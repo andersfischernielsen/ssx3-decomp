@@ -9,7 +9,10 @@ use super::{Gs, Mtgs};
 use crate::Qword;
 
 fn giftag(nloop: u32, eop: bool, flg: u32, nreg: u32, regs: u64) -> Qword {
-    let lo = nloop as u64 & 0x7FFF | (eop as u64) << 15 | (flg as u64) << 58 | ((nreg as u64) & 0xF) << 60;
+    let lo = nloop as u64 & 0x7FFF
+        | (eop as u64) << 15
+        | (flg as u64) << 58
+        | ((nreg as u64) & 0xF) << 60;
     lo as u128 | (regs as u128) << 64
 }
 
@@ -44,7 +47,11 @@ fn random_packet(r: &mut Rng) -> Vec<Qword> {
             if halves.len() % 2 == 1 {
                 halves.push(0);
             }
-            q.extend(halves.chunks(2).map(|c| c[0] as u128 | (c[1] as u128) << 64));
+            q.extend(
+                halves
+                    .chunks(2)
+                    .map(|c| c[0] as u128 | (c[1] as u128) << 64),
+            );
             q
         }
         0..=4 => {
@@ -52,8 +59,18 @@ fn random_packet(r: &mut Rng) -> Vec<Qword> {
             let prim = r.pick(&[3u64, 4, 6, 6 | 1 << 3]);
             let mut list = vec![(0x00u8, prim)];
             for _ in 0..r.below(12) + 3 {
-                list.push((0x01, r.next() & 0xFFFF_FFFF | (1.0f32.to_bits() as u64) << 32));
-                list.push((0x05, xyz(r.below(320) as u32, r.below(224) as u32, r.below(1 << 20) as u32)));
+                list.push((
+                    0x01,
+                    r.next() & 0xFFFF_FFFF | (1.0f32.to_bits() as u64) << 32,
+                ));
+                list.push((
+                    0x05,
+                    xyz(
+                        r.below(320) as u32,
+                        r.below(224) as u32,
+                        r.below(1 << 20) as u32,
+                    ),
+                ));
             }
             ad_packet(&list, true)
         }
@@ -64,7 +81,12 @@ fn random_packet(r: &mut Rng) -> Vec<Qword> {
             let (w, h) = (8 * (r.below(4) + 1), 2 * (r.below(8) + 1));
             let dbp = 0x1000 + r.below(64) * 32;
             let mut q = ad_packet(
-                &[(0x50, dbp << 32 | 2u64 << 48 | psm << 56), (0x51, r.below(16) << 32 | r.below(16) << 48), (0x52, w | h << 32), (0x53, 0)],
+                &[
+                    (0x50, dbp << 32 | 2u64 << 48 | psm << 56),
+                    (0x51, r.below(16) << 32 | r.below(16) << 48),
+                    (0x52, w | h << 32),
+                    (0x53, 0),
+                ],
                 false,
             );
             let bpp = match psm {
@@ -83,17 +105,37 @@ fn random_packet(r: &mut Rng) -> Vec<Qword> {
             }
             q
         }
-        7 => ad_packet(&[(0x60, r.next() & 0xFFFF_0000_FFFF), (0x62, r.next() & 0xFFFF_0000_FFFF)], true),
+        7 => ad_packet(
+            &[
+                (0x60, r.next() & 0xFFFF_0000_FFFF),
+                (0x62, r.next() & 0xFFFF_0000_FFFF),
+            ],
+            true,
+        ),
         8 => ad_packet(&[(0x61, 0)], true),
         _ => ad_packet(
-            &[(0x50, 0 | 10 << 16), (0x51, r.below(64) | r.below(64) << 16), (0x52, 8 | 4u64 << 32), (0x53, 1)],
+            &[
+                (0x50, 0 | 10 << 16),
+                (0x51, r.below(64) | r.below(64) << 16),
+                (0x52, 8 | 4u64 << 32),
+                (0x53, 1),
+            ],
             true,
         ),
     }
 }
 
 fn setup() -> Vec<Qword> {
-    ad_packet(&[(0x4C, 10 << 16), (0x40, 639 << 16 | 447 << 48), (0x18, 0), (0x47, 0), (0x4E, 0x80 << 0 | 0 << 24)], true)
+    ad_packet(
+        &[
+            (0x4C, 10 << 16),
+            (0x40, 639 << 16 | 447 << 48),
+            (0x18, 0),
+            (0x47, 0),
+            (0x4E, 0x80 << 0 | 0 << 24),
+        ],
+        true,
+    )
 }
 
 /// The machine-facing GS API, for running one session on `Gs` itself and
@@ -118,18 +160,42 @@ trait Dev {
 
 macro_rules! fwd {
     () => {
-        fn gif_write(&mut self, path: usize, d: &[Qword]) { self.gif_write(path, d) }
-        fn path3_dma(&mut self, d: &[Qword]) { self.path3_dma(d) }
-        fn set_path3_mask(&mut self, m: bool) { self.set_path3_mask(m) }
-        fn path3_flow(&mut self) { self.path3_flow() }
-        fn set_path3_mask_reg(&mut self, m: bool) { self.set_path3_mask_reg(m) }
-        fn path3_pending(&self) -> usize { self.path3_pending() }
-        fn gif_stat(&self) -> u32 { self.gif_stat() }
-        fn read_priv(&mut self, o: u32) -> u64 { self.read_priv(o) }
-        fn write_priv(&mut self, o: u32, v: u64) { self.write_priv(o, v) }
-        fn vblank(&mut self, f: u32) { self.vblank(f) }
-        fn sync(&mut self) { self.sync() }
-        fn read_local(&mut self, n: usize) -> Vec<Qword> { self.read_local(n) }
+        fn gif_write(&mut self, path: usize, d: &[Qword]) {
+            self.gif_write(path, d)
+        }
+        fn path3_dma(&mut self, d: &[Qword]) {
+            self.path3_dma(d)
+        }
+        fn set_path3_mask(&mut self, m: bool) {
+            self.set_path3_mask(m)
+        }
+        fn path3_flow(&mut self) {
+            self.path3_flow()
+        }
+        fn set_path3_mask_reg(&mut self, m: bool) {
+            self.set_path3_mask_reg(m)
+        }
+        fn path3_pending(&self) -> usize {
+            self.path3_pending()
+        }
+        fn gif_stat(&self) -> u32 {
+            self.gif_stat()
+        }
+        fn read_priv(&mut self, o: u32) -> u64 {
+            self.read_priv(o)
+        }
+        fn write_priv(&mut self, o: u32, v: u64) {
+            self.write_priv(o, v)
+        }
+        fn vblank(&mut self, f: u32) {
+            self.vblank(f)
+        }
+        fn sync(&mut self) {
+            self.sync()
+        }
+        fn read_local(&mut self, n: usize) -> Vec<Qword> {
+            self.read_local(n)
+        }
     };
 }
 
@@ -138,7 +204,11 @@ impl Dev for Gs {
     fn write_priv32(&mut self, o: u32, hi: bool, v: u32) {
         // What the bus did before MTGS: read, merge, write.
         let cur = self.read_priv(o);
-        let nv = if hi { (cur & 0xffff_ffff) | (v as u64) << 32 } else { (cur & !0xffff_ffff) | v as u64 };
+        let nv = if hi {
+            (cur & 0xffff_ffff) | (v as u64) << 32
+        } else {
+            (cur & !0xffff_ffff) | v as u64
+        };
         self.write_priv(o, nv);
     }
     fn irq_pending(&mut self) -> bool {
@@ -209,7 +279,8 @@ fn run_session(seed: u64, m: &mut impl Dev) -> (Vec<u64>, Vec<u32>) {
                 seen.push(q.len() as u64);
             }
             18 => m.write_priv(r.pick(&[0x00u32, 0x70, 0x90, 0xE0, 0x1040]), r.next()),
-            _ => seen.push(m.read_priv(r.pick(&[0x00u32, 0x70, 0x90, 0xE0, 0x1010, 0x1040])) ^ 0x5555),
+            _ => seen
+                .push(m.read_priv(r.pick(&[0x00u32, 0x70, 0x90, 0xE0, 0x1010, 0x1040])) ^ 0x5555),
         }
         seen.push(m.irq_pending() as u64);
         seen.push(m.gif_stat() as u64);
@@ -229,7 +300,10 @@ fn threaded_matches_direct() {
             let (b, vb) = session(seed, mode);
             assert_eq!(a.len(), b.len(), "seed {seed} mode {mode}");
             if let Some(i) = (0..a.len()).find(|&i| a[i] != b[i]) {
-                panic!("seed {seed} mode {mode}: observation {i} differs: {:#x} vs {:#x}", a[i], b[i]);
+                panic!(
+                    "seed {seed} mode {mode}: observation {i} differs: {:#x} vs {:#x}",
+                    a[i], b[i]
+                );
             }
             assert!(va == vb, "seed {seed} mode {mode}: VRAM differs");
         }
@@ -242,13 +316,23 @@ fn path3_mask_through_mtgs() {
     // outcome of a mask pulse through the threaded GS.
     let mut m = Mtgs::with_thread(Gs::new_cpu(), true);
     let up = |dbp: u64, c: u32| {
-        let mut q = ad_packet(&[(0x50, dbp << 32 | 1u64 << 48), (0x51, 0), (0x52, 8 | 8u64 << 32), (0x53, 0)], false);
+        let mut q = ad_packet(
+            &[
+                (0x50, dbp << 32 | 1u64 << 48),
+                (0x51, 0),
+                (0x52, 8 | 8u64 << 32),
+                (0x53, 0),
+            ],
+            false,
+        );
         q.push(giftag(16, true, 2, 0, 0));
         let w = c as u128;
         q.extend((0..16).map(|_| w | w << 32 | w << 64 | w << 96));
         q
     };
-    let texel = |m: &mut Mtgs| super::swizzle::read_pixel(&m.core().vram, super::swizzle::PSMCT32, 0x100, 1, 3, 3);
+    let texel = |m: &mut Mtgs| {
+        super::swizzle::read_pixel(&m.core().vram, super::swizzle::PSMCT32, 0x100, 1, 3, 3)
+    };
     m.set_path3_mask(true);
     let mut q = up(0x100, 0x6666_6666);
     q.extend(up(0x100, 0x7777_7777));

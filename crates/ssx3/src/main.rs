@@ -9,10 +9,10 @@
 //! second controller drives pad 2 when `SSX3_PAD2=1` plugs it in (Multi Play).
 
 // The generated EE code in the chosen form (features `ee-threads` / `ee-unwind`).
-#[cfg(feature = "ee-unwind")]
-extern crate ssx3_ee_unwind as ssx3_ee;
 #[cfg(all(feature = "ee-threads", not(feature = "ee-unwind")))]
 extern crate ssx3_ee_threads as ssx3_ee;
+#[cfg(feature = "ee-unwind")]
+extern crate ssx3_ee_unwind as ssx3_ee;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -134,13 +134,19 @@ impl App {
                             p.mapping_source()
                         );
                     }
-                    gilrs::EventType::ButtonPressed(b, code) if std::env::var_os("SSX3_PAD_DEBUG").is_some() => {
+                    gilrs::EventType::ButtonPressed(b, code)
+                        if std::env::var_os("SSX3_PAD_DEBUG").is_some() =>
+                    {
                         eprintln!("[pad] pressed {b:?} (code {code:?})");
                     }
-                    gilrs::EventType::AxisChanged(a, v, code) if std::env::var_os("SSX3_PAD_DEBUG").is_some() && v.abs() > 0.5 => {
+                    gilrs::EventType::AxisChanged(a, v, code)
+                        if std::env::var_os("SSX3_PAD_DEBUG").is_some() && v.abs() > 0.5 =>
+                    {
                         eprintln!("[pad] axis {a:?} {v:.2} (code {code:?})");
                     }
-                    gilrs::EventType::Disconnected => eprintln!("[pad] controller disconnected: {}", g.gamepad(ev.id).name()),
+                    gilrs::EventType::Disconnected => {
+                        eprintln!("[pad] controller disconnected: {}", g.gamepad(ev.id).name())
+                    }
                     // The controller's home/guide button opens the settings.
                     gilrs::EventType::ButtonPressed(gilrs::Button::Mode, _) => open_menu = true,
                     _ => {}
@@ -149,11 +155,22 @@ impl App {
             for (port, (_, pad)) in g.gamepads().take(2).enumerate() {
                 let (buttons, sticks) = &mut state[port];
                 for b in [
-                    gilrs::Button::Select, gilrs::Button::LeftThumb, gilrs::Button::RightThumb,
-                    gilrs::Button::Start, gilrs::Button::DPadUp, gilrs::Button::DPadRight,
-                    gilrs::Button::DPadDown, gilrs::Button::DPadLeft, gilrs::Button::LeftTrigger2,
-                    gilrs::Button::RightTrigger2, gilrs::Button::LeftTrigger, gilrs::Button::RightTrigger,
-                    gilrs::Button::North, gilrs::Button::East, gilrs::Button::South, gilrs::Button::West,
+                    gilrs::Button::Select,
+                    gilrs::Button::LeftThumb,
+                    gilrs::Button::RightThumb,
+                    gilrs::Button::Start,
+                    gilrs::Button::DPadUp,
+                    gilrs::Button::DPadRight,
+                    gilrs::Button::DPadDown,
+                    gilrs::Button::DPadLeft,
+                    gilrs::Button::LeftTrigger2,
+                    gilrs::Button::RightTrigger2,
+                    gilrs::Button::LeftTrigger,
+                    gilrs::Button::RightTrigger,
+                    gilrs::Button::North,
+                    gilrs::Button::East,
+                    gilrs::Button::South,
+                    gilrs::Button::West,
                 ] {
                     if let Some(bit) = gamepad_bit(b) {
                         if pad.is_pressed(b) {
@@ -189,20 +206,20 @@ impl App {
 fn pad_bit(k: KeyCode) -> Option<u16> {
     // libpad button bits (active-low in the wire format; we store active-high).
     Some(match k {
-        KeyCode::ShiftRight => 1 << 0,  // Select
-        KeyCode::Enter => 1 << 3,       // Start
+        KeyCode::ShiftRight => 1 << 0, // Select
+        KeyCode::Enter => 1 << 3,      // Start
         KeyCode::ArrowUp => 1 << 4,
         KeyCode::ArrowRight => 1 << 5,
         KeyCode::ArrowDown => 1 << 6,
         KeyCode::ArrowLeft => 1 << 7,
-        KeyCode::Digit1 => 1 << 8,      // L2
-        KeyCode::Digit2 => 1 << 9,      // R2
-        KeyCode::KeyQ => 1 << 10,       // L1
-        KeyCode::KeyW => 1 << 11,       // R1
-        KeyCode::KeyA => 1 << 12,       // Triangle
-        KeyCode::KeyS => 1 << 13,       // Circle
-        KeyCode::KeyX => 1 << 14,       // Cross
-        KeyCode::KeyZ => 1 << 15,       // Square
+        KeyCode::Digit1 => 1 << 8, // L2
+        KeyCode::Digit2 => 1 << 9, // R2
+        KeyCode::KeyQ => 1 << 10,  // L1
+        KeyCode::KeyW => 1 << 11,  // R1
+        KeyCode::KeyA => 1 << 12,  // Triangle
+        KeyCode::KeyS => 1 << 13,  // Circle
+        KeyCode::KeyX => 1 << 14,  // Cross
+        KeyCode::KeyZ => 1 << 15,  // Square
         _ => return None,
     })
 }
@@ -216,10 +233,16 @@ impl ApplicationHandler for App {
             .with_title("SSX 3 (USA) — native recompilation")
             .with_inner_size(winit::dpi::LogicalSize::new(960.0, 672.0));
         // SSX3_FULLSCREEN=1: start in borderless fullscreen (F11 toggles).
-        let attrs = if settings::get("SSX3_FULLSCREEN").is_some_and(|v| v != "0") { attrs.with_fullscreen(Some(Fullscreen::Borderless(None))) } else { attrs };
+        let attrs = if settings::get("SSX3_FULLSCREEN").is_some_and(|v| v != "0") {
+            attrs.with_fullscreen(Some(Fullscreen::Borderless(None)))
+        } else {
+            attrs
+        };
         // The SSX 3 logo from the disc (title bar and taskbar on Windows and
         // Linux; macOS takes the app bundle's icon).
-        let attrs = match icon::from_disc(128).and_then(|rgba| winit::window::Icon::from_rgba(rgba, 128, 128).ok()) {
+        let attrs = match icon::from_disc(128)
+            .and_then(|rgba| winit::window::Icon::from_rgba(rgba, 128, 128).ok())
+        {
             Some(i) => attrs.with_window_icon(Some(i)),
             None => attrs,
         };
@@ -238,7 +261,11 @@ impl ApplicationHandler for App {
             "[window] display {:.0} Hz, game {} Hz{}",
             self.display_hz,
             ssx3_ps2::machine::vsync_hz(),
-            if locked { ", locked to the display" } else { "" }
+            if locked {
+                ", locked to the display"
+            } else {
+                ""
+            }
         );
         self.window = Some(window);
         self.follow_window_size(size.width, size.height);
@@ -267,22 +294,35 @@ impl ApplicationHandler for App {
                                 KeyCode::ArrowDown => self.menu_input(MenuKey::Down),
                                 KeyCode::ArrowLeft => self.menu_input(MenuKey::Left),
                                 KeyCode::ArrowRight => self.menu_input(MenuKey::Right),
-                                KeyCode::Enter | KeyCode::Space | KeyCode::KeyX => self.menu_input(MenuKey::Select),
-                                KeyCode::Escape | KeyCode::Backspace => self.menu_input(MenuKey::Close),
+                                KeyCode::Enter | KeyCode::Space | KeyCode::KeyX => {
+                                    self.menu_input(MenuKey::Select)
+                                }
+                                KeyCode::Escape | KeyCode::Backspace => {
+                                    self.menu_input(MenuKey::Close)
+                                }
                                 _ => {}
                             }
                         }
                         return;
                     }
                     // F11: borderless fullscreen on and off.
-                    if code == KeyCode::F11 && event.state == ElementState::Pressed && !event.repeat {
+                    if code == KeyCode::F11 && event.state == ElementState::Pressed && !event.repeat
+                    {
                         if let Some(w) = self.window.as_ref() {
-                            w.set_fullscreen(if w.fullscreen().is_some() { None } else { Some(Fullscreen::Borderless(None)) });
+                            w.set_fullscreen(if w.fullscreen().is_some() {
+                                None
+                            } else {
+                                Some(Fullscreen::Borderless(None))
+                            });
                         }
                     }
                     if code == KeyCode::F12 && event.state == ElementState::Pressed {
                         // The image on screen: the native renderer's while it is active.
-                        let native = self.gfx.as_ref().filter(|_| ssx3_ps2::frame_sink::native()).and_then(|g| g.read_image());
+                        let native = self
+                            .gfx
+                            .as_ref()
+                            .filter(|_| ssx3_ps2::frame_sink::native())
+                            .and_then(|g| g.read_image());
                         let (w, h) = match native {
                             Some((w, h, px)) => {
                                 self.frame = px.iter().map(|p| p | 0xFF00_0000).collect();
@@ -343,7 +383,9 @@ impl ApplicationHandler for App {
                     std::thread::sleep(Duration::from_secs_f64(w.min(0.002)));
                     return;
                 }
-                ssx3_ps2::machine::set_audio_lead_frames((self.pacer.audio_lead() * 48000.0) as u32);
+                ssx3_ps2::machine::set_audio_lead_frames(
+                    (self.pacer.audio_lead() * 48000.0) as u32,
+                );
                 ssx3_game::tick::set_updates_per_vsync(plan.updates_per_vsync);
                 for _ in 0..plan.vsyncs {
                     if !self.step(event_loop) {
@@ -369,10 +411,18 @@ impl App {
         self.update_pad();
         let alive = ssx3_ps2::machine::run_frame(&mut self.cpu);
         if ssx3_ps2::m!(self.cpu).sched.frames % 60 == 0 {
-            eprintln!("[{:6.1}s] {}", self.started.elapsed().as_secs_f64(), game::status(&self.cpu));
+            eprintln!(
+                "[{:6.1}s] {}",
+                self.started.elapsed().as_secs_f64(),
+                game::status(&self.cpu)
+            );
             {
                 let app = self.cpu.bus.read32(ssx3_game::tick::APPMAN_PTR);
-                let updates = if app != 0 { self.cpu.bus.read32(app + 0x1c) } else { 0 };
+                let updates = if app != 0 {
+                    self.cpu.bus.read32(app + 0x1c)
+                } else {
+                    0
+                };
                 eprintln!(
                     "          game updates {updates}, audio gaps {:.2}s total, lead {} ms, repeated images {}, catch-up VSyncs {}",
                     ssx3_iop::audio::underrun_frames() as f64 / 48000.0,
@@ -385,7 +435,9 @@ impl App {
             let fps = 60.0 / now.duration_since(self.fps_mark).as_secs_f64().max(1e-6);
             self.fps_mark = now;
             if let Some(w) = self.window.as_ref() {
-                w.set_title(&format!("SSX 3 (USA) — native recompilation — {fps:.0} fps"));
+                w.set_title(&format!(
+                    "SSX 3 (USA) — native recompilation — {fps:.0} fps"
+                ));
             }
         }
         if !alive {
@@ -405,8 +457,13 @@ impl App {
     fn show(&mut self) {
         if let Some(p) = self.presenter.as_mut() {
             // Rendering at the window's size fills it exactly.
-            let native_fill = self.gfx.is_some() && ssx3_ps2::frame_sink::native() && game::follows_window();
-            p.set_aspect(if native_fill { game::aspect_box().unwrap_or(0.0) } else { display_aspect(&self.cpu) });
+            let native_fill =
+                self.gfx.is_some() && ssx3_ps2::frame_sink::native() && game::follows_window();
+            p.set_aspect(if native_fill {
+                game::aspect_box().unwrap_or(0.0)
+            } else {
+                display_aspect(&self.cpu)
+            });
             match self.menu {
                 Some(sel) => {
                     let (w, h, img) = settings::draw(sel, self.restart_pending);
@@ -477,7 +534,10 @@ impl App {
                 None => (w, h),
             };
             let k = game::resolution();
-            g.set_output_size(Some((((bw as f32 * k).round() as u32).max(64), ((bh as f32 * k).round() as u32).max(64))));
+            g.set_output_size(Some((
+                ((bw as f32 * k).round() as u32).max(64),
+                ((bh as f32 * k).round() as u32).max(64),
+            )));
             ssx3_ps2::frame_sink::set_view(bw as f32 / bh as f32, game::fov());
         }
     }
@@ -566,7 +626,9 @@ impl App {
                         gilrs::Button::DPadLeft => MenuKey::Left,
                         gilrs::Button::DPadRight => MenuKey::Right,
                         gilrs::Button::South => MenuKey::Select,
-                        gilrs::Button::East | gilrs::Button::Mode | gilrs::Button::Start => MenuKey::Close,
+                        gilrs::Button::East | gilrs::Button::Mode | gilrs::Button::Start => {
+                            MenuKey::Close
+                        }
                         _ => continue,
                     });
                 }
@@ -603,7 +665,11 @@ fn display_aspect(cpu: &Cpu) -> f32 {
             None
         }
     });
-    forced.unwrap_or(if (cpu.bus.ram_u32(0x0053_5610) >> 20) & 3 == 2 { 16.0 / 9.0 } else { 4.0 / 3.0 })
+    forced.unwrap_or(if (cpu.bus.ram_u32(0x0053_5610) >> 20) & 3 == 2 {
+        16.0 / 9.0
+    } else {
+        4.0 / 3.0
+    })
 }
 
 fn main() {
@@ -624,7 +690,9 @@ fn main() {
         frame: Vec::new(),
         last: Instant::now(),
         started: Instant::now(),
-        exit_after: std::env::var("SSX3_EXIT_AFTER_FRAMES").ok().and_then(|s| s.parse().ok()),
+        exit_after: std::env::var("SSX3_EXIT_AFTER_FRAMES")
+            .ok()
+            .and_then(|s| s.parse().ok()),
         shots: 0,
         fps_mark: Instant::now(),
         keys: 0,

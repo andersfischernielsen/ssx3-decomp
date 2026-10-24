@@ -16,22 +16,50 @@ fn mn(w: u32) -> &'static str {
 fn nop_is_sll_zero_zero_zero() {
     // Ghidra prints this as `nop`; canonically it is `sll $0,$0,0`.
     assert_eq!(mn(0x0000_0000), "sll");
-    assert_eq!(op(0x0000_0000), Operands::RdRtSa { rd: 0, rt: 0, sa: 0 });
+    assert_eq!(
+        op(0x0000_0000),
+        Operands::RdRtSa {
+            rd: 0,
+            rt: 0,
+            sa: 0
+        }
+    );
 }
 
 #[test]
 fn immediate_arith() {
     assert_eq!(mn(0x2402_1234), "addiu");
-    assert_eq!(op(0x2402_1234), Operands::RtRsImm { rt: 2, rs: 0, imm: 0x1234 });
+    assert_eq!(
+        op(0x2402_1234),
+        Operands::RtRsImm {
+            rt: 2,
+            rs: 0,
+            imm: 0x1234
+        }
+    );
     assert_eq!(mn(0x3408_1234), "ori");
-    assert_eq!(op(0x3408_1234), Operands::RtRsImmU { rt: 8, rs: 0, imm: 0x1234 });
+    assert_eq!(
+        op(0x3408_1234),
+        Operands::RtRsImmU {
+            rt: 8,
+            rs: 0,
+            imm: 0x1234
+        }
+    );
     assert_eq!(mn(0x3C08_8000), "lui");
     assert_eq!(op(0x3C08_8000), Operands::RtImm { rt: 8, imm: 0x8000 });
 }
 
 #[test]
 fn negative_immediate_is_sign_extended() {
-    assert_eq!(op(0x2402_FFFC), Operands::RtRsImm { rt: 2, rs: 0, imm: -4 });
+    assert_eq!(
+        op(0x2402_FFFC),
+        Operands::RtRsImm {
+            rt: 2,
+            rs: 0,
+            imm: -4
+        }
+    );
 }
 
 #[test]
@@ -66,7 +94,13 @@ fn ee_hi_lo_moves_via_mmi() {
     assert_eq!(mn(0x7000_0013), "mtlo1");
     assert_eq!(
         op(0x7000_0011),
-        Operands::Mmi { mmiop: 0, fct: 0x11, rd: 0, rs: 0, rt: 0 }
+        Operands::Mmi {
+            mmiop: 0,
+            fct: 0x11,
+            rd: 0,
+            rs: 0,
+            rt: 0
+        }
     );
 }
 
@@ -109,27 +143,62 @@ fn cop0_control_ops() {
 #[test]
 fn cop0_moves() {
     assert_eq!(mn(0x4008_6000), "mfc0");
-    assert_eq!(op(0x4008_6000), Operands::CopMove { rt: 8, rd: 12, sel: 0 });
+    assert_eq!(
+        op(0x4008_6000),
+        Operands::CopMove {
+            rt: 8,
+            rd: 12,
+            sel: 0
+        }
+    );
     assert_eq!(mn(0x4088_6000), "mtc0");
 }
 
 #[test]
 fn loads_and_stores() {
     assert_eq!(mn(0x8FA8_0010), "lw");
-    assert_eq!(op(0x8FA8_0010), Operands::Mem { rt: 8, rs: 29, offset: 0x10 });
+    assert_eq!(
+        op(0x8FA8_0010),
+        Operands::Mem {
+            rt: 8,
+            rs: 29,
+            offset: 0x10
+        }
+    );
     assert_eq!(mn(0xAFA8_0010), "sw");
     assert_eq!(mn(0x7888_0000), "lq");
     assert_eq!(mn(0x7C88_0000), "sq");
     assert_eq!(mn(0xD888_0000), "lqc2");
-    assert_eq!(op(0xD888_0000), Operands::Mem { rt: 8, rs: 4, offset: 0 });
+    assert_eq!(
+        op(0xD888_0000),
+        Operands::Mem {
+            rt: 8,
+            rs: 4,
+            offset: 0
+        }
+    );
 }
 
 #[test]
 fn branches() {
     assert_eq!(mn(0x1100_0010), "beq");
-    assert_eq!(op(0x1100_0010), Operands::Branch { rs: 8, rt: 0, offset: 0x10 });
+    assert_eq!(
+        op(0x1100_0010),
+        Operands::Branch {
+            rs: 8,
+            rt: 0,
+            offset: 0x10
+        }
+    );
     assert_eq!(mn(0x1520_FFFC), "bne");
-    assert_eq!(op(0x1520_FFFC), Operands::Branch { rs: 9, rt: 0, offset: -4 });
+    assert_eq!(
+        op(0x1520_FFFC),
+        Operands::Branch {
+            rs: 9,
+            rt: 0,
+            offset: -4
+        }
+    );
     assert_eq!(mn(0x0480_FFF8), "bltz");
     assert_eq!(op(0x0480_FFF8), Operands::Branch1 { rs: 4, offset: -8 });
 }
@@ -137,20 +206,48 @@ fn branches() {
 #[test]
 fn integer_r_type_and_64bit_ops() {
     assert_eq!(mn(0x0001_102B), "sltu");
-    assert_eq!(op(0x0001_102B), Operands::RdRsRt { rd: 2, rs: 0, rt: 1 });
+    assert_eq!(
+        op(0x0001_102B),
+        Operands::RdRsRt {
+            rd: 2,
+            rs: 0,
+            rt: 1
+        }
+    );
     assert_eq!(mn(0x0064_102D), "daddu");
     assert_eq!(mn(0x0008_413C), "dsll32");
-    assert_eq!(op(0x0008_413C), Operands::RdRtSa { rd: 8, rt: 8, sa: 4 });
+    assert_eq!(
+        op(0x0008_413C),
+        Operands::RdRtSa {
+            rd: 8,
+            rt: 8,
+            sa: 4
+        }
+    );
 }
 
 #[test]
 fn cop1_moves_and_arith_use_fpu_field_layout() {
     // mfc1 $t0, $f2
     assert_eq!(mn(0x4408_1000), "mfc1");
-    assert_eq!(op(0x4408_1000), Operands::CopMove { rt: 8, rd: 2, sel: 0 });
+    assert_eq!(
+        op(0x4408_1000),
+        Operands::CopMove {
+            rt: 8,
+            rd: 2,
+            sel: 0
+        }
+    );
     // add.s $f3, $f2, $f1
     assert_eq!(mn(0x4601_10C0), "add.s");
-    assert_eq!(op(0x4601_10C0), Operands::Cop1Arith { fd: 3, fs: 2, ft: 1 });
+    assert_eq!(
+        op(0x4601_10C0),
+        Operands::Cop1Arith {
+            fd: 3,
+            fs: 2,
+            ft: 1
+        }
+    );
     // bc1t +0x10
     assert_eq!(mn(0x4501_0010), "bc1t");
     assert_eq!(op(0x4501_0010), Operands::Cop1Branch { offset: 0x10 });

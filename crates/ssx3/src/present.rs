@@ -163,15 +163,23 @@ impl Presenter {
         let shared = gs.and_then(|ctx| {
             let surface = ctx.instance.create_surface(window.clone()).ok()?;
             if !ctx.adapter.is_surface_supported(&surface) {
-                eprintln!("[present] GS device cannot present to this window; using a separate device");
+                eprintln!(
+                    "[present] GS device cannot present to this window; using a separate device"
+                );
                 return None;
             }
-            Some((surface, ctx.adapter.clone(), ctx.device.clone(), ctx.queue.clone()))
+            Some((
+                surface,
+                ctx.adapter.clone(),
+                ctx.device.clone(),
+                ctx.queue.clone(),
+            ))
         });
         let (surface, adapter, device, queue) = match shared {
             Some(s) => s,
             None => {
-                let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+                let instance =
+                    wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
                 let surface = instance
                     .create_surface(window.clone())
                     .expect("create surface");
@@ -303,7 +311,12 @@ impl Presenter {
         let overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("overlay-pipeline"),
             layout: Some(&layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
@@ -311,7 +324,11 @@ impl Presenter {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format: config.format, blend: Some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
             }),
             multiview_mask: None,
             cache: None,
@@ -355,13 +372,21 @@ impl Presenter {
                 label: Some("gs-frame-bg"),
                 layout: &bp.bgl,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: frame.buffer.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: bp.dims.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: frame.buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: bp.dims.as_entire_binding(),
+                    },
                 ],
             });
             bp.bound = Some((frame.buffer.clone(), bg));
         }
-        let Some((_, bg)) = &self.buffer_path.bound else { unreachable!() };
+        let Some((_, bg)) = &self.buffer_path.bound else {
+            unreachable!()
+        };
         let bg = bg.clone();
         let pipeline = self.buffer_path.pipeline.clone();
         self.draw_fullscreen(&pipeline, &bg)
@@ -374,8 +399,14 @@ impl Presenter {
             label: Some("gfx-frame-bg"),
             layout: &self.bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         });
         let pipeline = self.pipeline.clone();
@@ -413,11 +444,18 @@ impl Presenter {
             self.overlay = None;
             return;
         };
-        let same = self.overlay.as_ref().is_some_and(|(t, _)| (t.width(), t.height()) == (w, h));
+        let same = self
+            .overlay
+            .as_ref()
+            .is_some_and(|(t, _)| (t.width(), t.height()) == (w, h));
         if !same {
             let tex = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("overlay"),
-                size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -430,8 +468,14 @@ impl Presenter {
                 label: Some("overlay-bg"),
                 layout: &self.bgl,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
                 ],
             });
             self.overlay = Some((tex, bg));
@@ -439,10 +483,23 @@ impl Presenter {
         let (tex, _) = self.overlay.as_ref().unwrap();
         let bytes: Vec<u8> = px.iter().flat_map(|p| p.to_le_bytes()).collect();
         self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo {
+                texture: tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
             &bytes,
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(h) },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
     }
 
@@ -460,7 +517,11 @@ impl Presenter {
         if (w, h) != self.tex_size && w > 0 && h > 0 {
             self.tex = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("frame"),
-                size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -468,18 +529,27 @@ impl Presenter {
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
-            let view = self.tex.create_view(&wgpu::TextureViewDescriptor::default());
+            let view = self
+                .tex
+                .create_view(&wgpu::TextureViewDescriptor::default());
             self.bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("frame-bg"),
                 layout: &self.bgl,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
                 ],
             });
             self.tex_size = (w, h);
         }
-        let bytes: &[u8] = unsafe { std::slice::from_raw_parts(rgba.as_ptr() as *const u8, rgba.len() * 4) };
+        let bytes: &[u8] =
+            unsafe { std::slice::from_raw_parts(rgba.as_ptr() as *const u8, rgba.len() * 4) };
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.tex,
@@ -488,8 +558,16 @@ impl Presenter {
                 aspect: wgpu::TextureAspect::All,
             },
             &bytes[..(w * h * 4) as usize],
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(h) },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
 
         let (pipeline, bg) = (self.pipeline.clone(), self.bind_group.clone());
@@ -497,7 +575,11 @@ impl Presenter {
     }
 
     /// Acquire the next surface texture and draw a fullscreen triangle.
-    fn draw_fullscreen(&mut self, pipeline: &wgpu::RenderPipeline, bind_group: &wgpu::BindGroup) -> Result<(), PresentError> {
+    fn draw_fullscreen(
+        &mut self,
+        pipeline: &wgpu::RenderPipeline,
+        bind_group: &wgpu::BindGroup,
+    ) -> Result<(), PresentError> {
         if self.reconfigure && !self.configure() {
             return Err(PresentError::Skip);
         }
@@ -547,8 +629,19 @@ impl Presenter {
             });
             let (w, h) = (self.config.width as f32, self.config.height as f32);
             if self.aspect > 0.0 {
-                let (vw, vh) = if w / h > self.aspect { (h * self.aspect, h) } else { (w, w / self.aspect) };
-                pass.set_viewport(((w - vw) / 2.0).floor(), ((h - vh) / 2.0).floor(), vw.round(), vh.round(), 0.0, 1.0);
+                let (vw, vh) = if w / h > self.aspect {
+                    (h * self.aspect, h)
+                } else {
+                    (w, w / self.aspect)
+                };
+                pass.set_viewport(
+                    ((w - vw) / 2.0).floor(),
+                    ((h - vh) / 2.0).floor(),
+                    vw.round(),
+                    vh.round(),
+                    0.0,
+                    1.0,
+                );
             }
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, bind_group, &[]);
@@ -558,7 +651,14 @@ impl Presenter {
                 let (ow, oh) = (tex.width() as f32, tex.height() as f32);
                 let k = ((w * 0.9 / ow).min(h * 0.9 / oh)).floor().max(1.0);
                 let (vw, vh) = ((ow * k).min(w), (oh * k).min(h));
-                pass.set_viewport(((w - vw) / 2.0).floor(), ((h - vh) / 2.0).floor(), vw, vh, 0.0, 1.0);
+                pass.set_viewport(
+                    ((w - vw) / 2.0).floor(),
+                    ((h - vh) / 2.0).floor(),
+                    vw,
+                    vh,
+                    0.0,
+                    1.0,
+                );
                 pass.set_pipeline(&self.overlay_pipeline);
                 pass.set_bind_group(0, bg, &[]);
                 pass.draw(0..3, 0..1);
@@ -570,7 +670,6 @@ impl Presenter {
         Ok(())
     }
 }
-
 
 impl BufferPath {
     fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> BufferPath {

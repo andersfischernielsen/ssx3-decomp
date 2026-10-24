@@ -40,7 +40,9 @@ fn glyph(c: &mut Cpu, font: u32, code: i32) -> u32 {
     let last = r32(c, font + 0x10) as i32;
     let table = r32(c, font + 4);
     if code <= last {
-        return table.wrapping_add((code as u32).wrapping_mul(12)).wrapping_sub((first as u32).wrapping_mul(12));
+        return table
+            .wrapping_add((code as u32).wrapping_mul(12))
+            .wrapping_sub((first as u32).wrapping_mul(12));
     }
     let mut lo = last.wrapping_sub(first);
     let mut hi = r32(c, font) as i32;
@@ -74,7 +76,12 @@ fn draw_glyphs_with(c: &mut Cpu, wide: bool, view_ret: u32) {
     let (us, vs, z) = (ff(c, 16), ff(c, 17), ff(c, 18));
     ensure_view_matrices(c, gm, view_ret);
     let view = r32(c, gm + 0x10dc);
-    let mode = r32(c, view.wrapping_mul(0x230).wrapping_add(gm).wrapping_add(0x6d40));
+    let mode = r32(
+        c,
+        view.wrapping_mul(0x230)
+            .wrapping_add(gm)
+            .wrapping_add(0x6d40),
+    );
     let (ka, kb) = (f(c, gm + 0x6af0), f(c, gm + 0x6b04));
     let (ox, oy) = (f(c, gm + 0x6b20), f(c, gm + 0x6b24));
     // 2D: Z from the font Z scale / offset.
@@ -84,7 +91,11 @@ fn draw_glyphs_with(c: &mut Cpu, wide: bool, view_ret: u32) {
     let mut data: Vec<u128> = Vec::new();
     let mut n = 0u64;
     loop {
-        let code = if wide { c.bus.read16(s) as u32 } else { c.bus.read8(s) as u32 };
+        let code = if wide {
+            c.bus.read16(s) as u32
+        } else {
+            c.bus.read8(s) as u32
+        };
         if code == 0 {
             break;
         }
@@ -97,7 +108,10 @@ fn draw_glyphs_with(c: &mut Cpu, wide: bool, view_ret: u32) {
         let (w, h) = (c.bus.read8(gl + 2) as i32, c.bus.read8(gl + 3) as i32);
         let (u, v) = (c.bus.read16(gl + 4) as i32, c.bus.read16(gl + 6) as i32);
         let adv = c.bus.read8(gl + 8) as i8 as i32;
-        let (xoff, yoff) = (c.bus.read8(gl + 9) as i8 as i32, c.bus.read8(gl + 0xa) as i8 as i32);
+        let (xoff, yoff) = (
+            c.bus.read8(gl + 9) as i8 as i32,
+            c.bus.read8(gl + 0xa) as i8 as i32,
+        );
         let st0 = st(FpuF32::from_i32(u) * us, FpuF32::from_i32(v) * vs);
         let st1 = st(FpuF32::from_i32(u + w) * us, FpuF32::from_i32(v + h) * vs);
         let (p0, p1) = if mode != 0 {
@@ -105,7 +119,10 @@ fn draw_glyphs_with(c: &mut Cpu, wide: bool, view_ret: u32) {
             let y0 = (y + FpuF32::from_i32(yoff) * sy) * kb + oy;
             let x1 = x0 + FpuF32::from_i32(w) * sx * ka;
             let y1 = y0 + FpuF32::from_i32(h) * sy * kb;
-            (xyz(x0.to_i32(), y0.to_i32(), zi), xyz(x1.to_i32(), y1.to_i32(), zi))
+            (
+                xyz(x0.to_i32(), y0.to_i32(), zi),
+                xyz(x1.to_i32(), y1.to_i32(), zi),
+            )
         } else {
             let hw = FpuF32::from_i32(w) * sx * half;
             let hh = FpuF32::from_i32(h) * sy * half;
@@ -116,7 +133,13 @@ fn draw_glyphs_with(c: &mut Cpu, wide: bool, view_ret: u32) {
             let (dx, dy) = (ka * hw * iw, kb * hh * iw);
             let a: V = [(FpuF32(p[0]) * iw).0, (FpuF32(p[1]) * iw).0, p[2], iw.0];
             let d: V = [dx.0, dy.0, 0, 0];
-            let corner = |q: V| xyz(FpuF32(q[0]).to_i32(), FpuF32(q[1]).to_i32(), (FpuF32(q[2]) * FpuF32(q[3])).to_i32());
+            let corner = |q: V| {
+                xyz(
+                    FpuF32(q[0]).to_i32(),
+                    FpuF32(q[1]).to_i32(),
+                    (FpuF32(q[2]) * FpuF32(q[3])).to_i32(),
+                )
+            };
             (corner(vu0::sub(&a, &d)), corner(vu0::add(&a, &d)))
         };
         data.push(st0 as u128 | (p0 as u128) << 64);

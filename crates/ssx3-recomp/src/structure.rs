@@ -20,8 +20,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use crate::eegen::{
-    branch_cond_pub, classify_pub, direct_callee_pub, fn_name, is_lowerable, lower, tail_pub, Ctl, Ctx,
-    Func, Image,
+    branch_cond_pub, classify_pub, direct_callee_pub, fn_name, is_lowerable, lower, tail_pub, Ctl,
+    Ctx, Func, Image,
 };
 
 enum Edge {
@@ -31,9 +31,19 @@ enum Edge {
 
 enum Term {
     /// Computed jump within the function: `match t { targets… , _ => out }`.
-    Switch { prelude: String, targets: Vec<u32>, other: String },
+    Switch {
+        prelude: String,
+        targets: Vec<u32>,
+        other: String,
+    },
     Goto(Edge),
-    Cond { prelude: String, cond: String, then_extra: String, taken: Edge, fall: Edge },
+    Cond {
+        prelude: String,
+        cond: String,
+        then_extra: String,
+        taken: Edge,
+        fall: Edge,
+    },
     Leave(String),
 }
 
@@ -46,7 +56,13 @@ const MAX_NEST: usize = 64;
 
 /// Try to emit `f` as structured Rust. Returns `None` if the function needs
 /// the dispatch form (computed jumps, irreducible flow, very deep nesting).
-pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, external: &BTreeSet<u32>) -> Option<String> {
+pub fn emit_structured(
+    img: &dyn Image,
+    f: &Func,
+    shard: usize,
+    ctx: &Ctx,
+    external: &BTreeSet<u32>,
+) -> Option<String> {
     let mut insns: Vec<(u32, u32)> = Vec::new();
     for &(lo, hi) in &f.runs {
         let mut a = lo;
@@ -56,7 +72,11 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
         }
     }
     let is_insn: BTreeSet<u32> = insns.iter().map(|(a, _)| *a).collect();
-    let index: BTreeMap<u32, usize> = insns.iter().enumerate().map(|(i, (a, _))| (*a, i)).collect();
+    let index: BTreeMap<u32, usize> = insns
+        .iter()
+        .enumerate()
+        .map(|(i, (a, _))| (*a, i))
+        .collect();
     let inside = |a: u32| a >= f.start && a < f.end && is_insn.contains(&a);
 
     // Block starts: entry + every intra-function branch/jump target + the
@@ -89,7 +109,11 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
 
     // Jump-table targets: in-function addresses that data refers to.
     let switch_targets: Vec<u32> = if has_switch {
-        ctx.data_refs.range(f.start..f.end).copied().filter(|a| inside(*a)).collect()
+        ctx.data_refs
+            .range(f.start..f.end)
+            .copied()
+            .filter(|a| inside(*a))
+            .collect()
     } else {
         Vec::new()
     };
@@ -113,22 +137,34 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
             }
             let (pc, w) = insns[i];
             if pc != l && (starts.contains(&pc) || insns[i - 1].0 + 4 != pc) {
-                term = Term::Goto(if inside(pc) { Edge::To(pc) } else { Edge::Out(tail_pub(pc, shard, ctx)) });
+                term = Term::Goto(if inside(pc) {
+                    Edge::To(pc)
+                } else {
+                    Edge::Out(tail_pub(pc, shard, ctx))
+                });
                 break;
             }
             count += 1;
             let ctl = classify_pub(pc, w);
-            let delay = insns.get(i + 1).filter(|(a, _)| *a == pc + 4).map(|(_, dw)| *dw);
+            let delay = insns
+                .get(i + 1)
+                .filter(|(a, _)| *a == pc + 4)
+                .map(|(_, dw)| *dw);
             let ds = match delay {
-                Some(dw) if classify_pub(pc + 4, dw) == Ctl::None => lower(pc + 4, dw).unwrap_or_default(),
+                Some(dw) if classify_pub(pc + 4, dw) == Ctl::None => {
+                    lower(pc + 4, dw).unwrap_or_default()
+                }
                 _ => String::new(),
             };
-            let edge = |t: u32| if inside(t) { Edge::To(t) } else { Edge::Out(tail_pub(t, shard, ctx)) };
+            let edge = |t: u32| {
+                if inside(t) {
+                    Edge::To(t)
+                } else {
+                    Edge::Out(tail_pub(t, shard, ctx))
+                }
+            };
             let after_call = |code: &mut String, ret: u32| {
-                let _ = writeln!(
-                    code,
-                    "if c.pc != {ret:#010x} {{ return; }}"
-                );
+                let _ = writeln!(code, "if c.pc != {ret:#010x} {{ return; }}");
             };
             match ctl {
                 Ctl::None => {
@@ -146,7 +182,11 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                     if !ds.is_empty() {
                         let _ = writeln!(code, "{ds}");
                     }
-                    let _ = writeln!(code, "c.pc = {target:#010x}; {};", direct_callee_pub(target, shard, ctx));
+                    let _ = writeln!(
+                        code,
+                        "c.pc = {target:#010x}; {};",
+                        direct_callee_pub(target, shard, ctx)
+                    );
                     after_call(&mut code, ret);
                     if !inside(ret) {
                         term = Term::Leave(tail_pub(ret, shard, ctx));
@@ -198,10 +238,18 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                     }
                     continue;
                 }
-                Ctl::Branch { target, likely, link } => {
+                Ctl::Branch {
+                    target,
+                    likely,
+                    link,
+                } => {
                     count += delay.is_some() as usize;
                     let cond = branch_cond_pub(w);
-                    let link_s = if link { format!("c.g[31][0] = sx({:#010x});", pc + 8) } else { String::new() };
+                    let link_s = if link {
+                        format!("c.g[31][0] = sx({:#010x});", pc + 8)
+                    } else {
+                        String::new()
+                    };
                     if link {
                         // bal/bltzal...: a conditional call, then continue at pc+8.
                         let call = format!(
@@ -212,7 +260,8 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
                         if likely {
                             let _ = writeln!(code, "{link_s} if {cond} {{ {ds} {call} }}");
                         } else {
-                            let _ = writeln!(code, "let t = {cond}; {link_s} {ds} if t {{ {call} }}");
+                            let _ =
+                                writeln!(code, "let t = {cond}; {link_s} {ds} if t {{ {call} }}");
                         }
                         term = Term::Goto(edge(pc + 8));
                     } else if likely {
@@ -337,7 +386,13 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
     while changed {
         changed = false;
         for &n in order.iter().skip(1) {
-            let ps: Vec<u32> = preds.get(&n).cloned().unwrap_or_default().into_iter().filter(|p| idom.contains_key(p)).collect();
+            let ps: Vec<u32> = preds
+                .get(&n)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|p| idom.contains_key(p))
+                .collect();
             let Some(&first) = ps.first() else { continue };
             let mut new = first;
             for &p in &ps[1..] {
@@ -383,7 +438,14 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
         children.entry(idom[&n]).or_default().push(n);
     }
 
-    let mut g = Gen { blocks: &blocks, rpo: &rpo, headers: &headers, merges: &merges, children: &children, ok: true };
+    let mut g = Gen {
+        blocks: &blocks,
+        rpo: &rpo,
+        headers: &headers,
+        merges: &merges,
+        children: &children,
+        ok: true,
+    };
     let mut body = String::new();
     g.do_tree(f.start, &mut body, 0);
     if !g.ok {
@@ -398,7 +460,11 @@ pub fn emit_structured(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, exter
     let _ = writeln!(out, "pub fn {name}(c: &mut Cpu) {{");
     let has_external = external.range(f.start + 1..f.end).next().is_some();
     if has_external {
-        let _ = writeln!(out, "if c.pc != {:#010x} {{ return {name}__entries(c); }}", f.start);
+        let _ = writeln!(
+            out,
+            "if c.pc != {:#010x} {{ return {name}__entries(c); }}",
+            f.start
+        );
     }
     out.push_str(&body);
     let _ = writeln!(out, "}}");
@@ -420,7 +486,14 @@ impl Gen<'_> {
             self.ok = false;
             return;
         }
-        let mut ys: Vec<u32> = self.children.get(&x).cloned().unwrap_or_default().into_iter().filter(|y| self.merges.contains(y)).collect();
+        let mut ys: Vec<u32> = self
+            .children
+            .get(&x)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|y| self.merges.contains(y))
+            .collect();
         ys.sort_by_key(|y| std::cmp::Reverse(self.rpo[y]));
         if self.headers.contains(&x) {
             let _ = writeln!(out, "'l_{x:x}: loop {{");
@@ -445,7 +518,11 @@ impl Gen<'_> {
                         let _ = writeln!(out, "{s}");
                     }
                     Term::Goto(e) => self.edge(x, e, out, depth),
-                    Term::Switch { prelude, targets, other } => {
+                    Term::Switch {
+                        prelude,
+                        targets,
+                        other,
+                    } => {
                         if !prelude.is_empty() {
                             let _ = writeln!(out, "{prelude}");
                         }
@@ -458,7 +535,13 @@ impl Gen<'_> {
                         let _ = writeln!(out, "_ => {{ {other} }}");
                         let _ = writeln!(out, "}}");
                     }
-                    Term::Cond { prelude, cond, then_extra, taken, fall } => {
+                    Term::Cond {
+                        prelude,
+                        cond,
+                        then_extra,
+                        taken,
+                        fall,
+                    } => {
                         if !prelude.is_empty() {
                             let _ = writeln!(out, "{prelude}");
                         }

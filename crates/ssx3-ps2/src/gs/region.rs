@@ -87,8 +87,14 @@ impl Region {
         for pr in pr0..=pr1 {
             for pc in pc0..=pc1 {
                 let first = (s.base >> 6).wrapping_add((pc + pr * s.pages_per_row) * 32);
-                let (lx0, lx1) = (x0.max(pc << pws) - (pc << pws), x1.min(((pc + 1) << pws) - 1) - (pc << pws));
-                let (ly0, ly1) = (y0.max(pr << phs) - (pr << phs), y1.min(((pr + 1) << phs) - 1) - (pr << phs));
+                let (lx0, lx1) = (
+                    x0.max(pc << pws) - (pc << pws),
+                    x1.min(((pc + 1) << pws) - 1) - (pc << pws),
+                );
+                let (ly0, ly1) = (
+                    y0.max(pr << phs) - (pr << phs),
+                    y1.min(((pr + 1) << phs) - 1) - (pr << phs),
+                );
                 if lx0 == 0 && ly0 == 0 && lx1 == pw - 1 && ly1 == ph - 1 {
                     self.add_page_blocks(first);
                     continue;
@@ -178,7 +184,13 @@ mod tests {
 
     #[test]
     fn rect_blocks_cover_exactly_the_written_words() {
-        let cases = [(PSMCT32, 10), (PSMCT16, 4), (PSMT8, 2), (PSMT4, 2), (PSMZ24, 8)];
+        let cases = [
+            (PSMCT32, 10),
+            (PSMCT16, 4),
+            (PSMT8, 2),
+            (PSMT4, 2),
+            (PSMZ24, 8),
+        ];
         for (&(psm, bw), bp) in cases.iter().flat_map(|c| [(c, 96u32), (c, 4096)]) {
             let s = Surface::new(psm, bp, bw);
             for (x0, y0, x1, y1) in [(13, 7, 77, 41), (0, 0, 255, 127), (5, 0, 300, 200)] {
@@ -190,7 +202,10 @@ mod tests {
                         want.add_block((s.elem(x, y) >> s.es) >> 6);
                     }
                 }
-                assert!(r.pages == want.pages && r.blocks == want.blocks, "psm {psm:#x} bp {bp}");
+                assert!(
+                    r.pages == want.pages && r.blocks == want.blocks,
+                    "psm {psm:#x} bp {bp}"
+                );
             }
             let mut r = Region::default();
             r.add_rect(&s, 13, 7, 77, 41);

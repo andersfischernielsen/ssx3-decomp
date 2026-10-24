@@ -45,7 +45,9 @@ fn parse_golden(path: &Path) -> Vec<(u32, u32)> {
 
 #[test]
 fn decoder_matches_ghidra_for_every_corpus_function() {
-    let Some(program) = open_program() else { return };
+    let Some(program) = open_program() else {
+        return;
+    };
     let dir = corpus_dir();
     let Ok(entries) = std::fs::read_dir(&dir) else {
         eprintln!("skipping: no golden corpus at {}", dir.display());
@@ -59,11 +61,7 @@ fn decoder_matches_ghidra_for_every_corpus_function() {
         if path.extension().and_then(|e| e.to_str()) != Some("txt") {
             continue;
         }
-        let start = u32::from_str_radix(
-            path.file_stem().unwrap().to_str().unwrap(),
-            16,
-        )
-        .unwrap();
+        let start = u32::from_str_radix(path.file_stem().unwrap().to_str().unwrap(), 16).unwrap();
         let golden = parse_golden(&path);
         let f = index()
             .by_address(start)
@@ -72,10 +70,8 @@ fn decoder_matches_ghidra_for_every_corpus_function() {
         // With authoritative boundaries the instruction address set must match
         // Ghidra's exactly, and every word must agree.
         let decoded = program.decode_with_addresses(f);
-        let got: std::collections::BTreeMap<u32, u32> = decoded
-            .iter()
-            .map(|(a, i)| (*a, i.word))
-            .collect();
+        let got: std::collections::BTreeMap<u32, u32> =
+            decoded.iter().map(|(a, i)| (*a, i.word)).collect();
         let want: std::collections::BTreeSet<u32> = golden.iter().map(|(a, _)| *a).collect();
         let got_addrs: std::collections::BTreeSet<u32> = got.keys().copied().collect();
         assert_eq!(
@@ -109,7 +105,9 @@ fn decoder_matches_ghidra_for_every_corpus_function() {
 #[test]
 fn every_corpus_file_is_a_real_function_entry() {
     let dir = corpus_dir();
-    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("txt") {

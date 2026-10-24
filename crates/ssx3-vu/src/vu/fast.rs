@@ -56,7 +56,10 @@ fn mac_of<const D: u8>(v: &[u32; 4], e: &[Exc; 4]) -> u32 {
 macro_rules! fmac2 {
     ($name:ident, $f:path) => {
         #[cfg_attr(not(debug_assertions), inline(always))]
-        pub fn $name<const D: u8, const NS: bool, const NT: bool>(s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
+        pub fn $name<const D: u8, const NS: bool, const NT: bool>(
+            s: &[u32; 4],
+            t: &[u32; 4],
+        ) -> ([u32; 4], u32) {
             let mut v = [0u32; 4];
             let mut e = [Exc::default(); 4];
             for l in 0..4 {
@@ -108,7 +111,10 @@ mod neon_ops {
     macro_rules! neon2 {
         ($name:ident, |$s:ident, $t:ident| $e:expr) => {
             #[cfg_attr(not(debug_assertions), inline(always))]
-            pub fn $name<const D: u8, const NS: bool, const NT: bool>(s: &[u32; 4], t: &[u32; 4]) -> ([u32; 4], u32) {
+            pub fn $name<const D: u8, const NS: bool, const NT: bool>(
+                s: &[u32; 4],
+                t: &[u32; 4],
+            ) -> ([u32; 4], u32) {
                 let ($s, $t) = (load(s), load(t));
                 let r = $e;
                 (store(r.v), simd::mac::<D>(&r))
@@ -368,7 +374,8 @@ impl Vu {
         self.clip = ((self.clip << 6) | c) & 0xff_ffff;
         if push {
             self.retire_clip();
-            self.clip_pipe.push_back((self.cycle + CLIP_LATENCY, self.clip));
+            self.clip_pipe
+                .push_back((self.cycle + CLIP_LATENCY, self.clip));
             self.flags_push();
         } else {
             self.vis_clip = self.clip;

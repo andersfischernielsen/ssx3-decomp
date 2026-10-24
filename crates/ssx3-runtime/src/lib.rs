@@ -9,6 +9,7 @@
 //! (register 2). Confirmed from the real image: `SetGsCrt` does
 //! `li v1, 0x2; syscall`.
 
+#[rustfmt::skip] // written by recomp_gen (not in git)
 pub mod generated;
 pub mod sdk;
 pub mod syscall;
@@ -18,8 +19,8 @@ use ssx3_core::{memory_map, Memory};
 /// ABI register names, index 0..31.
 pub const REG_NAMES: [&str; 32] = [
     "zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5", "t6",
-    "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp",
-    "fp", "ra",
+    "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0", "k1", "gp", "sp", "fp",
+    "ra",
 ];
 
 /// Why execution stopped.

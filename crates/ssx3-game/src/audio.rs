@@ -21,7 +21,7 @@
 
 use crate::abi::{self, addu, mult, reg, set_reg};
 use crate::call::{call_ptr, guest, tail_wrapper, Callee, Flow, Frame, Target, Unwound, VSlot};
-use crate::events::{Resume, back_edge_unwinds, deliver_event_here, event_due};
+use crate::events::{back_edge_unwinds, deliver_event_here, event_due, Resume};
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use crate::sound::snd;
@@ -32,23 +32,87 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0028_b1c8, ssx_audio_get_game_module, "SSXAudioSystem_GetGameModule"),
-    (0x0028_b1d8, ssx_audio_get_race_man, "SSXAudioSystem_GetRaceMan"),
-    (0x0028_7968, ssx_audio_get_channel_gain_ptr, "SSXAudioSystem_GetChannelGainPtr"),
-    (0x0028_8ae0, ssx_audio_is_replay_playing, "SSXAudioSystem_IsReplayPlaying"),
-    (0x002a_bc18, bank_monitor_calc_falloff_volume, "BankMonitor_CalcFalloffVolume"),
-    (0x002a_bc80, bank_monitor_instance_get_falloff_volume, "BankMonitorInstance_GetFalloffVolume"),
-    (0x002a_bb80, bank_monitor_instance_poll_free, "BankMonitorInstance_PollFree"),
-    (0x002a_d550, bank_monitor_find_instance, "BankMonitor_FindInstance"),
-    (0x002a_be78, bank_monitor_instance_set_pitch, "BankMonitorInstance_SetPitch"),
-    (0x002a_d998, bank_monitor_snd_tick_callback, "BankMonitor_SndTickCallback"),
+    (
+        0x0028_b1c8,
+        ssx_audio_get_game_module,
+        "SSXAudioSystem_GetGameModule",
+    ),
+    (
+        0x0028_b1d8,
+        ssx_audio_get_race_man,
+        "SSXAudioSystem_GetRaceMan",
+    ),
+    (
+        0x0028_7968,
+        ssx_audio_get_channel_gain_ptr,
+        "SSXAudioSystem_GetChannelGainPtr",
+    ),
+    (
+        0x0028_8ae0,
+        ssx_audio_is_replay_playing,
+        "SSXAudioSystem_IsReplayPlaying",
+    ),
+    (
+        0x002a_bc18,
+        bank_monitor_calc_falloff_volume,
+        "BankMonitor_CalcFalloffVolume",
+    ),
+    (
+        0x002a_bc80,
+        bank_monitor_instance_get_falloff_volume,
+        "BankMonitorInstance_GetFalloffVolume",
+    ),
+    (
+        0x002a_bb80,
+        bank_monitor_instance_poll_free,
+        "BankMonitorInstance_PollFree",
+    ),
+    (
+        0x002a_d550,
+        bank_monitor_find_instance,
+        "BankMonitor_FindInstance",
+    ),
+    (
+        0x002a_be78,
+        bank_monitor_instance_set_pitch,
+        "BankMonitorInstance_SetPitch",
+    ),
+    (
+        0x002a_d998,
+        bank_monitor_snd_tick_callback,
+        "BankMonitor_SndTickCallback",
+    ),
     (0x002b_4388, music_player_update, "MusicPlayer_Update"),
-    (0x002b_2488, song_instance_get_stream_handle, "SongInstance_GetStreamHandle"),
-    (0x002a_b958, ssx_audio_update_banks_and_streams, "SSXAudioSystem_UpdateBanksAndStreams"),
-    (0x002a_b7a0, ssx_audio_update_bank_monitor, "SSXAudioSystem_UpdateBankMonitor"),
-    (0x002a_b6b0, ssx_audio_update_bank_monitor_instance, "SSXAudioSystem_UpdateBankMonitorInstance"),
-    (0x002a_b8e8, ssx_audio_update_timers, "SSXAudioSystem_UpdateTimers"),
-    (0x003b_aa00, snd_next_handle_channel, "SND_NextHandleChannel"),
+    (
+        0x002b_2488,
+        song_instance_get_stream_handle,
+        "SongInstance_GetStreamHandle",
+    ),
+    (
+        0x002a_b958,
+        ssx_audio_update_banks_and_streams,
+        "SSXAudioSystem_UpdateBanksAndStreams",
+    ),
+    (
+        0x002a_b7a0,
+        ssx_audio_update_bank_monitor,
+        "SSXAudioSystem_UpdateBankMonitor",
+    ),
+    (
+        0x002a_b6b0,
+        ssx_audio_update_bank_monitor_instance,
+        "SSXAudioSystem_UpdateBankMonitorInstance",
+    ),
+    (
+        0x002a_b8e8,
+        ssx_audio_update_timers,
+        "SSXAudioSystem_UpdateTimers",
+    ),
+    (
+        0x003b_aa00,
+        snd_next_handle_channel,
+        "SND_NextHandleChannel",
+    ),
     (0x003b_a938, snd_channel_calc_pitch, "SND_ChannelCalcPitch"),
     (0x003b_8790, snd_set_pitch, "SND_SetPitch"),
     (0x003b_8c00, snd_set_pan, "SND_SetPan"),
@@ -65,39 +129,116 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 mod callee {
     use super::{ee, Callee};
 
-    pub const SND_HANDLE_TO_CHANNEL: Callee = Callee { addr: 0x003b_a6e8, f: ee::s13::SND_HandleToChannel };
-    pub const SND_CHANNEL_CALC_PITCH: Callee = Callee { addr: 0x003b_a938, f: ee::s13::SND_ChannelCalcPitch };
-    pub const SND_CHANNEL_APPLY_PITCH: Callee = Callee { addr: 0x003c_25e0, f: ee::s13::SND_ChannelApplyPitch };
-    pub const SND_CHANNEL_APPLY_PAN: Callee = Callee { addr: 0x003c_38e0, f: ee::s13::SND_ChannelApplyPan };
-    pub const SND_NEXT_HANDLE_CHANNEL: Callee = Callee { addr: 0x003b_aa00, f: ee::s13::SND_NextHandleChannel };
-    pub const SND_CENTS_TO_PITCH: Callee = Callee { addr: 0x003b_a888, f: ee::s13::SND_CentsToPitch };
-    pub const SND_MUTEX_LOCK: Callee = Callee { addr: 0x003c_3380, f: ee::s13::SND_MutexLock };
-    pub const SND_MUTEX_UNLOCK: Callee = Callee { addr: 0x003c_33e0, f: ee::s13::SND_MutexUnlock };
-    pub const SND_TICK: Callee = Callee { addr: 0x003b_55f0, f: ee::s13::SND_Tick };
+    pub const SND_HANDLE_TO_CHANNEL: Callee = Callee {
+        addr: 0x003b_a6e8,
+        f: ee::s13::SND_HandleToChannel,
+    };
+    pub const SND_CHANNEL_CALC_PITCH: Callee = Callee {
+        addr: 0x003b_a938,
+        f: ee::s13::SND_ChannelCalcPitch,
+    };
+    pub const SND_CHANNEL_APPLY_PITCH: Callee = Callee {
+        addr: 0x003c_25e0,
+        f: ee::s13::SND_ChannelApplyPitch,
+    };
+    pub const SND_CHANNEL_APPLY_PAN: Callee = Callee {
+        addr: 0x003c_38e0,
+        f: ee::s13::SND_ChannelApplyPan,
+    };
+    pub const SND_NEXT_HANDLE_CHANNEL: Callee = Callee {
+        addr: 0x003b_aa00,
+        f: ee::s13::SND_NextHandleChannel,
+    };
+    pub const SND_CENTS_TO_PITCH: Callee = Callee {
+        addr: 0x003b_a888,
+        f: ee::s13::SND_CentsToPitch,
+    };
+    pub const SND_MUTEX_LOCK: Callee = Callee {
+        addr: 0x003c_3380,
+        f: ee::s13::SND_MutexLock,
+    };
+    pub const SND_MUTEX_UNLOCK: Callee = Callee {
+        addr: 0x003c_33e0,
+        f: ee::s13::SND_MutexUnlock,
+    };
+    pub const SND_TICK: Callee = Callee {
+        addr: 0x003b_55f0,
+        f: ee::s13::SND_Tick,
+    };
 
-    pub const CALC_FALLOFF_VOLUME: Callee =
-        Callee { addr: 0x002a_bc18, f: ee::s08::BankMonitor_CalcFalloffVolume };
-    pub const CROWD_AUDIO_UPDATE: Callee = Callee { addr: 0x002a_6d18, f: ee::s08::CrowdAudio_Update };
-    pub const MUSIC_PLAYER_UPDATE: Callee = Callee { addr: 0x002b_4388, f: ee::s08::MusicPlayer_Update };
-    pub const SPEECH_SYSTEM_UPDATE: Callee = Callee { addr: 0x002b_0c78, f: ee::s08::SpeechSystem_Update };
-    pub const STREAM_ARRAY_UPDATE_ALL: Callee = Callee { addr: 0x002a_ac28, f: ee::s08::StreamArray_UpdateAll };
-    pub const UPDATE_BANK_MONITOR_INSTANCE: Callee =
-        Callee { addr: 0x002a_b6b0, f: ee::s08::SSXAudioSystem_UpdateBankMonitorInstance };
-    pub const BMI_POLL_FREE: Callee = Callee { addr: 0x002a_bb80, f: ee::s08::BankMonitorInstance_PollFree };
-    pub const BMI_UPDATE_3D: Callee = Callee { addr: 0x002a_c868, f: ee::s08::BankMonitorInstance_Update3D };
-    pub const BMI_IS_DONE: Callee = Callee { addr: 0x002a_ba40, f: ee::s08::BankMonitorInstance_IsDone };
-    pub const BMI_RESET: Callee = Callee { addr: 0x002a_bb38, f: ee::s08::BankMonitorInstance_Reset };
-    pub const BANK_MONITOR_TICK: Callee = Callee { addr: 0x002a_dc10, f: ee::s08::BankMonitor_Tick };
-    pub const BANK_MONITOR_TIMER_UPDATE: Callee =
-        Callee { addr: 0x002a_b828, f: ee::s08::BankMonitor_TimerUpdate };
-    pub const STREAM_BUFFER_SET_PITCH: Callee = Callee { addr: 0x002a_9f38, f: ee::s08::StreamBuffer_SetPitch };
-    pub const SONG_INSTANCE_UPDATE: Callee = Callee { addr: 0x002b_21e0, f: ee::s08::SongInstance_Update };
-    pub const MUSIC_PLAYER_ATTACH_LOOP_BANK: Callee =
-        Callee { addr: 0x002b_4620, f: ee::s08::MusicPlayer_AttachLoopBank };
-    pub const PATH_GET_TRACK_DATA: Callee = Callee { addr: 0x002a_dfb0, f: ee::s08::PATH_GetTrackData };
+    pub const CALC_FALLOFF_VOLUME: Callee = Callee {
+        addr: 0x002a_bc18,
+        f: ee::s08::BankMonitor_CalcFalloffVolume,
+    };
+    pub const CROWD_AUDIO_UPDATE: Callee = Callee {
+        addr: 0x002a_6d18,
+        f: ee::s08::CrowdAudio_Update,
+    };
+    pub const MUSIC_PLAYER_UPDATE: Callee = Callee {
+        addr: 0x002b_4388,
+        f: ee::s08::MusicPlayer_Update,
+    };
+    pub const SPEECH_SYSTEM_UPDATE: Callee = Callee {
+        addr: 0x002b_0c78,
+        f: ee::s08::SpeechSystem_Update,
+    };
+    pub const STREAM_ARRAY_UPDATE_ALL: Callee = Callee {
+        addr: 0x002a_ac28,
+        f: ee::s08::StreamArray_UpdateAll,
+    };
+    pub const UPDATE_BANK_MONITOR_INSTANCE: Callee = Callee {
+        addr: 0x002a_b6b0,
+        f: ee::s08::SSXAudioSystem_UpdateBankMonitorInstance,
+    };
+    pub const BMI_POLL_FREE: Callee = Callee {
+        addr: 0x002a_bb80,
+        f: ee::s08::BankMonitorInstance_PollFree,
+    };
+    pub const BMI_UPDATE_3D: Callee = Callee {
+        addr: 0x002a_c868,
+        f: ee::s08::BankMonitorInstance_Update3D,
+    };
+    pub const BMI_IS_DONE: Callee = Callee {
+        addr: 0x002a_ba40,
+        f: ee::s08::BankMonitorInstance_IsDone,
+    };
+    pub const BMI_RESET: Callee = Callee {
+        addr: 0x002a_bb38,
+        f: ee::s08::BankMonitorInstance_Reset,
+    };
+    pub const BANK_MONITOR_TICK: Callee = Callee {
+        addr: 0x002a_dc10,
+        f: ee::s08::BankMonitor_Tick,
+    };
+    pub const BANK_MONITOR_TIMER_UPDATE: Callee = Callee {
+        addr: 0x002a_b828,
+        f: ee::s08::BankMonitor_TimerUpdate,
+    };
+    pub const STREAM_BUFFER_SET_PITCH: Callee = Callee {
+        addr: 0x002a_9f38,
+        f: ee::s08::StreamBuffer_SetPitch,
+    };
+    pub const SONG_INSTANCE_UPDATE: Callee = Callee {
+        addr: 0x002b_21e0,
+        f: ee::s08::SongInstance_Update,
+    };
+    pub const MUSIC_PLAYER_ATTACH_LOOP_BANK: Callee = Callee {
+        addr: 0x002b_4620,
+        f: ee::s08::MusicPlayer_AttachLoopBank,
+    };
+    pub const PATH_GET_TRACK_DATA: Callee = Callee {
+        addr: 0x002a_dfb0,
+        f: ee::s08::PATH_GetTrackData,
+    };
 
-    pub const IS_IN_GAME: Callee = Callee { addr: 0x0028_b1b0, f: ee::s07::SSXAudioSystem_IsInGame };
-    pub const GET_GAME_MODULE: Callee = Callee { addr: 0x0028_b1c8, f: ee::s07::SSXAudioSystem_GetGameModule };
+    pub const IS_IN_GAME: Callee = Callee {
+        addr: 0x0028_b1b0,
+        f: ee::s07::SSXAudioSystem_IsInGame,
+    };
+    pub const GET_GAME_MODULE: Callee = Callee {
+        addr: 0x0028_b1c8,
+        f: ee::s07::SSXAudioSystem_GetGameModule,
+    };
 }
 
 /// Cross-shard calls the compiler emitted as `call_indirect` (function table).
@@ -284,7 +425,10 @@ fn sra(v: u64, n: u32) -> u64 {
 /// (`game->module`, `game = *(gp-0x848)`). 3 cycles.
 pub fn ssx_audio_get_game_module(c: &mut Cpu) {
     c.cycles += 3;
-    let game = lw(c, (reg(c, GP) as u32).wrapping_sub(ssx_audio::GAME_GP) as u64);
+    let game = lw(
+        c,
+        (reg(c, GP) as u32).wrapping_sub(ssx_audio::GAME_GP) as u64,
+    );
     set_reg(c, V1, game); // leftover
     let module = lw_at(c, game, 0x84);
     set_reg(c, V0, module);
@@ -295,7 +439,10 @@ pub fn ssx_audio_get_game_module(c: &mut Cpu) {
 /// module (`module+0xc`). 4 cycles.
 pub fn ssx_audio_get_race_man(c: &mut Cpu) {
     c.cycles += 4;
-    let game = lw(c, (reg(c, GP) as u32).wrapping_sub(ssx_audio::GAME_GP) as u64);
+    let game = lw(
+        c,
+        (reg(c, GP) as u32).wrapping_sub(ssx_audio::GAME_GP) as u64,
+    );
     let module = lw_at(c, game, 0x84);
     set_reg(c, V1, module); // leftover
     let race_man = lw_at(c, module, 0xc);
@@ -559,7 +706,11 @@ pub fn bank_monitor_instance_set_pitch(c: &mut Cpu) {
         frame.save(c, S1, 0x10);
         frame.save(c, S0, 0x20);
         frame.save_ra(c, 0);
-        let mut pitch = if slt(requested, 0x4000) != 0 { requested } else { 0x3fff };
+        let mut pitch = if slt(requested, 0x4000) != 0 {
+            requested
+        } else {
+            0x3fff
+        };
         let inst = reg(c, A0);
         set_reg(c, S0, inst);
         let positive = slt(u64::MAX, pitch);
@@ -569,7 +720,7 @@ pub fn bank_monitor_instance_set_pitch(c: &mut Cpu) {
         }
         set_reg(c, S1, pitch);
         set_reg(c, V1, positive); // leftover
-        // |pitch - last| <= 0xff, as one unsigned compare.
+                                  // |pitch - last| <= 0xff, as one unsigned compare.
         let moved = sx((pitch as u32).wrapping_sub(last as u32).wrapping_add(0xff));
         let small = moved < 0x1ff;
         set_reg(c, V0, small as u64);
@@ -637,7 +788,10 @@ pub fn bank_monitor_snd_tick_callback(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 11;
         let frame = Frame::open(c, 0x10);
-        let sys = lw(c, (reg(c, GP) as u32).wrapping_add(ssx_audio::GLOBAL_GP) as u64);
+        let sys = lw(
+            c,
+            (reg(c, GP) as u32).wrapping_add(ssx_audio::GLOBAL_GP) as u64,
+        );
         set_reg(c, A1, sys);
         frame.save_ra(c, 0);
         let vt = lw_at(c, sys, ssx_audio::TICK_LISTENER);
@@ -1499,7 +1653,12 @@ pub fn snd_default_lock(c: &mut Cpu) {
 
 /// `SND_DefaultUnlock()` 0x3b5880: the default `SND_Unlock` hook.
 pub fn snd_default_unlock(c: &mut Cpu) {
-    tail_wrapper(c, None, Target::Direct(callee::SND_MUTEX_UNLOCK), 0x003b_5890)
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(callee::SND_MUTEX_UNLOCK),
+        0x003b_5890,
+    )
 }
 
 /// The mutex field `off` (from [`snd_mutex::BASE`]).
@@ -1668,7 +1827,9 @@ mod tests {
     use super::*;
     use crate::difftest::events::{check_events, driven, schedule};
     use crate::difftest::fakes::{covered, machine, ptr, vtable, FAKE, LOG_RESULTS};
-    use crate::difftest::{check, check_lohi, check_paths, fill, require_paths, Rng, DATA, GAME_GP};
+    use crate::difftest::{
+        check, check_lohi, check_paths, fill, require_paths, Rng, DATA, GAME_GP,
+    };
     use ssx3_ee::{s07, s08, s13};
 
     const SEEDS: u32 = 300;
@@ -1702,13 +1863,32 @@ mod tests {
         for i in 0..n {
             let ch = CHANNELS + i * snd::CHANNEL_SIZE;
             c.bus.write8(ch + chan::GROUP, (r.next_u32() % 3) as u8);
-            let alloc = if r.next_u32() % 4 != 0 { 1 } else { r.next_u32() as u8 };
+            let alloc = if r.next_u32() % 4 != 0 {
+                1
+            } else {
+                r.next_u32() as u8
+            };
             c.bus.write8(ch + chan::ALLOCATED, alloc);
-            let h = if r.next_u32() % 5 != 0 { (r.next_u32() << 8 | i) & 0x7fff_ffff } else { r.next_u32() };
+            let h = if r.next_u32() % 5 != 0 {
+                (r.next_u32() << 8 | i) & 0x7fff_ffff
+            } else {
+                r.next_u32()
+            };
             c.bus.write32(ch, h);
-            c.bus.write16(ch + chan::PITCH_CACHE, if r.next_u32() % 4 == 0 { 0 } else { r.next_u32() as u16 });
-            c.bus.write16(ch + chan::REQUESTED_PITCH, (r.next_u32() % 4) as u16 * 0x800);
-            c.bus.write16(ch + chan::CENTS, (r.next_u32() % 0x3000) as u16);
+            c.bus.write16(
+                ch + chan::PITCH_CACHE,
+                if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u16
+                },
+            );
+            c.bus.write16(
+                ch + chan::REQUESTED_PITCH,
+                (r.next_u32() % 4) as u16 * 0x800,
+            );
+            c.bus
+                .write16(ch + chan::CENTS, (r.next_u32() % 0x3000) as u16);
             c.bus.write16(ch + chan::PATCH_PAN, r.next_u32() as u16);
         }
         n
@@ -1717,7 +1897,8 @@ mod tests {
     /// A handle: mostly the handle of one of the channels.
     fn handle(c: &mut Cpu, r: &mut Rng, n: u32) -> u32 {
         if n > 0 && r.next_u32() % 5 != 0 {
-            c.bus.read32(CHANNELS + (r.next_u32() % n) * snd::CHANNEL_SIZE)
+            c.bus
+                .read32(CHANNELS + (r.next_u32() % n) * snd::CHANNEL_SIZE)
         } else {
             r.next_u32()
         }
@@ -1729,7 +1910,8 @@ mod tests {
         let game = ptr(r);
         let module = ptr(r) + 0x10_0000;
         c.bus.write32(GAME_GP - ssx_audio::GAME_GP, game);
-        c.bus.write32(game + 0x84, if r.next_u32() % 8 == 0 { 0 } else { module });
+        c.bus
+            .write32(game + 0x84, if r.next_u32() % 8 == 0 { 0 } else { module });
         c.bus.write32(module + 0xc, r.next_u32());
         module
     }
@@ -1737,7 +1919,10 @@ mod tests {
     #[test]
     fn get_game_module_and_race_man() {
         for (g, h) in [
-            (s07::f_0028b1c8__generated as fn(&mut Cpu), ssx_audio_get_game_module as fn(&mut Cpu)),
+            (
+                s07::f_0028b1c8__generated as fn(&mut Cpu),
+                ssx_audio_get_game_module as fn(&mut Cpu),
+            ),
             (s07::f_0028b1d8__generated, ssx_audio_get_race_man),
         ] {
             check(g, h, SEEDS, &|c, seed| {
@@ -1749,38 +1934,73 @@ mod tests {
 
     #[test]
     fn get_channel_gain_ptr() {
-        check_paths(s07::f_00287968__generated, ssx_audio_get_channel_gain_ptr, SEEDS, &[6, 9, 10], &|c, seed| {
-            let mut r = machine(c, seed, 2, 0);
-            c.g[A0][0] = r64!(&mut r, r.next_u32());
-            let k = if r.next_u32() % 2 == 0 { 4 } else { r.next_u32() % 8 };
-            c.g[A1][0] = r64!(&mut r, k);
-            let i = if r.next_u32() % 2 == 0 { r.next_u32() % 14 } else { r.next_u32() };
-            c.g[A2][0] = r64!(&mut r, i);
-        });
+        check_paths(
+            s07::f_00287968__generated,
+            ssx_audio_get_channel_gain_ptr,
+            SEEDS,
+            &[6, 9, 10],
+            &|c, seed| {
+                let mut r = machine(c, seed, 2, 0);
+                c.g[A0][0] = r64!(&mut r, r.next_u32());
+                let k = if r.next_u32() % 2 == 0 {
+                    4
+                } else {
+                    r.next_u32() % 8
+                };
+                c.g[A1][0] = r64!(&mut r, k);
+                let i = if r.next_u32() % 2 == 0 {
+                    r.next_u32() % 14
+                } else {
+                    r.next_u32()
+                };
+                c.g[A2][0] = r64!(&mut r, i);
+            },
+        );
     }
 
     #[test]
     fn is_replay_playing() {
-        check_paths(s07::f_00288ae0__generated, ssx_audio_is_replay_playing, SEEDS, &[13, 21, 33, 34], &|c, seed| {
-            let mut r = machine(c, seed, 3, 0);
-            let module = game_chain(c, &mut r);
-            let replay = ptr(&mut r) + 0x20_0000;
-            c.bus.write32(module + 0x28, if r.next_u32() % 4 == 0 { 0 } else { replay });
-            let s = match r.next_u32() % 3 {
-                0 => 0,
-                1 => r.next_u32(),
-                _ => (r.next_u32() % 14).wrapping_sub(2),
-            };
-            c.bus.write32(replay, s);
-        });
+        check_paths(
+            s07::f_00288ae0__generated,
+            ssx_audio_is_replay_playing,
+            SEEDS,
+            &[13, 21, 33, 34],
+            &|c, seed| {
+                let mut r = machine(c, seed, 3, 0);
+                let module = game_chain(c, &mut r);
+                let replay = ptr(&mut r) + 0x20_0000;
+                c.bus.write32(
+                    module + 0x28,
+                    if r.next_u32() % 4 == 0 { 0 } else { replay },
+                );
+                let s = match r.next_u32() % 3 {
+                    0 => 0,
+                    1 => r.next_u32(),
+                    _ => (r.next_u32() % 14).wrapping_sub(2),
+                };
+                c.bus.write32(replay, s);
+            },
+        );
     }
 
     // --- BankMonitor -----------------------------------------------------
 
     fn falloff_args(c: &mut Cpu, r: &mut Rng) {
-        c.f[12] = if r.next_u32() % 3 == 0 { r.edge_f32() } else { r.f32(50.0) };
-        c.f[13] = if r.next_u32() % 3 == 0 { r.edge_f32() } else { r.f32(60.0) };
-        let v = if r.next_u32() % 3 == 0 { r.next_u32() } else { r.next_u32() % 128 };
+        c.f[12] = if r.next_u32() % 3 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(50.0)
+        };
+        c.f[13] = if r.next_u32() % 3 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(60.0)
+        };
+        let v = if r.next_u32() % 3 == 0 {
+            r.next_u32()
+        } else {
+            r.next_u32() % 128
+        };
         c.g[A0][0] = r64!(r, v);
         c.g[A1][0] = r64!(r, v ^ r.next_u32() % 3);
     }
@@ -1789,18 +2009,30 @@ mod tests {
     // unreachable: `d` is never below 0 in the compare order.
     #[test]
     fn calc_falloff_volume() {
-        check_paths(s08::f_002abc18__generated, bank_monitor_calc_falloff_volume, 600, &[14, 25], &|c, seed| {
-            let mut r = machine(c, seed, 4, 0);
-            falloff_args(c, &mut r);
-        });
+        check_paths(
+            s08::f_002abc18__generated,
+            bank_monitor_calc_falloff_volume,
+            600,
+            &[14, 25],
+            &|c, seed| {
+                let mut r = machine(c, seed, 4, 0);
+                falloff_args(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn get_falloff_volume() {
-        check_paths(s08::f_002abc80__generated, bank_monitor_instance_get_falloff_volume, 600, &[21, 32], &|c, seed| {
-            let mut r = machine(c, seed, 5, 0);
-            falloff_args(c, &mut r);
-        });
+        check_paths(
+            s08::f_002abc80__generated,
+            bank_monitor_instance_get_falloff_volume,
+            600,
+            &[21, 32],
+            &|c, seed| {
+                let mut r = machine(c, seed, 5, 0);
+                falloff_args(c, &mut r);
+            },
+        );
     }
 
     /// Fake lock hooks, so `SND_Lock`/`SND_Unlock` reach the fakes.
@@ -1812,23 +2044,35 @@ mod tests {
     /// A bank-monitor instance with a random state.
     fn instance(c: &mut Cpu, r: &mut Rng, inst: u32, busy: u32) {
         fill(c, r, inst, bmi::SIZE / 4);
-        let s = if r.next_u32() % busy == 0 { r.next_u32() % 5 } else { 0 };
+        let s = if r.next_u32() % busy == 0 {
+            r.next_u32() % 5
+        } else {
+            0
+        };
         c.bus.write32(inst, s);
         c.bus.write32(inst + bmi::ID, r.next_u32() % 4);
-        c.bus.write32(inst + bmi::STOPPING, if r.next_u32() % 2 == 0 { 0 } else { 1 });
+        c.bus.write32(
+            inst + bmi::STOPPING,
+            if r.next_u32() % 2 == 0 { 0 } else { 1 },
+        );
         c.bus.write32(inst + bmi::STREAM, 0);
         c.bus.write32(inst + bmi::CALLBACK, 0);
     }
 
     #[test]
     fn poll_free() {
-        covered(s08::f_002abb80__generated, bank_monitor_instance_poll_free, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 6, 4);
-            lock_hooks(c);
-            let inst = ptr(&mut r);
-            instance(c, &mut r, inst, 1);
-            c.g[A0][0] = r64!(&mut r, inst);
-        });
+        covered(
+            s08::f_002abb80__generated,
+            bank_monitor_instance_poll_free,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 6, 4);
+                lock_hooks(c);
+                let inst = ptr(&mut r);
+                instance(c, &mut r, inst, 1);
+                c.g[A0][0] = r64!(&mut r, inst);
+            },
+        );
     }
 
     driven!(gen_find_instance, s08::f_002ad550__generated);
@@ -1853,10 +2097,15 @@ mod tests {
 
     #[test]
     fn find_instance() {
-        check(s08::f_002ad550__generated, bank_monitor_find_instance, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 7, 0);
-            find_instance_setup(c, seed, &mut r);
-        });
+        check(
+            s08::f_002ad550__generated,
+            bank_monitor_find_instance,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 7, 0);
+                find_instance_setup(c, seed, &mut r);
+            },
+        );
         check_events(gen_find_instance, hand_find_instance, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, 8, 0);
             find_instance_setup(c, seed, &mut r);
@@ -1866,46 +2115,62 @@ mod tests {
 
     #[test]
     fn bmi_set_pitch() {
-        covered(s08::f_002abe78__generated, bank_monitor_instance_set_pitch, 600, &|c, seed| {
-            let mut r = machine(c, seed, 9, 4);
-            lock_hooks(c);
-            let inst = ptr(&mut r);
-            instance(c, &mut r, inst, 1);
-            let last = r.next_u32() % 0x4000;
-            c.bus.write32(inst + bmi::PITCH, last);
-            let p = match r.next_u32() % 4 {
-                0 => r.next_u32(),
-                1 => last.wrapping_add(r.next_u32() % 0x200).wrapping_sub(0x100),
-                _ => r.next_u32() % 0x5000,
-            };
-            c.g[A0][0] = sx(inst);
-            c.g[A1][0] = r64!(&mut r, p);
-        });
+        covered(
+            s08::f_002abe78__generated,
+            bank_monitor_instance_set_pitch,
+            600,
+            &|c, seed| {
+                let mut r = machine(c, seed, 9, 4);
+                lock_hooks(c);
+                let inst = ptr(&mut r);
+                instance(c, &mut r, inst, 1);
+                let last = r.next_u32() % 0x4000;
+                c.bus.write32(inst + bmi::PITCH, last);
+                let p = match r.next_u32() % 4 {
+                    0 => r.next_u32(),
+                    1 => last.wrapping_add(r.next_u32() % 0x200).wrapping_sub(0x100),
+                    _ => r.next_u32() % 0x5000,
+                };
+                c.g[A0][0] = sx(inst);
+                c.g[A1][0] = r64!(&mut r, p);
+            },
+        );
     }
 
     #[test]
     fn snd_tick_callback() {
-        covered(s08::f_002ad998__generated, bank_monitor_snd_tick_callback, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 10, 1);
-            let sys = ptr(&mut r);
-            c.bus.write32(GAME_GP + ssx_audio::GLOBAL_GP, sys);
-            let vt = vtable(c, &mut r, &[8]);
-            c.bus.write32(sys + ssx_audio::TICK_LISTENER, vt);
-        });
+        covered(
+            s08::f_002ad998__generated,
+            bank_monitor_snd_tick_callback,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 10, 1);
+                let sys = ptr(&mut r);
+                c.bus.write32(GAME_GP + ssx_audio::GLOBAL_GP, sys);
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(sys + ssx_audio::TICK_LISTENER, vt);
+            },
+        );
     }
 
     // --- music -----------------------------------------------------------
 
     #[test]
     fn music_player_update_matches() {
-        check(s08::f_002b4388__generated, music_player_update, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 11, 0);
-            let mp = ptr(&mut r);
-            let song = DATA + 0x30_0000;
-            c.bus.write32(mp + 0x408, if r.next_u32() % 3 == 0 { 0 } else { song });
-            c.bus.write32(song + 0x50, r.next_u32() % 2);
-            c.g[A0][0] = sx(mp);
-        });
+        check(
+            s08::f_002b4388__generated,
+            music_player_update,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 11, 0);
+                let mp = ptr(&mut r);
+                let song = DATA + 0x30_0000;
+                c.bus
+                    .write32(mp + 0x408, if r.next_u32() % 3 == 0 { 0 } else { song });
+                c.bus.write32(song + 0x50, r.next_u32() % 2);
+                c.g[A0][0] = sx(mp);
+            },
+        );
         require_paths(s08::f_002b4388__generated, SEEDS, &[10], &|c, seed| {
             let mut r = machine(c, seed, 11, 0);
             let mp = ptr(&mut r);
@@ -1916,9 +2181,14 @@ mod tests {
 
     #[test]
     fn get_stream_handle() {
-        check(s08::f_002b2488__generated, song_instance_get_stream_handle, SEEDS, &|c, seed| {
-            let _ = machine(c, seed, 12, 0);
-        });
+        check(
+            s08::f_002b2488__generated,
+            song_instance_get_stream_handle,
+            SEEDS,
+            &|c, seed| {
+                let _ = machine(c, seed, 12, 0);
+            },
+        );
     }
 
     // --- the per-frame update -------------------------------------------
@@ -1935,24 +2205,36 @@ mod tests {
         let vt = vtable(c, r, &[0x28]);
         c.bus.write32(snd + ssx_audio::SND_MANAGER, vt);
         c.bus.write32(snd + ssx_audio::SND_PAUSED, r.next_u32() % 2);
-        c.bus.write32(snd + ssx_audio::SND_TIMERS_DISABLED, if r.next_u32() % 3 == 0 { 1 } else { 0 });
+        c.bus.write32(
+            snd + ssx_audio::SND_TIMERS_DISABLED,
+            if r.next_u32() % 3 == 0 { 1 } else { 0 },
+        );
         let insts = DATA + 0x70_0000;
         c.bus.write32(snd + ssx_audio::SND_INSTANCES, insts);
         for i in 0..64 {
             instance(c, r, insts + i * bmi::SIZE, busy);
             c.bus.write32(insts + i * bmi::SIZE + bmi::STOPPING, 0);
         }
-        c.f[12] = if r.next_u32() % 3 == 0 { r.edge_f32() } else { r.f32(0.05) };
+        c.f[12] = if r.next_u32() % 3 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(0.05)
+        };
         sys
     }
 
     #[test]
     fn update_banks_and_streams() {
-        covered(s08::f_002ab958__generated, ssx_audio_update_banks_and_streams, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 13, 2);
-            let sys = audio_system(c, &mut r, 1);
-            c.g[A0][0] = sx(sys);
-        });
+        covered(
+            s08::f_002ab958__generated,
+            ssx_audio_update_banks_and_streams,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 13, 2);
+                let sys = audio_system(c, &mut r, 1);
+                c.g[A0][0] = sx(sys);
+            },
+        );
     }
 
     driven!(gen_update_bank_monitor, s08::f_002ab7a0__generated);
@@ -1960,49 +2242,64 @@ mod tests {
 
     #[test]
     fn update_bank_monitor() {
-        check(s08::f_002ab7a0__generated, ssx_audio_update_bank_monitor, 100, &|c, seed| {
-            let mut r = machine(c, seed, 14, 0);
-            let sys = audio_system(c, &mut r, 8);
-            c.g[A0][0] = sx(sys);
-        });
-        check_events(gen_update_bank_monitor, hand_update_bank_monitor, 200, &|c, seed| {
-            let mut r = machine(c, seed, 15, 0);
-            let sys = audio_system(c, &mut r, 8);
-            c.g[A0][0] = sx(sys);
-            schedule(c, &mut r, seed, 0x002a_b7a0)
-        });
+        check(
+            s08::f_002ab7a0__generated,
+            ssx_audio_update_bank_monitor,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 14, 0);
+                let sys = audio_system(c, &mut r, 8);
+                c.g[A0][0] = sx(sys);
+            },
+        );
+        check_events(
+            gen_update_bank_monitor,
+            hand_update_bank_monitor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 15, 0);
+                let sys = audio_system(c, &mut r, 8);
+                c.g[A0][0] = sx(sys);
+                schedule(c, &mut r, seed, 0x002a_b7a0)
+            },
+        );
     }
 
     #[test]
     fn update_bank_monitor_instance() {
-        covered(s08::f_002ab6b0__generated, ssx_audio_update_bank_monitor_instance, 600, &|c, seed| {
-            let mut r = machine(c, seed, 16, 3);
-            let sys = audio_system(c, &mut r, 1);
-            let inst = DATA + 0x70_0000;
-            // The callback: none, a plain function or a virtual one.
-            let delta = (r.next_u32() % 64) as u16 & !3;
-            c.bus.write16(inst + bmi::CALLBACK, delta);
-            match r.next_u32() % 3 {
-                0 => c.bus.write16(inst + bmi::CALLBACK + 2, 0),
-                1 => {
-                    c.bus.write16(inst + bmi::CALLBACK + 2, 0xffff);
-                    c.bus.write32(inst + bmi::CALLBACK + 4, FAKE + 0x200);
+        covered(
+            s08::f_002ab6b0__generated,
+            ssx_audio_update_bank_monitor_instance,
+            600,
+            &|c, seed| {
+                let mut r = machine(c, seed, 16, 3);
+                let sys = audio_system(c, &mut r, 1);
+                let inst = DATA + 0x70_0000;
+                // The callback: none, a plain function or a virtual one.
+                let delta = (r.next_u32() % 64) as u16 & !3;
+                c.bus.write16(inst + bmi::CALLBACK, delta);
+                match r.next_u32() % 3 {
+                    0 => c.bus.write16(inst + bmi::CALLBACK + 2, 0),
+                    1 => {
+                        c.bus.write16(inst + bmi::CALLBACK + 2, 0xffff);
+                        c.bus.write32(inst + bmi::CALLBACK + 4, FAKE + 0x200);
+                    }
+                    _ => {
+                        let index = 1 + r.next_u32() % 4;
+                        let vptr_off = (r.next_u32() % 32) * 4;
+                        c.bus.write16(inst + bmi::CALLBACK + 2, index as u16);
+                        c.bus.write16(inst + bmi::CALLBACK + 4, vptr_off as u16);
+                        let vt = DATA + 0x80_0000;
+                        c.bus.write32(sys + vptr_off, vt);
+                        let entry = vt + (index - 1) * 8;
+                        c.bus.write32(entry, r.next_u32());
+                        c.bus.write32(entry + 4, FAKE + 0x300);
+                    }
                 }
-                _ => {
-                    let index = 1 + r.next_u32() % 4;
-                    let vptr_off = (r.next_u32() % 32) * 4;
-                    c.bus.write16(inst + bmi::CALLBACK + 2, index as u16);
-                    c.bus.write16(inst + bmi::CALLBACK + 4, vptr_off as u16);
-                    let vt = DATA + 0x80_0000;
-                    c.bus.write32(sys + vptr_off, vt);
-                    let entry = vt + (index - 1) * 8;
-                    c.bus.write32(entry, r.next_u32());
-                    c.bus.write32(entry + 4, FAKE + 0x300);
-                }
-            }
-            c.g[A0][0] = sx(inst);
-            c.g[A1][0] = if r.next_u32() % 8 == 0 { 0 } else { sx(sys) };
-        });
+                c.g[A0][0] = sx(inst);
+                c.g[A1][0] = if r.next_u32() % 8 == 0 { 0 } else { sx(sys) };
+            },
+        );
     }
 
     driven!(gen_update_timers, s08::f_002ab8e8__generated);
@@ -2010,15 +2307,21 @@ mod tests {
 
     #[test]
     fn update_timers() {
-        check(s08::f_002ab8e8__generated, ssx_audio_update_timers, 100, &|c, seed| {
-            let mut r = machine(c, seed, 17, 0);
-            let sys = audio_system(c, &mut r, 1);
-            c.g[A0][0] = sx(sys);
-        });
+        check(
+            s08::f_002ab8e8__generated,
+            ssx_audio_update_timers,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 17, 0);
+                let sys = audio_system(c, &mut r, 1);
+                c.g[A0][0] = sx(sys);
+            },
+        );
         check_events(gen_update_timers, hand_update_timers, 200, &|c, seed| {
             let mut r = machine(c, seed, 18, 0);
             let sys = audio_system(c, &mut r, 1);
-            c.bus.write32(DATA + 0x60_0000 + ssx_audio::SND_TIMERS_DISABLED, 0);
+            c.bus
+                .write32(DATA + 0x60_0000 + ssx_audio::SND_TIMERS_DISABLED, 0);
             c.g[A0][0] = sx(sys);
             schedule(c, &mut r, seed, 0x002a_b8e8)
         });
@@ -2030,7 +2333,11 @@ mod tests {
         let n = 1 + r.next_u32() % 24;
         let n = channels(c, r, n);
         let it = DATA + 0x10;
-        let cur = if r.next_u32() % 2 == 0 { u32::MAX } else { (r.next_u32() % (n + 3)).wrapping_sub(1) };
+        let cur = if r.next_u32() % 2 == 0 {
+            u32::MAX
+        } else {
+            (r.next_u32() % (n + 3)).wrapping_sub(1)
+        };
         c.bus.write32(it, cur);
         c.g[A0][0] = r64!(r, r.next_u32() % n);
         c.g[A1][0] = sx(it);
@@ -2041,14 +2348,24 @@ mod tests {
 
     #[test]
     fn next_handle_channel() {
-        check_lohi(s13::f_003baa00__generated, snd_next_handle_channel, 600, &|c, seed| {
-            let mut r = machine(c, seed, 19, 0);
-            next_channel_setup(c, &mut r);
-        });
-        require_paths(s13::f_003baa00__generated, 600, &[14, 15, 19], &|c, seed| {
-            let mut r = machine(c, seed, 19, 0);
-            next_channel_setup(c, &mut r);
-        });
+        check_lohi(
+            s13::f_003baa00__generated,
+            snd_next_handle_channel,
+            600,
+            &|c, seed| {
+                let mut r = machine(c, seed, 19, 0);
+                next_channel_setup(c, &mut r);
+            },
+        );
+        require_paths(
+            s13::f_003baa00__generated,
+            600,
+            &[14, 15, 19],
+            &|c, seed| {
+                let mut r = machine(c, seed, 19, 0);
+                next_channel_setup(c, &mut r);
+            },
+        );
         check_events(gen_next, hand_next, 600, &|c, seed| {
             let mut r = machine(c, seed, 20, 0);
             next_channel_setup(c, &mut r);
@@ -2065,16 +2382,39 @@ mod tests {
             let ch = CHANNELS + i * snd::CHANNEL_SIZE;
             let tables = DATA + 0x20_0000;
             fill(&mut *c, &mut r, tables, 0x80);
-            c.bus.write16(ch + chan::BEND_RANGE, if r.next_u32() % 3 == 0 { 0 } else { r.next_u32() as u16 });
+            c.bus.write16(
+                ch + chan::BEND_RANGE,
+                if r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u16
+                },
+            );
             c.bus.write8(ch + chan::BEND, r.next_u32() as u8);
-            c.bus.write32(ch + chan::BEND_TABLE, if r.next_u32() % 2 == 0 { 0 } else { tables + 0x80 });
-            c.bus.write32(ch + chan::MOD_TABLE, if r.next_u32() % 2 == 0 { 0 } else { tables });
+            c.bus.write32(
+                ch + chan::BEND_TABLE,
+                if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    tables + 0x80
+                },
+            );
+            c.bus.write32(
+                ch + chan::MOD_TABLE,
+                if r.next_u32() % 2 == 0 { 0 } else { tables },
+            );
             c.bus.write8(ch + chan::MOD_INDEX, r.next_u32() as u8);
             c.bus.write16(ch + chan::MOD_DEPTH, r.next_u32() as u16);
-            c.bus.write16(ch + chan::REQUESTED_PITCH, r.next_u32() as u16);
+            c.bus
+                .write16(ch + chan::REQUESTED_PITCH, r.next_u32() as u16);
             c.g[A0][0] = r64!(&mut r, i);
         };
-        check_lohi(s13::f_003ba938__generated, snd_channel_calc_pitch, 600, &setup);
+        check_lohi(
+            s13::f_003ba938__generated,
+            snd_channel_calc_pitch,
+            600,
+            &setup,
+        );
         require_paths(s13::f_003ba938__generated, 600, &[19], &setup);
     }
 
@@ -2084,8 +2424,16 @@ mod tests {
         let n = channels(c, r, n);
         let h = handle(c, r, n);
         c.g[A0][0] = r64!(r, h);
-        let p = if r.next_u32() % 2 == 0 { (r.next_u32() % 4) * 0x800 } else { r.next_u32() & 0xffff };
-        c.g[A1][0] = if r.next_u32() % 8 == 0 { r.next_u32() as u64 | (r.next_u32() as u64) << 32 } else { p as u64 };
+        let p = if r.next_u32() % 2 == 0 {
+            (r.next_u32() % 4) * 0x800
+        } else {
+            r.next_u32() & 0xffff
+        };
+        c.g[A1][0] = if r.next_u32() % 8 == 0 {
+            r.next_u32() as u64 | (r.next_u32() as u64) << 32
+        } else {
+            p as u64
+        };
     }
 
     driven!(gen_set_pitch, s13::f_003b8790__generated);
@@ -2093,11 +2441,16 @@ mod tests {
 
     #[test]
     fn set_pitch() {
-        check_lohi(s13::f_003b8790__generated, snd_set_pitch, 400, &|c, seed| {
-            let mut r = machine(c, seed, 22, 0);
-            c.pc = 0x003b_8790;
-            set_pitch_setup(c, &mut r);
-        });
+        check_lohi(
+            s13::f_003b8790__generated,
+            snd_set_pitch,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 22, 0);
+                c.pc = 0x003b_8790;
+                set_pitch_setup(c, &mut r);
+            },
+        );
         check_events(gen_set_pitch, hand_set_pitch, 600, &|c, seed| {
             let mut r = machine(c, seed, 23, 0);
             set_pitch_setup(c, &mut r);
@@ -2147,14 +2500,21 @@ mod tests {
         };
         c.bus.write32(LOG_RESULTS, tid);
         c.bus.write32(snd_mutex::BASE + snd_mutex::OWNER, owner);
-        c.bus.write32(snd_mutex::BASE + snd_mutex::COUNT, (r.next_u32() % 4).wrapping_sub(1));
-        c.bus.write32(snd_mutex::BASE + snd_mutex::SEMA, r.next_u32() % 8);
+        c.bus.write32(
+            snd_mutex::BASE + snd_mutex::COUNT,
+            (r.next_u32() % 4).wrapping_sub(1),
+        );
+        c.bus
+            .write32(snd_mutex::BASE + snd_mutex::SEMA, r.next_u32() % 8);
     }
 
     #[test]
     fn mutex_lock_unlock() {
         for (g, h) in [
-            (s13::f_003c3380__generated as fn(&mut Cpu), snd_mutex_lock as fn(&mut Cpu)),
+            (
+                s13::f_003c3380__generated as fn(&mut Cpu),
+                snd_mutex_lock as fn(&mut Cpu),
+            ),
             (s13::f_003c33e0__generated, snd_mutex_unlock),
             (s13::f_003b5860__generated, snd_default_lock),
             (s13::f_003b5880__generated, snd_default_unlock),
@@ -2177,13 +2537,24 @@ mod tests {
             2 => 1 + r.next_u32() % 200,
             _ => r.next_u32() | 0x100,
         };
-        let rate = if !init && r.next_u32() % 2 == 0 { 0 } else { rate };
-        let old = if r.next_u32() % 2 == 0 { rate } else { r.next_u32() % 100 };
+        let rate = if !init && r.next_u32() % 2 == 0 {
+            0
+        } else {
+            rate
+        };
+        let old = if r.next_u32() % 2 == 0 {
+            rate
+        } else {
+            r.next_u32() % 100
+        };
         c.bus.write16(base + snd_state::SERVICE_RATE, old as u16);
         let calls = r.next_u32() % 12;
         c.bus.write32(base + snd_state::SERVICE_CALLS, calls);
         let due = (calls + 1) * 100 / rate.max(1);
-        c.bus.write32(base + snd_state::TICKS, due.saturating_sub(r.next_u32() % 4) + r.next_u32() % 2);
+        c.bus.write32(
+            base + snd_state::TICKS,
+            due.saturating_sub(r.next_u32() % 4) + r.next_u32() % 2,
+        );
         // Tick callbacks (fakes).
         let cbs = r.next_u32() % 3;
         c.bus.write8(base + 0x177, cbs as u8);
@@ -2212,5 +2583,4 @@ mod tests {
             schedule(c, &mut r, seed, 0x003b_5540)
         });
     }
-
 }

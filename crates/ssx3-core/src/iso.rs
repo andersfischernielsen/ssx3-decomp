@@ -62,7 +62,11 @@ impl Disc {
 
     pub fn read(&mut self, sector: u32, count: u32, out: &mut [u8]) -> bool {
         let n = count as usize * SECTOR;
-        out.len() >= n && self.src.read_at(sector as u64 * SECTOR as u64, &mut out[..n]).is_ok()
+        out.len() >= n
+            && self
+                .src
+                .read_at(sector as u64 * SECTOR as u64, &mut out[..n])
+                .is_ok()
     }
 
     pub fn read_vec(&mut self, sector: u32, count: u32) -> Vec<u8> {

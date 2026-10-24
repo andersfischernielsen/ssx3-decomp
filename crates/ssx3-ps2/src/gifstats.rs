@@ -64,5 +64,10 @@ pub fn scan(p: &[Qword]) {
 
 /// Take and reset the counters: (packets, vertices, adc, far).
 pub fn take() -> (u64, u64, u64, u64) {
-    (PACKETS.swap(0, Relaxed), VERTS.swap(0, Relaxed), ADC.swap(0, Relaxed), FAR.swap(0, Relaxed))
+    (
+        PACKETS.swap(0, Relaxed),
+        VERTS.swap(0, Relaxed),
+        ADC.swap(0, Relaxed),
+        FAR.swap(0, Relaxed),
+    )
 }

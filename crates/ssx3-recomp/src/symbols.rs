@@ -20,7 +20,14 @@ pub struct Function {
 /// Prefixes Ghidra uses for names it generated itself, as opposed to names
 /// recovered from symbols or applied by a human.
 const AUTO_PREFIXES: &[&str] = &[
-    "FUN_", "thunk_FUN_", "LAB_", "DAT_", "UNK_", "SUB_", "switchD_", "caseD_",
+    "FUN_",
+    "thunk_FUN_",
+    "LAB_",
+    "DAT_",
+    "UNK_",
+    "SUB_",
+    "switchD_",
+    "caseD_",
 ];
 
 impl Function {
@@ -147,7 +154,9 @@ impl FunctionIndex {
 
     /// True when addresses are strictly ascending.
     pub fn is_sorted_unique(&self) -> bool {
-        self.functions.windows(2).all(|w| w[0].address < w[1].address)
+        self.functions
+            .windows(2)
+            .all(|w| w[0].address < w[1].address)
     }
 }
 
@@ -157,9 +166,8 @@ mod tests {
 
     #[test]
     fn parses_and_looks_up() {
-        let idx = FunctionIndex::parse(
-            "00100008\t001001c8\tentry\n001001c8\t001001d0\tFUN_001001c8\n",
-        );
+        let idx =
+            FunctionIndex::parse("00100008\t001001c8\tentry\n001001c8\t001001d0\tFUN_001001c8\n");
         assert_eq!(idx.len(), 2);
         assert_eq!(idx.by_address(0x0010_0008).unwrap().name, "entry");
         assert_eq!(idx.by_address(0x0010_0008).unwrap().end, 0x0010_01c8);
@@ -170,9 +178,8 @@ mod tests {
 
     #[test]
     fn containing_respects_the_end() {
-        let idx = FunctionIndex::parse(
-            "00100008\t001001c8\tentry\n001001c8\t001001d0\tFUN_001001c8\n",
-        );
+        let idx =
+            FunctionIndex::parse("00100008\t001001c8\tentry\n001001c8\t001001d0\tFUN_001001c8\n");
         assert_eq!(idx.containing(0x0010_0100).unwrap().name, "entry");
         // 0x001001d0 is past the end of FUN_001001c8.
         assert!(idx.containing(0x0010_01d0).is_none());
@@ -180,9 +187,8 @@ mod tests {
 
     #[test]
     fn auto_named_classification() {
-        let idx = FunctionIndex::parse(
-            "00100008\t001001c8\tentry\n001001c8\t001001d0\tFUN_001001c8\n",
-        );
+        let idx =
+            FunctionIndex::parse("00100008\t001001c8\tentry\n001001c8\t001001d0\tFUN_001001c8\n");
         assert!(idx.by_address(0x0010_0008).unwrap().is_named());
         assert!(idx.by_address(0x0010_01c8).unwrap().is_auto_named());
     }

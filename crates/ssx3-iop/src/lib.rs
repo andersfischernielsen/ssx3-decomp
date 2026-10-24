@@ -433,7 +433,11 @@ impl Iop {
         }
         if (0x1F90_0000..0x1F90_0800).contains(&p) {
             let lo = self.spu.read(p);
-            return if size == 4 { lo | (self.spu.read(p + 2) << 16) } else { lo };
+            return if size == 4 {
+                lo | (self.spu.read(p + 2) << 16)
+            } else {
+                lo
+            };
         }
         if let Some(v) = hw::read(self, p, size) {
             return v;
@@ -480,7 +484,11 @@ impl Iop {
     }
     pub fn read_cstr(&self, a: u32, max: usize) -> String {
         let o = (a & 0x1F_FFFF) as usize;
-        self.ram[o..(o + max).min(RAM_SIZE)].iter().take_while(|&&b| b != 0).map(|&b| b as char).collect()
+        self.ram[o..(o + max).min(RAM_SIZE)]
+            .iter()
+            .take_while(|&&b| b != 0)
+            .map(|&b| b as char)
+            .collect()
     }
     pub fn ram32(&self, a: u32) -> u32 {
         let o = (a & 0x1F_FFFC) as usize;

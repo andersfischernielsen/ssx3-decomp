@@ -127,7 +127,12 @@ impl GpuCall {
     pub fn expanded_indices(&self) -> std::borrow::Cow<'_, [u32]> {
         match self.index_mode {
             0 => std::borrow::Cow::Borrowed(&self.indices),
-            m => std::borrow::Cow::Owned(self.indices.iter().flat_map(|&t| (0..m >> 8).map(move |c| t << (m & 0xff) | c)).collect()),
+            m => std::borrow::Cow::Owned(
+                self.indices
+                    .iter()
+                    .flat_map(|&t| (0..m >> 8).map(move |c| t << (m & 0xff) | c))
+                    .collect(),
+            ),
         }
     }
 }
@@ -206,25 +211,46 @@ pub fn mesh_key(src: u64, program: Program) -> u64 {
 /// Plan the call for the GPU when its program and variant have a GPU port
 /// (and do its memory side effects): its draws in kick order. `None`
 /// leaves the memory untouched, for the CPU program.
-pub fn plan(hash: u64, entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
+pub fn plan(
+    hash: u64,
+    entry: u32,
+    top: u32,
+    itop: u32,
+    kept: Option<f32>,
+    mem: &mut [u8; 16384],
+) -> Option<Vec<GpuCall>> {
     let r = plan_inner(hash, entry, top, itop, kept, mem);
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if *ON.get_or_init(|| std::env::var_os("SSX3_GPU_STATS").is_some()) {
-        *STATS.lock().unwrap().entry((hash, entry, itop != 0, r.is_some())).or_default() += 1;
+        *STATS
+            .lock()
+            .unwrap()
+            .entry((hash, entry, itop != 0, r.is_some()))
+            .or_default() += 1;
     }
     r
 }
 
 /// Debug (`SSX3_GPU_STATS`): calls per (program, entry, ITOP set, on the GPU).
-pub static STATS: std::sync::Mutex<std::collections::BTreeMap<(u64, u32, bool, bool), u64>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+pub static STATS: std::sync::Mutex<std::collections::BTreeMap<(u64, u32, bool, bool), u64>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
-fn plan_inner(hash: u64, entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u8; 16384]) -> Option<Vec<GpuCall>> {
+fn plan_inner(
+    hash: u64,
+    entry: u32,
+    top: u32,
+    itop: u32,
+    kept: Option<f32>,
+    mem: &mut [u8; 16384],
+) -> Option<Vec<GpuCall>> {
     if skipped(hash) {
         return None;
     }
     match hash {
         crate::mat3::HASH => match entry {
-            0x12b8 | 0x3a08 if !skipped(STRIPS) => crate::mat3::plan_gpu_strip(entry, top, mem).map(|c| vec![c]),
+            0x12b8 | 0x3a08 if !skipped(STRIPS) => {
+                crate::mat3::plan_gpu_strip(entry, top, mem).map(|c| vec![c])
+            }
             0x12b8 | 0x3a08 => None,
             _ => crate::mat3::plan_gpu(entry, top, itop, kept, mem).map(|c| vec![c]),
         },
@@ -264,7 +290,9 @@ fn words<T: Words>(b: &[u8], n: usize) -> Vec<T> {
 /// Append `w` as little-endian bytes.
 fn put_words<T: Words>(out: &mut Vec<u8>, w: &[T]) {
     // SAFETY: any initialized `T` (`Words`: no padding) is valid bytes.
-    out.extend_from_slice(unsafe { std::slice::from_raw_parts(w.as_ptr() as *const u8, std::mem::size_of_val(w)) });
+    out.extend_from_slice(unsafe {
+        std::slice::from_raw_parts(w.as_ptr() as *const u8, std::mem::size_of_val(w))
+    });
 }
 
 /// Encode for the browser's VU helper workers (`vujob`).
@@ -300,7 +328,9 @@ pub fn decode(b: &[u8]) -> (GpuCall, usize) {
     let u32_at = |s: &[u8]| u32::from_le_bytes(s.try_into().unwrap());
     let program = Program::from_u8(take(1)[0]).expect("gpu program");
     let n = u32_at(take(4)) as usize;
-    let pre = (0..n).map(|_| u128::from_le_bytes(take(16).try_into().unwrap())).collect();
+    let pre = (0..n)
+        .map(|_| u128::from_le_bytes(take(16).try_into().unwrap()))
+        .collect();
     let tag = u128::from_le_bytes(take(16).try_into().unwrap());
     let mut uniforms = [[0u32; 4]; UNIFORM_QWORDS];
     let u: Vec<[u32; 4]> = words(take(16 * UNIFORM_QWORDS), UNIFORM_QWORDS);
@@ -316,7 +346,22 @@ pub fn decode(b: &[u8]) -> (GpuCall, usize) {
     let link = Link::from_code(t, u32_at(take(4)));
     let mk = u64::from_le_bytes(take(8).try_into().unwrap());
     let mesh_key = (mk != u64::MAX).then_some(mk);
-    (GpuCall { program, pre, tag, uniforms, data, indices, index_mode, alpha_max, link, split, mesh_key }, p)
+    (
+        GpuCall {
+            program,
+            pre,
+            tag,
+            uniforms,
+            data,
+            indices,
+            index_mode,
+            alpha_max,
+            link,
+            split,
+            mesh_key,
+        },
+        p,
+    )
 }
 
 #[cfg(test)]
@@ -357,7 +402,9 @@ mod tests {
 pub fn check(hash: u64, calls: &[GpuCall], gif: &[u128]) -> Option<String> {
     match (hash, calls) {
         (crate::mat3::HASH, [call]) if call.program == Program::Mat3Mesh => check_mat3(call, gif),
-        (crate::mat3::HASH, [call]) if call.program == Program::Mat3Strip => crate::mat3::check_gpu_strip(call, gif),
+        (crate::mat3::HASH, [call]) if call.program == Program::Mat3Strip => {
+            crate::mat3::check_gpu_strip(call, gif)
+        }
         (crate::mat6::HASH, [call]) => crate::mat6::check_gpu(call, gif),
         (crate::mat4::HASH | crate::mat5::HASH, _) => crate::mat4::gpu_check(calls, gif),
         (crate::mat1::HASH | crate::mat2::HASH, _) => crate::bezier::gpu::check(calls, gif),
@@ -384,23 +431,54 @@ fn check_mat3(call: &GpuCall, gif: &[u128]) -> Option<String> {
         let xyz = call.data[4 * i];
         let uv = call.data[4 * i + 1];
         let cw = call.data[4 * i + 2];
-        let p = [xyz[0] as i32 as f32 / 32768.0, xyz[1] as i32 as f32 / 32768.0, xyz[2] as i32 as f32 / 32768.0];
+        let p = [
+            xyz[0] as i32 as f32 / 32768.0,
+            xyz[1] as i32 as f32 / 32768.0,
+            xyz[2] as i32 as f32 / 32768.0,
+        ];
         let s = [f(0), f(1), f(2), f(3)];
-        let hc: [f32; 4] = std::array::from_fn(|l| s[0][l] * p[0] + s[1][l] * p[1] + s[2][l] * p[2] + s[3][l]);
+        let hc: [f32; 4] =
+            std::array::from_fn(|l| s[0][l] * p[0] + s[1][l] * p[1] + s[2][l] * p[2] + s[3][l]);
         let q = 1.0 / hc[3];
         let t = [uv[0] as i32 as f32 / 4096.0, uv[1] as i32 as f32 / 4096.0];
         let stq = [t[0] * q, t[1] * q, q];
         let col: [f32; 4] = if lit {
-            let n = [cw[0] as i32 as f32 / 32768.0, cw[1] as i32 as f32 / 32768.0, cw[2] as i32 as f32 / 32768.0];
-            let d: [f32; 4] = std::array::from_fn(|l| f(5)[l] * n[0] + f(6)[l] * n[1] + f(7)[l] * n[2]);
-            let terms = [1.0, d[0] * d[0], d[1] * d[1], d[2] * d[2], d[0] * d[1], d[2] * d[0], d[1] * d[2], d[0], d[1], d[2]];
-            std::array::from_fn(|l| (0..10).map(|k| f(8 + k)[l] * terms[k]).sum::<f32>().clamp(0.0, 255.0).floor())
+            let n = [
+                cw[0] as i32 as f32 / 32768.0,
+                cw[1] as i32 as f32 / 32768.0,
+                cw[2] as i32 as f32 / 32768.0,
+            ];
+            let d: [f32; 4] =
+                std::array::from_fn(|l| f(5)[l] * n[0] + f(6)[l] * n[1] + f(7)[l] * n[2]);
+            let terms = [
+                1.0,
+                d[0] * d[0],
+                d[1] * d[1],
+                d[2] * d[2],
+                d[0] * d[1],
+                d[2] * d[0],
+                d[1] * d[2],
+                d[0],
+                d[1],
+                d[2],
+            ];
+            std::array::from_fn(|l| {
+                (0..10)
+                    .map(|k| f(8 + k)[l] * terms[k])
+                    .sum::<f32>()
+                    .clamp(0.0, 255.0)
+                    .floor()
+            })
         } else {
             std::array::from_fn(|l| cw[l] as i32 as f32)
         };
         let sx = [hc[0] * q * 16.0, hc[1] * q * 16.0, hc[2] * q * 16.0];
         let got_xy = [w[8] as i32 as f32, w[9] as i32 as f32, w[10] as i32 as f32];
-        let got_stq = [f32::from_bits(w[0]), f32::from_bits(w[1]), f32::from_bits(w[2])];
+        let got_stq = [
+            f32::from_bits(w[0]),
+            f32::from_bits(w[1]),
+            f32::from_bits(w[2]),
+        ];
         let got_col = [w[4] as f32, w[5] as f32, w[6] as f32, w[7] as f32];
         let close = |a: f32, b: f32, tol: f32| (a - b).abs() <= tol * (1.0 + b.abs());
         let ok_xy = (0..3).all(|l| (sx[l] - got_xy[l]).abs() <= 2.0 + 1e-4 * got_xy[l].abs());
@@ -413,5 +491,12 @@ fn check_mat3(call: &GpuCall, gif: &[u128]) -> Option<String> {
             ));
         }
     }
-    (!bad.is_empty()).then(|| format!("mat3 mesh ({} vertices, lit {lit}, pass {}): {}", n, call.uniforms[4][2], bad.join("; ")))
+    (!bad.is_empty()).then(|| {
+        format!(
+            "mat3 mesh ({} vertices, lit {lit}, pass {}): {}",
+            n,
+            call.uniforms[4][2],
+            bad.join("; ")
+        )
+    })
 }

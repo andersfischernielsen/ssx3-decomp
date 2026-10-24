@@ -62,10 +62,23 @@ fn coef(a: u64, b: u64, d: u64, which: u64) -> (f32, f32) {
 }
 
 /// Blend plan for ALPHA (with ABE) → (blend, src_mode, cs_a, cs_b, c_kind).
-fn blend(alpha: u64) -> (Option<(wgpu::BlendFactor, wgpu::BlendFactor, wgpu::BlendOperation)>, u32, f32, f32, u32) {
+fn blend(
+    alpha: u64,
+) -> (
+    Option<(wgpu::BlendFactor, wgpu::BlendFactor, wgpu::BlendOperation)>,
+    u32,
+    f32,
+    f32,
+    u32,
+) {
     use wgpu::BlendFactor as F;
     use wgpu::BlendOperation as O;
-    let (a, b, c, d) = (alpha & 3, (alpha >> 2) & 3, (alpha >> 4) & 3, (alpha >> 6) & 3);
+    let (a, b, c, d) = (
+        alpha & 3,
+        (alpha >> 2) & 3,
+        (alpha >> 4) & 3,
+        (alpha >> 6) & 3,
+    );
     let (sa, sb) = coef(a, b, d, 0);
     let (da, db) = coef(a, b, d, 1);
     if c == 1 {
@@ -88,7 +101,11 @@ fn blend(alpha: u64) -> (Option<(wgpu::BlendFactor, wgpu::BlendFactor, wgpu::Ble
     }
     let c_kind = if c == 2 { 2 } else { 0 };
     let cf = if c == 2 { F::Constant } else { F::SrcAlpha };
-    let cf1 = if c == 2 { F::OneMinusConstant } else { F::OneMinusSrcAlpha };
+    let cf1 = if c == 2 {
+        F::OneMinusConstant
+    } else {
+        F::OneMinusSrcAlpha
+    };
     let s_neg = sa < 0.0 && sb == 0.0;
     let (fd, d_neg) = match (da as i32, db as i32) {
         (0, 0) => (F::Zero, false),
@@ -139,26 +156,59 @@ fn compare(test: u64) -> wgpu::CompareFunction {
 /// doubled (Cd + Cd), the stored alpha separately.
 pub fn plans(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>, as_max: f32) -> Vec<Plan> {
     use wgpu::BlendFactor as F;
-    let reads_as = |k: &PipeKey| k.blend.is_some_and(|(s, d, _)| [s, d].iter().any(|f| matches!(f, F::SrcAlpha | F::OneMinusSrcAlpha)));
+    let reads_as = |k: &PipeKey| {
+        k.blend.is_some_and(|(s, d, _)| {
+            [s, d]
+                .iter()
+                .any(|f| matches!(f, F::SrcAlpha | F::OneMinusSrcAlpha))
+        })
+    };
     let alpha = st.ctx.alpha;
-    let half = st.prim & (1 << 6) != 0 && (alpha >> 4) & 3 == 0 && (alpha >> 6) & 3 == 2 && as_max > 128.0;
+    let half =
+        st.prim & (1 << 6) != 0 && (alpha >> 4) & 3 == 0 && (alpha >> 6) & 3 == 2 && as_max > 128.0;
     let mut out = Vec::new();
     for p in plans_unsplit(st, size, rt_psm) {
         if half && p.key.blend.is_some() && p.key.write & 7 != 0 {
             let last_z = p.key.depth_write;
             let alpha_too = p.key.write & 8 != 0;
             out.push(Plan {
-                key: PipeKey { depth_write: false, write: p.key.write & 7, ..p.key },
-                u: BatchU { flags: (p.u.flags | 512) & !8, ..p.u },
+                key: PipeKey {
+                    depth_write: false,
+                    write: p.key.write & 7,
+                    ..p.key
+                },
+                u: BatchU {
+                    flags: (p.u.flags | 512) & !8,
+                    ..p.u
+                },
                 constant: p.constant,
             });
             out.push(Plan {
-                key: PipeKey { blend: Some((F::Dst, F::One, wgpu::BlendOperation::Add)), depth_write: last_z && !alpha_too, write: p.key.write & 7, ..p.key },
-                u: BatchU { flags: p.u.flags & !8, src_mode: 2, c_kind: 2, fix: 1.0, ..p.u },
+                key: PipeKey {
+                    blend: Some((F::Dst, F::One, wgpu::BlendOperation::Add)),
+                    depth_write: last_z && !alpha_too,
+                    write: p.key.write & 7,
+                    ..p.key
+                },
+                u: BatchU {
+                    flags: p.u.flags & !8,
+                    src_mode: 2,
+                    c_kind: 2,
+                    fix: 1.0,
+                    ..p.u
+                },
                 constant: p.constant,
             });
             if alpha_too {
-                out.push(Plan { key: PipeKey { blend: None, write: 8, ..p.key }, u: p.u, constant: p.constant });
+                out.push(Plan {
+                    key: PipeKey {
+                        blend: None,
+                        write: 8,
+                        ..p.key
+                    },
+                    u: p.u,
+                    constant: p.constant,
+                });
             }
             continue;
         }
@@ -168,8 +218,27 @@ pub fn plans(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>, as_max: f32)
         }
         // Colour with the true As (no depth write, so the alpha draw still
         // passes the same depth test), then the stored alpha.
-        out.push(Plan { key: PipeKey { depth_write: false, write: p.key.write & 7, ..p.key }, u: BatchU { flags: p.u.flags & !8, ..p.u }, constant: p.constant });
-        out.push(Plan { key: PipeKey { blend: None, write: 8, ..p.key }, u: p.u, constant: p.constant });
+        out.push(Plan {
+            key: PipeKey {
+                depth_write: false,
+                write: p.key.write & 7,
+                ..p.key
+            },
+            u: BatchU {
+                flags: p.u.flags & !8,
+                ..p.u
+            },
+            constant: p.constant,
+        });
+        out.push(Plan {
+            key: PipeKey {
+                blend: None,
+                write: 8,
+                ..p.key
+            },
+            u: p.u,
+            constant: p.constant,
+        });
     }
     out
 }
@@ -177,7 +246,11 @@ pub fn plans(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>, as_max: f32)
 fn plans_unsplit(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>) -> Vec<Plan> {
     let c = &st.ctx;
     let abe = st.prim & (1 << 6) != 0;
-    let (bl, src_mode, cs_a, cs_b, c_kind) = if abe { blend(c.alpha) } else { (None, 0, 0.0, 0.0, 0) };
+    let (bl, src_mode, cs_a, cs_b, c_kind) = if abe {
+        blend(c.alpha)
+    } else {
+        (None, 0, 0.0, 0.0, 0)
+    };
     let fix = ((c.alpha >> 32) & 0xff) as f64 / 128.0;
     let fbmsk = (c.frame >> 32) as u32;
     let mut write = 0xfu8;
@@ -190,10 +263,20 @@ fn plans_unsplit(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>) -> Vec<P
     let zmsk = (c.zbuf >> 32) & 1 != 0;
     let depth = compare(c.test);
     let tex0 = c.tex0;
-    let fogcol = [(st.fogcol & 0xff) as f32, ((st.fogcol >> 8) & 0xff) as f32, ((st.fogcol >> 16) & 0xff) as f32, 0.0];
+    let fogcol = [
+        (st.fogcol & 0xff) as f32,
+        ((st.fogcol >> 8) & 0xff) as f32,
+        ((st.fogcol >> 16) & 0xff) as f32,
+        0.0,
+    ];
     let frame_src = (st.tex == Some(crate::gs::FRAME_TEX) || rt_psm.is_some()) as u32;
     let ct16 = rt_psm.is_some_and(|p| matches!(p, 2 | 10)) as u32;
-    let flags = (st.prim >> 4 & 1) | (((tex0 >> 34) & 1) as u32) << 1 | (st.prim >> 5 & 1) << 2 | ((c.fba & 1) as u32) << 3 | frame_src << 4 | ct16 << 5;
+    let flags = (st.prim >> 4 & 1)
+        | (((tex0 >> 34) & 1) as u32) << 1
+        | (st.prim >> 5 & 1) << 2
+        | ((c.fba & 1) as u32) << 3
+        | frame_src << 4
+        | ct16 << 5;
     let u = BatchU {
         size: [size.0 as f32, size.1 as f32],
         tfx: ((tex0 >> 35) & 3) as u32,
@@ -210,23 +293,47 @@ fn plans_unsplit(st: &DrawState, size: (u32, u32), rt_psm: Option<u32>) -> Vec<P
         ta: [(st.texa & 0xff) as f32, ((st.texa >> 32) & 0xff) as f32],
         pad: [0.0; 2],
     };
-    let base = PipeKey { blend: bl, depth, depth_write: !zmsk && depth != wgpu::CompareFunction::Never, write };
+    let base = PipeKey {
+        blend: bl,
+        depth,
+        depth_write: !zmsk && depth != wgpu::CompareFunction::Never,
+        write,
+    };
     let ate = c.test & 1 != 0;
     let atst = (c.test >> 1) & 7;
     let afail = (c.test >> 12) & 3;
     if !ate || atst == 1 {
-        return vec![Plan { key: base, u, constant: fix }];
+        return vec![Plan {
+            key: base,
+            u,
+            constant: fix,
+        }];
     }
     let mut out = Vec::new();
-    out.push(Plan { key: base, u: BatchU { side: 1, ..u }, constant: fix });
+    out.push(Plan {
+        key: base,
+        u: BatchU { side: 1, ..u },
+        constant: fix,
+    });
     let fail = match afail {
         0 => None,
-        1 => Some(PipeKey { depth_write: false, ..base }),
+        1 => Some(PipeKey {
+            depth_write: false,
+            ..base
+        }),
         2 => Some(PipeKey { write: 0, ..base }),
-        _ => Some(PipeKey { depth_write: false, write: write & 7, ..base }),
+        _ => Some(PipeKey {
+            depth_write: false,
+            write: write & 7,
+            ..base
+        }),
     };
     if let Some(k) = fail {
-        out.push(Plan { key: k, u: BatchU { side: 2, ..u }, constant: fix });
+        out.push(Plan {
+            key: k,
+            u: BatchU { side: 2, ..u },
+            constant: fix,
+        });
     }
     out
 }
@@ -328,16 +435,32 @@ impl Pipelines {
         let storage = |binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
             count: None,
         };
-        let gpu_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("ssx3-gfx gpuvu"), entries: &[storage(0), storage(1), storage(2), storage(3), storage(4)] });
+        let gpu_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ssx3-gfx gpuvu"),
+            entries: &[storage(0), storage(1), storage(2), storage(3), storage(4)],
+        });
         let gpu_pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ssx3-gfx gpuvu"),
             bind_group_layouts: &[Some(&layout), Some(&gpu_layout)],
             immediate_size: 0,
         });
-        Pipelines { module, layout, pl, cache: HashMap::new(), gpu_module, gpu_layout, gpu_pl, gpu_cache: HashMap::new() }
+        Pipelines {
+            module,
+            layout,
+            pl,
+            cache: HashMap::new(),
+            gpu_module,
+            gpu_layout,
+            gpu_pl,
+            gpu_cache: HashMap::new(),
+        }
     }
 
     /// A GPU-vertex pipeline made earlier with [`Pipelines::get_gpu`].
@@ -347,19 +470,36 @@ impl Pipelines {
 
     /// The pipeline for `k` with the vertices of program `p` computed on
     /// the GPU (`vs_<program>`, no vertex buffer).
-    pub fn get_gpu(&mut self, dev: &wgpu::Device, k: PipeKey, p: ssx3_render::gpu::Program) -> &wgpu::RenderPipeline {
+    pub fn get_gpu(
+        &mut self,
+        dev: &wgpu::Device,
+        k: PipeKey,
+        p: ssx3_render::gpu::Program,
+    ) -> &wgpu::RenderPipeline {
         let (module, pl) = (&self.gpu_module, &self.gpu_pl);
         self.gpu_cache.entry((k, p)).or_insert_with(|| {
             let entry = p.vs_entry();
             let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
-                color: wgpu::BlendComponent { src_factor: s, dst_factor: d, operation: op },
+                color: wgpu::BlendComponent {
+                    src_factor: s,
+                    dst_factor: d,
+                    operation: op,
+                },
                 alpha: wgpu::BlendComponent::REPLACE,
             });
             dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("ssx3-gfx gpuvu draw"),
                 layout: Some(pl),
-                vertex: wgpu::VertexState { module, entry_point: Some(entry), compilation_options: Default::default(), buffers: &[] },
-                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+                vertex: wgpu::VertexState {
+                    module,
+                    entry_point: Some(entry),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: None,
+                    ..Default::default()
+                },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: Some(k.depth_write),
@@ -446,14 +586,28 @@ pub struct SampKey {
 
 pub fn samp_key(st: &DrawState) -> SampKey {
     let c = &st.ctx;
-    SampKey { linear: (c.tex1 >> 5) & 1 != 0, wrap_s: c.clamp & 3 == 0, wrap_t: (c.clamp >> 2) & 3 == 0 }
+    SampKey {
+        linear: (c.tex1 >> 5) & 1 != 0,
+        wrap_s: c.clamp & 3 == 0,
+        wrap_t: (c.clamp >> 2) & 3 == 0,
+    }
 }
 
 /// `aniso`: the anisotropic filtering level (1 = off, up to 16) for linear
 /// samplers.
 pub fn sampler(dev: &wgpu::Device, k: SampKey, aniso: u16) -> wgpu::Sampler {
-    let mode = |w: bool| if w { wgpu::AddressMode::Repeat } else { wgpu::AddressMode::ClampToEdge };
-    let f = if k.linear { wgpu::FilterMode::Linear } else { wgpu::FilterMode::Nearest };
+    let mode = |w: bool| {
+        if w {
+            wgpu::AddressMode::Repeat
+        } else {
+            wgpu::AddressMode::ClampToEdge
+        }
+    };
+    let f = if k.linear {
+        wgpu::FilterMode::Linear
+    } else {
+        wgpu::FilterMode::Nearest
+    };
     dev.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("ssx3-gfx"),
         address_mode_u: mode(k.wrap_s),
@@ -462,7 +616,11 @@ pub fn sampler(dev: &wgpu::Device, k: SampKey, aniso: u16) -> wgpu::Sampler {
         min_filter: f,
         // (Only replacement textures have mip levels; anisotropic filtering
         // keeps their detail on surfaces seen at a glancing angle.)
-        mipmap_filter: if k.linear { wgpu::MipmapFilterMode::Linear } else { wgpu::MipmapFilterMode::Nearest },
+        mipmap_filter: if k.linear {
+            wgpu::MipmapFilterMode::Linear
+        } else {
+            wgpu::MipmapFilterMode::Nearest
+        },
         anisotropy_clamp: if k.linear { aniso.clamp(1, 16) } else { 1 },
         ..Default::default()
     })
@@ -477,7 +635,14 @@ mod tests {
     fn blended(fba: u64, fbmsk: u32) -> DrawState {
         DrawState {
             prim: (1 << 4) | (1 << 6),
-            ctx: Ctx { alpha: 0x44, fba, frame: (fbmsk as u64) << 32, test: 0x5_0000, zbuf: 0, ..Default::default() },
+            ctx: Ctx {
+                alpha: 0x44,
+                fba,
+                frame: (fbmsk as u64) << 32,
+                test: 0x5_0000,
+                zbuf: 0,
+                ..Default::default()
+            },
             texa: 0,
             fogcol: 0,
             tex: None,
@@ -489,7 +654,14 @@ mod tests {
     fn blend_reads_source_alpha() {
         let p = plans(&blended(0, 0), (512, 448), None, 128.0);
         assert_eq!(p.len(), 1);
-        assert_eq!(p[0].key.blend, Some((wgpu::BlendFactor::One, wgpu::BlendFactor::OneMinusSrcAlpha, wgpu::BlendOperation::Add)));
+        assert_eq!(
+            p[0].key.blend,
+            Some((
+                wgpu::BlendFactor::One,
+                wgpu::BlendFactor::OneMinusSrcAlpha,
+                wgpu::BlendOperation::Add
+            ))
+        );
         assert_eq!(p[0].u.src_mode, 1);
     }
 
@@ -519,7 +691,14 @@ mod tests {
         assert_eq!(p.len(), 2);
         assert_eq!(p[0].u.flags & 512, 512);
         assert!(!p[0].key.depth_write);
-        assert_eq!(p[1].key.blend, Some((wgpu::BlendFactor::Dst, wgpu::BlendFactor::One, wgpu::BlendOperation::Add)));
+        assert_eq!(
+            p[1].key.blend,
+            Some((
+                wgpu::BlendFactor::Dst,
+                wgpu::BlendFactor::One,
+                wgpu::BlendOperation::Add
+            ))
+        );
         assert_eq!((p[1].u.src_mode, p[1].u.c_kind, p[1].u.fix), (2, 2, 1.0));
         assert!(p[1].key.depth_write);
         // As never above 1.0: one draw.

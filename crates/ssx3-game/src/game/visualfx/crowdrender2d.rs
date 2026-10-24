@@ -19,7 +19,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002d_bac0, c_crowd_anim2d_update, "cCrowdAnim2D_Update"),
 ];
 
-
 // ---------------------------------------------------------------------------
 // 2D crowd / fog particles.
 
@@ -46,7 +45,6 @@ pub fn c_crowd_anim2d_ctor(c: &mut Cpu) {
     Addr(this).off(0x18).sw(c, c.g[A1][0]);
     abi::ret(c);
 }
-
 
 /// The 2D crowd's animation tables in `.data`: `D_00445D38` (0xd8-byte
 /// animations: `+4` frame count, `+0x98 + 4 * frame` texture), the
@@ -82,7 +80,10 @@ enum Next {
 /// Tick rate: the interval is in 60 Hz frames (3 from the ctor), so above
 /// 60 it is compared as `ticks_from_frames60(interval)` ticks.
 pub fn c_crowd_anim2d_update(c: &mut Cpu) {
-    const STEP_FRAME: Callee = Callee { addr: 0x002d_ba08, f: ee::s09::f_002dba08 };
+    const STEP_FRAME: Callee = Callee {
+        addr: 0x002d_ba08,
+        f: ee::s09::f_002dba08,
+    };
     guest(c, |c| {
         c.cycles += 13;
         let frame = Frame::open(c, 0x30);
@@ -248,7 +249,8 @@ pub fn c_crowd_anim2d_update(c: &mut Cpu) {
                                 c.mult(0, A0, V1, A0);
                                 c.g[S1][0] = c.g[V0][0];
                                 c.g[V1][0] = sx(ANIMS);
-                                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                                c.g[V1][0] =
+                                    sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
                                 c.g[V0][0] = Addr(r32(c, V1)).off(4).lw(c);
                                 c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
                                 next = Next::StoreFrame;
@@ -319,22 +321,25 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-
     #[test]
     fn c_crowd_anim2d_ctor_matches() {
-        check(ssx3_ee::s09::f_002db9c8, c_crowd_anim2d_ctor, 200, &|c, seed| {
-            let mut r = Rng(0x1004 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
-            let table = DATA + 0x500;
-            c.bus.write32(GAME_GP + 0x2a74, table);
-            c.bus.write32(table + 0x1c, r.next_u32());
-            c.bus.write32(0x44_5dd0, r.next_u32());
-        });
+        check(
+            ssx3_ee::s09::f_002db9c8,
+            c_crowd_anim2d_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1004 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                let table = DATA + 0x500;
+                c.bus.write32(GAME_GP + 0x2a74, table);
+                c.bus.write32(table + 0x1c, r.next_u32());
+                c.bus.write32(0x44_5dd0, r.next_u32());
+            },
+        );
     }
-
 
     /// A crowd sprite at `DATA` and the animation tables: animations 0, 8
     /// and 9 (1..6 frames, textures `0x7e00_0000 | anim << 8 | frame`), and
@@ -376,24 +381,31 @@ pub(crate) mod tests {
         c.g[A0][0] = DATA as u64;
     }
 
-
     #[test]
     fn c_crowd_anim2d_update_matches() {
-        check_lohi(ssx3_ee::s09::f_002dbac0__generated, c_crowd_anim2d_update, 300, &|c, seed| {
-            let mut r = Rng(0x2dbac0 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            let app = DATA + 0x800;
-            c.bus.write32(GAME_GP + 0x2a74, app);
-            crowd_anim_fixture(c, &mut r, None);
-            // Interval 3: due (3 or more ticks since the last step) or not.
-            let now = r.next_u32() >> 4;
-            c.bus.write32(app + 0x1c, now);
-            let since = if seed % 5 == 0 { r.next_u32() % 3 } else { 3 + r.next_u32() % 4 };
-            c.bus.write32(DATA + 0x18, now.wrapping_sub(since));
-        });
+        check_lohi(
+            ssx3_ee::s09::f_002dbac0__generated,
+            c_crowd_anim2d_update,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2dbac0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let app = DATA + 0x800;
+                c.bus.write32(GAME_GP + 0x2a74, app);
+                crowd_anim_fixture(c, &mut r, None);
+                // Interval 3: due (3 or more ticks since the last step) or not.
+                let now = r.next_u32() >> 4;
+                c.bus.write32(app + 0x1c, now);
+                let since = if seed % 5 == 0 {
+                    r.next_u32() % 3
+                } else {
+                    3 + r.next_u32() % 4
+                };
+                c.bus.write32(DATA + 0x18, now.wrapping_sub(since));
+            },
+        );
     }
-
 
     /// The sprite steps once per 3 frames at 60 Hz at any rate: 20 steps in
     /// one second of ticks (60, 120 or 240 updates).

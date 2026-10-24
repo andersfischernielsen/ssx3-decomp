@@ -110,7 +110,12 @@ impl CommandBlock {
         let mut spu = [SpuVoiceCmd::default(); SPU_VOICES];
         for (v, s) in spu.iter_mut().enumerate() {
             let o = 0x20 + v * 8;
-            *s = SpuVoiceCmd { word: u32_at(b, o), pitch: u16_at(b, o + 4), vol_l: b[o + 6] as i8, vol_r: b[o + 7] as i8 };
+            *s = SpuVoiceCmd {
+                word: u32_at(b, o),
+                pitch: u16_at(b, o + 4),
+                vol_l: b[o + 6] as i8,
+                vol_r: b[o + 7] as i8,
+            };
         }
         let mut iop = [IopVoiceCmd::default(); IOP_VOICES];
         for (i, s) in iop.iter_mut().enumerate() {
@@ -119,7 +124,12 @@ impl CommandBlock {
             for (k, d) in dry.iter_mut().enumerate() {
                 *d = b[o + 6 + k] as i8;
             }
-            *s = IopVoiceCmd { word: u32_at(b, o), pitch: u16_at(b, o + 4), dry, wet: b[o + 0xC] as i8 };
+            *s = IopVoiceCmd {
+                word: u32_at(b, o),
+                pitch: u16_at(b, o + 4),
+                dry,
+                wet: b[o + 0xC] as i8,
+            };
         }
         Some(Self {
             wet_bits: u32_at(b, 0) as u64 | (u32_at(b, 4) as u64) << 32,
@@ -176,7 +186,10 @@ pub fn parse_tags(b: &[u8]) -> Result<TagBuffer, TagError> {
                 if d + bytes > b.len() {
                     return Err(TagError::Malformed(o));
                 }
-                out.pcm = b[d..d + bytes].chunks(2).map(|h| i16::from_le_bytes([h[0], h[1]])).collect();
+                out.pcm = b[d..d + bytes]
+                    .chunks(2)
+                    .map(|h| i16::from_le_bytes([h[0], h[1]]))
+                    .collect();
                 o = d + bytes;
             }
             2 => {
@@ -215,7 +228,11 @@ pub struct StatusBlock {
 
 impl Default for StatusBlock {
     fn default() -> Self {
-        Self { seq: 0, spu: [(0, 0); SPU_VOICES], iop: [(0, -1); IOP_VOICES] }
+        Self {
+            seq: 0,
+            spu: [(0, 0); SPU_VOICES],
+            iop: [(0, -1); IOP_VOICES],
+        }
     }
 }
 
@@ -299,7 +316,10 @@ mod tests {
 
     #[test]
     fn status_layout() {
-        let mut s = StatusBlock { seq: 3, ..Default::default() };
+        let mut s = StatusBlock {
+            seq: 3,
+            ..Default::default()
+        };
         s.spu[1] = (0xAA, 0x5040);
         s.iop[0] = (0xBB, -1);
         let b = s.to_bytes();

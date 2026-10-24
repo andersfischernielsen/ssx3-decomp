@@ -2,45 +2,69 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::fepopup2::fe_state_screen_init;
+pub(crate) use crate::game::fe::festateoptions::call_object_a2;
+pub(crate) use crate::game::fe::festateoptions::screen_object;
+pub(crate) use crate::game::fe::festateoptions::ui_state_epilogue;
+pub(crate) use crate::game::fe::festateoptions::ui_state_frame;
+pub(crate) use crate::game::fe::festateoptions::STR_HASH;
+pub(crate) use crate::game::fe::festateoptions::UI_SCREEN_FIND_OBJECT;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::Cpu;
-use crate::call::sp;
-use crate::call::Flow;
-use ssx3_ee_rt::vu0::X;
-use crate::abi::r32;
 use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
-pub(crate) use crate::game::fe::fepopup2::fe_state_screen_init;
-pub(crate) use crate::game::fe::festateoptions::STR_HASH;
-pub(crate) use crate::game::fe::festateoptions::UI_SCREEN_FIND_OBJECT;
-pub(crate) use crate::game::fe::festateoptions::screen_object;
-pub(crate) use crate::game::fe::festateoptions::call_object_a2;
-pub(crate) use crate::game::fe::festateoptions::ui_state_frame;
-pub(crate) use crate::game::fe::festateoptions::ui_state_epilogue;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0018_ead8, fe_screen_select_profile_init, "FEScreenSelectProfile_Init"),
-    (0x0018_eeb8, cfe_state_profile_load_on_widget_notify, "cFEStateProfileLoad_OnWidgetNotify"),
-    (0x0018_ef70, c_fe_state_profile_load_v37, "cFEStateProfileLoad_v37"),
-    (0x0018_f0b8, cfe_state_profile_load_v38, "cFEStateProfileLoad_v38"),
-    (0x0018_f278, c_fe_state_profile_load_v26, "cFEStateProfileLoad_v26"),
-    (0x0019_0858, c_fe_state_rider_bio_ctor, "cFEStateRiderBio_ctor"),
+    (
+        0x0018_ead8,
+        fe_screen_select_profile_init,
+        "FEScreenSelectProfile_Init",
+    ),
+    (
+        0x0018_eeb8,
+        cfe_state_profile_load_on_widget_notify,
+        "cFEStateProfileLoad_OnWidgetNotify",
+    ),
+    (
+        0x0018_ef70,
+        c_fe_state_profile_load_v37,
+        "cFEStateProfileLoad_v37",
+    ),
+    (
+        0x0018_f0b8,
+        cfe_state_profile_load_v38,
+        "cFEStateProfileLoad_v38",
+    ),
+    (
+        0x0018_f278,
+        c_fe_state_profile_load_v26,
+        "cFEStateProfileLoad_v26",
+    ),
+    (
+        0x0019_0858,
+        c_fe_state_rider_bio_ctor,
+        "cFEStateRiderBio_ctor",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -49,27 +73,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::camera::camera::callee::MEASURE_ROW;
-    pub(crate) use crate::game::camera::camera::callee::MEMCARD_SET_STATE;
-    pub(crate) use crate::game::camera::camera::callee::TRANSITION_MAN_START;
-    pub(crate) use crate::game::camera::camera::callee::WSCRIPT_DELETE_ALL;
-    pub(crate) use crate::game::camera::camera::callee::SPHERE_TREE_RESET_TRANSFORM;
-    pub(crate) use crate::game::camera::camera::callee::CAM_CONTROLLER_RESET;
-    pub(crate) use crate::game::camera::camera::callee::MANUAL_CAM_ALGO_BASE_CTOR;
-    pub(crate) use crate::game::camera::camera::callee::CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::camera::camera::callee::CHASE_CAM_SET_ALGORITHM_2 as CHASE_CAM_SET_ALGORITHM;
-    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_FREE_TRIGGERS;
-    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_RESET_HEADER;
-    pub(crate) use crate::game::camera::camera::callee::UI_TEXTURE_SET_FIND;
-    pub(crate) use crate::game::camera::camera::callee::UI_STATE_CTOR;
+    pub(crate) use crate::game::camera::camera::callee::BEBAGT_RESET_PROFILE;
     pub(crate) use crate::game::camera::camera::callee::BENEWPLAYER_GET_SLOT;
     pub(crate) use crate::game::camera::camera::callee::BE_LIBRARY_RESET_PROFILE;
-    pub(crate) use crate::game::camera::camera::callee::BEBAGT_RESET_PROFILE;
     pub(crate) use crate::game::camera::camera::callee::BE_OPTION_GET_MAX_HANDICAP;
+    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_FREE_TRIGGERS;
+    pub(crate) use crate::game::camera::camera::callee::CAMERA_TRIGGER_RESET_HEADER;
+    pub(crate) use crate::game::camera::camera::callee::CAM_CONTROLLER_RESET;
+    pub(crate) use crate::game::camera::camera::callee::CHASE_CAMERA_ALGORITHM_CTOR;
+    pub(crate) use crate::game::camera::camera::callee::CHASE_CAM_SET_ALGORITHM_2 as CHASE_CAM_SET_ALGORITHM;
     pub(crate) use crate::game::camera::camera::callee::FE_REFRESH_PROFILE_LIST;
     pub(crate) use crate::game::camera::camera::callee::FE_REFRESH_SLOTS;
+    pub(crate) use crate::game::camera::camera::callee::MANUAL_CAM_ALGO_BASE_CTOR;
+    pub(crate) use crate::game::camera::camera::callee::MEASURE_ROW;
+    pub(crate) use crate::game::camera::camera::callee::MEMCARD_SET_STATE;
+    pub(crate) use crate::game::camera::camera::callee::SPHERE_TREE_RESET_TRANSFORM;
+    pub(crate) use crate::game::camera::camera::callee::TRANSITION_MAN_START;
+    pub(crate) use crate::game::camera::camera::callee::UI_STATE_CTOR;
+    pub(crate) use crate::game::camera::camera::callee::UI_TEXTURE_SET_FIND;
+    pub(crate) use crate::game::camera::camera::callee::WSCRIPT_DELETE_ALL;
 }
-
 
 /// `void cFEStateProfileLoad_v26(this)` (0x18f278): refresh the profile list
 /// when the state at `+0x214` is 3, the slot list otherwise.
@@ -95,12 +118,10 @@ pub fn c_fe_state_profile_load_v26(c: &mut Cpu) {
     })
 }
 
-
 #[inline(always)]
 pub(crate) fn sb(c: &mut Cpu, a: u32, v: u64) {
     Addr(a).sb(c, v);
 }
-
 
 /// `FEScreenSelectProfile_Init(FEScreenSelectProfile* self)` (0x18ead8).
 pub fn fe_screen_select_profile_init(c: &mut Cpu) {
@@ -108,7 +129,6 @@ pub fn fe_screen_select_profile_init(c: &mut Cpu) {
         fe_state_screen_init(c, 0x0045_e240, [0x0018_eafc, 0x0018_eb10, 0x0018_eb28])
     })
 }
-
 
 /// `cFEStateRiderBio_ctor(cFEStateRiderBio* self, int, int rider)`
 /// (0x190858): construct the UI state, install the vtable, remember the rider
@@ -144,7 +164,6 @@ pub fn c_fe_state_rider_bio_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `cFEStateProfileLoad_v38` (0x18f0b8): when the profile mode is not 2,
@@ -204,7 +223,6 @@ pub fn cfe_state_profile_load_v38(c: &mut Cpu) {
     })
 }
 
-
 /// `int cFEStateProfileLoad_OnWidgetNotify(self, item, unsigned int msg)`
 /// (0x18eeb8): map a profile-load widget notification to the state that
 /// should handle it.
@@ -227,7 +245,7 @@ pub fn cfe_state_profile_load_on_widget_notify(c: &mut Cpu) {
                     'b4c: {
                         'b38: {
                             call_ptr(c, 0x0022_7f80, 0x0018_eed8)?;
-                            c.g[V1][0]=c.g[V0][0];
+                            c.g[V1][0] = c.g[V0][0];
                             c.g[V0][0] = 8;
                             let is8 = c.g[S0][0] == 8;
                             c.g[V0][0] = (c.g[S0][0] < 9) as u64;
@@ -313,7 +331,6 @@ pub fn cfe_state_profile_load_on_widget_notify(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // 0x0018eb40 FEScreenSelectProfile_OnWidgetAction
 // ---------------------------------------------------------------------------
@@ -337,45 +354,125 @@ pub fn fescreen_select_profile_on_widget_action(c: &mut Cpu) {
         c.g[S1][0] = c.g[A0][0]; // self
         'skip: {
             if !no_menu {
-            'actions: {
-                'item: {
-                    c.cycles += 3;
-                    c.g[V0][0] = 2;
-                    let is_two = c.g[A2][0] == c.g[V0][0];
-                    c.g[V0][0] = (c.g[A2][0] < 3) as u64;
-                    if is_two {
-                        // Case 2: white.
-                        c.cycles += 12;
-                        c.g[V1][0] = c.lw(p(c.g[S0][0] as u32, 8));
-                        c.g[A1][0] = c.g[SP][0];
-                        c.g[AT][0] = 0x3f80_0000;
-                        c.mtc1(1, 0);
-                        c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x58));
-                        c.swc1(0, p(c.g[SP][0] as u32, 0xc));
-                        c.swc1(0, c.g[SP][0] as u32);
-                        c.swc1(0, p(c.g[SP][0] as u32, 4));
-                        c.swc1(0, p(c.g[SP][0] as u32, 8));
-                        c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x5c));
-                        let t = c.g[V0][0] as u32;
-                        c.g[RA][0] = sx(0x0018_ec8c);
-                        c.g[A0][0] = sx(c.g[S0][0] as u32 + c.g[A0][0] as u32);
-                        call_ptr(c, t, 0x0018_ec8c)?;
-                        break 'skip;
-                    }
-                    'low: {
-                        c.cycles += 2;
-                        let below3 = c.g[V0][0] == 0; // action >= 3
-                        c.g[V0][0] = 1;
-                        if below3 {
-                            break 'low;
-                        }
-                        c.cycles += 2;
-                        if c.g[A2][0] == c.g[V0][0] {
-                            // Case 1: magenta.
+                'actions: {
+                    'item: {
+                        c.cycles += 3;
+                        c.g[V0][0] = 2;
+                        let is_two = c.g[A2][0] == c.g[V0][0];
+                        c.g[V0][0] = (c.g[A2][0] < 3) as u64;
+                        if is_two {
+                            // Case 2: white.
+                            c.cycles += 12;
                             c.g[V1][0] = c.lw(p(c.g[S0][0] as u32, 8));
-                            break 'item;
+                            c.g[A1][0] = c.g[SP][0];
+                            c.g[AT][0] = 0x3f80_0000;
+                            c.mtc1(1, 0);
+                            c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x58));
+                            c.swc1(0, p(c.g[SP][0] as u32, 0xc));
+                            c.swc1(0, c.g[SP][0] as u32);
+                            c.swc1(0, p(c.g[SP][0] as u32, 4));
+                            c.swc1(0, p(c.g[SP][0] as u32, 8));
+                            c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x5c));
+                            let t = c.g[V0][0] as u32;
+                            c.g[RA][0] = sx(0x0018_ec8c);
+                            c.g[A0][0] = sx(c.g[S0][0] as u32 + c.g[A0][0] as u32);
+                            call_ptr(c, t, 0x0018_ec8c)?;
+                            break 'skip;
                         }
-                        c.cycles += 2;
+                        'low: {
+                            c.cycles += 2;
+                            let below3 = c.g[V0][0] == 0; // action >= 3
+                            c.g[V0][0] = 1;
+                            if below3 {
+                                break 'low;
+                            }
+                            c.cycles += 2;
+                            if c.g[A2][0] == c.g[V0][0] {
+                                // Case 1: magenta.
+                                c.g[V1][0] = c.lw(p(c.g[S0][0] as u32, 8));
+                                break 'item;
+                            }
+                            c.cycles += 2;
+                            c.lq(16, p(c.g[SP][0] as u32, 0x30));
+                            c.cycles += 4;
+                            frame.restore(c, 17, 0x20);
+                            frame.restore_ra(c, 0x10);
+                            frame.close(c);
+                            return Ok(());
+                        }
+                        // Cases 5 and 6: run the menu item's action method.
+                        'five_six: {
+                            'five: {
+                                'six: {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = 5;
+                                    if c.g[A2][0] == c.g[V0][0] {
+                                        c.g[V1][0] = c.lw(p(c.g[S0][0] as u32, 8));
+                                        break 'six;
+                                    }
+                                    c.cycles += 3;
+                                    c.g[V0][0] = 6;
+                                    if c.g[A2][0] == c.g[V0][0] {
+                                        c.g[V0][0] = c.lw(p(c.g[S1][0] as u32, 0x10));
+                                        break 'five;
+                                    }
+                                    c.cycles += 2;
+                                    c.lq(16, p(c.g[SP][0] as u32, 0x30));
+                                    c.cycles += 4;
+                                    frame.restore(c, 17, 0x20);
+                                    frame.restore_ra(c, 0x10);
+                                    frame.close(c);
+                                    return Ok(());
+                                }
+                                // Case 5: yellow highlight plus the action call.
+                                c.cycles += 19;
+                                c.g[A1][0] = c.g[SP][0];
+                                c.g[AT][0] = 0x3f80_0000;
+                                c.mtc1(1, 0);
+                                c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x58));
+                                c.swc1(0, p(c.g[SP][0] as u32, 4));
+                                c.swc1(0, c.g[SP][0] as u32);
+                                c.sw(p(c.g[SP][0] as u32, 8), 0);
+                                c.sw(p(c.g[SP][0] as u32, 0xc), 0);
+                                c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x5c));
+                                let t = c.g[V0][0] as u32;
+                                c.g[RA][0] = sx(0x0018_ebcc);
+                                c.g[A0][0] = sx(c.g[S0][0] as u32 + c.g[A0][0] as u32);
+                                call_ptr(c, t, 0x0018_ebcc)?;
+                                c.g[A0][0] = c.lw(p(c.g[S1][0] as u32, 0x10));
+                                c.g[A1][0] = c.g[S1][0];
+                                c.g[A2][0] = c.lw(p(c.g[S0][0] as u32, 0x18));
+                                c.g[A3][0] = c.lw(c.g[A0][0] as u32);
+                                c.g[V1][0] = c.lw(p(c.g[A3][0] as u32, 4));
+                                c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x20));
+                                c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x24));
+                                break 'five_six;
+                            }
+                            // Case 6: just the action call.
+                            c.cycles += 6;
+                            c.g[A1][0] = c.g[S1][0];
+                            c.g[A2][0] = c.lw(p(c.g[S0][0] as u32, 0x18));
+                            c.g[A3][0] = c.lw(c.g[V0][0] as u32);
+                            c.g[V1][0] = c.lw(p(c.g[A3][0] as u32, 4));
+                            c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x28));
+                            c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x2c));
+                        }
+                        // Shared tail: call the item action and link the result.
+                        c.cycles += 4;
+                        let t = c.g[V0][0] as u32;
+                        c.g[RA][0] = sx(0x0018_ec0c);
+                        c.g[A0][0] = sx(c.g[A3][0] as u32 + c.g[A0][0] as u32);
+                        call_ptr(c, t, 0x0018_ec0c)?;
+                        let none = c.g[V0][0] == 0;
+                        c.g[A1][0] = c.g[V0][0];
+                        if none {
+                            break 'skip;
+                        }
+                        c.cycles += 5;
+                        c.g[A0][0] = c.lw(p(c.g[S1][0] as u32, 0x10));
+                        c.g[RA][0] = sx(0x0018_ec20);
+                        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+                        call_ptr(c, 0x0039_f400, 0x0018_ec20)?;
                         c.lq(16, p(c.g[SP][0] as u32, 0x30));
                         c.cycles += 4;
                         frame.restore(c, 17, 0x20);
@@ -383,103 +480,23 @@ pub fn fescreen_select_profile_on_widget_action(c: &mut Cpu) {
                         frame.close(c);
                         return Ok(());
                     }
-                    // Cases 5 and 6: run the menu item's action method.
-                    'five_six: {
-                        'five: {
-                            'six: {
-                                c.cycles += 3;
-                                c.g[V0][0] = 5;
-                                if c.g[A2][0] == c.g[V0][0] {
-                                    c.g[V1][0] = c.lw(p(c.g[S0][0] as u32, 8));
-                                    break 'six;
-                                }
-                                c.cycles += 3;
-                                c.g[V0][0] = 6;
-                                if c.g[A2][0] == c.g[V0][0] {
-                                    c.g[V0][0] = c.lw(p(c.g[S1][0] as u32, 0x10));
-                                    break 'five;
-                                }
-                                c.cycles += 2;
-                                c.lq(16, p(c.g[SP][0] as u32, 0x30));
-                                c.cycles += 4;
-                                frame.restore(c, 17, 0x20);
-                                frame.restore_ra(c, 0x10);
-                                frame.close(c);
-                                return Ok(());
-                            }
-                            // Case 5: yellow highlight plus the action call.
-                            c.cycles += 19;
-                            c.g[A1][0] = c.g[SP][0];
-                            c.g[AT][0] = 0x3f80_0000;
-                            c.mtc1(1, 0);
-                            c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x58));
-                            c.swc1(0, p(c.g[SP][0] as u32, 4));
-                            c.swc1(0, c.g[SP][0] as u32);
-                            c.sw(p(c.g[SP][0] as u32, 8), 0);
-                            c.sw(p(c.g[SP][0] as u32, 0xc), 0);
-                            c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x5c));
-                            let t = c.g[V0][0] as u32;
-                            c.g[RA][0] = sx(0x0018_ebcc);
-                            c.g[A0][0] = sx(c.g[S0][0] as u32 + c.g[A0][0] as u32);
-                            call_ptr(c, t, 0x0018_ebcc)?;
-                            c.g[A0][0] = c.lw(p(c.g[S1][0] as u32, 0x10));
-                            c.g[A1][0] = c.g[S1][0];
-                            c.g[A2][0] = c.lw(p(c.g[S0][0] as u32, 0x18));
-                            c.g[A3][0] = c.lw(c.g[A0][0] as u32);
-                            c.g[V1][0] = c.lw(p(c.g[A3][0] as u32, 4));
-                            c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x20));
-                            c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x24));
-                            break 'five_six;
-                        }
-                        // Case 6: just the action call.
-                        c.cycles += 6;
-                        c.g[A1][0] = c.g[S1][0];
-                        c.g[A2][0] = c.lw(p(c.g[S0][0] as u32, 0x18));
-                        c.g[A3][0] = c.lw(c.g[V0][0] as u32);
-                        c.g[V1][0] = c.lw(p(c.g[A3][0] as u32, 4));
-                        c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x28));
-                        c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x2c));
-                    }
-                    // Shared tail: call the item action and link the result.
-                    c.cycles += 4;
+                    // Case 1: magenta.
+                    c.cycles += 13;
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(1, 0);
+                    c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x58));
+                    c.swc1(0, p(c.g[SP][0] as u32, 8));
+                    c.swc1(0, c.g[SP][0] as u32);
+                    c.sw(p(c.g[SP][0] as u32, 4), 0);
+                    c.sw(p(c.g[SP][0] as u32, 0xc), 0);
+                    c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x5c));
                     let t = c.g[V0][0] as u32;
-                    c.g[RA][0] = sx(0x0018_ec0c);
-                    c.g[A0][0] = sx(c.g[A3][0] as u32 + c.g[A0][0] as u32);
-                    call_ptr(c, t, 0x0018_ec0c)?;
-                    let none = c.g[V0][0] == 0;
-                    c.g[A1][0] = c.g[V0][0];
-                    if none {
-                        break 'skip;
-                    }
-                    c.cycles += 5;
-                    c.g[A0][0] = c.lw(p(c.g[S1][0] as u32, 0x10));
-                    c.g[RA][0] = sx(0x0018_ec20);
-                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
-                    call_ptr(c, 0x0039_f400, 0x0018_ec20)?;
-                    c.lq(16, p(c.g[SP][0] as u32, 0x30));
-                    c.cycles += 4;
-                    frame.restore(c, 17, 0x20);
-                    frame.restore_ra(c, 0x10);
-                    frame.close(c);
-                    return Ok(());
+                    c.g[RA][0] = sx(0x0018_ec54);
+                    c.g[A0][0] = sx(c.g[S0][0] as u32 + c.g[A0][0] as u32);
+                    call_ptr(c, t, 0x0018_ec54)?;
+                    break 'skip;
                 }
-                // Case 1: magenta.
-                c.cycles += 13;
-                c.g[A1][0] = c.g[SP][0];
-                c.g[AT][0] = 0x3f80_0000;
-                c.mtc1(1, 0);
-                c.g[A0][0] = c.lh(p(c.g[V1][0] as u32, 0x58));
-                c.swc1(0, p(c.g[SP][0] as u32, 8));
-                c.swc1(0, c.g[SP][0] as u32);
-                c.sw(p(c.g[SP][0] as u32, 4), 0);
-                c.sw(p(c.g[SP][0] as u32, 0xc), 0);
-                c.g[V0][0] = c.lw(p(c.g[V1][0] as u32, 0x5c));
-                let t = c.g[V0][0] as u32;
-                c.g[RA][0] = sx(0x0018_ec54);
-                c.g[A0][0] = sx(c.g[S0][0] as u32 + c.g[A0][0] as u32);
-                call_ptr(c, t, 0x0018_ec54)?;
-                break 'skip;
-            }
             }
         }
         c.cycles += 1;
@@ -491,7 +508,6 @@ pub fn fescreen_select_profile_on_widget_action(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEStateProfileLoad_v37(FEState *s, int selected)` (0x18ef70): the
 /// profile-load screen's variant, which skips the second widget while
@@ -543,62 +559,65 @@ pub fn c_fe_state_profile_load_v37(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
     use crate::difftest::events::schedule;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fill;
+    use crate::difftest::put_words;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fill;
-    use crate::difftest::put_words;
     use crate::difftest::RA as SENTINEL;
-    use ssx3_ee as ee;
-    use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::SP;
-    pub(crate) use crate::game::fe::festateoptions::tests::fe_state_setup;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
-    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE;
-    pub(crate) use crate::game::bx::bxstring2::tests::DB;
-    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
+    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
+    pub(crate) use crate::game::bx::bxstring2::tests::f;
     pub(crate) use crate::game::bx::bxstring2::tests::gp_at;
     pub(crate) use crate::game::bx::bxstring2::tests::run;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3 as base;
     pub(crate) use crate::game::bx::bxstring2::tests::slot_2 as slot;
-    pub(crate) use crate::game::fe::fememcard2::tests::str_hash;
-    pub(crate) use crate::game::fe::fememcard2::tests::hash_screen;
-    pub(crate) use crate::game::bx::bxstring2::tests::f;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE;
+    pub(crate) use crate::game::bx::bxstring2::tests::DB;
+    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::bx::bxstring2::tests::RM;
+    pub(crate) use crate::game::bx::bxstring2::tests::VTS;
+    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals;
     pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
+    pub(crate) use crate::game::fe::fememcard2::tests::hash_screen;
+    pub(crate) use crate::game::fe::fememcard2::tests::str_hash;
     pub(crate) use crate::game::fe::festateoptions::tests::belib;
-    pub(crate) use crate::game::fe::festateoptions::tests::RET;
-    pub(crate) use crate::game::fe::festateoptions::tests::str_hash_2;
+    pub(crate) use crate::game::fe::festateoptions::tests::fe_state_setup;
     pub(crate) use crate::game::fe::festateoptions::tests::screen_fixture;
     pub(crate) use crate::game::fe::festateoptions::tests::state_switch_setup;
-
+    pub(crate) use crate::game::fe::festateoptions::tests::str_hash_2;
+    pub(crate) use crate::game::fe::festateoptions::tests::RET;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+    use ssx3_ee as ee;
 
     #[test]
     fn c_fe_state_profile_load_v26_matches() {
-        check(ssx3_ee::s02::f_0018f278__generated, c_fe_state_profile_load_v26, 24, &|c, seed| {
-            fe_state_setup(c, seed, 0x18f2_78);
-        });
+        check(
+            ssx3_ee::s02::f_0018f278__generated,
+            c_fe_state_profile_load_v26,
+            24,
+            &|c, seed| {
+                fe_state_setup(c, seed, 0x18f2_78);
+            },
+        );
     }
-
 
     #[test]
     fn fe_screen_select_profile_init_matches() {
@@ -615,7 +634,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_state_rider_bio_ctor_matches() {
         check(
@@ -631,7 +649,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cfe_state_profile_load_v38_matches() {
@@ -655,8 +672,7 @@ pub(crate) mod tests {
         );
     }
 
-
-        #[test]
+    #[test]
     fn cfe_state_profile_load_on_widget_notify_matches() {
         check(
             ee::s02::f_0018eeb8__generated,
@@ -675,14 +691,17 @@ pub(crate) mod tests {
                     5 => 5,
                     _ => (seed % 12) as u64,
                 };
-                w(c, GAME_GP.wrapping_sub(0x1b08), if seed % 3 == 0 { 2 } else { 0 });
+                w(
+                    c,
+                    GAME_GP.wrapping_sub(0x1b08),
+                    if seed % 3 == 0 { 2 } else { 0 },
+                );
                 w(c, OBJ + 0x220, (seed % 2) as u32);
                 w(c, OBJ2 + 0x428, 0);
                 w(c, OBJ2 + 0x434, 0);
             },
         );
     }
-
 
     #[test]
     fn c_fe_state_profile_load_v37_matches() {

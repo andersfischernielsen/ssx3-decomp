@@ -211,9 +211,15 @@ impl Kernel {
         let chosen = match mode {
             2 => {
                 let a = (at & 0x1F_FFFF) & !0xFF;
-                gaps.iter().any(|&(l, h)| a >= l && a + size <= h).then_some(a)
+                gaps.iter()
+                    .any(|&(l, h)| a >= l && a + size <= h)
+                    .then_some(a)
             }
-            1 => gaps.iter().rev().find(|&&(l, h)| h - l >= size).map(|&(_, h)| h - size),
+            1 => gaps
+                .iter()
+                .rev()
+                .find(|&&(l, h)| h - l >= size)
+                .map(|&(_, h)| h - size),
             _ => gaps.iter().find(|&&(l, h)| h - l >= size).map(|&(l, _)| l),
         };
         match chosen {
@@ -247,7 +253,15 @@ impl Kernel {
 
     // ---------------------------------------------------------- threads
 
-    pub fn create_thread(&mut self, entry: u32, stack_size: u32, prio: i32, gp: u32, attr: u32, option: u32) -> i32 {
+    pub fn create_thread(
+        &mut self,
+        entry: u32,
+        stack_size: u32,
+        prio: i32,
+        gp: u32,
+        attr: u32,
+        option: u32,
+    ) -> i32 {
         let stack_size = (stack_size + 0xFF) & !0xFF;
         let stack = self.alloc(stack_size, 1, 0);
         let id = self.next_thread;
@@ -283,7 +297,9 @@ impl Kernel {
     }
 
     pub fn start_thread(&mut self, id: i32, a0: u32, a1: u32) -> bool {
-        let Some(t) = self.threads.get_mut(&id) else { return false };
+        let Some(t) = self.threads.get_mut(&id) else {
+            return false;
+        };
         t.ctx = Ctx::default();
         t.ctx.pc = t.entry;
         t.ctx.r[4] = a0;
@@ -311,7 +327,9 @@ impl Kernel {
 
     /// Wake a waiting thread with `result` in its v0.
     pub fn wake(&mut self, id: i32, result: u32) {
-        let Some(t) = self.threads.get_mut(&id) else { return };
+        let Some(t) = self.threads.get_mut(&id) else {
+            return;
+        };
         if t.status != Status::Wait {
             return;
         }
@@ -336,7 +354,12 @@ impl Default for Kernel {
 }
 
 fn save_live(c: &mut Iop) -> Ctx {
-    Ctx { r: c.r, hi: c.hi, lo: c.lo, pc: c.pc & !UNWIND }
+    Ctx {
+        r: c.r,
+        hi: c.hi,
+        lo: c.lo,
+        pc: c.pc & !UNWIND,
+    }
 }
 
 fn load_live(c: &mut Iop, ctx: &Ctx) {
@@ -349,7 +372,11 @@ fn load_live(c: &mut Iop, ctx: &Ctx) {
 /// Pick the thread that should run and switch to it.
 pub fn reschedule(c: &mut Iop) {
     let cur = c.k.current;
-    let cur_running = c.k.threads.get(&cur).map(|t| t.status == Status::Run).unwrap_or(false);
+    let cur_running =
+        c.k.threads
+            .get(&cur)
+            .map(|t| t.status == Status::Run)
+            .unwrap_or(false);
     if !c.k.switch_pending && (cur_running || cur == 0) {
         if cur == 0 {
             if let Some(b) = c.k.best_ready() {
@@ -400,7 +427,10 @@ fn switch_to(c: &mut Iop, id: i32) {
 pub fn block(c: &mut Iop, wait: Wait) -> bool {
     let cur = c.k.current;
     if c.in_handler > 0 || cur == 0 {
-        eprintln!("[iop] blocking call {wait:?} outside a thread (pc {:#x})", c.r[31]);
+        eprintln!(
+            "[iop] blocking call {wait:?} outside a thread (pc {:#x})",
+            c.r[31]
+        );
         return false;
     }
     let mut ctx = save_live(c);
@@ -484,14 +514,20 @@ pub fn vblank_start(c: &mut Iop) {
 /// Run the handlers registered for `edge` in priority order; a handler that
 /// returns 0 is removed (vblank.irx semantics).
 fn run_vblank_handlers(c: &mut Iop, edge: u32) {
-    let hs: Vec<VblankHandler> = c.k.vblank.iter().copied().filter(|h| h.edge == edge).collect();
+    let hs: Vec<VblankHandler> =
+        c.k.vblank
+            .iter()
+            .copied()
+            .filter(|h| h.edge == edge)
+            .collect();
     for h in hs {
         if c.halted.is_some() {
             return;
         }
         let keep = c.call_guest(h.handler, &[h.arg]);
         if keep == 0 {
-            c.k.vblank.retain(|x| !(x.edge == h.edge && x.handler == h.handler && x.arg == h.arg));
+            c.k.vblank
+                .retain(|x| !(x.edge == h.edge && x.handler == h.handler && x.arg == h.arg));
         }
     }
 }
@@ -510,10 +546,16 @@ pub fn load_module(c: &mut Iop, bytes: &[u8], path: &str) -> Result<i32, String>
     let name = irx::module_name_of(path);
     let base = layout::base_of(&name).ok_or_else(|| format!("{name} has no fixed load address"))?;
     let gen = crate::generated().ok_or("no generated IOP code registered")?;
-    let info = gen.modules.iter().find(|m| m.name.eq_ignore_ascii_case(&name)).ok_or_else(|| format!("{name} was not recompiled"))?;
+    let info = gen
+        .modules
+        .iter()
+        .find(|m| m.name.eq_ignore_ascii_case(&name))
+        .ok_or_else(|| format!("{name} was not recompiled"))?;
     let m = irx::load(bytes, base)?;
     if m.text_hash() != info.text_hash || info.base != base {
-        return Err(format!("{name}: disc image does not match the recompiled code (rerun recomp-iop)"));
+        return Err(format!(
+            "{name}: disc image does not match the recompiled code (rerun recomp-iop)"
+        ));
     }
     let size = m.image.len() as u32;
     let start = base as usize;
@@ -531,8 +573,22 @@ pub fn load_module(c: &mut Iop, bytes: &[u8], path: &str) -> Result<i32, String>
     let tid = c.k.create_thread(m.entry, 0x4000, 8, m.gp, 0x0200_0000, 0);
     c.k.threads.get_mut(&tid).unwrap().module_start = Some(id);
     c.k.start_thread(tid, 1, argv);
-    eprintln!("[iop] module {} ({}) at {base:#x}, {size:#x} bytes, entry {:#x}", id, m.name, m.entry);
-    c.k.modules.insert(id, Module { id, name, base, size, entry: m.entry, gp: m.gp, result: None });
+    eprintln!(
+        "[iop] module {} ({}) at {base:#x}, {size:#x} bytes, entry {:#x}",
+        id, m.name, m.entry
+    );
+    c.k.modules.insert(
+        id,
+        Module {
+            id,
+            name,
+            base,
+            size,
+            entry: m.entry,
+            gp: m.gp,
+            result: None,
+        },
+    );
     Ok(id)
 }
 

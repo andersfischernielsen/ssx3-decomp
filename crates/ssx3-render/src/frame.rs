@@ -116,11 +116,21 @@ fn f32_at(m: &dyn Mem, a: u32) -> f32 {
 }
 
 fn vec4(m: &dyn Mem, a: u32) -> [f32; 4] {
-    [f32_at(m, a), f32_at(m, a + 4), f32_at(m, a + 8), f32_at(m, a + 12)]
+    [
+        f32_at(m, a),
+        f32_at(m, a + 4),
+        f32_at(m, a + 8),
+        f32_at(m, a + 12),
+    ]
 }
 
 fn mat4(m: &dyn Mem, a: u32) -> [[f32; 4]; 4] {
-    [vec4(m, a), vec4(m, a + 16), vec4(m, a + 32), vec4(m, a + 48)]
+    [
+        vec4(m, a),
+        vec4(m, a + 16),
+        vec4(m, a + 32),
+        vec4(m, a + 48),
+    ]
 }
 
 // ---------------------------------------------------------------------------
@@ -297,7 +307,13 @@ pub struct Blend {
 
 impl Blend {
     pub fn from_reg(v: u64) -> Self {
-        Self { a: (v & 3) as u8, b: ((v >> 2) & 3) as u8, c: ((v >> 4) & 3) as u8, d: ((v >> 6) & 3) as u8, fix: (v >> 32) as u8 }
+        Self {
+            a: (v & 3) as u8,
+            b: ((v >> 2) & 3) as u8,
+            c: ((v >> 4) & 3) as u8,
+            d: ((v >> 6) & 3) as u8,
+            fix: (v >> 32) as u8,
+        }
     }
 }
 
@@ -329,7 +345,11 @@ pub fn blend_preset(p: u32, fix: u8) -> Option<u64> {
 
 /// The TEST register value (`GsPkt_AddTest`).
 pub fn test_reg(zsel: u32, asel: u32, aref: u32) -> u64 {
-    1 | AlphaTest::from_sel(asel).atst() << 1 | (aref as u64) << 4 | 1 << 12 | 1 << 16 | DepthTest::from_sel(zsel).ztst() << 17
+    1 | AlphaTest::from_sel(asel).atst() << 1
+        | (aref as u64) << 4
+        | 1 << 12
+        | 1 << 16
+        | DepthTest::from_sel(zsel).ztst() << 17
 }
 
 /// The ZBUF register value (`GsPkt_AddZbuf`).
@@ -341,7 +361,12 @@ pub fn zbuf_reg(zbp: u32, zpsm: u32, zmsk: bool) -> u64 {
 /// `{x, y, w, h}`.
 pub fn scissor_reg(r: [i16; 4]) -> u64 {
     let sx = |v: u32| v as i32 as i64 as u64;
-    let (x, y, w, h) = (r[0] as i32 as u32, r[1] as i32 as u32, r[2] as i32 as u32, r[3] as i32 as u32);
+    let (x, y, w, h) = (
+        r[0] as i32 as u32,
+        r[1] as i32 as u32,
+        r[2] as i32 as u32,
+        r[3] as i32 as u32,
+    );
     let x1 = sx(x.wrapping_sub(1).wrapping_add(w));
     let y1 = sx(y.wrapping_sub(1).wrapping_add(h));
     sx(x) | x1 << 16 | sx(y) << 32 | y1 << 48
@@ -399,7 +424,13 @@ impl RenderState {
     }
 
     pub fn read(m: &dyn Mem, a: u32) -> Self {
-        Self::decode([word(m, a), word(m, a + 4), word(m, a + 8), word(m, a + 12), word(m, a + 16)])
+        Self::decode([
+            word(m, a),
+            word(m, a + 4),
+            word(m, a + 8),
+            word(m, a + 12),
+            word(m, a + 16),
+        ])
     }
 
     /// The 10-bit sort value of the bucket key.
@@ -422,7 +453,10 @@ impl RenderState {
         if tex[1] >= 0 {
             t |= (tex[1] as u32 & 0xf) << 6;
         }
-        !((t & 0x3ff) << 3 | (31 - self.layer as u32) << 26 | (self.sort_key_value() & 0x3ff) << 16 | self.material.rank() << 13)
+        !((t & 0x3ff) << 3
+            | (31 - self.layer as u32) << 26
+            | (self.sort_key_value() & 0x3ff) << 16
+            | self.material.rank() << 13)
     }
 
     /// ALPHA register for context `ctx` (`None`: stale, see [`blend_preset`]).
@@ -434,7 +468,11 @@ impl RenderState {
     }
     /// TEST register (both contexts get the same value from a state change).
     pub fn test_reg(&self) -> u64 {
-        test_reg((self.raw[1] >> 23) & 3, (self.raw[1] >> 20) & 3, self.aref as u32)
+        test_reg(
+            (self.raw[1] >> 23) & 3,
+            (self.raw[1] >> 20) & 3,
+            self.aref as u32,
+        )
     }
     pub fn zbuf_reg(&self, zbp: u32, zpsm: u32) -> u64 {
         zbuf_reg(zbp, zpsm, self.zmask)
@@ -540,17 +578,40 @@ impl Emitter {
         let (w0, w1) = (d[0], d[1]);
         let aref = (w1 >> 12) & 0xff;
         self.set(reg::CLAMP_1, Some(Wrap::from_bits(w0 >> 2).clamp_reg()));
-        self.set(reg::ALPHA_1, blend_preset((w1 >> 2) & 0x1f, (w0 >> 12) as u8));
-        self.set(reg::ZBUF_1, Some(zbuf_reg(self.zbp, self.zpsm, (w1 >> 22) & 1 == 1)));
-        self.set(reg::TEST_1, Some(test_reg((w1 >> 23) & 3, (w1 >> 20) & 3, aref)));
+        self.set(
+            reg::ALPHA_1,
+            blend_preset((w1 >> 2) & 0x1f, (w0 >> 12) as u8),
+        );
+        self.set(
+            reg::ZBUF_1,
+            Some(zbuf_reg(self.zbp, self.zpsm, (w1 >> 22) & 1 == 1)),
+        );
+        self.set(
+            reg::TEST_1,
+            Some(test_reg((w1 >> 23) & 3, (w1 >> 20) & 3, aref)),
+        );
         self.set(reg::CLAMP_2, Some(Wrap::from_bits(w0 >> 4).clamp_reg()));
-        self.set(reg::ALPHA_2, blend_preset((w1 >> 7) & 0x1f, (w0 >> 20) as u8));
-        self.set(reg::ZBUF_2, Some(zbuf_reg(self.zbp, self.zpsm, (w1 >> 23) & 1 == 1)));
-        self.set(reg::TEST_2, Some(test_reg((w1 >> 25) & 3, (w1 >> 22) & 3, aref)));
+        self.set(
+            reg::ALPHA_2,
+            blend_preset((w1 >> 7) & 0x1f, (w0 >> 20) as u8),
+        );
+        self.set(
+            reg::ZBUF_2,
+            Some(zbuf_reg(self.zbp, self.zpsm, (w1 >> 23) & 1 == 1)),
+        );
+        self.set(
+            reg::TEST_2,
+            Some(test_reg((w1 >> 25) & 3, (w1 >> 22) & 3, aref)),
+        );
     }
 
     /// `DeferMan_EmitStateChange` for state `s` (words) and matrix index.
-    pub fn state_change(&mut self, s: [u32; 5], matrix: i32, scissors: &[[i16; 4]]) -> MaterialSetup {
+    pub fn state_change(
+        &mut self,
+        s: [u32; 5],
+        matrix: i32,
+        scissors: &[[i16; 4]],
+    ) -> MaterialSetup {
         self.writes.clear();
         let mut setup = MaterialSetup::default();
         let ty = (s[0] >> 6) & 0xf;
@@ -596,13 +657,19 @@ impl Emitter {
             self.set(reg::CLAMP_1, Some(Wrap::from_bits(w0 >> 2).clamp_reg()));
         }
         if e1 & 0x7c != w1 & 0x7c || (e0 >> 12) & 0xff != (w0 >> 12) & 0xff {
-            self.set(reg::ALPHA_1, blend_preset((w1 >> 2) & 0x1f, (w0 >> 12) as u8));
+            self.set(
+                reg::ALPHA_1,
+                blend_preset((w1 >> 2) & 0x1f, (w0 >> 12) as u8),
+            );
         }
         if e0 & 0x30 != w0 & 0x30 {
             self.set(reg::CLAMP_2, Some(Wrap::from_bits(w0 >> 4).clamp_reg()));
         }
         if e1 & 0xf80 != w1 & 0xf80 || (e0 >> 20) & 0xff != (w0 >> 20) & 0xff {
-            self.set(reg::ALPHA_2, blend_preset((w1 >> 7) & 0x1f, (w0 >> 20) as u8));
+            self.set(
+                reg::ALPHA_2,
+                blend_preset((w1 >> 7) & 0x1f, (w0 >> 20) as u8),
+            );
         }
         self.state = s;
         setup
@@ -652,9 +719,20 @@ impl MatrixRecord {
     /// VU1 header qw0-5 (worldView rows, guard scale, guard offset) as the
     /// raw bit patterns UNPACK V4-32 writes.
     pub fn header_qwords(&self) -> [u128; 6] {
-        let q = |v: [f32; 4]| v.iter().enumerate().fold(0u128, |acc, (i, f)| acc | (f.to_bits() as u128) << (32 * i));
+        let q = |v: [f32; 4]| {
+            v.iter()
+                .enumerate()
+                .fold(0u128, |acc, (i, f)| acc | (f.to_bits() as u128) << (32 * i))
+        };
         let wv = self.world_view;
-        [q(wv[0]), q(wv[1]), q(wv[2]), q(wv[3]), q(self.guard_scale), q(self.guard_offset)]
+        [
+            q(wv[0]),
+            q(wv[1]),
+            q(wv[2]),
+            q(wv[3]),
+            q(self.guard_scale),
+            q(self.guard_offset),
+        ]
     }
 }
 
@@ -671,7 +749,11 @@ pub enum Payload {
     MaskPath3(bool),
     /// A captured draw (`crate::direct`): its index in [`Built::direct`],
     /// the VIF registers and VU1 qw0-5 at its packet.
-    Native { index: u32, regs: crate::vif::VifRegs, header: [u128; 6] },
+    Native {
+        index: u32,
+        regs: crate::vif::VifRegs,
+        header: [u128; 6],
+    },
 }
 
 impl From<Event> for Payload {
@@ -681,7 +763,15 @@ impl From<Event> for Payload {
             Event::Direct(d) => Self::Gif(d.qwords),
             Event::Microcode { addr, bytes } => Self::Microcode { addr, bytes },
             Event::MaskPath3(b) => Self::MaskPath3(b),
-            Event::Native { index, regs, header } => Self::Native { index, regs, header },
+            Event::Native {
+                index,
+                regs,
+                header,
+            } => Self::Native {
+                index,
+                regs,
+                header,
+            },
         }
     }
 }
@@ -738,7 +828,11 @@ pub enum Pass {
     PhaseBoundary,
     /// Per view, at the start of phase 2.
     Bloom { view: u8, params: [u32; 7] },
-    ColorFilter { view: u8, scale: [f32; 3], offset: [f32; 3] },
+    ColorFilter {
+        view: u8,
+        scale: [f32; 3],
+        offset: [f32; 3],
+    },
     /// The chain contents of the post markers just before (GIF/VIF as
     /// emitted; the post passes themselves go through PATH3 in GifBuff).
     PostChain(Vec<Payload>),
@@ -874,9 +968,19 @@ fn tex_id(t: i16) -> Option<u16> {
 }
 
 /// Read the DeferMan bucket list and simulate the state emission.
-fn plan(m: &dyn Mem, g: u32, defer: u32, carry: &Carry, scissors: &[[i16; 4]], issues: &mut Vec<String>) -> (Plan, Emitter) {
+fn plan(
+    m: &dyn Mem,
+    g: u32,
+    defer: u32,
+    carry: &Carry,
+    scissors: &[[i16; 4]],
+    issues: &mut Vec<String>,
+) -> (Plan, Emitter) {
     let num_sorted = word(m, defer + dm::NUM_SORTED).min(2048);
-    let thresholds = [word(m, addr::LAYER_THRESHOLDS), word(m, addr::LAYER_THRESHOLDS + 4)];
+    let thresholds = [
+        word(m, addr::LAYER_THRESHOLDS),
+        word(m, addr::LAYER_THRESHOLDS + 4),
+    ];
     let bucket_of = |i: u32| word(m, defer + dm::SORT_LIST + i * 8 + 4);
     let layer_of = |i: u32| {
         let b = bucket_of(i);
@@ -943,7 +1047,9 @@ fn plan(m: &dyn Mem, g: u32, defer: u32, carry: &Carry, scissors: &[[i16; 4]], i
                     let key = word(m, defer + dm::SORT_LIST + i * 8);
                     let want = state.sort_key([texw as i16, (texw >> 16) as i16]);
                     if key != want {
-                        issues.push(format!("sorted {i}: key {key:#x}, state predicts {want:#x}"));
+                        issues.push(format!(
+                            "sorted {i}: key {key:#x}, state predicts {want:#x}"
+                        ));
                     }
                 }
                 draws.push(Draw {
@@ -958,7 +1064,11 @@ fn plan(m: &dyn Mem, g: u32, defer: u32, carry: &Carry, scissors: &[[i16; 4]], i
                     setup,
                     state_change: changed,
                     gs: em.regs,
-                    ad: if changed { em.writes.clone() } else { Vec::new() },
+                    ad: if changed {
+                        em.writes.clone()
+                    } else {
+                        Vec::new()
+                    },
                     packets: word(m, b + 0xc)..word(m, b + 0x10),
                     prelude: Vec::new(),
                     payload: Vec::new(),
@@ -974,7 +1084,15 @@ fn plan(m: &dyn Mem, g: u32, defer: u32, carry: &Carry, scissors: &[[i16; 4]], i
             last_state = 0;
         }
     }
-    (Plan { draws, ranges, thresholds, num_sorted }, em)
+    (
+        Plan {
+            draws,
+            ranges,
+            thresholds,
+            num_sorted,
+        },
+        em,
+    )
 }
 
 fn is_flushe_cnt(tag: u128, first: u128) -> bool {
@@ -1138,8 +1256,15 @@ pub fn keep_payloads(on: bool) {
 fn play_chain(m: &dyn Mem, vif: &mut Vif1, cache: &mut ChainCache, a: u32) {
     let key = (a, vif.regs);
     let snap = m.snapshot();
-    let unchanged = snap != 0 && cache.map.get(&key).is_some_and(|e| e.seen != 0 && e.ranges.iter().all(|&(s, t)| m.unchanged(s, t, e.seen)));
-    let hashed = if unchanged { None } else { sub_chain_hash(m, a) };
+    let unchanged = snap != 0
+        && cache.map.get(&key).is_some_and(|e| {
+            e.seen != 0 && e.ranges.iter().all(|&(s, t)| m.unchanged(s, t, e.seen))
+        });
+    let hashed = if unchanged {
+        None
+    } else {
+        sub_chain_hash(m, a)
+    };
     let hit = match (&hashed, cache.map.get_mut(&key)) {
         (None, Some(_)) => unchanged,
         (Some((h, ranges)), Some(e)) if e.hash == *h => {
@@ -1167,7 +1292,15 @@ fn play_chain(m: &dyn Mem, vif: &mut Vif1, cache: &mut ChainCache, a: u32) {
             if let Some(mut rec) = vif.recorded() {
                 cache.next_id += 1;
                 rec.id = cache.next_id;
-                cache.map.insert(key, CachedChain { hash, rec, ranges, seen: snap });
+                cache.map.insert(
+                    key,
+                    CachedChain {
+                        hash,
+                        rec,
+                        ranges,
+                        seen: snap,
+                    },
+                );
             }
         }
         _ => {
@@ -1186,7 +1319,12 @@ fn direct_check() -> bool {
 /// Decode a captured packet (CNT / REF tags from `start` to its end) and
 /// compare the program starts' input with the command's; the first
 /// difference.
-fn check_capture(m: &dyn Mem, vif: &Vif1, start: u32, r: &crate::direct::Recorded) -> Option<String> {
+fn check_capture(
+    m: &dyn Mem,
+    vif: &Vif1,
+    start: u32,
+    r: &crate::direct::Recorded,
+) -> Option<String> {
     let mut v = vif.clone_state();
     let mut t = start;
     let mut stack: Vec<u32> = Vec::new();
@@ -1225,41 +1363,81 @@ fn check_capture(m: &dyn Mem, vif: &Vif1, start: u32, r: &crate::direct::Recorde
             }
         }
         if v.events != n.events {
-            let first = v.events.iter().zip(&n.events).position(|(a, b)| a != b).unwrap_or(v.events.len().min(n.events.len()));
-            return Some(format!("{} events decoded, {} native; first difference at {first}: {:x?} / {:x?}", v.events.len(), n.events.len(), v.events.get(first), n.events.get(first)));
+            let first = v
+                .events
+                .iter()
+                .zip(&n.events)
+                .position(|(a, b)| a != b)
+                .unwrap_or(v.events.len().min(n.events.len()));
+            return Some(format!(
+                "{} events decoded, {} native; first difference at {first}: {:x?} / {:x?}",
+                v.events.len(),
+                n.events.len(),
+                v.events.get(first),
+                n.events.get(first)
+            ));
         }
         if v.regs != n.regs {
             return Some(format!("VIF registers {:x?} / {:x?}", v.regs, n.regs));
         }
         if v.mem[..] != n.mem[..] {
-            let q = (0..1024).find(|&i| v.mem[16 * i..16 * i + 16] != n.mem[16 * i..16 * i + 16]).unwrap_or(0);
+            let q = (0..1024)
+                .find(|&i| v.mem[16 * i..16 * i + 16] != n.mem[16 * i..16 * i + 16])
+                .unwrap_or(0);
             return Some(format!("VU memory differs first at qw {q:#x}"));
         }
         return None;
     }
-    let calls: Vec<_> = v.events.iter().filter_map(|e| if let Event::Call(c) = e { Some(c) } else { None }).collect();
+    let calls: Vec<_> = v
+        .events
+        .iter()
+        .filter_map(|e| {
+            if let Event::Call(c) = e {
+                Some(c)
+            } else {
+                None
+            }
+        })
+        .collect();
     match &r.cmd {
         crate::direct::Cmd::Ribbon { entry, calls: want } => {
             if calls.len() != want.len() {
-                return Some(format!("{} starts decoded, {} captured", calls.len(), want.len()));
+                return Some(format!(
+                    "{} starts decoded, {} captured",
+                    calls.len(),
+                    want.len()
+                ));
             }
             for (k, (c, w)) in calls.iter().zip(want).enumerate() {
                 if c.entry != Some(*entry) {
                     return Some(format!("start {k}: entry {:x?}", c.entry));
                 }
-                let got: HashMap<u16, u128> = c.writes().map(|&(a, q)| ((a.wrapping_sub(c.top as u16)) & 0x3ff, q)).collect();
+                let got: HashMap<u16, u128> = c
+                    .writes()
+                    .map(|&(a, q)| ((a.wrapping_sub(c.top as u16)) & 0x3ff, q))
+                    .collect();
                 for &(a, q) in w {
                     if got.get(&a) != Some(&q) {
-                        return Some(format!("start {k} qword {a}: decoded {:x?} captured {q:#x}", got.get(&a)));
+                        return Some(format!(
+                            "start {k} qword {a}: decoded {:x?} captured {q:#x}",
+                            got.get(&a)
+                        ));
                     }
                 }
                 if got.len() < w.len() {
-                    return Some(format!("start {k}: {} decoded qwords, {} captured", got.len(), w.len()));
+                    return Some(format!(
+                        "start {k}: {} decoded qwords, {} captured",
+                        got.len(),
+                        w.len()
+                    ));
                 }
             }
             None
         }
-        crate::direct::Cmd::Strip { .. } | crate::direct::Cmd::Vu(_) | crate::direct::Cmd::Post { .. } | crate::direct::Cmd::Link(_) => None,
+        crate::direct::Cmd::Strip { .. }
+        | crate::direct::Cmd::Vu(_)
+        | crate::direct::Cmd::Post { .. }
+        | crate::direct::Cmd::Link(_) => None,
     }
 }
 
@@ -1273,11 +1451,19 @@ pub fn build(m: &dyn Mem, g: u32, carry: &Carry) -> Built {
 ///
 /// `direct`: the frame's captured draws; a packet with a capture is not
 /// decoded (`Event::Native`).
-pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, direct: std::sync::Arc<Vec<crate::direct::Recorded>>) -> Built {
+pub fn build_cached(
+    m: &dyn Mem,
+    g: u32,
+    carry: &Carry,
+    cache: &mut ChainCache,
+    direct: std::sync::Arc<Vec<crate::direct::Recorded>>,
+) -> Built {
     let defer = word(m, g + gm::DEFER);
     let mut issues = Vec::new();
     let nm = word(m, defer + dm::NUM_MATRICES).min(dm::MAX_MATRICES);
-    let matrices: Vec<_> = (0..nm).map(|i| MatrixRecord::read(m, defer + dm::MATRICES + i * 0x180)).collect();
+    let matrices: Vec<_> = (0..nm)
+        .map(|i| MatrixRecord::read(m, defer + dm::MATRICES + i * 0x180))
+        .collect();
     let ns = word(m, defer + dm::NUM_SCISSORS).min(32);
     let scissors: Vec<[i16; 4]> = (0..32.max(ns))
         .take(32)
@@ -1292,10 +1478,26 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
     let gif_heads = [word(m, g + gm::QUEUED_GIF1), word(m, g + gm::QUEUED_GIF2)];
 
     // Walk both phases.
-    let starts: HashMap<u32, usize> = plan.draws.iter().enumerate().filter(|(_, d)| d.packets.start != 0).map(|(i, d)| (d.packets.start, i)).collect();
-    let called: Vec<usize> = plan.draws.iter().enumerate().filter(|(_, d)| d.packets.start != 0).map(|(i, _)| i).collect();
+    let starts: HashMap<u32, usize> = plan
+        .draws
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| d.packets.start != 0)
+        .map(|(i, d)| (d.packets.start, i))
+        .collect();
+    let called: Vec<usize> = plan
+        .draws
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| d.packets.start != 0)
+        .map(|(i, _)| i)
+        .collect();
     let mut next_called = 0usize;
-    let native: HashMap<u32, usize> = direct.iter().enumerate().map(|(i, r)| (r.start, i)).collect();
+    let native: HashMap<u32, usize> = direct
+        .iter()
+        .enumerate()
+        .map(|(i, r)| (r.start, i))
+        .collect();
     let mut w = Walker {
         m,
         vif: Vif1::new(carry.regs),
@@ -1330,16 +1532,22 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         for _ in 0..1_000_000 {
             // A captured draw's packet (a bucket's packets are reached by
             // CALL or NEXT): its command instead of its decoding.
-            if let Some(&k) = native.get(&tadr).filter(|_| w.in_payload.is_some() && recording.is_none() && w.vif.idle()) {
+            if let Some(&k) = native
+                .get(&tadr)
+                .filter(|_| w.in_payload.is_some() && recording.is_none() && w.vif.idle())
+            {
                 let r = &direct[k];
-                if let (true, crate::direct::Cmd::Vu(steps)) = (w.m.qword(tadr) == r.first_tag, &r.cmd) {
+                if let (true, crate::direct::Cmd::Vu(steps)) =
+                    (w.m.qword(tadr) == r.first_tag, &r.cmd)
+                {
                     if direct_check() {
                         if let Some(e) = check_capture(w.m, &w.vif, tadr, r) {
                             issues.push(format!("capture at {tadr:#x}: {e}"));
                         }
                     }
                     let first = w.vif.events.len();
-                    for run in steps.split_inclusive(|s| matches!(s, crate::direct::Step::Chain(_))) {
+                    for run in steps.split_inclusive(|s| matches!(s, crate::direct::Step::Chain(_)))
+                    {
                         w.vif.native(run);
                         if let Some(&crate::direct::Step::Chain(a)) = run.last() {
                             play_chain(w.m, &mut w.vif, cache, a);
@@ -1363,8 +1571,14 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                             issues.push(format!("capture at {tadr:#x}: {e}"));
                         }
                     }
-                    let header = std::array::from_fn(|i| u128::from_le_bytes(w.vif.mem[16 * i..16 * i + 16].try_into().unwrap()));
-                    w.vif.events.push(Event::Native { index: k as u32, regs: w.vif.regs, header });
+                    let header = std::array::from_fn(|i| {
+                        u128::from_le_bytes(w.vif.mem[16 * i..16 * i + 16].try_into().unwrap())
+                    });
+                    w.vif.events.push(Event::Native {
+                        index: k as u32,
+                        regs: w.vif.regs,
+                        header,
+                    });
                     w.vif.skip_starts(r.cmd.starts());
                     w.take_events();
                     tadr = r.end;
@@ -1376,7 +1590,13 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
             let qwc = (tag & 0xffff) as u32;
             let id = ((tag >> 28) & 7) as u32;
             let a = ((tag >> 32) & 0x7fff_fff0) as u32;
-            let spr = |x: u32| if (tag >> 63) & 1 != 0 { x | 0x8000_0000 } else { x };
+            let spr = |x: u32| {
+                if (tag >> 63) & 1 != 0 {
+                    x | 0x8000_0000
+                } else {
+                    x
+                }
+            };
             let top = asp == 0;
             let (data, mut next, end) = match id {
                 0 => (spr(a), tadr + 16, true),
@@ -1394,15 +1614,29 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                 w.flushe.push(w.events.len());
             }
             // A top-level CALL into a bucket's first packet starts its payload.
-            let bucket_call = if top && id == 5 { starts.get(&a).copied() } else { None };
+            let bucket_call = if top && id == 5 {
+                starts.get(&a).copied()
+            } else {
+                None
+            };
             w.feed(&q);
             if let Some(d) = bucket_call {
                 match called.get(next_called) {
                     Some(&want) if want == d => {}
-                    want => issues.push(format!("CALL {a:#x} at {tadr:#x} is draw {d}, expected {want:?}")),
+                    want => issues.push(format!(
+                        "CALL {a:#x} at {tadr:#x} is draw {d}, expected {want:?}"
+                    )),
                 }
-                next_called = called.iter().position(|&x| x == d).map_or(next_called, |p| p + 1);
-                regions.push(Region { phase: phase as u8, before: Some(d), events: region_start..w.events.len(), flushe: std::mem::take(&mut w.flushe) });
+                next_called = called
+                    .iter()
+                    .position(|&x| x == d)
+                    .map_or(next_called, |p| p + 1);
+                regions.push(Region {
+                    phase: phase as u8,
+                    before: Some(d),
+                    events: region_start..w.events.len(),
+                    flushe: std::mem::take(&mut w.flushe),
+                });
                 obs[d] = ChainObs {
                     call_tag: tadr,
                     ret_at_end: false,
@@ -1417,12 +1651,25 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
             // A CALL from inside a payload (a model's mesh chain): replay it
             // from the cache, or record it.
             let (use_cache, check) = chain_cache_mode();
-            if id == 5 && !top && w.in_payload.is_some() && recording.is_none() && use_cache && w.vif.idle() {
+            if id == 5
+                && !top
+                && w.in_payload.is_some()
+                && recording.is_none()
+                && use_cache
+                && w.vif.idle()
+            {
                 let key = (a, w.vif.regs);
                 let snap = w.m.snapshot();
                 // Unchanged since it was last seen: no hash needed.
-                let unchanged = snap != 0 && cache.map.get(&key).is_some_and(|e| e.seen != 0 && e.ranges.iter().all(|&(s, t)| w.m.unchanged(s, t, e.seen)));
-                let looked = if unchanged { Some(None) } else { sub_chain_hash(w.m, a).map(Some) };
+                let unchanged = snap != 0
+                    && cache.map.get(&key).is_some_and(|e| {
+                        e.seen != 0 && e.ranges.iter().all(|&(s, t)| w.m.unchanged(s, t, e.seen))
+                    });
+                let looked = if unchanged {
+                    Some(None)
+                } else {
+                    sub_chain_hash(w.m, a).map(Some)
+                };
                 if let Some(hashed) = looked {
                     let hit = match (&hashed, cache.map.get_mut(&key)) {
                         (None, Some(_)) => true,
@@ -1439,10 +1686,15 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                             if check {
                                 let mut v = w.vif.clone_state();
                                 let mut asr2 = [0u32; 2];
-                                crate::chain::walk(w.m, a, false, false, 0, &mut asr2, &mut |d| v.write(d));
+                                crate::chain::walk(w.m, a, false, false, 0, &mut asr2, &mut |d| {
+                                    v.write(d)
+                                });
                                 let mut r = w.vif.clone_state();
                                 r.replay(rec);
-                                if v.events != r.events || v.regs != r.regs || v.mem[..] != r.mem[..] {
+                                if v.events != r.events
+                                    || v.regs != r.regs
+                                    || v.mem[..] != r.mem[..]
+                                {
                                     issues.push(format!("chain cache: {a:#x} replays differently"));
                                 }
                             }
@@ -1478,7 +1730,15 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
                     if let Some(mut rec) = w.vif.recorded() {
                         cache.next_id += 1;
                         rec.id = cache.next_id;
-                        cache.map.insert(key, CachedChain { hash, rec, ranges, seen });
+                        cache.map.insert(
+                            key,
+                            CachedChain {
+                                hash,
+                                rec,
+                                ranges,
+                                seen,
+                            },
+                        );
                     }
                 } else if asp == 0 && recording.take().is_some() {
                     // (A recording that did not end at its RET: dropped.)
@@ -1503,17 +1763,31 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
             }
         }
         if !ended {
-            issues.push(format!("phase {} chain at {head:#x} did not end", phase + 1));
+            issues.push(format!(
+                "phase {} chain at {head:#x} did not end",
+                phase + 1
+            ));
         }
         if let Some(d) = w.in_payload.take() {
-            issues.push(format!("phase {} ended inside draw {d}'s payload", phase + 1));
+            issues.push(format!(
+                "phase {} ended inside draw {d}'s payload",
+                phase + 1
+            ));
             payload_ranges[d] = Some(payload_start..w.events.len());
         }
-        regions.push(Region { phase: phase as u8, before: None, events: region_start..w.events.len(), flushe: std::mem::take(&mut w.flushe) });
+        regions.push(Region {
+            phase: phase as u8,
+            before: None,
+            events: region_start..w.events.len(),
+            flushe: std::mem::take(&mut w.flushe),
+        });
     }
     for (i, d) in plan.draws.iter().enumerate() {
         if d.packets.start != 0 && obs[i].call_tag == 0 {
-            issues.push(format!("draw {i} (bucket {:#x}, start {:#x}) never CALLed", d.bucket, d.packets.start));
+            issues.push(format!(
+                "draw {i} (bucket {:#x}, start {:#x}) never CALLed",
+                d.bucket, d.packets.start
+            ));
         }
     }
 
@@ -1530,7 +1804,10 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
     let keep = KEEP_PAYLOADS.load(std::sync::atomic::Ordering::Relaxed);
     for (d, r) in payload_ranges.iter().enumerate() {
         if let Some(r) = r.as_ref().filter(|_| keep) {
-            draws[d].payload = events[r.clone()].iter().map(|(_, e)| e.clone().into()).collect();
+            draws[d].payload = events[r.clone()]
+                .iter()
+                .map(|(_, e)| e.clone().into())
+                .collect();
         }
     }
     let to_payload = |events: &[(Owner, Event)], r: Range<usize>| -> Vec<Payload> {
@@ -1539,7 +1816,10 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         }
         events[r].iter().map(|(_, e)| e.clone().into()).collect()
     };
-    let last_r0 = plan.ranges[0].end.checked_sub(1).filter(|_| !plan.ranges[0].is_empty());
+    let last_r0 = plan.ranges[0]
+        .end
+        .checked_sub(1)
+        .filter(|_| !plan.ranges[0].is_empty());
     let after_draw_of_region = {
         // The draw whose payload precedes each region (None for a phase head).
         let mut prev: Option<usize> = None;
@@ -1556,7 +1836,9 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
     let mut passes: Vec<Pass> = Vec::new();
     let mut cur: Vec<Draw> = Vec::new();
     let mut fog_done = false;
-    let views = |base: u32, stride: u32, n: u32| -> Vec<u32> { (0..n).map(|v| g + base + v * stride).collect() };
+    let views = |base: u32, stride: u32, n: u32| -> Vec<u32> {
+        (0..n).map(|v| g + base + v * stride).collect()
+    };
     let mut draw_slots: Vec<Option<Draw>> = draws.into_iter().map(Some).collect();
     let mut emitted_draws = 0usize;
     let flush_draws = |cur: &mut Vec<Draw>, passes: &mut Vec<Pass>| {
@@ -1579,21 +1861,41 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
             passes.push(Pass::PhaseBoundary);
             if plan.num_sorted > 0 && plan.thresholds[1] == 9 {
                 for (v, a) in views(gm::BLOOM, 0x1c, num_views).into_iter().enumerate() {
-                    passes.push(Pass::Bloom { view: v as u8, params: core::array::from_fn(|k| word(m, a + 4 * k as u32)) });
+                    passes.push(Pass::Bloom {
+                        view: v as u8,
+                        params: core::array::from_fn(|k| word(m, a + 4 * k as u32)),
+                    });
                 }
-                for (v, a) in views(gm::COLOR_FILTER, 0x18, num_views).into_iter().enumerate() {
+                for (v, a) in views(gm::COLOR_FILTER, 0x18, num_views)
+                    .into_iter()
+                    .enumerate()
+                {
                     let f = |k: u32| f32_at(m, a + 4 * k);
-                    passes.push(Pass::ColorFilter { view: v as u8, scale: [f(0), f(1), f(2)], offset: [f(3), f(4), f(5)] });
+                    passes.push(Pass::ColorFilter {
+                        view: v as u8,
+                        scale: [f(0), f(1), f(2)],
+                        offset: [f(3), f(4), f(5)],
+                    });
                 }
                 expect_post = true;
                 expect_default = true;
             }
         }
-        if !fog_done && last_r0.is_some() && after_draw_of_region[ri] == last_r0 && plan.thresholds[0] == 6 {
+        if !fog_done
+            && last_r0.is_some()
+            && after_draw_of_region[ri] == last_r0
+            && plan.thresholds[0] == 6
+        {
             fog_done = true;
             flush_draws(&mut cur, &mut passes);
-            for (v, a) in views(gm::DEPTH_FOG, 0x20, num_views).into_iter().enumerate() {
-                passes.push(Pass::DepthFog { view: v as u8, params: core::array::from_fn(|k| word(m, a + 4 * k as u32)) });
+            for (v, a) in views(gm::DEPTH_FOG, 0x20, num_views)
+                .into_iter()
+                .enumerate()
+            {
+                passes.push(Pass::DepthFog {
+                    view: v as u8,
+                    params: core::array::from_fn(|k| word(m, a + 4 * k as u32)),
+                });
             }
             expect_post = true;
             expect_default = true;
@@ -1601,16 +1903,27 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         // Split: [post][default state][prelude of the next draw].
         let mut fl = r.flushe.clone();
         let prelude_start = match r.before {
-            Some(d) if draw_slots[d].as_ref().is_some_and(|x| x.state_change) => fl.pop().unwrap_or_else(|| {
-                issues.push(format!("region {ri}: draw {d} predicts a state change, chain has no FLUSHE block"));
-                r.events.start
-            }),
+            Some(d) if draw_slots[d].as_ref().is_some_and(|x| x.state_change) => {
+                fl.pop().unwrap_or_else(|| {
+                    issues.push(format!(
+                        "region {ri}: draw {d} predicts a state change, chain has no FLUSHE block"
+                    ));
+                    r.events.start
+                })
+            }
             Some(_) => r.events.start,
             None => r.events.end,
         };
-        let default_start = if expect_default { fl.pop().unwrap_or(prelude_start) } else { prelude_start };
+        let default_start = if expect_default {
+            fl.pop().unwrap_or(prelude_start)
+        } else {
+            prelude_start
+        };
         if !fl.is_empty() {
-            issues.push(format!("region {ri}: {} extra FLUSHE state blocks", fl.len()));
+            issues.push(format!(
+                "region {ri}: {} extra FLUSHE state blocks",
+                fl.len()
+            ));
         }
         let post = r.events.start..default_start;
         let def = default_start..prelude_start;
@@ -1664,13 +1977,32 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         zbp: word(m, g + gm::ZBP),
         zpsm: word(m, g + gm::ZPSM),
         blit: word(m, g + gm::BLIT) != 0,
-        brightness_rgba: core::array::from_fn(|k| word(m, g + gm::BRIGHTNESS_RGBA + 4 * k as u32) as i32),
+        brightness_rgba: core::array::from_fn(|k| {
+            word(m, g + gm::BRIGHTNESS_RGBA + 4 * k as u32) as i32
+        }),
         brightness: f32_at(m, g + gm::BRIGHTNESS),
-        screen_offset: [f32_at(m, g + gm::SCREEN_OFFSET), f32_at(m, g + gm::SCREEN_OFFSET + 4)],
+        screen_offset: [
+            f32_at(m, g + gm::SCREEN_OFFSET),
+            f32_at(m, g + gm::SCREEN_OFFSET + 4),
+        ],
     };
-    let views = (0..num_views).map(|v| View { screen: mat4(m, g + gm::VIEW_MATRICES + v * 0x40) }).collect();
+    let views = (0..num_views)
+        .map(|v| View {
+            screen: mat4(m, g + gm::VIEW_MATRICES + v * 0x40),
+        })
+        .collect();
     Built {
-        frame: Frame { gm: g, defer, vif_heads, gif_heads, views, matrices, scissors: scissors[..ns.max(1) as usize].to_vec(), passes, display },
+        frame: Frame {
+            gm: g,
+            defer,
+            vif_heads,
+            gif_heads,
+            views,
+            matrices,
+            scissors: scissors[..ns.max(1) as usize].to_vec(),
+            passes,
+            display,
+        },
         events,
         obs,
         issues,
@@ -1679,7 +2011,10 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         emitter,
         direct,
         path3_post: Default::default(),
-        path3: Some([path3_packets(m, gif_heads[0]), path3_packets(m, gif_heads[1])]),
+        path3: Some([
+            path3_packets(m, gif_heads[0]),
+            path3_packets(m, gif_heads[1]),
+        ]),
         flip: flip_packet(m),
     }
 }
@@ -1691,7 +2026,13 @@ pub use pages::{flip_packet, path3_packets, texture_ranges};
 
 /// The frame built from the buckets and the captures, without walking the
 /// published chains (stage B; `native`).
-pub fn build_native(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, direct: std::sync::Arc<Vec<crate::direct::Recorded>>) -> Built {
+pub fn build_native(
+    m: &dyn Mem,
+    g: u32,
+    carry: &Carry,
+    cache: &mut ChainCache,
+    direct: std::sync::Arc<Vec<crate::direct::Recorded>>,
+) -> Built {
     native::build(m, g, carry, cache, direct)
 }
 
@@ -1705,7 +2046,16 @@ mod tests {
         assert_eq!(s.material, Material::None);
         assert_eq!(s.blend, [5, 5]);
         assert_eq!(s.alpha_reg(0), Some(0x44));
-        assert_eq!(s.blend(0), Some(Blend { a: 0, b: 1, c: 0, d: 1, fix: 0 }));
+        assert_eq!(
+            s.blend(0),
+            Some(Blend {
+                a: 0,
+                b: 1,
+                c: 0,
+                d: 1,
+                fix: 0
+            })
+        );
         assert_eq!(s.atst, AlphaTest::Greater);
         assert_eq!(s.aref, 0);
         assert!(!s.zmask);
@@ -1744,7 +2094,10 @@ mod tests {
         assert_eq!(blend_preset(2, 0x10), Some(0x80 << 32 | 0x68));
         assert_eq!(blend_preset(15, 0), None);
         assert_eq!(blend_preset(18, 0), None);
-        assert_eq!(test_reg(2, 2, 0x80), 1 | 2 << 1 | 0x80 << 4 | 1 << 12 | 1 << 16 | 1 << 17);
+        assert_eq!(
+            test_reg(2, 2, 0x80),
+            1 | 2 << 1 | 0x80 << 4 | 1 << 12 | 1 << 16 | 1 << 17
+        );
         assert_eq!(test_reg(0, 0, 0), 1 | 1 << 1 | 1 << 12 | 1 << 16 | 3 << 17);
     }
 
@@ -1756,12 +2109,24 @@ mod tests {
         assert!(a.sort_key([-1, -1]) < b.sort_key([-1, -1]));
         let p = RenderState::decode([4 << 6, 2, 7 << 5 | 5 << 10, 0, 0]);
         assert_eq!(p.sort_key_value(), 5);
-        assert_eq!(!p.sort_key([3, 0x12]), (31 - 7) << 26 | 5 << 16 | 1 << 13 | (3 | 2 << 6) << 3);
+        assert_eq!(
+            !p.sort_key([3, 0x12]),
+            (31 - 7) << 26 | 5 << 16 | 1 << 13 | (3 | 2 << 6) << 3
+        );
     }
 
     #[test]
     fn emitter_emits_only_differences_and_quirky_default() {
-        let mut e = Emitter { state: [0; 5], scissor: -1, matrix: -1, material_param: 0, regs: GsRegs::default(), zbp: 0xe0, zpsm: 0x31, writes: Vec::new() };
+        let mut e = Emitter {
+            state: [0; 5],
+            scissor: -1,
+            matrix: -1,
+            material_param: 0,
+            regs: GsRegs::default(),
+            zbp: 0xe0,
+            zpsm: 0x31,
+            writes: Vec::new(),
+        };
         let d = [0, 0xb0_0294, 0x80, 0, 0xffff_ffff];
         e.default_state(d);
         // Context 2 takes ZMSK from bit 23 and ZTST/ATST from bits 25/22.
@@ -1772,19 +2137,47 @@ mod tests {
         let mut s = d;
         s[0] |= 3 << 6;
         let setup = e.state_change(s, 2, &sc);
-        assert_eq!(setup, MaterialSetup { program: true, matrix: false, param: false });
+        assert_eq!(
+            setup,
+            MaterialSetup {
+                program: true,
+                matrix: false,
+                param: false
+            }
+        );
         assert_eq!(e.regs.get(reg::SCISSOR_1), Some(scissor_reg(sc[0])));
         // Unchanged TEST bits: TEST_2 keeps the default-state value.
         assert_eq!(e.regs.get(reg::TEST_2), Some(test_reg(0, 2, 0)));
         // Same type, other matrix: header only.
-        assert_eq!(e.state_change(s, 3, &sc), MaterialSetup { program: false, matrix: true, param: false });
+        assert_eq!(
+            e.state_change(s, 3, &sc),
+            MaterialSetup {
+                program: false,
+                matrix: true,
+                param: false
+            }
+        );
         // Type 6 with a new parameter: program, then param on change.
         let mut t = s;
         t[0] = 6 << 6;
         t[3] = 0x6241c0;
-        assert_eq!(e.state_change(t, 3, &sc), MaterialSetup { program: true, matrix: false, param: false });
+        assert_eq!(
+            e.state_change(t, 3, &sc),
+            MaterialSetup {
+                program: true,
+                matrix: false,
+                param: false
+            }
+        );
         t[3] = 0x6241e0;
-        assert_eq!(e.state_change(t, 3, &sc), MaterialSetup { program: false, matrix: false, param: true });
+        assert_eq!(
+            e.state_change(t, 3, &sc),
+            MaterialSetup {
+                program: false,
+                matrix: false,
+                param: true
+            }
+        );
     }
 
     #[test]

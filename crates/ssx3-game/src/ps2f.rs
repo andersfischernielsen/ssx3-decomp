@@ -138,7 +138,11 @@ impl FpuF32 {
     /// integer, denormals as zero.
     #[inline]
     pub fn key(self) -> i32 {
-        let x = if self.0 & 0x7f80_0000 == 0 { self.0 & 0x8000_0000 } else { self.0 };
+        let x = if self.0 & 0x7f80_0000 == 0 {
+            self.0 & 0x8000_0000
+        } else {
+            self.0
+        };
         let m = (x & 0x7fff_ffff) as i32;
         if x & 0x8000_0000 != 0 {
             -m
@@ -212,7 +216,10 @@ impl Vec4 {
         }
     }
     pub fn to_bits(self) -> u128 {
-        (self.x.0 as u128) | (self.y.0 as u128) << 32 | (self.z.0 as u128) << 64 | (self.w.0 as u128) << 96
+        (self.x.0 as u128)
+            | (self.y.0 as u128) << 32
+            | (self.z.0 as u128) << 64
+            | (self.w.0 as u128) << 96
     }
 }
 

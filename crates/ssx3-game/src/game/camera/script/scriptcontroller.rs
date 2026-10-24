@@ -2,136 +2,228 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
 use crate::call;
 use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::back_edge_unwinds;
+use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::computer::delete_if_flag;
+pub(crate) use crate::game::ai::computer::DELETE;
+pub(crate) use crate::game::animation::rideranimbase::sw;
+pub(crate) use crate::game::be::be::gp;
+pub(crate) use crate::game::camera::cameraalgorithms::lh;
+pub(crate) use crate::game::dirtysock::tags2::arg;
+pub(crate) use crate::game::fe::debugfe::at as at_2;
+pub(crate) use crate::game::fe::debugfe::r32_2;
+pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw;
+pub(crate) use crate::game::fe::fepopup::at as at_3;
+pub(crate) use crate::game::fe::fepopup::ld;
+pub(crate) use crate::game::fe::fepopup::lq;
+pub(crate) use crate::game::fe::fepopup::lw_9 as lw_2;
+pub(crate) use crate::game::fe::fepopup::sq;
+pub(crate) use crate::game::fe::fepopup::sw_4 as sw_2;
+pub(crate) use crate::game::fe::fereal::close;
+pub(crate) use crate::game::fe::fereal::open;
+pub(crate) use crate::game::fe::festateload::at;
+pub(crate) use crate::game::fe::festaterewards::r;
+pub(crate) use crate::game::scripter::ssxscriptengine::p;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::call::guest;
-use crate::call::sp;
-use crate::ps2f::FpuF32;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::abi::r32;
-use crate::events::deliver_event;
-pub(crate) use crate::game::ai::computer::DELETE;
-pub(crate) use crate::game::ai::computer::delete_if_flag;
-pub(crate) use crate::game::dirtysock::tags2::arg;
-pub(crate) use crate::game::fe::festateload::at;
-pub(crate) use crate::game::fe::debugfe::at as at_2;
-pub(crate) use crate::game::fe::debugfe::r32_2;
-pub(crate) use crate::game::fe::fereal::open;
-pub(crate) use crate::game::fe::fereal::close;
-pub(crate) use crate::game::scripter::ssxscriptengine::p;
-pub(crate) use crate::game::be::be::gp;
-pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw;
-pub(crate) use crate::game::animation::rideranimbase::sw;
-pub(crate) use crate::game::camera::cameraalgorithms::lh;
-pub(crate) use crate::game::fe::festaterewards::r;
-pub(crate) use crate::game::fe::fepopup::at as at_3;
-pub(crate) use crate::game::fe::fepopup::lw_9 as lw_2;
-pub(crate) use crate::game::fe::fepopup::sw_4 as sw_2;
-pub(crate) use crate::game::fe::fepopup::ld;
-pub(crate) use crate::game::fe::fepopup::lq;
-pub(crate) use crate::game::fe::fepopup::sq;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0016_8fe8, script_cam_controller_ctor, "ScriptCamController_ctor"),
-    (0x0016_90d0, script_cam_controller_dtor, "ScriptCamController_dtor"),
-    (0x0016_92d8, script_cam_controller_stop_script_camera, "ScriptCamController_StopScriptCamera"),
-    (0x0016_9340, script_cam_controller_push_algorithm, "ScriptCamController_PushAlgorithm"),
-    (0x0016_9418, script_camera_algo_ctor, "ScriptCameraAlgo_ctor"),
-    (0x0016_94b8, manual_script_camera_algo_ctor, "ManualScriptCameraAlgo_ctor"),
-    (0x0016_9518, manual_script_camera_algo_reset_for_rider, "ManualScriptCameraAlgo_ResetForRider"),
-    (0x0016_9540, manual_script_camera_algo_reset, "ManualScriptCameraAlgo_Reset"),
-    (0x0016_9570, manual_script_camera_algo_update, "ManualScriptCameraAlgo_Update"),
-    (0x0016_9828, manual_script_camera_get_view, "ManualScriptCameraAlgo_GetView"),
-    (0x0016_9cf8, target_script_camera_algo_ctor, "TargetScriptCameraAlgo_ctor"),
-    (0x0016_9d58, target_script_camera_algo_reset_for_rider, "TargetScriptCameraAlgo_ResetForRider"),
-    (0x0016_9d80, target_script_camera_algo_reset, "TargetScriptCameraAlgo_Reset"),
-    (0x0016_9db0, target_script_camera_algo_update, "TargetScriptCameraAlgo_Update"),
-    (0x0016_9f88, target_script_camera_get_view, "TargetScriptCameraAlgo_GetView"),
-    (0x0016_a458, subject_script_camera_algo_ctor, "SubjectScriptCameraAlgo_ctor"),
-    (0x0016_a4b8, subject_script_camera_algo_reset_for_rider, "SubjectScriptCameraAlgo_ResetForRider"),
-    (0x0016_a4e0, subject_script_camera_algo_reset, "SubjectScriptCameraAlgo_Reset"),
-    (0x0016_a868, subject_script_camera_get_view, "SubjectScriptCameraAlgo_GetView"),
-    (0x0016_ad38, algorithmic_script_camera_algo_ctor, "AlgorithmicScriptCameraAlgo_ctor"),
-    (0x0016_b150, algorithmic_script_camera_algo_reset, "AlgorithmicScriptCameraAlgo_Reset"),
-    (0x0016_b7b8, algorithmic_script_camera_get_view, "AlgorithmicScriptCameraAlgo_GetView"),
-    (0x0016_bef8, camera_trigger_list_dtor, "CameraTriggerList_dtor"),
+    (
+        0x0016_8fe8,
+        script_cam_controller_ctor,
+        "ScriptCamController_ctor",
+    ),
+    (
+        0x0016_90d0,
+        script_cam_controller_dtor,
+        "ScriptCamController_dtor",
+    ),
+    (
+        0x0016_92d8,
+        script_cam_controller_stop_script_camera,
+        "ScriptCamController_StopScriptCamera",
+    ),
+    (
+        0x0016_9340,
+        script_cam_controller_push_algorithm,
+        "ScriptCamController_PushAlgorithm",
+    ),
+    (
+        0x0016_9418,
+        script_camera_algo_ctor,
+        "ScriptCameraAlgo_ctor",
+    ),
+    (
+        0x0016_94b8,
+        manual_script_camera_algo_ctor,
+        "ManualScriptCameraAlgo_ctor",
+    ),
+    (
+        0x0016_9518,
+        manual_script_camera_algo_reset_for_rider,
+        "ManualScriptCameraAlgo_ResetForRider",
+    ),
+    (
+        0x0016_9540,
+        manual_script_camera_algo_reset,
+        "ManualScriptCameraAlgo_Reset",
+    ),
+    (
+        0x0016_9570,
+        manual_script_camera_algo_update,
+        "ManualScriptCameraAlgo_Update",
+    ),
+    (
+        0x0016_9828,
+        manual_script_camera_get_view,
+        "ManualScriptCameraAlgo_GetView",
+    ),
+    (
+        0x0016_9cf8,
+        target_script_camera_algo_ctor,
+        "TargetScriptCameraAlgo_ctor",
+    ),
+    (
+        0x0016_9d58,
+        target_script_camera_algo_reset_for_rider,
+        "TargetScriptCameraAlgo_ResetForRider",
+    ),
+    (
+        0x0016_9d80,
+        target_script_camera_algo_reset,
+        "TargetScriptCameraAlgo_Reset",
+    ),
+    (
+        0x0016_9db0,
+        target_script_camera_algo_update,
+        "TargetScriptCameraAlgo_Update",
+    ),
+    (
+        0x0016_9f88,
+        target_script_camera_get_view,
+        "TargetScriptCameraAlgo_GetView",
+    ),
+    (
+        0x0016_a458,
+        subject_script_camera_algo_ctor,
+        "SubjectScriptCameraAlgo_ctor",
+    ),
+    (
+        0x0016_a4b8,
+        subject_script_camera_algo_reset_for_rider,
+        "SubjectScriptCameraAlgo_ResetForRider",
+    ),
+    (
+        0x0016_a4e0,
+        subject_script_camera_algo_reset,
+        "SubjectScriptCameraAlgo_Reset",
+    ),
+    (
+        0x0016_a868,
+        subject_script_camera_get_view,
+        "SubjectScriptCameraAlgo_GetView",
+    ),
+    (
+        0x0016_ad38,
+        algorithmic_script_camera_algo_ctor,
+        "AlgorithmicScriptCameraAlgo_ctor",
+    ),
+    (
+        0x0016_b150,
+        algorithmic_script_camera_algo_reset,
+        "AlgorithmicScriptCameraAlgo_Reset",
+    ),
+    (
+        0x0016_b7b8,
+        algorithmic_script_camera_get_view,
+        "AlgorithmicScriptCameraAlgo_GetView",
+    ),
+    (
+        0x0016_bef8,
+        camera_trigger_list_dtor,
+        "CameraTriggerList_dtor",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
 pub(crate) mod callee {
     use super::Callee;
-    use ssx3_ee as ee;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SETUP_MAN_SET_LOCAL_CHARACTER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SETUP_MAN_SEND_CHARACTER_MSG;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_START;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_CAN_SKIP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_GET_PLAY_STATUS_2 as SCRIPT_LIST_GET_PLAY_STATUS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_BINDING_CTOR_4 as SCRIPT_BINDING_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_OBJ_CTOR_3 as SCRIPT_OBJ_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::TRANSITION_MAN_STOP_TRANSITION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::TRANSITION_MAN_SCRIPT_SET_OWNER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::PATH_PLAT_FIND_BANK_SLOT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MENU_SYS_ITEM_DRAW_ROW_4 as MENU_SYS_ITEM_DRAW_ROW;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MENU_SYS_ITEM_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MATH_EVAL_CUBIC;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_DELETE_ALL;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_NODE_DTOR_BODY;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_OBJECT_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LINE_STRIP_CLOSE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LINE_STRIP_ADD_VERTEX;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::KEYBOARD_POPUP_UPDATE_SCROLL_WINDOW;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::KEYBOARD_POPUP_MASK_TEXT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::KEYBOARD_POPUP_UPDATE_CURSOR_2 as KEYBOARD_POPUP_UPDATE_CURSOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INPUT_SYNC_PACK_SAMPLE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INPUT_SYNC_UNPACK_SAMPLE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_IS_LOADED_WITH_NAME;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_LOAD_QUEUE_CANCEL_BANK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_LOAD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ATTACHED_DYNAMIC_EMITTER_CREATE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BELIBRARY_DTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BE_GET_RIDER_CHARACTER;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BE_GET_RIDER_PROFILE;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::BE_REWARD_INT_IS_PEAK_GOAL_COMPLETE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VEC3_NEG_DOT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT_3 as SCRIPT_LIST_IS_PLAYING_SCRIPT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_DATA_GET_INFO_4 as SCRIPT_DATA_GET_INFO;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::IN_SEQ_INSTANCE_GET_REMAINING_STEPS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_START_TRANSITION;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_ALGORITHM_DEFAULT_FOV;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::CBX_STRING_CONCAT_COPY;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::CBX_STRING_CTOR_COPY;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::CBX_STRING_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ATTACHED_DYNAMIC_EMITTER_CREATE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::CROWD_MAN2D_CLEAR_SLOT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_STREAM_REWIND_READ;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::CAMERA_ALGORITHM_DEFAULT_FOV;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BE_GET_RIDER_CHARACTER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GAME_PROCESS_CTOR;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_FLAG_MANAGER_GROUP_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MC_MANAGER_GET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_REPLACE_WITH_DEAD_NODE;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::FE_LOCALE_UNLOAD_TABLE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_FIRST_5 as UI_LIST_FIRST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_NODE_IS_SENTINEL;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_ASCII_TO_WIDE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_TEXT_SET_WIDE_STRING_INTERNAL;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BELIBRARY_DTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GAME_PROCESS_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INPUT_SYNC_PACK_SAMPLE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INPUT_SYNC_UNPACK_SAMPLE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::IN_SEQ_INSTANCE_GET_REMAINING_STEPS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::KEYBOARD_POPUP_MASK_TEXT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::KEYBOARD_POPUP_UPDATE_CURSOR_2 as KEYBOARD_POPUP_UPDATE_CURSOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::KEYBOARD_POPUP_UPDATE_SCROLL_WINDOW;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LINE_STRIP_ADD_VERTEX;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::LINE_STRIP_CLOSE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MATH_EVAL_CUBIC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MC_MANAGER_GET;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::MEM_MAN_FREE_ENTRY;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MENU_SYS_ITEM_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MENU_SYS_ITEM_DRAW_ROW_4 as MENU_SYS_ITEM_DRAW_ROW;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::PATH_PLAT_FIND_BANK_SLOT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_STREAM_REWIND_READ;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_BINDING_CTOR_4 as SCRIPT_BINDING_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_DATA_GET_INFO_4 as SCRIPT_DATA_GET_INFO;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_CAN_SKIP;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_GET_PLAY_STATUS_2 as SCRIPT_LIST_GET_PLAY_STATUS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT_3 as SCRIPT_LIST_IS_PLAYING_SCRIPT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_START;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_START_TRANSITION;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_OBJ_CTOR_3 as SCRIPT_OBJ_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SETUP_MAN_SEND_CHARACTER_MSG;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SETUP_MAN_SET_LOCAL_CHARACTER;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_IS_LOADED_WITH_NAME;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_BANK_LOAD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SND_LOAD_QUEUE_CANCEL_BANK;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::TRANSITION_MAN_SCRIPT_SET_OWNER;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::TRANSITION_MAN_STOP_TRANSITION;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_ASCII_TO_WIDE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_DELETE_ALL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_FIRST_5 as UI_LIST_FIRST;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_NODE_DTOR_BODY;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_NODE_IS_SENTINEL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_OBJECT_DTOR;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_SCREEN_FIND_OBJECT_3 as UI_SCREEN_FIND_OBJECT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_TEXT_SET_WIDE_STRING_INTERNAL;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VEC3_NEG_DOT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_REPLACE_WITH_DEAD_NODE;
+    use ssx3_ee as ee;
 
     pub const MATH_SIN_COS: u32 = 0x0031_be50;
 
@@ -182,18 +274,20 @@ pub(crate) mod camera {
 
 /// `gp`-relative globals used here.
 pub(crate) mod g {
-    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
+    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
+    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER;
     pub(crate) use crate::game::fe::festateload::g::SAVE_BUFFER_END;
-    pub(crate) use crate::game::fe::festateload::g::BE_OPTION_SINGLETON;
-    pub(crate) use crate::game::fe::festateload::g::FE_BASE_BACK;
-    pub(crate) use crate::game::fe::festateload::g::BOLT_FILE_CACHE;
+    pub(crate) use crate::game::fe::festateload::g::WORLD_TRIGGER_MANAGER;
 }
 
-pub(crate) const SCRIPT_CAMERA_ALGO_CTOR: Callee = Callee { addr: 0x0016_9418, f: ee::s02::f_00169418 };
+pub(crate) const SCRIPT_CAMERA_ALGO_CTOR: Callee = Callee {
+    addr: 0x0016_9418,
+    f: ee::s02::f_00169418,
+};
 
 pub(crate) const CAMERA_WOBBLE_INIT: u32 = 0x0015_fff0;
-
 
 /// `AlgorithmicScriptCameraAlgo *AlgorithmicScriptCameraAlgo_ctor(...)`
 /// (0x16ad38): construct the `ScriptCameraAlgo` base, initialise the camera
@@ -228,7 +322,6 @@ pub fn algorithmic_script_camera_algo_ctor(c: &mut Cpu) {
     })
 }
 
-
 /// `void AlgorithmicScriptCameraAlgo_Reset(AlgorithmicScriptCameraAlgo *this)`
 /// (0x16b150): call the vtable slot at `this+0x10 -> +0x18/+0x1c` with
 /// `arg = 0`.
@@ -250,7 +343,6 @@ pub fn algorithmic_script_camera_algo_reset(c: &mut Cpu) {
     })
 }
 
-
 /// The identity matrix and the three world axes, in `.bss` at boot.
 pub(crate) const IDENTITY_MAT: u32 = 0x004f_f1a0;
 
@@ -259,7 +351,6 @@ pub(crate) const AXIS_X: u32 = 0x004f_f140;
 pub(crate) const AXIS_Z: u32 = 0x004f_f150;
 
 pub(crate) const AXIS_Y: u32 = 0x004f_f160;
-
 
 // ---------------------------------------------------------------------------
 // Small helpers.
@@ -271,7 +362,6 @@ pub(crate) fn quad_copy(c: &mut Cpu, from: u32, to: u32) {
     c.sq(3, to);
 }
 
-
 /// `m = *(m0)` as the original copies the identity: four `lqc2`/`sqc2`
 /// pairs through vf1..vf4.
 pub(crate) fn copy_matrix(c: &mut Cpu, dst: u32, src: u32) {
@@ -282,7 +372,6 @@ pub(crate) fn copy_matrix(c: &mut Cpu, dst: u32, src: u32) {
         c.sqc2(1 + i as usize, dst + 0x10 * i);
     }
 }
-
 
 /// `out = m * v`, the VU0 "sum of scaled columns" product: vf4..vf7 are the
 /// matrix columns, vf8 the vector, and the result lands in vf12 (left in the
@@ -298,7 +387,6 @@ pub(crate) fn mat_vec(c: &mut Cpu, m: u32, v: u32, out: u32) {
     c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
     c.sqc2(12, out);
 }
-
 
 /// `m = m * r` for two column-major 4x4 matrices, in place, as the original
 /// emits it: four independent `MULA/MADDA/MADDA/MADD` chains into
@@ -323,7 +411,6 @@ pub(crate) fn mat_mul(c: &mut Cpu, m: u32, r: u32) {
     }
 }
 
-
 /// One `ctmRotAxis` step: `sincos(angle)` into `sin`/`cos`, build the
 /// axis-angle rotation matrix at `r`, then `m = m * r`.
 ///
@@ -340,7 +427,16 @@ pub(crate) fn mat_mul(c: &mut Cpu, m: u32, r: u32) {
 /// The 4th column is `(0, 0, 0, 1)`. Leaves `f0` and `f1` as the original's
 /// last two results (`f0 = a*x*y - s*z`, `f1 = a*y*y + cos`).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn rot_axis(c: &mut Cpu, m: u32, r: u32, axis: u32, angle: FpuF32, sin: u32, cos: u32, ret: u32) -> Flow {
+pub(crate) fn rot_axis(
+    c: &mut Cpu,
+    m: u32,
+    r: u32,
+    axis: u32,
+    angle: FpuF32,
+    sin: u32,
+    cos: u32,
+    ret: u32,
+) -> Flow {
     c.f[12] = angle.0;
     c.g[A0][0] = sx(sin);
     c.g[A1][0] = sx(cos);
@@ -403,14 +499,19 @@ pub(crate) fn rot_axis(c: &mut Cpu, m: u32, r: u32, axis: u32, angle: FpuF32, si
     Ok(())
 }
 
-
 // ---------------------------------------------------------------------------
 // Script camera views.
 
 /// Shared body of the four `*ScriptCameraAlgo_GetView` functions: `out` is
 /// the object whose view (position at +0, quaternion at +0x10) is written,
 /// `cam` the script camera, and `wobble` the offset of its wobble sub-object.
-pub(crate) fn script_camera_get_view(c: &mut Cpu, out: u64, cam: u32, wobble: u32, base: u32) -> Flow {
+pub(crate) fn script_camera_get_view(
+    c: &mut Cpu,
+    out: u64,
+    cam: u32,
+    wobble: u32,
+    base: u32,
+) -> Flow {
     c.cycles += 308;
     let frame = Frame::open(c, 0x150);
     frame.save(c, S0, 0x130);
@@ -459,16 +560,43 @@ pub(crate) fn script_camera_get_view(c: &mut Cpu, out: u64, cam: u32, wobble: u3
     let phase = FpuF32(c.f[0]);
     let pitch = Addr(cam + camera::ANGLE_PITCH).read_fpu(c) + phase;
     c.g[S0][0] = sx(AXIS_X);
-    rot_axis(c, m, m + 0x70, AXIS_X, pitch, m + 0xb0, m + 0xb4, base + ret::ROT_X)?;
+    rot_axis(
+        c,
+        m,
+        m + 0x70,
+        AXIS_X,
+        pitch,
+        m + 0xb0,
+        m + 0xb4,
+        base + ret::ROT_X,
+    )?;
     let roll = -Addr(cam + camera::ANGLE_B).read_fpu(c);
     c.g[S0][0] = 0x0050_0000;
     c.g[S1][0] = sx(AXIS_Z);
     c.g[S3][0] = sx(m);
-    rot_axis(c, m, m + 0x40, AXIS_Z, roll, m + 0xb8, m + 0xbc, base + ret::ROT_Z)?;
+    rot_axis(
+        c,
+        m,
+        m + 0x40,
+        AXIS_Z,
+        roll,
+        m + 0xb8,
+        m + 0xbc,
+        base + ret::ROT_Z,
+    )?;
     let yaw = Addr(cam + camera::ANGLE_A).read_fpu(c);
     c.g[S0][0] = sx(m);
     c.g[S4][0] = sx(m + 0x40);
-    rot_axis(c, m, m + 0x40, AXIS_Y, yaw, m + 0xc0, m + 0xc4, base + ret::ROT_Y)?;
+    rot_axis(
+        c,
+        m,
+        m + 0x40,
+        AXIS_Y,
+        yaw,
+        m + 0xc0,
+        m + 0xc4,
+        base + ret::ROT_Y,
+    )?;
 
     // Incidental registers the original leaves in the 3rd rotation step.
     c.g[V0][0] = sx(0x0050_0000);
@@ -491,7 +619,6 @@ pub(crate) fn script_camera_get_view(c: &mut Cpu, out: u64, cam: u32, wobble: u3
     Ok(())
 }
 
-
 /// `void ManualScriptCameraAlgo_GetView(SomeObj *out, Camera *cam)` (0x169828).
 pub fn manual_script_camera_get_view(c: &mut Cpu) {
     guest(c, |c| {
@@ -500,7 +627,6 @@ pub fn manual_script_camera_get_view(c: &mut Cpu) {
         script_camera_get_view(c, out, cam, cam.wrapping_add(0x74), 0x0016_9828)
     })
 }
-
 
 /// `void TargetScriptCameraAlgo_GetView(SomeObj *out, Camera *cam)` (0x169f88).
 pub fn target_script_camera_get_view(c: &mut Cpu) {
@@ -511,7 +637,6 @@ pub fn target_script_camera_get_view(c: &mut Cpu) {
     })
 }
 
-
 /// `void SubjectScriptCameraAlgo_GetView(SomeObj *out, Camera *cam)` (0x16a868).
 pub fn subject_script_camera_get_view(c: &mut Cpu) {
     guest(c, |c| {
@@ -520,7 +645,6 @@ pub fn subject_script_camera_get_view(c: &mut Cpu) {
         script_camera_get_view(c, out, cam, cam.wrapping_add(0x70), 0x0016_a868)
     })
 }
-
 
 /// `void AlgorithmicScriptCameraAlgo_GetView(SomeObj *out, Camera *cam)`
 /// (0x16b7b8).
@@ -532,12 +656,10 @@ pub fn algorithmic_script_camera_get_view(c: &mut Cpu) {
     })
 }
 
-
 /// `void CameraTriggerList_dtor(CameraTriggerList* l, int flags)` (0x16bef8).
 pub fn camera_trigger_list_dtor(c: &mut Cpu) {
     guest(c, |c| delete_if_flag(c, 0x0016_bf10))
 }
-
 
 /// `void ScriptCamController_PushAlgorithm(ScriptCamController* c, void* algo)`
 /// (0x169340): push `algo` onto the list at `c->+8` with weight 1.0f.
@@ -555,7 +677,6 @@ pub fn script_cam_controller_push_algorithm(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Script camera algorithms: the reset hook forwards to `self->v05()`.
@@ -581,24 +702,20 @@ pub(crate) fn script_camera_algo_reset_for_rider(c: &mut Cpu, ret: u32) -> Flow 
     Ok(())
 }
 
-
 /// The manual script camera algorithm's `ResetForRider`.
 pub fn manual_script_camera_algo_reset_for_rider(c: &mut Cpu) {
     guest(c, |c| script_camera_algo_reset_for_rider(c, 0x0016_9534))
 }
-
 
 /// The target script camera algorithm's `ResetForRider`.
 pub fn target_script_camera_algo_reset_for_rider(c: &mut Cpu) {
     guest(c, |c| script_camera_algo_reset_for_rider(c, 0x0016_9d74))
 }
 
-
 /// The subject script camera algorithm's `ResetForRider`.
 pub fn subject_script_camera_algo_reset_for_rider(c: &mut Cpu) {
     guest(c, |c| script_camera_algo_reset_for_rider(c, 0x0016_a4d4))
 }
-
 
 /// One of the scripted camera algorithms' `Reset` (0x169540, 0x169d80,
 /// 0x16a4e0): call the algorithm's `v03` (slot at `+0x18`, method at `+0x1c`
@@ -622,13 +739,11 @@ pub(crate) fn script_camera_algo_reset(c: &mut Cpu, ret: u32) {
     });
 }
 
-
 /// `void ManualScriptCameraAlgo_Reset(ManualScriptCameraAlgo* self)`
 /// (0x169540).
 pub fn manual_script_camera_algo_reset(c: &mut Cpu) {
     script_camera_algo_reset(c, 0x0016_9560);
 }
-
 
 /// `void TargetScriptCameraAlgo_Reset(TargetScriptCameraAlgo* self)`
 /// (0x169d80).
@@ -636,13 +751,11 @@ pub fn target_script_camera_algo_reset(c: &mut Cpu) {
     script_camera_algo_reset(c, 0x0016_9da0);
 }
 
-
 /// `void SubjectScriptCameraAlgo_Reset(SubjectScriptCameraAlgo* self)`
 /// (0x16a4e0).
 pub fn subject_script_camera_algo_reset(c: &mut Cpu) {
     script_camera_algo_reset(c, 0x0016_a500);
 }
-
 
 /// `void ManualScriptCameraAlgo_ctor(ManualScriptCameraAlgo* self)` (0x1694b8).
 pub fn manual_script_camera_algo_ctor(c: &mut Cpu) {
@@ -676,7 +789,6 @@ pub fn manual_script_camera_algo_ctor(c: &mut Cpu) {
     })
 }
 
-
 /// `void TargetScriptCameraAlgo_ctor(TargetScriptCameraAlgo* self)` (0x169cf8).
 pub fn target_script_camera_algo_ctor(c: &mut Cpu) {
     guest(c, |c| {
@@ -709,7 +821,6 @@ pub fn target_script_camera_algo_ctor(c: &mut Cpu) {
     })
 }
 
-
 /// `void SubjectScriptCameraAlgo_ctor(SubjectScriptCameraAlgo* self)` (0x16a458).
 pub fn subject_script_camera_algo_ctor(c: &mut Cpu) {
     guest(c, |c| {
@@ -741,7 +852,6 @@ pub fn subject_script_camera_algo_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void ScriptCamController_StopScriptCamera(ctrl, algo)` (0x1692d8): walk
 /// the algorithm list for the entry with `algo->key` and remove it; clear the
@@ -798,7 +908,6 @@ pub fn script_cam_controller_stop_script_camera(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Script camera algorithm.
 
@@ -845,7 +954,6 @@ pub fn script_camera_algo_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void ScriptCamController_Update(self)` (0x169368): blend every script
 /// camera's weight towards 1.0 and update its algorithm.
@@ -912,7 +1020,6 @@ pub fn script_cam_controller_update(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // `ScriptCamController_dtor` (0x001690d0).
 //
@@ -922,7 +1029,6 @@ pub fn script_cam_controller_update(c: &mut Cpu) {
 
 pub fn script_cam_controller_dtor(c: &mut Cpu) {
     guest(c, |c| {
-
         c.cycles += 14;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));
         c.g[V0][0] = 0x460000;
@@ -938,72 +1044,74 @@ pub fn script_cam_controller_dtor(c: &mut Cpu) {
         c.sw((c.g[S1][0] as u32).wrapping_add(0x14), c.g[V0][0]);
         c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
         'l_169108: loop {
-        'b_169140: {
-        c.cycles += 9;
-        c.g[S0][0] = sx((c.g[S2][0] as u32) << 2);
-        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-        c.g[RA][0] = sx(0x00169118);
-        c.g[A0][0] = c.lw((c.g[V0][0] as u32));
-        call_ptr(c, 0x002832d8, 0x00169118)?;
-        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
-        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
-        c.g[S0][0] = c.lw((c.g[S0][0] as u32));
-        let t = c.g[S0][0] == 0u64;
-        c.g[A1][0] = 0x3;
-        if t {
-        break 'b_169140;
-        } else {
-        c.cycles += 5;
-        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
-        c.g[V1][0] = vslot(c, c.g[V0][0], 0x8, V1);
-        let t = c.g[V1][0] as u32;
-        c.g[RA][0] = sx(0x00169140);
-        c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-        call_ptr(c, t, 0x00169140)?;
-        break 'b_169140;
-        }
-        }
-        c.cycles += 4;
-        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
-        c.g[V0][0] = ((c.g[S2][0] as i64) < 2i64) as u64;
-        if c.g[V0][0] != 0u64 {
-        c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
-        if crate::events::event_due(c) { crate::events::deliver_event_here(c, 0x00169108); }
-        continue 'l_169108;
-        } else {
-        'b_169168: {
-        c.cycles += 3;
-        c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
-        if c.g[A0][0] == 0u64 {
-        c.g[A0][0] = c.g[S1][0];
-        break 'b_169168;
-        } else {
-        c.cycles += 3;
-        c.g[RA][0] = sx(0x00169164);
-        call_ptr(c, 0x00317e98, 0x00169164)?;
-        c.g[A0][0] = c.g[S1][0];
-        break 'b_169168;
-        }
-        }
-        c.cycles += 9;
-        c.g[RA][0] = sx(0x00169170);
-        c.g[A1][0] = c.g[S3][0];
-        call_ptr(c, 0x0015cc10, 0x00169170)?;
-        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
-        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
-        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-        let t = c.g[RA][0] as u32;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
-        c.pc = t; return Ok(());
-        }
+            'b_169140: {
+                c.cycles += 9;
+                c.g[S0][0] = sx((c.g[S2][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                c.g[RA][0] = sx(0x00169118);
+                c.g[A0][0] = c.lw((c.g[V0][0] as u32));
+                call_ptr(c, 0x002832d8, 0x00169118)?;
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                c.g[S0][0] = c.lw((c.g[S0][0] as u32));
+                let t = c.g[S0][0] == 0u64;
+                c.g[A1][0] = 0x3;
+                if t {
+                    break 'b_169140;
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                    c.g[V1][0] = vslot(c, c.g[V0][0], 0x8, V1);
+                    let t = c.g[V1][0] as u32;
+                    c.g[RA][0] = sx(0x00169140);
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    call_ptr(c, t, 0x00169140)?;
+                    break 'b_169140;
+                }
+            }
+            c.cycles += 4;
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(0x1));
+            c.g[V0][0] = ((c.g[S2][0] as i64) < 2i64) as u64;
+            if c.g[V0][0] != 0u64 {
+                c.g[V0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                if crate::events::event_due(c) {
+                    crate::events::deliver_event_here(c, 0x00169108);
+                }
+                continue 'l_169108;
+            } else {
+                'b_169168: {
+                    c.cycles += 3;
+                    c.g[A0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x1c));
+                    if c.g[A0][0] == 0u64 {
+                        c.g[A0][0] = c.g[S1][0];
+                        break 'b_169168;
+                    } else {
+                        c.cycles += 3;
+                        c.g[RA][0] = sx(0x00169164);
+                        call_ptr(c, 0x00317e98, 0x00169164)?;
+                        c.g[A0][0] = c.g[S1][0];
+                        break 'b_169168;
+                    }
+                }
+                c.cycles += 9;
+                c.g[RA][0] = sx(0x00169170);
+                c.g[A1][0] = c.g[S3][0];
+                call_ptr(c, 0x0015cc10, 0x00169170)?;
+                c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x40));
+                c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x30));
+                c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x20));
+                c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x10));
+                c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+                let t = c.g[RA][0] as u32;
+                c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x50));
+                c.pc = t;
+                return Ok(());
+            }
         }
 
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Register and memory helpers.
@@ -1020,7 +1128,6 @@ pub(crate) fn vslot(c: &mut Cpu, vt: u64, off: u32, vreg: usize) -> u64 {
     c.g[vreg][0] = func;
     func
 }
-
 
 // ---------------------------------------------------------------------------
 // Script camera.
@@ -1102,7 +1209,6 @@ pub fn script_cam_controller_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void func_00169DB0(void* p)` (0x169db0): update a target-script camera
 /// algorithm: take the target camera's position and orientation, convert
@@ -1249,7 +1355,6 @@ pub fn target_script_camera_algo_update(c: &mut Cpu) {
     c.pc = t;
     return;
 }
-
 
 /// `void func_00169570(void* p)` (0x169570): update a manual-script camera
 /// algorithm: take the camera's offset and the rig matrix, place the target,
@@ -1550,99 +1655,106 @@ pub fn manual_script_camera_algo_update(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::compare;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::check;
-    use crate::difftest::check_lohi;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
     use crate::difftest::scramble;
+    use crate::difftest::seed_count;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::put_vec;
+    use crate::difftest::RA as RET;
+    pub(crate) use crate::game::be::beintmission::tests::SEEDS as SEEDS_3;
+    pub(crate) use crate::game::be::beintoption::tests::slot;
+    pub(crate) use crate::game::be::beintoption::tests::VT;
+    pub(crate) use crate::game::be::beintstat::tests::allocator;
+    pub(crate) use crate::game::be::beintstat::tests::call;
+    pub(crate) use crate::game::be::beintstat::tests::pool_allocator;
+    pub(crate) use crate::game::be::beintstat::tests::MEM_HEAP;
+    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
+    pub(crate) use crate::game::fe::debugfe::tests::OBJ as OBJ_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::strict;
+    pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_4;
+    pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
+    pub(crate) use crate::game::fe::fepopup::tests::AUX;
+    pub(crate) use crate::game::fe::fepopup::tests::BEL;
+    pub(crate) use crate::game::fe::fepopup::tests::RACE;
+    pub(crate) use crate::game::fe::fepopup::tests::RMAN_2 as RMAN;
+    pub(crate) use crate::game::fe::fepopup::tests::SYS;
+    pub(crate) use crate::game::fe::fepopup::tests::WORLD_4 as WORLD_2;
+    pub(crate) use crate::game::fe::fereal::tests::base;
+    pub(crate) use crate::game::fe::festateload::tests::clear;
+    pub(crate) use crate::game::fe::festateload::tests::OBJ;
+    pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base_3;
+    pub(crate) use crate::game::fe::festaterewards::tests::hook;
+    pub(crate) use crate::game::fe::festaterewards::tests::strict as strict_2;
+    pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE_2;
+    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
+    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
+    pub(crate) use crate::game::fe::festaterewards::tests::W;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::base as base_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::globals_4 as globals;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::BE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::WORLD;
+    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
     use ssx3_ee as ee;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::fakes::FAKE;
-    use ssx3_ee::s01;
-    use ssx3_ee::s03;
     use ssx3_ee::s00;
+    use ssx3_ee::s01;
     use ssx3_ee::s02;
+    use ssx3_ee::s03;
     use ssx3_ee::s08;
     use ssx3_ee::s09;
     use ssx3_ee::s10;
     use ssx3_ee::s11;
     use ssx3_ee::s12;
     use ssx3_ee::s13;
-    use crate::difftest::fakes;
-    use crate::difftest::fill;
-    use crate::difftest::RA as RET;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::elf_image;
-    use crate::difftest::seed_count;
-    use crate::difftest::compare;
-    use crate::difftest::put_words;
     use ssx3_ee_rt::funcs::GuestFn;
-    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
-    pub(crate) use crate::game::be::beintmission::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::be_library;
-    pub(crate) use crate::game::fe::festateload::tests::OBJ;
-    pub(crate) use crate::game::be::beintoption::tests::VT;
-    pub(crate) use crate::game::be::beintoption::tests::slot;
-    pub(crate) use crate::game::fe::festateload::tests::clear;
-    pub(crate) use crate::game::fe::debugfe::tests::OBJ as OBJ_2;
-    pub(crate) use crate::game::fe::fereal::tests::base;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::BE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::WORLD;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::base as base_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::globals_4 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::strict;
-    pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE_2;
-    pub(crate) use crate::game::fe::festaterewards::tests::W;
-    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
-    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
-    pub(crate) use crate::game::fe::festaterewards::tests::hook;
-    pub(crate) use crate::game::be::beintstat::tests::call;
-    pub(crate) use crate::game::be::beintstat::tests::pool_allocator;
-    pub(crate) use crate::game::be::beintstat::tests::MEM_HEAP;
-    pub(crate) use crate::game::be::beintstat::tests::allocator;
-    pub(crate) use crate::game::fe::festaterewards::tests::strict as strict_2;
-    pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base_3;
-    pub(crate) use crate::game::fe::fepopup::tests::BEL;
-    pub(crate) use crate::game::fe::fepopup::tests::WORLD_4 as WORLD_2;
-    pub(crate) use crate::game::fe::fepopup::tests::AUX;
-    pub(crate) use crate::game::fe::fepopup::tests::SYS;
-    pub(crate) use crate::game::fe::fepopup::tests::RACE;
-    pub(crate) use crate::game::fe::fepopup::tests::RMAN_2 as RMAN;
-    pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
-    pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_4;
-
 
     #[test]
     fn algorithmic_script_camera_algo_ctor_matches() {
-        check(ee::s02::f_0016ad38, algorithmic_script_camera_algo_ctor, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xad38, 0);
-            c.g[A0][0] = DATA as u64;
-            crate::difftest::fill(c, &mut r, DATA, 0x180 / 4);
-        });
+        check(
+            ee::s02::f_0016ad38,
+            algorithmic_script_camera_algo_ctor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xad38, 0);
+                c.g[A0][0] = DATA as u64;
+                crate::difftest::fill(c, &mut r, DATA, 0x180 / 4);
+            },
+        );
     }
-
 
     #[test]
     fn algorithmic_script_camera_algo_reset_matches() {
-        covered(ee::s02::f_0016b150, algorithmic_script_camera_algo_reset, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xb150, 1);
-            let this = ptr(&mut r);
-            let vt = vtable(c, &mut r, &[0x18]);
-            c.bus.write32(this + 0x10, vt);
-            c.g[A0][0] = this as u64;
-        });
+        covered(
+            ee::s02::f_0016b150,
+            algorithmic_script_camera_algo_reset,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xb150, 1);
+                let this = ptr(&mut r);
+                let vt = vtable(c, &mut r, &[0x18]);
+                c.bus.write32(this + 0x10, vt);
+                c.g[A0][0] = this as u64;
+            },
+        );
     }
-
 
     pub(crate) const SEEDS_2: u32 = 250;
 
@@ -1656,11 +1768,9 @@ pub(crate) mod tests {
     /// The vector `CameraWobble_GetOffset` returns when the wobble is off.
     pub(crate) const NO_WOBBLE: u32 = 0x004f_f120;
 
-
     pub(crate) fn f(x: f32) -> u32 {
         x.to_bits()
     }
-
 
     /// The boot-time matrices/axes and the wobble support globals.
     pub(crate) fn put_globals(c: &mut Cpu, r: &mut Rng) {
@@ -1671,15 +1781,22 @@ pub(crate) mod tests {
         put_vec(c, AXIS_X, [f(1.0), 0, 0, 0]);
         put_vec(c, AXIS_Z, [0, 0, f(1.0), 0]);
         put_vec(c, AXIS_Y, [0, f(1.0), 0, 0]);
-        put_vec(c, NO_WOBBLE, [r.f32(3.0), r.f32(3.0), r.f32(3.0), r.f32(3.0)]);
+        put_vec(
+            c,
+            NO_WOBBLE,
+            [r.f32(3.0), r.f32(3.0), r.f32(3.0), r.f32(3.0)],
+        );
         c.bus.write32(WOBBLE_SCALE, r.f32(1.0));
     }
-
 
     /// A script camera: position at +0x30, script angles at +0x40..0x48 and
     /// a wobble sub-object at +0x70 (also covering the +0x74 variant).
     pub(crate) fn put_script_camera(c: &mut Cpu, r: &mut Rng, seed: u32) {
-        put_vec(c, CAM + camera::POSITION, [r.f32(500.0), r.f32(500.0), r.f32(500.0), 0]);
+        put_vec(
+            c,
+            CAM + camera::POSITION,
+            [r.f32(500.0), r.f32(500.0), r.f32(500.0), 0],
+        );
         for off in [camera::ANGLE_PITCH, camera::ANGLE_A, camera::ANGLE_B] {
             c.bus.write32(CAM + off, r.f32(6.0));
         }
@@ -1700,91 +1817,118 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn manual_script_camera_get_view_matches() {
-        check(ee::s02::f_00169828__generated, manual_script_camera_get_view, SEEDS_2, &|c, seed| {
-            let mut r = Rng(0x0016_9828 ^ (seed as u64) << 9);
-            scramble(c, &mut r);
-            put_globals(c, &mut r);
-            put_script_camera(c, &mut r, seed);
-            c.g[A0][0] = sx(OUT);
-            c.g[A1][0] = sx(CAM);
-        });
+        check(
+            ee::s02::f_00169828__generated,
+            manual_script_camera_get_view,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = Rng(0x0016_9828 ^ (seed as u64) << 9);
+                scramble(c, &mut r);
+                put_globals(c, &mut r);
+                put_script_camera(c, &mut r, seed);
+                c.g[A0][0] = sx(OUT);
+                c.g[A1][0] = sx(CAM);
+            },
+        );
     }
-
 
     #[test]
     fn target_script_camera_get_view_matches() {
-        check(ee::s02::f_00169f88__generated, target_script_camera_get_view, SEEDS_2, &|c, seed| {
-            let mut r = Rng(0x0016_9f88 ^ (seed as u64) << 9);
-            scramble(c, &mut r);
-            put_globals(c, &mut r);
-            put_script_camera(c, &mut r, seed);
-            c.g[A0][0] = sx(OUT);
-            c.g[A1][0] = sx(CAM);
-        });
+        check(
+            ee::s02::f_00169f88__generated,
+            target_script_camera_get_view,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = Rng(0x0016_9f88 ^ (seed as u64) << 9);
+                scramble(c, &mut r);
+                put_globals(c, &mut r);
+                put_script_camera(c, &mut r, seed);
+                c.g[A0][0] = sx(OUT);
+                c.g[A1][0] = sx(CAM);
+            },
+        );
     }
-
 
     #[test]
     fn subject_script_camera_get_view_matches() {
-        check(ee::s02::f_0016a868__generated, subject_script_camera_get_view, SEEDS_2, &|c, seed| {
-            let mut r = Rng(0x0016_a868 ^ (seed as u64) << 9);
-            scramble(c, &mut r);
-            put_globals(c, &mut r);
-            put_script_camera(c, &mut r, seed);
-            c.g[A0][0] = sx(OUT);
-            c.g[A1][0] = sx(CAM);
-        });
+        check(
+            ee::s02::f_0016a868__generated,
+            subject_script_camera_get_view,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = Rng(0x0016_a868 ^ (seed as u64) << 9);
+                scramble(c, &mut r);
+                put_globals(c, &mut r);
+                put_script_camera(c, &mut r, seed);
+                c.g[A0][0] = sx(OUT);
+                c.g[A1][0] = sx(CAM);
+            },
+        );
     }
-
 
     #[test]
     fn algorithmic_script_camera_get_view_matches() {
-        check(ee::s02::f_0016b7b8__generated, algorithmic_script_camera_get_view, SEEDS_2, &|c, seed| {
-            let mut r = Rng(0x0016_b7b8 ^ (seed as u64) << 9);
-            scramble(c, &mut r);
-            put_globals(c, &mut r);
-            put_script_camera(c, &mut r, seed);
-            c.g[A0][0] = sx(OUT);
-            c.g[A1][0] = sx(CAM);
-        });
+        check(
+            ee::s02::f_0016b7b8__generated,
+            algorithmic_script_camera_get_view,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = Rng(0x0016_b7b8 ^ (seed as u64) << 9);
+                scramble(c, &mut r);
+                put_globals(c, &mut r);
+                put_script_camera(c, &mut r, seed);
+                c.g[A0][0] = sx(OUT);
+                c.g[A1][0] = sx(CAM);
+            },
+        );
     }
-
 
     #[test]
     fn script_cam_controller_push_algorithm_matches() {
-        crate::difftest::check(ee::s02::f_00169340__generated, script_cam_controller_push_algorithm, SEEDS_3, &|c, seed| {
-            let mut r = machine(c, seed, 0x1693_40, 2);
-            be_library(c);
-            c.g[A0][0] = sx(DATA);
-            // The new algorithm; a null vtable makes its "notify" call go to
-            // the fake hook (or be skipped).
-            c.g[A1][0] = sx(DATA + 0x300);
-            c.bus.write32(DATA + 8, if seed % 2 == 0 { 0 } else { DATA + 0x500 });
-            c.bus.write32(DATA + 0x300 + 0x10, if seed % 3 == 0 { 0 } else { DATA + 0x600 });
-            c.bus.write32(DATA + 0x600 + 0x24, 0);
-            c.bus.write32(DATA + 0x500 + 4, r.next_u32());
-        });
+        crate::difftest::check(
+            ee::s02::f_00169340__generated,
+            script_cam_controller_push_algorithm,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1693_40, 2);
+                be_library(c);
+                c.g[A0][0] = sx(DATA);
+                // The new algorithm; a null vtable makes its "notify" call go to
+                // the fake hook (or be skipped).
+                c.g[A1][0] = sx(DATA + 0x300);
+                c.bus
+                    .write32(DATA + 8, if seed % 2 == 0 { 0 } else { DATA + 0x500 });
+                c.bus.write32(
+                    DATA + 0x300 + 0x10,
+                    if seed % 3 == 0 { 0 } else { DATA + 0x600 },
+                );
+                c.bus.write32(DATA + 0x600 + 0x24, 0);
+                c.bus.write32(DATA + 0x500 + 4, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn camera_trigger_list_dtor_matches() {
-        crate::difftest::check(ee::s02::f_0016bef8__generated, camera_trigger_list_dtor, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0x16be_f8, 2);
-            be_library(c);
-            if seed % 2 == 1 {
-                c.g[A0][0] = 0;
-                c.g[A1][0] = 1;
-            } else {
-                c.g[A0][0] = sx(DATA + (r.next_u32() & 0xfff0));
-                c.g[A1][0] = sx(r.next_u32() & !1);
-            }
-        });
+        crate::difftest::check(
+            ee::s02::f_0016bef8__generated,
+            camera_trigger_list_dtor,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x16be_f8, 2);
+                be_library(c);
+                if seed % 2 == 1 {
+                    c.g[A0][0] = 0;
+                    c.g[A1][0] = 1;
+                } else {
+                    c.g[A0][0] = sx(DATA + (r.next_u32() & 0xfff0));
+                    c.g[A1][0] = sx(r.next_u32() & !1);
+                }
+            },
+        );
     }
-
 
     // ---------------------------------------------------------------- camera
 
@@ -1798,72 +1942,89 @@ pub(crate) mod tests {
         c.bus.write32(obj.wrapping_add(0x10), vt);
     }
 
-
     #[test]
     fn manual_script_camera_algo_reset_for_rider_matches() {
-        covered(ssx3_ee::s02::f_00169518__generated, manual_script_camera_algo_reset_for_rider, 120, &|c, seed| {
-            algo_reset_setup(c, seed, 0x11)
-        });
+        covered(
+            ssx3_ee::s02::f_00169518__generated,
+            manual_script_camera_algo_reset_for_rider,
+            120,
+            &|c, seed| algo_reset_setup(c, seed, 0x11),
+        );
     }
-
 
     #[test]
     fn target_script_camera_algo_reset_for_rider_matches() {
-        covered(ssx3_ee::s02::f_00169d58__generated, target_script_camera_algo_reset_for_rider, 120, &|c, seed| {
-            algo_reset_setup(c, seed, 0x12)
-        });
+        covered(
+            ssx3_ee::s02::f_00169d58__generated,
+            target_script_camera_algo_reset_for_rider,
+            120,
+            &|c, seed| algo_reset_setup(c, seed, 0x12),
+        );
     }
-
 
     #[test]
     fn subject_script_camera_algo_reset_for_rider_matches() {
-        covered(ssx3_ee::s02::f_0016a4b8__generated, subject_script_camera_algo_reset_for_rider, 120, &|c, seed| {
-            algo_reset_setup(c, seed, 0x13)
-        });
+        covered(
+            ssx3_ee::s02::f_0016a4b8__generated,
+            subject_script_camera_algo_reset_for_rider,
+            120,
+            &|c, seed| algo_reset_setup(c, seed, 0x13),
+        );
     }
-
 
     #[test]
     fn manual_script_camera_algo_reset_matches() {
-        covered(s02::f_00169540__generated, manual_script_camera_algo_reset, 120, &|c, seed| {
-            machine(c, seed, 0x169540, 1);
-            clear(c, OBJ, 0x40);
-            clear(c, VT, 0x40);
-            slot(c, VT, 0x18);
-            c.bus.write32(OBJ + 0x10, VT);
-            c.g[A0][0] = sx(OBJ);
-            let _ = seed;
-        });
+        covered(
+            s02::f_00169540__generated,
+            manual_script_camera_algo_reset,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x169540, 1);
+                clear(c, OBJ, 0x40);
+                clear(c, VT, 0x40);
+                slot(c, VT, 0x18);
+                c.bus.write32(OBJ + 0x10, VT);
+                c.g[A0][0] = sx(OBJ);
+                let _ = seed;
+            },
+        );
     }
-
 
     #[test]
     fn target_script_camera_algo_reset_matches() {
-        covered(s02::f_00169d80__generated, target_script_camera_algo_reset, 120, &|c, seed| {
-            machine(c, seed, 0x169d80, 1);
-            clear(c, OBJ, 0x40);
-            clear(c, VT, 0x40);
-            slot(c, VT, 0x18);
-            c.bus.write32(OBJ + 0x10, VT);
-            c.g[A0][0] = sx(OBJ);
-            let _ = seed;
-        });
+        covered(
+            s02::f_00169d80__generated,
+            target_script_camera_algo_reset,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x169d80, 1);
+                clear(c, OBJ, 0x40);
+                clear(c, VT, 0x40);
+                slot(c, VT, 0x18);
+                c.bus.write32(OBJ + 0x10, VT);
+                c.g[A0][0] = sx(OBJ);
+                let _ = seed;
+            },
+        );
     }
-
 
     #[test]
     fn subject_script_camera_algo_reset_matches() {
-        covered(s02::f_0016a4e0__generated, subject_script_camera_algo_reset, 120, &|c, seed| {
-            machine(c, seed, 0x16a4e0, 1);
-            clear(c, OBJ, 0x40);
-            clear(c, VT, 0x40);
-            slot(c, VT, 0x18);
-            c.bus.write32(OBJ + 0x10, VT);
-            c.g[A0][0] = sx(OBJ);
-            let _ = seed;
-        });
+        covered(
+            s02::f_0016a4e0__generated,
+            subject_script_camera_algo_reset,
+            120,
+            &|c, seed| {
+                machine(c, seed, 0x16a4e0, 1);
+                clear(c, OBJ, 0x40);
+                clear(c, VT, 0x40);
+                slot(c, VT, 0x18);
+                c.bus.write32(OBJ + 0x10, VT);
+                c.g[A0][0] = sx(OBJ);
+                let _ = seed;
+            },
+        );
     }
-
 
     #[test]
     fn manual_script_camera_algo_ctor_matches() {
@@ -1879,7 +2040,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn target_script_camera_algo_ctor_matches() {
         check(
@@ -1893,7 +2053,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn subject_script_camera_algo_ctor_matches() {
@@ -1909,7 +2068,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// Call a guest setup function and return `v0`.
     pub(crate) fn run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
         for (i, a) in args.iter().enumerate() {
@@ -1921,7 +2079,6 @@ pub(crate) mod tests {
         assert_eq!(c.pc, RET, "setup call {addr:#x} did not return");
         c.g[V0][0]
     }
-
 
     /// `DLHeap_InitArena(&MEM_HEAP, arena, size)` over a test arena: the game
     /// heap, for the paths that allocate more than the pools hold.
@@ -1935,95 +2092,108 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn script_cam_controller_stop_script_camera_matches() {
-        check(ee::s02::f_001692d8__generated, script_cam_controller_stop_script_camera, 40, &|c, seed| {
-            base(c, seed, 0x16_92d8);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x400);
-            c.bus.write32(DATA + 0x400 + 0x1c, 0);
-            c.bus.write32(DATA + 0x18, if seed % 5 == 0 { 0 } else { 1 });
-            c.bus.write32(DATA + 0x8, DATA + 0x300);
-            c.bus.write32(DATA + 0x304, if seed % 3 == 2 { 1 } else { 4 });
-            match seed % 3 {
-                0 => {
-                    c.bus.write32(DATA + 0x300, 0);
-                }
-                1 => {
-                    // No key match: the node at the head has key 0x77.
-                    let node = DATA + 0x500;
-                    c.bus.write32(node, 0x77);
-                    c.bus.write32(node + 0x10, 0);
-                    c.bus.write32(node + 0x14, 0);
-                    c.bus.write32(DATA + 0x300, node);
-                }
-                _ => {
-                    // A real heap block, so `AlgorithmList_Remove` can free it.
-                    heap_init(c);
-                    let node = run(
-                        c,
-                        0x0032_0058,
-                        ee::s10::MEM_HeapMemalign,
-                        &[0x004f_f250, 16, 0x40],
-                    ) as u32;
-                    for off in [0u32, 0x10, 0x14, 0x18] {
-                        c.bus.write32(node + off, 0);
+        check(
+            ee::s02::f_001692d8__generated,
+            script_cam_controller_stop_script_camera,
+            40,
+            &|c, seed| {
+                base(c, seed, 0x16_92d8);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x400);
+                c.bus.write32(DATA + 0x400 + 0x1c, 0);
+                c.bus
+                    .write32(DATA + 0x18, if seed % 5 == 0 { 0 } else { 1 });
+                c.bus.write32(DATA + 0x8, DATA + 0x300);
+                c.bus
+                    .write32(DATA + 0x304, if seed % 3 == 2 { 1 } else { 4 });
+                match seed % 3 {
+                    0 => {
+                        c.bus.write32(DATA + 0x300, 0);
                     }
-                    c.bus.write32(DATA + 0x300, node);
+                    1 => {
+                        // No key match: the node at the head has key 0x77.
+                        let node = DATA + 0x500;
+                        c.bus.write32(node, 0x77);
+                        c.bus.write32(node + 0x10, 0);
+                        c.bus.write32(node + 0x14, 0);
+                        c.bus.write32(DATA + 0x300, node);
+                    }
+                    _ => {
+                        // A real heap block, so `AlgorithmList_Remove` can free it.
+                        heap_init(c);
+                        let node = run(
+                            c,
+                            0x0032_0058,
+                            ee::s10::MEM_HeapMemalign,
+                            &[0x004f_f250, 16, 0x40],
+                        ) as u32;
+                        for off in [0u32, 0x10, 0x14, 0x18] {
+                            c.bus.write32(node + off, 0);
+                        }
+                        c.bus.write32(DATA + 0x300, node);
+                    }
                 }
-            }
-        });
+            },
+        );
     }
-
 
     #[test]
     fn script_camera_algo_ctor_matches() {
-        check(ee::s02::f_00169418__generated, script_camera_algo_ctor, 100, &|c, seed| {
-            let _ = base_2(c, seed, 0x16_9418);
-            globals(c);
-            let game = WORLD + 0x1000;
-            let list = WORLD + 0x2000;
-            let ctrl = WORLD + 0x3000;
-            w(c, WORLD + 0x84, game);
-            w(c, game + 0x84, list);
-            w(c, list + 4, ctrl);
-            w(c, ctrl + 0xac, seed ^ 0x77);
-            w(c, GAME_GP.wrapping_sub(0x6548), 0x42c8_0000);
-            c.g[A0][0] = sx(DATA);
-        });
+        check(
+            ee::s02::f_00169418__generated,
+            script_camera_algo_ctor,
+            100,
+            &|c, seed| {
+                let _ = base_2(c, seed, 0x16_9418);
+                globals(c);
+                let game = WORLD + 0x1000;
+                let list = WORLD + 0x2000;
+                let ctrl = WORLD + 0x3000;
+                w(c, WORLD + 0x84, game);
+                w(c, game + 0x84, list);
+                w(c, list + 4, ctrl);
+                w(c, ctrl + 0xac, seed ^ 0x77);
+                w(c, GAME_GP.wrapping_sub(0x6548), 0x42c8_0000);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
     }
-
 
     #[test]
     fn script_cam_controller_dtor_matches() {
-        strict(ee::s02::f_001690d0__generated, script_cam_controller_dtor, 120, &|c, seed| {
-            let mut r = machine(c, seed, 0x1690, 4);
-            let this = DATA;
-            let array = DATA + 0x400;
-            let vt = DATA + 0x600;
-            c.bus.write32(this + 0x1c, array);
-            for i in 0..2u32 {
-                let elem = DATA + 0x800 + 0x100 * i;
-                c.bus.write32(array + 4 * i, elem);
-                c.bus.write32(elem + 4, r.next_u32());
-                c.bus.write32(elem + 0xc, vt);
-            }
-            c.bus.write16(vt + 8, 0);
-            c.bus.write32(vt + 0xc, FAKE);
-            let se = DATA + 0x1000;
-            let mgr = DATA + 0x1400;
-            c.bus.write32(GAME_GP + 0x3ec, se);
-            c.bus.write32(se + 0x2a8, mgr);
-            c.bus.write16(mgr + 0x18, 0);
-            c.bus.write32(mgr + 0x1c, FAKE);
-            c.bus.write32(this + 8, 0);
-            c.bus.write32(this + 0x14, r.next_u32());
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = (seed as u64) & !1;
-        });
+        strict(
+            ee::s02::f_001690d0__generated,
+            script_cam_controller_dtor,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1690, 4);
+                let this = DATA;
+                let array = DATA + 0x400;
+                let vt = DATA + 0x600;
+                c.bus.write32(this + 0x1c, array);
+                for i in 0..2u32 {
+                    let elem = DATA + 0x800 + 0x100 * i;
+                    c.bus.write32(array + 4 * i, elem);
+                    c.bus.write32(elem + 4, r.next_u32());
+                    c.bus.write32(elem + 0xc, vt);
+                }
+                c.bus.write16(vt + 8, 0);
+                c.bus.write32(vt + 0xc, FAKE);
+                let se = DATA + 0x1000;
+                let mgr = DATA + 0x1400;
+                c.bus.write32(GAME_GP + 0x3ec, se);
+                c.bus.write32(se + 0x2a8, mgr);
+                c.bus.write16(mgr + 0x18, 0);
+                c.bus.write32(mgr + 0x1c, FAKE);
+                c.bus.write32(this + 8, 0);
+                c.bus.write32(this + 0x14, r.next_u32());
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed as u64) & !1;
+            },
+        );
     }
-
 
     // ------------------------------------------------------- script camera
 
@@ -2043,13 +2213,11 @@ pub(crate) mod tests {
         );
     }
 
-
-        pub(crate) const TARGET_CAM: u32 = DATA + 0x1_0000;
+    pub(crate) const TARGET_CAM: u32 = DATA + 0x1_0000;
 
     pub(crate) const TARGET_RIG: u32 = DATA + 0x1_1000;
 
     pub(crate) const TARGET_ORBIT: u32 = DATA + 0x1_2000;
-
 
     #[test]
     fn target_script_camera_algo_update_matches() {
@@ -2074,13 +2242,11 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) const MAN_CAM: u32 = DATA + 0x1_0000;
 
     pub(crate) const MAN_RIG: u32 = DATA + 0x1_1000;
 
     pub(crate) const MAN_ORBIT: u32 = DATA + 0x1_2000;
-
 
     #[test]
     fn manual_script_camera_algo_update_matches() {

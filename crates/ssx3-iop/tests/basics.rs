@@ -80,7 +80,9 @@ fn spu2_voice_plays_adpcm() {
 /// The IRX parser on the real module, when the disc is mounted.
 #[test]
 fn parse_snddrv_if_present() {
-    let Ok(f) = std::fs::read("/Volumes/SSX3/DATA/MODULES/SNDDRV.IRX") else { return };
+    let Ok(f) = std::fs::read("/Volumes/SSX3/DATA/MODULES/SNDDRV.IRX") else {
+        return;
+    };
     let m = irx::load(&f, 0x30000).unwrap();
     assert_eq!(m.entry, 0x39244);
     let libs: Vec<&str> = m.imports.iter().map(|i| i.lib.as_str()).collect();

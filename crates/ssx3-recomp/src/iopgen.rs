@@ -40,7 +40,8 @@ enum Ctl {
 }
 
 fn branch_target(pc: u32, w: u32) -> u32 {
-    pc.wrapping_add(4).wrapping_add(((w as i16 as i32) << 2) as u32)
+    pc.wrapping_add(4)
+        .wrapping_add(((w as i16 as i32) << 2) as u32)
 }
 
 fn classify(pc: u32, w: u32) -> Ctl {
@@ -49,19 +50,35 @@ fn classify(pc: u32, w: u32) -> Ctl {
     match op {
         0 => match w & 63 {
             0x08 => Ctl::JumpReg { rs: (w >> 21) & 31 },
-            0x09 => Ctl::CallReg { rd: (w >> 11) & 31, rs: (w >> 21) & 31 },
+            0x09 => Ctl::CallReg {
+                rd: (w >> 11) & 31,
+                rs: (w >> 21) & 31,
+            },
             0x0C => Ctl::Syscall,
             0x0D => Ctl::Break,
             _ => Ctl::None,
         },
         1 => match rt {
-            0x00 | 0x01 => Ctl::Branch { target: branch_target(pc, w), link: false },
-            0x10 | 0x11 => Ctl::Branch { target: branch_target(pc, w), link: true },
+            0x00 | 0x01 => Ctl::Branch {
+                target: branch_target(pc, w),
+                link: false,
+            },
+            0x10 | 0x11 => Ctl::Branch {
+                target: branch_target(pc, w),
+                link: true,
+            },
             _ => Ctl::None,
         },
-        2 => Ctl::Jump { target: (pc & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2) },
-        3 => Ctl::Call { target: (pc & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2) },
-        4..=7 => Ctl::Branch { target: branch_target(pc, w), link: false },
+        2 => Ctl::Jump {
+            target: (pc & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2),
+        },
+        3 => Ctl::Call {
+            target: (pc & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2),
+        },
+        4..=7 => Ctl::Branch {
+            target: branch_target(pc, w),
+            link: false,
+        },
         _ => Ctl::None,
     }
 }
@@ -94,7 +111,13 @@ fn branch_cond(w: u32) -> String {
     let op = w >> 26;
     let rs = (w >> 21) & 31;
     let rt = (w >> 16) & 31;
-    let s = |n: u32| if n == 0 { "0i32".to_string() } else { format!("(c.r[{n}] as i32)") };
+    let s = |n: u32| {
+        if n == 0 {
+            "0i32".to_string()
+        } else {
+            format!("(c.r[{n}] as i32)")
+        }
+    };
     match op {
         4 => {
             if rs == rt {
@@ -146,7 +169,10 @@ fn lower(w: u32) -> Option<String> {
             0x03 => set(rd, format!("(({} as i32) >> {sa}) as u32", r(rt))),
             0x04 => set(rd, format!("{} << ({} & 31)", r(rt), r(rs))),
             0x06 => set(rd, format!("{} >> ({} & 31)", r(rt), r(rs))),
-            0x07 => set(rd, format!("(({} as i32) >> ({} & 31)) as u32", r(rt), r(rs))),
+            0x07 => set(
+                rd,
+                format!("(({} as i32) >> ({} & 31)) as u32", r(rt), r(rs)),
+            ),
             0x10 => set(rd, "c.hi".into()),
             0x11 => format!("c.hi = {};", r(rs)),
             0x12 => set(rd, "c.lo".into()),
@@ -162,13 +188,22 @@ fn lower(w: u32) -> Option<String> {
             0x25 => set(rd, format!("{} | {}", r(rs), r(rt))),
             0x26 => set(rd, format!("{} ^ {}", r(rs), r(rt))),
             0x27 => set(rd, format!("!({} | {})", r(rs), r(rt))),
-            0x2A => set(rd, format!("(({} as i32) < ({} as i32)) as u32", r(rs), r(rt))),
+            0x2A => set(
+                rd,
+                format!("(({} as i32) < ({} as i32)) as u32", r(rs), r(rt)),
+            ),
             0x2B => set(rd, format!("({} < {}) as u32", r(rs), r(rt))),
             _ => return None,
         },
-        0x08 | 0x09 => set(rt, format!("{}.wrapping_add({:#x})", r(rs), simm as i32 as u32)),
+        0x08 | 0x09 => set(
+            rt,
+            format!("{}.wrapping_add({:#x})", r(rs), simm as i32 as u32),
+        ),
         0x0A => set(rt, format!("(({} as i32) < {}i32) as u32", r(rs), simm)),
-        0x0B => set(rt, format!("({} < {:#x}u32) as u32", r(rs), simm as i32 as u32)),
+        0x0B => set(
+            rt,
+            format!("({} < {:#x}u32) as u32", r(rs), simm as i32 as u32),
+        ),
         0x0C => set(rt, format!("{} & {imm:#x}", r(rs))),
         0x0D => set(rt, format!("{} | {imm:#x}", r(rs))),
         0x0E => set(rt, format!("{} ^ {imm:#x}", r(rs))),
@@ -277,7 +312,11 @@ pub fn generate(mods: &[Irx]) -> Output {
                 } else if let Some(id) = irx::library_id(&i.lib) {
                     Stub::Native(id, idx)
                 } else {
-                    let _ = writeln!(report, "WARNING: {}: import from unknown library {} #{idx}", m.name, i.lib);
+                    let _ = writeln!(
+                        report,
+                        "WARNING: {}: import from unknown library {} #{idx}",
+                        m.name, i.lib
+                    );
                     Stub::Missing(idx)
                 };
                 stubs.insert(a, s);
@@ -350,7 +389,10 @@ pub fn generate(mods: &[Irx]) -> Output {
     };
 
     // Labels: per-function sets.
-    let mut labels: BTreeMap<u32, BTreeSet<u32>> = funcs.iter().map(|f| (f.start, BTreeSet::from([f.start]))).collect();
+    let mut labels: BTreeMap<u32, BTreeSet<u32>> = funcs
+        .iter()
+        .map(|f| (f.start, BTreeSet::from([f.start])))
+        .collect();
     let add_label = |labels: &mut BTreeMap<u32, BTreeSet<u32>>, a: u32| {
         if let Some(f) = container(a) {
             labels.get_mut(&f).unwrap().insert(a);
@@ -394,11 +436,18 @@ pub fn generate(mods: &[Irx]) -> Output {
                 continue;
             }
         }
-        let Some(&nw) = words.get(&(a + 4)) else { continue };
-        let pair = matches!((w >> 26, nw >> 26), (0x22, 0x26) | (0x26, 0x22)) && (nw >> 16) & 31 == rt;
+        let Some(&nw) = words.get(&(a + 4)) else {
+            continue;
+        };
+        let pair =
+            matches!((w >> 26, nw >> 26), (0x22, 0x26) | (0x26, 0x22)) && (nw >> 16) & 31 == rt;
         if !pair && reads(nw).contains(&rt) {
             hazards += 1;
-            let _ = writeln!(report, "load-delay hazard: {a:#08x} {w:08x} -> {:#08x} {nw:08x} reads r{rt}", a + 4);
+            let _ = writeln!(
+                report,
+                "load-delay hazard: {a:#08x} {w:08x} -> {:#08x} {nw:08x} reads r{rt}",
+                a + 4
+            );
         }
     }
 
@@ -429,7 +478,9 @@ pub fn generate(mods: &[Irx]) -> Output {
         let _ = writeln!(code, "        match pc {{");
         let label_list: Vec<u32> = fl.iter().copied().collect();
         for &l in &label_list {
-            let Some(start_i) = insns.iter().position(|&(a, _)| a == l) else { continue };
+            let Some(start_i) = insns.iter().position(|&(a, _)| a == l) else {
+                continue;
+            };
             let _ = writeln!(code, "            {l:#010x} => {{");
             let mut body = String::new();
             let mut count = 0usize;
@@ -474,18 +525,31 @@ pub fn generate(mods: &[Irx]) -> Output {
                     i += 1;
                     continue;
                 }
-                let delay = insns.get(i + 1).filter(|(a, _)| *a == pc + 4).map(|(_, d)| *d);
-                let delay = if matches!(ctl, Ctl::Syscall | Ctl::Break) { None } else { delay };
+                let delay = insns
+                    .get(i + 1)
+                    .filter(|(a, _)| *a == pc + 4)
+                    .map(|(_, d)| *d);
+                let delay = if matches!(ctl, Ctl::Syscall | Ctl::Break) {
+                    None
+                } else {
+                    delay
+                };
                 let ds = match delay {
-                    Some(d) if classify(pc + 4, d) == Ctl::None => match lower(d) {
-                        Some(s) => s,
-                        None => {
-                            invalid += 1;
-                            format!("c.fatal({:#010x}, \"invalid instruction in delay slot\"); return;", pc + 4)
+                    Some(d) if classify(pc + 4, d) == Ctl::None => {
+                        match lower(d) {
+                            Some(s) => s,
+                            None => {
+                                invalid += 1;
+                                format!("c.fatal({:#010x}, \"invalid instruction in delay slot\"); return;", pc + 4)
+                            }
                         }
-                    },
+                    }
                     Some(_) => {
-                        let _ = writeln!(report, "WARNING: control transfer in delay slot at {:#x}", pc + 4);
+                        let _ = writeln!(
+                            report,
+                            "WARNING: control transfer in delay slot at {:#x}",
+                            pc + 4
+                        );
                         String::new()
                     }
                     None => String::new(),
@@ -494,19 +558,31 @@ pub fn generate(mods: &[Irx]) -> Output {
                     count += 1;
                 }
                 let after = pc + 8;
-                let fall = if inside(after) { format!("pc = {after:#010x}; continue;") } else { tail(after, &container) };
+                let fall = if inside(after) {
+                    format!("pc = {after:#010x}; continue;")
+                } else {
+                    tail(after, &container)
+                };
                 match ctl {
                     Ctl::Branch { target, link } => {
                         let cond = branch_cond(w);
                         if link {
                             // bltzal/bgezal: $ra is written whether or not the branch is taken.
-                            let _ = writeln!(body, "                let t = {cond}; c.r[31] = {after:#010x};");
+                            let _ = writeln!(
+                                body,
+                                "                let t = {cond}; c.r[31] = {after:#010x};"
+                            );
                             let _ = writeln!(body, "                {ds}");
-                            let _ = writeln!(body, "                if t {{ {} }}", call_code(target, after, &stubs));
+                            let _ = writeln!(
+                                body,
+                                "                if t {{ {} }}",
+                                call_code(target, after, &stubs)
+                            );
                         } else {
                             let _ = writeln!(body, "                let t = {cond};");
                             let _ = writeln!(body, "                {ds}");
-                            let _ = writeln!(body, "                if t {{ {} }}", goto(target, pc));
+                            let _ =
+                                writeln!(body, "                if t {{ {} }}", goto(target, pc));
                         }
                         let _ = writeln!(body, "                {fall}");
                     }
@@ -517,7 +593,8 @@ pub fn generate(mods: &[Irx]) -> Output {
                     Ctl::Call { target } => {
                         let _ = writeln!(body, "                c.r[31] = {after:#010x};");
                         let _ = writeln!(body, "                {ds}");
-                        let _ = writeln!(body, "                {}", call_code(target, after, &stubs));
+                        let _ =
+                            writeln!(body, "                {}", call_code(target, after, &stubs));
                         let _ = writeln!(body, "                {fall}");
                     }
                     Ctl::JumpReg { rs } => {
@@ -545,7 +622,11 @@ pub fn generate(mods: &[Irx]) -> Output {
                         let _ = writeln!(body, "                c.syscall({pc:#010x}); return;");
                     }
                     Ctl::Break => {
-                        let _ = writeln!(body, "                c.brk({pc:#010x}, {}); return;", (w >> 6) & 0xFFFFF);
+                        let _ = writeln!(
+                            body,
+                            "                c.brk({pc:#010x}, {}); return;",
+                            (w >> 6) & 0xFFFFF
+                        );
                     }
                     Ctl::None => unreachable!(),
                 }
@@ -572,7 +653,13 @@ pub fn generate(mods: &[Irx]) -> Output {
     // Tables.
     let _ = writeln!(code, "pub static FUNCTIONS: [FnEntry; {}] = [", funcs.len());
     for f in &funcs {
-        let _ = writeln!(code, "    FnEntry {{ start: {:#010x}, end: {:#010x}, f: {} }},", f.start, f.end, fn_name(f.start));
+        let _ = writeln!(
+            code,
+            "    FnEntry {{ start: {:#010x}, end: {:#010x}, f: {} }},",
+            f.start,
+            f.end,
+            fn_name(f.start)
+        );
     }
     let _ = writeln!(code, "];\n");
     let native: Vec<(u32, String)> = stubs
@@ -583,7 +670,11 @@ pub fn generate(mods: &[Irx]) -> Output {
             Stub::Missing(_) => None,
         })
         .collect();
-    let _ = writeln!(code, "pub static STUBS: [(u32, StubKind); {}] = [", native.len());
+    let _ = writeln!(
+        code,
+        "pub static STUBS: [(u32, StubKind); {}] = [",
+        native.len()
+    );
     for (a, k) in &native {
         let _ = writeln!(code, "    ({a:#010x}, {k}),");
     }
@@ -606,8 +697,19 @@ pub fn generate(mods: &[Irx]) -> Output {
     let header = "//! Generated by `recomp-iop` (ssx3-recomp/src/iopgen.rs) from the disc's IRX modules. Do not edit.\n\
 #![allow(unused_mut, unused_variables, unreachable_code, unused_assignments, clippy::all)]\n\n\
 use ssx3_iop::{FnEntry, Generated, Iop, ModuleInfo, StubKind};\n\n";
-    let _ = writeln!(report, "functions {} instructions {instructions} invalid {invalid} load-delay hazards {hazards}", funcs.len());
-    Output { code: format!("{header}{code}"), report, functions: funcs.len(), instructions, invalid, load_hazards: hazards }
+    let _ = writeln!(
+        report,
+        "functions {} instructions {instructions} invalid {invalid} load-delay hazards {hazards}",
+        funcs.len()
+    );
+    Output {
+        code: format!("{header}{code}"),
+        report,
+        functions: funcs.len(),
+        instructions,
+        invalid,
+        load_hazards: hazards,
+    }
 }
 
 fn direct_call(target: u32, ret: u32, container: &dyn Fn(u32) -> Option<u32>) -> String {
@@ -649,11 +751,14 @@ impl NameKey for Irx {
 /// Read the sound modules from the disc image, translate them, and write the
 /// crate `ssx3-iop-gen` to `out` (`generated/iop/modules`).
 pub fn generate_from_disc(iso: &std::path::Path, out: &std::path::Path) -> Result<Output, String> {
-    let mut disc = ssx3_core::iso::Disc::open(iso).map_err(|e| format!("{}: {e}", iso.display()))?;
+    let mut disc =
+        ssx3_core::iso::Disc::open(iso).map_err(|e| format!("{}: {e}", iso.display()))?;
     let mut mods = Vec::new();
     for (name, base) in irx::layout::MODULES {
         let path = format!("cdrom0:\\DATA\\MODULES\\{name}.IRX;1");
-        let e = disc.find(&path).ok_or_else(|| format!("{path} not found on the disc"))?;
+        let e = disc
+            .find(&path)
+            .ok_or_else(|| format!("{path} not found on the disc"))?;
         let mut data = disc.read_vec(e.sector, e.size.div_ceil(2048));
         data.truncate(e.size as usize);
         mods.push(irx::load(&data, *base)?);

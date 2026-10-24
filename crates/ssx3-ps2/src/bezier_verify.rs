@@ -102,7 +102,8 @@ pub fn begin(vu: &mut Vu, pc: u32, top: u32, itop: u32) -> Option<Pending> {
 
 /// A TRIFAN packet: the GIF tag's PRIM (PRE set) has primitive type 5.
 fn is_fan(p: &[Qword]) -> bool {
-    p.first().is_some_and(|t| (t >> 46) & 1 == 1 && (t >> 47) & 7 == 5)
+    p.first()
+        .is_some_and(|t| (t >> 46) & 1 == 1 && (t >> 47) & 7 == 5)
 }
 
 fn write_record(f: &mut std::fs::File, p: &Pending, input: &[u8], out: &[u8]) {
@@ -134,16 +135,22 @@ pub fn end(mut p: Pending, vu: &Vu) {
     let implemented = match p.program {
         Program::Type1 => {
             let mut regs = mat1::VuState::default();
-            mat1::run(p.entry, p.top, p.itop, &mut p.mem, &mut regs, &mut |k| native.push(k.to_vec()))
+            mat1::run(p.entry, p.top, p.itop, &mut p.mem, &mut regs, &mut |k| {
+                native.push(k.to_vec())
+            })
         }
         Program::Type2 => {
             let mut regs = mat2::VuState::default();
-            mat2::run(p.entry, p.top, p.itop, &mut p.mem, &mut regs, &mut |k| native.push(k.to_vec()))
+            mat2::run(p.entry, p.top, p.itop, &mut p.mem, &mut regs, &mut |k| {
+                native.push(k.to_vec())
+            })
         }
     };
     let mut g = STATE.lock().unwrap();
     let s = g.get_or_insert_with(|| State {
-        dump: std::env::var("SSX3_VERIFY_BEZIER_DUMP").ok().and_then(|path| std::fs::File::create(path).ok()),
+        dump: std::env::var("SSX3_VERIFY_BEZIER_DUMP")
+            .ok()
+            .and_then(|path| std::fs::File::create(path).ok()),
         ..State::default()
     });
     if let (Some(f), true) = (s.dump.as_mut(), s.dump_records < 6000) {
@@ -186,7 +193,8 @@ pub fn end(mut p: Pending, vu: &Vu) {
         native.len(),
         p.kicks.len()
     );
-    if let Some(i) = (0..native.len().max(p.kicks.len())).find(|&i| native.get(i) != p.kicks.get(i)) {
+    if let Some(i) = (0..native.len().max(p.kicks.len())).find(|&i| native.get(i) != p.kicks.get(i))
+    {
         let (a, b) = (native.get(i), p.kicks.get(i));
         eprintln!(
             "  kick {i}: native {} qw, translated {} qw",
@@ -194,14 +202,26 @@ pub fn end(mut p: Pending, vu: &Vu) {
             b.map_or(0, |k| k.len())
         );
         if let (Some(a), Some(b)) = (a, b) {
-            for (j, (x, y)) in a.iter().zip(b).enumerate().filter(|(_, (x, y))| x != y).take(6) {
+            for (j, (x, y)) in a
+                .iter()
+                .zip(b)
+                .enumerate()
+                .filter(|(_, (x, y))| x != y)
+                .take(6)
+            {
                 eprintln!("    qw {j}: native {x:032x} translated {y:032x}");
             }
         }
     }
-    let diff: Vec<usize> = (0..1024).filter(|q| p.mem[q * 16..q * 16 + 16] != vu.data[q * 16..q * 16 + 16]).collect();
+    let diff: Vec<usize> = (0..1024)
+        .filter(|q| p.mem[q * 16..q * 16 + 16] != vu.data[q * 16..q * 16 + 16])
+        .collect();
     if !diff.is_empty() {
-        eprintln!("  data memory: {} qwords differ, first at {:?}", diff.len(), &diff[..diff.len().min(8)]);
+        eprintln!(
+            "  data memory: {} qwords differ, first at {:?}",
+            diff.len(),
+            &diff[..diff.len().min(8)]
+        );
     }
 }
 

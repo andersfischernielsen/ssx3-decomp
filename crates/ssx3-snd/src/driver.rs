@@ -26,10 +26,11 @@ use crate::proto::*;
 
 /// `volramplut` (0x3abd8): sweep rate by half the volume distance.
 const VOL_RAMP: [u8; 128] = [
-    0, 55, 51, 49, 47, 46, 45, 44, 43, 43, 42, 42, 41, 40, 40, 40, 39, 39, 39, 39, 37, 37, 37, 37, 37, 37, 37, 37, 36, 36,
-    36, 36, 35, 35, 35, 35, 35, 35, 35, 35, 34, 34, 34, 34, 34, 34, 34, 34, 33, 33, 33, 33, 33, 33, 33, 33, 32, 32, 32, 32,
-    32, 32, 32, 32, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
-    30, 30, 30, 30, 30, 30, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 28, 28, 28, 28, 28, 28, 28, 28,
+    0, 55, 51, 49, 47, 46, 45, 44, 43, 43, 42, 42, 41, 40, 40, 40, 39, 39, 39, 39, 37, 37, 37, 37,
+    37, 37, 37, 37, 36, 36, 36, 36, 35, 35, 35, 35, 35, 35, 35, 35, 34, 34, 34, 34, 34, 34, 34, 34,
+    33, 33, 33, 33, 33, 33, 33, 33, 32, 32, 32, 32, 32, 32, 32, 32, 31, 31, 31, 31, 31, 31, 31, 31,
+    31, 31, 31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+    29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 29, 28, 28, 28, 28, 28, 28, 28, 28,
     28, 28, 28, 28, 28, 28, 28, 28,
 ];
 
@@ -160,7 +161,8 @@ impl SndDriver {
         (v / 24) as u32 * 0x400 + 0x1C0 + (v % 24) as u32 * 12
     }
     fn set_param(&mut self, v: usize, reg: u32, value: u16) {
-        self.spu.write_reg16(Self::voice_base(v) + reg, value as u32);
+        self.spu
+            .write_reg16(Self::voice_base(v) + reg, value as u32);
     }
     fn get_param(&mut self, v: usize, reg: u32) -> u16 {
         self.spu.read(Self::voice_base(v) + reg) as u16
@@ -191,15 +193,20 @@ impl SndDriver {
         }
     }
     fn set_master(&mut self, core: u32, reg: u32, lr: [u16; 2]) {
-        self.spu.write_reg16(MASTER + core * 0x28 + reg, lr[0] as u32);
-        self.spu.write_reg16(MASTER + core * 0x28 + reg + 2, lr[1] as u32);
+        self.spu
+            .write_reg16(MASTER + core * 0x28 + reg, lr[0] as u32);
+        self.spu
+            .write_reg16(MASTER + core * 0x28 + reg + 2, lr[1] as u32);
     }
 
     /// RPC fno 0: `SNDIOP_init` (stereo path).
     pub fn init(&mut self, p: InitParams) {
         self.cfg = Some(p);
         self.mix = IopMixer::new(p.iop_voices as usize, (p.channels + p.aux) as usize);
-        self.buses = [vec![0; p.iop_frames().max(1)], vec![0; p.iop_frames().max(1)]];
+        self.buses = [
+            vec![0; p.iop_frames().max(1)],
+            vec![0; p.iop_frames().max(1)],
+        ];
         for core in 0..2 {
             self.set_master(core, 0x0, [0x3FFF, 0x3FFF]);
             self.set_master(core, 0x4, [0, 0]);
@@ -448,7 +455,13 @@ impl SndDriver {
             }
         }
         let mut half = [0i16; 1024];
-        self.out.mix(cfg.ee_rate as u32, cfg.iop_rate as u32, pcm, &mut self.buses, &mut half);
+        self.out.mix(
+            cfg.ee_rate as u32,
+            cfg.iop_rate as u32,
+            pcm,
+            &mut self.buses,
+            &mut half,
+        );
         // Half layout: [L 256][R 256][L 256][R 256] (0x800 bytes, 512 frames).
         let mut frames_out = Vec::with_capacity(TICK_FRAMES);
         for blk in 0..2 {

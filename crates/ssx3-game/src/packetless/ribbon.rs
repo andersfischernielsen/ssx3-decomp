@@ -35,7 +35,9 @@ pub fn draw_board_wake(c: &mut Cpu) {
     for k in 1..count.max(1) as u32 {
         let entry = ribbon_entry(c, 0x12c0);
         w32(c, gp + 0x12c0, 0);
-        if let Some((e, input)) = board_wake_input(c, entry, alpha, step, (rings, first, size, n, k - 1, k)) {
+        if let Some((e, input)) =
+            board_wake_input(c, entry, alpha, step, (rings, first, size, n, k - 1, k))
+        {
             input.steps(e, &mut steps);
         }
     }
@@ -68,13 +70,26 @@ fn guard(c: &mut Cpu, gm: u32, zero_z: bool, steps: &mut Vec<Step>) {
         rows[1][2] = 0;
     }
     steps.push(Step::Cycle(0x0101));
-    steps.push(Step::Write { addr: 4, rel: false, data: rows.iter().map(|r| q4(*r)).collect() });
+    steps.push(Step::Write {
+        addr: 4,
+        rel: false,
+        data: rows.iter().map(|r| q4(*r)).collect(),
+    });
 }
 
 /// `DrawShadowMeshPass` / `DrawShadowEdgePass`: the shadow strips of every
 /// list entry {rings, first, count, alpha, step} with more than one
 /// vertex; mesh passes draw them at alpha 0.
-fn shadow_pass(c: &mut Cpu, list: u32, count: i32, ia: u32, ib: u32, textured: bool, edge: bool, steps: &mut Vec<Step>) {
+fn shadow_pass(
+    c: &mut Cpu,
+    list: u32,
+    count: i32,
+    ia: u32,
+    ib: u32,
+    textured: bool,
+    edge: bool,
+    steps: &mut Vec<Step>,
+) {
     let gp = c.g[GP][0] as u32;
     for i in 0..count.max(0) as u32 {
         let e = list + 0x14 * i;
@@ -82,11 +97,17 @@ fn shadow_pass(c: &mut Cpu, list: u32, count: i32, ia: u32, ib: u32, textured: b
         if n <= 1 {
             continue;
         }
-        let (alpha, step) = if edge { (FpuF32(r32(c, e + 0xc)), FpuF32(r32(c, e + 0x10))) } else { (FpuF32(0), FpuF32(0)) };
+        let (alpha, step) = if edge {
+            (FpuF32(r32(c, e + 0xc)), FpuF32(r32(c, e + 0x10)))
+        } else {
+            (FpuF32(0), FpuF32(0))
+        };
         let entry = ribbon_entry(c, 0x12b0);
         w32(c, gp + 0x12b0, 0);
         let (rings, first) = (r32(c, e), r32(c, e + 4) as i32);
-        if let Some((en, input)) = crate::capture::shadow_input(c, entry, alpha, step, (rings, first, n, ia, ib, textured)) {
+        if let Some((en, input)) =
+            crate::capture::shadow_input(c, entry, alpha, step, (rings, first, n, ia, ib, textured))
+        {
             input.steps(en, steps);
         }
     }
@@ -128,12 +149,20 @@ pub fn draw_shadow_volume(c: &mut Cpu) {
     let both = r32(c, 0x004a_45cc) != 0;
     let mut s = Vec::new();
     // Faces into alpha only, Z tested, not written.
-    s.push(ad_block(&[(fbp | fbw << 16 | 0xff_ffff << 32, 0x4c), (zbp | 0x1_0100_0000, 0x4e), (0x3_0000, 0x47)]));
+    s.push(ad_block(&[
+        (fbp | fbw << 16 | 0xff_ffff << 32, 0x4c),
+        (zbp | 0x1_0100_0000, 0x4e),
+        (0x3_0000, 0x47),
+    ]));
     guard(c, gm, false, &mut s);
     shadow_pass(c, list, count, 0, 1, false, false, &mut s);
     s.push(ad_block(&[(0x5_0000, 0x47), (1, 0x4a)]));
     shadow_pass(c, list, count, 0, 1, false, false, &mut s);
-    s.push(ad_block(&[(zbp | 0x100_0000, 0x4e), (0x3_c000, 0x47), (0, 0x4a)]));
+    s.push(ad_block(&[
+        (zbp | 0x100_0000, 0x4e),
+        (0x3_c000, 0x47),
+        (0, 0x4a),
+    ]));
     guard(c, gm, true, &mut s);
     shadow_pass(c, list, count, 0, 1, false, false, &mut s);
     let mut regs = vec![(fbp | fbw << 16, 0x4c), (0x5_0000, 0x47)];

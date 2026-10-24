@@ -31,7 +31,11 @@ fn both(cpu: &mut Gs, gpu: &mut Gs, f: impl Fn(&mut Gs)) {
 fn differing_words(cpu: &mut Gs, gpu: &mut Gs) -> usize {
     cpu.sync();
     gpu.sync_vram();
-    cpu.vram.iter().zip(&gpu.vram).filter(|(a, b)| a != b).count()
+    cpu.vram
+        .iter()
+        .zip(&gpu.vram)
+        .filter(|(a, b)| a != b)
+        .count()
 }
 
 fn xyz(x: u32, y: u32) -> u64 {
@@ -53,7 +57,10 @@ fn upload(gs: &mut Gs, dbp: u32, dbw: u32, w: u32, h: u32, px: impl Fn(u32, u32)
     gs.write_reg(0x51, 0);
     gs.write_reg(0x52, w as u64 | (h as u64) << 32);
     gs.write_reg(0x53, 0);
-    let data: Vec<u32> = (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).map(|(x, y)| px(x, y)).collect();
+    let data: Vec<u32> = (0..h)
+        .flat_map(|y| (0..w).map(move |x| (x, y)))
+        .map(|(x, y)| px(x, y))
+        .collect();
     let mut q: Vec<u128> = vec![(data.len() as u64 / 4 | 2 << 58) as u128 | 1 << 15];
     for c in data.chunks_exact(4) {
         q.push(c.iter().rev().fold(0u128, |acc, &v| acc << 32 | v as u128));
@@ -63,7 +70,9 @@ fn upload(gs: &mut Gs, dbp: u32, dbw: u32, w: u32, h: u32, px: impl Fn(u32, u32)
 
 #[test]
 fn flat_and_gouraud_primitives_match() {
-    let Some((mut cpu, mut gpu)) = pair(1) else { return };
+    let Some((mut cpu, mut gpu)) = pair(1) else {
+        return;
+    };
     both(&mut cpu, &mut gpu, |gs| {
         frame(gs);
         // Flat sprite, then flat triangles.
@@ -72,7 +81,17 @@ fn flat_and_gouraud_primitives_match() {
         gs.write_reg(0x05, xyz(10, 20));
         gs.write_reg(0x05, xyz(300, 200));
         gs.write_reg(0x00, 3);
-        for (i, &(x, y)) in [(5u32, 5u32), (600, 30), (100, 400), (630, 440), (20, 300), (500, 100)].iter().enumerate() {
+        for (i, &(x, y)) in [
+            (5u32, 5u32),
+            (600, 30),
+            (100, 400),
+            (630, 440),
+            (20, 300),
+            (500, 100),
+        ]
+        .iter()
+        .enumerate()
+        {
             gs.write_reg(0x01, 0x8000_00FF | (i as u64 * 40) << 8);
             gs.write_reg(0x05, xyz(x, y));
         }
@@ -82,11 +101,15 @@ fn flat_and_gouraud_primitives_match() {
 
 #[test]
 fn textured_copy_and_clut_match() {
-    let Some((mut cpu, mut gpu)) = pair(2) else { return };
+    let Some((mut cpu, mut gpu)) = pair(2) else {
+        return;
+    };
     both(&mut cpu, &mut gpu, |gs| {
         frame(gs);
         // CT32 texture at block 0x2000 (64 wide), copied 1:1 by a UV sprite.
-        upload(gs, 0x2000, 1, 64, 64, |x, y| 0x8000_0000 | x << 2 | y << 10 | (x ^ y) << 16);
+        upload(gs, 0x2000, 1, 64, 64, |x, y| {
+            0x8000_0000 | x << 2 | y << 10 | (x ^ y) << 16
+        });
         gs.write_reg(0x06, 0x2000 | 1 << 14 | 6 << 26 | 6 << 30 | 1 << 35); // DECAL
         gs.write_reg(0x14, 0);
         gs.write_reg(0x00, 6 | 1 << 4 | 1 << 8); // sprite, TME, FST
@@ -95,9 +118,20 @@ fn textured_copy_and_clut_match() {
         gs.write_reg(0x03, (64 * 16) | (64 * 16) << 16);
         gs.write_reg(0x05, xyz(164, 164));
         // A T8 texture through a CT32 CLUT (CSM1), scaled 2x.
-        upload(gs, 0x2400, 1, 16, 16, |x, y| 0x8000_0000 | (x * 16) | (y * 16) << 8);
-        upload(gs, 0x2800, 2, 64, 16, |x, y| (x * 7 + y * 13) & 0xFF * 0x0101_0101);
-        let tex0 = 0x2800u64 | 2 << 14 | (PSMT8 as u64) << 20 | 6 << 26 | 4 << 30 | 1 << 35 | 0x2400 << 37 | 1 << 61;
+        upload(gs, 0x2400, 1, 16, 16, |x, y| {
+            0x8000_0000 | (x * 16) | (y * 16) << 8
+        });
+        upload(gs, 0x2800, 2, 64, 16, |x, y| {
+            (x * 7 + y * 13) & 0xFF * 0x0101_0101
+        });
+        let tex0 = 0x2800u64
+            | 2 << 14
+            | (PSMT8 as u64) << 20
+            | 6 << 26
+            | 4 << 30
+            | 1 << 35
+            | 0x2400 << 37
+            | 1 << 61;
         gs.write_reg(0x06, tex0);
         gs.write_reg(0x00, 6 | 1 << 4 | 1 << 8);
         gs.write_reg(0x03, 0);
@@ -118,7 +152,9 @@ fn textured_copy_and_clut_match() {
 
 #[test]
 fn readback_after_gpu_drawing() {
-    let Some((mut cpu, mut gpu)) = pair(3) else { return };
+    let Some((mut cpu, mut gpu)) = pair(3) else {
+        return;
+    };
     gpu.set_latent_readback(false);
     both(&mut cpu, &mut gpu, |gs| {
         frame(gs);
@@ -147,7 +183,9 @@ fn random_scenes_mostly_match() {
     let mut total = 0usize;
     let mut differ = 0usize;
     for seed in 0..12u64 {
-        let Some((mut cpu, mut gpu)) = pair(100 + seed) else { return };
+        let Some((mut cpu, mut gpu)) = pair(100 + seed) else {
+            return;
+        };
         let mut r = Rng(seed.wrapping_mul(0x2545_F491_4F6C_DD1D) | 1);
         let (fbp, fbw) = (r.pick(&[0u64, 140]), r.pick(&[4u64, 8, 10]));
         for _ in 0..4 {
@@ -178,7 +216,10 @@ fn random_scenes_mostly_match() {
         total += before;
     }
     let frac = differ as f64 / total as f64;
-    eprintln!("random scenes: {differ} of {total} words differ ({:.4}%)", frac * 100.0);
+    eprintln!(
+        "random scenes: {differ} of {total} words differ ({:.4}%)",
+        frac * 100.0
+    );
     assert!(frac < 0.005, "too many differing words: {frac}");
 }
 
@@ -204,11 +245,23 @@ fn gpu_random(seed: u64) -> Option<(Gs, Vec<u32>)> {
 
 /// Frame at block 0 and Z right after it (block `z_off` further), `fbw` wide, `h` tall.
 fn surfaces(fpsm: u32, zpsm: u32, fbw: u32, h: u32, z_off: u32) -> NativeSurfaces {
-    let rows = if fpsm == PSMCT32 || fpsm == PSMCT24 { 32 } else { 64 };
+    let rows = if fpsm == PSMCT32 || fpsm == PSMCT24 {
+        32
+    } else {
+        64
+    };
     let fb_pages = h.div_ceil(rows) * fbw;
     NativeSurfaces {
-        frame: Some(NativeSurface { bp: 0, bw: fbw, psm: fpsm }),
-        z: Some(NativeSurface { bp: (fb_pages + 1) * 32 + z_off, bw: fbw, psm: zpsm }),
+        frame: Some(NativeSurface {
+            bp: 0,
+            bw: fbw,
+            psm: fpsm,
+        }),
+        z: Some(NativeSurface {
+            bp: (fb_pages + 1) * 32 + z_off,
+            bw: fbw,
+            psm: zpsm,
+        }),
         width: fbw * 64,
         height: h,
     }
@@ -239,7 +292,9 @@ fn native_roundtrip_is_identity() {
     let mut seed = 500;
     for &fbw in &[1u32, 5, 10, 16] {
         for (i, &fpsm) in FRAME_PSMS.iter().enumerate() {
-            let Some((mut gs, orig)) = gpu_random(seed) else { return };
+            let Some((mut gs, orig)) = gpu_random(seed) else {
+                return;
+            };
             seed += 1;
             for (j, &zpsm) in Z_PSMS.iter().enumerate() {
                 let h = [200, 448, 37][(i + j) % 3];
@@ -263,7 +318,9 @@ fn native_targets_match_cpu_model() {
     for &fpsm in &FRAME_PSMS {
         for &zpsm in &Z_PSMS {
             for &fbw in &[3u32, 10] {
-                let Some((mut gs, orig)) = gpu_random(seed) else { return };
+                let Some((mut gs, orig)) = gpu_random(seed) else {
+                    return;
+                };
                 seed += 1;
                 let s = surfaces(fpsm, zpsm, fbw, 123, 0);
                 gs.native_run(Some(s), Vec::new()).expect("native run");
@@ -281,7 +338,11 @@ fn native_targets_match_cpu_model() {
                         assert_eq!(c[i], want, "colour at ({x}, {y}), psm {fpsm:#x}");
                         let zv = zs.read(&orig, x, y);
                         let dw = zv as f32 / DEPTH_SCALE;
-                        assert_eq!(d[i].to_bits(), dw.to_bits(), "depth at ({x}, {y}), psm {zpsm:#x}");
+                        assert_eq!(
+                            d[i].to_bits(),
+                            dw.to_bits(),
+                            "depth at ({x}, {y}), psm {zpsm:#x}"
+                        );
                         assert_eq!((d[i] * DEPTH_SCALE) as u32, zv);
                     }
                 }
@@ -298,10 +359,15 @@ fn native_pass_writes_back() {
     let mut seed = 700;
     for &fpsm in &[PSMCT32, PSMCT24, PSMCT16] {
         for &zpsm in &[PSMZ24, PSMZ16] {
-            let Some((mut gs, orig)) = gpu_random(seed) else { return };
+            let Some((mut gs, orig)) = gpu_random(seed) else {
+                return;
+            };
             seed += 1;
             let s = surfaces(fpsm, zpsm, 10, 96, 0);
-            let (rgba, zval) = (0x7856_3412u32, if zpsm == PSMZ24 { 0x12_3456u32 } else { 0xBEEF });
+            let (rgba, zval) = (
+                0x7856_3412u32,
+                if zpsm == PSMZ24 { 0x12_3456u32 } else { 0xBEEF },
+            );
             let pass: NativeRecord = Box::new(move |t, enc| {
                 let _ = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("test-clear"),
@@ -341,7 +407,9 @@ fn native_pass_writes_back() {
             let fs = Surface::new(f.psm, f.bp, f.bw);
             let zs = Surface::new(z.psm, z.bp, z.bw);
             let packed = match fpsm {
-                PSMCT16 => (rgba >> 3) & 0x1F | ((rgba >> 11) & 0x1F) << 5 | ((rgba >> 19) & 0x1F) << 10,
+                PSMCT16 => {
+                    (rgba >> 3) & 0x1F | ((rgba >> 11) & 0x1F) << 5 | ((rgba >> 19) & 0x1F) << 10
+                }
                 _ => rgba,
             };
             for y in 0..s.height {
@@ -359,7 +427,9 @@ fn native_pass_writes_back() {
 /// A run sits exactly between the primitives sent before and after it.
 #[test]
 fn native_run_is_ordered_in_the_stream() {
-    let Some((mut gs, _)) = gpu_random(800) else { return };
+    let Some((mut gs, _)) = gpu_random(800) else {
+        return;
+    };
     frame(&mut gs);
     gs.write_reg(0x00, 6);
     gs.write_reg(0x01, 0x8011_2233);
@@ -375,13 +445,21 @@ fn native_run_is_ordered_in_the_stream() {
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 1.0, g: 0.0, b: 0.0, a: 128.0 / 255.0 }),
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 128.0 / 255.0,
+                    }),
                     store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: t.depth,
-                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.5), store: wgpu::StoreOp::Store }),
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0.5),
+                    store: wgpu::StoreOp::Store,
+                }),
                 stencil_ops: None,
             }),
             timestamp_writes: None,
@@ -410,19 +488,30 @@ fn native_run_is_ordered_in_the_stream() {
 #[test]
 fn native_run_refusals() {
     use super::NativeError;
-    let Some((mut gs, _)) = gpu_random(900) else { return };
+    let Some((mut gs, _)) = gpu_random(900) else {
+        return;
+    };
     let mut s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
     s.z.as_mut().unwrap().psm = PSMZ32;
-    assert_eq!(gs.native_run(Some(s), Vec::new()), Err(NativeError::ZFormat(PSMZ32)));
+    assert_eq!(
+        gs.native_run(Some(s), Vec::new()),
+        Err(NativeError::ZFormat(PSMZ32))
+    );
     let mut s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
     s.z.as_mut().unwrap().bp = 32;
-    assert_eq!(gs.native_run(Some(s), Vec::new()), Err(NativeError::Aliased));
+    assert_eq!(
+        gs.native_run(Some(s), Vec::new()),
+        Err(NativeError::Aliased)
+    );
     let mut s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
     s.frame.as_mut().unwrap().bp = 500 * 32;
     assert_eq!(gs.native_run(Some(s), Vec::new()), Err(NativeError::Wraps));
     let mut s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
     s.width = 700;
-    assert_eq!(gs.native_run(Some(s), Vec::new()), Err(NativeError::TooLarge));
+    assert_eq!(
+        gs.native_run(Some(s), Vec::new()),
+        Err(NativeError::TooLarge)
+    );
     let st = gs.gpu_stats().unwrap().native;
     assert_eq!((st.runs, st.refused), (0, 4));
     let mut cpu = Gs::new_cpu();
@@ -435,7 +524,9 @@ fn native_run_refusals() {
 #[test]
 #[ignore]
 fn native_roundtrip_cost() {
-    let Some((mut gs, _)) = gpu_random(1000) else { return };
+    let Some((mut gs, _)) = gpu_random(1000) else {
+        return;
+    };
     let s = surfaces(PSMCT32, PSMZ24, 10, 448, 0);
     // Warm up.
     for _ in 0..20 {
@@ -472,8 +563,12 @@ fn native_roundtrip_cost() {
 #[test]
 fn n3_triangles_vs_compute() {
     for scene in 0..8u32 {
-        let Some((mut emu, _)) = gpu_random(7) else { return };
-        let Some((mut nat, _)) = gpu_random(7) else { return };
+        let Some((mut emu, _)) = gpu_random(7) else {
+            return;
+        };
+        let Some((mut nat, _)) = gpu_random(7) else {
+            return;
+        };
         let mut r = Rng(0x1234_5678 + scene as u64);
         for gs in [&mut emu, &mut nat] {
             frame(gs);
@@ -515,7 +610,12 @@ fn n3_triangles_vs_compute() {
                     y: (r.below(500 * 16) as u32).wrapping_sub(30 * 16),
                     z: r.below(1 << 24) as u32,
                     f: 0,
-                    rgba: [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, r.below(129) as u8],
+                    rgba: [
+                        r.below(256) as u8,
+                        r.below(256) as u8,
+                        r.below(256) as u8,
+                        r.below(129) as u8,
+                    ],
                     s: r.f32_in(0.0, 1.0) * q,
                     t: r.f32_in(0.0, 1.0) * q,
                     q,
@@ -549,7 +649,11 @@ fn n3_triangles_vs_compute() {
                 let a = fb.read(&emu.vram, x, y);
                 let b = fb.read(&nat.vram, x, y);
                 if a != b {
-                    let m = (0..4).map(|k| ((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32).map(i32::abs).max().unwrap();
+                    let m = (0..4)
+                        .map(|k| ((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32)
+                        .map(i32::abs)
+                        .max()
+                        .unwrap();
                     if m <= 1 {
                         c1 += 1;
                     } else if m > 8 {
@@ -584,21 +688,137 @@ fn n3_dst_read_ct16_sprites_vs_compute() {
     use super::N3Fallback as Fb;
     // (name, frame psm, ALPHA_1, TEST_1 extra bits, PABE, COLCLAMP, FBMSK, textured, sprites)
     let scenes: &[(&str, u32, u64, u64, bool, bool, u32, bool, bool)] = &[
-        ("(Cd-Cs)As, As<=0xFF", PSMCT32, 1 | 2 << 6, 0, false, true, 0, true, false),
-        ("(Cs-Cd)As+Cd, As<=0xFF", PSMCT32, 0x44, 0, false, true, 0, false, false),
-        ("Cs*Ad+Cd", PSMCT32, 2 << 2 | 1 << 4 | 1 << 6, 0, false, true, 0, true, false),
-        ("DATE + (Cs-Cd)As+Cd", PSMCT32, 0x44, 1 << 14, false, true, 0, false, false),
-        ("PABE, no COLCLAMP", PSMCT32, 2 << 2 | 1 << 6, 0, true, false, 0, true, false),
-        ("partial FBMSK", PSMCT32, 0x44, 0, false, true, 0x0F00_F0F0, false, false),
-        ("CT16, no blend, FB_ONLY", PSMCT16, 0, 1 | 6 << 1 | 0x40 << 4 | 1 << 12, false, true, 0, false, false),
-        ("CT16, (Cs-Cd)As+Cd", PSMCT16, 0x44, 0, false, true, 0, true, false),
-        ("sprites, (Cs-Cd)As+Cd", PSMCT32, 0x44, 0, false, true, 0, true, true),
-        ("sprites, Cs*As+Cd, FB_ONLY", PSMCT32, 2 << 2 | 1 << 6, 1 | 6 << 1 | 0x40 << 4 | 1 << 12, false, true, 0, true, true),
-        ("sprites, CT16, flat", PSMCT16, 0, 0, false, true, 0, false, true),
+        (
+            "(Cd-Cs)As, As<=0xFF",
+            PSMCT32,
+            1 | 2 << 6,
+            0,
+            false,
+            true,
+            0,
+            true,
+            false,
+        ),
+        (
+            "(Cs-Cd)As+Cd, As<=0xFF",
+            PSMCT32,
+            0x44,
+            0,
+            false,
+            true,
+            0,
+            false,
+            false,
+        ),
+        (
+            "Cs*Ad+Cd",
+            PSMCT32,
+            2 << 2 | 1 << 4 | 1 << 6,
+            0,
+            false,
+            true,
+            0,
+            true,
+            false,
+        ),
+        (
+            "DATE + (Cs-Cd)As+Cd",
+            PSMCT32,
+            0x44,
+            1 << 14,
+            false,
+            true,
+            0,
+            false,
+            false,
+        ),
+        (
+            "PABE, no COLCLAMP",
+            PSMCT32,
+            2 << 2 | 1 << 6,
+            0,
+            true,
+            false,
+            0,
+            true,
+            false,
+        ),
+        (
+            "partial FBMSK",
+            PSMCT32,
+            0x44,
+            0,
+            false,
+            true,
+            0x0F00_F0F0,
+            false,
+            false,
+        ),
+        (
+            "CT16, no blend, FB_ONLY",
+            PSMCT16,
+            0,
+            1 | 6 << 1 | 0x40 << 4 | 1 << 12,
+            false,
+            true,
+            0,
+            false,
+            false,
+        ),
+        (
+            "CT16, (Cs-Cd)As+Cd",
+            PSMCT16,
+            0x44,
+            0,
+            false,
+            true,
+            0,
+            true,
+            false,
+        ),
+        (
+            "sprites, (Cs-Cd)As+Cd",
+            PSMCT32,
+            0x44,
+            0,
+            false,
+            true,
+            0,
+            true,
+            true,
+        ),
+        (
+            "sprites, Cs*As+Cd, FB_ONLY",
+            PSMCT32,
+            2 << 2 | 1 << 6,
+            1 | 6 << 1 | 0x40 << 4 | 1 << 12,
+            false,
+            true,
+            0,
+            true,
+            true,
+        ),
+        (
+            "sprites, CT16, flat",
+            PSMCT16,
+            0,
+            0,
+            false,
+            true,
+            0,
+            false,
+            true,
+        ),
     ];
-    for (si, &(name, fpsm, alpha, test, pabe, colclamp, fbmsk, tex, sprites)) in scenes.iter().enumerate() {
-        let Some((mut emu, _)) = gpu_random(11 + si as u64) else { return };
-        let Some((mut nat, _)) = gpu_random(11 + si as u64) else { return };
+    for (si, &(name, fpsm, alpha, test, pabe, colclamp, fbmsk, tex, sprites)) in
+        scenes.iter().enumerate()
+    {
+        let Some((mut emu, _)) = gpu_random(11 + si as u64) else {
+            return;
+        };
+        let Some((mut nat, _)) = gpu_random(11 + si as u64) else {
+            return;
+        };
         let mut r = Rng(0xABCD_0000 + si as u64);
         for gs in [&mut emu, &mut nat] {
             frame(gs);
@@ -627,7 +847,12 @@ fn n3_dst_read_ct16_sprites_vs_compute() {
                     y: (r.below(500 * 16) as u32).wrapping_sub(30 * 16),
                     z: r.below(1 << 24) as u32,
                     f: 0,
-                    rgba: [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, r.below(256) as u8],
+                    rgba: [
+                        r.below(256) as u8,
+                        r.below(256) as u8,
+                        r.below(256) as u8,
+                        r.below(256) as u8,
+                    ],
                     s: r.f32_in(0.0, 1.0) * q,
                     t: r.f32_in(0.0, 1.0) * q,
                     q,
@@ -662,7 +887,11 @@ fn n3_dst_read_ct16_sprites_vs_compute() {
                 let a = frame_rgba8(fpsm, fb.read(&emu.vram, x, y));
                 let b = frame_rgba8(fpsm, fb.read(&nat.vram, x, y));
                 if a != b {
-                    let m = (0..4).map(|k| ((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32).map(i32::abs).max().unwrap();
+                    let m = (0..4)
+                        .map(|k| ((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32)
+                        .map(i32::abs)
+                        .max()
+                        .unwrap();
                     match m {
                         0..=1 => c1 += 1,
                         // One CT16 step.
@@ -680,12 +909,19 @@ fn n3_dst_read_ct16_sprites_vs_compute() {
             st.tris, st.sprites, st.dr_prims, st.dr_copies, st.fallback
         );
         let fallbacks: u64 = st.fallback.iter().sum();
-        assert_eq!(fallbacks - st.fallback[Fb::NotTri as usize], 0, "{name}: fallbacks");
+        assert_eq!(
+            fallbacks - st.fallback[Fb::NotTri as usize],
+            0,
+            "{name}: fallbacks"
+        );
         assert!(st.tris > 200, "{name}: native prims");
         assert_eq!(zd, 0, "{name}: Z differs");
         // Interpolation residuals only: a handful of pixels near texel or
         // rounding boundaries (each a few in 10^4 of the frame).
-        assert!(cbig <= 40 && c1 + cmid <= 2500, "{name}: {c1} {cmid} {cbig}");
+        assert!(
+            cbig <= 40 && c1 + cmid <= 2500,
+            "{name}: {c1} {cmid} {cbig}"
+        );
     }
 }
 
@@ -700,7 +936,11 @@ fn frame_diff(emu: &Gs, nat: &Gs, fpsm: u32) -> (u32, u32, u32, u32) {
             let a = frame_rgba8(fpsm, fb.read(&emu.vram, x, y));
             let b = frame_rgba8(fpsm, fb.read(&nat.vram, x, y));
             if a != b {
-                let m = (0..4).map(|k| ((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32).map(i32::abs).max().unwrap();
+                let m = (0..4)
+                    .map(|k| ((a >> (8 * k)) & 0xFF) as i32 - ((b >> (8 * k)) & 0xFF) as i32)
+                    .map(i32::abs)
+                    .max()
+                    .unwrap();
                 match m {
                     0..=1 => c1 += 1,
                     2..=8 => cmid += 1,
@@ -724,19 +964,60 @@ fn n3_lines_vs_compute() {
     let scenes: &[(&str, u64, u64, u64, bool, bool)] = &[
         ("flat", 0, 0, 0, false, false),
         ("gouraud", 1 << 3, 0, 0, false, false),
-        ("gouraud, FB_ONLY alpha test", 1 << 3, 0, 1 | 6 << 1 | 0x40 << 4 | 1 << 12, false, false),
-        ("flat, FB_ONLY alpha test", 0, 0, 1 | 6 << 1 | 0x40 << 4 | 1 << 12, false, false),
-        ("textured bilinear, modulate", 1 << 3 | 1 << 4, 0, 0, true, false),
-        ("gouraud, (Cs-Cd)As+Cd", 1 << 3 | 1 << 6, 0x44, 0, false, true),
-        ("gouraud, Cs*As+Cd, As > 0x80", 1 << 3 | 1 << 6, 2 << 2 | 1 << 6, 0, false, false),
+        (
+            "gouraud, FB_ONLY alpha test",
+            1 << 3,
+            0,
+            1 | 6 << 1 | 0x40 << 4 | 1 << 12,
+            false,
+            false,
+        ),
+        (
+            "flat, FB_ONLY alpha test",
+            0,
+            0,
+            1 | 6 << 1 | 0x40 << 4 | 1 << 12,
+            false,
+            false,
+        ),
+        (
+            "textured bilinear, modulate",
+            1 << 3 | 1 << 4,
+            0,
+            0,
+            true,
+            false,
+        ),
+        (
+            "gouraud, (Cs-Cd)As+Cd",
+            1 << 3 | 1 << 6,
+            0x44,
+            0,
+            false,
+            true,
+        ),
+        (
+            "gouraud, Cs*As+Cd, As > 0x80",
+            1 << 3 | 1 << 6,
+            2 << 2 | 1 << 6,
+            0,
+            false,
+            false,
+        ),
     ];
     for (si, &(name, attr, alpha, test, tex, rounding)) in scenes.iter().enumerate() {
-        let Some((mut emu, _)) = gpu_random(31 + si as u64) else { return };
-        let Some((mut nat, _)) = gpu_random(31 + si as u64) else { return };
+        let Some((mut emu, _)) = gpu_random(31 + si as u64) else {
+            return;
+        };
+        let Some((mut nat, _)) = gpu_random(31 + si as u64) else {
+            return;
+        };
         let mut r = Rng(0x11AE_0000 + si as u64);
         for gs in [&mut emu, &mut nat] {
             frame(gs);
-            upload(gs, 0x3000, 4, 256, 256, |x, y| (x.wrapping_mul(0x9E37_79B9) ^ y.wrapping_mul(0x85EB_CA6B)).rotate_left(13));
+            upload(gs, 0x3000, 4, 256, 256, |x, y| {
+                (x.wrapping_mul(0x9E37_79B9) ^ y.wrapping_mul(0x85EB_CA6B)).rotate_left(13)
+            });
             gs.write_reg(0x47, test | 1 << 16 | 2 << 17); // ZTE, GEQUAL
             gs.write_reg(0x46, 1);
             gs.write_reg(0x42, alpha);
@@ -756,7 +1037,12 @@ fn n3_lines_vs_compute() {
                     y: (r.below(500 * 16) as u32).wrapping_sub(30 * 16),
                     z: r.below(1 << 24) as u32,
                     f: 0,
-                    rgba: [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, r.below(256) as u8],
+                    rgba: [
+                        r.below(256) as u8,
+                        r.below(256) as u8,
+                        r.below(256) as u8,
+                        r.below(256) as u8,
+                    ],
                     s: r.f32_in(0.0, 1.0) * q,
                     t: r.f32_in(0.0, 1.0) * q,
                     q,
@@ -765,8 +1051,14 @@ fn n3_lines_vs_compute() {
                 };
                 // Short lines, axis-aligned and diagonal ones too.
                 if k == 1 && i % 3 != 0 {
-                    v[1].x = v[0].x.wrapping_add(r.below(80 * 16) as u32).wrapping_sub(40 * 16);
-                    v[1].y = v[0].y.wrapping_add(r.below(80 * 16) as u32).wrapping_sub(40 * 16);
+                    v[1].x = v[0]
+                        .x
+                        .wrapping_add(r.below(80 * 16) as u32)
+                        .wrapping_sub(40 * 16);
+                    v[1].y = v[0]
+                        .y
+                        .wrapping_add(r.below(80 * 16) as u32)
+                        .wrapping_sub(40 * 16);
                     match i % 9 {
                         1 => v[1].y = v[0].y,
                         2 => v[1].x = v[0].x,
@@ -817,20 +1109,56 @@ fn n3_texture_feedback_vs_compute() {
     // (name, texture TEX0 (frame at 0, Z24 at block 140 * 32), PRIM extra, ALPHA_1, bilinear)
     let t8h_clut = 0x3800u64 << 37 | 1 << 61;
     let scenes: &[(&str, u64, u64, u64, bool)] = &[
-        ("frame copy, decal", 10 << 14 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35, 0, 0, false),
-        ("frame copy, bilinear, (Cs-Cd)As+Cd", 10 << 14 | 10 << 26 | 9 << 30 | 1 << 34, 1 << 6, 0x44, true),
-        ("frame alpha as PSMT8H index, decal, (Cd-Cs)As+Cs", 10 << 14 | 0x1B << 20 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35 | t8h_clut, 1 << 6, 1 | 2 << 4, false),
-        ("Z24 as texture, Cs*As+Cd", 140 * 32 | 10 << 14 | 0x31 << 20 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35, 1 << 6, 2 << 2 | 1 << 6, false),
-        ("Z high byte as PSMT8H index, decal", 140 * 32 | 10 << 14 | 0x1B << 20 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35 | t8h_clut, 0, 0, false),
+        (
+            "frame copy, decal",
+            10 << 14 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35,
+            0,
+            0,
+            false,
+        ),
+        (
+            "frame copy, bilinear, (Cs-Cd)As+Cd",
+            10 << 14 | 10 << 26 | 9 << 30 | 1 << 34,
+            1 << 6,
+            0x44,
+            true,
+        ),
+        (
+            "frame alpha as PSMT8H index, decal, (Cd-Cs)As+Cs",
+            10 << 14 | 0x1B << 20 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35 | t8h_clut,
+            1 << 6,
+            1 | 2 << 4,
+            false,
+        ),
+        (
+            "Z24 as texture, Cs*As+Cd",
+            140 * 32 | 10 << 14 | 0x31 << 20 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35,
+            1 << 6,
+            2 << 2 | 1 << 6,
+            false,
+        ),
+        (
+            "Z high byte as PSMT8H index, decal",
+            140 * 32 | 10 << 14 | 0x1B << 20 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35 | t8h_clut,
+            0,
+            0,
+            false,
+        ),
     ];
     for (si, &(name, tex0, pattr, alpha, bilinear)) in scenes.iter().enumerate() {
-        let Some((mut emu, _)) = gpu_random(51 + si as u64) else { return };
-        let Some((mut nat, _)) = gpu_random(51 + si as u64) else { return };
+        let Some((mut emu, _)) = gpu_random(51 + si as u64) else {
+            return;
+        };
+        let Some((mut nat, _)) = gpu_random(51 + si as u64) else {
+            return;
+        };
         let mut r = Rng(0xFEED_0000 + si as u64);
         for gs in [&mut emu, &mut nat] {
             frame(gs);
             // A 16x16 CT32 CLUT at block 0x3800.
-            upload(gs, 0x3800, 1, 16, 16, |x, y| (x * 0x0011_2233 + y * 0x0B0A_0908) | 0x4000_0000);
+            upload(gs, 0x3800, 1, 16, 16, |x, y| {
+                (x * 0x0011_2233 + y * 0x0B0A_0908) | 0x4000_0000
+            });
             gs.write_reg(0x46, 1);
             gs.write_reg(0x42, alpha);
             gs.write_reg(0x14, if bilinear { 1 << 5 | 1 << 6 } else { 0 });
@@ -848,13 +1176,24 @@ fn n3_texture_feedback_vs_compute() {
             v[1].y = (y0 + h).min(448) * 16;
             v[0].z = r.below(1 << 24) as u32;
             v[1].z = r.below(1 << 24) as u32;
-            v[1].rgba = [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, r.below(256) as u8];
+            v[1].rgba = [
+                r.below(256) as u8,
+                r.below(256) as u8,
+                r.below(256) as u8,
+                r.below(256) as u8,
+            ];
             // Texel coordinates: the same rectangle (a pixel reads its own
             // texel), or shifted (overlapping itself or not), sub-texel too.
             let (du, dv) = match i % 6 {
                 1 => (0, 0),
-                3 => (r.below(64 * 16) as i32 - 32 * 16, r.below(64 * 16) as i32 - 32 * 16),
-                _ => (r.below(400 * 16) as i32 - 200 * 16, r.below(300 * 16) as i32 - 150 * 16),
+                3 => (
+                    r.below(64 * 16) as i32 - 32 * 16,
+                    r.below(64 * 16) as i32 - 32 * 16,
+                ),
+                _ => (
+                    r.below(400 * 16) as i32 - 200 * 16,
+                    r.below(300 * 16) as i32 - 150 * 16,
+                ),
             };
             v[0].u = (x0 as i32 * 16 + du).clamp(0, 1023 * 16) as u32;
             v[0].v = (y0 as i32 * 16 + dv).clamp(0, 511 * 16) as u32;
@@ -898,7 +1237,9 @@ fn n3_texture_feedback_vs_compute() {
 fn hires_scene(gs: &mut Gs, seed: u64, tris: usize) {
     frame(gs);
     // A smooth texture: finer sampling must average back to the 1× result.
-    upload(gs, 0x3000, 4, 256, 256, |x, y| x | y << 8 | ((x + y) / 2) << 16 | 0x8000_0000);
+    upload(gs, 0x3000, 4, 256, 256, |x, y| {
+        x | y << 8 | ((x + y) / 2) << 16 | 0x8000_0000
+    });
     gs.write_reg(0x47, 1 << 16 | 2 << 17); // ZTE, GEQUAL
     gs.write_reg(0x46, 1); // COLCLAMP
     gs.write_reg(0x06, 0x3000 | 4 << 14 | 8 << 26 | 8 << 30 | 1 << 34);
@@ -914,7 +1255,12 @@ fn hires_scene(gs: &mut Gs, seed: u64, tris: usize) {
                 y: (r.below(500 * 16) as u32).wrapping_sub(30 * 16),
                 z: r.below(1 << 24) as u32,
                 f: 0,
-                rgba: [r.below(256) as u8, r.below(256) as u8, r.below(256) as u8, 128],
+                rgba: [
+                    r.below(256) as u8,
+                    r.below(256) as u8,
+                    r.below(256) as u8,
+                    128,
+                ],
                 s: r.f32_in(0.0, 1.0) * q,
                 t: r.f32_in(0.0, 1.0) * q,
                 q,
@@ -933,7 +1279,10 @@ fn hires_scene(gs: &mut Gs, seed: u64, tris: usize) {
 fn hires_copy(gs: &mut Gs, bp: u32) -> (u32, u32, Vec<u32>) {
     let label = format!("{bp:05x}-10-00");
     let snaps = gs.hires_snapshots();
-    let s = snaps.into_iter().find(|s| s.0 == label).unwrap_or_else(|| panic!("no N× copy {label}"));
+    let s = snaps
+        .into_iter()
+        .find(|s| s.0 == label)
+        .unwrap_or_else(|| panic!("no N× copy {label}"));
     (s.1, s.2, s.3)
 }
 
@@ -954,8 +1303,12 @@ fn non_uniform(w: u32, px: &[u32]) -> f64 {
 
 #[test]
 fn hires_keeps_vram_exact_and_renders_finer() {
-    let Some((mut a, _)) = gpu_random(21) else { return };
-    let Some((mut b, _)) = gpu_random(21) else { return };
+    let Some((mut a, _)) = gpu_random(21) else {
+        return;
+    };
+    let Some((mut b, _)) = gpu_random(21) else {
+        return;
+    };
     b.set_hires_scale(2);
     hires_scene(&mut a, 99, 300);
     hires_scene(&mut b, 99, 300);
@@ -972,7 +1325,10 @@ fn hires_keeps_vram_exact_and_renders_finer() {
             let lo = fb.read(&b.vram, x, y);
             for c in 0..3 {
                 let ch = |v: u32| ((v >> (8 * c)) & 0xFF) as f64;
-                let avg = (0..4).map(|k| ch(px[((2 * y + k / 2) * w + 2 * x + k % 2) as usize])).sum::<f64>() / 4.0;
+                let avg = (0..4)
+                    .map(|k| ch(px[((2 * y + k / 2) * w + 2 * x + k % 2) as usize]))
+                    .sum::<f64>()
+                    / 4.0;
                 let d = (avg - ch(lo)).abs();
                 sum += d;
                 big += (d > 48.0) as u32;
@@ -982,14 +1338,26 @@ fn hires_keeps_vram_exact_and_renders_finer() {
     let mean = sum / (640.0 * 448.0 * 3.0);
     let nu = non_uniform(w, &px);
     eprintln!("hires 2x: mean |2x2 avg - 1x| {mean:.2}, channels off by >48: {big}, non-uniform blocks {:.1}%", nu * 100.0);
-    assert!(mean < 6.0, "N× copy drifted from the 1× frame (mean {mean:.2})");
-    assert!((big as f64) < 0.02 * 640.0 * 448.0 * 3.0, "too many large differences: {big}");
-    assert!(nu > 0.05, "N× copy has no detail beyond 1× ({:.1}%)", nu * 100.0);
+    assert!(
+        mean < 6.0,
+        "N× copy drifted from the 1× frame (mean {mean:.2})"
+    );
+    assert!(
+        (big as f64) < 0.02 * 640.0 * 448.0 * 3.0,
+        "too many large differences: {big}"
+    );
+    assert!(
+        nu > 0.05,
+        "N× copy has no detail beyond 1× ({:.1}%)",
+        nu * 100.0
+    );
 }
 
 #[test]
 fn hires_frame_as_texture_copies_exactly() {
-    let Some((mut gs, _)) = gpu_random(22) else { return };
+    let Some((mut gs, _)) = gpu_random(22) else {
+        return;
+    };
     gs.set_hires_scale(2);
     hires_scene(&mut gs, 7, 300);
     // Copy frame A (block 0) into frame B (page 200) with a 1:1 decal
@@ -999,12 +1367,31 @@ fn hires_frame_as_texture_copies_exactly() {
     gs.write_reg(0x06, 10 << 14 | 10 << 26 | 9 << 30 | 1 << 34 | 1 << 35);
     // Region clamp to the frame (the 1024x512 texture extent would reach
     // the Z buffer).
-    gs.write_reg(0x08, 2 | 2 << 2 | 0 << 4 | 639 << 14 | 0 << 24 | 447u64 << 34);
+    gs.write_reg(
+        0x08,
+        2 | 2 << 2 | 0 << 4 | 639 << 14 | 0 << 24 | 447u64 << 34,
+    );
     gs.write_reg(0x14, 0);
     gs.write_reg(0x00, 6 | 1 << 4 | 1 << 8);
     let mut v = [Vertex::default(); 2];
-    v[0] = Vertex { x: 0, y: 0, rgba: [128; 4], u: 0, v: 0, q: 1.0, ..Default::default() };
-    v[1] = Vertex { x: 640 * 16, y: 448 * 16, rgba: [128; 4], u: 640 * 16, v: 448 * 16, q: 1.0, ..Default::default() };
+    v[0] = Vertex {
+        x: 0,
+        y: 0,
+        rgba: [128; 4],
+        u: 0,
+        v: 0,
+        q: 1.0,
+        ..Default::default()
+    };
+    v[1] = Vertex {
+        x: 640 * 16,
+        y: 448 * 16,
+        rgba: [128; 4],
+        u: 640 * 16,
+        v: 448 * 16,
+        q: 1.0,
+        ..Default::default()
+    };
     gs.n3_capture = true;
     gs.draw_primitive(6, &v);
     gs.n3_capture = false;
@@ -1018,18 +1405,32 @@ fn hires_frame_as_texture_copies_exactly() {
             diff += ((a[i] ^ b[i]) & 0xFF_FFFF != 0) as u32;
         }
     }
-    eprintln!("hires copy: {diff} of {} N× pixels differ, B non-uniform {:.1}%", 1280 * 896, non_uniform(w, &b) * 100.0);
-    assert_eq!(diff, 0, "a 1:1 copy of an N× frame must reproduce it exactly");
+    eprintln!(
+        "hires copy: {diff} of {} N× pixels differ, B non-uniform {:.1}%",
+        1280 * 896,
+        non_uniform(w, &b) * 100.0
+    );
+    assert_eq!(
+        diff, 0,
+        "a 1:1 copy of an N× frame must reproduce it exactly"
+    );
     // And 1× stays the GS's: B equals A in VRAM.
     let fa = Surface::new(PSMCT32, 0, 10);
     let fbb = Surface::new(PSMCT32, 200 * 32, 10);
-    let mism = (0..448u32).flat_map(|y| (0..640u32).map(move |x| (x, y))).filter(|&(x, y)| fa.read(&gs.vram, x, y) & 0xFF_FFFF != fbb.read(&gs.vram, x, y) & 0xFF_FFFF).count();
+    let mism = (0..448u32)
+        .flat_map(|y| (0..640u32).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            fa.read(&gs.vram, x, y) & 0xFF_FFFF != fbb.read(&gs.vram, x, y) & 0xFF_FFFF
+        })
+        .count();
     assert_eq!(mism, 0, "1× copy differs");
 }
 
 #[test]
 fn hires_refreshes_after_vram_upload() {
-    let Some((mut gs, _)) = gpu_random(23) else { return };
+    let Some((mut gs, _)) = gpu_random(23) else {
+        return;
+    };
     gs.set_hires_scale(2);
     hires_scene(&mut gs, 5, 200);
     gs.sync_vram();
@@ -1039,7 +1440,9 @@ fn hires_refreshes_after_vram_upload() {
     gs.write_reg(0x51, 100 | 50 << 16);
     gs.write_reg(0x52, 64 | 32 << 32);
     gs.write_reg(0x53, 0);
-    let data: Vec<u32> = (0..64 * 32).map(|i| 0x0011_2233u32.wrapping_mul(i as u32 + 1) | 0x8000_0000).collect();
+    let data: Vec<u32> = (0..64 * 32)
+        .map(|i| 0x0011_2233u32.wrapping_mul(i as u32 + 1) | 0x8000_0000)
+        .collect();
     let mut q: Vec<u128> = vec![(data.len() as u64 / 4 | 2 << 58) as u128 | 1 << 15];
     for c in data.chunks_exact(4) {
         q.push(c.iter().rev().fold(0u128, |acc, &v| acc << 32 | v as u128));
@@ -1056,7 +1459,8 @@ fn hires_refreshes_after_vram_upload() {
             // Unless the extra triangle covered it, the copy shows the upload.
             if lo == data[((y - 50) * 64 + x - 100) as usize] & 0xFF_FFFF {
                 for k in 0..4u32 {
-                    wrong += (px[((2 * y + k / 2) * w + 2 * x + k % 2) as usize] & 0xFF_FFFF != lo) as u32;
+                    wrong += (px[((2 * y + k / 2) * w + 2 * x + k % 2) as usize] & 0xFF_FFFF != lo)
+                        as u32;
                 }
             }
         }
@@ -1076,26 +1480,40 @@ fn show_frame0(gs: &mut Gs) -> (u32, u32, Vec<u32>) {
 
 #[test]
 fn hires_display_shows_the_n_copy() {
-    let Some((mut gs, _)) = gpu_random(24) else { return };
+    let Some((mut gs, _)) = gpu_random(24) else {
+        return;
+    };
     gs.set_hires_scale(2);
     hires_scene(&mut gs, 3, 300);
     let (w, h, px) = show_frame0(&mut gs);
     assert_eq!((w, h), (1280, 896), "display not at N×");
     let (cw, _, copy) = hires_copy(&mut gs, 0);
-    let diff = (0..896u32).flat_map(|y| (0..1280u32).map(move |x| (x, y))).filter(|&(x, y)| px[(y * 1280 + x) as usize] != copy[(y * cw + x) as usize] | 0xFF00_0000).count();
-    eprintln!("hires display: {diff} pixels differ from the N× copy, non-uniform {:.1}%", non_uniform(1280, &px) * 100.0);
+    let diff = (0..896u32)
+        .flat_map(|y| (0..1280u32).map(move |x| (x, y)))
+        .filter(|&(x, y)| px[(y * 1280 + x) as usize] != copy[(y * cw + x) as usize] | 0xFF00_0000)
+        .count();
+    eprintln!(
+        "hires display: {diff} pixels differ from the N× copy, non-uniform {:.1}%",
+        non_uniform(1280, &px) * 100.0
+    );
     assert_eq!(diff, 0, "N× display differs from the N× copy");
     // Screenshots (`display`) stay 1× and exact.
     let mut lo = Vec::new();
     assert_eq!(gs.display(&mut lo), (640, 448));
     gs.sync_vram();
     let fb = Surface::new(PSMCT32, 0, 10);
-    assert!((0..448u32).all(|y| (0..640u32).all(|x| lo[(y * 640 + x) as usize] == fb.read(&gs.vram, x, y) | 0xFF00_0000)), "1× display changed");
+    assert!(
+        (0..448u32).all(|y| (0..640u32)
+            .all(|x| lo[(y * 640 + x) as usize] == fb.read(&gs.vram, x, y) | 0xFF00_0000)),
+        "1× display changed"
+    );
 }
 
 #[test]
 fn hires_display_falls_back_to_vram_when_stale() {
-    let Some((mut gs, _)) = gpu_random(25) else { return };
+    let Some((mut gs, _)) = gpu_random(25) else {
+        return;
+    };
     gs.set_hires_scale(2);
     hires_scene(&mut gs, 4, 200);
     // A host upload into the frame after the last native run: the N× copy
@@ -1104,7 +1522,9 @@ fn hires_display_falls_back_to_vram_when_stale() {
     gs.write_reg(0x51, 100 | 50 << 16);
     gs.write_reg(0x52, 64 | 32 << 32);
     gs.write_reg(0x53, 0);
-    let data: Vec<u32> = (0..64 * 32).map(|i| 0x0011_2233u32.wrapping_mul(i as u32 + 1) | 0x8000_0000).collect();
+    let data: Vec<u32> = (0..64 * 32)
+        .map(|i| 0x0011_2233u32.wrapping_mul(i as u32 + 1) | 0x8000_0000)
+        .collect();
     let mut q: Vec<u128> = vec![(data.len() as u64 / 4 | 2 << 58) as u128 | 1 << 15];
     for c in data.chunks_exact(4) {
         q.push(c.iter().rev().fold(0u128, |acc, &v| acc << 32 | v as u128));
@@ -1114,7 +1534,11 @@ fn hires_display_falls_back_to_vram_when_stale() {
     assert_eq!((w, h), (1280, 896));
     gs.sync_vram();
     let fb = Surface::new(PSMCT32, 0, 10);
-    let wrong = (0..896u32).flat_map(|y| (0..1280u32).map(move |x| (x, y))).filter(|&(x, y)| px[(y * 1280 + x) as usize] != fb.read(&gs.vram, x / 2, y / 2) | 0xFF00_0000).count();
+    let wrong = (0..896u32)
+        .flat_map(|y| (0..1280u32).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            px[(y * 1280 + x) as usize] != fb.read(&gs.vram, x / 2, y / 2) | 0xFF00_0000
+        })
+        .count();
     assert_eq!(wrong, 0, "stale N× copy shown");
 }
-

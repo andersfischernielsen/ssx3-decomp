@@ -131,8 +131,20 @@ fn send(c: &mut Cpu, words: &[u32]) {
 /// RPC end packet: header(4 words) + record, packet, rpc, client, command,
 /// server, buffer, cbuffer.
 #[allow(clippy::too_many_arguments)]
-fn rend(dest: u32, record: u32, packet: u32, rpc: u32, client: u32, command: u32, server: u32, buf: u32, cbuf: u32) -> [u32; 12] {
-    [48, dest, CMD_REND, 0, record, packet, rpc, client, command, server, buf, cbuf]
+fn rend(
+    dest: u32,
+    record: u32,
+    packet: u32,
+    rpc: u32,
+    client: u32,
+    command: u32,
+    server: u32,
+    buf: u32,
+    cbuf: u32,
+) -> [u32; 12] {
+    [
+        48, dest, CMD_REND, 0, record, packet, rpc, client, command, server, buf, cbuf,
+    ]
 }
 
 /// Deliver the next queued packet to the EE once it acknowledged the last.
@@ -142,7 +154,11 @@ pub fn pump(c: &mut Cpu) {
     }
     let p = m!(c).sif.outgoing.pop_front().unwrap();
     if m!(c).sif.trace {
-        let w: Vec<String> = p.chunks(4).take(12).map(|b| format!("{:08x}", u32::from_le_bytes(b.try_into().unwrap()))).collect();
+        let w: Vec<String> = p
+            .chunks(4)
+            .take(12)
+            .map(|b| format!("{:08x}", u32::from_le_bytes(b.try_into().unwrap())))
+            .collect();
         eprintln!("[sif] -> ee {}", w.join(" "));
     }
     let at = m!(c).sif.ee_recv;
@@ -285,9 +301,26 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
                 *m!(c).sif.unknown_servers.entry(server).or_default() += 1;
             }
             if m!(c).sif.trace || !known {
-                eprintln!("[sif] bind {server:#010x}{}", if known { "" } else { " (no HLE server; answering generically)" });
+                eprintln!(
+                    "[sif] bind {server:#010x}{}",
+                    if known {
+                        ""
+                    } else {
+                        " (no HLE server; answering generically)"
+                    }
+                );
             }
-            let r = rend(w[1], record, packet, rpc, client, 0x8000_0009, server ^ SERVER_XOR, RPC_RECV_ADDR, 0xDEAD_CAFE);
+            let r = rend(
+                w[1],
+                record,
+                packet,
+                rpc,
+                client,
+                0x8000_0009,
+                server ^ SERVER_XOR,
+                RPC_RECV_ADDR,
+                0xDEAD_CAFE,
+            );
             send(c, &r);
         }
         0x8000_000A => {
@@ -296,7 +329,9 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
             let (fno, ssize, recv, rsize, server) = (w[8], w[9], w[10], w[11], w[13] ^ SERVER_XOR);
             let args = m!(c).sif.data_addr;
             if m!(c).sif.trace {
-                eprintln!("[sif] call {server:#010x} fn {fno:#x} send {ssize} recv {recv:#x}/{rsize}");
+                eprintln!(
+                    "[sif] call {server:#010x} fn {fno:#x} send {ssize} recv {recv:#x}/{rsize}"
+                );
             }
             let done = match server_for(server) {
                 Some(f) => f(c, fno, args, ssize, recv & 0x01FF_FFFF, rsize),
@@ -316,7 +351,8 @@ fn command(c: &mut Cpu, src: u32, size: u32) {
         }
         0x8000_000C => {
             // Get other data: copy IOP memory to EE.
-            let (record, packet, rpc, receive, srca, dst, n) = (w[4], w[5], w[6], w[7], w[8], w[9], w[10]);
+            let (record, packet, rpc, receive, srca, dst, n) =
+                (w[4], w[5], w[6], w[7], w[8], w[9], w[10]);
             let o = (srca & 0x1F_FFFF) as usize;
             let data = m!(c).iop[o..(o + n as usize).min(0x20_0000)].to_vec();
             c.bus.write_bytes(dst, &data);
@@ -443,7 +479,11 @@ fn fileio(c: &mut Cpu, method: u32, args: u32, _s: u32, ret: u32, _rs: u32) -> b
         }
         1 => {
             let fd = word(c, 0) as i32;
-            if m!(c).sif.fds.remove(&fd).is_some() { 0 } else { -9 }
+            if m!(c).sif.fds.remove(&fd).is_some() {
+                0
+            } else {
+                -9
+            }
         }
         2 => {
             let (fd, buf, n) = (word(c, 0) as i32, word(c, 1), word(c, 2));
@@ -521,7 +561,8 @@ fn cd_scmd(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> 
             // Fixed RTC by default so runs are reproducible (the game seeds its
             // RNG from it, e.g. the rider line-up). SSX3_RTC=<unix secs> pins a
             // specific time; SSX3_REAL_CLOCK=1 uses the host clock.
-            let secs = if let Some(v) = std::env::var("SSX3_RTC").ok().and_then(|v| v.parse().ok()) {
+            let secs = if let Some(v) = std::env::var("SSX3_RTC").ok().and_then(|v| v.parse().ok())
+            {
                 v
             } else if std::env::var_os("SSX3_REAL_CLOCK").is_some() {
                 web_time::SystemTime::now()
@@ -531,9 +572,25 @@ fn cd_scmd(c: &mut Cpu, method: u32, _a: u32, _s: u32, ret: u32, rsize: u32) -> 
             } else {
                 12 * 3600
             };
-            let (s, m, h) = ((secs % 60) as u32, (secs / 60 % 60) as u32, (secs / 3600 % 24) as u32);
+            let (s, m, h) = (
+                (secs % 60) as u32,
+                (secs / 60 % 60) as u32,
+                (secs / 3600 % 24) as u32,
+            );
             wr(c, ret, 1);
-            c.bus.write_bytes(ret + 4, &[0, bcd(s), bcd(m), bcd((h + 9) % 24), 0, bcd(14), bcd(10), bcd(26)]);
+            c.bus.write_bytes(
+                ret + 4,
+                &[
+                    0,
+                    bcd(s),
+                    bcd(m),
+                    bcd((h + 9) % 24),
+                    0,
+                    bcd(14),
+                    bcd(10),
+                    bcd(26),
+                ],
+            );
         }
         0x03 => wr(c, ret, 0x14),
         0x04 => wr(c, ret, 0),
@@ -627,7 +684,10 @@ fn cd_search(c: &mut Cpu, _m: u32, args: u32, size: u32, ret: u32, _rs: u32) -> 
         wr(c, args, e.sector);
         wr(c, args + 4, e.size);
     }
-    eprintln!("[cdvdfsv] search {path} -> {}", if found.is_some() { "found" } else { "missing" });
+    eprintln!(
+        "[cdvdfsv] search {path} -> {}",
+        if found.is_some() { "found" } else { "missing" }
+    );
     wr(c, ret, found.is_some() as u32);
     true
 }

@@ -54,7 +54,10 @@
 //! Inputs whose loop would not end (a flake count of 0) are declined.
 
 use crate::bezier::Mem;
-use crate::mat4::{add, bc, div, ftoi0, ftoi4, madd, max, min, mul, mul1, neg, sub, sub1, with_xyz, xform, Lfsr, Packets, V, ONE};
+use crate::mat4::{
+    add, bc, div, ftoi0, ftoi4, madd, max, min, mul, mul1, neg, sub, sub1, with_xyz, xform, Lfsr,
+    Packets, ONE, V,
+};
 
 /// Hash of the program this module implements.
 pub const HASH: u64 = 0xe725_40c9_e7c4_34ee;
@@ -127,7 +130,13 @@ pub fn run(
         let visible = fade || ssx3_vu::vu::fast::clip(c, c[3]) & 0x3f == 0;
         if visible {
             let rgba = if fade {
-                let alpha = depth_fade(max(bc(colour[3]), bc(colour[3]))[0], c[2], depth_scale, e, far);
+                let alpha = depth_fade(
+                    max(bc(colour[3]), bc(colour[3]))[0],
+                    c[2],
+                    depth_scale,
+                    e,
+                    far,
+                );
                 [rgba[0], rgba[1], rgba[2], ftoi0(bc(alpha))[0]]
             } else {
                 rgba
@@ -153,7 +162,12 @@ pub fn run(
 /// LFSR is reseeded from T8 per call; the packets are the program's own).
 /// The CPU draws the random points and wraps them into the box; the shader
 /// (`vs_mat5_snow`) transforms, culls, fades and makes the sprites.
-pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+pub fn plan_gpu(
+    entry: u32,
+    top: u32,
+    _itop: u32,
+    mem: &mut [u8; 16384],
+) -> Option<Vec<crate::gpu::GpuCall>> {
     use crate::mat4::gpu_particles::*;
     let fade = match entry {
         0x0000 => false,
@@ -196,15 +210,35 @@ pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Opti
         }
     };
     let mut data = Vec::with_capacity(count as usize);
-    flakes(t(8), t(6), box_min, box_max, count, &mut |p, e, _| data.push([p[0], p[1], p[2], e]));
+    flakes(t(8), t(6), box_min, box_max, count, &mut |p, e, _| {
+        data.push([p[0], p[1], p[2], e])
+    });
     // (Kicked even when empty: the tag still sets PRIM.)
-    Some(vec![crate::mat4::sprite_call(crate::gpu::Program::Mat5Snow, tag, u, data, 0..count as u32, amax)])
+    Some(vec![crate::mat4::sprite_call(
+        crate::gpu::Program::Mat5Snow,
+        tag,
+        u,
+        data,
+        0..count as u32,
+        amax,
+    )])
 }
 
 /// The flakes in order (`count` > 0): the wrapped point, `p₁.z − max.z`
 /// (the depth fade's e) and whether it is the last.
-fn flakes(seeds: V, offset: V, box_min: V, box_max: V, count: u16, each: &mut dyn FnMut(V, u32, bool)) {
-    let mut r = [Lfsr::after(seeds[1]), Lfsr::after(seeds[2]), Lfsr::after(seeds[3])];
+fn flakes(
+    seeds: V,
+    offset: V,
+    box_min: V,
+    box_max: V,
+    count: u16,
+    each: &mut dyn FnMut(V, u32, bool),
+) {
+    let mut r = [
+        Lfsr::after(seeds[1]),
+        Lfsr::after(seeds[2]),
+        Lfsr::after(seeds[3]),
+    ];
     for k in 0..count {
         // (The original steps y, x, z: the lanes are independent.)
         for x in r.iter_mut() {
@@ -274,28 +308,74 @@ mod tests {
                 let t = |i: u16| top + i;
                 put(&mut mem, t(0), [r.f(1.0, 2.5), 0, 0, 0]);
                 put(&mut mem, t(1), [0, r.f(1.0, 2.5), 0, 0]);
-                put(&mut mem, t(2), [r.f(-0.3, 0.3), r.f(-0.3, 0.3), r.f(0.8, 1.2), f(1.0)]);
-                put(&mut mem, t(3), [r.f(-1.0, 0.0), r.f(-1.0, 0.0), r.f(-0.5, 0.0), r.f(1.0, 2.0)]);
+                put(
+                    &mut mem,
+                    t(2),
+                    [r.f(-0.3, 0.3), r.f(-0.3, 0.3), r.f(0.8, 1.2), f(1.0)],
+                );
+                put(
+                    &mut mem,
+                    t(3),
+                    [
+                        r.f(-1.0, 0.0),
+                        r.f(-1.0, 0.0),
+                        r.f(-0.5, 0.0),
+                        r.f(1.0, 2.0),
+                    ],
+                );
                 put(&mut mem, t(4), r.v(0.0, 1.0, 1.0));
                 put(&mut mem, t(5), r.v(0.0, 1.0, 1.0));
                 put(&mut mem, t(6), r.v(-2.5, 0.0, 0.0));
                 put(&mut mem, t(7), r.v(0.0, 255.0, 128.0));
-                put(&mut mem, t(8), [(r.u() % 400 + 1) as u32, r.u() as u32, r.u() as u32, r.u() as u32]);
-                put(&mut mem, t(9), [f(-1.0), f(-1.0), f(-1.0), r.f(0.005, 0.05)]);
+                put(
+                    &mut mem,
+                    t(8),
+                    [
+                        (r.u() % 400 + 1) as u32,
+                        r.u() as u32,
+                        r.u() as u32,
+                        r.u() as u32,
+                    ],
+                );
+                put(
+                    &mut mem,
+                    t(9),
+                    [f(-1.0), f(-1.0), f(-1.0), r.f(0.005, 0.05)],
+                );
                 put(&mut mem, t(10), [f(0.0), f(0.0), f(0.0), r.f(0.5, 2.0)]);
-                let (s, n) = check_plan(entry, top, &mut mem, &mut |m, k| run(entry, top as u32, 0, m, &mut VuState::default(), k), plan_gpu);
+                let (s, n) = check_plan(
+                    entry,
+                    top,
+                    &mut mem,
+                    &mut |m, k| run(entry, top as u32, 0, m, &mut VuState::default(), k),
+                    plan_gpu,
+                );
                 let e = agree.entry(entry).or_insert((0, 0));
                 e.0 += s;
                 e.1 += n;
                 let want = translated("e72540c9e7c434ee", HASH, entry, top as u32, &mem);
                 let mut kicks = Vec::new();
-                let ok = run(entry, top as u32, 0, &mut mem, &mut VuState::default(), &mut |k| kicks.push(k.to_vec()));
-                compare(&format!("snow case {case} entry {entry:#06x}"), (ok, kicks, mem.to_vec()), want);
+                let ok = run(
+                    entry,
+                    top as u32,
+                    0,
+                    &mut mem,
+                    &mut VuState::default(),
+                    &mut |k| kicks.push(k.to_vec()),
+                );
+                compare(
+                    &format!("snow case {case} entry {entry:#06x}"),
+                    (ok, kicks, mem.to_vec()),
+                    want,
+                );
             }
         }
         for (entry, (same, total)) in agree {
             eprintln!("snow entry {entry:#06x}: GPU plan, {same} of {total} sprites agree");
-            assert!(total > 100 && same as f64 >= 0.99 * total as f64, "entry {entry:#06x}: {same} of {total}");
+            assert!(
+                total > 100 && same as f64 >= 0.99 * total as f64,
+                "entry {entry:#06x}: {same} of {total}"
+            );
         }
     }
 }

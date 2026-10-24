@@ -160,11 +160,7 @@ pub fn add_k<const NA: bool, const NB: bool>(a: uint32x4_t, b: uint32x4_t) -> R 
         let az = vceqq_u32(aa, k(0));
         let bz = vceqq_u32(ba, k(0));
         let cancel = vandq_u32(sub, vceqq_u32(ma, mb));
-        let sp = vbslq_u32(
-            bz,
-            vbslq_u32(az, vandq_u32(a, b), a),
-            vandq_u32(az, b),
-        );
+        let sp = vbslq_u32(bz, vbslq_u32(az, vandq_u32(a, b), a), vandq_u32(az, b));
         let special = vorrq_u32(vorrq_u32(az, bz), cancel);
         R {
             v: vbslq_u32(special, sp, r.v),
@@ -187,7 +183,11 @@ pub fn madd(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
 
 /// `madd`; the product is always normal, so the add never normalises it.
 #[cfg_attr(not(debug_assertions), inline(always))]
-pub fn madd_k<const NC: bool, const NA: bool, const NB: bool>(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
+pub fn madd_k<const NC: bool, const NA: bool, const NB: bool>(
+    acc: uint32x4_t,
+    a: uint32x4_t,
+    b: uint32x4_t,
+) -> R {
     let p = mul_k::<NA, NB>(a, b);
     let r = add_k::<NC, false>(acc, p.v);
     R {
@@ -204,7 +204,11 @@ pub fn msub(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
 }
 
 #[cfg_attr(not(debug_assertions), inline(always))]
-pub fn msub_k<const NC: bool, const NA: bool, const NB: bool>(acc: uint32x4_t, a: uint32x4_t, b: uint32x4_t) -> R {
+pub fn msub_k<const NC: bool, const NA: bool, const NB: bool>(
+    acc: uint32x4_t,
+    a: uint32x4_t,
+    b: uint32x4_t,
+) -> R {
     let p = mul_k::<NA, NB>(a, b);
     let r = add_k::<NC, false>(acc, neg(p.v));
     R {
@@ -240,7 +244,11 @@ pub fn ftoi<const F: i32>(x: uint32x4_t) -> uint32x4_t {
         let neg = vtstq_u32(x, k(SIGN));
         let shift = vsubq_s32(e, vdupq_n_s32(150));
         let v = vshlq_u32(mantissa(x), shift);
-        let v = vbslq_u32(neg, vreinterpretq_u32_s32(vnegq_s32(vreinterpretq_s32_u32(v))), v);
+        let v = vbslq_u32(
+            neg,
+            vreinterpretq_u32_s32(vnegq_s32(vreinterpretq_s32_u32(v))),
+            v,
+        );
         let sat = vbslq_u32(neg, k(0x8000_0000), k(0x7fff_ffff));
         let big = vcgeq_s32(e, vdupq_n_s32(158));
         let zero = vorrq_u32(vceqq_u32(e8, k(0)), vcleq_s32(e, vdupq_n_s32(126)));
@@ -326,7 +334,8 @@ mod tests {
         for i in 0..iters {
             let near = (i % 256) as u32;
             let a: [u32; 4] = std::array::from_fn(|_| word(near));
-            let b: [u32; 4] = std::array::from_fn(|l| if i % 7 == 0 { a[l] ^ SIGN } else { word(near) });
+            let b: [u32; 4] =
+                std::array::from_fn(|l| if i % 7 == 0 { a[l] ^ SIGN } else { word(near) });
             let c: [u32; 4] = std::array::from_fn(|_| word(near));
             let check = |name: &str, r: R, f: &dyn Fn(usize) -> (u32, float::Exc)| {
                 let v = store(r.v);
@@ -353,9 +362,15 @@ mod tests {
             // for FMAC results).
             let n = |x: &[u32; 4]| -> [u32; 4] { std::array::from_fn(|l| float::norm_in(x[l])) };
             let (na, nb, nc) = (load(&n(&a)), load(&n(&b)), load(&n(&c)));
-            check("madd_k", madd_k::<false, false, false>(nc, na, nb), &|l| float::madd(c[l], a[l], b[l]));
-            check("msub_k", msub_k::<false, false, false>(nc, na, nb), &|l| float::msub(c[l], a[l], b[l]));
-            check("add_k", add_k::<false, false>(na, nb), &|l| float::add_ref(a[l], b[l]));
+            check("madd_k", madd_k::<false, false, false>(nc, na, nb), &|l| {
+                float::madd(c[l], a[l], b[l])
+            });
+            check("msub_k", msub_k::<false, false, false>(nc, na, nb), &|l| {
+                float::msub(c[l], a[l], b[l])
+            });
+            check("add_k", add_k::<false, false>(na, nb), &|l| {
+                float::add_ref(a[l], b[l])
+            });
             // ITOF / FTOI.
             for (fr, x) in [(0, a), (4, b), (12, c), (15, a)] {
                 let it = match fr {
@@ -371,7 +386,12 @@ mod tests {
                     _ => store(ftoi::<15>(load(&x))),
                 };
                 for l in 0..4 {
-                    assert_eq!(it[l], float::from_fixed(x[l] as i32, fr), "itof{fr} {:#010x}", x[l]);
+                    assert_eq!(
+                        it[l],
+                        float::from_fixed(x[l] as i32, fr),
+                        "itof{fr} {:#010x}",
+                        x[l]
+                    );
                     assert_eq!(ft[l], float::to_fixed(x[l], fr), "ftoi{fr} {:#010x}", x[l]);
                 }
             }

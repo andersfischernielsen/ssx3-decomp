@@ -12,9 +12,19 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
 use crate::call::VSlot;
+use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
+pub(crate) use crate::game::fe::feasyncfile::r;
+pub(crate) use crate::game::intersect::aifwddiff::gp;
+pub(crate) use crate::game::intersect::worldsphtree::at;
+pub(crate) use crate::game::intersect::worldsphtree::fpu;
+pub(crate) use crate::game::intersect::worldsphtree::lw;
+pub(crate) use crate::game::intersect::worldsphtree::p;
+pub(crate) use crate::game::intersect::worldsphtree::store_fpr;
+pub(crate) use crate::game::intersect::worldsphtree::virtual_call;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -22,26 +32,24 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::Cpu;
-use crate::events;
 use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::intersect::worldsphtree::lw;
-pub(crate) use crate::game::intersect::worldsphtree::at;
-pub(crate) use crate::game::intersect::aifwddiff::gp;
-pub(crate) use crate::game::intersect::worldsphtree::fpu;
-pub(crate) use crate::game::intersect::worldsphtree::store_fpr;
-pub(crate) use crate::game::intersect::worldsphtree::p;
-pub(crate) use crate::game::intersect::worldsphtree::virtual_call;
-pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
-pub(crate) use crate::game::fe::feasyncfile::r;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x002c_0778, world_painter_query_update_at_pos, "WorldPainterQuery_UpdateAtPos"),
-    (0x002c_0a10, world_painter_query_lookup_cell, "WorldPainterQuery_LookupCell"),
+    (
+        0x002c_0778,
+        world_painter_query_update_at_pos,
+        "WorldPainterQuery_UpdateAtPos",
+    ),
+    (
+        0x002c_0a10,
+        world_painter_query_lookup_cell,
+        "WorldPainterQuery_LookupCell",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -50,64 +58,64 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::COLLIDE_VOLUME_OBJECT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::WORLD_PAINTER_LOOKUP_CELL;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::WORLD_SOUND_QUERY_TREE_NODE;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::AI_FWD_DIFF_CACHE_GET;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::AI_FWD_DIFF_CACHE_COLLIDE_ENTRY;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::WP_DATA_FIND_CELL_INDEX;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_BUILTIN;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_PAD_CHANNEL;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::FOCUS_MAN_COLLECT_OCTREE_NODE;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::ANIM_OBJECT_GET_NODE_INTERSECT_MATRIX;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::COLLIDE_VOLUME_OBJECT_2;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_MODIFIER_FIND_CLOSEST_POINT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::FLEX_RAIL_FIND_CLOSEST_POINT;
-    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_FIND_NEAREST_POINT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MALLOC;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FREE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FREE2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::VEC3_MAX_COMPONENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_12 as NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_DTOR_4 as NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_INIT_3 as NET_FE_STATE_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_SELECTED_USER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WSCRIPT_CACHE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_INSTANCE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_MANAGER_LOAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_FIRST_2 as PROCESS_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_NEXT_2 as PROCESS_LIST_NEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_FREE_TRIGGERS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_PARSE_2 as CAMERA_TRIGGER_MAN_PARSE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_MONTH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_DAY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_YEAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_GENDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_LEGAL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_INIT_PAGES;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_REQUEST_SHAPE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OV_STATE_OVERLAY_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPTIONS_HUD_REFRESH_SELECTION;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_BINDING_BIND;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_WRITE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_NEXT_CHAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_EMPTY_STUB;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_CTOR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_RELEASE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_ALLOC_BUFFER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TRACK_TO_CATEGORY;
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE_2 as AUDIO_GET_GAME_MODULE;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_INTERFACE;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_SOMETHING;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_ALLOC_BUFFER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_CTOR_COPY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_RELEASE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_FREE_TRIGGERS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_PARSE_2 as CAMERA_TRIGGER_MAN_PARSE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_DAY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_GENDER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_LEGAL;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_MONTH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_YEAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FREE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FREE2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::GET_LANGUAGE_MASK;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_EMPTY_STUB;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_NEXT_CHAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_WRITE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MALLOC;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_12 as NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_DTOR_4 as NET_FE_STATE_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_SELECTED_USER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_INIT_3 as NET_FE_STATE_INIT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OPTIONS_HUD_REFRESH_SELECTION;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OV_STATE_OVERLAY_INIT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_FIRST_2 as PROCESS_LIST_FIRST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_NEXT_2 as PROCESS_LIST_NEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_INIT_PAGES;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_REQUEST_SHAPE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_BINDING_BIND;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SET_EVENT_CONTEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_CTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::SPEECH_NEW;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TRACK_TO_CATEGORY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::VEC3_MAX_COMPONENT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_INSTANCE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_MANAGER_LOAD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WSCRIPT_CACHE_CTOR;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::AI_FWD_DIFF_CACHE_COLLIDE_ENTRY;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::AI_FWD_DIFF_CACHE_GET;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::ANIM_OBJECT_GET_NODE_INTERSECT_MATRIX;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::COLLIDE_VOLUME_OBJECT;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::COLLIDE_VOLUME_OBJECT_2;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::FLEX_RAIL_FIND_CLOSEST_POINT;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::FOCUS_MAN_COLLECT_OCTREE_NODE;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_BUILTIN;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::INPUT_VM_READ_PAD_CHANNEL;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_FIND_NEAREST_POINT;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::RAIL_MODIFIER_FIND_CLOSEST_POINT;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::WORLD_PAINTER_LOOKUP_CELL;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::WORLD_SOUND_QUERY_TREE_NODE;
+    pub(crate) use crate::game::intersect::worldsphtree::callee::WP_DATA_FIND_CELL_INDEX;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,14 +123,13 @@ pub(crate) mod callee {
 
 /// `WorldObject` fields.
 pub(crate) mod obj {
-    pub(crate) use crate::game::intersect::worldsphtree::obj::NEXT;
-    pub(crate) use crate::game::intersect::worldsphtree::obj::FLAGS;
-    pub(crate) use crate::game::intersect::worldsphtree::obj::SUB;
-    pub(crate) use crate::game::intersect::worldsphtree::obj::BOX_MIN;
     pub(crate) use crate::game::intersect::worldsphtree::obj::BOX_MAX;
+    pub(crate) use crate::game::intersect::worldsphtree::obj::BOX_MIN;
+    pub(crate) use crate::game::intersect::worldsphtree::obj::FLAGS;
+    pub(crate) use crate::game::intersect::worldsphtree::obj::NEXT;
     pub(crate) use crate::game::intersect::worldsphtree::obj::SHAPE;
+    pub(crate) use crate::game::intersect::worldsphtree::obj::SUB;
 }
-
 
 // ---------------------------------------------------------------------------
 // World painter.
@@ -134,7 +141,6 @@ pub(crate) const WP_PROBE: u32 = 0x002c_0810;
 
 pub(crate) const WP_END: u32 = 0x002c_0a10;
 
-
 #[derive(Clone, Copy)]
 pub(crate) enum Wp {
     Probe,
@@ -142,7 +148,6 @@ pub(crate) enum Wp {
     Done,
     Exit,
 }
-
 
 /// `void WorldPainterQuery_UpdateAtPos(WorldPainterQuery* q, float x,
 /// float y, float value)` (0x2c0778): moves the query to (x, y) (adding
@@ -198,7 +203,6 @@ pub fn world_painter_query_update_at_pos(c: &mut Cpu) {
     })
 }
 
-
 /// Prologue and the move: s1 = query, s2 = "fresh", f20 = value.
 pub(crate) fn world_painter_enter(c: &mut Cpu) {
     c.cycles += 19;
@@ -249,7 +253,6 @@ pub(crate) fn world_painter_enter(c: &mut Cpu) {
     store_fpr(c, 13, at(c, S1, 0xc));
 }
 
-
 /// The layer record (`a2 = 12 * layer`): probe its cells if it is a
 /// populated list (type 3, non-empty), else release. `None` when an event
 /// asks the thread to unwind at the probe.
@@ -283,7 +286,6 @@ pub(crate) fn world_painter_walk(c: &mut Cpu) -> Option<Wp> {
         Some(Wp::Release)
     }
 }
-
 
 /// Look up the painted cell at the query position and feed the painter.
 pub(crate) fn world_painter_probe(c: &mut Cpu) -> Result<Wp, Unwound> {
@@ -419,7 +421,6 @@ pub(crate) fn world_painter_probe(c: &mut Cpu) -> Result<Wp, Unwound> {
     Ok(Wp::Exit)
 }
 
-
 // ---------------------------------------------------------------------------
 // World painter query: the cell a key falls in.
 
@@ -457,7 +458,6 @@ pub fn world_painter_query_lookup_cell(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // World painter query list.
@@ -556,71 +556,108 @@ pub fn world_painter_query_dtor(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::fakes::fake_call;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::SEEDS;
     pub(crate) use crate::game::intersect::worldsphtree::tests::f;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::fake_varied;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::put_vtables;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::setup_machine;
     pub(crate) use crate::game::intersect::worldsphtree::tests::uf;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::BOX2;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::SEEDS;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::SEEDS_2;
+    pub(crate) use crate::game::intersect::worldsphtree::tests::VT_PAINTER;
     pub(crate) use crate::game::intersect::worldsphtree::tests::VT_SUB;
     pub(crate) use crate::game::intersect::worldsphtree::tests::VT_VOL;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::VT_PAINTER;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::BOX2;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::put_vtables;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::fake_varied;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::setup_machine;
-    pub(crate) use crate::game::intersect::worldsphtree::tests::SEEDS_2;
-
 
     #[test]
     fn world_painter_query_update_at_pos_matches() {
-        check(ee::s08::f_002c0778__generated, world_painter_query_update_at_pos, SEEDS, &|c, seed| {
-            let mut r = setup_machine(c, seed, 0x0778, 4);
-            c.pc = WP_ENTRY;
-            let (p1, p2, p3, table, recs, list) =
-                (DATA + 0x100, DATA + 0x180, DATA + 0x200, DATA + 0x280, DATA + 0x300, DATA + 0x600);
-            let (query, painter, data, quad, cells, value) =
-                (DATA + 0x800, DATA + 0x900, DATA + 0xa00, DATA + 0xb00, DATA + 0xc00, DATA + 0xd00);
-            let (k1, k2) = (uf(&mut r, -1.0, 1.0), uf(&mut r, -1.0, 1.0));
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), p1);
-            c.bus.write32(p1 + 0x84, p2);
-            c.bus.write32(p2 + 0x10, p3);
-            c.bus.write32(p3 + 8, table);
-            c.bus.write32(table + 4, recs);
-            let layer = r.next_u32() % 3;
-            c.bus.write32(GAME_GP.wrapping_add(0x770), layer);
-            let rec = recs + 12 * layer;
-            c.bus.write16(rec, if seed % 9 == 0 { 2 } else { 3 });
-            c.bus.write32(rec + 8, if seed % 11 == 0 { 0 } else { list });
-            c.bus.write32(list + 4, if seed % 13 == 0 { 0 } else { 1 + r.next_u32() % 3 });
-            let k = r.next_u32() % 4;
-            let tag = r.next_u32() & 0xff_ffff;
-            c.bus.write32(query + 0x10, tag << 8 | k);
-            c.bus.write32(list + 8 + 4 * k, if seed % 5 == 0 { 0 } else { data });
-            c.bus.write32(data, quad);
-            c.bus.write32(data + 8, if seed % 17 == 0 { 0 } else { cells });
-            c.bus.write32(cells, if seed % 4 == 1 { tag + 1 } else { tag });
-            c.bus.write32(cells + 4, value);
-            c.bus.write32(value, f(uf(&mut r, -1.0, 2.0)));
-            c.bus.write32(query, painter);
-            c.bus.write32(query + 8, f(uf(&mut r, -5.0, 5.0)));
-            c.bus.write32(query + 0xc, f(uf(&mut r, -5.0, 5.0)));
-            c.bus.write32(painter, f(if seed % 3 == 0 { k1 } else { uf(&mut r, -1.0, 2.0) }));
-            c.bus.write32(painter + 4, VT_PAINTER);
-            c.bus.write32(GAME_GP.wrapping_sub(0x4284), f(k1));
-            c.bus.write32(GAME_GP.wrapping_sub(0x4280), f(k2));
-            c.f[12] = f(uf(&mut r, -5.0, 5.0));
-            c.f[13] = f(uf(&mut r, -5.0, 5.0));
-            c.f[14] = if seed % 2 == 0 { f(k2) } else { f(uf(&mut r, -1.0, 2.0)) };
-            c.g[A0][0] = sx(query);
-        });
+        check(
+            ee::s08::f_002c0778__generated,
+            world_painter_query_update_at_pos,
+            SEEDS,
+            &|c, seed| {
+                let mut r = setup_machine(c, seed, 0x0778, 4);
+                c.pc = WP_ENTRY;
+                let (p1, p2, p3, table, recs, list) = (
+                    DATA + 0x100,
+                    DATA + 0x180,
+                    DATA + 0x200,
+                    DATA + 0x280,
+                    DATA + 0x300,
+                    DATA + 0x600,
+                );
+                let (query, painter, data, quad, cells, value) = (
+                    DATA + 0x800,
+                    DATA + 0x900,
+                    DATA + 0xa00,
+                    DATA + 0xb00,
+                    DATA + 0xc00,
+                    DATA + 0xd00,
+                );
+                let (k1, k2) = (uf(&mut r, -1.0, 1.0), uf(&mut r, -1.0, 1.0));
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), p1);
+                c.bus.write32(p1 + 0x84, p2);
+                c.bus.write32(p2 + 0x10, p3);
+                c.bus.write32(p3 + 8, table);
+                c.bus.write32(table + 4, recs);
+                let layer = r.next_u32() % 3;
+                c.bus.write32(GAME_GP.wrapping_add(0x770), layer);
+                let rec = recs + 12 * layer;
+                c.bus.write16(rec, if seed % 9 == 0 { 2 } else { 3 });
+                c.bus
+                    .write32(rec + 8, if seed % 11 == 0 { 0 } else { list });
+                c.bus.write32(
+                    list + 4,
+                    if seed % 13 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 3
+                    },
+                );
+                let k = r.next_u32() % 4;
+                let tag = r.next_u32() & 0xff_ffff;
+                c.bus.write32(query + 0x10, tag << 8 | k);
+                c.bus
+                    .write32(list + 8 + 4 * k, if seed % 5 == 0 { 0 } else { data });
+                c.bus.write32(data, quad);
+                c.bus
+                    .write32(data + 8, if seed % 17 == 0 { 0 } else { cells });
+                c.bus
+                    .write32(cells, if seed % 4 == 1 { tag + 1 } else { tag });
+                c.bus.write32(cells + 4, value);
+                c.bus.write32(value, f(uf(&mut r, -1.0, 2.0)));
+                c.bus.write32(query, painter);
+                c.bus.write32(query + 8, f(uf(&mut r, -5.0, 5.0)));
+                c.bus.write32(query + 0xc, f(uf(&mut r, -5.0, 5.0)));
+                c.bus.write32(
+                    painter,
+                    f(if seed % 3 == 0 {
+                        k1
+                    } else {
+                        uf(&mut r, -1.0, 2.0)
+                    }),
+                );
+                c.bus.write32(painter + 4, VT_PAINTER);
+                c.bus.write32(GAME_GP.wrapping_sub(0x4284), f(k1));
+                c.bus.write32(GAME_GP.wrapping_sub(0x4280), f(k2));
+                c.f[12] = f(uf(&mut r, -5.0, 5.0));
+                c.f[13] = f(uf(&mut r, -5.0, 5.0));
+                c.f[14] = if seed % 2 == 0 {
+                    f(k2)
+                } else {
+                    f(uf(&mut r, -1.0, 2.0))
+                };
+                c.g[A0][0] = sx(query);
+            },
+        );
     }
-
 
     #[test]
     fn world_painter_query_lookup_cell_matches() {

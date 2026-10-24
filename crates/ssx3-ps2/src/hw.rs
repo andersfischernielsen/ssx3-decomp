@@ -41,8 +41,16 @@ pub mod ch {
 }
 
 const CH_BASE: [u32; 10] = [
-    0x1000_8000, 0x1000_9000, 0x1000_A000, 0x1000_B000, 0x1000_B400, 0x1000_C000, 0x1000_C400,
-    0x1000_C800, 0x1000_D000, 0x1000_D400,
+    0x1000_8000,
+    0x1000_9000,
+    0x1000_A000,
+    0x1000_B000,
+    0x1000_B400,
+    0x1000_C000,
+    0x1000_C400,
+    0x1000_C800,
+    0x1000_D000,
+    0x1000_D400,
 ];
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -240,7 +248,11 @@ impl Hw {
         let mut ticks = u64::MAX;
         if t.mode & 0x100 != 0 {
             let comp = t.comp as u64;
-            ticks = if comp > count { comp - count } else { 0x1_0000 - count + comp };
+            ticks = if comp > count {
+                comp - count
+            } else {
+                0x1_0000 - count + comp
+            };
         }
         if t.mode & 0x200 != 0 {
             ticks = ticks.min(0x1_0000 - count);
@@ -254,7 +266,9 @@ impl Hw {
         let now = self.now;
         for i in 0..4 {
             for _ in 0..64 {
-                let Some(at) = self.timers[i].irq_at else { break };
+                let Some(at) = self.timers[i].irq_at else {
+                    break;
+                };
                 if at > now {
                     break;
                 }
@@ -373,7 +387,12 @@ impl Hw {
             0x1000_6000 => self.gs.read_local(1).first().copied().unwrap_or(0),
             0x1000_7000 => {
                 // IPU out FIFO (CPU read; no DMA attached for this access).
-                let q = self.ipu.read_fifo(1, &mut ipu::NoDma).first().copied().unwrap_or(0);
+                let q = self
+                    .ipu
+                    .read_fifo(1, &mut ipu::NoDma)
+                    .first()
+                    .copied()
+                    .unwrap_or(0);
                 if self.ipu.take_irq() {
                     self.raise(int::IPU);
                 }
@@ -415,7 +434,12 @@ impl Hw {
     pub fn write16(&mut self, p: u32, v: u16, ram: &mut [u8], spr: &mut [u8]) {
         let cur = self.read32(p & !3);
         let sh = (p & 2) * 8;
-        self.write32(p & !3, (cur & !(0xffff << sh)) | ((v as u32) << sh), ram, spr);
+        self.write32(
+            p & !3,
+            (cur & !(0xffff << sh)) | ((v as u32) << sh),
+            ram,
+            spr,
+        );
     }
 
     fn sio_putc(&mut self, v: u8) {
@@ -657,13 +681,19 @@ impl Hw {
                 }
                 if std::env::var_os("SSX3_TRACE_DOWNLOAD").is_some() {
                     let nz = data.iter().filter(|q| **q != 0).count();
-                    eprintln!("[vif1-download] qwc {n} -> {madr:#x}: got {} qwords, {nz} non-zero", data.len());
+                    eprintln!(
+                        "[vif1-download] qwc {n} -> {madr:#x}: got {} qwords, {nz} non-zero",
+                        data.len()
+                    );
                 }
                 self.ch[c].madr += n * 16;
                 self.ch[c].qwc = 0;
             }
             _ => {
-                if mode == 1 && (c == ch::VIF1 || c == ch::GIF) && crate::frame_sink::skip_chain(c == ch::VIF1, self.ch[c].tadr) {
+                if mode == 1
+                    && (c == ch::VIF1 || c == ch::GIF)
+                    && crate::frame_sink::skip_chain(c == ch::VIF1, self.ch[c].tadr)
+                {
                     // Native: the frame was drawn by the host renderer.
                 } else if mode == 1 {
                     self.dma_chain(c, ram, spr);
@@ -692,10 +722,13 @@ impl Hw {
     fn dma_sink(&mut self, c: usize, data: &[Qword], ram: &mut [u8], spr: &mut [u8]) {
         if let Some(want) = watch_qword() {
             for (k, q) in data.iter().enumerate() {
-                if (*q as u64) == want || ((*q >> 64) as u64) == want || ((*q >> 32) as u64) == want {
+                if (*q as u64) == want || ((*q >> 64) as u64) == want || ((*q >> 32) as u64) == want
+                {
                     eprintln!(
                         "[dma-watch] ch{c} qword {k}/{} = {q:#034x} madr {:#x} tadr {:#x}",
-                        data.len(), self.ch[c].madr, self.ch[c].tadr
+                        data.len(),
+                        self.ch[c].madr,
+                        self.ch[c].tadr
                     );
                 }
             }
@@ -729,13 +762,27 @@ impl Hw {
         if c == ch::VIF1 && crate::render_verify::enabled() {
             let n = self.ch[c].qwc;
             let madr = self.ch[c].madr;
-            let pending: Vec<Qword> = (0..n).map(|i| mem_q(ram, spr, madr + i * 16, madr & 0x8000_0000 != 0)).collect();
+            let pending: Vec<Qword> = (0..n)
+                .map(|i| mem_q(ram, spr, madr + i * 16, madr & 0x8000_0000 != 0))
+                .collect();
             let id = (self.ch[c].chcr >> 28) & 7;
             if n > 0 && (id == 0 || id == 7) {
-                crate::render_verify::chain_start(&self.vif1, ram, spr, &pending, 0, false, false, 0, [0; 2]);
+                crate::render_verify::chain_start(
+                    &self.vif1, ram, spr, &pending, 0, false, false, 0, [0; 2],
+                );
             } else {
                 let asr = [self.ch[c].asr[0], self.ch[c].asr[1]];
-                crate::render_verify::chain_start(&self.vif1, ram, spr, &pending, self.ch[c].tadr, tte, tie, asp, asr);
+                crate::render_verify::chain_start(
+                    &self.vif1,
+                    ram,
+                    spr,
+                    &pending,
+                    self.ch[c].tadr,
+                    tte,
+                    tie,
+                    asp,
+                    asr,
+                );
             }
         }
         // If QWC is non-zero the channel first finishes the pending data.
@@ -762,7 +809,10 @@ impl Hw {
             let tag_spr = (tag >> 63) & 1 != 0;
             self.ch[c].chcr = (self.ch[c].chcr & 0xffff) | (((tag as u32) >> 16) << 16);
             if crate::trace_path3() && c == ch::GIF {
-                eprintln!("[p3] gif dmatag {:#x}: id {id} qwc {qwc} addr {addr:#x} irq {irq}", tadr);
+                eprintln!(
+                    "[p3] gif dmatag {:#x}: id {id} qwc {qwc} addr {addr:#x} irq {irq}",
+                    tadr
+                );
             }
             if tte && (c == ch::VIF0 || c == ch::VIF1) {
                 // The upper 64 bits of the tag are VIFcodes.
@@ -770,10 +820,15 @@ impl Hw {
                 self.dma_sink(c, &[t], ram, spr);
             }
             let (data_addr, data_spr, mut next, mut end) = match id {
-                0 => (addr, tag_spr, tadr, true),                              // refe
-                1 => (tadr + 16, tadr & 0x8000_0000 != 0, tadr + 16 + qwc * 16, false), // cnt
-                2 => (tadr + 16, tadr & 0x8000_0000 != 0, addr, false),         // next
-                3 | 4 => (addr, tag_spr, tadr + 16, false),                     // ref/refs
+                0 => (addr, tag_spr, tadr, true), // refe
+                1 => (
+                    tadr + 16,
+                    tadr & 0x8000_0000 != 0,
+                    tadr + 16 + qwc * 16,
+                    false,
+                ), // cnt
+                2 => (tadr + 16, tadr & 0x8000_0000 != 0, addr, false), // next
+                3 | 4 => (addr, tag_spr, tadr + 16, false), // ref/refs
                 5 => {
                     // call
                     let ret = tadr + 16 + qwc * 16;
@@ -820,7 +875,9 @@ impl Hw {
 fn watch_qword() -> Option<u64> {
     static W: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
     *W.get_or_init(|| {
-        std::env::var("SSX3_WATCH_QWORD").ok().and_then(|v| u64::from_str_radix(v.trim_start_matches("0x"), 16).ok())
+        std::env::var("SSX3_WATCH_QWORD")
+            .ok()
+            .and_then(|v| u64::from_str_radix(v.trim_start_matches("0x"), 16).ok())
     })
 }
 

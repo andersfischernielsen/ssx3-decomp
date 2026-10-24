@@ -21,16 +21,23 @@ pub fn init_standalone() -> bool {
     };
     let shown = path.display().to_string();
     ssx3_core::iso::set_opener(Box::new(move || {
-        Ok(Box::new(ssx3_core::pack::Pack::open_at(&path, base)?) as Box<dyn ssx3_core::iso::Source>)
+        Ok(Box::new(ssx3_core::pack::Pack::open_at(&path, base)?)
+            as Box<dyn ssx3_core::iso::Source>)
     }));
     STANDALONE.store(true, std::sync::atomic::Ordering::Relaxed);
     let dir = data_dir();
-    for (key, file) in [("SSX3_MEMCARD", "ssx3-mc0.ps2"), ("SSX3_SETTINGS", "ssx3-settings.cfg")] {
+    for (key, file) in [
+        ("SSX3_MEMCARD", "ssx3-mc0.ps2"),
+        ("SSX3_SETTINGS", "ssx3-settings.cfg"),
+    ] {
         if std::env::var_os(key).is_none() {
             std::env::set_var(key, dir.join(file));
         }
     }
-    eprintln!("[standalone] game data from {shown}; saves in {}", dir.display());
+    eprintln!(
+        "[standalone] game data from {shown}; saves in {}",
+        dir.display()
+    );
     true
 }
 
@@ -40,9 +47,13 @@ pub fn init_standalone() -> bool {
 fn data_dir() -> PathBuf {
     let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
     if cfg!(windows) {
-        env("APPDATA").unwrap_or_else(|| PathBuf::from(".")).join("SSX3")
+        env("APPDATA")
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("SSX3")
     } else if cfg!(target_os = "macos") {
-        env("HOME").unwrap_or_else(|| PathBuf::from(".")).join("Library/Application Support/SSX3")
+        env("HOME")
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Library/Application Support/SSX3")
     } else {
         env("XDG_DATA_HOME")
             .or_else(|| env("HOME").map(|h| h.join(".local/share")))
@@ -59,7 +70,9 @@ fn vblank(c: &mut Cpu) {
 
 /// `SSX3_DRAW_DIST=<factor>` (settings "Detail distance"): 1 = original.
 pub fn detail_distance() -> f32 {
-    crate::settings::get("SSX3_DRAW_DIST").and_then(|v| v.parse::<f32>().ok()).map_or(1.0, |f| f.clamp(1.0, 4.0))
+    crate::settings::get("SSX3_DRAW_DIST")
+        .and_then(|v| v.parse::<f32>().ok())
+        .map_or(1.0, |f| f.clamp(1.0, 4.0))
 }
 
 /// Create the machine, load the disc and the executable, start the main thread.
@@ -94,7 +107,11 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     // (The browser: no GS rasterizer at all, see `install_renderer`.)
     #[cfg(feature = "emu-gs")]
     if std::env::var("SSX3_GS").is_err() && !cfg!(target_arch = "wasm32") {
-        ssx3_ps2::m!(c).hw.gs.core().set_backend(ssx3_ps2::gs::Backend::Gpu);
+        ssx3_ps2::m!(c)
+            .hw
+            .gs
+            .core()
+            .set_backend(ssx3_ps2::gs::Backend::Gpu);
     }
     let iso = std::env::var("SSX3_ISO")
         .map(PathBuf::from)
@@ -109,7 +126,9 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     // 0x1a27a0). Clearing it skips them: the headless runner does by default
     // (scripted input timings assume it), the window plays them.
     // SSX3_SKIP_MOVIES=0/1 overrides either.
-    let skip = std::env::var("SSX3_SKIP_MOVIES").map(|v| v != "0").unwrap_or(skip_movies_default);
+    let skip = std::env::var("SSX3_SKIP_MOVIES")
+        .map(|v| v != "0")
+        .unwrap_or(skip_movies_default);
     if skip {
         c.bus.write32(0x004a_19cc, 0);
     }
@@ -124,7 +143,11 @@ fn read_elf(c: &mut Cpu) -> Vec<u8> {
             return v;
         }
     }
-    let d = ssx3_ps2::m!(c).sif.disc.as_mut().unwrap_or_else(|| panic!("{}: missing, and no disc", path.display()));
+    let d = ssx3_ps2::m!(c)
+        .sif
+        .disc
+        .as_mut()
+        .unwrap_or_else(|| panic!("{}: missing, and no disc", path.display()));
     let e = d.find("SLUS_207.72").expect("SLUS_207.72 on the disc");
     let mut v = d.read_vec(e.sector, e.size.div_ceil(2048));
     v.truncate(e.size as usize);
@@ -137,7 +160,19 @@ pub fn status(c: &Cpu) -> String {
         .kernel
         .threads
         .values()
-        .map(|t| format!("{}:{:?}@{:x}p{}", t.id, t.status, if t.id == ssx3_ps2::mr!(c).kernel.current { c.pc } else { t.ctx.pc }, t.priority))
+        .map(|t| {
+            format!(
+                "{}:{:?}@{:x}p{}",
+                t.id,
+                t.status,
+                if t.id == ssx3_ps2::mr!(c).kernel.current {
+                    c.pc
+                } else {
+                    t.ctx.pc
+                },
+                t.priority
+            )
+        })
         .collect();
     format!(
         "frame {} cycles {}M thread {} prims {} | {}",
@@ -167,7 +202,10 @@ pub fn dump(c: &Cpu) -> String {
         let mut bt = Vec::new();
         for i in 0..512u32 {
             let v = c.bus.ram_u32(sp.wrapping_add(i * 4));
-            if (0x0010_0000..0x0042_e590).contains(&v) && v & 3 == 0 && ssx3_ps2::machine::has_code(v) {
+            if (0x0010_0000..0x0042_e590).contains(&v)
+                && v & 3 == 0
+                && ssx3_ps2::machine::has_code(v)
+            {
                 let call = c.bus.ram_u32(v - 8);
                 if call >> 26 == 3 || (call >> 26 == 0 && call & 63 == 9) {
                     bt.push(format!("{v:x}"));
@@ -179,7 +217,15 @@ pub fn dump(c: &Cpu) -> String {
         }
         out += &format!("    stack: {}\n", bt.join(" "));
     }
-    out += &format!("  cpu per thread (Mcycles): {:?}\n", ssx3_ps2::mr!(c).kernel.thread_cycles.iter().map(|(k, v)| (*k, v / 1_000_000)).collect::<Vec<_>>());
+    out += &format!(
+        "  cpu per thread (Mcycles): {:?}\n",
+        ssx3_ps2::mr!(c)
+            .kernel
+            .thread_cycles
+            .iter()
+            .map(|(k, v)| (*k, v / 1_000_000))
+            .collect::<Vec<_>>()
+    );
     for (id, s) in &ssx3_ps2::mr!(c).kernel.semas {
         if !s.waiters.is_empty() {
             out += &format!("  sema {id} count {} waiters {:?}\n", s.count, s.waiters);
@@ -228,7 +274,10 @@ pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
         ssx3_ps2::frame_sink::set_view(0.0, fov());
     }
     // SSX3_RENDER_SCALE=N: N× internal resolution (1..8).
-    if let Some(n) = std::env::var("SSX3_RENDER_SCALE").ok().and_then(|v| v.parse::<u32>().ok()) {
+    if let Some(n) = std::env::var("SSX3_RENDER_SCALE")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+    {
         r.set_scale(n);
     }
     // The light visibility queries from the native depth (unless a debug
@@ -252,7 +301,10 @@ pub fn install_renderer(c: &mut Cpu) -> Option<ssx3_gfx::Renderer> {
     // Stage C: draw functions with a native form build no packets while
     // the native renderer draws (the emulated GS is detached).
     ssx3_game::packetless::set_on(native);
-    eprintln!("[gfx] draw-layer renderer installed ({})", if native { "native" } else { "shadow" });
+    eprintln!(
+        "[gfx] draw-layer renderer installed ({})",
+        if native { "native" } else { "shadow" }
+    );
     Some(r)
 }
 
@@ -274,7 +326,9 @@ fn lensfx_query_native(c: &mut Cpu) {
         return;
     }
     let (rec, out) = (c.g[A1][0] as u32, c.g[A2][0] as u32);
-    let f: Vec<f32> = (0..10).map(|i| f32::from_bits(c.bus.read32(rec + 4 * i))).collect();
+    let f: Vec<f32> = (0..10)
+        .map(|i| f32::from_bits(c.bus.read32(rec + 4 * i)))
+        .collect();
     // Records with a read rectangle beyond the screen (or not a number)
     // are left to the game's own code.
     let area = f[6] * f[7];
@@ -286,7 +340,8 @@ fn lensfx_query_native(c: &mut Cpu) {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
     }
-    let Some(v) = ssx3_ps2::frame_sink::with_depth(|d| lensfx_visibility(&f, d.w, d.h, &d.z)) else {
+    let Some(v) = ssx3_ps2::frame_sink::with_depth(|d| lensfx_visibility(&f, d.w, d.h, &d.z))
+    else {
         ssx3_ee::s09::f_002ec478__generated(c);
         return;
     };
@@ -305,7 +360,11 @@ fn lensfx_visibility(f: &[f32], w: u32, h: u32, z: &dyn Fn(u32, u32) -> u32) -> 
     let (lx, ly, lw, lh) = (f[0] as i32, f[1] as i32, f[2] as i32, f[3] as i32);
     let (sx, sy, rw, rh) = (f[4] as i32, f[5] as i32, f[6] as i32, f[7] as i32);
     // __fixunssfsi.
-    let depth = if f[9] < 0.0 { f[9] as i32 as u32 } else { f[9] as u32 };
+    let depth = if f[9] < 0.0 {
+        f[9] as i32 as u32
+    } else {
+        f[9] as u32
+    };
     let (mut total, mut visible) = (0.0f32, 0.0f32);
     for r in 0..rh.max(0) {
         let py = sy + r;
@@ -315,7 +374,11 @@ fn lensfx_visibility(f: &[f32], w: u32, h: u32, z: &dyn Fn(u32, u32) -> u32) -> 
                 continue;
             }
             total += 1.0;
-            let zv = if px >= 0 && py >= 0 && (px as u32) < w && (py as u32) < h { z(px as u32, py as u32) } else { 0 };
+            let zv = if px >= 0 && py >= 0 && (px as u32) < w && (py as u32) < h {
+                z(px as u32, py as u32)
+            } else {
+                0
+            };
             if zv <= depth {
                 visible += 1.0;
             }
@@ -343,7 +406,10 @@ mod tests {
     #[test]
     fn unoccluded_light_is_fully_visible() {
         let z = vec![500u32; 64 * 64];
-        assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]), 1.0);
+        assert_eq!(
+            lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]),
+            1.0
+        );
     }
 
     #[test]
@@ -356,7 +422,10 @@ mod tests {
                 z[y * 64 + x] = 5000;
             }
         }
-        assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]), 0.5);
+        assert_eq!(
+            lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]),
+            0.5
+        );
     }
 
     #[test]
@@ -367,10 +436,16 @@ mod tests {
         let mut f = query(-8.0, 8.0);
         f[4] = 0.0;
         f[6] = 8.0;
-        assert_eq!(lensfx_visibility(&f, 64, 64, &|x, y| z[(y * 64 + x) as usize]), 0.0);
+        assert_eq!(
+            lensfx_visibility(&f, 64, 64, &|x, y| z[(y * 64 + x) as usize]),
+            0.0
+        );
         // Fully on screen again but every pixel occluded: 0.
         let z = vec![5000u32; 64 * 64];
-        assert_eq!(lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]), 0.0);
+        assert_eq!(
+            lensfx_visibility(&query(8.0, 8.0), 64, 64, &|x, y| z[(y * 64 + x) as usize]),
+            0.0
+        );
     }
 }
 
@@ -384,7 +459,10 @@ pub fn render_size() -> Option<(u32, u32)> {
 /// `SSX3_FOV=<multiplier>`: field of view relative to the game's (1.2 =
 /// 20% wider, in the projection's tangent).
 pub fn fov() -> f32 {
-    crate::settings::get("SSX3_FOV").and_then(|v| v.parse::<f32>().ok()).filter(|v| *v > 0.1 && *v < 4.0).unwrap_or(1.0)
+    crate::settings::get("SSX3_FOV")
+        .and_then(|v| v.parse::<f32>().ok())
+        .filter(|v| *v > 0.1 && *v < 4.0)
+        .unwrap_or(1.0)
 }
 
 /// Native window: render at the window's pixel size (or the aspect box in
@@ -416,8 +494,12 @@ pub fn gfx_options() -> ssx3_gfx::Options {
             _ => ssx3_gfx::Aa::Off,
         },
         mipmaps: on("SSX3_MIPMAPS"),
-        lod_bias: get("SSX3_LOD_BIAS").and_then(|v| v.parse::<f32>().ok()).map_or(0.0, |b| b.clamp(-2.0, 2.0)),
-        terrain: get("SSX3_TERRAIN").and_then(|v| v.parse().ok()).map_or(1, |n: u32| n.clamp(1, 4)),
+        lod_bias: get("SSX3_LOD_BIAS")
+            .and_then(|v| v.parse::<f32>().ok())
+            .map_or(0.0, |b| b.clamp(-2.0, 2.0)),
+        terrain: get("SSX3_TERRAIN")
+            .and_then(|v| v.parse().ok())
+            .map_or(1, |n: u32| n.clamp(1, 4)),
         ao: on("SSX3_AO"),
         bloom: match get("SSX3_BLOOM").as_deref() {
             Some("modern") => ssx3_gfx::Bloom::Modern,
@@ -432,11 +514,15 @@ pub fn gfx_options() -> ssx3_gfx::Options {
 /// sharpens textures with mipmaps, i.e. texture-pack replacements, seen at a
 /// glancing angle).
 pub fn anisotropy() -> u16 {
-    crate::settings::get("SSX3_ANISO").and_then(|v| v.parse::<u16>().ok()).map_or(16, |n| n.clamp(1, 16))
+    crate::settings::get("SSX3_ANISO")
+        .and_then(|v| v.parse::<u16>().ok())
+        .map_or(16, |n| n.clamp(1, 16))
 }
 
 /// `SSX3_RESOLUTION=<percent>`: render at that fraction of the window's
 /// pixels (scaled up to fill it).
 pub fn resolution() -> f32 {
-    crate::settings::get("SSX3_RESOLUTION").and_then(|v| v.parse::<f32>().ok()).map_or(1.0, |p| (p / 100.0).clamp(0.25, 2.0))
+    crate::settings::get("SSX3_RESOLUTION")
+        .and_then(|v| v.parse::<f32>().ok())
+        .map_or(1.0, |p| (p / 100.0).clamp(0.25, 2.0))
 }

@@ -32,7 +32,9 @@ pub const HASH: u64 = 0x2764_9fa5_5223_cbbf;
 /// Code bytes (the registry entry's length).
 pub const LEN: u32 = 0xf40;
 /// The routines' entry points.
-pub const ENTRIES: [u32; 10] = [0x000, 0x278, 0x320, 0x570, 0x6e0, 0x828, 0x948, 0xdb8, 0xe80, 0xef0];
+pub const ENTRIES: [u32; 10] = [
+    0x000, 0x278, 0x320, 0x570, 0x6e0, 0x828, 0x948, 0xdb8, 0xe80, 0xef0,
+];
 
 type V = [u32; 4];
 
@@ -233,7 +235,11 @@ fn matrix_chain(vu: &mut Vu0) -> u32 {
         // Ten vectors through it, alternating VF17/VF28 (loads) and
         // VF18/VF27 (results); each result is stored one step later.
         for k in 0..10 {
-            let (src, dst, next) = if k % 2 == 0 { (17, 18, 28) } else { (28, 27, 17) };
+            let (src, dst, next) = if k % 2 == 0 {
+                (17, 18, 28)
+            } else {
+                (28, 27, 17)
+            };
             let s = vu.f(src);
             let (a, b, c, d) = (vu.f(23), vu.f(24), vu.f(25), vu.f(26));
             vu.mul(Acc, XYZW, a, bc(s, 0));
@@ -280,7 +286,9 @@ fn box_test_lanes(vu: &mut Vu0) -> u32 {
     vu.mul(Vf(14), W, zero, bc(zero, 3));
     let one = vu.f(14);
     // Lanes from the min corner (the rest from max), per corner VF1..8.
-    const FROM_MIN: [u8; 8] = [0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001];
+    const FROM_MIN: [u8; 8] = [
+        0b1111, 0b1101, 0b1011, 0b1001, 0b0111, 0b0101, 0b0011, 0b0001,
+    ];
     for (k, m) in FROM_MIN.into_iter().enumerate() {
         vu.mul(Vf(1 + k), m, one, lo);
         if k > 0 {
@@ -762,7 +770,10 @@ pub fn box_clip_typed(lo: V, hi: V, m: [V; 4], vf0: V, clip: u32) -> BoxClip {
     let [mx, my, mz, mt] = m;
     let mut acc = [0; 4];
     let mut corners = [[0; 4]; 8];
-    for (k, (z, y)) in [(lo, lo), (lo, hi), (hi, lo), (hi, hi)].into_iter().enumerate() {
+    for (k, (z, y)) in [(lo, lo), (lo, hi), (hi, lo), (hi, hi)]
+        .into_iter()
+        .enumerate()
+    {
         acc = mul(mt, bc(vf0, 3)).0;
         acc = madd(acc, mz, bc(z, 2)).0;
         acc = madd(acc, my, bc(y, 1)).0;
@@ -776,7 +787,12 @@ pub fn box_clip_typed(lo: V, hi: V, m: [V; 4], vf0: V, clip: u32) -> BoxClip {
         any |= reads[k];
         all &= reads[k];
     }
-    BoxClip { corners, acc, vi: [any & 63, all, reads[6], reads[7], 63], clip }
+    BoxClip {
+        corners,
+        acc,
+        vi: [any & 63, all, reads[6], reads[7], 63],
+        clip,
+    }
 }
 
 /// What the plane-set test (0x948) leaves: VF1-5 (the planes, xyz scaled
@@ -817,7 +833,12 @@ pub fn sphere_against_planes_typed(planes: [V; 5], s: V, vf7: V, acc: V, vf0: V)
     scale(&mut p, 3);
     let mut near = minus_r(acc, vf7);
     let (mut t, mut o) = (3, 2);
-    let done = |p: [V; 5], acc: V, vi: [u16; 4]| SpherePlanes { planes: p, vf7, acc, vi: [vi[1], vi[2], vi[3]] };
+    let done = |p: [V; 5], acc: V, vi: [u16; 4]| SpherePlanes {
+        planes: p,
+        vf7,
+        acc,
+        vi: [vi[1], vi[2], vi[3]],
+    };
     for r in 2..=5 {
         dist(&mut acc, &p, vf7, r);
         vi[t] = far & vi[1];
@@ -891,7 +912,9 @@ mod typed_tests {
     }
     fn run_routine(vu: &mut Vu, pc: u32) {
         vu.start(pc);
-        let VuExit::End = run(vu, pc, &mut |_| {}) else { panic!() };
+        let VuExit::End = run(vu, pc, &mut |_| {}) else {
+            panic!()
+        };
     }
 
     #[test]
@@ -899,7 +922,13 @@ mod typed_tests {
         let mut seed = 0x0b0c_5eed_u64;
         for _ in 0..20000 {
             let mut vu = state(&mut seed);
-            let t = box_clip_typed(vu.vf[15], vu.vf[16], [vu.vf[10], vu.vf[11], vu.vf[12], vu.vf[13]], vu.vf[0], vu.clip);
+            let t = box_clip_typed(
+                vu.vf[15],
+                vu.vf[16],
+                [vu.vf[10], vu.vf[11], vu.vf[12], vu.vf[13]],
+                vu.vf[0],
+                vu.clip,
+            );
             run_routine(&mut vu, 0x570);
             let want = BoxClip {
                 corners: std::array::from_fn(|k| vu.vf[1 + k]),
@@ -917,7 +946,13 @@ mod typed_tests {
         let mut results = [0u32; 3];
         for _ in 0..20000 {
             let mut vu = state(&mut seed);
-            let t = sphere_against_planes_typed(std::array::from_fn(|k| vu.vf[1 + k]), vu.vf[6], vu.vf[7], vu.acc, vu.vf[0]);
+            let t = sphere_against_planes_typed(
+                std::array::from_fn(|k| vu.vf[1 + k]),
+                vu.vf[6],
+                vu.vf[7],
+                vu.acc,
+                vu.vf[0],
+            );
             run_routine(&mut vu, 0x948);
             let want = SpherePlanes {
                 planes: std::array::from_fn(|k| vu.vf[1 + k]),
@@ -959,7 +994,8 @@ mod tests {
                 3 => self.next() as u32 & 0x807f_ffff,
                 4 => (self.next() as u32 & 0x80ff_ffff) | 0x7e00_0000,
                 _ => {
-                    let v = (self.below(2001) as f32 - 1000.0) / 100.0 * (1u32 << self.below(4)) as f32;
+                    let v =
+                        (self.below(2001) as f32 - 1000.0) / 100.0 * (1u32 << self.below(4)) as f32;
                     v.to_bits()
                 }
             }
@@ -1000,14 +1036,16 @@ mod tests {
             }
             for q in 80..100 {
                 let o = q * 16 + 12;
-                vu.data[o..o + 4].copy_from_slice(&(r.below(100) as f32 + 1.0).to_bits().to_le_bytes());
+                vu.data[o..o + 4]
+                    .copy_from_slice(&(r.below(100) as f32 + 1.0).to_bits().to_le_bytes());
             }
             vu.vf[6][3] = (r.below(4) as f32).to_bits();
             vu.vf[22][3] = (r.below(4) as f32).to_bits();
         }
         // Triangles the segment can hit.
         if entry == 0x6e0 && r.below(2) == 0 {
-            let p = |x: f32, y: f32, z: f32| [x.to_bits(), y.to_bits(), z.to_bits(), 1f32.to_bits()];
+            let p =
+                |x: f32, y: f32, z: f32| [x.to_bits(), y.to_bits(), z.to_bits(), 1f32.to_bits()];
             let f = |r: &mut Rng| (r.below(200) as f32 - 100.0) / 10.0;
             vu.vf[10] = p(f(r), f(r), 0.0);
             vu.vf[11] = p(f(r), f(r), 0.0);
@@ -1049,7 +1087,9 @@ mod tests {
 
     fn run_hand(vu: &mut Vu, pc: u32) {
         vu.start(pc);
-        let VuExit::End = run(vu, pc, &mut |_| {}) else { panic!() };
+        let VuExit::End = run(vu, pc, &mut |_| {}) else {
+            panic!()
+        };
     }
 
     fn compare(mut a: Vu, mut b: Vu, pc: u32, what: &str) {
@@ -1060,9 +1100,32 @@ mod tests {
             let diff: Vec<String> = (0..32)
                 .filter(|&k| sa.vf[k] != sb.vf[k])
                 .map(|k| format!("vf{k} {:08x?} != {:08x?}", sa.vf[k], sb.vf[k]))
-                .chain((0..16).filter(|&k| sa.vi[k] != sb.vi[k]).map(|k| format!("vi{k} {:#x} != {:#x}", sa.vi[k], sb.vi[k])))
-                .chain([("acc", sa.acc != sb.acc), ("q", sa.q != sb.q), ("i", sa.i != sb.i)].iter().filter(|x| x.1).map(|x| x.0.to_string()))
-                .chain([("mac", sa.mac, sb.mac), ("status", sa.status, sb.status), ("clip", sa.clip, sb.clip), ("tpc", sa.tpc, sb.tpc)].iter().filter(|x| x.1 != x.2).map(|x| format!("{} {:#x} != {:#x}", x.0, x.1, x.2)))
+                .chain(
+                    (0..16)
+                        .filter(|&k| sa.vi[k] != sb.vi[k])
+                        .map(|k| format!("vi{k} {:#x} != {:#x}", sa.vi[k], sb.vi[k])),
+                )
+                .chain(
+                    [
+                        ("acc", sa.acc != sb.acc),
+                        ("q", sa.q != sb.q),
+                        ("i", sa.i != sb.i),
+                    ]
+                    .iter()
+                    .filter(|x| x.1)
+                    .map(|x| x.0.to_string()),
+                )
+                .chain(
+                    [
+                        ("mac", sa.mac, sb.mac),
+                        ("status", sa.status, sb.status),
+                        ("clip", sa.clip, sb.clip),
+                        ("tpc", sa.tpc, sb.tpc),
+                    ]
+                    .iter()
+                    .filter(|x| x.1 != x.2)
+                    .map(|x| format!("{} {:#x} != {:#x}", x.0, x.1, x.2)),
+                )
                 .chain((a.data != b.data).then(|| "data".to_string()))
                 .collect();
             panic!("{what} at {pc:#05x}: {}", diff.join(", "));
@@ -1092,10 +1155,15 @@ mod tests {
     /// a game run).
     #[test]
     fn matches_translation_on_captures() {
-        let Ok(path) = std::env::var("SSX3_VU0_CAPTURE") else { return };
+        let Ok(path) = std::env::var("SSX3_VU0_CAPTURE") else {
+            return;
+        };
         let bytes = std::fs::read(path).unwrap();
         let mut n = 0;
-        for rec in Record::read_all(&bytes).into_iter().filter(|r| r.unit == 0 && r.hash == HASH) {
+        for rec in Record::read_all(&bytes)
+            .into_iter()
+            .filter(|r| r.unit == 0 && r.hash == HASH)
+        {
             let mut vu = Vu::new(0);
             rec.start.apply(&mut vu);
             vu.data = rec.data_in.clone();

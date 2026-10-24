@@ -94,7 +94,16 @@ impl ArchState {
         for x in self.vi {
             w.extend_from_slice(&x.to_le_bytes());
         }
-        for x in [self.q, self.p, self.i, self.r, self.mac, self.status, self.clip, self.tpc] {
+        for x in [
+            self.q,
+            self.p,
+            self.i,
+            self.r,
+            self.mac,
+            self.status,
+            self.clip,
+            self.tpc,
+        ] {
             put32(w, x);
         }
     }
@@ -190,7 +199,11 @@ impl<'a> Reader<'a> {
     pub fn qwords(&mut self) -> Option<Vec<Qword>> {
         let n = self.u32()? as usize;
         let b = self.take(n * 16)?;
-        Some(b.chunks_exact(16).map(|c| u128::from_le_bytes(c.try_into().unwrap())).collect())
+        Some(
+            b.chunks_exact(16)
+                .map(|c| u128::from_le_bytes(c.try_into().unwrap()))
+                .collect(),
+        )
     }
 }
 
@@ -329,7 +342,9 @@ fn init() {
         let to = num(p.next(), u64::MAX);
         match std::fs::File::create(&path) {
             Ok(file) => {
-                eprintln!("[vu-capture] -> {path}: max {max}, frames {from}..{to}, stride {stride}");
+                eprintln!(
+                    "[vu-capture] -> {path}: max {max}, frames {from}..{to}, stride {stride}"
+                );
                 *REC.lock().unwrap() = Some(Recorder {
                     file,
                     max,

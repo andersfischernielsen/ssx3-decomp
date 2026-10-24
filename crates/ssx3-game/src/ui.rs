@@ -34,24 +34,60 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001e_91f8, hud_get_elem_pos, "HUD_GetElemPos"),
     (0x001e_9220, hud_get_elem_size, "HUD_GetElemSize"),
     (0x0011_7008, c_hudfx_set_text, "cHUDFX_SetText"),
-    (0x0011_79e0, rider_metrix_remove_hud_message, "RiderMetrix_RemoveHUDMessage"),
-    (0x0039_f7b8, ui_state_mgr_set_parent_chain_visible, "UIStateMgr_SetParentChainVisible"),
+    (
+        0x0011_79e0,
+        rider_metrix_remove_hud_message,
+        "RiderMetrix_RemoveHUDMessage",
+    ),
+    (
+        0x0039_f7b8,
+        ui_state_mgr_set_parent_chain_visible,
+        "UIStateMgr_SetParentChainVisible",
+    ),
     (0x0039_ebe0, ui_state_mgr_render, "UIStateMgr_Render"),
-    (0x0039_e868, ui_state_update_screens, "UIState_UpdateScreens"),
+    (
+        0x0039_e868,
+        ui_state_update_screens,
+        "UIState_UpdateScreens",
+    ),
     (0x0039_f100, ui_state_mgr_update, "UIStateMgr_Update"),
-    (0x0039_eb60, ui_state_mgr_has_state_in_phase, "UIStateMgr_HasStateInPhase"),
-    (0x0039_ea90, ui_state_mgr_restart_state_in_phase, "UIStateMgr_RestartStateInPhase"),
+    (
+        0x0039_eb60,
+        ui_state_mgr_has_state_in_phase,
+        "UIStateMgr_HasStateInPhase",
+    ),
+    (
+        0x0039_ea90,
+        ui_state_mgr_restart_state_in_phase,
+        "UIStateMgr_RestartStateInPhase",
+    ),
     (0x0039_f840, ui_state_mgr_close_all, "UIStateMgr_CloseAll"),
     (0x0039_f9d8, ui_state_mgr_find_state, "UIStateMgr_FindState"),
-    (0x0039_fa88, ui_state_mgr_get_active_state, "UIStateMgr_GetActiveState"),
+    (
+        0x0039_fa88,
+        ui_state_mgr_get_active_state,
+        "UIStateMgr_GetActiveState",
+    ),
     (0x0039_8038, ui_engine_update, "UIEngine_Update"),
     (0x0039_7df8, ui_engine_render, "UIEngine_Render"),
     (0x0011_7048, c_hudfx_show, "cHUDFX_Show"),
-    (0x0011_71a8, c_hudfx_show_number_delayed, "cHUDFX_ShowNumberDelayed"),
-    (0x0011_7b88, rider_metrix_show_hud_number, "RiderMetrix_ShowHUDNumber"),
+    (
+        0x0011_71a8,
+        c_hudfx_show_number_delayed,
+        "cHUDFX_ShowNumberDelayed",
+    ),
+    (
+        0x0011_7b88,
+        rider_metrix_show_hud_number,
+        "RiderMetrix_ShowHUDNumber",
+    ),
     (0x001f_10f8, hud_align_elem_pos, "HUD_AlignElemPos"),
     (0x0039_1cb0, font_draw_text, "Font_DrawText"),
-    (0x0039_2908, font_draw_text_centered, "Font_DrawTextCentered"),
+    (
+        0x0039_2908,
+        font_draw_text_centered,
+        "Font_DrawTextCentered",
+    ),
     (0x001f_1190, hud_draw_sprite, "HUD_DrawSprite"),
     (0x0039_1fb0, font_measure_text, "Font_MeasureText"),
 ];
@@ -383,16 +419,34 @@ pub fn ui_state_mgr_set_parent_chain_visible(c: &mut Cpu) {
 mod callee {
     use crate::call::Callee;
     use ssx3_ee as ee;
-    pub const UI_LIST_FIRST: Callee = Callee { addr: 0x0039_7840, f: ee::s13::UIList_First };
-    pub const UI_LIST_NODE_IS_SENTINEL: Callee =
-        Callee { addr: 0x0039_7718, f: ee::s13::UIListNode_IsSentinel };
-    pub const UI_SCREEN_UPDATE: Callee = Callee { addr: 0x0039_d778, f: ee::s13::UIScreen_Update };
-    pub const UI_STATE_UPDATE_SCREENS: Callee =
-        Callee { addr: 0x0039_e868, f: ee::s13::UIState_UpdateScreens };
-    pub const UI_STATE_MGR_PROCESS_STATES: Callee =
-        Callee { addr: 0x0039_ecb0, f: ee::s13::UIStateMgr_ProcessStates };
-    pub const UI_STATE_MGR_UPDATE: Callee = Callee { addr: 0x0039_f100, f: ee::s13::UIStateMgr_Update };
-    pub const UI_STATE_MGR_RENDER: Callee = Callee { addr: 0x0039_ebe0, f: ee::s13::UIStateMgr_Render };
+    pub const UI_LIST_FIRST: Callee = Callee {
+        addr: 0x0039_7840,
+        f: ee::s13::UIList_First,
+    };
+    pub const UI_LIST_NODE_IS_SENTINEL: Callee = Callee {
+        addr: 0x0039_7718,
+        f: ee::s13::UIListNode_IsSentinel,
+    };
+    pub const UI_SCREEN_UPDATE: Callee = Callee {
+        addr: 0x0039_d778,
+        f: ee::s13::UIScreen_Update,
+    };
+    pub const UI_STATE_UPDATE_SCREENS: Callee = Callee {
+        addr: 0x0039_e868,
+        f: ee::s13::UIState_UpdateScreens,
+    };
+    pub const UI_STATE_MGR_PROCESS_STATES: Callee = Callee {
+        addr: 0x0039_ecb0,
+        f: ee::s13::UIStateMgr_ProcessStates,
+    };
+    pub const UI_STATE_MGR_UPDATE: Callee = Callee {
+        addr: 0x0039_f100,
+        f: ee::s13::UIStateMgr_Update,
+    };
+    pub const UI_STATE_MGR_RENDER: Callee = Callee {
+        addr: 0x0039_ebe0,
+        f: ee::s13::UIStateMgr_Render,
+    };
 }
 use callee::*;
 
@@ -485,7 +539,11 @@ pub fn ui_state_mgr_render(c: &mut Cpu) {
             c.cycles += 1;
             render_visible(
                 c,
-                &RenderPass { after_render: 0x0039_ec2c, after_sentinel: 0x0039_ec38, head: 0x0039_ec08 },
+                &RenderPass {
+                    after_render: 0x0039_ec2c,
+                    after_sentinel: 0x0039_ec38,
+                    head: 0x0039_ec08,
+                },
             )?;
         }
         c.cycles += 5;
@@ -496,7 +554,11 @@ pub fn ui_state_mgr_render(c: &mut Cpu) {
             c.cycles += 1;
             render_visible(
                 c,
-                &RenderPass { after_render: 0x0039_ec7c, after_sentinel: 0x0039_ec88, head: 0x0039_ec58 },
+                &RenderPass {
+                    after_render: 0x0039_ec7c,
+                    after_sentinel: 0x0039_ec88,
+                    head: 0x0039_ec58,
+                },
             )?;
             c.cycles += 1;
         }
@@ -674,7 +736,14 @@ pub fn ui_state_mgr_restart_state_in_phase(c: &mut Cpu) {
         c.cycles += 14;
         let frame = Frame::open(c, 0x70);
         set_word(c, A1, r32(c, A1) << 24);
-        for (reg, off) in [(S1, 0x50), (S0, 0x60), (S2, 0x40), (S3, 0x30), (S4, 0x20), (S5, 0x10)] {
+        for (reg, off) in [
+            (S1, 0x50),
+            (S0, 0x60),
+            (S2, 0x40),
+            (S3, 0x30),
+            (S4, 0x20),
+            (S5, 0x10),
+        ] {
             frame.save(c, reg, off);
         }
         frame.save_ra(c, 0);
@@ -719,7 +788,14 @@ pub fn ui_state_mgr_restart_state_in_phase(c: &mut Cpu) {
             c.g[V0][0] = 0;
         }
         c.cycles += 9;
-        for (reg, off) in [(S0, 0x60), (S1, 0x50), (S2, 0x40), (S3, 0x30), (S4, 0x20), (S5, 0x10)] {
+        for (reg, off) in [
+            (S0, 0x60),
+            (S1, 0x50),
+            (S2, 0x40),
+            (S3, 0x30),
+            (S4, 0x20),
+            (S5, 0x10),
+        ] {
             frame.restore(c, reg, off);
         }
         frame.restore_ra(c, 0);
@@ -1091,14 +1167,28 @@ fn ui_renderer(c: &mut Cpu) -> u64 {
 /// A renderer method call: the renderer in `obj_reg`, its vptr in
 /// `vt_reg`, the method in `fn_reg`, `this` in a0 (as the original
 /// leaves them). The renderer is loaded first.
-fn renderer_call(c: &mut Cpu, obj_reg: usize, vt_reg: usize, fn_reg: usize, slot: u32, ret_to: u32) -> Flow {
+fn renderer_call(
+    c: &mut Cpu,
+    obj_reg: usize,
+    vt_reg: usize,
+    fn_reg: usize,
+    slot: u32,
+    ret_to: u32,
+) -> Flow {
     let r = ui_renderer(c);
     c.g[obj_reg][0] = r;
     renderer_call_on(c, r, vt_reg, fn_reg, slot, ret_to)
 }
 
 /// [`renderer_call`] with the renderer already loaded.
-fn renderer_call_on(c: &mut Cpu, r: u64, vt_reg: usize, fn_reg: usize, slot: u32, ret_to: u32) -> Flow {
+fn renderer_call_on(
+    c: &mut Cpu,
+    r: u64,
+    vt_reg: usize,
+    fn_reg: usize,
+    slot: u32,
+    ret_to: u32,
+) -> Flow {
     let vt = lw(c, (r as u32).wrapping_add(ui_renderer::VPTR));
     c.g[vt_reg][0] = vt;
     let m = VSlot::read(c, vt, slot);
@@ -1162,7 +1252,12 @@ pub fn ui_engine_render(c: &mut Cpu) {
         c.f[12] = 0;
         c.g[A1][0] = 0;
         c.f[13] = 0;
-        for (f, bits) in [(14, 0x4420_0000u32), (15, 0x43f0_0000), (16, 0xbf80_0000), (17, 0x3f80_0000)] {
+        for (f, bits) in [
+            (14, 0x4420_0000u32),
+            (15, 0x43f0_0000),
+            (16, 0xbf80_0000),
+            (17, 0x3f80_0000),
+        ] {
             c.g[AT][0] = sx(bits);
             c.f[f] = bits;
         }
@@ -1235,12 +1330,18 @@ pub mod hud_fx {
     pub const TEXT: u32 = 0x18;
 }
 
-const C_HUDFX_SET_TEXT: crate::call::Callee =
-    crate::call::Callee { addr: 0x0011_7008, f: ssx3_ee::s00::cHUDFX_SetText };
-const C_HUDFX_SHOW_NUMBER: crate::call::Callee =
-    crate::call::Callee { addr: 0x0011_70a8, f: ssx3_ee::s00::cHUDFX_ShowNumber };
-const RIDER_METRIX_FIND_HUD_SLOT: crate::call::Callee =
-    crate::call::Callee { addr: 0x0011_7a58, f: ssx3_ee::s00::RiderMetrix_FindHUDSlot };
+const C_HUDFX_SET_TEXT: crate::call::Callee = crate::call::Callee {
+    addr: 0x0011_7008,
+    f: ssx3_ee::s00::cHUDFX_SetText,
+};
+const C_HUDFX_SHOW_NUMBER: crate::call::Callee = crate::call::Callee {
+    addr: 0x0011_70a8,
+    f: ssx3_ee::s00::cHUDFX_ShowNumber,
+};
+const RIDER_METRIX_FIND_HUD_SLOT: crate::call::Callee = crate::call::Callee {
+    addr: 0x0011_7a58,
+    f: ssx3_ee::s00::RiderMetrix_FindHUDSlot,
+};
 /// `sprintf` (libc, another shard: called through the table).
 const SPRINTF: u32 = 0x0041_7828;
 /// The shared number buffer and its `"%d"` format.
@@ -1397,7 +1498,14 @@ pub fn hud_align_elem_pos(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 37;
         let frame = Frame::open(c, 0x70);
-        for (reg, off) in [(S0, 0x60), (S1, 0x50), (S2, 0x40), (S3, 0x30), (S4, 0x20), (S5, 0x10)] {
+        for (reg, off) in [
+            (S0, 0x60),
+            (S1, 0x50),
+            (S2, 0x40),
+            (S3, 0x30),
+            (S4, 0x20),
+            (S5, 0x10),
+        ] {
             frame.save(c, reg, off);
         }
         frame.save_ra(c, 0);
@@ -1417,11 +1525,22 @@ pub fn hud_align_elem_pos(c: &mut Cpu) {
             for (f, reg) in [(12, S2), (13, S3), (14, S4)] {
                 c.f[f] = Addr(at(c, reg, 4 * axis)).read_u32(c);
             }
-            let (func, ret_to) = if axis == 0 { (0x0021_e750, 0x001f_1148) } else { (0x0021_e7a8, 0x001f_1164) };
+            let (func, ret_to) = if axis == 0 {
+                (0x0021_e750, 0x001f_1148)
+            } else {
+                (0x0021_e7a8, 0x001f_1164)
+            };
             call_ptr(c, func, ret_to)?;
             Addr(at(c, S5, 4 * axis)).write_u32(c, c.f[0]);
         }
-        for (reg, off) in [(S0, 0x60), (S1, 0x50), (S2, 0x40), (S3, 0x30), (S4, 0x20), (S5, 0x10)] {
+        for (reg, off) in [
+            (S0, 0x60),
+            (S1, 0x50),
+            (S2, 0x40),
+            (S3, 0x30),
+            (S4, 0x20),
+            (S5, 0x10),
+        ] {
             frame.restore(c, reg, off);
         }
         frame.restore_ra(c, 0);
@@ -1599,10 +1718,14 @@ pub fn font_draw_text(c: &mut Cpu) {
     })
 }
 
-const FONT_MEASURE_TEXT: crate::call::Callee =
-    crate::call::Callee { addr: 0x0039_1fb0, f: ssx3_ee::s12::Font_MeasureText };
-const FONT_DRAW_TEXT: crate::call::Callee =
-    crate::call::Callee { addr: 0x0039_1cb0, f: ssx3_ee::s12::Font_DrawText };
+const FONT_MEASURE_TEXT: crate::call::Callee = crate::call::Callee {
+    addr: 0x0039_1fb0,
+    f: ssx3_ee::s12::Font_MeasureText,
+};
+const FONT_DRAW_TEXT: crate::call::Callee = crate::call::Callee {
+    addr: 0x0039_1cb0,
+    f: ssx3_ee::s12::Font_DrawText,
+};
 
 /// `Font_DrawTextCentered(font, const char* text, float x, float y)`
 /// (0x392908): measures the text at the font's size and draws it with its
@@ -1801,7 +1924,15 @@ pub fn hud_draw_sprite(c: &mut Cpu) {
             let rend = ui_renderer(c);
             c.g[T0][0] = rend;
             c.sq(V0, sp + 0xb0);
-            for (f, v) in [(0, v0_uv), (1, u1), (2, y1.0), (3, x1.0), (4, x0.0), (5, u0), (7, v1_uv)] {
+            for (f, v) in [
+                (0, v0_uv),
+                (1, u1),
+                (2, y1.0),
+                (3, x1.0),
+                (4, x0.0),
+                (5, u0),
+                (7, v1_uv),
+            ] {
                 c.f[f] = v;
             }
             renderer_call_on(c, rend, V1, V0, 0x238, 0x001f_1328)?;
@@ -1872,7 +2003,11 @@ pub fn font_measure_text(c: &mut Cpu) {
     c.cycles += 13;
     let frame = Frame::open(c, 0x10);
     c.g[T5][0] = c.g[A3][0];
-    c.g[T3][0] = if c.g[A2][0] != 0 { c.g[A2][0] } else { c.g[SP][0] };
+    c.g[T3][0] = if c.g[A2][0] != 0 {
+        c.g[A2][0]
+    } else {
+        c.g[SP][0]
+    };
     let rect = r32(c, T3);
     for i in 0..4 {
         Addr(rect + 4 * i).sw(c, 0);
@@ -2101,28 +2236,44 @@ mod tests {
         }
         c.g[A0][0] = DATA as u64;
         c.g[A1][0] = (DATA + 0x100) as u64;
-        c.g[A2][0] = if r.next_u32() % 3 == 0 { 0 } else { (DATA + 0x200) as u64 };
+        c.g[A2][0] = if r.next_u32() % 3 == 0 {
+            0
+        } else {
+            (DATA + 0x200) as u64
+        };
     }
 
     #[test]
     fn hud_get_elem_scale() {
-        check_paths(ssx3_ee::s04::f_001e9290__generated, super::hud_get_elem_scale, SEEDS, &[5], &|c, s| {
-            hud_setup(c, s, 1)
-        });
+        check_paths(
+            ssx3_ee::s04::f_001e9290__generated,
+            super::hud_get_elem_scale,
+            SEEDS,
+            &[5],
+            &|c, s| hud_setup(c, s, 1),
+        );
     }
 
     #[test]
     fn hud_get_elem_color() {
-        check_paths(ssx3_ee::s04::f_001e91a8__generated, super::hud_get_elem_color, SEEDS, &[9], &|c, s| {
-            hud_setup(c, s, 2)
-        });
+        check_paths(
+            ssx3_ee::s04::f_001e91a8__generated,
+            super::hud_get_elem_color,
+            SEEDS,
+            &[9],
+            &|c, s| hud_setup(c, s, 2),
+        );
     }
 
     #[test]
     fn hud_get_elem_pos() {
-        check_paths(ssx3_ee::s04::f_001e91f8__generated, super::hud_get_elem_pos, SEEDS, &[9], &|c, s| {
-            hud_setup(c, s, 3)
-        });
+        check_paths(
+            ssx3_ee::s04::f_001e91f8__generated,
+            super::hud_get_elem_pos,
+            SEEDS,
+            &[9],
+            &|c, s| hud_setup(c, s, 3),
+        );
     }
 
     #[test]
@@ -2139,20 +2290,30 @@ mod tests {
 
     #[test]
     fn c_hudfx_set_text() {
-        check_events(ssx3_ee::s00::f_00117008__generated, super::c_hudfx_set_text, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 5);
-            scramble(c, &mut r);
-            fill(c, &mut r, DATA, 0x80);
-            // A string of 0..40 non-zero bytes (some with the top bit set).
-            let n = r.next_u32() % 40;
-            for i in 0..n {
-                c.bus.write8(DATA + 0x200 + i, (r.next_u32() % 255 + 1) as u8);
-            }
-            c.bus.write8(DATA + 0x200 + n, 0);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = if r.next_u32() % 8 == 0 { 0 } else { (DATA + 0x200) as u64 };
-            schedule(c, &mut r, seed, 0x0011_7008)
-        });
+        check_events(
+            ssx3_ee::s00::f_00117008__generated,
+            super::c_hudfx_set_text,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 5);
+                scramble(c, &mut r);
+                fill(c, &mut r, DATA, 0x80);
+                // A string of 0..40 non-zero bytes (some with the top bit set).
+                let n = r.next_u32() % 40;
+                for i in 0..n {
+                    c.bus
+                        .write8(DATA + 0x200 + i, (r.next_u32() % 255 + 1) as u8);
+                }
+                c.bus.write8(DATA + 0x200 + n, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = if r.next_u32() % 8 == 0 {
+                    0
+                } else {
+                    (DATA + 0x200) as u64
+                };
+                schedule(c, &mut r, seed, 0x0011_7008)
+            },
+        );
     }
 
     fn remove_hud_message_setup(c: &mut Cpu, seed: u32) -> Rng {
@@ -2160,7 +2321,8 @@ mod tests {
         scramble(c, &mut r);
         let table = DATA + 0x1000;
         let count = r.next_u32() % 45;
-        c.bus.write32(DATA + 0x1b0, if r.next_u32() % 8 == 0 { 0 } else { table });
+        c.bus
+            .write32(DATA + 0x1b0, if r.next_u32() % 8 == 0 { 0 } else { table });
         c.bus.write32(DATA + 0x1b4, count);
         for i in 0..70 {
             c.bus.write32(table + 0x9c * i, r.next_u32() % 40);
@@ -2177,7 +2339,10 @@ mod tests {
 
     #[test]
     fn rider_metrix_remove_hud_message() {
-        let (generated, hand) = (ssx3_ee::s00::f_001179e0__generated, super::rider_metrix_remove_hud_message);
+        let (generated, hand) = (
+            ssx3_ee::s00::f_001179e0__generated,
+            super::rider_metrix_remove_hud_message,
+        );
         check_paths_lohi(generated, hand, SEEDS, &[6, 12, 24], &|c, s| {
             remove_hud_message_setup(c, s);
         });
@@ -2202,12 +2367,18 @@ mod tests {
         for i in 0..14u32 {
             let s = DATA + 0x40 * i;
             c.bus.write32(s + 4, s + 0x40);
-            c.bus.write32(s + 0x20, if i < depth { r.next_u32() | 1 } else { 0 });
+            c.bus
+                .write32(s + 0x20, if i < depth { r.next_u32() | 1 } else { 0 });
             let phase = r.next_u32() % 9;
-            c.bus.write32(s + 0x1c, (r.next_u32() & !0x3f00) | phase << 8);
+            c.bus
+                .write32(s + 0x1c, (r.next_u32() & !0x3f00) | phase << 8);
         }
         c.g[A0][0] = r.next_u32() as u64;
-        c.g[A1][0] = if r.next_u32() % 10 == 0 { 0 } else { DATA as u64 };
+        c.g[A1][0] = if r.next_u32() % 10 == 0 {
+            0
+        } else {
+            DATA as u64
+        };
         c.g[A2][0] = r.next_u32() as u64 | (r.next_u32() as u64) << 32;
         c.g[A3][0] = (r.next_u32() % 2) as u64;
         r
@@ -2215,7 +2386,10 @@ mod tests {
 
     #[test]
     fn ui_state_mgr_set_parent_chain_visible() {
-        let (generated, hand) = (ssx3_ee::s13::f_0039f7b8__generated, super::ui_state_mgr_set_parent_chain_visible);
+        let (generated, hand) = (
+            ssx3_ee::s13::f_0039f7b8__generated,
+            super::ui_state_mgr_set_parent_chain_visible,
+        );
         // null; no parent (with / without self, phase open / closed); one
         // step of the chain (open / closed).
         check_paths(generated, hand, SEEDS, &[4, 9, 15, 20, 21, 23], &|c, s| {
@@ -2263,7 +2437,8 @@ mod tests {
         c.bus.write32(s + 8, VT);
         c.bus.write32(s + 0xc, r.next_u32() % 6);
         let phase = r.next_u32() % 8;
-        c.bus.write32(s + 0x1c, (r.next_u32() & !0x3f00) | phase << 8);
+        c.bus
+            .write32(s + 0x1c, (r.next_u32() & !0x3f00) | phase << 8);
     }
 
     /// Both manager lists with 0..`max` states each (states 0x40 apart
@@ -2284,7 +2459,12 @@ mod tests {
     }
 
     /// Require that `gen` returns each of `results` (v0) for some seed.
-    fn require_v0(gen: GuestFn, seeds: u32, results: &[&dyn Fn(u64) -> bool], setup: &dyn Fn(&mut Cpu, u32)) {
+    fn require_v0(
+        gen: GuestFn,
+        seeds: u32,
+        results: &[&dyn Fn(u64) -> bool],
+        setup: &dyn Fn(&mut Cpu, u32),
+    ) {
         let mut seen = vec![false; results.len()];
         for seed in 0..seeds {
             let mut c = fresh();
@@ -2306,7 +2486,10 @@ mod tests {
 
     #[test]
     fn ui_state_mgr_render() {
-        let (generated, hand) = (ssx3_ee::s13::f_0039ebe0__generated, super::ui_state_mgr_render);
+        let (generated, hand) = (
+            ssx3_ee::s13::f_0039ebe0__generated,
+            super::ui_state_mgr_render,
+        );
         covered(generated, hand, SEEDS, &|c, seed| {
             mgr_setup(c, seed, 0x10, 6, 4);
             c.g[A0][0] = MGR as u64;
@@ -2322,14 +2505,21 @@ mod tests {
         let mut r = mgr_setup(c, seed, salt, 0, 8);
         c.g[A0][0] = if seed % 2 == 0 { MGR } else { MGR + 0x1c } as u64;
         // Low byte: a phase (sometimes negative); garbage above.
-        let p = if r.next_u32() % 8 == 0 { 0xfc | r.next_u32() % 4 } else { r.next_u32() % 9 };
+        let p = if r.next_u32() % 8 == 0 {
+            0xfc | r.next_u32() % 4
+        } else {
+            r.next_u32() % 9
+        };
         c.g[A1][0] = (r.next_u32() as u64) << 32 | (r.next_u32() & !0xff | p) as u64;
         r
     }
 
     #[test]
     fn ui_state_mgr_has_state_in_phase() {
-        let (generated, hand) = (ssx3_ee::s13::f_0039eb60__generated, super::ui_state_mgr_has_state_in_phase);
+        let (generated, hand) = (
+            ssx3_ee::s13::f_0039eb60__generated,
+            super::ui_state_mgr_has_state_in_phase,
+        );
         check_events(generated, hand, SEEDS, &|c, seed| {
             let mut r = phase_setup(c, seed, 0x20);
             schedule(c, &mut r, seed, 0x0039_eb60)
@@ -2341,7 +2531,10 @@ mod tests {
 
     #[test]
     fn ui_state_mgr_restart_state_in_phase() {
-        let (generated, hand) = (ssx3_ee::s13::f_0039ea90__generated, super::ui_state_mgr_restart_state_in_phase);
+        let (generated, hand) = (
+            ssx3_ee::s13::f_0039ea90__generated,
+            super::ui_state_mgr_restart_state_in_phase,
+        );
         check_events(generated, hand, SEEDS, &|c, seed| {
             let mut r = phase_setup(c, seed, 0x30);
             schedule(c, &mut r, seed, 0x0039_ea90)
@@ -2371,7 +2564,11 @@ mod tests {
         c.g[A0][0] = MGR as u64;
         // An id in 0..7 (6 and 7 never match), sometimes with upper bits.
         let id = (r.next_u32() % 8) as u64;
-        c.g[A1][0] = if r.next_u32() % 8 == 0 { id | 1 << 40 } else { id };
+        c.g[A1][0] = if r.next_u32() % 8 == 0 {
+            id | 1 << 40
+        } else {
+            id
+        };
         c.g[GP][0] = GAME_GP as u64;
         schedule(c, &mut r, seed, 0x0039_f9d8)
     }
@@ -2381,9 +2578,14 @@ mod tests {
         check_events(gen_find_state, hand_find_state, SEEDS, &find_state_setup);
         let first = |v: u64| (DATA + 0x100..DATA + 0x800).contains(&(v as u32));
         let second = |v: u64| (DATA + 0x800..DATA + 0xf00).contains(&(v as u32));
-        require_v0(gen_find_state, SEEDS, &[&|v| v == 0, &first, &second], &|c, seed| {
-            find_state_setup(c, seed);
-        });
+        require_v0(
+            gen_find_state,
+            SEEDS,
+            &[&|v| v == 0, &first, &second],
+            &|c, seed| {
+                find_state_setup(c, seed);
+            },
+        );
     }
 
     driven!(gen_get_active_state, ssx3_ee::s13::f_0039fa88__generated);
@@ -2397,7 +2599,11 @@ mod tests {
             for base in [DATA + 0x100, DATA + 0x800] {
                 let f = base + 0x40 * i + 0x1c;
                 let v = c.bus.read32(f);
-                let v = if r.next_u32() % 6 == 0 { v | 0x20 } else { v & !0x20 };
+                let v = if r.next_u32() % 6 == 0 {
+                    v | 0x20
+                } else {
+                    v & !0x20
+                };
                 c.bus.write32(f, v);
             }
         }
@@ -2406,10 +2612,20 @@ mod tests {
 
     #[test]
     fn ui_state_mgr_get_active_state() {
-        check_events(gen_get_active_state, hand_get_active_state, SEEDS, &get_active_state_setup);
-        require_v0(gen_get_active_state, SEEDS, &[&|v| v == 0, &|v| v != 0], &|c, seed| {
-            get_active_state_setup(c, seed);
-        });
+        check_events(
+            gen_get_active_state,
+            hand_get_active_state,
+            SEEDS,
+            &get_active_state_setup,
+        );
+        require_v0(
+            gen_get_active_state,
+            SEEDS,
+            &[&|v| v == 0, &|v| v != 0],
+            &|c, seed| {
+                get_active_state_setup(c, seed);
+            },
+        );
     }
 
     // ------------------------------------------------- update and engine
@@ -2429,8 +2645,14 @@ mod tests {
         }
     }
 
-    const PROCESS_STATES_JUMPS: [u32; 6] =
-        [0x0039_ed4c, 0x0039_ee14, 0x0039_edc8, 0x0039_ee78, 0x0039_ee9c, 0x0039_eee4];
+    const PROCESS_STATES_JUMPS: [u32; 6] = [
+        0x0039_ed4c,
+        0x0039_ee14,
+        0x0039_edc8,
+        0x0039_ee78,
+        0x0039_ee9c,
+        0x0039_eee4,
+    ];
 
     fn update_setup(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
         let mut r = mgr_setup(c, seed, salt, calls, 6);
@@ -2442,7 +2664,10 @@ mod tests {
 
     #[test]
     fn ui_state_update_screens() {
-        let (generated, hand) = (ssx3_ee::s13::f_0039e868__generated, super::ui_state_update_screens);
+        let (generated, hand) = (
+            ssx3_ee::s13::f_0039e868__generated,
+            super::ui_state_update_screens,
+        );
         check_events(generated, hand, SEEDS, &|c, seed| {
             let mut r = update_setup(c, seed, 0x70, 0);
             c.g[A0][0] = (DATA + 0x100 + 0x40 * (r.next_u32() % 6)) as u64;
@@ -2452,7 +2677,10 @@ mod tests {
 
     #[test]
     fn ui_state_mgr_update() {
-        let (generated, hand) = (ssx3_ee::s13::f_0039f100__generated, super::ui_state_mgr_update);
+        let (generated, hand) = (
+            ssx3_ee::s13::f_0039f100__generated,
+            super::ui_state_mgr_update,
+        );
         covered(generated, hand, SEEDS, &|c, seed| {
             update_setup(c, seed, 0x80, 8);
             c.g[A0][0] = MGR as u64;
@@ -2473,7 +2701,10 @@ mod tests {
             ssx3_ee::s13::f_0039ecb0(&mut c);
             outcomes[(c.g[V0][0] != 0) as usize] += 1;
         }
-        assert!(outcomes[0] > 0 && outcomes[1] > 0, "ProcessStates results {outcomes:?}");
+        assert!(
+            outcomes[0] > 0 && outcomes[1] > 0,
+            "ProcessStates results {outcomes:?}"
+        );
     }
 
     #[test]
@@ -2484,7 +2715,8 @@ mod tests {
             // engine + 0x18 is the manager; the input object uses VT too.
             let engine = MGR - 0x18;
             c.bus.write32(engine + 0xc, DATA + 0x1_0000);
-            c.bus.write32(DATA + 0x1_0008, VT + (r.next_u32() % 4) * 8 - 0x170 + 0x80);
+            c.bus
+                .write32(DATA + 0x1_0008, VT + (r.next_u32() % 4) * 8 - 0x170 + 0x80);
             c.g[A0][0] = engine as u64;
         });
     }
@@ -2522,20 +2754,30 @@ mod tests {
         fill(c, &mut r, DATA + 0x400, 0x40);
         let n = r.next_u32() % 30;
         for i in 0..n {
-            c.bus.write8(DATA + 0x200 + i, (r.next_u32() % 255 + 1) as u8);
+            c.bus
+                .write8(DATA + 0x200 + i, (r.next_u32() % 255 + 1) as u8);
         }
         c.bus.write8(DATA + 0x200 + n, 0);
         c.g[A0][0] = (DATA + 0x400) as u64;
-        c.g[A2][0] = if r.next_u32() % 8 == 0 { 0 } else { (DATA + 0x200) as u64 };
+        c.g[A2][0] = if r.next_u32() % 8 == 0 {
+            0
+        } else {
+            (DATA + 0x200) as u64
+        };
         c.f[12] = r.edge_f32();
         r
     }
 
     #[test]
     fn c_hudfx_show() {
-        crate::difftest::check(ssx3_ee::s00::f_00117048__generated, super::c_hudfx_show, SEEDS, &|c, s| {
-            hud_fx_setup(c, s, 0xb0);
-        });
+        crate::difftest::check(
+            ssx3_ee::s00::f_00117048__generated,
+            super::c_hudfx_show,
+            SEEDS,
+            &|c, s| {
+                hud_fx_setup(c, s, 0xb0);
+            },
+        );
     }
 
     /// The game's initialised data (the ELF's load segment), for the real
@@ -2548,7 +2790,11 @@ mod tests {
             let d = std::fs::read(path).expect("orig/SLUS_207.72");
             let u32_at = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
             let ph = u32_at(0x1c) as usize;
-            let (off, vaddr, size) = (u32_at(ph + 4) as usize, u32_at(ph + 8), u32_at(ph + 16) as usize);
+            let (off, vaddr, size) = (
+                u32_at(ph + 4) as usize,
+                u32_at(ph + 8),
+                u32_at(ph + 16) as usize,
+            );
             (vaddr, d[off..off + size].to_vec())
         });
         let at = *vaddr as usize;
@@ -2571,10 +2817,15 @@ mod tests {
 
     #[test]
     fn c_hudfx_show_number_delayed() {
-        crate::difftest::check(ssx3_ee::s00::f_001171a8__generated, super::c_hudfx_show_number_delayed, SEEDS, &|c, s| {
-            let mut r = hud_fx_setup(c, s, 0xb1);
-            number_setup(c, &mut r);
-        });
+        crate::difftest::check(
+            ssx3_ee::s00::f_001171a8__generated,
+            super::c_hudfx_show_number_delayed,
+            SEEDS,
+            &|c, s| {
+                let mut r = hud_fx_setup(c, s, 0xb1);
+                number_setup(c, &mut r);
+            },
+        );
         // The real sprintf formats into the message text.
         let mut c = fresh();
         let mut r = hud_fx_setup(&mut c, 0, 0xb1);
@@ -2587,33 +2838,46 @@ mod tests {
 
     #[test]
     fn rider_metrix_show_hud_number() {
-        let (generated, hand) = (ssx3_ee::s00::f_00117b88__generated, super::rider_metrix_show_hud_number);
+        let (generated, hand) = (
+            ssx3_ee::s00::f_00117b88__generated,
+            super::rider_metrix_show_hud_number,
+        );
         let setup = |c: &mut Cpu, s: u32| {
             let mut r = remove_hud_message_setup(c, s);
             number_setup(c, &mut r);
             c.f[12] = r.edge_f32();
         };
         crate::difftest::check_lohi(generated, hand, SEEDS, &setup);
-        require_v0(generated, SEEDS, &[&|v| v == u64::MAX, &|v| v != u64::MAX], &setup);
+        require_v0(
+            generated,
+            SEEDS,
+            &[&|v| v == u64::MAX, &|v| v != u64::MAX],
+            &setup,
+        );
     }
 
     #[test]
     fn hud_align_elem_pos() {
-        crate::difftest::check(ssx3_ee::s04::f_001f10f8__generated, super::hud_align_elem_pos, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 0xb3);
-            scramble(c, &mut r);
-            fill(c, &mut r, DATA + 0x300, 0x10);
-            for i in 0..6 {
-                c.bus.write32(DATA + 4 * i, r.edge_f32());
-            }
-            c.g[A1][0] = (DATA + 0x300) as u64;
-            c.g[A2][0] = DATA as u64;
-            c.g[A3][0] = (DATA + 8) as u64;
-            c.g[T0][0] = (DATA + 16) as u64;
-            for reg in [A0, T1, T2, T3] {
-                c.g[reg][0] = (r.next_u32() % 8) as u64;
-            }
-        });
+        crate::difftest::check(
+            ssx3_ee::s04::f_001f10f8__generated,
+            super::hud_align_elem_pos,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 0xb3);
+                scramble(c, &mut r);
+                fill(c, &mut r, DATA + 0x300, 0x10);
+                for i in 0..6 {
+                    c.bus.write32(DATA + 4 * i, r.edge_f32());
+                }
+                c.g[A1][0] = (DATA + 0x300) as u64;
+                c.g[A2][0] = DATA as u64;
+                c.g[A3][0] = (DATA + 8) as u64;
+                c.g[T0][0] = (DATA + 16) as u64;
+                for reg in [A0, T1, T2, T3] {
+                    c.g[reg][0] = (r.next_u32() % 8) as u64;
+                }
+            },
+        );
     }
 
     // ---------------------------------------------------------------- fonts
@@ -2632,7 +2896,8 @@ mod tests {
         }
         let rend = DATA + 0x1_8000;
         c.bus.write32(GAME_GP + 0x2a90, rend);
-        c.bus.write32(rend + 0x10d8, VT - 0x280 + 8 * (r.next_u32() % 8));
+        c.bus
+            .write32(rend + 0x10d8, VT - 0x280 + 8 * (r.next_u32() % 8));
         let state = DATA + 0x1_c000 + 4 * (r.next_u32() % 16);
         c.bus.write32(rend + 0xe84, state);
         fill(c, &mut r, state & !0xf, 0x20);
@@ -2659,12 +2924,14 @@ mod tests {
         fill(c, &mut r, DATA + 0x4000, 0x400);
         c.bus.write32(FONT, n);
         c.bus.write32(FONT + 4, codes);
-        c.bus.write32(FONT + 8, DATA + 0x4000 + 12 * (r.next_u32() % 8));
+        c.bus
+            .write32(FONT + 8, DATA + 0x4000 + 12 * (r.next_u32() % 8));
         c.bus.write32(FONT + 0xc, r.next_u32() % 64);
         c.bus.write32(FONT + 0x10, 64 + r.next_u32() % 128);
         let len = r.next_u32() % 20;
         for i in 0..len {
-            c.bus.write8(DATA + 0x200 + i, (1 + r.next_u32() % 200) as u8);
+            c.bus
+                .write8(DATA + 0x200 + i, (1 + r.next_u32() % 200) as u8);
         }
         c.bus.write8(DATA + 0x200 + len, 0);
         c.g[A0][0] = FONT as u64;
@@ -2690,14 +2957,23 @@ mod tests {
             let x = c.bus.read32(FONT + 0x28) & 0x7f80_0000 != 0;
             crate::difftest::run_generated(&mut c, generated);
             let calls = c.bus.read32(crate::difftest::fakes::LOG_COUNT);
-            seen[if calls == 1 { 0 } else if x { 1 } else { 2 }] += 1;
+            seen[if calls == 1 {
+                0
+            } else if x {
+                1
+            } else {
+                2
+            }] += 1;
         }
         assert!(seen.iter().all(|&n| n > 0), "paths {seen:?}");
     }
 
     #[test]
     fn font_draw_text_centered() {
-        let (generated, hand) = (ssx3_ee::s12::f_00392908__generated, super::font_draw_text_centered);
+        let (generated, hand) = (
+            ssx3_ee::s12::f_00392908__generated,
+            super::font_draw_text_centered,
+        );
         covered(generated, hand, SEEDS, &|c, seed| {
             font_setup(c, seed, 0xc2, 2);
         });
@@ -2709,7 +2985,10 @@ mod tests {
         let mut r = machine(c, seed, salt, calls);
         renderer_setup(c, &mut r);
         // DrawPrimitive at +0x238 lands in the fake vtable.
-        c.bus.write32(DATA + 0x1_8000 + 0x10d8, VT - 0x238 + 8 * (r.next_u32() % 8));
+        c.bus.write32(
+            DATA + 0x1_8000 + 0x10d8,
+            VT - 0x238 + 8 * (r.next_u32() % 8),
+        );
         for off in (0..0x100).step_by(8) {
             c.bus.write16(VT + off, ((r.next_u32() % 16) * 4) as u16);
             c.bus.write32(VT + off + 4, FAKE + 2 * off);
@@ -2724,7 +3003,11 @@ mod tests {
                 c.bus.write32(DATA + 0x540 + 4 * i, f.to_bits());
             }
         }
-        c.g[A1][0] = if r.next_u32() % 8 == 0 { 0 } else { (DATA + 0x500) as u64 };
+        c.g[A1][0] = if r.next_u32() % 8 == 0 {
+            0
+        } else {
+            (DATA + 0x500) as u64
+        };
         c.g[A2][0] = (DATA + 0x520) as u64;
         c.g[A3][0] = (DATA + 0x528) as u64;
         c.g[T0][0] = (DATA + 0x530) as u64;
@@ -2749,7 +3032,8 @@ mod tests {
         // Text with codes below, inside and above the dense range.
         let len = r.next_u32() % 24;
         for i in 0..len {
-            c.bus.write8(DATA + 0x200 + i, (1 + r.next_u32() % 255) as u8);
+            c.bus
+                .write8(DATA + 0x200 + i, (1 + r.next_u32() % 255) as u8);
         }
         c.bus.write8(DATA + 0x200 + len, 0);
         // Dense range [first, last], extra glyphs sorted above last.
@@ -2766,10 +3050,21 @@ mod tests {
         }
         c.bus.write32(FONT, dense + extra);
         c.bus.write32(FONT + 4, table);
-        c.bus.write32(FONT + 8, if r.next_u32() % 3 == 0 { 0 } else { table + 12 * (r.next_u32() % dense) });
+        c.bus.write32(
+            FONT + 8,
+            if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                table + 12 * (r.next_u32() % dense)
+            },
+        );
         c.bus.write32(FONT + 0xc, first);
         c.bus.write32(FONT + 0x10, last);
-        c.g[A2][0] = if r.next_u32() % 2 == 0 { 0 } else { (DATA + 0x380) as u64 };
+        c.g[A2][0] = if r.next_u32() % 2 == 0 {
+            0
+        } else {
+            (DATA + 0x380) as u64
+        };
         fill(c, &mut r, DATA + 0x380, 4);
         c.g[A3][0] = (r.next_u32() % 2) as u64;
         r
@@ -2777,7 +3072,10 @@ mod tests {
 
     #[test]
     fn font_measure_text() {
-        let (generated, hand) = (ssx3_ee::s12::f_00391fb0__generated, super::font_measure_text);
+        let (generated, hand) = (
+            ssx3_ee::s12::f_00391fb0__generated,
+            super::font_measure_text,
+        );
         crate::difftest::check_lohi(generated, hand, SEEDS, &|c, seed| {
             measure_setup(c, seed, 0xe0);
         });

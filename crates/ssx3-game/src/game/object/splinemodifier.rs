@@ -2,62 +2,114 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::float;
-use ssx3_ee_rt::Cpu;
+use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::at as at_2;
+pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
+pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
+pub(crate) use crate::game::fe::feasyncfile::sw_r;
+pub(crate) use crate::game::fe::fereal::close;
+pub(crate) use crate::game::fe::fereal::open;
+pub(crate) use crate::game::fe::festaterewards2::r;
+pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::object::debouncenode::p;
+pub(crate) use crate::game::object::flagset::gp_float;
+pub(crate) use crate::game::render::lightman::addu;
+pub(crate) use crate::game::render::lightman::gp;
+pub(crate) use crate::game::render::lightman::off;
+pub(crate) use crate::game::render::lightman::Oc49Mem;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::float;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
-use crate::abi::r32;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::sp;
-pub(crate) use crate::game::object::flagset::gp_float;
-pub(crate) use crate::game::render::lightman::off;
-pub(crate) use crate::game::render::lightman::gp;
-pub(crate) use crate::game::render::lightman::Oc49Mem;
-pub(crate) use crate::game::render::lightman::addu;
-pub(crate) use crate::game::object::debouncenode::p;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
-pub(crate) use crate::game::fe::fereal::open;
-pub(crate) use crate::game::fe::fereal::close;
-pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
-pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
-pub(crate) use crate::game::fe::feasyncfile::sw_r;
-pub(crate) use crate::game::fe::feasyncfile::at as at_2;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_95d8, spline_modifier_ctor_2, "SplineModifier_ctor_2"),
-    (0x0035_9688, spline_modifier_set_speed, "SplineModifier_SetSpeed"),
+    (
+        0x0035_9688,
+        spline_modifier_set_speed,
+        "SplineModifier_SetSpeed",
+    ),
     (0x0035_9cf8, spline_modifier_v22, "SplineModifier_v22"),
     (0x0035_9eb8, spline_modifier_v05, "SplineModifier_v05"),
-    (0x0035_a250, multisplinemodifier_v01, "MultiSplineModifier_v01"),
-    (0x0035_a3f0, multi_spline_modifier_alloc_node_instances, "MultiSplineModifier_AllocNodeInstances"),
-    (0x0035_a550, multi_spline_modifier_set_speed, "MultiSplineModifier_SetSpeed"),
-    (0x0035_a560, multi_spline_modifier_update, "MultiSplineModifier_Update"),
-    (0x0035_a918, multi_spline_modifier_v24, "MultiSplineModifier_v24"),
-    (0x0035_aae0, multi_spline_modifier_release, "MultiSplineModifier_Release"),
-    (0x0035_aaf0, multi_spline_modifier_v19, "MultiSplineModifier_v19"),
-    (0x0035_ab60, multi_spline_modifier_v23, "MultiSplineModifier_v23"),
-    (0x0035_b418, multi_spline_modifier_v11, "MultiSplineModifier_v11"),
-    (0x0035_b670, rail_modifier_list_push_front, "RailModifier_ListPushFront"),
-    (0x0035_b690, rail_modifier_list_push_back, "RailModifier_ListPushBack"),
-    (0x0035_b6d0, rail_modifier_list_unlink, "RailModifier_ListUnlink"),
+    (
+        0x0035_a250,
+        multisplinemodifier_v01,
+        "MultiSplineModifier_v01",
+    ),
+    (
+        0x0035_a3f0,
+        multi_spline_modifier_alloc_node_instances,
+        "MultiSplineModifier_AllocNodeInstances",
+    ),
+    (
+        0x0035_a550,
+        multi_spline_modifier_set_speed,
+        "MultiSplineModifier_SetSpeed",
+    ),
+    (
+        0x0035_a560,
+        multi_spline_modifier_update,
+        "MultiSplineModifier_Update",
+    ),
+    (
+        0x0035_a918,
+        multi_spline_modifier_v24,
+        "MultiSplineModifier_v24",
+    ),
+    (
+        0x0035_aae0,
+        multi_spline_modifier_release,
+        "MultiSplineModifier_Release",
+    ),
+    (
+        0x0035_aaf0,
+        multi_spline_modifier_v19,
+        "MultiSplineModifier_v19",
+    ),
+    (
+        0x0035_ab60,
+        multi_spline_modifier_v23,
+        "MultiSplineModifier_v23",
+    ),
+    (
+        0x0035_b418,
+        multi_spline_modifier_v11,
+        "MultiSplineModifier_v11",
+    ),
+    (
+        0x0035_b670,
+        rail_modifier_list_push_front,
+        "RailModifier_ListPushFront",
+    ),
+    (
+        0x0035_b690,
+        rail_modifier_list_push_back,
+        "RailModifier_ListPushBack",
+    ),
+    (
+        0x0035_b6d0,
+        rail_modifier_list_unlink,
+        "RailModifier_ListUnlink",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -66,58 +118,58 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::render::lightman::callee::LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_FLAG_MANAGER;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_AI_FRAME_COUNT;
-    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_NASH;
-    pub(crate) use crate::game::render::lightman::callee::LIGHT_CONTRIBUTION;
-    pub(crate) use crate::game::render::lightman::callee::MATH_SIN_COS;
-    pub(crate) use crate::game::render::lightman::callee::SPATIAL_HASH_UPDATE;
-    pub(crate) use crate::game::render::lightman::callee::FLAG_MANAGER_GROUP_COMPUTE_VERTS;
-    pub(crate) use crate::game::render::lightman::callee::INTERSECT_INFO_EVALUATE;
-    pub(crate) use crate::game::render::lightman::callee::TYPED_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::SYNC_PROCESS_SAVE;
-    pub(crate) use crate::game::render::lightman::callee::MULTI_SPLINE_MODIFIER_DEBUG_DRAW_PATH;
-    pub(crate) use crate::game::render::lightman::callee::EA_MEMSET;
-    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_FROM_SCRATCHPAD;
-    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_TO_SCRATCHPAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_RESET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_RENDER_FADE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_TRICK_METER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUTOSAVE_UPDATE_ICON;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BANK_MONITOR_STOP_HANDLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_FILE_CACHE_SHUTDOWN;
     pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_ALLOC_COPY;
     pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_CTOR_COPY;
     pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCARD_INSTALL_CALLBACKS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_SET_STATE_2 as REPLAY_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PLAYBACK_RESTORE_WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CHUNK_RESOLVE_HOOK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_RENDER_FADE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_RAIL_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_MODIFIER_SET_SPEED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUTOSAVE_UPDATE_ICON;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_LOCALE_LOAD_TABLE;
     pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_ANIM_DATA;
     pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_RIDER_PREVIEWS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_FILE_CACHE_SHUTDOWN;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_RAIL_SAVE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_EXPECT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_GET_CHAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_READ_QUOTED_STRING;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_HIDE_ROOM_TABS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCARD_INSTALL_CALLBACKS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MOD_OBJ_SAVE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_9 as NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PLAYBACK_RESTORE_WORLD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_SET_STATE_2 as REPLAY_SET_STATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_MODIFIER_SET_SPEED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_RESET;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_UPDATE_ANIM;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CHUNK_RESOLVE_HOOK;
     pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_CTOR_2 as WORLD_OBJ_CTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_DTOR_2 as WORLD_OBJ_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_RUN_KILL_SCRIPT_2 as WORLD_OBJ_RUN_KILL_SCRIPT;
     pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_REPLACE_WITH_DEAD_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MOD_OBJ_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_LOCALE_LOAD_TABLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_9 as NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_UPDATE_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_GET_CHAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_EXPECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_READ_QUOTED_STRING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_TRICK_METER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_HIDE_ROOM_TABS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_RUN_KILL_SCRIPT_2 as WORLD_OBJ_RUN_KILL_SCRIPT;
+    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_FROM_SCRATCHPAD;
+    pub(crate) use crate::game::render::lightman::callee::DMA_WAIT_TO_SCRATCHPAD;
+    pub(crate) use crate::game::render::lightman::callee::EA_MEMSET;
+    pub(crate) use crate::game::render::lightman::callee::FLAG_MANAGER_GROUP_COMPUTE_VERTS;
+    pub(crate) use crate::game::render::lightman::callee::INTERSECT_INFO_EVALUATE;
+    pub(crate) use crate::game::render::lightman::callee::LIGHT_CONTRIBUTION;
+    pub(crate) use crate::game::render::lightman::callee::LUNO_TABLE_DTOR;
+    pub(crate) use crate::game::render::lightman::callee::MATH_SIN_COS;
+    pub(crate) use crate::game::render::lightman::callee::MULTI_SPLINE_MODIFIER_DEBUG_DRAW_PATH;
+    pub(crate) use crate::game::render::lightman::callee::SPATIAL_HASH_UPDATE;
+    pub(crate) use crate::game::render::lightman::callee::SYNC_PROCESS_SAVE;
+    pub(crate) use crate::game::render::lightman::callee::TYPED_PROCESS_SAVE;
+    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_AI_FRAME_COUNT;
+    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_FLAG_MANAGER;
+    pub(crate) use crate::game::render::lightman::callee::WORLD_GET_NASH;
 }
 
 /// `MultiSplineModifier` fields: the element array (`+0x3c`, stride 0x60) and
@@ -144,7 +196,6 @@ pub(crate) mod spline {
     pub const ELEM_SIZE: u32 = 0x60;
 }
 
-
 /// `void SplineModifier_SetSpeed(SplineModifier *m, float speed)` (0x359688):
 /// store `speed * <constant>` into `m + 0x48`.
 pub fn spline_modifier_set_speed(c: &mut Cpu) {
@@ -156,7 +207,6 @@ pub fn spline_modifier_set_speed(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void MultiSplineModifier_SetSpeed(MultiSplineModifier *m, float speed)`
 /// (0x35a550): store `speed * <constant>` into `m + 0x14`.
 pub fn multi_spline_modifier_set_speed(c: &mut Cpu) {
@@ -167,7 +217,6 @@ pub fn multi_spline_modifier_set_speed(c: &mut Cpu) {
     this.off(0x14).write_fpu(c, FpuF32(c.f[12]));
     abi::ret(c);
 }
-
 
 /// `void RailModifier_ListPushFront(RailModifierList *list, void *m)`
 /// (0x35b670): push `m` at the head.
@@ -187,7 +236,6 @@ pub fn rail_modifier_list_push_front(c: &mut Cpu) {
     list.sw(c, m);
     abi::ret(c);
 }
-
 
 /// `void RailModifier_ListUnlink(void *m)` (0x35b6d0): unlink `m` from its
 /// doubly linked list.
@@ -216,7 +264,6 @@ pub fn rail_modifier_list_unlink(c: &mut Cpu) {
     m.sw(c, 0);
     abi::ret(c);
 }
-
 
 /// `void MultiSplineModifier_v24(MultiSplineModifier *self)` (0x0035a918):
 /// rebuild when dirty, then for every element recompute the world-space box
@@ -356,7 +403,6 @@ pub fn multi_spline_modifier_v24(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void MultiSplineModifier_v11(MultiSplineModifier *self)` (0x0035b418):
 /// rebuild when dirty, then update every instance's box against the spatial
@@ -507,11 +553,9 @@ pub fn multi_spline_modifier_v11(c: &mut Cpu) {
     })
 }
 
-
 /// `float World_GetSecondsPerTick(void)` (0x2d1c70): a cross-shard call the
 /// generator emitted as `call_indirect`.
 pub(crate) const WORLD_GET_SECONDS_PER_TICK: u32 = 0x002d_1c70;
-
 
 /// `fN = v`.
 #[inline(always)]
@@ -520,14 +564,12 @@ pub(crate) fn setf(c: &mut Cpu, n: usize, v: FpuF32) -> FpuF32 {
     v
 }
 
-
 /// `lwc1 fN, a`.
 #[inline(always)]
 pub(crate) fn ldf(c: &mut Cpu, n: usize, a: u32) -> FpuF32 {
     let v = Addr(a).read_fpu(c);
     setf(c, n, v)
 }
-
 
 /// `swc1 fN, a`.
 #[inline(always)]
@@ -536,14 +578,12 @@ pub(crate) fn stf(c: &mut Cpu, n: usize, a: u32) {
     Addr(a).write_fpu(c, v);
 }
 
-
 /// `c.lt.s`/`c.le.s` then the FPU condition bit.
 #[inline(always)]
 pub(crate) fn fcc(c: &mut Cpu, cond: bool) -> bool {
     abi::set_fcc(c, cond);
     cond
 }
-
 
 // ---------------------------------------------------------------------------
 // MultiSplineModifier_Update.
@@ -600,7 +640,6 @@ pub fn multi_spline_modifier_update(c: &mut Cpu) {
     })
 }
 
-
 /// `void RailModifier_ListPushBack(Link** list, Link* item)` (0x35B690): append
 /// `item` to a doubly linked list whose head word sits at `*list`.
 pub fn rail_modifier_list_push_back(c: &mut Cpu) {
@@ -633,7 +672,6 @@ pub fn rail_modifier_list_push_back(c: &mut Cpu) {
     Addr(link).sw(c, item);
     abi::ret(c);
 }
-
 
 /// `void SplineModifier_v22(SplineModifier* self, Body* body)` (0x00359cf8):
 /// turn the spline point's tangent and curvature into a velocity and an
@@ -778,7 +816,6 @@ pub fn spline_modifier_v22(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void MultiSplineModifier_Release(MultiSplineModifier* m)` (0x35aae0):
 /// decrement the reference count and store it back.
 pub fn multi_spline_modifier_release(c: &mut Cpu) {
@@ -790,7 +827,6 @@ pub fn multi_spline_modifier_release(c: &mut Cpu) {
     Addr(m.wrapping_add(0x34)).sw(c, count);
     abi::ret(c);
 }
-
 
 /// `void MultiSplineModifier_AllocNodeInstances(MultiSplineModifier* self)`
 /// (0x35a3f0): fill `self->instances[0 .. count)` with fresh instance-man
@@ -838,7 +874,6 @@ pub fn multi_spline_modifier_alloc_node_instances(c: &mut Cpu) {
     })
 }
 
-
 /// `void MultiSplineModifier_v19(MultiSplineModifier* self, void* item)`
 /// (0x35aaf0): unlink the spline object (when present) and notify the
 /// current item when it is the modifier's own.
@@ -885,7 +920,6 @@ pub fn multi_spline_modifier_v19(c: &mut Cpu) {
     })
 }
 
-
 /// `lwc1 f, off(reg)`.
 #[inline]
 pub(crate) fn lwc1_r(c: &mut Cpu, f: usize, reg: usize, off: u32) {
@@ -893,14 +927,12 @@ pub(crate) fn lwc1_r(c: &mut Cpu, f: usize, reg: usize, off: u32) {
     c.lwc1(f, a);
 }
 
-
 /// `swc1 f, off(reg)`.
 #[inline]
 pub(crate) fn swc1_r(c: &mut Cpu, f: usize, reg: usize, off: u32) {
     let a = low(c, reg).wrapping_add(off);
     c.swc1(f, a);
 }
-
 
 /// `func_0035A0xx` `SplineModifier_v05` (0x359eb8): the spline modifier's
 /// event handler. Action 0x190 runs `SplineModifier_SetSpeed` and re-enables
@@ -962,7 +994,6 @@ pub fn spline_modifier_v05(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int MultiSplineModifier_v23(self, item)` (0x35ab60): whether `item` is the
 /// current spline (and its end flag), or hand the item to the current spine's
@@ -1030,7 +1061,6 @@ pub fn multi_spline_modifier_v23(c: &mut Cpu) {
     })
 }
 
-
 /// `void SplineModifier_ctor_2(self, path)` (0x3595d8): construct a spline
 /// modifier for a path and load its spline.
 pub fn spline_modifier_ctor_2(c: &mut Cpu) {
@@ -1084,7 +1114,6 @@ pub fn spline_modifier_ctor_2(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Spline modifier.
@@ -1180,128 +1209,144 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+    use crate::difftest::elf_image;
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::put_words;
-    use crate::difftest::fakes;
-    use crate::difftest::put_vec;
     use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::elf_image;
-    use crate::difftest::SP as STACK;
-    use crate::difftest::RA as RET;
-    use ssx3_ee as ee;
     use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    use crate::difftest::RA as RET;
     use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::SP as STACK_TOP;
-    use ssx3_ee_rt::funcs::GuestFn;
     use crate::difftest::RA as TEST_RA;
+    use crate::difftest::SP as STACK;
+    use crate::difftest::SP as STACK_TOP;
     use crate::difftest::SP;
-    pub(crate) use crate::game::input::inputmap::tests::put_f32;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::world::worldview::tests::pick;
-    pub(crate) use crate::game::world::worldview::tests::word;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::ai::ai::tests::rng;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
     pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::fe::fereal::tests::base;
+    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
+    pub(crate) use crate::game::ai::ai::tests::rng;
+    pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
     pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
-    pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_12 as SEEDS_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::EMPTY;
-    pub(crate) use crate::game::fe::festatecredits::tests::RET_ZERO;
+    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_8 as be_library_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::env;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals;
+    pub(crate) use crate::game::fe::feasyncfile::tests::gpat;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_4 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot_6 as slot;
     pub(crate) use crate::game::fe::feasyncfile::tests::w16;
     pub(crate) use crate::game::fe::feasyncfile::tests::w32;
-    pub(crate) use crate::game::fe::feasyncfile::tests::gpat;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_6 as slot;
-    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_8 as be_library_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_4 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
     pub(crate) use crate::game::fe::feasyncfile::tests::world_5 as world_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::env;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::EMPTY;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_12 as SEEDS_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
-    pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool_3;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
+    pub(crate) use crate::game::fe::fereal::tests::base;
+    pub(crate) use crate::game::fe::festatecredits::tests::RET_ZERO;
+    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
+    pub(crate) use crate::game::fe::festaterewards2::tests::w;
+    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS;
+    pub(crate) use crate::game::input::inputmap::tests::put_f32;
+    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_2;
     pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
     pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_3;
-
+    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
+    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool_3;
+    pub(crate) use crate::game::world::worldview::tests::pick;
+    pub(crate) use crate::game::world::worldview::tests::word;
+    use ssx3_ee as ee;
+    use ssx3_ee_rt::funcs::GuestFn;
 
     #[test]
     fn spline_modifier_set_speed_matches() {
-        check(ssx3_ee::s11::f_00359688, spline_modifier_set_speed, 200, &|c, seed| {
-            let mut r = Rng(0x1027 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[GP][0] = GAME_GP as u64;
-            c.f[12] = r.edge_f32();
-            c.bus.write32(GAME_GP - 0x2a60, r.edge_f32());
-        });
+        check(
+            ssx3_ee::s11::f_00359688,
+            spline_modifier_set_speed,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1027 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[GP][0] = GAME_GP as u64;
+                c.f[12] = r.edge_f32();
+                c.bus.write32(GAME_GP - 0x2a60, r.edge_f32());
+            },
+        );
     }
-
 
     #[test]
     fn multi_spline_modifier_set_speed_matches() {
-        check(ssx3_ee::s11::f_0035a550, multi_spline_modifier_set_speed, 200, &|c, seed| {
-            let mut r = Rng(0x1028 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[GP][0] = GAME_GP as u64;
-            c.f[12] = r.edge_f32();
-            c.bus.write32(GAME_GP - 0x2a28, r.edge_f32());
-        });
+        check(
+            ssx3_ee::s11::f_0035a550,
+            multi_spline_modifier_set_speed,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1028 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[GP][0] = GAME_GP as u64;
+                c.f[12] = r.edge_f32();
+                c.bus.write32(GAME_GP - 0x2a28, r.edge_f32());
+            },
+        );
     }
-
 
     #[test]
     fn rail_modifier_list_push_front_matches() {
-        check(ssx3_ee::s11::f_0035b670, rail_modifier_list_push_front, 200, &|c, seed| {
-            let mut r = Rng(0x1029 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = ((DATA + 0x100) as u64) | ((r.next_u32() as u64) << 32);
-            c.bus.write32(DATA, if seed % 3 == 0 { 0 } else { DATA + 0x200 });
-        });
+        check(
+            ssx3_ee::s11::f_0035b670,
+            rail_modifier_list_push_front,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1029 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = ((DATA + 0x100) as u64) | ((r.next_u32() as u64) << 32);
+                c.bus
+                    .write32(DATA, if seed % 3 == 0 { 0 } else { DATA + 0x200 });
+            },
+        );
     }
-
 
     #[test]
     fn rail_modifier_list_unlink_matches() {
-        check(ssx3_ee::s11::f_0035b6d0, rail_modifier_list_unlink, 200, &|c, seed| {
-            let mut r = Rng(0x102a ^ seed as u64);
-            scramble(c, &mut r);
-            let m = DATA;
-            let prev = DATA + 0x100;
-            let next = DATA + 0x200;
-            c.g[A0][0] = m as u64;
-            c.bus.write32(m, if seed % 4 >= 2 { prev } else { 0 });
-            c.bus.write32(m + 4, if seed % 2 == 0 { 0 } else { next });
-            c.bus.write32(prev + 4, r.next_u32());
-            c.bus.write32(next, r.next_u32());
-        });
+        check(
+            ssx3_ee::s11::f_0035b6d0,
+            rail_modifier_list_unlink,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x102a ^ seed as u64);
+                scramble(c, &mut r);
+                let m = DATA;
+                let prev = DATA + 0x100;
+                let next = DATA + 0x200;
+                c.g[A0][0] = m as u64;
+                c.bus.write32(m, if seed % 4 >= 2 { prev } else { 0 });
+                c.bus.write32(m + 4, if seed % 2 == 0 { 0 } else { next });
+                c.bus.write32(prev + 4, r.next_u32());
+                c.bus.write32(next, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn multi_spline_modifier_v24_matches() {
@@ -1336,7 +1381,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn multi_spline_modifier_v11_matches() {
@@ -1387,124 +1431,159 @@ pub(crate) mod tests {
         );
     }
 
-
     // -------------------------------------------------- MultiSplineModifier_Update
 
     #[test]
     fn multi_spline_modifier_update_matches() {
-        check(ee::s11::f_0035a560__generated, multi_spline_modifier_update, 200, &|c, seed| {
-            let mut r = fakes::machine(c, seed, 0x0e50_00d4, 1);
-            let this = DATA + 0x1000;
-            c.g[A0][0] = this as u64;
-            // World_GetSecondsPerTick reads world->+0x14.
-            let world = DATA + 0x2000;
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
-            c.bus.write32(world + 0x14, r.edge_f32());
-            c.bus.write32(this + 0x10, match seed % 4 {
-                0 => 0,
-                1 => 0x3f80_0000,
-                _ => r.edge_f32(),
-            });
-            c.bus.write32(this + 0x14, match seed % 5 {
-                0 => 0x7f80_0000, // largest, so the position overflows
-                1 => 0x8000_0000, // -0.0
-                2 => 0x3f80_0000,
-                _ => r.edge_f32(),
-            });
-            c.bus.write32(this + 0x54, match seed % 3 {
-                0 => 0,
-                1 => 0x3f80_0000,
-                _ => r.edge_f32(),
-            });
-            c.bus.write32(this + 0x30, r.next_u32());
-        });
+        check(
+            ee::s11::f_0035a560__generated,
+            multi_spline_modifier_update,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x0e50_00d4, 1);
+                let this = DATA + 0x1000;
+                c.g[A0][0] = this as u64;
+                // World_GetSecondsPerTick reads world->+0x14.
+                let world = DATA + 0x2000;
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(world + 0x14, r.edge_f32());
+                c.bus.write32(
+                    this + 0x10,
+                    match seed % 4 {
+                        0 => 0,
+                        1 => 0x3f80_0000,
+                        _ => r.edge_f32(),
+                    },
+                );
+                c.bus.write32(
+                    this + 0x14,
+                    match seed % 5 {
+                        0 => 0x7f80_0000, // largest, so the position overflows
+                        1 => 0x8000_0000, // -0.0
+                        2 => 0x3f80_0000,
+                        _ => r.edge_f32(),
+                    },
+                );
+                c.bus.write32(
+                    this + 0x54,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => 0x3f80_0000,
+                        _ => r.edge_f32(),
+                    },
+                );
+                c.bus.write32(this + 0x30, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn rail_modifier_list_push_back_matches() {
-        check(ssx3_ee::s11::f_0035b690__generated, rail_modifier_list_push_back, SEEDS, &|c, seed| {
-            machine(c, seed, 0x35b6_90, 0);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x100) as u64;
-            match seed % 3 {
-                0 => {}
-                1 => {
-                    w(c, DATA, DATA + 0x20);
-                    w(c, DATA + 0x20, 0);
+        check(
+            ssx3_ee::s11::f_0035b690__generated,
+            rail_modifier_list_push_back,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 0x35b6_90, 0);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                match seed % 3 {
+                    0 => {}
+                    1 => {
+                        w(c, DATA, DATA + 0x20);
+                        w(c, DATA + 0x20, 0);
+                    }
+                    _ => {
+                        w(c, DATA, DATA + 0x20);
+                        w(c, DATA + 0x20, DATA + 0x40);
+                        w(c, DATA + 0x40, 0);
+                    }
                 }
-                _ => {
-                    w(c, DATA, DATA + 0x20);
-                    w(c, DATA + 0x20, DATA + 0x40);
-                    w(c, DATA + 0x40, 0);
-                }
-            }
-        });
+            },
+        );
     }
-
 
     #[test]
     fn spline_modifier_v22_matches() {
-        check_lohi(ssx3_ee::s11::f_00359cf8__generated, spline_modifier_v22, 80, &|c, seed| {
-            let mut r = machine(c, seed, 0x359cf8, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x1000);
-            c.g[GP][0] = crate::difftest::GAME_GP as u64;
-            word(c, crate::difftest::GAME_GP.wrapping_sub(0x2a30), 1.0e-5f32.to_bits());
-            // the modifier struct: active, stopped and the spline parameters
-            for k in 0..0x38 {
-                word(c, DATA + 4 * k, r.edge_f32());
-            }
-            word(c, DATA + 0x54, if seed % 5 == 0 { 0 } else { 1 });
-            word(c, DATA + 0x50, if seed % 5 == 1 { 1 } else { 0 });
-            word(
-                c,
-                DATA + 0xb0,
-                match seed % 4 {
-                    0 => 0.0f32.to_bits(),
-                    1 => 1.0e-9f32.to_bits(),
-                    2 => 1.0f32.to_bits(),
-                    _ => r.edge_f32(),
-                },
-            );
-            for off in [0xb4u32, 0xb8, 0xc0, 0xc4, 0xc8, 0xd0, 0xd4] {
-                word(c, DATA + off, pick(&mut r, &[0.0, 1.0, -1.0, 0.5, 2.0, -0.25]));
-            }
-            word(c, DATA + 0x48, pick(&mut r, &[0.0, 1.0, -2.5]));
-            word(c, DATA + 0x38, pick(&mut r, &[0.0, 1.0, -1.0, 3.5]));
-            // the body
-            for k in 0..0x40 {
-                word(c, DATA + 0x1000 + 4 * k, r.f32(10.0));
-            }
-        });
+        check_lohi(
+            ssx3_ee::s11::f_00359cf8__generated,
+            spline_modifier_v22,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x359cf8, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x1000);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                word(
+                    c,
+                    crate::difftest::GAME_GP.wrapping_sub(0x2a30),
+                    1.0e-5f32.to_bits(),
+                );
+                // the modifier struct: active, stopped and the spline parameters
+                for k in 0..0x38 {
+                    word(c, DATA + 4 * k, r.edge_f32());
+                }
+                word(c, DATA + 0x54, if seed % 5 == 0 { 0 } else { 1 });
+                word(c, DATA + 0x50, if seed % 5 == 1 { 1 } else { 0 });
+                word(
+                    c,
+                    DATA + 0xb0,
+                    match seed % 4 {
+                        0 => 0.0f32.to_bits(),
+                        1 => 1.0e-9f32.to_bits(),
+                        2 => 1.0f32.to_bits(),
+                        _ => r.edge_f32(),
+                    },
+                );
+                for off in [0xb4u32, 0xb8, 0xc0, 0xc4, 0xc8, 0xd0, 0xd4] {
+                    word(
+                        c,
+                        DATA + off,
+                        pick(&mut r, &[0.0, 1.0, -1.0, 0.5, 2.0, -0.25]),
+                    );
+                }
+                word(c, DATA + 0x48, pick(&mut r, &[0.0, 1.0, -2.5]));
+                word(c, DATA + 0x38, pick(&mut r, &[0.0, 1.0, -1.0, 3.5]));
+                // the body
+                for k in 0..0x40 {
+                    word(c, DATA + 0x1000 + 4 * k, r.f32(10.0));
+                }
+            },
+        );
     }
-
 
     #[test]
     fn multi_spline_modifier_release_matches() {
-        leaf(ssx3_ee::s11::f_0035aae0__generated, multi_spline_modifier_release, 30);
+        leaf(
+            ssx3_ee::s11::f_0035aae0__generated,
+            multi_spline_modifier_release,
+            30,
+        );
     }
-
 
     #[test]
     fn multi_spline_modifier_alloc_node_instances_matches() {
-        check(ee::s11::f_0035a3f0__generated, multi_spline_modifier_alloc_node_instances, 40, &|c, seed| {
-            base(c, seed, 0x35_a3f0);
-            c.g[A0][0] = sx(DATA);
-            c.bus.write32(DATA + 0x4, (seed % 4) as u32);
-            c.bus.write32(DATA + 0x44, DATA + 0x200);
-            // gp-0x848 -> world, +0x84 -> module, +0x88 -> instance manager.
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), DATA + 0x1000);
-            c.bus.write32(DATA + 0x1000 + 0x84, DATA + 0x1100);
-            c.bus.write32(DATA + 0x1100 + 0x88, DATA + 0x1200);
-            // Empty instance-manager free list.
-            c.bus.write32(DATA + 0x1200, 0);
-            c.bus.write32(DATA + 0x1208, 0);
-            c.bus.write32(DATA + 0x120c, 0);
-        });
+        check(
+            ee::s11::f_0035a3f0__generated,
+            multi_spline_modifier_alloc_node_instances,
+            40,
+            &|c, seed| {
+                base(c, seed, 0x35_a3f0);
+                c.g[A0][0] = sx(DATA);
+                c.bus.write32(DATA + 0x4, (seed % 4) as u32);
+                c.bus.write32(DATA + 0x44, DATA + 0x200);
+                // gp-0x848 -> world, +0x84 -> module, +0x88 -> instance manager.
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), DATA + 0x1000);
+                c.bus.write32(DATA + 0x1000 + 0x84, DATA + 0x1100);
+                c.bus.write32(DATA + 0x1100 + 0x88, DATA + 0x1200);
+                // Empty instance-manager free list.
+                c.bus.write32(DATA + 0x1200, 0);
+                c.bus.write32(DATA + 0x1208, 0);
+                c.bus.write32(DATA + 0x120c, 0);
+            },
+        );
     }
-
 
     #[test]
     fn multi_spline_modifier_v19_matches() {
@@ -1532,7 +1611,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn spline_modifier_v05_matches() {
         check(
@@ -1550,7 +1628,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn multi_spline_modifier_v23_matches() {
@@ -1581,8 +1658,7 @@ pub(crate) mod tests {
         );
     }
 
-
-        #[test]
+    #[test]
     fn spline_modifier_ctor_2_matches() {
         check(
             ee::s11::f_003595d8__generated,
@@ -1602,7 +1678,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn multisplinemodifier_v01_matches() {

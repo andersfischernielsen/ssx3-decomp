@@ -7,41 +7,61 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
+use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::debugfe::at;
+pub(crate) use crate::game::fe::feasyncfile::gp_3 as gp_2;
+pub(crate) use crate::game::fe::festaterewards::p;
+pub(crate) use crate::game::fe::festaterewards::r;
+pub(crate) use crate::game::object::flexrailnode::at_3 as at_2;
+pub(crate) use crate::game::object::flexrailnode::r32v;
+pub(crate) use crate::game::object::flexrailnode::spa;
+#[cfg(test)]
+pub(crate) use crate::game::render::bezierman::f;
+pub(crate) use crate::game::render::bezierman::gp;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::Cpu;
-use crate::call::Flow;
-use crate::events::back_edge_unwinds;
-use crate::events::deliver_event;
 use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::render::bezierman::gp;
-#[cfg(test)]
-pub(crate) use crate::game::render::bezierman::f;
-pub(crate) use crate::game::fe::feasyncfile::gp_3 as gp_2;
-pub(crate) use crate::game::fe::debugfe::at;
-pub(crate) use crate::game::fe::festaterewards::p;
-pub(crate) use crate::game::fe::festaterewards::r;
-pub(crate) use crate::game::object::flexrailnode::at_3 as at_2;
-pub(crate) use crate::game::object::flexrailnode::r32v;
-pub(crate) use crate::game::object::flexrailnode::spa;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0021_0618, race_progress_update_rider, "RaceProgress_UpdateRider"),
-    (0x0021_0820, race_progress_project_rider, "RaceProgress_ProjectRider"),
-    (0x0021_08f8, race_progress_reset_all, "RaceProgress_ResetAll"),
-    (0x0021_0f40, ov_screen_read_private_message_open_keyboard, "OVScreenReadPrivateMessage_OpenKeyboard"),
-    (0x0021_0fa0, ovscreen_read_private_message_create_keyboard_popup, "OVScreenReadPrivateMessage_CreateKeyboardPopup"),
+    (
+        0x0021_0618,
+        race_progress_update_rider,
+        "RaceProgress_UpdateRider",
+    ),
+    (
+        0x0021_0820,
+        race_progress_project_rider,
+        "RaceProgress_ProjectRider",
+    ),
+    (
+        0x0021_08f8,
+        race_progress_reset_all,
+        "RaceProgress_ResetAll",
+    ),
+    (
+        0x0021_0f40,
+        ov_screen_read_private_message_open_keyboard,
+        "OVScreenReadPrivateMessage_OpenKeyboard",
+    ),
+    (
+        0x0021_0fa0,
+        ovscreen_read_private_message_create_keyboard_popup,
+        "OVScreenReadPrivateMessage_CreateKeyboardPopup",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -56,13 +76,13 @@ pub(crate) mod callee {
     pub(crate) use crate::game::render::bezierman::callee::RIDER_SPHERE_TREE_CTOR;
     pub(crate) use crate::game::render::bezierman::callee::RIDER_SPHERE_TREE_GET_BOUNDS;
     pub(crate) use crate::game::render::bezierman::callee::SND_LOCK;
-    pub(crate) use crate::game::render::bezierman::callee::SND_UNLOCK;
-    pub(crate) use crate::game::render::bezierman::callee::SND_STREAM_POSITION;
-    pub(crate) use crate::game::render::bezierman::callee::SND_SUB_TIME;
-    pub(crate) use crate::game::render::bezierman::callee::SND_SUB_STATUS;
-    pub(crate) use crate::game::render::bezierman::callee::SND_STREAM_INFO;
-    pub(crate) use crate::game::render::bezierman::callee::SND_SUB_STATE;
     pub(crate) use crate::game::render::bezierman::callee::SND_STATUS;
+    pub(crate) use crate::game::render::bezierman::callee::SND_STREAM_INFO;
+    pub(crate) use crate::game::render::bezierman::callee::SND_STREAM_POSITION;
+    pub(crate) use crate::game::render::bezierman::callee::SND_SUB_STATE;
+    pub(crate) use crate::game::render::bezierman::callee::SND_SUB_STATUS;
+    pub(crate) use crate::game::render::bezierman::callee::SND_SUB_TIME;
+    pub(crate) use crate::game::render::bezierman::callee::SND_UNLOCK;
 }
 
 /// The race-progress state: the rider slots (`0x4d0000-0x7438`, stride 0x18),
@@ -81,7 +101,6 @@ pub(crate) mod progress {
     /// The step limit (138.8889) at `gp-0x54ac`.
     pub const STEP_LIMIT: i32 = -0x54ac;
 
-
     pub const ACTIVE: u32 = 0x0;
 
     pub const SEG: u32 = 0x4;
@@ -94,7 +113,6 @@ pub(crate) mod progress {
 
     pub const STRIDE: u32 = 0x18;
 
-
     /// Course: segment count at +0, distance at +0x10.
     pub const COURSE_COUNT: u32 = 0x0;
 
@@ -106,7 +124,6 @@ pub(crate) mod progress {
 
     pub const SEG_STRIDE: u32 = 0x14;
 
-
     /// Race manager: riders at +0x28, rider count at +0x78.
     pub const RIDERS: u32 = 0x28;
 
@@ -116,7 +133,6 @@ pub(crate) mod progress {
 
     pub const RIDER_DIST: u32 = 0x4d0;
 
-
     pub const ZONE_SX: u32 = 0x0;
 
     pub const ZONE_SY: u32 = 0x4;
@@ -125,7 +141,6 @@ pub(crate) mod progress {
 
     pub const ZONE_Y: u32 = 0xc;
 }
-
 
 // ---------------------------------------------------------------------------
 // RaceProgress_ProjectRider.
@@ -207,7 +222,6 @@ pub fn race_progress_project_rider(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // RaceProgress_UpdateRider.
@@ -411,7 +425,6 @@ pub fn race_progress_update_rider(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Race progress reset.
 
@@ -453,7 +466,6 @@ pub fn race_progress_reset_all(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void OVScreenReadPrivateMessage_OpenKeyboard(...)` (0x210f40): open the
 /// keyboard popup for the private-message overlay.
 pub fn ov_screen_read_private_message_open_keyboard(c: &mut Cpu) {
@@ -488,7 +500,6 @@ pub fn ov_screen_read_private_message_open_keyboard(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Keyboard popup.
@@ -569,13 +580,11 @@ pub fn ovscreen_read_private_message_create_keyboard_popup(c: &mut Cpu) {
     })
 }
 
-
 /// A `gp_3`-relative global address.
 #[inline(always)]
 pub(crate) fn gp_3(c: &Cpu, off: i32) -> u32 {
     (c.g[GP][0] as u32).wrapping_add(off as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // HUD.
@@ -666,38 +675,37 @@ pub fn hud_meter_set_rect(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
+    use crate::difftest::fill;
     use crate::difftest::put_vec;
     use crate::difftest::scramble;
+    use crate::difftest::seed_count;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes;
-    use crate::difftest::check_lohi;
-    use crate::difftest::fill;
-    use crate::difftest::seed_count;
-    pub(crate) use crate::game::fe::debugfe::tests::OBJ;
-    pub(crate) use crate::game::fe::debugfe::tests::OBJ2;
-    pub(crate) use crate::game::fe::debugfe::tests::OBJ3;
-    pub(crate) use crate::game::fe::debugfe::tests::w;
-    pub(crate) use crate::game::fe::debugfe::tests::pool_allocator;
-    pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE;
-    pub(crate) use crate::game::fe::festaterewards::tests::W;
-    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
-    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
-    pub(crate) use crate::game::fe::festaterewards::tests::w as w_2;
-    pub(crate) use crate::game::fe::festaterewards::tests::hook;
+    pub(crate) use crate::game::be::beintstat::tests::allocator;
     pub(crate) use crate::game::be::beintstat::tests::call;
     pub(crate) use crate::game::be::beintstat::tests::pool_allocator as pool_allocator_2;
     pub(crate) use crate::game::be::beintstat::tests::MEM_HEAP;
-    pub(crate) use crate::game::be::beintstat::tests::allocator;
-    pub(crate) use crate::game::fe::festaterewards::tests::strict;
+    pub(crate) use crate::game::fe::debugfe::tests::pool_allocator;
+    pub(crate) use crate::game::fe::debugfe::tests::w;
+    pub(crate) use crate::game::fe::debugfe::tests::OBJ;
+    pub(crate) use crate::game::fe::debugfe::tests::OBJ2;
+    pub(crate) use crate::game::fe::debugfe::tests::OBJ3;
     pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base;
-
+    pub(crate) use crate::game::fe::festaterewards::tests::hook;
+    pub(crate) use crate::game::fe::festaterewards::tests::strict;
+    pub(crate) use crate::game::fe::festaterewards::tests::w as w_2;
+    pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE;
+    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
+    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
+    pub(crate) use crate::game::fe::festaterewards::tests::W;
 
     // RaceProgress_ProjectRider ------------------------------------------
 
@@ -713,7 +721,6 @@ pub(crate) mod tests {
 
     pub(crate) const POS_VT: u32 = DATA + 0x4000;
 
-
     /// The world → race manager chain and the zone table pointer.
     pub(crate) fn put_world(c: &mut Cpu) {
         c.bus.write32(GAME_GP - 0x848, WORLD);
@@ -723,7 +730,6 @@ pub(crate) mod tests {
         c.bus.write32(GAME_GP - 0x99c, ZONES);
     }
 
-
     /// The rider `idx`: its position object's virtual method is a fake.
     pub(crate) fn put_rider(c: &mut Cpu, idx: u32) {
         let rider = RIDER + 0x100 * idx;
@@ -732,7 +738,6 @@ pub(crate) mod tests {
         c.bus.write16(POS_VT + 0x28, 0);
         c.bus.write32(POS_VT + 0x2c, FAKE);
     }
-
 
     #[test]
     fn race_progress_project_rider_matches() {
@@ -758,13 +763,11 @@ pub(crate) mod tests {
         );
     }
 
-
     // RaceProgress_UpdateRider -------------------------------------------
 
     pub(crate) const COURSE: u32 = DATA + 0x5000;
 
     pub(crate) const COURSE_SEGS: u32 = DATA + 0x6000;
-
 
     pub(crate) fn put_course(c: &mut Cpu) {
         c.bus.write32(COURSE, 4);
@@ -779,7 +782,6 @@ pub(crate) mod tests {
                 .write32(COURSE_SEGS + 0x14 * i + 0x10, f(100.0 * i as f32));
         }
     }
-
 
     #[test]
     fn race_progress_update_rider_matches() {
@@ -824,7 +826,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn race_progress_reset_all_matches() {
         check(
@@ -836,7 +837,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn ov_screen_read_private_message_open_keyboard_matches() {
@@ -859,10 +859,9 @@ pub(crate) mod tests {
         );
     }
 
-
     // -------------------------------------------------------- lobby pages
 
-            #[test]
+    #[test]
     fn ovscreen_read_private_message_create_keyboard_popup_matches() {
         strict(
             ee::s05::f_00210fa0__generated,

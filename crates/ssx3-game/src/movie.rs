@@ -43,7 +43,11 @@ pub fn overrides() -> &'static [(u32, GuestFn, &'static str)] {
     if on() {
         OVERRIDES
     } else if hash_on() {
-        &[(0x0040_2a10, generated_get_picture_hashed, "sceMpegGetPicture")]
+        &[(
+            0x0040_2a10,
+            generated_get_picture_hashed,
+            "sceMpegGetPicture",
+        )]
     } else {
         &[]
     }
@@ -57,7 +61,11 @@ fn hash_on() -> bool {
 fn print_hash(c: &Cpu, a: u32, n: usize) {
     static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let o = (a & 0x01ff_ffff) as usize;
-    let h = c.bus.ram.get(o..o + n).map_or(0, |b| b.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &x| (h ^ x as u64).wrapping_mul(0x100_0000_01b3)));
+    let h = c.bus.ram.get(o..o + n).map_or(0, |b| {
+        b.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &x| {
+            (h ^ x as u64).wrapping_mul(0x100_0000_01b3)
+        })
+    });
     let k = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     eprintln!("[movie] picture {k} hash {h:016x}");
     // (`SSX3_MOVIE_DUMP=<dir>`: the first pictures' bytes, for a diff.)
@@ -134,7 +142,14 @@ fn mpeg_create(c: &mut Cpu) {
     for o in [0, 4, 8] {
         w32(c, mp + o, 0);
     }
-    for (o, v) in [(0x10, !0u64), (0x18, !0), (0x20, 0), (0x28, !0), (0x30, !0), (0x38, 0)] {
+    for (o, v) in [
+        (0x10, !0u64),
+        (0x18, !0),
+        (0x20, 0),
+        (0x28, !0),
+        (0x30, !0),
+        (0x38, 0),
+    ] {
         w64(c, mp + o, v);
     }
     w32(c, mp + 0x40, aligned);
@@ -143,7 +158,12 @@ fn mpeg_create(c: &mut Cpu) {
     }
     let mut s = STREAMS.lock().unwrap();
     s.retain(|x| x.mp != mp);
-    s.push(Stream { mp, work: aligned, dec: Decoder::new(), callbacks: [(0, 0); 8] });
+    s.push(Stream {
+        mp,
+        work: aligned,
+        dec: Decoder::new(),
+        callbacks: [(0, 0); 8],
+    });
     ret(c, 1, 2000);
 }
 
@@ -254,7 +274,12 @@ fn mpeg_get_picture(c: &mut Cpu) {
     let work = st.work;
     c.bus.write32(work, 0);
     let got = {
-        let mut feed = GuestFeed { c: &mut *c, mp, work, callback: st.callbacks[1] };
+        let mut feed = GuestFeed {
+            c: &mut *c,
+            mp,
+            work,
+            callback: st.callbacks[1],
+        };
         st.dec.picture(&mut feed)
     };
     c.g[RA] = ra;
@@ -279,7 +304,12 @@ fn mpeg_get_picture(c: &mut Cpu) {
     }
     if st.dec.errors != 0 {
         static ONCE: std::sync::Once = std::sync::Once::new();
-        ONCE.call_once(|| eprintln!("[movie] decoder errors: {} (unsupported stream syntax?)", st.dec.errors));
+        ONCE.call_once(|| {
+            eprintln!(
+                "[movie] decoder errors: {} (unsupported stream syntax?)",
+                st.dec.errors
+            )
+        });
     }
     // (Cycles: about what the IPU path takes per picture.)
     let cycles = 400 + mbcount as u64 * 600;

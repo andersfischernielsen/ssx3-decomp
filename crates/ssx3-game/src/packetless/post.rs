@@ -78,7 +78,12 @@ fn gif_data(stream: &[u128]) -> Vec<u128> {
 }
 
 fn record_post(vif: u32, kind: PostKind, gif: Vec<u128>, windows: u32) {
-    direct::record(Recorded { start: vif, end: vif, first_tag: 0, cmd: Cmd::Post { kind, gif, windows } });
+    direct::record(Recorded {
+        start: vif,
+        end: vif,
+        first_tag: 0,
+        cmd: Cmd::Post { kind, gif, windows },
+    });
 }
 
 /// 127.5: the colour scale of the post passes.
@@ -94,7 +99,9 @@ const CNT: u64 = 0x1000_0000;
 /// filter floats (`gm + view*0x18 + 0x6ca4`) from the defaults at
 /// `gp+0x14f4..0x1508`.
 fn reset_color_filter(c: &mut Cpu, gm: u32, view: u32, gp: u32) {
-    let p = gm.wrapping_add(view.wrapping_mul(0x18)).wrapping_add(0x6ca4);
+    let p = gm
+        .wrapping_add(view.wrapping_mul(0x18))
+        .wrapping_add(0x6ca4);
     for k in 0..6 {
         let v = r32(c, gp + 0x14f4 + 4 * k);
         w32(c, p + 4 * k, v);
@@ -107,7 +114,9 @@ fn reset_color_filter(c: &mut Cpu, gm: u32, view: u32, gp: u32) {
 /// pass with the RGB bias when it is not zero), then a CNT of 4 (FRAME,
 /// XYOFFSET, SCISSOR back).
 fn color_filter_stream(c: &mut Cpu, gm: u32, view: u32) -> Vec<u128> {
-    let p = gm.wrapping_add(view.wrapping_mul(0x18)).wrapping_add(0x6ca4);
+    let p = gm
+        .wrapping_add(view.wrapping_mul(0x18))
+        .wrapping_add(0x6ca4);
     let vo = gm.wrapping_add(view << 3);
     let fbp = r32(c, gm + 0x5a84);
     let w80 = r32(c, gm + 0x5a80);
@@ -126,19 +135,26 @@ fn color_filter_stream(c: &mut Cpu, gm: u32, view: u32) -> Vec<u128> {
     let flag = (c3 > 0 || c4 > 0 || c5 > 0) as i32;
     let s0 = y0.wrapping_add(h);
     let mut s: Vec<u128> = vec![0];
-    let nloop = sx64((n << 2).wrapping_add(0xa)).wrapping_add(sx64(((n << 1).wrapping_add(3)).wrapping_mul(flag)));
+    let nloop = sx64((n << 2).wrapping_add(0xa))
+        .wrapping_add(sx64(((n << 1).wrapping_add(3)).wrapping_mul(flag)));
     s.push(qw(nloop | NREG1, 0xe));
     let v = vget(c, gm, 0x54, 0x0039_077c);
     s.push(qw(fbp as u64 | ((v >> 6) as u64) << 16, 0x4c));
     s.push(qw((w80 | 0x100_0000) as u64 | 0x1_0000_0000, 0x4e));
     s.push(qw(0x30000, 0x47));
     s.push(qw(sx64(fp) | sx64(s7) << 32, 0x18));
-    let sc = sx64(x0) | sx64(x0.wrapping_add(w).wrapping_sub(1)) << 16 | sx64(y0) << 32 | sx64(s0.wrapping_sub(1)) << 48;
+    let sc = sx64(x0)
+        | sx64(x0.wrapping_add(w).wrapping_sub(1)) << 16
+        | sx64(y0) << 32
+        | sx64(s0.wrapping_sub(1)) << 48;
     s.push(qw(sc, 0x40));
     s.push(qw(5, 8));
     s.push(qw(0, 0x14));
     let v = vget(c, gm, 0x54, 0x0039_085c);
-    s.push(qw((fbp << 5) as u64 | ((v >> 6) as u64) << 14 | 0x6_a800_0000, 6));
+    s.push(qw(
+        (fbp << 5) as u64 | ((v >> 6) as u64) << 14 | 0x6_a800_0000,
+        6,
+    ));
     s.push(qw(0x116, 0));
     // (Generated: f2 = p[1] * k, f3 = p[2] * k, f0 = p[0] * k.)
     let g = sx64((f(c, p + 4) * K127_5).to_i32());
@@ -153,7 +169,10 @@ fn color_filter_stream(c: &mut Cpu, gm: u32, view: u32) -> Vec<u128> {
         let s1 = sx64(s7.wrapping_add(s0 << 4)) << 16;
         let t6 = sx64((s0 << 4).wrapping_add(8)) << 16;
         let (mut t1, mut a2) = (xs.wrapping_add(8), xs.wrapping_add(fp));
-        let (mut a3, mut t2) = (xs.wrapping_add(0x208), xs.wrapping_add(0x200).wrapping_add(fp));
+        let (mut a3, mut t2) = (
+            xs.wrapping_add(0x208),
+            xs.wrapping_add(0x200).wrapping_add(fp),
+        );
         for _ in 0..n {
             s.push(qw(sx64(t1) | t7, 3));
             s.push(qw(sx64(a2) | s4 | ff, 5));
@@ -168,7 +187,10 @@ fn color_filter_stream(c: &mut Cpu, gm: u32, view: u32) -> Vec<u128> {
     if flag != 0 {
         s.push(qw(0x48, 0x42));
         s.push(qw(0x46, 0));
-        s.push(qw(sx64(c3) | sx64(c4) << 8 | sx64(c5) << 16 | 0x3f80_0000_8000_0000, 1));
+        s.push(qw(
+            sx64(c3) | sx64(c4) << 8 | sx64(c5) << 16 | 0x3f80_0000_8000_0000,
+            1,
+        ));
         if n != 0 {
             let t0 = sx64(s7.wrapping_add(s0 << 4)) << 16;
             let s0q = sx64(s7.wrapping_add(y0 << 4)) << 16;
@@ -187,9 +209,18 @@ fn color_filter_stream(c: &mut Cpu, gm: u32, view: u32) -> Vec<u128> {
     let v = vget(c, gm, 0x54, 0x0039_0b20);
     s.push(qw(fbp as u64 | ((v >> 6) as u64) << 16, 0x4c));
     s.push(xyoffset(c, gm, 0x0039_0b58, 0x0039_0b78));
-    let (sx, sy) = (c.bus.read16(gm + 0x5900) as i32, c.bus.read16(gm + 0x5902) as i32);
-    let (sw, sh) = (c.bus.read16(gm + 0x5904) as i32, c.bus.read16(gm + 0x5906) as i32);
-    let sc = sx64(sx) | sx64(sx.wrapping_sub(1).wrapping_add(sw)) << 16 | (sy as u64) << 32 | sx64(sy.wrapping_sub(1).wrapping_add(sh)) << 48;
+    let (sx, sy) = (
+        c.bus.read16(gm + 0x5900) as i32,
+        c.bus.read16(gm + 0x5902) as i32,
+    );
+    let (sw, sh) = (
+        c.bus.read16(gm + 0x5904) as i32,
+        c.bus.read16(gm + 0x5906) as i32,
+    );
+    let sc = sx64(sx)
+        | sx64(sx.wrapping_sub(1).wrapping_add(sw)) << 16
+        | (sy as u64) << 32
+        | sx64(sy.wrapping_sub(1).wrapping_add(sh)) << 48;
     s.push(qw(sc, 0x40));
     s
 }
@@ -219,7 +250,9 @@ pub fn render_color_filter(c: &mut Cpu) {
         if r32(c, gp + 0x14ec) != 0 {
             reset_color_filter(c, gm, view, gp);
         }
-        let p = gm.wrapping_add(view.wrapping_mul(0x18)).wrapping_add(0x6ca4);
+        let p = gm
+            .wrapping_add(view.wrapping_mul(0x18))
+            .wrapping_add(0x6ca4);
         let identity = f(c, p).eq_s(FpuF32::ONE)
             && f(c, p + 4).eq_s(FpuF32::ONE)
             && f(c, p + 8).eq_s(FpuF32::ONE)
@@ -244,7 +277,9 @@ pub fn render_color_filter(c: &mut Cpu) {
 /// bloom floats (`gm + view*0x1c + 0x6cd4`) from the defaults at
 /// `gp+0x12e4..0x12f4`, `0x1300`, `0x1304`.
 fn reset_bloom_params(c: &mut Cpu, gm: u32, view: u32, gp: u32) {
-    let p = gm.wrapping_add(view.wrapping_mul(0x1c)).wrapping_add(0x6cd4);
+    let p = gm
+        .wrapping_add(view.wrapping_mul(0x1c))
+        .wrapping_add(0x6cd4);
     let src = [0x12e4, 0x12e8, 0x12ec, 0x12f0, 0x12f4, 0x1300, 0x1304];
     for (k, &o) in src.iter().enumerate() {
         let v = r32(c, gp + o);
@@ -264,7 +299,9 @@ fn blur_downsample(c: &mut Cpu, s: &mut Vec<u128>, gm: u32, scale: FpuF32, p: [i
     let w80 = r32(c, gm + 0x5a80) as i32;
     let i2 = (p5 << 4).wrapping_add(p12.wrapping_add(8));
     let n = div32(p10);
-    let i8 = (p5.wrapping_add(p7) << 4).wrapping_sub(p12.wrapping_sub(8)).wrapping_sub(i2);
+    let i8 = (p5.wrapping_add(p7) << 4)
+        .wrapping_sub(p12.wrapping_sub(8))
+        .wrapping_sub(i2);
     let i3 = (p6 << 4).wrapping_add(p12.wrapping_add(8));
     let i9 = (p6.wrapping_add(p8) << 4).wrapping_sub(p12.wrapping_sub(8));
     let fp = p10 << 4;
@@ -273,13 +310,19 @@ fn blur_downsample(c: &mut Cpu, s: &mut Vec<u128>, gm: u32, scale: FpuF32, p: [i
     let t2 = n.wrapping_mul(p13 << 2);
     s.push(qw(sx64(t2.wrapping_add(0xe)) | CNT, 0));
     s.push(qw(sx64(t2.wrapping_add(0xd)) | NREG1, 0xe));
-    s.push(qw(sx64(p9 >> 5) | sx64(units64(p10)) << 16 | 0xff00_0000_0100_0000, 0x4c));
+    s.push(qw(
+        sx64(p9 >> 5) | sx64(units64(p10)) << 16 | 0xff00_0000_0100_0000,
+        0x4c,
+    ));
     s.push(qw(sx64(w80) | 0x100_0000 | 0x1_0000_0000, 0x4e));
     s.push(qw(0x30000, 0x47));
     s.push(qw(0, 0x18));
     s.push(qw(0x80_0000_0068, 0x42));
     s.push(qw(0, 0x3f));
-    s.push(qw(sx64(p10.wrapping_sub(1)) << 16 | sx64(p11.wrapping_sub(1)) << 48, 0x40));
+    s.push(qw(
+        sx64(p10.wrapping_sub(1)) << 16 | sx64(p11.wrapping_sub(1)) << 48,
+        0x40,
+    ));
     s.push(qw(0x60, 0x14));
     s.push(qw(sx64(p3) | sx64(units64(p4)) << 14 | 0x6_a810_0000, 6));
     let xyuv = sx64(p5) << 4
@@ -336,7 +379,10 @@ fn blended_fill(s: &mut Vec<u128>, p2: i32, p3: i32, p4: i32, p5: i32, p6: i32) 
     let step = idiv(p3, m) << 4;
     s.push(qw(sx64((m << 1).wrapping_add(7)) | CNT, 0));
     s.push(qw(sx64((m << 1).wrapping_add(6)) | NREG1, 0xe));
-    s.push(qw(sx64(p2 >> 5) | sx64(units64(p3)) << 16 | 0xff00_0000_0100_0000, 0x4c));
+    s.push(qw(
+        sx64(p2 >> 5) | sx64(units64(p3)) << 16 | 0xff00_0000_0100_0000,
+        0x4c,
+    ));
     s.push(qw(0, 0x18));
     s.push(qw(sx64(p6) << 32 | 0xa1, 0x42));
     s.push(qw(0, 0x3f));
@@ -379,14 +425,23 @@ fn bloom_composite(c: &mut Cpu, s: &mut Vec<u128>, gm: u32, p: [i32; 10]) {
     s.push(qw(sx64(p11) << 32 | 0x29, 0x42));
     s.push(qw(0, 0x3f));
     let y1 = p7.wrapping_add(p9);
-    let sc = sx64(p6) | sx64(p6.wrapping_add(p8).wrapping_sub(1)) << 16 | sx64(p7) << 32 | sx64(y1.wrapping_sub(1)) << 48;
+    let sc = sx64(p6)
+        | sx64(p6.wrapping_add(p8).wrapping_sub(1)) << 16
+        | sx64(p7) << 32
+        | sx64(y1.wrapping_sub(1)) << 48;
     s.push(qw(sc, 0x40));
     s.push(qw(0x60, 0x14));
     s.push(qw(sx64(p2) | sx64(units64(p3)) << 14 | 0x6_a810_0000, 6));
-    s.push(qw(sx64(p3.wrapping_sub(1)) << 14 | sx64(p4.wrapping_sub(1)) << 34 | 0xa, 8));
+    s.push(qw(
+        sx64(p3.wrapping_sub(1)) << 14 | sx64(p4.wrapping_sub(1)) << 34 | 0xa,
+        8,
+    ));
     s.push(qw(0x156, 0));
     let a = sx64(p10);
-    s.push(qw(a | a << 8 | a << 16 | a << 24 | 0x3f80_0000_0000_0000, 1));
+    s.push(qw(
+        a | a << 8 | a << 16 | a << 24 | 0x3f80_0000_0000_0000,
+        1,
+    ));
     if m > 0 {
         let t2 = sx64(p7 << 4) << 16;
         let a3 = sx64(p4 << 4) << 16;
@@ -424,7 +479,9 @@ pub fn render_bloom(c: &mut Cpu) {
     if r32(c, gp + 0x12dc) != 0 {
         reset_bloom_params(c, gm, view, gp);
     }
-    let p = gm.wrapping_add(view.wrapping_mul(0x1c)).wrapping_add(0x6cd4);
+    let p = gm
+        .wrapping_add(view.wrapping_mul(0x1c))
+        .wrapping_add(0x6cd4);
     let k = K127_5;
     // The composite alphas: two globals, the view's p[5], p[6] (each × 127.5).
     let alpha = [
@@ -452,7 +509,13 @@ pub fn render_bloom(c: &mut Cpu) {
     let fbp32 = fbp << 5;
     let mut s: Vec<u128> = Vec::new();
     let scale = f(c, p + 0xc) * k;
-    blur_downsample(c, &mut s, gm, scale, [fbp32, width, x0, y0, w, h, buf0, s1, s1, 0, 1]);
+    blur_downsample(
+        c,
+        &mut s,
+        gm,
+        scale,
+        [fbp32, width, x0, y0, w, h, buf0, s1, s1, 0, 1],
+    );
     let fill_a = (f(c, p) * k).to_i32();
     let fill_f = (f(c, gp + 0x12e8) * k).to_i32();
     blended_fill(&mut s, buf0, s1, s1, fill_a, fill_f);
@@ -460,18 +523,34 @@ pub fn render_bloom(c: &mut Cpu) {
     for lvl in 0..3usize {
         if alpha[lvl] != 0 {
             let fix = (f(c, p + 0x10) * k).to_i32();
-            bloom_composite(c, &mut s, gm, [src, s4, s1, fbp32, x0, y0, w, h, alpha[lvl], fix]);
+            bloom_composite(
+                c,
+                &mut s,
+                gm,
+                [src, s4, s1, fbp32, x0, y0, w, h, alpha[lvl], fix],
+            );
         }
         let dst = bufs[(lvl + 1) & 1];
         let scale = f(c, p + 8) * k;
-        blur_downsample(c, &mut s, gm, scale, [src, s4, 0, 0, s4, s1, dst, s4 >> 1, s1 >> 1, offset, 4]);
+        blur_downsample(
+            c,
+            &mut s,
+            gm,
+            scale,
+            [src, s4, 0, 0, s4, s1, dst, s4 >> 1, s1 >> 1, offset, 4],
+        );
         src = dst;
         s4 >>= 1;
         s1 >>= 1;
     }
     if alpha[3] != 0 {
         let fix = (f(c, p + 0x10) * k).to_i32();
-        bloom_composite(c, &mut s, gm, [src, s4, s1, fbp32, x0, y0, w, h, alpha[3], fix]);
+        bloom_composite(
+            c,
+            &mut s,
+            gm,
+            [src, s4, s1, fbp32, x0, y0, w, h, alpha[3], fix],
+        );
     }
     s.push(qw(CNT | 3, 0));
     s.push(qw(0x1000_0000_0000_8002, 0xe));

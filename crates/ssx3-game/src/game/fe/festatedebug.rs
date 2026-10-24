@@ -8,20 +8,21 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::p;
+pub(crate) use crate::game::fe::feasyncfile::r;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-pub(crate) use crate::game::fe::feasyncfile::p;
-pub(crate) use crate::game::fe::feasyncfile::r;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0018_1090, fe_state_char_select_ctor, "cFEStateCharSelect_ctor"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
+    0x0018_1090,
+    fe_state_char_select_ctor,
+    "cFEStateCharSelect_ctor",
+)];
 
 // ---------------------------------------------------------------------------
 // FE state: character select.
@@ -99,29 +100,33 @@ pub fn fe_state_char_select_ctor(c: &mut Cpu) {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::*;
     use super::ee;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
+    use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::FAKE;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w;
     pub(crate) use crate::game::fe::feasyncfile::tests::BE_8 as BE;
     pub(crate) use crate::game::fe::feasyncfile::tests::W_6 as W;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base;
-
 
     #[test]
     fn fe_state_char_select_ctor_matches() {
-        check(ee::s02::f_00181090__generated, fe_state_char_select_ctor, 60, &|c, seed| {
-            base(c, seed, 0x1810, 1);
-            c.g[A0][0] = DATA as u64;
-            c.g[A2][0] = (seed % 4) as u64;
-            w(c, DATA + 0x10, DATA + 0x400);
-            w(c, DATA + 0x400, DATA + 0x500);
-        });
+        check(
+            ee::s02::f_00181090__generated,
+            fe_state_char_select_ctor,
+            60,
+            &|c, seed| {
+                base(c, seed, 0x1810, 1);
+                c.g[A0][0] = DATA as u64;
+                c.g[A2][0] = (seed % 4) as u64;
+                w(c, DATA + 0x10, DATA + 0x400);
+                w(c, DATA + 0x400, DATA + 0x500);
+            },
+        );
     }
 }

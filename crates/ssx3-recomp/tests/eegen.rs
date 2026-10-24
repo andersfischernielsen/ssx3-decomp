@@ -17,8 +17,14 @@ fn li_is_a_constant() {
 fn addiu_sign_extends_32_bit_result() {
     // addiu sp, sp, -0x50
     let s = lower(0, word(0x09, 29, 29, (-0x50i16) as u16)).unwrap();
-    assert_eq!(s, "c.g[29][0] = sx((c.g[29][0] as u32).wrapping_add(0xffffffb0));");
-    assert_eq!(prettify(&s), "c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));");
+    assert_eq!(
+        s,
+        "c.g[29][0] = sx((c.g[29][0] as u32).wrapping_add(0xffffffb0));"
+    );
+    assert_eq!(
+        prettify(&s),
+        "c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x50));"
+    );
 }
 
 #[test]

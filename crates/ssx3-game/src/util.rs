@@ -20,7 +20,7 @@
 //! differential tests compare v0/v1 and the upper GPR halves as hard state.
 
 use crate::abi::{gpr128, r32, ret, set_gpr128, set_word};
-use crate::events::{Resume, back_edge_unwinds, deliver_event_here, event_due};
+use crate::events::{back_edge_unwinds, deliver_event_here, event_due, Resume};
 use crate::mmi::{lq, pand, pcpyld, pcpyud, pnot, psubb, psubw};
 use ssx3_ee_rt::cpu::{reg::*, sx};
 use ssx3_ee_rt::funcs::GuestFn;
@@ -438,9 +438,13 @@ enum MemsetStage {
     Quads,
     /// 8 bytes per iteration from the replicated doubleword in v1; `resume`
     /// enters at the count step after a store (0x416270).
-    Doubles { resume: bool },
+    Doubles {
+        resume: bool,
+    },
     /// The byte tail; `resume` enters the loop body (0x4162ac).
-    Bytes { resume: bool },
+    Bytes {
+        resume: bool,
+    },
 }
 
 /// `memset(dst, c, n)` (0x416210, newlib): fills `n` bytes with the low byte
@@ -624,7 +628,9 @@ enum EaMemSetStage {
     Words16,
     /// 4 bytes per iteration; `resume` enters at the count step after a
     /// store (0x3e6530).
-    Words4 { resume: bool },
+    Words4 {
+        resume: bool,
+    },
 }
 
 /// The signed count in a2 (the original compares the whole register).
@@ -1583,7 +1589,8 @@ mod tests {
             2 => r.next_u32() % 8,
             3 => r.next_u32() % 40,
             4 => 14 + r.next_u32() % 24,
-            5 => [7, 8, 9, 15, 16, 17, 18, 31, 32, 33, 63, 64, 127, 128, 129][(r.next_u32() % 15) as usize],
+            5 => [7, 8, 9, 15, 16, 17, 18, 31, 32, 33, 63, 64, 127, 128, 129]
+                [(r.next_u32() % 15) as usize],
             6 => r.next_u32() % 300,
             7 => 120 + r.next_u32() % 400,
             8 => r.next_u32() % 2000,
@@ -1636,7 +1643,11 @@ mod tests {
             c.g[A0][0] = sx(dst);
             c.g[A1][0] = sx(src);
             // Negative counts copy nothing.
-            let n = if r.next_u32() % 20 == 0 { 0u32.wrapping_sub(r.next_u32() % 5) } else { n };
+            let n = if r.next_u32() % 20 == 0 {
+                0u32.wrapping_sub(r.next_u32() % 5)
+            } else {
+                n
+            };
             c.g[A2][0] = sx(n);
             schedule(c, &mut r, seed, 0x003e_6574)
         });
@@ -1708,7 +1719,11 @@ mod tests {
             let mut r = Rng(0x4541_7365_74 ^ (seed as u64) << 20);
             scramble(c, &mut r);
             let (dst, _, n) = copy_setup(c, &mut r, false);
-            let n = if r.next_u32() % 20 == 0 { 0u32.wrapping_sub(r.next_u32() % 5) } else { n };
+            let n = if r.next_u32() % 20 == 0 {
+                0u32.wrapping_sub(r.next_u32() % 5)
+            } else {
+                n
+            };
             c.g[A0][0] = sx(dst);
             c.g[A2][0] = sx(n);
             schedule(c, &mut r, seed, 0x003e_6448)
@@ -1745,7 +1760,10 @@ mod tests {
                 c.g[A1][0] = sx(spr);
                 schedule(c, &mut r, seed, 0x0037_1d10);
             });
-            assert!(r.hard.is_empty() && r.soft.is_empty(), "seed {seed}: {r:#?}");
+            assert!(
+                r.hard.is_empty() && r.soft.is_empty(),
+                "seed {seed}: {r:#?}"
+            );
         }
     }
 
@@ -1760,7 +1778,10 @@ mod tests {
                 c.g[A1][0] = sx(mem);
                 schedule(c, &mut r, seed, 0x0037_1dd8);
             });
-            assert!(r.hard.is_empty() && r.soft.is_empty(), "seed {seed}: {r:#?}");
+            assert!(
+                r.hard.is_empty() && r.soft.is_empty(),
+                "seed {seed}: {r:#?}"
+            );
         }
     }
 
@@ -1780,7 +1801,10 @@ mod tests {
     /// Two addresses in separate areas with the same, random or 8/16-byte
     /// alignment.
     fn str_ptrs(r: &mut Rng) -> (u32, u32) {
-        let (a, b) = (DATA + 0x10 * (r.next_u32() % 32), DATA + 0x3000 + 0x10 * (r.next_u32() % 32));
+        let (a, b) = (
+            DATA + 0x10 * (r.next_u32() % 32),
+            DATA + 0x3000 + 0x10 * (r.next_u32() % 32),
+        );
         match r.next_u32() % 4 {
             0 => (a, b),
             1 => (a + 8, b + 8 * (r.next_u32() % 2)),
@@ -1880,7 +1904,11 @@ mod tests {
                     put_str(c, &mut r, b + len, extra)
                 }
             }
-            let (a, b) = if r.next_u32() % 2 == 0 { (a, b) } else { (b, a) };
+            let (a, b) = if r.next_u32() % 2 == 0 {
+                (a, b)
+            } else {
+                (b, a)
+            };
             c.g[A0][0] = sx(a);
             c.g[A1][0] = sx(b);
             schedule(c, &mut r, seed, 0x0041_65a8)

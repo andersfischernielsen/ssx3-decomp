@@ -15,7 +15,11 @@ use ssx3_ee_rt::Cpu;
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_78d8, sndstrm_queue, "SNDSTRM_Queue"),
     (0x003d_3030, path_get_track_stream, "PATH_GetTrackStream"),
-    (0x002a_e020, path_plat_timer_callback, "PATH_PlatTimerCallback"),
+    (
+        0x002a_e020,
+        path_plat_timer_callback,
+        "PATH_PlatTimerCallback",
+    ),
     (0x003e_00d8, stream_file_on_open, "StreamFile_OnOpen"),
     (0x003d_f980, async_file_is_done, "AsyncFile_IsDone"),
     (0x003e_3350, eafile_platform_read, "EAFile_PlatformRead"),
@@ -27,23 +31,50 @@ mod callee {
     use super::Callee;
     use ssx3_ee::{s08, s13, s14};
 
-    pub const SNDSTRM_QUEUE_REQUEST: Callee =
-        Callee { addr: 0x003b_76e8, f: s13::SNDSTRM_QueueRequest };
-    pub const PATH_FIND_TRACK: Callee = Callee { addr: 0x003d_5290, f: s14::PATH_FindTrack };
-    pub const EAFILE_RELEASE_REQUEST: Callee =
-        Callee { addr: 0x003d_d310, f: s14::EAFile_ReleaseRequest };
-    pub const STREAM_FILE_ISSUE_READ: Callee =
-        Callee { addr: 0x003e_03d0, f: s14::StreamFile_IssueRead };
-    pub const EAFILE_QUEUE_OPEN: Callee = Callee { addr: 0x003d_d4e8, f: s14::EAFile_QueueOpen };
-    pub const EAFILE_SET_REQUEST_CALLBACK: Callee =
-        Callee { addr: 0x003d_cf70, f: s14::EAFile_SetRequestCallback };
-    pub const EAMUTEX_LOCK: Callee = Callee { addr: 0x003e_5700, f: s14::EAMutex_Lock };
-    pub const EAMUTEX_UNLOCK: Callee = Callee { addr: 0x003e_5760, f: s14::EAMutex_Unlock };
-    pub const ASYNCFILE_FROM_HANDLE: Callee =
-        Callee { addr: 0x003d_ef70, f: s14::AsyncFile_FromHandle };
-    pub const EAFILE_CD_READ: Callee = Callee { addr: 0x003e_4648, f: s14::EAFile_CdRead };
-    pub const PATH_PLAT_GET_TIME_MS: Callee =
-        Callee { addr: 0x002a_f370, f: s08::PATH_PlatGetTimeMs };
+    pub const SNDSTRM_QUEUE_REQUEST: Callee = Callee {
+        addr: 0x003b_76e8,
+        f: s13::SNDSTRM_QueueRequest,
+    };
+    pub const PATH_FIND_TRACK: Callee = Callee {
+        addr: 0x003d_5290,
+        f: s14::PATH_FindTrack,
+    };
+    pub const EAFILE_RELEASE_REQUEST: Callee = Callee {
+        addr: 0x003d_d310,
+        f: s14::EAFile_ReleaseRequest,
+    };
+    pub const STREAM_FILE_ISSUE_READ: Callee = Callee {
+        addr: 0x003e_03d0,
+        f: s14::StreamFile_IssueRead,
+    };
+    pub const EAFILE_QUEUE_OPEN: Callee = Callee {
+        addr: 0x003d_d4e8,
+        f: s14::EAFile_QueueOpen,
+    };
+    pub const EAFILE_SET_REQUEST_CALLBACK: Callee = Callee {
+        addr: 0x003d_cf70,
+        f: s14::EAFile_SetRequestCallback,
+    };
+    pub const EAMUTEX_LOCK: Callee = Callee {
+        addr: 0x003e_5700,
+        f: s14::EAMutex_Lock,
+    };
+    pub const EAMUTEX_UNLOCK: Callee = Callee {
+        addr: 0x003e_5760,
+        f: s14::EAMutex_Unlock,
+    };
+    pub const ASYNCFILE_FROM_HANDLE: Callee = Callee {
+        addr: 0x003d_ef70,
+        f: s14::AsyncFile_FromHandle,
+    };
+    pub const EAFILE_CD_READ: Callee = Callee {
+        addr: 0x003e_4648,
+        f: s14::EAFile_CdRead,
+    };
+    pub const PATH_PLAT_GET_TIME_MS: Callee = Callee {
+        addr: 0x002a_f370,
+        f: s08::PATH_PlatGetTimeMs,
+    };
 }
 
 /// The shared mutex base used by the `EAFile_*` / `AsyncFile_*` functions
@@ -286,101 +317,148 @@ mod tests {
 
     #[test]
     fn sndstrm_queue_matches() {
-        check(ssx3_ee::s13::f_003b78d8, sndstrm_queue, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x51, 0);
-            let this = ptr(&mut r);
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-            c.g[A2][0] = r.next_u32() as u64;
-            c.g[A3][0] = r.next_u32() as u64;
-        });
+        check(
+            ssx3_ee::s13::f_003b78d8,
+            sndstrm_queue,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x51, 0);
+                let this = ptr(&mut r);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.g[A3][0] = r.next_u32() as u64;
+            },
+        );
     }
 
     #[test]
     fn path_get_track_stream_matches() {
-        check(ssx3_ee::s14::f_003d3030, path_get_track_stream, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x52, 0);
-            c.g[A0][0] = (r.next_u32() % 6) as u64;
-            // A plausible track table so both branches are reachable.
-            let table = ptr(&mut r);
-            c.bus.write32(0x0051_765c, table);
-            c.bus.write32(table, if seed % 2 == 0 { 0 } else { ptr(&mut r) });
-        });
+        check(
+            ssx3_ee::s14::f_003d3030,
+            path_get_track_stream,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x52, 0);
+                c.g[A0][0] = (r.next_u32() % 6) as u64;
+                // A plausible track table so both branches are reachable.
+                let table = ptr(&mut r);
+                c.bus.write32(0x0051_765c, table);
+                c.bus
+                    .write32(table, if seed % 2 == 0 { 0 } else { ptr(&mut r) });
+            },
+        );
     }
 
     #[test]
     fn path_plat_timer_callback_matches() {
-        covered(ssx3_ee::s08::f_002ae020, path_plat_timer_callback, SEEDS, &|c, seed| {
-            machine(c, seed, 0x53, 1);
-            let cb = if seed % 4 == 0 { 0 } else { FAKE + 0x40 };
-            c.bus.write32(GAME_GP + 0x6a8, cb);
-        });
+        covered(
+            ssx3_ee::s08::f_002ae020,
+            path_plat_timer_callback,
+            SEEDS,
+            &|c, seed| {
+                machine(c, seed, 0x53, 1);
+                let cb = if seed % 4 == 0 { 0 } else { FAKE + 0x40 };
+                c.bus.write32(GAME_GP + 0x6a8, cb);
+            },
+        );
     }
 
     #[test]
     fn stream_file_on_open_matches() {
-        check(ssx3_ee::s14::f_003e00d8, stream_file_on_open, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x54, 0);
-            let file = ptr(&mut r);
-            c.g[A2][0] = file as u64;
-            c.bus.write32(file + 0x174, if seed % 3 == 0 { 0 } else { ptr(&mut r) });
-            c.bus.write32(file + 0x40, r.next_u32());
-        });
+        check(
+            ssx3_ee::s14::f_003e00d8,
+            stream_file_on_open,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x54, 0);
+                let file = ptr(&mut r);
+                c.g[A2][0] = file as u64;
+                c.bus
+                    .write32(file + 0x174, if seed % 3 == 0 { 0 } else { ptr(&mut r) });
+                c.bus.write32(file + 0x40, r.next_u32());
+            },
+        );
     }
 
     #[test]
     fn stream_file_on_close_matches() {
-        check(ssx3_ee::s14::f_003e0118, stream_file_on_close, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x55, 0);
-            let file = ptr(&mut r);
-            c.g[A2][0] = file as u64;
-            c.bus.write32(file + 0x174, if seed % 3 == 0 { 0 } else { ptr(&mut r) });
-            c.bus.write32(file + 0x40, r.next_u32());
-            // EAFile's request and file-handle pools (counts 0x519ab0 /
-            // 0x519ab4, tables 0x519ad8 / 0x519adc, entries 0x30 / 0x110
-            // bytes): with no free entry the allocators spin forever.
-            for (count, table, at, size) in [(0x0051_9ab0, 0x0051_9ad8, 0xf_0000, 0x30), (0x0051_9ab4, 0x0051_9adc, 0xf_1000, 0x110)] {
-                let base = crate::difftest::DATA + at;
-                c.bus.write32(count, 4);
-                c.bus.write32(table, base);
-                for i in 0..size {
-                    c.bus.write32(base + 4 * i, 0);
+        check(
+            ssx3_ee::s14::f_003e0118,
+            stream_file_on_close,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x55, 0);
+                let file = ptr(&mut r);
+                c.g[A2][0] = file as u64;
+                c.bus
+                    .write32(file + 0x174, if seed % 3 == 0 { 0 } else { ptr(&mut r) });
+                c.bus.write32(file + 0x40, r.next_u32());
+                // EAFile's request and file-handle pools (counts 0x519ab0 /
+                // 0x519ab4, tables 0x519ad8 / 0x519adc, entries 0x30 / 0x110
+                // bytes): with no free entry the allocators spin forever.
+                for (count, table, at, size) in [
+                    (0x0051_9ab0, 0x0051_9ad8, 0xf_0000, 0x30),
+                    (0x0051_9ab4, 0x0051_9adc, 0xf_1000, 0x110),
+                ] {
+                    let base = crate::difftest::DATA + at;
+                    c.bus.write32(count, 4);
+                    c.bus.write32(table, base);
+                    for i in 0..size {
+                        c.bus.write32(base + 4 * i, 0);
+                    }
                 }
-            }
-        });
+            },
+        );
     }
 
     #[test]
     fn async_file_is_done_matches() {
-        check(ssx3_ee::s14::f_003df980, async_file_is_done, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x56, 0);
-            c.g[A0][0] = r.next_u32() as u64;
-        });
+        check(
+            ssx3_ee::s14::f_003df980,
+            async_file_is_done,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x56, 0);
+                c.g[A0][0] = r.next_u32() as u64;
+            },
+        );
     }
 
     #[test]
     fn eafile_platform_read_matches() {
-        check(ssx3_ee::s14::f_003e3350, eafile_platform_read, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x57, 0);
-            // Cover both the CD path (byte 3 == 1) and the platform-block path.
-            let handle = if seed % 2 == 0 {
-                0x0100_0000 | (r.next_u32() & 0x00ff_ffff)
-            } else {
-                r.next_u32()
-            };
-            c.g[A0][0] = handle as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-            c.g[A2][0] = r.next_u32() as u64;
-            c.g[A3][0] = r.next_u32() as u64;
-        });
+        check(
+            ssx3_ee::s14::f_003e3350,
+            eafile_platform_read,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x57, 0);
+                // Cover both the CD path (byte 3 == 1) and the platform-block path.
+                let handle = if seed % 2 == 0 {
+                    0x0100_0000 | (r.next_u32() & 0x00ff_ffff)
+                } else {
+                    r.next_u32()
+                };
+                c.g[A0][0] = handle as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = r.next_u32() as u64;
+                c.g[A3][0] = r.next_u32() as u64;
+            },
+        );
     }
 
     #[test]
     fn path_plat_get_time_ms_matches() {
-        check(ssx3_ee::s08::f_002af370, path_plat_get_time_ms, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x58, 0);
-            c.bus.write32(0x0045_0dcc, r.next_u32());
-            c.bus.write32(0x0045_0dc8, if seed % 4 == 0 { 0 } else { r.next_u32() });
-        });
+        check(
+            ssx3_ee::s08::f_002af370,
+            path_plat_get_time_ms,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x58, 0);
+                c.bus.write32(0x0045_0dcc, r.next_u32());
+                c.bus
+                    .write32(0x0045_0dc8, if seed % 4 == 0 { 0 } else { r.next_u32() });
+            },
+        );
     }
 }

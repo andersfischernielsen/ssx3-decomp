@@ -3,20 +3,20 @@
 
 use crate::abi;
 use crate::call;
+use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
+use crate::events::back_edge_unwinds;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use crate::call::guest;
-use crate::call::Flow;
-use crate::call::Unwound;
-use crate::events::back_edge_unwinds;
-use crate::ps2f::FpuF32;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -29,7 +29,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_03d8, throw_type_match, "__throw_type_match"),
     (0x0041_0468, get_eh_context, "__get_eh_context"),
     (0x0041_0490, get_eh_info, "__get_eh_info"),
-    (0x0041_0548, get_dynamic_handler_chain, "__get_dynamic_handler_chain"),
+    (
+        0x0041_0548,
+        get_dynamic_handler_chain,
+        "__get_dynamic_handler_chain",
+    ),
     (0x0041_1538, udivdi3, "__udivdi3"),
     (0x0041_2500, cmpdf2, "__cmpdf2"),
     (0x0041_2740, negdf2, "__negdf2"),
@@ -49,7 +53,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_3af8, extendsfdf2, "__extendsfdf2"),
     (0x0041_46d0, register_frame_info, "__register_frame_info"),
     (0x0041_46f8, register_frame, "__register_frame"),
-    (0x0041_4728, register_frame_info_table, "__register_frame_info_table"),
+    (
+        0x0041_4728,
+        register_frame_info_table,
+        "__register_frame_info_table",
+    ),
     (0x0041_4750, register_frame_table, "__register_frame_table"),
     (0x0041_47f8, deregister_frame, "__deregister_frame"),
     (0x0041_4c00, rtti_si, "__rtti_si"),
@@ -73,12 +81,28 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_5dd8, ptmf_type_info_dtor, "__ptmf_type_info_dtor"),
     (0x0041_5df8, tf16_func_type_info, "__tf16__func_type_info"),
     (0x0041_5e48, func_type_info_dtor, "__func_type_info_dtor"),
-    (0x0041_5e68, tf19_builtin_type_info, "__tf19__builtin_type_info"),
-    (0x0041_5eb8, builtin_type_info_dtor, "__builtin_type_info_dtor"),
+    (
+        0x0041_5e68,
+        tf19_builtin_type_info,
+        "__tf19__builtin_type_info",
+    ),
+    (
+        0x0041_5eb8,
+        builtin_type_info_dtor,
+        "__builtin_type_info_dtor",
+    ),
     (0x0041_5ed8, tf16_attr_type_info, "__tf16__attr_type_info"),
     (0x0041_5f28, attr_type_info_dtor, "__attr_type_info_dtor"),
-    (0x0041_5f48, tf19_pointer_type_info, "__tf19__pointer_type_info"),
-    (0x0041_5f98, pointer_type_info_dtor, "__pointer_type_info_dtor"),
+    (
+        0x0041_5f48,
+        tf19_pointer_type_info,
+        "__tf19__pointer_type_info",
+    ),
+    (
+        0x0041_5f98,
+        pointer_type_info_dtor,
+        "__pointer_type_info_dtor",
+    ),
     (0x0041_5fb8, getreent, "__getreent"),
     (0x0041_7948, sread, "__sread"),
     (0x0041_79b0, swrite, "__swrite"),
@@ -96,65 +120,141 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_dad8, umoddi3, "__umoddi3"),
 ];
 
-
 // ---------------------------------------------------------------------------
 // Direct-call targets (the readable aliases, which dispatch through the
 // generated override slots).
 
-pub(crate) const DEREGISTER_FRAME_INFO: Callee = Callee { addr: 0x0041_4780, f: ssx3_ee::s15::__deregister_frame_info };
+pub(crate) const DEREGISTER_FRAME_INFO: Callee = Callee {
+    addr: 0x0041_4780,
+    f: ssx3_ee::s15::__deregister_frame_info,
+};
 
-pub(crate) const DO_GLOBAL_CTORS: Callee = Callee { addr: 0x0040_fbe0, f: ssx3_ee::s15::__do_global_ctors };
+pub(crate) const DO_GLOBAL_CTORS: Callee = Callee {
+    addr: 0x0040_fbe0,
+    f: ssx3_ee::s15::__do_global_ctors,
+};
 
-pub(crate) const ABORT: Callee = Callee { addr: 0x0041_8790, f: ssx3_ee::s15::abort };
+pub(crate) const ABORT: Callee = Callee {
+    addr: 0x0041_8790,
+    f: ssx3_ee::s15::abort,
+};
 
-pub(crate) const TERMINATE: Callee = Callee { addr: 0x0041_03b0, f: ssx3_ee::s15::__terminate };
+pub(crate) const TERMINATE: Callee = Callee {
+    addr: 0x0041_03b0,
+    f: ssx3_ee::s15::__terminate,
+};
 
 /// The C++ `terminate()` (0x412800), which calls the installed handler and
 /// then re-enters `set_terminate`.
-pub(crate) const TERMINATE_CPP: Callee = Callee { addr: 0x0041_2800, f: ssx3_ee::s15::terminate };
+pub(crate) const TERMINATE_CPP: Callee = Callee {
+    addr: 0x0041_2800,
+    f: ssx3_ee::s15::terminate,
+};
 
-pub(crate) const STR_CMP: Callee = Callee { addr: 0x0041_65a8, f: ssx3_ee::s15::strcmp };
+pub(crate) const STR_CMP: Callee = Callee {
+    addr: 0x0041_65a8,
+    f: ssx3_ee::s15::strcmp,
+};
 
-pub(crate) const GET_EH_INFO: Callee = Callee { addr: 0x0041_0490, f: ssx3_ee::s15::__get_eh_info };
+pub(crate) const GET_EH_INFO: Callee = Callee {
+    addr: 0x0041_0490,
+    f: ssx3_ee::s15::__get_eh_info,
+};
 
-pub(crate) const MALLOC: Callee = Callee { addr: 0x0041_88c0, f: ssx3_ee::s15::malloc };
+pub(crate) const MALLOC: Callee = Callee {
+    addr: 0x0041_88c0,
+    f: ssx3_ee::s15::malloc,
+};
 
-pub(crate) const FREE: Callee = Callee { addr: 0x0041_8910, f: ssx3_ee::s15::free };
+pub(crate) const FREE: Callee = Callee {
+    addr: 0x0041_8910,
+    f: ssx3_ee::s15::free,
+};
 
-pub(crate) const REGISTER_FRAME_INFO: Callee = Callee { addr: 0x0041_46d0, f: ssx3_ee::s15::__register_frame_info };
+pub(crate) const REGISTER_FRAME_INFO: Callee = Callee {
+    addr: 0x0041_46d0,
+    f: ssx3_ee::s15::__register_frame_info,
+};
 
-pub(crate) const REGISTER_FRAME_INFO_TABLE: Callee = Callee { addr: 0x0041_4728, f: ssx3_ee::s15::__register_frame_info_table };
+pub(crate) const REGISTER_FRAME_INFO_TABLE: Callee = Callee {
+    addr: 0x0041_4728,
+    f: ssx3_ee::s15::__register_frame_info_table,
+};
 
-pub(crate) const TYPE_INFO_DTOR: Callee = Callee { addr: 0x0041_4b68, f: ssx3_ee::s15::type_info_dtor };
+pub(crate) const TYPE_INFO_DTOR: Callee = Callee {
+    addr: 0x0041_4b68,
+    f: ssx3_ee::s15::type_info_dtor,
+};
 
-pub(crate) const TYPE_INFO_EQ: Callee = Callee { addr: 0x0041_4b98, f: ssx3_ee::s15::type_info_eq };
+pub(crate) const TYPE_INFO_EQ: Callee = Callee {
+    addr: 0x0041_4b98,
+    f: ssx3_ee::s15::type_info_eq,
+};
 
-pub(crate) const TF9_EXCEPTION: Callee = Callee { addr: 0x0041_2f18, f: ssx3_ee::s15::__tf9exception };
+pub(crate) const TF9_EXCEPTION: Callee = Callee {
+    addr: 0x0041_2f18,
+    f: ssx3_ee::s15::__tf9exception,
+};
 
-pub(crate) const TF16_USER_TYPE_INFO: Callee = Callee { addr: 0x0041_5018, f: ssx3_ee::s15::__tf16__user_type_info };
+pub(crate) const TF16_USER_TYPE_INFO: Callee = Callee {
+    addr: 0x0041_5018,
+    f: ssx3_ee::s15::__tf16__user_type_info,
+};
 
-pub(crate) const TF9_TYPE_INFO: Callee = Callee { addr: 0x0041_51f8, f: ssx3_ee::s15::__tf9type_info };
+pub(crate) const TF9_TYPE_INFO: Callee = Callee {
+    addr: 0x0041_51f8,
+    f: ssx3_ee::s15::__tf9type_info,
+};
 
-pub(crate) const RTTI_SI: Callee = Callee { addr: 0x0041_4c00, f: ssx3_ee::s15::__rtti_si };
+pub(crate) const RTTI_SI: Callee = Callee {
+    addr: 0x0041_4c00,
+    f: ssx3_ee::s15::__rtti_si,
+};
 
-pub(crate) const RTTI_USER: Callee = Callee { addr: 0x0041_4c20, f: ssx3_ee::s15::__rtti_user };
+pub(crate) const RTTI_USER: Callee = Callee {
+    addr: 0x0041_4c20,
+    f: ssx3_ee::s15::__rtti_user,
+};
 
-pub(crate) const UNPACK_D: Callee = Callee { addr: 0x0041_1c38, f: ssx3_ee::s15::__unpack_d };
+pub(crate) const UNPACK_D: Callee = Callee {
+    addr: 0x0041_1c38,
+    f: ssx3_ee::s15::__unpack_d,
+};
 
-pub(crate) const PACK_D: Callee = Callee { addr: 0x0041_1b08, f: ssx3_ee::s15::__pack_d };
+pub(crate) const PACK_D: Callee = Callee {
+    addr: 0x0041_1b08,
+    f: ssx3_ee::s15::__pack_d,
+};
 
-pub(crate) const UNPACK_F: Callee = Callee { addr: 0x0041_3068, f: ssx3_ee::s15::__unpack_f };
+pub(crate) const UNPACK_F: Callee = Callee {
+    addr: 0x0041_3068,
+    f: ssx3_ee::s15::__unpack_f,
+};
 
-pub(crate) const PACK_F: Callee = Callee { addr: 0x0041_2f58, f: ssx3_ee::s15::__pack_f };
+pub(crate) const PACK_F: Callee = Callee {
+    addr: 0x0041_2f58,
+    f: ssx3_ee::s15::__pack_f,
+};
 
-pub(crate) const MAKE_DP: Callee = Callee { addr: 0x0041_2778, f: ssx3_ee::s15::__make_dp };
+pub(crate) const MAKE_DP: Callee = Callee {
+    addr: 0x0041_2778,
+    f: ssx3_ee::s15::__make_dp,
+};
 
-pub(crate) const MAKE_FP: Callee = Callee { addr: 0x0041_3ac8, f: ssx3_ee::s15::__make_fp };
+pub(crate) const MAKE_FP: Callee = Callee {
+    addr: 0x0041_3ac8,
+    f: ssx3_ee::s15::__make_fp,
+};
 
-pub(crate) const FPCMP_PARTS_D: Callee = Callee { addr: 0x0041_23e8, f: ssx3_ee::s15::__fpcmp_parts_d };
+pub(crate) const FPCMP_PARTS_D: Callee = Callee {
+    addr: 0x0041_23e8,
+    f: ssx3_ee::s15::__fpcmp_parts_d,
+};
 
-pub(crate) const FPCMP_PARTS_F: Callee = Callee { addr: 0x0041_3748, f: ssx3_ee::s15::__fpcmp_parts_f };
-
+pub(crate) const FPCMP_PARTS_F: Callee = Callee {
+    addr: 0x0041_3748,
+    f: ssx3_ee::s15::__fpcmp_parts_f,
+};
 
 // ---------------------------------------------------------------------------
 // Frame helpers (the generator emits a mix of `sd`/`ld` and `sq`/`lq`).
@@ -164,18 +264,15 @@ pub(crate) fn frame_sd(c: &mut Cpu, f: Frame, off: u32, v: u64) {
     Addr(f.at(c, off)).sd(c, v);
 }
 
-
 #[inline]
 pub(crate) fn frame_ld(c: &mut Cpu, f: Frame, off: u32) -> u64 {
     Addr(f.at(c, off)).ld(c)
 }
 
-
 #[inline]
 pub(crate) fn add_sp(c: &mut Cpu, delta: u32) {
     c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(delta));
 }
-
 
 // ---------------------------------------------------------------------------
 // Global constructor/destructor walks.
@@ -198,7 +295,6 @@ pub fn do_global_dtors_aux(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void __do_global_dtors(void)` (0x40fb88): walk the destructor list at
 /// `*(0x450000 + 0x343c)` (a null-terminated array of function pointers),
@@ -245,7 +341,6 @@ pub fn do_global_dtors(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void __do_global_ctors(void)` (0x40fbe0): walk the constructor table at
 /// `0x440000 - 0x31c8` (word 0 is the count/head marker, the table follows)
@@ -332,7 +427,6 @@ pub fn do_global_ctors(c: &mut Cpu) {
     });
 }
 
-
 /// `void __main(void)` (0x40fc90): if the "ctors run" flag is clear, set it
 /// and run `__do_global_ctors`.
 pub fn main_(c: &mut Cpu) {
@@ -351,7 +445,6 @@ pub fn main_(c: &mut Cpu) {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Exception-handling termination and frame registration.
 
@@ -368,7 +461,6 @@ pub fn default_terminate(c: &mut Cpu) {
     });
 }
 
-
 /// `void __terminate(void)` (0x4103b0): call the installed terminate handler
 /// (`*(0x450000 + 0x3440)`).
 pub fn terminate(c: &mut Cpu) {
@@ -384,7 +476,6 @@ pub fn terminate(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void *__throw_type_match(const char *a, const char *b, void *c)`
 /// (0x4103d8): `strcmp(a, b) == 0 ? c : 0`.
@@ -407,7 +498,6 @@ pub fn throw_type_match(c: &mut Cpu) {
     });
 }
 
-
 /// `void *__get_eh_context(void)` (0x410468): tail-call the current thread's
 /// exception-context getter (`*(0x450000 + 0x3444)`).
 pub fn get_eh_context(c: &mut Cpu) {
@@ -424,7 +514,6 @@ pub fn get_eh_context(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void *__get_eh_info(void)` (0x410490): `__get_eh_context() + 8`.
 pub fn get_eh_info(c: &mut Cpu) {
@@ -443,7 +532,6 @@ pub fn get_eh_info(c: &mut Cpu) {
     });
 }
 
-
 /// `void *__get_dynamic_handler_chain(void)` (0x410548): like `__get_eh_info`
 /// but `+ 4`.
 pub fn get_dynamic_handler_chain(c: &mut Cpu) {
@@ -461,7 +549,6 @@ pub fn get_dynamic_handler_chain(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void *__cp_exception_info(void)` (0x412848): call the per-thread handler
 /// getter (`*(0x450000 + 0x3a38)`), then return `*__get_eh_info() + 8`.
@@ -486,7 +573,6 @@ pub fn cp_exception_info(c: &mut Cpu) {
     });
 }
 
-
 /// `void *__cp_eh_info(void)` (0x412888): `*__get_eh_info()`.
 pub fn cp_eh_info(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -500,7 +586,6 @@ pub fn cp_eh_info(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void __start_cp_handler(void)` (0x4128a8): mark the current exception
 /// handler active and bump its counter.
@@ -524,7 +609,6 @@ pub fn start_cp_handler(c: &mut Cpu) {
     });
 }
 
-
 /// `void *__eh_alloc(size_t n)` (0x4128e0): `malloc` or die.
 pub fn eh_alloc(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -544,7 +628,6 @@ pub fn eh_alloc(c: &mut Cpu) {
     });
 }
 
-
 /// `void __eh_free(void *p)` (0x412908): `free`.
 pub fn eh_free(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -557,7 +640,6 @@ pub fn eh_free(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `void __uncatch_exception(void)` (0x412af0): clear the active handler.
 pub fn uncatch_exception(c: &mut Cpu) {
@@ -580,7 +662,6 @@ pub fn uncatch_exception(c: &mut Cpu) {
     });
 }
 
-
 // ---------------------------------------------------------------------------
 // RTTI slot installers.
 
@@ -602,7 +683,6 @@ pub fn rtti_si(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void __rtti_user(void *obj, int vtable)` (0x414c20): fill a user
 /// type_info's vtable slot.
 pub fn rtti_user(c: &mut Cpu) {
@@ -618,7 +698,6 @@ pub fn rtti_user(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void *__user_type_info_dcast(void *sub, int, int, void *obj)`
 /// (0x414c40): `type_info_eq(sub, obj) ? obj : 0`.
@@ -641,7 +720,6 @@ pub fn user_type_info_dcast(c: &mut Cpu) {
     });
 }
 
-
 // ---------------------------------------------------------------------------
 // `__tf*` lazy type_info singletons.
 
@@ -658,7 +736,6 @@ pub(crate) struct Singleton {
     a2: Option<u32>,
     init_cycles: u64,
 }
-
 
 pub(crate) fn singleton(c: &mut Cpu, s: Singleton) {
     call::guest(c, |c| {
@@ -692,216 +769,245 @@ pub(crate) fn singleton(c: &mut Cpu, s: Singleton) {
     });
 }
 
-
 /// `__tf13bad_exception` (0x412e80).
 pub fn tf13bad_exception(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ea10,
-        pre: Some((TF9_EXCEPTION, 0x0041_2ea4)),
-        rtti: (RTTI_SI, 0x0041_2ebc),
-        a1: 0x0049_98d0,
-        a2: Some(0x004a_5ba8),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ea10,
+            pre: Some((TF9_EXCEPTION, 0x0041_2ea4)),
+            rtti: (RTTI_SI, 0x0041_2ebc),
+            a1: 0x0049_98d0,
+            a2: Some(0x004a_5ba8),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf9exception` (0x412f18).
 pub fn tf9exception(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x004a_0000,
-        obj: 0x004a_5ba8,
-        pre: None,
-        rtti: (RTTI_USER, 0x0041_2f44),
-        a1: 0x0049_98e0,
-        a2: None,
-        init_cycles: 4,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x004a_0000,
+            obj: 0x004a_5ba8,
+            pre: None,
+            rtti: (RTTI_USER, 0x0041_2f44),
+            a1: 0x0049_98e0,
+            a2: None,
+            init_cycles: 4,
+        },
+    );
 }
-
 
 /// `__tf9type_info` (0x4151f8).
 pub fn tf9type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x004a_0000,
-        obj: 0x004a_5bb0,
-        pre: None,
-        rtti: (RTTI_USER, 0x0041_5224),
-        a1: 0x0049_9ac0,
-        a2: None,
-        init_cycles: 4,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x004a_0000,
+            obj: 0x004a_5bb0,
+            pre: None,
+            rtti: (RTTI_USER, 0x0041_5224),
+            a1: 0x0049_9ac0,
+            a2: None,
+            init_cycles: 4,
+        },
+    );
 }
-
 
 /// `__tf16__user_type_info` (0x415018).
 pub fn tf16_user_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ea40,
-        pre: Some((TF9_TYPE_INFO, 0x0041_503c)),
-        rtti: (RTTI_SI, 0x0041_5054),
-        a1: 0x0049_9a88,
-        a2: Some(0x004a_5bb0),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ea40,
+            pre: Some((TF9_TYPE_INFO, 0x0041_503c)),
+            rtti: (RTTI_SI, 0x0041_5054),
+            a1: 0x0049_9a88,
+            a2: Some(0x004a_5bb0),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf17__class_type_info` (0x414f00).
 pub fn tf17_class_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ea60,
-        pre: Some((TF16_USER_TYPE_INFO, 0x0041_4f24)),
-        rtti: (RTTI_SI, 0x0041_4f3c),
-        a1: 0x0049_9a58,
-        a2: Some(0x0053_ea40),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ea60,
+            pre: Some((TF16_USER_TYPE_INFO, 0x0041_4f24)),
+            rtti: (RTTI_SI, 0x0041_4f3c),
+            a1: 0x0049_9a58,
+            a2: Some(0x0053_ea40),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf14__si_type_info` (0x414f90).
 pub fn tf14_si_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ea50,
-        pre: Some((TF16_USER_TYPE_INFO, 0x0041_4fb4)),
-        rtti: (RTTI_SI, 0x0041_4fcc),
-        a1: 0x0049_9a70,
-        a2: Some(0x0053_ea40),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ea50,
+            pre: Some((TF16_USER_TYPE_INFO, 0x0041_4fb4)),
+            rtti: (RTTI_SI, 0x0041_4fcc),
+            a1: 0x0049_9a70,
+            a2: Some(0x0053_ea40),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf10bad_typeid` (0x4150d0).
 pub fn tf10bad_typeid(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ea20,
-        pre: Some((TF9_EXCEPTION, 0x0041_50f4)),
-        rtti: (RTTI_SI, 0x0041_510c),
-        a1: 0x0049_9aa0,
-        a2: Some(0x004a_5ba8),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ea20,
+            pre: Some((TF9_EXCEPTION, 0x0041_50f4)),
+            rtti: (RTTI_SI, 0x0041_510c),
+            a1: 0x0049_9aa0,
+            a2: Some(0x004a_5ba8),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf8bad_cast` (0x415168).
 pub fn tf8bad_cast(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ea30,
-        pre: Some((TF9_EXCEPTION, 0x0041_518c)),
-        rtti: (RTTI_SI, 0x0041_51a4),
-        a1: 0x0049_9ab0,
-        a2: Some(0x004a_5ba8),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ea30,
+            pre: Some((TF9_EXCEPTION, 0x0041_518c)),
+            rtti: (RTTI_SI, 0x0041_51a4),
+            a1: 0x0049_9ab0,
+            a2: Some(0x004a_5ba8),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf17__array_type_info` (0x415ca8).
 pub fn tf17_array_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_eaa0,
-        pre: Some((TF9_TYPE_INFO, 0x0041_5ccc)),
-        rtti: (RTTI_SI, 0x0041_5ce4),
-        a1: 0x0049_9bd8,
-        a2: Some(0x004a_5bb0),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_eaa0,
+            pre: Some((TF9_TYPE_INFO, 0x0041_5ccc)),
+            rtti: (RTTI_SI, 0x0041_5ce4),
+            a1: 0x0049_9bd8,
+            a2: Some(0x004a_5bb0),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf16__ptmd_type_info` (0x415d18).
 pub fn tf16_ptmd_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_eac0,
-        pre: Some((TF9_TYPE_INFO, 0x0041_5d3c)),
-        rtti: (RTTI_SI, 0x0041_5d54),
-        a1: 0x0049_9bf0,
-        a2: Some(0x004a_5bb0),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_eac0,
+            pre: Some((TF9_TYPE_INFO, 0x0041_5d3c)),
+            rtti: (RTTI_SI, 0x0041_5d54),
+            a1: 0x0049_9bf0,
+            a2: Some(0x004a_5bb0),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf16__ptmf_type_info` (0x415d88).
 pub fn tf16_ptmf_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ea90,
-        pre: Some((TF9_TYPE_INFO, 0x0041_5dac)),
-        rtti: (RTTI_SI, 0x0041_5dc4),
-        a1: 0x0049_9c08,
-        a2: Some(0x004a_5bb0),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ea90,
+            pre: Some((TF9_TYPE_INFO, 0x0041_5dac)),
+            rtti: (RTTI_SI, 0x0041_5dc4),
+            a1: 0x0049_9c08,
+            a2: Some(0x004a_5bb0),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf16__func_type_info` (0x415df8).
 pub fn tf16_func_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ea70,
-        pre: Some((TF9_TYPE_INFO, 0x0041_5e1c)),
-        rtti: (RTTI_SI, 0x0041_5e34),
-        a1: 0x0049_9c20,
-        a2: Some(0x004a_5bb0),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ea70,
+            pre: Some((TF9_TYPE_INFO, 0x0041_5e1c)),
+            rtti: (RTTI_SI, 0x0041_5e34),
+            a1: 0x0049_9c20,
+            a2: Some(0x004a_5bb0),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf19__builtin_type_info` (0x415e68).
 pub fn tf19_builtin_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ead0,
-        pre: Some((TF9_TYPE_INFO, 0x0041_5e8c)),
-        rtti: (RTTI_SI, 0x0041_5ea4),
-        a1: 0x0049_9c38,
-        a2: Some(0x004a_5bb0),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ead0,
+            pre: Some((TF9_TYPE_INFO, 0x0041_5e8c)),
+            rtti: (RTTI_SI, 0x0041_5ea4),
+            a1: 0x0049_9c38,
+            a2: Some(0x004a_5bb0),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf16__attr_type_info` (0x415ed8).
 pub fn tf16_attr_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_ea80,
-        pre: Some((TF9_TYPE_INFO, 0x0041_5efc)),
-        rtti: (RTTI_SI, 0x0041_5f14),
-        a1: 0x0049_9c50,
-        a2: Some(0x004a_5bb0),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_ea80,
+            pre: Some((TF9_TYPE_INFO, 0x0041_5efc)),
+            rtti: (RTTI_SI, 0x0041_5f14),
+            a1: 0x0049_9c50,
+            a2: Some(0x004a_5bb0),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 /// `__tf19__pointer_type_info` (0x415f48).
 pub fn tf19_pointer_type_info(c: &mut Cpu) {
-    singleton(c, Singleton {
-        base: 0x0054_0000,
-        obj: 0x0053_eab0,
-        pre: Some((TF9_TYPE_INFO, 0x0041_5f6c)),
-        rtti: (RTTI_SI, 0x0041_5f84),
-        a1: 0x0049_9c68,
-        a2: Some(0x004a_5bb0),
-        init_cycles: 8,
-    });
+    singleton(
+        c,
+        Singleton {
+            base: 0x0054_0000,
+            obj: 0x0053_eab0,
+            pre: Some((TF9_TYPE_INFO, 0x0041_5f6c)),
+            rtti: (RTTI_SI, 0x0041_5f84),
+            a1: 0x0049_9c68,
+            a2: Some(0x004a_5bb0),
+            init_cycles: 8,
+        },
+    );
 }
-
 
 // ---------------------------------------------------------------------------
 // type_info destructors: each just forwards to `type_info_dtor`.
@@ -917,7 +1023,6 @@ pub(crate) fn type_info_dtor_call(c: &mut Cpu, ret: u32) {
         Ok(())
     });
 }
-
 
 /// `__class_type_info_dtor` (0x414f50).
 pub fn class_type_info_dtor(c: &mut Cpu) {
@@ -969,7 +1074,6 @@ pub fn pointer_type_info_dtor(c: &mut Cpu) {
     type_info_dtor_call(c, 0x0041_5fa8);
 }
 
-
 // ---------------------------------------------------------------------------
 // Frame registration.
 
@@ -990,7 +1094,6 @@ pub fn register_frame_info(c: &mut Cpu) {
     Addr(a1.wrapping_add(0x10)).sw(c, 0);
     abi::ret(c);
 }
-
 
 /// `void __register_frame(void *begin)` (0x4146f8): allocate the 0x18-byte
 /// frame object and register it.
@@ -1014,7 +1117,6 @@ pub fn register_frame(c: &mut Cpu) {
     });
 }
 
-
 /// `void __register_frame_info_table(void *begin, void *obj)` (0x414728).
 pub fn register_frame_info_table(c: &mut Cpu) {
     c.cycles += 10;
@@ -1031,7 +1133,6 @@ pub fn register_frame_info_table(c: &mut Cpu) {
     Addr(a1.wrapping_add(0x10)).sw(c, 0);
     abi::ret(c);
 }
-
 
 /// `void __register_frame_table(void *begin)` (0x414750).
 pub fn register_frame_table(c: &mut Cpu) {
@@ -1054,7 +1155,6 @@ pub fn register_frame_table(c: &mut Cpu) {
     });
 }
 
-
 /// `void __deregister_frame(void *begin)` (0x4147f8): unregister and free.
 pub fn deregister_frame(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -1070,7 +1170,6 @@ pub fn deregister_frame(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // Misc small utilities.
@@ -1097,7 +1196,6 @@ pub fn tfv(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void *__getreent(void)` (0x415fb8): the current reentrancy struct
 /// (`*(0x450000 + 0x4944)`).
 pub fn getreent(c: &mut Cpu) {
@@ -1106,7 +1204,6 @@ pub fn getreent(c: &mut Cpu) {
     c.g[V0][0] = Addr(0x0045_4944).lw(c);
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Software-float helpers (double/single unpack/pack wrappers).
@@ -1132,7 +1229,6 @@ pub fn negdf2(c: &mut Cpu) {
     });
 }
 
-
 /// `double __make_dp(int cls, int sign, int exp, u64 mant)` (0x412778).
 pub fn make_dp(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -1150,7 +1246,6 @@ pub fn make_dp(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `float __truncdfsf2(double x)` (0x4127a8).
 pub fn truncdfsf2(c: &mut Cpu) {
@@ -1183,7 +1278,6 @@ pub fn truncdfsf2(c: &mut Cpu) {
     });
 }
 
-
 /// `int __cmpdf2(double a, double b)` (0x412500): three-way compare.
 pub fn cmpdf2(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -1210,7 +1304,6 @@ pub fn cmpdf2(c: &mut Cpu) {
     });
 }
 
-
 /// `float __negsf2(float x)` (0x413a90).
 pub fn negsf2(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -1232,7 +1325,6 @@ pub fn negsf2(c: &mut Cpu) {
     });
 }
 
-
 /// `float __make_fp(int cls, int sign, int exp, int mant)` (0x413ac8).
 pub fn make_fp(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -1250,7 +1342,6 @@ pub fn make_fp(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `double __extendsfdf2(float x)` (0x413af8).
 pub fn extendsfdf2(c: &mut Cpu) {
@@ -1274,7 +1365,6 @@ pub fn extendsfdf2(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `int __cmpsf2(float a, float b)` (0x413860): three-way compare.
 pub fn cmpsf2(c: &mut Cpu) {
@@ -1302,26 +1392,45 @@ pub fn cmpsf2(c: &mut Cpu) {
     });
 }
 
-
 // ---------------------------------------------------------------------------
 // stdio stream hooks (`struct __sFILE` at `cookie`; the reent pointer is at
 // +0x54, the fd at +0xe, the flags halfword at +0xc, the seek position at
 // +0x50). These call the reentrant I/O wrappers above.
 
-pub(crate) const READ_R: Callee = Callee { addr: 0x0041_fd10, f: ssx3_ee::s15::f_0041fd10 };
+pub(crate) const READ_R: Callee = Callee {
+    addr: 0x0041_fd10,
+    f: ssx3_ee::s15::f_0041fd10,
+};
 
-pub(crate) const WRITE_R: Callee = Callee { addr: 0x0041_fdd0, f: ssx3_ee::s15::f_0041fdd0 };
+pub(crate) const WRITE_R: Callee = Callee {
+    addr: 0x0041_fdd0,
+    f: ssx3_ee::s15::f_0041fdd0,
+};
 
-pub(crate) const LSEEK_R: Callee = Callee { addr: 0x0041_fc50, f: ssx3_ee::s15::f_0041fc50 };
+pub(crate) const LSEEK_R: Callee = Callee {
+    addr: 0x0041_fc50,
+    f: ssx3_ee::s15::f_0041fc50,
+};
 
-pub(crate) const CLOSE_R: Callee = Callee { addr: 0x0041_fb98, f: ssx3_ee::s15::f_0041fb98 };
+pub(crate) const CLOSE_R: Callee = Callee {
+    addr: 0x0041_fb98,
+    f: ssx3_ee::s15::f_0041fb98,
+};
 
-pub(crate) const GET_THREAD_ID: Callee = Callee { addr: 0x0042_3c90, f: ssx3_ee::s15::f_00423c90 };
+pub(crate) const GET_THREAD_ID: Callee = Callee {
+    addr: 0x0042_3c90,
+    f: ssx3_ee::s15::f_00423c90,
+};
 
-pub(crate) const WAIT_SEMA: Callee = Callee { addr: 0x0042_3de0, f: ssx3_ee::s15::f_00423de0 };
+pub(crate) const WAIT_SEMA: Callee = Callee {
+    addr: 0x0042_3de0,
+    f: ssx3_ee::s15::f_00423de0,
+};
 
-pub(crate) const SIGNAL_SEMA: Callee = Callee { addr: 0x0042_3dc0, f: ssx3_ee::s15::f_00423dc0 };
-
+pub(crate) const SIGNAL_SEMA: Callee = Callee {
+    addr: 0x0042_3dc0,
+    f: ssx3_ee::s15::f_00423dc0,
+};
 
 /// `int __sread(void *cookie, char *buf, int n)` (0x417948): `_read_r` on the
 /// stream's fd; on error clear flag 0x1000 in the stream flags, else advance
@@ -1359,7 +1468,6 @@ pub fn sread(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int __swrite(void *cookie, const char *buf, int n)` (0x4179b0): when the
 /// stream is in append mode (flag 0x100), seek to the end first, then
@@ -1406,7 +1514,6 @@ pub fn swrite(c: &mut Cpu) {
     })
 }
 
-
 /// `int __sseek(void *cookie, int off, int whence)` (0x417a30):
 /// `_lseek_r`; on success store the new position and set flag 0x1000, on
 /// failure clear it and return -1.
@@ -1447,7 +1554,6 @@ pub fn sseek(c: &mut Cpu) {
     })
 }
 
-
 /// `int __sclose(void *cookie)` (0x417a98): `_close_r` on the stream's fd.
 pub fn sclose(c: &mut Cpu) {
     call::guest(c, |c| {
@@ -1463,7 +1569,6 @@ pub fn sclose(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // malloc mutex (`0x450000`: owner at +0x4ca8, recursion count at +0x4cac,
@@ -1507,7 +1612,6 @@ pub fn malloc_lock(c: &mut Cpu) {
     })
 }
 
-
 /// `void __malloc_unlock(struct _reent *r)` (0x418d08): drop the recursion
 /// count; on the last release clear the owner and signal the mutex semaphore.
 pub fn malloc_unlock(c: &mut Cpu) {
@@ -1535,24 +1639,43 @@ pub fn malloc_unlock(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // newlib bignum / bit helpers.
 
-pub(crate) const CMPDF2: Callee = Callee { addr: 0x0041_2500, f: ssx3_ee::s15::f_00412500 };
+pub(crate) const CMPDF2: Callee = Callee {
+    addr: 0x0041_2500,
+    f: ssx3_ee::s15::f_00412500,
+};
 
-pub(crate) const SUBDF3: Callee = Callee { addr: 0x0041_1f70, f: ssx3_ee::s15::f_00411f70 };
+pub(crate) const SUBDF3: Callee = Callee {
+    addr: 0x0041_1f70,
+    f: ssx3_ee::s15::f_00411f70,
+};
 
-pub(crate) const ADDDF3: Callee = Callee { addr: 0x0041_1f18, f: ssx3_ee::s15::f_00411f18 };
+pub(crate) const ADDDF3: Callee = Callee {
+    addr: 0x0041_1f18,
+    f: ssx3_ee::s15::f_00411f18,
+};
 
-pub(crate) const MULDF3: Callee = Callee { addr: 0x0041_1fd8, f: ssx3_ee::s15::f_00411fd8 };
+pub(crate) const MULDF3: Callee = Callee {
+    addr: 0x0041_1fd8,
+    f: ssx3_ee::s15::f_00411fd8,
+};
 
-pub(crate) const FLOATDIDF: Callee = Callee { addr: 0x0041_1438, f: ssx3_ee::s15::f_00411438 };
+pub(crate) const FLOATDIDF: Callee = Callee {
+    addr: 0x0041_1438,
+    f: ssx3_ee::s15::f_00411438,
+};
 
-pub(crate) const FIXUNSDFSI: Callee = Callee { addr: 0x0041_26a0, f: ssx3_ee::s15::f_004126a0 };
+pub(crate) const FIXUNSDFSI: Callee = Callee {
+    addr: 0x0041_26a0,
+    f: ssx3_ee::s15::f_004126a0,
+};
 
-pub(crate) const FIXUNSDFDI: Callee = Callee { addr: 0x0042_d380, f: ssx3_ee::s15::f_0042d380 };
-
+pub(crate) const FIXUNSDFDI: Callee = Callee {
+    addr: 0x0042_d380,
+    f: ssx3_ee::s15::f_0042d380,
+};
 
 /// `int __hi0bits(uint32 x)` (0x420830): number of leading zero bits, 32
 /// when `x` is 0 (the original returns 32 for `x == 0`, and never more).
@@ -1612,7 +1735,6 @@ pub fn hi0bits(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `int __lo0bits(uint32 *x)` (0x4208b8): number of trailing zero bits of
 /// `*x`, storing `*x >> n` back (unchanged when `*x` is odd).
@@ -1707,7 +1829,6 @@ pub fn lo0bits(c: &mut Cpu) {
     }
 }
 
-
 /// `int __mcmp(struct _Bigint *a, struct _Bigint *b)` (0x420e28): compare the
 /// magnitudes from the most significant component down; returns the
 /// difference of the lengths when they differ.
@@ -1762,7 +1883,6 @@ pub fn mcmp(c: &mut Cpu) {
         }
     }
 }
-
 
 /// `double __ulp(double x)` (0x421020): the unit in the last place of `x` —
 /// the smallest power of two that changes it (a small positive value; 0 for
@@ -1831,7 +1951,6 @@ pub fn ulp(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `long long __fixdfdi(double x)` (0x42d320): truncate `x` toward zero,
 /// negating the unsigned conversion for negative `x`.
 pub fn fixdfdi(c: &mut Cpu) {
@@ -1868,7 +1987,6 @@ pub fn fixdfdi(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `unsigned long long __fixunsdfdi(double x)` (0x42d380): truncate a
 /// non-negative `x`; negative input gives 0.
@@ -1950,7 +2068,6 @@ pub fn fixunsdfdi(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int __sflags(struct _reent *r, const char *mode, int *optr)` (0x420180):
 /// decode a stdio mode ("r", "w", "a", optionally with "+"): returns the
@@ -2035,7 +2152,6 @@ pub fn sflags(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------- libgcc
 
 /// `count_leading_zeros` of libgcc's `longlong.h` (the C version: range
@@ -2064,13 +2180,19 @@ pub(crate) fn clz_tab(c: &mut Cpu, x: u32) -> u32 {
     32 - ((32 - byte.leading_zeros()) + a)
 }
 
-
 /// One 16-bit digit of `__udiv_qrnnd_c` (`d` normalized, `top < d`):
 /// `(top << 16 | part) / d` from the estimate `top / (d >> 16)`, corrected
 /// at most twice. Returns the digit and the remainder. `block` = cycles of
 /// the block that takes the estimate (the `divu` itself is charged by the
 /// caller's block), `retry` = cycles of the second correction.
-pub(crate) fn qrnnd_step(c: &mut Cpu, top: u32, part: u32, d: u32, block: u64, retry: u64) -> (u32, u32) {
+pub(crate) fn qrnnd_step(
+    c: &mut Cpu,
+    top: u32,
+    part: u32,
+    d: u32,
+    block: u64,
+    retry: u64,
+) -> (u32, u32) {
     c.cycles += block;
     let (mut q, r) = abi::divu(c, top, d >> 16);
     let m = abi::mult(c, q, d & 0xffff);
@@ -2094,7 +2216,6 @@ pub(crate) fn qrnnd_step(c: &mut Cpu, top: u32, part: u32, d: u32, block: u64, r
     (q, r.wrapping_sub(m))
 }
 
-
 /// The last digit of a `__udiv_qrnnd_c` whose remainder is not used (the
 /// compiler drops it and adds `d` speculatively): 13 cycles, +3 per
 /// correction test.
@@ -2116,7 +2237,6 @@ pub(crate) fn qrnnd_step_quotient(c: &mut Cpu, top: u32, part: u32, d: u32) -> u
     }
     q
 }
-
 
 /// `u64 __udivdi3(u64 n, u64 d)` (0x411538): libgcc's `__udivmoddi4`
 /// without remainder (`UDIV_NEEDS_NORMALIZATION`, 16-bit digit division).
@@ -2252,7 +2372,6 @@ pub fn udivdi3(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// A remainder-only digit step of `__umoddi3`'s inlined `udiv_qrnnd` (the
 /// high digit of the `n2:n1 / d0` division): estimate block of 11 cycles,
 /// corrections +4, then +3 and +1 (+1 more without a second correction).
@@ -2278,7 +2397,6 @@ pub(crate) fn mod_step_first(c: &mut Cpu, top: u32, part: u32, d: u32) -> u32 {
     r.wrapping_sub(m)
 }
 
-
 /// The other remainder-only digit steps of `__umoddi3`: estimate block of
 /// 10 cycles, corrections +4, then +3 +1. Returns `r - m`.
 pub(crate) fn mod_step(c: &mut Cpu, top: u32, part: u32, d: u32) -> u32 {
@@ -2298,7 +2416,6 @@ pub(crate) fn mod_step(c: &mut Cpu, top: u32, part: u32, d: u32) -> u32 {
     }
     r.wrapping_sub(m)
 }
-
 
 /// The last digit step of `__umoddi3`'s `d1 == 0` path: estimate block of
 /// 10 cycles, corrections +4 then +2. Returns `(r - m, r)`; the corrected
@@ -2320,7 +2437,6 @@ pub(crate) fn mod_step_last(c: &mut Cpu, top: u32, part: u32, d: u32) -> (u32, u
     }
     (r.wrapping_sub(m), r)
 }
-
 
 /// `u64 __umoddi3(u64 n, u64 d)` (0x42dad8): libgcc's `__udivmoddi4` for the
 /// remainder only. The remainder goes through a stack slot (`rp = sp`), so
@@ -2467,25 +2583,23 @@ pub fn umoddi3(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::check;
+    use crate::difftest::fill;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::schedule;
-    use crate::difftest::events::Events;
-    use crate::difftest::fill;
-    use crate::difftest::scramble;
-    use crate::difftest::put_words;
     use ssx3_ee as ee;
 
-
     pub(crate) const SEEDS: u32 = 200;
-
 
     /// Scrambled registers, fake hooks and a game-like `gp`.
     pub(crate) fn plain(gen: GuestFn, hand: GuestFn, salt: u64) {
@@ -2495,14 +2609,12 @@ pub(crate) mod tests {
         });
     }
 
-
     // -------------------------------------------------------- ctor/dtor walks
 
     #[test]
     fn do_global_dtors_aux_matches() {
         plain(ssx3_ee::s00::f_00100218, do_global_dtors_aux, 0x100);
     }
-
 
     #[test]
     fn do_global_dtors_matches() {
@@ -2519,7 +2631,6 @@ pub(crate) mod tests {
         };
         covered(ssx3_ee::s15::f_0040fb88, do_global_dtors, SEEDS, &setup);
     }
-
 
     #[test]
     fn do_global_ctors_matches() {
@@ -2543,15 +2654,16 @@ pub(crate) mod tests {
         covered(ssx3_ee::s15::f_0040fbe0, do_global_ctors, SEEDS, &setup);
     }
 
-
     #[test]
     fn main_matches() {
         check(ssx3_ee::s15::f_0040fc90, main_, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, 0x103, 0);
-            c.bus.write32(0x0052_ad98, if seed % 3 == 0 { 0 } else { r.next_u32() | 1 });
+            c.bus.write32(
+                0x0052_ad98,
+                if seed % 3 == 0 { 0 } else { r.next_u32() | 1 },
+            );
         });
     }
-
 
     // ------------------------------------------------------ terminate / eh
 
@@ -2563,7 +2675,6 @@ pub(crate) mod tests {
         covered(ssx3_ee::s15::f_004103a0, default_terminate, SEEDS, &setup);
     }
 
-
     #[test]
     fn terminate_matches() {
         let setup = |c: &mut Cpu, seed: u32| {
@@ -2572,26 +2683,33 @@ pub(crate) mod tests {
         covered(ssx3_ee::s15::f_004103b0, terminate, SEEDS, &setup);
     }
 
-
     #[test]
     fn throw_type_match_matches() {
-        check(ssx3_ee::s15::f_004103d8, throw_type_match, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x106, 0);
-            c.bus.write32(DATA, 0);
-            for i in 0..0x30u32 {
-                let b = (r.next_u32() & 0x3f) as u8 + 1;
-                c.bus.write8(DATA + i, b);
-                let b2 = if seed % 3 == 0 { b } else { (r.next_u32() & 0x3f) as u8 + 1 };
-                c.bus.write8(DATA + 0x40 + i, b2);
-            }
-            c.bus.write8(DATA + 0x30, 0);
-            c.bus.write8(DATA + 0x70, 0);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x40) as u64;
-            c.g[A2][0] = (DATA + 0x80) as u64;
-        });
+        check(
+            ssx3_ee::s15::f_004103d8,
+            throw_type_match,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x106, 0);
+                c.bus.write32(DATA, 0);
+                for i in 0..0x30u32 {
+                    let b = (r.next_u32() & 0x3f) as u8 + 1;
+                    c.bus.write8(DATA + i, b);
+                    let b2 = if seed % 3 == 0 {
+                        b
+                    } else {
+                        (r.next_u32() & 0x3f) as u8 + 1
+                    };
+                    c.bus.write8(DATA + 0x40 + i, b2);
+                }
+                c.bus.write8(DATA + 0x30, 0);
+                c.bus.write8(DATA + 0x70, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x40) as u64;
+                c.g[A2][0] = (DATA + 0x80) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn get_eh_context_matches() {
@@ -2605,14 +2723,12 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn get_eh_info_matches() {
         covered(ssx3_ee::s15::f_00410490, get_eh_info, SEEDS, &|c, seed| {
             let _ = machine(c, seed, 0x108, 1);
         });
     }
-
 
     #[test]
     fn get_dynamic_handler_chain_matches() {
@@ -2626,7 +2742,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cp_exception_info_matches() {
         let setup = |c: &mut Cpu, seed: u32| {
@@ -2636,7 +2751,6 @@ pub(crate) mod tests {
         covered(ssx3_ee::s15::f_00412848, cp_exception_info, SEEDS, &setup);
     }
 
-
     #[test]
     fn cp_eh_info_matches() {
         covered(ssx3_ee::s15::f_00412888, cp_eh_info, SEEDS, &|c, seed| {
@@ -2644,18 +2758,21 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn start_cp_handler_matches() {
-        check(ssx3_ee::s15::f_004128a8, start_cp_handler, SEEDS, &|c, seed| {
-            let _ = machine(c, seed, 0x10c, 1);
-            let p = DATA + 0x300;
-            c.bus.write32(0x0045_3444, FAKE);
-            // The fake returns `p`; make the dereference land in RAM.
-            c.bus.write32(LOG_RESULTS, p);
-        });
+        check(
+            ssx3_ee::s15::f_004128a8,
+            start_cp_handler,
+            SEEDS,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x10c, 1);
+                let p = DATA + 0x300;
+                c.bus.write32(0x0045_3444, FAKE);
+                // The fake returns `p`; make the dereference land in RAM.
+                c.bus.write32(LOG_RESULTS, p);
+            },
+        );
     }
-
 
     #[test]
     fn eh_alloc_matches() {
@@ -2666,47 +2783,60 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn eh_free_matches() {
         plain(ssx3_ee::s15::f_00412908, eh_free, 0x10e);
     }
 
-
     #[test]
     fn uncatch_exception_matches() {
-        check(ssx3_ee::s15::f_00412af0, uncatch_exception, SEEDS, &|c, seed| {
-            let _ = machine(c, seed, 0x10f, 1);
-            // Make the fake EH-info pointer land in RAM with a non-null
-            // "active handler" so the noreturn terminate path isn't taken.
-            c.bus.write32(LOG_RESULTS, DATA + 0x400);
-            c.bus.write32(DATA + 0x408, 1);
-        });
+        check(
+            ssx3_ee::s15::f_00412af0,
+            uncatch_exception,
+            SEEDS,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x10f, 1);
+                // Make the fake EH-info pointer land in RAM with a non-null
+                // "active handler" so the noreturn terminate path isn't taken.
+                c.bus.write32(LOG_RESULTS, DATA + 0x400);
+                c.bus.write32(DATA + 0x408, 1);
+            },
+        );
     }
-
 
     // ------------------------------------------------------------- singletons
 
     pub(crate) fn singleton_test(gen: GuestFn, hand: GuestFn, obj: u32, salt: u64) {
         check(gen, hand, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, salt, 0);
-            c.bus.write32(obj, if seed % 3 == 0 { r.next_u32() | 1 } else { 0 });
+            c.bus
+                .write32(obj, if seed % 3 == 0 { r.next_u32() | 1 } else { 0 });
         });
     }
 
-
-    pub(crate) fn singleton_test_entries(gen: GuestFn, hand: GuestFn, obj: u32, start: u32, salt: u64) {
+    pub(crate) fn singleton_test_entries(
+        gen: GuestFn,
+        hand: GuestFn,
+        obj: u32,
+        start: u32,
+        salt: u64,
+    ) {
         check(gen, hand, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, salt, 0);
-            c.bus.write32(obj, if seed % 3 == 0 { r.next_u32() | 1 } else { 0 });
+            c.bus
+                .write32(obj, if seed % 3 == 0 { r.next_u32() | 1 } else { 0 });
             c.pc = start;
         });
     }
 
-
     #[test]
     fn tf13bad_exception_matches() {
-        singleton_test(ssx3_ee::s15::f_00412e80, tf13bad_exception, 0x0053_ea10, 0x120);
+        singleton_test(
+            ssx3_ee::s15::f_00412e80,
+            tf13bad_exception,
+            0x0053_ea10,
+            0x120,
+        );
     }
 
     #[test]
@@ -2716,17 +2846,33 @@ pub(crate) mod tests {
 
     #[test]
     fn tf17_class_type_info_matches() {
-        singleton_test(ssx3_ee::s15::f_00414f00, tf17_class_type_info, 0x0053_ea60, 0x122);
+        singleton_test(
+            ssx3_ee::s15::f_00414f00,
+            tf17_class_type_info,
+            0x0053_ea60,
+            0x122,
+        );
     }
 
     #[test]
     fn tf14_si_type_info_matches() {
-        singleton_test(ssx3_ee::s15::f_00414f90, tf14_si_type_info, 0x0053_ea50, 0x123);
+        singleton_test(
+            ssx3_ee::s15::f_00414f90,
+            tf14_si_type_info,
+            0x0053_ea50,
+            0x123,
+        );
     }
 
     #[test]
     fn tf16_user_type_info_matches() {
-        singleton_test_entries(ssx3_ee::s15::f_00415018, tf16_user_type_info, 0x0053_ea40, 0x0041_5018, 0x124);
+        singleton_test_entries(
+            ssx3_ee::s15::f_00415018,
+            tf16_user_type_info,
+            0x0053_ea40,
+            0x0041_5018,
+            0x124,
+        );
     }
 
     #[test]
@@ -2746,39 +2892,73 @@ pub(crate) mod tests {
 
     #[test]
     fn tf17_array_type_info_matches() {
-        singleton_test(ssx3_ee::s15::f_00415ca8, tf17_array_type_info, 0x0053_eaa0, 0x128);
+        singleton_test(
+            ssx3_ee::s15::f_00415ca8,
+            tf17_array_type_info,
+            0x0053_eaa0,
+            0x128,
+        );
     }
 
     #[test]
     fn tf16_ptmd_type_info_matches() {
-        singleton_test(ssx3_ee::s15::f_00415d18, tf16_ptmd_type_info, 0x0053_eac0, 0x129);
+        singleton_test(
+            ssx3_ee::s15::f_00415d18,
+            tf16_ptmd_type_info,
+            0x0053_eac0,
+            0x129,
+        );
     }
 
     #[test]
     fn tf16_ptmf_type_info_matches() {
-        singleton_test(ssx3_ee::s15::f_00415d88, tf16_ptmf_type_info, 0x0053_ea90, 0x12a);
+        singleton_test(
+            ssx3_ee::s15::f_00415d88,
+            tf16_ptmf_type_info,
+            0x0053_ea90,
+            0x12a,
+        );
     }
 
     #[test]
     fn tf16_func_type_info_matches() {
-        singleton_test(ssx3_ee::s15::f_00415df8, tf16_func_type_info, 0x0053_ea70, 0x12b);
+        singleton_test(
+            ssx3_ee::s15::f_00415df8,
+            tf16_func_type_info,
+            0x0053_ea70,
+            0x12b,
+        );
     }
 
     #[test]
     fn tf19_builtin_type_info_matches() {
-        singleton_test(ssx3_ee::s15::f_00415e68, tf19_builtin_type_info, 0x0053_ead0, 0x12c);
+        singleton_test(
+            ssx3_ee::s15::f_00415e68,
+            tf19_builtin_type_info,
+            0x0053_ead0,
+            0x12c,
+        );
     }
 
     #[test]
     fn tf16_attr_type_info_matches() {
-        singleton_test(ssx3_ee::s15::f_00415ed8, tf16_attr_type_info, 0x0053_ea80, 0x12d);
+        singleton_test(
+            ssx3_ee::s15::f_00415ed8,
+            tf16_attr_type_info,
+            0x0053_ea80,
+            0x12d,
+        );
     }
 
     #[test]
     fn tf19_pointer_type_info_matches() {
-        singleton_test(ssx3_ee::s15::f_00415f48, tf19_pointer_type_info, 0x0053_eab0, 0x12e);
+        singleton_test(
+            ssx3_ee::s15::f_00415f48,
+            tf19_pointer_type_info,
+            0x0053_eab0,
+            0x12e,
+        );
     }
-
 
     // --------------------------------------------------------------- rtti
 
@@ -2786,36 +2966,46 @@ pub(crate) mod tests {
     fn rtti_si_matches() {
         check(ssx3_ee::s15::f_00414c00, rtti_si, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, 0x130, 0);
-            let obj = if seed % 3 == 0 { 0 } else { (DATA + (r.next_u32() & 0xff0)) as u64 };
+            let obj = if seed % 3 == 0 {
+                0
+            } else {
+                (DATA + (r.next_u32() & 0xff0)) as u64
+            };
             c.g[A0][0] = obj;
             c.g[A1][0] = r.next_u32() as u64;
             c.g[A2][0] = r.next_u32() as u64;
         });
     }
 
-
     #[test]
     fn rtti_user_matches() {
         check(ssx3_ee::s15::f_00414c20, rtti_user, SEEDS, &|c, seed| {
             let mut r = machine(c, seed, 0x131, 0);
-            let obj = if seed % 3 == 0 { 0 } else { (DATA + (r.next_u32() & 0xff0)) as u64 };
+            let obj = if seed % 3 == 0 {
+                0
+            } else {
+                (DATA + (r.next_u32() & 0xff0)) as u64
+            };
             c.g[A0][0] = obj;
             c.g[A1][0] = r.next_u32() as u64;
         });
     }
 
-
     #[test]
     fn user_type_info_dcast_matches() {
-        check(ssx3_ee::s15::f_00414c40, user_type_info_dcast, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x132, 0);
-            for i in 0..4 {
-                c.g[[A0, A1, A2, A3][i]][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
-            }
-            c.pc = 0x0041_4c40;
-        });
+        check(
+            ssx3_ee::s15::f_00414c40,
+            user_type_info_dcast,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x132, 0);
+                for i in 0..4 {
+                    c.g[[A0, A1, A2, A3][i]][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
+                }
+                c.pc = 0x0041_4c40;
+            },
+        );
     }
-
 
     // ----------------------------------------------------------- type_info dtor
 
@@ -2823,13 +3013,17 @@ pub(crate) mod tests {
         plain(gen, hand, salt);
     }
 
-
     #[test]
     fn class_type_info_dtor_matches() {
-        check(ssx3_ee::s15::f_00414f50, class_type_info_dtor, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x140, 1);
-            c.g[A0][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
-        });
+        check(
+            ssx3_ee::s15::f_00414f50,
+            class_type_info_dtor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x140, 1);
+                c.g[A0][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
+            },
+        );
     }
 
     #[test]
@@ -2877,46 +3071,50 @@ pub(crate) mod tests {
         dtor_test(ssx3_ee::s15::f_00415f98, pointer_type_info_dtor, 0x149);
     }
 
-
     // ------------------------------------------------------- frame registration
 
     #[test]
     fn register_frame_info_matches() {
-        check(ssx3_ee::s15::f_004146d0, register_frame_info, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x150, 0);
-            c.g[A0][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
-            c.g[A1][0] = (DATA + 0x1000) as u64;
-        });
+        check(
+            ssx3_ee::s15::f_004146d0,
+            register_frame_info,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x150, 0);
+                c.g[A0][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
+                c.g[A1][0] = (DATA + 0x1000) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn register_frame_info_table_matches() {
-        check(ssx3_ee::s15::f_00414728, register_frame_info_table, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x151, 0);
-            c.g[A0][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
-            c.g[A1][0] = (DATA + 0x1000) as u64;
-        });
+        check(
+            ssx3_ee::s15::f_00414728,
+            register_frame_info_table,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x151, 0);
+                c.g[A0][0] = (DATA + (r.next_u32() & 0xff0)) as u64;
+                c.g[A1][0] = (DATA + 0x1000) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn register_frame_matches() {
         plain(ssx3_ee::s15::f_004146f8, register_frame, 0x152);
     }
 
-
     #[test]
     fn register_frame_table_matches() {
         plain(ssx3_ee::s15::f_00414750, register_frame_table, 0x153);
     }
 
-
     #[test]
     fn deregister_frame_matches() {
         plain(ssx3_ee::s15::f_004147f8, deregister_frame, 0x154);
     }
-
 
     // ------------------------------------------------------------------ misc
 
@@ -2928,12 +3126,10 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn getreent_matches() {
         plain(ssx3_ee::s15::f_00415fb8, getreent, 0x161);
     }
-
 
     // -------------------------------------------------------------- soft float
 
@@ -2947,7 +3143,6 @@ pub(crate) mod tests {
             c.f[13] = r.edge_f32();
         });
     }
-
 
     #[test]
     fn negdf2_matches() {
@@ -2989,7 +3184,6 @@ pub(crate) mod tests {
         float_arg_test(ssx3_ee::s15::f_00413860, cmpsf2, 0x177);
     }
 
-
     // -------------------------------------------------------- stream hooks
 
     /// The common fields of a `FILE` cookie at `DATA + 0x400`: flags, fd,
@@ -3009,7 +3203,6 @@ pub(crate) mod tests {
         r
     }
 
-
     #[test]
     fn sread_matches() {
         check(ssx3_ee::s15::f_00417948, sread, SEEDS, &|c, seed| {
@@ -3019,14 +3212,21 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn swrite_matches() {
         check(ssx3_ee::s15::f_004179b0, swrite, SEEDS, &|c, seed| {
-            stream_cookie(c, seed, 31, if seed % 2 == 0 { 0 } else { 3 + (seed as u16 % 8) });
+            stream_cookie(
+                c,
+                seed,
+                31,
+                if seed % 2 == 0 {
+                    0
+                } else {
+                    3 + (seed as u16 % 8)
+                },
+            );
         });
     }
-
 
     #[test]
     fn sseek_matches() {
@@ -3035,14 +3235,12 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn sclose_matches() {
         check(ssx3_ee::s15::f_00417a98, sclose, SEEDS, &|c, seed| {
             stream_cookie(c, seed, 33, (seed as u16 % 32) + 3);
         });
     }
-
 
     // --------------------------------------------------------- malloc lock
 
@@ -3054,24 +3252,32 @@ pub(crate) mod tests {
             // reachable.
             let tid = 1 + r.next_u32() % 0xffff;
             c.bus.write32(crate::difftest::fakes::LOG_RESULTS, tid);
-            c.bus.write32(0x0045_0000 + 0x4ca8, if seed % 2 == 0 { tid } else { r.next_u32() });
+            c.bus.write32(
+                0x0045_0000 + 0x4ca8,
+                if seed % 2 == 0 { tid } else { r.next_u32() },
+            );
             c.bus.write32(0x0045_0000 + 0x4cac, r.next_u32());
             c.bus.write32(0x0045_0000 + 0x5248, r.next_u32());
         };
         covered(ssx3_ee::s15::f_00418ca8, malloc_lock, SEEDS, &setup);
     }
 
-
     #[test]
     fn malloc_unlock_matches() {
         let setup = |c: &mut Cpu, seed: u32| {
             let mut r = machine(c, seed, 41, 1);
-            c.bus.write32(0x0045_0000 + 0x4cac, if seed % 2 == 0 { 1 } else { 2 + r.next_u32() % 5 });
+            c.bus.write32(
+                0x0045_0000 + 0x4cac,
+                if seed % 2 == 0 {
+                    1
+                } else {
+                    2 + r.next_u32() % 5
+                },
+            );
             c.bus.write32(0x0045_0000 + 0x5248, r.next_u32());
         };
         covered(ssx3_ee::s15::f_00418d08, malloc_unlock, SEEDS, &setup);
     }
-
 
     #[test]
     fn hi0bits_matches() {
@@ -3087,7 +3293,6 @@ pub(crate) mod tests {
             c.g[A0][0] = x as u64;
         });
     }
-
 
     #[test]
     fn lo0bits_matches() {
@@ -3107,7 +3312,6 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn mcmp_matches() {
         let setup = |c: &mut Cpu, seed: u32| -> Events {
@@ -3116,13 +3320,25 @@ pub(crate) mod tests {
             let b = DATA + 0x2000;
             // Long enough that the compare loop reaches a scheduled event.
             let ka = 16 + r.next_u32() % 96;
-            let kb = if seed % 5 == 0 { 1 + r.next_u32() % 96 } else { ka };
+            let kb = if seed % 5 == 0 {
+                1 + r.next_u32() % 96
+            } else {
+                ka
+            };
             c.bus.write32(a + 0x10, ka);
             c.bus.write32(b + 0x10, kb);
-            let differ_at = if seed % 2 == 0 { u32::MAX } else { r.next_u32() % ka };
+            let differ_at = if seed % 2 == 0 {
+                u32::MAX
+            } else {
+                r.next_u32() % ka
+            };
             for i in 0..96 {
                 let x = r.next_u32();
-                let y = if i == differ_at { x ^ (1 << (r.next_u32() % 32)) } else { x };
+                let y = if i == differ_at {
+                    x ^ (1 << (r.next_u32() % 32))
+                } else {
+                    x
+                };
                 c.bus.write32(a + 0x14 + 4 * i, x);
                 c.bus.write32(b + 0x14 + 4 * i, y);
             }
@@ -3132,7 +3348,6 @@ pub(crate) mod tests {
         };
         check_events(ssx3_ee::s15::f_00420e28, mcmp, SEEDS, &setup);
     }
-
 
     #[test]
     fn ulp_matches() {
@@ -3151,7 +3366,6 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn fixdfdi_matches() {
         check(ssx3_ee::s15::f_0042d320, fixdfdi, SEEDS, &|c, seed| {
@@ -3167,7 +3381,6 @@ pub(crate) mod tests {
             c.g[A1][0] = r.next_u32() as u64;
         });
     }
-
 
     #[test]
     fn fixunsdfdi_matches() {
@@ -3185,7 +3398,6 @@ pub(crate) mod tests {
             c.g[A1][0] = r.next_u32() as u64;
         });
     }
-
 
     #[test]
     fn sflags_matches() {
@@ -3206,7 +3418,6 @@ pub(crate) mod tests {
         });
     }
 
-
     // ------------------------------------------------------------ libgcc
 
     /// `__clz_tab` (bit length of each byte) where the generated code reads
@@ -3216,7 +3427,6 @@ pub(crate) mod tests {
             c.bus.write8(at + i, (32 - i.leading_zeros()) as u8);
         }
     }
-
 
     /// Operands for every path of `__udivmoddi4`: d1 == 0 with d0 above or
     /// below n1, d == 0, normalized and unnormalized d1, q estimates that
@@ -3239,7 +3449,10 @@ pub(crate) mod tests {
             0 => w(&mut r) as u64,
             1 => (r.next_u32() >> (r.next_u32() % 32)) as u64,
             2 => 0,
-            3 => (0x8000_0000 | r.next_u32()) as u64 | ((r.next_u32() as u64) << 32 | 0x8000_0000_0000_0000),
+            3 => {
+                (0x8000_0000 | r.next_u32()) as u64
+                    | ((r.next_u32() as u64) << 32 | 0x8000_0000_0000_0000)
+            }
             4 => {
                 // d0 > n1 with a high half that makes the estimate too big
                 let d0 = 0x8000_ffffu32.wrapping_sub(r.next_u32() % 16);
@@ -3264,15 +3477,17 @@ pub(crate) mod tests {
         c.g[A1][0] = d;
     }
 
-
     #[test]
     fn udivdi3_matches() {
-        check(ee::s15::f_00411538__generated, udivdi3, 500, &|c, seed| div_setup(c, seed, 0x0049_97a0));
+        check(ee::s15::f_00411538__generated, udivdi3, 500, &|c, seed| {
+            div_setup(c, seed, 0x0049_97a0)
+        });
     }
-
 
     #[test]
     fn umoddi3_matches() {
-        check(ee::s15::f_0042dad8__generated, umoddi3, 500, &|c, seed| div_setup(c, seed, 0x0049_af18));
+        check(ee::s15::f_0042dad8__generated, umoddi3, 500, &|c, seed| {
+            div_setup(c, seed, 0x0049_af18)
+        });
     }
 }

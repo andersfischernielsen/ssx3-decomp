@@ -50,7 +50,10 @@ impl Pack {
         let mut head = [0u8; 16];
         file.read_exact(&mut head)?;
         if &head[..8] != MAGIC {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "not an SSX3 pack"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "not an SSX3 pack",
+            ));
         }
         let sectors = u32::from_le_bytes(head[8..12].try_into().unwrap());
         let n = u32::from_le_bytes(head[12..16].try_into().unwrap()) as usize;
@@ -64,7 +67,12 @@ impl Pack {
                 offset: u64::from_le_bytes(e[8..16].try_into().unwrap()),
             })
             .collect();
-        Ok(Self { file, base, sectors, extents })
+        Ok(Self {
+            file,
+            base,
+            sectors,
+            extents,
+        })
     }
 
     /// The pack appended to `path` (an executable), if it has one.
@@ -105,7 +113,9 @@ impl Pack {
     }
 
     fn extent_of(&self, sector: u32) -> Option<&Extent> {
-        let i = self.extents.partition_point(|e| e.first + e.count <= sector);
+        let i = self
+            .extents
+            .partition_point(|e| e.first + e.count <= sector);
         self.extents.get(i).filter(|e| e.first <= sector)
     }
 }
@@ -125,13 +135,21 @@ impl Source for Pack {
             let (run, src) = match self.extent_of(sector) {
                 Some(e) => {
                     let left = (e.first + e.count - sector) as usize * SECTOR - in_sector;
-                    let src = e.offset + (sector - e.first) as u64 * SECTOR as u64 + in_sector as u64;
+                    let src =
+                        e.offset + (sector - e.first) as u64 * SECTOR as u64 + in_sector as u64;
                     (left, Some(src))
                 }
                 None => {
                     // Up to the next extent (or the end).
-                    let next = self.extents.iter().find(|e| e.first > sector).map_or(self.sectors, |e| e.first);
-                    ((next.max(sector + 1) - sector) as usize * SECTOR - in_sector, None)
+                    let next = self
+                        .extents
+                        .iter()
+                        .find(|e| e.first > sector)
+                        .map_or(self.sectors, |e| e.first);
+                    (
+                        (next.max(sector + 1) - sector) as usize * SECTOR - in_sector,
+                        None,
+                    )
                 }
             };
             let n = run.min(buf.len() - done);
@@ -189,8 +207,17 @@ mod tests {
         let mut buf = vec![0xffu8; 10 * SECTOR];
         p.read_at(0, &mut buf).unwrap();
         for s in 0..10u32 {
-            let want = if (2..5).contains(&s) || s == 7 { s as u8 } else { 0 };
-            assert!(buf[s as usize * SECTOR..(s as usize + 1) * SECTOR].iter().all(|&b| b == want), "sector {s}");
+            let want = if (2..5).contains(&s) || s == 7 {
+                s as u8
+            } else {
+                0
+            };
+            assert!(
+                buf[s as usize * SECTOR..(s as usize + 1) * SECTOR]
+                    .iter()
+                    .all(|&b| b == want),
+                "sector {s}"
+            );
         }
         // A read inside a sector across an extent boundary.
         let mut b = [0u8; 100];

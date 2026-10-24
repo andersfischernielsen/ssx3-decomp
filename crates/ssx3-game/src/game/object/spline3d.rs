@@ -7,10 +7,14 @@ use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::p_6 as p;
+pub(crate) use crate::game::object::movenode::GFX_MAN;
+pub(crate) use crate::game::object::movenode::ONE;
 use crate::guest::Addr;
 use crate::ps2f::vu0_scratch;
 use crate::ps2f::FpuF32;
@@ -19,53 +23,56 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::call::Flow;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::X;
-pub(crate) use crate::game::object::movenode::GFX_MAN;
-pub(crate) use crate::game::object::movenode::ONE;
-pub(crate) use crate::game::fe::feasyncfile::p_6 as p;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0034_5570, spline_modifier_load_path, "SplineModifier_LoadPath"),
-    (0x0034_5638, spline_modifier_is_node_visible, "SplineModifier_IsNodeVisible"),
+    (
+        0x0034_5570,
+        spline_modifier_load_path,
+        "SplineModifier_LoadPath",
+    ),
+    (
+        0x0034_5638,
+        spline_modifier_is_node_visible,
+        "SplineModifier_IsNodeVisible",
+    ),
 ];
 
 /// Same-shard direct callees used above.
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_EQUIP_MODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_BUY_MODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SET_CATEGORY_TITLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BUILD_ITEM_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REFRESH_ITEM_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_GET_PATH_LENGTH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_ACCOUNT_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_FIND_BANK_SLOT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_REMOVE_BANK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_HANDLE_INPUT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_DISABLED_3 as MENU_SYS_ITEM_IS_DISABLED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_HEAP_ALLOC;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_ACTIVATE_KEY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_NEXT_KEY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PS2_GRID_MESH_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_IS_KEY_ENABLED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_FIND_ENABLED_FROM_TOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_GET_RIDER_PREVIEW_2 as FEMODULE_GET_RIDER_PREVIEW;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_RIDER_PREVIEW_SET_VISIBLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUTSYNC_IS_READY;
     pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_GET_NEXT_NODE;
     pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_GET_PREV_NODE;
     pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_NODE_INDEX;
-    pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_BASE_RESET_FX;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BUILD_ITEM_LIST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_GET_RIDER_PREVIEW_2 as FEMODULE_GET_RIDER_PREVIEW;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_RIDER_PREVIEW_SET_VISIBLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUTSYNC_IS_READY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_HEAP_ALLOC;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_ACTIVATE_KEY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_NEXT_KEY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_FIND_ENABLED_FROM_TOP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_IS_KEY_ENABLED;
     pub(crate) use crate::game::fe::feasyncfile::callee::LOAD_INDICATOR_ADVANCE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_HANDLE_INPUT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_DISABLED_3 as MENU_SYS_ITEM_IS_DISABLED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_ACCOUNT_SET_STATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_FIND_BANK_SLOT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_REMOVE_BANK;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PS2_GRID_MESH_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REFRESH_ITEM_LIST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_BASE_RESET_FX;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SET_CATEGORY_TITLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_BUY_MODE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_EQUIP_MODE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_GET_PATH_LENGTH;
     pub(crate) use crate::game::fe::feasyncfile::callee::START_SCREEN_CTOR;
 }
-
 
 // ---------------------------------------------------------------------------
 // Spline modifier.
@@ -141,7 +148,6 @@ pub fn spline_modifier_is_node_visible(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Spline paths.
@@ -228,14 +234,14 @@ pub fn spline_modifier_load_path(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::check;
-    use crate::difftest::check_lohi;
     use crate::difftest::fill;
     use crate::difftest::put_vec;
     use crate::difftest::scramble;
@@ -243,35 +249,39 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     use crate::difftest::RA as SENTINEL;
-    use ssx3_ee as ee;
-    pub(crate) use crate::game::object::movenode::tests::slot;
-    pub(crate) use crate::game::object::movenode::tests::delta;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM_3 as RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base;
     pub(crate) use crate::game::bx::bxstring2::tests::f;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::gp_at;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::RM_3 as RM;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W;
+    pub(crate) use crate::game::object::movenode::tests::delta;
+    pub(crate) use crate::game::object::movenode::tests::slot;
+    use ssx3_ee as ee;
 
     // ------------------------------------------------------ spline modifier
 
     #[test]
     fn spline_modifier_is_node_visible_matches() {
-        covered(ssx3_ee::s11::f_00345638__generated, spline_modifier_is_node_visible, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x3456_3800, 2);
-            let (gfx, cam_vt, node) = (DATA + 0x2000, DATA + 0x3000, DATA + 0x100);
-            c.bus.write32(GAME_GP + GFX_MAN, gfx);
-            c.bus.write32(gfx + 0x10d8, cam_vt);
-            slot(c, cam_vt, 0x158, delta(&mut r), FAKE);
-            slot(c, cam_vt, 0x2e8, delta(&mut r), FAKE + 0x10);
-            fill(c, &mut r, node, 0x30);
-            c.g[A0][0] = sx(node);
-            // The test answers 1 (hidden) or a pointer.
-            c.bus.write32(LOG_RESULTS + 4, if seed % 2 == 0 { 1 } else { 0 });
-        });
+        covered(
+            ssx3_ee::s11::f_00345638__generated,
+            spline_modifier_is_node_visible,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3456_3800, 2);
+                let (gfx, cam_vt, node) = (DATA + 0x2000, DATA + 0x3000, DATA + 0x100);
+                c.bus.write32(GAME_GP + GFX_MAN, gfx);
+                c.bus.write32(gfx + 0x10d8, cam_vt);
+                slot(c, cam_vt, 0x158, delta(&mut r), FAKE);
+                slot(c, cam_vt, 0x2e8, delta(&mut r), FAKE + 0x10);
+                fill(c, &mut r, node, 0x30);
+                c.g[A0][0] = sx(node);
+                // The test answers 1 (hidden) or a pointer.
+                c.bus
+                    .write32(LOG_RESULTS + 4, if seed % 2 == 0 { 1 } else { 0 });
+            },
+        );
     }
-
 
     #[test]
     fn spline_modifier_load_path_matches() {

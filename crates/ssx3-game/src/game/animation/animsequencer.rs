@@ -2,41 +2,57 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
+use crate::call::Callee;
+use crate::call::Flow;
+use crate::call::Frame;
+use crate::call::Unwound;
+use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::p;
+pub(crate) use crate::game::fe::feasyncfile::r;
+pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-use crate::call::call_ptr;
-use crate::call::guest;
-use crate::call::Callee;
-use crate::call::Frame;
-use crate::call::VSlot;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use crate::call::Flow;
-use crate::call::Unwound;
-use crate::events::back_edge_unwinds;
-use crate::abi::r32;
-use crate::call::sp;
-use ssx3_ee as ee;
-pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
-pub(crate) use crate::game::fe::feasyncfile::p;
-pub(crate) use crate::game::fe::feasyncfile::r;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0031_3d28, anim_sequence_set_track_weight, "AnimSequence_SetTrackWeight"),
-    (0x0031_3d40, anim_sequence_set_track_loop, "AnimSequence_SetTrackLoop"),
+    (
+        0x0031_3d28,
+        anim_sequence_set_track_weight,
+        "AnimSequence_SetTrackWeight",
+    ),
+    (
+        0x0031_3d40,
+        anim_sequence_set_track_loop,
+        "AnimSequence_SetTrackLoop",
+    ),
     (0x0031_42e8, anim_seq_list_init, "AnimSeqList_Init"),
     (0x0031_4368, anim_seq_list_append, "AnimSeqList_Append"),
-    (0x0031_4418, anim_seq_list_collect_tracks, "AnimSeqList_CollectTracks"),
+    (
+        0x0031_4418,
+        anim_seq_list_collect_tracks,
+        "AnimSeqList_CollectTracks",
+    ),
     (0x0031_4978, mdf_file_ctor, "MdfFile_ctor"),
     (0x0031_4988, mdf_file_dtor, "MdfFile_dtor"),
     (0x0031_49d0, mdf_file_free, "MdfFile_Free"),
     (0x0031_4aa0, mdf_file_parse_header, "MdfFile_ParseHeader"),
-    (0x0031_4c00, mdf_file_create_model_by_name, "MdfFile_CreateModelByName"),
+    (
+        0x0031_4c00,
+        mdf_file_create_model_by_name,
+        "MdfFile_CreateModelByName",
+    ),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -44,14 +60,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 /// Direct-call targets of the animation functions (shard s10).
 pub(crate) mod anim_callee {
     use super::Callee;
-    use ssx3_ee::s10 as ee;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_AT_TIME;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_END_TRIGGERS;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_IN_RANGE;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::GET_TRACK_BLEND_WEIGHT;
     pub(crate) use crate::game::animation::animmodel::anim_callee::ALLOC_CHAN_CACHE;
     pub(crate) use crate::game::animation::animmodel::anim_callee::DECODE_CHAN_CACHE;
     pub(crate) use crate::game::animation::animmodel::anim_callee::EVAL_CHAN_CURVES;
+    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_END_TRIGGERS;
+    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_AT_TIME;
+    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_IN_RANGE;
+    pub(crate) use crate::game::animation::animmodel::anim_callee::GET_TRACK_BLEND_WEIGHT;
+    use ssx3_ee::s10 as ee;
 }
 
 /// `AnimSequence` layout used here (tracks of 0x1c bytes from +0).
@@ -101,131 +117,130 @@ pub(crate) mod seq {
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_SOUND_BANK_MAN_FIND_BANK;
-    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_PAUSE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_CLEAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_PUSH_2 as ALGORITHM_LIST_PUSH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ATTACHED_EMITTER_FX_DESTROY_EMITTER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_LEVEL_TO_VOLUME_2 as AUDIO_LEVEL_TO_VOLUME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_SET_CHANNEL_VOLUME_2 as AUDIO_SET_CHANNEL_VOLUME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_DESTROY_ALL;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_RESET_ONE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BENEW_PLAYER_INT_GET_SLOT_2 as BENEW_PLAYER_INT_GET_SLOT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_COPY_PROFILE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_RIDER_PROFILE_5 as BE_GET_RIDER_PROFILE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_RESET_PROFILE_CHARACTERS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SET_CHAR_PROFILE_FLAG;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SET_PHASE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BUDDY_API_DESTROY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BUILTIN_DELETE_6 as BUILTIN_DELETE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CHAT_ROOM_SELECT_PLAYER_BY_NAME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CLEAR_MUSIC_TRIGGER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::DATA_INSTANCE_FREE_INFO;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_FINISH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_START_PROFILE_SEARCH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_MODULE_SET_STATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_RAND_NEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_STATE_IS_LOADING;
+    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_CHANNEL_GET_LENGTH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOAD_AGREEMENT_TERMS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_API_DESTROY_LIST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_API_FLUSH_ROSTER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_RELEASE_SNAPSHOT_LISTS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SEND_DECLINE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MC_GET_WORLD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_GET_2 as MC_MANAGER_GET;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MDF_FILE_CREATE_MODEL;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCPY_2 as MEMCPY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_POPUP_3 as NET_FE_STATE_GET_POPUP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_ON_CHILD_EVENT_DEFAULT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_SHOW_POPUP_2 as NET_FE_STATE_SHOW_POPUP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_RESET;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_UPDATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_UPDATE_CALLEE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_RESUME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_SET_RUNNING;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_STOP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_SUSPEND;
+    pub(crate) use crate::game::fe::feasyncfile::callee::POPUP_CFG_SET_OPTION_TEXT_ID;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_COUNT_SAVE_SNAPSHOTS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_GET_WORLD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_CMD_QUEUE_AT_4 as SCRIPT_CMD_QUEUE_AT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_PROCESS_STATE_2 as SCRIPT_ENGINE_GET_PROCESS_STATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_IS_MOVIE_ENTRY_3 as SCRIPT_LIST_IS_MOVIE_ENTRY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_SET_PAUSED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SND_BANK_IS_LOADED_WITH_NAME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SND_BANK_LOAD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_CANCEL_BANK;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_PUSH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_PICK_RANDOM_LOOP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPRAY_CONFIGURE_FOR_RIDER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPRAY_UPDATE_EMITTER_ENABLES;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPRINTF_6 as SPRINTF_2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::STRCASECMP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SYNC_PROCESS_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_HIDE_POPUP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_SET_STATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_SET_TEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TRANSITION_EFFECT_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TRANSITION_EFFECT_DRAW_RECT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TUBE_MENU_BASE_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TUBE_MENU_ITEM_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_ADD_SCREEN_BY_HASH_NAME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_FIRST_6 as UI_LIST_FIRST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_GET_OBJECT_BY_HASH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_LAUNCH_THREAD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_LOOKUP_VALUE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_PLAY_FRAME_3 as UI_SCREEN_PLAY_FRAME;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_SET_OBJECT_VALUE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCROLL_SET_PARTS_VISIBLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_IS_HULL_FREE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_SOUND_GET_TRIGGER_IDS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_CREATE_OBJECT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_FINALIZE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_IS_FLAG4;
+    pub(crate) use crate::game::world::wscriptcache::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
     pub(crate) use crate::game::world::wscriptcache::callee::BANK_MONITOR_DELETE_INSTANCE;
     pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INTERFACE;
     pub(crate) use crate::game::world::wscriptcache::callee::BE_NEW_RACE_INT_GET_TRACK_INFO;
-    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP5;
+    pub(crate) use crate::game::world::wscriptcache::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
+    pub(crate) use crate::game::world::wscriptcache::callee::BOLT_FILE_CACHE_SHUTDOWN;
+    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_RESET_CHASE_CONTROLLER_SWITCHES;
+    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_TRIGGER_STACK_CLEAR;
+    pub(crate) use crate::game::world::wscriptcache::callee::CHASE_CAMERA_ALGORITHM_CTOR_2 as CHASE_CAMERA_ALGORITHM_CTOR;
+    pub(crate) use crate::game::world::wscriptcache::callee::CINSTANCE_NODE_CTOR_V;
     pub(crate) use crate::game::world::wscriptcache::callee::CROWD_AUDIO_FREE_SAMPLE_LIST;
     pub(crate) use crate::game::world::wscriptcache::callee::CUT_SCENE_TRANSITION_MAN_BASE_CTOR;
     pub(crate) use crate::game::world::wscriptcache::callee::CUT_SCENE_TRANSITION_MAN_INIT;
-    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_GET_COUNT;
-    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_ADD_ITEMS;
-    pub(crate) use crate::game::world::wscriptcache::callee::EA_MEM_FREE_2 as EA_MEM_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::MDF_FILE_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SPRINTF_2 as SPRINTF;
-    pub(crate) use crate::game::world::wscriptcache::callee::INPUT_PREPROC_WRITE_STRING;
-    pub(crate) use crate::game::world::wscriptcache::callee::CINSTANCE_NODE_CTOR_V;
-    pub(crate) use crate::game::world::wscriptcache::callee::FONT_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_LIST_COUNT;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_APPLY;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_ADVANCE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SECTION_ALLOCATOR_FREE_ALL;
     pub(crate) use crate::game::world::wscriptcache::callee::C_WORLD_CACHE_STREAMER_DTOR_STUB;
-    pub(crate) use crate::game::world::wscriptcache::callee::RCMP_SYSTEM_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::PS2_SONY_CODEC_INTERNAL_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_GET_BITS1;
-    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_FLUSH_BUFFER_3 as MPEG2_FLUSH_BUFFER;
-    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_SUB_STATE;
-    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_MAIN_STATE;
-    pub(crate) use crate::game::world::wscriptcache::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
-    pub(crate) use crate::game::world::wscriptcache::callee::CHASE_CAMERA_ALGORITHM_CTOR_2 as CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
-    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_TRIGGER_STACK_CLEAR;
-    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_RESET_CHASE_CONTROLLER_SWITCHES;
-    pub(crate) use crate::game::world::wscriptcache::callee::BOLT_FILE_CACHE_SHUTDOWN;
     pub(crate) use crate::game::world::wscriptcache::callee::DELETE;
+    pub(crate) use crate::game::world::wscriptcache::callee::EA_MEM_FREE_2 as EA_MEM_FREE;
+    pub(crate) use crate::game::world::wscriptcache::callee::FONT_FREE;
+    pub(crate) use crate::game::world::wscriptcache::callee::INPUT_PREPROC_WRITE_STRING;
+    pub(crate) use crate::game::world::wscriptcache::callee::MDF_FILE_FREE;
+    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_FLUSH_BUFFER_3 as MPEG2_FLUSH_BUFFER;
+    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_GET_BITS1;
+    pub(crate) use crate::game::world::wscriptcache::callee::PS2_SONY_CODEC_INTERNAL_CTOR;
+    pub(crate) use crate::game::world::wscriptcache::callee::RCMP_SYSTEM_CTOR;
+    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_MAIN_STATE;
+    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_SUB_STATE;
+    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_ENGINE_GET_INSTANCE;
+    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_SOUND_BANK_MAN_FIND_BANK;
+    pub(crate) use crate::game::world::wscriptcache::callee::SECTION_ALLOCATOR_FREE_ALL;
     pub(crate) use crate::game::world::wscriptcache::callee::SND_BANK_MONITOR_MEM_SIZE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BUILTIN_DELETE_6 as BUILTIN_DELETE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPERATOR_NEW;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TRANSITION_EFFECT_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_POPUP_3 as NET_FE_STATE_GET_POPUP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::POPUP_CFG_SET_OPTION_TEXT_ID;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_SHOW_POPUP_2 as NET_FE_STATE_SHOW_POPUP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_ON_CHILD_EVENT_DEFAULT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CHAT_ROOM_SELECT_PLAYER_BY_NAME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOAD_AGREEMENT_TERMS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_RELEASE_SNAPSHOT_LISTS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MAN_SEND_DECLINE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_PICK_RANDOM_LOOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_COUNT_SAVE_SNAPSHOTS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IN_SEQ_CHANNEL_GET_LENGTH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_PUSH_2 as ALGORITHM_LIST_PUSH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ALGORITHM_LIST_CLEAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SND_BANK_IS_LOADED_WITH_NAME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_CANCEL_BANK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SND_LOAD_QUEUE_PUSH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CLEAR_MUSIC_TRIGGER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPRAY_CONFIGURE_FOR_RIDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPRAY_UPDATE_EMITTER_ENABLES;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_RIDER_PROFILE_5 as BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BENEW_PLAYER_INT_GET_SLOT_2 as BENEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SET_CHAR_PROFILE_FLAG;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_RAND_NEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_IS_FLAG4;
-    pub(crate) use crate::game::fe::feasyncfile::callee::DATA_INSTANCE_FREE_INFO;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_CMD_QUEUE_AT_4 as SCRIPT_CMD_QUEUE_AT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_IS_MOVIE_ENTRY_3 as SCRIPT_LIST_IS_MOVIE_ENTRY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_ENGINE_GET_PROCESS_STATE_2 as SCRIPT_ENGINE_GET_PROCESS_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_LIST_SET_PAUSED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_DESTROY_ALL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ATTACHED_EMITTER_FX_DESTROY_EMITTER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_IS_HULL_FREE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SYNC_PROCESS_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MDF_FILE_CREATE_MODEL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_START_PROFILE_SEARCH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_MEMCARD_FINISH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_FIRST_6 as UI_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TRANSITION_EFFECT_DRAW_RECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_RESET_PROFILE_CHARACTERS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_COPY_PROFILE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_CREATE_OBJECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_LEVEL_TO_VOLUME_2 as AUDIO_LEVEL_TO_VOLUME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_SET_CHANNEL_VOLUME_2 as AUDIO_SET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCPY_2 as MEMCPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::STRCASECMP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPRINTF_6 as SPRINTF_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCROLL_SET_PARTS_VISIBLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_ADD_SCREEN_BY_HASH_NAME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_PLAY_FRAME_3 as UI_SCREEN_PLAY_FRAME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_GET_OBJECT_BY_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_API_DESTROY_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_API_FLUSH_ROSTER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BUDDY_API_DESTROY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_HIDE_POPUP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TOOLTIP_MANAGER_SET_TEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TUBE_MENU_ITEM_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TUBE_MENU_BASE_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_RESET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SET_PHASE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_MODULE_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_SOUND_GET_TRIGGER_IDS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MC_GET_WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MC_MANAGER_GET_2 as MC_MANAGER_GET;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_UPDATE_CALLEE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SND_BANK_LOAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AVALANCHE_RESET_ONE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REPLAY_GET_WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GAME_STATE_IS_LOADING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_STATE_FINALIZE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_LOOKUP_VALUE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_LAUNCH_THREAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_RESUME;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_SUSPEND;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_SET_RUNNING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_STOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OVERLAY_UPDATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_SET_OBJECT_VALUE;
+    pub(crate) use crate::game::world::wscriptcache::callee::SPRINTF_2 as SPRINTF;
+    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP5;
+    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_PAUSE;
+    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_ADVANCE;
+    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_APPLY;
+    pub(crate) use crate::game::world::wscriptcache::callee::UI_LIST_COUNT;
+    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_ADD_ITEMS;
+    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_GET_COUNT;
 }
-
 
 // ---------------------------------------------------------------- anim sequence
 
@@ -237,7 +252,6 @@ pub(crate) const TRACK_WEIGHT: u32 = 0x14;
 
 /// `AnimTrack+0x1c`: the track's loop flag.
 pub(crate) const TRACK_LOOP: u32 = 0x1c;
-
 
 /// `void AnimSequence_SetTrackWeight(AnimSequence *seq, int track, float w)`
 /// (0x313d28): set track `track`'s blend weight (`seq + track*0x1c + 0x14`)
@@ -254,7 +268,6 @@ pub fn anim_sequence_set_track_weight(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void AnimSequence_SetTrackLoop(AnimSequence *seq, int track, uint loop)`
 /// (0x313d40): store the loop flag at `seq + track*0x1c + 0x1c`. The index
 /// multiply also sets `LO`/`HI`.
@@ -270,7 +283,6 @@ pub fn anim_sequence_set_track_loop(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void AnimSeqList_Init(AnimSeqList *this)` (0x3142e8): clear the head and
 /// count.
 pub fn anim_seq_list_init(c: &mut Cpu) {
@@ -281,7 +293,6 @@ pub fn anim_seq_list_init(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `MdfFile *MdfFile_ctor(MdfFile *this)` (0x314978): clear the header word.
 pub fn mdf_file_ctor(c: &mut Cpu) {
     c.cycles += 3;
@@ -289,7 +300,6 @@ pub fn mdf_file_ctor(c: &mut Cpu) {
     Addr(abi::arg(c, 0)).sw(c, 0);
     abi::ret(c);
 }
-
 
 /// `void MdfFile_ParseHeader(MdfFile *this, const u8 *data)` (0x314aa0):
 /// store the data pointer and resolve the geometry/vertex sections.
@@ -307,7 +317,6 @@ pub fn mdf_file_parse_header(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // AnimSeqList.
 
@@ -315,7 +324,6 @@ pub fn mdf_file_parse_header(c: &mut Cpu) {
 pub(crate) const LIST_HEAD: u32 = 0x4;
 
 pub(crate) const SEQ_NEXT: u32 = 0xc8;
-
 
 /// `void AnimSeqList_Append(AnimSeqList *list, AnimSequence *seq)`
 /// (0x314368): append `seq` to the singly-linked list at +0x4 (following
@@ -367,7 +375,6 @@ pub fn anim_seq_list_append(c: &mut Cpu) {
     list.sw(c, c.g[V0][0]);
     abi::ret(c);
 }
-
 
 /// `int AnimSeqList_CollectTracks(AnimSeqList* list, TrackSample* out)`
 /// (0x314418): for every sequence in the list (`+4` first, linked by
@@ -421,7 +428,9 @@ pub fn anim_seq_list_collect_tracks(c: &mut Cpu) {
                         c.cycles += 20;
                         let time_at = Addr(c.g[S2][0] as u32);
                         let out = Addr(c.g[S0][0] as u32);
-                        let anim = time_at.off(0u32.wrapping_sub(seq::T_TIME - seq::T_ANIM)).lw(c);
+                        let anim = time_at
+                            .off(0u32.wrapping_sub(seq::T_TIME - seq::T_ANIM))
+                            .lw(c);
                         c.g[V0][0] = anim;
                         c.g[A1][0] = c.g[S4][0];
                         c.g[S5][0] = sx((c.g[S5][0] as u32).wrapping_add(0x50));
@@ -490,7 +499,6 @@ pub fn anim_seq_list_collect_tracks(c: &mut Cpu) {
     })
 }
 
-
 /// `void Foo_dtor(void* self, int flags)` (0x30 frame): run the destructor
 /// `base`, then `__builtin_delete(self)` when bit 0 of `flags` is set.
 ///
@@ -522,7 +530,6 @@ pub(crate) fn dtor(c: &mut Cpu, base: Callee, ret_base: u32, ret_delete: u32) ->
     Ok(())
 }
 
-
 // ---------------------------------------------------------------------------
 // Destructor thunks and vtable forwarders.
 
@@ -533,7 +540,6 @@ pub fn mdf_file_dtor(c: &mut Cpu) {
         dtor(c, callee::MDF_FILE_FREE, 0x0031_49a4, 0x0031_49b8)
     })
 }
-
 
 /// `void MdfFile_Free(MdfFile* f)` (0x3149d0): release the buffer (`+0`) and
 /// zero the four list fields.
@@ -562,7 +568,6 @@ pub fn mdf_file_free(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `MdfFile_CreateModelByName` (0x314c00): find the model whose name matches
 /// `a1` (case-insensitive) in the file's 0x60-byte records and create it.
@@ -638,86 +643,97 @@ pub fn mdf_file_create_model_by_name(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
-    use ssx3_ee::s09;
-    use ssx3_ee::s10;
     use crate::difftest::check_lohi;
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
-    use crate::difftest::fakes::*;
-    use crate::difftest::fill;
-    use crate::difftest::put_words;
-    use ssx3_ee as ee;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use ssx3_ee_rt::funcs::GuestFn;
-    pub(crate) use crate::game::bx::appman::tests::SEEDS;
-    pub(crate) use crate::game::bx::appman::tests::rng;
+    use crate::difftest::fakes::*;
+    use crate::difftest::fill;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
     pub(crate) use crate::game::bx::appman::tests::ptr as ptr_2;
-    pub(crate) use crate::game::visualfx::worldlightman::tests::f;
-    pub(crate) use crate::game::visualfx::worldlightman::tests::pick;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_13 as SEEDS_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_4 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_3 as W;
-    pub(crate) use crate::game::fe::feasyncfile::tests::MEM_HEAP;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::wh;
-    pub(crate) use crate::game::fe::feasyncfile::tests::wb;
-    pub(crate) use crate::game::fe::feasyncfile::tests::put_str_4 as put_str;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_8 as slot;
-    pub(crate) use crate::game::fe::feasyncfile::tests::eafile_pools;
-    pub(crate) use crate::game::fe::feasyncfile::tests::run_7 as run;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_8 as heap_init;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_9 as pool_allocator;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_9 as base;
+    pub(crate) use crate::game::bx::appman::tests::rng;
+    pub(crate) use crate::game::bx::appman::tests::SEEDS;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_3 as alloc_base;
     pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_setup;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_9 as base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::eafile_pools;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_8 as heap_init;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_9 as pool_allocator;
+    pub(crate) use crate::game::fe::feasyncfile::tests::put_str_4 as put_str;
+    pub(crate) use crate::game::fe::feasyncfile::tests::run_7 as run;
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot_8 as slot;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::wb;
+    pub(crate) use crate::game::fe::feasyncfile::tests::wh;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_4 as BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::MEM_HEAP;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_13 as SEEDS_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W_3 as W;
+    pub(crate) use crate::game::visualfx::worldlightman::tests::f;
+    pub(crate) use crate::game::visualfx::worldlightman::tests::pick;
+    use ssx3_ee as ee;
+    use ssx3_ee::s09;
+    use ssx3_ee::s10;
+    use ssx3_ee_rt::funcs::GuestFn;
 
     #[test]
     fn anim_sequence_set_track_weight_matches() {
-        check(s10::f_00313d28__generated, anim_sequence_set_track_weight, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 6);
-            scramble(c, &mut r);
-            let seq = ptr_2(&mut r, 0);
-            c.g[A0][0] = sx(seq);
-            c.g[A1][0] = (r.next_u32() % 6) as u64;
-            c.f[12] = r.edge_f32();
-        });
+        check(
+            s10::f_00313d28__generated,
+            anim_sequence_set_track_weight,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 6);
+                scramble(c, &mut r);
+                let seq = ptr_2(&mut r, 0);
+                c.g[A0][0] = sx(seq);
+                c.g[A1][0] = (r.next_u32() % 6) as u64;
+                c.f[12] = r.edge_f32();
+            },
+        );
     }
-
 
     #[test]
     fn anim_sequence_set_track_loop_matches() {
-        check(s10::f_00313d40__generated, anim_sequence_set_track_loop, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 7);
-            scramble(c, &mut r);
-            let seq = ptr_2(&mut r, 0);
-            c.g[A0][0] = sx(seq);
-            c.g[A1][0] = (r.next_u32() % 6) as u64;
-            c.g[A2][0] = if seed % 2 == 0 { 0 } else { sx(r.next_u32()) };
-        });
+        check(
+            s10::f_00313d40__generated,
+            anim_sequence_set_track_loop,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 7);
+                scramble(c, &mut r);
+                let seq = ptr_2(&mut r, 0);
+                c.g[A0][0] = sx(seq);
+                c.g[A1][0] = (r.next_u32() % 6) as u64;
+                c.g[A2][0] = if seed % 2 == 0 { 0 } else { sx(r.next_u32()) };
+            },
+        );
     }
-
 
     #[test]
     fn anim_seq_list_init_matches() {
-        check(ssx3_ee::s10::f_003142e8, anim_seq_list_init, 100, &|c, seed| {
-            let mut r = Rng(0x200d ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA, r.next_u32());
-            c.bus.write32(DATA + 4, r.next_u32());
-        });
+        check(
+            ssx3_ee::s10::f_003142e8,
+            anim_seq_list_init,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x200d ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA, r.next_u32());
+                c.bus.write32(DATA + 4, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn mdf_file_ctor_matches() {
@@ -729,19 +745,22 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn mdf_file_parse_header_matches() {
-        check(ssx3_ee::s10::f_00314aa0, mdf_file_parse_header, 200, &|c, seed| {
-            let mut r = Rng(0x200f ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x100) as u64;
-            c.bus.write16(DATA + 0x106, (r.next_u32() & 0xffff) as u16);
-            c.bus.write32(DATA + 0x108, r.next_u32());
-        });
+        check(
+            ssx3_ee::s10::f_00314aa0,
+            mdf_file_parse_header,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x200f ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                c.bus.write16(DATA + 0x106, (r.next_u32() & 0xffff) as u16);
+                c.bus.write32(DATA + 0x108, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn anim_seq_list_append_matches() {
@@ -762,7 +781,8 @@ pub(crate) mod tests {
                 let mut node = DATA + 0x1000;
                 c.bus.write32(list + LIST_HEAD, node);
                 for i in 0..n {
-                    c.bus.write32(node + SEQ_NEXT, if i + 1 < n { node + 0x10 } else { 0 });
+                    c.bus
+                        .write32(node + SEQ_NEXT, if i + 1 < n { node + 0x10 } else { 0 });
                     node += 0x10;
                 }
                 c.bus.write32(list, r.next_u32());
@@ -776,28 +796,33 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn anim_seq_list_append_short_matches() {
-        check(ssx3_ee::s10::f_00314368, anim_seq_list_append, 80, &|c, seed| {
-            let mut r = Rng(0x3143_68f0 ^ seed as u64);
-            scramble(c, &mut r);
-            let list = DATA;
-            c.g[A0][0] = list as u64;
-            let seq = DATA + 0x800;
-            c.g[A1][0] = seq as u64;
-            let n = r.next_u32() % 4;
-            let mut node = DATA + 0x1000;
-            c.bus.write32(list + LIST_HEAD, if n == 0 { 0 } else { node });
-            for i in 0..n {
-                c.bus.write32(node + SEQ_NEXT, if i + 1 < n { node + 0x10 } else { 0 });
-                node += 0x10;
-            }
-            c.bus.write32(list, r.next_u32());
-            c.bus.write32(seq + SEQ_NEXT, r.next_u32());
-        });
+        check(
+            ssx3_ee::s10::f_00314368,
+            anim_seq_list_append,
+            80,
+            &|c, seed| {
+                let mut r = Rng(0x3143_68f0 ^ seed as u64);
+                scramble(c, &mut r);
+                let list = DATA;
+                c.g[A0][0] = list as u64;
+                let seq = DATA + 0x800;
+                c.g[A1][0] = seq as u64;
+                let n = r.next_u32() % 4;
+                let mut node = DATA + 0x1000;
+                c.bus
+                    .write32(list + LIST_HEAD, if n == 0 { 0 } else { node });
+                for i in 0..n {
+                    c.bus
+                        .write32(node + SEQ_NEXT, if i + 1 < n { node + 0x10 } else { 0 });
+                    node += 0x10;
+                }
+                c.bus.write32(list, r.next_u32());
+                c.bus.write32(seq + SEQ_NEXT, r.next_u32());
+            },
+        );
     }
-
 
     // ------------------------------------------------------------ AnimSequence
 
@@ -811,67 +836,79 @@ pub(crate) mod tests {
             c.bus.write32(t + 0x8, r.f32(4.0));
             c.bus.write32(t + 0x10, f(pick(r, &[0.5, 1.0, 2.0, 3.0])));
             c.bus.write32(t + 0x14, r.f32(1.0));
-            c.bus.write32(t + 0x18, if r.next_u32() % 3 == 0 { 0 } else { 1 });
+            c.bus
+                .write32(t + 0x18, if r.next_u32() % 3 == 0 { 0 } else { 1 });
         }
         c.bus.write32(s + 0x94, r.f32(1.0));
         c.bus.write32(s + 0xa4, f(pick(r, &[0.0, 0.25, 0.5])));
         c.bus.write32(s + 0xa8, f(pick(r, &[0.0, 0.25, 0.5])));
     }
 
-
     #[test]
     fn anim_seq_list_collect_tracks_matches() {
-        check(ee::s10::f_00314418__generated, anim_seq_list_collect_tracks, 200, &|c, seed| {
-            let mut r = Rng(0xc011_ec75 ^ (seed as u64) << 12);
-            scramble(c, &mut r);
-            let list = DATA;
-            let out = DATA + 0x8000;
-            let mut link = list + 4;
-            for k in 0..seed % 4 {
-                let s = DATA + 0x1000 + k * 0x400;
-                sequence(c, &mut r, s);
-                c.bus.write32(link, s);
-                link = s + 0xc8;
-            }
-            c.bus.write32(link, 0);
-            c.g[A0][0] = sx(list);
-            c.g[A1][0] = sx(out);
-        });
+        check(
+            ee::s10::f_00314418__generated,
+            anim_seq_list_collect_tracks,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0xc011_ec75 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                let list = DATA;
+                let out = DATA + 0x8000;
+                let mut link = list + 4;
+                for k in 0..seed % 4 {
+                    let s = DATA + 0x1000 + k * 0x400;
+                    sequence(c, &mut r, s);
+                    c.bus.write32(link, s);
+                    link = s + 0xc8;
+                }
+                c.bus.write32(link, 0);
+                c.g[A0][0] = sx(list);
+                c.g[A1][0] = sx(out);
+            },
+        );
     }
-
 
     #[test]
     fn mdf_file_dtor_matches() {
-        check(ee::s10::f_00314988__generated, mdf_file_dtor, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x31_4988, 0);
-            let obj = DATA + 0x1000;
-            c.bus
-                .write32(obj, if seed % 3 == 0 { DATA + 0x2000 } else { 0 });
-            c.g[A0][0] = sx(obj);
-            c.g[A1][0] = (seed % 4 == 0) as u64;
-            let _ = r.next_u32();
-        });
+        check(
+            ee::s10::f_00314988__generated,
+            mdf_file_dtor,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_4988, 0);
+                let obj = DATA + 0x1000;
+                c.bus
+                    .write32(obj, if seed % 3 == 0 { DATA + 0x2000 } else { 0 });
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = (seed % 4 == 0) as u64;
+                let _ = r.next_u32();
+            },
+        );
     }
-
 
     #[test]
     fn mdf_file_free_matches() {
-        check(ee::s10::f_003149d0__generated, mdf_file_free, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x31_49d0, 0);
-            let obj = DATA + 0x1000;
-            c.bus.write32(
-                obj,
-                match seed % 3 {
-                    0 => 0,
-                    1 => DATA + 0x2000,
-                    _ => 4,
-                },
-            );
-            c.bus.write32(obj + 0xc, r.next_u32());
-            c.g[A0][0] = sx(obj);
-        });
+        check(
+            ee::s10::f_003149d0__generated,
+            mdf_file_free,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_49d0, 0);
+                let obj = DATA + 0x1000;
+                c.bus.write32(
+                    obj,
+                    match seed % 3 {
+                        0 => 0,
+                        1 => DATA + 0x2000,
+                        _ => 4,
+                    },
+                );
+                c.bus.write32(obj + 0xc, r.next_u32());
+                c.g[A0][0] = sx(obj);
+            },
+        );
     }
-
 
     #[test]
     fn mdf_file_create_model_by_name_matches() {

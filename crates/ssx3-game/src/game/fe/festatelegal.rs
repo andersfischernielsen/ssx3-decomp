@@ -1,13 +1,20 @@
 //! `src/fe/festatelegal.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
+use crate::abi;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::lw;
+pub(crate) use crate::game::fe::fepopup3::gp_2 as gp;
+pub(crate) use crate::game::fe::fepopup3::p_2 as p;
+pub(crate) use crate::game::fe::fepopup3::sw;
 use crate::guest::Addr;
 use crate::tick;
 use ssx3_ee as ee;
@@ -15,20 +22,16 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-use crate::abi;
-use crate::call::sp;
-use crate::call::Flow;
-pub(crate) use crate::game::fe::fepopup3::p_2 as p;
-pub(crate) use crate::game::fe::fepopup3::sw;
-pub(crate) use crate::game::fe::fepopup3::gp_2 as gp;
-pub(crate) use crate::game::fe::feasyncfile::lw;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0018_7cb8, fe_screen_autosave_popup_update, "FEScreenAutosavePopup_Update"),
+    (
+        0x0018_7cb8,
+        fe_screen_autosave_popup_update,
+        "FEScreenAutosavePopup_Update",
+    ),
     (0x0018_87a0, cfe_state_options_ctor, "cFEStateOptions_ctor"),
 ];
-
 
 // ---------------------------------------------------------------------------
 // FE state construction / locale tables.
@@ -69,11 +72,9 @@ pub fn cfe_state_options_ctor(c: &mut Cpu) {
     })
 }
 
-
 /// The autosave popup's delay before it looks up the autosave screen: 4 s at
 /// 60 Hz (the original's `self+0x48 == 0xf0`, 240 frames).
 const AUTOSAVE_POPUP_FRAMES: u32 = 240;
-
 
 /// `void FEScreenAutosavePopup_Update(FEScreenAutosavePopup* p)` (0x00187cb8):
 /// tick the base state; 4 s after the popup was created look up the autosave
@@ -132,25 +133,24 @@ pub fn fe_screen_autosave_popup_update(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
+    use crate::difftest::fill;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fill;
-    use ssx3_ee as ee;
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_3 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::wh;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_4 as slot;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_6 as globals;
     pub(crate) use crate::game::fe::feasyncfile::tests::pool_3 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot_4 as slot;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::wh;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_3 as WORLD;
+    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    use ssx3_ee as ee;
 
     // ---------------------------------------------------------------- FE core
 
@@ -174,7 +174,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn fe_screen_autosave_popup_update_matches() {
         check(
@@ -193,7 +192,6 @@ pub(crate) mod tests {
         );
     }
 
-
     // --------------------------------------------------- autosave popup timer
 
     /// A callee outside the translated code: answer null and return at once.
@@ -203,7 +201,6 @@ pub(crate) mod tests {
         c.g[V0][0] = 0;
         c.pc = c.g[RA][0] as u32;
     }
-
 
     /// `FEScreenAutosavePopup_Update` at rate `hz`, `n` times from a zero
     /// counter; the `v0` the last update left. While it is waiting that is the
@@ -227,14 +224,17 @@ pub(crate) mod tests {
         c.g[V0][0]
     }
 
-
     /// The autosave popup waits 4 s (240 frames) at every rate: it fires on the
     /// 240th/480th/960th update, and exactly once (the comparison is an
     /// equality test).
     #[test]
     fn fe_screen_autosave_popup_delay_follows_the_rate() {
         for (hz, n) in [(60u32, 240u32), (120, 480), (240, 960)] {
-            assert_eq!(autosave_after(hz, n - 1), (n - 1) as u64, "{hz} Hz: still waiting");
+            assert_eq!(
+                autosave_after(hz, n - 1),
+                (n - 1) as u64,
+                "{hz} Hz: still waiting"
+            );
             assert_eq!(autosave_after(hz, n), 0, "{hz} Hz: fires on update {n}");
             assert_eq!(
                 autosave_after(hz, n + 1),

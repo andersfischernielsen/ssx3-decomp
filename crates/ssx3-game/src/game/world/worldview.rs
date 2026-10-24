@@ -2,12 +2,8 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use crate::abi::r32;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -17,47 +13,83 @@ use crate::call::Frame;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::bx::bxstring2::vdot4;
+pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
+pub(crate) use crate::game::fe::feasyncfile::lw_8 as lw;
+pub(crate) use crate::game::fe::feasyncfile::lw_r;
+pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw;
+pub(crate) use crate::game::fe::feasyncfile::sw_r;
+pub(crate) use crate::game::fe::festateloadhint::p_3;
+pub(crate) use crate::game::fe::festaterewards2::r;
+pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::object::splinemodifier::lwc1_r;
+pub(crate) use crate::game::object::splinemodifier::swc1_r;
+pub(crate) use crate::game::render::particle::add32;
+pub(crate) use crate::game::render::particle::at;
+pub(crate) use crate::game::render::particle::fconst;
+pub(crate) use crate::game::render::particle::fr;
+pub(crate) use crate::game::render::particle::gp;
+pub(crate) use crate::game::render::particle::ldf;
+pub(crate) use crate::game::render::particle::le;
+pub(crate) use crate::game::render::particle::lt;
+pub(crate) use crate::game::render::particle::p;
+pub(crate) use crate::game::render::particle::setf;
+use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use callee::*;
 use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use callee::*;
-use crate::call;
-pub(crate) use crate::game::render::particle::p;
-pub(crate) use crate::game::render::particle::at;
-pub(crate) use crate::game::render::particle::gp;
-pub(crate) use crate::game::render::particle::ldf;
-pub(crate) use crate::game::render::particle::fr;
-pub(crate) use crate::game::render::particle::setf;
-pub(crate) use crate::game::render::particle::fconst;
-pub(crate) use crate::game::render::particle::lt;
-pub(crate) use crate::game::render::particle::le;
-pub(crate) use crate::game::render::particle::add32;
-pub(crate) use crate::game::bx::bxstring2::vdot4;
-pub(crate) use crate::game::fe::festaterewards2::r;
-pub(crate) use crate::game::fe::festaterewards2::Ops;
-pub(crate) use crate::game::fe::festateloadhint::p_3;
-pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
-pub(crate) use crate::game::fe::feasyncfile::lw_r;
-pub(crate) use crate::game::fe::feasyncfile::sw_r;
-pub(crate) use crate::game::object::splinemodifier::lwc1_r;
-pub(crate) use crate::game::object::splinemodifier::swc1_r;
-pub(crate) use crate::game::fe::feasyncfile::lw_8 as lw;
-pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x003a_9820, c_world_cache_streamer_get_section, "cWorldCache_StreamerGetSection"),
-    (0x003a_9858, c_world_cache_streamer_is_section_resident, "cWorldCache_StreamerIsSectionResident"),
-    (0x003a_9890, c_world_cache_streamer_is_section_unloaded, "cWorldCache_StreamerIsSectionUnloaded"),
-    (0x003a_99d8, c_world_cache_streamer_activate_section, "cWorldCache_StreamerActivateSection"),
-    (0x003a_9a98, c_world_cache_streamer_get_hull, "cWorldCache_StreamerGetHull"),
-    (0x003a_9ab0, c_world_cache_streamer_get_hull_count, "cWorldCache_StreamerGetHullCount"),
-    (0x003a_a028, world_cache_streamer_update_view_node, "cWorldCache_StreamerUpdateViewNode"),
-    (0x003a_a3f0, c_ps2_chunk_resolve_base_v05, "cPS2ChunkResolveBase_v05"),
+    (
+        0x003a_9820,
+        c_world_cache_streamer_get_section,
+        "cWorldCache_StreamerGetSection",
+    ),
+    (
+        0x003a_9858,
+        c_world_cache_streamer_is_section_resident,
+        "cWorldCache_StreamerIsSectionResident",
+    ),
+    (
+        0x003a_9890,
+        c_world_cache_streamer_is_section_unloaded,
+        "cWorldCache_StreamerIsSectionUnloaded",
+    ),
+    (
+        0x003a_99d8,
+        c_world_cache_streamer_activate_section,
+        "cWorldCache_StreamerActivateSection",
+    ),
+    (
+        0x003a_9a98,
+        c_world_cache_streamer_get_hull,
+        "cWorldCache_StreamerGetHull",
+    ),
+    (
+        0x003a_9ab0,
+        c_world_cache_streamer_get_hull_count,
+        "cWorldCache_StreamerGetHullCount",
+    ),
+    (
+        0x003a_a028,
+        world_cache_streamer_update_view_node,
+        "cWorldCache_StreamerUpdateViewNode",
+    ),
+    (
+        0x003a_a3f0,
+        c_ps2_chunk_resolve_base_v05,
+        "cPS2ChunkResolveBase_v05",
+    ),
     (0x003a_a438, c_ps2_chunk_resolve_v06, "cPS2ChunkResolve_v06"),
     (0x003a_a520, cps2_chunk_resolve_v07, "cPS2ChunkResolve_v07"),
     (0x003a_a5c8, ps2_chunk_resolve_v14, "cPS2ChunkResolve_v14"),
@@ -68,17 +100,37 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003a_a780, cps2_chunk_resolve_v10, "cPS2ChunkResolve_v10"),
     (0x003a_a830, cps2_chunk_resolve_v11, "cPS2ChunkResolve_v11"),
     (0x003a_a8d8, cps2_chunk_resolve_v12, "cPS2ChunkResolve_v12"),
-    (0x003a_a8f0, cps2_chunk_resolve_base_v13, "cPS2ChunkResolveBase_v13"),
+    (
+        0x003a_a8f0,
+        cps2_chunk_resolve_base_v13,
+        "cPS2ChunkResolveBase_v13",
+    ),
     (0x003a_a960, cps2_chunk_resolve_v18, "cPS2ChunkResolve_v18"),
     (0x003a_abd8, cps2_chunk_resolve_v20, "cPS2ChunkResolve_v20"),
     (0x003a_ac50, cps2_chunk_resolve_v21, "cPS2ChunkResolve_v21"),
     (0x003a_aca8, cps2_chunk_resolve_v22, "cPS2ChunkResolve_v22"),
-    (0x003a_ad98, c_ps2_chunk_resolve_create, "cPS2ChunkResolve_Create"),
-    (0x003a_ade8, c_ps2_chunk_resolve_dtor, "cPS2ChunkResolve_dtor"),
-    (0x003a_ae40, cps2_chunk_resolve_init, "cPS2ChunkResolve_Init"),
+    (
+        0x003a_ad98,
+        c_ps2_chunk_resolve_create,
+        "cPS2ChunkResolve_Create",
+    ),
+    (
+        0x003a_ade8,
+        c_ps2_chunk_resolve_dtor,
+        "cPS2ChunkResolve_dtor",
+    ),
+    (
+        0x003a_ae40,
+        cps2_chunk_resolve_init,
+        "cPS2ChunkResolve_Init",
+    ),
     (0x003a_be40, cps2chunkresolve_v05, "cPS2ChunkResolve_v05"),
     (0x003a_c2a8, cps2_chunk_resolve_v13, "cPS2ChunkResolve_v13"),
-    (0x003a_c358, cps2chunkresolve_relocate_instance_dma, "cPS2ChunkResolve_RelocateInstanceDma"),
+    (
+        0x003a_c358,
+        cps2chunkresolve_relocate_instance_dma,
+        "cPS2ChunkResolve_RelocateInstanceDma",
+    ),
     (0x003a_c7c8, cw_script_cache_ctor, "cWScriptCache_ctor"),
 ];
 
@@ -91,268 +143,268 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::render::particle::callee::DYNAMIC_EMITTER_SPAWN;
-    pub(crate) use crate::game::render::particle::callee::RANDOM;
-    pub(crate) use crate::game::render::particle::callee::POINT_BOX_DISTANCE;
-    pub(crate) use crate::game::render::particle::callee::IS_HULL_RESIDENT;
-    pub(crate) use crate::game::render::particle::callee::REQUEST_HULL;
-    pub(crate) use crate::game::render::particle::callee::STREAMER_UPDATE_VIEW_NODE;
-    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_PANEL_SEGMENT;
-    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_COLOR;
-    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_POS;
-    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_SIZE;
-    pub(crate) use crate::game::render::particle::callee::HUD_ALIGN_ELEM_POS;
-    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_SPRITE;
-    pub(crate) use crate::game::render::particle::callee::FONT_DRAW_TEXT;
-    pub(crate) use crate::game::render::particle::callee::SPATIAL_KEY_FROM_AABB;
-    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_REMOVE;
-    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_INSERT;
-    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_MOVE;
-    pub(crate) use crate::game::render::particle::callee::DELETE;
-    pub(crate) use crate::game::render::particle::callee::SPOT_LIGHT_VECTOR;
-    pub(crate) use crate::game::render::particle::callee::POINT_LIGHT_VECTOR;
-    pub(crate) use crate::game::render::particle::callee::ADD_DIRECTIONAL;
-    pub(crate) use crate::game::render::particle::callee::SAMPLE_SURFACE_COLOURS;
-    pub(crate) use crate::game::render::particle::callee::LERP_VIEW_COLOURS;
-    pub(crate) use crate::game::render::particle::callee::BLEND_VIEW_COLOURS;
-    pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE0;
-    pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE1;
-    pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE2;
-    pub(crate) use crate::game::render::particle::callee::COMPUTE_COLOUR_FACTOR;
-    pub(crate) use crate::game::render::particle::callee::GET_LIGHTING28;
-    pub(crate) use crate::game::render::particle::callee::SECTION_GET_EVENT_WORLD_SECTION;
-    pub(crate) use crate::game::render::particle::callee::RIDER_GET_MAIN_STATE;
-    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_SCALE;
-    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_SCALE_IN_PLACE;
-    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_ADD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE_2 as BUILTIN_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_ALLOC;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_FREE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_LOAD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_SOUND_BASE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_MGR_CLOSE_TOP_STATES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR_2 as UI_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_REMOVE_TICK_CALLBACK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CW_SCRIPT_CACHE_ALLOC;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_RIDER_CHARACTER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GAME_CAMERA_SET_CONTROLLER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MENU_ON_LOBBY_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_FORWARD_EVENT_TO_UI;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CAMERA_TRIGGER_MAN_UPDATE_TRIGGERS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VID_ENGINE_PLAYER_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_PLAY_CHARACTER_TUNE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_GAME_UTIL_DESTROY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CSETUP_MAN_SEND_PACKET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CVOIP_MAN_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_RPC_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_RPC_SET_PARAMS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SET_STATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_HIGHLIGHT_SLOT_CLEAR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SAVE_EMIT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_HANDLE_MUSIC_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_STOP_LOADING_SCREEN_LOOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_MAN_UNLOAD_BANK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_ARCADE_SAY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EATIMER_REMOVE_CALLBACK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
-    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::render::particle::callee::INI_PARSER_SKIP_TO_EOL;
-    pub(crate) use crate::game::render::particle::callee::BANK_MONITOR_INSTANCE_PAUSE;
-    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_STREAM_HANDLE;
-    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_MS_TO_NEXT_BEAT;
-    pub(crate) use crate::game::render::particle::callee::CPS2_MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_CTOR;
-    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_DRAW_ROW_2 as MENU_SYS_ITEM_DRAW_ROW;
-    pub(crate) use crate::game::render::particle::callee::CUT_SCENE_TRANSITION_SAVE_VIEWPORT;
-    pub(crate) use crate::game::render::particle::callee::EA_MEM_ALLOC_NAMED_2;
-    pub(crate) use crate::game::render::particle::callee::AVA_SPLINE_MODIFIER_CTOR;
-    pub(crate) use crate::game::render::particle::callee::POSITION_MODIFIER_CTOR;
-    pub(crate) use crate::game::render::particle::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER;
-    pub(crate) use crate::game::render::particle::callee::ANIM_OBJECT_BASE_DTOR;
-    pub(crate) use crate::game::render::particle::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE_2;
-    pub(crate) use crate::game::render::particle::callee::TEX_MAN_LOAD_TEXTURE as TEX_MAN_LOAD_TEXTURE_2;
-    pub(crate) use crate::game::render::particle::callee::UI_LIST_RESET;
-    pub(crate) use crate::game::render::particle::callee::UI_LIST_PUSH_BACK_2 as UI_LIST_PUSH_BACK;
-    pub(crate) use crate::game::render::particle::callee::CPS2_CHUNK_RESOLVE_DTOR_STUB;
-    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_ON_MISSION_COMPLETED;
-    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_AWARD_POINTS;
-    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_SETTLE_SLEW;
-    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_FINISH_PRESS;
-    pub(crate) use crate::game::render::particle::callee::RIDER_ADD_BOOST;
-    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_FINISH_BOARD_PRESS;
-    pub(crate) use crate::game::render::particle::callee::ALGORITHM_LIST_DTOR;
-    pub(crate) use crate::game::render::particle::callee::CHASE_CAM_SET_ALGORITHM_IMMEDIATE;
-    pub(crate) use crate::game::render::particle::callee::CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::render::particle::callee::CFE_STATE_CHAR_SELECT_UPDATE_ATTRIBUTE_BARS;
-    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_CSTR;
-    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_COPY;
-    pub(crate) use crate::game::render::particle::callee::BXSTRING_CONCAT_IN_PLACE;
-    pub(crate) use crate::game::render::particle::callee::CROWD_MAN3D_GROUP_REMOVE_SECTION;
-    pub(crate) use crate::game::render::particle::callee::WORLD_OBJ_SAVE;
-    pub(crate) use crate::game::render::particle::callee::FLEX_BRIDGE_SPRINGS_SAVE;
-    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_MISSION_COMPLETED;
-    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_COLLECTIBLE_COLLECTED;
-    pub(crate) use crate::game::render::particle::callee::BENEW_PLAYER_INT_GET_CHARACTER_BY_SLOT;
-    pub(crate) use crate::game::render::particle::callee::BENEW_RACE_INT_IS_STATION_TRACK_BY_INDEX;
-    pub(crate) use crate::game::render::particle::callee::SND_LOCK;
-    pub(crate) use crate::game::render::particle::callee::SND_UNLOCK;
-    pub(crate) use crate::game::render::particle::callee::SND_SPU_MEM_SET_BASE;
-    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_POP;
-    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_SELECT;
-    pub(crate) use crate::game::render::particle::callee::SNDSTRM_SET_PITCH;
-    pub(crate) use crate::game::render::particle::callee::PATH_SET_PAUSED;
-    pub(crate) use crate::game::render::particle::callee::PATH_POST_EVENT;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_SEEK;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_READ;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_WRITE;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_MKDIR;
-    pub(crate) use crate::game::render::particle::callee::SCE_MC_DELETE;
-    pub(crate) use crate::game::render::particle::callee::ISIGNAL_SEMA;
-    pub(crate) use crate::game::render::particle::callee::STRLEN;
-    pub(crate) use crate::game::render::particle::callee::WORLD_CREATE_DEAD_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_RESET as UI_LIST_RESET_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_ALLOC_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_CTOR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCARD_INSTALL_CALLBACKS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PLAYBACK_RESTORE_WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CHUNK_RESOLVE_HOOK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_RENDER_FADE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_RAIL_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_MODIFIER_SET_SPEED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUTOSAVE_UPDATE_ICON;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_ANIM_DATA;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_RIDER_PREVIEWS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_FILE_CACHE_SHUTDOWN;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_CTOR_2 as WORLD_OBJ_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_DTOR_2 as WORLD_OBJ_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_RUN_KILL_SCRIPT_2 as WORLD_OBJ_RUN_KILL_SCRIPT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_REPLACE_WITH_DEAD_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MOD_OBJ_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_LOCALE_LOAD_TABLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_9 as NET_FE_STATE_CTOR_2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_UPDATE_ANIM;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_GET_CHAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_EXPECT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_READ_QUOTED_STRING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_TRICK_METER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_HIDE_ROOM_TABS;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_FROM_ASCII_2 as USTR_FROM_ASCII;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_SPRINTF;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_TO_ASCII;
-    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WIDGET_ALIGN;
-    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WRAPPED_TEXT;
-    pub(crate) use crate::game::bx::bxstring2::callee::RIDER_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::DEBUG_MENU_DISPATCH_ITEM_OP;
-    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_MISSION_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED_3;
-    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT_2 as WSCRIPT_PROCESS_LIST_PUSH_FRONT;
-    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_MAN_CLEAR;
-    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_CTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::MUSIC_PLAYER_SET_EVENT_STATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::MUSIC_PLAYER_GET_SONG_TAG;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_UPDATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::OPTIONS_SET_VIBRATION;
-    pub(crate) use crate::game::bx::bxstring2::callee::STR_HASH;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_FIND_FIRST_SELECTABLE;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_SET_SELECTION;
-    pub(crate) use crate::game::bx::bxstring2::callee::STRLEN as STRLEN_2;
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_DEQUEUE_SECTION;
-    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_POP_FREE_NODE;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_ADD_ITEM_STR_ID;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_FIND_ITEM_BY_VALUE;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_SET_SELECTION;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_GET_POPUP;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_SHOW_POPUP;
-    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_CFG_SET_OPTION_TEXT_ID;
-    pub(crate) use crate::game::bx::bxstring2::callee::MESSAGE_CENTER_GET_INBOX;
+    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_CHAR_PROFILE_EVENT_RECORD;
+    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_RIDER_PROFILE;
     pub(crate) use crate::game::bx::bxstring2::callee::CBXSTRING_CTOR_COPY;
     pub(crate) use crate::game::bx::bxstring2::callee::CBXSTRING_DTOR;
-    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_INIT_FROM_RIDER;
+    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_RESET_FOR_RIDER;
+    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAM_CONTROLLER_RESTORE_DEFAULT;
+    pub(crate) use crate::game::bx::bxstring2::callee::CHUNK_RESOLVE_RELOCATE_DMA;
+    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN3D_GROUP_BUILD_MATRICES;
+    pub(crate) use crate::game::bx::bxstring2::callee::CUTSCENE_TRANSITION_MAN_FORCE_ON;
+    pub(crate) use crate::game::bx::bxstring2::callee::DEBUG_MENU_DISPATCH_ITEM_OP;
+    pub(crate) use crate::game::bx::bxstring2::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED_3;
+    pub(crate) use crate::game::bx::bxstring2::callee::FLAG_MANAGER_GROUP_BUILD_MESH;
+    pub(crate) use crate::game::bx::bxstring2::callee::GAME_COMM_RECV_GAME_PACKET;
+    pub(crate) use crate::game::bx::bxstring2::callee::INI_PARSER_SKIP_WHITESPACE;
+    pub(crate) use crate::game::bx::bxstring2::callee::MEMSET;
+    pub(crate) use crate::game::bx::bxstring2::callee::MESSAGE_CENTER_GET_INBOX;
+    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_CTOR;
+    pub(crate) use crate::game::bx::bxstring2::callee::MULTIPARTICLE_MAN_CLEAR;
+    pub(crate) use crate::game::bx::bxstring2::callee::MUSIC_PLAYER_GET_SONG_TAG;
+    pub(crate) use crate::game::bx::bxstring2::callee::MUSIC_PLAYER_SET_EVENT_STATE;
+    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_GET_POPUP;
+    pub(crate) use crate::game::bx::bxstring2::callee::NET_FE_STATE_SHOW_POPUP;
+    pub(crate) use crate::game::bx::bxstring2::callee::NET_MANAGER;
+    pub(crate) use crate::game::bx::bxstring2::callee::OPTIONS_SET_VIBRATION;
+    pub(crate) use crate::game::bx::bxstring2::callee::OV_SCREEN_PDA_TEMPLATE_CLOSE;
+    pub(crate) use crate::game::bx::bxstring2::callee::OV_STATE_OVERLAY_UPDATE;
+    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_READ_FLOAT_3 as PATH_DATA_READ_FLOAT;
+    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_READ_INT;
+    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_CFG_SET_OPTION_TEXT_ID;
+    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WIDGET_ALIGN;
+    pub(crate) use crate::game::bx::bxstring2::callee::POPUP_SET_WRAPPED_TEXT;
+    pub(crate) use crate::game::bx::bxstring2::callee::QSORT;
+    pub(crate) use crate::game::bx::bxstring2::callee::READ_PRIVATE_MESSAGE_SET_TEXT;
+    pub(crate) use crate::game::bx::bxstring2::callee::RIDER_CAMERA_ALGORITHM_CTOR;
+    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_LIST_START;
+    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_SET_SKIP_DELAY;
+    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_DEQUEUE_SECTION;
+    pub(crate) use crate::game::bx::bxstring2::callee::SECTION_MAN_POP_FREE_NODE;
     pub(crate) use crate::game::bx::bxstring2::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT;
     pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_LANGUAGE_MASK;
     pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_GET_SPEECH_CONTEXT_MASK;
-    pub(crate) use crate::game::bx::bxstring2::callee::INI_PARSER_SKIP_WHITESPACE;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHUNK_RESOLVE_RELOCATE_DMA;
-    pub(crate) use crate::game::bx::bxstring2::callee::FLAG_MANAGER_GROUP_BUILD_MESH;
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::bx::bxstring2::callee::BE_GET_CHAR_PROFILE_EVENT_RECORD;
-    pub(crate) use crate::game::bx::bxstring2::callee::OV_STATE_OVERLAY_UPDATE;
-    pub(crate) use crate::game::bx::bxstring2::callee::READ_PRIVATE_MESSAGE_SET_TEXT;
-    pub(crate) use crate::game::bx::bxstring2::callee::NET_MANAGER;
-    pub(crate) use crate::game::bx::bxstring2::callee::OV_SCREEN_PDA_TEMPLATE_CLOSE;
-    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_READ_INT;
-    pub(crate) use crate::game::bx::bxstring2::callee::PATH_DATA_READ_FLOAT_3 as PATH_DATA_READ_FLOAT;
+    pub(crate) use crate::game::bx::bxstring2::callee::SSX_AUDIO_IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::bx::bxstring2::callee::STRLEN as STRLEN_2;
+    pub(crate) use crate::game::bx::bxstring2::callee::STR_HASH;
     pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_DESIRED_EYE;
     pub(crate) use crate::game::bx::bxstring2::callee::SUPERPIPE_COMPUTE_LOOK_AT;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_RESET_FOR_RIDER;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAMERA_INIT_FROM_RIDER;
-    pub(crate) use crate::game::bx::bxstring2::callee::MEMSET;
-    pub(crate) use crate::game::bx::bxstring2::callee::QSORT;
-    pub(crate) use crate::game::bx::bxstring2::callee::CROWD_MAN3D_GROUP_BUILD_MATRICES;
-    pub(crate) use crate::game::bx::bxstring2::callee::CHASE_CAM_CONTROLLER_RESTORE_DEFAULT;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_LIST_START;
-    pub(crate) use crate::game::bx::bxstring2::callee::SCRIPT_ENGINE_SET_SKIP_DELAY;
-    pub(crate) use crate::game::bx::bxstring2::callee::CUTSCENE_TRANSITION_MAN_FORCE_ON;
+    pub(crate) use crate::game::bx::bxstring2::callee::UITEXT_SET_WIDE_STRING;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_ADD_ITEM_STR_ID;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_FIND_ITEM_BY_VALUE;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_LISTBOX_SET_SELECTION;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_FIND_FIRST_SELECTABLE;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_MENU_SET_SELECTION;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_SCREEN_FIND_OBJECT;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_MGR_CLOSE_ALL_POPUPS;
     pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_MGR_FIND_STATE;
     pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_SHUTDOWN;
-    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_MGR_CLOSE_ALL_POPUPS;
-    pub(crate) use crate::game::bx::bxstring2::callee::GAME_COMM_RECV_GAME_PACKET;
-    pub(crate) use crate::game::bx::bxstring2::callee::USTR_LEN;
+    pub(crate) use crate::game::bx::bxstring2::callee::UI_STATE_UPDATE;
     pub(crate) use crate::game::bx::bxstring2::callee::USTR_CPY;
-    pub(crate) use crate::game::bx::bxstring2::callee::UITEXT_SET_WIDE_STRING;
+    pub(crate) use crate::game::bx::bxstring2::callee::USTR_FROM_ASCII_2 as USTR_FROM_ASCII;
+    pub(crate) use crate::game::bx::bxstring2::callee::USTR_LEN;
+    pub(crate) use crate::game::bx::bxstring2::callee::USTR_SPRINTF;
+    pub(crate) use crate::game::bx::bxstring2::callee::USTR_TO_ASCII;
+    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_MISSION_CTOR;
+    pub(crate) use crate::game::bx::bxstring2::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT_2 as WSCRIPT_PROCESS_LIST_PUSH_FRONT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_GET_RIDER_CHARACTER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE_2 as BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE_2 as BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE_2 as BUILTIN_DELETE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::CAMERA_TRIGGER_MAN_UPDATE_TRIGGERS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::CSETUP_MAN_SEND_PACKET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::CVOIP_MAN_CTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::CW_SCRIPT_CACHE_ALLOC;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EATIMER_REMOVE_CALLBACK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_ALLOC;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEM_FREE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GAME_CAMERA_SET_CONTROLLER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MAN_FORWARD_EVENT_TO_UI;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_MENU_ON_LOBBY_EVENT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LUNO_TABLE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_GAME_UTIL_DESTROY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_HIGHLIGHT_SLOT_CLEAR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SAVE_EMIT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_SET_STATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_MAN_UNLOAD_BANK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_REMOVE_TICK_CALLBACK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_ARCADE_SAY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_HANDLE_MUSIC_EVENT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_PLAY_CHARACTER_TUNE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SSX_AUDIO_STOP_LOADING_SCREEN_LOOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_LOAD;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_SOUND_BASE_CTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR_2 as UI_STATE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_MGR_CLOSE_TOP_STATES;
+    pub(crate) use crate::game::dirtysock::tags2::callee::VID_ENGINE_PLAYER_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_RPC_SET_PARAMS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_RPC_STOP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_RENDER_FADE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_TRICK_METER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_STOP_WIPEOUT_LOOP2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUTOSAVE_UPDATE_ICON;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BANK_MONITOR_STOP_HANDLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_OPTION_INT_SWAP_PLAYER_FLAGS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_FILE_CACHE_SHUTDOWN;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_ALLOC_COPY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_CTOR_COPY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CBX_STRING_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_LOCALE_LOAD_TABLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_ANIM_DATA;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_UNLOAD_RIDER_PREVIEWS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FLEX_RAIL_SAVE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_EXPECT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_GET_CHAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INI_PARSER_READ_QUOTED_STRING;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOBBY_MENU_HIDE_ROOM_TABS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MEMCARD_INSTALL_CALLBACKS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MOD_OBJ_SAVE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_9 as NET_FE_STATE_CTOR_2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PLAYBACK_RESTORE_WORLD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_MODIFIER_SET_SPEED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_RESET as UI_LIST_RESET_2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_UPDATE_ANIM;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CHUNK_RESOLVE_HOOK;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_CTOR_2 as WORLD_OBJ_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_DTOR_2 as WORLD_OBJ_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_REPLACE_WITH_DEAD_NODE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_OBJ_RUN_KILL_SCRIPT_2 as WORLD_OBJ_RUN_KILL_SCRIPT;
+    pub(crate) use crate::game::render::particle::callee::ADD_DIRECTIONAL;
+    pub(crate) use crate::game::render::particle::callee::ALGORITHM_LIST_DTOR;
+    pub(crate) use crate::game::render::particle::callee::ANIM_OBJECT_BASE_DTOR;
+    pub(crate) use crate::game::render::particle::callee::AVA_SPLINE_MODIFIER_CTOR;
+    pub(crate) use crate::game::render::particle::callee::BANK_MONITOR_INSTANCE_PAUSE;
+    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::render::particle::callee::BELIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::render::particle::callee::BENEW_PLAYER_INT_GET_CHARACTER_BY_SLOT;
+    pub(crate) use crate::game::render::particle::callee::BENEW_RACE_INT_IS_STATION_TRACK_BY_INDEX;
+    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_COLLECTIBLE_COLLECTED;
+    pub(crate) use crate::game::render::particle::callee::BEREWARD_ON_MISSION_COMPLETED;
+    pub(crate) use crate::game::render::particle::callee::BLEND_VIEW_COLOURS;
+    pub(crate) use crate::game::render::particle::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE_2;
+    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_COPY;
+    pub(crate) use crate::game::render::particle::callee::BXSTRING_ASSIGN_CSTR;
+    pub(crate) use crate::game::render::particle::callee::BXSTRING_CONCAT_IN_PLACE;
+    pub(crate) use crate::game::render::particle::callee::CFE_STATE_CHAR_SELECT_UPDATE_ATTRIBUTE_BARS;
+    pub(crate) use crate::game::render::particle::callee::CHASE_CAMERA_ALGORITHM_CTOR;
+    pub(crate) use crate::game::render::particle::callee::CHASE_CAM_SET_ALGORITHM_IMMEDIATE;
+    pub(crate) use crate::game::render::particle::callee::COMPUTE_COLOUR_FACTOR;
+    pub(crate) use crate::game::render::particle::callee::CPS2_CHUNK_RESOLVE_DTOR_STUB;
+    pub(crate) use crate::game::render::particle::callee::CPS2_MEM_CARD_SET_STATE;
+    pub(crate) use crate::game::render::particle::callee::CROWD_MAN3D_GROUP_REMOVE_SECTION;
+    pub(crate) use crate::game::render::particle::callee::CUT_SCENE_TRANSITION_SAVE_VIEWPORT;
+    pub(crate) use crate::game::render::particle::callee::DELETE;
+    pub(crate) use crate::game::render::particle::callee::DYNAMIC_EMITTER_SPAWN;
+    pub(crate) use crate::game::render::particle::callee::EA_MEM_ALLOC_NAMED_2;
+    pub(crate) use crate::game::render::particle::callee::FLEX_BRIDGE_SPRINGS_SAVE;
+    pub(crate) use crate::game::render::particle::callee::FONT_DRAW_TEXT;
+    pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE0;
+    pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE1;
+    pub(crate) use crate::game::render::particle::callee::GET_IRRADIANCE2;
+    pub(crate) use crate::game::render::particle::callee::GET_LIGHTING28;
+    pub(crate) use crate::game::render::particle::callee::HUD_ALIGN_ELEM_POS;
+    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_PANEL_SEGMENT;
+    pub(crate) use crate::game::render::particle::callee::HUD_DRAW_SPRITE;
+    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_COLOR;
+    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_POS;
+    pub(crate) use crate::game::render::particle::callee::HUD_GET_ELEM_SIZE;
+    pub(crate) use crate::game::render::particle::callee::INI_PARSER_SKIP_TO_EOL;
+    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_ADD;
+    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_SCALE;
+    pub(crate) use crate::game::render::particle::callee::IRRADIANCE_SCALE_IN_PLACE;
+    pub(crate) use crate::game::render::particle::callee::ISIGNAL_SEMA;
+    pub(crate) use crate::game::render::particle::callee::IS_HULL_RESIDENT;
+    pub(crate) use crate::game::render::particle::callee::LERP_VIEW_COLOURS;
+    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_POP;
+    pub(crate) use crate::game::render::particle::callee::LOBBY_OCCUPANT_SELECT;
+    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_CTOR;
+    pub(crate) use crate::game::render::particle::callee::MENU_SYS_ITEM_DRAW_ROW_2 as MENU_SYS_ITEM_DRAW_ROW;
+    pub(crate) use crate::game::render::particle::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER;
+    pub(crate) use crate::game::render::particle::callee::PATH_POST_EVENT;
+    pub(crate) use crate::game::render::particle::callee::PATH_SET_PAUSED;
+    pub(crate) use crate::game::render::particle::callee::POINT_BOX_DISTANCE;
+    pub(crate) use crate::game::render::particle::callee::POINT_LIGHT_VECTOR;
+    pub(crate) use crate::game::render::particle::callee::POSITION_MODIFIER_CTOR;
+    pub(crate) use crate::game::render::particle::callee::RANDOM;
+    pub(crate) use crate::game::render::particle::callee::REQUEST_HULL;
+    pub(crate) use crate::game::render::particle::callee::RIDER_ADD_BOOST;
+    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_FINISH_PRESS;
+    pub(crate) use crate::game::render::particle::callee::RIDER_BOARD_PRESS_SUB_SETTLE_SLEW;
+    pub(crate) use crate::game::render::particle::callee::RIDER_GET_MAIN_STATE;
+    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_AWARD_POINTS;
+    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_FINISH_BOARD_PRESS;
+    pub(crate) use crate::game::render::particle::callee::RIDER_METRIX_ON_MISSION_COMPLETED;
+    pub(crate) use crate::game::render::particle::callee::SAMPLE_SURFACE_COLOURS;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_DELETE;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_MKDIR;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_READ;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_SEEK;
+    pub(crate) use crate::game::render::particle::callee::SCE_MC_WRITE;
+    pub(crate) use crate::game::render::particle::callee::SECTION_GET_EVENT_WORLD_SECTION;
+    pub(crate) use crate::game::render::particle::callee::SNDSTRM_SET_PITCH;
+    pub(crate) use crate::game::render::particle::callee::SND_LOCK;
+    pub(crate) use crate::game::render::particle::callee::SND_SPU_MEM_SET_BASE;
+    pub(crate) use crate::game::render::particle::callee::SND_UNLOCK;
+    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_MS_TO_NEXT_BEAT;
+    pub(crate) use crate::game::render::particle::callee::SONG_INSTANCE_GET_STREAM_HANDLE;
+    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_INSERT;
+    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_MOVE;
+    pub(crate) use crate::game::render::particle::callee::SPATIAL_HASH_REMOVE;
+    pub(crate) use crate::game::render::particle::callee::SPATIAL_KEY_FROM_AABB;
+    pub(crate) use crate::game::render::particle::callee::SPOT_LIGHT_VECTOR;
+    pub(crate) use crate::game::render::particle::callee::STREAMER_UPDATE_VIEW_NODE;
+    pub(crate) use crate::game::render::particle::callee::STRLEN;
+    pub(crate) use crate::game::render::particle::callee::TEX_MAN_LOAD_TEXTURE as TEX_MAN_LOAD_TEXTURE_2;
+    pub(crate) use crate::game::render::particle::callee::UI_LIST_PUSH_BACK_2 as UI_LIST_PUSH_BACK;
+    pub(crate) use crate::game::render::particle::callee::UI_LIST_RESET;
+    pub(crate) use crate::game::render::particle::callee::WORLD_CREATE_DEAD_NODE;
+    pub(crate) use crate::game::render::particle::callee::WORLD_OBJ_SAVE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
+    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
+    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
+    pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
+    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
+    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
 }
 
 // ---------------------------------------------------------------------------
@@ -360,14 +412,14 @@ pub(crate) mod callee {
 
 /// Streamer view records: 0x50 bytes each at `wc + 0x250`.
 pub(crate) mod view {
-    pub(crate) use crate::game::main::game::view::STRIDE;
-    pub(crate) use crate::game::main::game::view::EYE;
     pub(crate) use crate::game::main::game::view::BOX;
-    pub(crate) use crate::game::main::game::view::LEFT_POINT;
-    pub(crate) use crate::game::main::game::view::RIGHT_POINT;
-    pub(crate) use crate::game::main::game::view::HULL_RANGE;
+    pub(crate) use crate::game::main::game::view::EYE;
     pub(crate) use crate::game::main::game::view::HULL_DIST;
+    pub(crate) use crate::game::main::game::view::HULL_RANGE;
+    pub(crate) use crate::game::main::game::view::LEFT_POINT;
     pub(crate) use crate::game::main::game::view::NEAREST;
+    pub(crate) use crate::game::main::game::view::RIGHT_POINT;
+    pub(crate) use crate::game::main::game::view::STRIDE;
 }
 
 /// Streamer tree node fields.
@@ -387,7 +439,6 @@ pub(crate) mod node {
 
     pub const HULL: u32 = 0x58;
 }
-
 
 // ---------------------------------------------------------------------------
 // World cache streamer sections.
@@ -419,7 +470,6 @@ pub fn c_world_cache_streamer_get_section(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `bool cWorldCache_StreamerIsSectionResident(Streamer* self, int index)`
 /// (0x3a9858): true when the section's state at +0x14 is 3 or 4.
 pub fn c_world_cache_streamer_is_section_resident(c: &mut Cpu) {
@@ -447,7 +497,6 @@ pub fn c_world_cache_streamer_is_section_resident(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `bool cWorldCache_StreamerIsSectionUnloaded(Streamer* self, int index)`
 /// (0x3a9890): true when the section's state at +0x14 is zero.
 pub fn c_world_cache_streamer_is_section_unloaded(c: &mut Cpu) {
@@ -474,7 +523,6 @@ pub fn c_world_cache_streamer_is_section_unloaded(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `Hull* cWorldCache_StreamerGetHull(Streamer* self, int index)`
 /// (0x3a9a98): base of the hull array at self+0x10 plus index*0x44.
 pub fn c_world_cache_streamer_get_hull(c: &mut Cpu) {
@@ -487,7 +535,6 @@ pub fn c_world_cache_streamer_get_hull(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cWorldCache_StreamerGetHullCount(Streamer* self)` (0x3a9ab0): hull
 /// count at the streamer's owner + 0x10.
 pub fn c_world_cache_streamer_get_hull_count(c: &mut Cpu) {
@@ -498,7 +545,6 @@ pub fn c_world_cache_streamer_get_hull_count(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `v1 = view * 0x50` (`mult`, LO/HI as the original), `v0 = wc + v1`:
 /// the view record (v0 = 0x50 on entry).
 #[inline(always)]
@@ -507,7 +553,6 @@ pub(crate) fn view_record(c: &mut Cpu) -> u32 {
     c.g[V0][0] = add32(c.g[V1][0], c.g[S2][0]);
     r32(c, V0)
 }
-
 
 /// `void cWorldCache_StreamerUpdateViewNode(cWorldCache* wc, Node* node,
 /// int view, int store_dist /*a3*/)` (0x3aa028): if the node's box
@@ -588,7 +633,6 @@ pub fn world_cache_streamer_update_view_node(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// An overlapping node: hull request, then the children. `Ok(false)` when
 /// the original leaves early (eye beyond the view's hull range: neither
@@ -679,8 +723,18 @@ pub(crate) fn streamer_visit(c: &mut Cpu, frame: Frame) -> Result<bool, crate::c
     }
     // Children whose plane (dotted with the view point) is negative.
     for (child, plane, point, ret) in [
-        (node::LEFT, node::LEFT_PLANE, view::LEFT_POINT, 0x003a_a250u32),
-        (node::RIGHT, node::RIGHT_PLANE, view::RIGHT_POINT, 0x003a_a2a8),
+        (
+            node::LEFT,
+            node::LEFT_PLANE,
+            view::LEFT_POINT,
+            0x003a_a250u32,
+        ),
+        (
+            node::RIGHT,
+            node::RIGHT_PLANE,
+            view::RIGHT_POINT,
+            0x003a_a2a8,
+        ),
     ] {
         c.cycles += 3;
         c.g[A1][0] = c.lw(p(nd, child));
@@ -706,7 +760,6 @@ pub(crate) fn streamer_visit(c: &mut Cpu, frame: Frame) -> Result<bool, crate::c
     Ok(true)
 }
 
-
 /// `v0 = node->hull; a0 = wc->cache; a1 = hull->id (lhu +2)`: the
 /// arguments of the hull calls.
 #[inline(always)]
@@ -715,7 +768,6 @@ pub(crate) fn hull_id(c: &mut Cpu, nd: u32) {
     c.g[A0][0] = c.lw(r32(c, S2));
     c.g[A1][0] = c.lhu(at(c, V0, 2));
 }
-
 
 /// `void* cWScriptCache_ctor(cWScriptCache* self, int count)` (0x3ac7c8):
 /// stash the world, zero the list and allocate `count` script entries.
@@ -739,7 +791,6 @@ pub fn cw_script_cache_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int cPS2ChunkResolve_v14(void* self, void* chunk, int a2)` (0x3AA5C8): make
 /// the chunk's relative pointer at +0x8 absolute and let the owner's virtual
@@ -769,7 +820,6 @@ pub fn ps2_chunk_resolve_v14(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int cPS2ChunkResolveBase_v05(self, chunk)` (0x3aa3f0): relocate the
 /// chunk's two internal pointers to absolute addresses, hand the chunk to the
@@ -802,7 +852,6 @@ pub fn c_ps2_chunk_resolve_base_v05(c: &mut Cpu) {
     })
 }
 
-
 /// `void* cPS2ChunkResolve_Create(void)` (0x3aad98): allocate and construct a
 /// chunk resolver.
 pub fn c_ps2_chunk_resolve_create(c: &mut Cpu) {
@@ -829,7 +878,6 @@ pub fn c_ps2_chunk_resolve_create(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cPS2ChunkResolve_dtor(cPS2ChunkResolve* self, int flags)` (0x3aade8):
 /// two-stage teardown with an optional free.
@@ -867,13 +915,11 @@ pub fn c_ps2_chunk_resolve_dtor(c: &mut Cpu) {
     })
 }
 
-
 /// `base + off` (a 32-bit address add).
 #[inline(always)]
 pub(crate) fn p_2(base: u32, off: u32) -> u32 {
     base.wrapping_add(off)
 }
-
 
 /// `int cPS2ChunkResolve_v16(void* self, ResolveNode* node)` (0x003aa6e8):
 /// the node's `+0x20` word becomes its own address (a self-relative base).
@@ -887,7 +933,6 @@ pub fn cps2_chunk_resolve_v16(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cPS2ChunkResolve_v12(void* self, ResolveNode* node, int v)`
 /// (0x003aa8d8): `node->base += v`.
 pub fn cps2_chunk_resolve_v12(c: &mut Cpu) {
@@ -900,7 +945,6 @@ pub fn cps2_chunk_resolve_v12(c: &mut Cpu) {
     c.sw(p_2(node, 0x4), c.g[V1][0]);
     abi::ret(c);
 }
-
 
 /// `int cPS2ChunkResolve_Init(cPS2ChunkResolve* self, int n)` (0x003aae40):
 /// remember the world and the chunk count.
@@ -917,7 +961,6 @@ pub fn cps2_chunk_resolve_init(c: &mut Cpu) {
     c.sw(p_2(self_, 0x10), c.g[A1][0]);
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // cPS2ChunkResolve: the per-kind hash lookups.
@@ -965,7 +1008,6 @@ pub fn cps2_chunk_resolve_v17(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cPS2ChunkResolveBase_v13(void* self, ResolveNode* node)`
 /// (0x003aa8f0): resolve `node+0x80` through the `+0x14` table, then seed
 /// `node+0x8c`/`+0x94` from the resolved structure.
@@ -1012,7 +1054,6 @@ pub fn cps2_chunk_resolve_base_v13(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cPS2ChunkResolve_v09(void* self, ResolveNode* node)` (0x003aa758):
 /// point `node+0x10` at `node+0x14` (or 0 when it was -1).
 pub fn cps2_chunk_resolve_v09(c: &mut Cpu) {
@@ -1033,7 +1074,6 @@ pub fn cps2_chunk_resolve_v09(c: &mut Cpu) {
     c.g[V0][0] = 1;
     abi::ret(c);
 }
-
 
 /// `int cPS2ChunkResolve_v10(void* self, int n, u32* data)` (0x003aa780):
 /// resolve every hash of `n` counted arrays in place; `data` advances by
@@ -1128,7 +1168,6 @@ pub fn cps2_chunk_resolve_v10(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cPS2ChunkResolve_v18(void* self, List* list)` (0x003aa960): rebuild
 /// the ring indices (`prev`/`next` at +0x60/+0x64, owner at +0x68) of every
 /// node of the list at +0x30.
@@ -1211,7 +1250,6 @@ pub fn cps2_chunk_resolve_v18(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cPS2ChunkResolve_v21(void* self, ResolveNode* node)` (0x003aac50):
 /// clamp the resolved object's value at +0x1c to 5000 while it is still
 /// initialising (0 < state < 3).
@@ -1254,7 +1292,6 @@ pub fn cps2_chunk_resolve_v21(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int cPS2ChunkResolve_v22(void* self, ResolveNode* node)` (0x003aaca8):
 /// true while the object is initialising (state 1 or 2) and not flagged.
 pub fn cps2_chunk_resolve_v22(c: &mut Cpu) {
@@ -1284,7 +1321,6 @@ pub fn cps2_chunk_resolve_v22(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `int cWorldCache_StreamerActivateSection(cWorldCache* cache, int i)`
 /// (0x3a99d8): move section `i`'s streamer state from 5 (requested) to 6
@@ -1344,7 +1380,6 @@ pub fn c_world_cache_streamer_activate_section(c: &mut Cpu) {
     });
 }
 
-
 /// `func_003AABD8` (0x3aabd8): `cPS2ChunkResolve`. Runs the chunk resolve hook
 /// on the chunk's flags (`*(this+0xc) & 0x70`), then fills the bounding box at
 /// `+0x28`..`+0x3c` and `+0x34`..`+0x44` with the centre (`+0x1c`..`+0x24`) plus
@@ -1384,7 +1419,6 @@ pub fn cps2_chunk_resolve_v20(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// The shared body of the two chunk relocators: add `base` to every pointer
 /// in the chunk and fix each entry through the object's method at `slot`.
@@ -1446,18 +1480,15 @@ pub(crate) fn chunk_resolve(c: &mut Cpu, slot: u32, entry: u32) -> Flow {
     Ok(())
 }
 
-
 /// `int cPS2ChunkResolve_v07(self, chunk, base)` (0x3aa520).
 pub fn cps2_chunk_resolve_v07(c: &mut Cpu) {
     guest(c, |c| chunk_resolve(c, 0x40, 0x003a_a520))
 }
 
-
 /// `int cPS2ChunkResolve_v11(self, chunk, base)` (0x3aa830).
 pub fn cps2_chunk_resolve_v11(c: &mut Cpu) {
     guest(c, |c| chunk_resolve(c, 0x60, 0x003a_a830))
 }
-
 
 // ---------------------------------------------------------------------------
 // `cPS2ChunkResolve_v13` (0x3ac2a8): resolve a chunk instance through the
@@ -1524,7 +1555,6 @@ pub fn cps2_chunk_resolve_v13(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Chunk resolver.
@@ -1610,7 +1640,6 @@ pub fn cps2chunkresolve_v05(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int cPS2ChunkResolve_RelocateInstanceDma(self, void* chunk)` (0x3ac358):
 /// relocate the instance-DMA chain for every instance in the chunk.
@@ -1705,134 +1734,140 @@ pub fn cps2chunkresolve_relocate_instance_dma(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // cPS2ChunkResolve_v15 (0x00003aa608).
 
 /// `cPS2ChunkResolve_v15`: resolve a PlayStation 2 chunk descriptor (version 15) to data pointers.
 pub fn c_ps2_chunk_resolve_v15(c: &mut Cpu) {
     guest(c, |c| {
-    'b_3aa6c0: {
-    c.cycles += 13;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
-    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
-    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.g[S1][0] = c.g[A0][0];
-    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
-    c.g[S2][0] = c.g[A1][0];
-    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
-    let t = (c.g[V1][0] as i64) <= 0;
-    c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
-    if t {
-    break 'b_3aa6c0;
-    } else {
-    c.cycles += 5;
-    c.g[S4][0] = 0xffffffffffff0000;
-    c.g[V0][0] = 0x500000;
-    c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe60));
-    c.g[S3][0] = c.g[V1][0];
-    c.g[S4][0] = c.g[S4][0] | 0xffff;
-    'l_3aa650: loop {
-    'b_3aa674: {
-    c.cycles += 3;
-    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-    let t = c.g[A1][0] == 0u64;
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-    if t {
-    break 'b_3aa674;
-    } else {
-    c.cycles += 6;
-    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
-    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x80));
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
-    let t = c.g[V0][0] as u32;
-    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.g[RA][0] = sx(0x003aa674);
-    c.pc = t;
-    ssx3_ee_rt::funcs::call_indirect(c, t);
-    if c.pc != 0x003aa674 { return Err(crate::call::Unwound); }
-    break 'b_3aa674;
-    }
-    }
-    'b_3aa68c: {
-    'b_3aa688: {
-    c.cycles += 3;
-    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
-    let t = c.g[V0][0] != c.g[S4][0];
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-    if t {
-    break 'b_3aa688;
-    } else {
-    c.cycles += 2;
-    let t = true;
-    c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[S5][0]);
-    if t {
-    break 'b_3aa68c;
-    } else {
-    break 'b_3aa688;
-    }
-    }
-    }
-    c.cycles += 1;
-    c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
-    break 'b_3aa68c;
-    }
-    'b_3aa6b4: {
-    c.cycles += 3;
-    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
-    let t = c.g[A1][0] == 0u64;
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
-    if t {
-    break 'b_3aa6b4;
-    } else {
-    c.cycles += 7;
-    c.g[A2][0] = 0u64;
-    c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
-    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
-    let t = c.g[V0][0] as u32;
-    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.g[RA][0] = sx(0x003aa6b4);
-    c.pc = t;
-    ssx3_ee_rt::funcs::call_indirect(c, t);
-    if c.pc != 0x003aa6b4 { return Err(crate::call::Unwound); }
-    break 'b_3aa6b4;
-    }
-    }
-    c.cycles += 3;
-    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1));
-    let t = c.g[S3][0] != 0u64;
-    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
-    if t {
-    if event_due(c) { deliver_event_here(c, 0x003aa650); } continue 'l_3aa650;
-    } else {
-    break 'b_3aa6c0;
-    }
-    }
-    }
-    }
-    c.cycles += 10;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
-    c.g[V0][0] = 0x1;
-    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
-    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
-    c.pc = t; return Ok(());
+        'b_3aa6c0: {
+            c.cycles += 13;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S1][0] = c.g[A0][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S2][0] = c.g[A1][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x4));
+            let t = (c.g[V1][0] as i64) <= 0;
+            c.g[S0][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+            if t {
+                break 'b_3aa6c0;
+            } else {
+                c.cycles += 5;
+                c.g[S4][0] = 0xffffffffffff0000;
+                c.g[V0][0] = 0x500000;
+                c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe60));
+                c.g[S3][0] = c.g[V1][0];
+                c.g[S4][0] = c.g[S4][0] | 0xffff;
+                'l_3aa650: loop {
+                    'b_3aa674: {
+                        c.cycles += 3;
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                        let t = c.g[A1][0] == 0u64;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                        if t {
+                            break 'b_3aa674;
+                        } else {
+                            c.cycles += 6;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+                            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x80));
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x84));
+                            let t = c.g[V0][0] as u32;
+                            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                            c.g[RA][0] = sx(0x003aa674);
+                            c.pc = t;
+                            ssx3_ee_rt::funcs::call_indirect(c, t);
+                            if c.pc != 0x003aa674 {
+                                return Err(crate::call::Unwound);
+                            }
+                            break 'b_3aa674;
+                        }
+                    }
+                    'b_3aa68c: {
+                        'b_3aa688: {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                            let t = c.g[V0][0] != c.g[S4][0];
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                            if t {
+                                break 'b_3aa688;
+                            } else {
+                                c.cycles += 2;
+                                let t = true;
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[S5][0]);
+                                if t {
+                                    break 'b_3aa68c;
+                                } else {
+                                    break 'b_3aa688;
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                        break 'b_3aa68c;
+                    }
+                    'b_3aa6b4: {
+                        c.cycles += 3;
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                        let t = c.g[A1][0] == 0u64;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[S2][0] as u32)));
+                        if t {
+                            break 'b_3aa6b4;
+                        } else {
+                            c.cycles += 7;
+                            c.g[A2][0] = 0u64;
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
+                            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+                            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
+                            let t = c.g[V0][0] as u32;
+                            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                            c.g[RA][0] = sx(0x003aa6b4);
+                            c.pc = t;
+                            ssx3_ee_rt::funcs::call_indirect(c, t);
+                            if c.pc != 0x003aa6b4 {
+                                return Err(crate::call::Unwound);
+                            }
+                            break 'b_3aa6b4;
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[S3][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003aa650);
+                        }
+                        continue 'l_3aa650;
+                    } else {
+                        break 'b_3aa6c0;
+                    }
+                }
+            }
+        }
+        c.cycles += 10;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[V0][0] = 0x1;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        return Ok(());
         Ok(())
     });
 }
-
 
 // ---------------------------------------------------------------------------
 // cPS2ChunkResolve_v06 (0x00003aa438).
@@ -1840,124 +1875,132 @@ pub fn c_ps2_chunk_resolve_v15(c: &mut Cpu) {
 /// `cPS2ChunkResolve_v06`: resolve a PlayStation 2 chunk descriptor (version 6) to data pointers.
 pub fn c_ps2_chunk_resolve_v06(c: &mut Cpu) {
     guest(c, |c| {
-    'b_3aa4f4: {
-    c.cycles += 13;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
-    c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
-    c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.g[S1][0] = c.g[A1][0];
-    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
-    c.g[S2][0] = c.g[A0][0];
-    c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-    c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
-    let t = (c.g[V1][0] as i64) <= 0;
-    c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
-    if t {
-    break 'b_3aa4f4;
-    } else {
-    c.cycles += 5;
-    c.g[S4][0] = 0xffffffffffff0000;
-    c.g[V0][0] = 0x500000;
-    c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe60));
-    c.g[S3][0] = c.g[V1][0];
-    c.g[S4][0] = c.g[S4][0] | 0xffff;
-    'l_3aa480: loop {
-    'b_3aa4a8: {
-    c.cycles += 3;
-    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
-    let t = c.g[A1][0] == 0u64;
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[S1][0] as u32)));
-    if t {
-    break 'b_3aa4a8;
-    } else {
-    c.cycles += 7;
-    c.g[A2][0] = c.g[S1][0];
-    c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
-    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
-    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
-    let t = c.g[V0][0] as u32;
-    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.g[RA][0] = sx(0x003aa4a8);
-    c.pc = t;
-    ssx3_ee_rt::funcs::call_indirect(c, t);
-    if c.pc != 0x003aa4a8 { return Err(crate::call::Unwound); }
-    break 'b_3aa4a8;
-    }
-    }
-    'b_3aa4c0: {
-    'b_3aa4bc: {
-    c.cycles += 3;
-    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
-    let t = c.g[V0][0] != c.g[S4][0];
-    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
-    if t {
-    break 'b_3aa4bc;
-    } else {
-    c.cycles += 2;
-    let t = true;
-    c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[S5][0]);
-    if t {
-    break 'b_3aa4c0;
-    } else {
-    break 'b_3aa4bc;
-    }
-    }
-    }
-    c.cycles += 1;
-    c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
-    break 'b_3aa4c0;
-    }
-    'b_3aa4e8: {
-    c.cycles += 3;
-    c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
-    let t = c.g[A1][0] == 0u64;
-    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[S1][0] as u32)));
-    if t {
-    break 'b_3aa4e8;
-    } else {
-    c.cycles += 7;
-    c.g[A2][0] = c.g[S1][0];
-    c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
-    c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
-    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
-    let t = c.g[V0][0] as u32;
-    c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.g[RA][0] = sx(0x003aa4e8);
-    c.pc = t;
-    ssx3_ee_rt::funcs::call_indirect(c, t);
-    if c.pc != 0x003aa4e8 { return Err(crate::call::Unwound); }
-    break 'b_3aa4e8;
-    }
-    }
-    c.cycles += 3;
-    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1));
-    let t = c.g[S3][0] != 0u64;
-    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
-    if t {
-    if event_due(c) { deliver_event_here(c, 0x003aa480); } continue 'l_3aa480;
-    } else {
-    break 'b_3aa4f4;
-    }
-    }
-    }
-    }
-    c.cycles += 10;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
-    c.g[V0][0] = 0x1;
-    c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
-    c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
-    c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
-    c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
-    c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
-    c.pc = t; return Ok(());
+        'b_3aa4f4: {
+            c.cycles += 13;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.g[S1][0] = c.g[A1][0];
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S2][0] = c.g[A0][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.sq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+            c.g[V1][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x4));
+            let t = (c.g[V1][0] as i64) <= 0;
+            c.g[S0][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x8));
+            if t {
+                break 'b_3aa4f4;
+            } else {
+                c.cycles += 5;
+                c.g[S4][0] = 0xffffffffffff0000;
+                c.g[V0][0] = 0x500000;
+                c.g[S5][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe60));
+                c.g[S3][0] = c.g[V1][0];
+                c.g[S4][0] = c.g[S4][0] | 0xffff;
+                'l_3aa480: loop {
+                    'b_3aa4a8: {
+                        c.cycles += 3;
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x4));
+                        let t = c.g[A1][0] == 0u64;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                        if t {
+                            break 'b_3aa4a8;
+                        } else {
+                            c.cycles += 7;
+                            c.g[A2][0] = c.g[S1][0];
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x4), c.g[A1][0]);
+                            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x38));
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x3c));
+                            let t = c.g[V0][0] as u32;
+                            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                            c.g[RA][0] = sx(0x003aa4a8);
+                            c.pc = t;
+                            ssx3_ee_rt::funcs::call_indirect(c, t);
+                            if c.pc != 0x003aa4a8 {
+                                return Err(crate::call::Unwound);
+                            }
+                            break 'b_3aa4a8;
+                        }
+                    }
+                    'b_3aa4c0: {
+                        'b_3aa4bc: {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                            let t = c.g[V0][0] != c.g[S4][0];
+                            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                            if t {
+                                break 'b_3aa4bc;
+                            } else {
+                                c.cycles += 2;
+                                let t = true;
+                                c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[S5][0]);
+                                if t {
+                                    break 'b_3aa4c0;
+                                } else {
+                                    break 'b_3aa4bc;
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.sw((c.g[S0][0] as u32).wrapping_add(0xc), c.g[V0][0]);
+                        break 'b_3aa4c0;
+                    }
+                    'b_3aa4e8: {
+                        c.cycles += 3;
+                        c.g[A1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x8));
+                        let t = c.g[A1][0] == 0u64;
+                        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add((c.g[S1][0] as u32)));
+                        if t {
+                            break 'b_3aa4e8;
+                        } else {
+                            c.cycles += 7;
+                            c.g[A2][0] = c.g[S1][0];
+                            c.sw((c.g[S0][0] as u32).wrapping_add(0x8), c.g[A1][0]);
+                            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(0x8));
+                            c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x58));
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x5c));
+                            let t = c.g[V0][0] as u32;
+                            c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                            c.g[RA][0] = sx(0x003aa4e8);
+                            c.pc = t;
+                            ssx3_ee_rt::funcs::call_indirect(c, t);
+                            if c.pc != 0x003aa4e8 {
+                                return Err(crate::call::Unwound);
+                            }
+                            break 'b_3aa4e8;
+                        }
+                    }
+                    c.cycles += 3;
+                    c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x1));
+                    let t = c.g[S3][0] != 0u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x10));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003aa480);
+                        }
+                        continue 'l_3aa480;
+                    } else {
+                        break 'b_3aa4f4;
+                    }
+                }
+            }
+        }
+        c.cycles += 10;
+        c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x60));
+        c.g[V0][0] = 0x1;
+        c.lq(17, (c.g[SP][0] as u32).wrapping_add(0x50));
+        c.lq(18, (c.g[SP][0] as u32).wrapping_add(0x40));
+        c.lq(19, (c.g[SP][0] as u32).wrapping_add(0x30));
+        c.lq(20, (c.g[SP][0] as u32).wrapping_add(0x20));
+        c.lq(21, (c.g[SP][0] as u32).wrapping_add(0x10));
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
+        c.pc = t;
+        return Ok(());
         Ok(())
     });
 }
@@ -1967,96 +2010,99 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::compare;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
     use crate::difftest::scramble;
+    use crate::difftest::seed_count;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
-    use crate::difftest::put_words;
-    use crate::difftest::SP as TEST_SP;
     use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::put_vec;
-    use crate::difftest::fakes::ptr;
     use crate::difftest::RA as TEST_RA;
-    use ssx3_ee as ee;
     use crate::difftest::RA as SENTINEL;
+    use crate::difftest::SP as TEST_SP;
     use crate::difftest::SP;
-    use crate::difftest::compare;
-    use crate::difftest::seed_count;
-    pub(crate) use crate::game::render::particle::tests::SEEDS;
-    pub(crate) use crate::game::render::particle::tests::f;
-    pub(crate) use crate::game::render::particle::tests::uf;
-    pub(crate) use crate::game::render::particle::tests::base;
-    pub(crate) use crate::game::render::particle::tests::put_vec3;
-    pub(crate) use crate::game::render::particle::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::pool_allocator;
-    pub(crate) use crate::game::dirtysock::tags2::tests::MEM_HEAP;
-    pub(crate) use crate::game::dirtysock::tags2::tests::run_2 as run;
-    pub(crate) use crate::game::dirtysock::tags2::tests::heap_init_2 as heap_init;
-    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_machine;
-    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_2;
-    pub(crate) use crate::game::fe::festaterewards2::tests::w;
-    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
-    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_3;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
-    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
-    pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_4;
-    pub(crate) use crate::game::render::particle::tests::clear;
-    pub(crate) use crate::game::render::particle::tests::common;
-    pub(crate) use crate::game::be::bedbreward::tests::call_setup;
-    pub(crate) use crate::game::be::bedbreward::tests::alloc_ready as alloc_ready_2;
-    pub(crate) use crate::game::camera::cameracontroller::tests::heap_block;
-    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
     pub(crate) use crate::game::ai::ai::tests::w16;
-    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_6;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_7;
-    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
-    pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_3 as OBJ2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_5 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_10 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_8 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::ai::rider::tests::clear_2;
+    pub(crate) use crate::game::be::bedbreward::tests::alloc_ready as alloc_ready_2;
+    pub(crate) use crate::game::be::bedbreward::tests::call_setup;
+    pub(crate) use crate::game::bx::bxstring2::tests::base_3;
     pub(crate) use crate::game::bx::bxstring2::tests::BE_2;
     pub(crate) use crate::game::bx::bxstring2::tests::DB;
+    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::bx::bxstring2::tests::RM;
     pub(crate) use crate::game::bx::bxstring2::tests::VTS;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3;
-    pub(crate) use crate::game::ai::rider::tests::clear_2;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool_2;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2;
-    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ as OBJ_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::ui;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_12 as heap_init_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_10 as pool_3;
+    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W;
+    pub(crate) use crate::game::camera::cameracontroller::tests::heap_block;
+    pub(crate) use crate::game::dirtysock::tags2::tests::alloc_machine;
+    pub(crate) use crate::game::dirtysock::tags2::tests::heap_init_2 as heap_init;
+    pub(crate) use crate::game::dirtysock::tags2::tests::pool_allocator;
+    pub(crate) use crate::game::dirtysock::tags2::tests::run_2 as run;
+    pub(crate) use crate::game::dirtysock::tags2::tests::MEM_HEAP;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::be_library_5 as be_library;
     pub(crate) use crate::game::fe::feasyncfile::tests::diff;
     pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_10 as globals;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_12 as heap_init_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_10 as pool_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_8 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::ui;
+    pub(crate) use crate::game::fe::feasyncfile::tests::world_3 as world;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ as OBJ_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_3 as OBJ2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_8 as SEEDS_7;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_5 as WORLD;
+    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
+    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_6;
+    pub(crate) use crate::game::fe::festaterewards2::tests::belib;
+    pub(crate) use crate::game::fe::festaterewards2::tests::w;
+    pub(crate) use crate::game::fe::festaterewards2::tests::SEEDS as SEEDS_2;
+    pub(crate) use crate::game::render::particle::tests::base;
+    pub(crate) use crate::game::render::particle::tests::clear;
+    pub(crate) use crate::game::render::particle::tests::common;
+    pub(crate) use crate::game::render::particle::tests::f;
+    pub(crate) use crate::game::render::particle::tests::gp_at;
+    pub(crate) use crate::game::render::particle::tests::put_vec3;
+    pub(crate) use crate::game::render::particle::tests::uf;
+    pub(crate) use crate::game::render::particle::tests::SEEDS;
+    pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_4;
+    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_4;
+    pub(crate) use crate::game::sound::soundsys::tests::load_2;
+    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool_2;
+    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
+    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_3;
+    use ssx3_ee as ee;
 
     #[test]
     fn c_world_cache_streamer_get_section_matches() {
-        check(ssx3_ee::s13::f_003a9820, c_world_cache_streamer_get_section, 200, &|c, seed| {
-            let mut r = Rng(0x9999 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let index = (r.next_u32() % 8) as u64;
-            c.g[A1][0] = index;
-            let count = r.next_u32() % 8;
-            let head = if seed % 5 == 0 { 0 } else { DATA + 0x100 };
-            c.bus.write32(DATA + 0x4, head);
-            c.bus.write32(DATA + 0x8, DATA + 0x1000);
-            c.bus.write32(head + 0x8, count);
-        });
+        check(
+            ssx3_ee::s13::f_003a9820,
+            c_world_cache_streamer_get_section,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x9999 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let index = (r.next_u32() % 8) as u64;
+                c.g[A1][0] = index;
+                let count = r.next_u32() % 8;
+                let head = if seed % 5 == 0 { 0 } else { DATA + 0x100 };
+                c.bus.write32(DATA + 0x4, head);
+                c.bus.write32(DATA + 0x8, DATA + 0x1000);
+                c.bus.write32(head + 0x8, count);
+            },
+        );
     }
-
 
     #[test]
     fn c_world_cache_streamer_is_section_resident_matches() {
@@ -2074,11 +2120,13 @@ pub(crate) mod tests {
                 let head = if seed % 5 == 0 { 0 } else { DATA + 0x100 };
                 c.bus.write32(DATA + 0x4, head);
                 c.bus.write32(head + 0x8, count);
-                c.bus.write32(DATA + index * 8 + 0x14, if seed % 2 == 0 { 3 } else { r.next_u32() });
+                c.bus.write32(
+                    DATA + index * 8 + 0x14,
+                    if seed % 2 == 0 { 3 } else { r.next_u32() },
+                );
             },
         );
     }
-
 
     #[test]
     fn c_world_cache_streamer_is_section_unloaded_matches() {
@@ -2096,137 +2144,172 @@ pub(crate) mod tests {
                 let head = if seed % 5 == 0 { 0 } else { DATA + 0x100 };
                 c.bus.write32(DATA + 0x4, head);
                 c.bus.write32(head + 0x8, count);
-                c.bus.write32(DATA + index * 8 + 0x14, if seed % 2 == 0 { 0 } else { r.next_u32() });
+                c.bus.write32(
+                    DATA + index * 8 + 0x14,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() },
+                );
             },
         );
     }
 
-
     #[test]
     fn c_world_cache_streamer_get_hull_matches() {
-        check_lohi(ssx3_ee::s13::f_003a9a98, c_world_cache_streamer_get_hull, 200, &|c, seed| {
-            let mut r = Rng(0xcccc ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (r.next_u32() % 8) as u64;
-            c.bus.write32(DATA + 0x10, r.next_u32());
-        });
+        check_lohi(
+            ssx3_ee::s13::f_003a9a98,
+            c_world_cache_streamer_get_hull,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0xcccc ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (r.next_u32() % 8) as u64;
+                c.bus.write32(DATA + 0x10, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn c_world_cache_streamer_get_hull_count_matches() {
-        check(ssx3_ee::s13::f_003a9ab0, c_world_cache_streamer_get_hull_count, 200, &|c, seed| {
-            let mut r = Rng(0xdddd ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let owner = DATA + 0x100;
-            c.bus.write32(DATA + 0x4, owner);
-            c.bus.write32(owner + 0x10, r.next_u32());
-        });
+        check(
+            ssx3_ee::s13::f_003a9ab0,
+            c_world_cache_streamer_get_hull_count,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0xdddd ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let owner = DATA + 0x100;
+                c.bus.write32(DATA + 0x4, owner);
+                c.bus.write32(owner + 0x10, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn world_cache_streamer_update_view_node_matches() {
-        check(ee::s13::f_003aa028__generated, world_cache_streamer_update_view_node, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 0x3aa0);
-            let (wc, cache, hulls) = (DATA, DATA + 0x8000, DATA + 0x3000);
-            c.bus.write32(wc, cache);
-            c.bus.write32(gp_at(0x2a74), DATA + 0x9000);
-            c.bus.write32(gp_at(-0x23c0), f(uf(&mut r, 0.0, 4.0)));
-            c.bus.write32(gp_at(-0x23bc), f(uf(&mut r, 0.0, 4.0)));
-            for id in 0..8 {
-                c.bus.write32(cache + 0x3f0 + 0x18 * id, r.next_u32() % 5);
-            }
-            let view = r.next_u32() % 2;
-            let rec = wc + 0x250 + 0x50 * view;
-            put_vec3(c, &mut r, rec, -10.0, 10.0);
-            c.bus.write32(rec + 0xc, f(1.0));
-            for k in 0..3 {
-                let lo = uf(&mut r, -12.0, 4.0);
-                c.bus.write32(rec + 0x10 + 4 * k, f(lo));
-                c.bus.write32(rec + 0x20 + 4 * k, f(lo + uf(&mut r, 0.0, 16.0)));
-            }
-            c.bus.write32(rec + 0x1c, f(uf(&mut r, -1.0, 1.0)));
-            c.bus.write32(rec + 0x2c, f(uf(&mut r, -1.0, 1.0)));
-            c.bus.write32(rec + 0x30, f(uf(&mut r, 1.0, 30.0)));
-            c.bus.write32(rec + 0x34, f(uf(&mut r, 0.0, 30.0)));
-            c.bus.write32(rec + 0x38, f(uf(&mut r, 0.0, 30.0)));
-            // A root with up to two leaf children.
-            for i in 0..3u32 {
-                let nd = DATA + 0x1000 + 0x100 * i;
+        check(
+            ee::s13::f_003aa028__generated,
+            world_cache_streamer_update_view_node,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x3aa0);
+                let (wc, cache, hulls) = (DATA, DATA + 0x8000, DATA + 0x3000);
+                c.bus.write32(wc, cache);
+                c.bus.write32(gp_at(0x2a74), DATA + 0x9000);
+                c.bus.write32(gp_at(-0x23c0), f(uf(&mut r, 0.0, 4.0)));
+                c.bus.write32(gp_at(-0x23bc), f(uf(&mut r, 0.0, 4.0)));
+                for id in 0..8 {
+                    c.bus.write32(cache + 0x3f0 + 0x18 * id, r.next_u32() % 5);
+                }
+                let view = r.next_u32() % 2;
+                let rec = wc + 0x250 + 0x50 * view;
+                put_vec3(c, &mut r, rec, -10.0, 10.0);
+                c.bus.write32(rec + 0xc, f(1.0));
                 for k in 0..3 {
-                    let lo = uf(&mut r, -12.0, 8.0);
-                    c.bus.write32(nd + 4 * k, f(lo));
-                    c.bus.write32(nd + 0x10 + 4 * k, f(lo + uf(&mut r, 0.0, 10.0)));
+                    let lo = uf(&mut r, -12.0, 4.0);
+                    c.bus.write32(rec + 0x10 + 4 * k, f(lo));
+                    c.bus
+                        .write32(rec + 0x20 + 4 * k, f(lo + uf(&mut r, 0.0, 16.0)));
                 }
-                for k in 0..8 {
-                    c.bus.write32(nd + 0x20 + 4 * k, f(uf(&mut r, -1.0, 1.0)));
+                c.bus.write32(rec + 0x1c, f(uf(&mut r, -1.0, 1.0)));
+                c.bus.write32(rec + 0x2c, f(uf(&mut r, -1.0, 1.0)));
+                c.bus.write32(rec + 0x30, f(uf(&mut r, 1.0, 30.0)));
+                c.bus.write32(rec + 0x34, f(uf(&mut r, 0.0, 30.0)));
+                c.bus.write32(rec + 0x38, f(uf(&mut r, 0.0, 30.0)));
+                // A root with up to two leaf children.
+                for i in 0..3u32 {
+                    let nd = DATA + 0x1000 + 0x100 * i;
+                    for k in 0..3 {
+                        let lo = uf(&mut r, -12.0, 8.0);
+                        c.bus.write32(nd + 4 * k, f(lo));
+                        c.bus
+                            .write32(nd + 0x10 + 4 * k, f(lo + uf(&mut r, 0.0, 10.0)));
+                    }
+                    for k in 0..8 {
+                        c.bus.write32(nd + 0x20 + 4 * k, f(uf(&mut r, -1.0, 1.0)));
+                    }
+                    let hull = hulls + 0x10 * i;
+                    c.bus.write16(hull + 2, (r.next_u32() % 8) as u16);
+                    c.bus
+                        .write32(nd + 0x58, if r.next_u32() % 4 == 0 { 0 } else { hull });
+                    let (left, right) = if i == 0 {
+                        (DATA + 0x1100, DATA + 0x1200)
+                    } else {
+                        (0, 0)
+                    };
+                    c.bus
+                        .write32(nd + 0x50, if seed % 3 == 0 { 0 } else { left });
+                    c.bus
+                        .write32(nd + 0x54, if seed % 5 == 0 { 0 } else { right });
                 }
-                let hull = hulls + 0x10 * i;
-                c.bus.write16(hull + 2, (r.next_u32() % 8) as u16);
-                c.bus.write32(nd + 0x58, if r.next_u32() % 4 == 0 { 0 } else { hull });
-                let (left, right) = if i == 0 { (DATA + 0x1100, DATA + 0x1200) } else { (0, 0) };
-                c.bus.write32(nd + 0x50, if seed % 3 == 0 { 0 } else { left });
-                c.bus.write32(nd + 0x54, if seed % 5 == 0 { 0 } else { right });
-            }
-            c.g[A0][0] = sx(wc);
-            c.g[A1][0] = sx(DATA + 0x1000);
-            c.g[A2][0] = view as u64;
-            c.g[A3][0] = (seed / 2 % 2) as u64;
-        });
+                c.g[A0][0] = sx(wc);
+                c.g[A1][0] = sx(DATA + 0x1000);
+                c.g[A2][0] = view as u64;
+                c.g[A3][0] = (seed / 2 % 2) as u64;
+            },
+        );
     }
-
 
     #[test]
     fn cw_script_cache_ctor_matches() {
-        check(ee::s13::f_003ac7c8__generated, cw_script_cache_ctor, 60, &|c, seed| {
-            let mut r = alloc_machine(c, seed, 0x3ac7_c8);
-            let this = DATA + 0x400;
-            fill(c, &mut r, this, 8);
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = sx(seed % 3);
-        });
+        check(
+            ee::s13::f_003ac7c8__generated,
+            cw_script_cache_ctor,
+            60,
+            &|c, seed| {
+                let mut r = alloc_machine(c, seed, 0x3ac7_c8);
+                let this = DATA + 0x400;
+                fill(c, &mut r, this, 8);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(seed % 3);
+            },
+        );
     }
-
 
     #[test]
     fn ps2_chunk_resolve_v14_matches() {
-        check(ssx3_ee::s13::f_003aa5c8__generated, ps2_chunk_resolve_v14, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa5_c8, 1);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x200) as u64;
-            c.g[A2][0] = (seed % 3) as u64;
-            w(c, DATA + 0x200 + 8, (seed as u32) << 4);
-            if seed % 2 == 0 {
-                let vt = vtable(c, &mut r, &[0x78]);
-                w(c, DATA + 8, vt);
-            }
-        });
+        check(
+            ssx3_ee::s13::f_003aa5c8__generated,
+            ps2_chunk_resolve_v14,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa5_c8, 1);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x200) as u64;
+                c.g[A2][0] = (seed % 3) as u64;
+                w(c, DATA + 0x200 + 8, (seed as u32) << 4);
+                if seed % 2 == 0 {
+                    let vt = vtable(c, &mut r, &[0x78]);
+                    w(c, DATA + 8, vt);
+                }
+            },
+        );
     }
-
 
     // -----------------------------------------------------------------------
     // 0x3aa3f0 cPS2ChunkResolveBase_v05.
 
     #[test]
     fn c_ps2_chunk_resolve_base_v05_matches() {
-        check(ee::s13::f_003aa3f0__generated, c_ps2_chunk_resolve_base_v05, 16, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa3_f0, 1);
-            let resolver = DATA + 0x100;
-            let chunk = DATA + 0x200;
-            c.g[A0][0] = sx(resolver);
-            c.g[A1][0] = sx(chunk);
-            c.bus.write32(resolver + 8, DATA + 0x300);
-            c.bus.write32(chunk + 8, r.next_u32());
-            c.bus.write32(chunk + 0xc, r.next_u32());
-            let vt = vtable(c, &mut r, &[0x30]);
-            c.bus.write32(DATA + 0x300, vt);
-        });
+        check(
+            ee::s13::f_003aa3f0__generated,
+            c_ps2_chunk_resolve_base_v05,
+            16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa3_f0, 1);
+                let resolver = DATA + 0x100;
+                let chunk = DATA + 0x200;
+                c.g[A0][0] = sx(resolver);
+                c.g[A1][0] = sx(chunk);
+                c.bus.write32(resolver + 8, DATA + 0x300);
+                c.bus.write32(chunk + 8, r.next_u32());
+                c.bus.write32(chunk + 0xc, r.next_u32());
+                let vt = vtable(c, &mut r, &[0x30]);
+                c.bus.write32(DATA + 0x300, vt);
+            },
+        );
     }
-
 
     #[test]
     fn c_ps2_chunk_resolve_create_matches() {
@@ -2241,22 +2324,24 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_ps2_chunk_resolve_dtor_matches() {
-        check(ee::s13::f_003aade8__generated, c_ps2_chunk_resolve_dtor, SEEDS_4, &|c, seed| {
-            let _ = common(c, seed, 0x3aade8, 2);
-            alloc_ready_2(c);
-            let this = heap_block(c, 0x100);
-            clear(c, this, 0x40);
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = (seed % 2) as u64;
-        });
+        check(
+            ee::s13::f_003aade8__generated,
+            c_ps2_chunk_resolve_dtor,
+            SEEDS_4,
+            &|c, seed| {
+                let _ = common(c, seed, 0x3aade8, 2);
+                alloc_ready_2(c);
+                let this = heap_block(c, 0x100);
+                clear(c, this, 0x40);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = (seed % 2) as u64;
+            },
+        );
     }
 
-
     pub(crate) const SEEDS_5: u32 = 150;
-
 
     /// A float whose bits come from a small set, so every branch of a wrap or
     /// clamp function is reached.
@@ -2264,51 +2349,66 @@ pub(crate) mod tests {
         values[(r.next_u32() as usize) % values.len()].to_bits()
     }
 
-
     pub(crate) fn word(c: &mut Cpu, addr: u32, v: u32) {
         c.bus.write32(addr, v);
     }
 
-
     #[test]
     fn cps2_chunk_resolve_v16_matches() {
-        check(ssx3_ee::s13::f_003aa6e8__generated, cps2_chunk_resolve_v16, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa6e8, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x100);
-            word(c, DATA + 0x120, r.next_u32());
-        });
+        check(
+            ssx3_ee::s13::f_003aa6e8__generated,
+            cps2_chunk_resolve_v16,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa6e8, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                word(c, DATA + 0x120, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v12_matches() {
-        check(ssx3_ee::s13::f_003aa8d8__generated, cps2_chunk_resolve_v12, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa8d8, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x100);
-            c.g[A2][0] = r.next_u32() as u64;
-            word(c, DATA + 0x104, r.next_u32());
-        });
+        check(
+            ssx3_ee::s13::f_003aa8d8__generated,
+            cps2_chunk_resolve_v12,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa8d8, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                c.g[A2][0] = r.next_u32() as u64;
+                word(c, DATA + 0x104, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_init_matches() {
-        check(ssx3_ee::s13::f_003aae40__generated, cps2_chunk_resolve_init, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aae40, 0);
-            c.g[GP][0] = crate::difftest::GAME_GP as u64;
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = r.next_u32() as u64;
-            word(c, crate::difftest::GAME_GP.wrapping_add(0x16c8), DATA + 0x400);
-            word(c, DATA + 0x400, DATA + 0x500);
-            word(c, DATA + 0x500, DATA + 0x600);
-            c.bus.write16(DATA + 0x600 + 0x2a, (r.next_u32() & 0xffff) as u16);
-            word(c, DATA + 0xc, r.next_u32());
-            word(c, DATA + 0x10, r.next_u32());
-        });
+        check(
+            ssx3_ee::s13::f_003aae40__generated,
+            cps2_chunk_resolve_init,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aae40, 0);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = r.next_u32() as u64;
+                word(
+                    c,
+                    crate::difftest::GAME_GP.wrapping_add(0x16c8),
+                    DATA + 0x400,
+                );
+                word(c, DATA + 0x400, DATA + 0x500);
+                word(c, DATA + 0x500, DATA + 0x600);
+                c.bus
+                    .write16(DATA + 0x600 + 0x2a, (r.next_u32() & 0xffff) as u16);
+                word(c, DATA + 0xc, r.next_u32());
+                word(c, DATA + 0x10, r.next_u32());
+            },
+        );
     }
-
 
     // ------------------------------------------------------------ chunk resolver
 
@@ -2327,7 +2427,11 @@ pub(crate) mod tests {
             word(c, sections + 4 * i, sec);
         }
         word(c, sec + 0xc, 0x1234);
-        for (off, inner) in [(0x24u32, self_ + 0x900), (0x14, self_ + 0xa00), (0x4, self_ + 0xb00)] {
+        for (off, inner) in [
+            (0x24u32, self_ + 0x900),
+            (0x14, self_ + 0xa00),
+            (0x4, self_ + 0xb00),
+        ] {
             word(c, sec + off, inner);
             for i in 0..256u32 {
                 let v = if i == 0 { 0 } else { (i << 8) | 0x40 };
@@ -2336,209 +2440,260 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn cps2_chunk_resolve_v17_matches() {
-        check(ssx3_ee::s13::f_003aa700__generated, cps2_chunk_resolve_v17, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa700, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x1000);
-            resolver(c, DATA);
-            let h = match seed % 4 {
-                0 => 0,
-                1 => 0x0000_0042,
-                2 => 0x0000_1042,
-                _ => r.next_u32() & 0xffff,
-            };
-            word(c, DATA + 0x1064, h);
-            word(c, DATA + 0x1084, r.next_u32());
-        });
+        check(
+            ssx3_ee::s13::f_003aa700__generated,
+            cps2_chunk_resolve_v17,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa700, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x1000);
+                resolver(c, DATA);
+                let h = match seed % 4 {
+                    0 => 0,
+                    1 => 0x0000_0042,
+                    2 => 0x0000_1042,
+                    _ => r.next_u32() & 0xffff,
+                };
+                word(c, DATA + 0x1064, h);
+                word(c, DATA + 0x1084, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_base_v13_matches() {
-        check(ssx3_ee::s13::f_003aa8f0__generated, cps2_chunk_resolve_base_v13, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa8f0, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x1000);
-            resolver(c, DATA);
-            let h = match seed % 4 {
-                0 => 0,
-                1 => 0x0000_0042,
-                2 => 0x0000_1042,
-                _ => r.next_u32() & 0xffff,
-            };
-            word(c, DATA + 0x1080, h);
-            word(c, DATA + 0x108c, r.next_u32());
-            word(c, DATA + 0x1094, r.next_u32());
-        });
+        check(
+            ssx3_ee::s13::f_003aa8f0__generated,
+            cps2_chunk_resolve_base_v13,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa8f0, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x1000);
+                resolver(c, DATA);
+                let h = match seed % 4 {
+                    0 => 0,
+                    1 => 0x0000_0042,
+                    2 => 0x0000_1042,
+                    _ => r.next_u32() & 0xffff,
+                };
+                word(c, DATA + 0x1080, h);
+                word(c, DATA + 0x108c, r.next_u32());
+                word(c, DATA + 0x1094, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v09_matches() {
-        check(ssx3_ee::s13::f_003aa758__generated, cps2_chunk_resolve_v09, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa758, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x100);
-            word(
-                c,
-                DATA + 0x110,
-                match seed % 3 {
-                    0 => 0xffff_ffff,
-                    1 => 0,
-                    _ => r.next_u32(),
-                },
-            );
-            word(c, DATA + 0x114, r.next_u32());
-        });
+        check(
+            ssx3_ee::s13::f_003aa758__generated,
+            cps2_chunk_resolve_v09,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa758, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                word(
+                    c,
+                    DATA + 0x110,
+                    match seed % 3 {
+                        0 => 0xffff_ffff,
+                        1 => 0,
+                        _ => r.next_u32(),
+                    },
+                );
+                word(c, DATA + 0x114, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v10_matches() {
-        check(ssx3_ee::s13::f_003aa780__generated, cps2_chunk_resolve_v10, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa780, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = (seed % 3) as u64; // 0, 1 or 2 counted arrays
-            resolver(c, DATA);
-            let data = DATA + 0x1000;
-            c.g[A2][0] = sx(data);
-            let mut at = data;
-            let n = (seed % 3).max(1);
-            for _ in 0..n {
-                let count = 1 + (r.next_u32() % 3);
-                word(c, at, count);
-                for j in 0..count {
-                    let h = match r.next_u32() % 4 {
-                        0 => 0,
-                        1 => 0x42,
-                        2 => 0x1042,
-                        _ => r.next_u32() & 0xffff,
-                    };
-                    word(c, at + 4 + 4 * j, h);
+        check(
+            ssx3_ee::s13::f_003aa780__generated,
+            cps2_chunk_resolve_v10,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa780, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = (seed % 3) as u64; // 0, 1 or 2 counted arrays
+                resolver(c, DATA);
+                let data = DATA + 0x1000;
+                c.g[A2][0] = sx(data);
+                let mut at = data;
+                let n = (seed % 3).max(1);
+                for _ in 0..n {
+                    let count = 1 + (r.next_u32() % 3);
+                    word(c, at, count);
+                    for j in 0..count {
+                        let h = match r.next_u32() % 4 {
+                            0 => 0,
+                            1 => 0x42,
+                            2 => 0x1042,
+                            _ => r.next_u32() & 0xffff,
+                        };
+                        word(c, at + 4 + 4 * j, h);
+                    }
+                    at += 4 * (count + 1);
                 }
-                at += 4 * (count + 1);
-            }
-        });
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v18_matches() {
-        check_lohi(ssx3_ee::s13::f_003aa960__generated, cps2_chunk_resolve_v18, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa960, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x100);
-            let n = 1 + (seed % 3);
-            word(c, DATA + 0x120, n);
-            word(c, DATA + 0x124, r.next_u32());
-            for i in 0..n {
-                let node = DATA + 0x200 + 0x90 * i;
-                let prev = match r.next_u32() % 4 {
-                    0 => 0xffff_ffff,
-                    1 => 0,
-                    2 => n - 1,
-                    _ => r.next_u32() % n,
-                };
-                let next = match r.next_u32() % 4 {
-                    0 => 0xffff_ffff,
-                    1 => 1 % n,
-                    _ => r.next_u32() % n,
-                };
-                word(c, node + 0x60, prev);
-                word(c, node + 0x64, next);
-                word(c, node + 0x68, r.next_u32());
-            }
-        });
+        check_lohi(
+            ssx3_ee::s13::f_003aa960__generated,
+            cps2_chunk_resolve_v18,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa960, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                let n = 1 + (seed % 3);
+                word(c, DATA + 0x120, n);
+                word(c, DATA + 0x124, r.next_u32());
+                for i in 0..n {
+                    let node = DATA + 0x200 + 0x90 * i;
+                    let prev = match r.next_u32() % 4 {
+                        0 => 0xffff_ffff,
+                        1 => 0,
+                        2 => n - 1,
+                        _ => r.next_u32() % n,
+                    };
+                    let next = match r.next_u32() % 4 {
+                        0 => 0xffff_ffff,
+                        1 => 1 % n,
+                        _ => r.next_u32() % n,
+                    };
+                    word(c, node + 0x60, prev);
+                    word(c, node + 0x64, next);
+                    word(c, node + 0x68, r.next_u32());
+                }
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v21_matches() {
-        check(ssx3_ee::s13::f_003aac50__generated, cps2_chunk_resolve_v21, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aac50, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x100);
-            c.g[GP][0] = crate::difftest::GAME_GP as u64;
-            word(c, crate::difftest::GAME_GP.wrapping_sub(0x23b8), 5000.0f32.to_bits());
-            word(c, DATA + 0x10c, if seed % 3 == 0 { 0x100 } else { r.next_u32() });
-            word(
-                c,
-                DATA + 0x110,
-                match seed % 5 {
-                    0 => 0,
-                    1 => 1,
-                    2 => 2,
-                    3 => 3,
-                    _ => 0xffff_ffff,
-                },
-            );
-            word(c, DATA + 0x11c, pick(&mut r, &[0.0, 4999.0, 5000.0, 5001.0, 1.0e9]));
-        });
+        check(
+            ssx3_ee::s13::f_003aac50__generated,
+            cps2_chunk_resolve_v21,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aac50, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                word(
+                    c,
+                    crate::difftest::GAME_GP.wrapping_sub(0x23b8),
+                    5000.0f32.to_bits(),
+                );
+                word(
+                    c,
+                    DATA + 0x10c,
+                    if seed % 3 == 0 { 0x100 } else { r.next_u32() },
+                );
+                word(
+                    c,
+                    DATA + 0x110,
+                    match seed % 5 {
+                        0 => 0,
+                        1 => 1,
+                        2 => 2,
+                        3 => 3,
+                        _ => 0xffff_ffff,
+                    },
+                );
+                word(
+                    c,
+                    DATA + 0x11c,
+                    pick(&mut r, &[0.0, 4999.0, 5000.0, 5001.0, 1.0e9]),
+                );
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v22_matches() {
-        check(ssx3_ee::s13::f_003aaca8__generated, cps2_chunk_resolve_v22, SEEDS_5, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aaca8, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x100);
-            word(c, DATA + 0x10c, if seed % 3 == 0 { 0x100 } else { r.next_u32() });
-            word(
-                c,
-                DATA + 0x110,
-                match seed % 6 {
-                    0 => 0,
-                    1 => 1,
-                    2 => 2,
-                    3 => 3,
-                    4 => 4,
-                    _ => 0xffff_ffff,
-                },
-            );
-        });
+        check(
+            ssx3_ee::s13::f_003aaca8__generated,
+            cps2_chunk_resolve_v22,
+            SEEDS_5,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aaca8, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                word(
+                    c,
+                    DATA + 0x10c,
+                    if seed % 3 == 0 { 0x100 } else { r.next_u32() },
+                );
+                word(
+                    c,
+                    DATA + 0x110,
+                    match seed % 6 {
+                        0 => 0,
+                        1 => 1,
+                        2 => 2,
+                        3 => 3,
+                        4 => 4,
+                        _ => 0xffff_ffff,
+                    },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v10_delivers_events() {
         use crate::difftest::events::schedule;
-        check(ssx3_ee::s13::f_003aa780__generated, cps2_chunk_resolve_v10, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa780, 0);
-            resolver(c, DATA);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = 1;
-            c.g[A2][0] = sx(DATA + 0x1000);
-            let count = 6;
-            word(c, DATA + 0x1000, count);
-            for j in 0..count {
-                word(c, DATA + 0x1004 + 4 * j, r.next_u32() & 0xffff);
-            }
-            schedule(c, &mut r, seed, 0x003a_a780);
-        });
+        check(
+            ssx3_ee::s13::f_003aa780__generated,
+            cps2_chunk_resolve_v10,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa780, 0);
+                resolver(c, DATA);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = 1;
+                c.g[A2][0] = sx(DATA + 0x1000);
+                let count = 6;
+                word(c, DATA + 0x1000, count);
+                for j in 0..count {
+                    word(c, DATA + 0x1004 + 4 * j, r.next_u32() & 0xffff);
+                }
+                schedule(c, &mut r, seed, 0x003a_a780);
+            },
+        );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v18_delivers_events() {
         use crate::difftest::events::schedule;
-        check_lohi(ssx3_ee::s13::f_003aa960__generated, cps2_chunk_resolve_v18, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0x3aa960, 0);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x100);
-            word(c, DATA + 0x120, 6);
-            for i in 0..6 {
-                let node = DATA + 0x200 + 0x90 * i;
-                word(c, node + 0x60, if i == 0 { 0xffff_ffff } else { i - 1 });
-                word(c, node + 0x64, if i == 5 { 0xffff_ffff } else { i + 1 });
-            }
-            schedule(c, &mut r, seed, 0x003a_a960);
-        });
+        check_lohi(
+            ssx3_ee::s13::f_003aa960__generated,
+            cps2_chunk_resolve_v18,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3aa960, 0);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x100);
+                word(c, DATA + 0x120, 6);
+                for i in 0..6 {
+                    let node = DATA + 0x200 + 0x90 * i;
+                    word(c, node + 0x60, if i == 0 { 0xffff_ffff } else { i - 1 });
+                    word(c, node + 0x64, if i == 5 { 0xffff_ffff } else { i + 1 });
+                }
+                schedule(c, &mut r, seed, 0x003a_a960);
+            },
+        );
     }
-
 
     #[test]
     fn c_world_cache_streamer_activate_section_matches() {
@@ -2559,7 +2714,11 @@ pub(crate) mod tests {
                     w32(
                         c,
                         cache + 0x14 + i * 8,
-                        if i == idx { (seed % 8) as u32 } else { r.next_u32() % 8 },
+                        if i == idx {
+                            (seed % 8) as u32
+                        } else {
+                            r.next_u32() % 8
+                        },
                     );
                 }
                 // The flagging path needs a world whose section has no objects.
@@ -2573,7 +2732,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v20_matches() {
@@ -2597,7 +2755,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cps2_chunk_resolve_v07_matches() {
         check(
@@ -2620,7 +2777,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn cps2_chunk_resolve_v11_matches() {
         check(
@@ -2642,7 +2798,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cps2_chunk_resolve_v13_matches() {
@@ -2672,25 +2827,28 @@ pub(crate) mod tests {
         );
     }
 
-
-        #[test]
+    #[test]
     fn cps2chunkresolve_v05_matches() {
-        check(ee::s13::f_003abe40__generated, cps2chunkresolve_v05, 8, &|c, seed| {
-            let mut r = base_4(c, seed, 0x3abe40, 2);
-            let this = DATA;
-            let chunk = DATA + 0x200;
-            clear_2(c, this, 0x400);
-            clear_2(c, chunk, 0x400);
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = chunk as u64;
-            w(c, chunk + 8, 0x10);
-            w(c, chunk + 0xc, 0x20);
-            w(c, chunk + 0x20, if seed % 2 == 0 { 0 } else { 0 });
-            let vt = vtable(c, &mut r, &[0x30]);
-            w(c, this + 8, vt);
-        });
+        check(
+            ee::s13::f_003abe40__generated,
+            cps2chunkresolve_v05,
+            8,
+            &|c, seed| {
+                let mut r = base_4(c, seed, 0x3abe40, 2);
+                let this = DATA;
+                let chunk = DATA + 0x200;
+                clear_2(c, this, 0x400);
+                clear_2(c, chunk, 0x400);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = chunk as u64;
+                w(c, chunk + 8, 0x10);
+                w(c, chunk + 0xc, 0x20);
+                w(c, chunk + 0x20, if seed % 2 == 0 { 0 } else { 0 });
+                let vt = vtable(c, &mut r, &[0x30]);
+                w(c, this + 8, vt);
+            },
+        );
     }
-
 
     #[test]
     fn cps2chunkresolve_relocate_instance_dma_matches() {
@@ -2719,36 +2877,44 @@ pub(crate) mod tests {
         );
     }
 
-
-        #[test]
+    #[test]
     fn c_ps2_chunk_resolve_v15_matches() {
-        diff(ee::s13::f_003aa608__generated, c_ps2_chunk_resolve_v15, 30, &|c, seed| {
-            let mut r = fe_base(c, seed, 0x3a_a608);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x2000);
-            w(c, DATA + 0x2004, if seed % 3 == 0 { 0 } else { 1 });
-            w(c, DATA + 0x2008, DATA + 0x3000);
-            w(c, DATA + 0x3000, r.next_u32());
-            w(c, DATA + 0x3004, if seed % 2 == 0 { 0 } else { 0x10 });
-            w(c, DATA + 0x3008, r.next_u32());
-            w(c, DATA + 0x300c, 0xffff_ffff);
-            w(c, DATA + 8, 0); // no vtable on the chunk: calls are fakes
-        });
+        diff(
+            ee::s13::f_003aa608__generated,
+            c_ps2_chunk_resolve_v15,
+            30,
+            &|c, seed| {
+                let mut r = fe_base(c, seed, 0x3a_a608);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x2000);
+                w(c, DATA + 0x2004, if seed % 3 == 0 { 0 } else { 1 });
+                w(c, DATA + 0x2008, DATA + 0x3000);
+                w(c, DATA + 0x3000, r.next_u32());
+                w(c, DATA + 0x3004, if seed % 2 == 0 { 0 } else { 0x10 });
+                w(c, DATA + 0x3008, r.next_u32());
+                w(c, DATA + 0x300c, 0xffff_ffff);
+                w(c, DATA + 8, 0); // no vtable on the chunk: calls are fakes
+            },
+        );
     }
-
 
     #[test]
     fn c_ps2_chunk_resolve_v06_matches() {
-        diff(ee::s13::f_003aa438__generated, c_ps2_chunk_resolve_v06, 20, &|c, seed| {
-            let mut r = fe_base(c, seed, 0x3a_a438);
-            c.g[A0][0] = sx(DATA + 0x2000);
-            c.g[A1][0] = sx(DATA);
-            w(c, DATA + 0x2004, if seed % 3 == 0 { 0 } else { 1 });
-            w(c, DATA + 0x2008, DATA + 0x3000);
-            w(c, DATA + 0x3000, r.next_u32());
-            w(c, DATA + 0x3004, if seed % 2 == 0 { 0 } else { 0x10 });
-            w(c, DATA + 0x3008, r.next_u32());
-            w(c, DATA + 8, 0);
-        });
+        diff(
+            ee::s13::f_003aa438__generated,
+            c_ps2_chunk_resolve_v06,
+            20,
+            &|c, seed| {
+                let mut r = fe_base(c, seed, 0x3a_a438);
+                c.g[A0][0] = sx(DATA + 0x2000);
+                c.g[A1][0] = sx(DATA);
+                w(c, DATA + 0x2004, if seed % 3 == 0 { 0 } else { 1 });
+                w(c, DATA + 0x2008, DATA + 0x3000);
+                w(c, DATA + 0x3000, r.next_u32());
+                w(c, DATA + 0x3004, if seed % 2 == 0 { 0 } else { 0x10 });
+                w(c, DATA + 0x3008, r.next_u32());
+                w(c, DATA + 8, 0);
+            },
+        );
     }
 }

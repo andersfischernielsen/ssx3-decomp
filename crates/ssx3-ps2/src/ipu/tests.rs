@@ -878,9 +878,15 @@ fn eabig_native_decoder() {
         .unwrap();
     let mut drv = Driver { ipu: Ipu::new() };
     drv.set_default_matrices();
-    let ipu = drv.decode_i_picture(first_i, width, height, false).expect("I-picture");
+    let ipu = drv
+        .decode_i_picture(first_i, width, height, false)
+        .expect("I-picture");
     // The whole movie natively.
-    let mut feed = ChunkFeed { chunks, next: 0, ended: false };
+    let mut feed = ChunkFeed {
+        chunks,
+        next: 0,
+        ended: false,
+    };
     let mut d = ssx3_mpeg::decoder::Decoder::new();
     let mut out = vec![0u8; width * height * 4];
     let mut pictures = 0;
@@ -900,7 +906,11 @@ fn eabig_native_decoder() {
         }
         pictures += 1;
     }
-    eprintln!("EABIG natively: {pictures} pictures, {} errors, {:?}", d.errors, t.elapsed());
+    eprintln!(
+        "EABIG natively: {pictures} pictures, {} errors, {:?}",
+        d.errors,
+        t.elapsed()
+    );
     assert_eq!(d.errors, 0);
     assert_eq!(pictures, 75);
     assert!(d.ended);
@@ -915,13 +925,19 @@ fn eabig_native_vs_dumps() {
         return;
     };
     let chunks = mpc_video_chunks(&mpc);
-    let mut feed = ChunkFeed { chunks, next: 0, ended: false };
+    let mut feed = ChunkFeed {
+        chunks,
+        next: 0,
+        ended: false,
+    };
     let mut d = ssx3_mpeg::decoder::Decoder::new();
     d.log_mbs = true;
     let mut out = vec![0u8; 512 * 448 * 4];
     for k in 0..8 {
         assert_eq!(d.picture(&mut feed), ssx3_mpeg::decoder::Got::Picture);
-        let Ok(r) = std::fs::read(std::path::Path::new(&dir).join(format!("pic{k}.rgba"))) else { continue };
+        let Ok(r) = std::fs::read(std::path::Path::new(&dir).join(format!("pic{k}.rgba"))) else {
+            continue;
+        };
         d.output_rgb32(&mut out);
         let mut bad = std::collections::BTreeMap::new();
         for (i, (a, b)) in out.iter().zip(&r).enumerate() {
@@ -935,7 +951,12 @@ fn eabig_native_vs_dumps() {
         let mut cat = std::collections::BTreeMap::new();
         for &(mb, f, b, mv) in &d.mb_log {
             let kind = |v: [i32; 2]| (v[0] & 1 | (v[1] & 1) << 1) as u8;
-            let key = (f, b, if f { kind(mv[0]) } else { 9 }, if b { kind(mv[1]) } else { 9 });
+            let key = (
+                f,
+                b,
+                if f { kind(mv[0]) } else { 9 },
+                if b { kind(mv[1]) } else { 9 },
+            );
             let (mx, my) = (mb % 32, mb / 32);
             let e = cat.entry(key).or_insert((0, 0));
             e.0 += 1;

@@ -8,22 +8,29 @@ use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::be::bedbreward::POST_RACE_GP;
+pub(crate) use crate::game::be::bedbreward::PRE_RACE_GP;
+pub(crate) use crate::game::be::beintreward::alloc_named;
+pub(crate) use crate::game::be::beintreward::EA_MEM_ALLOC_NAMED;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-pub(crate) use crate::game::be::beintreward::EA_MEM_ALLOC_NAMED;
-pub(crate) use crate::game::be::bedbreward::PRE_RACE_GP;
-pub(crate) use crate::game::be::bedbreward::POST_RACE_GP;
-pub(crate) use crate::game::be::beintreward::alloc_named;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0015_6338, be_post_race_get_instance, "BEPostRace_GetInstance"),
-    (0x0015_6570, be_pre_race_get_instance, "BEPreRace_GetInstance"),
+    (
+        0x0015_6338,
+        be_post_race_get_instance,
+        "BEPostRace_GetInstance",
+    ),
+    (
+        0x0015_6570,
+        be_pre_race_get_instance,
+        "BEPreRace_GetInstance",
+    ),
 ];
-
 
 /// `BEPostRace_GetInstance(int id)` (0x156338): as above with `gp - 0x1e9c`
 /// and the "BEPostRace" name.
@@ -38,7 +45,6 @@ pub fn be_post_race_get_instance(c: &mut Cpu) {
     );
 }
 
-
 /// `BEPreRace_GetInstance(int id)` (0x156570): as above with `gp - 0x1e98`
 /// and the "BEPreRace" name.
 pub fn be_pre_race_get_instance(c: &mut Cpu) {
@@ -52,7 +58,6 @@ pub fn be_pre_race_get_instance(c: &mut Cpu) {
     );
 }
 
-
 /// What to store in an allocated singleton's word.
 #[derive(Clone, Copy)]
 pub(crate) enum Arg {
@@ -62,10 +67,16 @@ pub(crate) enum Arg {
     Const(u32),
 }
 
-
 /// The shared `*_GetInstance` body: return the cached singleton, allocating
 /// it (and storing the given words) when the global is still zero.
-pub(crate) fn get_instance(c: &mut Cpu, gp_off: u32, ret: u32, size: u64, name: u32, init: &[(u32, Arg)]) {
+pub(crate) fn get_instance(
+    c: &mut Cpu,
+    gp_off: u32,
+    ret: u32,
+    size: u64,
+    name: u32,
+    init: &[(u32, Arg)],
+) {
     call::guest(c, |c| {
         c.cycles += 6;
         let frame = Frame::open(c, 0x20);

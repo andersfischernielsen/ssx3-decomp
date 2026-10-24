@@ -32,9 +32,17 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_0120, build_bone_matrix, "RiderModel_BuildBoneMatrix"),
-    (0x0031_03f0, build_bone_matrices, "RiderModel_BuildBoneMatrices"),
+    (
+        0x0031_03f0,
+        build_bone_matrices,
+        "RiderModel_BuildBoneMatrices",
+    ),
     (0x0032_9910, rider_sphere_tree_ctor, "RiderSphereTree_ctor"),
-    (0x0032_9ae0, rider_sphere_tree_update_from_bones, "RiderSphereTree_UpdateFromBones"),
+    (
+        0x0032_9ae0,
+        rider_sphere_tree_update_from_bones,
+        "RiderSphereTree_UpdateFromBones",
+    ),
     (0x0032_c590, sphere_tree_get_radius, "SphereTree_GetRadius"),
     (0x0032_c630, sphere_tree_translate, "SphereTree_Translate"),
     (0x0031_b088, det2x2, "Math_Det2x2"),
@@ -43,14 +51,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_0200, apply_pose, "RiderModel_ApplyPose"),
     (0x0031_4760, anim_seq_list_get_at, "AnimSeqList_GetAt"),
     (0x0031_45f8, anim_seq_list_remove, "AnimSeqList_Remove"),
-    (0x0031_2598, anim_controller_evaluate_pose, "AnimController_EvaluatePose"),
+    (
+        0x0031_2598,
+        anim_controller_evaluate_pose,
+        "AnimController_EvaluatePose",
+    ),
     (0x0031_23c0, anim_controller_update, "AnimController_Update"),
     (0x0037_dee0, project_point, "PS2GraphicsMan_ProjectPoint"),
-    (0x0011_dfe0, rider_rotate_around_axis, "Rider_RotateAroundAxis"),
+    (
+        0x0011_dfe0,
+        rider_rotate_around_axis,
+        "Rider_RotateAroundAxis",
+    ),
     (0x0031_b6c8, mat4_inverse, "Mat4_Inverse"),
     (0x0031_b748, mat4_to_pos_quat, "Mat4_ToPosQuat"),
     (0x0036_d400, vu0_rand_next, "Vu0_RandNext"),
-    (0x0032_c5e0, sphere_tree_set_position, "SphereTree_SetPosition"),
+    (
+        0x0032_c5e0,
+        sphere_tree_set_position,
+        "SphereTree_SetPosition",
+    ),
     (0x0031_b098, det3x3, "Math_Det3x3"),
     (0x0031_b7a8, quat_from_matrix, "Quat_FromMatrix"),
     (0x0031_bb30, quat_from_two_vectors, "Quat_FromTwoVectors"),
@@ -174,12 +194,22 @@ fn ptr(c: &mut Cpu, field: Addr) -> Addr {
 
 /// Lane-wise `vmul` of a vector by a scalar (broadcast field).
 fn scale4(v: Vec4, s: VuF32) -> Vec4 {
-    Vec4 { x: v.x * s, y: v.y * s, z: v.z * s, w: v.w * s }
+    Vec4 {
+        x: v.x * s,
+        y: v.y * s,
+        z: v.z * s,
+        w: v.w * s,
+    }
 }
 
 /// Lane-wise `vadd`.
 fn add4(a: Vec4, b: Vec4) -> Vec4 {
-    Vec4 { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z, w: a.w + b.w }
+    Vec4 {
+        x: a.x + b.x,
+        y: a.y + b.y,
+        z: a.z + b.z,
+        w: a.w + b.w,
+    }
 }
 
 /// A quaternion as a 3x3 rotation matrix plus the VU0 intermediates.
@@ -279,7 +309,12 @@ pub fn build_bone_matrix(c: &mut Cpu) {
     let skin = skin_base.off(offset);
     let s = model.scale().read_vec4(c);
     let l = read_mat(c, local);
-    let scaled = [scale4(l[0], s.x), scale4(l[1], s.y), scale4(l[2], s.z), scale4(l[3], s.w)];
+    let scaled = [
+        scale4(l[0], s.x),
+        scale4(l[1], s.y),
+        scale4(l[2], s.z),
+        scale4(l[3], s.w),
+    ];
     for (i, row) in scaled.iter().enumerate() {
         skin.off(0x10 * i as u32).write_vec4(c, *row);
     }
@@ -298,12 +333,20 @@ pub fn build_bone_matrix(c: &mut Cpu) {
     // The last ADDAs of the row code: x = 0 + zx, y = 0 + yz, z = 0 + zx.
     let [yz, zx, _] = r.cross;
     let zero = VuF32::ZERO;
-    let acc = Vec4 { x: zero + zx, y: zero + yz, z: zero + zx, w: zero };
+    let acc = Vec4 {
+        x: zero + zx,
+        y: zero + yz,
+        z: zero + zx,
+        w: zero,
+    };
     vu0_scratch::set_acc(c, 0b1110, acc);
     abi::ret(c);
 }
 
-const BUILD_BONE_MATRIX: Callee = Callee { addr: 0x0031_0120, f: ee::s10::RiderModel_BuildBoneMatrix };
+const BUILD_BONE_MATRIX: Callee = Callee {
+    addr: 0x0031_0120,
+    f: ee::s10::RiderModel_BuildBoneMatrix,
+};
 
 /// `RiderModel_BuildBoneMatrices(model)` (0x3103f0): for every bone,
 /// `RiderModel_BuildBoneMatrix(model, i, &model->bones[i])`. The bone count
@@ -458,7 +501,12 @@ pub fn sphere_tree_translate(c: &mut Cpu) {
 /// separately) in f0; f12 is left holding `a*d`.
 pub fn det2x2(c: &mut Cpu) {
     c.cycles += 4;
-    let (a, b, cc, d) = (abi::farg(c, 0), abi::farg(c, 1), abi::farg(c, 2), abi::farg(c, 3));
+    let (a, b, cc, d) = (
+        abi::farg(c, 0),
+        abi::farg(c, 1),
+        abi::farg(c, 2),
+        abi::farg(c, 3),
+    );
     let ad = a * d;
     abi::set_fpr(c, 12, ad);
     abi::set_fret(c, ad - b * cc);
@@ -695,7 +743,12 @@ struct QuatMul {
 
 fn quat_mul(a: Vec4, b: Vec4) -> QuatMul {
     let one = VuF32::ONE;
-    let p = Vec4 { x: a.x * b.x, y: a.y * b.y, z: a.z * b.z, w: a.w * b.w };
+    let p = Vec4 {
+        x: a.x * b.x,
+        y: a.y * b.y,
+        z: a.z * b.z,
+        w: a.w * b.w,
+    };
     let cross = [
         VuF32::msub(a.y * b.z, b.y, a.z),
         VuF32::msub(a.z * b.x, b.z, a.x),
@@ -862,7 +915,15 @@ fn pose_bone(c: &mut Cpu, model: RiderModel, b: u32, parent: BoneXform) {
     c.lq(V0, lq_at);
     c.sq(V0, sp.off(0x10).0);
     // FPU registers as the loads and muls leave them.
-    for (r, v) in [(0, tx), (1, ty), (2, sz_), (3, sw_), (4, tz), (5, tw), (6, sy_)] {
+    for (r, v) in [
+        (0, tx),
+        (1, ty),
+        (2, sz_),
+        (3, sw_),
+        (4, tz),
+        (5, tw),
+        (6, sy_),
+    ] {
         abi::set_fpr(c, r, v);
     }
 
@@ -879,7 +940,12 @@ fn pose_bone(c: &mut Cpu, model: RiderModel, b: u32, parent: BoneXform) {
     // v = t - origin (the vec4 at 0x4ff130), via sp+0xa0 and sp+0x90.
     let t = sp.read_vec4(c);
     let origin = Addr(0x004f_f130).read_vec4(c);
-    let v = Vec4 { x: t.x - origin.x, y: t.y - origin.y, z: t.z - origin.z, w: t.w - origin.w };
+    let v = Vec4 {
+        x: t.x - origin.x,
+        y: t.y - origin.y,
+        z: t.z - origin.z,
+        w: t.w - origin.w,
+    };
     sp.off(0xa0).write_vec4(c, v);
     c.lq(V0, sp.off(0xa0).0);
     c.sq(V0, sp.off(0x90).0);
@@ -888,7 +954,12 @@ fn pose_bone(c: &mut Cpu, model: RiderModel, b: u32, parent: BoneXform) {
 
     // Rotate v by q: c = q×v, d = q×c, out = v + 2w·c + 2d (ACC chain).
     let cr = vu_cross(q, v);
-    let cv = Vec4 { x: cr[0], y: cr[1], z: cr[2], w: old6w };
+    let cv = Vec4 {
+        x: cr[0],
+        y: cr[1],
+        z: cr[2],
+        w: old6w,
+    };
     let d = vu_cross(q, cv);
     let lane = |l: usize| {
         let (vl, cl, dl) = ([v.x, v.y, v.z][l], cr[l], d[l]);
@@ -899,7 +970,12 @@ fn pose_bone(c: &mut Cpu, model: RiderModel, b: u32, parent: BoneXform) {
         (acc, VuF32::madd(acc, dl, one))
     };
     let (l0, l1, l2) = (lane(0), lane(1), lane(2));
-    let rotated = Vec4 { x: l0.1, y: l1.1, z: l2.1, w: VuF32::ZERO };
+    let rotated = Vec4 {
+        x: l0.1,
+        y: l1.1,
+        z: l2.1,
+        w: VuF32::ZERO,
+    };
     sp.off(0xa0).write_vec4(c, rotated);
     c.lq(V0, sp.off(0xa0).0);
     c.sq(V0, sp.off(0x80).0);
@@ -924,10 +1000,20 @@ fn pose_bone(c: &mut Cpu, model: RiderModel, b: u32, parent: BoneXform) {
     vu0_scratch::set_vf(c, 4, 0b1111, ppos);
     vu0_scratch::set_vf(c, 5, 0b1111, pos);
     vu0_scratch::set_vf(c, 6, 0b1110, cv);
-    let d4 = Vec4 { x: d[0], y: d[1], z: d[2], w: m.p.w };
+    let d4 = Vec4 {
+        x: d[0],
+        y: d[1],
+        z: d[2],
+        w: m.p.w,
+    };
     vu0_scratch::set_vf(c, 7, 0b1111, d4);
     vu0_scratch::set_vf(c, 8, 0b1111, rotated);
-    let acc = Vec4 { x: l0.0, y: l1.0, z: l2.0, w: m.acc.w };
+    let acc = Vec4 {
+        x: l0.0,
+        y: l1.0,
+        z: l2.0,
+        w: m.acc.w,
+    };
     vu0_scratch::set_acc(c, 0b1111, acc);
 }
 
@@ -1021,9 +1107,14 @@ pub fn anim_seq_list_get_at(c: &mut Cpu) {
     abi::ret(c);
 }
 
-const ANIM_SEQUENCE_FREE_TRIGGERS: Callee =
-    Callee { addr: 0x0031_3c08, f: ee::s10::AnimSequence_FreeTriggers };
-const BUILTIN_DELETE: Callee = Callee { addr: 0x0031_7e50, f: ee::s10::__builtin_delete };
+const ANIM_SEQUENCE_FREE_TRIGGERS: Callee = Callee {
+    addr: 0x0031_3c08,
+    f: ee::s10::AnimSequence_FreeTriggers,
+};
+const BUILTIN_DELETE: Callee = Callee {
+    addr: 0x0031_7e50,
+    f: ee::s10::__builtin_delete,
+};
 
 /// `AnimSeqList_Remove(list, seq)` (0x3145f8): unlink `seq` from the list
 /// (the link is rewritten first), free its triggers, delete it and
@@ -1087,10 +1178,14 @@ pub fn anim_seq_list_remove(c: &mut Cpu) {
     })
 }
 
-const ANIM_SEQ_LIST_COLLECT_TRACKS: Callee =
-    Callee { addr: 0x0031_4418, f: ee::s10::AnimSeqList_CollectTracks };
-const RIDER_MODEL_BLEND_ANIM_POSE: Callee =
-    Callee { addr: 0x0030_f2b0, f: ee::s10::RiderModel_BlendAnimPose };
+const ANIM_SEQ_LIST_COLLECT_TRACKS: Callee = Callee {
+    addr: 0x0031_4418,
+    f: ee::s10::AnimSeqList_CollectTracks,
+};
+const RIDER_MODEL_BLEND_ANIM_POSE: Callee = Callee {
+    addr: 0x0030_f2b0,
+    f: ee::s10::RiderModel_BlendAnimPose,
+};
 
 /// Size of one track entry gathered by `AnimSeqList_CollectTracks`.
 const TRACK_SIZE: u32 = 0x50;
@@ -1185,9 +1280,14 @@ pub fn anim_controller_evaluate_pose(c: &mut Cpu) {
     })
 }
 
-const ANIM_SEQ_LIST_GET_AT: Callee = Callee { addr: 0x0031_4760, f: ee::s10::AnimSeqList_GetAt };
-const ANIM_CONTROLLER_EVALUATE_POSE: Callee =
-    Callee { addr: 0x0031_2598, f: ee::s10::AnimController_EvaluatePose };
+const ANIM_SEQ_LIST_GET_AT: Callee = Callee {
+    addr: 0x0031_4760,
+    f: ee::s10::AnimSeqList_GetAt,
+};
+const ANIM_CONTROLLER_EVALUATE_POSE: Callee = Callee {
+    addr: 0x0031_2598,
+    f: ee::s10::AnimController_EvaluatePose,
+};
 
 /// `AnimController_Update(ac, out, dt)` (0x3123c0): advance every sequence
 /// of the six layers, then evaluate the pose:
@@ -1295,7 +1395,12 @@ pub fn anim_controller_update(c: &mut Cpu) {
 fn quat_mul_leftovers(c: &mut Cpu, a: Vec4, b: Vec4, m: &QuatMul) {
     vu0_scratch::set_vf(c, 4, 0b1111, a);
     vu0_scratch::set_vf(c, 5, 0b1111, b);
-    let cross = Vec4 { x: m.cross[0], y: m.cross[1], z: m.cross[2], w: VuF32::ZERO };
+    let cross = Vec4 {
+        x: m.cross[0],
+        y: m.cross[1],
+        z: m.cross[2],
+        w: VuF32::ZERO,
+    };
     vu0_scratch::set_vf(c, 6, 0b1110, cross);
     vu0_scratch::set_vf(c, 7, 0b1111, m.p);
     vu0_scratch::set_vf(c, 8, 0b1111, m.q);
@@ -1333,7 +1438,12 @@ pub fn project_point(c: &mut Cpu) {
         let acc = VuF32::madd(acc, m2[i], p.z);
         VuF32::madd(acc, m3[i], p.w)
     });
-    let clip = Vec4 { x: clip[0], y: clip[1], z: clip[2], w: clip[3] };
+    let clip = Vec4 {
+        x: clip[0],
+        y: clip[1],
+        z: clip[2],
+        w: clip[3],
+    };
     let q = VuF32::div(VuF32::ONE, clip.w);
     let n = scale4(clip, q);
     let s = l(scale);
@@ -1341,7 +1451,12 @@ pub fn project_point(c: &mut Cpu) {
     let o = l(offset);
     let acc: [VuF32; 4] = std::array::from_fn(|i| s[i] * nn[i]);
     let res: [VuF32; 4] = std::array::from_fn(|i| VuF32::madd(acc[i], o[i], VuF32::ONE));
-    let res = Vec4 { x: res[0], y: res[1], z: res[2], w: res[3] };
+    let res = Vec4 {
+        x: res[0],
+        y: res[1],
+        z: res[2],
+        w: res[3],
+    };
     let sp = Addr(crate::call::sp(c));
     sp.write_vec4(c, res);
     c.lq(V1, sp.0);
@@ -1356,12 +1471,24 @@ pub fn project_point(c: &mut Cpu) {
     vu0_scratch::set_vf(c, 11, 0b1111, clip);
     vu0_scratch::set_vf(c, 12, 0b1111, n);
     vu0_scratch::set_vf(c, 13, 0b1111, res);
-    vu0_scratch::set_acc(c, 0b1111, Vec4 { x: acc[0], y: acc[1], z: acc[2], w: acc[3] });
+    vu0_scratch::set_acc(
+        c,
+        0b1111,
+        Vec4 {
+            x: acc[0],
+            y: acc[1],
+            z: acc[2],
+            w: acc[3],
+        },
+    );
     vu0_scratch::set_q(c, q);
     frame.close(c);
 }
 
-const RIDER_BUILD_WORLD_MATRIX: Callee = Callee { addr: 0x0011_e098, f: ee::s00::Rider_BuildWorldMatrix };
+const RIDER_BUILD_WORLD_MATRIX: Callee = Callee {
+    addr: 0x0011_e098,
+    f: ee::s00::Rider_BuildWorldMatrix,
+};
 /// `Math_SinCos(angle, &sin, &cos)`, called through the function table
 /// (cross-shard).
 const MATH_SIN_COS: u32 = 0x0031_be50;
@@ -1399,7 +1526,11 @@ pub fn rider_rotate_around_axis(c: &mut Cpu) {
         let axis = Addr(r32(c, S0));
         let rider = crate::rider::Rider(Addr(r32(c, S1)));
         c.g[A0][0] = c.g[S1][0];
-        let (ax, ay, az) = (axis.read_fpu(c), axis.off(4).read_fpu(c), axis.off(8).read_fpu(c));
+        let (ax, ay, az) = (
+            axis.read_fpu(c),
+            axis.off(4).read_fpu(c),
+            axis.off(8).read_fpu(c),
+        );
         let (s, co) = (sp.off(0x30).read_fpu(c), sp.off(0x34).read_fpu(c));
         let (rx, ry, rz) = (s * ax, s * ay, s * az);
         sp.off(0x1c).write_fpu(c, co);
@@ -1428,8 +1559,14 @@ pub fn rider_rotate_around_axis(c: &mut Cpu) {
     })
 }
 
-const MAT4_DETERMINANT: Callee = Callee { addr: 0x0031_b178, f: ee::s10::Mat4_Determinant };
-const MAT4_ADJOINT: Callee = Callee { addr: 0x0031_b310, f: ee::s10::Mat4_Adjoint };
+const MAT4_DETERMINANT: Callee = Callee {
+    addr: 0x0031_b178,
+    f: ee::s10::Mat4_Determinant,
+};
+const MAT4_ADJOINT: Callee = Callee {
+    addr: 0x0031_b310,
+    f: ee::s10::Mat4_Adjoint,
+};
 
 /// `Mat4_Inverse(m)` (0x31b6c8): invert a 4x4 matrix in place as
 /// `adjoint(m) / det(m)`: `det = Mat4_Determinant(m)`, `Mat4_Adjoint(m)`,
@@ -1464,7 +1601,12 @@ pub fn mat4_inverse(c: &mut Cpu) {
             m.off(0x10 * i as u32).write_vec4(c, *row);
         }
         let v0 = c.g[V0];
-        let vf3 = [v0[0] as u32, (v0[0] >> 32) as u32, v0[1] as u32, (v0[1] >> 32) as u32];
+        let vf3 = [
+            v0[0] as u32,
+            (v0[0] >> 32) as u32,
+            v0[1] as u32,
+            (v0[1] >> 32) as u32,
+        ];
         c.bus.plat.set_vf(3, vf3);
         for i in 0..4 {
             vu0_scratch::set_vf(c, 4 + i, 0b1111, rows[i]);
@@ -1479,7 +1621,10 @@ pub fn mat4_inverse(c: &mut Cpu) {
     })
 }
 
-const QUAT_FROM_MATRIX: Callee = Callee { addr: 0x0031_b7a8, f: ee::s10::Quat_FromMatrix };
+const QUAT_FROM_MATRIX: Callee = Callee {
+    addr: 0x0031_b7a8,
+    f: ee::s10::Quat_FromMatrix,
+};
 
 /// `Mat4_ToPosQuat(out, m)` (0x31b748): split a rigid transform into its
 /// translation (`out+0 = m.row3`) and rotation quaternion (`out+0x10 =
@@ -1537,7 +1682,10 @@ pub fn vu0_rand_next(c: &mut Cpu) {
     let y = (r >> 22) & 1;
     r = (((r << 1) ^ x ^ y) & 0x7f_ffff) | 0x3f80_0000;
     let v0 = c.g[V0];
-    c.bus.plat.set_vf(3, [r, (v0[0] >> 32) as u32, v0[1] as u32, (v0[1] >> 32) as u32]);
+    c.bus.plat.set_vf(
+        3,
+        [r, (v0[0] >> 32) as u32, v0[1] as u32, (v0[1] >> 32) as u32],
+    );
     c.bus.plat.write_ctrl(20, r);
     c.g[V0][0] = (v0[0] & !0xffff_ffff) | r as u64;
     c.f[0] = r;
@@ -1558,7 +1706,11 @@ pub fn sphere_tree_set_position(c: &mut Cpu) {
     let frame = Frame::open(c, 0x30);
     let sp = Addr(crate::call::sp(c));
     c.g[AT][0] = FpuF32::ONE.0 as u64;
-    let (ox, oy, oz) = (def.off(0x14).read_fpu(c), def.off(0x18).read_fpu(c), def.off(0x1c).read_fpu(c));
+    let (ox, oy, oz) = (
+        def.off(0x14).read_fpu(c),
+        def.off(0x18).read_fpu(c),
+        def.off(0x1c).read_fpu(c),
+    );
     sp.off(0x10).write_fpu(c, ox);
     sp.off(0x14).write_fpu(c, oy);
     sp.off(0x1c).write_fpu(c, FpuF32::ONE);
@@ -1579,7 +1731,10 @@ pub fn sphere_tree_set_position(c: &mut Cpu) {
     frame.close(c);
 }
 
-const MATH_DET2X2: Callee = Callee { addr: 0x0031_b088, f: ee::s10::Math_Det2x2 };
+const MATH_DET2X2: Callee = Callee {
+    addr: 0x0031_b088,
+    f: ee::s10::Math_Det2x2,
+};
 
 /// `Math_Det3x3(a, b, c, d, e, f, g, h, i)` (0x31b098): the determinant of
 /// the rows [a b c; d e f; g h i] by cofactors of the first column:
@@ -1598,7 +1753,8 @@ pub fn det3x3(c: &mut Cpu) {
         let frame = Frame::open(c, 0x60);
         let sp = Addr(crate::call::sp(c));
         for r in 20..30 {
-            sp.off(0x10 + 8 * (r as u32 - 20)).write_fpu(c, FpuF32(c.f[r]));
+            sp.off(0x10 + 8 * (r as u32 - 20))
+                .write_fpu(c, FpuF32(c.f[r]));
         }
         frame.save_ra(c, 0);
         let f = |c: &Cpu, r: usize| FpuF32(c.f[r]);
@@ -1606,7 +1762,17 @@ pub fn det3x3(c: &mut Cpu) {
         let (e, ff, g, h) = (f(c, 16), f(c, 17), f(c, 18), f(c, 19));
         let i = sp.off(0x60).read_fpu(c);
         // Callee-saved homes of the arguments.
-        for (r, v) in [(20, a), (21, d), (22, g), (23, h), (24, i), (26, b), (27, cc), (28, e), (29, ff)] {
+        for (r, v) in [
+            (20, a),
+            (21, d),
+            (22, g),
+            (23, h),
+            (24, i),
+            (26, b),
+            (27, cc),
+            (28, e),
+            (29, ff),
+        ] {
             abi::set_fpr(c, r, v);
         }
         let det2 = |c: &mut Cpu, args: [FpuF32; 4], ret: u32| {
@@ -1749,14 +1915,25 @@ pub fn quat_from_matrix(c: &mut Cpu) {
     frame.close(c);
 }
 
-const MATH_ASIN: Callee = Callee { addr: 0x0031_c128, f: ee::s10::Math_Asin };
-const MATH_SIN_COS_DIRECT: Callee = Callee { addr: 0x0031_be50, f: ee::s10::Math_SinCos };
+const MATH_ASIN: Callee = Callee {
+    addr: 0x0031_c128,
+    f: ee::s10::Math_Asin,
+};
+const MATH_SIN_COS_DIRECT: Callee = Callee {
+    addr: 0x0031_be50,
+    f: ee::s10::Math_SinCos,
+};
 
 /// The VU0 4-lane dot product `((p.x + p.y) + 1*p.z) + 1*p.w` of `p = a*b`
 /// (ADDA, MADDA, MADD with vf6.x = 1). Returns (p, ACC.x, dot).
 fn vu_dot4(a: Vec4, b: Vec4) -> (Vec4, VuF32, VuF32) {
     let one = VuF32::ONE;
-    let p = Vec4 { x: a.x * b.x, y: a.y * b.y, z: a.z * b.z, w: a.w * b.w };
+    let p = Vec4 {
+        x: a.x * b.x,
+        y: a.y * b.y,
+        z: a.z * b.z,
+        w: a.w * b.w,
+    };
     let acc = VuF32::madd(p.x + p.y, one, p.z);
     (p, acc, VuF32::madd(acc, one, p.w))
 }
@@ -1793,7 +1970,12 @@ pub fn quat_from_two_vectors(c: &mut Cpu) {
         let u = ua.read_vec4(c);
         let v = va.read_vec4(c);
         let cr = vu_cross(u, v);
-        let axis = Vec4 { x: cr[0], y: cr[1], z: cr[2], w: VuF32::ZERO };
+        let axis = Vec4 {
+            x: cr[0],
+            y: cr[1],
+            z: cr[2],
+            w: VuF32::ZERO,
+        };
         sp.off(0x10).write_vec4(c, axis);
         c.lq(V0, sp.off(0x10).0);
         c.sq(V0, sp.0);
@@ -1803,14 +1985,24 @@ pub fn quat_from_two_vectors(c: &mut Cpu) {
         set_word(c, V1, len.0);
         let len_f = FpuF32(len.0);
         abi::set_fpr(c, 12, len_f);
-        let vf6 = Vec4 { x: one, y: cr[1], z: cr[2], w: VuF32::ZERO };
+        let vf6 = Vec4 {
+            x: one,
+            y: cr[1],
+            z: cr[2],
+            w: VuF32::ZERO,
+        };
         vu0_scratch::set_vf(c, 3, 0b1111, axis);
         vu0_scratch::set_vf(c, 4, 0b1111, Vec4 { x: len2, ..sq });
         vu0_scratch::set_vf(c, 5, 0b1111, v);
         vu0_scratch::set_vf(c, 6, 0b1111, vf6);
         // ACC: x the dot product sum, y/z still the OPMULA products, w
         // untouched.
-        let opm = Vec4 { x: acc, y: u.z * v.x, z: u.x * v.y, w: VuF32::ZERO };
+        let opm = Vec4 {
+            x: acc,
+            y: u.z * v.x,
+            z: u.x * v.y,
+            w: VuF32::ZERO,
+        };
         vu0_scratch::set_acc(c, 0b1110, opm);
         vu0_scratch::set_q(c, len);
         if c_eq_s(c, len_f, FpuF32::ZERO) {
@@ -1919,7 +2111,11 @@ mod tests {
                 setup(c, seed);
             });
             assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
-            let soft: Vec<_> = r.soft.iter().filter(|m| !m.starts_with("vu0 ctrl")).collect();
+            let soft: Vec<_> = r
+                .soft
+                .iter()
+                .filter(|m| !m.starts_with("vu0 ctrl"))
+                .collect();
             assert!(soft.is_empty(), "seed {seed} (soft): {soft:#?}");
             let mut c = fresh();
             let mode = setup(&mut c, seed);
@@ -1932,7 +2128,10 @@ mod tests {
                 }
             }
         }
-        assert!(evented * 4 >= event_seeds, "only {evented} of {event_seeds} event seeds reached an event");
+        assert!(
+            evented * 4 >= event_seeds,
+            "only {evented} of {event_seeds} event seeds reached an event"
+        );
     }
 
     fn rng(seed: u32, salt: u64) -> Rng {
@@ -1956,7 +2155,11 @@ mod tests {
         c.bus.write32(DATA + 0x10, bones);
         c.bus.write32(DATA + 0x2c, DATA + 0x1000);
         c.bus.write32(DATA + 0x30, DATA + 0x2000);
-        let skin = if seed % 7 == 3 { DATA + 0x2000 } else { DATA + 0x3000 };
+        let skin = if seed % 7 == 3 {
+            DATA + 0x2000
+        } else {
+            DATA + 0x3000
+        };
         c.bus.write32(DATA + 0x34, skin);
         put_vec(c, DATA + 0x140, vec(r, 2.0, seed));
         for i in 0..bones.min(64) {
@@ -1967,27 +2170,38 @@ mod tests {
 
     #[test]
     fn build_bone_matrix() {
-        check(ee::s10::f_00310120__generated, super::build_bone_matrix, 400, &|c, seed| {
-            let mut r = rng(seed, 1);
-            scramble(c, &mut r);
-            model(c, &mut r, seed, 16);
-            let bone = r.next_u32() % 16;
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = bone as u64 | (r.next_u32() as u64) << 32;
-            c.g[A2][0] = (DATA + 0x1000 + 0x20 * bone) as u64;
-        });
+        check(
+            ee::s10::f_00310120__generated,
+            super::build_bone_matrix,
+            400,
+            &|c, seed| {
+                let mut r = rng(seed, 1);
+                scramble(c, &mut r);
+                model(c, &mut r, seed, 16);
+                let bone = r.next_u32() % 16;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = bone as u64 | (r.next_u32() as u64) << 32;
+                c.g[A2][0] = (DATA + 0x1000 + 0x20 * bone) as u64;
+            },
+        );
     }
 
     #[test]
     fn build_bone_matrices() {
-        check_paths(ee::s10::f_003103f0__generated, super::build_bone_matrices, 300, &[13, 80, 145], &|c, seed| {
-            let mut r = rng(seed, 2);
-            scramble(c, &mut r);
-            let n = [0, 1, 2, 13, (-3i32) as u32][(seed % 5) as usize];
-            model(c, &mut r, seed, n);
-            fill(c, &mut r, crate::difftest::SP - 0x40, 0x10);
-            c.g[A0][0] = DATA as u64;
-        });
+        check_paths(
+            ee::s10::f_003103f0__generated,
+            super::build_bone_matrices,
+            300,
+            &[13, 80, 145],
+            &|c, seed| {
+                let mut r = rng(seed, 2);
+                scramble(c, &mut r);
+                let n = [0, 1, 2, 13, (-3i32) as u32][(seed % 5) as usize];
+                model(c, &mut r, seed, n);
+                fill(c, &mut r, crate::difftest::SP - 0x40, 0x10);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
     driven!(gen_build_bone_matrices, ee::s10::f_003103f0__generated);
@@ -1995,24 +2209,34 @@ mod tests {
 
     #[test]
     fn build_bone_matrices_events() {
-        check_events(gen_build_bone_matrices, hand_build_bone_matrices, 300, &|c, seed| {
-            let mut r = rng(seed, 3);
-            scramble(c, &mut r);
-            let n = 2 + r.next_u32() % 12;
-            model(c, &mut r, seed, n);
-            c.g[A0][0] = DATA as u64;
-            schedule(c, &mut r, seed, 0x0031_03f0)
-        });
+        check_events(
+            gen_build_bone_matrices,
+            hand_build_bone_matrices,
+            300,
+            &|c, seed| {
+                let mut r = rng(seed, 3);
+                scramble(c, &mut r);
+                let n = 2 + r.next_u32() % 12;
+                model(c, &mut r, seed, n);
+                c.g[A0][0] = DATA as u64;
+                schedule(c, &mut r, seed, 0x0031_03f0)
+            },
+        );
     }
 
     #[test]
     fn rider_sphere_tree_ctor() {
-        check(ee::s10::f_00329910__generated, super::rider_sphere_tree_ctor, 200, &|c, seed| {
-            let mut r = rng(seed, 4);
-            scramble(c, &mut r);
-            fill(c, &mut r, DATA, 0x40);
-            c.g[A0][0] = DATA as u64 | (r.next_u32() as u64) << 32;
-        });
+        check(
+            ee::s10::f_00329910__generated,
+            super::rider_sphere_tree_ctor,
+            200,
+            &|c, seed| {
+                let mut r = rng(seed, 4);
+                scramble(c, &mut r);
+                fill(c, &mut r, DATA, 0x40);
+                c.g[A0][0] = DATA as u64 | (r.next_u32() as u64) << 32;
+            },
+        );
     }
 
     /// A sphere tree at DATA (bones at DATA+0x1000, 16 bones).
@@ -2030,61 +2254,98 @@ mod tests {
     #[test]
     fn rider_sphere_tree_update_from_bones() {
         let f = ee::s10::f_00329ae0__generated;
-        check_paths(f, super::rider_sphere_tree_update_from_bones, 300, &[11, 24, 35], &|c, seed| {
-            let mut r = rng(seed, 5);
-            scramble(c, &mut r);
-            let n = [0, 1, 2, 5, (-1i32) as u32][(seed % 5) as usize];
-            sphere_tree(c, &mut r, n);
-            c.g[A0][0] = DATA as u64;
-        });
+        check_paths(
+            f,
+            super::rider_sphere_tree_update_from_bones,
+            300,
+            &[11, 24, 35],
+            &|c, seed| {
+                let mut r = rng(seed, 5);
+                scramble(c, &mut r);
+                let n = [0, 1, 2, 5, (-1i32) as u32][(seed % 5) as usize];
+                sphere_tree(c, &mut r, n);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
     driven!(gen_update_from_bones, ee::s10::f_00329ae0__generated);
-    driven!(hand_update_from_bones, super::rider_sphere_tree_update_from_bones);
+    driven!(
+        hand_update_from_bones,
+        super::rider_sphere_tree_update_from_bones
+    );
 
     #[test]
     fn rider_sphere_tree_update_from_bones_events() {
-        check_events(gen_update_from_bones, hand_update_from_bones, 300, &|c, seed| {
-            let mut r = rng(seed, 6);
-            scramble(c, &mut r);
-            let n = 3 + r.next_u32() % 6;
-            sphere_tree(c, &mut r, n);
-            c.g[A0][0] = DATA as u64;
-            schedule(c, &mut r, seed, 0x0032_9ae0)
-        });
+        check_events(
+            gen_update_from_bones,
+            hand_update_from_bones,
+            300,
+            &|c, seed| {
+                let mut r = rng(seed, 6);
+                scramble(c, &mut r);
+                let n = 3 + r.next_u32() % 6;
+                sphere_tree(c, &mut r, n);
+                c.g[A0][0] = DATA as u64;
+                schedule(c, &mut r, seed, 0x0032_9ae0)
+            },
+        );
     }
 
     #[test]
     fn sphere_tree_small() {
-        check(ee::s10::f_0032c590__generated, super::sphere_tree_get_radius, 200, &|c, seed| {
-            let mut r = rng(seed, 7);
-            scramble(c, &mut r);
-            fill(c, &mut r, DATA, 0x100);
-            c.bus.write32(DATA + 0x98, DATA + 0x200);
-            c.bus.write32(DATA + 0x220, DATA + 0x300);
-            c.bus.write32(DATA + 0x300, r.edge_f32());
-            c.bus.write32(DATA + 0x90, r.edge_f32());
-            c.g[A0][0] = DATA as u64;
-        });
-        check(ee::s10::f_0032c630__generated, super::sphere_tree_translate, 200, &|c, seed| {
-            let mut r = rng(seed, 8);
-            scramble(c, &mut r);
-            put_vec(c, DATA + 0x80, vec(&mut r, 1e4, seed));
-            put_vec(c, DATA + 0x400, vec(&mut r, 1e4, seed));
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = if seed % 9 == 0 { DATA as u64 + 0x80 } else { DATA as u64 + 0x400 };
-        });
+        check(
+            ee::s10::f_0032c590__generated,
+            super::sphere_tree_get_radius,
+            200,
+            &|c, seed| {
+                let mut r = rng(seed, 7);
+                scramble(c, &mut r);
+                fill(c, &mut r, DATA, 0x100);
+                c.bus.write32(DATA + 0x98, DATA + 0x200);
+                c.bus.write32(DATA + 0x220, DATA + 0x300);
+                c.bus.write32(DATA + 0x300, r.edge_f32());
+                c.bus.write32(DATA + 0x90, r.edge_f32());
+                c.g[A0][0] = DATA as u64;
+            },
+        );
+        check(
+            ee::s10::f_0032c630__generated,
+            super::sphere_tree_translate,
+            200,
+            &|c, seed| {
+                let mut r = rng(seed, 8);
+                scramble(c, &mut r);
+                put_vec(c, DATA + 0x80, vec(&mut r, 1e4, seed));
+                put_vec(c, DATA + 0x400, vec(&mut r, 1e4, seed));
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = if seed % 9 == 0 {
+                    DATA as u64 + 0x80
+                } else {
+                    DATA as u64 + 0x400
+                };
+            },
+        );
     }
 
     #[test]
     fn det2x2() {
-        check(ee::s10::f_0031b088__generated, super::det2x2, 300, &|c, seed| {
-            let mut r = rng(seed, 9);
-            scramble(c, &mut r);
-            for i in 12..16 {
-                c.f[i] = if seed % 3 == 0 { r.edge_f32() } else { r.f32(100.0) };
-            }
-        });
+        check(
+            ee::s10::f_0031b088__generated,
+            super::det2x2,
+            300,
+            &|c, seed| {
+                let mut r = rng(seed, 9);
+                scramble(c, &mut r);
+                for i in 12..16 {
+                    c.f[i] = if seed % 3 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(100.0)
+                    };
+                }
+            },
+        );
     }
 
     /// A path at DATA with `n` segments (lengths at DATA+0x100+i*0x10+0xc).
@@ -2099,13 +2360,19 @@ mod tests {
 
     #[test]
     fn path_get_length() {
-        check_paths(ee::s07::f_0026ac48__generated, super::path_get_length, 300, &[6, 15, 22], &|c, seed| {
-            let mut r = rng(seed, 10);
-            scramble(c, &mut r);
-            let n = [0, 1, 2, 7, (-4i32) as u32][(seed % 5) as usize];
-            path(c, &mut r, n);
-            c.g[A0][0] = DATA as u64;
-        });
+        check_paths(
+            ee::s07::f_0026ac48__generated,
+            super::path_get_length,
+            300,
+            &[6, 15, 22],
+            &|c, seed| {
+                let mut r = rng(seed, 10);
+                scramble(c, &mut r);
+                let n = [0, 1, 2, 7, (-4i32) as u32][(seed % 5) as usize];
+                path(c, &mut r, n);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
     driven!(gen_path_get_length, ee::s07::f_0026ac48__generated);
@@ -2113,14 +2380,19 @@ mod tests {
 
     #[test]
     fn path_get_length_events() {
-        check_events(gen_path_get_length, hand_path_get_length, 300, &|c, seed| {
-            let mut r = rng(seed, 11);
-            scramble(c, &mut r);
-            let n = 4 + r.next_u32() % 30;
-            path(c, &mut r, n);
-            c.g[A0][0] = DATA as u64;
-            schedule(c, &mut r, seed, 0x0026_ac48)
-        });
+        check_events(
+            gen_path_get_length,
+            hand_path_get_length,
+            300,
+            &|c, seed| {
+                let mut r = rng(seed, 11);
+                scramble(c, &mut r);
+                let n = 4 + r.next_u32() % 30;
+                path(c, &mut r, n);
+                c.g[A0][0] = DATA as u64;
+                schedule(c, &mut r, seed, 0x0026_ac48)
+            },
+        );
     }
 
     /// A skeleton at DATA: `segs` segments (at DATA+0x400) of up to
@@ -2144,7 +2416,11 @@ mod tests {
             c.bus.write32(seg + 0x38, DATA + 0x5200 + 0x200 * s);
             c.bus.write32(seg + 0x44, n);
             for j in 0..n {
-                let parent = if r.next_u32() % 3 == 0 { -1i16 as u16 } else { (r.next_u32() % 16) as u16 };
+                let parent = if r.next_u32() % 3 == 0 {
+                    -1i16 as u16
+                } else {
+                    (r.next_u32() % 16) as u16
+                };
                 c.bus.write16(DATA + 0x5212 + 0x200 * s + 0x50 * j, parent);
             }
         }
@@ -2158,14 +2434,24 @@ mod tests {
 
     #[test]
     fn translate() {
-        check_paths(ee::s10::f_00310530__generated, super::translate, 400, &[8, 23, 68], &|c, seed| {
-            let mut r = rng(seed, 12);
-            scramble(c, &mut r);
-            let segs = [0, 1, 1, 2, 3, (-1i32) as u32][(seed % 6) as usize];
-            let max = if seed % 6 == 1 { (seed / 6) % 2 } else { 4 };
-            skeleton(c, &mut r, seed, segs, max);
-            c.g[A1][0] = if seed % 11 == 0 { DATA as u64 + 0x1000 } else { DATA as u64 + 0x900 };
-        });
+        check_paths(
+            ee::s10::f_00310530__generated,
+            super::translate,
+            400,
+            &[8, 23, 68],
+            &|c, seed| {
+                let mut r = rng(seed, 12);
+                scramble(c, &mut r);
+                let segs = [0, 1, 1, 2, 3, (-1i32) as u32][(seed % 6) as usize];
+                let max = if seed % 6 == 1 { (seed / 6) % 2 } else { 4 };
+                skeleton(c, &mut r, seed, segs, max);
+                c.g[A1][0] = if seed % 11 == 0 {
+                    DATA as u64 + 0x1000
+                } else {
+                    DATA as u64 + 0x900
+                };
+            },
+        );
     }
 
     driven!(gen_translate, ee::s10::f_00310530__generated);
@@ -2184,14 +2470,20 @@ mod tests {
 
     #[test]
     fn apply_pose() {
-        check_paths(ee::s10::f_00310200__generated, super::apply_pose, 400, &[8, 24, 120], &|c, seed| {
-            let mut r = rng(seed, 14);
-            scramble(c, &mut r);
-            let segs = [0, 1, 1, 2, 3, (-1i32) as u32][(seed % 6) as usize];
-            let max = if seed % 6 == 1 { (seed / 6) % 2 } else { 5 };
-            skeleton(c, &mut r, seed, segs, max);
-            c.g[A1][0] = DATA as u64 + 0x800;
-        });
+        check_paths(
+            ee::s10::f_00310200__generated,
+            super::apply_pose,
+            400,
+            &[8, 24, 120],
+            &|c, seed| {
+                let mut r = rng(seed, 14);
+                scramble(c, &mut r);
+                let segs = [0, 1, 1, 2, 3, (-1i32) as u32][(seed % 6) as usize];
+                let max = if seed % 6 == 1 { (seed / 6) % 2 } else { 5 };
+                skeleton(c, &mut r, seed, segs, max);
+                c.g[A1][0] = DATA as u64 + 0x800;
+            },
+        );
     }
 
     driven!(gen_apply_pose, ee::s10::f_00310200__generated);
@@ -2218,7 +2510,11 @@ mod tests {
             let next = if i + 1 < k { at + 0x100 * (i + 1) } else { 0 };
             c.bus.write32(at + 0x100 * i + 0xc8, next);
         }
-        if k == 0 { 0 } else { at }
+        if k == 0 {
+            0
+        } else {
+            at
+        }
     }
 
     driven!(gen_get_at, ee::s10::f_00314760__generated);
@@ -2251,26 +2547,31 @@ mod tests {
     #[test]
     fn anim_seq_list_remove() {
         use crate::difftest::fakes::{covered, machine};
-        covered(ee::s10::f_003145f8__generated, super::anim_seq_list_remove, 400, &|c, seed| {
-            let mut r = machine(c, seed, 17, 4);
-            let k = r.next_u32() % 6;
-            let head = seq_chain(c, DATA + 0x1000, k);
-            c.bus.write32(DATA, r.next_u32() % 8);
-            c.bus.write32(DATA + 4, head);
-            // Sometimes the sequence has a trigger to free.
-            if k > 0 && r.next_u32() % 3 == 0 {
-                let s = DATA + 0x1000 + 0x100 * (r.next_u32() % k);
-                c.bus.write32(s + 0xac, DATA + 0x2000);
-                c.bus.write32(DATA + 0x200c, 0);
-            }
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = match r.next_u32() % 4 {
-                0 => 0,
-                1 => DATA as u64 + 0x1800,
-                _ if k > 0 => (DATA + 0x1000 + 0x100 * (r.next_u32() % k)) as u64,
-                _ => DATA as u64 + 0x1000,
-            };
-        });
+        covered(
+            ee::s10::f_003145f8__generated,
+            super::anim_seq_list_remove,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 17, 4);
+                let k = r.next_u32() % 6;
+                let head = seq_chain(c, DATA + 0x1000, k);
+                c.bus.write32(DATA, r.next_u32() % 8);
+                c.bus.write32(DATA + 4, head);
+                // Sometimes the sequence has a trigger to free.
+                if k > 0 && r.next_u32() % 3 == 0 {
+                    let s = DATA + 0x1000 + 0x100 * (r.next_u32() % k);
+                    c.bus.write32(s + 0xac, DATA + 0x2000);
+                    c.bus.write32(DATA + 0x200c, 0);
+                }
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => DATA as u64 + 0x1800,
+                    _ if k > 0 => (DATA + 0x1000 + 0x100 * (r.next_u32() % k)) as u64,
+                    _ => DATA as u64 + 0x1000,
+                };
+            },
+        );
     }
 
     driven!(gen_remove, ee::s10::f_003145f8__generated);
@@ -2304,7 +2605,8 @@ mod tests {
             c.bus.write32(DATA + 0x104 + 8 * l, head);
         }
         let vt = DATA + 0x5000;
-        c.bus.write16(vt + 0x10, (r.next_u32() as i16 as i32 & !3) as u16);
+        c.bus
+            .write16(vt + 0x10, (r.next_u32() as i16 as i32 & !3) as u16);
         c.bus.write32(vt + 0x14, crate::difftest::fakes::FAKE);
         c.bus.write32(DATA + 0x58, vt);
         c.g[A0][0] = DATA as u64;
@@ -2315,19 +2617,29 @@ mod tests {
     #[test]
     fn anim_controller_evaluate_pose() {
         use crate::difftest::fakes::machine;
-        check(ee::s10::f_00312598__generated, super::anim_controller_evaluate_pose, 200, &|c, seed| {
-            let mut r = machine(c, seed, 19, 0);
-            anim_controller(c, &mut r, 2);
-        });
+        check(
+            ee::s10::f_00312598__generated,
+            super::anim_controller_evaluate_pose,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 19, 0);
+                anim_controller(c, &mut r, 2);
+            },
+        );
     }
 
     #[test]
     fn anim_controller_update() {
         use crate::difftest::fakes::{covered, machine};
-        covered(ee::s10::f_003123c0__generated, super::anim_controller_update, 300, &|c, seed| {
-            let mut r = machine(c, seed, 20, 6);
-            anim_controller(c, &mut r, 2);
-        });
+        covered(
+            ee::s10::f_003123c0__generated,
+            super::anim_controller_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 20, 6);
+                anim_controller(c, &mut r, 2);
+            },
+        );
     }
 
     driven!(gen_evaluate_pose, ee::s10::f_00312598__generated);
@@ -2358,114 +2670,161 @@ mod tests {
 
     #[test]
     fn project_point() {
-        check(ee::s12::f_0037dee0__generated, super::project_point, 400, &|c, seed| {
-            let mut r = rng(seed, 23);
-            scramble(c, &mut r);
-            let gm = DATA;
-            for i in 0..4 {
-                put_vec(c, gm + 0x58a0 + 16 * i, vec(&mut r, 2.0, seed));
-            }
-            put_vec(c, gm + 0x58e0, vec(&mut r, 300.0, seed));
-            put_vec(c, gm + 0x58f0, vec(&mut r, 2048.0, seed));
-            put_vec(c, DATA + 0x8000, vec(&mut r, 1e3, seed));
-            if seed % 13 == 0 {
-                // w = 0 after the transform: division by zero.
+        check(
+            ee::s12::f_0037dee0__generated,
+            super::project_point,
+            400,
+            &|c, seed| {
+                let mut r = rng(seed, 23);
+                scramble(c, &mut r);
+                let gm = DATA;
                 for i in 0..4 {
-                    c.bus.write32(gm + 0x58ac + 16 * i, 0);
+                    put_vec(c, gm + 0x58a0 + 16 * i, vec(&mut r, 2.0, seed));
                 }
-            }
-            fill(c, &mut r, crate::difftest::SP - 0x10, 4);
-            c.g[A0][0] = if seed % 7 == 0 { DATA as u64 + 0x8000 } else { DATA as u64 + 0x9000 };
-            c.g[A1][0] = gm as u64;
-            c.g[A2][0] = DATA as u64 + 0x8000;
-        });
+                put_vec(c, gm + 0x58e0, vec(&mut r, 300.0, seed));
+                put_vec(c, gm + 0x58f0, vec(&mut r, 2048.0, seed));
+                put_vec(c, DATA + 0x8000, vec(&mut r, 1e3, seed));
+                if seed % 13 == 0 {
+                    // w = 0 after the transform: division by zero.
+                    for i in 0..4 {
+                        c.bus.write32(gm + 0x58ac + 16 * i, 0);
+                    }
+                }
+                fill(c, &mut r, crate::difftest::SP - 0x10, 4);
+                c.g[A0][0] = if seed % 7 == 0 {
+                    DATA as u64 + 0x8000
+                } else {
+                    DATA as u64 + 0x9000
+                };
+                c.g[A1][0] = gm as u64;
+                c.g[A2][0] = DATA as u64 + 0x8000;
+            },
+        );
     }
 
     #[test]
     fn rider_rotate_around_axis() {
-        check(ee::s00::f_0011dfe0__generated, super::rider_rotate_around_axis, 300, &|c, seed| {
-            let mut r = rng(seed, 24);
-            scramble(c, &mut r);
-            c.g[GP][0] = crate::difftest::GAME_GP as u64;
-            fill(c, &mut r, DATA, 0x80);
-            put_vec(c, DATA + 0x110, vec(&mut r, 1e4, seed));
-            put_vec(c, DATA + 0x120, vec(&mut r, 1.0, seed));
-            put_vec(c, DATA + 0x400, vec(&mut r, 1.0, seed));
-            fill(c, &mut r, crate::difftest::SP - 0x80, 0x20);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = DATA as u64 + 0x400;
-            c.f[12] = if seed % 5 == 0 { r.edge_f32() } else { r.f32(7.0) };
-        });
+        check(
+            ee::s00::f_0011dfe0__generated,
+            super::rider_rotate_around_axis,
+            300,
+            &|c, seed| {
+                let mut r = rng(seed, 24);
+                scramble(c, &mut r);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                fill(c, &mut r, DATA, 0x80);
+                put_vec(c, DATA + 0x110, vec(&mut r, 1e4, seed));
+                put_vec(c, DATA + 0x120, vec(&mut r, 1.0, seed));
+                put_vec(c, DATA + 0x400, vec(&mut r, 1.0, seed));
+                fill(c, &mut r, crate::difftest::SP - 0x80, 0x20);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = DATA as u64 + 0x400;
+                c.f[12] = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(7.0)
+                };
+            },
+        );
     }
 
     #[test]
     fn mat4_inverse() {
-        check(ee::s10::f_0031b6c8__generated, super::mat4_inverse, 300, &|c, seed| {
-            let mut r = rng(seed, 25);
-            scramble(c, &mut r);
-            for i in 0..4 {
-                put_vec(c, DATA + 16 * i, vec(&mut r, 10.0, seed));
-            }
-            if seed % 11 == 0 {
-                // Singular: two equal rows.
-                let row = c.bus.read128(DATA);
-                c.bus.write128(DATA + 0x10, row);
-            }
-            fill(c, &mut r, crate::difftest::SP - 0x100, 0x40);
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ee::s10::f_0031b6c8__generated,
+            super::mat4_inverse,
+            300,
+            &|c, seed| {
+                let mut r = rng(seed, 25);
+                scramble(c, &mut r);
+                for i in 0..4 {
+                    put_vec(c, DATA + 16 * i, vec(&mut r, 10.0, seed));
+                }
+                if seed % 11 == 0 {
+                    // Singular: two equal rows.
+                    let row = c.bus.read128(DATA);
+                    c.bus.write128(DATA + 0x10, row);
+                }
+                fill(c, &mut r, crate::difftest::SP - 0x100, 0x40);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
     #[test]
     fn mat4_to_pos_quat() {
-        check(ee::s10::f_0031b748__generated, super::mat4_to_pos_quat, 300, &|c, seed| {
-            let mut r = rng(seed, 26);
-            scramble(c, &mut r);
-            for i in 0..4 {
-                put_vec(c, DATA + 16 * i, vec(&mut r, 1.0, seed));
-            }
-            fill(c, &mut r, crate::difftest::SP - 0x40, 0x10);
-            c.g[A0][0] = DATA as u64 + 0x100;
-            c.g[A1][0] = DATA as u64;
-        });
+        check(
+            ee::s10::f_0031b748__generated,
+            super::mat4_to_pos_quat,
+            300,
+            &|c, seed| {
+                let mut r = rng(seed, 26);
+                scramble(c, &mut r);
+                for i in 0..4 {
+                    put_vec(c, DATA + 16 * i, vec(&mut r, 1.0, seed));
+                }
+                fill(c, &mut r, crate::difftest::SP - 0x40, 0x10);
+                c.g[A0][0] = DATA as u64 + 0x100;
+                c.g[A1][0] = DATA as u64;
+            },
+        );
     }
 
     #[test]
     fn vu0_rand_next() {
-        check(ee::s12::f_0036d400__generated, super::vu0_rand_next, 400, &|c, seed| {
-            let mut r = rng(seed, 27);
-            scramble(c, &mut r);
-            c.bus.write32(DATA, r.next_u32());
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ee::s12::f_0036d400__generated,
+            super::vu0_rand_next,
+            400,
+            &|c, seed| {
+                let mut r = rng(seed, 27);
+                scramble(c, &mut r);
+                c.bus.write32(DATA, r.next_u32());
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
     #[test]
     fn sphere_tree_set_position() {
-        check(ee::s10::f_0032c5e0__generated, super::sphere_tree_set_position, 300, &|c, seed| {
-            let mut r = rng(seed, 28);
-            scramble(c, &mut r);
-            fill(c, &mut r, DATA, 0x100);
-            c.bus.write32(DATA + 0x98, DATA + 0x200);
-            put_vec(c, DATA + 0x210, vec(&mut r, 100.0, seed));
-            put_vec(c, DATA + 0x400, vec(&mut r, 1e4, seed));
-            fill(c, &mut r, crate::difftest::SP - 0x30, 0xc);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = DATA as u64 + 0x400;
-        });
+        check(
+            ee::s10::f_0032c5e0__generated,
+            super::sphere_tree_set_position,
+            300,
+            &|c, seed| {
+                let mut r = rng(seed, 28);
+                scramble(c, &mut r);
+                fill(c, &mut r, DATA, 0x100);
+                c.bus.write32(DATA + 0x98, DATA + 0x200);
+                put_vec(c, DATA + 0x210, vec(&mut r, 100.0, seed));
+                put_vec(c, DATA + 0x400, vec(&mut r, 1e4, seed));
+                fill(c, &mut r, crate::difftest::SP - 0x30, 0xc);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = DATA as u64 + 0x400;
+            },
+        );
     }
 
     #[test]
     fn det3x3() {
-        check(ee::s10::f_0031b098__generated, super::det3x3, 400, &|c, seed| {
-            let mut r = rng(seed, 29);
-            scramble(c, &mut r);
-            for i in 12..20 {
-                c.f[i] = if seed % 4 == 0 { r.edge_f32() } else { r.f32(50.0) };
-            }
-            fill(c, &mut r, crate::difftest::SP - 0x60, 0x18);
-            c.bus.write32(crate::difftest::SP, r.f32(50.0));
-        });
+        check(
+            ee::s10::f_0031b098__generated,
+            super::det3x3,
+            400,
+            &|c, seed| {
+                let mut r = rng(seed, 29);
+                scramble(c, &mut r);
+                for i in 12..20 {
+                    c.f[i] = if seed % 4 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(50.0)
+                    };
+                }
+                fill(c, &mut r, crate::difftest::SP - 0x60, 0x18);
+                c.bus.write32(crate::difftest::SP, r.f32(50.0));
+            },
+        );
     }
 
     #[test]
@@ -2492,7 +2851,13 @@ mod tests {
             c.g[A0][0] = DATA as u64 + 0x100;
             c.g[A1][0] = DATA as u64;
         };
-        crate::difftest::check_paths_lohi(ee::s10::f_0031b7a8__generated, super::quat_from_matrix, 600, &[40, 104, 105], &setup);
+        crate::difftest::check_paths_lohi(
+            ee::s10::f_0031b7a8__generated,
+            super::quat_from_matrix,
+            600,
+            &[40, 104, 105],
+            &setup,
+        );
     }
 
     #[test]
@@ -2517,6 +2882,12 @@ mod tests {
             c.g[A1][0] = DATA as u64;
             c.g[A2][0] = DATA as u64 + 0x10;
         };
-        check_paths(ee::s10::f_0031bb30__generated, super::quat_from_two_vectors, 400, &[30], &setup);
+        check_paths(
+            ee::s10::f_0031bb30__generated,
+            super::quat_from_two_vectors,
+            400,
+            &[30],
+            &setup,
+        );
     }
 }

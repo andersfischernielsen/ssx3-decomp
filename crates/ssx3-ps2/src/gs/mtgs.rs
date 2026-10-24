@@ -30,9 +30,9 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use super::gif::GifPath;
 #[cfg(feature = "emu-gs")]
 use super::gpu::{NativeRecord, NativeSurfaces};
-use super::{Priv, CSR_FINISH, CSR_SIGNAL, CSR_VSINT};
 #[cfg(feature = "emu-gs")]
 use super::Gs;
+use super::{Priv, CSR_FINISH, CSR_SIGNAL, CSR_VSINT};
 use crate::Qword;
 
 const CSR_RESET: u64 = 1 << 9;
@@ -48,9 +48,18 @@ const MAX_INFLIGHT: u64 = 256;
 #[derive(Clone, Copy, Debug)]
 enum Cmd {
     /// `Gs::gif_write(path, next len qwords of the packet's data)`.
-    Gif { path: u8, len: u32 },
-    Reg { addr: u8, value: u64 },
-    Priv { offset: u32, value: u64 },
+    Gif {
+        path: u8,
+        len: u32,
+    },
+    Reg {
+        addr: u8,
+        value: u64,
+    },
+    Priv {
+        offset: u32,
+        value: u64,
+    },
     Vblank(u32),
     Raise(u64),
     Sync,
@@ -132,13 +141,21 @@ fn apply(gs: &mut Gs, c: Cmd, data: &[Qword], slot: &DisplaySlot, job: Option<Na
 #[cfg(feature = "emu-gs")]
 fn run(gs: &mut Gs, p: &mut Packet, slot: &DisplaySlot) {
     let mut pos = 0usize;
-    let Packet { cmds, data, natives } = p;
+    let Packet {
+        cmds,
+        data,
+        natives,
+    } = p;
     for &c in cmds.iter() {
         let len = match c {
             Cmd::Gif { len, .. } => len as usize,
             _ => 0,
         };
-        let job = if matches!(c, Cmd::Native) { natives.pop_front() } else { None };
+        let job = if matches!(c, Cmd::Native) {
+            natives.pop_front()
+        } else {
+            None
+        };
         apply(gs, c, &data[pos..pos + len], slot, job);
         pos += len;
     }
@@ -260,7 +277,10 @@ pub struct Mtgs {
 /// `SSX3_RENDER_ROUNDTRIP=N` (see `Mtgs::roundtrip_every`); `1` is every
 /// GIF transfer.
 fn roundtrip_every() -> u64 {
-    std::env::var("SSX3_RENDER_ROUNDTRIP").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+    std::env::var("SSX3_RENDER_ROUNDTRIP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
 }
 
 fn mtgs_enabled() -> bool {
@@ -295,7 +315,10 @@ impl Mtgs {
         let mode = if threaded {
             let shared = Arc::new(Shared {
                 core: Mutex::new(gs),
-                queue: Mutex::new(Queue { packets: VecDeque::new(), shutdown: false }),
+                queue: Mutex::new(Queue {
+                    packets: VecDeque::new(),
+                    shutdown: false,
+                }),
                 work: Condvar::new(),
                 done: AtomicU64::new(0),
                 waiters: AtomicU64::new(0),
@@ -309,7 +332,12 @@ impl Mtgs {
                 .name("gs".into())
                 .spawn(move || worker(sh))
                 .expect("spawn GS thread");
-            Mode::Threaded(Threaded { shared, thread: Some(thread), sent: 0, cur: Packet::default() })
+            Mode::Threaded(Threaded {
+                shared,
+                thread: Some(thread),
+                sent: 0,
+                cur: Packet::default(),
+            })
         } else {
             Mode::Direct(Arc::new(Mutex::new(gs)), Mutex::new(None))
         };
@@ -348,7 +376,11 @@ impl Mtgs {
     /// The guest-visible GS without a core (builds without `emu-gs`).
     #[cfg(not(feature = "emu-gs"))]
     pub fn new() -> Self {
-        let pr = Priv { csr: super::CSR_FIXED, imr: 0x7F00, ..Priv::default() };
+        let pr = Priv {
+            csr: super::CSR_FIXED,
+            imr: 0x7F00,
+            ..Priv::default()
+        };
         Mtgs {
             pr,
             csr: 0,
@@ -435,7 +467,9 @@ impl Mtgs {
     /// Hand the current packet to the GS thread.
     #[cfg(feature = "emu-gs")]
     fn kick(&mut self) {
-        let Mode::Threaded(t) = &mut self.mode else { return };
+        let Mode::Threaded(t) = &mut self.mode else {
+            return;
+        };
         if t.cur.is_empty() {
             return;
         }
@@ -506,10 +540,20 @@ impl Mtgs {
         let gs = self.lock();
         if mtgs_check() {
             for p in 0..4 {
-                assert!(gs.paths[p].same(&self.tags[p]), "MTGS GIF path {p} tag mirror diverged");
+                assert!(
+                    gs.paths[p].same(&self.tags[p]),
+                    "MTGS GIF path {p} tag mirror diverged"
+                );
             }
-            assert_eq!(gs.pr.csr & (0x1F | CSR_FIELD), self.csr, "MTGS CSR mirror diverged");
-            assert_eq!(gs.pr.siglblid, self.siglblid, "MTGS SIGLBLID mirror diverged");
+            assert_eq!(
+                gs.pr.csr & (0x1F | CSR_FIELD),
+                self.csr,
+                "MTGS CSR mirror diverged"
+            );
+            assert_eq!(
+                gs.pr.siglblid, self.siglblid,
+                "MTGS SIGLBLID mirror diverged"
+            );
         }
         gs
     }
@@ -665,7 +709,11 @@ impl Mtgs {
     /// half), merged with the register's current value like the bus does.
     pub fn write_priv32(&mut self, offset: u32, hi: bool, v: u32) {
         let cur = self.read_priv(offset);
-        let nv = if hi { (cur & 0xffff_ffff) | (v as u64) << 32 } else { (cur & !0xffff_ffff) | v as u64 };
+        let nv = if hi {
+            (cur & 0xffff_ffff) | (v as u64) << 32
+        } else {
+            (cur & !0xffff_ffff) | v as u64
+        };
         self.write_priv(offset, nv);
     }
 
@@ -714,10 +762,19 @@ impl Mtgs {
         if self.roundtrip_every != 0 {
             self.gif_writes += 1;
             if self.gif_writes % self.roundtrip_every == 0 {
-                self.native_run(NativeJob { surfaces: None, passes: Vec::new() });
+                self.native_run(NativeJob {
+                    surfaces: None,
+                    passes: Vec::new(),
+                });
             }
         }
-        self.exec(Cmd::Gif { path: path as u8, len: data.len() as u32 }, data);
+        self.exec(
+            Cmd::Gif {
+                path: path as u8,
+                len: data.len() as u32,
+            },
+            data,
+        );
     }
 
     /// A PATH1 (XGKICK) packet of the type-3 VU1 program (d159716b): the
@@ -734,7 +791,13 @@ impl Mtgs {
         let path = path.min(3);
         let (csr, sig) = (&mut self.csr, &mut self.siglblid);
         self.tags[path].scan(data, |addr, value| ad_side_effects(csr, sig, addr, value));
-        self.exec(Cmd::Gif { path: 0x80 | path as u8, len: data.len() as u32 }, data);
+        self.exec(
+            Cmd::Gif {
+                path: 0x80 | path as u8,
+                len: data.len() as u32,
+            },
+            data,
+        );
     }
 
     /// Stop (or resume) rasterizing primitives; everything else (state,
@@ -893,49 +956,49 @@ impl Drop for Mtgs {
         }
         #[cfg(feature = "emu-gs")]
         {
-        if super::render_native_type3() {
-            self.drain();
-            if let Some(st) = self.lock().gpu_stats() {
-                eprintln!("{}", st.n3.report(&st.native));
+            if super::render_native_type3() {
+                self.drain();
+                if let Some(st) = self.lock().gpu_stats() {
+                    eprintln!("{}", st.n3.report(&st.native));
+                }
+                if super::gpu::native3_diag() {
+                    eprint!("{}", self.lock().n3_diag_report());
+                }
             }
-            if super::gpu::native3_diag() {
-                eprint!("{}", self.lock().n3_diag_report());
+            if self.roundtrip_every != 0 {
+                self.drain();
+                self.roundtrip_report();
             }
-        }
-        if self.roundtrip_every != 0 {
-            self.drain();
-            self.roundtrip_report();
-        }
-        if std::env::var_os("SSX3_GS_WAITS").is_some() {
-            self.drain();
-            if let Some(st) = self.lock().gpu_stats() {
-                eprintln!(
+            if std::env::var_os("SSX3_GS_WAITS").is_some() {
+                self.drain();
+                if let Some(st) = self.lock().gpu_stats() {
+                    eprintln!(
                     "[gs-waits] {} readbacks: waiting for the submit thread {:.1} ms, for the GPU {:.1} ms; {} submits",
                     st.readback_count,
                     st.readback_drain_ns as f64 / 1e6,
                     st.readback_gpu_ns as f64 / 1e6,
                     st.submits
                 );
+                }
             }
-        }
-        if std::env::var_os("SSX3_GS_PROFILE").is_some() {
-            self.drain();
-            if let Some(st) = self.lock().gpu_stats() {
-                eprintln!(
+            if std::env::var_os("SSX3_GS_PROFILE").is_some() {
+                self.drain();
+                if let Some(st) = self.lock().gpu_stats() {
+                    eprintln!(
                     "[gs-prof] GPU time: compute raster {:.1} ms, native runs {:.1} ms; {} submits",
                     st.gpu_raster_ns as f64 / 1e6,
                     st.native.gpu_ns as f64 / 1e6,
                     st.submits
                 );
+                }
             }
-        }
-        if let Mode::Threaded(t) = &mut self.mode {
-            t.shared.queue.lock().unwrap().shutdown = true;
-            t.shared.work.notify_all();
-            if let Some(h) = t.thread.take() {
-                let _ = h.join();
+            if let Mode::Threaded(t) = &mut self.mode {
+                t.shared.queue.lock().unwrap().shutdown = true;
+                t.shared.work.notify_all();
+                if let Some(h) = t.thread.take() {
+                    let _ = h.join();
+                }
             }
-        }
         }
     }
 }

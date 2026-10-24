@@ -1,14 +1,30 @@
 //! `src/visualfx/boardsparkfx.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
+use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::visualfx::attachedemitterfx::rand_step;
+pub(crate) use crate::game::visualfx::attachedemitterfx::vu0_length;
+pub(crate) use crate::game::visualfx::attachedemitterfx::RAND_SEED;
+pub(crate) use crate::game::visualfx::boardwakefx::addiu;
+pub(crate) use crate::game::visualfx::boardwakefx::at;
+pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
+pub(crate) use crate::game::visualfx::boardwakefx::copy_quad;
+pub(crate) use crate::game::visualfx::boardwakefx::fconst;
+pub(crate) use crate::game::visualfx::boardwakefx::gp;
+pub(crate) use crate::game::visualfx::boardwakefx::p;
+pub(crate) use crate::game::visualfx::boardwakefx::vadd;
+pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
+pub(crate) use crate::game::visualfx::boardwakefx::APP;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -19,22 +35,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi;
-use crate::call::sp;
-use crate::ps2f::FpuF32;
-pub(crate) use crate::game::visualfx::boardwakefx::APP;
-pub(crate) use crate::game::visualfx::boardwakefx::at;
-pub(crate) use crate::game::visualfx::boardwakefx::addiu;
-pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
-pub(crate) use crate::game::visualfx::boardwakefx::vmul_bc;
-pub(crate) use crate::game::visualfx::boardwakefx::vadd;
-pub(crate) use crate::game::visualfx::boardwakefx::copy_quad;
-pub(crate) use crate::game::visualfx::attachedemitterfx::RAND_SEED;
-pub(crate) use crate::game::visualfx::attachedemitterfx::vu0_length;
-pub(crate) use crate::game::visualfx::attachedemitterfx::rand_step;
-pub(crate) use crate::game::visualfx::boardwakefx::p;
-pub(crate) use crate::game::visualfx::boardwakefx::gp;
-pub(crate) use crate::game::visualfx::boardwakefx::fconst;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -106,11 +106,10 @@ pub(crate) mod spark {
 
 /// The renderer object (`cGfx`) at gp-0x854.
 pub(crate) mod gfx {
-    pub(crate) use crate::game::visualfx::boardwakefx::gfx::STATE_TOP;
     pub(crate) use crate::game::visualfx::boardwakefx::gfx::F1030;
+    pub(crate) use crate::game::visualfx::boardwakefx::gfx::STATE_TOP;
     pub(crate) use crate::game::visualfx::boardwakefx::gfx::VTABLE;
 }
-
 
 /// The character id that always grinds sparks.
 pub(crate) const SPARK_CHARACTER: u64 = 9;
@@ -129,7 +128,6 @@ pub(crate) const EMITTER_SET_PATH: u32 = 0x0036_cef8;
 pub(crate) const DYNAMIC_EMITTER_SPAWN_AT: u32 = 0x0037_17c0;
 
 pub(crate) const RIDER_GET_MAIN_STATE: u32 = 0x0011_fe98;
-
 
 /// `void cBoardSparkFX_Update(cBoardSparkFX *fx)` (0x2dabc8): advance the
 /// descriptor by the frame time, restart the emitter when asked; from the
@@ -352,7 +350,6 @@ pub fn c_board_spark_fx_update(c: &mut Cpu) {
     })
 }
 
-
 /// The grinding spark: the board colour (character 9: the constant colour
 /// at gp-0x3c88, else the colour of the board the rider's method 0x38
 /// names, doubled with alpha 1) at sp+0x10, the velocity along the rider's
@@ -499,7 +496,6 @@ pub(crate) fn spark_grind(c: &mut Cpu, sp: u32, gp: u32) -> Flow {
     c.g[A3][0] = sx(s(0x10));
     call_ptr(c, DYNAMIC_EMITTER_SPAWN_AT, 0x002d_afc4)
 }
-
 
 /// Spraying: the bone's axes at sp+0x10 (s3) / sp+0x20 (s4); the
 /// descriptor's velocity curve from two colours (hot: (255, 0, 255, 153)
@@ -688,7 +684,6 @@ pub(crate) fn spark_spray(c: &mut Cpu, sp: u32, gp: u32) -> Flow {
     Ok(())
 }
 
-
 /// The burst (when a random roll beats gp-0x3c5c): three points
 /// `source + (8 * (r1 - 1) - 4, ...)` with random scales `10 * (r - 1) +
 /// 20`, at `fx+0x30..` and `fx+0x60..`. Returns whether it ran (else the
@@ -803,7 +798,6 @@ pub(crate) fn spark_burst(c: &mut Cpu, sp: u32, gp: u32) -> bool {
     true
 }
 
-
 /// `PushState`: copy the current 20-byte renderer state one slot up and leave
 /// the new top in v0 (as the original's `stateTop[1] = stateTop[0];
 /// stateTop++`). Returns the new top.
@@ -828,7 +822,6 @@ pub(crate) fn push_renderer_state(c: &mut Cpu) -> u32 {
     c.g[V0][0] = c.lw(p(r32(c, A1), gfx::STATE_TOP));
     r32(c, V0)
 }
-
 
 /// `void cBoardSparkFX_Render(Spark* self)` (0x2db478): step the spark
 /// emitter, then (if enabled) draw the trail strip and the three spark quads
@@ -999,152 +992,187 @@ pub fn board_spark_fx_render(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::fill;
+    use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::check;
-    use crate::difftest::scramble;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::delta;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_2;
     pub(crate) use crate::game::visualfx::boardwakefx::tests::gp_at;
-
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_2;
 
     #[test]
     fn c_board_spark_fx_update_matches() {
-        covered(ssx3_ee::s09::f_002dabc8__generated, c_board_spark_fx_update, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x2dab_c8, 3);
-            let (fx, em, em_vt, desc) = (DATA, DATA + 0x1000, DATA + 0x1800, DATA + 0x2000);
-            let (clock, app, module, players) = (DATA + 0x3000, DATA + 0x3100, DATA + 0x3200, DATA + 0x3300);
-            let (rider, state, rider_vt, model, bones) =
-                (DATA + 0x4000, DATA + 0x4800, DATA + 0x4900, DATA + 0x5000, DATA + 0x5100);
-            c.g[A0][0] = sx(fx);
-            c.bus.write32(fx + spark::RIDER, rider);
-            c.bus.write32(fx + spark::EMITTER, em);
-            c.bus.write32(fx + spark::RESTART_ARG, r.next_u32());
-            c.bus.write32(fx + spark::DESC, desc);
-            c.bus.write32(fx + spark::RESTART, r.next_u32() % 2);
-            // The dynamic emitter: restart method (fake), colour slots;
-            // DynamicEmitter_Spawn returns at once (+0x174 = 0).
-            c.bus.write32(em + 0x1f8, em_vt);
-            slot(c, em_vt, 0x18, delta(&mut r), FAKE + 0x10);
-            c.bus.write32(em + 0x58, r.f32(2.0));
-            c.bus.write32(em + 0x174, 0);
-            c.bus.write32(em + 0x17c, r.next_u32() % 4);
-            c.bus.write32(em + 0x204, em + 0x400);
-            // The descriptor: no catch-up loop in Emitter_UpdateDescriptor.
-            for i in 0..0x50 {
-                c.bus.write32(desc + 4 * i, r.f32(4.0));
-            }
-            c.bus.write32(desc, 1000);
-            c.bus.write32(desc + 8, 0);
-            c.bus.write32(desc + 0xc, 1.0f32.to_bits());
-            c.bus.write32(desc + 0x4c, 1.0f32.to_bits());
-            // Frame rate, app, player records (+0x88 rail, +0x8c carving).
-            c.bus.write32(GAME_GP + 0x2a74, clock);
-            c.bus.write32(clock + 0x10, if r.next_u32() % 2 == 0 { 30 } else { 60 });
-            c.bus.write32(GAME_GP - APP, app);
-            c.bus.write32(app + 0x84, module);
-            c.bus.write32(module + 0x44, players);
-            for i in 0..10 {
-                c.bus.write32(players + 0xb0 * i + 0x88, r.next_u32() % 2);
-                c.bus.write32(players + 0xb0 * i + 0x8c, (r.next_u32() % 3 != 0) as u32);
-            }
-            // The rider: player index or the spark character, velocity,
-            // position, direction, main state, board query (fake, forced
-            // to a small board index), bone.
-            let character = if r.next_u32() % 4 == 0 { 9 } else { r.next_u32() % 4 };
-            c.bus.write32(rider + 0x438, character);
-            for off in [0x1a0, 0x1e0, 0x460] {
-                for k in 0..4 {
-                    c.bus.write32(rider + off + 4 * k, r.f32(8.0));
+        covered(
+            ssx3_ee::s09::f_002dabc8__generated,
+            c_board_spark_fx_update,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2dab_c8, 3);
+                let (fx, em, em_vt, desc) = (DATA, DATA + 0x1000, DATA + 0x1800, DATA + 0x2000);
+                let (clock, app, module, players) =
+                    (DATA + 0x3000, DATA + 0x3100, DATA + 0x3200, DATA + 0x3300);
+                let (rider, state, rider_vt, model, bones) = (
+                    DATA + 0x4000,
+                    DATA + 0x4800,
+                    DATA + 0x4900,
+                    DATA + 0x5000,
+                    DATA + 0x5100,
+                );
+                c.g[A0][0] = sx(fx);
+                c.bus.write32(fx + spark::RIDER, rider);
+                c.bus.write32(fx + spark::EMITTER, em);
+                c.bus.write32(fx + spark::RESTART_ARG, r.next_u32());
+                c.bus.write32(fx + spark::DESC, desc);
+                c.bus.write32(fx + spark::RESTART, r.next_u32() % 2);
+                // The dynamic emitter: restart method (fake), colour slots;
+                // DynamicEmitter_Spawn returns at once (+0x174 = 0).
+                c.bus.write32(em + 0x1f8, em_vt);
+                slot(c, em_vt, 0x18, delta(&mut r), FAKE + 0x10);
+                c.bus.write32(em + 0x58, r.f32(2.0));
+                c.bus.write32(em + 0x174, 0);
+                c.bus.write32(em + 0x17c, r.next_u32() % 4);
+                c.bus.write32(em + 0x204, em + 0x400);
+                // The descriptor: no catch-up loop in Emitter_UpdateDescriptor.
+                for i in 0..0x50 {
+                    c.bus.write32(desc + 4 * i, r.f32(4.0));
                 }
-            }
-            c.bus.write32(rider + 0x2f0, r.f32(1.0));
-            c.bus.write32(rider + 0x77c, state);
-            c.bus.write32(state + 0xde0, if r.next_u32() % 2 == 0 { 4 } else { r.next_u32() % 8 });
-            c.bus.write32(rider + 0x6c0, rider_vt);
-            slot(c, rider_vt, 0x38, delta(&mut r), FAKE);
-            for n in 0..8 {
-                c.bus.write32(crate::difftest::fakes::LOG_RESULTS + 4 * n, 1 + r.next_u32() % 4);
-            }
-            for i in 0..0x140u32 {
-                c.bus.write32(BOARD_COLOURS + 4 * i, r.f32(1.0));
-            }
-            c.bus.write32(rider + 0x780, model);
-            c.bus.write32(rider + 0x8a4, r.next_u32() % 4);
-            c.bus.write32(model + 0x34, bones);
-            fill(c, &mut r, bones, 0x40);
-            // Globals: the threshold (speed 5), constants, switches, seed.
-            c.bus.write32(GAME_GP - 0x3c94, 5.0f32.to_bits());
-            for off in (0x3c5c..0x3c94).step_by(4) {
-                c.bus.write32(GAME_GP - off, r.f32(2.0));
-            }
-            c.bus.write32(GAME_GP + 0x163c, (r.next_u32() % 3 == 0) as u32);
-            c.bus.write32(GAME_GP + 0x1638, (r.next_u32() % 3 == 0) as u32);
-            c.bus.write32(GAME_GP + RAND_SEED, r.next_u32());
-        });
+                c.bus.write32(desc, 1000);
+                c.bus.write32(desc + 8, 0);
+                c.bus.write32(desc + 0xc, 1.0f32.to_bits());
+                c.bus.write32(desc + 0x4c, 1.0f32.to_bits());
+                // Frame rate, app, player records (+0x88 rail, +0x8c carving).
+                c.bus.write32(GAME_GP + 0x2a74, clock);
+                c.bus
+                    .write32(clock + 0x10, if r.next_u32() % 2 == 0 { 30 } else { 60 });
+                c.bus.write32(GAME_GP - APP, app);
+                c.bus.write32(app + 0x84, module);
+                c.bus.write32(module + 0x44, players);
+                for i in 0..10 {
+                    c.bus.write32(players + 0xb0 * i + 0x88, r.next_u32() % 2);
+                    c.bus
+                        .write32(players + 0xb0 * i + 0x8c, (r.next_u32() % 3 != 0) as u32);
+                }
+                // The rider: player index or the spark character, velocity,
+                // position, direction, main state, board query (fake, forced
+                // to a small board index), bone.
+                let character = if r.next_u32() % 4 == 0 {
+                    9
+                } else {
+                    r.next_u32() % 4
+                };
+                c.bus.write32(rider + 0x438, character);
+                for off in [0x1a0, 0x1e0, 0x460] {
+                    for k in 0..4 {
+                        c.bus.write32(rider + off + 4 * k, r.f32(8.0));
+                    }
+                }
+                c.bus.write32(rider + 0x2f0, r.f32(1.0));
+                c.bus.write32(rider + 0x77c, state);
+                c.bus.write32(
+                    state + 0xde0,
+                    if r.next_u32() % 2 == 0 {
+                        4
+                    } else {
+                        r.next_u32() % 8
+                    },
+                );
+                c.bus.write32(rider + 0x6c0, rider_vt);
+                slot(c, rider_vt, 0x38, delta(&mut r), FAKE);
+                for n in 0..8 {
+                    c.bus.write32(
+                        crate::difftest::fakes::LOG_RESULTS + 4 * n,
+                        1 + r.next_u32() % 4,
+                    );
+                }
+                for i in 0..0x140u32 {
+                    c.bus.write32(BOARD_COLOURS + 4 * i, r.f32(1.0));
+                }
+                c.bus.write32(rider + 0x780, model);
+                c.bus.write32(rider + 0x8a4, r.next_u32() % 4);
+                c.bus.write32(model + 0x34, bones);
+                fill(c, &mut r, bones, 0x40);
+                // Globals: the threshold (speed 5), constants, switches, seed.
+                c.bus.write32(GAME_GP - 0x3c94, 5.0f32.to_bits());
+                for off in (0x3c5c..0x3c94).step_by(4) {
+                    c.bus.write32(GAME_GP - off, r.f32(2.0));
+                }
+                c.bus
+                    .write32(GAME_GP + 0x163c, (r.next_u32() % 3 == 0) as u32);
+                c.bus
+                    .write32(GAME_GP + 0x1638, (r.next_u32() % 3 == 0) as u32);
+                c.bus.write32(GAME_GP + RAND_SEED, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn board_spark_fx_render_matches() {
-        check(ee::s09::f_002db478__generated, board_spark_fx_render, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0x2db4, 2);
-            let (s, em, gfx, state, vt1, ctx2, vt2) = (
-                DATA,
-                DATA + 0x5000,
-                DATA + 0x1000,
-                DATA + 0x2000,
-                DATA + 0x3000,
-                DATA + 0x7000,
-                DATA + 0x7200,
-            );
-            // Emitter step: enabled = 0 makes the real callee return at once.
-            c.bus.write32(em + 0x174, 0);
-            c.bus.write32(em + 0x1e0, seed % 2);
-            // The renderers' state stack and virtual tables.
-            c.bus.write32(gp_at(-0x854), gfx);
-            c.bus.write32(gfx + 0xe84, state);
-            c.bus.write32(gfx + 0x10d8, vt1);
-            c.bus.write16(vt1 + 0x290, (r.next_u32() & 0x7c) as u16);
-            c.bus.write32(vt1 + 0x294, FAKE);
-            c.bus.write32(gp_at(0x2a90), ctx2);
-            c.bus.write32(ctx2 + 0x10d8, vt2);
-            c.bus.write16(vt2 + 0x270, (r.next_u32() & 0x7c) as u16);
-            c.bus.write32(vt2 + 0x274, FAKE);
-            // The one-time UV/colour globals.
-            c.bus.write32(gp_at(0x23e8), if seed % 3 == 0 { 0 } else { 1 });
-            c.bus.write32(gp_at(0x23f8), if seed % 4 == 0 { 0 } else { 1 });
-            c.bus.write32(gp_at(0x23fc), if seed % 5 == 0 { 0 } else { 1 });
-            c.bus.write32(gp_at(0x23e0), r.next_u32());
-            c.bus.write32(gp_at(0x23e4), r.next_u32());
-            c.bus.write32(gp_at(0x23f0), r.next_u32());
-            c.bus.write32(gp_at(0x23f4), r.next_u32());
-            for k in 0..4u32 {
-                c.bus.write32(0x004d_57a0 + 4 * k, r.edge_f32());
-            }
-            // The spark object.
-            c.bus.write32(s + 0x20, em);
-            c.bus.write32(s + 0x28, r.next_u32());
-            for k in 0..12u32 {
-                c.bus.write32(s + 0x30 + 4 * k, r.edge_f32());
-            }
-            for k in 0..3u32 {
-                c.bus.write32(s + 0x60 + 4 * k, r.edge_f32());
-            }
-            for k in 0..5u32 {
-                c.bus.write32(s + 0x7c + 4 * k, r.next_u32());
-                c.bus.write32(s + 0x90 + 4 * k, r.next_u32());
-            }
-            c.bus.write32(s + 0x70, if seed % 6 == 0 { 0 } else { 1 });
-            c.bus.write32(s + 0x74, if seed % 7 == 0 { 0 } else { 1 });
-            c.g[A0][0] = sx(s);
-        });
+        check(
+            ee::s09::f_002db478__generated,
+            board_spark_fx_render,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2db4, 2);
+                let (s, em, gfx, state, vt1, ctx2, vt2) = (
+                    DATA,
+                    DATA + 0x5000,
+                    DATA + 0x1000,
+                    DATA + 0x2000,
+                    DATA + 0x3000,
+                    DATA + 0x7000,
+                    DATA + 0x7200,
+                );
+                // Emitter step: enabled = 0 makes the real callee return at once.
+                c.bus.write32(em + 0x174, 0);
+                c.bus.write32(em + 0x1e0, seed % 2);
+                // The renderers' state stack and virtual tables.
+                c.bus.write32(gp_at(-0x854), gfx);
+                c.bus.write32(gfx + 0xe84, state);
+                c.bus.write32(gfx + 0x10d8, vt1);
+                c.bus.write16(vt1 + 0x290, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt1 + 0x294, FAKE);
+                c.bus.write32(gp_at(0x2a90), ctx2);
+                c.bus.write32(ctx2 + 0x10d8, vt2);
+                c.bus.write16(vt2 + 0x270, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt2 + 0x274, FAKE);
+                // The one-time UV/colour globals.
+                c.bus
+                    .write32(gp_at(0x23e8), if seed % 3 == 0 { 0 } else { 1 });
+                c.bus
+                    .write32(gp_at(0x23f8), if seed % 4 == 0 { 0 } else { 1 });
+                c.bus
+                    .write32(gp_at(0x23fc), if seed % 5 == 0 { 0 } else { 1 });
+                c.bus.write32(gp_at(0x23e0), r.next_u32());
+                c.bus.write32(gp_at(0x23e4), r.next_u32());
+                c.bus.write32(gp_at(0x23f0), r.next_u32());
+                c.bus.write32(gp_at(0x23f4), r.next_u32());
+                for k in 0..4u32 {
+                    c.bus.write32(0x004d_57a0 + 4 * k, r.edge_f32());
+                }
+                // The spark object.
+                c.bus.write32(s + 0x20, em);
+                c.bus.write32(s + 0x28, r.next_u32());
+                for k in 0..12u32 {
+                    c.bus.write32(s + 0x30 + 4 * k, r.edge_f32());
+                }
+                for k in 0..3u32 {
+                    c.bus.write32(s + 0x60 + 4 * k, r.edge_f32());
+                }
+                for k in 0..5u32 {
+                    c.bus.write32(s + 0x7c + 4 * k, r.next_u32());
+                    c.bus.write32(s + 0x90 + 4 * k, r.next_u32());
+                }
+                c.bus.write32(s + 0x70, if seed % 6 == 0 { 0 } else { 1 });
+                c.bus.write32(s + 0x74, if seed % 7 == 0 { 0 } else { 1 });
+                c.g[A0][0] = sx(s);
+            },
+        );
     }
 }

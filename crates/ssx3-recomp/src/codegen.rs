@@ -41,11 +41,29 @@ const SYSCALLS: &[(u32, &str, usize, bool)] = &[
 fn is_control(m: &str) -> bool {
     matches!(
         m,
-        "beq" | "bne" | "beql" | "bnel"
-            | "blez" | "bgtz" | "blezl" | "bgtzl"
-            | "bltz" | "bgez" | "bltzl" | "bgezl"
-            | "bltzal" | "bgezal" | "bltzall" | "bgezall"
-            | "bc1f" | "bc1t" | "j" | "jal" | "jr" | "jalr" | "eret"
+        "beq"
+            | "bne"
+            | "beql"
+            | "bnel"
+            | "blez"
+            | "bgtz"
+            | "blezl"
+            | "bgtzl"
+            | "bltz"
+            | "bgez"
+            | "bltzl"
+            | "bgezl"
+            | "bltzal"
+            | "bgezal"
+            | "bltzall"
+            | "bgezall"
+            | "bc1f"
+            | "bc1t"
+            | "j"
+            | "jal"
+            | "jr"
+            | "jalr"
+            | "eret"
     )
 }
 
@@ -158,11 +176,17 @@ impl<'a> Emit<'a> {
             ("mtsab", _) | ("mtsah", _) | ("clear_f", _) | ("clear_fcsr", _) => true,
             // COP1 data moves.
             ("mtc1", CopMove { rt, rd, .. }) => {
-                self.line(pc, &format!("c.set_f32({rd}, f32::from_bits(c.reg({rt}) as u32));"));
+                self.line(
+                    pc,
+                    &format!("c.set_f32({rd}, f32::from_bits(c.reg({rt}) as u32));"),
+                );
                 true
             }
             ("mfc1", CopMove { rt, rd, .. }) => {
-                self.line(pc, &format!("c.set_reg({rt}, (c.f32({rd}).to_bits() as i32) as i64 as u64);"));
+                self.line(
+                    pc,
+                    &format!("c.set_reg({rt}, (c.f32({rd}).to_bits() as i32) as i64 as u64);"),
+                );
                 true
             }
             ("cfc1", CopMove { rt, .. }) => {
@@ -176,7 +200,9 @@ impl<'a> Emit<'a> {
             ("addiu" | "addi" | "daddiu" | "daddi", RtRsImm { rt, rs, imm }) => {
                 self.line(
                     pc,
-                    &format!("c.set_reg({rt}, (c.reg({rs}) as i64).wrapping_add({imm}i64) as u64);"),
+                    &format!(
+                        "c.set_reg({rt}, (c.reg({rs}) as i64).wrapping_add({imm}i64) as u64);"
+                    ),
                 );
                 true
             }
@@ -184,7 +210,9 @@ impl<'a> Emit<'a> {
                 let cast = if m == "slti" { "i64" } else { "u64" };
                 self.line(
                     pc,
-                    &format!("c.set_reg({rt}, ((c.reg({rs}) as {cast}) < ({imm} as {cast})) as u64);"),
+                    &format!(
+                        "c.set_reg({rt}, ((c.reg({rs}) as {cast}) < ({imm} as {cast})) as u64);"
+                    ),
                 );
                 true
             }
@@ -194,7 +222,10 @@ impl<'a> Emit<'a> {
                     "ori" => "|",
                     _ => "^",
                 };
-                self.line(pc, &format!("c.set_reg({rt}, c.reg({rs}) {op} ({imm}u64));"));
+                self.line(
+                    pc,
+                    &format!("c.set_reg({rt}, c.reg({rs}) {op} ({imm}u64));"),
+                );
                 true
             }
             ("lui", RtImm { rt, imm }) => {
@@ -202,8 +233,11 @@ impl<'a> Emit<'a> {
                 true
             }
 
-            ("addu" | "add" | "subu" | "sub" | "daddu" | "dadd" | "dsubu" | "dsub" | "and" | "or"
-            | "xor" | "nor", RdRsRt { rd, rs, rt }) => {
+            (
+                "addu" | "add" | "subu" | "sub" | "daddu" | "dadd" | "dsubu" | "dsub" | "and"
+                | "or" | "xor" | "nor",
+                RdRsRt { rd, rs, rt },
+            ) => {
                 let expr = match m {
                     "addu" | "add" | "daddu" | "dadd" => {
                         format!("c.reg({rs}).wrapping_add(c.reg({rt}))")
@@ -223,12 +257,17 @@ impl<'a> Emit<'a> {
             ("slt", RdRsRt { rd, rs, rt }) => {
                 self.line(
                     pc,
-                    &format!("c.set_reg({rd}, ((c.reg({rs}) as i64) < (c.reg({rt}) as i64)) as u64);"),
+                    &format!(
+                        "c.set_reg({rd}, ((c.reg({rs}) as i64) < (c.reg({rt}) as i64)) as u64);"
+                    ),
                 );
                 true
             }
             ("sltu", RdRsRt { rd, rs, rt }) => {
-                self.line(pc, &format!("c.set_reg({rd}, (c.reg({rs}) < c.reg({rt})) as u64);"));
+                self.line(
+                    pc,
+                    &format!("c.set_reg({rd}, (c.reg({rs}) < c.reg({rt})) as u64);"),
+                );
                 true
             }
             ("movz" | "movn", RdRsRt { rd, rs, rt }) => {
@@ -240,8 +279,10 @@ impl<'a> Emit<'a> {
                 true
             }
 
-            ("sll" | "srl" | "sra" | "dsll" | "dsrl" | "dsra" | "dsll32" | "dsrl32" | "dsra32",
-                RdRtSa { rd, rt, sa }) => {
+            (
+                "sll" | "srl" | "sra" | "dsll" | "dsrl" | "dsra" | "dsll32" | "dsrl32" | "dsra32",
+                RdRtSa { rd, rt, sa },
+            ) => {
                 let (base, extra) = match m {
                     "dsll32" => ("dsll", 32),
                     "dsrl32" => ("dsrl", 32),
@@ -270,8 +311,14 @@ impl<'a> Emit<'a> {
             }
 
             ("mult" | "multu" | "mult1" | "multu1", RsRt { rs, rt }) => {
-                self.line(pc, &format!("let {t} = (c.reg({rs}) as u128) * (c.reg({rt}) as u128);"));
-                self.line(pc, &format!("c.lo = {t} as u64; c.hi = ({t} >> 64) as u64;"));
+                self.line(
+                    pc,
+                    &format!("let {t} = (c.reg({rs}) as u128) * (c.reg({rt}) as u128);"),
+                );
+                self.line(
+                    pc,
+                    &format!("c.lo = {t} as u64; c.hi = ({t} >> 64) as u64;"),
+                );
                 true
             }
             ("div" | "divu" | "div1" | "divu1", RsRt { rs, rt }) => {
@@ -283,29 +330,70 @@ impl<'a> Emit<'a> {
                 true
             }
             ("madd" | "maddu" | "madd1" | "maddu1", RsRt { rs, rt }) => {
-                self.line(pc, &format!("let {t} = (c.reg({rs}) as u128) * (c.reg({rt}) as u128);"));
+                self.line(
+                    pc,
+                    &format!("let {t} = (c.reg({rs}) as u128) * (c.reg({rt}) as u128);"),
+                );
                 self.line(pc, &format!("let acc = ((c.hi as u128) << 64) | c.lo as u128; let acc = acc.wrapping_add({t});"));
                 self.line(pc, "c.lo = acc as u64; c.hi = (acc >> 64) as u64;");
                 true
             }
 
-            ("lb" | "lbu" | "lh" | "lhu" | "lw" | "lwu" | "ld" | "sb" | "sh" | "sw" | "sd",
-                Mem { rt, rs, offset }) => {                self.line(
+            (
+                "lb" | "lbu" | "lh" | "lhu" | "lw" | "lwu" | "ld" | "sb" | "sh" | "sw" | "sd",
+                Mem { rt, rs, offset },
+            ) => {
+                self.line(
                     pc,
-                    &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"),
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
                 );
                 match m {
-                    "lb" => self.line(pc, &format!("let {t} = c.load_i8(a_{pc:08x}); c.set_reg({rt}, {t});")),
-                    "lbu" => self.line(pc, &format!("let {t} = c.load_u8(a_{pc:08x}); c.set_reg({rt}, {t});")),
-                    "lh" => self.line(pc, &format!("let {t} = c.load_i16(a_{pc:08x}); c.set_reg({rt}, {t});")),
-                    "lhu" => self.line(pc, &format!("let {t} = c.load_u16(a_{pc:08x}); c.set_reg({rt}, {t});")),
-                    "lw" => self.line(pc, &format!("let {t} = c.load_i32(a_{pc:08x}); c.set_reg({rt}, {t});")),
-                    "lwu" => self.line(pc, &format!("let {t} = c.load_u32(a_{pc:08x}); c.set_reg({rt}, {t});")),
-                    "ld" => self.line(pc, &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_reg({rt}, {t});")),
-                    "sb" => self.line(pc, &format!("let {t} = c.reg({rt}); c.store_u8(a_{pc:08x}, {t});")),
-                    "sh" => self.line(pc, &format!("let {t} = c.reg({rt}); c.store_u16(a_{pc:08x}, {t});")),
-                    "sw" => self.line(pc, &format!("let {t} = c.reg({rt}); c.store_u32(a_{pc:08x}, {t});")),
-                    _ => self.line(pc, &format!("let {t} = c.reg({rt}); c.store_u64(a_{pc:08x}, {t});")),
+                    "lb" => self.line(
+                        pc,
+                        &format!("let {t} = c.load_i8(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                    ),
+                    "lbu" => self.line(
+                        pc,
+                        &format!("let {t} = c.load_u8(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                    ),
+                    "lh" => self.line(
+                        pc,
+                        &format!("let {t} = c.load_i16(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                    ),
+                    "lhu" => self.line(
+                        pc,
+                        &format!("let {t} = c.load_u16(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                    ),
+                    "lw" => self.line(
+                        pc,
+                        &format!("let {t} = c.load_i32(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                    ),
+                    "lwu" => self.line(
+                        pc,
+                        &format!("let {t} = c.load_u32(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                    ),
+                    "ld" => self.line(
+                        pc,
+                        &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                    ),
+                    "sb" => self.line(
+                        pc,
+                        &format!("let {t} = c.reg({rt}); c.store_u8(a_{pc:08x}, {t});"),
+                    ),
+                    "sh" => self.line(
+                        pc,
+                        &format!("let {t} = c.reg({rt}); c.store_u16(a_{pc:08x}, {t});"),
+                    ),
+                    "sw" => self.line(
+                        pc,
+                        &format!("let {t} = c.reg({rt}); c.store_u32(a_{pc:08x}, {t});"),
+                    ),
+                    _ => self.line(
+                        pc,
+                        &format!("let {t} = c.reg({rt}); c.store_u64(a_{pc:08x}, {t});"),
+                    ),
                 }
                 true
             }
@@ -315,61 +403,135 @@ impl<'a> Emit<'a> {
             ("lq", Mem { rt, rs, offset }) => {
                 self.line(
                     pc,
-                    &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"),
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
                 );
-                self.line(pc, &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_reg({rt}, {t});"));
+                self.line(
+                    pc,
+                    &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                );
                 true
             }
             ("sq", Mem { rt, rs, offset }) => {
                 self.line(
                     pc,
-                    &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"),
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
                 );
-                self.line(pc, &format!("let {t} = c.reg({rt}); c.store_u64(a_{pc:08x}, {t});"));
+                self.line(
+                    pc,
+                    &format!("let {t} = c.reg({rt}); c.store_u64(a_{pc:08x}, {t});"),
+                );
                 true
             }
 
             // Unaligned word/doubleword loads and stores (approximated as
             // aligned accesses on a byte-addressed memory model).
             ("lwl" | "lwr", Mem { rt, rs, offset }) => {
-                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
-                self.line(pc, &format!("let {t} = c.load_i32(a_{pc:08x}); c.set_reg({rt}, {t});"));
+                self.line(
+                    pc,
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
+                );
+                self.line(
+                    pc,
+                    &format!("let {t} = c.load_i32(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                );
                 true
             }
             ("swl" | "swr", Mem { rt, rs, offset }) => {
-                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
-                self.line(pc, &format!("let {t} = c.reg({rt}); c.store_u32(a_{pc:08x}, {t});"));
+                self.line(
+                    pc,
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
+                );
+                self.line(
+                    pc,
+                    &format!("let {t} = c.reg({rt}); c.store_u32(a_{pc:08x}, {t});"),
+                );
                 true
             }
             ("ldl" | "ldr", Mem { rt, rs, offset }) => {
-                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
-                self.line(pc, &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_reg({rt}, {t});"));
+                self.line(
+                    pc,
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
+                );
+                self.line(
+                    pc,
+                    &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_reg({rt}, {t});"),
+                );
                 true
             }
             ("sdl" | "sdr", Mem { rt, rs, offset }) => {
-                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
-                self.line(pc, &format!("let {t} = c.reg({rt}); c.store_u64(a_{pc:08x}, {t});"));
+                self.line(
+                    pc,
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
+                );
+                self.line(
+                    pc,
+                    &format!("let {t} = c.reg({rt}); c.store_u64(a_{pc:08x}, {t});"),
+                );
                 true
             }
             // FPU loads/stores.
             ("lwc1", Mem { rt, rs, offset }) => {
-                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
-                self.line(pc, &format!("let {t} = c.load_u32(a_{pc:08x}); c.set_fpr_bits({rt}, {t});"));
+                self.line(
+                    pc,
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
+                );
+                self.line(
+                    pc,
+                    &format!("let {t} = c.load_u32(a_{pc:08x}); c.set_fpr_bits({rt}, {t});"),
+                );
                 true
             }
             ("swc1", Mem { rt, rs, offset }) => {
-                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
-                self.line(pc, &format!("let {t} = c.fpr_bits({rt}); c.store_u32(a_{pc:08x}, {t});"));
+                self.line(
+                    pc,
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
+                );
+                self.line(
+                    pc,
+                    &format!("let {t} = c.fpr_bits({rt}); c.store_u32(a_{pc:08x}, {t});"),
+                );
                 true
             }
             ("ldc1", Mem { rt, rs, offset }) => {
-                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
-                self.line(pc, &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_fpr_bits({rt}, {t});"));
+                self.line(
+                    pc,
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
+                );
+                self.line(
+                    pc,
+                    &format!("let {t} = c.load_u64(a_{pc:08x}); c.set_fpr_bits({rt}, {t});"),
+                );
                 true
             }
             ("sdc1", Mem { rt, rs, offset }) => {
-                self.line(pc, &format!("let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"));
-                self.line(pc, &format!("let {t} = c.fpr_bits({rt}); c.store_u64(a_{pc:08x}, {t});"));
+                self.line(
+                    pc,
+                    &format!(
+                        "let a_{pc:08x} = (c.reg({rs}) as i64).wrapping_add({offset}i64) as u32;"
+                    ),
+                );
+                self.line(
+                    pc,
+                    &format!("let {t} = c.fpr_bits({rt}); c.store_u64(a_{pc:08x}, {t});"),
+                );
                 true
             }
             // `break` is a trap; games use it for asserts. Treat as a no-op.
@@ -418,7 +580,8 @@ impl<'a> Emit<'a> {
                     "mov" => "a",
                     "sqrt" => "a.sqrt()",
                     _ => return false,
-                };                self.line(pc, &format!("let a = {read}({fs}); let b = {read}({ft});"));
+                };
+                self.line(pc, &format!("let a = {read}({fs}); let b = {read}({ft});"));
                 self.line(pc, &format!("c.{setf}({fd}, {expr});"));
                 true
             }
@@ -503,7 +666,10 @@ impl<'a> Emit<'a> {
                     "bltz" | "bltzl" | "bltzal" | "bltzall" => format!("(c.reg({rs}) as i64) < 0"),
                     _ => format!("(c.reg({rs}) as i64) >= 0"),
                 };
-                self.line(pc, &format!("if {cond} {{ pc = {target:#010x}; }} else {{ pc = {fall:#010x}; }}"));
+                self.line(
+                    pc,
+                    &format!("if {cond} {{ pc = {target:#010x}; }} else {{ pc = {fall:#010x}; }}"),
+                );
             }
             ("j", Jump { target }) => {
                 self.line(pc, &format!("pc = {:#010x};", jump_target(pc, target)));
@@ -516,21 +682,37 @@ impl<'a> Emit<'a> {
                     self.line(pc, &format!("{pfx}{}(c);", fn_name(t)));
                     self.line(pc, &format!("pc = {fall:#010x};"));
                 } else {
-                    self.line(pc, &format!("c.untranslated_call({pc:#010x}, {t:#010x}); return;"));
+                    self.line(
+                        pc,
+                        &format!("c.untranslated_call({pc:#010x}, {t:#010x}); return;"),
+                    );
                 }
             }
             ("jr", Rs { rs }) => {
                 self.line(pc, &format!("if ({rs} & 31) == 31 {{ return; }}"));
-                self.line(pc, &format!("c.stop({pc:#010x}, 0, \"indirect jump\"); return;"));
+                self.line(
+                    pc,
+                    &format!("c.stop({pc:#010x}, 0, \"indirect jump\"); return;"),
+                );
             }
             ("jalr", RdRs { rs: _, .. }) => {
                 self.line(pc, &format!("c.set_reg(31, {fall:#010x});"));
-                self.line(pc, &format!("c.stop({pc:#010x}, 0, \"indirect call\"); return;"));
+                self.line(
+                    pc,
+                    &format!("c.stop({pc:#010x}, 0, \"indirect call\"); return;"),
+                );
             }
             ("bc1f" | "bc1t", Cop1Branch { offset }) => {
                 let target = branch_target(pc, offset);
-                let cond = if m == "bc1t" { "c.fcr31_cc" } else { "!c.fcr31_cc" };
-                self.line(pc, &format!("if {cond} {{ pc = {target:#010x}; }} else {{ pc = {fall:#010x}; }}"));
+                let cond = if m == "bc1t" {
+                    "c.fcr31_cc"
+                } else {
+                    "!c.fcr31_cc"
+                };
+                self.line(
+                    pc,
+                    &format!("if {cond} {{ pc = {target:#010x}; }} else {{ pc = {fall:#010x}; }}"),
+                );
             }
             _ => {
                 // eret and anything else we cannot model yet.
@@ -559,7 +741,8 @@ pub fn can_lower(inst: &Instruction) -> bool {
     e.lower(0, inst)
 }
 
-fn branch_target(pc: u32, offset: i16) -> u32 {    pc.wrapping_add(4)
+fn branch_target(pc: u32, offset: i16) -> u32 {
+    pc.wrapping_add(4)
         .wrapping_add((offset as i32 as u32).wrapping_mul(4))
 }
 
@@ -685,7 +868,8 @@ fn build_cfg(decoded: &[(u32, Instruction)]) -> Option<Vec<Blk>> {
     }
     let starts: Vec<usize> = leaders.into_iter().filter(|&x| x < decoded.len()).collect();
     // Map a decoded instruction index that is a leader to its block index.
-    let block_of: BTreeMap<usize, usize> = starts.iter().enumerate().map(|(k, &s)| (s, k)).collect();
+    let block_of: BTreeMap<usize, usize> =
+        starts.iter().enumerate().map(|(k, &s)| (s, k)).collect();
     let to_block = |di: usize| block_of.get(&di).copied().unwrap_or(usize::MAX);
 
     let mut blocks: Vec<Blk> = Vec::with_capacity(starts.len());
@@ -914,7 +1098,8 @@ impl<'a> Struct<'a> {
     fn normal(&mut self, lo: usize, hi: usize) -> Result<(), ()> {
         for i in lo..hi {
             let (pc, inst) = self.decoded[i];
-            self.e.line(pc, &format!("c.tick({pc:#010x}, {:#010x});", inst.word));
+            self.e
+                .line(pc, &format!("c.tick({pc:#010x}, {:#010x});", inst.word));
             if inst.mnemonic == "syscall" {
                 self.e.emit_syscall(pc, self.e.v1);
             } else if !self.e.lower(pc, &inst) {
@@ -933,11 +1118,13 @@ impl<'a> Struct<'a> {
         self.normal(lo, term)?;
         if term < hi {
             let (pc, inst) = self.decoded[term];
-            self.e.line(pc, &format!("c.tick({pc:#010x}, {:#010x});", inst.word));
+            self.e
+                .line(pc, &format!("c.tick({pc:#010x}, {:#010x});", inst.word));
             if term + 1 < hi {
                 let (dpc, dinst) = self.decoded[term + 1];
                 if !is_control(dinst.mnemonic) {
-                    self.e.line(dpc, &format!("c.tick({dpc:#010x}, {:#010x});", dinst.word));
+                    self.e
+                        .line(dpc, &format!("c.tick({dpc:#010x}, {:#010x});", dinst.word));
                     if !self.e.lower(dpc, &dinst) {
                         return Err(());
                     }
@@ -998,8 +1185,7 @@ impl<'a> Struct<'a> {
 
             self.emitted.insert(cur);
             let b = &self.blocks[cur];
-            let (start_addr, kind, succ, nsucc, term) =
-                (b.start, b.kind, b.succ, b.nsucc, b.term);
+            let (start_addr, kind, succ, nsucc, term) = (b.start, b.kind, b.succ, b.nsucc, b.term);
             self.block_body(cur)?;
 
             match kind {
@@ -1008,7 +1194,12 @@ impl<'a> Struct<'a> {
                     return Ok(Flow::End);
                 }
                 Kind::Stop => {
-                    self.e.line(start_addr, &format!("c.stop({start_addr:#010x}, 0, \"unresolved control flow\"); return;"));
+                    self.e.line(
+                        start_addr,
+                        &format!(
+                            "c.stop({start_addr:#010x}, 0, \"unresolved control flow\"); return;"
+                        ),
+                    );
                     return Ok(Flow::End);
                 }
                 Kind::Fall => {
@@ -1048,7 +1239,10 @@ impl<'a> Struct<'a> {
                         self.e.line(pc, &format!("{pfx}{}(c);", fn_name(target)));
                         self.e.line(pc, "if c.trap.is_some() { return; }");
                     } else {
-                        self.e.line(pc, &format!("c.untranslated_call({pc:#010x}, {target:#010x}); return;"));
+                        self.e.line(
+                            pc,
+                            &format!("c.untranslated_call({pc:#010x}, {target:#010x}); return;"),
+                        );
                         return Ok(Flow::End);
                     }
                     if nsucc == 0 {
@@ -1066,7 +1260,10 @@ impl<'a> Struct<'a> {
                         let pfx = self.e.call_prefix;
                         self.e.line(pc, &format!("{pfx}{}(c);", fn_name(target)));
                     } else {
-                        self.e.line(pc, &format!("c.untranslated_call({pc:#010x}, {target:#010x});"));
+                        self.e.line(
+                            pc,
+                            &format!("c.untranslated_call({pc:#010x}, {target:#010x});"),
+                        );
                     }
                     self.e.line(start_addr, "return;");
                     return Ok(Flow::End);
@@ -1104,12 +1301,7 @@ impl<'a> Struct<'a> {
 
     /// Emit one arm of a branch. Back edges to the innermost loop become
     /// `continue`, and jumps out of it become `break`.
-    fn arm(
-        &mut self,
-        s: usize,
-        stop: &BTreeSet<usize>,
-        loops: &[usize],
-    ) -> Result<Flow, ()> {
+    fn arm(&mut self, s: usize, stop: &BTreeSet<usize>, loops: &[usize]) -> Result<Flow, ()> {
         if let Some(&h) = loops.last() {
             if s == h {
                 self.e.line(self.blocks[s].start, "continue;");
@@ -1191,7 +1383,10 @@ fn emit_dispatcher(
     let _ = writeln!(e.out, "/// {} @ {:08x}", f.name, f.address);
     let _ = writeln!(e.out, "pub fn {name}(c: &mut Cpu) {{");
     let _ = writeln!(e.out, "    let mut pc: u32 = {:#010x};", f.address);
-    let _ = writeln!(e.out, "    // NOTE: basic-block dispatch is scaffolding for structured control flow.");
+    let _ = writeln!(
+        e.out,
+        "    // NOTE: basic-block dispatch is scaffolding for structured control flow."
+    );
     let _ = writeln!(e.out, "    while c.trap.is_none() {{");
     let _ = writeln!(e.out, "        match pc {{");
 
@@ -1217,14 +1412,20 @@ fn emit_dispatcher(
             if ok {
                 e.emit_control(pc, &inst, fall);
             } else {
-                e.line(pc, &format!("c.unimplemented({pc:#010x}, {:#010x}); return;", inst.word));
+                e.line(
+                    pc,
+                    &format!("c.unimplemented({pc:#010x}, {:#010x}); return;", inst.word),
+                );
             }
             i += 2;
             v1 = Option::None;
             let _ = writeln!(e.out, "            }}");
             continue;
         } else if !e.lower(pc, &inst) {
-            e.line(pc, &format!("c.unimplemented({pc:#010x}, {:#010x}); return;", inst.word));
+            e.line(
+                pc,
+                &format!("c.unimplemented({pc:#010x}, {:#010x}); return;", inst.word),
+            );
         } else {
             e.line(pc, &format!("pc = {:#010x};", pc.wrapping_add(4)));
         }
@@ -1238,7 +1439,10 @@ fn emit_dispatcher(
         let _ = writeln!(e.out, "            }}");
     }
 
-    let _ = writeln!(e.out, "            _ => {{ c.stop(pc, 0, \"pc outside translated function\"); return; }}");
+    let _ = writeln!(
+        e.out,
+        "            _ => {{ c.stop(pc, 0, \"pc outside translated function\"); return; }}"
+    );
     let _ = writeln!(e.out, "        }}");
     let _ = writeln!(e.out, "    }}");
     let _ = writeln!(e.out, "}}");

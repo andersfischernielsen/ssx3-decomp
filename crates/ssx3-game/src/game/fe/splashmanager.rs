@@ -25,13 +25,32 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002f_39c8, c_splash_manager_reset, "cSplashManager_Reset"),
-    (0x002f_39e0, c_splash_manager_update, "cSplashManager_Update"),
-    (0x002f_2810, c_splash_manager_update_drop, "cSplashManager_UpdateDrop"),
-    (0x002f_3030, c_splash_manager_update_crystal, "cSplashManager_UpdateCrystal"),
-    (0x002f_4260, c_splash_manager_add_splash_from_point, "cSplashManager_AddSplashFromPoint"),
-    (0x002f_4330, c_splash_manager_set_snow_amount, "cSplashManager_SetSnowAmount"),
+    (
+        0x002f_39e0,
+        c_splash_manager_update,
+        "cSplashManager_Update",
+    ),
+    (
+        0x002f_2810,
+        c_splash_manager_update_drop,
+        "cSplashManager_UpdateDrop",
+    ),
+    (
+        0x002f_3030,
+        c_splash_manager_update_crystal,
+        "cSplashManager_UpdateCrystal",
+    ),
+    (
+        0x002f_4260,
+        c_splash_manager_add_splash_from_point,
+        "cSplashManager_AddSplashFromPoint",
+    ),
+    (
+        0x002f_4330,
+        c_splash_manager_set_snow_amount,
+        "cSplashManager_SetSnowAmount",
+    ),
 ];
-
 
 // ---------------------------------------------------------------------------
 // Splash manager.
@@ -48,7 +67,6 @@ pub fn c_splash_manager_reset(c: &mut Cpu) {
     Addr(this).off(0x18).sw(c, 0);
     abi::ret(c);
 }
-
 
 /// `void cSplashManager_SetSnowAmount(cSplashManager *this, float amount)`
 /// (0x2f4330): store the amount and, when it crosses the global threshold,
@@ -85,7 +103,6 @@ pub fn c_splash_manager_set_snow_amount(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Tick rate helpers for the lens particles.
@@ -253,7 +270,17 @@ fn speed_ramp(c: &mut Cpu, g: u32) {
 /// crystals (0x2f2964.. / 0x2f31e0..): velocity at `vel` (`+0`, `+4`),
 /// sizes at `size` (`+0`, `+4`), push random range at `gp+push`, growth
 /// range at `gp+grow`, cap at `gp+cap`. Each increment is scaled by `q`.
-fn push_grow_cap(c: &mut Cpu, s: u32, g: u32, vel: u32, size: u32, push: u32, grow: u32, cap: u32, q: Option<FpuF32>) {
+fn push_grow_cap(
+    c: &mut Cpu,
+    s: u32,
+    g: u32,
+    vel: u32,
+    size: u32,
+    push: u32,
+    grow: u32,
+    cap: u32,
+    q: Option<FpuF32>,
+) {
     c.cycles += 77;
     c.g[V0][0] = Addr(g.wrapping_add(0xa0c)).lw(c);
     c.g[A1][0] = 0x1_8fcd;
@@ -481,7 +508,17 @@ pub fn c_splash_manager_update_drop(c: &mut Cpu) {
     centre_direction_drop(c, s, g);
 
     speed_ramp(c, g);
-    push_grow_cap(c, s, g, d.wrapping_add(0x14), d.wrapping_add(0xc), 0x11c8, 0x11c0, 0x11d0, q);
+    push_grow_cap(
+        c,
+        s,
+        g,
+        d.wrapping_add(0x14),
+        d.wrapping_add(0xc),
+        0x11c8,
+        0x11c0,
+        0x11d0,
+        q,
+    );
     c.g[V0][0] = Addr(g.wrapping_add(0xa0c)).lw(c);
 
     // Move by velocity * lerp(lo, hi, rand) on each axis.
@@ -715,7 +752,17 @@ pub fn c_splash_manager_update_crystal(c: &mut Cpu) {
     }
 
     speed_ramp(c, g);
-    push_grow_cap(c, s, g, k.wrapping_add(0x18), k.wrapping_add(0x10), 0x121c, 0x1214, 0x1224, q);
+    push_grow_cap(
+        c,
+        s,
+        g,
+        k.wrapping_add(0x18),
+        k.wrapping_add(0x10),
+        0x121c,
+        0x1214,
+        0x1224,
+        q,
+    );
     c.lwc1(3, k.wrapping_add(0x8));
 
     // position += velocity.
@@ -747,7 +794,6 @@ pub fn c_splash_manager_update_crystal(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `cSplashManager` fields used by the update.
 mod splash {
     /// Index of the view (camera) the lens effect belongs to.
@@ -772,10 +818,22 @@ mod splash {
 /// Direct callees of the splash manager update.
 mod callee {
     use super::{ee, Callee};
-    pub const EMIT_PENDING: Callee = Callee { addr: 0x002f_3810, f: ee::s09::cSplashManager_EmitPending };
-    pub const UPDATE_DROP: Callee = Callee { addr: 0x002f_2810, f: ee::s09::cSplashManager_UpdateDrop };
-    pub const UPDATE_CRYSTAL: Callee = Callee { addr: 0x002f_3030, f: ee::s09::cSplashManager_UpdateCrystal };
-    pub const ADD_DROP: Callee = Callee { addr: 0x002f_37a8, f: ee::s09::cSplashManager_AddDrop };
+    pub const EMIT_PENDING: Callee = Callee {
+        addr: 0x002f_3810,
+        f: ee::s09::cSplashManager_EmitPending,
+    };
+    pub const UPDATE_DROP: Callee = Callee {
+        addr: 0x002f_2810,
+        f: ee::s09::cSplashManager_UpdateDrop,
+    };
+    pub const UPDATE_CRYSTAL: Callee = Callee {
+        addr: 0x002f_3030,
+        f: ee::s09::cSplashManager_UpdateCrystal,
+    };
+    pub const ADD_DROP: Callee = Callee {
+        addr: 0x002f_37a8,
+        f: ee::s09::cSplashManager_AddDrop,
+    };
     /// `Rand_NextMain` (called through the function table).
     pub const RAND_NEXT_MAIN: u32 = 0x0031_77f0;
 }
@@ -1206,13 +1264,13 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::vtable;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::elf_image;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
 
     fn f(x: f32) -> u32 {
         x.to_bits()
@@ -1232,17 +1290,27 @@ pub(crate) mod tests {
         c.bus.write32(list + 0x10, 2);
         c.bus.write32(list + 4, cam);
         c.bus.write32(list + 8, cam + 0x40);
-        let view = if seed % 9 == 8 { 2 + seed % 3 } else { seed % 2 };
+        let view = if seed % 9 == 8 {
+            2 + seed % 3
+        } else {
+            seed % 2
+        };
         c.bus.write32(this + 0x10, view);
         for k in [cam, cam + 0x40] {
             for i in 0..4 {
-                c.bus.write32(k + 0x20 + 4 * i, f(10.0 * (i + 1) as f32 + (seed % 13) as f32));
+                c.bus.write32(
+                    k + 0x20 + 4 * i,
+                    f(10.0 * (i + 1) as f32 + (seed % 13) as f32),
+                );
             }
         }
         let cp = if view == 1 { cam + 0x40 } else { cam };
         for i in 0..4 {
             let v = f32::from_bits(c.bus.read32(cp + 0x20 + 4 * i));
-            c.bus.write32(this + 0x1010 + 4 * i, f(v - if i == 0 { step } else { 0.0 }));
+            c.bus.write32(
+                this + 0x1010 + 4 * i,
+                f(v - if i == 0 { step } else { 0.0 }),
+            );
         }
         let vt = vtable(c, r, &[0x70]);
         c.bus.write32(this + 0xc, vt);
@@ -1268,67 +1336,78 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn c_splash_manager_reset_matches() {
-        check(ssx3_ee::s09::f_002f39c8, c_splash_manager_reset, 100, &|c, seed| {
-            let mut r = Rng(0x1011 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA + 0x1028, r.next_u32());
-        });
+        check(
+            ssx3_ee::s09::f_002f39c8,
+            c_splash_manager_reset,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x1011 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA + 0x1028, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn c_splash_manager_set_snow_amount_matches() {
-        check(ssx3_ee::s09::f_002f4330, c_splash_manager_set_snow_amount, 300, &|c, seed| {
-            let mut r = Rng(0x1012 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = DATA as u64;
-            c.f[12] = match seed % 5 {
-                0 => 0,
-                1 => 0x7f7f_ffff,
-                2 => 0x8000_0000,
-                3 => r.edge_f32(),
-                _ => r.f32(1000.0),
-            };
-            c.bus.write32(GAME_GP + 0x1190, r.edge_f32());
-            c.bus.write32(GAME_GP + 0x1194, r.edge_f32());
-            c.bus.write32(GAME_GP - 0x38f4, r.edge_f32());
-            c.bus.write32(DATA + 0x1020, r.edge_f32());
-            c.bus.write32(DATA + 0x1024, r.edge_f32());
-        });
+        check(
+            ssx3_ee::s09::f_002f4330,
+            c_splash_manager_set_snow_amount,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x1012 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                c.f[12] = match seed % 5 {
+                    0 => 0,
+                    1 => 0x7f7f_ffff,
+                    2 => 0x8000_0000,
+                    3 => r.edge_f32(),
+                    _ => r.f32(1000.0),
+                };
+                c.bus.write32(GAME_GP + 0x1190, r.edge_f32());
+                c.bus.write32(GAME_GP + 0x1194, r.edge_f32());
+                c.bus.write32(GAME_GP - 0x38f4, r.edge_f32());
+                c.bus.write32(DATA + 0x1020, r.edge_f32());
+                c.bus.write32(DATA + 0x1024, r.edge_f32());
+            },
+        );
     }
-
 
     #[test]
     fn c_splash_manager_update_matches() {
-        check(ssx3_ee::s09::f_002f39e0__generated, c_splash_manager_update, 240, &|c, seed| {
-            let mut r = machine(c, seed, 0x2f39e0, 1);
-            elf_image(c);
-            if seed % 11 == 10 {
-                c.bus.write32(GAME_GP + 0x115c, 0);
-            }
-            for i in 0..6 {
-                c.bus.write32(RAND_STATE + 4 * i, r.next_u32());
-            }
-            c.bus.write32(DATA + 0x100c, (seed % 7 != 0) as u32);
-            let step = match seed % 5 {
-                0 => 900.0,
-                1 => 0.0,
-                _ => (seed % 17) as f32 * 0.25,
-            };
-            let drops = seed % 5;
-            let crystals = (seed / 5) % 4;
-            // (Crystal slots alternate between 8-aligned and not: both
-            // copy loops of the swap-remove run.)
-            splash_fixture(c, &mut r, seed, step, drops, crystals);
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ssx3_ee::s09::f_002f39e0__generated,
+            c_splash_manager_update,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f39e0, 1);
+                elf_image(c);
+                if seed % 11 == 10 {
+                    c.bus.write32(GAME_GP + 0x115c, 0);
+                }
+                for i in 0..6 {
+                    c.bus.write32(RAND_STATE + 4 * i, r.next_u32());
+                }
+                c.bus.write32(DATA + 0x100c, (seed % 7 != 0) as u32);
+                let step = match seed % 5 {
+                    0 => 900.0,
+                    1 => 0.0,
+                    _ => (seed % 17) as f32 * 0.25,
+                };
+                let drops = seed % 5;
+                let crystals = (seed / 5) % 4;
+                // (Crystal slots alternate between 8-aligned and not: both
+                // copy loops of the swap-remove run.)
+                splash_fixture(c, &mut r, seed, step, drops, crystals);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
-
 
     /// The lens snow accumulates per 60 Hz tick: one call at 60 and
     /// `rate/60` calls at 120 / 240 Hz add the same amount.
@@ -1358,7 +1437,6 @@ pub(crate) mod tests {
             assert!((v - base).abs() < 1e-5, "{hz} Hz: {v} vs {base} at 60");
         }
     }
-
 
     /// Above 60 Hz the camera speed is per second at the game's rate (the
     /// same camera motion per second gives the same speed), and the drip
@@ -1396,11 +1474,13 @@ pub(crate) mod tests {
         assert_eq!(n60, 1);
         for hz in [120, 240] {
             let (s, n) = after(hz);
-            assert!((s - s60).abs() < 1e-3 * s60, "{hz} Hz: speed {s} vs {s60} at 60");
+            assert!(
+                (s - s60).abs() < 1e-3 * s60,
+                "{hz} Hz: speed {s} vs {s60} at 60"
+            );
             assert_eq!(n, 1, "{hz} Hz: {n} drip rolls in one 60 Hz frame");
         }
     }
-
 
     /// The screen centre the drops and crystals are pushed away from.
     fn centre(c: &mut Cpu) {
@@ -1413,36 +1493,42 @@ pub(crate) mod tests {
         f(lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo))
     }
 
-
     #[test]
     fn c_splash_manager_add_splash_from_point_matches() {
-        check(ssx3_ee::s09::f_002f4260__generated, c_splash_manager_add_splash_from_point, 300, &|c, seed| {
-            let mut r = Rng(0x2f4260 ^ seed as u64);
-            scramble(c, &mut r);
-            elf_image(c);
-            c.g[GP][0] = GAME_GP as u64;
-            let this = DATA;
-            let point = DATA + 0x2000;
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = point as u64;
-            let reach = f32::from_bits(c.bus.read32(GAME_GP + 0x1180));
-            let d = match seed % 4 {
-                0 => reach * 2.0,
-                _ => reach * (seed % 7) as f32 / 8.0,
-            };
-            for i in 0..4 {
-                c.bus.write32(this + 0x1010 + 4 * i, f(10.0 * i as f32));
-                let off = if i == 0 { d } else { 0.0 };
-                c.bus.write32(point + 4 * i, f(10.0 * i as f32 + off));
-            }
-            let thr = f32::from_bits(c.bus.read32(GAME_GP + 0x1188));
-            c.bus.write32(this + 0x1028, f(if seed % 5 == 1 { thr - 1.0 } else { thr + 2.0 }));
-            c.bus.write32(this + 0x1024, r.f32(3.0));
-            // Speeds below, inside and above the ramp.
-            c.f[12] = f((seed % 9) as f32 * 600.0);
-        });
+        check(
+            ssx3_ee::s09::f_002f4260__generated,
+            c_splash_manager_add_splash_from_point,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2f4260 ^ seed as u64);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                let this = DATA;
+                let point = DATA + 0x2000;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = point as u64;
+                let reach = f32::from_bits(c.bus.read32(GAME_GP + 0x1180));
+                let d = match seed % 4 {
+                    0 => reach * 2.0,
+                    _ => reach * (seed % 7) as f32 / 8.0,
+                };
+                for i in 0..4 {
+                    c.bus.write32(this + 0x1010 + 4 * i, f(10.0 * i as f32));
+                    let off = if i == 0 { d } else { 0.0 };
+                    c.bus.write32(point + 4 * i, f(10.0 * i as f32 + off));
+                }
+                let thr = f32::from_bits(c.bus.read32(GAME_GP + 0x1188));
+                c.bus.write32(
+                    this + 0x1028,
+                    f(if seed % 5 == 1 { thr - 1.0 } else { thr + 2.0 }),
+                );
+                c.bus.write32(this + 0x1024, r.f32(3.0));
+                // Speeds below, inside and above the ramp.
+                c.f[12] = f((seed % 9) as f32 * 600.0);
+            },
+        );
     }
-
 
     /// A lens drop at `DATA` for `cSplashManager_UpdateDrop`.
     fn drop_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
@@ -1454,7 +1540,10 @@ pub(crate) mod tests {
             2 => (660.0, 100.0),
             3 => (100.0, -30.0),
             4 => (100.0, 500.0),
-            _ => (f32::from_bits(uf(r, 0.0, 640.0)), f32::from_bits(uf(r, 0.0, 480.0))),
+            _ => (
+                f32::from_bits(uf(r, 0.0, 640.0)),
+                f32::from_bits(uf(r, 0.0, 480.0)),
+            ),
         };
         c.bus.write32(d + 0x4, f(x));
         c.bus.write32(d + 0x8, f(y));
@@ -1470,22 +1559,25 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn c_splash_manager_update_drop_matches() {
-        check(ssx3_ee::s09::f_002f2810__generated, c_splash_manager_update_drop, 300, &|c, seed| {
-            let mut r = Rng(0x2f2810 ^ seed as u64);
-            scramble(c, &mut r);
-            elf_image(c);
-            c.g[GP][0] = GAME_GP as u64;
-            centre(c);
-            c.bus.write32(GAME_GP + 0xa0c, r.next_u32());
-            drop_fixture(c, &mut r, seed);
-            c.g[A0][0] = DATA as u64;
-            c.f[12] = f((seed % 7) as f32 * 30.0);
-        });
+        check(
+            ssx3_ee::s09::f_002f2810__generated,
+            c_splash_manager_update_drop,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2f2810 ^ seed as u64);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                centre(c);
+                c.bus.write32(GAME_GP + 0xa0c, r.next_u32());
+                drop_fixture(c, &mut r, seed);
+                c.g[A0][0] = DATA as u64;
+                c.f[12] = f((seed % 7) as f32 * 30.0);
+            },
+        );
     }
-
 
     /// A lens crystal at `DATA` for `cSplashManager_UpdateCrystal`.
     fn crystal_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
@@ -1498,7 +1590,10 @@ pub(crate) mod tests {
             2 => (660.0, 100.0),
             3 => (100.0, -30.0),
             4 => (100.0, 500.0),
-            _ => (f32::from_bits(uf(r, 0.0, 640.0)), f32::from_bits(uf(r, 0.0, 480.0))),
+            _ => (
+                f32::from_bits(uf(r, 0.0, 640.0)),
+                f32::from_bits(uf(r, 0.0, 480.0)),
+            ),
         };
         c.bus.write32(k + 0x8, f(x));
         c.bus.write32(k + 0xc, f(y));
@@ -1513,27 +1608,37 @@ pub(crate) mod tests {
             c.bus.write32(k + 4 * w, r.next_u32());
         }
         // The timer to the next acceleration: running out or not.
-        c.bus.write32(k + 0x40, if seed % 4 == 0 { f(0.001) } else { uf(r, 0.1, 2.0) });
+        c.bus.write32(
+            k + 0x40,
+            if seed % 4 == 0 {
+                f(0.001)
+            } else {
+                uf(r, 0.1, 2.0)
+            },
+        );
         c.bus.write32(k + 0x44, r.f32(0.5));
         c.bus.write32(k + 0x48, r.f32(0.5));
     }
 
-
     #[test]
     fn c_splash_manager_update_crystal_matches() {
-        check(ssx3_ee::s09::f_002f3030__generated, c_splash_manager_update_crystal, 300, &|c, seed| {
-            let mut r = Rng(0x2f3030 ^ seed as u64);
-            scramble(c, &mut r);
-            elf_image(c);
-            c.g[GP][0] = GAME_GP as u64;
-            centre(c);
-            c.bus.write32(GAME_GP + 0xa0c, r.next_u32());
-            crystal_fixture(c, &mut r, seed);
-            c.g[A0][0] = DATA as u64;
-            c.f[12] = f((seed % 7) as f32 * 30.0);
-        });
+        check(
+            ssx3_ee::s09::f_002f3030__generated,
+            c_splash_manager_update_crystal,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2f3030 ^ seed as u64);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                centre(c);
+                c.bus.write32(GAME_GP + 0xa0c, r.next_u32());
+                crystal_fixture(c, &mut r, seed);
+                c.g[A0][0] = DATA as u64;
+                c.f[12] = f((seed % 7) as f32 * 30.0);
+            },
+        );
     }
-
 
     /// The lens splash builds per 60 Hz frame: one call at 60 and `rate/60`
     /// calls at 120 / 240 Hz add the same amount.
@@ -1550,7 +1655,8 @@ pub(crate) mod tests {
             let thr = f32::from_bits(c.bus.read32(GAME_GP + 0x1188));
             for i in 0..4 {
                 c.bus.write32(this + 0x1010 + 4 * i, 0);
-                c.bus.write32(point + 4 * i, if i == 0 { f(reach * 0.25) } else { 0 });
+                c.bus
+                    .write32(point + 4 * i, if i == 0 { f(reach * 0.25) } else { 0 });
             }
             c.bus.write32(this + 0x1028, f(thr + 2.0));
             c.bus.write32(this + 0x1024, 0);
@@ -1567,10 +1673,12 @@ pub(crate) mod tests {
         assert!(base > 0.0, "{base}");
         for hz in [120, 240] {
             let v = after(hz);
-            assert!((v - base).abs() < 1e-5 * base.max(1.0), "{hz} Hz: {v} vs {base} at 60");
+            assert!(
+                (v - base).abs() < 1e-5 * base.max(1.0),
+                "{hz} Hz: {v} vs {base} at 60"
+            );
         }
     }
-
 
     /// (position, size, velocity) of a particle after one second of updates
     /// with fixed random ranges (each range one value), no push (camera at
@@ -1609,14 +1717,22 @@ pub(crate) mod tests {
         (a - b).abs() <= rel * a.abs().max(b.abs()).max(1.0)
     }
 
-
     /// Drops kick, grow and move per 60 Hz frame: after one second at 120 /
     /// 240 Hz the velocity and size match 60 Hz, the position within the
     /// integration error.
     #[test]
     fn c_splash_manager_update_drop_follows_the_rate() {
         let setup = |c: &mut Cpu| {
-            for (a, v) in [(0x11b0, 0.03f32), (0x11b4, 0.03), (0x11b8, 0.02), (0x11bc, 0.02), (0x11c0, 0.05), (0x11c4, 0.05), (0x11d4, 1.0), (0x11d8, 1.0)] {
+            for (a, v) in [
+                (0x11b0, 0.03f32),
+                (0x11b4, 0.03),
+                (0x11b8, 0.02),
+                (0x11bc, 0.02),
+                (0x11c0, 0.05),
+                (0x11c4, 0.05),
+                (0x11d4, 1.0),
+                (0x11d8, 1.0),
+            ] {
                 c.bus.write32(GAME_GP + a, f(v));
             }
             let d = DATA;
@@ -1631,18 +1747,24 @@ pub(crate) mod tests {
             c.bus.write32(d + 0x20, f(100.0));
         };
         let step = GAME_GP.wrapping_sub(0x3918);
-        let (p60, s60, v60) = one_second(60, c_splash_manager_update_drop, DROP_FIELDS, step, &setup);
+        let (p60, s60, v60) =
+            one_second(60, c_splash_manager_update_drop, DROP_FIELDS, step, &setup);
         assert!(p60[0] > 150.0, "{p60:?}");
         for hz in [120, 240] {
             let (p, s, v) = one_second(hz, c_splash_manager_update_drop, DROP_FIELDS, step, &setup);
             assert!(close(s, s60, 1e-4), "{hz} Hz: size {s} vs {s60}");
             for i in 0..2 {
-                assert!(close(v[i], v60[i], 1e-4), "{hz} Hz: velocity {v:?} vs {v60:?}");
-                assert!(close(p[i], p60[i], 0.01), "{hz} Hz: position {p:?} vs {p60:?}");
+                assert!(
+                    close(v[i], v60[i], 1e-4),
+                    "{hz} Hz: velocity {v:?} vs {v60:?}"
+                );
+                assert!(
+                    close(p[i], p60[i], 0.01),
+                    "{hz} Hz: position {p:?} vs {p60:?}"
+                );
             }
         }
     }
-
 
     /// Crystals accelerate, grow and move per 60 Hz frame (as the drops).
     #[test]
@@ -1666,14 +1788,32 @@ pub(crate) mod tests {
             c.bus.write32(k + 0x48, f(0.03));
         };
         let step = GAME_GP.wrapping_sub(0x390c);
-        let (p60, s60, v60) = one_second(60, c_splash_manager_update_crystal, CRYSTAL_FIELDS, step, &setup);
+        let (p60, s60, v60) = one_second(
+            60,
+            c_splash_manager_update_crystal,
+            CRYSTAL_FIELDS,
+            step,
+            &setup,
+        );
         assert!(p60[0] > 150.0, "{p60:?}");
         for hz in [120, 240] {
-            let (p, s, v) = one_second(hz, c_splash_manager_update_crystal, CRYSTAL_FIELDS, step, &setup);
+            let (p, s, v) = one_second(
+                hz,
+                c_splash_manager_update_crystal,
+                CRYSTAL_FIELDS,
+                step,
+                &setup,
+            );
             assert!(close(s, s60, 1e-4), "{hz} Hz: size {s} vs {s60}");
             for i in 0..2 {
-                assert!(close(v[i], v60[i], 1e-4), "{hz} Hz: velocity {v:?} vs {v60:?}");
-                assert!(close(p[i], p60[i], 0.01), "{hz} Hz: position {p:?} vs {p60:?}");
+                assert!(
+                    close(v[i], v60[i], 1e-4),
+                    "{hz} Hz: velocity {v:?} vs {v60:?}"
+                );
+                assert!(
+                    close(p[i], p60[i], 0.01),
+                    "{hz} Hz: position {p:?} vs {p60:?}"
+                );
             }
         }
     }

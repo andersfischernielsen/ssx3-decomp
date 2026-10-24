@@ -50,7 +50,10 @@ pub fn covered(
     STATS.with(|s| s.set((0, 0)));
     check(generated, hand, seeds, setup);
     let (calls, unwinds) = STATS.with(|s| s.get());
-    assert!(calls >= seeds / 4 && unwinds > 0, "fake calls {calls}, unwinds {unwinds}");
+    assert!(
+        calls >= seeds / 4 && unwinds > 0,
+        "fake calls {calls}, unwinds {unwinds}"
+    );
 }
 
 /// The `miss` hook: a call to `target` returning to `ra`.
@@ -85,10 +88,21 @@ pub fn fake(c: &mut Cpu, target: u32, ret: u32) {
     }
     c.bus.write32(LOG_NEXT, p + 0x220);
     let h = mix(c.g[A0][0] ^ (n as u64) << 40 ^ c.g[A1][0].rotate_left(17) ^ c.cycles);
-    let forced = if n < 8 { c.bus.read32(LOG_RESULTS + 4 * n) } else { 0 };
-    c.g[V0][0] = if forced != 0 { forced as u64 } else { 0x0080_0000 + (h & 0x3fff0) };
+    let forced = if n < 8 {
+        c.bus.read32(LOG_RESULTS + 4 * n)
+    } else {
+        0
+    };
+    c.g[V0][0] = if forced != 0 {
+        forced as u64
+    } else {
+        0x0080_0000 + (h & 0x3fff0)
+    };
     c.g[V1][0] = mix(h);
-    for (i, r) in [AT, A0, A1, A2, A3, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9].into_iter().enumerate() {
+    for (i, r) in [AT, A0, A1, A2, A3, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9]
+        .into_iter()
+        .enumerate()
+    {
         c.g[r][0] = mix(h + i as u64);
     }
     c.f[0] = mix(h + 99) as u32;
@@ -98,11 +112,7 @@ pub fn fake(c: &mut Cpu, target: u32, ret: u32) {
         let (a, b) = s.get();
         s.set((a + 1, b + unwind as u32));
     });
-    c.pc = if unwind {
-        0xdead_0000 | n << 4
-    } else {
-        ret
-    };
+    c.pc = if unwind { 0xdead_0000 | n << 4 } else { ret };
 }
 
 /// The `jump_out` hook: treated as a call to `pc`.
@@ -119,7 +129,11 @@ pub fn machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
     c.hooks.miss = fake_call;
     c.hooks.jump_out = fake_jump_out;
     c.hooks.syscall = fake_syscall;
-    let unwind = if calls > 0 && r.next_u32() % 3 == 0 { r.next_u32() % calls } else { u32::MAX };
+    let unwind = if calls > 0 && r.next_u32() % 3 == 0 {
+        r.next_u32() % calls
+    } else {
+        u32::MAX
+    };
     c.bus.write32(LOG_UNWIND_AT, unwind);
     // Random bytes around the stack frame (the saves overwrite them).
     fill(c, &mut r, SP - 0x100, 0x40);

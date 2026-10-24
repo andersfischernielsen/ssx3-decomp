@@ -44,7 +44,11 @@ impl Wav {
     fn create(path: &str) -> std::io::Result<Self> {
         let mut file = File::create(path)?;
         file.write_all(&header(0))?;
-        Ok(Self { file, bytes: 0, pending: Vec::with_capacity(1 << 16) })
+        Ok(Self {
+            file,
+            bytes: 0,
+            pending: Vec::with_capacity(1 << 16),
+        })
     }
     fn push(&mut self, s: &[i16]) {
         for v in s {
@@ -94,16 +98,18 @@ fn header(bytes: u32) -> Vec<u8> {
 impl Sink {
     /// Build the sink from the environment (see module docs).
     pub fn from_env() -> Self {
-        let wav = std::env::var("SSX3_WAV").ok().and_then(|p| match Wav::create(&p) {
-            Ok(w) => {
-                eprintln!("[audio] recording to {p}");
-                Some(w)
-            }
-            Err(e) => {
-                eprintln!("[audio] cannot create {p}: {e}");
-                None
-            }
-        });
+        let wav = std::env::var("SSX3_WAV")
+            .ok()
+            .and_then(|p| match Wav::create(&p) {
+                Ok(w) => {
+                    eprintln!("[audio] recording to {p}");
+                    Some(w)
+                }
+                Err(e) => {
+                    eprintln!("[audio] cannot create {p}: {e}");
+                    None
+                }
+            });
         let mode = std::env::var("SSX3_AUDIO").unwrap_or_default();
         let ring = match mode.as_str() {
             "0" => None,
@@ -134,7 +140,9 @@ impl Sink {
         if cfg!(target_arch = "wasm32") {
             return None;
         }
-        self.ring.as_ref().map(|r| r.lock().map_or(0, |q| q.len() / 2))
+        self.ring
+            .as_ref()
+            .map(|r| r.lock().map_or(0, |q| q.len() / 2))
     }
 
     pub fn flush(&mut self) {
@@ -162,7 +170,8 @@ fn start_null_device() -> Option<Ring> {
                 let mut q = r.lock().unwrap();
                 let k = n.min(q.len());
                 q.drain(..k);
-                UNDERRUN_FRAMES.fetch_add(((n - k) / 2) as u64, std::sync::atomic::Ordering::Relaxed);
+                UNDERRUN_FRAMES
+                    .fetch_add(((n - k) / 2) as u64, std::sync::atomic::Ordering::Relaxed);
                 taken = due;
             }
         })
@@ -203,22 +212,24 @@ fn start_device() -> Option<Ring> {
     let ring: Ring = Arc::new(Mutex::new(VecDeque::with_capacity(RING_FRAMES * 2)));
     let (tx, rx) = std::sync::mpsc::channel::<bool>();
     let r2 = ring.clone();
-    let spawned = std::thread::Builder::new().name("ssx3-audio".into()).spawn(move || {
-        match open_stream(r2) {
-            Ok(stream) => {
-                let _ = tx.send(true);
-                // Keep the stream alive for the life of the process.
-                let _keep = stream;
-                loop {
-                    std::thread::park();
+    let spawned = std::thread::Builder::new()
+        .name("ssx3-audio".into())
+        .spawn(move || {
+            match open_stream(r2) {
+                Ok(stream) => {
+                    let _ = tx.send(true);
+                    // Keep the stream alive for the life of the process.
+                    let _keep = stream;
+                    loop {
+                        std::thread::park();
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[audio] no output device: {e}");
+                    let _ = tx.send(false);
                 }
             }
-            Err(e) => {
-                eprintln!("[audio] no output device: {e}");
-                let _ = tx.send(false);
-            }
-        }
-    });
+        });
     if spawned.is_err() {
         return None;
     }
@@ -232,7 +243,9 @@ fn start_device() -> Option<Ring> {
 fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let host = cpal::default_host();
-    let device = host.default_output_device().ok_or("no default output device")?;
+    let device = host
+        .default_output_device()
+        .ok_or("no default output device")?;
     let supported = device.default_output_config().map_err(|e| e.to_string())?;
     let channels = supported.channels() as usize;
     let device_rate = supported.sample_rate();
@@ -243,7 +256,10 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     };
     eprintln!(
         "[audio] output: {} ({} ch, {} Hz, {:?})",
-        device.description().map(|d| d.name().to_string()).unwrap_or_default(),
+        device
+            .description()
+            .map(|d| d.name().to_string())
+            .unwrap_or_default(),
         channels,
         device_rate,
         supported.sample_format()

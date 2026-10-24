@@ -33,11 +33,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0036_23d8, gs_pkt_add_scissor, "GsPkt_AddScissor"),
     (0x0036_26d8, gs_pkt_add_test, "GsPkt_AddTest"),
     (0x0036_2660, gs_pkt_add_zbuf, "GsPkt_AddZbuf"),
-    (0x0036_7db8, tex_man_build_upload_packet, "TexMan_BuildUploadPacket"),
-    (0x0036_7f18, tex_man_build_sprite_packet, "TexMan_BuildSpritePacket"),
-    (0x0036_2978, defer_man_append_packet, "DeferMan_AppendPacket"),
-    (0x0038_26e0, gm_acquire_frame_buffer, "PS2GraphicsMan_AcquireFrameBuffer"),
-    (0x0038_2730, gm_is_render_idle, "PS2GraphicsMan_IsRenderIdle"),
+    (
+        0x0036_7db8,
+        tex_man_build_upload_packet,
+        "TexMan_BuildUploadPacket",
+    ),
+    (
+        0x0036_7f18,
+        tex_man_build_sprite_packet,
+        "TexMan_BuildSpritePacket",
+    ),
+    (
+        0x0036_2978,
+        defer_man_append_packet,
+        "DeferMan_AppendPacket",
+    ),
+    (
+        0x0038_26e0,
+        gm_acquire_frame_buffer,
+        "PS2GraphicsMan_AcquireFrameBuffer",
+    ),
+    (
+        0x0038_2730,
+        gm_is_render_idle,
+        "PS2GraphicsMan_IsRenderIdle",
+    ),
     (0x002e_2fa8, lens_fx_add_source, "LensFX_AddSource"),
     (0x002e_2f98, lens_fx_clear_sources, "LensFX_ClearSources"),
     (0x0035_3d98, sky_box_clear, "SkyBox_Clear"),
@@ -209,7 +229,12 @@ pub fn gs_pkt_add_clamp(c: &mut Cpu) {
 pub fn gs_pkt_add_scissor(c: &mut Cpu) {
     c.cycles += 27;
     let p = GsPacket(Addr(abi::arg(c, 0)));
-    let (x, w, y, h) = (abi::reg(c, A1), abi::arg(c, 2), abi::reg(c, A3), abi::arg(c, 4));
+    let (x, w, y, h) = (
+        abi::reg(c, A1),
+        abi::arg(c, 2),
+        abi::reg(c, A3),
+        abi::arg(c, 4),
+    );
     let x1 = sx((x as u32).wrapping_sub(1).wrapping_add(w));
     let y1 = sx((y as u32).wrapping_sub(1).wrapping_add(h));
     // 64-bit ORs of the whole registers: wide inputs bleed into neighbours.
@@ -232,7 +257,12 @@ pub fn gs_pkt_add_scissor(c: &mut Cpu) {
 /// Cycles: context 3/7/5, alpha 5/6/9/10, depth 5/7/8, tail 20.
 pub fn gs_pkt_add_test(c: &mut Cpu) {
     let p = GsPacket(Addr(abi::arg(c, 0)));
-    let (zsel, asel, aref, ctx) = (abi::reg(c, A1) as i64, abi::reg(c, A2) as i64, abi::reg(c, A3), abi::reg(c, T0));
+    let (zsel, asel, aref, ctx) = (
+        abi::reg(c, A1) as i64,
+        abi::reg(c, A2) as i64,
+        abi::reg(c, A3),
+        abi::reg(c, T0),
+    );
 
     let reg_id = if ctx == 0 {
         c.cycles += 3;
@@ -294,7 +324,12 @@ pub fn gs_pkt_add_test(c: &mut Cpu) {
 /// == 1)}. Cycles: context 3/7/5, 9 (+3 with ZMSK), tail 10.
 pub fn gs_pkt_add_zbuf(c: &mut Cpu) {
     let p = GsPacket(Addr(abi::arg(c, 0)));
-    let (zbp, psm, zmsk, ctx) = (abi::reg(c, A1), abi::arg(c, 2), abi::reg(c, A3), abi::reg(c, T0));
+    let (zbp, psm, zmsk, ctx) = (
+        abi::reg(c, A1),
+        abi::arg(c, 2),
+        abi::reg(c, A3),
+        abi::reg(c, T0),
+    );
 
     let reg_id = if ctx == 0 {
         c.cycles += 3;
@@ -446,7 +481,11 @@ pub fn tex_man_build_sprite_packet(c: &mut Cpu) {
     let q = FpuF32::ONE;
     let channel = |x: FpuF32| sx(x.to_i32() as u32);
     c.lq(S1, frame.0);
-    let rgbaq = channel(r) | (channel(g) << 8) | (channel(b) << 16) | (channel(a) << 24) | ((q.0 as u64) << 32);
+    let rgbaq = channel(r)
+        | (channel(g) << 8)
+        | (channel(b) << 16)
+        | (channel(a) << 24)
+        | ((q.0 as u64) << 32);
     at(0x38).sd(c, rgbaq);
 
     // XYZ2 corners (12.4 fixed point, Z = 1), centred on 2048.
@@ -817,7 +856,8 @@ mod tests {
     /// GsPacket at DATA {count, cursor = DATA + 0x100 + 16k}.
     fn packet(c: &mut Cpu, r: &mut Rng) {
         c.bus.write32(DATA, r.next_u32());
-        c.bus.write32(DATA + 4, DATA + 0x100 + (r.next_u32() % 16) * 0x10);
+        c.bus
+            .write32(DATA + 4, DATA + 0x100 + (r.next_u32() % 16) * 0x10);
         fill(c, r, DATA + 0x100, 0x100);
         c.g[A0][0] = DATA as u64;
     }
@@ -832,48 +872,72 @@ mod tests {
 
     #[test]
     fn gs_pkt_add_clamp_matches() {
-        check(ssx3_ee::s12::f_003625c0__generated, gs_pkt_add_clamp, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 1);
-            packet(c, &mut r);
-            c.g[A1][0] = selector(&mut r);
-            c.g[A2][0] = selector(&mut r);
-        });
+        check(
+            ssx3_ee::s12::f_003625c0__generated,
+            gs_pkt_add_clamp,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 1);
+                packet(c, &mut r);
+                c.g[A1][0] = selector(&mut r);
+                c.g[A2][0] = selector(&mut r);
+            },
+        );
     }
 
     #[test]
     fn gs_pkt_add_scissor_matches() {
-        check(ssx3_ee::s12::f_003623d8__generated, gs_pkt_add_scissor, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 2);
-            packet(c, &mut r);
-            c.g[A1][0] = wide(&mut r);
-            c.g[A2][0] = wide(&mut r);
-            c.g[A3][0] = wide(&mut r);
-            c.g[T0][0] = wide(&mut r);
-        });
+        check(
+            ssx3_ee::s12::f_003623d8__generated,
+            gs_pkt_add_scissor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 2);
+                packet(c, &mut r);
+                c.g[A1][0] = wide(&mut r);
+                c.g[A2][0] = wide(&mut r);
+                c.g[A3][0] = wide(&mut r);
+                c.g[T0][0] = wide(&mut r);
+            },
+        );
     }
 
     #[test]
     fn gs_pkt_add_test_matches() {
-        check(ssx3_ee::s12::f_003626d8__generated, gs_pkt_add_test, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 3);
-            packet(c, &mut r);
-            c.g[A1][0] = selector(&mut r);
-            c.g[A2][0] = selector(&mut r);
-            c.g[A3][0] = wide(&mut r);
-            c.g[T0][0] = selector(&mut r);
-        });
+        check(
+            ssx3_ee::s12::f_003626d8__generated,
+            gs_pkt_add_test,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 3);
+                packet(c, &mut r);
+                c.g[A1][0] = selector(&mut r);
+                c.g[A2][0] = selector(&mut r);
+                c.g[A3][0] = wide(&mut r);
+                c.g[T0][0] = selector(&mut r);
+            },
+        );
     }
 
     #[test]
     fn gs_pkt_add_zbuf_matches() {
-        check(ssx3_ee::s12::f_00362660__generated, gs_pkt_add_zbuf, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 4);
-            packet(c, &mut r);
-            c.g[A1][0] = wide(&mut r);
-            c.g[A2][0] = if r.next_u32() % 2 == 0 { 0x30 + (r.next_u32() % 11) as u64 } else { wide(&mut r) };
-            c.g[A3][0] = selector(&mut r);
-            c.g[T0][0] = selector(&mut r);
-        });
+        check(
+            ssx3_ee::s12::f_00362660__generated,
+            gs_pkt_add_zbuf,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 4);
+                packet(c, &mut r);
+                c.g[A1][0] = wide(&mut r);
+                c.g[A2][0] = if r.next_u32() % 2 == 0 {
+                    0x30 + (r.next_u32() % 11) as u64
+                } else {
+                    wide(&mut r)
+                };
+                c.g[A3][0] = selector(&mut r);
+                c.g[T0][0] = selector(&mut r);
+            },
+        );
     }
 
     /// TexMan at DATA with tex[slot] -> TexInfo at DATA + 0x2000 (random
@@ -886,7 +950,8 @@ mod tests {
         if r.next_u32() % 2 == 0 {
             c.bus.write32(DATA + 0x2028, r.next_u32() % 0x4000);
         }
-        c.bus.write32(DATA + 0x1000, DATA + 0x3000 + (r.next_u32() % 4) * 0x10);
+        c.bus
+            .write32(DATA + 0x1000, DATA + 0x3000 + (r.next_u32() % 4) * 0x10);
         fill(c, r, DATA + 0x3000, 0x40);
         c.g[A0][0] = DATA as u64;
         c.g[A1][0] = slot as u64;
@@ -894,48 +959,79 @@ mod tests {
 
     #[test]
     fn tex_man_build_upload_packet_matches() {
-        check(ssx3_ee::s12::f_00367db8__generated, tex_man_build_upload_packet, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 5);
-            texman(c, &mut r);
-            c.g[A2][0] = (DATA + 0x1000) as u64;
-        });
+        check(
+            ssx3_ee::s12::f_00367db8__generated,
+            tex_man_build_upload_packet,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 5);
+                texman(c, &mut r);
+                c.g[A2][0] = (DATA + 0x1000) as u64;
+            },
+        );
     }
 
     #[test]
     fn tex_man_build_sprite_packet_matches() {
-        check(ssx3_ee::s12::f_00367f18__generated, tex_man_build_sprite_packet, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 6);
-            texman(c, &mut r);
-            for i in 0..4 {
-                let f = if r.next_u32() % 2 == 0 { r.f32(2.0) } else { r.edge_f32() };
-                c.bus.write32(DATA + 0x4000 + i * 4, f);
-            }
-            c.g[A2][0] = (DATA + 0x4000) as u64;
-            c.g[A3][0] = (DATA + 0x1000) as u64;
-        });
+        check(
+            ssx3_ee::s12::f_00367f18__generated,
+            tex_man_build_sprite_packet,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 6);
+                texman(c, &mut r);
+                for i in 0..4 {
+                    let f = if r.next_u32() % 2 == 0 {
+                        r.f32(2.0)
+                    } else {
+                        r.edge_f32()
+                    };
+                    c.bus.write32(DATA + 0x4000 + i * 4, f);
+                }
+                c.g[A2][0] = (DATA + 0x4000) as u64;
+                c.g[A3][0] = (DATA + 0x1000) as u64;
+            },
+        );
     }
 
     #[test]
     fn defer_man_append_packet_matches() {
-        check(ssx3_ee::s12::f_00362978__generated, defer_man_append_packet, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 7);
-            fill(c, &mut r, DATA, 8);
-            if r.next_u32() % 2 == 0 {
-                c.bus.write32(DATA + 0xc, 0);
-            }
-            c.bus.write32(DATA + 0x10, DATA + 0x200 + (r.next_u32() % 8) * 0x10);
-            fill(c, &mut r, DATA + 0x200, 0x40);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = wide(&mut r);
-            c.g[A2][0] = wide(&mut r);
-        });
+        check(
+            ssx3_ee::s12::f_00362978__generated,
+            defer_man_append_packet,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 7);
+                fill(c, &mut r, DATA, 8);
+                if r.next_u32() % 2 == 0 {
+                    c.bus.write32(DATA + 0xc, 0);
+                }
+                c.bus
+                    .write32(DATA + 0x10, DATA + 0x200 + (r.next_u32() % 8) * 0x10);
+                fill(c, &mut r, DATA + 0x200, 0x40);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = wide(&mut r);
+                c.g[A2][0] = wide(&mut r);
+            },
+        );
     }
 
     fn graphics_man(c: &mut Cpu, r: &mut Rng) {
         c.bus.write32(DATA + 0x5a10, r.next_u32() % 2);
-        c.bus.write32(DATA + 0x5a8c, if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() % 6 });
+        c.bus.write32(
+            DATA + 0x5a8c,
+            if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                r.next_u32() % 6
+            },
+        );
         for i in 0..2 {
-            let s = if r.next_u32() % 5 == 0 { r.next_u32() } else { r.next_u32() % 4 };
+            let s = if r.next_u32() % 5 == 0 {
+                r.next_u32()
+            } else {
+                r.next_u32() % 4
+            };
             c.bus.write32(DATA + 0x5a90 + i * 4, s);
         }
         c.g[A0][0] = DATA as u64;
@@ -943,27 +1039,41 @@ mod tests {
 
     #[test]
     fn gm_acquire_frame_buffer_matches() {
-        check(ssx3_ee::s12::f_003826e0__generated, gm_acquire_frame_buffer, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 8);
-            graphics_man(c, &mut r);
-        });
+        check(
+            ssx3_ee::s12::f_003826e0__generated,
+            gm_acquire_frame_buffer,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 8);
+                graphics_man(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn gm_is_render_idle_matches() {
-        check(ssx3_ee::s12::f_00382730__generated, gm_is_render_idle, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 9);
-            graphics_man(c, &mut r);
-        });
+        check(
+            ssx3_ee::s12::f_00382730__generated,
+            gm_is_render_idle,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 9);
+                graphics_man(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn sce_gs_get_gparam_matches() {
-        check(ssx3_ee::s15::f_003fdaa0__generated, sce_gs_get_gparam, 200, &|c, seed| {
-            base(c, seed, 10);
-        });
+        check(
+            ssx3_ee::s15::f_003fdaa0__generated,
+            sce_gs_get_gparam,
+            200,
+            &|c, seed| {
+                base(c, seed, 10);
+            },
+        );
     }
-
 
     fn lens_fx(c: &mut Cpu, r: &mut Rng) {
         for l in 0..4 {
@@ -976,74 +1086,123 @@ mod tests {
 
     #[test]
     fn lens_fx_add_source_matches() {
-        check_lohi(ssx3_ee::s09::f_002e2fa8__generated, lens_fx_add_source, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 11);
-            lens_fx(c, &mut r);
-        });
+        check_lohi(
+            ssx3_ee::s09::f_002e2fa8__generated,
+            lens_fx_add_source,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 11);
+                lens_fx(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn lens_fx_clear_sources_matches() {
-        check(ssx3_ee::s09::f_002e2f98__generated, lens_fx_clear_sources, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 12);
-            lens_fx(c, &mut r);
-            c.g[A1][0] = (r.next_u32() % 64) as u64 | (r.next_u32() as u64) << 32;
-        });
+        check(
+            ssx3_ee::s09::f_002e2f98__generated,
+            lens_fx_clear_sources,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 12);
+                lens_fx(c, &mut r);
+                c.g[A1][0] = (r.next_u32() % 64) as u64 | (r.next_u32() as u64) << 32;
+            },
+        );
     }
 
     #[test]
     fn sky_box_clear_matches() {
-        check(ssx3_ee::s11::f_00353d98__generated, sky_box_clear, 200, &|c, seed| {
-            let mut r = base(c, seed, 13);
-            fill(c, &mut r, DATA, 8);
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ssx3_ee::s11::f_00353d98__generated,
+            sky_box_clear,
+            200,
+            &|c, seed| {
+                let mut r = base(c, seed, 13);
+                fill(c, &mut r, DATA, 8);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
     #[test]
     fn spr_stream_next_index_matches() {
-        check_lohi(ssx3_ee::s12::f_0038f6a8__generated, spr_stream_next_index, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 14);
-            let (n, i) = match r.next_u32() % 6 {
-                0 => (0, r.next_u32()),
-                1 => (u32::MAX, i32::MAX as u32),
-                2 => (r.next_u32(), r.next_u32()),
-                _ => (r.next_u32() % 4, r.next_u32() % 4),
-            };
-            c.bus.write32(DATA + 4, n);
-            c.bus.write32(DATA + 0xc, i);
-            c.g[A0][0] = DATA as u64;
-        });
+        check_lohi(
+            ssx3_ee::s12::f_0038f6a8__generated,
+            spr_stream_next_index,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 14);
+                let (n, i) = match r.next_u32() % 6 {
+                    0 => (0, r.next_u32()),
+                    1 => (u32::MAX, i32::MAX as u32),
+                    2 => (r.next_u32(), r.next_u32()),
+                    _ => (r.next_u32() % 4, r.next_u32() % 4),
+                };
+                c.bus.write32(DATA + 4, n);
+                c.bus.write32(DATA + 0xc, i);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
     #[test]
     fn hud_fx_update_matches() {
-        check(ssx3_ee::s00::f_00116fb8__generated, hud_fx_update, 1000, &|c, seed| {
-            let mut r = base(c, seed, 15);
-            let state = if r.next_u32() % 4 == 0 { 0x34 } else { r.next_u32() % 0x40 };
-            c.bus.write32(DATA, state);
-            let target = match r.next_u32() % 4 {
-                0 => 0xbf80_0000,
-                _ => r.edge_f32(),
-            };
-            c.bus.write32(DATA + 4, target);
-            let acc = if r.next_u32() % 3 == 0 { target } else { r.edge_f32() };
-            c.bus.write32(DATA + 8, acc);
-            let step = if r.next_u32() % 3 == 0 { 0 } else { r.edge_f32() };
-            c.bus.write32(0x0049_b5d8, step);
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ssx3_ee::s00::f_00116fb8__generated,
+            hud_fx_update,
+            1000,
+            &|c, seed| {
+                let mut r = base(c, seed, 15);
+                let state = if r.next_u32() % 4 == 0 {
+                    0x34
+                } else {
+                    r.next_u32() % 0x40
+                };
+                c.bus.write32(DATA, state);
+                let target = match r.next_u32() % 4 {
+                    0 => 0xbf80_0000,
+                    _ => r.edge_f32(),
+                };
+                c.bus.write32(DATA + 4, target);
+                let acc = if r.next_u32() % 3 == 0 {
+                    target
+                } else {
+                    r.edge_f32()
+                };
+                c.bus.write32(DATA + 8, acc);
+                let step = if r.next_u32() % 3 == 0 {
+                    0
+                } else {
+                    r.edge_f32()
+                };
+                c.bus.write32(0x0049_b5d8, step);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
     #[test]
     fn app_module_update_fade_matches() {
-        check(ssx3_ee::s06::f_00231d18__generated, app_module_update_fade, 1000, &|c, seed| {
-            let mut r = base(c, seed, 16);
-            c.bus.write32(DATA + 4, r.edge_f32());
-            c.bus.write32(DATA + 8, if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() });
-            c.bus.write32(0x0049_df40, r.edge_f32());
-            c.bus.write32(0x0049_df44, r.edge_f32());
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ssx3_ee::s06::f_00231d18__generated,
+            app_module_update_fade,
+            1000,
+            &|c, seed| {
+                let mut r = base(c, seed, 16);
+                c.bus.write32(DATA + 4, r.edge_f32());
+                c.bus.write32(
+                    DATA + 8,
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32()
+                    },
+                );
+                c.bus.write32(0x0049_df40, r.edge_f32());
+                c.bus.write32(0x0049_df44, r.edge_f32());
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 }

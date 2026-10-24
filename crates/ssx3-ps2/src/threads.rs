@@ -56,7 +56,9 @@ pub fn handoff(me: i32, to: i32) {
     } else {
         // Suspend this coroutine; the driver's loop runs `to` (or returns to
         // the frame driver when `to` is 0) and resumes us later.
-        let y = YIELDERS.with(|m| m.borrow().get(&me).copied()).expect("running coroutine has a yielder");
+        let y = YIELDERS
+            .with(|m| m.borrow().get(&me).copied())
+            .expect("running coroutine has a yielder");
         // SAFETY: the yielder lives on this coroutine's stack, which is live
         // while it runs.
         unsafe { (*y).suspend(to) };

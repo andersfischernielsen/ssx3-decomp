@@ -107,7 +107,12 @@ mod tests {
     fn every_function_is_sliceable() {
         let Some(p) = open() else { return };
         for f in p.functions() {
-            assert!(p.code(f).is_some(), "no code for {} at {:08x}", f.name, f.address);
+            assert!(
+                p.code(f).is_some(),
+                "no code for {} at {:08x}",
+                f.name,
+                f.address
+            );
         }
     }
 

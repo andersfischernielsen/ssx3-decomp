@@ -35,16 +35,56 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0014_48d8, be_new_race_int_get_instance, "BENewRaceInt_GetInstance"),
-    (0x0014_5970, be_new_player_int_get_instance, "BENewPlayerInt_GetInstance"),
-    (0x0014_7f78, be_char_int_get_instance, "BECharInt_GetInstance"),
-    (0x0015_5a50, be_aggression_int_get_instance, "BEAggressionInt_GetInstance"),
-    (0x0015_4948, be_score_int_get_instance, "BEScoreInt_GetInstance"),
-    (0x0014_f250, be_option_int_get_instance, "BEOptionInt_GetInstance"),
-    (0x0014_6e98, be_new_player_int_get_human_rider, "BENewPlayerInt_GetHumanRider"),
-    (0x0014_7398, be_new_player_int_get_character, "BENewPlayerInt_GetCharacter"),
-    (0x0014_7290, be_new_player_int_get_pad_index, "BENewPlayerInt_GetPadIndex"),
-    (0x0014_4c98, be_new_race_int_get_track_peak, "BENewRaceInt_GetTrackPeak"),
+    (
+        0x0014_48d8,
+        be_new_race_int_get_instance,
+        "BENewRaceInt_GetInstance",
+    ),
+    (
+        0x0014_5970,
+        be_new_player_int_get_instance,
+        "BENewPlayerInt_GetInstance",
+    ),
+    (
+        0x0014_7f78,
+        be_char_int_get_instance,
+        "BECharInt_GetInstance",
+    ),
+    (
+        0x0015_5a50,
+        be_aggression_int_get_instance,
+        "BEAggressionInt_GetInstance",
+    ),
+    (
+        0x0015_4948,
+        be_score_int_get_instance,
+        "BEScoreInt_GetInstance",
+    ),
+    (
+        0x0014_f250,
+        be_option_int_get_instance,
+        "BEOptionInt_GetInstance",
+    ),
+    (
+        0x0014_6e98,
+        be_new_player_int_get_human_rider,
+        "BENewPlayerInt_GetHumanRider",
+    ),
+    (
+        0x0014_7398,
+        be_new_player_int_get_character,
+        "BENewPlayerInt_GetCharacter",
+    ),
+    (
+        0x0014_7290,
+        be_new_player_int_get_pad_index,
+        "BENewPlayerInt_GetPadIndex",
+    ),
+    (
+        0x0014_4c98,
+        be_new_race_int_get_track_peak,
+        "BENewRaceInt_GetTrackPeak",
+    ),
     (0x0014_8410, be_char_int_get_attrib0, "BECharInt_GetAttrib0"),
     (0x0014_84e0, be_char_int_get_attrib1, "BECharInt_GetAttrib1"),
     (0x0014_85b0, be_char_int_get_attrib2, "BECharInt_GetAttrib2"),
@@ -52,28 +92,104 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0014_8750, be_char_int_get_attrib4, "BECharInt_GetAttrib4"),
     (0x0014_8820, be_char_int_get_attrib5, "BECharInt_GetAttrib5"),
     (0x0014_88f0, be_char_int_get_attrib6, "BECharInt_GetAttrib6"),
-    (0x0014_8d80, be_char_int_get_attrib3_factor, "BECharInt_GetAttrib3Factor"),
-    (0x0014_8e68, be_char_int_get_attrib3_factor_2, "BECharInt_GetAttrib3Factor_2"),
-    (0x0014_8f50, be_char_int_get_attrib5_factor, "BECharInt_GetAttrib5Factor"),
-    (0x0014_9038, be_char_int_get_attrib5_factor_2, "BECharInt_GetAttrib5Factor_2"),
-    (0x0014_9120, be_char_int_get_attrib6_factor, "BECharInt_GetAttrib6Factor"),
-    (0x0014_9208, be_char_int_get_attrib6_factor_2, "BECharInt_GetAttrib6Factor_2"),
-    (0x0014_92f0, be_char_int_get_attrib6_factor_3, "BECharInt_GetAttrib6Factor_3"),
-    (0x0014_93d8, be_char_int_get_attrib1_factor, "BECharInt_GetAttrib1Factor"),
-    (0x0014_94c0, be_char_int_get_attrib0_factor, "BECharInt_GetAttrib0Factor"),
-    (0x0014_95a8, be_char_int_get_attrib4_factor, "BECharInt_GetAttrib4Factor"),
-    (0x0014_9690, be_char_int_get_attrib2_factor, "BECharInt_GetAttrib2Factor"),
-    (0x0015_5b50, be_aggression_int_get_rival_level, "BEAggressionInt_GetRivalLevel"),
-    (0x0012_a250, ai_all_players_finished, "AI_AllPlayersFinished"),
-    (0x0012_a180, ai_are_all_riders_loaded, "AI_AreAllRidersLoaded"),
+    (
+        0x0014_8d80,
+        be_char_int_get_attrib3_factor,
+        "BECharInt_GetAttrib3Factor",
+    ),
+    (
+        0x0014_8e68,
+        be_char_int_get_attrib3_factor_2,
+        "BECharInt_GetAttrib3Factor_2",
+    ),
+    (
+        0x0014_8f50,
+        be_char_int_get_attrib5_factor,
+        "BECharInt_GetAttrib5Factor",
+    ),
+    (
+        0x0014_9038,
+        be_char_int_get_attrib5_factor_2,
+        "BECharInt_GetAttrib5Factor_2",
+    ),
+    (
+        0x0014_9120,
+        be_char_int_get_attrib6_factor,
+        "BECharInt_GetAttrib6Factor",
+    ),
+    (
+        0x0014_9208,
+        be_char_int_get_attrib6_factor_2,
+        "BECharInt_GetAttrib6Factor_2",
+    ),
+    (
+        0x0014_92f0,
+        be_char_int_get_attrib6_factor_3,
+        "BECharInt_GetAttrib6Factor_3",
+    ),
+    (
+        0x0014_93d8,
+        be_char_int_get_attrib1_factor,
+        "BECharInt_GetAttrib1Factor",
+    ),
+    (
+        0x0014_94c0,
+        be_char_int_get_attrib0_factor,
+        "BECharInt_GetAttrib0Factor",
+    ),
+    (
+        0x0014_95a8,
+        be_char_int_get_attrib4_factor,
+        "BECharInt_GetAttrib4Factor",
+    ),
+    (
+        0x0014_9690,
+        be_char_int_get_attrib2_factor,
+        "BECharInt_GetAttrib2Factor",
+    ),
+    (
+        0x0015_5b50,
+        be_aggression_int_get_rival_level,
+        "BEAggressionInt_GetRivalLevel",
+    ),
+    (
+        0x0012_a250,
+        ai_all_players_finished,
+        "AI_AllPlayersFinished",
+    ),
+    (
+        0x0012_a180,
+        ai_are_all_riders_loaded,
+        "AI_AreAllRidersLoaded",
+    ),
     (0x0012_98c8, ai_get_frame_counter, "AI_GetFrameCounter"),
     (0x0011_3c20, ai_update_race_state, "AI_UpdateRaceState"),
     (0x0010_f878, ai_update_rivals, "AI_UpdateRivals"),
-    (0x0010_a960, computer_actor_rider_think_cruise, "ComputerActorRider_ThinkCruise"),
-    (0x0010_b750, computer_actor_rider_think_wipeout, "ComputerActorRider_ThinkWipeout"),
-    (0x0010_0610, computer_actor_rider_get_steer_target, "ComputerActorRider_GetSteerTarget"),
-    (0x0010_deb0, computer_actor_rider_get_human_rider, "ComputerActorRider_GetHumanRider"),
-    (0x0011_3618, air_predictor_set_launch_state, "AirPredictor_SetLaunchState"),
+    (
+        0x0010_a960,
+        computer_actor_rider_think_cruise,
+        "ComputerActorRider_ThinkCruise",
+    ),
+    (
+        0x0010_b750,
+        computer_actor_rider_think_wipeout,
+        "ComputerActorRider_ThinkWipeout",
+    ),
+    (
+        0x0010_0610,
+        computer_actor_rider_get_steer_target,
+        "ComputerActorRider_GetSteerTarget",
+    ),
+    (
+        0x0010_deb0,
+        computer_actor_rider_get_human_rider,
+        "ComputerActorRider_GetHumanRider",
+    ),
+    (
+        0x0011_3618,
+        air_predictor_set_launch_state,
+        "AirPredictor_SetLaunchState",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -85,31 +201,81 @@ const EA_MEM_ALLOC_NAMED: u32 = 0x0031_7d70;
 
 mod callee {
     use super::{ee, Callee};
-    pub const NEW_PLAYER_INT_CTOR: Callee = Callee { addr: 0x0014_5930, f: ee::s01::BENewPlayerInt_ctor };
-    pub const SCORE_INT_CTOR: Callee = Callee { addr: 0x0015_49a8, f: ee::s01::BEScoreInt_ctor };
-    pub const OPTION_INT_CTOR: Callee = Callee { addr: 0x0014_f418, f: ee::s01::BEOptionInt_ctor };
-    pub const LIBRARY_CTOR: Callee = Callee { addr: 0x0014_9860, f: ee::s01::BELibrary_ctor };
-    pub const PRE_RACE_GET_INSTANCE: Callee = Callee { addr: 0x0015_6570, f: ee::s01::BEPreRace_GetInstance };
-    pub const RACE_GET_INSTANCE: Callee = Callee { addr: 0x0015_3088, f: ee::s01::BERace_GetInstance };
-    pub const POST_RACE_GET_INSTANCE: Callee = Callee { addr: 0x0015_6338, f: ee::s01::BEPostRace_GetInstance };
-    pub const GET_SLOT: Callee = Callee { addr: 0x0014_7798, f: ee::s01::BENewPlayerInt_GetSlot };
-    pub const GET_RIDER_PROFILE: Callee = Callee { addr: 0x0014_a0e0, f: ee::s01::BE_GetRiderProfile };
-    pub const GET_RIDER_CHARACTER: Callee = Callee { addr: 0x0014_a080, f: ee::s01::BE_GetRiderCharacter };
+    pub const NEW_PLAYER_INT_CTOR: Callee = Callee {
+        addr: 0x0014_5930,
+        f: ee::s01::BENewPlayerInt_ctor,
+    };
+    pub const SCORE_INT_CTOR: Callee = Callee {
+        addr: 0x0015_49a8,
+        f: ee::s01::BEScoreInt_ctor,
+    };
+    pub const OPTION_INT_CTOR: Callee = Callee {
+        addr: 0x0014_f418,
+        f: ee::s01::BEOptionInt_ctor,
+    };
+    pub const LIBRARY_CTOR: Callee = Callee {
+        addr: 0x0014_9860,
+        f: ee::s01::BELibrary_ctor,
+    };
+    pub const PRE_RACE_GET_INSTANCE: Callee = Callee {
+        addr: 0x0015_6570,
+        f: ee::s01::BEPreRace_GetInstance,
+    };
+    pub const RACE_GET_INSTANCE: Callee = Callee {
+        addr: 0x0015_3088,
+        f: ee::s01::BERace_GetInstance,
+    };
+    pub const POST_RACE_GET_INSTANCE: Callee = Callee {
+        addr: 0x0015_6338,
+        f: ee::s01::BEPostRace_GetInstance,
+    };
+    pub const GET_SLOT: Callee = Callee {
+        addr: 0x0014_7798,
+        f: ee::s01::BENewPlayerInt_GetSlot,
+    };
+    pub const GET_RIDER_PROFILE: Callee = Callee {
+        addr: 0x0014_a0e0,
+        f: ee::s01::BE_GetRiderProfile,
+    };
+    pub const GET_RIDER_CHARACTER: Callee = Callee {
+        addr: 0x0014_a080,
+        f: ee::s01::BE_GetRiderCharacter,
+    };
     /// Unnamed: "is this player's attribute fixed" (the factor is 0.5).
-    pub const ATTRIB_FIXED: Callee = Callee { addr: 0x0014_77e8, f: ee::s01::f_001477e8 };
-    pub const NEW_RACE_INT_GET_INSTANCE: Callee =
-        Callee { addr: 0x0014_48d8, f: ee::s01::BENewRaceInt_GetInstance };
+    pub const ATTRIB_FIXED: Callee = Callee {
+        addr: 0x0014_77e8,
+        f: ee::s01::f_001477e8,
+    };
+    pub const NEW_RACE_INT_GET_INSTANCE: Callee = Callee {
+        addr: 0x0014_48d8,
+        f: ee::s01::BENewRaceInt_GetInstance,
+    };
     /// Unnamed: the race's featured (boss) character.
-    pub const RACE_FEATURED_CHARACTER: Callee = Callee { addr: 0x0014_5750, f: ee::s01::f_00145750 };
-    pub const RIDER_IS_LOADED: Callee = Callee { addr: 0x0011_d640, f: ee::s00::Rider_IsLoaded };
-    pub const SHOULD_RESET_PATH: Callee =
-        Callee { addr: 0x0010_d1a0, f: ee::s00::ComputerActorRider_ShouldResetPath };
-    pub const FIND_ATTACK_TARGET: Callee =
-        Callee { addr: 0x0010_dbf0, f: ee::s00::ComputerActorRider_FindAttackTarget };
+    pub const RACE_FEATURED_CHARACTER: Callee = Callee {
+        addr: 0x0014_5750,
+        f: ee::s01::f_00145750,
+    };
+    pub const RIDER_IS_LOADED: Callee = Callee {
+        addr: 0x0011_d640,
+        f: ee::s00::Rider_IsLoaded,
+    };
+    pub const SHOULD_RESET_PATH: Callee = Callee {
+        addr: 0x0010_d1a0,
+        f: ee::s00::ComputerActorRider_ShouldResetPath,
+    };
+    pub const FIND_ATTACK_TARGET: Callee = Callee {
+        addr: 0x0010_dbf0,
+        f: ee::s00::ComputerActorRider_FindAttackTarget,
+    };
     /// Unnamed: "shove back" decision (cooldown at CAR+0xf30, result +0xf34).
-    pub const SHOVE_BACK: Callee = Callee { addr: 0x0010_da10, f: ee::s00::f_0010da10 };
-    pub const FIND_HUMAN_RIDER_INDEX: Callee =
-        Callee { addr: 0x0010_d8f8, f: ee::s00::ComputerActorRider_FindHumanRiderIndex };
+    pub const SHOVE_BACK: Callee = Callee {
+        addr: 0x0010_da10,
+        f: ee::s00::f_0010da10,
+    };
+    pub const FIND_HUMAN_RIDER_INDEX: Callee = Callee {
+        addr: 0x0010_d8f8,
+        f: ee::s00::ComputerActorRider_FindHumanRiderIndex,
+    };
 }
 
 /// gp offsets of the globals (`*(gp - off)`).
@@ -205,7 +371,13 @@ fn init_with_vtable(c: &mut Cpu, vtable: u32, global: u32) {
 /// `BENewRaceInt* BENewRaceInt_GetInstance(void)` (0x1448d8): the race
 /// setup interface (vtable 0x45ae58).
 pub fn be_new_race_int_get_instance(c: &mut Cpu) {
-    let s = Singleton { global: global::NEW_RACE_INT, size: 0x10, name: 0x0045_a0f0, alloc_ret: 0x0014_4900, init_cycles: 11 };
+    let s = Singleton {
+        global: global::NEW_RACE_INT,
+        size: 0x10,
+        name: 0x0045_a0f0,
+        alloc_ret: 0x0014_4900,
+        init_cycles: 11,
+    };
     lazy_singleton(c, s, |c| {
         init_with_vtable(c, 0x0045_ae58, global::NEW_RACE_INT);
         Ok(())
@@ -215,7 +387,13 @@ pub fn be_new_race_int_get_instance(c: &mut Cpu) {
 /// `BEAggressionInt* BEAggressionInt_GetInstance(void)` (0x155a50): the
 /// rivalry interface (vtable 0x45ac48).
 pub fn be_aggression_int_get_instance(c: &mut Cpu) {
-    let s = Singleton { global: global::AGGRESSION_INT, size: 0x10, name: 0x0045_a898, alloc_ret: 0x0015_5a78, init_cycles: 11 };
+    let s = Singleton {
+        global: global::AGGRESSION_INT,
+        size: 0x10,
+        name: 0x0045_a898,
+        alloc_ret: 0x0015_5a78,
+        init_cycles: 11,
+    };
     lazy_singleton(c, s, |c| {
         init_with_vtable(c, 0x0045_ac48, global::AGGRESSION_INT);
         Ok(())
@@ -225,7 +403,13 @@ pub fn be_aggression_int_get_instance(c: &mut Cpu) {
 /// `BENewPlayerInt* BENewPlayerInt_GetInstance(void)` (0x145970): built by
 /// `BENewPlayerInt_ctor`; the global holds what the constructor returns.
 pub fn be_new_player_int_get_instance(c: &mut Cpu) {
-    let s = Singleton { global: global::NEW_PLAYER_INT, size: 0x10, name: 0x0045_a1d8, alloc_ret: 0x0014_5998, init_cycles: 9 };
+    let s = Singleton {
+        global: global::NEW_PLAYER_INT,
+        size: 0x10,
+        name: 0x0045_a1d8,
+        alloc_ret: 0x0014_5998,
+        init_cycles: 9,
+    };
     lazy_singleton(c, s, |c| {
         c.g[A0][0] = c.g[V0][0];
         callee::NEW_PLAYER_INT_CTOR.call(c, 0x0014_59a0)?;
@@ -238,7 +422,13 @@ pub fn be_new_player_int_get_instance(c: &mut Cpu) {
 /// interface. Published first, then vtable 0x45ad68 and the init method in
 /// its slot 0x10 (called through the static vtable).
 pub fn be_char_int_get_instance(c: &mut Cpu) {
-    let s = Singleton { global: global::CHAR_INT, size: 0x10, name: 0x0045_a280, alloc_ret: 0x0014_7fa0, init_cycles: 15 };
+    let s = Singleton {
+        global: global::CHAR_INT,
+        size: 0x10,
+        name: 0x0045_a280,
+        alloc_ret: 0x0014_7fa0,
+        init_cycles: 15,
+    };
     lazy_singleton(c, s, |c| {
         const VTABLE: u32 = 0x0045_ad68;
         let obj = c.g[V0][0];
@@ -257,7 +447,13 @@ pub fn be_char_int_get_instance(c: &mut Cpu) {
 /// `BEScoreInt_ctor`; then the score fields are reset on the constructor's
 /// result (`+0x1c = +0x18 = -1`, `+0x8 = +0x10 = +0x14 = 0`).
 pub fn be_score_int_get_instance(c: &mut Cpu) {
-    let s = Singleton { global: global::SCORE_INT, size: 0x230, name: 0x0045_a858, alloc_ret: 0x0015_4970, init_cycles: 15 };
+    let s = Singleton {
+        global: global::SCORE_INT,
+        size: 0x230,
+        name: 0x0045_a858,
+        alloc_ret: 0x0015_4970,
+        init_cycles: 15,
+    };
     lazy_singleton(c, s, |c| {
         c.g[A0][0] = c.g[V0][0];
         callee::SCORE_INT_CTOR.call(c, 0x0015_4978)?;
@@ -277,7 +473,13 @@ pub fn be_score_int_get_instance(c: &mut Cpu) {
 /// 0x45adc8, published, then `BEOptionInt_ctor` (a re-entrant `GetInstance`
 /// from the constructor already sees the object).
 pub fn be_option_int_get_instance(c: &mut Cpu) {
-    let s = Singleton { global: global::OPTION_INT, size: 0x10, name: 0x0045_a6b0, alloc_ret: 0x0014_f278, init_cycles: 13 };
+    let s = Singleton {
+        global: global::OPTION_INT,
+        size: 0x10,
+        name: 0x0045_a6b0,
+        alloc_ret: 0x0014_f278,
+        init_cycles: 13,
+    };
     lazy_singleton(c, s, |c| {
         let obj = r32(c, V0);
         c.g[V1][0] = sx(0x0045_adc8);
@@ -380,7 +582,13 @@ pub const CHARACTER_MAX: u32 = 0x0053_08d8;
 /// one 13-cycle block before the call), then `mult` slot by the record size.
 /// Leaves v1 = the table base, a0 = 0x1c; returns the record address in a
 /// register named by `rec` (v0 or v1) as the two originals do.
-fn player_record(c: &mut Cpu, call_ret: u32, rec: usize, field: u32, load: fn(&mut Cpu, u32) -> u64) {
+fn player_record(
+    c: &mut Cpu,
+    call_ret: u32,
+    rec: usize,
+    field: u32,
+    load: fn(&mut Cpu, u32) -> u64,
+) {
     guest(c, |c| {
         c.cycles += 13;
         let frame = Frame::open(c, 0x10);
@@ -531,7 +739,9 @@ fn get_attrib(c: &mut Cpu, start: u32, n: u32, regs: Regs) {
         callee::GET_RIDER_CHARACTER.call(c, start + 0x28)?;
         let character = r32(c, V0);
         let profile_off = abi::mult(c, r32(c, S0), ATTRIB_PROFILE_STRIDE);
-        let entry_off = (character << 3).wrapping_sub(character).wrapping_add(profile_off);
+        let entry_off = (character << 3)
+            .wrapping_sub(character)
+            .wrapping_add(profile_off);
         let addr = ATTRIBS.wrapping_add(entry_off);
         match regs {
             Regs::A => {
@@ -612,7 +822,9 @@ fn get_attrib_factor(c: &mut Cpu, start: u32, n: u32, regs: Regs) {
                 c.cycles += 9 + 6;
                 let character = r32(c, S1);
                 let profile_off = abi::mult(c, r32(c, S3), ATTRIB_PROFILE_STRIDE);
-                let entry_off = (character << 3).wrapping_sub(character).wrapping_add(profile_off);
+                let entry_off = (character << 3)
+                    .wrapping_sub(character)
+                    .wrapping_add(profile_off);
                 let addr = ATTRIBS.wrapping_add(entry_off);
                 c.g[A1][0] = 5;
                 match regs {
@@ -723,7 +935,10 @@ pub fn be_aggression_int_get_rival_level(c: &mut Cpu) {
             let profile_b = abi::mult(c, r32(c, S2), 0x9b50);
             c.g[A1][0] = sx(profile_b);
             let char_a = r32(c, S0);
-            let off = (char_a << 1).wrapping_add(char_a).wrapping_add(char_b).wrapping_add(profile_b);
+            let off = (char_a << 1)
+                .wrapping_add(char_a)
+                .wrapping_add(char_b)
+                .wrapping_add(profile_b);
             c.g[V0][0] = sx(off);
             let addr = 0x004a_6ca8u32.wrapping_add(off);
             c.g[V1][0] = sx(addr);
@@ -1240,7 +1455,12 @@ pub fn computer_actor_rider_get_steer_target(c: &mut Cpu) {
     Addr(frame.at(c, 0)).write_vec4(c, offset);
     c.g[A2][0] = abi::mfc1(blend);
     let k = VuF32(blend.0);
-    let scaled = Vec4 { x: offset.x * k, y: offset.y * k, z: offset.z * k, w: offset.w * k };
+    let scaled = Vec4 {
+        x: offset.x * k,
+        y: offset.y * k,
+        z: offset.z * k,
+        w: offset.w * k,
+    };
     Addr(frame.at(c, 0x20)).write_vec4(c, scaled);
     c.g[A2][0] = c.lw(at(c, A1, car::RIDER));
     Addr(frame.at(c, 0)).write_vec4(c, scaled);
@@ -1327,7 +1547,12 @@ mod tests {
 
     /// Require every case `0..n` (as `classify` reads it after the
     /// generated function ran) to be taken by some seed.
-    fn require_cases(gen: GuestFn, n: u32, setup: &dyn Fn(&mut Cpu, u32), classify: &dyn Fn(&mut Cpu) -> u32) {
+    fn require_cases(
+        gen: GuestFn,
+        n: u32,
+        setup: &dyn Fn(&mut Cpu, u32),
+        classify: &dyn Fn(&mut Cpu) -> u32,
+    ) {
         let mut seen = BTreeSet::new();
         for seed in 0..SEEDS {
             let mut c = fresh();
@@ -1348,7 +1573,11 @@ mod tests {
             let r = compare(gen, hand, &|c| setup(c, seed));
             assert!(r.hard.is_empty(), "seed {seed}: {:#?}", r.hard);
             assert!(r.lohi.is_empty(), "seed {seed} (LO/HI): {:#?}", r.lohi);
-            let soft: Vec<&String> = r.soft.iter().filter(|m| !m.starts_with("vu0 ctrl 1")).collect();
+            let soft: Vec<&String> = r
+                .soft
+                .iter()
+                .filter(|m| !m.starts_with("vu0 ctrl 1"))
+                .collect();
             assert!(soft.is_empty(), "seed {seed} (temporaries): {:#?}", soft);
         }
     }
@@ -1379,9 +1608,13 @@ mod tests {
         let all_cpu = r.next_u32() % 5 == 0;
         for s in 0..8 {
             if all_cpu || r.next_u32() % 2 == 0 {
-                c.bus.write32(player_table::BASE + s * 0x1c + 0xc, r.next_u32() | 0x8000_0000);
+                c.bus.write32(
+                    player_table::BASE + s * 0x1c + 0xc,
+                    r.next_u32() | 0x8000_0000,
+                );
             } else {
-                c.bus.write32(player_table::BASE + s * 0x1c + 0xc, r.next_u32() % 4);
+                c.bus
+                    .write32(player_table::BASE + s * 0x1c + 0xc, r.next_u32() % 4);
             }
         }
         fill(c, r, 0x0053_5b20, 16 * 0x1c / 4);
@@ -1390,7 +1623,11 @@ mod tests {
             if r.next_u32() % 2 == 0 {
                 c.bus.write32(rec + 0xc, u32::MAX);
             }
-            let ch = if r.next_u32() % 8 == 0 { r.next_u32() as u8 } else { (r.next_u32() % 10) as u8 };
+            let ch = if r.next_u32() % 8 == 0 {
+                r.next_u32() as u8
+            } else {
+                (r.next_u32() % 10) as u8
+            };
             c.bus.write8(rec + 0x11, ch);
         }
         for ch in 0..10 {
@@ -1404,17 +1641,26 @@ mod tests {
         for p in 0..3u32 {
             for b in 0..10u32 {
                 for a in 0..10u32 {
-                    c.bus.write8(RIVALRY + p * 0x9b50 + b * 0xf88 + a * 3, (r.next_u32() % 5) as u8);
+                    c.bus.write8(
+                        RIVALRY + p * 0x9b50 + b * 0xf88 + a * 3,
+                        (r.next_u32() % 5) as u8,
+                    );
                 }
             }
         }
         c.bus.write32(0x0053_5c08, r.next_u32() % 40);
         fill(c, r, 0x0043_d950, 40 * 0x64 / 4);
         for t in 0..40 {
-            c.bus.write32(0x0043_d950 + t * 0x64 + 0x54, r.next_u32() % 4);
+            c.bus
+                .write32(0x0043_d950 + t * 0x64 + 0x54, r.next_u32() % 4);
         }
         // The BE singletons exist.
-        for g in [global::NEW_RACE_INT, global::NEW_PLAYER_INT, global::AGGRESSION_INT, global::CHAR_INT] {
+        for g in [
+            global::NEW_RACE_INT,
+            global::NEW_PLAYER_INT,
+            global::AGGRESSION_INT,
+            global::CHAR_INT,
+        ] {
             c.bus.write32(GAME_GP - g, DATA + 0xe_0000 + g * 0x10);
         }
     }
@@ -1445,7 +1691,14 @@ mod tests {
             be_tables(c, &mut r);
             let built = seed % 3 != 0;
             c.bus.write32(CASE, built as u32);
-            c.bus.write32(GAME_GP - global, if built { 0 } else { DATA + (r.next_u32() & 0xfff0) });
+            c.bus.write32(
+                GAME_GP - global,
+                if built {
+                    0
+                } else {
+                    DATA + (r.next_u32() & 0xfff0)
+                },
+            );
         };
         covered(gen, hand, SEEDS, &setup);
         check_lohi(gen, hand, SEEDS, &setup);
@@ -1454,27 +1707,57 @@ mod tests {
 
     #[test]
     fn be_new_race_int_get_instance_matches() {
-        singleton_test(ssx3_ee::s01::f_001448d8__generated, super::be_new_race_int_get_instance, global::NEW_RACE_INT, 1);
+        singleton_test(
+            ssx3_ee::s01::f_001448d8__generated,
+            super::be_new_race_int_get_instance,
+            global::NEW_RACE_INT,
+            1,
+        );
     }
     #[test]
     fn be_aggression_int_get_instance_matches() {
-        singleton_test(ssx3_ee::s01::f_00155a50__generated, super::be_aggression_int_get_instance, global::AGGRESSION_INT, 2);
+        singleton_test(
+            ssx3_ee::s01::f_00155a50__generated,
+            super::be_aggression_int_get_instance,
+            global::AGGRESSION_INT,
+            2,
+        );
     }
     #[test]
     fn be_new_player_int_get_instance_matches() {
-        singleton_test(ssx3_ee::s01::f_00145970__generated, super::be_new_player_int_get_instance, global::NEW_PLAYER_INT, 3);
+        singleton_test(
+            ssx3_ee::s01::f_00145970__generated,
+            super::be_new_player_int_get_instance,
+            global::NEW_PLAYER_INT,
+            3,
+        );
     }
     #[test]
     fn be_char_int_get_instance_matches() {
-        singleton_test(ssx3_ee::s01::f_00147f78__generated, super::be_char_int_get_instance, global::CHAR_INT, 4);
+        singleton_test(
+            ssx3_ee::s01::f_00147f78__generated,
+            super::be_char_int_get_instance,
+            global::CHAR_INT,
+            4,
+        );
     }
     #[test]
     fn be_score_int_get_instance_matches() {
-        singleton_test(ssx3_ee::s01::f_00154948__generated, super::be_score_int_get_instance, global::SCORE_INT, 5);
+        singleton_test(
+            ssx3_ee::s01::f_00154948__generated,
+            super::be_score_int_get_instance,
+            global::SCORE_INT,
+            5,
+        );
     }
     #[test]
     fn be_option_int_get_instance_matches() {
-        singleton_test(ssx3_ee::s01::f_0014f250__generated, super::be_option_int_get_instance, global::OPTION_INT, 6);
+        singleton_test(
+            ssx3_ee::s01::f_0014f250__generated,
+            super::be_option_int_get_instance,
+            global::OPTION_INT,
+            6,
+        );
     }
     /// Only the hot path and an unwind inside the first allocation: the
     /// rest of the build (`BELibrary_ctor` loads the character database
@@ -1487,12 +1770,24 @@ mod tests {
             be_tables(c, &mut r);
             let built = seed % 3 != 0;
             c.bus.write32(CASE, built as u32);
-            c.bus.write32(GAME_GP - global::BE_LIBRARY, if built { 0 } else { DATA + (r.next_u32() & 0xfff0) });
+            c.bus.write32(
+                GAME_GP - global::BE_LIBRARY,
+                if built {
+                    0
+                } else {
+                    DATA + (r.next_u32() & 0xfff0)
+                },
+            );
             if built {
                 c.bus.write32(crate::difftest::fakes::LOG_UNWIND_AT, 0);
             }
         };
-        covered(ssx3_ee::s01::f_0014dc80, super::be_library_get_instance, SEEDS, &setup);
+        covered(
+            ssx3_ee::s01::f_0014dc80,
+            super::be_library_get_instance,
+            SEEDS,
+            &setup,
+        );
         require_cases(ssx3_ee::s01::f_0014dc80, 2, &setup, &|c| noted(c));
     }
 
@@ -1513,21 +1808,57 @@ mod tests {
 
     #[test]
     fn be_new_player_int_table_getters_match() {
-        check_lohi(ssx3_ee::s01::f_00147398__generated, super::be_new_player_int_get_character, SEEDS, &table_setup(10));
-        check_lohi(ssx3_ee::s01::f_00147290__generated, super::be_new_player_int_get_pad_index, SEEDS, &table_setup(11));
-        check_lohi(ssx3_ee::s01::f_00144c98__generated, super::be_new_race_int_get_track_peak, SEEDS, &table_setup(12));
+        check_lohi(
+            ssx3_ee::s01::f_00147398__generated,
+            super::be_new_player_int_get_character,
+            SEEDS,
+            &table_setup(10),
+        );
+        check_lohi(
+            ssx3_ee::s01::f_00147290__generated,
+            super::be_new_player_int_get_pad_index,
+            SEEDS,
+            &table_setup(11),
+        );
+        check_lohi(
+            ssx3_ee::s01::f_00144c98__generated,
+            super::be_new_race_int_get_track_peak,
+            SEEDS,
+            &table_setup(12),
+        );
     }
 
     #[test]
     fn be_char_int_get_attrib_matches() {
         let fns: [(GuestFn, GuestFn); 7] = [
-            (ssx3_ee::s01::f_00148410__generated, super::be_char_int_get_attrib0),
-            (ssx3_ee::s01::f_001484e0__generated, super::be_char_int_get_attrib1),
-            (ssx3_ee::s01::f_001485b0__generated, super::be_char_int_get_attrib2),
-            (ssx3_ee::s01::f_00148680__generated, super::be_char_int_get_attrib3),
-            (ssx3_ee::s01::f_00148750__generated, super::be_char_int_get_attrib4),
-            (ssx3_ee::s01::f_00148820__generated, super::be_char_int_get_attrib5),
-            (ssx3_ee::s01::f_001488f0__generated, super::be_char_int_get_attrib6),
+            (
+                ssx3_ee::s01::f_00148410__generated,
+                super::be_char_int_get_attrib0,
+            ),
+            (
+                ssx3_ee::s01::f_001484e0__generated,
+                super::be_char_int_get_attrib1,
+            ),
+            (
+                ssx3_ee::s01::f_001485b0__generated,
+                super::be_char_int_get_attrib2,
+            ),
+            (
+                ssx3_ee::s01::f_00148680__generated,
+                super::be_char_int_get_attrib3,
+            ),
+            (
+                ssx3_ee::s01::f_00148750__generated,
+                super::be_char_int_get_attrib4,
+            ),
+            (
+                ssx3_ee::s01::f_00148820__generated,
+                super::be_char_int_get_attrib5,
+            ),
+            (
+                ssx3_ee::s01::f_001488f0__generated,
+                super::be_char_int_get_attrib6,
+            ),
         ];
         for (i, (g, h)) in fns.into_iter().enumerate() {
             check_lohi(g, h, SEEDS, &table_setup(20 + i as u64));
@@ -1537,17 +1868,61 @@ mod tests {
     #[test]
     fn be_char_int_get_attrib_factor_matches() {
         let fns: [(u32, GuestFn, GuestFn); 11] = [
-            (0x0014_8d80, ssx3_ee::s01::f_00148d80__generated, super::be_char_int_get_attrib3_factor),
-            (0x0014_8e68, ssx3_ee::s01::f_00148e68__generated, super::be_char_int_get_attrib3_factor_2),
-            (0x0014_8f50, ssx3_ee::s01::f_00148f50__generated, super::be_char_int_get_attrib5_factor),
-            (0x0014_9038, ssx3_ee::s01::f_00149038__generated, super::be_char_int_get_attrib5_factor_2),
-            (0x0014_9120, ssx3_ee::s01::f_00149120__generated, super::be_char_int_get_attrib6_factor),
-            (0x0014_9208, ssx3_ee::s01::f_00149208__generated, super::be_char_int_get_attrib6_factor_2),
-            (0x0014_92f0, ssx3_ee::s01::f_001492f0__generated, super::be_char_int_get_attrib6_factor_3),
-            (0x0014_93d8, ssx3_ee::s01::f_001493d8__generated, super::be_char_int_get_attrib1_factor),
-            (0x0014_94c0, ssx3_ee::s01::f_001494c0__generated, super::be_char_int_get_attrib0_factor),
-            (0x0014_95a8, ssx3_ee::s01::f_001495a8__generated, super::be_char_int_get_attrib4_factor),
-            (0x0014_9690, ssx3_ee::s01::f_00149690__generated, super::be_char_int_get_attrib2_factor),
+            (
+                0x0014_8d80,
+                ssx3_ee::s01::f_00148d80__generated,
+                super::be_char_int_get_attrib3_factor,
+            ),
+            (
+                0x0014_8e68,
+                ssx3_ee::s01::f_00148e68__generated,
+                super::be_char_int_get_attrib3_factor_2,
+            ),
+            (
+                0x0014_8f50,
+                ssx3_ee::s01::f_00148f50__generated,
+                super::be_char_int_get_attrib5_factor,
+            ),
+            (
+                0x0014_9038,
+                ssx3_ee::s01::f_00149038__generated,
+                super::be_char_int_get_attrib5_factor_2,
+            ),
+            (
+                0x0014_9120,
+                ssx3_ee::s01::f_00149120__generated,
+                super::be_char_int_get_attrib6_factor,
+            ),
+            (
+                0x0014_9208,
+                ssx3_ee::s01::f_00149208__generated,
+                super::be_char_int_get_attrib6_factor_2,
+            ),
+            (
+                0x0014_92f0,
+                ssx3_ee::s01::f_001492f0__generated,
+                super::be_char_int_get_attrib6_factor_3,
+            ),
+            (
+                0x0014_93d8,
+                ssx3_ee::s01::f_001493d8__generated,
+                super::be_char_int_get_attrib1_factor,
+            ),
+            (
+                0x0014_94c0,
+                ssx3_ee::s01::f_001494c0__generated,
+                super::be_char_int_get_attrib0_factor,
+            ),
+            (
+                0x0014_95a8,
+                ssx3_ee::s01::f_001495a8__generated,
+                super::be_char_int_get_attrib4_factor,
+            ),
+            (
+                0x0014_9690,
+                ssx3_ee::s01::f_00149690__generated,
+                super::be_char_int_get_attrib2_factor,
+            ),
         ];
         for (i, (start, g, h)) in fns.into_iter().enumerate() {
             let base = table_setup(30 + i as u64);
@@ -1574,7 +1949,12 @@ mod tests {
             table_setup(40)(c, seed);
             c.g[A2][0] = (seed / 8 % 8) as u64;
         };
-        check_lohi(ssx3_ee::s01::f_00155b50__generated, super::be_aggression_int_get_rival_level, SEEDS, &setup);
+        check_lohi(
+            ssx3_ee::s01::f_00155b50__generated,
+            super::be_aggression_int_get_rival_level,
+            SEEDS,
+            &setup,
+        );
         // featured character (3) or the table
         require_cases(ssx3_ee::s01::f_00155b50__generated, 2, &setup, &|c| {
             (r32(c, V1).wrapping_sub(0x004a_6ca8) < 0x4_0000) as u32
@@ -1588,23 +1968,55 @@ mod tests {
         let setup = |c: &mut Cpu, seed: u32| -> Events {
             let mut r = machine(c, seed, 50, 0);
             be_tables(c, &mut r);
-            c.g[A1][0] = if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() as u64 | 1 };
+            c.g[A1][0] = if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                r.next_u32() as u64 | 1
+            };
             c.bus.write32(CASE, (c.g[A1][0] != 0) as u32);
             schedule(c, &mut r, seed, 0x0014_6e98)
         };
-        check_events(ssx3_ee::s01::f_00146e98__generated, super::be_new_player_int_get_human_rider, SEEDS, &setup);
-        check_lohi(ssx3_ee::s01::f_00146e98__generated, super::be_new_player_int_get_human_rider, SEEDS, &|c, s| {
-            setup(c, s);
-        });
+        check_events(
+            ssx3_ee::s01::f_00146e98__generated,
+            super::be_new_player_int_get_human_rider,
+            SEEDS,
+            &setup,
+        );
+        check_lohi(
+            ssx3_ee::s01::f_00146e98__generated,
+            super::be_new_player_int_get_human_rider,
+            SEEDS,
+            &|c, s| {
+                setup(c, s);
+            },
+        );
         // none, first, second
-        require_cases(ssx3_ee::s01::f_00146e98__generated, 3, &|c, s| { setup(c, s); }, &|c| {
-            if c.g[V0][0] == u64::MAX { 0 } else { 1 + noted(c) }
-        });
+        require_cases(
+            ssx3_ee::s01::f_00146e98__generated,
+            3,
+            &|c, s| {
+                setup(c, s);
+            },
+            &|c| {
+                if c.g[V0][0] == u64::MAX {
+                    0
+                } else {
+                    1 + noted(c)
+                }
+            },
+        );
     }
 
     fn ai_players(c: &mut Cpu, r: &mut Rng, ai: u32) {
         let n = r.next_u32() % 5;
-        c.bus.write32(ai + ai_mgr::PLAYER_COUNT, if r.next_u32() % 8 == 0 { r.next_u32() | 0x8000_0000 } else { n });
+        c.bus.write32(
+            ai + ai_mgr::PLAYER_COUNT,
+            if r.next_u32() % 8 == 0 {
+                r.next_u32() | 0x8000_0000
+            } else {
+                n
+            },
+        );
         for i in 0..4 {
             let player = DATA + 0x1000 * (i + 1);
             let state = DATA + 0x8000 + 0x1000 * i;
@@ -1632,19 +2044,51 @@ mod tests {
             }
             mode
         };
-        check_events(ssx3_ee::s00::f_0012a250__generated, super::ai_all_players_finished, SEEDS, &setup);
-        require_cases(ssx3_ee::s00::f_0012a250__generated, 3, &|c, s| { setup(c, s); }, &|c| {
-            if c.g[V0][0] == 0 { 0 } else if c.g[A2][0] == 0 { 1 } else { 2 }
-        });
+        check_events(
+            ssx3_ee::s00::f_0012a250__generated,
+            super::ai_all_players_finished,
+            SEEDS,
+            &setup,
+        );
+        require_cases(
+            ssx3_ee::s00::f_0012a250__generated,
+            3,
+            &|c, s| {
+                setup(c, s);
+            },
+            &|c| {
+                if c.g[V0][0] == 0 {
+                    0
+                } else if c.g[A2][0] == 0 {
+                    1
+                } else {
+                    2
+                }
+            },
+        );
     }
 
     fn ai_riders(c: &mut Cpu, r: &mut Rng, ai: u32) {
         let n = r.next_u32() % 7;
-        c.bus.write32(ai + ai_mgr::RIDER_COUNT, if r.next_u32() % 10 == 0 { r.next_u32() | 0x8000_0000 } else { n });
+        c.bus.write32(
+            ai + ai_mgr::RIDER_COUNT,
+            if r.next_u32() % 10 == 0 {
+                r.next_u32() | 0x8000_0000
+            } else {
+                n
+            },
+        );
         for i in 0..6 {
             let rider = DATA + 0x2_0000 + 0x1000 * i;
             c.bus.write32(ai + ai_mgr::RIDERS + 4 * i, rider);
-            c.bus.write32(rider + 0x880, if r.next_u32() % 4 == 0 { r.next_u32() % 9 } else { 7 });
+            c.bus.write32(
+                rider + 0x880,
+                if r.next_u32() % 4 == 0 {
+                    r.next_u32() % 9
+                } else {
+                    7
+                },
+            );
         }
     }
 
@@ -1657,16 +2101,33 @@ mod tests {
             c.g[A0][0] = ai as u64;
             schedule(c, &mut r, seed, 0x0012_a180)
         };
-        check_events(ssx3_ee::s00::f_0012a180__generated, super::ai_are_all_riders_loaded, SEEDS, &setup);
-        require_cases(ssx3_ee::s00::f_0012a180__generated, 2, &|c, s| { setup(c, s); }, &|c| c.g[V0][0] as u32);
+        check_events(
+            ssx3_ee::s00::f_0012a180__generated,
+            super::ai_are_all_riders_loaded,
+            SEEDS,
+            &setup,
+        );
+        require_cases(
+            ssx3_ee::s00::f_0012a180__generated,
+            2,
+            &|c, s| {
+                setup(c, s);
+            },
+            &|c| c.g[V0][0] as u32,
+        );
     }
 
     #[test]
     fn ai_get_frame_counter_matches() {
-        check_lohi(ssx3_ee::s00::f_001298c8__generated, super::ai_get_frame_counter, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 80, 0);
-            app_chain(c, r.next_u32());
-        });
+        check_lohi(
+            ssx3_ee::s00::f_001298c8__generated,
+            super::ai_get_frame_counter,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 80, 0);
+                app_chain(c, r.next_u32());
+            },
+        );
     }
 
     #[test]
@@ -1676,7 +2137,14 @@ mod tests {
             let sm = DATA + 0x100;
             let id = r.next_u32() % 4;
             c.bus.write32(sm, id);
-            c.bus.write32(sm + 4, if r.next_u32() % 2 == 0 { id } else { r.next_u32() % 4 });
+            c.bus.write32(
+                sm + 4,
+                if r.next_u32() % 2 == 0 {
+                    id
+                } else {
+                    r.next_u32() % 4
+                },
+            );
             for (off, obj) in [(0x98, DATA + 0x400), (0x9c, DATA + 0x500)] {
                 let vt = vtable(c, &mut r, &[0x8, 0x10, 0x18]);
                 c.bus.write32(obj, vt);
@@ -1687,15 +2155,23 @@ mod tests {
             }
             c.g[A0][0] = sm as u64;
         };
-        covered(ssx3_ee::s00::f_00113c20__generated, super::ai_update_race_state, SEEDS, &setup);
+        covered(
+            ssx3_ee::s00::f_00113c20__generated,
+            super::ai_update_race_state,
+            SEEDS,
+            &setup,
+        );
         // same state; change without / with an old state
         let no_unwind = |c: &mut Cpu, seed: u32| {
             setup(c, seed);
-            c.bus.write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+            c.bus
+                .write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
         };
         // fake calls: update only; enter + update; exit + enter + update
         require_cases(ssx3_ee::s00::f_00113c20__generated, 3, &no_unwind, &|c| {
-            c.bus.read32(crate::difftest::fakes::LOG_COUNT).wrapping_sub(1)
+            c.bus
+                .read32(crate::difftest::fakes::LOG_COUNT)
+                .wrapping_sub(1)
         });
     }
 
@@ -1706,15 +2182,28 @@ mod tests {
             be_tables(c, &mut r);
             let ai = DATA + 0x100;
             ai_riders(c, &mut r, ai);
-            c.bus.write32(ai + ai_mgr::RIVALS_ENABLED, if r.next_u32() % 6 == 0 { 0 } else { 1 });
+            c.bus.write32(
+                ai + ai_mgr::RIVALS_ENABLED,
+                if r.next_u32() % 6 == 0 { 0 } else { 1 },
+            );
             c.g[A0][0] = ai as u64;
             schedule(c, &mut r, seed, 0x0010_f878)
         };
-        check_events(ssx3_ee::s00::f_0010f878__generated, super::ai_update_rivals, SEEDS, &setup);
+        check_events(
+            ssx3_ee::s00::f_0010f878__generated,
+            super::ai_update_rivals,
+            SEEDS,
+            &setup,
+        );
         // some rider got a sworn rival
-        require_cases(ssx3_ee::s00::f_0010f878__generated, 2, &|c, s| { setup(c, s); }, &|c| {
-            (0..6).any(|i| c.bus.read32(DATA + 0x2_0000 + 0x1000 * i + 0xf0) == 1) as u32
-        });
+        require_cases(
+            ssx3_ee::s00::f_0010f878__generated,
+            2,
+            &|c, s| {
+                setup(c, s);
+            },
+            &|c| (0..6).any(|i| c.bus.read32(DATA + 0x2_0000 + 0x1000 * i + 0xf0) == 1) as u32,
+        );
     }
 
     // ------------------------------------------------------------ CPU riders
@@ -1733,8 +2222,22 @@ mod tests {
         fill(c, r, RIDER, 0xb40 / 4);
         c.bus.write32(THIS + 0x18, RIDER);
         // ShouldResetPath inputs.
-        c.bus.write32(RIDER + 0x1b0, if r.next_u32() % 2 == 0 { 0 } else { r.f32(10.0) });
-        c.bus.write32(RIDER + 0x1b4, if r.next_u32() % 2 == 0 { 0 } else { r.f32(10.0) });
+        c.bus.write32(
+            RIDER + 0x1b0,
+            if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                r.f32(10.0)
+            },
+        );
+        c.bus.write32(
+            RIDER + 0x1b4,
+            if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                r.f32(10.0)
+            },
+        );
         c.bus.write32(RIDER + 0x4cc, r.f32(4.0));
         c.bus.write32(RIDER + 0x4c8, r.f32(2000.0) & 0x7fff_ffff);
         c.bus.write32(RIDER + 0x77c, OWNER);
@@ -1742,7 +2245,10 @@ mod tests {
         c.bus.write32(OWNER + 0xde4, r.next_u32() % 10);
         c.bus.write32(RIDER + 0x788, OWNER + 0x100);
         c.bus.write32(OWNER + 0x1a0, r.f32(60.0));
-        c.bus.write32(THIS + 0xe70, if r.next_u32() % 2 == 0 { u32::MAX } else { 1 });
+        c.bus.write32(
+            THIS + 0xe70,
+            if r.next_u32() % 2 == 0 { u32::MAX } else { 1 },
+        );
         c.bus.write32(THIS + 0xe74, r.next_u32() % 300);
         c.bus.write32(THIS + 0xe78, r.next_u32() % 100);
         // FindAttackTarget: a target only on frames divisible by 6.
@@ -1757,7 +2263,8 @@ mod tests {
         c.bus.write32(RIDER + 0x1b0, 0);
         c.bus.write32(RIDER + 0x1b4, 0);
         let left = r.next_u32() % 2 == 0;
-        c.bus.write32(RIDER + 0xc, f(if left { 10.0 } else { -10.0 }));
+        c.bus
+            .write32(RIDER + 0xc, f(if left { 10.0 } else { -10.0 }));
         c.bus.write32(RIDER + 0xf4, 0);
         // Fake results: the rider's own index (5), then rider a = 2.
         put_words(c, LOG_RESULTS, &[5, 2]);
@@ -1788,7 +2295,8 @@ mod tests {
             c.bus.write16(THIS + 0xf48, 0x20);
             let bvt = DATA + 0x7000;
             c.bus.write32(THIS + 0x20, bvt);
-            c.bus.write16(bvt + (index - 1) * 8, ((r.next_u32() % 8) * 4) as u16);
+            c.bus
+                .write16(bvt + (index - 1) * 8, ((r.next_u32() % 8) * 4) as u16);
             c.bus.write32(bvt + (index - 1) * 8 + 4, FAKE + 0x50);
         }
         c.bus.write32(CTL, r.next_u32() & !0x000c_0000);
@@ -1802,8 +2310,18 @@ mod tests {
             let mut r = machine(c, seed, 110, 4);
             car_setup(c, &mut r);
         };
-        covered(ssx3_ee::s00::f_0010a960__generated, super::computer_actor_rider_think_cruise, SEEDS, &setup);
-        check_lohi(ssx3_ee::s00::f_0010a960__generated, super::computer_actor_rider_think_cruise, SEEDS, &setup);
+        covered(
+            ssx3_ee::s00::f_0010a960__generated,
+            super::computer_actor_rider_think_cruise,
+            SEEDS,
+            &setup,
+        );
+        check_lohi(
+            ssx3_ee::s00::f_0010a960__generated,
+            super::computer_actor_rider_think_cruise,
+            SEEDS,
+            &setup,
+        );
         let no_unwind = |c: &mut Cpu, seed: u32| {
             let mut r = machine(c, seed, 110, 0);
             car_setup(c, &mut r);
@@ -1813,7 +2331,9 @@ mod tests {
             let w = c.bus.read32(CTL);
             ((w >> 18) & 3) | ((w >> 12) & 1) << 2
         });
-        require_cases(ssx3_ee::s00::f_0010a960__generated, 2, &no_unwind, &|c| (c.bus.read16(THIS + 0xf46) as i16 >= 0) as u32);
+        require_cases(ssx3_ee::s00::f_0010a960__generated, 2, &no_unwind, &|c| {
+            (c.bus.read16(THIS + 0xf46) as i16 >= 0) as u32
+        });
     }
 
     #[test]
@@ -1822,8 +2342,15 @@ mod tests {
             let mut r = machine(c, seed, 120, 0);
             car_setup(c, &mut r);
         };
-        check_lohi(ssx3_ee::s00::f_0010b750__generated, super::computer_actor_rider_think_wipeout, SEEDS, &setup);
-        require_cases(ssx3_ee::s00::f_0010b750__generated, 2, &setup, &|c| (c.bus.read32(CTL) >> 12) & 1);
+        check_lohi(
+            ssx3_ee::s00::f_0010b750__generated,
+            super::computer_actor_rider_think_wipeout,
+            SEEDS,
+            &setup,
+        );
+        require_cases(ssx3_ee::s00::f_0010b750__generated, 2, &setup, &|c| {
+            (c.bus.read32(CTL) >> 12) & 1
+        });
     }
 
     #[test]
@@ -1836,48 +2363,84 @@ mod tests {
             c.bus.write32(THIS + 0x18, rel);
             for i in 0..6 {
                 for w in 0..2 {
-                    c.bus.write32(rel + 0x24 * i + 4 * w, if r.next_u32() % 4 == 0 { 0 } else { r.next_u32() });
+                    c.bus.write32(
+                        rel + 0x24 * i + 4 * w,
+                        if r.next_u32() % 4 == 0 {
+                            0
+                        } else {
+                            r.next_u32()
+                        },
+                    );
                 }
             }
             c.g[A0][0] = THIS as u64;
             schedule(c, &mut r, seed, 0x0010_deb0)
         };
         // No loop of its own (events reach the callee's loop only).
-        check_lohi(ssx3_ee::s00::f_0010deb0__generated, super::computer_actor_rider_get_human_rider, SEEDS, &|c, s| {
-            setup(c, s);
-        });
-        require_cases(ssx3_ee::s00::f_0010deb0__generated, 2, &|c, s| { setup(c, s); }, &|c| (c.g[V0][0] != 0) as u32);
+        check_lohi(
+            ssx3_ee::s00::f_0010deb0__generated,
+            super::computer_actor_rider_get_human_rider,
+            SEEDS,
+            &|c, s| {
+                setup(c, s);
+            },
+        );
+        require_cases(
+            ssx3_ee::s00::f_0010deb0__generated,
+            2,
+            &|c, s| {
+                setup(c, s);
+            },
+            &|c| (c.g[V0][0] != 0) as u32,
+        );
     }
 
     #[test]
     fn computer_actor_rider_get_steer_target_matches() {
-        check_lohi(ssx3_ee::s00::f_00100610__generated, super::computer_actor_rider_get_steer_target, 1000, &|c, seed| {
-            let mut r = machine(c, seed, 140, 0);
-            c.bus.write32(THIS + 0x18, RIDER);
-            for off in [0x110, 0x490, 0x4b0] {
-                let v = if seed % 4 == 0 {
-                    [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()]
-                } else {
-                    [r.f32(1e5), r.f32(1e5), r.f32(1e5), r.f32(2.0)]
-                };
-                put_vec(c, RIDER + off, v);
-            }
-            c.bus.write32(GAME_GP - global::STEER_BLEND, if seed % 3 == 0 { r.edge_f32() } else { 0x3dcc_cccd });
-            c.g[A0][0] = (DATA + 0x800) as u64;
-            c.g[A1][0] = THIS as u64;
-        });
+        check_lohi(
+            ssx3_ee::s00::f_00100610__generated,
+            super::computer_actor_rider_get_steer_target,
+            1000,
+            &|c, seed| {
+                let mut r = machine(c, seed, 140, 0);
+                c.bus.write32(THIS + 0x18, RIDER);
+                for off in [0x110, 0x490, 0x4b0] {
+                    let v = if seed % 4 == 0 {
+                        [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()]
+                    } else {
+                        [r.f32(1e5), r.f32(1e5), r.f32(1e5), r.f32(2.0)]
+                    };
+                    put_vec(c, RIDER + off, v);
+                }
+                c.bus.write32(
+                    GAME_GP - global::STEER_BLEND,
+                    if seed % 3 == 0 {
+                        r.edge_f32()
+                    } else {
+                        0x3dcc_cccd
+                    },
+                );
+                c.g[A0][0] = (DATA + 0x800) as u64;
+                c.g[A1][0] = THIS as u64;
+            },
+        );
     }
 
     #[test]
     fn air_predictor_set_launch_state_matches() {
-        check_lohi(ssx3_ee::s00::f_00113618__generated, super::air_predictor_set_launch_state, 1000, &|c, seed| {
-            let mut r = machine(c, seed, 150, 0);
-            let ap = DATA + 0x1000 + (r.next_u32() % 4) * 0x10;
-            fill(c, &mut r, DATA + 0x1000, 0x100);
-            c.g[A0][0] = ap as u64;
-            // pos/vel elsewhere, or inside the predictor (overlap)
-            c.g[A1][0] = (DATA + 0x1000 + (r.next_u32() % 0x100) * 4) as u64;
-            c.g[A2][0] = (DATA + 0x1000 + (r.next_u32() % 0x100) * 4) as u64;
-        });
+        check_lohi(
+            ssx3_ee::s00::f_00113618__generated,
+            super::air_predictor_set_launch_state,
+            1000,
+            &|c, seed| {
+                let mut r = machine(c, seed, 150, 0);
+                let ap = DATA + 0x1000 + (r.next_u32() % 4) * 0x10;
+                fill(c, &mut r, DATA + 0x1000, 0x100);
+                c.g[A0][0] = ap as u64;
+                // pos/vel elsewhere, or inside the predictor (overlap)
+                c.g[A1][0] = (DATA + 0x1000 + (r.next_u32() % 0x100) * 4) as u64;
+                c.g[A2][0] = (DATA + 0x1000 + (r.next_u32() % 0x100) * 4) as u64;
+            },
+        );
     }
 }

@@ -62,9 +62,9 @@ pub mod recomp;
 pub mod reference;
 #[cfg(target_arch = "aarch64")]
 pub mod simd;
-pub mod vu0lib;
 #[cfg(test)]
 mod tests;
+pub mod vu0lib;
 
 /// Statically recompiled microcode (written by `src/bin/vu_recomp.rs`).
 /// Behind the `microcode` feature (off by default): the game runs VU0's
@@ -72,11 +72,12 @@ mod tests;
 /// path.
 #[cfg(feature = "microcode")]
 #[path = "../../../../generated/vu/mod.rs"]
+#[rustfmt::skip] // generated code (not in git)
 pub mod generated;
 
 use crate::Qword;
-use float::{Exc, ABS, MAX, ONE, SIGN};
 use decode::EfuLatency;
+use float::{Exc, ABS, MAX, ONE, SIGN};
 use std::collections::{HashMap, VecDeque};
 
 /// Field indices and the FMAC operand type are shared with the EE core
@@ -502,7 +503,11 @@ impl Vu {
         // The game re-uploads the same few programs every frame. Comparing
         // against copies of recently hashed uploads (memcmp) is far cheaper
         // than FNV over up to 16 KiB byte by byte.
-        let h = match self.hash_memo.iter().find(|(a, b, _)| *a == start && b[..] == *bytes) {
+        let h = match self
+            .hash_memo
+            .iter()
+            .find(|(a, b, _)| *a == start && b[..] == *bytes)
+        {
             Some(&(_, _, h)) => h,
             None => {
                 let h = program_hash(start, bytes);
@@ -1030,19 +1035,35 @@ impl Vu {
         self.stage_v(Target::Acc, dest, r);
     }
     pub fn madd(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        let r = fast::madd4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        let r = fast::madd4::<0b1111, true, true, true>(
+            &self.acc,
+            &self.vf[fs as usize & 31],
+            &self.src_vec(src),
+        );
         self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn madda(&mut self, dest: u8, fs: u8, src: Src) {
-        let r = fast::madd4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        let r = fast::madd4::<0b1111, true, true, true>(
+            &self.acc,
+            &self.vf[fs as usize & 31],
+            &self.src_vec(src),
+        );
         self.stage_v(Target::Acc, dest, r);
     }
     pub fn msub(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {
-        let r = fast::msub4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        let r = fast::msub4::<0b1111, true, true, true>(
+            &self.acc,
+            &self.vf[fs as usize & 31],
+            &self.src_vec(src),
+        );
         self.stage_v(Target::Vf(fd), dest, r);
     }
     pub fn msuba(&mut self, dest: u8, fs: u8, src: Src) {
-        let r = fast::msub4::<0b1111, true, true, true>(&self.acc, &self.vf[fs as usize & 31], &self.src_vec(src));
+        let r = fast::msub4::<0b1111, true, true, true>(
+            &self.acc,
+            &self.vf[fs as usize & 31],
+            &self.src_vec(src),
+        );
         self.stage_v(Target::Acc, dest, r);
     }
     pub fn max(&mut self, dest: u8, fd: u8, fs: u8, src: Src) {

@@ -10,10 +10,11 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0038_e0a8, render2d_transform_point, "Render2D_TransformPoint"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
+    0x0038_e0a8,
+    render2d_transform_point,
+    "Render2D_TransformPoint",
+)];
 
 // ---------------------------------------------------------------------------
 // 2D rendering
@@ -66,21 +67,25 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-
     #[test]
     fn render2d_transform_point_matches() {
-        check(ssx3_ee::s12::f_0038e0a8, render2d_transform_point, 200, &|c, seed| {
-            let mut r = Rng(0x38e0_a800 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x100) as u64;
-            c.g[A2][0] = (DATA + 0x200) as u64;
-            for k in 0..2 {
-                c.bus.write32(DATA + 0x100 + k * 4, r.edge_f32());
-            }
-            for off in [0, 4, 0xc, 0x10, 0x18, 0x1c] {
-                c.bus.write32(DATA + 0x200 + off, r.edge_f32());
-            }
-        });
+        check(
+            ssx3_ee::s12::f_0038e0a8,
+            render2d_transform_point,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x38e0_a800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x100) as u64;
+                c.g[A2][0] = (DATA + 0x200) as u64;
+                for k in 0..2 {
+                    c.bus.write32(DATA + 0x100 + k * 4, r.edge_f32());
+                }
+                for off in [0, 4, 0xc, 0x10, 0x18, 0x1c] {
+                    c.bus.write32(DATA + 0x200 + off, r.edge_f32());
+                }
+            },
+        );
     }
 }

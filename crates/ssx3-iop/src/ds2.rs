@@ -157,7 +157,11 @@ impl DualShock2 {
                     match i {
                         3 => {
                             self.analog_light = b != 0;
-                            self.mode = if self.analog_light { Mode::Analog } else { Mode::Digital };
+                            self.mode = if self.analog_light {
+                                Mode::Analog
+                            } else {
+                                Mode::Digital
+                            };
                         }
                         4 => self.locked = b == 3,
                         _ => {}

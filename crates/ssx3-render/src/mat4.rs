@@ -207,7 +207,12 @@ pub(crate) struct Packets {
 
 impl Packets {
     pub fn new(a: u16, b: u16) -> Packets {
-        Packets { tag: a, spare: b, next: a + 1, count: 0 }
+        Packets {
+            tag: a,
+            spare: b,
+            next: a + 1,
+            count: 0,
+        }
     }
     /// One sprite: {ST, RGBA, XYZ2, ST, XYZ2}.
     pub fn push(&mut self, m: &mut Mem, sprite: [V; 5]) {
@@ -279,11 +284,11 @@ fn drag_poly(t: u32) -> u32 {
 /// The 9 random lanes of the emitter (0x0), each reseeded from its own
 /// previous value once per particle.
 struct EmitterSeeds {
-    life: u32,     // D5.w
-    vel: [u32; 3], // D4.xyz
+    life: u32,        // D5.w
+    vel: [u32; 3],    // D4.xyz
     colour: [u32; 2], // D5.xy
-    size: u32,     // D5.z
-    spawn: [u32; 2], // D3.zw
+    size: u32,        // D5.z
+    spawn: [u32; 2],  // D3.zw
 }
 
 impl EmitterSeeds {
@@ -364,7 +369,12 @@ impl Trail {
 }
 
 /// The emitter's particles that are alive, in order.
-fn emitter_particles(m: &mut Mem, top: u16, scr: &Screen, each: &mut dyn FnMut(&mut Mem, &Particle)) {
+fn emitter_particles(
+    m: &mut Mem,
+    top: u16,
+    scr: &Screen,
+    each: &mut dyn FnMut(&mut Mem, &Particle),
+) {
     let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
     let to_clip = |m: &Mem, i: u16| xform(&scr.m, d(m, i));
     // Directions and points in clip space (M·D, w included).
@@ -418,7 +428,17 @@ fn emitter_particles(m: &mut Mem, top: u16, scr: &Screen, each: &mut dyn FnMut(&
             let size = madd1(add1(growth, d1[2]), d1[0], seeds.size);
             let rgb = min(max(colour, bc(0)), bc(F255));
             let half = scr.half_size(size);
-            each(m, &Particle { spawn, g_minus_v, rgb, alpha: colour[3], half, t });
+            each(
+                m,
+                &Particle {
+                    spawn,
+                    g_minus_v,
+                    rgb,
+                    alpha: colour[3],
+                    half,
+                    t,
+                },
+            );
         }
         t = sub1(t, dt);
         left = left.wrapping_sub(1);
@@ -515,7 +535,13 @@ struct Segment {
 }
 
 /// The ring's particles that are alive, in order.
-fn ring_particles(m: &mut Mem, top: u16, kind: Ring, scr: &Screen, each: &mut dyn FnMut(&mut Mem, &Particle)) {
+fn ring_particles(
+    m: &mut Mem,
+    top: u16,
+    kind: Ring,
+    scr: &Screen,
+    each: &mut dyn FnMut(&mut Mem, &Particle),
+) {
     let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
     let (d0, d21) = (d(m, 0), d(m, 21));
     let k = RingConsts {
@@ -636,7 +662,16 @@ fn lerp(a: V, b: V, w: u32, s: u32) -> V {
 
 /// One ring particle: its nine random values, then `None` when it is dead.
 #[allow(clippy::too_many_arguments)]
-fn ring_particle(m: &Mem, scr: &Screen, kind: Ring, seg: &Segment, rng: &mut Lfsr, s: u32, age: u32, k: &RingConsts) -> Option<Particle> {
+fn ring_particle(
+    m: &Mem,
+    scr: &Screen,
+    kind: Ring,
+    seg: &Segment,
+    rng: &mut Lfsr,
+    s: u32,
+    age: u32,
+    k: &RingConsts,
+) -> Option<Particle> {
     let d = |i: u16| m.ld(k.top.wrapping_add(i));
     // Nine values per particle, in this order whatever the variant
     // (0x0f10 draws and discards the two colour ones).
@@ -705,7 +740,14 @@ fn ring_particle(m: &Mem, scr: &Screen, kind: Ring, seg: &Segment, rng: &mut Lfs
     };
     let growth = mul1(mul1(d(2)[0], age), q);
     let size = madd1(add1(growth, d1[2]), d1[0], r_size);
-    Some(Particle { spawn, g_minus_v, rgb, alpha, half: scr.half_size(size), t: age })
+    Some(Particle {
+        spawn,
+        g_minus_v,
+        rgb,
+        alpha,
+        half: scr.half_size(size),
+        t: age,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -744,7 +786,12 @@ struct GlitterSetup {
 
 /// The facing points of a glitter call, in order (the hash runs over every
 /// point). `count` must not be 0.
-fn glitter_points(m: &mut Mem, top: u16, scr: &Screen, each: &mut dyn FnMut(&mut Mem, &GlitterPoint)) {
+fn glitter_points(
+    m: &mut Mem,
+    top: u16,
+    scr: &Screen,
+    each: &mut dyn FnMut(&mut Mem, &GlitterPoint),
+) {
     let d = |m: &Mem, i: u16| m.ld(top.wrapping_add(i));
     let count = d(m, 21)[3] as u16;
     let coef: [V; 16] = std::array::from_fn(|i| d(m, i as u16));
@@ -813,7 +860,15 @@ fn glitter_points(m: &mut Mem, top: u16, scr: &Screen, each: &mut dyn FnMut(&mut
         done = done.wrapping_add(1);
         let last = done == count;
         if facing {
-            each(m, &GlitterPoint { u: [u1, v1, w1], v: [u2, v2, w2], dot, last });
+            each(
+                m,
+                &GlitterPoint {
+                    u: [u1, v1, w1],
+                    v: [u2, v2, w2],
+                    dot,
+                    last,
+                },
+            );
         }
         if last {
             break;
@@ -824,7 +879,11 @@ fn glitter_points(m: &mut Mem, top: u16, scr: &Screen, each: &mut dyn FnMut(&mut
 impl GlitterSetup {
     fn load(m: &Mem, top: u16) -> GlitterSetup {
         let d = |i: u16| m.ld(top.wrapping_add(i));
-        GlitterSetup { coef: std::array::from_fn(|i| d(i as u16)), colour: d(20), d21: d(21) }
+        GlitterSetup {
+            coef: std::array::from_fn(|i| d(i as u16)),
+            colour: d(20),
+            d21: d(21),
+        }
     }
     /// The point on the patch, lifted 12 units in z.
     fn eval(&self, g: &GlitterPoint) -> V {
@@ -876,7 +935,12 @@ fn glitter(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
             let ha = abs(half);
             half[0] = ha[0];
             half[1] = ha[1];
-            let rgba = [ftoi0(g.colour)[0], ftoi0(g.colour)[1], ftoi0(g.colour)[2], GlitterSetup::alpha(pt)];
+            let rgba = [
+                ftoi0(g.colour)[0],
+                ftoi0(g.colour)[1],
+                ftoi0(g.colour)[2],
+                GlitterSetup::alpha(pt),
+            ];
             let cq = with_xyz(cl, mul(cl, bc(q)));
             let hm = max(half, bc(g.d21[1]));
             half[0] = hm[0];
@@ -981,13 +1045,32 @@ pub(crate) fn gpu_sprite_tag(m: &Mem, a: u16, b: u16, scale: V, offset: V) -> Op
 }
 
 /// A sprite draw over `slots` (two triangles per slot).
-pub(crate) fn sprite_call(program: crate::gpu::Program, tag: u128, uniforms: [V; crate::gpu::UNIFORM_QWORDS], data: Vec<V>, slots: impl Iterator<Item = u32>, alpha_max: u32) -> crate::gpu::GpuCall {
+pub(crate) fn sprite_call(
+    program: crate::gpu::Program,
+    tag: u128,
+    uniforms: [V; crate::gpu::UNIFORM_QWORDS],
+    data: Vec<V>,
+    slots: impl Iterator<Item = u32>,
+    alpha_max: u32,
+) -> crate::gpu::GpuCall {
     let mut indices = Vec::new();
     for s in slots {
         let b = 4 * s;
         indices.extend_from_slice(&[b, b + 1, b + 2, b, b + 2, b + 3]);
     }
-    crate::gpu::GpuCall { program, pre: Vec::new(), tag, uniforms, data, indices, index_mode: 0, alpha_max: alpha_max as f32, link: crate::gpu::Link::None, split: None, mesh_key: None }
+    crate::gpu::GpuCall {
+        program,
+        pre: Vec::new(),
+        tag,
+        uniforms,
+        data,
+        indices,
+        index_mode: 0,
+        alpha_max: alpha_max as f32,
+        link: crate::gpu::Link::None,
+        split: None,
+        mesh_key: None,
+    }
 }
 
 /// The alpha byte the GS takes from an alpha (FTOI0, low 8 bits).
@@ -1003,7 +1086,12 @@ pub(crate) fn alpha_byte(a: u32) -> u32 {
 /// trail sample the shader does the position, the CLIP cull, the fade and
 /// the sprite. Glitter: the CPU runs the serial hash and the facing test,
 /// the shader evaluates the patch.
-pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>> {
+pub fn plan_gpu(
+    entry: u32,
+    top: u32,
+    _itop: u32,
+    mem: &mut [u8; 16384],
+) -> Option<Vec<crate::gpu::GpuCall>> {
     use gpu_particles::*;
     let top = (top & 0x3ff) as u16;
     let mut m = Mem(mem);
@@ -1034,7 +1122,14 @@ pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Opti
         u[G_LIMITS] = [g.d21[1], g.d21[2], 0, 0];
         // (Kicked even when empty: the tag still sets PRIM.)
         let n = data.len() as u32 / 2;
-        return Some(vec![sprite_call(crate::gpu::Program::Mat4Glitter, tag, u, data, 0..n, amax)]);
+        return Some(vec![sprite_call(
+            crate::gpu::Program::Mat4Glitter,
+            tag,
+            u,
+            data,
+            0..n,
+            amax,
+        )]);
     }
     let kind = match entry {
         0x0000 => None,
@@ -1056,7 +1151,12 @@ pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Opti
             ok = false;
             return;
         };
-        data.extend_from_slice(&[p.spawn, p.g_minus_v, [p.rgb[0], p.rgb[1], p.rgb[2], p.alpha], [p.half[0], p.half[1], p.t, 0]]);
+        data.extend_from_slice(&[
+            p.spawn,
+            p.g_minus_v,
+            [p.rgb[0], p.rgb[1], p.rgb[2], p.alpha],
+            [p.half[0], p.half[1], p.t, 0],
+        ]);
         samples.push(n);
         // (The alphas the samples can have: drawn emitter samples take
         // the first fades of the same sequence.)
@@ -1081,13 +1181,29 @@ pub fn plan_gpu(entry: u32, top: u32, _itop: u32, mem: &mut [u8; 16384]) -> Opti
     u[MATRIX..MATRIX + 4].copy_from_slice(&scr.m);
     u[SCALE] = scr.scale;
     u[OFFSET] = scr.offset;
-    u[TRAIL] = [trail.fade_step, trail.dt, trail.half_max, kind.is_some() as u32];
+    u[TRAIL] = [
+        trail.fade_step,
+        trail.dt,
+        trail.half_max,
+        kind.is_some() as u32,
+    ];
     u[GRAVITY] = trail.gravity;
     u[ST_A] = trail.st_a;
     u[ST_B] = trail.st_b;
     u[SLOTS] = [slots, 0, 0, 0];
-    let order = samples.iter().enumerate().flat_map(|(i, &n)| (0..n).map(move |k| i as u32 * slots + k)).collect::<Vec<_>>();
-    Some(vec![sprite_call(crate::gpu::Program::Mat4Particles, tag, u, data, order.into_iter(), amax)])
+    let order = samples
+        .iter()
+        .enumerate()
+        .flat_map(|(i, &n)| (0..n).map(move |k| i as u32 * slots + k))
+        .collect::<Vec<_>>();
+    Some(vec![sprite_call(
+        crate::gpu::Program::Mat4Particles,
+        tag,
+        u,
+        data,
+        order.into_iter(),
+        amax,
+    )])
 }
 
 /// One sprite as the program kicks it: the two XYZ2 positions (FTOI4
@@ -1109,7 +1225,9 @@ pub fn gpu_sprites(call: &crate::gpu::GpuCall) -> Vec<Option<Sprite>> {
     let uq = |q: usize| f(call.uniforms[q]);
     let inside = |v: [f32; 4]| (0..3).all(|l| v[l].abs() <= v[3].abs());
     let xform = |c: usize, p: [f32; 3]| -> [f32; 4] {
-        std::array::from_fn(|l| uq(c)[l] * p[0] + uq(c + 1)[l] * p[1] + uq(c + 2)[l] * p[2] + uq(c + 3)[l])
+        std::array::from_fn(|l| {
+            uq(c)[l] * p[0] + uq(c + 1)[l] * p[1] + uq(c + 2)[l] * p[2] + uq(c + 3)[l]
+        })
     };
     let ftoi4 = |v: [f32; 3]| v.map(|x| (x * 16.0) as i32);
     // The sprite's centre on screen.
@@ -1152,21 +1270,43 @@ pub fn gpu_sprites(call: &crate::gpu::GpuCall) -> Vec<Option<Sprite>> {
                     return None;
                 }
                 let q = 1.0 / cl[3];
-                let h = [(misc[0] * q).abs().min(half_max), (misc[1] * q).abs().min(half_max), 0.0];
+                let h = [
+                    (misc[0] * q).abs().min(half_max),
+                    (misc[1] * q).abs().min(half_max),
+                    0.0,
+                ];
                 let c = centre(cl, SCALE, OFFSET);
                 let lo: [f32; 3] = std::array::from_fn(|l| c[l] - h[l]);
                 let hi: [f32; 3] = std::array::from_fn(|l| c[l] + h[l]);
                 let (a, b) = if ring { (hi, lo) } else { (lo, hi) };
-                let rgba = [col[0] as i32, col[1] as i32, col[2] as i32, (col[3] * fade) as i32];
+                let rgba = [
+                    col[0] as i32,
+                    col[1] as i32,
+                    col[2] as i32,
+                    (col[3] * fade) as i32,
+                ];
                 let (sa, sb) = (uq(ST_A), uq(ST_B));
-                Some(Sprite { a: ftoi4(a), b: ftoi4(b), rgba, st: [sa[0], sa[1], sb[0], sb[1]] })
+                Some(Sprite {
+                    a: ftoi4(a),
+                    b: ftoi4(b),
+                    rgba,
+                    st: [sa[0], sa[1], sb[0], sb[1]],
+                })
             }
             Program::Mat4Glitter => {
                 let pa = f(call.data[2 * s as usize]);
                 let pb = f(call.data[2 * s as usize + 1]);
-                let row = |k: usize| -> [f32; 4] { std::array::from_fn(|l| uq(G_COEF + k)[l] * pa[0] + uq(G_COEF + k + 1)[l] * pa[1] + uq(G_COEF + k + 2)[l] * pa[2] + uq(G_COEF + k + 3)[l]) };
+                let row = |k: usize| -> [f32; 4] {
+                    std::array::from_fn(|l| {
+                        uq(G_COEF + k)[l] * pa[0]
+                            + uq(G_COEF + k + 1)[l] * pa[1]
+                            + uq(G_COEF + k + 2)[l] * pa[2]
+                            + uq(G_COEF + k + 3)[l]
+                    })
+                };
                 let (r0, r1, r2, r3) = (row(0), row(4), row(8), row(12));
-                let p: [f32; 4] = std::array::from_fn(|l| r0[l] * pb[0] + r1[l] * pb[1] + r2[l] * pb[2] + r3[l]);
+                let p: [f32; 4] =
+                    std::array::from_fn(|l| r0[l] * pb[0] + r1[l] * pb[1] + r2[l] * pb[2] + r3[l]);
                 let cl = xform(G_MATRIX, [p[0], p[1], p[2] + 12.0]);
                 if !inside(cl) {
                     return None;
@@ -1179,8 +1319,18 @@ pub fn gpu_sprites(call: &crate::gpu::GpuCall) -> Vec<Option<Sprite>> {
                 let lo: [f32; 3] = std::array::from_fn(|l| c[l] - h[l]);
                 let hi: [f32; 3] = std::array::from_fn(|l| c[l] + h[l]);
                 let rgb = call.uniforms[G_RGB];
-                let rgba = [rgb[0] as i32, rgb[1] as i32, rgb[2] as i32, call.data[2 * s as usize][3] as i32];
-                Some(Sprite { a: ftoi4(hi), b: ftoi4(lo), rgba, st: [0.0, 0.0, 1.0, 1.0] })
+                let rgba = [
+                    rgb[0] as i32,
+                    rgb[1] as i32,
+                    rgb[2] as i32,
+                    call.data[2 * s as usize][3] as i32,
+                ];
+                Some(Sprite {
+                    a: ftoi4(hi),
+                    b: ftoi4(lo),
+                    rgba,
+                    st: [0.0, 0.0, 1.0, 1.0],
+                })
             }
             Program::Mat5Snow => {
                 let p = f(call.data[s as usize]);
@@ -1209,7 +1359,12 @@ pub fn gpu_sprites(call: &crate::gpu::GpuCall) -> Vec<Option<Sprite>> {
                 let lo: [f32; 3] = std::array::from_fn(|l| c[l] - h[l]);
                 let hi: [f32; 3] = std::array::from_fn(|l| c[l] + h[l]);
                 let (sa, sb) = (uq(S_ST_A), uq(S_ST_B));
-                Some(Sprite { a: ftoi4(hi), b: ftoi4(lo), rgba, st: [sa[0], sa[1], sb[0], sb[1]] })
+                Some(Sprite {
+                    a: ftoi4(hi),
+                    b: ftoi4(lo),
+                    rgba,
+                    st: [sa[0], sa[1], sb[0], sb[1]],
+                })
             }
             _ => None,
         })
@@ -1234,7 +1389,12 @@ pub fn kicked_sprites(gif: &[u128]) -> Vec<Sprite> {
                 a: xyz(a),
                 b: xyz(b),
                 rgba: [c[0] as i32, c[1] as i32, c[2] as i32, c[3] as i32],
-                st: [f32::from_bits(sa[0]), f32::from_bits(sa[1]), f32::from_bits(sb[0]), f32::from_bits(sb[1])],
+                st: [
+                    f32::from_bits(sa[0]),
+                    f32::from_bits(sa[1]),
+                    f32::from_bits(sb[0]),
+                    f32::from_bits(sb[1]),
+                ],
             });
         }
         i += 1 + 5 * n;
@@ -1248,11 +1408,17 @@ pub fn kicked_sprites(gif: &[u128]) -> Vec<Sprite> {
 /// the first differences. (Z: the samples come from world-space sums that
 /// cancel in the transform, so the PS2's truncating rounding and IEEE's
 /// differ by a few 1e-4 of the depth on real frames.)
-pub fn compare_sprites(calls: &[crate::gpu::GpuCall], gif: &[u128]) -> (usize, usize, usize, Vec<String>) {
+pub fn compare_sprites(
+    calls: &[crate::gpu::GpuCall],
+    gif: &[u128],
+) -> (usize, usize, usize, Vec<String>) {
     let want = kicked_sprites(gif);
     let got: Vec<Sprite> = calls.iter().flat_map(gpu_sprites).flatten().collect();
     let close = |a: &Sprite, b: &Sprite| {
-        let pos = |x: [i32; 3], y: [i32; 3]| (0..2).all(|l| (x[l] - y[l]).abs() <= 2) && (x[2] as f64 - y[2] as f64).abs() <= 2.0 + 1e-3 * (y[2] as f64).abs();
+        let pos = |x: [i32; 3], y: [i32; 3]| {
+            (0..2).all(|l| (x[l] - y[l]).abs() <= 2)
+                && (x[2] as f64 - y[2] as f64).abs() <= 2.0 + 1e-3 * (y[2] as f64).abs()
+        };
         let col = (0..4).all(|l| {
             let d = ((a.rgba[l] & 0xff) - (b.rgba[l] & 0xff)).abs();
             d <= 1 || d == 255
@@ -1288,7 +1454,12 @@ pub fn compare_sprites(calls: &[crate::gpu::GpuCall], gif: &[u128]) -> (usize, u
 pub fn gpu_check(calls: &[crate::gpu::GpuCall], gif: &[u128]) -> Option<String> {
     let (same, got, want, bad) = compare_sprites(calls, gif);
     let off = got.max(want) - same;
-    (off > want / 100 || !bad.is_empty()).then(|| format!("particles: {same} sprites agree, shader {got}, program {want}: {}", bad.join("; ")))
+    (off > want / 100 || !bad.is_empty()).then(|| {
+        format!(
+            "particles: {same} sprites agree, shader {got}, program {want}: {}",
+            bad.join("; ")
+        )
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1376,12 +1547,21 @@ pub(crate) mod tests {
     /// The program's code bytes, from the `// 0xADDR: upper lower` comments
     /// of the translation.
     fn code(hash: &str) -> Vec<u8> {
-        let path = format!("{}/../../generated/vu/vu_{hash}.rs", env!("CARGO_MANIFEST_DIR"));
+        let path = format!(
+            "{}/../../generated/vu/vu_{hash}.rs",
+            env!("CARGO_MANIFEST_DIR")
+        );
         let src = std::fs::read_to_string(path).unwrap();
         let mut words = std::collections::BTreeMap::new();
         for l in src.lines() {
             let p: Vec<&str> = l.split_whitespace().collect();
-            if p.len() >= 4 && p[0] == "//" && p[1].starts_with("0x") && p[1].ends_with(':') && p[2].len() == 8 && p[3].len() == 8 {
+            if p.len() >= 4
+                && p[0] == "//"
+                && p[1].starts_with("0x")
+                && p[1].ends_with(':')
+                && p[2].len() == 8
+                && p[3].len() == 8
+            {
                 let (Ok(a), Ok(hi), Ok(lo)) = (
                     u32::from_str_radix(&p[1][2..p[1].len() - 1], 16),
                     u32::from_str_radix(p[2], 16),
@@ -1402,7 +1582,13 @@ pub(crate) mod tests {
     }
 
     /// Run the translated program; returns (kicks, data memory).
-    pub fn translated(hash: &str, want: u64, entry: u32, top: u32, mem: &[u8; 16384]) -> (Vec<Vec<u128>>, Vec<u8>) {
+    pub fn translated(
+        hash: &str,
+        want: u64,
+        entry: u32,
+        top: u32,
+        mem: &[u8; 16384],
+    ) -> (Vec<Vec<u128>>, Vec<u8>) {
         let mut vu = Vu::new(1);
         vu.write_code(0, &code(hash));
         assert_eq!(vu.segment_hash_pub(0), want);
@@ -1440,7 +1626,11 @@ pub(crate) mod tests {
         [0, (1 << 14) | (6 << 15) | (5 << 28), 0x52512, 0]
     }
 
-    pub fn compare(name: &str, native: (bool, Vec<Vec<u128>>, Vec<u8>), want: (Vec<Vec<u128>>, Vec<u8>)) {
+    pub fn compare(
+        name: &str,
+        native: (bool, Vec<Vec<u128>>, Vec<u8>),
+        want: (Vec<Vec<u128>>, Vec<u8>),
+    ) {
         assert!(native.0, "{name}: declined");
         let sprites: u64 = want.0.iter().map(|k| (k[0] as u64) & 0x7fff).sum();
         assert_eq!(native.1.len(), want.0.len(), "{name}: kick count");
@@ -1456,9 +1646,22 @@ pub(crate) mod tests {
         put(mem, 0, [r.f(0.8, 1.6), 0, 0, 0]);
         put(mem, 1, [0, r.f(0.8, 1.6), 0, 0]);
         put(mem, 2, [r.f(-0.2, 0.2), r.f(-0.2, 0.2), f(1.0), f(1.0)]);
-        put(mem, 3, [r.f(-0.5, 0.5), r.f(-0.5, 0.5), r.f(-0.5, 0.0), r.f(1.5, 4.0)]);
+        put(
+            mem,
+            3,
+            [
+                r.f(-0.5, 0.5),
+                r.f(-0.5, 0.5),
+                r.f(-0.5, 0.0),
+                r.f(1.5, 4.0),
+            ],
+        );
         let scale = if r.u() % 2 == 0 { 256.0 } else { 1024.0 };
-        put(mem, 4, [f(scale), f(scale * 0.875), f(-8388467.5 / 16.0), 0]);
+        put(
+            mem,
+            4,
+            [f(scale), f(scale * 0.875), f(-8388467.5 / 16.0), 0],
+        );
         put(mem, 5, [f(2047.5), f(2047.5), f(8388467.5 / 16.0), 0]);
         put(mem, 6, [r.f(1.0, 2.0), r.f(1.0, 2.0), 0, 0]);
         put(mem, PACKET_A, tag());
@@ -1470,11 +1673,23 @@ pub(crate) mod tests {
         let n = (r.u() % 60 + 1) as u32;
         let trails = (r.u() % 4 + 1) as u32;
         put(mem, t(0), [n, trails, r.f(0.0, 3.0), r.f(0.01, 0.1)]);
-        put(mem, t(1), [r.f(0.0, 0.5), r.f(0.0, 1.0), r.f(0.05, 0.5), r.f(0.5, 3.0)]);
+        put(
+            mem,
+            t(1),
+            [r.f(0.0, 0.5), r.f(0.0, 1.0), r.f(0.05, 0.5), r.f(0.5, 3.0)],
+        );
         put(mem, t(2), [r.f(-0.3, 0.3), 0, 0, 0]);
-        put(mem, t(3), [r.f(0.05, 0.4), r.f(0.02, 0.3), r.u() as u32, r.u() as u32]);
+        put(
+            mem,
+            t(3),
+            [r.f(0.05, 0.4), r.f(0.02, 0.3), r.u() as u32, r.u() as u32],
+        );
         put(mem, t(4), [r.u() as u32, r.u() as u32, r.u() as u32, 0]);
-        put(mem, t(5), [r.u() as u32, r.u() as u32, r.u() as u32, r.u() as u32]);
+        put(
+            mem,
+            t(5),
+            [r.u() as u32, r.u() as u32, r.u() as u32, r.u() as u32],
+        );
         put(mem, t(6), r.v(-1.0, 1.0, 0.0));
         for i in 7..=10 {
             put(mem, t(i), r.v(-0.5, 0.5, 0.0));
@@ -1494,21 +1709,47 @@ pub(crate) mod tests {
                 put(mem, t(i), r.v(-1.0, 1.0, 0.5));
             }
             put(mem, t(20), r.v(0.0, 255.0, 0.0));
-            put(mem, t(21), [r.f(0.2, 3.0), r.f(0.5, 4.0), r.f(8.0, 60.0), (r.u() % 200 + 1) as u32]);
+            put(
+                mem,
+                t(21),
+                [
+                    r.f(0.2, 3.0),
+                    r.f(0.5, 4.0),
+                    r.f(8.0, 60.0),
+                    (r.u() % 200 + 1) as u32,
+                ],
+            );
             return;
         }
         // Ring.
         let segs = (r.u() % 8) as u32;
-        put(mem, t(21), [segs, (r.u() % 8 + 1) as u32, r.f(1.0, 8.0), r.f(0.0, 0.5)]);
-        let dir = if entry == 0x510 { DIR_DYNAMIC } else { DIR_COLOURED };
+        put(
+            mem,
+            t(21),
+            [segs, (r.u() % 8 + 1) as u32, r.f(1.0, 8.0), r.f(0.0, 0.5)],
+        );
+        let dir = if entry == 0x510 {
+            DIR_DYNAMIC
+        } else {
+            DIR_COLOURED
+        };
         for k in 0..=segs as u16 + 1 {
             put(mem, t(RING + k), r.v(-1.0, 1.0, 0.0));
-            let seed = if r.u() % 5 == 0 { r.f(0.0, 0.99) } else { r.f(1.0, 2.0) };
+            let seed = if r.u() % 5 == 0 {
+                r.f(0.0, 0.99)
+            } else {
+                r.f(1.0, 2.0)
+            };
             let mut e = r.v(-0.5, 0.5, 0.0);
             e[3] = seed;
             put(mem, t(RING + dir + k), e);
             if entry != 0x510 {
-                let c = [(r.u() % 256) as u32, (r.u() % 256) as u32, (r.u() % 256) as u32, (r.u() % 256) as u32];
+                let c = [
+                    (r.u() % 256) as u32,
+                    (r.u() % 256) as u32,
+                    (r.u() % 256) as u32,
+                    (r.u() % 256) as u32,
+                ];
                 put(mem, t(RING + COLOUR_COLOURED + k), c);
             }
         }
@@ -1525,8 +1766,19 @@ pub(crate) mod tests {
                 descriptor(&mut r, &mut mem, top, entry);
                 let want = translated("f55ee63416fe5dcf", HASH, entry, top as u32, &mem);
                 let mut kicks = Vec::new();
-                let ok = run(entry, top as u32, 0, &mut mem, &mut VuState::default(), &mut |k| kicks.push(k.to_vec()));
-                compare(&format!("case {case} entry {entry:#06x}"), (ok, kicks, mem.to_vec()), want);
+                let ok = run(
+                    entry,
+                    top as u32,
+                    0,
+                    &mut mem,
+                    &mut VuState::default(),
+                    &mut |k| kicks.push(k.to_vec()),
+                );
+                compare(
+                    &format!("case {case} entry {entry:#06x}"),
+                    (ok, kicks, mem.to_vec()),
+                    want,
+                );
             }
         }
     }
@@ -1534,7 +1786,13 @@ pub(crate) mod tests {
     /// A GPU plan against the program: no memory written, the shader
     /// mirror's sprites equal to the kicked ones but for CLIP-boundary
     /// decisions. Returns (sprites agreeing, sprites).
-    pub fn check_plan(entry: u32, top: u16, mem: &mut [u8; 16384], native: &mut dyn FnMut(&mut [u8; 16384], &mut dyn FnMut(&[u128])) -> bool, plan: fn(u32, u32, u32, &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>>) -> (usize, usize) {
+    pub fn check_plan(
+        entry: u32,
+        top: u16,
+        mem: &mut [u8; 16384],
+        native: &mut dyn FnMut(&mut [u8; 16384], &mut dyn FnMut(&[u128])) -> bool,
+        plan: fn(u32, u32, u32, &mut [u8; 16384]) -> Option<Vec<crate::gpu::GpuCall>>,
+    ) -> (usize, usize) {
         let before = Box::new(*mem);
         let mut copy = Box::new(*mem);
         let mut gif = Vec::new();
@@ -1561,7 +1819,13 @@ pub(crate) mod tests {
                 let mut mem = Box::new([0u8; 16384]);
                 header(&mut r, &mut mem);
                 descriptor(&mut r, &mut mem, top, entry);
-                let (s, t) = check_plan(entry, top, &mut mem, &mut |m, k| run(entry, top as u32, 0, m, &mut VuState::default(), k), plan_gpu);
+                let (s, t) = check_plan(
+                    entry,
+                    top,
+                    &mut mem,
+                    &mut |m, k| run(entry, top as u32, 0, m, &mut VuState::default(), k),
+                    plan_gpu,
+                );
                 let e = n.entry(entry).or_insert((0, 0));
                 e.0 += s;
                 e.1 += t;
@@ -1569,7 +1833,10 @@ pub(crate) mod tests {
         }
         for (entry, (same, total)) in n {
             eprintln!("entry {entry:#06x}: {same} of {total} sprites agree");
-            assert!(total > 100 && same as f64 >= 0.99 * total as f64, "entry {entry:#06x}: {same} of {total}");
+            assert!(
+                total > 100 && same as f64 >= 0.99 * total as f64,
+                "entry {entry:#06x}: {same} of {total}"
+            );
         }
     }
 

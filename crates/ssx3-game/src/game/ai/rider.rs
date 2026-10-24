@@ -2,73 +2,97 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::call;
-use crate::call::Callee;
-use crate::call::Frame;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use crate::abi::r32;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Flow;
+use crate::call::Frame;
+use crate::call::Unwound;
+use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
+use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::control::handplantcontrol::gp_4;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_4;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_2;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
+pub(crate) use crate::game::fe::debugfe::at as at_3;
+pub(crate) use crate::game::fe::debugfe::r32_2;
+pub(crate) use crate::game::fe::feasyncfile::at as at_6;
+pub(crate) use crate::game::fe::feasyncfile::gp as gp_6;
+pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_4;
+pub(crate) use crate::game::fe::feasyncfile::p_6 as p_3;
+pub(crate) use crate::game::fe::festateloadhint::gp as gp_5;
+pub(crate) use crate::game::fe::festateloadhint::lqsp;
+pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
+pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::fe::festaterewards::at_4 as at_5;
+pub(crate) use crate::game::fe::festaterewards::gp_4 as gp_7;
+pub(crate) use crate::game::fe::festaterewards::lw_3;
+pub(crate) use crate::game::main::gamemode::low as low_2;
+pub(crate) use crate::game::main::gamemode::lw_r;
+pub(crate) use crate::game::main::gamemode::sp_2 as sp_3;
+pub(crate) use crate::game::render::particle::at as at_2;
+pub(crate) use crate::game::scripter::ssxscriptengine::low;
+pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
+pub(crate) use crate::game::scripter::ssxscriptengine::sw_at as sw_at_2;
+pub(crate) use crate::game::visualfx::boardwakefx::lh;
+pub(crate) use crate::game::visualfx::boardwakefx::lw_2;
+pub(crate) use crate::game::visualfx::boardwakefx::r32_2 as r32_3;
+pub(crate) use crate::game::visualfx::boardwakefx::sw;
+pub(crate) use crate::game::visualfx::boardwakefx::sw_at;
+pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::Unwound;
-use crate::events::back_edge_unwinds;
-use crate::call::VSlot;
-use crate::events::deliver_event;
-pub(crate) use crate::game::visualfx::boardwakefx::lh;
-pub(crate) use crate::game::ai::control::handplantcontrol::gp_4;
-pub(crate) use crate::game::render::particle::at as at_2;
-pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
-pub(crate) use crate::game::fe::debugfe::at as at_3;
-pub(crate) use crate::game::fe::debugfe::r32_2;
-pub(crate) use crate::game::visualfx::boardwakefx::lw_2;
-pub(crate) use crate::game::visualfx::boardwakefx::r32_2 as r32_3;
-pub(crate) use crate::game::visualfx::boardwakefx::sw;
-pub(crate) use crate::game::visualfx::boardwakefx::sw_at;
-pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
-pub(crate) use crate::game::fe::festateloadhint::sqsp;
-pub(crate) use crate::game::fe::festateloadhint::lqsp;
-pub(crate) use crate::game::fe::festateloadhint::gp as gp_5;
-pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
-pub(crate) use crate::game::scripter::ssxscriptengine::sw_at as sw_at_2;
-pub(crate) use crate::game::scripter::ssxscriptengine::low;
-pub(crate) use crate::game::main::gamemode::low as low_2;
-pub(crate) use crate::game::main::gamemode::sp_2 as sp_3;
-pub(crate) use crate::game::main::gamemode::lw_r;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_4;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_2;
-pub(crate) use crate::game::fe::festaterewards::at_4 as at_5;
-pub(crate) use crate::game::fe::festaterewards::lw_3;
-pub(crate) use crate::game::fe::feasyncfile::at as at_6;
-pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_4;
-pub(crate) use crate::game::fe::feasyncfile::gp as gp_6;
-pub(crate) use crate::game::fe::feasyncfile::p_6 as p_3;
-pub(crate) use crate::game::fe::festaterewards::gp_4 as gp_7;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0010_4e70, rider_find_wall_contact, "Rider_FindWallContact"),
-    (0x0010_5398, rider_handle_wall_collision, "Rider_HandleWallCollision"),
-    (0x0010_7888, rider_check_rider_collisions, "Rider_CheckRiderCollisions"),
+    (
+        0x0010_4e70,
+        rider_find_wall_contact,
+        "Rider_FindWallContact",
+    ),
+    (
+        0x0010_5398,
+        rider_handle_wall_collision,
+        "Rider_HandleWallCollision",
+    ),
+    (
+        0x0010_7888,
+        rider_check_rider_collisions,
+        "Rider_CheckRiderCollisions",
+    ),
     (0x0011_3f38, rider_set_slew5_target, "Rider_SetSlew5Target"),
-    (0x0011_5b58, rider_update_timed_event_anim, "Rider_UpdateTimedEventAnim"),
-    (0x0011_5d48, rider_update_idle_look_anim, "Rider_UpdateIdleLookAnim"),
-    (0x0011_6930, rider_empty_stance_hook, "Rider_EmptyStanceHook"),
+    (
+        0x0011_5b58,
+        rider_update_timed_event_anim,
+        "Rider_UpdateTimedEventAnim",
+    ),
+    (
+        0x0011_5d48,
+        rider_update_idle_look_anim,
+        "Rider_UpdateIdleLookAnim",
+    ),
+    (
+        0x0011_6930,
+        rider_empty_stance_hook,
+        "Rider_EmptyStanceHook",
+    ),
     (0x0011_bb40, rider_create_focus_box, "Rider_CreateFocusBox"),
     (0x0011_c0e0, rider_has_render_slot, "Rider_HasRenderSlot"),
     (0x0011_de60, rider_place_at_marker, "Rider_PlaceAtMarker"),
@@ -76,38 +100,114 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0011_e150, rider_update_bounds, "Rider_UpdateBounds"),
     (0x0011_eb98, rider_update_skeleton, "Rider_UpdateSkeleton"),
     (0x0011_f3d8, rider_solve_leg_ik, "Rider_SolveLegIK"),
-    (0x0011_fa10, rider_update_board_lean, "Rider_UpdateBoardLean"),
-    (0x0011_fea8, rider_get_main_state_name, "Rider_GetMainStateName"),
+    (
+        0x0011_fa10,
+        rider_update_board_lean,
+        "Rider_UpdateBoardLean",
+    ),
+    (
+        0x0011_fea8,
+        rider_get_main_state_name,
+        "Rider_GetMainStateName",
+    ),
     (0x0011_ff98, rider_get_mass, "cRider_getMass"),
-    (0x0012_00d0, rider_update_boost_timers, "Rider_UpdateBoostTimers"),
-    (0x0012_0378, rider_update_speed_anims, "Rider_UpdateSpeedAnims"),
+    (
+        0x0012_00d0,
+        rider_update_boost_timers,
+        "Rider_UpdateBoostTimers",
+    ),
+    (
+        0x0012_0378,
+        rider_update_speed_anims,
+        "Rider_UpdateSpeedAnims",
+    ),
     (0x0012_0d90, rider_update_leg_ik_blend, "func_00120D90"),
     (0x0012_0e50, rider_refresh_overlaps, "Rider_RefreshOverlaps"),
-    (0x0012_11f8, rider_update_slewed_params, "Rider_UpdateSlewedParams"),
-    (0x0012_1950, rider_update_heading_and_audio, "Rider_UpdateHeadingAndAudio"),
+    (
+        0x0012_11f8,
+        rider_update_slewed_params,
+        "Rider_UpdateSlewedParams",
+    ),
+    (
+        0x0012_1950,
+        rider_update_heading_and_audio,
+        "Rider_UpdateHeadingAndAudio",
+    ),
     (0x0012_1f30, rider_compute_lod, "Rider_ComputeLOD"),
-    (0x0012_2278, rider_update_visibility, "Rider_UpdateVisibility"),
+    (
+        0x0012_2278,
+        rider_update_visibility,
+        "Rider_UpdateVisibility",
+    ),
     (0x0012_2448, rider_render_model, "Rider_RenderModel"),
-    (0x0012_2c28, rider_get_start_marker_pos, "Rider_GetStartMarkerPos"),
+    (
+        0x0012_2c28,
+        rider_get_start_marker_pos,
+        "Rider_GetStartMarkerPos",
+    ),
     (0x0012_2c98, rider_is_spinning_fast, "Rider_IsSpinningFast"),
     (0x0012_2cf0, rider_update_danger_state, "func_00122CF0"),
-    (0x0012_2d78, rider_estimate_finish_time, "Rider_EstimateFinishTime"),
-    (0x0012_2e50, rider_estimate_final_score, "Rider_EstimateFinalScore"),
+    (
+        0x0012_2d78,
+        rider_estimate_finish_time,
+        "Rider_EstimateFinishTime",
+    ),
+    (
+        0x0012_2e50,
+        rider_estimate_final_score,
+        "Rider_EstimateFinalScore",
+    ),
     (0x0012_35f8, rider_force_reset, "Rider_ForceReset"),
-    (0x0012_3da8, rider_update_from_script, "Rider_UpdateFromScript"),
+    (
+        0x0012_3da8,
+        rider_update_from_script,
+        "Rider_UpdateFromScript",
+    ),
     (0x0012_41c0, quat_from_euler, "Quat_FromEuler"),
     (0x0012_5038, rider_stop_transition, "Rider_StopTransition"),
     (0x0012_50a8, rider_add_velocity, "Rider_AddVelocity"),
-    (0x0012_5228, rider_check_race_finish, "Rider_CheckRaceFinish"),
-    (0x0012_53d0, rider_mark_quit_requested, "Rider_MarkQuitRequested"),
-    (0x0012_5958, rider_set_boost_enabled, "Rider_SetBoostEnabled"),
+    (
+        0x0012_5228,
+        rider_check_race_finish,
+        "Rider_CheckRaceFinish",
+    ),
+    (
+        0x0012_53d0,
+        rider_mark_quit_requested,
+        "Rider_MarkQuitRequested",
+    ),
+    (
+        0x0012_5958,
+        rider_set_boost_enabled,
+        "Rider_SetBoostEnabled",
+    ),
     (0x0012_5970, rider_apply_wind_force, "Rider_ApplyWindForce"),
-    (0x0012_5ad0, rider_empty_progress_hook, "Rider_EmptyProgressHook"),
-    (0x0012_5ad8, rider_get_sync_checksum, "Rider_GetSyncChecksum"),
-    (0x0012_76f0, player_get_trick_button, "Player_GetTrickButton"),
-    (0x0012_7848, player_get_uber_grind_button, "Player_GetUberGrindButton"),
+    (
+        0x0012_5ad0,
+        rider_empty_progress_hook,
+        "Rider_EmptyProgressHook",
+    ),
+    (
+        0x0012_5ad8,
+        rider_get_sync_checksum,
+        "Rider_GetSyncChecksum",
+    ),
+    (
+        0x0012_76f0,
+        player_get_trick_button,
+        "Player_GetTrickButton",
+    ),
+    (
+        0x0012_7848,
+        player_get_uber_grind_button,
+        "Player_GetUberGrindButton",
+    ),
     (0x0012_78d0, player_pulse_rumble, "Player_PulseRumble"),
-    (0x002a_3c00, ssx_audio_system_arcade_say20a8, "SSXAudioSystem_ArcadeSay20A8"),
+    (
+        0x002a_3c00,
+        ssx_audio_system_arcade_say20a8,
+        "SSXAudioSystem_ArcadeSay20A8",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -117,259 +217,288 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
     use super::*;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::ANIM_SEQ_LIST_GET_AT;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_COMPUTE_LOD;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::TRANSITION_EFFECT_UPDATE_SCREEN_RECT;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_MODEL_RENDER;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::MATH_COS;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::EMITTER_UPDATE;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::WORLD_PAINTER_QUERY_RESET_ALL;
-    pub(crate) use crate::game::ai::ai::callee::INTC_SAVE_REGS;
-    pub(crate) use crate::game::ai::ai::callee::INTC_RESTORE_REGS;
-    pub(crate) use crate::game::ai::ai::callee::IRRADIANCE_FIND_INDEX;
-    pub(crate) use crate::game::ai::ai::callee::IRRADIANCE_GET_ENTRY;
-    pub(crate) use crate::game::ai::ai::callee::WORLD_CACHE_FREE;
-    pub(crate) use crate::game::ai::ai::callee::MPEG2_FLUSH_BUFFER;
-    pub(crate) use crate::game::ai::ai::callee::MPEG2_SHOW_BITS;
-    pub(crate) use crate::game::ai::ai::callee::MPEG2_FLUSH_BUFFER32;
     pub(crate) use crate::game::ai::ai::callee::AI_RESET_RIDERS;
     pub(crate) use crate::game::ai::ai::callee::AI_SET_RIDER_ORDER_MODE;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_FIND_NEARBY_LIGHTS;
     pub(crate) use crate::game::ai::ai::callee::BE_COPY_PROFILE_CHARACTERS;
-    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_SOUND_BANK_MAN_FIND_BANK;
-    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_PAUSE;
+    pub(crate) use crate::game::ai::ai::callee::INTC_RESTORE_REGS;
+    pub(crate) use crate::game::ai::ai::callee::INTC_SAVE_REGS;
+    pub(crate) use crate::game::ai::ai::callee::IRRADIANCE_FIND_INDEX;
+    pub(crate) use crate::game::ai::ai::callee::IRRADIANCE_GET_ENTRY;
+    pub(crate) use crate::game::ai::ai::callee::MPEG2_FLUSH_BUFFER;
+    pub(crate) use crate::game::ai::ai::callee::MPEG2_FLUSH_BUFFER32;
+    pub(crate) use crate::game::ai::ai::callee::MPEG2_SHOW_BITS;
+    pub(crate) use crate::game::ai::ai::callee::RIDER_FIND_NEARBY_LIGHTS;
+    pub(crate) use crate::game::ai::ai::callee::WORLD_CACHE_FREE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::AVALANCHE_GET_OBJECT_MATRIX;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_CHARACTER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_PROFILE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_TRACK_INFO;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_MISSION_SET_COLLECTED;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_SET_CHARACTER_BY_SLOT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_COUNT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_ENTRY;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUY_POPUP_RESET;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::CLEAR_NEW_REWARDS;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::DYNAMIC_EMITTER_RESET;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_MEM_ALLOC_NAMED_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_THREAD_YIELD;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_TIMER_SERVICE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::FE_ASYNC_SET_STATE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_MODULE_REQUEST_STATE_2 as GAME_MODULE_REQUEST_STATE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_PROCESS_DTOR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GROW_LINES;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INIT_FROM_RIDER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INSTANCE_GET_NODE_MATRIX;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOAD_INDICATOR_RENDER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_API_SEND;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_GET_ROOM_NAME;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_END_OPERATION;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_ON_OPERATION_DONE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MEM_REPORT_STATS_LOCKED;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MSG_PRINTF;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::OPERATOR_NEW_NAMED;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::POPUP_CONFIRM_REBUILD;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::QSORT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RESET_FOR_RIDER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_ADD_BOOST_2 as RIDER_ADD_BOOST;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_APPLY_SCRIPT_TRACK;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GATHER_CAM_STATE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GET_MAIN_STATE as RIDER_GET_MAIN_STATE_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_RECORD_BEST_JUMP;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_UPDATE_SCRIPT_SOUNDS;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SECTION_SELECT_PEAK_LIGHTING;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SERIALIZE_READ_U32;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SET_ITEM_YEAR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SNOW_BOX_DTOR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_IS_TRACK_GROUP5;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_PLAY_MUSIC;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_RESUME_SFX;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STOP_LOADING_SCREEN_LOOP;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STREAM_FILE_QUEUE_RANGE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STRLEN;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_HASH;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_LEN;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_COPY;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_RAW;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_STRING;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TEX_MAN_INIT_TABLE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_CTOR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LISTBOX_SET_ITEM_TEXT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST_WRAPPER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_NODE_SENTINEL;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_FIND_BY_ID;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_SET_ANIM;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_SCREEN_FIND_OBJECT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_CTOR_2_2 as UI_STATE_CTOR_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_MGR_PUSH_POPUP;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_ASCII;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_EVENT_STAT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_STRING;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_TEXT_ID;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_CPY;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_LEN;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::VRAM_HEAP_INIT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::WORLD_GET_INSTANCE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_GET_NEXT_NODE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_GET_PREV_NODE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_NODE_INDEX;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BUILD_ITEM_LIST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_GET_RIDER_PREVIEW_2 as FEMODULE_GET_RIDER_PREVIEW;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_RIDER_PREVIEW_SET_VISIBLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUTSYNC_IS_READY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_HEAP_ALLOC;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_ACTIVATE_KEY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_NEXT_KEY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_FIND_ENABLED_FROM_TOP;
+    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_IS_KEY_ENABLED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::LOAD_INDICATOR_ADVANCE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_HANDLE_INPUT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_DISABLED_3 as MENU_SYS_ITEM_IS_DISABLED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_ACCOUNT_SET_STATE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_FIND_BANK_SLOT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_REMOVE_BANK;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PS2_GRID_MESH_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REFRESH_ITEM_LIST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_BASE_RESET_FX;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SET_CATEGORY_TITLE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_BUY_MODE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_EQUIP_MODE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_GET_PATH_LENGTH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::START_SCREEN_CTOR;
+    pub(crate) use crate::game::fe::festaterewards::callee::BECHAR_GET_OVERALL_RATING;
+    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_GET_SLOT;
+    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_IS_SHARING_CHAR_RECORD;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_GET_MONEY;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_SPEND_MONEY;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_GET_RIDER_PROFILE_2 as BE_GET_RIDER_PROFILE_3;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INSTANCE;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INTERFACE;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_GET_FILE;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_SET_BIT;
+    pub(crate) use crate::game::fe::festaterewards::callee::BRAGGING_RIGHTS_UPDATE_ROW_COLORS;
+    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_OPPONENT_DISCONNECTED;
+    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SERVER_TIMEOUT;
+    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SHOW_CANCEL;
+    pub(crate) use crate::game::fe::festaterewards::callee::GET_LANGUAGE_MASK_2 as GET_LANGUAGE_MASK;
+    pub(crate) use crate::game::fe::festaterewards::callee::IS_ARCADE_SPEECH_ON;
+    pub(crate) use crate::game::fe::festaterewards::callee::IS_DJ_SPEECH_ON_2 as IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_IS_FLAG_SET;
+    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_POST;
+    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_SET_FLAG;
+    pub(crate) use crate::game::fe::festaterewards::callee::MOD_OBJ_RUN_SCRIPT_EVENT;
+    pub(crate) use crate::game::fe::festaterewards::callee::REWARD_GALLERY_REGISTER_TEXTURES;
+    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_POP_FREE_NODE;
+    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_PUSH_FREE_NODE;
+    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_START_SCRIPT;
+    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_SET_EVENT_CONTEXT;
+    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_STOP_INSTANCE;
+    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_COPY_TAG;
+    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_SET_RAW as TAG_FIELD_SET_RAW_2;
+    pub(crate) use crate::game::fe::festaterewards::callee::TEXFLIP_SET_FRAME;
+    pub(crate) use crate::game::fe::festaterewards::callee::VFX_PLANTS_GET_SWAY_MATRIX;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::ANIM_SEQ_LIST_GET_AT;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::EMITTER_UPDATE;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::MATH_COS;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_COMPUTE_LOD;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_MODEL_RENDER;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::TRANSITION_EFFECT_UPDATE_SCREEN_RECT;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::WORLD_PAINTER_QUERY_RESET_ALL;
+    pub(crate) use crate::game::world::wscriptcache::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
     pub(crate) use crate::game::world::wscriptcache::callee::BANK_MONITOR_DELETE_INSTANCE;
     pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INSTANCE as BELIBRARY_GET_INSTANCE_2;
     pub(crate) use crate::game::world::wscriptcache::callee::BELIBRARY_GET_INTERFACE as BELIBRARY_GET_INTERFACE_2;
     pub(crate) use crate::game::world::wscriptcache::callee::BE_NEW_RACE_INT_GET_TRACK_INFO;
-    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP5;
+    pub(crate) use crate::game::world::wscriptcache::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
+    pub(crate) use crate::game::world::wscriptcache::callee::BOLT_FILE_CACHE_SHUTDOWN;
+    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_RESET_CHASE_CONTROLLER_SWITCHES;
+    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_TRIGGER_STACK_CLEAR;
+    pub(crate) use crate::game::world::wscriptcache::callee::CHASE_CAMERA_ALGORITHM_CTOR_2 as CHASE_CAMERA_ALGORITHM_CTOR;
+    pub(crate) use crate::game::world::wscriptcache::callee::CINSTANCE_NODE_CTOR_V;
     pub(crate) use crate::game::world::wscriptcache::callee::CROWD_AUDIO_FREE_SAMPLE_LIST;
     pub(crate) use crate::game::world::wscriptcache::callee::CUT_SCENE_TRANSITION_MAN_BASE_CTOR;
     pub(crate) use crate::game::world::wscriptcache::callee::CUT_SCENE_TRANSITION_MAN_INIT;
-    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_GET_COUNT;
-    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_ADD_ITEMS;
-    pub(crate) use crate::game::world::wscriptcache::callee::EA_MEM_FREE_2 as EA_MEM_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::MDF_FILE_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SPRINTF_2 as SPRINTF;
-    pub(crate) use crate::game::world::wscriptcache::callee::INPUT_PREPROC_WRITE_STRING;
-    pub(crate) use crate::game::world::wscriptcache::callee::CINSTANCE_NODE_CTOR_V;
-    pub(crate) use crate::game::world::wscriptcache::callee::FONT_FREE;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_LIST_COUNT;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_APPLY;
-    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_ADVANCE;
-    pub(crate) use crate::game::world::wscriptcache::callee::SECTION_ALLOCATOR_FREE_ALL;
     pub(crate) use crate::game::world::wscriptcache::callee::C_WORLD_CACHE_STREAMER_DTOR_STUB;
-    pub(crate) use crate::game::world::wscriptcache::callee::RCMP_SYSTEM_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::PS2_SONY_CODEC_INTERNAL_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_GET_BITS1;
-    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_FLUSH_BUFFER_3 as MPEG2_FLUSH_BUFFER_2;
-    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_SUB_STATE;
-    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_MAIN_STATE;
-    pub(crate) use crate::game::world::wscriptcache::callee::BE_SCORE_INT_GET_HIGH_SCORE_TABLE;
-    pub(crate) use crate::game::world::wscriptcache::callee::CHASE_CAMERA_ALGORITHM_CTOR_2 as CHASE_CAMERA_ALGORITHM_CTOR;
-    pub(crate) use crate::game::world::wscriptcache::callee::ACTIVE_CAMERA_TRIGGER_LIST_CLEAR;
-    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_TRIGGER_STACK_CLEAR;
-    pub(crate) use crate::game::world::wscriptcache::callee::CAMERA_RESET_CHASE_CONTROLLER_SWITCHES;
-    pub(crate) use crate::game::world::wscriptcache::callee::BOLT_FILE_CACHE_SHUTDOWN;
     pub(crate) use crate::game::world::wscriptcache::callee::DELETE;
+    pub(crate) use crate::game::world::wscriptcache::callee::EA_MEM_FREE_2 as EA_MEM_FREE;
+    pub(crate) use crate::game::world::wscriptcache::callee::FONT_FREE;
+    pub(crate) use crate::game::world::wscriptcache::callee::INPUT_PREPROC_WRITE_STRING;
+    pub(crate) use crate::game::world::wscriptcache::callee::MDF_FILE_FREE;
+    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_FLUSH_BUFFER_3 as MPEG2_FLUSH_BUFFER_2;
+    pub(crate) use crate::game::world::wscriptcache::callee::MPEG2_GET_BITS1;
+    pub(crate) use crate::game::world::wscriptcache::callee::PS2_SONY_CODEC_INTERNAL_CTOR;
+    pub(crate) use crate::game::world::wscriptcache::callee::RCMP_SYSTEM_CTOR;
+    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_MAIN_STATE;
+    pub(crate) use crate::game::world::wscriptcache::callee::RIDER_SET_SUB_STATE;
+    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_ENGINE_GET_INSTANCE;
+    pub(crate) use crate::game::world::wscriptcache::callee::SCRIPT_SOUND_BANK_MAN_FIND_BANK;
+    pub(crate) use crate::game::world::wscriptcache::callee::SECTION_ALLOCATOR_FREE_ALL;
     pub(crate) use crate::game::world::wscriptcache::callee::SND_BANK_MONITOR_MEM_SIZE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
+    pub(crate) use crate::game::world::wscriptcache::callee::SPRINTF_2 as SPRINTF;
+    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP5;
+    pub(crate) use crate::game::world::wscriptcache::callee::SSX_AUDIO_SYSTEM_PAUSE;
+    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_ADVANCE;
+    pub(crate) use crate::game::world::wscriptcache::callee::UI_ANIM_APPLY;
+    pub(crate) use crate::game::world::wscriptcache::callee::UI_LIST_COUNT;
+    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_ADD_ITEMS;
+    pub(crate) use crate::game::world::wscriptcache::callee::WSCRIPT_MAN_COLLECT_SET_GET_COUNT;
     pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
     pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
     pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
     pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
     pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RESET_FOR_RIDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INIT_FROM_RIDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::DYNAMIC_EMITTER_RESET;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_END_OPERATION;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_ON_OPERATION_DONE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUY_POPUP_RESET;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STOP_LOADING_SCREEN_LOOP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::CLEAR_NEW_REWARDS;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GET_MAIN_STATE as RIDER_GET_MAIN_STATE_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_RECORD_BEST_JUMP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_ADD_BOOST_2 as RIDER_ADD_BOOST;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_APPLY_SCRIPT_TRACK;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_UPDATE_SCRIPT_SOUNDS;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SNOW_BOX_DTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_CTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::VRAM_HEAP_INIT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TEX_MAN_INIT_TABLE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_COPY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_RAW;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GROW_LINES;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_EVENT_STAT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_CTOR_2_2 as UI_STATE_CTOR_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOAD_INDICATOR_RENDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_FIND_BY_ID;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_NODE_SENTINEL;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SECTION_SELECT_PEAK_LIGHTING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INSTANCE_GET_NODE_MATRIX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::AVALANCHE_GET_OBJECT_MATRIX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_PROCESS_DTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::WORLD_GET_INSTANCE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_CHARACTER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_TRACK_INFO;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_SET_CHARACTER_BY_SLOT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_GET_ROOM_NAME;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_COUNT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_ENTRY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::FE_ASYNC_SET_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::POPUP_CONFIRM_REBUILD;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_PLAY_MUSIC;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_HASH;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STREAM_FILE_QUEUE_RANGE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_LEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_CPY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_TEXT_ID;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_STRING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_SET_ANIM;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_MGR_PUSH_POPUP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LISTBOX_SET_ITEM_TEXT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SET_ITEM_YEAR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_ASCII;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_MISSION_SET_COLLECTED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MSG_PRINTF;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_LEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STRLEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::QSORT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_TIMER_SERVICE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_THREAD_YIELD;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_MODULE_REQUEST_STATE_2 as GAME_MODULE_REQUEST_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_API_SEND;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_STRING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_RESUME_SFX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_IS_TRACK_GROUP5;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GATHER_CAM_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MEM_REPORT_STATS_LOCKED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_MEM_ALLOC_NAMED_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST_WRAPPER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SERIALIZE_READ_U32;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_EQUIP_MODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SHOW_BUY_MODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SET_CATEGORY_TITLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BUILD_ITEM_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REFRESH_ITEM_LIST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPLINE_GET_PATH_LENGTH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_ACCOUNT_SET_STATE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_FIND_BANK_SLOT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PATH_PLAT_REMOVE_BANK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_HANDLE_INPUT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_IS_DISABLED_3 as MENU_SYS_ITEM_IS_DISABLED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_HEAP_ALLOC;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_ACTIVATE_KEY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::ISEQ_SPAN_TRACK_NEXT_KEY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PS2_GRID_MESH_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_IS_KEY_ENABLED;
-    pub(crate) use crate::game::fe::feasyncfile::callee::KEYBOARD_FIND_ENABLED_FROM_TOP;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_GET_RIDER_PREVIEW_2 as FEMODULE_GET_RIDER_PREVIEW;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FEMODULE_RIDER_PREVIEW_SET_VISIBLE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUTSYNC_IS_READY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_GET_NEXT_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_GET_PREV_NODE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BOLT_NODE_INDEX;
-    pub(crate) use crate::game::fe::feasyncfile::callee::RIDER_BASE_RESET_FX;
-    pub(crate) use crate::game::fe::feasyncfile::callee::LOAD_INDICATOR_ADVANCE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::START_SCREEN_CTOR;
-    pub(crate) use crate::game::fe::festaterewards::callee::IS_DJ_SPEECH_ON_2 as IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::fe::festaterewards::callee::IS_ARCADE_SPEECH_ON;
-    pub(crate) use crate::game::fe::festaterewards::callee::GET_LANGUAGE_MASK_2 as GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_STOP_INSTANCE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_POP_FREE_NODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_PUSH_FREE_NODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_START_SCRIPT;
-    pub(crate) use crate::game::fe::festaterewards::callee::MOD_OBJ_RUN_SCRIPT_EVENT;
-    pub(crate) use crate::game::fe::festaterewards::callee::REWARD_GALLERY_REGISTER_TEXTURES;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SERVER_TIMEOUT;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_OPPONENT_DISCONNECTED;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SHOW_CANCEL;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INSTANCE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INTERFACE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_SET_BIT;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_GET_FILE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_SPEND_MONEY;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_GET_MONEY;
-    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_COPY_TAG;
-    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_SET_RAW as TAG_FIELD_SET_RAW_2;
-    pub(crate) use crate::game::fe::festaterewards::callee::BRAGGING_RIGHTS_UPDATE_ROW_COLORS;
-    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_IS_SHARING_CHAR_RECORD;
-    pub(crate) use crate::game::fe::festaterewards::callee::BECHAR_GET_OVERALL_RATING;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_IS_FLAG_SET;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_SET_FLAG;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_POST;
-    pub(crate) use crate::game::fe::festaterewards::callee::TEXFLIP_SET_FRAME;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_GET_RIDER_PROFILE_2 as BE_GET_RIDER_PROFILE_3;
-    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_GET_SLOT;
-    pub(crate) use crate::game::fe::festaterewards::callee::VFX_PLANTS_GET_SWAY_MATRIX;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
+    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
+    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
 
+    pub const RIDER_GET_SUB_STATE: Callee = Callee {
+        addr: 0x0011_fee8,
+        f: ee::s00::Rider_GetSubState,
+    };
 
-    pub const RIDER_GET_SUB_STATE: Callee = Callee { addr: 0x0011_fee8, f: ee::s00::Rider_GetSubState };
+    pub const RIDER_GET_MAIN_STATE: Callee = Callee {
+        addr: 0x0011_fe98,
+        f: ee::s00::Rider_GetMainState,
+    };
 
-    pub const RIDER_GET_MAIN_STATE: Callee = Callee { addr: 0x0011_fe98, f: ee::s00::Rider_GetMainState };
+    pub const RIDER_UPDATE_BOARD_LEAN: Callee = Callee {
+        addr: 0x0011_fa10,
+        f: ee::s00::Rider_UpdateBoardLean,
+    };
 
-    pub const RIDER_UPDATE_BOARD_LEAN: Callee = Callee { addr: 0x0011_fa10, f: ee::s00::Rider_UpdateBoardLean };
+    pub const RIDER_SOLVE_LEG_IK: Callee = Callee {
+        addr: 0x0011_f3d8,
+        f: ee::s00::Rider_SolveLegIK,
+    };
 
-    pub const RIDER_SOLVE_LEG_IK: Callee = Callee { addr: 0x0011_f3d8, f: ee::s00::Rider_SolveLegIK };
+    pub const RIDER_UPDATE_SPHERE_TREE: Callee = Callee {
+        addr: 0x0010_6828,
+        f: ee::s00::Rider_UpdateSphereTree,
+    };
 
-    pub const RIDER_UPDATE_SPHERE_TREE: Callee = Callee { addr: 0x0010_6828, f: ee::s00::Rider_UpdateSphereTree };
+    pub const RIDER_UPDATE_SPEED_ANIMS: Callee = Callee {
+        addr: 0x0012_0378,
+        f: ee::s00::Rider_UpdateSpeedAnims,
+    };
 
-    pub const RIDER_UPDATE_SPEED_ANIMS: Callee = Callee { addr: 0x0012_0378, f: ee::s00::Rider_UpdateSpeedAnims };
+    pub const AI_GET_FRAME_COUNTER: Callee = Callee {
+        addr: 0x0012_98c8,
+        f: ee::s00::AI_GetFrameCounter,
+    };
 
-    pub const AI_GET_FRAME_COUNTER: Callee = Callee { addr: 0x0012_98c8, f: ee::s00::AI_GetFrameCounter };
+    pub const RIDER_METRIX_BANK_COMBO: Callee = Callee {
+        addr: 0x0011_7718,
+        f: ee::s00::RiderMetrix_BankCombo,
+    };
 
-    pub const RIDER_METRIX_BANK_COMBO: Callee = Callee { addr: 0x0011_7718, f: ee::s00::RiderMetrix_BankCombo };
+    pub const RIDER_METRIX_CHECK_SCORE_MILESTONE: Callee = Callee {
+        addr: 0x0011_9210,
+        f: ee::s00::RiderMetrix_CheckScoreMilestone,
+    };
 
-    pub const RIDER_METRIX_CHECK_SCORE_MILESTONE: Callee =
-        Callee { addr: 0x0011_9210, f: ee::s00::RiderMetrix_CheckScoreMilestone };
+    pub const RIDER_METRIX_UPDATE_TRICK_HUD: Callee = Callee {
+        addr: 0x0011_7fe0,
+        f: ee::s00::RiderMetrix_UpdateTrickHUD,
+    };
 
-    pub const RIDER_METRIX_UPDATE_TRICK_HUD: Callee =
-        Callee { addr: 0x0011_7fe0, f: ee::s00::RiderMetrix_UpdateTrickHUD };
-
-    pub const CHUDFX_UPDATE: Callee = Callee { addr: 0x0011_6fb8, f: ee::s00::cHUDFX_Update };
-
+    pub const CHUDFX_UPDATE: Callee = Callee {
+        addr: 0x0011_6fb8,
+        f: ee::s00::cHUDFX_Update,
+    };
 
     // Cross-shard direct calls the generator emitted as `call_indirect`.
     pub const RIDER_SPIN_SUB_APPLY_POSE_ROTATION: u32 = 0x0013_4dd0;
@@ -393,7 +522,6 @@ pub(crate) mod callee {
     pub const SSX_AUDIO_SYSTEM_GET_INSTANCE: u32 = 0x0028_b180;
 
     pub const SSX_AUDIO_SYSTEM_SET_PLAYER_TRICK_SCORE: u32 = 0x0029_0f58;
-
 
     pub const GET_MAIN_STATE: Callee = Callee {
         addr: 0x0011_fe98,
@@ -500,7 +628,6 @@ pub(crate) mod callee {
         f: ee::s00::Rider_ResolveRiderCollision,
     };
 
-
     // Cross-shard direct calls the generator emitted as `call_indirect`.
     pub const COLL_SEGMENT_CTOR: u32 = 0x0032_e100;
 
@@ -542,7 +669,6 @@ pub(crate) mod callee {
 
     pub const SPHERE_TREE_INTERSECT: u32 = 0x0032_9f98;
 
-
     pub const SSX_AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
 
     pub const SSX_AUDIO_UPDATE_RIDER_WORLD_PAINT: u32 = 0x0028_98a8;
@@ -569,74 +695,125 @@ pub(crate) mod callee {
 
     pub const EA_MEM_COPY: u32 = 0x003e_6574;
 
+    pub const RIDER_IS_ON_GROUND: Callee = Callee {
+        addr: 0x0012_31a8,
+        f: ee::s00::Rider_IsOnGround,
+    };
 
-    pub const RIDER_IS_ON_GROUND: Callee =
-        Callee { addr: 0x0012_31a8, f: ee::s00::Rider_IsOnGround };
+    pub const RIDER_UPDATE_DANGER_STATE: Callee = Callee {
+        addr: 0x0012_2cf0,
+        f: ee::s00::Rider_UpdateDangerState,
+    };
 
-    pub const RIDER_UPDATE_DANGER_STATE: Callee =
-        Callee { addr: 0x0012_2cf0, f: ee::s00::Rider_UpdateDangerState };
+    pub const RIDER_SET_TIMED_EVENT: Callee = Callee {
+        addr: 0x0010_e028,
+        f: ee::s00::Rider_SetTimedEvent,
+    };
 
-    pub const RIDER_SET_TIMED_EVENT: Callee =
-        Callee { addr: 0x0010_e028, f: ee::s00::Rider_SetTimedEvent };
+    pub const RIDER_UPDATE_DIST_TO_FINISH: Callee = Callee {
+        addr: 0x0011_2fb0,
+        f: ee::s00::Rider_UpdateDistToFinish,
+    };
 
-    pub const RIDER_UPDATE_DIST_TO_FINISH: Callee =
-        Callee { addr: 0x0011_2fb0, f: ee::s00::Rider_UpdateDistToFinish };
+    pub const RIDER_SELECT_RACE_PATH: Callee = Callee {
+        addr: 0x0011_27f0,
+        f: ee::s00::Rider_SelectRacePath,
+    };
 
-    pub const RIDER_SELECT_RACE_PATH: Callee =
-        Callee { addr: 0x0011_27f0, f: ee::s00::Rider_SelectRacePath };
+    pub const RIDER_HANDLE_RACE_PATH_EVENT: Callee = Callee {
+        addr: 0x0010_e5d8,
+        f: ee::s00::Rider_HandleRacePathEvent,
+    };
 
-    pub const RIDER_HANDLE_RACE_PATH_EVENT: Callee =
-        Callee { addr: 0x0010_e5d8, f: ee::s00::Rider_HandleRacePathEvent };
+    pub const RIDER_RETURN_ZERO: Callee = Callee {
+        addr: 0x0011_25b8,
+        f: ee::s00::Rider_ReturnZero_25b8,
+    };
 
-    pub const RIDER_RETURN_ZERO: Callee =
-        Callee { addr: 0x0011_25b8, f: ee::s00::Rider_ReturnZero_25b8 };
+    pub const RIDER_AI_LOOK_AHEAD: Callee = Callee {
+        addr: 0x0011_2588,
+        f: ee::s00::Rider_GetAIPathLookAheadDist,
+    };
 
-    pub const RIDER_AI_LOOK_AHEAD: Callee =
-        Callee { addr: 0x0011_2588, f: ee::s00::Rider_GetAIPathLookAheadDist };
+    pub const RIDER_SAVE_AI_LOOK_AHEAD: Callee = Callee {
+        addr: 0x0011_25a8,
+        f: ee::s00::Rider_SaveAIPathLookAhead,
+    };
 
-    pub const RIDER_SAVE_AI_LOOK_AHEAD: Callee =
-        Callee { addr: 0x0011_25a8, f: ee::s00::Rider_SaveAIPathLookAhead };
+    pub const RIDER_SELECT_AI_PATH: Callee = Callee {
+        addr: 0x0011_2a50,
+        f: ee::s00::Rider_SelectAIPath,
+    };
 
-    pub const RIDER_SELECT_AI_PATH: Callee =
-        Callee { addr: 0x0011_2a50, f: ee::s00::Rider_SelectAIPath };
+    pub const RIDER_ON_FINISH_RACE: Callee = Callee {
+        addr: 0x0012_5108,
+        f: ee::s00::Rider_OnFinishRace,
+    };
 
-    pub const RIDER_ON_FINISH_RACE: Callee =
-        Callee { addr: 0x0012_5108, f: ee::s00::Rider_OnFinishRace };
+    pub const EMITTER_UPDATE_DESCRIPTOR: Callee = Callee {
+        addr: 0x0036_d428,
+        f: ee::s12::Emitter_UpdateDescriptor,
+    };
 
+    pub const EMITTER_ADVANCE_DESC_TIME: Callee = Callee {
+        addr: 0x0036_d3e8,
+        f: ee::s12::Emitter_AdvanceDescTime,
+    };
 
-    pub const EMITTER_UPDATE_DESCRIPTOR: Callee =
-        Callee { addr: 0x0036_d428, f: ee::s12::Emitter_UpdateDescriptor };
+    pub const PAD_QUEUE_ADVANCE_WRITE: Callee = Callee {
+        addr: 0x0032_6b48,
+        f: ee::s10::PadQueue_AdvanceWrite,
+    };
 
-    pub const EMITTER_ADVANCE_DESC_TIME: Callee =
-        Callee { addr: 0x0036_d3e8, f: ee::s12::Emitter_AdvanceDescTime };
+    pub const PAD_QUEUE_GET_PAD_STATUS: Callee = Callee {
+        addr: 0x0032_6ca0,
+        f: ee::s10::PadQueue_GetPadStatus,
+    };
 
-    pub const PAD_QUEUE_ADVANCE_WRITE: Callee =
-        Callee { addr: 0x0032_6b48, f: ee::s10::PadQueue_AdvanceWrite };
+    pub const PAD_QUEUE_GET_PAD_DATA: Callee = Callee {
+        addr: 0x0032_6cc8,
+        f: ee::s10::PadQueue_GetPadData,
+    };
 
-    pub const PAD_QUEUE_GET_PAD_STATUS: Callee =
-        Callee { addr: 0x0032_6ca0, f: ee::s10::PadQueue_GetPadStatus };
+    pub const INPUT_PAD_UPDATE: Callee = Callee {
+        addr: 0x0032_1298,
+        f: ee::s10::InputPad_Update,
+    };
 
-    pub const PAD_QUEUE_GET_PAD_DATA: Callee =
-        Callee { addr: 0x0032_6cc8, f: ee::s10::PadQueue_GetPadData };
+    pub const COMM_SYSTEM_UPDATE: Callee = Callee {
+        addr: 0x0025_5a20,
+        f: ee::s06::cCommSystem_Update,
+    };
 
-    pub const INPUT_PAD_UPDATE: Callee = Callee { addr: 0x0032_1298, f: ee::s10::InputPad_Update };
+    pub const USB_KEYBOARD_UPDATE: Callee = Callee {
+        addr: 0x0026_68e8,
+        f: ee::s07::cUsbKeyboard_Update,
+    };
 
-    pub const COMM_SYSTEM_UPDATE: Callee = Callee { addr: 0x0025_5a20, f: ee::s06::cCommSystem_Update };
+    pub const MATH_SIN_COS_2: Callee = Callee {
+        addr: 0x0031_be50,
+        f: ee::s10::Math_SinCos,
+    };
 
-    pub const USB_KEYBOARD_UPDATE: Callee =
-        Callee { addr: 0x0026_68e8, f: ee::s07::cUsbKeyboard_Update };
+    pub const EMITTER_RENDER: Callee = Callee {
+        addr: 0x0037_1688,
+        f: ee::s12::mEmitter_Render,
+    };
 
-    pub const MATH_SIN_COS_2: Callee = Callee { addr: 0x0031_be50, f: ee::s10::Math_SinCos };
+    pub const VU0_SAVE_CONTEXT: Callee = Callee {
+        addr: 0x0031_a308,
+        f: ee::s10::VU0_SaveContext,
+    };
 
-    pub const EMITTER_RENDER: Callee = Callee { addr: 0x0037_1688, f: ee::s12::mEmitter_Render };
+    pub const VU0_RESTORE_CONTEXT: Callee = Callee {
+        addr: 0x0031_a3c0,
+        f: ee::s10::VU0_RestoreContext,
+    };
 
-    pub const VU0_SAVE_CONTEXT: Callee = Callee { addr: 0x0031_a308, f: ee::s10::VU0_SaveContext };
-
-    pub const VU0_RESTORE_CONTEXT: Callee =
-        Callee { addr: 0x0031_a3c0, f: ee::s10::VU0_RestoreContext };
-
-    pub const MODIFIER_BLOCK_GET_TRANSFORM_BOUNDS: Callee =
-        Callee { addr: 0x0035_2b88, f: ee::s11::ModifierBlock_GetTransformBounds };
+    pub const MODIFIER_BLOCK_GET_TRANSFORM_BOUNDS: Callee = Callee {
+        addr: 0x0035_2b88,
+        f: ee::s11::ModifierBlock_GetTransformBounds,
+    };
 
     pub const NET_ACCOUNT_MEM_CTOR: Callee = Callee {
         addr: 0x001b_6ed0,
@@ -934,12 +1111,12 @@ pub(crate) mod model {
 
 /// Rider fields used by the steering computation.
 pub(crate) mod rider {
-    pub(crate) use crate::game::visualfx::boardwakefx::rider::LOD;
-    pub(crate) use crate::game::visualfx::boardwakefx::rider::HIDDEN;
-    pub(crate) use crate::game::visualfx::boardwakefx::rider::SUB_STATE;
-    pub(crate) use crate::game::visualfx::boardwakefx::rider::MATRIX;
     pub(crate) use crate::game::ai::computer::rider::MODEL as MODEL_2;
     pub(crate) use crate::game::ai::computer::rider::MOTION;
+    pub(crate) use crate::game::visualfx::boardwakefx::rider::HIDDEN;
+    pub(crate) use crate::game::visualfx::boardwakefx::rider::LOD;
+    pub(crate) use crate::game::visualfx::boardwakefx::rider::MATRIX;
+    pub(crate) use crate::game::visualfx::boardwakefx::rider::SUB_STATE;
 
     pub const MODEL: u32 = 0x780;
 
@@ -996,7 +1173,6 @@ pub(crate) mod rider {
     /// Ground normal (vec4).
     pub const GROUND_NORMAL: u32 = 0x370;
 
-
     // Race / AI paths.
     pub const RACE_PATH: u32 = 0xab4;
 
@@ -1016,7 +1192,6 @@ pub(crate) mod rider {
 
     pub const DIST_ESTIMATE: u32 = 0x4d0;
 
-
     // AI path following.
     pub const AI_POINT: u32 = 0x4a0;
 
@@ -1031,7 +1206,6 @@ pub(crate) mod rider {
     pub const AI_SEARCH_DIST: u32 = 0x4c8;
 
     pub const AI_HEADING: u32 = 0x4cc;
-
 
     // Body flags used by the visibility test.
     pub const RENDER_FLAG: u32 = 0x884;
@@ -1050,7 +1224,6 @@ pub(crate) mod rider {
 
     pub const BSPHERE: u32 = 0x420;
 
-
     // Boost timers.
     pub const DELTA_TIME: u32 = 0x300;
 
@@ -1068,12 +1241,10 @@ pub(crate) mod rider {
 
     pub const BOOST_KIND: u32 = 0x304;
 
-
     // Wind force.
     pub const IS_HUMAN: u32 = 0x874;
 
     pub const AI_INDEX: u32 = 0x86c;
-
 
     // Race finish.
     pub const FINISH_TIME: u32 = 0x470;
@@ -1121,9 +1292,9 @@ pub(crate) mod rail {
 /// texture-id table (`+0xf50`).
 #[allow(dead_code)]
 pub(crate) mod ctx {
-    pub(crate) use crate::game::visualfx::boardwakefx::ctx::VTABLE;
-    pub(crate) use crate::game::visualfx::boardwakefx::ctx::TOP;
     pub(crate) use crate::game::visualfx::boardwakefx::ctx::TEX_IDS;
+    pub(crate) use crate::game::visualfx::boardwakefx::ctx::TOP;
+    pub(crate) use crate::game::visualfx::boardwakefx::ctx::VTABLE;
 }
 
 /// `sAmCtx` (`D_004A289C`) used by `Rider_RenderModel`, and the world
@@ -1131,14 +1302,14 @@ pub(crate) mod ctx {
 #[allow(dead_code)]
 pub(crate) mod globals {
     pub(crate) use crate::game::visualfx::boardwakefx::globals::AM_CTX;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::WORLD;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::EMITTER_BLEND;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::IDENTITY_MAT;
-    pub(crate) use crate::game::visualfx::boardwakefx::globals::FLAG_STATE;
     pub(crate) use crate::game::visualfx::boardwakefx::globals::BONE_MATRICES;
     pub(crate) use crate::game::visualfx::boardwakefx::globals::BONE_MATRICES_SHADOW;
+    pub(crate) use crate::game::visualfx::boardwakefx::globals::EMITTER_BLEND;
     pub(crate) use crate::game::visualfx::boardwakefx::globals::FLAG_MANAGER;
+    pub(crate) use crate::game::visualfx::boardwakefx::globals::FLAG_STATE;
     pub(crate) use crate::game::visualfx::boardwakefx::globals::FLAG_TABLE;
+    pub(crate) use crate::game::visualfx::boardwakefx::globals::IDENTITY_MAT;
+    pub(crate) use crate::game::visualfx::boardwakefx::globals::WORLD;
 }
 
 // ---------------------------------------------------------------------------
@@ -1168,18 +1339,35 @@ pub(crate) mod anim_callee {
     use super::Callee;
     use ssx3_ee as ee;
 
+    pub const GET_LAYER_ENTRY: Callee = Callee {
+        addr: 0x0031_1ae8,
+        f: ee::s10::AnimController_GetLayerAnimEntry,
+    };
 
-    pub const GET_LAYER_ENTRY: Callee = Callee { addr: 0x0031_1ae8, f: ee::s10::AnimController_GetLayerAnimEntry };
+    pub const PLAY_ANIM: Callee = Callee {
+        addr: 0x0031_28e8,
+        f: ee::s10::AnimController_PlayAnim,
+    };
 
-    pub const PLAY_ANIM: Callee = Callee { addr: 0x0031_28e8, f: ee::s10::AnimController_PlayAnim };
+    pub const AUDIO_GET_INSTANCE: Callee = Callee {
+        addr: 0x0028_b180,
+        f: ee::s07::SSXAudioSystem_GetInstance,
+    };
 
-    pub const AUDIO_GET_INSTANCE: Callee = Callee { addr: 0x0028_b180, f: ee::s07::SSXAudioSystem_GetInstance };
+    pub const AUDIO_RIDER_SAY: Callee = Callee {
+        addr: 0x0029_ff80,
+        f: ee::s08::SSXAudioSystem_RiderSay2082,
+    };
 
-    pub const AUDIO_RIDER_SAY: Callee = Callee { addr: 0x0029_ff80, f: ee::s08::SSXAudioSystem_RiderSay2082 };
+    pub const FRAME_COUNTER: Callee = Callee {
+        addr: 0x0012_98c8,
+        f: ee::s00::AI_GetFrameCounter,
+    };
 
-    pub const FRAME_COUNTER: Callee = Callee { addr: 0x0012_98c8, f: ee::s00::AI_GetFrameCounter };
-
-    pub const GET_SUB_STATE: Callee = Callee { addr: 0x0011_fee8, f: ee::s00::Rider_GetSubState };
+    pub const GET_SUB_STATE: Callee = Callee {
+        addr: 0x0011_fee8,
+        f: ee::s00::Rider_GetSubState,
+    };
 
     /// The animation-type jump table the original indexes by `event - 1`.
     pub const EVENT_TABLE: u32 = 0x0045_6cc0;
@@ -1187,43 +1375,42 @@ pub(crate) mod anim_callee {
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod table {
-    pub(crate) use crate::game::fe::feasyncfile::table::STR_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_TEXT_ID;
-    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_ASSIGN;
-    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_RELEASE;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_MENU_RESET_SCROLL;
-    pub(crate) use crate::game::fe::feasyncfile::table::PS2_MEM_CARD_CREATE;
-    pub(crate) use crate::game::fe::feasyncfile::table::PATH_STOP_TRACKS;
-    pub(crate) use crate::game::fe::feasyncfile::table::EA_MEM_FREE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BUILTIN_DELETE;
-    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_START;
-    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_SET_PARAMS;
-    pub(crate) use crate::game::fe::feasyncfile::table::AUDIO_GET_RACE_MAN;
     pub(crate) use crate::game::fe::feasyncfile::table::ASYNC_FILE_GET_RESULT;
-    pub(crate) use crate::game::fe::feasyncfile::table::SCRIPT_ENGINE_GET_RESULT_VTABLE;
-    pub(crate) use crate::game::fe::feasyncfile::table::RIDER_MODEL_FIND;
+    pub(crate) use crate::game::fe::feasyncfile::table::AUDIO_GET_RACE_MAN;
     pub(crate) use crate::game::fe::feasyncfile::table::BE_GET_INSTANCE;
     pub(crate) use crate::game::fe::feasyncfile::table::BE_GET_INTERFACE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_GAME_MODE;
     pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_EVENT_TYPE;
-    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_END_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_BEGIN_PLAYBACK;
-    pub(crate) use crate::game::fe::feasyncfile::table::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::fe::feasyncfile::table::OPERATOR_NEW_TAG;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_NODE_IS_SENTINEL;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_WIDE_STRING;
-    pub(crate) use crate::game::fe::feasyncfile::table::SPRINTF;
-    pub(crate) use crate::game::fe::feasyncfile::table::EAC_GET_UNPACKED_SIZE;
-    pub(crate) use crate::game::fe::feasyncfile::table::EAC_UNPACK;
-    pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_TREE_TRIANGLE;
+    pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_GAME_MODE;
+    pub(crate) use crate::game::fe::feasyncfile::table::BUILTIN_DELETE;
+    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_ASSIGN;
+    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_RELEASE;
     pub(crate) use crate::game::fe::feasyncfile::table::COLL_HULL_TRIANGLE;
     pub(crate) use crate::game::fe::feasyncfile::table::COLL_HULL_TRIANGLE2;
     pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_CALC;
+    pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_TREE_TRIANGLE;
+    pub(crate) use crate::game::fe::feasyncfile::table::EAC_GET_UNPACKED_SIZE;
+    pub(crate) use crate::game::fe::feasyncfile::table::EAC_UNPACK;
+    pub(crate) use crate::game::fe::feasyncfile::table::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::fe::feasyncfile::table::EA_MEM_FREE;
+    pub(crate) use crate::game::fe::feasyncfile::table::OPERATOR_NEW_TAG;
+    pub(crate) use crate::game::fe::feasyncfile::table::PATH_STOP_TRACKS;
+    pub(crate) use crate::game::fe::feasyncfile::table::PS2_MEM_CARD_CREATE;
+    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_BEGIN_PLAYBACK;
+    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_END_SAVE;
+    pub(crate) use crate::game::fe::feasyncfile::table::RIDER_MODEL_FIND;
+    pub(crate) use crate::game::fe::feasyncfile::table::SCRIPT_ENGINE_GET_RESULT_VTABLE;
+    pub(crate) use crate::game::fe::feasyncfile::table::SPRINTF;
     pub(crate) use crate::game::fe::feasyncfile::table::STR_CASECMP;
+    pub(crate) use crate::game::fe::feasyncfile::table::STR_HASH;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_FIRST;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_NODE_IS_SENTINEL;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_MENU_RESET_SCROLL;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_SCREEN_FIND_OBJECT;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_TEXT_ID;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_WIDE_STRING;
+    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_SET_PARAMS;
+    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_START;
 }
-
 
 /// `void Rider_SetSlew5Target(Rider *rider, float target)` (0x113f38): slew the
 /// "slew 5" value (`+0x22c`) toward `target` (f12), rate limited by the two gp
@@ -1265,7 +1452,6 @@ pub fn rider_set_slew5_target(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `char *Rider_GetMainStateName(Rider *rider)` (0x11fea8): tail-call
 /// `RiderBase_GetMainStateName` (0x111830) on the base object at
 /// `rider+0x77c`.
@@ -1273,11 +1459,13 @@ pub fn rider_get_main_state_name(c: &mut Cpu) {
     call::tail_wrapper(
         c,
         Some(0x77c),
-        call::Target::Direct(Callee { addr: 0x0011_1830, f: ssx3_ee::s00::RiderBase_GetMainStateName }),
+        call::Target::Direct(Callee {
+            addr: 0x0011_1830,
+            f: ssx3_ee::s00::RiderBase_GetMainStateName,
+        }),
         0x0011_feb8,
     );
 }
-
 
 /// Global vectors (`.bss`, set up at boot): the bone pivot subtracted
 /// before rotating a bone offset, the three rotation axes, the identity
@@ -1292,7 +1480,6 @@ pub(crate) const AXIS_Y: u32 = 0x004f_f160;
 
 pub(crate) const IDENTITY_QUAT: u32 = 0x004f_f220;
 
-
 // ---------------------------------------------------------------------------
 // Register and memory helpers.
 
@@ -1302,13 +1489,11 @@ pub(crate) fn p(a: u32, off: u32) -> u32 {
     a.wrapping_add(off)
 }
 
-
 /// A `gp`-relative global.
 #[inline(always)]
 pub(crate) fn gp(c: &Cpu, off: i32) -> u32 {
     r32(c, GP).wrapping_add(off as u32)
 }
-
 
 /// `lw` (sign-extended).
 #[inline(always)]
@@ -1316,13 +1501,11 @@ pub(crate) fn lw(c: &mut Cpu, a: u32) -> u64 {
     c.lw(a)
 }
 
-
 /// FPU register `n`.
 #[inline(always)]
 pub(crate) fn fr(c: &Cpu, n: usize) -> FpuF32 {
     FpuF32(c.f[n])
 }
-
 
 /// `fN = v`.
 #[inline(always)]
@@ -1331,14 +1514,12 @@ pub(crate) fn setf(c: &mut Cpu, n: usize, v: FpuF32) -> FpuF32 {
     v
 }
 
-
 /// `lwc1 fN, a`.
 #[inline(always)]
 pub(crate) fn ldf(c: &mut Cpu, n: usize, a: u32) -> FpuF32 {
     let v = Addr(a).read_fpu(c);
     setf(c, n, v)
 }
-
 
 /// `swc1 fN, a`.
 #[inline(always)]
@@ -1347,14 +1528,12 @@ pub(crate) fn stf(c: &mut Cpu, n: usize, a: u32) {
     Addr(a).write_fpu(c, v);
 }
 
-
 /// `li at, bits; mtc1 at, fN`.
 #[inline(always)]
 pub(crate) fn li_f(c: &mut Cpu, n: usize, bits: u32) -> FpuF32 {
     c.g[AT][0] = sx(bits);
     setf(c, n, FpuF32(bits))
 }
-
 
 /// Set the FPU condition bit; returns it.
 #[inline(always)]
@@ -1363,14 +1542,12 @@ pub(crate) fn fcc(c: &mut Cpu, cond: bool) -> bool {
     cond
 }
 
-
 /// `lq reg, src; sq reg, dst` (a quadword copied through a GPR).
 #[inline(always)]
 pub(crate) fn qcopy(c: &mut Cpu, reg: usize, src: u32, dst: u32) {
     c.lq(reg, src);
     c.sq(reg, dst);
 }
-
 
 // ---------------------------------------------------------------------------
 // VU0 sequences (macro mode), as the original issues them.
@@ -1383,7 +1560,6 @@ pub(crate) fn v_add(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.sqc2(5, out);
 }
 
-
 /// `out = a - b` (vf3, vf4 → vf5).
 pub(crate) fn v_sub(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.lqc2(3, a);
@@ -1391,7 +1567,6 @@ pub(crate) fn v_sub(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
     c.sqc2(5, out);
 }
-
 
 /// [`v_add`] or [`v_sub`].
 pub(crate) fn v_add_sub(c: &mut Cpu, add: bool, a: u32, b: u32, out: u32) {
@@ -1401,7 +1576,6 @@ pub(crate) fn v_add_sub(c: &mut Cpu, add: bool, a: u32, b: u32, out: u32) {
         v_sub(c, a, b, out)
     }
 }
-
 
 /// `out = v * fF`, the scalar moved through GPR `via` into vf3
 /// (`mfc1 via, fF; qmtc2 via, vf3` — vf3 keeps the GPR's upper half).
@@ -1413,7 +1587,6 @@ pub(crate) fn v_scale(c: &mut Cpu, via: usize, f: usize, v: u32, out: u32) {
     c.sqc2(5, out);
 }
 
-
 /// The tail of the dot-product sequence (vf4 holds the products).
 pub(crate) fn dot_tail(c: &mut Cpu) {
     let vu = c.vu0();
@@ -1421,7 +1594,6 @@ pub(crate) fn dot_tail(c: &mut Cpu) {
     vu.madda(0b1000, 6, Src::Bc(4, Z));
     vu.madd(0b1000, 4, 6, Src::Bc(4, W));
 }
-
 
 /// `vf4.x = a · b` (vf3 = a, vf5 = b).
 pub(crate) fn v_dot(c: &mut Cpu, a: u32, b: u32) {
@@ -1432,7 +1604,6 @@ pub(crate) fn v_dot(c: &mut Cpu, a: u32, b: u32) {
     dot_tail(c);
 }
 
-
 /// `vf4.x = a · a` (vf3 = a).
 pub(crate) fn v_dot_self(c: &mut Cpu, a: u32) {
     c.lqc2(3, a);
@@ -1440,7 +1611,6 @@ pub(crate) fn v_dot_self(c: &mut Cpu, a: u32) {
     c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
     dot_tail(c);
 }
-
 
 /// `|a|` through Q (`vsqrt`, `cfc2 via, Q`, `mtc1 via, fDst`).
 pub(crate) fn v_length(c: &mut Cpu, a: u32, via: usize, dst: usize) -> FpuF32 {
@@ -1452,7 +1622,6 @@ pub(crate) fn v_length(c: &mut Cpu, a: u32, via: usize, dst: usize) -> FpuF32 {
     fr(c, dst)
 }
 
-
 /// `out = a / |a|` (`vrsqrt`).
 pub(crate) fn v_normalize(c: &mut Cpu, a: u32, out: u32) {
     v_dot_self(c, a);
@@ -1461,7 +1630,6 @@ pub(crate) fn v_normalize(c: &mut Cpu, a: u32, out: u32) {
     c.vu0().mul(0b1111, 5, 3, Src::Q);
     c.sqc2(5, out);
 }
-
 
 /// `out = v / fF` (`vdiv`, the scalar moved through v0).
 pub(crate) fn v_div_by(c: &mut Cpu, f: usize, v: u32, out: u32) {
@@ -1474,7 +1642,6 @@ pub(crate) fn v_div_by(c: &mut Cpu, f: usize, v: u32, out: u32) {
     c.sqc2(5, out);
 }
 
-
 /// `out = a × b` (vf4 = a, vf5 = b → vf6).
 pub(crate) fn v_cross(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.lqc2(4, a);
@@ -1484,7 +1651,6 @@ pub(crate) fn v_cross(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
     c.sqc2(6, out);
 }
-
 
 /// Quaternion product `out = a ⊗ b` (vf4 = a, vf5 = b → vf8).
 pub(crate) fn q_mul(c: &mut Cpu, a: u32, b: u32, out: u32) {
@@ -1502,7 +1668,6 @@ pub(crate) fn q_mul(c: &mut Cpu, a: u32, b: u32, out: u32) {
     vu.madd(0b1110, 8, 6, Src::Bc(0, W));
     c.sqc2(8, out);
 }
-
 
 /// Vector `v` rotated by quaternion `q`: `v + 2w(q×v) + 2q×(q×v)` (vf4 = q,
 /// vf5 = v → vf8).
@@ -1523,12 +1688,18 @@ pub(crate) fn q_rotate(c: &mut Cpu, q: u32, v: u32, out: u32) {
     c.sqc2(8, out);
 }
 
-
 /// The quaternion `{axis * sin, cos}` from `Math_SinCos`'s outputs at
 /// `sincos` (sin) and `sincos + 4` (cos), written to `out`. The original
 /// reads the axis from a global (z into f1, x into `x_reg`, y into f4) and
 /// the cosine into `cos_reg`; f0 ends as y·sin.
-pub(crate) fn axis_quat(c: &mut Cpu, axis: u32, sincos: u32, out: u32, x_reg: usize, cos_reg: usize) {
+pub(crate) fn axis_quat(
+    c: &mut Cpu,
+    axis: u32,
+    sincos: u32,
+    out: u32,
+    x_reg: usize,
+    cos_reg: usize,
+) {
     let az = ldf(c, 1, p(axis, 8));
     let s = ldf(c, 0, sincos);
     let ax = ldf(c, x_reg, axis);
@@ -1542,7 +1713,6 @@ pub(crate) fn axis_quat(c: &mut Cpu, axis: u32, sincos: u32, out: u32, x_reg: us
     Addr(out).write_fpu(c, qx);
     Addr(p(out, 4)).write_fpu(c, qy);
 }
-
 
 /// [`axis_quat`] for an axis on the stack (x into f1, y into f2, z into
 /// f4, cosine into f3; f0 ends as z·sin).
@@ -1561,7 +1731,6 @@ pub(crate) fn axis_quat_v(c: &mut Cpu, axis: u32, sincos: u32, out: u32) {
     Addr(p(out, 8)).write_fpu(c, qz);
 }
 
-
 // ---------------------------------------------------------------------------
 // Rider_UpdateBounds.
 
@@ -1576,7 +1745,6 @@ pub(crate) const BOUNDS_CORNERS: [([bool; 3], u32); 7] = [
     ([false, false, true], 0x437a_0000),
     ([false, false, false], 0x4248_0000),
 ];
-
 
 /// `void Rider_UpdateBounds(Rider* r, const Vec4* centre)` (0x11e150): the
 /// world AABB (`+0x400` min, `+0x410` max) of the box centred on `centre`
@@ -1623,11 +1791,17 @@ pub fn rider_update_bounds(c: &mut Cpu) {
     frame.close(c);
 }
 
-
 /// One corner: `centre ± fwd*f3 ± up*f2 ± side*side_len` (the original's
 /// stack round trips), then the box grown to it (the first compare is
 /// part of the corner's block, each further one costs 6 cycles).
-pub(crate) fn bounds_corner(c: &mut Cpu, r: u32, centre: u32, via: usize, side: u32, signs: [bool; 3]) {
+pub(crate) fn bounds_corner(
+    c: &mut Cpu,
+    r: u32,
+    centre: u32,
+    via: usize,
+    side: u32,
+    signs: [bool; 3],
+) {
     let sp = sp(c);
     v_scale(c, via, 3, p(sp, 0x20), p(sp, 0x70));
     li_f(c, 0, side);
@@ -1655,7 +1829,6 @@ pub(crate) fn bounds_corner(c: &mut Cpu, r: u32, centre: u32, via: usize, side: 
     }
 }
 
-
 /// `f1 = corner, f0 = bound`; store the corner when it is below (`lower`)
 /// or above the bound.
 pub(crate) fn grow_bound(c: &mut Cpu, corner: u32, bound: u32, lower: bool) {
@@ -1666,7 +1839,6 @@ pub(crate) fn grow_bound(c: &mut Cpu, corner: u32, bound: u32, lower: bool) {
         Addr(bound).write_fpu(c, v);
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider_UpdateBoardLean.
@@ -1752,7 +1924,6 @@ pub fn rider_update_board_lean(c: &mut Cpu) {
     })
 }
 
-
 /// `fOut = sign(v) * max(|v| - 2|dead|, 0)` (f0 = 2|dead|, f1 = |v|, f3 =
 /// v, f2 = 0 as the original leaves them).
 pub(crate) fn dead_zone(c: &mut Cpu, value_at: u32, dead_at: u32, out: usize) -> FpuF32 {
@@ -1775,7 +1946,6 @@ pub(crate) fn dead_zone(c: &mut Cpu, value_at: u32, dead_at: u32, out: usize) ->
         }
     }
 }
-
 
 /// The lean rotation (154-cycle block; v1 = the model): move the pivot
 /// bone offset into place, rotate about X by roll and Z by pitch (half
@@ -1859,7 +2029,6 @@ pub(crate) fn lean_board(c: &mut Cpu, r: u32, xf: u32, roll: FpuF32, pitch: FpuF
     Ok(())
 }
 
-
 /// The spin yaw (40-cycle block): `xf.rot ⊗= {X * sin, cos}` of
 /// `spin * k * 0.5`. Ends with f1 = `+0x1f0`.
 pub(crate) fn spin_board(c: &mut Cpu, r: u32, xf: u32, spin: FpuF32) -> Flow {
@@ -1882,7 +2051,6 @@ pub(crate) fn spin_board(c: &mut Cpu, r: u32, xf: u32, spin: FpuF32) -> Flow {
     ldf(c, 1, p(r, 0x1f0));
     Ok(())
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider_SolveLegIK.
@@ -2146,7 +2314,6 @@ pub fn rider_solve_leg_ik(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Rider_UpdateSkeleton.
 
@@ -2323,7 +2490,6 @@ pub fn rider_update_skeleton(c: &mut Cpu) {
     })
 }
 
-
 /// Root bones `+0x8a0` and `+0x8a4`: offsets reset to [`PIVOT`], rotations
 /// to the identity; the pose root becomes the rider's `+0x130` transform.
 pub(crate) fn reset_root_bones(c: &mut Cpu, r: u32) {
@@ -2362,7 +2528,6 @@ pub(crate) fn reset_root_bones(c: &mut Cpu, r: u32) {
     c.sq(A0, p(sp, 0x40));
     c.sq(V0, p(sp, 0x50));
 }
-
 
 /// The spine twist (51-cycle block onwards): the bone `+0x8a0` (left in
 /// s0) turns about `+0x390 × its x axis` by `+0x2bc` times the angle
@@ -2458,7 +2623,6 @@ pub(crate) fn spine_twist(c: &mut Cpu, r: u32) -> Flow {
     Ok(())
 }
 
-
 /// The pelvis (`+0x8a4`) re-hung from the twisted spine bone `bone`
 /// (80-cycle block; a0 = the model): rotation `bone.rot ⊗ local rot`,
 /// position `bone.pos + rotate(bone.rot, scaled offset - pivot)`.
@@ -2517,7 +2681,6 @@ pub(crate) fn rehang_pelvis(c: &mut Cpu, r: u32, bone: u32) {
     qcopy(c, V0, p(sp, 0xc0), p(dst, 0x10));
 }
 
-
 /// One leg: the hip target `pelvis ⊗ {offset (desc+0x10), rot (desc+0x20)}`
 /// on the stack (s1 = sp+0x60), then `Rider_SolveLegIK(r, desc, &target,
 /// +0x318)`.
@@ -2544,7 +2707,6 @@ pub(crate) fn leg(c: &mut Cpu, r: u32, pelvis: u32, desc: u32, ret: u32) -> Flow
     c.sq(V0, p(sp, 0x80));
     callee::RIDER_SOLVE_LEG_IK.call(c, ret)
 }
-
 
 /// Rotation rows vf10..vf12 of the quaternion in vf4 (vf3, the position,
 /// untouched), as the original's VU0 sequence computes them.
@@ -2579,7 +2741,6 @@ pub(crate) fn quat_to_matrix(c: &mut Cpu) {
     vu.madd(0b1000, 12, 1, Src::Bc(7, Y));
 }
 
-
 // ---------------------------------------------------------------------------
 // Rider_UpdateSpeedAnims.
 
@@ -2600,7 +2761,6 @@ pub(crate) struct Channel {
     ret_anim_id: u32,
     ret_play: u32,
 }
-
 
 pub(crate) const CHANNELS: [Channel; 3] = [
     Channel {
@@ -2634,7 +2794,6 @@ pub(crate) const CHANNELS: [Channel; 3] = [
         ret_play: 0x0012_0d34,
     },
 ];
-
 
 /// `void Rider_UpdateSpeedAnims(Rider* r)` (0x120378): the playback rate of
 /// animation layers 3..5 follows the speed (`|+0x1e0 - +0x3d0| / max`,
@@ -2673,9 +2832,11 @@ pub fn rider_update_speed_anims(c: &mut Cpu) {
         // Layer playback rates.
         c.cycles += 5;
         c.g[A0][0] = lw(c, p(r, rider::ANIM));
-        for (layer, ret_get, ret_set) in
-            [(3u64, 0x0012_041c, 0x0012_042c), (4, 0x0012_043c, 0x0012_044c), (5, 0x0012_045c, 0x0012_0470)]
-        {
+        for (layer, ret_get, ret_set) in [
+            (3u64, 0x0012_041c, 0x0012_042c),
+            (4, 0x0012_043c, 0x0012_044c),
+            (5, 0x0012_045c, 0x0012_0470),
+        ] {
             let last = layer == 5;
             if layer != 3 {
                 c.cycles += 4;
@@ -2725,7 +2886,6 @@ pub fn rider_update_speed_anims(c: &mut Cpu) {
     })
 }
 
-
 /// The channel pass: s1 = "slow" (speed below `gp-0x7938`; never in
 /// sub-state 11, which also pushes the velocity copy by 1000 along z).
 pub(crate) fn speed_anim_channels(c: &mut Cpu, r: u32) -> Flow {
@@ -2760,7 +2920,6 @@ pub(crate) fn speed_anim_channels(c: &mut Cpu, r: u32) -> Flow {
     Ok(())
 }
 
-
 /// One channel (v0 = its enable flag): the wanted animation in a1, played
 /// (`AnimController_PlayAnim(ctrl, layer, 0, -1)`) when the layer's
 /// current one (a2) differs.
@@ -2793,7 +2952,6 @@ pub(crate) fn speed_anim_channel(c: &mut Cpu, r: u32, ch: &Channel) -> Flow {
     }
     Ok(())
 }
-
 
 /// The channel's animation (into a1) from the velocity (at sp) in the
 /// frame `bone.rot ⊗ local rot`: sideways (|side| > `f22`) → +1/+2 by
@@ -2938,7 +3096,6 @@ pub(crate) fn pick_speed_anim(c: &mut Cpu, r: u32, ch: &Channel) {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Rider_UpdateSlewedParams.
 
@@ -2948,7 +3105,6 @@ pub(crate) const SLEWED_FIRST: u32 = 0x1f0;
 pub(crate) const SLEWED_STRIDE: u32 = 0xc;
 
 pub(crate) const SLEWED_COUNT: u32 = 19;
-
 
 /// `void Rider_UpdateSlewedParams(Rider* r)` (0x1211f8):
 /// `Rider_UpdateSpeedAnims(r)`, then every slewed parameter moves towards
@@ -2982,7 +3138,6 @@ pub fn rider_update_slewed_params(c: &mut Cpu) {
     })
 }
 
-
 /// `f1 = value moved towards target by rate` (f0 = target ± rate, f2 =
 /// rate, f3 = value as the original leaves them).
 pub(crate) fn slew(c: &mut Cpu, param: u32) {
@@ -3002,7 +3157,6 @@ pub(crate) fn slew(c: &mut Cpu, param: u32) {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Register and memory helpers (32-bit address arithmetic, sign-extended
 // results, as the compiled code computes them). The pure ones take `&Cpu`;
@@ -3015,13 +3169,11 @@ pub(crate) fn r(c: &Cpu, reg: usize) -> u32 {
     c.g[reg][0] as u32
 }
 
-
 /// The address `reg + off`.
 #[inline(always)]
 pub(crate) fn at(c: &Cpu, reg: usize, off: u32) -> u32 {
     r(c, reg).wrapping_add(off)
 }
-
 
 /// A `gp_2`-relative global.
 #[inline(always)]
@@ -3029,20 +3181,17 @@ pub(crate) fn gp_2(c: &Cpu, off: i32) -> u32 {
     r(c, GP).wrapping_add(off as u32)
 }
 
-
 /// The current stack pointer.
 #[inline(always)]
 pub(crate) fn sp_2(c: &Cpu) -> u32 {
     r(c, SP)
 }
 
-
 /// `slt`-style signed compare of two registers (64-bit).
 #[inline(always)]
 pub(crate) fn slt(c: &Cpu, a: usize, b: usize) -> u64 {
     ((c.g[a][0] as i64) < (c.g[b][0] as i64)) as u64
 }
-
 
 /// Register, memory and VU0-idiom operations, issued op for op as the
 /// compiled code does.
@@ -3081,7 +3230,6 @@ pub(crate) trait Ops {
     /// (the compiler's VU0-to-memory round trip through a GPR).
     fn vstore(&mut self, vf: usize, tmp: u32, reg: usize, to: &[u32]);
 }
-
 
 impl Ops for Cpu {
     #[inline(always)]
@@ -3180,10 +3328,15 @@ impl Ops for Cpu {
     }
 }
 
-
 /// The epilogue of the rider collision functions: callee-saved GPRs and
 /// FPRs back, `ra`, `sp_2 += size`, return.
-pub(crate) fn epilogue(c: &mut Cpu, gprs: &[(usize, u32)], fprs: &[(usize, u32)], ra_at: u32, size: u32) {
+pub(crate) fn epilogue(
+    c: &mut Cpu,
+    gprs: &[(usize, u32)],
+    fprs: &[(usize, u32)],
+    ra_at: u32,
+    size: u32,
+) {
     let s = sp_2(c);
     for &(reg, off) in gprs {
         c.lq(reg, p(s, off));
@@ -3197,10 +3350,15 @@ pub(crate) fn epilogue(c: &mut Cpu, gprs: &[(usize, u32)], fprs: &[(usize, u32)]
     c.pc = ra;
 }
 
-
 /// The prologue: `sp_2 -= size`, the callee-saved GPRs (`sq`), `ra` (`sd`)
 /// and FPRs (`swc1`).
-pub(crate) fn prologue(c: &mut Cpu, size: u32, gprs: &[(usize, u32)], ra_at: u32, fprs: &[(usize, u32)]) {
+pub(crate) fn prologue(
+    c: &mut Cpu,
+    size: u32,
+    gprs: &[(usize, u32)],
+    ra_at: u32,
+    fprs: &[(usize, u32)],
+) {
     c.set_r(SP, sp_2(c).wrapping_sub(size));
     let s = sp_2(c);
     for &(reg, off) in gprs {
@@ -3212,11 +3370,17 @@ pub(crate) fn prologue(c: &mut Cpu, size: u32, gprs: &[(usize, u32)], ra_at: u32
     }
 }
 
-
 /// A gcc 2.9x virtual call on `obj` (`vt = obj->+0xc`... read by the
 /// caller): `a0 = obj + lh(vt + slot)`, target `lw(vt + slot + 4)` in
 /// `func_reg`, `jalr` returning to `ret`. `vt_reg` holds the vtable.
-pub(crate) fn vcall(c: &mut Cpu, obj_reg: usize, vt_reg: usize, slot: u32, func_reg: usize, ret: u32) -> Flow {
+pub(crate) fn vcall(
+    c: &mut Cpu,
+    obj_reg: usize,
+    vt_reg: usize,
+    slot: u32,
+    func_reg: usize,
+    ret: u32,
+) -> Flow {
     let vt = r(c, vt_reg);
     let delta = c.lh(p(vt, slot));
     c.g[A0][0] = delta;
@@ -3227,12 +3391,10 @@ pub(crate) fn vcall(c: &mut Cpu, obj_reg: usize, vt_reg: usize, slot: u32, func_
     call_ptr(c, func as u32, ret)
 }
 
-
 /// `.rodata` defaults: the up vector and the second ground normal.
 pub(crate) const RODATA_UP: u32 = 0x004f_f160;
 
 pub(crate) const RODATA_NORMAL2: u32 = 0x004f_f120;
-
 
 /// Copy a 0x80-byte contact record (`v0` from, `v1` to, `a0` end) in four
 /// 0x20 steps through a1/a2, with the loop's event checks at `head`.
@@ -3256,7 +3418,6 @@ pub(crate) fn copy_contact(c: &mut Cpu, head: u32) {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Walls.
 
@@ -3270,11 +3431,9 @@ pub(crate) const FW_COPY: u32 = 0x0010_522c;
 
 pub(crate) const FW_SUM: u32 = 0x0010_5270;
 
-
 /// The rider's list of wall surface ids touched this frame (`-1`
 /// terminated).
 pub(crate) const RIDER_WALL_IDS: u32 = 0x5b8;
-
 
 /// `float Rider_FindWallContact(Rider* r, CollHull* hull, Contact* out)`
 /// (0x104e70): collides the hull with the rider's overlap list (up to 64
@@ -3344,7 +3503,13 @@ pub fn rider_find_wall_contact(c: &mut Cpu) {
         c.cycles += 8;
         epilogue(
             c,
-            &[(S1, 0x2080), (S2, 0x2070), (S3, 0x2060), (S4, 0x2050), (S5, 0x2040)],
+            &[
+                (S1, 0x2080),
+                (S2, 0x2070),
+                (S3, 0x2060),
+                (S4, 0x2050),
+                (S5, 0x2040),
+            ],
             &[],
             0x2030,
             0x20a0,
@@ -3352,7 +3517,6 @@ pub fn rider_find_wall_contact(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// The contacts are in (s4 of them at `sp_2`, v1 = contact 0's surface).
 pub(crate) fn find_wall_pick(c: &mut Cpu) -> Flow {
@@ -3507,7 +3671,12 @@ pub(crate) fn find_wall_pick(c: &mut Cpu) -> Flow {
             c.mfc1(V1, 1);
             c.vdiv(p(s, 0x2000), V1);
             let out = r(c, S5);
-            c.vstore(4, p(s, 0x2020), V0, &[p(out, contact::NORMAL), p(s, 0x2010)]);
+            c.vstore(
+                4,
+                p(s, 0x2020),
+                V0,
+                &[p(out, contact::NORMAL), p(s, 0x2010)],
+            );
         }
     }
     // Terminate the id list; tell the surface's owner (virtual 0x150).
@@ -3532,7 +3701,6 @@ pub(crate) fn find_wall_pick(c: &mut Cpu) -> Flow {
     c.lwc1(0, p(out, contact::DEPTH));
     Ok(())
 }
-
 
 /// One contact (t1, at `sp_2 + v0`) of the wall pick: records its surface id
 /// if new, scores it (wall, facing, depth) against the best (s3).
@@ -3655,14 +3823,12 @@ pub(crate) fn find_wall_pick_one(c: &mut Cpu) {
     find_wall_facing(c);
 }
 
-
 /// `t1 = t5` (the next contact), through the shared block.
 #[inline]
 pub(crate) fn pick_next(c: &mut Cpu) {
     c.cycles += 1;
     c.g[T1][0] = c.g[T5][0];
 }
-
 
 /// The facing test (a1 = dot(pos - tree.center, normal) < 0) and the rest
 /// of the scoring of one wall pick candidate (v0 = sphere tree).
@@ -3706,7 +3872,6 @@ pub(crate) fn find_wall_facing(c: &mut Cpu) {
     }
     find_wall_depth(c);
 }
-
 
 /// Depth closest to the reference wins (f1 against the best f2); ties by
 /// surface / instance id.
@@ -3765,13 +3930,10 @@ pub(crate) fn find_wall_depth(c: &mut Cpu) {
     pick_next(c);
 }
 
-
 pub(crate) const WC_SAVE_CONTACT: u32 = 0x0010_56e0;
-
 
 /// The global (`0x4c5830`) camera trigger manager.
 pub(crate) const CAMERA_TRIGGER_MAN: u32 = 0x004c_5830;
-
 
 /// `void Rider_HandleWallCollision(Rider* r, const Vec4* ground_normal)`
 /// (0x105398): unless the rider is in sub-state 9, handles rail contacts
@@ -3783,7 +3945,13 @@ pub(crate) const CAMERA_TRIGGER_MAN: u32 = 0x004c_5830;
 /// bounces off a bouncy wall and a non-silent wall plays the hit sound.
 /// Always updates the camera triggers for the rider and destroys the hull.
 pub fn rider_handle_wall_collision(c: &mut Cpu) {
-    const SAVED: &[(usize, u32)] = &[(S2, 0x460), (S1, 0x470), (S0, 0x480), (S3, 0x450), (S4, 0x440)];
+    const SAVED: &[(usize, u32)] = &[
+        (S2, 0x460),
+        (S1, 0x470),
+        (S0, 0x480),
+        (S3, 0x450),
+        (S4, 0x440),
+    ];
     guest(c, |c| {
         c.cycles += 15;
         prologue(c, 0x4a0, SAVED, 0x430, &[(21, 0x498), (20, 0x490)]);
@@ -3818,7 +3986,6 @@ pub fn rider_handle_wall_collision(c: &mut Cpu) {
     })
 }
 
-
 /// Rail contacts, the hull, the wall contact and its response; ends with
 /// a0 = the camera trigger manager.
 pub(crate) fn wall_collision_body(c: &mut Cpu) -> Flow {
@@ -3851,7 +4018,6 @@ pub(crate) fn wall_collision_body(c: &mut Cpu) -> Flow {
     wall_push_depth(c);
     wall_response(c)
 }
-
 
 /// The push-out normal at `sp_2+0x10` (the contact normal): flattened onto
 /// the ground plane on the ground, or the board normal when grinding.
@@ -3917,7 +4083,6 @@ pub(crate) fn wall_push_normal(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 /// f0 = how far the velocity runs into the wall: `max(dot(-n, contact -
 /// vel), 0)`-style compares into f0 (as the original), v0 = `[sp_2]`.
 pub(crate) fn wall_push_depth(c: &mut Cpu) {
@@ -3951,7 +4116,6 @@ pub(crate) fn wall_push_depth(c: &mut Cpu) {
     }
     c.lq(V0, s);
 }
-
 
 /// Save the contact in the rider (walls with material bit 2, unless the
 /// surface has flag 0x2000), bounce (material bit 1) and the hit sound
@@ -4037,7 +4201,6 @@ pub(crate) fn wall_response(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 // ---------------------------------------------------------------------------
 // Rails.
 
@@ -4072,7 +4235,6 @@ pub(crate) fn rail_axis_from_quat(c: &mut Cpu) {
     c.swc1(0, s);
 }
 
-
 /// `bool Rider_HandleWallRailContact(Rider* r)` (0x106f78): unless
 /// grinding already, looks for a rail along the wall the board touches
 /// (`OverlapList_FindNearestRail` with the board axis); when the rider is
@@ -4101,7 +4263,6 @@ pub fn rider_handle_wall_rail_contact(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// Everything after the state check; leaves v0 = the result.
 pub(crate) fn wall_rail_contact_body(c: &mut Cpu) -> Flow {
@@ -4194,7 +4355,6 @@ pub(crate) fn wall_rail_contact_body(c: &mut Cpu) -> Flow {
     }
     wall_rail_push_off(c)
 }
-
 
 /// Push the rider off the rail: the contact normal facing the velocity,
 /// the owner told, the push-out distance and direction, deflection and
@@ -4373,10 +4533,8 @@ pub(crate) fn wall_rail_push_off(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 /// `.rodata`: the board animation's rotation axis.
 pub(crate) const RODATA_ANIM_AXIS: u32 = 0x004f_f130;
-
 
 /// Two board axes from the bone quaternion at `s0` (+0x10..+0x1c), as the
 /// compiler scheduled it: `sp_2+0x90..0x9c` (f22 = 0 from `sp_2+0x9c`) and
@@ -4428,7 +4586,6 @@ pub(crate) fn railslide_board_axes(c: &mut Cpu) {
     c.swc1(0, p(s, 0xa0));
 }
 
-
 /// `bool Rider_TryStartRailslide(Rider* r)` (0x106848): when
 /// `Rider_FindRail` finds a rail, puts the rider on it: the velocity along
 /// the rail (speed clamped, vertical part damped), the owner told, the
@@ -4458,7 +4615,6 @@ pub fn rider_try_start_railslide(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// The rail direction (`sp_2+0x10`) along the velocity; the velocity along
 /// it with the speed clamped (f23), the vertical part damped; the owner of
@@ -4532,7 +4688,6 @@ pub(crate) fn railslide_velocity(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 /// The board's angle to the rail (f20) and the stance (`r+0x328`); leaves
 /// s2 = the previous stance, v0 as the original.
 pub(crate) fn railslide_stance(c: &mut Cpu) -> Flow {
@@ -4601,7 +4756,6 @@ pub(crate) fn railslide_stance(c: &mut Cpu) -> Flow {
     railslide_pick_stance(c)
 }
 
-
 /// Where the stance pick ends.
 pub(crate) enum Stance {
     /// `sw s1 (1)`, then done.
@@ -4613,7 +4767,6 @@ pub(crate) enum Stance {
     /// Already stored.
     Done,
 }
-
 
 pub(crate) fn railslide_pick_stance(c: &mut Cpu) -> Flow {
     let rd = r(c, S3);
@@ -4695,7 +4848,6 @@ pub(crate) fn railslide_pick_stance(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 /// The stance from the board's up axis (`sp_2+0xb0`) and the angle.
 pub(crate) fn railslide_stance_from_angle(c: &mut Cpu) -> Stance {
     let (s, q) = (sp_2(c), r(c, S0));
@@ -4754,7 +4906,6 @@ pub(crate) fn railslide_stance_from_angle(c: &mut Cpu) -> Stance {
     c.c_lt_s(20, 0);
     Stance::IfFcc
 }
-
 
 /// Tricks, main state 4, sub-state, animation, the board turned for a
 /// sideways stance, the look direction; v0 = 1.
@@ -4918,7 +5069,6 @@ pub(crate) fn railslide_enter(c: &mut Cpu) -> Flow {
     railslide_look(c)
 }
 
-
 /// `RiderRailslideState_ComputeEntryAngle(r->state + 0xb0, &rail_dir)`;
 /// v0 = 1.
 pub(crate) fn railslide_look(c: &mut Cpu) -> Flow {
@@ -4929,7 +5079,6 @@ pub(crate) fn railslide_look(c: &mut Cpu) -> Flow {
     c.g[V0][0] = 1;
     Ok(())
 }
-
 
 /// A stance change to 3 or 4 (from s2, the previous one; v0 = the new
 /// one) turns the board by +-90 degrees (gp_2-0x7eac / gp_2-0x7ea8) and its
@@ -4954,7 +5103,13 @@ pub(crate) fn railslide_turn_board(c: &mut Cpu) -> Flow {
             None
         } else {
             c.cycles += 27;
-            Some((-0x7ea8, 0x0010_6ec0u32, 0x0010_6eccu32, 0x0010_6ef4u32, 0xc8u32))
+            Some((
+                -0x7ea8,
+                0x0010_6ec0u32,
+                0x0010_6eccu32,
+                0x0010_6ef4u32,
+                0xc8u32,
+            ))
         }
     } else {
         c.cycles += 29;
@@ -5012,17 +5167,21 @@ pub(crate) fn railslide_turn_board(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 // ---------------------------------------------------------------------------
 // Rider against rider.
 
 pub(crate) const RC_LOOP: u32 = 0x0010_7948;
 
-
 /// `FLAGS64_TEST(layer(anim, 1) + 0xb0, which)` for `anim = [base +
 /// 0x784]` (two calls), the shape the original uses to test the rider's
 /// animation layer.
-pub(crate) fn anim_layer_is(c: &mut Cpu, rider_reg: usize, which: u64, ret_layer: u32, ret_is: u32) -> Flow {
+pub(crate) fn anim_layer_is(
+    c: &mut Cpu,
+    rider_reg: usize,
+    which: u64,
+    ret_layer: u32,
+    ret_is: u32,
+) -> Flow {
     c.lw_r(A0, at(c, rider_reg, 0x784));
     c.g[A1][0] = 1;
     call_ptr(c, callee::ANIM_LAYER_SEQUENCE, ret_layer)?;
@@ -5030,7 +5189,6 @@ pub(crate) fn anim_layer_is(c: &mut Cpu, rider_reg: usize, which: u64, ret_layer
     c.g[A1][0] = which;
     call_ptr(c, callee::FLAGS64_TEST, ret_is)
 }
-
 
 /// `void Rider_CheckRiderCollisions(Rider* r)` (0x107888): for each of the
 /// six other rider slots (`r + 0x24 * i` non-zero, the AI rider list at
@@ -5053,7 +5211,13 @@ pub fn rider_check_rider_collisions(c: &mut Cpu) {
         (S7, 0x90),
         (FP, 0x80),
     ];
-    const FSAVED: &[(usize, u32)] = &[(22, 0x120), (24, 0x130), (23, 0x128), (21, 0x118), (20, 0x110)];
+    const FSAVED: &[(usize, u32)] = &[
+        (22, 0x120),
+        (24, 0x130),
+        (23, 0x128),
+        (21, 0x118),
+        (20, 0x110),
+    ];
     guest(c, |c| {
         c.cycles += 26;
         prologue(c, 0x140, SAVED, 0x70, FSAVED);
@@ -5121,14 +5285,19 @@ pub fn rider_check_rider_collisions(c: &mut Cpu) {
                 (S7, 0x90),
                 (FP, 0x80),
             ],
-            &[(24, 0x130), (23, 0x128), (22, 0x120), (21, 0x118), (20, 0x110)],
+            &[
+                (24, 0x130),
+                (23, 0x128),
+                (22, 0x120),
+                (21, 0x118),
+                (20, 0x110),
+            ],
             0x70,
             0x140,
         );
         Ok(())
     })
 }
-
 
 /// One rider slot (s7, s6); ends with s7 advanced.
 pub(crate) fn rider_pair(c: &mut Cpu) -> Flow {
@@ -5162,7 +5331,6 @@ pub(crate) fn rider_pair(c: &mut Cpu) -> Flow {
     }
     rider_pair_knock_down(c)
 }
-
 
 /// The pair's bump: timers (`+0x14` per pair entry, `r+0x86c` index * 0x24
 /// into the other's table), sphere trees, push apart and resolve. Ends
@@ -5285,7 +5453,6 @@ pub(crate) fn rider_pair_bump(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 /// `[v] -= up * dot([v], up)` through `sp_2+0x40`/`sp_2+0x50`.
 pub(crate) fn flatten_on(c: &mut Cpu, v: u32, up: u32) {
     let s = sp_2(c);
@@ -5296,7 +5463,6 @@ pub(crate) fn flatten_on(c: &mut Cpu, v: u32, up: u32) {
     c.vsub(v, p(s, 0x40));
     c.sqc2(5, v);
 }
-
 
 /// Knock the other rider (s0) down when its timer (`s5+0x18`) allows, it
 /// is not tumbling, is within range and in front.
@@ -5421,13 +5587,11 @@ pub(crate) fn rider_pair_knock_down(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
 /// A `gp_3`-relative global.
 #[inline(always)]
 pub(crate) fn gp_3(c: &Cpu, off: i32) -> u32 {
     (c.g[GP][0] as u32).wrapping_add(off as u32)
 }
-
 
 /// `lwc1 f, a`, returning the value.
 #[inline(always)]
@@ -5436,20 +5600,17 @@ pub(crate) fn ldf_2(c: &mut Cpu, f: usize, a: u32) -> FpuF32 {
     FpuF32(c.f[f])
 }
 
-
 /// FPU register `f`.
 #[inline(always)]
 pub(crate) fn fr_2(c: &Cpu, f: usize) -> FpuF32 {
     FpuF32(c.f[f])
 }
 
-
 /// Set FPU register `f`.
 #[inline(always)]
 pub(crate) fn setf_2(c: &mut Cpu, f: usize, v: FpuF32) {
     c.f[f] = v.0;
 }
-
 
 /// `c.lt.s a, b` leaving the condition bit.
 #[inline(always)]
@@ -5459,7 +5620,6 @@ pub(crate) fn lt(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
     r
 }
 
-
 /// `c.le.s a, b`.
 #[inline(always)]
 pub(crate) fn le(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
@@ -5467,7 +5627,6 @@ pub(crate) fn le(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
     abi::set_fcc(c, r);
     r
 }
-
 
 /// `c.eq.s a, b`.
 #[inline(always)]
@@ -5477,13 +5636,11 @@ pub(crate) fn eq(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
     r
 }
 
-
 /// `x + y` of two sign-extended words (`addu`).
 #[inline(always)]
 pub(crate) fn add32(x: u64, y: u64) -> u64 {
     sx((x as u32).wrapping_add(y as u32))
 }
-
 
 /// `sll x, n` (32-bit, sign-extended).
 #[inline(always)]
@@ -5491,20 +5648,17 @@ pub(crate) fn shl32(x: u64, n: u32) -> u64 {
     sx((x as u32) << n)
 }
 
-
 /// `sllv x, y` (32-bit, sign-extended).
 #[inline(always)]
 pub(crate) fn shlv32(x: u64, y: u64) -> u64 {
     sx((x as u32) << ((y as u32) & 31))
 }
 
-
 /// `sra x, n`.
 #[inline(always)]
 pub(crate) fn sra32(x: u64, n: u32) -> u64 {
     sx((((x as u32) as i32) >> n) as u32)
 }
-
 
 // ---------------------------------------------------------------------------
 // Wind.
@@ -5617,7 +5771,6 @@ pub fn rider_apply_wind_force(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Heading and audio.
@@ -5752,7 +5905,6 @@ pub fn rider_update_heading_and_audio(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Visibility.
@@ -5959,7 +6111,6 @@ pub fn rider_update_visibility(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Boost timers.
@@ -6242,7 +6393,6 @@ pub fn rider_update_boost_timers(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Race finish.
 
@@ -6425,7 +6575,6 @@ pub fn rider_check_race_finish(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider_RenderModel (0x122448).
@@ -6632,14 +6781,12 @@ pub fn rider_render_model(c: &mut Cpu) {
     })
 }
 
-
 /// `li at, bits; mtc1 at, fN`.
 #[inline(always)]
 pub(crate) fn li_f_2(c: &mut Cpu, n: usize, bits: u32) {
     c.g[AT][0] = sx(bits);
     c.mtc1(1, n);
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider mass and leg IK.
@@ -6694,7 +6841,6 @@ pub fn rider_get_mass(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void func_00120D90(cRider* r)` (0x120d90): approach the leg-IK blend
 /// `r->legIKBlend` (+0x318) towards 0 for the spin/air animation ids 20..26
@@ -6761,7 +6907,6 @@ pub fn rider_update_leg_ik_blend(c: &mut Cpu) {
     })
 }
 
-
 /// The clamp of [`rider_update_leg_ik_blend`] (0x120e08): never overshoot.
 pub(crate) fn leg_ik_blend_clamp(c: &mut Cpu, frame: Frame) {
     c.cycles += 4;
@@ -6772,7 +6917,6 @@ pub(crate) fn leg_ik_blend_clamp(c: &mut Cpu, frame: Frame) {
     leg_ik_blend_exit(c, frame);
 }
 
-
 /// The epilogue of [`rider_update_leg_ik_blend`] (0x120e18): store the blend.
 pub(crate) fn leg_ik_blend_exit(c: &mut Cpu, frame: Frame) {
     c.cycles += 5;
@@ -6781,7 +6925,6 @@ pub(crate) fn leg_ik_blend_exit(c: &mut Cpu, frame: Frame) {
     frame.restore_ra(c, 0);
     frame.close(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider danger state.
@@ -6835,7 +6978,6 @@ pub fn rider_update_danger_state(c: &mut Cpu) {
     })
 }
 
-
 /// The state-change tail of [`rider_update_danger_state`] (0x122d50).
 pub(crate) fn rider_danger_changed(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 2;
@@ -6851,13 +6993,11 @@ pub(crate) fn rider_danger_changed(c: &mut Cpu, frame: Frame) -> Flow {
     frame.close(c);
     Ok(())
 }
- // D_004FA370, sRSMEntry[0]
+// D_004FA370, sRSMEntry[0]
 pub(crate) const SPIN_FAST_THRESHOLD: i32 = -0x78b4;
-
 
 /// `Rider::unk_5B4`: the current spin rate, radians per update.
 pub(crate) const RIDER_SPIN_RATE: u32 = 0x5b4;
-
 
 // ---------------------------------------------------------------------------
 // Rider helpers.
@@ -6889,7 +7029,6 @@ pub fn rider_is_spinning_fast(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// The global object `D_004A289C` (`gp-0x854`) and the float table read from
 /// it (its vtable at_2 +0x10d8: slot 35 returns the view-projection matrix,
 /// slot 29 the field of view).
@@ -6899,7 +7038,6 @@ pub(crate) const GLOBAL_VTBL: u32 = 0x10d8;
 
 /// The `0.01` scale factor the LOD distance is multiplied by (`gp-0x78c4`).
 pub(crate) const LOD_SCALE: i32 = -0x78c4;
-
 
 /// `void Rider_ComputeLOD(cRider* self)` (0x121f30): project the rider's
 /// position into view space, scale z by tan/`tan(cot)` of the field of view
@@ -7000,7 +7138,6 @@ pub fn rider_compute_lod(c: &mut Cpu) {
     })
 }
 
-
 /// `void Rider_SetBoostEnabled(Rider* r, Boost* boost)` (0x125958): stores the
 /// boost pointer at +0xb2c; clearing it also zeroes the two boost state words
 /// at +0x2f0/+0x2f4.
@@ -7020,7 +7157,6 @@ pub fn rider_set_boost_enabled(c: &mut Cpu) {
 
 /// `OverlapList_GatherAll` (0x332db8).
 pub(crate) const OVERLAP_LIST_GATHER_ALL: u32 = 0x0033_2db8;
-
 
 // ---------------------------------------------------------------------------
 // Rider_RefreshOverlaps / AI_ResetRidersAndOrder.
@@ -7045,7 +7181,6 @@ pub fn rider_refresh_overlaps(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int Rider_GetSyncChecksum(const Rider* r)` (0x125ad8): the bit pattern
 /// of `sum(position) + sum(rotation)` (the two vectors at `+0x110` and
@@ -7083,7 +7218,6 @@ pub fn rider_get_sync_checksum(c: &mut Cpu) {
     crate::abi::ret(c);
 }
 
-
 /// `void Rider_ForceReset(Rider* r)` (0x1235f8): hard-reset a rider: set the
 /// handler's reset latch (`+0x350`), go to sub-state 9 / main state 3 and
 /// clear the handler's `+0x290`.
@@ -7110,7 +7244,6 @@ pub fn rider_force_reset(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Riders, camera and the front end.
@@ -7143,7 +7276,6 @@ pub fn rider_create_focus_box(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `bool Rider_HasRenderSlot(Rider* self)` (0x11c0e0): whether the rider's
 /// safe render tick is older than the renderer's current tick (no tick `-1`
@@ -7183,7 +7315,6 @@ pub fn rider_has_render_slot(c: &mut Cpu) {
     })
 }
 
-
 /// `void Player_PulseRumble(Player* player, float amount)` (0x1278d0):
 /// `player->rumble = max(amount, player->rumble)` (leave-set, no decay).
 pub fn player_pulse_rumble(c: &mut Cpu) {
@@ -7194,7 +7325,6 @@ pub fn player_pulse_rumble(c: &mut Cpu) {
     c.swc1(12, this.wrapping_add(0xdfc));
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Riders.
@@ -7233,7 +7363,6 @@ pub fn rider_get_start_marker_pos(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void Rider_AddVelocity(Rider* rider, Vec4* v)` (0x1250a8): add `v` to the
 /// rider's velocity with VU0, and prime the air predictor while in the air.
@@ -7274,14 +7403,12 @@ pub fn rider_add_velocity(c: &mut Cpu) {
     })
 }
 
-
 /// `void Rider_EmptyProgressHook(Rider* r)` (0x125ad0): per-frame progress
 /// hook, not installed.
 pub fn rider_empty_progress_hook(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void Rider_EmptyStanceHook(Rider* r)` (0x116930): stance hook, not
 /// installed.
@@ -7290,13 +7417,11 @@ pub fn rider_empty_stance_hook(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `ld` (a 64-bit load).
 #[inline(always)]
 pub(crate) fn ld(c: &mut Cpu, a: u32) -> u64 {
     Addr(a).ld(c)
 }
-
 
 /// The common epilogue: `s0` back, `ra` back, `sp += 0x20`, return.
 pub(crate) fn timed_event_epilogue(c: &mut Cpu, frame: Frame) {
@@ -7305,7 +7430,6 @@ pub(crate) fn timed_event_epilogue(c: &mut Cpu, frame: Frame) {
     frame.restore_ra(c, 0);
     frame.close(c);
 }
-
 
 /// The tail at 0x115d38: clear the event, remember the frame it ended on and
 /// return (the original repeats the epilogue's 3 cycles here).
@@ -7317,12 +7441,16 @@ pub(crate) fn timed_event_tail(c: &mut Cpu, frame: Frame) {
     timed_event_epilogue(c, frame);
 }
 
-
 /// The two variants of the "landing sound" arm (events 1 and 2): play the
 /// landing animation on layer 0x13b, reset the blend doubleword, then tell the
 /// audio system which landing it was. `rets` are the original return
 /// addresses (PlayAnim, GetInstance, RiderSay).
-pub(crate) fn timed_event_land_sound(c: &mut Cpu, frame: Frame, say_arg: u64, rets: [u32; 3]) -> Flow {
+pub(crate) fn timed_event_land_sound(
+    c: &mut Cpu,
+    frame: Frame,
+    say_arg: u64,
+    rets: [u32; 3],
+) -> Flow {
     c.cycles += 19;
     c.g[V1][0] = lw_2(c, p(r32_3(c, S0), rider_anim::ANIM));
     c.g[A1][0] = 0x13b;
@@ -7346,7 +7474,6 @@ pub(crate) fn timed_event_land_sound(c: &mut Cpu, frame: Frame, say_arg: u64, re
     timed_event_tail(c, frame);
     Ok(())
 }
-
 
 /// `void Rider_UpdateTimedEventAnim(Rider* rider)` (0x00115b58): when the rider
 /// has a pending timed event and the animation controller is idle (no layer
@@ -7512,7 +7639,6 @@ pub fn rider_update_timed_event_anim(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// Where `Rider_UpdateIdleLookAnim` plays its look animation.
 const IDLE_LOOK_PLAY: u32 = 0x0031_28e8;
@@ -7941,7 +8067,6 @@ fn idle_look_epilogue(c: &mut Cpu, frame: Frame, with_s0: bool) {
     frame.close(c);
 }
 
-
 /// `void Rider_StopTransition(Rider* r)` (0x125038): when the rider is in a
 /// view and its view index is valid, stop the transition on the current
 /// camera.
@@ -7983,7 +8108,6 @@ pub fn rider_stop_transition(c: &mut Cpu) {
         Ok(())
     });
 }
-
 
 /// `Rider_MarkQuitRequested` (0x1253D0): when the rider's "finished" timer is
 /// negative, flag the rider as a did-not-finish and set its AI index entry.
@@ -8029,7 +8153,6 @@ pub fn rider_mark_quit_requested(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int Player_GetUberGrindButton(self)` (0x127848): which of the four uber
 /// grind buttons (0x1b..0x1e) is held, or -1.
@@ -8085,7 +8208,6 @@ pub fn player_get_uber_grind_button(c: &mut Cpu) {
     })
 }
 
-
 /// `void Rider_UpdateFromScript(Rider* self, ScriptState* script,
 /// float, float, int)` (0x123da8): gather the script camera state, then apply
 /// the script track and its sounds.
@@ -8137,7 +8259,6 @@ pub fn rider_update_from_script(c: &mut Cpu) {
     })
 }
 
-
 /// `int Rider_EstimateFinalScore(Rider* r)` (0x122e50): extrapolate the final
 /// score from the distance still to go and the time so far.
 pub fn rider_estimate_final_score(c: &mut Cpu) {
@@ -8184,7 +8305,6 @@ pub fn rider_estimate_final_score(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int RiderModel_FindBone(model, index, name)` (0x310c48): find the named
 /// bone inside the indexed model part, returning its absolute bone index.
@@ -8257,7 +8377,6 @@ pub fn rider_model_find_bone(c: &mut Cpu) {
     })
 }
 
-
 /// `void Rider_PlaceAtMarker(rider, marker, int a2)` (0x11de60): place the
 /// rider at a marker transform, reset its matrix and state.
 pub fn rider_place_at_marker(c: &mut Cpu) {
@@ -8312,7 +8431,6 @@ pub fn rider_place_at_marker(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `Rider_PlaceAtStart(this)` (0x11dd98): read the start marker's position
 /// and direction, offset the position by the start pose angle and place the
@@ -8384,13 +8502,11 @@ pub fn rider_place_at_start(c: &mut Cpu) {
     return;
 }
 
-
 /// The world singleton at `gp_6-0x848`.
 #[inline(always)]
 pub(crate) fn world(c: &mut Cpu) -> u32 {
     Addr(gp_6(c, -0x848)).lw(c) as u32
 }
-
 
 /// `void Rider_ResetMotion(Rider *self, int notify)` (0x11df18): zero the
 /// rider's motion, scale its velocity row by 1/833.33, reset the FX state and
@@ -8456,7 +8572,6 @@ pub fn rider_reset_motion(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Rider finish time.
@@ -8541,7 +8656,6 @@ pub fn rider_estimate_finish_time(c: &mut Cpu) {
     })
 }
 
-
 /// An amount per 60 Hz tick — a speed in units/tick, a per-tick increment, a
 /// slew step, a per-tick phase — as the amount per tick at the game's rate
 /// (`x * 60 / rate`). At 60 the value is returned unchanged, so the
@@ -8556,7 +8670,6 @@ pub(crate) fn rate_step_60(c: &mut Cpu, x: FpuF32) -> FpuF32 {
     }
 }
 
-
 /// [`rate_step_60`] for the value in `f{r}` (nothing changes at 60).
 #[inline]
 pub(crate) fn per_tick_60(c: &mut Cpu, r: usize) {
@@ -8564,7 +8677,6 @@ pub(crate) fn per_tick_60(c: &mut Cpu, r: usize) {
     let y = rate_step_60(c, x);
     setf_2(c, r, y);
 }
-
 
 /// A per-60-Hz-tick smoothing factor `a` of `x += (t - x) * a`, as the factor
 /// for the game's rate: `1 - (1 - a)^(60/rate)`, so the filter keeps its time
@@ -8579,7 +8691,6 @@ pub(crate) fn smoothing_60(c: &mut Cpu, a: FpuF32) -> FpuF32 {
         FpuF32::from_f32(1.0 - (1.0 - a).powf(60.0 / hz as f32))
     }
 }
-
 
 /// `void SSXAudioSystem_ArcadeSay20A8(void* self, void* obj, int arg)`
 /// (0x2a3c00): as 0x2a3b18 with event `0x20a8`; the `+0x470` animation test is
@@ -8693,7 +8804,6 @@ pub fn ssx_audio_system_arcade_say20a8(c: &mut Cpu) {
     })
 }
 
-
 /// `Quat_FromEuler(out, x, y, z)` (0x1241c0): build a quaternion from three
 /// Euler angles (half-angle sines and cosines through `Math_SinCos`, then the
 /// standard product/sum combinations) and store it in `out`.
@@ -8772,14 +8882,12 @@ pub fn quat_from_euler(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Addresses.
 
 /// `int InputBinding_EvalBool(InputBinding*, int value)` — evaluates the input
 /// map bound to a button, non-zero when the button is held.
 pub(crate) const INPUT_BINDING_EVAL_BOOL: u32 = 0x0032_0c48;
-
 
 // ---------------------------------------------------------------------------
 // Player / FE input queries.
@@ -8838,166 +8946,172 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::compare;
     use crate::difftest::elf_image;
-    use crate::difftest::put_vec;
     use crate::difftest::events::check_events;
     use crate::difftest::events::driven;
     use crate::difftest::events::schedule;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::fake_call;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::SP as STACK;
-    use crate::difftest::fakes;
-    use crate::difftest::put_words;
-    use ssx3_ee as ee;
-    use crate::difftest::fill;
-    use crate::difftest::SP;
+    use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
-    use crate::difftest::RA as TEST_RA;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
     use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::seed_count;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+    use crate::difftest::RA as TEST_RA;
     use crate::difftest::RA as RET;
     use crate::difftest::RA as SENTINEL;
-    use crate::difftest::seed_count;
-    use crate::difftest::compare;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_3 as SEEDS_2;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::CTX;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::TOP;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::TEX;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::WORLD as WORLD_2;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::BASE as BASE_2;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::ctx_at;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::put_ctx;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::put_world;
-    pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2 as SEEDS_3;
-    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_4;
-    pub(crate) use crate::game::sound::bankmanager::tests::rng;
-    pub(crate) use crate::game::sound::bankmanager::tests::mixed;
-    pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_5;
+    use crate::difftest::SP as STACK;
+    use crate::difftest::SP;
     pub(crate) use crate::game::ai::ai::tests::be_library;
-    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6;
-    pub(crate) use crate::game::wscript::wscriptman::tests::gp_at;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear;
-    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
-    pub(crate) use crate::game::wscript::wscriptman::tests::dummy_world;
-    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
-    pub(crate) use crate::game::fe::festateoptions::tests::rng as rng_2;
+    pub(crate) use crate::game::ai::ai::tests::leaf;
+    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
+    pub(crate) use crate::game::ai::ai::tests::rng as rng_3;
+    pub(crate) use crate::game::ai::ai::tests::strict as strict_2;
+    pub(crate) use crate::game::ai::ai::tests::SEEDS as SEEDS_11;
+    pub(crate) use crate::game::ai::ai::tests::SEEDS_2 as SEEDS_5;
     pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
-    pub(crate) use crate::game::fe::festateoptions::tests::setup;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2 as SEEDS_3;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::globals_3 as globals_4;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::pool_4 as pool_3;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::w as w_8;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ as OBJ_2;
     pub(crate) use crate::game::fe::debugfe::tests::OBJ2;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_7;
-    pub(crate) use crate::game::ai::ai::tests::rng as rng_3;
-    pub(crate) use crate::game::ai::ai::tests::leaf_setup;
-    pub(crate) use crate::game::ai::ai::tests::leaf;
-    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
-    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_8;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as SEEDS_9;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w as w_2;
-    pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_10;
-    pub(crate) use crate::game::main::gamemode::tests::w as w_3;
-    pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_2;
-    pub(crate) use crate::game::fe::festaterewards::tests::w as w_4;
-    pub(crate) use crate::game::fe::festaterewards::tests::w16;
-    pub(crate) use crate::game::fe::festaterewards::tests::slot_2 as slot_3;
-    pub(crate) use crate::game::fe::festaterewards::tests::globals_3 as globals;
-    pub(crate) use crate::game::fe::festaterewards::tests::pool_4 as pool;
-    pub(crate) use crate::game::fe::festaterewards::tests::heap_init_3 as heap_init;
-    pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w as w_5;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4_2 as OBJ4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w as w_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ_3;
     pub(crate) use crate::game::fe::feasyncfile::tests::RM_3 as RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_3;
-    pub(crate) use crate::game::sound::soundsys::tests::WORLD as WORLD_4;
-    pub(crate) use crate::game::sound::soundsys::tests::w as w_6;
-    pub(crate) use crate::game::sound::soundsys::tests::wf as wf_2;
-    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals_3;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2;
-    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W;
+    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
+    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_8;
+    pub(crate) use crate::game::fe::festateoptions::tests::rng as rng_2;
+    pub(crate) use crate::game::fe::festateoptions::tests::setup;
+    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
+    pub(crate) use crate::game::fe::festaterewards::tests::base_4 as base;
+    pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base_5;
+    pub(crate) use crate::game::fe::festaterewards::tests::globals_3 as globals;
+    pub(crate) use crate::game::fe::festaterewards::tests::heap_init_3 as heap_init;
+    pub(crate) use crate::game::fe::festaterewards::tests::hook;
+    pub(crate) use crate::game::fe::festaterewards::tests::pool_4 as pool;
+    pub(crate) use crate::game::fe::festaterewards::tests::slot_2 as slot_3;
+    pub(crate) use crate::game::fe::festaterewards::tests::strict;
+    pub(crate) use crate::game::fe::festaterewards::tests::w as w_4;
+    pub(crate) use crate::game::fe::festaterewards::tests::w as w_7;
+    pub(crate) use crate::game::fe::festaterewards::tests::w16;
     pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE_3;
-    pub(crate) use crate::game::fe::festaterewards::tests::W as W_2;
     pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
     pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
-    pub(crate) use crate::game::fe::festaterewards::tests::w as w_7;
-    pub(crate) use crate::game::fe::festaterewards::tests::hook;
-    pub(crate) use crate::game::fe::festaterewards::tests::strict;
-    pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base_5;
-    pub(crate) use crate::game::ai::ai::tests::SEEDS as SEEDS_11;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::w as w_8;
-    pub(crate) use crate::game::ai::ai::tests::strict as strict_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::globals_3 as globals_4;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::pool_4 as pool_3;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6;
+    pub(crate) use crate::game::fe::festaterewards::tests::W as W_2;
+    pub(crate) use crate::game::lib::sif::tests::SEEDS as SEEDS_7;
     pub(crate) use crate::game::main::debugmenu::tests::w as w_9;
-
+    pub(crate) use crate::game::main::gamemode::tests::be_library as be_library_2;
+    pub(crate) use crate::game::main::gamemode::tests::w as w_3;
+    pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_10;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w as w_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_10 as SEEDS_9;
+    pub(crate) use crate::game::sound::bankmanager::tests::mixed;
+    pub(crate) use crate::game::sound::bankmanager::tests::rng;
+    pub(crate) use crate::game::sound::bankmanager::tests::SEEDS as SEEDS_4;
+    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base_4;
+    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals_3;
+    pub(crate) use crate::game::sound::soundsys::tests::load_2;
+    pub(crate) use crate::game::sound::soundsys::tests::w as w_6;
+    pub(crate) use crate::game::sound::soundsys::tests::wf as wf_2;
+    pub(crate) use crate::game::sound::soundsys::tests::WORLD as WORLD_4;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::ctx_at;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::put_ctx;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::put_world;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::BASE as BASE_2;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::CTX;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_3 as SEEDS_2;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::TEX;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::TOP;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::WORLD as WORLD_2;
+    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear;
+    pub(crate) use crate::game::wscript::wscriptman::tests::dummy_world;
+    pub(crate) use crate::game::wscript::wscriptman::tests::gp_at;
+    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6;
+    use ssx3_ee as ee;
 
     #[test]
     fn rider_set_slew5_target_matches() {
-        check(ssx3_ee::s00::f_00113f38, rider_set_slew5_target, 300, &|c, seed| {
-            let mut r = Rng(0x2233_4455 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA + 0x22c, r.edge_f32());
-            c.f[12] = r.edge_f32();
-            // Alternate a small cap (compare true -> min.s path) and a huge one
-            // (compare false -> cap path) so both branches are taken.
-            let cap = if seed % 2 == 0 {
-                r.f32(1.0)
-            } else {
-                0x4f00_0000 | (r.next_u32() & 0x007f_ffff)
-            };
-            c.bus.write32(GAME_GP - 0x7c28, cap);
-            c.bus.write32(GAME_GP - 0x7c24, r.edge_f32());
-            c.bus.write32(DATA + 0x230, r.next_u32());
-            c.bus.write32(DATA + 0x234, r.next_u32());
-        });
+        check(
+            ssx3_ee::s00::f_00113f38,
+            rider_set_slew5_target,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2233_4455 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA + 0x22c, r.edge_f32());
+                c.f[12] = r.edge_f32();
+                // Alternate a small cap (compare true -> min.s path) and a huge one
+                // (compare false -> cap path) so both branches are taken.
+                let cap = if seed % 2 == 0 {
+                    r.f32(1.0)
+                } else {
+                    0x4f00_0000 | (r.next_u32() & 0x007f_ffff)
+                };
+                c.bus.write32(GAME_GP - 0x7c28, cap);
+                c.bus.write32(GAME_GP - 0x7c24, r.edge_f32());
+                c.bus.write32(DATA + 0x230, r.next_u32());
+                c.bus.write32(DATA + 0x234, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn rider_get_main_state_name_matches() {
-        check(ssx3_ee::s00::f_0011fea8, rider_get_main_state_name, 200, &|c, seed| {
-            let mut r = Rng(0x2468_ace0 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let base = DATA + 0x1000;
-            c.bus.write32(DATA + 0x77c, base);
-            // Cover both branches of the callee's range test (< 7 vs >= 7).
-            let state = if seed % 2 == 0 {
-                r.next_u32() % 7
-            } else {
-                7 + r.next_u32() % 8
-            };
-            c.bus.write32(base + 0xde0, state);
-            // name tables the callee indexes.
-            for i in 0..8 {
-                c.bus.write32(0x459d70 + i * 4, r.next_u32());
-                c.bus.write32(0x456c48 + i * 4, r.next_u32());
-            }
-        });
+        check(
+            ssx3_ee::s00::f_0011fea8,
+            rider_get_main_state_name,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x2468_ace0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let base = DATA + 0x1000;
+                c.bus.write32(DATA + 0x77c, base);
+                // Cover both branches of the callee's range test (< 7 vs >= 7).
+                let state = if seed % 2 == 0 {
+                    r.next_u32() % 7
+                } else {
+                    7 + r.next_u32() % 8
+                };
+                c.bus.write32(base + 0xde0, state);
+                // name tables the callee indexes.
+                for i in 0..8 {
+                    c.bus.write32(0x459d70 + i * 4, r.next_u32());
+                    c.bus.write32(0x456c48 + i * 4, r.next_u32());
+                }
+            },
+        );
     }
 
-
     pub(crate) const SEEDS: u32 = 250;
-
 
     pub(crate) const RIDER: u32 = DATA;
 
@@ -9013,39 +9127,37 @@ pub(crate) mod tests {
 
     pub(crate) const STATE: u32 = DATA + 0x6000;
 
-
     pub(crate) fn f(x: f32) -> u32 {
         x.to_bits()
     }
-
 
     /// A float in [lo, hi).
     pub(crate) fn uf(r: &mut Rng, lo: f32, hi: f32) -> u32 {
         f(lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo))
     }
 
-
     pub(crate) fn rand_vec(c: &mut Cpu, r: &mut Rng, a: u32, range: f32) {
         let v = [r.f32(range), r.f32(range), r.f32(range), r.f32(range)];
         put_vec(c, a, v);
     }
 
-
     pub(crate) fn rand_quat(c: &mut Cpu, r: &mut Rng, a: u32) {
         rand_vec(c, r, a, 1.0);
     }
 
-
     /// The boot-time globals: pivot (zero for `zero_pivot`), axes, identity.
     pub(crate) fn put_globals(c: &mut Cpu, r: &mut Rng, zero_pivot: bool) {
-        let pivot = if zero_pivot { [0; 4] } else { [r.f32(0.5), r.f32(0.5), r.f32(0.5), 0] };
+        let pivot = if zero_pivot {
+            [0; 4]
+        } else {
+            [r.f32(0.5), r.f32(0.5), r.f32(0.5), 0]
+        };
         put_vec(c, PIVOT, pivot);
         put_vec(c, AXIS_X, [f(1.0), 0, 0, 0]);
         put_vec(c, AXIS_Z, [0, 0, f(1.0), 0]);
         put_vec(c, AXIS_Y, [0, f(1.0), 0, 0]);
         put_vec(c, IDENTITY_QUAT, [0, 0, 0, f(1.0)]);
     }
-
 
     /// The rider's model with its three bone tables (zero scale for
     /// `zero_scale`).
@@ -9066,7 +9178,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// The rider's state object (`+0x77c`): main state `+0xde0`, sub-state
     /// `+0xde4`.
     pub(crate) fn put_state(c: &mut Cpu, main: u32, sub: u32) {
@@ -9075,120 +9186,150 @@ pub(crate) mod tests {
         c.bus.write32(STATE + 0xde4, sub);
     }
 
-
     /// The board-lean inputs.
     pub(crate) fn put_lean(c: &mut Cpu, r: &mut Rng, seed: u32) {
         c.bus.write32(RIDER + 0x8a0, r.next_u32() % NBONES);
         c.bus.write32(RIDER + 0x214, r.f32(0.3));
-        let roll = if seed % 3 == 0 { r.f32(0.2) } else { r.f32(2.0) };
+        let roll = if seed % 3 == 0 {
+            r.f32(0.2)
+        } else {
+            r.f32(2.0)
+        };
         c.bus.write32(RIDER + 0x208, roll);
-        let pitch = if seed % 4 == 1 { r.f32(0.2) } else { r.f32(2.0) };
+        let pitch = if seed % 4 == 1 {
+            r.f32(0.2)
+        } else {
+            r.f32(2.0)
+        };
         c.bus.write32(RIDER + 0x1f0, pitch);
         let spin = if seed % 5 == 0 { 0 } else { r.f32(1.0) };
         c.bus.write32(RIDER + 0x250, spin);
         rand_vec(c, r, RIDER + 0x3b0, 2.0);
     }
 
-
     #[test]
     fn rider_update_bounds_matches() {
-        check(ee::s00::f_0011e150__generated, rider_update_bounds, SEEDS, &|c, seed| {
-            let mut r = Rng(0x0011_e150 ^ (seed as u64) << 12);
-            scramble(c, &mut r);
-            for off in [0x110, 0x1a0, 0x1b0, 0x1c0] {
-                rand_vec(c, &mut r, RIDER + off, 3.0);
-            }
-            for k in 0..8 {
-                c.bus.write32(RIDER + 0x400 + 4 * k, r.f32(600.0));
-            }
-            let centre = DATA + 0x5000;
-            rand_vec(c, &mut r, centre, 100.0);
-            c.g[A0][0] = sx(RIDER);
-            c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(centre) };
-        });
+        check(
+            ee::s00::f_0011e150__generated,
+            rider_update_bounds,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x0011_e150 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                for off in [0x110, 0x1a0, 0x1b0, 0x1c0] {
+                    rand_vec(c, &mut r, RIDER + off, 3.0);
+                }
+                for k in 0..8 {
+                    c.bus.write32(RIDER + 0x400 + 4 * k, r.f32(600.0));
+                }
+                let centre = DATA + 0x5000;
+                rand_vec(c, &mut r, centre, 100.0);
+                c.g[A0][0] = sx(RIDER);
+                c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(centre) };
+            },
+        );
     }
-
 
     #[test]
     fn rider_update_board_lean_matches() {
-        check(ee::s00::f_0011fa10__generated, rider_update_board_lean, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xfa10, 0);
-            elf_image(c);
-            put_globals(c, &mut r, seed % 4 == 0);
-            put_model(c, &mut r, false);
-            put_lean(c, &mut r, seed);
-            let xf = DATA + 0x5000;
-            rand_vec(c, &mut r, xf, 5.0);
-            rand_quat(c, &mut r, xf + 0x10);
-            c.g[A0][0] = sx(RIDER);
-            c.g[A1][0] = sx(xf);
-        });
+        check(
+            ee::s00::f_0011fa10__generated,
+            rider_update_board_lean,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xfa10, 0);
+                elf_image(c);
+                put_globals(c, &mut r, seed % 4 == 0);
+                put_model(c, &mut r, false);
+                put_lean(c, &mut r, seed);
+                let xf = DATA + 0x5000;
+                rand_vec(c, &mut r, xf, 5.0);
+                rand_quat(c, &mut r, xf + 0x10);
+                c.g[A0][0] = sx(RIDER);
+                c.g[A1][0] = sx(xf);
+            },
+        );
     }
-
 
     #[test]
     fn rider_solve_leg_ik_matches() {
-        check(ee::s00::f_0011f3d8__generated, rider_solve_leg_ik, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xf3d8, 0);
-            elf_image(c);
-            let degenerate = seed % 6 == 0;
-            put_globals(c, &mut r, degenerate || seed % 4 == 0);
-            put_model(c, &mut r, degenerate);
-            let leg = DATA + 0x5000;
-            for k in 0..3 {
-                c.bus.write32(leg + 4 * k, r.next_u32() % NBONES);
-            }
-            let target = DATA + 0x5100;
-            rand_vec(c, &mut r, target, 4.0);
-            rand_quat(c, &mut r, target + 0x10);
-            c.f[12] = if seed % 3 == 0 { f(1.0) } else { uf(&mut r, 0.0, 1.0) };
-            c.g[A0][0] = sx(RIDER);
-            c.g[A1][0] = sx(leg);
-            c.g[A2][0] = sx(target);
-        });
+        check(
+            ee::s00::f_0011f3d8__generated,
+            rider_solve_leg_ik,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xf3d8, 0);
+                elf_image(c);
+                let degenerate = seed % 6 == 0;
+                put_globals(c, &mut r, degenerate || seed % 4 == 0);
+                put_model(c, &mut r, degenerate);
+                let leg = DATA + 0x5000;
+                for k in 0..3 {
+                    c.bus.write32(leg + 4 * k, r.next_u32() % NBONES);
+                }
+                let target = DATA + 0x5100;
+                rand_vec(c, &mut r, target, 4.0);
+                rand_quat(c, &mut r, target + 0x10);
+                c.f[12] = if seed % 3 == 0 {
+                    f(1.0)
+                } else {
+                    uf(&mut r, 0.0, 1.0)
+                };
+                c.g[A0][0] = sx(RIDER);
+                c.g[A1][0] = sx(leg);
+                c.g[A2][0] = sx(target);
+            },
+        );
     }
-
 
     #[test]
     fn rider_update_skeleton_matches() {
-        check(ee::s00::f_0011eb98__generated, rider_update_skeleton, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xeb98, 0);
-            elf_image(c);
-            put_globals(c, &mut r, seed % 4 == 0);
-            put_model(c, &mut r, false);
-            put_lean(c, &mut r, seed);
-            let sub = [5, 0xd, 0xb, 0, 5, 1][(seed % 6) as usize];
-            put_state(c, 0, sub);
-            rand_vec(c, &mut r, RIDER + 0x110, 5.0);
-            rand_quat(c, &mut r, RIDER + 0x120);
-            rand_vec(c, &mut r, RIDER + 0x130, 5.0);
-            rand_quat(c, &mut r, RIDER + 0x140);
-            let spin = if seed % 7 == 0 { 0 } else { r.f32(2.0) };
-            c.bus.write32(RIDER + 0x2c8, spin);
-            c.bus.write32(RIDER + 0x150, (seed / 2) % 2);
-            c.bus.write32(RIDER + 0x8a4, r.next_u32() % NBONES);
-            let twist = if seed % 5 == 2 { 0 } else { r.f32(1.0) };
-            c.bus.write32(RIDER + 0x2bc, twist);
-            rand_vec(c, &mut r, RIDER + 0x390, 1.0);
-            if seed % 9 == 4 {
-                // Parallel to the bone's axis: no twist axis.
-                put_vec(c, RIDER + 0x390, [0; 4]);
-            }
-            c.bus.write32(RIDER + 0x31c, r.f32(1.0));
-            rand_vec(c, &mut r, RIDER + 0x370, 1.0);
-            let ik = if seed % 8 == 3 { 0 } else { uf(&mut r, 0.0, 1.0) };
-            c.bus.write32(RIDER + 0x318, ik);
-            for desc in [0x8e0, 0x910] {
-                for k in 0..3 {
-                    c.bus.write32(RIDER + desc + 4 * k, r.next_u32() % NBONES);
+        check(
+            ee::s00::f_0011eb98__generated,
+            rider_update_skeleton,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xeb98, 0);
+                elf_image(c);
+                put_globals(c, &mut r, seed % 4 == 0);
+                put_model(c, &mut r, false);
+                put_lean(c, &mut r, seed);
+                let sub = [5, 0xd, 0xb, 0, 5, 1][(seed % 6) as usize];
+                put_state(c, 0, sub);
+                rand_vec(c, &mut r, RIDER + 0x110, 5.0);
+                rand_quat(c, &mut r, RIDER + 0x120);
+                rand_vec(c, &mut r, RIDER + 0x130, 5.0);
+                rand_quat(c, &mut r, RIDER + 0x140);
+                let spin = if seed % 7 == 0 { 0 } else { r.f32(2.0) };
+                c.bus.write32(RIDER + 0x2c8, spin);
+                c.bus.write32(RIDER + 0x150, (seed / 2) % 2);
+                c.bus.write32(RIDER + 0x8a4, r.next_u32() % NBONES);
+                let twist = if seed % 5 == 2 { 0 } else { r.f32(1.0) };
+                c.bus.write32(RIDER + 0x2bc, twist);
+                rand_vec(c, &mut r, RIDER + 0x390, 1.0);
+                if seed % 9 == 4 {
+                    // Parallel to the bone's axis: no twist axis.
+                    put_vec(c, RIDER + 0x390, [0; 4]);
                 }
-                rand_vec(c, &mut r, RIDER + desc + 0x10, 2.0);
-                rand_quat(c, &mut r, RIDER + desc + 0x20);
-            }
-            c.g[A0][0] = sx(RIDER);
-        });
+                c.bus.write32(RIDER + 0x31c, r.f32(1.0));
+                rand_vec(c, &mut r, RIDER + 0x370, 1.0);
+                let ik = if seed % 8 == 3 {
+                    0
+                } else {
+                    uf(&mut r, 0.0, 1.0)
+                };
+                c.bus.write32(RIDER + 0x318, ik);
+                for desc in [0x8e0, 0x910] {
+                    for k in 0..3 {
+                        c.bus.write32(RIDER + desc + 4 * k, r.next_u32() % NBONES);
+                    }
+                    rand_vec(c, &mut r, RIDER + desc + 0x10, 2.0);
+                    rand_quat(c, &mut r, RIDER + desc + 0x20);
+                }
+                c.g[A0][0] = sx(RIDER);
+            },
+        );
     }
-
 
     /// The animation controller of `Rider_UpdateSpeedAnims` (layer
     /// sequences, current animation ids, a handler vtable whose `PlayAnim`
@@ -9200,7 +9341,11 @@ pub(crate) mod tests {
         c.bus.write32(RIDER + 0x784, ctrl);
         c.bus.write32(ctrl + 0x50, layers);
         for layer in 3..6u32 {
-            let seq = if r.next_u32() % 3 == 0 { 0 } else { DATA + 0x7200 + 0x100 * layer };
+            let seq = if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                DATA + 0x7200 + 0x100 * layer
+            };
             c.bus.write32(layers + 8 * layer + 4, seq);
             let first = [0x19b, 0x1a2, 0x1a9][(layer - 3) as usize];
             c.bus.write32(ctrl + 4 * layer, first + r.next_u32() % 8);
@@ -9217,13 +9362,25 @@ pub(crate) mod tests {
         c.bus.write32(b + 0xc, d);
         let frame = r.next_u32() % 1000;
         c.bus.write32(d + 8, frame);
-        let phase = if seed % 4 == 3 { (frame + 1) % 6 } else { frame % 6 };
+        let phase = if seed % 4 == 3 {
+            (frame + 1) % 6
+        } else {
+            frame % 6
+        };
         c.bus.write32(RIDER + 0x86c, phase);
         // Velocity relative to +0x3d0; speeds up to ~2500.
         let range = [100.0, 600.0, 1500.0][(seed % 3) as usize];
         rand_vec(c, r, RIDER + 0x1e0, range);
         rand_vec(c, r, RIDER + 0x3d0, 50.0);
-        put_state(c, 0, if seed % 5 == 1 { 0xb } else { r.next_u32() % 16 });
+        put_state(
+            c,
+            0,
+            if seed % 5 == 1 {
+                0xb
+            } else {
+                r.next_u32() % 16
+            },
+        );
         for en in [0x940, 0x970, 0x9a0] {
             c.bus.write32(RIDER + en, (r.next_u32() % 4 != 0) as u32);
         }
@@ -9236,44 +9393,50 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn rider_update_speed_anims_matches() {
-        check(ee::s00::f_00120378__generated, rider_update_speed_anims, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x0378, 3);
-            elf_image(c);
-            put_globals(c, &mut r, false);
-            put_model(c, &mut r, false);
-            put_speed_anims(c, &mut r, seed);
-            c.g[A0][0] = sx(RIDER);
-        });
+        check(
+            ee::s00::f_00120378__generated,
+            rider_update_speed_anims,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0378, 3);
+                elf_image(c);
+                put_globals(c, &mut r, false);
+                put_model(c, &mut r, false);
+                put_speed_anims(c, &mut r, seed);
+                c.g[A0][0] = sx(RIDER);
+            },
+        );
     }
-
 
     #[test]
     fn rider_update_slewed_params_matches() {
-        check(ee::s00::f_001211f8__generated, rider_update_slewed_params, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x11f8, 3);
-            elf_image(c);
-            put_globals(c, &mut r, false);
-            put_model(c, &mut r, false);
-            put_speed_anims(c, &mut r, seed);
-            for i in 0..SLEWED_COUNT {
-                let a = RIDER + SLEWED_FIRST + SLEWED_STRIDE * i;
-                c.bus.write32(a, r.f32(10.0));
-                c.bus.write32(a + 4, uf(&mut r, 0.0, 3.0));
-                c.bus.write32(a + 8, r.f32(10.0));
-            }
-            c.g[A0][0] = sx(RIDER);
-        });
+        check(
+            ee::s00::f_001211f8__generated,
+            rider_update_slewed_params,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11f8, 3);
+                elf_image(c);
+                put_globals(c, &mut r, false);
+                put_model(c, &mut r, false);
+                put_speed_anims(c, &mut r, seed);
+                for i in 0..SLEWED_COUNT {
+                    let a = RIDER + SLEWED_FIRST + SLEWED_STRIDE * i;
+                    c.bus.write32(a, r.f32(10.0));
+                    c.bus.write32(a + 4, uf(&mut r, 0.0, 3.0));
+                    c.bus.write32(a + 8, r.f32(10.0));
+                }
+                c.g[A0][0] = sx(RIDER);
+            },
+        );
     }
-
 
     /// A float in [lo, hi).
     pub(crate) fn uf_2(r: &mut Rng, lo: f32, hi: f32) -> f32 {
         lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo)
     }
-
 
     pub(crate) fn put_v(c: &mut Cpu, at: u32, v: [f32; 4]) {
         for (k, x) in v.iter().enumerate() {
@@ -9281,16 +9444,13 @@ pub(crate) mod tests {
         }
     }
 
-
     pub(crate) fn rand_v(r: &mut Rng, lo: f32, hi: f32) -> [f32; 4] {
         [uf_2(r, lo, hi), uf_2(r, lo, hi), uf_2(r, lo, hi), 0.0]
     }
 
-
     pub(crate) fn gp_f32(c: &mut Cpu, off: i32, x: f32) {
         c.bus.write32(GAME_GP.wrapping_add(off as u32), f(x));
     }
-
 
     // -----------------------------------------------------------------
     // Shared fixtures.
@@ -9329,7 +9489,6 @@ pub(crate) mod tests {
 
     pub(crate) const TREE: u32 = DATA + 0x2_c000;
 
-
     /// `fakes::fake_call`, then a result that depends on the method.
     pub(crate) fn fake_varied(c: &mut Cpu, target: u32) {
         fake_call(c, target);
@@ -9341,12 +9500,10 @@ pub(crate) mod tests {
         }
     }
 
-
     pub(crate) fn put_slot(c: &mut Cpu, vt: u32, off: u32, target: u32) {
         c.bus.write16(vt + off, 0);
         c.bus.write32(vt + off + 4, target);
     }
-
 
     /// Scrambled registers, the fake hooks and vtables, surfaces,
     /// materials and instances.
@@ -9366,12 +9523,14 @@ pub(crate) mod tests {
             c.bus.write32(s + 0x78, r.next_u32() % 3);
             c.bus.write32(s + 0xc, if k % 2 == 0 { OWNER } else { 0 });
             c.bus.write32(s + 0x88, MATS);
-            c.bus.write32(s + 0x8, if r.next_u32() % 3 == 0 { 0x2000 } else { 0 });
+            c.bus
+                .write32(s + 0x8, if r.next_u32() % 3 == 0 { 0x2000 } else { 0 });
             c.bus.write32(s + 0x8c, 0);
         }
         for i in 0..4 {
             let m = MATS + 0x10 + 0xc * i;
-            c.bus.write32(m, if r.next_u32() % 3 == 0 { 0 } else { f(1.0) });
+            c.bus
+                .write32(m, if r.next_u32() % 3 == 0 { 0 } else { f(1.0) });
             c.bus.write32(m + 4, f(uf_2(&mut r, 0.0, 2.0)));
             c.bus.write16(m + 8, (r.next_u32() & 3) as u16);
         }
@@ -9396,7 +9555,6 @@ pub(crate) mod tests {
         r
     }
 
-
     /// `n` contact records at `base`: positions, normals (some repeated
     /// with their depth, for ties), depths, materials, surfaces, instances.
     pub(crate) fn put_contacts(c: &mut Cpu, r: &mut Rng, base: u32, n: u32) {
@@ -9408,7 +9566,12 @@ pub(crate) mod tests {
             let normal = if tie {
                 prev.0
             } else {
-                [uf_2(r, -1.0, 1.0), uf_2(r, -0.2, 1.0), uf_2(r, -1.0, 1.0), 0.0]
+                [
+                    uf_2(r, -1.0, 1.0),
+                    uf_2(r, -0.2, 1.0),
+                    uf_2(r, -1.0, 1.0),
+                    0.0,
+                ]
             };
             let depth = if tie {
                 prev.1
@@ -9449,7 +9612,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// The overlap list: no instances, no rails, `objects` static objects
     /// with huge boxes whose collider delegate adds 0-3 contacts.
     pub(crate) fn put_list(c: &mut Cpu, objects: u32) {
@@ -9470,12 +9632,15 @@ pub(crate) mod tests {
         }
     }
 
-
     /// The rider: vectors, list, sphere tree (one child), states.
     pub(crate) fn put_rider(c: &mut Cpu, r: &mut Rng, main: u32, sub: u32) {
         c.bus.write32(RIDER_2 + 0x77c, BASE);
         c.bus.write32(RIDER_2 + 0x780, PARAMS);
-        put_v(c, RIDER_2 + 0x370, [uf_2(r, -0.2, 0.2), 1.0, uf_2(r, -0.2, 0.2), 0.0]);
+        put_v(
+            c,
+            RIDER_2 + 0x370,
+            [uf_2(r, -0.2, 0.2), 1.0, uf_2(r, -0.2, 0.2), 0.0],
+        );
         put_v(c, RIDER_2 + 0x110, rand_v(r, -5.0, 5.0));
         put_v(c, RIDER_2 + 0x1e0, rand_v(r, -30.0, 30.0));
         put_v(c, RIDER_2 + 0x1b0, rand_v(r, -1.0, 1.0));
@@ -9495,17 +9660,27 @@ pub(crate) mod tests {
         c.bus.write32(TREE + 0x40, f(0.5));
         c.bus.write32(BASE + 0xde0, main);
         c.bus.write32(BASE + 0xde4, sub);
-        put_v(c, BASE + 0xb0, [uf_2(r, -0.3, 0.3), 1.0, uf_2(r, -0.3, 0.3), 0.0]);
+        put_v(
+            c,
+            BASE + 0xb0,
+            [uf_2(r, -0.3, 0.3), 1.0, uf_2(r, -0.3, 0.3), 0.0],
+        );
         for k in 0..6 {
             c.bus.write32(RIDER_2 + 0x5b8 + 4 * k, r.next_u32() % 3);
         }
     }
 
-
     // -----------------------------------------------------------------
     // Sphere trees.
 
-    pub(crate) fn put_sphere_tree(c: &mut Cpu, r: &mut Rng, t: u32, centre: [f32; 4], radius: f32, n: u32) {
+    pub(crate) fn put_sphere_tree(
+        c: &mut Cpu,
+        r: &mut Rng,
+        t: u32,
+        centre: [f32; 4],
+        radius: f32,
+        n: u32,
+    ) {
         put_v(c, t + 0x10, centre);
         c.bus.write32(t + 0x20, f(radius));
         c.bus.write32(t + 0x2c, n);
@@ -9515,57 +9690,72 @@ pub(crate) mod tests {
             put_v(
                 c,
                 ch + 0x30,
-                [centre[0] + off[0], centre[1] + off[1], centre[2] + off[2], 0.0],
+                [
+                    centre[0] + off[0],
+                    centre[1] + off[1],
+                    centre[2] + off[2],
+                    0.0,
+                ],
             );
             c.bus.write32(ch + 0x40, f(uf_2(r, 0.1, 0.8)));
         }
     }
-
 
     // -----------------------------------------------------------------
     // Walls.
 
     pub(crate) const HULL: u32 = DATA + 0x600;
 
-
     #[test]
     fn rider_find_wall_contact_matches() {
-        check(ee::s00::f_00104e70__generated, rider_find_wall_contact, SEEDS, &|c, seed| {
-            let mut r = setup_machine(c, seed, 0x4e70, 6);
-            put_rider(c, &mut r, 0, 0);
-            put_list(c, seed % 4);
-            put_contacts(c, &mut r, STACK - 0x20a0, 10);
-            c.bus.write32(HULL + 0x50, VT_HULL);
-            gp_f32(c, -0x7f38, uf_2(&mut r, 0.0, 0.5));
-            c.g[A0][0] = sx(RIDER_2);
-            c.g[A1][0] = sx(HULL);
-            c.g[A2][0] = sx(DATA + 0x700);
-        });
+        check(
+            ee::s00::f_00104e70__generated,
+            rider_find_wall_contact,
+            SEEDS,
+            &|c, seed| {
+                let mut r = setup_machine(c, seed, 0x4e70, 6);
+                put_rider(c, &mut r, 0, 0);
+                put_list(c, seed % 4);
+                put_contacts(c, &mut r, STACK - 0x20a0, 10);
+                c.bus.write32(HULL + 0x50, VT_HULL);
+                gp_f32(c, -0x7f38, uf_2(&mut r, 0.0, 0.5));
+                c.g[A0][0] = sx(RIDER_2);
+                c.g[A1][0] = sx(HULL);
+                c.g[A2][0] = sx(DATA + 0x700);
+            },
+        );
     }
-
 
     #[test]
     fn rider_handle_wall_collision_matches() {
-        check(ee::s00::f_00105398__generated, rider_handle_wall_collision, SEEDS, &|c, seed| {
-            let mut r = setup_machine(c, seed, 0x5398, 8);
-            // Sub-state 9 skips; main state 4 (grinding) takes the board
-            // normal and skips the rail contacts; 2 / 0 the ground tests.
-            let sub = if seed % 9 == 0 { 9 } else { 0 };
-            let main = [4u32, 0, 2, 1][(seed % 4) as usize];
-            put_rider(c, &mut r, main, sub);
-            c.bus.write32(BASE + 0x30, r.next_u32() % 2);
-            put_list(c, if seed % 5 == 0 { 0 } else { 1 + seed % 3 });
-            // Rider_FindWallContact's records (its frame inside ours).
-            put_contacts(c, &mut r, STACK - 0x4a0 - 0x20a0, 10);
-            gp_f32(c, -0x7f34, uf_2(&mut r, 0.0, 0.5));
-            gp_f32(c, -0x7f38, uf_2(&mut r, 0.0, 0.5));
-            let ground = DATA + 0x800;
-            put_v(c, ground, [uf_2(&mut r, -0.3, 0.3), 1.0, uf_2(&mut r, -0.3, 0.3), 0.0]);
-            c.g[A0][0] = sx(RIDER_2);
-            c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(ground) };
-        });
+        check(
+            ee::s00::f_00105398__generated,
+            rider_handle_wall_collision,
+            SEEDS,
+            &|c, seed| {
+                let mut r = setup_machine(c, seed, 0x5398, 8);
+                // Sub-state 9 skips; main state 4 (grinding) takes the board
+                // normal and skips the rail contacts; 2 / 0 the ground tests.
+                let sub = if seed % 9 == 0 { 9 } else { 0 };
+                let main = [4u32, 0, 2, 1][(seed % 4) as usize];
+                put_rider(c, &mut r, main, sub);
+                c.bus.write32(BASE + 0x30, r.next_u32() % 2);
+                put_list(c, if seed % 5 == 0 { 0 } else { 1 + seed % 3 });
+                // Rider_FindWallContact's records (its frame inside ours).
+                put_contacts(c, &mut r, STACK - 0x4a0 - 0x20a0, 10);
+                gp_f32(c, -0x7f34, uf_2(&mut r, 0.0, 0.5));
+                gp_f32(c, -0x7f38, uf_2(&mut r, 0.0, 0.5));
+                let ground = DATA + 0x800;
+                put_v(
+                    c,
+                    ground,
+                    [uf_2(&mut r, -0.3, 0.3), 1.0, uf_2(&mut r, -0.3, 0.3), 0.0],
+                );
+                c.g[A0][0] = sx(RIDER_2);
+                c.g[A1][0] = if seed % 3 == 0 { 0 } else { sx(ground) };
+            },
+        );
     }
-
 
     // -----------------------------------------------------------------
     // Rails (reachable paths only: a rail contact needs the real rail
@@ -9592,23 +9782,26 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn rider_try_start_railslide_matches() {
-        check(ee::s00::f_00106848, rider_try_start_railslide, SEEDS, &|c, seed| {
-            let mut r = setup_machine(c, seed, 0x6848, 2);
-            put_rider(c, &mut r, seed % 3, 0);
-            put_list(c, 0);
-            let bones = DATA + 0x5000;
-            c.bus.write32(PARAMS + 0x2c, bones);
-            c.bus.write32(RIDER_2 + 0x8a0, r.next_u32() % 4);
-            for i in 0..4 {
-                put_v(c, bones + 0x20 * i + 0x10, rand_v(&mut r, -1.0, 1.0));
-            }
-            c.g[A0][0] = sx(RIDER_2);
-        });
+        check(
+            ee::s00::f_00106848,
+            rider_try_start_railslide,
+            SEEDS,
+            &|c, seed| {
+                let mut r = setup_machine(c, seed, 0x6848, 2);
+                put_rider(c, &mut r, seed % 3, 0);
+                put_list(c, 0);
+                let bones = DATA + 0x5000;
+                c.bus.write32(PARAMS + 0x2c, bones);
+                c.bus.write32(RIDER_2 + 0x8a0, r.next_u32() % 4);
+                for i in 0..4 {
+                    put_v(c, bones + 0x20 * i + 0x10, rand_v(&mut r, -1.0, 1.0));
+                }
+                c.g[A0][0] = sx(RIDER_2);
+            },
+        );
     }
-
 
     // -----------------------------------------------------------------
     // Rider against rider.
@@ -9617,10 +9810,14 @@ pub(crate) mod tests {
 
     pub(crate) const OTHERS: u32 = DATA + 0x4_0000;
 
-
     #[test]
     fn rider_check_rider_collisions_matches() {
-        check(ee::s00::f_00107888__generated, rider_check_rider_collisions, SEEDS, &collisions_setup);
+        check(
+            ee::s00::f_00107888__generated,
+            rider_check_rider_collisions,
+            SEEDS,
+            &collisions_setup,
+        );
     }
 
     /// `Rider_CheckRiderCollisions`' fixture: this rider (`RIDER_2`), six
@@ -9651,7 +9848,8 @@ pub(crate) mod tests {
                 let slot = RIDER_2 + 0x24 * i;
                 c.bus.write32(slot, (r.next_u32() % 4 != 0) as u32);
                 for t in [0x10u32, 0x14, 0x18] {
-                    c.bus.write32(slot + t, frame.wrapping_sub(r.next_u32() % 8));
+                    c.bus
+                        .write32(slot + t, frame.wrapping_sub(r.next_u32() % 8));
                 }
                 // The other rider i.
                 let o = OTHERS + 0x1000 * i;
@@ -9670,7 +9868,8 @@ pub(crate) mod tests {
                 put_v(c, o + 0x1e0, rand_v(&mut r, -30.0, 30.0));
                 let pair = o + 0x24 * me;
                 for t in [0x10u32, 0x14, 0x18] {
-                    c.bus.write32(pair + t, frame.wrapping_sub(r.next_u32() % 8));
+                    c.bus
+                        .write32(pair + t, frame.wrapping_sub(r.next_u32() % 8));
                 }
             }
             c.g[A0][0] = sx(RIDER_2);
@@ -9710,10 +9909,19 @@ pub(crate) mod tests {
         };
         let at_60 = bumps(60, 4);
         assert!(!at_60.is_empty(), "no seed bumps at 60 Hz");
-        assert!(bumps(60, 3).is_empty(), "60 Hz: bump inside the 3-frame cooldown");
-        assert!(bumps(120, 6).is_empty(), "120 Hz: bump inside the 6-tick cooldown");
+        assert!(
+            bumps(60, 3).is_empty(),
+            "60 Hz: bump inside the 3-frame cooldown"
+        );
+        assert!(
+            bumps(120, 6).is_empty(),
+            "120 Hz: bump inside the 6-tick cooldown"
+        );
         assert_eq!(bumps(120, 7), at_60, "120 Hz: past the cooldown");
-        assert!(bumps(240, 12).is_empty(), "240 Hz: bump inside the 12-tick cooldown");
+        assert!(
+            bumps(240, 12).is_empty(),
+            "240 Hz: bump inside the 12-tick cooldown"
+        );
         assert_eq!(bumps(240, 13), at_60, "240 Hz: past the cooldown");
     }
 
@@ -9723,24 +9931,20 @@ pub(crate) mod tests {
     /// A vtable page.
     pub(crate) const VT: u32 = DATA + 0x8000;
 
-
     /// A float at `gp_3 + off` (the game's `.rodata` constants).
     pub(crate) fn wf(c: &mut Cpu, off: i32, v: f32) {
         c.bus.write32(GAME_GP.wrapping_add(off as u32), v.to_bits());
     }
 
-
     pub(crate) fn w(c: &mut Cpu, at: u32, v: u32) {
         c.bus.write32(at, v);
     }
-
 
     /// A vtable slot `{ short delta; short; fn }` at `vt + off`.
     pub(crate) fn slot(c: &mut Cpu, vt: u32, off: u32, delta: i16) {
         c.bus.write16(vt + off, delta as u16);
         c.bus.write32(vt + off + 4, fakes::FAKE);
     }
-
 
     /// The `Math_Atan` polynomial constants.
     pub(crate) fn atan_constants(c: &mut Cpu) {
@@ -9751,7 +9955,6 @@ pub(crate) mod tests {
         wf(c, -0x2e4c, 1.570_796_4);
         wf(c, -0x2e50, -1.570_796_4);
     }
-
 
     /// The heading-blend constants (`Rider_UpdateHeadingAndAudio`).
     pub(crate) fn heading_constants(c: &mut Cpu) {
@@ -9770,205 +9973,265 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn rider_apply_wind_force_matches() {
-        check(ssx3_ee::s00::f_00125970__generated, rider_apply_wind_force, 200, &|c, seed| {
-            let mut r = fakes::machine(c, seed, 0x125970, 4);
-            let rider = RIDER;
-            c.g[A0][0] = rider as u64;
-            // The wind direction table (512 sin/cos entries).
-            let dirs = 0x0050_4fb8u32;
-            for i in 0..0x300u32 {
-                let v = (i as f32 * 0.002).sin();
-                c.bus.write32(dirs + 4 * i, v.to_bits());
-            }
-            slot(c, VT, 0x20, 0);
-            w(c, rider + rider::BASE, VT);
-            let speed = match seed % 3 {
-                0 => 0.0f32,
-                1 => 1000.0,
-                _ => 1.0,
-            };
-            let angle = match seed % 5 {
-                0 => 0.0f32,
-                1 => 45.0,
-                2 => -170.0,
-                3 => 359.0,
-                _ => 12.5,
-            };
-            let fv = OBJ + 0x100;
-            w(c, fv, speed.to_bits());
-            w(c, fv + 4, angle.to_bits());
-            w(c, fakes::LOG_RESULTS, fv);
-            w(c, fakes::LOG_RESULTS + 4, fv + 4);
-            w(c, rider + rider::IS_HUMAN, if seed % 3 == 0 { 0 } else { 1 });
-            w(c, rider + rider::AI_INDEX, r.next_u32() % 4);
-            // Some seeds have a velocity that already outruns the wind.
-            let v = if seed % 4 == 3 { 1e30f32 } else { f32::from_bits(r.f32(50.0)) };
-            put_vec(c, rider + rider::VELOCITY, [v.to_bits(), v.to_bits(), 0, 0]);
-            wf(c, -0x7878, 1388.888_9);
-            wf(c, -0x7874, 27.777_779);
-            wf(c, -0x7870, 277.777_77);
-            wf(c, -0x786c, 0.017_453_293);
-            wf(c, -0x7868, 81.487_33);
-            wf(c, -0x7864, 0.015_000_001);
-        });
+        check(
+            ssx3_ee::s00::f_00125970__generated,
+            rider_apply_wind_force,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x125970, 4);
+                let rider = RIDER;
+                c.g[A0][0] = rider as u64;
+                // The wind direction table (512 sin/cos entries).
+                let dirs = 0x0050_4fb8u32;
+                for i in 0..0x300u32 {
+                    let v = (i as f32 * 0.002).sin();
+                    c.bus.write32(dirs + 4 * i, v.to_bits());
+                }
+                slot(c, VT, 0x20, 0);
+                w(c, rider + rider::BASE, VT);
+                let speed = match seed % 3 {
+                    0 => 0.0f32,
+                    1 => 1000.0,
+                    _ => 1.0,
+                };
+                let angle = match seed % 5 {
+                    0 => 0.0f32,
+                    1 => 45.0,
+                    2 => -170.0,
+                    3 => 359.0,
+                    _ => 12.5,
+                };
+                let fv = OBJ + 0x100;
+                w(c, fv, speed.to_bits());
+                w(c, fv + 4, angle.to_bits());
+                w(c, fakes::LOG_RESULTS, fv);
+                w(c, fakes::LOG_RESULTS + 4, fv + 4);
+                w(
+                    c,
+                    rider + rider::IS_HUMAN,
+                    if seed % 3 == 0 { 0 } else { 1 },
+                );
+                w(c, rider + rider::AI_INDEX, r.next_u32() % 4);
+                // Some seeds have a velocity that already outruns the wind.
+                let v = if seed % 4 == 3 {
+                    1e30f32
+                } else {
+                    f32::from_bits(r.f32(50.0))
+                };
+                put_vec(c, rider + rider::VELOCITY, [v.to_bits(), v.to_bits(), 0, 0]);
+                wf(c, -0x7878, 1388.888_9);
+                wf(c, -0x7874, 27.777_779);
+                wf(c, -0x7870, 277.777_77);
+                wf(c, -0x786c, 0.017_453_293);
+                wf(c, -0x7868, 81.487_33);
+                wf(c, -0x7864, 0.015_000_001);
+            },
+        );
     }
-
 
     #[test]
     fn rider_update_heading_and_audio_matches() {
-        check(ssx3_ee::s00::f_00121950__generated, rider_update_heading_and_audio, 200, &|c, seed| {
-            let mut r = fakes::machine(c, seed, 0x121950, 1);
-            let rider = RIDER;
-            c.g[A0][0] = rider as u64;
-            heading_constants(c);
-            atan_constants(c);
-            // A created audio system (so its instance accessor is trivial).
-            w(c, GAME_GP.wrapping_add(0x410), 0);
-            // Skip the heavy audio-paint block of UpdateRiderWorldPaint.
-            w(c, rider + 0x870, 2);
-            w(c, rider + rider::HANDLER, 0);
-            w(c, rider + 0x5b0, (seed % 2) as u32);
-            w(c, rider + 0x86c, 0);
-            // The ground normal: sometimes a zero z (the degenerate branch).
-            let nx = f32::from_bits(r.f32(4.0));
-            let ny = f32::from_bits(r.f32(4.0));
-            let nz = if seed % 4 == 0 { 0.0 } else { f32::from_bits(r.f32(4.0)) };
-            put_vec(c, rider + rider::GROUND_NORMAL, [nx.to_bits(), ny.to_bits(), nz.to_bits(), 0]);
-            let heading = match seed % 4 {
-                0 => 0.0f32,
-                1 => 100.0,
-                2 => -100.0,
-                _ => f32::from_bits(r.f32(7.0)),
-            };
-            w(c, rider + rider::HEADING, heading.to_bits());
-            wf(c, -0x78b4, 0.925_082);
-            // A null world keeps the danger manager quiet.
-            w(c, GAME_GP.wrapping_sub(0x848), 0);
-            let _ = &mut r;
-        });
+        check(
+            ssx3_ee::s00::f_00121950__generated,
+            rider_update_heading_and_audio,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x121950, 1);
+                let rider = RIDER;
+                c.g[A0][0] = rider as u64;
+                heading_constants(c);
+                atan_constants(c);
+                // A created audio system (so its instance accessor is trivial).
+                w(c, GAME_GP.wrapping_add(0x410), 0);
+                // Skip the heavy audio-paint block of UpdateRiderWorldPaint.
+                w(c, rider + 0x870, 2);
+                w(c, rider + rider::HANDLER, 0);
+                w(c, rider + 0x5b0, (seed % 2) as u32);
+                w(c, rider + 0x86c, 0);
+                // The ground normal: sometimes a zero z (the degenerate branch).
+                let nx = f32::from_bits(r.f32(4.0));
+                let ny = f32::from_bits(r.f32(4.0));
+                let nz = if seed % 4 == 0 {
+                    0.0
+                } else {
+                    f32::from_bits(r.f32(4.0))
+                };
+                put_vec(
+                    c,
+                    rider + rider::GROUND_NORMAL,
+                    [nx.to_bits(), ny.to_bits(), nz.to_bits(), 0],
+                );
+                let heading = match seed % 4 {
+                    0 => 0.0f32,
+                    1 => 100.0,
+                    2 => -100.0,
+                    _ => f32::from_bits(r.f32(7.0)),
+                };
+                w(c, rider + rider::HEADING, heading.to_bits());
+                wf(c, -0x78b4, 0.925_082);
+                // A null world keeps the danger manager quiet.
+                w(c, GAME_GP.wrapping_sub(0x848), 0);
+                let _ = &mut r;
+            },
+        );
     }
-
 
     #[test]
     fn rider_update_visibility_matches() {
-        check(ssx3_ee::s00::f_00122278__generated, rider_update_visibility, 200, &|c, seed| {
-            let mut r = fakes::machine(c, seed, 0x122278, 2);
-            let rider = RIDER;
-            c.g[A0][0] = rider as u64;
-            // A draw context whose world painter is a fake vtable.
-            let ctx = OBJ;
-            let painter = VT;
-            w(c, ctx + 0x10d8, painter);
-            slot(c, painter, 0x158, 0);
-            slot(c, painter, 0x2e8, 0);
-            w(c, painter + 0x2ec, fakes::FAKE + 0x10);
-            w(c, GAME_GP.wrapping_sub(0x854), ctx);
-            // The render state: only kind 7 without a block word is tested.
-            w(c, rider + rider::RENDER_FLAG, if seed % 5 == 0 { 0 } else { 1 });
-            w(c, rider + rider::RENDER_KIND, if seed % 5 == 2 { 5 } else { 7 });
-            w(c, rider + rider::VISIBILITY_BLOCK, if seed % 5 == 3 { 1 } else { 0 });
-            w(c, rider + rider::ON_SCREEN, if seed % 2 == 0 { 0 } else { 1 });
-            w(c, rider + rider::UNK_150, if seed % 7 == 0 { 1 } else { 0 });
-            w(c, rider + rider::HANDLER, OBJ + 0x2000);
-            // Make the projection probes return "not visible" sometimes, so the
-            // handler re-test and its branches run.
-            w(c, fakes::LOG_RESULTS, if seed % 3 == 0 { 1 } else { 0 });
-            w(c, fakes::LOG_RESULTS + 4, if seed % 2 == 0 { 1 } else { 0 });
-            // A null world: the frustum query list is empty.
-            w(c, GAME_GP.wrapping_sub(0x848), 0);
-            let _ = &mut r;
-        });
+        check(
+            ssx3_ee::s00::f_00122278__generated,
+            rider_update_visibility,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x122278, 2);
+                let rider = RIDER;
+                c.g[A0][0] = rider as u64;
+                // A draw context whose world painter is a fake vtable.
+                let ctx = OBJ;
+                let painter = VT;
+                w(c, ctx + 0x10d8, painter);
+                slot(c, painter, 0x158, 0);
+                slot(c, painter, 0x2e8, 0);
+                w(c, painter + 0x2ec, fakes::FAKE + 0x10);
+                w(c, GAME_GP.wrapping_sub(0x854), ctx);
+                // The render state: only kind 7 without a block word is tested.
+                w(
+                    c,
+                    rider + rider::RENDER_FLAG,
+                    if seed % 5 == 0 { 0 } else { 1 },
+                );
+                w(
+                    c,
+                    rider + rider::RENDER_KIND,
+                    if seed % 5 == 2 { 5 } else { 7 },
+                );
+                w(
+                    c,
+                    rider + rider::VISIBILITY_BLOCK,
+                    if seed % 5 == 3 { 1 } else { 0 },
+                );
+                w(
+                    c,
+                    rider + rider::ON_SCREEN,
+                    if seed % 2 == 0 { 0 } else { 1 },
+                );
+                w(c, rider + rider::UNK_150, if seed % 7 == 0 { 1 } else { 0 });
+                w(c, rider + rider::HANDLER, OBJ + 0x2000);
+                // Make the projection probes return "not visible" sometimes, so the
+                // handler re-test and its branches run.
+                w(c, fakes::LOG_RESULTS, if seed % 3 == 0 { 1 } else { 0 });
+                w(c, fakes::LOG_RESULTS + 4, if seed % 2 == 0 { 1 } else { 0 });
+                // A null world: the frustum query list is empty.
+                w(c, GAME_GP.wrapping_sub(0x848), 0);
+                let _ = &mut r;
+            },
+        );
     }
-
 
     #[test]
     fn rider_update_boost_timers_matches() {
-        check(ssx3_ee::s00::f_001200d0__generated, rider_update_boost_timers, 200, &|c, seed| {
-            let mut r = fakes::machine(c, seed, 0x1200d0, 1);
-            let rider = RIDER;
-            c.g[A0][0] = rider as u64;
-            wf(c, -0x7958, 0.016_666_667);
-            wf(c, -0x7954, 0.016_666_667);
-            wf(c, -0x7950, 0.016_666_667);
-            wf(c, -0x794c, 0.004_999_999_8);
-            wf(c, -0x7948, 0.023_986_11);
-            slot(c, VT, 0x48, 0);
-            w(c, rider + rider::BASE, VT);
-            // The rider handler holds the state words at +0xde0/+0xde4.
-            w(c, rider + rider::HANDLER, OBJ + 0x1000);
-            let (main, sub) = match seed % 4 {
-                0 => (1u32, 0u32),
-                1 => (0, 0xc),
-                2 => (0, (seed / 4) % 16),
-                _ => (1, 6),
-            };
-            w(c, OBJ + 0x1000 + 0xde0, main);
-            w(c, OBJ + 0x1000 + 0xde4, sub);
-            let dt = if seed % 2 == 0 { 1.0f32 } else { 0.05 };
-            w(c, rider + rider::DELTA_TIME, dt.to_bits());
-            w(c, rider + rider::BOOST_A, r.edge_f32());
-            w(c, rider + rider::BOOST_B, r.edge_f32());
-            w(
-                c,
-                rider + rider::BOOST,
-                if seed % 3 == 0 { 0 } else { f32::from_bits(r.f32(30.0)).to_bits() },
-            );
-            w(
-                c,
-                rider + rider::BOOST_PHASE,
-                match seed % 5 {
-                    0 => 10,
-                    1 => 5,
-                    2 => 1,
-                    3 => 2,
-                    _ => 3,
-                },
-            );
-            w(c, rider + rider::BOOST_SCALE, r.edge_f32());
-            w(c, rider + rider::BOOST_KIND, (seed / 5) % 5);
-            w(c, GAME_GP.wrapping_sub(0x848), 0);
-        });
+        check(
+            ssx3_ee::s00::f_001200d0__generated,
+            rider_update_boost_timers,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1200d0, 1);
+                let rider = RIDER;
+                c.g[A0][0] = rider as u64;
+                wf(c, -0x7958, 0.016_666_667);
+                wf(c, -0x7954, 0.016_666_667);
+                wf(c, -0x7950, 0.016_666_667);
+                wf(c, -0x794c, 0.004_999_999_8);
+                wf(c, -0x7948, 0.023_986_11);
+                slot(c, VT, 0x48, 0);
+                w(c, rider + rider::BASE, VT);
+                // The rider handler holds the state words at +0xde0/+0xde4.
+                w(c, rider + rider::HANDLER, OBJ + 0x1000);
+                let (main, sub) = match seed % 4 {
+                    0 => (1u32, 0u32),
+                    1 => (0, 0xc),
+                    2 => (0, (seed / 4) % 16),
+                    _ => (1, 6),
+                };
+                w(c, OBJ + 0x1000 + 0xde0, main);
+                w(c, OBJ + 0x1000 + 0xde4, sub);
+                let dt = if seed % 2 == 0 { 1.0f32 } else { 0.05 };
+                w(c, rider + rider::DELTA_TIME, dt.to_bits());
+                w(c, rider + rider::BOOST_A, r.edge_f32());
+                w(c, rider + rider::BOOST_B, r.edge_f32());
+                w(
+                    c,
+                    rider + rider::BOOST,
+                    if seed % 3 == 0 {
+                        0
+                    } else {
+                        f32::from_bits(r.f32(30.0)).to_bits()
+                    },
+                );
+                w(
+                    c,
+                    rider + rider::BOOST_PHASE,
+                    match seed % 5 {
+                        0 => 10,
+                        1 => 5,
+                        2 => 1,
+                        3 => 2,
+                        _ => 3,
+                    },
+                );
+                w(c, rider + rider::BOOST_SCALE, r.edge_f32());
+                w(c, rider + rider::BOOST_KIND, (seed / 5) % 5);
+                w(c, GAME_GP.wrapping_sub(0x848), 0);
+            },
+        );
     }
-
 
     #[test]
     fn rider_check_race_finish_matches() {
-        check(ssx3_ee::s00::f_00125228__generated, rider_check_race_finish, 200, &|c, seed| {
-            let mut r = fakes::machine(c, seed, 0x125228, 6);
-            let rider = RIDER;
-            c.g[A0][0] = rider as u64;
-            // The rider base's "is human" slot 0x40.
-            slot(c, VT, 0x40, 0);
-            w(c, rider + rider::BASE, VT);
-            wf(c, -0x787c, 0.016_666_667);
-            // A created BE library object (never let it build one).
-            w(c, GAME_GP.wrapping_sub(0x1f04), OBJ + 0x3000);
-            w(c, GAME_GP.wrapping_sub(0x1efc), 0);
-            w(c, 0x0053_08a8, 0);
-            // The world / race manager chain.
-            let world = OBJ + 0x2000;
-            w(c, GAME_GP.wrapping_sub(0x848), world);
-            w(c, world + 0x84, world + 0x100);
-            w(c, world + 0xc0, OBJ + 0x2200);
-            w(c, world + 0x100 + 0x214, 0);
-            w(c, world + 0x100 + 0x8, r.next_u32());
-            w(c, OBJ + 0x2200 + 0x88, if seed % 6 == 4 { 1 } else { 0 });
-            w(c, OBJ + 0x2200 + 0x78, r.next_u32());
-            let finish = match seed % 3 {
-                0 => 1.0f32,
-                1 => -1.0,
-                _ => -1000.0,
-            };
-            w(c, rider + rider::FINISH_TIME, finish.to_bits());
-            w(c, rider + rider::DID_NOT_FINISH, if seed % 4 == 0 { 1 } else { 0 });
-            w(c, rider + 0x87c, 0);
-            w(c, rider + 0x150, 0);
-            w(c, rider + rider::IS_HUMAN, 1);
-            let _ = &mut r;
-        });
+        check(
+            ssx3_ee::s00::f_00125228__generated,
+            rider_check_race_finish,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x125228, 6);
+                let rider = RIDER;
+                c.g[A0][0] = rider as u64;
+                // The rider base's "is human" slot 0x40.
+                slot(c, VT, 0x40, 0);
+                w(c, rider + rider::BASE, VT);
+                wf(c, -0x787c, 0.016_666_667);
+                // A created BE library object (never let it build one).
+                w(c, GAME_GP.wrapping_sub(0x1f04), OBJ + 0x3000);
+                w(c, GAME_GP.wrapping_sub(0x1efc), 0);
+                w(c, 0x0053_08a8, 0);
+                // The world / race manager chain.
+                let world = OBJ + 0x2000;
+                w(c, GAME_GP.wrapping_sub(0x848), world);
+                w(c, world + 0x84, world + 0x100);
+                w(c, world + 0xc0, OBJ + 0x2200);
+                w(c, world + 0x100 + 0x214, 0);
+                w(c, world + 0x100 + 0x8, r.next_u32());
+                w(c, OBJ + 0x2200 + 0x88, if seed % 6 == 4 { 1 } else { 0 });
+                w(c, OBJ + 0x2200 + 0x78, r.next_u32());
+                let finish = match seed % 3 {
+                    0 => 1.0f32,
+                    1 => -1.0,
+                    _ => -1000.0,
+                };
+                w(c, rider + rider::FINISH_TIME, finish.to_bits());
+                w(
+                    c,
+                    rider + rider::DID_NOT_FINISH,
+                    if seed % 4 == 0 { 1 } else { 0 },
+                );
+                w(c, rider + 0x87c, 0);
+                w(c, rider + 0x150, 0);
+                w(c, rider + rider::IS_HUMAN, 1);
+                let _ = &mut r;
+            },
+        );
     }
 
     pub(crate) const AM_CTX: u32 = DATA + 0x25_0000;
@@ -9977,51 +10240,58 @@ pub(crate) mod tests {
 
     pub(crate) const MODEL_2: u32 = DATA + 0x40_0000;
 
-
     #[test]
     fn rider_render_model_matches() {
-        check(ee::s00::f_00122448__generated, rider_render_model, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0x2448, 8);
-            // The AM render context (`gp-0x854`) and its vtable.
-            c.bus.write32(GAME_GP - 0x854, AM_CTX);
-            c.bus.write32(AM_CTX + ctx::TEX_IDS, TEX);
-            ctx_at(c, &mut r, AM_CTX, AM_TOP, &[0x228, 0xd8, 0x118, 0xe8]);
-            // The model renderer's own context (`gp+0x2a90`).
-            put_ctx(c, &mut r, &[0x378, 0x318]);
-            let rider = BASE_2;
-            let on_screen = (seed % 5 != 0) as u32;
-            let hidden = (seed % 3 == 0) as u32;
-            c.bus.write32(rider + rider::ON_SCREEN, on_screen);
-            c.bus.write32(rider + rider::HIDDEN, hidden);
-            c.bus.write32(rider + rider::HANDLER, if seed % 4 == 0 { 0 } else { rider + 0x3000 });
-            let q = rider + 0x3000 + 0xd30;
-            c.bus.write32(q + 0xa0, (seed % 3 == 1) as u32);
-            c.bus.write32(q + 0xa4, (seed % 6 == 1) as u32);
-            c.bus.write32(rider + rider::SUB_STATE, (seed % 14) as u32);
-            c.bus.write32(rider + rider::LOD, seed % 3);
-            c.bus.write32(rider + 0x74, 7);
-            c.bus.write32(rider + rider::MATRIX, rider + 0x4000);
-            for i in 0..4 {
-                c.bus.write32(rider + rider::POSITION + 4 * i, uf(&mut r, -100.0, 100.0));
-            }
-            // Rider vtable for Rider_ComputeLOD (`r+0x6c0`, slot 5).
-            let vt = vtable(c, &mut r, &[0x28]);
-            c.bus.write32(rider + 0x6c0, vt);
-            // A cheap model: no bones, no parts (the real RiderModel_Render
-            // then only does its LOD-matrix call).
-            let model = MODEL_2;
-            c.bus.write32(rider + rider::MODEL, model);
-            c.bus.write32(model + model::NUM_BONES, 0);
-            c.bus.write32(model + model::NUM_PARTS, 0);
-            c.bus.write32(model + model::HAS_PARTS, 0);
-            c.bus.write32(model + model::LOD_INFO, r.next_u32());
-            c.bus.write32(model + model::SCALE_Y, f(1.0));
-            // The active rider handle: equal on most seeds.
-            put_world(c, &mut r, if seed % 6 == 0 { 8 } else { 7 });
-            c.g[A0][0] = sx(rider);
-        });
+        check(
+            ee::s00::f_00122448__generated,
+            rider_render_model,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2448, 8);
+                // The AM render context (`gp-0x854`) and its vtable.
+                c.bus.write32(GAME_GP - 0x854, AM_CTX);
+                c.bus.write32(AM_CTX + ctx::TEX_IDS, TEX);
+                ctx_at(c, &mut r, AM_CTX, AM_TOP, &[0x228, 0xd8, 0x118, 0xe8]);
+                // The model renderer's own context (`gp+0x2a90`).
+                put_ctx(c, &mut r, &[0x378, 0x318]);
+                let rider = BASE_2;
+                let on_screen = (seed % 5 != 0) as u32;
+                let hidden = (seed % 3 == 0) as u32;
+                c.bus.write32(rider + rider::ON_SCREEN, on_screen);
+                c.bus.write32(rider + rider::HIDDEN, hidden);
+                c.bus.write32(
+                    rider + rider::HANDLER,
+                    if seed % 4 == 0 { 0 } else { rider + 0x3000 },
+                );
+                let q = rider + 0x3000 + 0xd30;
+                c.bus.write32(q + 0xa0, (seed % 3 == 1) as u32);
+                c.bus.write32(q + 0xa4, (seed % 6 == 1) as u32);
+                c.bus.write32(rider + rider::SUB_STATE, (seed % 14) as u32);
+                c.bus.write32(rider + rider::LOD, seed % 3);
+                c.bus.write32(rider + 0x74, 7);
+                c.bus.write32(rider + rider::MATRIX, rider + 0x4000);
+                for i in 0..4 {
+                    c.bus
+                        .write32(rider + rider::POSITION + 4 * i, uf(&mut r, -100.0, 100.0));
+                }
+                // Rider vtable for Rider_ComputeLOD (`r+0x6c0`, slot 5).
+                let vt = vtable(c, &mut r, &[0x28]);
+                c.bus.write32(rider + 0x6c0, vt);
+                // A cheap model: no bones, no parts (the real RiderModel_Render
+                // then only does its LOD-matrix call).
+                let model = MODEL_2;
+                c.bus.write32(rider + rider::MODEL, model);
+                c.bus.write32(model + model::NUM_BONES, 0);
+                c.bus.write32(model + model::NUM_PARTS, 0);
+                c.bus.write32(model + model::HAS_PARTS, 0);
+                c.bus.write32(model + model::LOD_INFO, r.next_u32());
+                c.bus.write32(model + model::SCALE_Y, f(1.0));
+                // The active rider handle: equal on most seeds.
+                put_world(c, &mut r, if seed % 6 == 0 { 8 } else { 7 });
+                c.g[A0][0] = sx(rider);
+            },
+        );
     }
-
 
     /// Point the world chain at dummies: `gp-0x848 -> +0x84` (race manager)
     /// `-> +0xc` (its object). Returns the world address.
@@ -10031,162 +10301,228 @@ pub(crate) mod tests {
         c.bus.write32(man + 0xc, ctx);
     }
 
-
     #[test]
     fn rider_get_mass_matches() {
-        check(ee::s00::f_0011ff98__generated, rider_get_mass, 250, &|c, seed| {
-            let mut r = machine(c, seed, 0x11ff98, 5);
-            // The back end's singleton exists (else it builds itself from
-            // disc); its interface table starts empty, so the interface call
-            // goes through a null vtable slot answered by the fake hook.
-            c.bus.write32(GAME_GP - 0x1f04, DATA + 0x3000);
-            c.bus.write32(GAME_GP - 0x1efc, 0);
-            let rider = DATA;
-            c.bus.write32(rider + 0x86c, r.next_u32() % 4);
-            c.bus.write32(rider + 0xb34, [0u32, 1, 0xffff_ffff, 5][(seed % 4) as usize]);
-            c.bus.write32(rider + 0x2fc, r.f32(0.4));
-            c.pc = 0x0011_ff98;
-            c.g[A0][0] = sx(rider);
-        });
+        check(
+            ee::s00::f_0011ff98__generated,
+            rider_get_mass,
+            250,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11ff98, 5);
+                // The back end's singleton exists (else it builds itself from
+                // disc); its interface table starts empty, so the interface call
+                // goes through a null vtable slot answered by the fake hook.
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x3000);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                let rider = DATA;
+                c.bus.write32(rider + 0x86c, r.next_u32() % 4);
+                c.bus.write32(
+                    rider + 0xb34,
+                    [0u32, 1, 0xffff_ffff, 5][(seed % 4) as usize],
+                );
+                c.bus.write32(rider + 0x2fc, r.f32(0.4));
+                c.pc = 0x0011_ff98;
+                c.g[A0][0] = sx(rider);
+            },
+        );
     }
-
 
     #[test]
     fn rider_update_leg_ik_blend_matches() {
-        check(ee::s00::f_00120d90__generated, rider_update_leg_ik_blend, 250, &|c, seed| {
-            machine(c, seed, 0x120d90, 1);
-            let rider = DATA;
-            let anim = DATA + 0x200;
-            let table = 0x0044_6990u32;
-            let idx = (seed % 4) as u32;
-            c.bus.write32(rider + 0x784, anim);
-            // `AnimTable_GetEntry` indexes the table with the raw id word.
-            c.bus.write32(anim + 8, if seed % 8 == 7 { 0x1b6 } else { idx * 4 });
-            if seed % 8 != 7 {
-                let id = if seed % 8 < 4 { 0x14 + seed % 7 } else { 0x30 };
-                c.bus.write32(table + idx * 4, id);
-            }
-            // +-1 makes the four approach paths (in/out of an air animation,
-            // below/above the step) deterministic: both are reached.
-            c.bus.write32(rider + 0x318, if seed % 2 == 0 { 0xbf80_0000 } else { 0x3f80_0000 });
-            // The five approach constants (`riderApproach`'s arguments).
-            put_words(
-                c,
-                GAME_GP - 0x7934,
-                &[0x3c23_d70a, 0x3f80_0000, 0x3dcc_cccd, 0x3c23_d70a, 0x3f80_0000],
-            );
-            c.g[A0][0] = sx(rider);
-        });
+        check(
+            ee::s00::f_00120d90__generated,
+            rider_update_leg_ik_blend,
+            250,
+            &|c, seed| {
+                machine(c, seed, 0x120d90, 1);
+                let rider = DATA;
+                let anim = DATA + 0x200;
+                let table = 0x0044_6990u32;
+                let idx = (seed % 4) as u32;
+                c.bus.write32(rider + 0x784, anim);
+                // `AnimTable_GetEntry` indexes the table with the raw id word.
+                c.bus
+                    .write32(anim + 8, if seed % 8 == 7 { 0x1b6 } else { idx * 4 });
+                if seed % 8 != 7 {
+                    let id = if seed % 8 < 4 { 0x14 + seed % 7 } else { 0x30 };
+                    c.bus.write32(table + idx * 4, id);
+                }
+                // +-1 makes the four approach paths (in/out of an air animation,
+                // below/above the step) deterministic: both are reached.
+                c.bus.write32(
+                    rider + 0x318,
+                    if seed % 2 == 0 {
+                        0xbf80_0000
+                    } else {
+                        0x3f80_0000
+                    },
+                );
+                // The five approach constants (`riderApproach`'s arguments).
+                put_words(
+                    c,
+                    GAME_GP - 0x7934,
+                    &[
+                        0x3c23_d70a,
+                        0x3f80_0000,
+                        0x3dcc_cccd,
+                        0x3c23_d70a,
+                        0x3f80_0000,
+                    ],
+                );
+                c.g[A0][0] = sx(rider);
+            },
+        );
     }
-
 
     #[test]
     fn rider_update_danger_state_matches() {
-        check(ee::s00::f_00122cf0__generated, rider_update_danger_state, 250, &|c, seed| {
-            machine(c, seed, 0x122cf0, 5);
-            let rider = DATA;
-            let world = DATA + 0x100;
-            let man = DATA + 0x200;
-            let ctx = DATA + 0x300;
-            let danger = DATA + 0x400;
-            put_world_2(c, world, man, ctx);
-            c.bus.write32(ctx + 0xa8, danger);
-            let index = (seed % 4) as u32;
-            c.bus.write32(rider + 0x86c, index);
-            c.bus.write32(
-                danger + index + 0x710,
-                if seed % 3 == 0 { 0 } else { 1 + seed % 5 },
-            );
-            c.bus.write32(rider + 0x5b0, [0u32, 1, 2][(seed % 3) as usize]);
-            c.bus.write32(rider + 0x790, DATA + 0x800);
-            let state = DATA + 0x500;
-            c.bus.write32(rider + 0x77c, state);
-            c.bus.write32(state + 0xde0, [0u32, 1, 2][(seed % 3) as usize]);
-            c.bus.write32(state + 0x30, if seed % 4 == 2 { 1 } else { 0 });
-            c.bus.write32(rider + 0x5b4, if seed % 2 == 0 { 0xbf80_0000 } else { 0x3f80_0000 });
-            put_words(c, GAME_GP - 0x78b4, &[0x3f80_0000]);
-            c.g[A0][0] = sx(rider);
-        });
+        check(
+            ee::s00::f_00122cf0__generated,
+            rider_update_danger_state,
+            250,
+            &|c, seed| {
+                machine(c, seed, 0x122cf0, 5);
+                let rider = DATA;
+                let world = DATA + 0x100;
+                let man = DATA + 0x200;
+                let ctx = DATA + 0x300;
+                let danger = DATA + 0x400;
+                put_world_2(c, world, man, ctx);
+                c.bus.write32(ctx + 0xa8, danger);
+                let index = (seed % 4) as u32;
+                c.bus.write32(rider + 0x86c, index);
+                c.bus.write32(
+                    danger + index + 0x710,
+                    if seed % 3 == 0 { 0 } else { 1 + seed % 5 },
+                );
+                c.bus
+                    .write32(rider + 0x5b0, [0u32, 1, 2][(seed % 3) as usize]);
+                c.bus.write32(rider + 0x790, DATA + 0x800);
+                let state = DATA + 0x500;
+                c.bus.write32(rider + 0x77c, state);
+                c.bus
+                    .write32(state + 0xde0, [0u32, 1, 2][(seed % 3) as usize]);
+                c.bus
+                    .write32(state + 0x30, if seed % 4 == 2 { 1 } else { 0 });
+                c.bus.write32(
+                    rider + 0x5b4,
+                    if seed % 2 == 0 {
+                        0xbf80_0000
+                    } else {
+                        0x3f80_0000
+                    },
+                );
+                put_words(c, GAME_GP - 0x78b4, &[0x3f80_0000]);
+                c.g[A0][0] = sx(rider);
+            },
+        );
     }
-
 
     #[test]
     fn rider_is_spinning_fast_matches() {
-        check(ee::s00::f_00122c98__generated, rider_is_spinning_fast, SEEDS_3, &|c, seed| {
-            let mut r = Rng(0x0012_2c98 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            let rider = DATA + 0x1000;
-            c.g[A0][0] = rider as u64;
-            c.bus.write32(GAME_GP.wrapping_sub(0x78b4), 0.925_081_97f32.to_bits());
-            let rate: f32 = match seed % 6 {
-                0 => 2.0,   // at or past +threshold
-                1 => -2.0,  // below -threshold
-                2 => 0.0,
-                3 => 0.5,
-                4 => 1.0,
-                _ => -0.5,
-            };
-            c.bus.write32(rider + 0x5b4, rate.to_bits());
-        });
+        check(
+            ee::s00::f_00122c98__generated,
+            rider_is_spinning_fast,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = Rng(0x0012_2c98 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let rider = DATA + 0x1000;
+                c.g[A0][0] = rider as u64;
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x78b4), 0.925_081_97f32.to_bits());
+                let rate: f32 = match seed % 6 {
+                    0 => 2.0,  // at or past +threshold
+                    1 => -2.0, // below -threshold
+                    2 => 0.0,
+                    3 => 0.5,
+                    4 => 1.0,
+                    _ => -0.5,
+                };
+                c.bus.write32(rider + 0x5b4, rate.to_bits());
+            },
+        );
     }
-
 
     #[test]
     fn rider_compute_lod_matches() {
-        covered(ssx3_ee::s00::f_00121f30__generated, rider_compute_lod, 150, &|c, seed| {
-            let mut r = machine(c, seed, 17, 3);
-            // D_004A289C and the global vtable (slots 35 and 29).
-            let g = DATA + 0x200;
-            c.bus.write32(GAME_GP - 0x854, g);
-            let gvt = vtable(c, &mut r, &[0x118, 0xe8]);
-            c.bus.write32(g + 0x10d8, gvt);
-            // The rider and its own vtable (slot 5: the position).
-            let rider = DATA + 0x300;
-            let rvt = vtable(c, &mut r, &[0x28]);
-            c.bus.write32(rider + 0x6c0, rvt);
-            c.bus.write32(rider + 0x898, r.next_u32());
-            // The 0.01 scale and Math_SinCos' polynomial coefficients.
-            put_words(c, GAME_GP - 0x78c4, &[0x3c23_d70a]);
-            put_words(
-                c,
-                GAME_GP - 0x2ec0,
-                &[0x3f22_f983, 0x3fc9_0fdb, 0x3638_ef1f, 0xb950_0d03, 0x3c08_8889, 0xbe2a_aaab],
-            );
-            // A field of view of a plausible size half the time, random else.
-            c.g[A0][0] = sx(rider);
-        });
+        covered(
+            ssx3_ee::s00::f_00121f30__generated,
+            rider_compute_lod,
+            150,
+            &|c, seed| {
+                let mut r = machine(c, seed, 17, 3);
+                // D_004A289C and the global vtable (slots 35 and 29).
+                let g = DATA + 0x200;
+                c.bus.write32(GAME_GP - 0x854, g);
+                let gvt = vtable(c, &mut r, &[0x118, 0xe8]);
+                c.bus.write32(g + 0x10d8, gvt);
+                // The rider and its own vtable (slot 5: the position).
+                let rider = DATA + 0x300;
+                let rvt = vtable(c, &mut r, &[0x28]);
+                c.bus.write32(rider + 0x6c0, rvt);
+                c.bus.write32(rider + 0x898, r.next_u32());
+                // The 0.01 scale and Math_SinCos' polynomial coefficients.
+                put_words(c, GAME_GP - 0x78c4, &[0x3c23_d70a]);
+                put_words(
+                    c,
+                    GAME_GP - 0x2ec0,
+                    &[
+                        0x3f22_f983,
+                        0x3fc9_0fdb,
+                        0x3638_ef1f,
+                        0xb950_0d03,
+                        0x3c08_8889,
+                        0xbe2a_aaab,
+                    ],
+                );
+                // A field of view of a plausible size half the time, random else.
+                c.g[A0][0] = sx(rider);
+            },
+        );
     }
-
 
     #[test]
     fn rider_set_boost_enabled_matches() {
-        check(ee::s00::f_00125958__generated, rider_set_boost_enabled, SEEDS_4, &|c, seed| {
-            let mut r = rng(0x0012_5958, seed);
-            scramble(c, &mut r);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = if seed % 2 == 0 { 0 } else { mixed(&mut r, seed, DATA + 0x100) };
-            c.bus.write32(DATA + 0xb2c, r.next_u32());
-            c.bus.write32(DATA + 0x2f0, r.next_u32());
-            c.bus.write32(DATA + 0x2f4, r.next_u32());
-        });
+        check(
+            ee::s00::f_00125958__generated,
+            rider_set_boost_enabled,
+            SEEDS_4,
+            &|c, seed| {
+                let mut r = rng(0x0012_5958, seed);
+                scramble(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    mixed(&mut r, seed, DATA + 0x100)
+                };
+                c.bus.write32(DATA + 0xb2c, r.next_u32());
+                c.bus.write32(DATA + 0x2f0, r.next_u32());
+                c.bus.write32(DATA + 0x2f4, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn rider_refresh_overlaps_matches() {
-        check(ee::s00::f_00120e50__generated, rider_refresh_overlaps, SEEDS_5, &|c, seed| {
-            machine(c, seed, 0x120e_50, 2);
-            be_library(c);
-            // No app / light manager: the light query sees an empty overlap
-            // list and returns at once.
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), 0);
-            let rider = DATA + 0x400;
-            c.g[A0][0] = sx(rider);
-            c.bus.write32(rider + 0x860, 0);
-        });
+        check(
+            ee::s00::f_00120e50__generated,
+            rider_refresh_overlaps,
+            SEEDS_5,
+            &|c, seed| {
+                machine(c, seed, 0x120e_50, 2);
+                be_library(c);
+                // No app / light manager: the light query sees an empty overlap
+                // list and returns at once.
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), 0);
+                let rider = DATA + 0x400;
+                c.g[A0][0] = sx(rider);
+                c.bus.write32(rider + 0x860, 0);
+            },
+        );
     }
-
 
     #[test]
     fn rider_get_sync_checksum_matches() {
@@ -10210,18 +10546,21 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn rider_force_reset_matches() {
-        check(ee::s00::f_001235f8__generated, rider_force_reset, 30, &|c, seed| {
-            let mut r = machine(c, seed, 0x12_35f8, 0);
-            let rider = DATA + 0x1000;
-            c.bus.write32(rider + 0x77c, DATA + 0x2000);
-            c.g[A0][0] = sx(rider);
-            c.g[A1][0] = r.next_u32() as u64;
-        });
+        check(
+            ee::s00::f_001235f8__generated,
+            rider_force_reset,
+            30,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12_35f8, 0);
+                let rider = DATA + 0x1000;
+                c.bus.write32(rider + 0x77c, DATA + 0x2000);
+                c.g[A0][0] = sx(rider);
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
     }
-
 
     // ------------------------------------------------------------------
     // Riders, camera and the front end.
@@ -10248,7 +10587,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn rider_has_render_slot_matches() {
@@ -10281,17 +10619,24 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn player_pulse_rumble_matches() {
-        check(ee::s00::f_001278d0__generated, player_pulse_rumble, 200, &|c, seed| {
-            let mut r = setup(c, seed, 21);
-            c.g[A0][0] = AUX as u64;
-            put(c, AUX + 0xdfc, r.f32(2.0));
-            c.f[12] = if seed % 2 == 0 { r.edge_f32() } else { r.f32(2.0) };
-        });
+        check(
+            ee::s00::f_001278d0__generated,
+            player_pulse_rumble,
+            200,
+            &|c, seed| {
+                let mut r = setup(c, seed, 21);
+                c.g[A0][0] = AUX as u64;
+                put(c, AUX + 0xdfc, r.f32(2.0));
+                c.f[12] = if seed % 2 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(2.0)
+                };
+            },
+        );
     }
-
 
     // -------------------------------------------------------------- riders
 
@@ -10309,7 +10654,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn rider_add_velocity_matches() {
@@ -10330,18 +10674,23 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn rider_empty_progress_hook_matches() {
-        leaf(ssx3_ee::s00::f_00125ad0__generated, rider_empty_progress_hook, 2);
+        leaf(
+            ssx3_ee::s00::f_00125ad0__generated,
+            rider_empty_progress_hook,
+            2,
+        );
     }
-
 
     #[test]
     fn rider_empty_stance_hook_matches() {
-        leaf(ssx3_ee::s00::f_00116930__generated, rider_empty_stance_hook, 13);
+        leaf(
+            ssx3_ee::s00::f_00116930__generated,
+            rider_empty_stance_hook,
+            13,
+        );
     }
-
 
     #[test]
     fn rider_update_timed_event_anim_matches() {
@@ -10376,7 +10725,14 @@ pub(crate) mod tests {
                 put_words(
                     c,
                     0x0045_6cc0,
-                    &[0x0011_5c08, 0x0011_5c54, 0x0011_5ca0, 0x0011_5cac, 0x0011_5ce0, 0x0011_5ce0],
+                    &[
+                        0x0011_5c08,
+                        0x0011_5c54,
+                        0x0011_5ca0,
+                        0x0011_5cac,
+                        0x0011_5ce0,
+                        0x0011_5ce0,
+                    ],
                 );
                 let mut event = 1;
                 match seed % 13 {
@@ -10417,7 +10773,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// `Rider_UpdateTimedEventAnim`'s "recent enough" window is 180 frames
     /// (3 s) of the AI's tick counter: the same wall-clock window at 120/240 Hz.
     #[test]
@@ -10435,12 +10790,17 @@ pub(crate) mod tests {
         }
     }
 
-
     /// `Rider_UpdateIdleLookAnim`'s fixture (shared by the differential and
     /// the rate test): the rider at `DATA`, its controller at `DATA+0x4000`
     /// (layer 1 idle, `PlayAnim` reaching a fake), the AI frame counter
     /// `now`, the idle clock, the velocity and the `Rand_NextGame` state.
-    pub(crate) fn idle_look_base(c: &mut Cpu, r: &mut Rng, now: u32, clock: f32, vel: [f32; 2]) -> u32 {
+    pub(crate) fn idle_look_base(
+        c: &mut Cpu,
+        r: &mut Rng,
+        now: u32,
+        clock: f32,
+        vel: [f32; 2],
+    ) -> u32 {
         let rider = DATA;
         let ctrl = DATA + 0x4000;
         let vt = fakes::vtable(c, r, &[0x20]);
@@ -10463,8 +10823,14 @@ pub(crate) mod tests {
         c.bus.write32(rider + 0x1b0, vel[0].to_bits());
         c.bus.write32(rider + 0x1b4, vel[1].to_bits());
         c.bus.write32(rider + 0x320, r.next_u32() % 2);
-        c.bus.write64(rider + 0x8c0, (r.next_u32() as u64) << 32 | r.next_u32() as u64);
-        c.bus.write64(rider + 0x8d0, (r.next_u32() as u64) << 32 | r.next_u32() as u64);
+        c.bus.write64(
+            rider + 0x8c0,
+            (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+        );
+        c.bus.write64(
+            rider + 0x8d0,
+            (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+        );
         // Rand_NextGame's state (`0x4ff030`, six words).
         for i in 0..6u32 {
             c.bus.write32(0x004f_f030 + 4 * i, r.next_u32());
@@ -10472,45 +10838,52 @@ pub(crate) mod tests {
         rider
     }
 
-
     #[test]
     fn rider_update_idle_look_anim_matches() {
-        check_lohi(ee::s00::f_00115d48__generated, rider_update_idle_look_anim, 400, &|c, seed| {
-            elf_image(c);
-            let mut r = machine(c, seed, 0x5d48, 1);
-            let now = 5000u32;
-            let clock = match seed % 9 {
-                0 => 0.5f32,
-                1 => 0.99,
-                _ => 1.0 + (r.next_u32() % 100) as f32 * 0.01,
-            };
-            let f = |r: &mut Rng| (r.next_u32() % 2000) as f32 * 0.001 - 1.0;
-            let vel = match seed % 7 {
-                0 => [0.0, 0.0],
-                1 => [0.0, 0.5],
-                2 => [0.0, -0.5],
-                3 => [-0.5, f(&mut r)],
-                _ => [f(&mut r), f(&mut r)],
-            };
-            let rider = idle_look_base(c, &mut r, now, clock, vel);
-            if seed % 11 == 5 {
-                // Layer 1 busy (anim table entry 0x12 is non-zero).
-                c.bus.write32(DATA + 0x4000 + 4, 0x12);
-            }
-            for i in 0..6u32 {
-                let slot = rider + 0x24 * i;
-                c.bus.write32(slot, (r.next_u32() % 4 != 0) as u32);
-                c.bus.write32(slot + 0x1c, (r.next_u32() % 5 != 0) as u32);
-                let dist = if r.next_u32() % 4 == 0 { 1500.0f32 } else { (r.next_u32() % 1000) as f32 };
-                c.bus.write32(slot + 0x8, dist.to_bits());
-                let angle = (r.next_u32() % 14000) as f32 * 0.001 - 7.0;
-                c.bus.write32(slot + 0xc, angle.to_bits());
-                let age = [0u32, 1, 599, 600, 601, 3000][(r.next_u32() % 6) as usize];
-                c.bus.write32(slot + 0x20, now - age);
-            }
-        });
+        check_lohi(
+            ee::s00::f_00115d48__generated,
+            rider_update_idle_look_anim,
+            400,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x5d48, 1);
+                let now = 5000u32;
+                let clock = match seed % 9 {
+                    0 => 0.5f32,
+                    1 => 0.99,
+                    _ => 1.0 + (r.next_u32() % 100) as f32 * 0.01,
+                };
+                let f = |r: &mut Rng| (r.next_u32() % 2000) as f32 * 0.001 - 1.0;
+                let vel = match seed % 7 {
+                    0 => [0.0, 0.0],
+                    1 => [0.0, 0.5],
+                    2 => [0.0, -0.5],
+                    3 => [-0.5, f(&mut r)],
+                    _ => [f(&mut r), f(&mut r)],
+                };
+                let rider = idle_look_base(c, &mut r, now, clock, vel);
+                if seed % 11 == 5 {
+                    // Layer 1 busy (anim table entry 0x12 is non-zero).
+                    c.bus.write32(DATA + 0x4000 + 4, 0x12);
+                }
+                for i in 0..6u32 {
+                    let slot = rider + 0x24 * i;
+                    c.bus.write32(slot, (r.next_u32() % 4 != 0) as u32);
+                    c.bus.write32(slot + 0x1c, (r.next_u32() % 5 != 0) as u32);
+                    let dist = if r.next_u32() % 4 == 0 {
+                        1500.0f32
+                    } else {
+                        (r.next_u32() % 1000) as f32
+                    };
+                    c.bus.write32(slot + 0x8, dist.to_bits());
+                    let angle = (r.next_u32() % 14000) as f32 * 0.001 - 7.0;
+                    c.bus.write32(slot + 0xc, angle.to_bits());
+                    let age = [0u32, 1, 599, 600, 601, 3000][(r.next_u32() % 6) as usize];
+                    c.bus.write32(slot + 0x20, now - age);
+                }
+            },
+        );
     }
-
 
     /// `Rider_UpdateIdleLookAnim` looks at the same rider again only after
     /// 600 frames (10 s): 600 ticks at 60 Hz, 1200 at 120, 2400 at 240.
@@ -10532,13 +10905,16 @@ pub(crate) mod tests {
             c.bus.write32(rider, 1);
             c.bus.write32(rider + 0x1c, 1);
             c.bus.write32(rider + 0x8, 100.0f32.to_bits());
-            c.bus.write32(rider + 0xc, std::f32::consts::FRAC_PI_2.to_bits());
+            c.bus
+                .write32(rider + 0xc, std::f32::consts::FRAC_PI_2.to_bits());
             c.bus.write32(rider + 0x20, now - age);
             rider_update_idle_look_anim(&mut c);
             c.bus.read32(rider + 0x20) == now
         };
         // A Rand state whose roll takes the look branch (90%).
-        let k = (0..64).find(|&k| looked(k, 60, 600)).expect("no seed rolls the look branch");
+        let k = (0..64)
+            .find(|&k| looked(k, 60, 600))
+            .expect("no seed rolls the look branch");
         assert!(!looked(k, 60, 599), "60 Hz: inside 600 ticks");
         for hz in [120u32, 240] {
             let ticks = 10 * hz;
@@ -10547,7 +10923,6 @@ pub(crate) mod tests {
             assert!(looked(k, hz, ticks), "{hz} Hz: 10 s passed");
         }
     }
-
 
     /// `Rider_UpdateHeadingAndAudio` blends the heading 15% of the way to the
     /// ground normal per tick: a tenth of a second of ticks must cover the same
@@ -10571,10 +10946,12 @@ pub(crate) mod tests {
         assert!((at_60 - 0.6228).abs() < 1e-3, "{at_60}");
         for hz in [120u32, 240] {
             let at = run(&mut c, hz);
-            assert!((at - at_60).abs() < 1e-4, "{hz} Hz: {at} after 0.1 s, 60 Hz: {at_60}");
+            assert!(
+                (at - at_60).abs() < 1e-4,
+                "{hz} Hz: {at} after 0.1 s, 60 Hz: {at_60}"
+            );
         }
     }
-
 
     /// `Rider_UpdateLegIKBlend` moves the blend 0.05 per tick: at 120/240 Hz a
     /// tick carries `60/rate` of that, so a blend takes the same wall-clock
@@ -10600,32 +10977,40 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn rider_stop_transition_matches() {
-        check(ssx3_ee::s00::f_00125038__generated, rider_stop_transition, SEEDS_8, &|c, seed| {
-            let mut r = machine(c, seed, 0x125038, 0);
-            let rider = DATA + 0x1000;
-            let world = DATA + 0x3000;
-            let ail = DATA + 0x4000;
-            let cam = DATA + 0x5000;
-            c.g[A0][0] = rider as u64;
-            w32(c, GAME_GP.wrapping_sub(0x848), world);
-            w32(c, world + 0x84, ail);
-            w32(c, ail + 0x84, if seed % 5 == 0 { 0 } else { cam });
-            let view = if seed % 3 == 0 { 0x8000_0000u32 } else { (seed % 4) as u32 };
-            w32(c, rider + 0x870, view);
-            // func_00230698(ail, view) -> *(ail + view*4 + 0x5c)
-            for i in 0..4u32 {
-                w32(c, ail + 0x5c + 4 * i, DATA + 0x6000 + i * 0x100);
-            }
-            for i in 0..4u32 {
-                let c2 = DATA + 0x6000 + i * 0x100;
-                w32(c, c2 + 0x78, if seed % 2 == 0 { 1 } else { 0 });
-                w32(c, c2 + 0x44, 0);
-            }
-            let _ = &mut r;
-        });
+        check(
+            ssx3_ee::s00::f_00125038__generated,
+            rider_stop_transition,
+            SEEDS_8,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x125038, 0);
+                let rider = DATA + 0x1000;
+                let world = DATA + 0x3000;
+                let ail = DATA + 0x4000;
+                let cam = DATA + 0x5000;
+                c.g[A0][0] = rider as u64;
+                w32(c, GAME_GP.wrapping_sub(0x848), world);
+                w32(c, world + 0x84, ail);
+                w32(c, ail + 0x84, if seed % 5 == 0 { 0 } else { cam });
+                let view = if seed % 3 == 0 {
+                    0x8000_0000u32
+                } else {
+                    (seed % 4) as u32
+                };
+                w32(c, rider + 0x870, view);
+                // func_00230698(ail, view) -> *(ail + view*4 + 0x5c)
+                for i in 0..4u32 {
+                    w32(c, ail + 0x5c + 4 * i, DATA + 0x6000 + i * 0x100);
+                }
+                for i in 0..4u32 {
+                    let c2 = DATA + 0x6000 + i * 0x100;
+                    w32(c, c2 + 0x78, if seed % 2 == 0 { 1 } else { 0 });
+                    w32(c, c2 + 0x44, 0);
+                }
+                let _ = &mut r;
+            },
+        );
     }
 
     pub(crate) fn hh(c: &mut Cpu, a: u32, v: u16) {
@@ -10636,44 +11021,54 @@ pub(crate) mod tests {
         x.to_bits()
     }
 
-
     /// A vtable slot_2 `{delta, fn}` at `vt + off` (the game's `lh`/`lw` pair).
     pub(crate) fn slot_2(c: &mut Cpu, vt: u32, off: u32, delta: u16, f: u32) {
         hh(c, vt + off, delta);
         w_2(c, vt + off + 4, f);
     }
 
-
     #[test]
     fn rider_mark_quit_requested_matches() {
-        check(ee::s00::f_001253d0__generated, rider_mark_quit_requested, SEEDS_9, &|c, seed| {
-            machine(c, seed, 0x12_53d0, 1);
-            c.g[A0][0] = (DATA + 0x2000) as u64;
-            w_2(c, DATA + 0x2000 + 0x470, if seed % 2 == 0 { fb(-1.0) } else { fb(0.5) });
-            w_2(c, DATA + 0x2000 + 0x6c0, DATA + 0x2400);
-            slot_2(c, DATA + 0x2400, 0x38, 0, 0x0027_7f08);
-            c.pc = 0x0012_53d0;
-        });
+        check(
+            ee::s00::f_001253d0__generated,
+            rider_mark_quit_requested,
+            SEEDS_9,
+            &|c, seed| {
+                machine(c, seed, 0x12_53d0, 1);
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                w_2(
+                    c,
+                    DATA + 0x2000 + 0x470,
+                    if seed % 2 == 0 { fb(-1.0) } else { fb(0.5) },
+                );
+                w_2(c, DATA + 0x2000 + 0x6c0, DATA + 0x2400);
+                slot_2(c, DATA + 0x2400, 0x38, 0, 0x0027_7f08);
+                c.pc = 0x0012_53d0;
+            },
+        );
     }
-
 
     #[test]
     fn player_get_uber_grind_button_matches() {
-        check(ee::s00::f_00127848__generated, player_get_uber_grind_button, SEEDS_10, &|c, seed| {
-            let mut r = machine(c, seed, 0x127848, 4);
-            be_library_2(c);
-            let obj = DATA;
-            let map = DATA + 0x1000;
-            c.g[A0][0] = obj as u64;
-            w_3(c, obj + 0xdf0, map);
-            w_3(c, map, 0);
-            w_3(c, map + 4, 0);
-            w_3(c, map + 0x14, r.next_u32() % 4);
-        });
+        check(
+            ee::s00::f_00127848__generated,
+            player_get_uber_grind_button,
+            SEEDS_10,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x127848, 4);
+                be_library_2(c);
+                let obj = DATA;
+                let map = DATA + 0x1000;
+                c.g[A0][0] = obj as u64;
+                w_3(c, obj + 0xdf0, map);
+                w_3(c, map, 0);
+                w_3(c, map + 4, 0);
+                w_3(c, map + 0x14, r.next_u32() % 4);
+            },
+        );
     }
 
-
-        #[test]
+    #[test]
     fn rider_update_from_script_matches() {
         check(
             ee::s00::f_00123da8__generated,
@@ -10689,7 +11084,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn rider_estimate_final_score_matches() {
@@ -10710,23 +11104,26 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn rider_place_at_marker_matches() {
-        check(ee::s00::f_0011de60__generated, rider_place_at_marker, 6, &|c, seed| {
-            let mut r = base_2(c, seed, 0x0011_de60, 4);
-            c.g[A0][0] = OBJ_3 as u64;
-            c.g[A1][0] = OBJ2_2 as u64;
-            c.g[A2][0] = OBJ3 as u64;
-            c.g[A3][0] = (seed % 4) as u64;
-            w_5(c, OBJ_3 + 0x790, OBJ4);
-            let t = DATA + 0x10000;
-            for i in 0..8u32 {
-                w_5(c, t + 4 * i, r.edge_f32());
-            }
-        });
+        check(
+            ee::s00::f_0011de60__generated,
+            rider_place_at_marker,
+            6,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x0011_de60, 4);
+                c.g[A0][0] = OBJ_3 as u64;
+                c.g[A1][0] = OBJ2_2 as u64;
+                c.g[A2][0] = OBJ3 as u64;
+                c.g[A3][0] = (seed % 4) as u64;
+                w_5(c, OBJ_3 + 0x790, OBJ4);
+                let t = DATA + 0x10000;
+                for i in 0..8u32 {
+                    w_5(c, t + 4 * i, r.edge_f32());
+                }
+            },
+        );
     }
-
 
     #[test]
     fn rider_reset_motion_matches() {
@@ -10748,13 +11145,11 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) fn clear_2(c: &mut Cpu, a: u32, n: u32) {
         for i in 0..n {
             c.bus.write32(a + 4 * i, 0);
         }
     }
-
 
     #[test]
     fn rider_estimate_finish_time_matches() {
@@ -10778,7 +11173,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// The `30 - aiIndex` speed floor is per tick: a rider whose recent speed
     /// is under it gets the same estimated *time* to the finish at 60, 120 and
@@ -10811,14 +11205,19 @@ pub(crate) mod tests {
             c.bus.write16(VT + 0x38, 0);
             c.bus.write32(VT + 0x3c, crate::difftest::fakes::FAKE);
             c.hooks.miss = crate::difftest::fakes::fake_call;
-            c.bus.write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+            c.bus
+                .write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
             for i in 0..2u32 {
-                c.bus.write32(crate::difftest::fakes::LOG_RESULTS + 4 * i, 3);
+                c.bus
+                    .write32(crate::difftest::fakes::LOG_RESULTS + 4 * i, 3);
             }
             tick::set_for_test(&mut c, hz);
             rider_estimate_finish_time(&mut c);
             let estimate = c.g[V0][0] as u32 as i32 as i64;
-            ((estimate - frames as i64) as f64 / hz as f64, frames as f64 / hz as f64)
+            (
+                (estimate - frames as i64) as f64 / hz as f64,
+                frames as f64 / hz as f64,
+            )
         };
         let (at_60, t_60) = seconds(60);
         assert_eq!(t_60, 2.0);
@@ -10831,7 +11230,6 @@ pub(crate) mod tests {
             );
         }
     }
-
 
     #[test]
     fn ssx_audio_system_arcade_say20a8_matches() {
@@ -10869,20 +11267,23 @@ pub(crate) mod tests {
         );
     }
 
-
-        #[test]
+    #[test]
     fn quat_from_euler_matches() {
-        strict_2(ee::s00::f_001241c0__generated, quat_from_euler, SEEDS_11, &|c, seed| {
-            let mut r = Rng(0x0012_41c0 ^ (seed as u64) << 10);
-            let _ = base_6(c, seed, 0x41c0, 0);
-            c.f[12] = r.edge_f32();
-            c.f[13] = r.edge_f32();
-            c.f[14] = r.edge_f32();
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(DATA + 0x1000);
-        });
+        strict_2(
+            ee::s00::f_001241c0__generated,
+            quat_from_euler,
+            SEEDS_11,
+            &|c, seed| {
+                let mut r = Rng(0x0012_41c0 ^ (seed as u64) << 10);
+                let _ = base_6(c, seed, 0x41c0, 0);
+                c.f[12] = r.edge_f32();
+                c.f[13] = r.edge_f32();
+                c.f[14] = r.edge_f32();
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x1000);
+            },
+        );
     }
-
 
     /// A valid, empty input map at `map` (`InputVM` stops on its first op).
     pub(crate) fn input_map(c: &mut Cpu, map: u32) {
@@ -10898,14 +11299,12 @@ pub(crate) mod tests {
         w_9(c, INPUT_VM_TABLE + 4 * STOP_OPCODE, INPUT_VM_STOP);
     }
 
-
     /// An `InputBinding` at `binding` whose map is `map`.
     pub(crate) fn binding(c: &mut Cpu, binding: u32, map: u32, value: u32) {
         w_9(c, binding, value);
         w_9(c, binding + 4, map);
         input_map(c, map);
     }
-
 
     #[test]
     fn player_get_trick_button_matches() {

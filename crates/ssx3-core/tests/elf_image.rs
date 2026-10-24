@@ -14,7 +14,10 @@ const ELF_PATH: &str = "../../orig/SLUS_207.72";
 fn load() -> Option<Elf> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(ELF_PATH);
     if !path.exists() {
-        eprintln!("skipping: {} not found (run tools/extract-from-iso.sh)", path.display());
+        eprintln!(
+            "skipping: {} not found (run tools/extract-from-iso.sh)",
+            path.display()
+        );
         return None;
     }
     Some(Elf::from_file(&path).expect("SLUS_207.72 should parse"))

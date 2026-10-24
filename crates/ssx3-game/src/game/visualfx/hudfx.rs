@@ -13,10 +13,7 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0011_6fa8, chudfx_ctor, "cHUDFX_ctor"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0011_6fa8, chudfx_ctor, "cHUDFX_ctor")];
 
 /// `cHUDFX *cHUDFX_ctor(cHUDFX *this)` (0x116fa8): set the state word at +0 to
 /// 0x34 and return `this`.
@@ -38,7 +35,6 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-
 
     #[test]
     fn chudfx_ctor_matches() {

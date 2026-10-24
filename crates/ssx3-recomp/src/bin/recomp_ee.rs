@@ -16,7 +16,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ssx3_core::elf::Elf;
-use ssx3_recomp::eegen::{emit_function, emit_function_named, extend_runs, fn_name, targets, Ctx, Func, Image, Stats};
+use ssx3_recomp::eegen::{
+    emit_function, emit_function_named, extend_runs, fn_name, targets, Ctx, Func, Image, Stats,
+};
 use ssx3_recomp::{boundaries, index, write_if_changed};
 
 struct ElfImage(Elf);
@@ -28,7 +30,10 @@ impl Image for ElfImage {
 }
 
 fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap()
 }
 
 fn main() {
@@ -68,7 +73,8 @@ fn main() {
         i += 1;
     }
     let root = repo_root();
-    let elf = Elf::from_file(root.join("orig/SLUS_207.72")).expect("orig/SLUS_207.72 (see tools/extract-from-iso.sh)");
+    let elf = Elf::from_file(root.join("orig/SLUS_207.72"))
+        .expect("orig/SLUS_207.72 (see tools/extract-from-iso.sh)");
     let img = ElfImage(elf);
 
     // Functions with their instruction runs.
@@ -79,7 +85,12 @@ fn main() {
             .map(|r| r.to_vec())
             .unwrap_or_else(|| vec![(f.address, f.end)]);
         let name = (!f.is_auto_named()).then(|| f.name.to_string());
-        funcs.push(Func { start: f.address, end: f.end, runs, name });
+        funcs.push(Func {
+            start: f.address,
+            end: f.end,
+            runs,
+            name,
+        });
     }
     funcs.sort_by_key(|f| f.start);
 
@@ -119,7 +130,11 @@ fn main() {
                     lui[rt] = Some((w & 0xFFFF) << 16);
                 } else if (op == 0x09 || op == 0x0D) && lui[rs].is_some() {
                     let base = lui[rs].unwrap();
-                    let v = if op == 0x09 { base.wrapping_add(w as i16 as i32 as u32) } else { base | (w & 0xFFFF) };
+                    let v = if op == 0x09 {
+                        base.wrapping_add(w as i16 as i32 as u32)
+                    } else {
+                        base | (w & 0xFFFF)
+                    };
                     if v & 3 == 0 && (0x0010_0000..text_end).contains(&v) && !covered(&funcs, v) {
                         new_entries.insert(v);
                     }
@@ -158,7 +173,12 @@ fn main() {
     }
     for e in new_entries {
         if !covered(&funcs, e) {
-            funcs.push(Func { start: e, end: e, runs: Vec::new(), name: discovered_names.get(&e).cloned() });
+            funcs.push(Func {
+                start: e,
+                end: e,
+                runs: Vec::new(),
+                name: discovered_names.get(&e).cloned(),
+            });
         }
     }
     funcs.sort_by_key(|f| f.start);
@@ -191,14 +211,26 @@ fn main() {
     }
 
     // Shard by cumulative instruction count.
-    let total: usize = funcs.iter().map(|f| f.runs.iter().map(|r| ((r.1 - r.0) / 4) as usize).sum::<usize>()).sum();
+    let total: usize = funcs
+        .iter()
+        .map(|f| {
+            f.runs
+                .iter()
+                .map(|r| ((r.1 - r.0) / 4) as usize)
+                .sum::<usize>()
+        })
+        .sum();
     let per = total.div_ceil(shards);
     let mut shard_of = BTreeMap::new();
     let mut acc = 0usize;
     for f in &funcs {
         let s = (acc / per).min(shards - 1);
         shard_of.insert(f.start, s);
-        acc += f.runs.iter().map(|r| ((r.1 - r.0) / 4) as usize).sum::<usize>();
+        acc += f
+            .runs
+            .iter()
+            .map(|r| ((r.1 - r.0) / 4) as usize)
+            .sum::<usize>();
     }
 
     // Cross-function branch targets must be labels where they land.
@@ -233,7 +265,10 @@ fn main() {
         .iter()
         .filter_map(|f| {
             let n = f.name.as_ref()?;
-            let ok = n.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            let ok = n
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
                 && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                 && !n.starts_with("f_")
                 && !RUST_RESERVED.contains(&n.as_str())
@@ -246,11 +281,21 @@ fn main() {
     let structured_set: BTreeSet<u32> = if threads {
         BTreeSet::new()
     } else {
-        let tctx = Ctx { shard_of: &shard_of, data_refs: &data_refs, extra_labels: &extra, threads: true, names: &names, structured: None };
+        let tctx = Ctx {
+            shard_of: &shard_of,
+            data_refs: &data_refs,
+            extra_labels: &extra,
+            threads: true,
+            names: &names,
+            structured: None,
+        };
         let none = BTreeSet::new();
         funcs
             .iter()
-            .filter(|f| ssx3_recomp::structure::emit_structured(&img, f, shard_of[&f.start], &tctx, &none).is_some())
+            .filter(|f| {
+                ssx3_recomp::structure::emit_structured(&img, f, shard_of[&f.start], &tctx, &none)
+                    .is_some()
+            })
             .map(|f| f.start)
             .collect()
     };
@@ -274,7 +319,10 @@ fn main() {
         })
         .collect();
     for a in &overrides {
-        assert!(funcs.iter().any(|f| f.start == *a), "override {a:#x}: no function starts there");
+        assert!(
+            funcs.iter().any(|f| f.start == *a),
+            "override {a:#x}: no function starts there"
+        );
     }
     let out_root = match &out {
         Some(o) if o.is_absolute() => o.clone(),
@@ -308,12 +356,16 @@ fn main() {
         )
         .unwrap();
         let mut code = String::new();
-        code.push_str("//! Recompiled SSX 3 EE code. Auto-generated by `recomp-ee`; do not edit.\n");
+        code.push_str(
+            "//! Recompiled SSX 3 EE code. Auto-generated by `recomp-ee`; do not edit.\n",
+        );
         code.push_str("#![allow(unused_imports, unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, non_snake_case, clippy::all)]\n");
         code.push_str("use ssx3_ee_rt::Cpu;\nuse ssx3_ee_rt::cpu::sx;\nuse ssx3_ee_rt::cpu::reg::*;\nuse ssx3_ee_rt::funcs::call_indirect;\nuse ssx3_ee_rt::vu0::{Efu, Src, W, X, Y, Z};\n\n");
         let mut emit_one = |f: &Func, code: &mut String| {
             if structured {
-                if let Some(src) = ssx3_recomp::structure::emit_structured(&img, f, s, &ctx, &external) {
+                if let Some(src) =
+                    ssx3_recomp::structure::emit_structured(&img, f, s, &ctx, &external)
+                {
                     code.push_str(&src);
                     structured_count += 1;
                     if external.range(f.start + 1..f.end).next().is_some() {
@@ -321,7 +373,11 @@ fn main() {
                         let st = emit_function_named(&img, f, s, &ctx, code, &twin);
                         totals.invalid += st.invalid;
                     }
-                    totals.instructions += f.runs.iter().map(|r| ((r.1 - r.0) / 4) as usize).sum::<usize>();
+                    totals.instructions += f
+                        .runs
+                        .iter()
+                        .map(|r| ((r.1 - r.0) / 4) as usize)
+                        .sum::<usize>();
                     code.push('\n');
                     return;
                 }
@@ -339,8 +395,16 @@ fn main() {
                 let name = fn_name(f.start);
                 let body = code.split_off(mark);
                 let def = format!("pub fn {name}(c: &mut Cpu)");
-                assert!(body.contains(&def), "override {:#x}: definition not found", f.start);
-                code.push_str(&body.replacen(&def, &format!("pub fn {name}__generated(c: &mut Cpu)"), 1));
+                assert!(
+                    body.contains(&def),
+                    "override {:#x}: definition not found",
+                    f.start
+                );
+                code.push_str(&body.replacen(
+                    &def,
+                    &format!("pub fn {name}__generated(c: &mut Cpu)"),
+                    1,
+                ));
                 let slot = format!("OVERRIDE_{:08X}", f.start);
                 // Functions entered mid-way from outside (resume points,
                 // computed jumps) keep those entries in the generated
@@ -353,7 +417,11 @@ fn main() {
                 // emitted as a `c.pc` dispatcher with no twin: its body
                 // takes the other entries itself.)
                 let has_twin = body.contains(&format!("pub fn {name}__entries("));
-                let twin = if structured && has_twin { format!("{name}__entries") } else { format!("{name}__generated") };
+                let twin = if structured && has_twin {
+                    format!("{name}__entries")
+                } else {
+                    format!("{name}__generated")
+                };
                 let mid = if !structured || external.range(f.start + 1..f.end).next().is_some() {
                     format!(
                         "    // Entries other than the start run the generated code.\n    if c.pc != {:#010x} {{\n        return {twin}(c);\n    }}\n",
@@ -389,7 +457,10 @@ fn main() {
     );
     for s in 0..shards {
         if renamed {
-            let _ = writeln!(toml, "ssx3-ee-s{s:02} = {{ path = \"../s{s:02}\", package = \"{prefix}-s{s:02}\" }}");
+            let _ = writeln!(
+                toml,
+                "ssx3-ee-s{s:02} = {{ path = \"../s{s:02}\", package = \"{prefix}-s{s:02}\" }}"
+            );
         } else {
             let _ = writeln!(toml, "ssx3-ee-s{s:02} = {{ path = \"../s{s:02}\" }}");
         }
@@ -419,14 +490,22 @@ fn main() {
     // Hand-written replacements (crates/ssx3-game) install themselves here.
     lib.push_str("\n/// Point the override slot of the function at `addr` to `f`; false when\n/// `addr` has no slot (not listed in crates/ssx3-game/overrides.txt).\n/// Call only during single-threaded startup, before guest code runs.\npub fn set_override(addr: u32, f: fn(&mut ssx3_ee_rt::Cpu)) -> bool {\n    match addr {\n");
     for a in &overrides {
-        let _ = writeln!(lib, "        {a:#010x} => unsafe {{ ssx3_ee_s{:02}::OVERRIDE_{a:08X} = f }},", shard_of[a]);
+        let _ = writeln!(
+            lib,
+            "        {a:#010x} => unsafe {{ ssx3_ee_s{:02}::OVERRIDE_{a:08X} = f }},",
+            shard_of[a]
+        );
     }
     lib.push_str("        _ => return false,\n    }\n    true\n}\n");
     // (Runtime A/B checks of a replacement, `ssx3-game`'s shadow mode, run
     // the generated body by address.)
     lib.push_str("\n/// The generated body of the function at `addr` when it has an override\n/// slot (whatever is installed in the slot).\npub fn generated_body(addr: u32) -> Option<fn(&mut ssx3_ee_rt::Cpu)> {\n    Some(match addr {\n");
     for a in &overrides {
-        let _ = writeln!(lib, "        {a:#010x} => ssx3_ee_s{:02}::f_{a:08x}__generated,", shard_of[a]);
+        let _ = writeln!(
+            lib,
+            "        {a:#010x} => ssx3_ee_s{:02}::f_{a:08x}__generated,",
+            shard_of[a]
+        );
     }
     lib.push_str("        _ => return None,\n    })\n}\n");
     let _ = writeln!(lib, "\n/// True when generated for host-thread mode (`ssx3_ps2::threads`).\npub const HOST_THREADS: bool = {threads};");
@@ -442,7 +521,10 @@ fn main() {
     println!("extra entries: {}", extra.len());
     println!("shards       : {shards}");
     if structured {
-        println!("structured   : {structured_count} of {} functions", funcs.len());
+        println!(
+            "structured   : {structured_count} of {} functions",
+            funcs.len()
+        );
     }
     println!("rust bytes   : {bytes}");
 
@@ -450,9 +532,14 @@ fn main() {
     if out.is_some() {
         return;
     }
-    let iso = std::env::var("SSX3_ISO").map(PathBuf::from).unwrap_or_else(|_| root.join("SSX 3 (USA).iso"));
+    let iso = std::env::var("SSX3_ISO")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| root.join("SSX 3 (USA).iso"));
     match ssx3_recomp::iopgen::generate_from_disc(&iso, &root.join("generated/iop/modules")) {
-        Ok(o) => println!("iop          : {} functions, {} instructions -> generated/iop/modules", o.functions, o.instructions),
+        Ok(o) => println!(
+            "iop          : {} functions, {} instructions -> generated/iop/modules",
+            o.functions, o.instructions
+        ),
         Err(e) => eprintln!("iop          : not generated ({e})"),
     }
 }
@@ -460,11 +547,12 @@ fn main() {
 /// Names that can't be used as Rust function identifiers in generated code
 /// (keywords, plus `entry`/`main` to avoid confusion with the host binary).
 const RUST_RESERVED: &[&str] = &[
-    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false",
-    "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
-    "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where", "while",
-    "abstract", "become", "box", "do", "final", "macro", "override", "priv", "typeof", "unsized", "virtual",
-    "yield", "try", "gen", "union", "entry", "main", "c", "sx", "Cpu",
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
+    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
+    "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true", "type",
+    "unsafe", "use", "where", "while", "abstract", "become", "box", "do", "final", "macro",
+    "override", "priv", "typeof", "unsized", "virtual", "yield", "try", "gen", "union", "entry",
+    "main", "c", "sx", "Cpu",
 ];
 
 /// Put `prof::enter` (the `callprof` call graph, empty without that feature)
@@ -475,7 +563,10 @@ fn add_prof_hooks(code: &str) -> String {
     for line in code.split_inclusive('\n') {
         out.push_str(line);
         if let Some(rest) = line.strip_prefix("pub fn f_") {
-            if rest.len() >= 8 && rest[8..].starts_with("(c: &mut Cpu) {") && rest[..8].bytes().all(|b| b.is_ascii_hexdigit()) {
+            if rest.len() >= 8
+                && rest[8..].starts_with("(c: &mut Cpu) {")
+                && rest[..8].bytes().all(|b| b.is_ascii_hexdigit())
+            {
                 out.push_str("ssx3_ee_rt::prof::enter(c, 0x");
                 out.push_str(&rest[..8]);
                 out.push_str(");\n");

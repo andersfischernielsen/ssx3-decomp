@@ -39,10 +39,20 @@ pub fn rpc(c: &mut Cpu, method: u32, args: u32, _ssize: u32, ret: u32, rsize: u3
     let result = match cmd & 0xff {
         // Open: [1]=port [2]=slot [4]=buffer.
         0x01 => {
-            let p = OpenPort { port: w(c, 1), slot: w(c, 2), buf: w(c, 4) & 0x01FF_FFFF };
-            m!(c).sif.pads.retain(|o| !(o.port == p.port && o.slot == p.slot));
+            let p = OpenPort {
+                port: w(c, 1),
+                slot: w(c, 2),
+                buf: w(c, 4) & 0x01FF_FFFF,
+            };
+            m!(c)
+                .sif
+                .pads
+                .retain(|o| !(o.port == p.port && o.slot == p.slot));
             m!(c).sif.pads.push(p);
-            eprintln!("[pad] open port {} slot {} buffer {:#x}", p.port, p.slot, p.buf);
+            eprintln!(
+                "[pad] open port {} slot {} buffer {:#x}",
+                p.port, p.slot, p.buf
+            );
             refresh(c);
             1
         }

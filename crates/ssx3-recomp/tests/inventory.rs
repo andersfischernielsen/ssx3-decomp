@@ -40,7 +40,10 @@ fn every_function_lies_within_the_loaded_image() {
 #[test]
 fn named_functions_include_the_sdk_entry_points() {
     // The emotion-engine extension recovered a number of SDK names.
-    assert!(index().named_count() >= 60, "expected the SDK names to survive");
+    assert!(
+        index().named_count() >= 60,
+        "expected the SDK names to survive"
+    );
     assert!(
         index().search("SetGsCrt").next().is_some(),
         "SetGsCrt should be named"

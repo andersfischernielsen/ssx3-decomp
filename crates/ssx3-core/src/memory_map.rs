@@ -44,20 +44,75 @@ pub const R: Perm = perms(true, false, false);
 
 /// The EE's own image (`SLUS_207.72`), as loaded by the PS2 loader.
 pub const SLUS_207_72: &[Segment] = &[
-    Segment { name: ".text", start: 0x0010_0000, end: 0x0042_e01f, perm: R_X },
+    Segment {
+        name: ".text",
+        start: 0x0010_0000,
+        end: 0x0042_e01f,
+        perm: R_X,
+    },
     // Function-sections emitted by the linker (`-ffunction-sections`). The
     // section names still carry C++ symbol names even though the ELF is
     // stripped, which makes them a free naming source for the decompilation.
-    Segment { name: ".gnu.linkonce.t.*", start: 0x0042_e020, end: 0x0042_e587, perm: R_X },
-    Segment { name: ".vutext", start: 0x0042_e590, end: 0x0043_cd6f, perm: R_X },
-    Segment { name: ".data", start: 0x0043_ce00, end: 0x0045_680b, perm: RW },
-    Segment { name: ".gnu.linkonce.d.*", start: 0x0045_6810, end: 0x0045_68bf, perm: RW },
-    Segment { name: ".rodata", start: 0x0045_6900, end: 0x0049_b017, perm: R },
-    Segment { name: ".gcc_except_table", start: 0x0049_b080, end: 0x0049_b0db, perm: RW },
-    Segment { name: ".lit4", start: 0x0049_b100, end: 0x004a_0e57, perm: RW },
-    Segment { name: ".sdata", start: 0x004a_0e80, end: 0x004a_4bf3, perm: RW },
-    Segment { name: ".sbss", start: 0x004a_4c00, end: 0x004a_5bbb, perm: RW },
-    Segment { name: ".bss", start: 0x004a_5c00, end: 0x0053_eadb, perm: RW },
+    Segment {
+        name: ".gnu.linkonce.t.*",
+        start: 0x0042_e020,
+        end: 0x0042_e587,
+        perm: R_X,
+    },
+    Segment {
+        name: ".vutext",
+        start: 0x0042_e590,
+        end: 0x0043_cd6f,
+        perm: R_X,
+    },
+    Segment {
+        name: ".data",
+        start: 0x0043_ce00,
+        end: 0x0045_680b,
+        perm: RW,
+    },
+    Segment {
+        name: ".gnu.linkonce.d.*",
+        start: 0x0045_6810,
+        end: 0x0045_68bf,
+        perm: RW,
+    },
+    Segment {
+        name: ".rodata",
+        start: 0x0045_6900,
+        end: 0x0049_b017,
+        perm: R,
+    },
+    Segment {
+        name: ".gcc_except_table",
+        start: 0x0049_b080,
+        end: 0x0049_b0db,
+        perm: RW,
+    },
+    Segment {
+        name: ".lit4",
+        start: 0x0049_b100,
+        end: 0x004a_0e57,
+        perm: RW,
+    },
+    Segment {
+        name: ".sdata",
+        start: 0x004a_0e80,
+        end: 0x004a_4bf3,
+        perm: RW,
+    },
+    Segment {
+        name: ".sbss",
+        start: 0x004a_4c00,
+        end: 0x004a_5bbb,
+        perm: RW,
+    },
+    Segment {
+        name: ".bss",
+        start: 0x004a_5c00,
+        end: 0x0053_eadb,
+        perm: RW,
+    },
 ];
 
 /// Program image base / entry point.

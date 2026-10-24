@@ -2,53 +2,93 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
 use crate::call;
 use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::aianimeventmap::BUILTIN_DELETE;
+pub(crate) use crate::game::animation::animmodel::EA_MEM_FREE_ADDR;
+pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw_2;
+pub(crate) use crate::game::visualfx::boardwakefx::lh;
+pub(crate) use crate::game::visualfx::boardwakefx::lw;
+pub(crate) use crate::game::visualfx::boardwakefx::p;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::call::guest;
-use crate::call::VSlot;
-use crate::ps2f::FpuF32;
-use crate::call::Unwound;
-use crate::abi::r32;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::sp;
-pub(crate) use crate::game::ai::aianimeventmap::BUILTIN_DELETE;
-pub(crate) use crate::game::animation::animmodel::EA_MEM_FREE_ADDR;
-pub(crate) use crate::game::visualfx::boardwakefx::p;
-pub(crate) use crate::game::visualfx::boardwakefx::lw;
-pub(crate) use crate::game::visualfx::boardwakefx::lh;
-pub(crate) use crate::game::fe::feasyncfile::lw_7 as lw_2;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_18d0, anim_controller_ctor, "AnimController_ctor"),
     (0x0031_1958, anim_controller_dtor, "AnimController_dtor"),
-    (0x0031_1e38, anim_controller_clear_layer, "AnimController_ClearLayer"),
-    (0x0031_2490, anim_controller_dispatch_end_events, "AnimController_DispatchEndEvents"),
-    (0x0031_2790, anim_controller_get_current_anim_length, "AnimController_GetCurrentAnimLength"),
-    (0x0031_2820, anim_controller_get_current_anim_trigger_time, "AnimController_GetCurrentAnimTriggerTime"),
-    (0x0031_2ab0, anim_controller_get_layer_progress, "AnimController_GetLayerProgress"),
-    (0x0031_2c20, anim_data_base_eval_chan_curves, "AnimDataBase_EvalChanCurves"),
+    (
+        0x0031_1e38,
+        anim_controller_clear_layer,
+        "AnimController_ClearLayer",
+    ),
+    (
+        0x0031_2490,
+        anim_controller_dispatch_end_events,
+        "AnimController_DispatchEndEvents",
+    ),
+    (
+        0x0031_2790,
+        anim_controller_get_current_anim_length,
+        "AnimController_GetCurrentAnimLength",
+    ),
+    (
+        0x0031_2820,
+        anim_controller_get_current_anim_trigger_time,
+        "AnimController_GetCurrentAnimTriggerTime",
+    ),
+    (
+        0x0031_2ab0,
+        anim_controller_get_layer_progress,
+        "AnimController_GetLayerProgress",
+    ),
+    (
+        0x0031_2c20,
+        anim_data_base_eval_chan_curves,
+        "AnimDataBase_EvalChanCurves",
+    ),
     (0x0031_3508, anim_sequence_ctor, "AnimSequence_ctor"),
-    (0x0031_35b0, anim_sequence_advance_track, "AnimSequence_AdvanceTrack"),
-    (0x0031_3868, anim_sequence_fire_triggers_in_range, "AnimSequence_FireTriggersInRange"),
-    (0x0031_3938, anim_sequence_fire_triggers_at_time, "AnimSequence_FireTriggersAtTime"),
-    (0x0031_39a8, anim_sequence_fire_end_triggers, "AnimSequence_FireEndTriggers"),
+    (
+        0x0031_35b0,
+        anim_sequence_advance_track,
+        "AnimSequence_AdvanceTrack",
+    ),
+    (
+        0x0031_3868,
+        anim_sequence_fire_triggers_in_range,
+        "AnimSequence_FireTriggersInRange",
+    ),
+    (
+        0x0031_3938,
+        anim_sequence_fire_triggers_at_time,
+        "AnimSequence_FireTriggersAtTime",
+    ),
+    (
+        0x0031_39a8,
+        anim_sequence_fire_end_triggers,
+        "AnimSequence_FireEndTriggers",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -72,48 +112,48 @@ pub(crate) mod trigger {
 /// Direct-call targets of the animation functions (shard s10).
 pub(crate) mod anim_callee {
     use super::Callee;
-    use ssx3_ee::s10 as ee;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_AT_TIME;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_END_TRIGGERS;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_IN_RANGE;
-    pub(crate) use crate::game::animation::animmodel::anim_callee::GET_TRACK_BLEND_WEIGHT;
     pub(crate) use crate::game::animation::animmodel::anim_callee::ALLOC_CHAN_CACHE;
     pub(crate) use crate::game::animation::animmodel::anim_callee::DECODE_CHAN_CACHE;
     pub(crate) use crate::game::animation::animmodel::anim_callee::EVAL_CHAN_CURVES;
+    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_END_TRIGGERS;
+    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_AT_TIME;
+    pub(crate) use crate::game::animation::animmodel::anim_callee::FIRE_TRIGGERS_IN_RANGE;
+    pub(crate) use crate::game::animation::animmodel::anim_callee::GET_TRACK_BLEND_WEIGHT;
+    use ssx3_ee::s10 as ee;
 }
 
 /// `AnimSequence` layout used here (tracks of 0x1c bytes from +0).
 pub(crate) mod seq {
-    pub(crate) use crate::game::animation::animsequencer::seq::TRACK_SIZE;
-    pub(crate) use crate::game::animation::animsequencer::seq::T_ANIM;
-    pub(crate) use crate::game::animation::animsequencer::seq::T_TIME;
-    pub(crate) use crate::game::animation::animsequencer::seq::T_RATE;
-    pub(crate) use crate::game::animation::animsequencer::seq::T_LENGTH;
-    pub(crate) use crate::game::animation::animsequencer::seq::T_ACTIVE;
-    pub(crate) use crate::game::animation::animsequencer::seq::T_MODE;
     pub(crate) use crate::game::animation::animsequencer::seq::BLEND_A;
     pub(crate) use crate::game::animation::animsequencer::seq::BLEND_B;
-    pub(crate) use crate::game::animation::animsequencer::seq::LAYER;
-    pub(crate) use crate::game::animation::animsequencer::seq::FLAGS;
-    pub(crate) use crate::game::animation::animsequencer::seq::USER;
-    pub(crate) use crate::game::animation::animsequencer::seq::RATE;
-    pub(crate) use crate::game::animation::animsequencer::seq::FIRED_MASK;
-    pub(crate) use crate::game::animation::animsequencer::seq::END_FLAG;
     pub(crate) use crate::game::animation::animsequencer::seq::DIRTY;
+    pub(crate) use crate::game::animation::animsequencer::seq::END_FLAG;
+    pub(crate) use crate::game::animation::animsequencer::seq::FIRED_MASK;
+    pub(crate) use crate::game::animation::animsequencer::seq::FLAGS;
+    pub(crate) use crate::game::animation::animsequencer::seq::LAYER;
     pub(crate) use crate::game::animation::animsequencer::seq::NEXT;
+    pub(crate) use crate::game::animation::animsequencer::seq::RATE;
+    pub(crate) use crate::game::animation::animsequencer::seq::TRACK_SIZE;
+    pub(crate) use crate::game::animation::animsequencer::seq::T_ACTIVE;
+    pub(crate) use crate::game::animation::animsequencer::seq::T_ANIM;
+    pub(crate) use crate::game::animation::animsequencer::seq::T_LENGTH;
+    pub(crate) use crate::game::animation::animsequencer::seq::T_MODE;
+    pub(crate) use crate::game::animation::animsequencer::seq::T_RATE;
+    pub(crate) use crate::game::animation::animsequencer::seq::T_TIME;
+    pub(crate) use crate::game::animation::animsequencer::seq::USER;
 }
 
 /// `AnimDataBase_EvalChanCurves` entry points and jump tables.
 pub(crate) mod eval {
-    pub(crate) use crate::game::animation::animmodel::eval::ENTRY;
-    pub(crate) use crate::game::animation::animmodel::eval::END;
-    pub(crate) use crate::game::animation::animmodel::eval::LERP_HEAD;
-    pub(crate) use crate::game::animation::animmodel::eval::KEY_HEAD;
-    pub(crate) use crate::game::animation::animmodel::eval::LERP_TABLE_AT;
-    pub(crate) use crate::game::animation::animmodel::eval::KEY_TABLE_AT;
-    pub(crate) use crate::game::animation::animmodel::eval::LERP_TABLE;
-    pub(crate) use crate::game::animation::animmodel::eval::KEY_TABLE;
     pub(crate) use crate::game::animation::animmodel::eval::CURVE_SIZE;
+    pub(crate) use crate::game::animation::animmodel::eval::END;
+    pub(crate) use crate::game::animation::animmodel::eval::ENTRY;
+    pub(crate) use crate::game::animation::animmodel::eval::KEY_HEAD;
+    pub(crate) use crate::game::animation::animmodel::eval::KEY_TABLE;
+    pub(crate) use crate::game::animation::animmodel::eval::KEY_TABLE_AT;
+    pub(crate) use crate::game::animation::animmodel::eval::LERP_HEAD;
+    pub(crate) use crate::game::animation::animmodel::eval::LERP_TABLE;
+    pub(crate) use crate::game::animation::animmodel::eval::LERP_TABLE_AT;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,25 +164,36 @@ pub(crate) mod callee {
     use super::ee;
     use super::Callee;
     pub(crate) use crate::game::visualfx::boardwakefx::callee::ANIM_SEQ_LIST_GET_AT;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_COMPUTE_LOD;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::TRANSITION_EFFECT_UPDATE_SCREEN_RECT;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_MODEL_RENDER;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::EMITTER_UPDATE;
     pub(crate) use crate::game::visualfx::boardwakefx::callee::FLAGS64_TEST;
     pub(crate) use crate::game::visualfx::boardwakefx::callee::MATH_COS;
-    pub(crate) use crate::game::visualfx::boardwakefx::callee::EMITTER_UPDATE;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_COMPUTE_LOD;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::RIDER_MODEL_RENDER;
+    pub(crate) use crate::game::visualfx::boardwakefx::callee::TRANSITION_EFFECT_UPDATE_SCREEN_RECT;
     pub(crate) use crate::game::visualfx::boardwakefx::callee::WORLD_PAINTER_QUERY_RESET_ALL;
 }
 
-pub(crate) const ANIM_SEQ_LIST_CLEAR: Callee = Callee { addr: 0x0031_4668, f: ee::s10::f_00314668 };
+pub(crate) const ANIM_SEQ_LIST_CLEAR: Callee = Callee {
+    addr: 0x0031_4668,
+    f: ee::s10::f_00314668,
+};
 
-pub(crate) const ANIM_SEQ_LIST_GET_AT: Callee = Callee { addr: 0x0031_4760, f: ee::s10::f_00314760 };
+pub(crate) const ANIM_SEQ_LIST_GET_AT: Callee = Callee {
+    addr: 0x0031_4760,
+    f: ee::s10::f_00314760,
+};
 
 pub(crate) const OPERATOR_NEW_NAMED2_ADDR: u32 = 0x0031_7e30;
 
-pub(crate) const ANIM_SEQ_LIST_INIT: Callee = Callee { addr: 0x0031_42e8, f: ee::s10::f_003142e8 };
+pub(crate) const ANIM_SEQ_LIST_INIT: Callee = Callee {
+    addr: 0x0031_42e8,
+    f: ee::s10::f_003142e8,
+};
 
-pub(crate) const ANIM_CONTROLLER_RESET: Callee = Callee { addr: 0x0031_1a50, f: ee::s10::f_00311a50 };
-
+pub(crate) const ANIM_CONTROLLER_RESET: Callee = Callee {
+    addr: 0x0031_1a50,
+    f: ee::s10::f_00311a50,
+};
 
 // ---------------------------------------------------------------------------
 // AnimController.
@@ -197,7 +248,6 @@ pub fn anim_controller_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void AnimController_dtor(AnimController *this, uint flags)` (0x311958):
 /// clear the six sequence lists, free them and, when `flags & 1`, delete
@@ -259,7 +309,6 @@ pub fn anim_controller_dtor(c: &mut Cpu) {
     })
 }
 
-
 /// `void AnimController_ClearLayer(AnimController *this, int layer)`
 /// (0x311e38): clear the layer's sequence list and mark the layer slot 0x1b6.
 pub fn anim_controller_clear_layer(c: &mut Cpu) {
@@ -286,7 +335,6 @@ pub fn anim_controller_clear_layer(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `float AnimController_GetCurrentAnimLength(AnimController *this)`
 /// (0x312790): the current anim's length in seconds: ask the vtable at
@@ -338,7 +386,6 @@ pub fn anim_controller_get_current_anim_length(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `float AnimController_GetCurrentAnimTriggerTime(AnimController *this, void *unused, int trigger)`
 /// (0x312820): the time of trigger `trigger` of the current anim, or -1.0 when
@@ -411,7 +458,6 @@ pub fn anim_controller_get_current_anim_trigger_time(c: &mut Cpu) {
     })
 }
 
-
 /// `float AnimController_GetLayerProgress(AnimController *this, int layer)`
 /// (0x312ab0): the ratio `seq->elapsed(+8) / seq->length(+0x10)` of the layer's
 /// current sequence.
@@ -435,7 +481,6 @@ pub fn anim_controller_get_layer_progress(c: &mut Cpu) {
     })
 }
 
-
 /// `AnimSequence` fields the firing helpers touch.
 pub(crate) const TRIGGERS: u32 = 0xac;
 
@@ -444,7 +489,6 @@ pub(crate) const MASK_A: u32 = 0xb0;
 pub(crate) const MASK_B: u32 = 0xb8;
 
 pub(crate) const END_FLAG: u32 = 0xc0;
-
 
 /// Set bit `bit` of the two trigger masks from `base` (a `T0`/`T1` holding 1),
 /// mirroring the original's `dsll32`-free `dsll` + `or`/`nor`/`and` sequence.
@@ -466,7 +510,6 @@ pub(crate) fn fire_mask_bit(c: &mut Cpu, seq: u32, base: u64, bit: u64) {
     c.g[A0][0] = new_b;
     Addr(seq.wrapping_add(MASK_B)).sd(c, new_b);
 }
-
 
 /// `void AnimSequence_FireEndTriggers(AnimSequence *this)` (0x3139a8): set the
 /// end flag (+0xc0) and, for every trigger in the chain at +0xac whose count
@@ -514,7 +557,6 @@ pub fn anim_sequence_fire_end_triggers(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void AnimSequence_FireTriggersAtTime(AnimSequence *this, float time)`
 /// (0x313938): for every trigger at +0xac whose count (+4) is non-zero and
@@ -570,7 +612,6 @@ pub fn anim_sequence_fire_triggers_at_time(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void AnimSequence_FireTriggersInRange(AnimSequence *this, float lo,
 /// float hi)` (0x313868): fire every trigger whose time lies in [lo, hi]
@@ -685,7 +726,6 @@ pub fn anim_sequence_fire_triggers_in_range(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void AnimSequence_ctor(AnimSequence *this, void *arg)` (0x313508):
 /// store `arg` at +0, clear the three track records at +0x18.., then fill the
 /// trigger/mask block from the constants at 0x4ff230. Back-edge event check
@@ -747,7 +787,6 @@ pub fn anim_sequence_ctor(c: &mut Cpu) {
     c.sw(seq.wrapping_add(0xc4), 0);
     abi::ret(c);
 }
-
 
 /// `void AnimSequence_AdvanceTrack(AnimSequence* seq, int track, float dt)`
 /// (0x3135b0): move a track's time by `dt * track rate * sequence rate` and
@@ -1010,7 +1049,6 @@ pub fn anim_sequence_advance_track(c: &mut Cpu) {
     }
 }
 
-
 /// `void AnimDataBase_EvalChanCurves(Chan* ch, int first, int count, float*
 /// out, float frame)` (0x312c20): evaluate `count` (at least one) curves of
 /// a decoded channel at `frame`, one float each into `out`. Kinds: 0 zero,
@@ -1034,7 +1072,11 @@ pub fn anim_data_base_eval_chan_curves(c: &mut Cpu) {
             return;
         }
     };
-    let finished = if interpolate { eval_lerp_loop(c) } else { eval_key_loop(c) };
+    let finished = if interpolate {
+        eval_lerp_loop(c)
+    } else {
+        eval_key_loop(c)
+    };
     if finished {
         c.cycles += 5;
         let frame = Frame { size: 0x40 };
@@ -1044,7 +1086,6 @@ pub fn anim_data_base_eval_chan_curves(c: &mut Cpu) {
         frame.close(c);
     }
 }
-
 
 /// The prologue of `AnimDataBase_EvalChanCurves`: key pointers for this
 /// frame and the next, the fractions; true for the interpolating loop.
@@ -1149,7 +1190,6 @@ pub(crate) fn eval_chan_prologue(c: &mut Cpu) -> bool {
     true
 }
 
-
 /// The curve-kind dispatch both loops start with (v1 = kind): v0 =
 /// 0x490000, and for kinds 0..9 the table pointer in v0/v1 and the target
 /// in a0 (6 more cycles). None for other kinds.
@@ -1167,7 +1207,6 @@ pub(crate) fn eval_kind(c: &mut Cpu, table_at: u32, table: &[u32; 10]) -> Option
     Some(kind as usize)
 }
 
-
 /// Horner evaluation of the polynomial kinds 2..4: `((c0 t + c1) t + c2)
 /// t + c3` with the coefficients from +4; leaves the coefficients after the
 /// first in f1.. and the result in f0.
@@ -1181,7 +1220,6 @@ pub(crate) fn eval_poly(c: &mut Cpu, curve: Addr, t: FpuF32, terms: u32) -> FpuF
     c.f[0] = v.0;
     v
 }
-
 
 /// The interpolating loop of `AnimDataBase_EvalChanCurves` (head 0x312d28).
 /// False when an event unwound the thread.
@@ -1244,7 +1282,8 @@ pub(crate) fn eval_lerp_loop(c: &mut Cpu) -> bool {
                     let index = curve.off(0xc).lw(c) as u32;
                     let scale = curve.off(8).read_fpu(c);
                     let bias = curve.off(4).read_fpu(c);
-                    let (next_at, cur_at) = (next_base.wrapping_add(index), cur_base.wrapping_add(index));
+                    let (next_at, cur_at) =
+                        (next_base.wrapping_add(index), cur_base.wrapping_add(index));
                     let next = Addr(next_at).lbu(c);
                     let cur = Addr(cur_at).lbu(c);
                     abi::set_word(c, A0, next_at);
@@ -1318,7 +1357,6 @@ pub(crate) fn eval_lerp_loop(c: &mut Cpu) -> bool {
     }
 }
 
-
 /// The key loop of `AnimDataBase_EvalChanCurves` (head 0x312f18): every
 /// keyed curve reads this frame's key. False when an event unwound the
 /// thread.
@@ -1372,7 +1410,11 @@ pub(crate) fn eval_key_loop(c: &mut Cpu) -> bool {
                 }
                 6 | 7 => {
                     c.cycles += 10 + 1;
-                    let base = if kind == 6 { c.g[T1][0] as u32 } else { c.g[T6][0] as u32 };
+                    let base = if kind == 6 {
+                        c.g[T1][0] as u32
+                    } else {
+                        c.g[T6][0] as u32
+                    };
                     let at = base.wrapping_add(curve.off(0xc).lw(c) as u32);
                     let scale = curve.off(8).read_fpu(c);
                     let bias = curve.off(4).read_fpu(c);
@@ -1427,7 +1469,6 @@ pub(crate) fn eval_key_loop(c: &mut Cpu) -> bool {
         }
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // AnimController_DispatchEndEvents (0x312490).
@@ -1570,18 +1611,16 @@ pub fn anim_controller_dispatch_end_events(c: &mut Cpu) {
         frame.restore(c, S5, 0x110);
         frame.restore(c, S0, 0x160);
         frame.restore_ra(c, 0x100);
-    frame.close(c);
+        frame.close(c);
         Ok(())
     })
 }
-
 
 /// `sw v` to `a + off`.
 #[inline(always)]
 pub(crate) fn sw(c: &mut Cpu, a: u32, off: u32, v: u64) {
     Addr(p(a, off)).sw(c, v);
 }
-
 
 // ---------------------------------------------------------------------------
 // `AnimController_PlayAnimDirect` (0x003129e0).
@@ -1592,38 +1631,37 @@ pub(crate) fn sw(c: &mut Cpu, a: u32, off: u32, v: u64) {
 
 pub fn anim_controller_play_anim_direct(c: &mut Cpu) {
     guest(c, |c| {
-
         'b_312a38: {
-        c.cycles += 19;
-        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
-        c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
-        c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
-        c.g[S1][0] = c.g[A1][0];
-        c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
-        c.g[S2][0] = c.g[A0][0];
-        c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x60));
-        c.g[S4][0] = c.g[A2][0];
-        c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
-        c.mov_s(20, 12);
-        c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
-        c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-        c.g[RA][0] = sx(0x00312a18);
-        c.g[A0][0] = c.g[S1][0];
-        call_ptr(c, 0x003115c8, 0x00312a18)?;
-        c.mtc1(0, 0);
-        c.c_lt_s(20, 0);
-        let t = !c.fcc();
-        c.g[S3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
-        if t {
-        break 'b_312a38;
-        } else {
-        c.cycles += 3;
-        c.g[RA][0] = sx(0x00312a34);
-        c.g[A0][0] = c.g[S1][0];
-        call_ptr(c, 0x003115c8, 0x00312a34)?;
-        c.lwc1(20, (c.g[V0][0] as u32).wrapping_add(0x10));
-        break 'b_312a38;
-        }
+            c.cycles += 19;
+            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x70));
+            c.sq(17, (c.g[SP][0] as u32).wrapping_add(0x40));
+            c.sq(18, (c.g[SP][0] as u32).wrapping_add(0x30));
+            c.g[S1][0] = c.g[A1][0];
+            c.sq(20, (c.g[SP][0] as u32).wrapping_add(0x10));
+            c.g[S2][0] = c.g[A0][0];
+            c.swc1(20, (c.g[SP][0] as u32).wrapping_add(0x60));
+            c.g[S4][0] = c.g[A2][0];
+            c.sq(19, (c.g[SP][0] as u32).wrapping_add(0x20));
+            c.mov_s(20, 12);
+            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x50));
+            c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+            c.g[RA][0] = sx(0x00312a18);
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x003115c8, 0x00312a18)?;
+            c.mtc1(0, 0);
+            c.c_lt_s(20, 0);
+            let t = !c.fcc();
+            c.g[S3][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+            if t {
+                break 'b_312a38;
+            } else {
+                c.cycles += 3;
+                c.g[RA][0] = sx(0x00312a34);
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x003115c8, 0x00312a34)?;
+                c.lwc1(20, (c.g[V0][0] as u32).wrapping_add(0x10));
+                break 'b_312a38;
+            }
         }
         c.cycles += 25;
         c.g[V0][0] = 0x490000;
@@ -1652,7 +1690,8 @@ pub fn anim_controller_play_anim_direct(c: &mut Cpu) {
         c.lwc1(20, (c.g[SP][0] as u32).wrapping_add(0x60));
         let t = c.g[RA][0] as u32;
         c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x70));
-        c.pc = t; return Ok(());
+        c.pc = t;
+        return Ok(());
 
         Ok(())
     })
@@ -1661,140 +1700,163 @@ pub fn anim_controller_play_anim_direct(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::schedule;
+    use crate::difftest::events::Events;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::check;
-    use crate::difftest::check_lohi;
+    use crate::difftest::fakes::*;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::schedule;
-    use crate::difftest::events::Events;
-    use crate::difftest::fakes::*;
-    use crate::difftest::fill;
-    use crate::difftest::put_words;
-    use ssx3_ee as ee;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::put_vec;
-    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
-    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
+    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
+    pub(crate) use crate::game::animation::animmodel::tests::channel;
+    pub(crate) use crate::game::animation::animmodel::tests::curves;
+    pub(crate) use crate::game::animation::animmodel::tests::eval_constants;
+    pub(crate) use crate::game::animation::animsequencer::tests::sequence;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::BASE;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_3 as SEEDS_2;
     pub(crate) use crate::game::visualfx::worldlightman::tests::f;
     pub(crate) use crate::game::visualfx::worldlightman::tests::pick;
-    pub(crate) use crate::game::animation::animsequencer::tests::sequence;
-    pub(crate) use crate::game::animation::animmodel::tests::eval_constants;
-    pub(crate) use crate::game::animation::animmodel::tests::curves;
-    pub(crate) use crate::game::animation::animmodel::tests::channel;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::SEEDS_3 as SEEDS_2;
-    pub(crate) use crate::game::visualfx::boardwakefx::tests::BASE;
-
+    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
+    use ssx3_ee as ee;
 
     #[test]
     fn anim_controller_get_current_anim_length_matches() {
-        check(ee::s10::f_00312790, anim_controller_get_current_anim_length, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x2790, 1);
-            let this = DATA;
-            c.g[A0][0] = this as u64;
-            let vt = vtable(c, &mut r, &[0x20]);
-            c.bus.write32(this + 0x58, vt);
-            let index = if seed % 4 == 0 { 0x207 } else { (seed % 5) + 1 };
-            c.bus.write32(crate::difftest::fakes::LOG_RESULTS, index);
-            // Anim table at gp+0xd8c: entry +0x1030 holds the packed index.
-            let table = DATA + 0x200;
-            c.bus.write32(GAME_GP + 0xd8c, table);
-            c.bus.write32(table + index * 4 + 0x1030, 0x203);
-            // Channel-cache table at gp+0xd08.
-            c.bus.write32(GAME_GP + 0xd08, DATA + 0x400);
-            c.bus.write32(DATA + 0x400 + 0x0c, DATA + 0x600);
-            c.bus.write32(DATA + 0x608, 0x100);
-            c.bus.write16(DATA + 0x134, 5);
-            c.bus.write32(GAME_GP - 0x3230, r.edge_f32());
-        });
+        check(
+            ee::s10::f_00312790,
+            anim_controller_get_current_anim_length,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2790, 1);
+                let this = DATA;
+                c.g[A0][0] = this as u64;
+                let vt = vtable(c, &mut r, &[0x20]);
+                c.bus.write32(this + 0x58, vt);
+                let index = if seed % 4 == 0 { 0x207 } else { (seed % 5) + 1 };
+                c.bus.write32(crate::difftest::fakes::LOG_RESULTS, index);
+                // Anim table at gp+0xd8c: entry +0x1030 holds the packed index.
+                let table = DATA + 0x200;
+                c.bus.write32(GAME_GP + 0xd8c, table);
+                c.bus.write32(table + index * 4 + 0x1030, 0x203);
+                // Channel-cache table at gp+0xd08.
+                c.bus.write32(GAME_GP + 0xd08, DATA + 0x400);
+                c.bus.write32(DATA + 0x400 + 0x0c, DATA + 0x600);
+                c.bus.write32(DATA + 0x608, 0x100);
+                c.bus.write16(DATA + 0x134, 5);
+                c.bus.write32(GAME_GP - 0x3230, r.edge_f32());
+            },
+        );
     }
-
 
     #[test]
     fn anim_controller_get_current_anim_trigger_time_matches() {
-        check(ee::s10::f_00312820, anim_controller_get_current_anim_trigger_time, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x2820, 1);
-            let this = DATA;
-            c.g[A0][0] = this as u64;
-            let vt = vtable(c, &mut r, &[0x20]);
-            c.bus.write32(this + 0x58, vt);
-            let index = if seed % 4 == 0 { 0x207 } else { (seed % 5) + 1 };
-            c.bus.write32(crate::difftest::fakes::LOG_RESULTS, index);
-            let table = DATA + 0x200;
-            c.bus.write32(GAME_GP + 0xd8c, table);
-            c.bus.write32(table + index * 4 + 0x1030, 0x203);
-            c.bus.write32(GAME_GP + 0xd08, DATA + 0x400);
-            c.bus.write32(DATA + 0x400 + 0x0c, DATA + 0x600);
-            c.bus.write32(DATA + 0x608, 0x100);
-            c.bus.write16(DATA + 0x710, 0);
-            c.bus.write16(DATA + 0x712, 10);
-            c.bus.write32(DATA + 0x610, DATA + 0x800);
-            for i in 0..12u32 {
-                c.bus.write16(DATA + 0x800 + i * 4, r.next_u32() as u16);
-            }
-            c.g[A2][0] = (seed % 12) as u64;
-            c.bus.write32(GAME_GP - 0x322c, r.edge_f32());
-        });
+        check(
+            ee::s10::f_00312820,
+            anim_controller_get_current_anim_trigger_time,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2820, 1);
+                let this = DATA;
+                c.g[A0][0] = this as u64;
+                let vt = vtable(c, &mut r, &[0x20]);
+                c.bus.write32(this + 0x58, vt);
+                let index = if seed % 4 == 0 { 0x207 } else { (seed % 5) + 1 };
+                c.bus.write32(crate::difftest::fakes::LOG_RESULTS, index);
+                let table = DATA + 0x200;
+                c.bus.write32(GAME_GP + 0xd8c, table);
+                c.bus.write32(table + index * 4 + 0x1030, 0x203);
+                c.bus.write32(GAME_GP + 0xd08, DATA + 0x400);
+                c.bus.write32(DATA + 0x400 + 0x0c, DATA + 0x600);
+                c.bus.write32(DATA + 0x608, 0x100);
+                c.bus.write16(DATA + 0x710, 0);
+                c.bus.write16(DATA + 0x712, 10);
+                c.bus.write32(DATA + 0x610, DATA + 0x800);
+                for i in 0..12u32 {
+                    c.bus.write16(DATA + 0x800 + i * 4, r.next_u32() as u16);
+                }
+                c.g[A2][0] = (seed % 12) as u64;
+                c.bus.write32(GAME_GP - 0x322c, r.edge_f32());
+            },
+        );
     }
-
 
     #[test]
     fn anim_controller_ctor_matches() {
-        check(ee::s10::f_003118d0, anim_controller_ctor, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x18d0, 0);
-            alloc_setup(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-        });
+        check(
+            ee::s10::f_003118d0,
+            anim_controller_ctor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x18d0, 0);
+                alloc_setup(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
-
 
     #[test]
     fn anim_controller_dtor_matches() {
-        check(ee::s10::f_00311958, anim_controller_dtor, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x1958, 0);
-            alloc_setup(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (seed % 2) as u64;
-            c.bus.write32(DATA + 0x50, 0);
-        });
+        check(
+            ee::s10::f_00311958,
+            anim_controller_dtor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1958, 0);
+                alloc_setup(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 2) as u64;
+                c.bus.write32(DATA + 0x50, 0);
+            },
+        );
     }
-
 
     #[test]
     fn anim_controller_clear_layer_matches() {
-        check(ee::s10::f_00311e38, anim_controller_clear_layer, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x1e38, 0);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (seed % 4) as u64;
-            // A layer's sequence list: head at +4 (empty keeps the free path
-            // short and safe).
-            c.bus.write32(DATA + 0x50, DATA + 0x100);
-            c.bus.write32(DATA + 0x100 + 4, 0);
-        });
+        check(
+            ee::s10::f_00311e38,
+            anim_controller_clear_layer,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1e38, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (seed % 4) as u64;
+                // A layer's sequence list: head at +4 (empty keeps the free path
+                // short and safe).
+                c.bus.write32(DATA + 0x50, DATA + 0x100);
+                c.bus.write32(DATA + 0x100 + 4, 0);
+            },
+        );
     }
-
 
     #[test]
     fn anim_controller_get_layer_progress_matches() {
-        check(ee::s10::f_00312ab0, anim_controller_get_layer_progress, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0x2ab0, 0);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = 0;
-            c.bus.write32(DATA + 0x50, DATA + 0x100);
-            c.bus.write32(DATA + 0x100 + 4, DATA + 0x300);
-            c.bus.write32(DATA + 0x300 + 8, r.edge_f32());
-            c.bus.write32(DATA + 0x300 + 0x10, r.edge_f32());
-        });
+        check(
+            ee::s10::f_00312ab0,
+            anim_controller_get_layer_progress,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ab0, 0);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = 0;
+                c.bus.write32(DATA + 0x50, DATA + 0x100);
+                c.bus.write32(DATA + 0x100 + 4, DATA + 0x300);
+                c.bus.write32(DATA + 0x300 + 8, r.edge_f32());
+                c.bus.write32(DATA + 0x300 + 0x10, r.edge_f32());
+            },
+        );
     }
-
 
     /// A chain of trigger nodes at DATA + 0x1000, each `{bit, count, time,
     /// next}`, with the header's `+0xac` pointing at the first. `mask` controls
@@ -1805,14 +1867,20 @@ pub(crate) mod tests {
         c.bus.write32(seq + TRIGGERS, if n == 0 { 0 } else { node });
         for i in 0..n {
             c.bus.write32(node + trigger::BIT, r.next_u32() % 64);
-            let count = if mask >> i & 1 != 0 { r.next_u32() % 3 + 1 } else { 0 };
+            let count = if mask >> i & 1 != 0 {
+                r.next_u32() % 3 + 1
+            } else {
+                0
+            };
             c.bus.write32(node + trigger::COUNT, count);
             c.bus.write32(node + trigger::TIME, r.edge_f32());
-            c.bus.write32(node + trigger::NEXT, if i + 1 < n { node + 0x20 } else { 0 });
+            c.bus.write32(
+                node + trigger::NEXT,
+                if i + 1 < n { node + 0x20 } else { 0 },
+            );
             node += 0x20;
         }
     }
-
 
     #[test]
     fn anim_sequence_fire_end_triggers_matches() {
@@ -1825,8 +1893,14 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 let seq = DATA;
                 c.g[A0][0] = seq as u64;
-                c.bus.write64(seq + MASK_A, ((r.next_u32() as u64) << 32) | r.next_u32() as u64);
-                c.bus.write64(seq + MASK_B, ((r.next_u32() as u64) << 32) | r.next_u32() as u64);
+                c.bus.write64(
+                    seq + MASK_A,
+                    ((r.next_u32() as u64) << 32) | r.next_u32() as u64,
+                );
+                c.bus.write64(
+                    seq + MASK_B,
+                    ((r.next_u32() as u64) << 32) | r.next_u32() as u64,
+                );
                 let mask = (r.next_u32() as u64) | 1;
                 build_triggers(c, &mut r, seq, mask);
                 let mode = schedule(c, &mut r, seed, 0x0031_39a8);
@@ -1837,7 +1911,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn anim_sequence_fire_triggers_at_time_matches() {
@@ -1850,14 +1923,24 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 let seq = DATA;
                 c.g[A0][0] = seq as u64;
-                c.bus.write64(seq + MASK_A, ((r.next_u32() as u64) << 32) | r.next_u32() as u64);
-                c.bus.write64(seq + MASK_B, ((r.next_u32() as u64) << 32) | r.next_u32() as u64);
+                c.bus.write64(
+                    seq + MASK_A,
+                    ((r.next_u32() as u64) << 32) | r.next_u32() as u64,
+                );
+                c.bus.write64(
+                    seq + MASK_B,
+                    ((r.next_u32() as u64) << 32) | r.next_u32() as u64,
+                );
                 let mask = (r.next_u32() as u64) | 1;
                 build_triggers(c, &mut r, seq, mask);
                 // Half the seeds match a node's time exactly.
                 let target = if seed % 2 == 0 {
                     let first = c.bus.read32(seq + TRIGGERS);
-                    if first != 0 { c.bus.read32(first + trigger::TIME) } else { r.edge_f32() }
+                    if first != 0 {
+                        c.bus.read32(first + trigger::TIME)
+                    } else {
+                        r.edge_f32()
+                    }
                 } else {
                     r.edge_f32()
                 };
@@ -1871,7 +1954,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn anim_sequence_fire_triggers_in_range_matches() {
         check_events(
@@ -1883,8 +1965,14 @@ pub(crate) mod tests {
                 scramble(c, &mut r);
                 let seq = DATA;
                 c.g[A0][0] = seq as u64;
-                c.bus.write64(seq + MASK_A, ((r.next_u32() as u64) << 32) | r.next_u32() as u64);
-                c.bus.write64(seq + MASK_B, ((r.next_u32() as u64) << 32) | r.next_u32() as u64);
+                c.bus.write64(
+                    seq + MASK_A,
+                    ((r.next_u32() as u64) << 32) | r.next_u32() as u64,
+                );
+                c.bus.write64(
+                    seq + MASK_B,
+                    ((r.next_u32() as u64) << 32) | r.next_u32() as u64,
+                );
                 let mask = (r.next_u32() as u64) | 1;
                 build_triggers(c, &mut r, seq, mask);
                 let (lo, hi) = match seed % 4 {
@@ -1903,7 +1991,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn anim_sequence_ctor_matches() {
@@ -1925,109 +2012,145 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn anim_sequence_advance_track_matches() {
-        check(ee::s10::f_003135b0__generated, anim_sequence_advance_track, 400, &|c, seed| {
-            let mut r = Rng(0xadfa_7ace ^ (seed as u64) << 12);
-            scramble(c, &mut r);
-            let s = DATA;
-            sequence(c, &mut r, s);
-            let index = [0u32, 0, 1, 2][seed as usize % 4];
-            let t = s + index * 0x1c;
-            let length = pick(&mut r, &[2.0f32, 1.0, 0.5]);
-            c.bus.write32(t + 0x10, f(length));
-            // loop mode: 0 clamps, anything else loops
-            c.bus.write32(t + 0x1c, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
-            let old = pick(&mut r, &[0.5f32, 0.0, 0.4, 5.0, -3.0, -0.5, 1.9]);
-            c.bus.write32(t + 0x8, f(old * length));
-            let dt = pick(&mut r, &[0.1f32, -0.7, 2.6, 7.0, -5.0, 0.0, 1.5, -2.0, 3.0, -0.25, -3.5]);
-            if seed % 7 == 3 {
-                c.bus.write32(t + 0xc, r.edge_f32());
-                c.bus.write32(s + 0x90, r.edge_f32());
-                c.f[12] = r.edge_f32();
-            } else {
-                c.bus.write32(t + 0xc, f(1.0));
-                c.bus.write32(s + 0x90, f(pick(&mut r, &[1.0f32, 0.5, 2.0])));
-                c.f[12] = f(dt * length);
-            }
-            c.bus.write32(s + 0xc4, (seed % 3 == 0) as u32);
-            c.g[A0][0] = sx(s);
-            c.g[A1][0] = index as u64;
-        });
+        check(
+            ee::s10::f_003135b0__generated,
+            anim_sequence_advance_track,
+            400,
+            &|c, seed| {
+                let mut r = Rng(0xadfa_7ace ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                let s = DATA;
+                sequence(c, &mut r, s);
+                let index = [0u32, 0, 1, 2][seed as usize % 4];
+                let t = s + index * 0x1c;
+                let length = pick(&mut r, &[2.0f32, 1.0, 0.5]);
+                c.bus.write32(t + 0x10, f(length));
+                // loop mode: 0 clamps, anything else loops
+                c.bus
+                    .write32(t + 0x1c, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+                let old = pick(&mut r, &[0.5f32, 0.0, 0.4, 5.0, -3.0, -0.5, 1.9]);
+                c.bus.write32(t + 0x8, f(old * length));
+                let dt = pick(
+                    &mut r,
+                    &[
+                        0.1f32, -0.7, 2.6, 7.0, -5.0, 0.0, 1.5, -2.0, 3.0, -0.25, -3.5,
+                    ],
+                );
+                if seed % 7 == 3 {
+                    c.bus.write32(t + 0xc, r.edge_f32());
+                    c.bus.write32(s + 0x90, r.edge_f32());
+                    c.f[12] = r.edge_f32();
+                } else {
+                    c.bus.write32(t + 0xc, f(1.0));
+                    c.bus
+                        .write32(s + 0x90, f(pick(&mut r, &[1.0f32, 0.5, 2.0])));
+                    c.f[12] = f(dt * length);
+                }
+                c.bus.write32(s + 0xc4, (seed % 3 == 0) as u32);
+                c.g[A0][0] = sx(s);
+                c.g[A1][0] = index as u64;
+            },
+        );
     }
-
 
     #[test]
     fn anim_data_base_eval_chan_curves_matches() {
-        check(ee::s10::f_00312c20__generated, anim_data_base_eval_chan_curves, 400, &|c, seed| {
-            let mut r = Rng(0xe7a1_c0e5 ^ (seed as u64) << 12);
-            scramble(c, &mut r);
-            eval_constants(c);
-            let (ch, recs, keys, out) = (DATA, DATA + 0x100, DATA + 0x1000, DATA + 0x3000);
-            channel(c, &mut r, ch, recs, keys);
-            curves(c, &mut r, recs, keys + 0x400, 12);
-            let frame = (r.next_u32() % 16) as f32;
-            let t = match seed % 6 {
-                0 => frame - frame % 2.0,                 // on a key and a half-rate key
-                1 => frame - frame % 2.0 + 1.0,           // on a key only
-                2 => frame + 0.004,                       // within epsilon of a key
-                3 => frame + 0.5,
-                _ => frame + (r.next_u32() % 1000) as f32 / 1000.0,
-            };
-            c.f[12] = f(t);
-            let first = r.next_u32() % 4;
-            c.g[A0][0] = sx(ch);
-            c.g[A1][0] = first as u64;
-            c.g[A2][0] = (1 + r.next_u32() % 6) as u64;
-            c.g[A3][0] = sx(out);
-            c.pc = eval::ENTRY;
-            if seed % 5 == 4 {
-                // re-entry at a loop head after an unwind: the frame is
-                // open and the loop state is in the registers
-                c.pc = if seed % 2 == 0 { eval::LERP_HEAD } else { eval::KEY_HEAD };
-                c.g[SP][0] = sx(crate::difftest::SP - 0x40);
-                let cur = recs + first * 0x14;
-                c.g[T5][0] = sx(cur);
-                c.g[A2][0] = sx(cur + (1 + r.next_u32() % 5) * 0x14);
-                c.g[V1][0] = c.bus.read32(cur) as u64;
-                for (reg, base) in [(T1, 0u32), (T3, 0x10), (T6, 0x100), (T2, 0x110), (T0, 0x200), (S0, 0x210), (T4, 0x300), (T7, 0x310)] {
-                    c.g[reg][0] = sx(keys + base + (r.next_u32() % 8) * 4);
+        check(
+            ee::s10::f_00312c20__generated,
+            anim_data_base_eval_chan_curves,
+            400,
+            &|c, seed| {
+                let mut r = Rng(0xe7a1_c0e5 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                eval_constants(c);
+                let (ch, recs, keys, out) = (DATA, DATA + 0x100, DATA + 0x1000, DATA + 0x3000);
+                channel(c, &mut r, ch, recs, keys);
+                curves(c, &mut r, recs, keys + 0x400, 12);
+                let frame = (r.next_u32() % 16) as f32;
+                let t = match seed % 6 {
+                    0 => frame - frame % 2.0,       // on a key and a half-rate key
+                    1 => frame - frame % 2.0 + 1.0, // on a key only
+                    2 => frame + 0.004,             // within epsilon of a key
+                    3 => frame + 0.5,
+                    _ => frame + (r.next_u32() % 1000) as f32 / 1000.0,
+                };
+                c.f[12] = f(t);
+                let first = r.next_u32() % 4;
+                c.g[A0][0] = sx(ch);
+                c.g[A1][0] = first as u64;
+                c.g[A2][0] = (1 + r.next_u32() % 6) as u64;
+                c.g[A3][0] = sx(out);
+                c.pc = eval::ENTRY;
+                if seed % 5 == 4 {
+                    // re-entry at a loop head after an unwind: the frame is
+                    // open and the loop state is in the registers
+                    c.pc = if seed % 2 == 0 {
+                        eval::LERP_HEAD
+                    } else {
+                        eval::KEY_HEAD
+                    };
+                    c.g[SP][0] = sx(crate::difftest::SP - 0x40);
+                    let cur = recs + first * 0x14;
+                    c.g[T5][0] = sx(cur);
+                    c.g[A2][0] = sx(cur + (1 + r.next_u32() % 5) * 0x14);
+                    c.g[V1][0] = c.bus.read32(cur) as u64;
+                    for (reg, base) in [
+                        (T1, 0u32),
+                        (T3, 0x10),
+                        (T6, 0x100),
+                        (T2, 0x110),
+                        (T0, 0x200),
+                        (S0, 0x210),
+                        (T4, 0x300),
+                        (T7, 0x310),
+                    ] {
+                        c.g[reg][0] = sx(keys + base + (r.next_u32() % 8) * 4);
+                    }
+                    c.f[4] = r.f32(1.0);
+                    c.f[5] = r.f32(1.0);
                 }
-                c.f[4] = r.f32(1.0);
-                c.f[5] = r.f32(1.0);
-            }
-        });
+            },
+        );
     }
-
 
     #[test]
     fn anim_controller_dispatch_end_events_matches() {
-        check(ee::s10::f_00312490__generated, anim_controller_dispatch_end_events, SEEDS_2, &|c, seed| {
-            let mut r = machine(c, seed, 0x2490, 1);
-            let anim = BASE;
-            let lists = BASE + 0x1_0000;
-            let nodes = BASE + 0x2_0000;
-            c.bus.write32(anim + 0x50, lists);
-            let vt = vtable(c, &mut r, &[0x18]);
-            c.bus.write32(anim + 0x58, vt);
-            for i in 0..6u32 {
-                let len = (seed / (i + 1)) % 3;
-                let mut head = 0u32;
-                for k in 0..len {
-                    let n = nodes + 0x100 * (i * 3 + k);
-                    c.bus.write32(n + 0xc8, head);
-                    c.bus.write32(n + 0xb0, r.next_u32());
-                    c.bus.write32(
-                        n + 0xb4,
-                        if (seed + k + i) % 3 == 0 { 0x8000_0000 } else { 0 },
-                    );
-                    head = n;
+        check(
+            ee::s10::f_00312490__generated,
+            anim_controller_dispatch_end_events,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2490, 1);
+                let anim = BASE;
+                let lists = BASE + 0x1_0000;
+                let nodes = BASE + 0x2_0000;
+                c.bus.write32(anim + 0x50, lists);
+                let vt = vtable(c, &mut r, &[0x18]);
+                c.bus.write32(anim + 0x58, vt);
+                for i in 0..6u32 {
+                    let len = (seed / (i + 1)) % 3;
+                    let mut head = 0u32;
+                    for k in 0..len {
+                        let n = nodes + 0x100 * (i * 3 + k);
+                        c.bus.write32(n + 0xc8, head);
+                        c.bus.write32(n + 0xb0, r.next_u32());
+                        c.bus.write32(
+                            n + 0xb4,
+                            if (seed + k + i) % 3 == 0 {
+                                0x8000_0000
+                            } else {
+                                0
+                            },
+                        );
+                        head = n;
+                    }
+                    c.bus.write32(lists + 8 * i, r.next_u32());
+                    c.bus.write32(lists + 8 * i + 4, head);
                 }
-                c.bus.write32(lists + 8 * i, r.next_u32());
-                c.bus.write32(lists + 8 * i + 4, head);
-            }
-            c.g[A0][0] = sx(anim);
-        });
+                c.g[A0][0] = sx(anim);
+            },
+        );
     }
 }

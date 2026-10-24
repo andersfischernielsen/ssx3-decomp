@@ -30,7 +30,10 @@ static APPLIED: AtomicU32 = AtomicU32::new(0);
 
 /// Set the detail distance factor (1.0 = original, up to 4).
 pub fn set(factor: f32) {
-    FACTOR.store((factor.clamp(1.0, 4.0) * 100.0).round() as u32, Ordering::Relaxed);
+    FACTOR.store(
+        (factor.clamp(1.0, 4.0) * 100.0).round() as u32,
+        Ordering::Relaxed,
+    );
 }
 
 /// At every VSync: write the tables when the factor changed.
@@ -41,9 +44,13 @@ pub fn on_vblank(c: &mut Cpu) {
         return;
     }
     let f = want as f32 / 100.0;
-    c.bus.write32(RIDER_LOD_SCALE, (RIDER_LOD_SCALE_ORIGINAL / f).to_bits());
+    c.bus
+        .write32(RIDER_LOD_SCALE, (RIDER_LOD_SCALE_ORIGINAL / f).to_bits());
     APPLIED.store(want, Ordering::Relaxed);
-    eprintln!("[detail] distance x{f}: rider LOD scale {}", RIDER_LOD_SCALE_ORIGINAL / f);
+    eprintln!(
+        "[detail] distance x{f}: rider LOD scale {}",
+        RIDER_LOD_SCALE_ORIGINAL / f
+    );
 }
 
 #[cfg(test)]

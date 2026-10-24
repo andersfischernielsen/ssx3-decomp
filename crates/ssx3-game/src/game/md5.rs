@@ -9,10 +9,7 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0031_d368, md5_init, "MD5_Init"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0031_d368, md5_init, "MD5_Init")];
 
 /// `void MD5_Init(MD5_CTX *ctx)` (0x31d368): load the standard MD5 constants.
 pub fn md5_init(c: &mut Cpu) {
@@ -44,7 +41,6 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-
 
     #[test]
     fn md5_init_matches() {

@@ -7,29 +7,32 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::dirtysock::tags2::at;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
+use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::call::Flow;
-use crate::guest::Addr;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::X;
-pub(crate) use crate::game::dirtysock::tags2::at;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_b598, path_data_has_marker, "PathData_HasMarker"),
     (0x0026_b5e0, path_data_find_marker, "PathData_FindMarker"),
-    (0x0026_b7d8, path_data_read_float_int_pairs, "PathData_ReadFloatIntPairs"),
+    (
+        0x0026_b7d8,
+        path_data_read_float_int_pairs,
+        "PathData_ReadFloatIntPairs",
+    ),
 ];
-
 
 /// `bool PathData_HasMarker(PathData* self, int a /*a1*/, int b /*a2*/)`
 /// (0x26b598): true when one of the `count` markers (0x28 bytes each, a
@@ -78,7 +81,6 @@ pub fn path_data_has_marker(c: &mut Cpu) {
     c.g[V0][0] = 0;
     abi::ret(c);
 }
-
 
 /// `PathMarker* PathData_FindMarker(PathData* self, int type, int id)`
 /// (0x26b5e0): linear search of the 0x28-byte marker array; then the first
@@ -142,7 +144,6 @@ pub fn path_data_find_marker(c: &mut Cpu) {
     }
     abi::ret(c);
 }
-
 
 /// `int PathData_ReadFloatIntPairs(pairs, p)` (0x26b7d8): read a count and
 /// then that many (float, int) pairs, returning the bytes consumed.
@@ -209,31 +210,30 @@ pub fn path_data_read_float_int_pairs(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
     use crate::difftest::events::check_events;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
     use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
+    use crate::difftest::fill;
+    use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::Rng;
-    use crate::difftest::fill;
-    use ssx3_ee as ee;
-    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
     pub(crate) use crate::game::be::belibrary::tests::SRC;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_5 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::dirtysock::tags2::tests::be_library_2 as be_library;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::globals_10 as globals;
     pub(crate) use crate::game::fe::feasyncfile::tests::pool_8 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_5 as WORLD;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+    use ssx3_ee as ee;
 
     #[test]
     fn path_data_has_marker_matches() {
@@ -270,9 +270,13 @@ pub(crate) mod tests {
             }
             mode
         };
-        check_events(ssx3_ee::s07::f_0026b598__generated, path_data_has_marker, 80, &setup);
+        check_events(
+            ssx3_ee::s07::f_0026b598__generated,
+            path_data_has_marker,
+            80,
+            &setup,
+        );
     }
-
 
     #[test]
     fn path_data_find_marker_matches() {
@@ -300,7 +304,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn path_data_read_float_int_pairs_matches() {

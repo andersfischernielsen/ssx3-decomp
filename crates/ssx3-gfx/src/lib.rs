@@ -140,7 +140,17 @@ pub struct Inner {
     pub want_depth: bool,
     /// This frame's depth readback in flight (buffer, size, ZMAX + 1).
     /// (The flag: mapped; the browser cannot wait for it.)
-    pending_depth: Option<(wgpu::Buffer, wgpu::SubmissionIndex, u32, u32, f32, u32, u32, Arc<std::sync::atomic::AtomicBool>, u64)>,
+    pending_depth: Option<(
+        wgpu::Buffer,
+        wgpu::SubmissionIndex,
+        u32,
+        u32,
+        f32,
+        u32,
+        u32,
+        Arc<std::sync::atomic::AtomicBool>,
+        u64,
+    )>,
     /// Frames received by `render_built` (the next frame's number).
     frames_in: u64,
     /// ZMAX + 1 of the frame's Z buffer (depth is stored as Z / it).
@@ -206,7 +216,9 @@ fn in_buffers(tbp: u32, d: &frame::DisplayState) -> bool {
     let size = (d.fb_width.div_ceil(64) * d.fb_height.div_ceil(32)).max(1);
     // The display buffer follows the draw buffer (TexMan's VramHeap: draw,
     // display, Z).
-    [d.draw_fbp, d.draw_fbp + size, d.zbp].iter().any(|&b| page >= b && page < b + size)
+    [d.draw_fbp, d.draw_fbp + size, d.zbp]
+        .iter()
+        .any(|&b| page >= b && page < b + size)
 }
 
 impl Renderer {
@@ -215,7 +227,11 @@ impl Renderer {
         let white = dev
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("ssx3-gfx white"),
-                size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -225,52 +241,68 @@ impl Renderer {
             })
             .create_view(&Default::default());
         queue.write_texture(
-            wgpu::TexelCopyTextureInfo { texture: white.texture(), mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo {
+                texture: white.texture(),
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
             &[255, 255, 255, 128],
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: Some(1) },
-            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
         );
         let shared = Arc::new(Shared::default());
-        Renderer(Arc::new(Mutex::new(Inner {
-            shared: shared.clone(),
-            dev,
-            queue,
-            pipes,
-            targets: None,
-            rts: HashMap::new(),
-            gs: gs::Gs::new(),
-            vu: Box::new([0; 16384]),
-            texcache: HashMap::new(),
-            texkeys: Default::default(),
-            samplers: HashMap::new(),
-            aniso: 16,
-            white,
-            failed: Default::default(),
-            stats: Stats::default(),
-            pack: pack::Pack::from_env(),
-            display_fbp: None,
-            scale: 1,
-            out_size: None,
-            fxy: (1.0, 1.0),
-            rt_scale: 1,
-            hud_squeeze: 1.0,
-            opts: Options::default(),
-            post: None,
-            t0: web_time::Instant::now(),
-            phase1_end: usize::MAX,
-            want_depth: false,
-            pending_depth: None,
-            frames_in: 0,
-            zscale: 16777216.0,
-            timing: (0, [0.0; 4]),
-            present: Vec::new(),
-            staged: None,
-            vbuf: None,
-            gbuf: [None, None, None, None],
-            arena_buf: None,
-            arena_epoch: u64::MAX,
-            ubuf: None,
-        })), shared)
+        Renderer(
+            Arc::new(Mutex::new(Inner {
+                shared: shared.clone(),
+                dev,
+                queue,
+                pipes,
+                targets: None,
+                rts: HashMap::new(),
+                gs: gs::Gs::new(),
+                vu: Box::new([0; 16384]),
+                texcache: HashMap::new(),
+                texkeys: Default::default(),
+                samplers: HashMap::new(),
+                aniso: 16,
+                white,
+                failed: Default::default(),
+                stats: Stats::default(),
+                pack: pack::Pack::from_env(),
+                display_fbp: None,
+                scale: 1,
+                out_size: None,
+                fxy: (1.0, 1.0),
+                rt_scale: 1,
+                hud_squeeze: 1.0,
+                opts: Options::default(),
+                post: None,
+                t0: web_time::Instant::now(),
+                phase1_end: usize::MAX,
+                want_depth: false,
+                pending_depth: None,
+                frames_in: 0,
+                zscale: 16777216.0,
+                timing: (0, [0.0; 4]),
+                present: Vec::new(),
+                staged: None,
+                vbuf: None,
+                gbuf: [None, None, None, None],
+                arena_buf: None,
+                arena_epoch: u64::MAX,
+                ubuf: None,
+            })),
+            shared,
+        )
     }
 
     /// Render on a thread of its own from now on: frames are rendered while
@@ -284,7 +316,10 @@ impl Renderer {
             .name("ssx3-gfx".into())
             .spawn(move || {
                 while let Ok(f) = rx.recv() {
-                    inner.lock().unwrap().render_built(&f.built, &f.carry, &f.mem);
+                    inner
+                        .lock()
+                        .unwrap()
+                        .render_built(&f.built, &f.carry, &f.mem);
                     drop(f);
                     let mut p = shared.pending.lock().unwrap();
                     *p -= 1;
@@ -314,7 +349,10 @@ impl Renderer {
     pub fn present_view(&self) -> Option<(wgpu::TextureView, u32, u32)> {
         let g = self.1.present.lock().unwrap();
         let t = g.as_ref()?.0.last()?;
-        let view = t.create_view(&wgpu::TextureViewDescriptor { format: Some(wgpu::TextureFormat::Rgba8UnormSrgb), ..Default::default() });
+        let view = t.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+            ..Default::default()
+        });
         Some((view, t.width(), t.height()))
     }
 
@@ -341,7 +379,10 @@ impl Renderer {
     pub fn read_presents(&self) -> Vec<(u32, u32, Vec<u32>)> {
         self.flush();
         let g = self.0.lock().unwrap();
-        g.present.iter().map(|p| g.read_texture(p, p.width(), p.height())).collect()
+        g.present
+            .iter()
+            .map(|p| g.read_texture(p, p.width(), p.height()))
+            .collect()
     }
 
     /// Render at `n`× the GS resolution (1..=8).
@@ -371,10 +412,13 @@ impl Renderer {
     /// The render targets (FBP, width, height, RGBA8), read back (debug).
     pub fn read_rts(&self) -> Vec<(u32, u32, u32, Vec<u32>)> {
         let g = self.0.lock().unwrap();
-        g.rts.iter().map(|(&fbp, r)| {
-            let (w, h, px) = g.read_texture(&r.color, r.w, r.h);
-            (fbp, w, h, px)
-        }).collect()
+        g.rts
+            .iter()
+            .map(|(&fbp, r)| {
+                let (w, h, px) = g.read_texture(&r.color, r.w, r.h);
+                (fbp, w, h, px)
+            })
+            .collect()
     }
 
     pub fn stats(&self) -> Stats {
@@ -383,7 +427,15 @@ impl Renderer {
 
     /// Primitives drawn into other frame buffers (debug).
     pub fn dropped_fbp(&self) -> Vec<((u32, u32, u32), u64)> {
-        let mut v: Vec<_> = self.0.lock().unwrap().gs.dropped_fbp.iter().map(|(k, v)| (*k, *v)).collect();
+        let mut v: Vec<_> = self
+            .0
+            .lock()
+            .unwrap()
+            .gs
+            .dropped_fbp
+            .iter()
+            .map(|(k, v)| (*k, *v))
+            .collect();
         v.sort_by_key(|x| std::cmp::Reverse(x.1));
         v
     }
@@ -435,7 +487,12 @@ impl ssx3_ps2::frame_sink::FrameSink for Renderer {
             if now >= deadline {
                 return g.take().map(|d| d.1);
             }
-            g = self.1.depth_ready.wait_timeout(g, deadline - now).unwrap().0;
+            g = self
+                .1
+                .depth_ready
+                .wait_timeout(g, deadline - now)
+                .unwrap()
+                .0;
         }
     }
 }
@@ -448,20 +505,46 @@ impl Inner {
         let mk = |label, format, extra| {
             self.dev.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
-                size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | extra,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | extra,
                 view_formats: &[],
             })
         };
-        let color = mk("ssx3-gfx colour", draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST);
-        let snapshot = mk("ssx3-gfx snapshot", draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_DST);
-        let depth = mk("ssx3-gfx depth", draw::DEPTH_FORMAT, wgpu::TextureUsages::COPY_SRC);
-        let zsnap = mk("ssx3-gfx depth snapshot", draw::DEPTH_FORMAT, wgpu::TextureUsages::COPY_DST);
-        let qdepth = mk("ssx3-gfx query depth", draw::DEPTH_FORMAT, wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC);
+        let color = mk(
+            "ssx3-gfx colour",
+            draw::COLOR_FORMAT,
+            wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
+        );
+        let snapshot = mk(
+            "ssx3-gfx snapshot",
+            draw::COLOR_FORMAT,
+            wgpu::TextureUsages::COPY_DST,
+        );
+        let depth = mk(
+            "ssx3-gfx depth",
+            draw::DEPTH_FORMAT,
+            wgpu::TextureUsages::COPY_SRC,
+        );
+        let zsnap = mk(
+            "ssx3-gfx depth snapshot",
+            draw::DEPTH_FORMAT,
+            wgpu::TextureUsages::COPY_DST,
+        );
+        let qdepth = mk(
+            "ssx3-gfx query depth",
+            draw::DEPTH_FORMAT,
+            wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
+        );
         // Start cleared (the game clears with its own draws afterwards).
         let mut enc = self.dev.create_command_encoder(&Default::default());
         {
@@ -473,11 +556,17 @@ impl Inner {
                     view: &cv,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &dv,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0.0), store: wgpu::StoreOp::Store }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -486,7 +575,15 @@ impl Inner {
             });
         }
         self.queue.submit(std::iter::once(enc.finish()));
-        self.targets = Some(Targets { w, h, color, depth, snapshot, zsnap, qdepth });
+        self.targets = Some(Targets {
+            w,
+            h,
+            color,
+            depth,
+            snapshot,
+            zsnap,
+            qdepth,
+        });
     }
 
     /// Textures for the render targets the game drew into (resized when
@@ -498,25 +595,45 @@ impl Inner {
             // scale; other targets an integer one.
             let (fx, fy) = self.rt_fxy(fbp);
             let _ = s;
-            let (pw, ph) = ((rt.w as f32 * fx).round() as u32, (rt.h as f32 * fy).round() as u32);
+            let (pw, ph) = (
+                (rt.w as f32 * fx).round() as u32,
+                (rt.h as f32 * fy).round() as u32,
+            );
             if self.rts.get(&fbp).is_some_and(|t| t.w == pw && t.h == ph) {
                 continue;
             }
             let mk = |format, extra| {
                 self.dev.create_texture(&wgpu::TextureDescriptor {
                     label: Some("ssx3-gfx rt"),
-                    size: wgpu::Extent3d { width: pw, height: ph, depth_or_array_layers: 1 },
+                    size: wgpu::Extent3d {
+                        width: pw,
+                        height: ph,
+                        depth_or_array_layers: 1,
+                    },
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
                     format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | extra,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | extra,
                     view_formats: &[],
                 })
             };
-            let color = mk(draw::COLOR_FORMAT, wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST);
+            let color = mk(
+                draw::COLOR_FORMAT,
+                wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
+            );
             let depth = mk(draw::DEPTH_FORMAT, wgpu::TextureUsages::empty());
-            self.rts.insert(fbp, RtTarget { w: pw, h: ph, color, depth });
+            self.rts.insert(
+                fbp,
+                RtTarget {
+                    w: pw,
+                    h: ph,
+                    color,
+                    depth,
+                },
+            );
         }
     }
 
@@ -547,17 +664,34 @@ impl Inner {
         self.pack.dump(&key, &d);
         let replaced = self.pack.load(&key);
         if let Some(r) = &replaced {
-            let (a, b) = (r[0].width as f32 / r[0].height as f32, d.width as f32 / d.height as f32);
+            let (a, b) = (
+                r[0].width as f32 / r[0].height as f32,
+                d.width as f32 / d.height as f32,
+            );
             if (a / b - 1.0).abs() > 0.01 {
-                eprintln!("[gfx] replacement {} is {}x{}, the texture {}x{}: aspect ratio differs", pack::name(&key), r[0].width, r[0].height, d.width, d.height);
+                eprintln!(
+                    "[gfx] replacement {} is {}x{}, the texture {}x{}: aspect ratio differs",
+                    pack::name(&key),
+                    r[0].width,
+                    r[0].height,
+                    d.width,
+                    d.height
+                );
             }
         }
         // Options: mipmaps for the game's own textures.
         let generated = (replaced.is_none() && self.opts.mipmaps).then(|| tex::mipmaps(&d));
-        let levels: &[tex::Decoded] = replaced.as_deref().or(generated.as_deref()).unwrap_or(std::slice::from_ref(&d));
+        let levels: &[tex::Decoded] = replaced
+            .as_deref()
+            .or(generated.as_deref())
+            .unwrap_or(std::slice::from_ref(&d));
         let t = self.dev.create_texture(&wgpu::TextureDescriptor {
             label: Some("ssx3-gfx tex"),
-            size: wgpu::Extent3d { width: levels[0].width, height: levels[0].height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: levels[0].width,
+                height: levels[0].height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: levels.len() as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -568,10 +702,23 @@ impl Inner {
         for (lv, l) in levels.iter().enumerate() {
             let bytes: Vec<u8> = l.rgba.iter().flat_map(|v| v.to_le_bytes()).collect();
             self.queue.write_texture(
-                wgpu::TexelCopyTextureInfo { texture: &t, mip_level: lv as u32, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &t,
+                    mip_level: lv as u32,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
                 &bytes,
-                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(l.width * 4), rows_per_image: Some(l.height) },
-                wgpu::Extent3d { width: l.width, height: l.height, depth_or_array_layers: 1 },
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(l.width * 4),
+                    rows_per_image: Some(l.height),
+                },
+                wgpu::Extent3d {
+                    width: l.width,
+                    height: l.height,
+                    depth_or_array_layers: 1,
+                },
             );
         }
         let bytes: Vec<u8> = d.rgba.iter().flat_map(|v| v.to_le_bytes()).collect();
@@ -590,8 +737,20 @@ impl Inner {
             let _ = std::fs::write(name, &bytes);
         }
         let view = t.create_view(&Default::default());
-        let amax = levels[0].rgba.iter().map(|p| (p >> 24) as u8).max().unwrap_or(0);
-        self.texcache.insert(key, CachedTex { view: view.clone(), used: frame, amax });
+        let amax = levels[0]
+            .rgba
+            .iter()
+            .map(|p| (p >> 24) as u8)
+            .max()
+            .unwrap_or(0);
+        self.texcache.insert(
+            key,
+            CachedTex {
+                view: view.clone(),
+                used: frame,
+                amax,
+            },
+        );
         Some((view, amax))
     }
 
@@ -614,7 +773,11 @@ impl Inner {
     /// A 256×1 texture from the depth-fog CLUT `i` of this frame (PSMCT32,
     /// CSM1).
     fn clut_texture(&self, i: u32) -> Option<wgpu::TextureView> {
-        let up = self.gs.fog_cluts.get(i as usize).filter(|u| !u.data.is_empty())?;
+        let up = self
+            .gs
+            .fog_cluts
+            .get(i as usize)
+            .filter(|u| !u.data.is_empty())?;
         let mut px = [0u32; 256];
         for (i, p) in px.iter_mut().enumerate() {
             // CSM1: entries 8..15 and 16..23 of each 32 swap places.
@@ -623,7 +786,11 @@ impl Inner {
         }
         let t = self.dev.create_texture(&wgpu::TextureDescriptor {
             label: Some("ssx3-gfx clut"),
-            size: wgpu::Extent3d { width: 256, height: 1, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: 256,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -633,10 +800,23 @@ impl Inner {
         });
         let bytes: Vec<u8> = px.iter().flat_map(|v| v.to_le_bytes()).collect();
         self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo { texture: &t, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo {
+                texture: &t,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
             &bytes,
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(1024), rows_per_image: Some(1) },
-            wgpu::Extent3d { width: 256, height: 1, depth_or_array_layers: 1 },
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(1024),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 256,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
         );
         Some(t.create_view(&Default::default()))
     }
@@ -661,7 +841,8 @@ impl Inner {
         let collect = {
             let draws: Vec<&frame::Draw> = f.built.frame.draws().collect();
             let plan = Build::plan_vu_calls(&b, &f.built, &draws);
-            plan.offloadable().then(|| (plan.bounds.len(), (OFFLOAD.get().unwrap().0)(plan.jobs())))
+            plan.offloadable()
+                .then(|| (plan.bounds.len(), (OFFLOAD.get().unwrap().0)(plan.jobs())))
         };
         self.put_build(b);
         self.staged = Some(Staged { f, collect });
@@ -681,7 +862,12 @@ impl Inner {
 
     /// Render a published frame (built with `carry`) over the memory it
     /// reads; keep it in the frame-dump ring if it carries all of memory.
-    pub fn render_built(&mut self, built: &Built, carry: &ssx3_render::frame::Carry, mem: &ssx3_ps2::frame_sink::FrameMem) {
+    pub fn render_built(
+        &mut self,
+        built: &Built,
+        carry: &ssx3_render::frame::Carry,
+        mem: &ssx3_ps2::frame_sink::FrameMem,
+    ) {
         self.frames_in += 1;
         if let Some(full) = &mem.full {
             ssx3_ps2::frame_sink::dump_frame(carry, full, &self.vu[..]);
@@ -693,10 +879,10 @@ impl Inner {
     pub fn render(&mut self, built: &Built, mem: &(dyn Mem + Sync)) {
         self.render_one(built, mem);
         if !self.present.is_empty() {
-            *self.shared.present.lock().unwrap() = Some((self.present.clone(), web_time::Instant::now()));
+            *self.shared.present.lock().unwrap() =
+                Some((self.present.clone(), web_time::Instant::now()));
         }
     }
-
 
     /// The build state, moved out of the renderer (see `Build`).
     fn take_build(&mut self) -> Build {
@@ -751,8 +937,19 @@ impl Inner {
         // Vertex buffer.
         // SAFETY: `Vtx` is `repr(C)`, twelve f32s with no padding, in the
         // vertex layout's order; the slice covers exactly the vertices.
-        let vbytes: &[u8] = unsafe { std::slice::from_raw_parts(self.gs.verts.as_ptr() as *const u8, std::mem::size_of_val(&self.gs.verts[..])) };
-        let vbuf = grow_buffer(&self.dev, &mut self.vbuf, (vbytes.len() as u64).max(256), wgpu::BufferUsages::VERTEX, "ssx3-gfx verts");
+        let vbytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(
+                self.gs.verts.as_ptr() as *const u8,
+                std::mem::size_of_val(&self.gs.verts[..]),
+            )
+        };
+        let vbuf = grow_buffer(
+            &self.dev,
+            &mut self.vbuf,
+            (vbytes.len() as u64).max(256),
+            wgpu::BufferUsages::VERTEX,
+            "ssx3-gfx verts",
+        );
         if !vbytes.is_empty() {
             self.queue.write_buffer(&vbuf, 0, vbytes);
         }
@@ -860,7 +1057,9 @@ impl Inner {
         let skip_test = &dbg.skip_test;
         // Debug: SSX3_GFX_PROBE=x,y prints that main-target pixel after every
         // item that changes it (on the SSX3_GFX_TRACE frame, if set).
-        let probe = dbg.probe.filter(|_| dbg.trace.is_none_or(|f| f == self.stats.frames));
+        let probe = dbg
+            .probe
+            .filter(|_| dbg.trace.is_none_or(|f| f == self.stats.frames));
         let opts = self.opts;
         let time = self.t0.elapsed().as_secs_f32();
         for (bi, b) in batches.iter().enumerate() {
@@ -871,13 +1070,19 @@ impl Inner {
             }
             let alpha_only = (st.ctx.frame >> 32) as u32 & 0x00ff_ffff == 0x00ff_ffff;
             // `z`: keep the batch but without depth writes.
-            let no_zw = skip_test.iter().any(|&(t, m)| t == st.ctx.test && m == b'z');
-            if skip_test.iter().any(|&(t, m)| t == st.ctx.test && m != b'z' && (m == 0 || (m == b'a') == alpha_only)) {
+            let no_zw = skip_test
+                .iter()
+                .any(|&(t, m)| t == st.ctx.test && m == b'z');
+            if skip_test.iter().any(|&(t, m)| {
+                t == st.ctx.test && m != b'z' && (m == 0 || (m == b'a') == alpha_only)
+            }) {
                 continue;
             }
             // A render target sampled while drawn into (a GS feedback
             // loop; wgpu forbids it): dropped.
-            if st.tex.is_some_and(|t| t != gs::FRAME_TEX && t & gs::RT_TEX != 0 && t & !gs::RT_TEX == st.target) {
+            if st.tex.is_some_and(|t| {
+                t != gs::FRAME_TEX && t & gs::RT_TEX != 0 && t & !gs::RT_TEX == st.target
+            }) {
                 self.stats.dropped += 1;
                 continue;
             }
@@ -892,8 +1097,15 @@ impl Inner {
                             let t = self.targets.as_ref().expect("targets");
                             (Some(t.snapshot.create_view(&Default::default())), 128)
                         }
-                        Some(t) if t & gs::RT_TEX != 0 => (self.rts.get(&(t & !gs::RT_TEX)).map(|r| r.color.create_view(&Default::default())), 128),
-                        Some(t) if t & gs::ZFOG_TEX != 0 => (self.clut_texture(t & !gs::ZFOG_TEX), 255),
+                        Some(t) if t & gs::RT_TEX != 0 => (
+                            self.rts
+                                .get(&(t & !gs::RT_TEX))
+                                .map(|r| r.color.create_view(&Default::default())),
+                            128,
+                        ),
+                        Some(t) if t & gs::ZFOG_TEX != 0 => {
+                            (self.clut_texture(t & !gs::ZFOG_TEX), 255)
+                        }
                         Some(info) => {
                             if dbg.texlog == Some(self.stats.frames) {
                                 let k = tex::key(mem, info, st.texa);
@@ -917,32 +1129,59 @@ impl Inner {
             let (tw, th) = if st.target == self.gs.main_fbp {
                 (w, h)
             } else {
-                match self.gs.rts.get(&st.target).filter(|_| self.rts.contains_key(&st.target)) {
+                match self
+                    .gs
+                    .rts
+                    .get(&st.target)
+                    .filter(|_| self.rts.contains_key(&st.target))
+                {
                     Some(r) => (r.w, r.h),
                     None => continue,
                 }
             };
             let sc = st.ctx.scissor;
-            let (x0, x1, y0, y1) = ((sc & 0x7ff) as u32, ((sc >> 16) & 0x7ff) as u32, ((sc >> 32) & 0x7ff) as u32, ((sc >> 48) & 0x7ff) as u32);
+            let (x0, x1, y0, y1) = (
+                (sc & 0x7ff) as u32,
+                ((sc >> 16) & 0x7ff) as u32,
+                ((sc >> 32) & 0x7ff) as u32,
+                ((sc >> 48) & 0x7ff) as u32,
+            );
             // In target pixels.
-            let (fx, fy) = if st.target == self.gs.main_fbp { self.fxy } else { self.rt_fxy(st.target) };
+            let (fx, fy) = if st.target == self.gs.main_fbp {
+                self.fxy
+            } else {
+                self.rt_fxy(st.target)
+            };
             let px = |v: u32, f: f32| (v as f32 * f).round() as u32;
             let scissor = (x0 <= x1 && y0 <= y1 && x0 < tw && y0 < th).then(|| {
                 let (a, b) = (px(x0, fx), px(y0, fy));
-                [a, b, px((x1 + 1).min(tw), fx).max(a + 1) - a, px((y1 + 1).min(th), fy).max(b + 1) - b]
+                [
+                    a,
+                    b,
+                    px((x1 + 1).min(tw), fx).max(a + 1) - a,
+                    px((y1 + 1).min(th), fy).max(b + 1) - b,
+                ]
             });
             if scissor.is_none() {
                 continue;
             }
-            let rt_psm = st.tex.filter(|t| *t != gs::FRAME_TEX && t & gs::RT_TEX != 0).and_then(|t| self.gs.rts.get(&(t & !gs::RT_TEX))).map(|r| r.psm);
+            let rt_psm = st
+                .tex
+                .filter(|t| *t != gs::FRAME_TEX && t & gs::RT_TEX != 0)
+                .and_then(|t| self.gs.rts.get(&(t & !gs::RT_TEX)))
+                .map(|r| r.psm);
             // DATE on the main target (render targets: not yet).
             let date = (st.ctx.test >> 14) & 1 != 0 && st.target == self.gs.main_fbp;
-            let zfog = st.tex.is_some_and(|t| t != gs::FRAME_TEX && t & gs::RT_TEX == 0 && t & gs::ZFOG_TEX != 0);
+            let zfog = st.tex.is_some_and(|t| {
+                t != gs::FRAME_TEX && t & gs::RT_TEX == 0 && t & gs::ZFOG_TEX != 0
+            });
             // The largest As the batch can produce (blends with As > 1
             // need care: see draw::plans).
             let av = match b.gpu {
                 Some(g) => g.alpha_max,
-                None => self.gs.verts[b.first as usize..(b.first + b.count) as usize].iter().fold(0f32, |m, v| m.max(v.col[3])),
+                None => self.gs.verts[b.first as usize..(b.first + b.count) as usize]
+                    .iter()
+                    .fold(0f32, |m, v| m.max(v.col[3])),
             };
             let ta = bind_amax[bind] as f32;
             let tcc = (st.ctx.tex0 >> 34) & 1 != 0;
@@ -1007,8 +1246,16 @@ impl Inner {
                     0,
                 ];
                 // SAFETY: u32 words as their (little-endian) bytes.
-                ubytes.extend_from_slice(unsafe { std::slice::from_raw_parts(words.as_ptr() as *const u8, std::mem::size_of_val(&words)) });
-                ubytes.resize(ubytes.len().next_multiple_of(draw::UNIFORM_STRIDE as usize), 0);
+                ubytes.extend_from_slice(unsafe {
+                    std::slice::from_raw_parts(
+                        words.as_ptr() as *const u8,
+                        std::mem::size_of_val(&words),
+                    )
+                });
+                ubytes.resize(
+                    ubytes.len().next_multiple_of(draw::UNIFORM_STRIDE as usize),
+                    0,
+                );
                 let desc = if probe.is_some() {
                     format!(
                         "prim {:#x} tex {:x?} tex0 {:#x} alpha {:#x} test {:#x} fba {} frame {:#x} flags {:#x} src_mode {} key {:?}",
@@ -1017,7 +1264,23 @@ impl Inner {
                 } else {
                     String::new()
                 };
-                items.push(Item { tag: b.tag, batch: bi, gpu: b.gpu, desc, frame: st.tex == Some(gs::FRAME_TEX), date, zfog, target: st.target, key: p.key, ubo, constant: p.constant, bind, first: b.first, count: b.count, scissor });
+                items.push(Item {
+                    tag: b.tag,
+                    batch: bi,
+                    gpu: b.gpu,
+                    desc,
+                    frame: st.tex == Some(gs::FRAME_TEX),
+                    date,
+                    zfog,
+                    target: st.target,
+                    key: p.key,
+                    ubo,
+                    constant: p.constant,
+                    bind,
+                    first: b.first,
+                    count: b.count,
+                    scissor,
+                });
             }
         }
         if items.is_empty() {
@@ -1025,15 +1288,35 @@ impl Inner {
         }
         let t_prepared = web_time::Instant::now();
         self.timing.1[1] += (t_prepared - t_built).as_secs_f64() * 1e3;
-        let ubuf = grow_buffer(&self.dev, &mut self.ubuf, ubytes.len() as u64, wgpu::BufferUsages::UNIFORM, "ssx3-gfx uniforms");
+        let ubuf = grow_buffer(
+            &self.dev,
+            &mut self.ubuf,
+            ubytes.len() as u64,
+            wgpu::BufferUsages::UNIFORM,
+            "ssx3-gfx uniforms",
+        );
         self.queue.write_buffer(&ubuf, 0, &ubytes);
-        let snap = self.targets.as_ref().expect("targets").snapshot.create_view(&Default::default());
-        let zsnap = self.targets.as_ref().expect("targets").zsnap.create_view(&Default::default());
+        let snap = self
+            .targets
+            .as_ref()
+            .expect("targets")
+            .snapshot
+            .create_view(&Default::default());
+        let zsnap = self
+            .targets
+            .as_ref()
+            .expect("targets")
+            .zsnap
+            .create_view(&Default::default());
         let groups: Vec<wgpu::BindGroup> = binds
             .iter()
             .map(|(view, sk)| {
                 let aniso = self.aniso;
-                let samp = self.samplers.entry(*sk).or_insert_with(|| draw::sampler(&self.dev, *sk, aniso)).clone();
+                let samp = self
+                    .samplers
+                    .entry(*sk)
+                    .or_insert_with(|| draw::sampler(&self.dev, *sk, aniso))
+                    .clone();
                 self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("ssx3-gfx batch"),
                     layout: &self.pipes.layout,
@@ -1046,10 +1329,24 @@ impl Inner {
                                 size: wgpu::BufferSize::new(draw::BATCH_BYTES),
                             }),
                         },
-                        wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(view.as_ref().unwrap_or(&self.white)) },
-                        wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&samp) },
-                        wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&snap) },
-                        wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&zsnap) },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(
+                                view.as_ref().unwrap_or(&self.white),
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&samp),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::TextureView(&snap),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: wgpu::BindingResource::TextureView(&zsnap),
+                        },
                     ],
                 })
             })
@@ -1067,8 +1364,22 @@ impl Inner {
         // The renderer's own passes: AO before the game's post passes, the
         // rest before the HUD (or at the end of a frame without them).
         let hud_post = opts.bloom == Bloom::Modern || opts.aa != Aa::Off;
-        let ao_at = if opts.ao { items.iter().position(|it| it.tag.post.is_some() || it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
-        let hud_at = if hud_post { items.iter().position(|it| it.tag.hud).unwrap_or(items.len()) } else { usize::MAX };
+        let ao_at = if opts.ao {
+            items
+                .iter()
+                .position(|it| it.tag.post.is_some() || it.tag.hud)
+                .unwrap_or(items.len())
+        } else {
+            usize::MAX
+        };
+        let hud_at = if hud_post {
+            items
+                .iter()
+                .position(|it| it.tag.hud)
+                .unwrap_or(items.len())
+        } else {
+            usize::MAX
+        };
         if (opts.ao || hud_post) && self.post.is_none() {
             self.post = Some(post::Post::new(&self.dev));
         }
@@ -1083,37 +1394,48 @@ impl Inner {
         let rts = &self.rts;
         // A pass on target `fbp`; depth starts cleared on a target's first
         // pass of the frame.
-        let begin = |enc: &mut wgpu::CommandEncoder, fbp: u32, first: bool| -> wgpu::RenderPass<'static> {
-            let (c, d) = if fbp == main {
-                (cv.clone(), dv.clone())
-            } else {
-                let r = &rts[&fbp];
-                (r.color.create_view(&Default::default()), r.depth.create_view(&Default::default()))
-            };
-            enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ssx3-gfx frame"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &c,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &d,
-                    // Each frame starts with depth cleared to the farthest
-                    // value (the GS's Z history across frames is not kept).
-                    depth_ops: Some(wgpu::Operations {
-                        load: if first { wgpu::LoadOp::Clear(0.0) } else { wgpu::LoadOp::Load },
-                        store: wgpu::StoreOp::Store,
+        let begin =
+            |enc: &mut wgpu::CommandEncoder, fbp: u32, first: bool| -> wgpu::RenderPass<'static> {
+                let (c, d) = if fbp == main {
+                    (cv.clone(), dv.clone())
+                } else {
+                    let r = &rts[&fbp];
+                    (
+                        r.color.create_view(&Default::default()),
+                        r.depth.create_view(&Default::default()),
+                    )
+                };
+                enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("ssx3-gfx frame"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &c,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &d,
+                        // Each frame starts with depth cleared to the farthest
+                        // value (the GS's Z history across frames is not kept).
+                        depth_ops: Some(wgpu::Operations {
+                            load: if first {
+                                wgpu::LoadOp::Clear(0.0)
+                            } else {
+                                wgpu::LoadOp::Load
+                            },
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
                     }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            })
-            .forget_lifetime()
-        };
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                })
+                .forget_lifetime()
+            };
         let mut started: std::collections::HashSet<u32> = Default::default();
         let mut cur_target = main;
         started.insert(main);
@@ -1144,18 +1466,46 @@ impl Inner {
         let mut depth_taken = false;
         let take_depth = |enc: &mut wgpu::CommandEncoder| {
             enc.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo { texture: &t.depth, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                wgpu::TexelCopyTextureInfo { texture: &t.qdepth, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &t.depth,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &t.qdepth,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width: t.w,
+                    height: t.h,
+                    depth_or_array_layers: 1,
+                },
             );
         };
-        let post_frame = post::Frame { color: &t.color, snapshot: &t.snapshot, depth: &t.depth, zsnap: &t.zsnap, w: t.w, h: t.h };
+        let post_frame = post::Frame {
+            color: &t.color,
+            snapshot: &t.snapshot,
+            depth: &t.depth,
+            zsnap: &t.zsnap,
+            w: t.w,
+            h: t.h,
+        };
         for (k, it) in items.iter().enumerate() {
             if k == ao_at || k == hud_at {
                 drop(pass);
                 let po = self.post.as_mut().expect("post passes");
                 if k == ao_at {
-                    po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
+                    po.ao(
+                        &self.dev,
+                        &self.queue,
+                        &mut enc,
+                        &post_frame,
+                        self.gs.cam.as_ref(),
+                        self.fxy,
+                    );
                 }
                 if k == hud_at {
                     po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
@@ -1174,28 +1524,59 @@ impl Inner {
                 pass.set_vertex_buffer(0, vbuf.slice(..));
                 last = Last::default();
             }
-            let Some([x, y, sw, sh]) = it.scissor else { continue };
+            let Some([x, y, sw, sh]) = it.scissor else {
+                continue;
+            };
             // (Frame-sampling items may draw into another target: the
             // display buffer copy.)
             // A new run of frame-sampling items, or one into another target
             // (the display copy after the colour filter), needs a fresh one.
-            let snapshot = it.frame && (!prev_frame || it.target != cur_target) || it.date && it.target == main;
+            let snapshot = it.frame && (!prev_frame || it.target != cur_target)
+                || it.date && it.target == main;
             let zsnapshot = it.zfog && it.target == main;
             if it.target != cur_target || snapshot || zsnapshot {
                 drop(pass);
                 if zsnapshot {
                     enc.copy_texture_to_texture(
-                        wgpu::TexelCopyTextureInfo { texture: &t.depth, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                        wgpu::TexelCopyTextureInfo { texture: &t.zsnap, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                        wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &t.depth,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &t.zsnap,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::Extent3d {
+                            width: t.w,
+                            height: t.h,
+                            depth_or_array_layers: 1,
+                        },
                     );
                 }
                 if snapshot {
                     // Snapshot the frame as drawn so far.
                     enc.copy_texture_to_texture(
-                        wgpu::TexelCopyTextureInfo { texture: &t.color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                        wgpu::TexelCopyTextureInfo { texture: &t.snapshot, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                        wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &t.color,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &t.snapshot,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::Extent3d {
+                            width: t.w,
+                            height: t.h,
+                            depth_or_array_layers: 1,
+                        },
                     );
                 }
                 cur_target = it.target;
@@ -1212,7 +1593,10 @@ impl Inner {
             if last.pipe != Some((it.key, program)) {
                 // (The GPU programs' pipelines have another layout: their
                 // bind groups are set again.)
-                if last.pipe.is_some_and(|(_, p)| p.is_some() != program.is_some()) {
+                if last
+                    .pipe
+                    .is_some_and(|(_, p)| p.is_some() != program.is_some())
+                {
                     last.group0 = None;
                     last.group1 = false;
                 }
@@ -1226,13 +1610,20 @@ impl Inner {
                 last.group0 = Some((it.bind, it.ubo));
                 pass.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
             }
-            if let (Some(bg), false) = (gpu_bind.as_ref().filter(|_| program.is_some()), last.group1) {
+            if let (Some(bg), false) =
+                (gpu_bind.as_ref().filter(|_| program.is_some()), last.group1)
+            {
                 last.group1 = true;
                 pass.set_bind_group(1, bg, &[]);
             }
             if last.constant != Some(it.constant.to_bits()) {
                 last.constant = Some(it.constant.to_bits());
-                pass.set_blend_constant(wgpu::Color { r: it.constant, g: it.constant, b: it.constant, a: it.constant });
+                pass.set_blend_constant(wgpu::Color {
+                    r: it.constant,
+                    g: it.constant,
+                    b: it.constant,
+                    a: it.constant,
+                });
             }
             if last.scissor != Some([x, y, sw, sh]) {
                 last.scissor = Some([x, y, sw, sh]);
@@ -1246,9 +1637,25 @@ impl Inner {
                 if it.target == main {
                     drop(pass);
                     enc.copy_texture_to_buffer(
-                        wgpu::TexelCopyTextureInfo { texture: &t.color, mip_level: 0, origin: wgpu::Origin3d { x: px, y: py, z: 0 }, aspect: wgpu::TextureAspect::All },
-                        wgpu::TexelCopyBufferInfo { buffer: pb, layout: wgpu::TexelCopyBufferLayout { offset: probed.len() as u64 * 256, bytes_per_row: Some(256), rows_per_image: Some(1) } },
-                        wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &t.color,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d { x: px, y: py, z: 0 },
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::TexelCopyBufferInfo {
+                            buffer: pb,
+                            layout: wgpu::TexelCopyBufferLayout {
+                                offset: probed.len() as u64 * 256,
+                                bytes_per_row: Some(256),
+                                rows_per_image: Some(1),
+                            },
+                        },
+                        wgpu::Extent3d {
+                            width: 1,
+                            height: 1,
+                            depth_or_array_layers: 1,
+                        },
                     );
                     probed.push(it.desc.clone());
                     pass = begin(&mut enc, cur_target, false);
@@ -1261,7 +1668,14 @@ impl Inner {
         if ao_at == items.len() || hud_at == items.len() {
             let po = self.post.as_mut().expect("post passes");
             if ao_at == items.len() {
-                po.ao(&self.dev, &self.queue, &mut enc, &post_frame, self.gs.cam.as_ref(), self.fxy);
+                po.ao(
+                    &self.dev,
+                    &self.queue,
+                    &mut enc,
+                    &post_frame,
+                    self.gs.cam.as_ref(),
+                    self.fxy,
+                );
             }
             if hud_at == items.len() {
                 po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
@@ -1276,26 +1690,51 @@ impl Inner {
             None => &t.color,
         };
         let (slots, slot) = (1, 0);
-        if self.present.len() != slots || self.present.first().is_some_and(|p| (p.width(), p.height()) != (t.w, t.h)) {
+        if self.present.len() != slots
+            || self
+                .present
+                .first()
+                .is_some_and(|p| (p.width(), p.height()) != (t.w, t.h))
+        {
             self.present = (0..slots)
                 .map(|_| {
                     self.dev.create_texture(&wgpu::TextureDescriptor {
                         label: Some("ssx3-gfx present"),
-                        size: wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+                        size: wgpu::Extent3d {
+                            width: t.w,
+                            height: t.h,
+                            depth_or_array_layers: 1,
+                        },
                         mip_level_count: 1,
                         sample_count: 1,
                         dimension: wgpu::TextureDimension::D2,
                         format: wgpu::TextureFormat::Rgba8Unorm,
-                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING
+                            | wgpu::TextureUsages::COPY_DST
+                            | wgpu::TextureUsages::COPY_SRC,
                         view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
                     })
                 })
                 .collect();
         }
         enc.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo { texture: shown, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            wgpu::TexelCopyTextureInfo { texture: &self.present[slot], mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+            wgpu::TexelCopyTextureInfo {
+                texture: shown,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.present[slot],
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: t.w,
+                height: t.h,
+                depth_or_array_layers: 1,
+            },
         );
         // Depth after phase 1, read back for the light queries.
         let depth_buf = self.want_depth.then(|| {
@@ -1306,12 +1745,25 @@ impl Inner {
                 mapped_at_creation: false,
             });
             enc.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo { texture: &t.qdepth, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::DepthOnly },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &t.qdepth,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::DepthOnly,
+                },
                 wgpu::TexelCopyBufferInfo {
                     buffer: &buf,
-                    layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some((t.w * 4).next_multiple_of(256)), rows_per_image: Some(t.h) },
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some((t.w * 4).next_multiple_of(256)),
+                        rows_per_image: Some(t.h),
+                    },
                 },
-                wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+                wgpu::Extent3d {
+                    width: t.w,
+                    height: t.h,
+                    depth_or_array_layers: 1,
+                },
             );
             buf
         });
@@ -1322,36 +1774,66 @@ impl Inner {
             // The previous frame's depth (its readback has had a frame to
             // complete): the light queries see depth one frame late, and
             // the CPU does not wait for this frame's GPU work.
-            if let Some((prev, prev_idx, pw, ph, zs, lw, lh, mapped, prev_frame)) = self.pending_depth.take() {
+            if let Some((prev, prev_idx, pw, ph, zs, lw, lh, mapped, prev_frame)) =
+                self.pending_depth.take()
+            {
                 let slice = prev.slice(..);
                 if cfg!(target_arch = "wasm32") {
                     let _ = self.dev.poll(wgpu::PollType::Poll);
                 } else {
-                    let _ = self.dev.poll(wgpu::PollType::Wait { submission_index: Some(prev_idx), timeout: None });
+                    let _ = self.dev.poll(wgpu::PollType::Wait {
+                        submission_index: Some(prev_idx),
+                        timeout: None,
+                    });
                 }
                 // (Not mapped yet in the browser: the queries keep the
                 // depth before.)
-                if let Some(v) = mapped.load(std::sync::atomic::Ordering::Acquire).then(|| slice.get_mapped_range()).and_then(|r| r.ok()) {
+                if let Some(v) = mapped
+                    .load(std::sync::atomic::Ordering::Acquire)
+                    .then(|| slice.get_mapped_range())
+                    .and_then(|r| r.ok())
+                {
                     // In GS pixels: the sample at each pixel's centre,
                     // converted when a query reads it.
                     let raw = v.to_vec();
                     let row = (pw * 4).next_multiple_of(256) as usize;
                     let zs = zs as f64;
                     let z = move |x: u32, y: u32| {
-                        let py = (((y as f32 + 0.5) * ph as f32 / lh as f32) as usize).min(ph as usize - 1);
-                        let pxl = (((x as f32 + 0.5) * pw as f32 / lw as f32) as usize).min(pw as usize - 1);
+                        let py = (((y as f32 + 0.5) * ph as f32 / lh as f32) as usize)
+                            .min(ph as usize - 1);
+                        let pxl = (((x as f32 + 0.5) * pw as f32 / lw as f32) as usize)
+                            .min(pw as usize - 1);
                         let o = py * row + 4 * pxl;
                         let d = f32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
                         (d as f64 * zs).round().min(zs - 1.0) as u32
                     };
-                    *self.shared.depth.lock().unwrap() = Some((prev_frame, ssx3_ps2::frame_sink::Depth { w: lw, h: lh, z: Box::new(z) }));
+                    *self.shared.depth.lock().unwrap() = Some((
+                        prev_frame,
+                        ssx3_ps2::frame_sink::Depth {
+                            w: lw,
+                            h: lh,
+                            z: Box::new(z),
+                        },
+                    ));
                     self.shared.depth_ready.notify_all();
                 }
             }
             let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let m = mapped.clone();
-            buf.slice(..).map_async(wgpu::MapMode::Read, move |r| m.store(r.is_ok(), std::sync::atomic::Ordering::Release));
-            self.pending_depth = Some((buf, sub_idx, t.w, t.h, self.zscale, w, h, mapped, self.frames_in - 1));
+            buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+                m.store(r.is_ok(), std::sync::atomic::Ordering::Release)
+            });
+            self.pending_depth = Some((
+                buf,
+                sub_idx,
+                t.w,
+                t.h,
+                self.zscale,
+                w,
+                h,
+                mapped,
+                self.frames_in - 1,
+            ));
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
         }
         if let Some(pb) = probe_buf {
@@ -1363,8 +1845,12 @@ impl Inner {
                 for (k, d) in probed.iter().enumerate() {
                     let px = u32::from_le_bytes(v[k * 256..k * 256 + 4].try_into().unwrap());
                     if px != last {
-                        let (r, g, b, a) = (px & 0xff, (px >> 8) & 0xff, (px >> 16) & 0xff, px >> 24);
-                        eprintln!("[probe] item {k}: rgba {r} {g} {b} a{:.0} <- {d}", a as f32 * 128.0 / 255.0);
+                        let (r, g, b, a) =
+                            (px & 0xff, (px >> 8) & 0xff, (px >> 16) & 0xff, px >> 24);
+                        eprintln!(
+                            "[probe] item {k}: rgba {r} {g} {b} a{:.0} <- {d}",
+                            a as f32 * 128.0 / 255.0
+                        );
                         last = px;
                     }
                 }
@@ -1382,7 +1868,9 @@ impl Inner {
         if let Some(r) = self.display_fbp.and_then(|f| self.rts.get(&f)) {
             let (rw, _, px) = self.read_texture(&r.color, r.w, r.h);
             let (w, h) = (t.w.min(rw), t.h.min(r.h));
-            let out = (0..h).flat_map(|y| px[(y * rw) as usize..(y * rw + w) as usize].iter().copied()).collect();
+            let out = (0..h)
+                .flat_map(|y| px[(y * rw) as usize..(y * rw + w) as usize].iter().copied())
+                .collect();
             return Some((w, h, out));
         }
         Some(self.read_texture(&t.color, t.w, t.h))
@@ -1409,15 +1897,33 @@ impl Inner {
         });
         let mut enc = self.dev.create_command_encoder(&Default::default());
         enc.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            wgpu::TexelCopyBufferInfo { buffer: &buf, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(t.h) } },
-            wgpu::Extent3d { width: t.w, height: t.h, depth_or_array_layers: 1 },
+            wgpu::TexelCopyTextureInfo {
+                texture: tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buf,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(row),
+                    rows_per_image: Some(t.h),
+                },
+            },
+            wgpu::Extent3d {
+                width: t.w,
+                height: t.h,
+                depth_or_array_layers: 1,
+            },
         );
         self.queue.submit(std::iter::once(enc.finish()));
         let slice = buf.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
         let _ = self.dev.poll(wgpu::PollType::wait_indefinitely());
-        let Ok(v) = slice.get_mapped_range() else { return (w, h, Vec::new()) };
+        let Ok(v) = slice.get_mapped_range() else {
+            return (w, h, Vec::new());
+        };
         let mut px = Vec::with_capacity((t.w * t.h) as usize);
         for y in 0..t.h as usize {
             for x in 0..t.w as usize {
@@ -1428,7 +1934,6 @@ impl Inner {
         (t.w, t.h, px)
     }
 }
-
 
 /// One chunk's result: (event index, GIF output) per call with a native
 /// program, and the VU memory after the chunk.
@@ -1467,8 +1972,12 @@ impl VuPlan<'_> {
                 let a = (a as usize & 1023) * 16;
                 mem[a..a + 16].copy_from_slice(&v.to_le_bytes());
             }
-            let (Some(entry), Some(hh)) = (c.entry, hash) else { continue };
-            if let Some(o) = ssx3_render::vujob::run_call(hh, entry, c.top, c.itop, c.src, kept, &mut mem) {
+            let (Some(entry), Some(hh)) = (c.entry, hash) else {
+                continue;
+            };
+            if let Some(o) =
+                ssx3_render::vujob::run_call(hh, entry, c.top, c.itop, c.src, kept, &mut mem)
+            {
                 outs.push((i, o));
             }
         }
@@ -1479,7 +1988,9 @@ impl VuPlan<'_> {
     fn work(&self) {
         loop {
             let j = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let Some(start) = self.starts.get(j) else { break };
+            let Some(start) = self.starts.get(j) else {
+                break;
+            };
             let st = start.lock().unwrap().take().expect("chunk");
             let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
             let r = Self::run(&self.calls[self.bounds[j]..e], st);
@@ -1502,7 +2013,9 @@ impl VuPlan<'_> {
             .map(|j| {
                 let start = self.starts[j].lock().unwrap().take().expect("chunk");
                 let e = self.bounds.get(j + 1).copied().unwrap_or(self.calls.len());
-                let st = store.as_mut().map(|s| &mut ***s as &mut dyn ssx3_render::vujob::SharedStore);
+                let st = store
+                    .as_mut()
+                    .map(|s| &mut ***s as &mut dyn ssx3_render::vujob::SharedStore);
                 ssx3_render::vujob::encode_with(&start, &self.calls[self.bounds[j]..e], st)
             })
             .collect()
@@ -1515,7 +2028,10 @@ impl VuPlan<'_> {
         if !self.offloadable() {
             return false;
         }
-        let pre = PREFETCH.lock().unwrap().take_if(|(n, _)| *n == self.bounds.len());
+        let pre = PREFETCH
+            .lock()
+            .unwrap()
+            .take_if(|(n, _)| *n == self.bounds.len());
         let results = match pre {
             Some((_, collect)) => collect(),
             None => (OFFLOAD.get().unwrap().0)(self.jobs())(),
@@ -1566,7 +2082,9 @@ impl VuReceiver {
         let out = self.outs.remove(&i);
         if plan.bounds.len() > 1 && debug::get().vucheck {
             if let Some(o) = &out {
-                self.seen.get_or_insert_with(HashMap::new).insert(i, o.clone());
+                self.seen
+                    .get_or_insert_with(HashMap::new)
+                    .insert(i, o.clone());
             }
         }
         out
@@ -1575,7 +2093,11 @@ impl VuReceiver {
     /// Wait for every chunk; `vu` becomes the memory after the last.
     fn finish(&mut self, plan: &VuPlan, vu: &mut Box<[u8; 16384]>) {
         let check = debug::get().vucheck && plan.bounds.len() > 1;
-        let mut all = if check { Some(self.seen.take().unwrap_or_default()) } else { None };
+        let mut all = if check {
+            Some(self.seen.take().unwrap_or_default())
+        } else {
+            None
+        };
         let n = plan.done.len();
         while self.merged < n {
             let (outs, mem) = plan.wait(self.merged);
@@ -1593,19 +2115,40 @@ impl VuReceiver {
             // Debug: which calls differ from a sequential run (only the calls
             // not yet consumed are compared).
             let (seq, _) = VuPlan::run(&plan.calls, plan.vu0.clone());
-            let bad = seq.iter().filter(|(i, out)| all.get(i).is_some_and(|o| o != out)).count();
-            eprintln!("[vucheck] {bad} of {} calls differ from a sequential run ({} chunks)", seq.len(), n);
-            for (i, out) in seq.iter().filter(|(i, out)| all.get(i).is_some_and(|o| o != out)).take(3) {
+            let bad = seq
+                .iter()
+                .filter(|(i, out)| all.get(i).is_some_and(|o| o != out))
+                .count();
+            eprintln!(
+                "[vucheck] {bad} of {} calls differ from a sequential run ({} chunks)",
+                seq.len(),
+                n
+            );
+            for (i, out) in seq
+                .iter()
+                .filter(|(i, out)| all.get(i).is_some_and(|o| o != out))
+                .take(3)
+            {
                 let kind = |o: &CallOut| match o {
                     CallOut::Gif(q) => format!("gif {}", q.len()),
                     CallOut::Gpu(g) => format!("gpu {}", g.len()),
                     CallOut::Native(v) => format!("native {}", v.len()),
                 };
-                let item = plan.calls.iter().find(|c| c.event() == *i).map(|c| match c {
-                    ssx3_render::vujob::JobItem::Call((_, c, h, _)) => format!("call {:x?} {:x?} top {:#x}", h, c.entry, c.top),
-                    ssx3_render::vujob::JobItem::Native { .. } => "native".into(),
-                });
-                eprintln!("[vucheck]   event {i} {item:?}: sequential {}, chunked {}", kind(out), kind(&all[i]));
+                let item = plan
+                    .calls
+                    .iter()
+                    .find(|c| c.event() == *i)
+                    .map(|c| match c {
+                        ssx3_render::vujob::JobItem::Call((_, c, h, _)) => {
+                            format!("call {:x?} {:x?} top {:#x}", h, c.entry, c.top)
+                        }
+                        ssx3_render::vujob::JobItem::Native { .. } => "native".into(),
+                    });
+                eprintln!(
+                    "[vucheck]   event {i} {item:?}: sequential {}, chunked {}",
+                    kind(out),
+                    kind(&all[i])
+                );
             }
         }
     }
@@ -1665,8 +2208,13 @@ impl Build {
         // HUD of phase 2 is drawn).
         // (A frame built without the chains carries its PATH3 packets.)
         // (Each packet with the post pass it belongs to, if any.)
-        let tagged = |ph: usize, v: &Vec<Vec<u128>>| -> Vec<(Vec<u128>, Option<ssx3_render::direct::PostKind>)> {
-            v.iter().enumerate().map(|(k, q)| (q.clone(), built.path3_post[ph].get(k).copied().flatten())).collect()
+        let tagged = |ph: usize,
+                      v: &Vec<Vec<u128>>|
+         -> Vec<(Vec<u128>, Option<ssx3_render::direct::PostKind>)> {
+            v.iter()
+                .enumerate()
+                .map(|(k, q)| (q.clone(), built.path3_post[ph].get(k).copied().flatten()))
+                .collect()
         };
         let (p1, mut p2) = match &built.path3 {
             Some([a, c]) => (tagged(0, a), tagged(1, c)),
@@ -1684,21 +2232,37 @@ impl Build {
         // With the frame blend on (gm+0x59e8 ≠ 0), the packet starts with a
         // block that blends the finished draw buffer into the display
         // buffer (the image on screen): that part runs at the end.
-        let flip = if !dbg.no_flip { built.flip.clone() } else { Vec::new() };
-        let split = flip.iter().position(|&q| q as u64 == 0x1000_0000_0000_8010).unwrap_or(0);
+        let flip = if !dbg.no_flip {
+            built.flip.clone()
+        } else {
+            Vec::new()
+        };
+        let split = flip
+            .iter()
+            .position(|&q| q as u64 == 0x1000_0000_0000_8010)
+            .unwrap_or(0);
         label(&mut b.gs, "flip".into());
         b.gs.gif(&flip[split..]);
-        b.display_fbp = (split > 0).then(|| d.draw_fbp + (d.fb_width.div_ceil(64) * d.fb_height.div_ceil(32)).max(1));
+        b.display_fbp = (split > 0)
+            .then(|| d.draw_fbp + (d.fb_width.div_ceil(64) * d.fb_height.div_ceil(32)).max(1));
         let mode = dbg.path3;
-        let mut p3: std::collections::VecDeque<(Vec<u128>, Option<ssx3_render::direct::PostKind>)> = std::collections::VecDeque::new();
+        let mut p3: std::collections::VecDeque<(Vec<u128>, Option<ssx3_render::direct::PostKind>)> =
+            std::collections::VecDeque::new();
         // A PATH3 packet through the GS, tagged with its post pass.
-        let path3 = |gs: &mut gs::Gs, (pk, post): (Vec<u128>, Option<ssx3_render::direct::PostKind>)| {
-            let hud = std::mem::replace(&mut gs.hud, false);
-            let tag = std::mem::replace(&mut gs.tag, gs::Tag { post, ..Default::default() });
-            gs.gif(&pk);
-            gs.hud = hud;
-            gs.tag = tag;
-        };
+        let path3 =
+            |gs: &mut gs::Gs, (pk, post): (Vec<u128>, Option<ssx3_render::direct::PostKind>)| {
+                let hud = std::mem::replace(&mut gs.hud, false);
+                let tag = std::mem::replace(
+                    &mut gs.tag,
+                    gs::Tag {
+                        post,
+                        ..Default::default()
+                    },
+                );
+                gs.gif(&pk);
+                gs.hud = hud;
+                gs.tag = tag;
+            };
         if mode & 1 != 0 {
             p3.extend(p1);
         }
@@ -1713,122 +2277,128 @@ impl Build {
         let plan = Build::plan_vu_calls(b, built, &draws);
         let mut vu = VuReceiver::default();
         std::thread::scope(|sc| {
-        // The helper workers (the browser) take every chunk up front;
-        // without threads, this thread does.
-        if plan.offload() {
-        } else if cfg!(target_arch = "wasm32") {
-            plan.work();
-        } else {
-            for _ in 0..plan.threads {
-                sc.spawn(|| plan.work());
+            // The helper workers (the browser) take every chunk up front;
+            // without threads, this thread does.
+            if plan.offload() {
+            } else if cfg!(target_arch = "wasm32") {
+                plan.work();
+            } else {
+                for _ in 0..plan.threads {
+                    sc.spawn(|| plan.work());
+                }
             }
-        }
-        for (i, (owner, ev)) in built.events.iter().enumerate() {
-            if matches!(owner, Owner::Payload(n) if skip.contains(n)) {
-                continue;
-            }
-            if !phase2_started && i >= built.phase2 {
-                phase2_started = true;
-                label(&mut b.gs, "path3".into());
-                if !p3_masked {
-                    while let Some(pk) = p3.pop_front() {
-                        path3(&mut b.gs, pk);
+            for (i, (owner, ev)) in built.events.iter().enumerate() {
+                if matches!(owner, Owner::Payload(n) if skip.contains(n)) {
+                    continue;
+                }
+                if !phase2_started && i >= built.phase2 {
+                    phase2_started = true;
+                    label(&mut b.gs, "path3".into());
+                    if !p3_masked {
+                        while let Some(pk) = p3.pop_front() {
+                            path3(&mut b.gs, pk);
+                        }
+                    }
+                    b.phase1_end = b.gs.batches.len();
+                    p3_masked = true;
+                    if mode & 2 != 0 {
+                        p3.extend(std::mem::take(&mut p2));
                     }
                 }
+                let n = match owner {
+                    Owner::Prelude(n) | Owner::Payload(n) => Some(*n),
+                    _ => None,
+                };
+                // The batches' tag: the draw's material (none between draws).
+                let m = n.and_then(|n| draws.get(n)).map(|d| d.state.material);
+                b.gs.tag = gs::Tag {
+                    terrain: matches!(m, Some(Material::Bezier1 | Material::Bezier2)),
+                    ..Default::default()
+                };
+                if let Some(n) = n {
+                    if cur != Some(n) {
+                        cur = Some(n);
+                        b.gs.hud = draws.get(n).is_some_and(|d| d.state.layer >= 9);
+                        if let Some(d) = draws.get(n) {
+                            if tracing {
+                                label(
+                                    &mut b.gs,
+                                    format!(
+                                        "draw{n} {:?} layer {} tex {:?}",
+                                        d.state.material, d.state.layer, d.tex
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                    // In a draw's payload its textures are bound to the TBPs its
+                    // prelude wrote.
+                    if let (Owner::Payload(_), Some(dr)) = (owner, draws.get(n)) {
+                        for (ctx, id) in dr.tex.iter().enumerate() {
+                            if let Some(id) = id {
+                                let info = tex::info(mem, texman, *id);
+                                if info != 0 {
+                                    let tbp = (b.gs.ctx[ctx].tex0 & 0x3fff) as u32;
+                                    b.gs.tex_map.insert(tbp, info);
+                                }
+                            }
+                        }
+                    }
+                }
+                match ev {
+                    Event::Call(_) => {
+                        b.stats.vu_calls += 1;
+                        match vu.take(&plan, i) {
+                            Some(CallOut::Gif(out)) => {
+                                b.stats.vu_native += 1;
+                                b.gs.gif(&out);
+                            }
+                            Some(CallOut::Gpu(g)) => {
+                                b.stats.vu_native += 1;
+                                b.stats.vu_gpu += 1;
+                                for c in g {
+                                    b.gs.gpu_draw(c);
+                                }
+                            }
+                            Some(CallOut::Native(_)) | None => b.stats.vu_missing += 1,
+                        }
+                    }
+                    Event::Direct(dd) => b.gs.gif(&dd.qwords),
+                    Event::Native { .. } => {
+                        // A draw captured at the game's draw function, planned
+                        // from its command with the VU calls.
+                        match vu.take(&plan, i) {
+                            Some(CallOut::Native(outs)) => {
+                                b.stats.native_draws += 1;
+                                for o in outs {
+                                    match o {
+                                        ssx3_render::direct::Out::Gpu(c) => b.gs.gpu_draw(c),
+                                        ssx3_render::direct::Out::Gif(g) => b.gs.gif(&g),
+                                    }
+                                }
+                            }
+                            _ => b.stats.vu_missing += 1,
+                        }
+                    }
+                    Event::MaskPath3(m) => {
+                        if !m {
+                            if let Some(pk) = p3.pop_front() {
+                                label(&mut b.gs, "path3".into());
+                                path3(&mut b.gs, pk);
+                            }
+                        }
+                        p3_masked = *m;
+                    }
+                    _ => {}
+                }
+            }
+            if !phase2_started {
                 b.phase1_end = b.gs.batches.len();
-                p3_masked = true;
                 if mode & 2 != 0 {
                     p3.extend(std::mem::take(&mut p2));
                 }
             }
-            let n = match owner {
-                Owner::Prelude(n) | Owner::Payload(n) => Some(*n),
-                _ => None,
-            };
-            // The batches' tag: the draw's material (none between draws).
-            let m = n.and_then(|n| draws.get(n)).map(|d| d.state.material);
-            b.gs.tag = gs::Tag {
-                terrain: matches!(m, Some(Material::Bezier1 | Material::Bezier2)),
-                ..Default::default()
-            };
-            if let Some(n) = n {
-                if cur != Some(n) {
-                    cur = Some(n);
-                    b.gs.hud = draws.get(n).is_some_and(|d| d.state.layer >= 9);
-                    if let Some(d) = draws.get(n) {
-                        if tracing {
-                            label(&mut b.gs, format!("draw{n} {:?} layer {} tex {:?}", d.state.material, d.state.layer, d.tex));
-                        }
-                    }
-                }
-                // In a draw's payload its textures are bound to the TBPs its
-                // prelude wrote.
-                if let (Owner::Payload(_), Some(dr)) = (owner, draws.get(n)) {
-                    for (ctx, id) in dr.tex.iter().enumerate() {
-                        if let Some(id) = id {
-                            let info = tex::info(mem, texman, *id);
-                            if info != 0 {
-                                let tbp = (b.gs.ctx[ctx].tex0 & 0x3fff) as u32;
-                                b.gs.tex_map.insert(tbp, info);
-                            }
-                        }
-                    }
-                }
-            }
-            match ev {
-                Event::Call(_) => {
-                    b.stats.vu_calls += 1;
-                    match vu.take(&plan, i) {
-                        Some(CallOut::Gif(out)) => {
-                            b.stats.vu_native += 1;
-                            b.gs.gif(&out);
-                        }
-                        Some(CallOut::Gpu(g)) => {
-                            b.stats.vu_native += 1;
-                            b.stats.vu_gpu += 1;
-                            for c in g {
-                                b.gs.gpu_draw(c);
-                            }
-                        }
-                        Some(CallOut::Native(_)) | None => b.stats.vu_missing += 1,
-                    }
-                }
-                Event::Direct(dd) => b.gs.gif(&dd.qwords),
-                Event::Native { .. } => {
-                    // A draw captured at the game's draw function, planned
-                    // from its command with the VU calls.
-                    match vu.take(&plan, i) {
-                        Some(CallOut::Native(outs)) => {
-                            b.stats.native_draws += 1;
-                            for o in outs {
-                                match o {
-                                    ssx3_render::direct::Out::Gpu(c) => b.gs.gpu_draw(c),
-                                    ssx3_render::direct::Out::Gif(g) => b.gs.gif(&g),
-                                }
-                            }
-                        }
-                        _ => b.stats.vu_missing += 1,
-                    }
-                }
-                Event::MaskPath3(m) => {
-                    if !m {
-                        if let Some(pk) = p3.pop_front() {
-                            label(&mut b.gs, "path3".into());
-                            path3(&mut b.gs, pk);
-                        }
-                    }
-                    p3_masked = *m;
-                }
-                _ => {}
-            }
-        }
-        if !phase2_started {
-            b.phase1_end = b.gs.batches.len();
-            if mode & 2 != 0 {
-                p3.extend(std::mem::take(&mut p2));
-            }
-        }
-        vu.finish(&plan, &mut b.vu);
+            vu.finish(&plan, &mut b.vu);
         });
         // Whatever is left runs before the next frame.
         label(&mut b.gs, "path3".into());
@@ -1845,7 +2415,11 @@ impl Build {
             let log = std::mem::take(&mut b.gs.trace_log);
             let path = &dbg.trace_out;
             let _ = std::fs::write(&path, log.join("\n"));
-            eprintln!("[gfx] frame {} traced: {} lines -> {path}", b.frame, log.len());
+            eprintln!(
+                "[gfx] frame {} traced: {} lines -> {path}",
+                b.frame,
+                log.len()
+            );
         }
     }
 
@@ -1882,22 +2456,42 @@ impl Build {
                     Some(ssx3_render::mat6::HASH) => Some(ssx3_render::gpu::Program::Mat6Skin),
                     _ => None,
                 };
-                let kept = c.src.zip(program).and_then(|(s, p)| arena.kept(ssx3_render::gpu::mesh_key(s, p)));
+                let kept = c
+                    .src
+                    .zip(program)
+                    .and_then(|(s, p)| arena.kept(ssx3_render::gpu::mesh_key(s, p)));
                 calls.push(ssx3_render::vujob::JobItem::Call((i, c, hash, kept)));
-            } else if let Event::Native { index, regs, header } = ev {
+            } else if let Event::Native {
+                index,
+                regs,
+                header,
+            } = ev
+            {
                 // (Chunks start at them as at calls.)
                 if let Some(r) = built.direct.get(*index as usize) {
                     draw_start.push(cur != last_draw && (calls.is_empty() || last_hash != hash));
                     last_hash = hash;
                     last_draw = cur;
-                    calls.push(ssx3_render::vujob::JobItem::Native { event: i, cmd: &r.cmd, regs: *regs, header });
+                    calls.push(ssx3_render::vujob::JobItem::Native {
+                        event: i,
+                        cmd: &r.cmd,
+                        regs: *regs,
+                        header,
+                    });
                 }
             }
         }
         static SEQ: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let seq = *SEQ.get_or_init(|| std::env::var_os("SSX3_GFX_SEQ_VU").is_some());
-        let parallel = OFFLOAD.get().map(|o| o.1).unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
-        let threads = if seq || calls.len() < 64 { 1 } else { parallel.clamp(1, 8) };
+        let parallel = OFFLOAD
+            .get()
+            .map(|o| o.1)
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
+        let threads = if seq || calls.len() < 64 {
+            1
+        } else {
+            parallel.clamp(1, 8)
+        };
         // About four chunks per thread, taken by whichever thread is free.
         let per = calls.len().div_ceil(threads * 4).max(1);
         // Chunk boundaries: the first draw start at or after each multiple
@@ -1922,9 +2516,24 @@ impl Build {
             bounds.push(0);
             starts.push(std::sync::Mutex::new(Some(b.vu.clone())));
         }
-        let chunk_of: HashMap<usize, usize> = calls.iter().enumerate().map(|(k, c)| (c.event(), bounds.partition_point(|&b| b <= k) - 1)).collect();
-        let done = (0..bounds.len()).map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new())).collect();
-        VuPlan { vu0: b.vu.clone(), calls, bounds, starts, done, chunk_of, next: std::sync::atomic::AtomicUsize::new(0), threads }
+        let chunk_of: HashMap<usize, usize> = calls
+            .iter()
+            .enumerate()
+            .map(|(k, c)| (c.event(), bounds.partition_point(|&b| b <= k) - 1))
+            .collect();
+        let done = (0..bounds.len())
+            .map(|_| (std::sync::Mutex::new(None), std::sync::Condvar::new()))
+            .collect();
+        VuPlan {
+            vu0: b.vu.clone(),
+            calls,
+            bounds,
+            starts,
+            done,
+            chunk_of,
+            next: std::sync::atomic::AtomicUsize::new(0),
+            threads,
+        }
     }
 }
 
@@ -1939,7 +2548,8 @@ static OFFLOAD: std::sync::OnceLock<(VuOffload, usize)> = std::sync::OnceLock::n
 
 /// Where the offload keeps replayed calls' shared input
 /// (`ssx3_render::vujob::SharedStore`), if anywhere.
-static STORE: std::sync::OnceLock<Mutex<Box<dyn ssx3_render::vujob::SharedStore + Send>>> = std::sync::OnceLock::new();
+static STORE: std::sync::OnceLock<Mutex<Box<dyn ssx3_render::vujob::SharedStore + Send>>> =
+    std::sync::OnceLock::new();
 
 /// Install the offload's store of shared input (once).
 pub fn set_vu_store(store: Box<dyn ssx3_render::vujob::SharedStore + Send>) {
@@ -1969,7 +2579,13 @@ pub fn set_vu_offload(f: VuOffload, workers: usize) {
 
 /// `slot`'s buffer if it holds `size` bytes, else a new one (twice as big as
 /// needed, so it rarely grows again).
-fn grow_buffer(dev: &wgpu::Device, slot: &mut Option<wgpu::Buffer>, size: u64, usage: wgpu::BufferUsages, label: &str) -> wgpu::Buffer {
+fn grow_buffer(
+    dev: &wgpu::Device,
+    slot: &mut Option<wgpu::Buffer>,
+    size: u64,
+    usage: wgpu::BufferUsages,
+    label: &str,
+) -> wgpu::Buffer {
     if let Some(b) = slot.as_ref().filter(|b| b.size() >= size) {
         return b.clone();
     }

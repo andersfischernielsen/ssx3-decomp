@@ -87,9 +87,9 @@ impl Boundaries {
 
     /// Iterate `(address, run)` for every instruction address.
     pub fn iter_instructions(&self) -> impl Iterator<Item = u32> + '_ {
-        self.entries.iter().flat_map(|(_, runs)| {
-            runs.iter().flat_map(|(lo, hi)| (*lo..*hi).step_by(4))
-        })
+        self.entries
+            .iter()
+            .flat_map(|(_, runs)| runs.iter().flat_map(|(lo, hi)| (*lo..*hi).step_by(4)))
     }
 }
 

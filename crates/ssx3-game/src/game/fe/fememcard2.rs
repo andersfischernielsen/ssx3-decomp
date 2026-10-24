@@ -2,78 +2,138 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
+use crate::events::deliver_event;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_3;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_2;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
+pub(crate) use crate::game::dirtysock::tags2::vslot;
+pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
+pub(crate) use crate::game::fe::feasyncfile::gpr;
+pub(crate) use crate::game::fe::feasyncfile::lh_3 as lh_2;
+pub(crate) use crate::game::fe::feasyncfile::lw_8 as lw_3;
+pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_4;
+pub(crate) use crate::game::fe::feasyncfile::p_7 as p_4;
+pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw_2;
+pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_3;
+pub(crate) use crate::game::fe::feasyncfile::STR_HASH;
+pub(crate) use crate::game::fe::fepopup3::gp_2 as gp;
+pub(crate) use crate::game::fe::fepopup3::lh;
+pub(crate) use crate::game::fe::fepopup3::lw_2;
+pub(crate) use crate::game::fe::fepopup3::p_2;
+pub(crate) use crate::game::fe::fepopup3::sw;
+pub(crate) use crate::game::fe::festateloadhint::lqsp;
+pub(crate) use crate::game::fe::festateloadhint::p_3;
+pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::fe::festateoptions::gpa;
+pub(crate) use crate::game::fe::ovstatepause::lw;
+pub(crate) use crate::game::fe::ovstatepause::p;
+pub(crate) use crate::game::movie::movieplayer::at as at_2;
+pub(crate) use crate::game::scripter::ssxscriptengine::gp as gp_2;
+pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
+pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use callee::*;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::abi::r32;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use crate::events::back_edge_unwinds;
-use callee::*;
-use crate::call::Flow;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::X;
-use crate::call::sp;
-use crate::call;
-use crate::events::deliver_event;
-use crate::ps2f::FpuF32;
-pub(crate) use crate::game::fe::ovstatepause::lw;
-pub(crate) use crate::game::fe::ovstatepause::p;
-pub(crate) use crate::game::fe::fepopup3::p_2;
-pub(crate) use crate::game::fe::fepopup3::lw_2;
-pub(crate) use crate::game::fe::fepopup3::sw;
-pub(crate) use crate::game::fe::fepopup3::lh;
-pub(crate) use crate::game::fe::fepopup3::gp_2 as gp;
-pub(crate) use crate::game::fe::festateoptions::gpa;
-pub(crate) use crate::game::fe::feasyncfile::at_2 as at;
-pub(crate) use crate::game::fe::feasyncfile::gpr;
-pub(crate) use crate::game::fe::festateloadhint::p_3;
-pub(crate) use crate::game::fe::festateloadhint::sqsp;
-pub(crate) use crate::game::fe::festateloadhint::lqsp;
-pub(crate) use crate::game::scripter::ssxscriptengine::gp as gp_2;
-pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
-pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
-pub(crate) use crate::game::movie::movieplayer::at as at_2;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_3;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_2;
-pub(crate) use crate::game::dirtysock::tags2::vslot;
-pub(crate) use crate::game::fe::feasyncfile::lw_8 as lw_3;
-pub(crate) use crate::game::fe::feasyncfile::sw_5 as sw_2;
-pub(crate) use crate::game::fe::feasyncfile::STR_HASH;
-pub(crate) use crate::game::fe::feasyncfile::p_7 as p_4;
-pub(crate) use crate::game::fe::feasyncfile::lw_9 as lw_4;
-pub(crate) use crate::game::fe::feasyncfile::lh_3 as lh_2;
-pub(crate) use crate::game::fe::feasyncfile::sw_7 as sw_3;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x001d_72a8, memcard_ui_on_load_aborted, "MemCardUI_OnLoadAborted"),
-    (0x001d_8160, mem_card_ui_try_next_slot, "MemCardUI_TryNextSlot"),
-    (0x001d_8358, mem_card_ui_show_file_display, "MemCardUI_ShowFileDisplay"),
+    (
+        0x001d_72a8,
+        memcard_ui_on_load_aborted,
+        "MemCardUI_OnLoadAborted",
+    ),
+    (
+        0x001d_8160,
+        mem_card_ui_try_next_slot,
+        "MemCardUI_TryNextSlot",
+    ),
+    (
+        0x001d_8358,
+        mem_card_ui_show_file_display,
+        "MemCardUI_ShowFileDisplay",
+    ),
     (0x001d_8670, mem_card_state_base_v46, "MemCardStateBase_v46"),
     (0x001d_86b0, mem_card_state_base_v45, "MemCardStateBase_v45"),
-    (0x001d_8be0, mem_card_state_base_reset_state, "MemCardStateBase_ResetState"),
-    (0x001d_8c50, memcard_state_base_handle_input, "MemCardStateBase_HandleInput"),
-    (0x001d_8d68, mem_card_state_base_show_status, "MemCardStateBase_ShowStatus"),
-    (0x001d_9258, memcard_state_base_sync_menu_selection, "MemCardStateBase_SyncMenuSelection"),
-    (0x001d_9308, mem_card_state_base_set_use_save_title, "MemCardStateBase_SetUseSaveTitle"),
-    (0x001d_9368, mem_card_state_base_set_mode_menu, "MemCardStateBase_SetModeMenu"),
-    (0x001d_93d8, mem_card_state_base_transition_out, "MemCardStateBase_TransitionOut"),
-    (0x001d_93e8, mem_card_state_base_play_widget_anim, "MemCardStateBase_PlayWidgetAnim"),
-    (0x001d_97e0, mem_card_state_base_step_slot_dir, "MemCardStateBase_StepSlotDir"),
-    (0x001d_9818, mem_card_state_base_on_activate, "MemCardStateBase_OnActivate"),
-    (0x001d_9880, memcard_state_base_is_card_ready, "MemCardStateBase_IsCardReady"),
-    (0x001d_9948, mem_card_state_base_alloc_read_buffer, "MemCardStateBase_AllocReadBuffer"),
+    (
+        0x001d_8be0,
+        mem_card_state_base_reset_state,
+        "MemCardStateBase_ResetState",
+    ),
+    (
+        0x001d_8c50,
+        memcard_state_base_handle_input,
+        "MemCardStateBase_HandleInput",
+    ),
+    (
+        0x001d_8d68,
+        mem_card_state_base_show_status,
+        "MemCardStateBase_ShowStatus",
+    ),
+    (
+        0x001d_9258,
+        memcard_state_base_sync_menu_selection,
+        "MemCardStateBase_SyncMenuSelection",
+    ),
+    (
+        0x001d_9308,
+        mem_card_state_base_set_use_save_title,
+        "MemCardStateBase_SetUseSaveTitle",
+    ),
+    (
+        0x001d_9368,
+        mem_card_state_base_set_mode_menu,
+        "MemCardStateBase_SetModeMenu",
+    ),
+    (
+        0x001d_93d8,
+        mem_card_state_base_transition_out,
+        "MemCardStateBase_TransitionOut",
+    ),
+    (
+        0x001d_93e8,
+        mem_card_state_base_play_widget_anim,
+        "MemCardStateBase_PlayWidgetAnim",
+    ),
+    (
+        0x001d_97e0,
+        mem_card_state_base_step_slot_dir,
+        "MemCardStateBase_StepSlotDir",
+    ),
+    (
+        0x001d_9818,
+        mem_card_state_base_on_activate,
+        "MemCardStateBase_OnActivate",
+    ),
+    (
+        0x001d_9880,
+        memcard_state_base_is_card_ready,
+        "MemCardStateBase_IsCardReady",
+    ),
+    (
+        0x001d_9948,
+        mem_card_state_base_alloc_read_buffer,
+        "MemCardStateBase_AllocReadBuffer",
+    ),
     (0x001d_99c8, cfe_popup_confirm_ctor, "cFEPopupConfirm_ctor"),
     (0x001d_9ca8, c_fe_popup_confirm_v27, "cFEPopupConfirm_v27"),
     (0x001d_9d18, c_fe_popup_confirm_v25, "cFEPopupConfirm_v25"),
@@ -85,49 +145,110 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::dirtysock::tags2::callee::ON_QUIT_POPUP_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE_2 as NET_FE_STATE_UPDATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR_2 as NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2 as CHAT_ROOM_UPDATE_PLAYER_QUALITY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STATS_SELECT_CATEGORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_UPDATE_CURSOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_SET_USE_SAVE_TITLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TROPHY_ROOM_RELEASE_IMAGES;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_GET_INBOX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_PUSH_FREE_NODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_END_OPERATION_2 as MC_MANAGER_END_OPERATION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_SET_PRESENCE_ADDR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_DESTROY_API;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_GET_ROSTER_COUNT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_OBJ_CAM_SET_OWNER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_OBJ_TABLE_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_RESET_PROCESS_TABLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_2 as SND_BANK_UNLOAD;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLINK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RECORD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_ADD_SNAPSHOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STREAM_BUFFER_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_INSTANCE_RESUME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::PATH_PLAT_REFRESH_STATUS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_ASCII_CHAR_TO_SJIS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_SET_STATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::USTR_TO_ASCII;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_PAGE_SELECT_NEXT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_ITEM_MEASURE_ROW;
-    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_FREE_HISTORIES;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::AVALANCHE_GET_OBJECT_MATRIX;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_CHARACTER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_PROFILE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_TRACK_INFO;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_MISSION_SET_COLLECTED;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_SET_CHARACTER_BY_SLOT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_COUNT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_ENTRY;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUY_POPUP_RESET;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::CLEAR_NEW_REWARDS;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::DYNAMIC_EMITTER_RESET;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_THREAD_YIELD;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_TIMER_SERVICE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::FE_ASYNC_SET_STATE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_MODULE_REQUEST_STATE_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_PROCESS_DTOR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GROW_LINES;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INIT_FROM_RIDER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INSTANCE_GET_NODE_MATRIX;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOAD_INDICATOR_RENDER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_API_SEND;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_GET_ROOM_NAME;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_END_OPERATION;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_ON_OPERATION_DONE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MEM_REPORT_STATS_LOCKED;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MSG_PRINTF;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::OPERATOR_NEW_NAMED as OPERATOR_NEW_NAMED_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::POPUP_CONFIRM_REBUILD;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::QSORT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RESET_FOR_RIDER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_ADD_BOOST_2 as RIDER_ADD_BOOST;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_APPLY_SCRIPT_TRACK;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GATHER_CAM_STATE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GET_MAIN_STATE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_RECORD_BEST_JUMP;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_UPDATE_SCRIPT_SOUNDS;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SECTION_SELECT_PEAK_LIGHTING;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SERIALIZE_READ_U32;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SET_ITEM_YEAR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SNOW_BOX_DTOR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_GET_INSTANCE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_IS_TRACK_GROUP5;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_PLAY_MUSIC;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_RESUME_SFX;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STOP_LOADING_SCREEN_LOOP;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STREAM_FILE_QUEUE_RANGE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STRLEN;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_HASH;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_LEN;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_COPY;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_RAW;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_STRING;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TEX_MAN_INIT_TABLE;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_CTOR;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LISTBOX_SET_ITEM_TEXT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST_WRAPPER;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_NODE_SENTINEL;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_FIND_BY_ID;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_SET_ANIM;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_SCREEN_FIND_OBJECT as UI_SCREEN_FIND_OBJECT_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_CTOR_2_2;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_MGR_PUSH_POPUP;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_ASCII;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_EVENT_STAT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_STRING;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_TEXT_ID;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_CPY;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_LEN;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::VRAM_HEAP_INIT;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::WORLD_GET_INSTANCE;
     pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_BAKE_GROUP;
     pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_EXPORT_HISTORY_FILES;
+    pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_FREE_HISTORIES;
     pub(crate) use crate::game::dirtysock::tags2::callee::AVALANCHE_LOAD_HISTORY_FILE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SNOW_BOX_RESET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_INSTANCE_RESUME;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_STOP_HANDLE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_REWARD_INT_IS_UNLOCKED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_DESTROY_API;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_GET_ROSTER_COUNT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUDDY_MAN_SET_PRESENCE_ADDR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::CHAT_ROOM_UPDATE_PLAYER_QUALITY_2 as CHAT_ROOM_UPDATE_PLAYER_QUALITY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_BX_STRING_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_LUNO_TABLE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_GET_SAVE_NAME;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_LIST_DIR_ALL;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_READ_SAVE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_SET_STATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_SETUP_MAN_SEND_QUIT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEMSET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EMPTY_CHILD_HANDLER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::KEYBOARD_POPUP_UPDATE_CURSOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_GET_AT_3 as LOBBY_LIST_GET_AT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_END_OPERATION_2 as MC_MANAGER_END_OPERATION;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_MANAGER_REQUEST_CARD_INFO;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_ASCII_CHAR_TO_SJIS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEM_CARD_SET_USE_SAVE_TITLE;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT0;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT1;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT2;
@@ -135,179 +256,118 @@ pub(crate) mod callee {
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT4;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT5;
     pub(crate) use crate::game::dirtysock::tags2::callee::MEM_REPORT_POOL_STAT6;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FE_MODULE_GET_PLAYER_PAD_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_ITEM_MEASURE_ROW;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MENU_SYS_PAGE_SELECT_NEXT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_GET_INBOX;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_CTOR_3 as NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_DTOR_2 as NET_FE_STATE_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_ON_CHILD_EVENT_3 as NET_FE_STATE_ON_CHILD_EVENT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FE_STATE_UPDATE_2 as NET_FE_STATE_UPDATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::ON_QUIT_POPUP_EVENT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::PATH_PLAT_REFRESH_STATUS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::RAND_NEXT_MAIN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_ADD_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::REPLAY_RECORD_SNAPSHOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCE_MC_FORMAT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_OBJ_TABLE_CTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_ENGINE_RESET_PROCESS_TABLE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_LIST_STOP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SCRIPT_OBJ_CAM_SET_OWNER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SECTION_MAN_PUSH_FREE_NODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SLOGIN_MC_GET_PORT_SLOT_2 as SLOGIN_MC_GET_PORT_SLOT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_FREE_MEMORY_2 as SND_BANK_FREE_MEMORY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLINK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SND_BANK_UNLOAD_2 as SND_BANK_UNLOAD;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SNOW_BOX_RESET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2 as SPRINTF;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STATS_SELECT_CATEGORY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STREAM_BUFFER_DTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TROPHY_ROOM_RELEASE_IMAGES;
     pub(crate) use crate::game::dirtysock::tags2::callee::UIMENU_SET_SELECTION;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_ON_ACTIVATE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_GET_FONT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_REWARD_INT_IS_UNLOCKED;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
     pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR;
     pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EA_MEMSET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_PS2_MEM_CARD_REQUEST_LIST_DIR_ALL;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_BX_STRING_DTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BUILTIN_DELETE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBY_LIST_GET_AT_3 as LOBBY_LIST_GET_AT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SLOGIN_MC_GET_PORT_SLOT_2 as SLOGIN_MC_GET_PORT_SLOT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SCE_MC_FORMAT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STRCPY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_2 as SPRINTF;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RAND_NEXT_MAIN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_SETUP_MAN_SEND_QUIT;
-    pub(crate) use crate::game::dirtysock::tags2::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_LUNO_TABLE_DTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_IS_CONNECTED;
-    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MAN;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_RECONNECT;
-    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MAN_DISCONNECT;
-    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_DISCONNECT;
-    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_SET_QUALITY_ICONS;
-    pub(crate) use crate::game::movie::movieplayer::callee::GET_HASH_VALUE_32;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_TEXT_SET_UNICODE_STRING_BY_ID;
-    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_HANDLE_NET_EVENT;
-    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MENU_ON_CREATE_ROOM_RESULT;
-    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MENU_ON_JOIN_ROOM_RESULT;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_SCREEN_PLAY_FRAME;
-    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_SHOW_DISCONNECTED_POPUP;
-    pub(crate) use crate::game::movie::movieplayer::callee::TAG_FIELD_GET_STRING;
-    pub(crate) use crate::game::movie::movieplayer::callee::STRCPY_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_STATE_ON_ACTIVATE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::UI_TEXT_GET_FONT;
+    pub(crate) use crate::game::dirtysock::tags2::callee::USTR_TO_ASCII;
     pub(crate) use crate::game::movie::movieplayer::callee::ASYNC_FILE_RELEASE_1;
     pub(crate) use crate::game::movie::movieplayer::callee::ASYNC_FILE_RELEASE_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_UNLOAD_BANK;
-    pub(crate) use crate::game::movie::movieplayer::callee::MEM_FREE;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_RUN_PROCESS;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_OBJ_ACTIVATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_DATA_GET_INFO;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_FIND_SOUND_BANK;
-    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_ITEM_ON_FOCUS;
-    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_PAGE_SET_SELECTION;
-    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_PAGE_ON_ACTIVATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::BEREWARD_INT_IS_PEAK_COMPLETE;
     pub(crate) use crate::game::movie::movieplayer::callee::BE_SCORE_INT_UPDATE_BEST_STATS;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_METRIX_RESET_STATS;
-    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_ON_OPERATION_DONE;
-    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_SET_MODE_2 as MC_MANAGER_SET_MODE;
-    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_RESET_LAYOUT;
-    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_APPLY_CONFIG;
-    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_APPLY_BACKGROUND_SCALE;
+    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_DISCONNECT;
+    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_IS_CONNECTED;
+    pub(crate) use crate::game::movie::movieplayer::callee::BUDDY_MAN_RECONNECT;
     pub(crate) use crate::game::movie::movieplayer::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::PARENT_MODIFIER_CTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::ROLLER_MODIFIER_CTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER;
-    pub(crate) use crate::game::movie::movieplayer::callee::MULTI_SPLINE_MODIFIER_ADD_REF;
-    pub(crate) use crate::game::movie::movieplayer::callee::MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::movie::movieplayer::callee::MEM_FREE_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_PROCESS;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_LAUNCH_PENDING_PROCESS;
-    pub(crate) use crate::game::movie::movieplayer::callee::C_FE_STATE_CHAR_EQUIP_SET_EQUIP_ROW;
-    pub(crate) use crate::game::movie::movieplayer::callee::C_FE_STATE_CHAR_EQUIP_SET_BUY_ROW;
-    pub(crate) use crate::game::movie::movieplayer::callee::STREAM_BUFFER_CTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_MAN_CREATE_PROCESS;
-    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESS_COUNT;
-    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESSES;
-    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_METRIX_ON_SPLIT_MARKER;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_CMD_QUEUE_CTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_CMD_QUEUE_CLEAR;
     pub(crate) use crate::game::movie::movieplayer::callee::BX_STRING_ALLOC_COPY;
     pub(crate) use crate::game::movie::movieplayer::callee::BX_STRING_CTOR_COPY;
     pub(crate) use crate::game::movie::movieplayer::callee::BX_STRING_DTOR;
-    pub(crate) use crate::game::movie::movieplayer::callee::FONT_PARSE_GLYPHS;
-    pub(crate) use crate::game::movie::movieplayer::callee::SPRINTF_2;
-    pub(crate) use crate::game::movie::movieplayer::callee::FILE_LOAD;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_STORE_WORD;
-    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_LOAD_TEXTURES;
-    pub(crate) use crate::game::movie::movieplayer::callee::FLEX_BRIDGE_ALLOC_SPRING_NODES;
     pub(crate) use crate::game::movie::movieplayer::callee::CBE_GET_BE;
     pub(crate) use crate::game::movie::movieplayer::callee::CBE_GET_INTERFACE;
+    pub(crate) use crate::game::movie::movieplayer::callee::C_FE_STATE_CHAR_EQUIP_SET_BUY_ROW;
+    pub(crate) use crate::game::movie::movieplayer::callee::C_FE_STATE_CHAR_EQUIP_SET_EQUIP_ROW;
+    pub(crate) use crate::game::movie::movieplayer::callee::C_FLAG_MANAGER_GROUP_INIT_KEY;
     pub(crate) use crate::game::movie::movieplayer::callee::C_OV_STATE_OVERLAY_INIT;
     pub(crate) use crate::game::movie::movieplayer::callee::EVENT_SELECT_INIT;
-    pub(crate) use crate::game::movie::movieplayer::callee::C_FLAG_MANAGER_GROUP_INIT_KEY;
+    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_APPLY_BACKGROUND_SCALE;
+    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_APPLY_CONFIG;
+    pub(crate) use crate::game::movie::movieplayer::callee::FE_POPUP_CONFIRM_RESET_LAYOUT;
+    pub(crate) use crate::game::movie::movieplayer::callee::FILE_LOAD;
+    pub(crate) use crate::game::movie::movieplayer::callee::FLEX_BRIDGE_ALLOC_SPRING_NODES;
+    pub(crate) use crate::game::movie::movieplayer::callee::FONT_PARSE_GLYPHS;
+    pub(crate) use crate::game::movie::movieplayer::callee::GAME_MODULE_REQUEST_OVERLAY_STATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::GAME_MODULE_REQUEST_STATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::GET_HASH_VALUE_32;
+    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MAN;
+    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MAN_DISCONNECT;
+    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MENU_ON_CREATE_ROOM_RESULT;
+    pub(crate) use crate::game::movie::movieplayer::callee::LOBBY_MENU_ON_JOIN_ROOM_RESULT;
+    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_ON_OPERATION_DONE;
+    pub(crate) use crate::game::movie::movieplayer::callee::MC_MANAGER_SET_MODE_2 as MC_MANAGER_SET_MODE;
+    pub(crate) use crate::game::movie::movieplayer::callee::MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::movie::movieplayer::callee::MEM_FREE;
+    pub(crate) use crate::game::movie::movieplayer::callee::MEM_FREE_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_ITEM_ON_FOCUS;
+    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_PAGE_ON_ACTIVATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::MENU_SYS_PAGE_SET_SELECTION;
+    pub(crate) use crate::game::movie::movieplayer::callee::MOD_OBJ_SET_TRANSFORM_MODIFIER;
+    pub(crate) use crate::game::movie::movieplayer::callee::MULTI_SPLINE_MODIFIER_ADD_REF;
+    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_SET_QUALITY_ICONS;
+    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_HANDLE_NET_EVENT;
+    pub(crate) use crate::game::movie::movieplayer::callee::NET_FE_STATE_SHOW_DISCONNECTED_POPUP;
+    pub(crate) use crate::game::movie::movieplayer::callee::OPERATOR_NEW_NAMED;
     pub(crate) use crate::game::movie::movieplayer::callee::OV_SCREEN_PDA_TEMPLATE_OPEN;
     pub(crate) use crate::game::movie::movieplayer::callee::OV_SCREEN_PROFILE_SAVE_PDA_INIT_SLOT_LABELS;
-    pub(crate) use crate::game::movie::movieplayer::callee::GAME_MODULE_REQUEST_STATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::GAME_MODULE_REQUEST_OVERLAY_STATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::PARENT_MODIFIER_CTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_METRIX_ON_SPLIT_MARKER;
+    pub(crate) use crate::game::movie::movieplayer::callee::RIDER_METRIX_RESET_STATS;
+    pub(crate) use crate::game::movie::movieplayer::callee::ROLLER_MODIFIER_CTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_CMD_QUEUE_CLEAR;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_CMD_QUEUE_CTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_DATA_GET_INFO;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_FIND_SOUND_BANK;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_PROCESS;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_LAUNCH_PENDING_PROCESS;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_RUN_PROCESS;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_ENGINE_UNLOAD_BANK;
+    pub(crate) use crate::game::movie::movieplayer::callee::SCRIPT_OBJ_ACTIVATE;
+    pub(crate) use crate::game::movie::movieplayer::callee::SPRINTF_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::STRCPY_2;
+    pub(crate) use crate::game::movie::movieplayer::callee::STREAM_BUFFER_CTOR;
+    pub(crate) use crate::game::movie::movieplayer::callee::TAG_FIELD_GET_STRING;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_ADD_SCREEN_BY_HASH_NAME;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_LOAD_TEXTURES;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_ENGINE_STORE_WORD;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_SCREEN_FIND_OBJECT;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_SCREEN_PLAY_FRAME;
     pub(crate) use crate::game::movie::movieplayer::callee::UI_STATE_CTOR_2;
     pub(crate) use crate::game::movie::movieplayer::callee::UI_STATE_MGR_ADD_BACKGROUND_STATE;
-    pub(crate) use crate::game::movie::movieplayer::callee::BEREWARD_INT_IS_PEAK_COMPLETE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RESET_FOR_RIDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INIT_FROM_RIDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::DYNAMIC_EMITTER_RESET;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_END_OPERATION;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MC_ON_OPERATION_DONE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUY_POPUP_RESET;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STOP_LOADING_SCREEN_LOOP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::CLEAR_NEW_REWARDS;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GET_MAIN_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_RECORD_BEST_JUMP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_ADD_BOOST_2 as RIDER_ADD_BOOST;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_APPLY_SCRIPT_TRACK;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_UPDATE_SCRIPT_SOUNDS;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SNOW_BOX_DTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_CTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::VRAM_HEAP_INIT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TEX_MAN_INIT_TABLE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_COPY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_RAW;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GROW_LINES;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_EVENT_STAT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_CTOR_2_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOAD_INDICATOR_RENDER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_FIND_BY_ID;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_NODE_SENTINEL;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SECTION_SELECT_PEAK_LIGHTING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::INSTANCE_GET_NODE_MATRIX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::AVALANCHE_GET_OBJECT_MATRIX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_PROCESS_DTOR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::WORLD_GET_INSTANCE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_RIDER_CHARACTER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_GET_TRACK_INFO;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_SET_CHARACTER_BY_SLOT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_GET_ROOM_NAME;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_COUNT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BUDDY_GET_ROSTER_ENTRY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::FE_ASYNC_SET_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::POPUP_CONFIRM_REBUILD;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_PLAY_MUSIC;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_HASH;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STREAM_FILE_QUEUE_RANGE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_LEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::USTR_CPY;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_TEXT_ID;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_STRING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_SCREEN_FIND_OBJECT as UI_SCREEN_FIND_OBJECT_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_OBJECT_SET_ANIM;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_STATE_MGR_PUSH_POPUP;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LISTBOX_SET_ITEM_TEXT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SET_ITEM_YEAR;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_TEXT_SET_ASCII;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_ANIM_SET_CREATE_ANIM_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::BE_MISSION_SET_COLLECTED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MSG_PRINTF;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STR_LEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::STRLEN;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::QSORT;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_TIMER_SERVICE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_THREAD_YIELD;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::GAME_MODULE_REQUEST_STATE_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::LOBBY_API_SEND;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::TAG_FIELD_SET_STRING;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_RESUME_SFX;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_IS_TRACK_GROUP5;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::RIDER_GATHER_CAM_STATE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SSX_AUDIO_GET_INSTANCE;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::MEM_REPORT_STATS_LOCKED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::OPERATOR_NEW_NAMED as OPERATOR_NEW_NAMED_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::UI_LIST_FIRST_WRAPPER;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::SERIALIZE_READ_U32;
+    pub(crate) use crate::game::movie::movieplayer::callee::UI_TEXT_SET_UNICODE_STRING_BY_ID;
+    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESSES;
+    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_CACHE_GET_PROCESS_COUNT;
+    pub(crate) use crate::game::movie::movieplayer::callee::WSCRIPT_MAN_CREATE_PROCESS;
 
     pub const MEM_CARD_STATE_BASE_SET_USE_SAVE_TITLE: Callee = Callee {
         addr: 0x001d_9308,
@@ -317,38 +377,37 @@ pub(crate) mod callee {
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod addr {
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STR_HASH;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_ENGINE_CREATE_SCREEN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_SCREEN_START_THREAD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BANK_MONITOR_ADD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_BE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE_9;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::CHASE_CAMERA_RESET_FOR_RIDER;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::CLOSE_UNPINNED_POPUPS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::FE_NET_SEND;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::HUD_SHOW_NUMBER_DELAYED;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MC_STATUS_TEXT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MEMSET;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::MEM_MAN_ALLOC;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_POP_PAGE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_PUSH_PAGE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::POSITION_MODIFIER_CTOR_3;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW_BOLTS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPATIAL_INSERT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPRINTF;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRCASECMP;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRCMP;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::STRLEN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPRINTF;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MEMSET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_BE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::CHASE_CAMERA_RESET_FOR_RIDER;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_POP_PAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_PUSH_PAGE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::FE_NET_SEND;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MENU_DTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_GET;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::MC_STATUS_TEXT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::RIDER_PREVIEW_BOLTS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BE_GET_INTERFACE_9;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::HUD_SHOW_NUMBER_DELAYED;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::SPATIAL_INSERT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::POSITION_MODIFIER_CTOR_3;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_PAINTER_2D;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_OBJECT_BY_HASH;
-    pub(crate) use crate::game::scripter::ssxscriptengine::addr::BANK_MONITOR_ADD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::STR_HASH;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_ENGINE_CREATE_SCREEN;
     pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_ENGINE_TEARDOWN;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_OBJECT_BY_HASH;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::UI_SCREEN_START_THREAD;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_GET;
+    pub(crate) use crate::game::scripter::ssxscriptengine::addr::WORLD_PAINTER_2D;
 }
-
 
 /// `cFEPopupConfirm_...` (v24) 0x1d9d18: store `a1` at +0x168 and, when the
 /// popup has a live object at +0x40, apply its layout (`cFEStateNetHelpPopup`'s
@@ -375,7 +434,6 @@ pub fn c_fe_popup_confirm_v25(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int MemCardStateBase_StepSlotDir(MemCardStateBase* self, void* list, int idx,
 /// int back)` (0x1d97e0): step `idx` by ±1 and report whether it is still in
@@ -409,7 +467,6 @@ pub fn mem_card_state_base_step_slot_dir(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void MemCardStateBase_SetModeMenu(State* s)` (0x1d9368): enter mode 1
 /// once (`+0x214`), calling the state's own `v` slot (+0x118) with 1.
 pub fn mem_card_state_base_set_mode_menu(c: &mut Cpu) {
@@ -440,7 +497,6 @@ pub fn mem_card_state_base_set_mode_menu(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void MemCardUI_ShowFileDisplay(self)` (0x1d8358): move the front end into
 /// the file-display state (mode 2) unless it is already there or a save is in
@@ -481,7 +537,6 @@ pub fn mem_card_ui_show_file_display(c: &mut Cpu) {
     })
 }
 
-
 /// `void MemCardStateBase_v45(self)` (0x1d86b0): enable the save title, set
 /// the "check cards" mode (5) and call the state's vtable slot 0x178/0x17c.
 pub fn mem_card_state_base_v45(c: &mut Cpu) {
@@ -512,7 +567,6 @@ pub fn mem_card_state_base_v45(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void MemCardStateBase_ResetState(self)` (0x1d8be0): clear the save-title
 /// and dialog fields and set the default use-save-title mode.
@@ -545,12 +599,10 @@ pub fn mem_card_state_base_reset_state(c: &mut Cpu) {
     })
 }
 
-
 #[inline(always)]
 pub(crate) fn sh(c: &mut Cpu, a: u32, v: u64) {
     Addr(a).sh(c, v);
 }
-
 
 /// `void MemCardStateBase_SetUseSaveTitle(MemCardStateBase* self, int on)`
 /// (0x1d9308): store the flag and, when on, let the overlay manager's current
@@ -589,7 +641,6 @@ pub fn mem_card_state_base_set_use_save_title(c: &mut Cpu) {
     })
 }
 
-
 /// `void MemCardStateBase_OnActivate(MemCardStateBase* self)` (0x1d9818):
 /// activate the UI screen, then show the "busy" widget found by its name hash.
 pub fn mem_card_state_base_on_activate(c: &mut Cpu) {
@@ -626,7 +677,6 @@ pub fn mem_card_state_base_on_activate(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Memory-card and front-end overlay states.
 
@@ -652,7 +702,6 @@ pub fn mem_card_state_base_v46(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `int MemCardStateBase_TransitionOut(MemCardStateBase* state)` (0x1d93d8):
 /// `state->+0x1c0 == 6`.
 pub fn mem_card_state_base_transition_out(c: &mut Cpu) {
@@ -662,7 +711,6 @@ pub fn mem_card_state_base_transition_out(c: &mut Cpu) {
     c.g[V0][0] = (c.g[V0][0] < 0x1u64) as u64;
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // The ports.
@@ -708,7 +756,6 @@ pub fn memcard_ui_on_load_aborted(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void cFEPopupConfirm_v27(cFEPopupConfirm* self, const u16* src)`
 /// (0x1d9ca8): set the popup's text from a source UTF-16 string.
@@ -758,7 +805,6 @@ pub fn c_fe_popup_confirm_v27(c: &mut Cpu) {
     });
 }
 
-
 /// `MemCardStateBase_ShowStatus` (0x1D8D68): show the memory card status text and
 /// hand it to the state's UI object.
 pub fn mem_card_state_base_show_status(c: &mut Cpu) {
@@ -798,7 +844,6 @@ pub fn mem_card_state_base_show_status(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void MemCardStateBase_AllocReadBuffer(self, size)` (0x001d9948):
 /// (re)allocate the memcard state's read buffer.
@@ -845,7 +890,6 @@ pub fn mem_card_state_base_alloc_read_buffer(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void MemCardStateBase_PlayWidgetAnim(MemCardStateBase* self, char* name,
 /// char* anim)` (0x1d93e8): find the widget named `name` and play the named
@@ -902,7 +946,6 @@ pub fn mem_card_state_base_play_widget_anim(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `MemCardStateBase_SyncMenuSelection` (0x1d9258): look up the memory-card
@@ -974,7 +1017,6 @@ pub fn memcard_state_base_sync_menu_selection(c: &mut Cpu) {
     })
 }
 
-
 /// `void* cFEPopupConfirm_ctor(self, engine, owner, text, a4..a8)` (0x1d99c8):
 /// construct a confirmation popup, choosing the button count from the global
 /// popup mode.
@@ -1034,7 +1076,6 @@ pub fn cfe_popup_confirm_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Memory card / load screens.
@@ -1152,128 +1193,133 @@ pub fn memcard_state_base_is_card_ready(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // MemCardUI_TryNextSlot (0x00001d8160).
 
 /// `MemCardUI_TryNextSlot`: advance the memory-card screen to the next usable slot.
 pub fn mem_card_ui_try_next_slot(c: &mut Cpu) {
     guest(c, |c| {
-    'b_1d8234: {
-    'b_1d8210: {
-    'b_1d8208: {
-    'b_1d81f0: {
-    'b_1d81a8: {
-    c.cycles += 13;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
-    c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-    c.sd((c.g[SP][0] as u32), c.g[RA][0]);
-    call_ptr(c, 0x00227f80, 0x001d8178)?;
-    c.g[S0][0] = c.g[V0][0];
-    c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x428));
-    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x424));
-    c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
-    c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
-    if c.g[V0][0] == 0u64 {
-    c.g[A0][0] = c.g[S0][0];
-    break 'b_1d81a8;
-    } else {
-    c.cycles += 5;
-    c.g[A0][0] = c.g[S0][0];
-    call_ptr(c, 0x0023fb18, 0x001d819c)?;
-    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x748));
-    let t = true;
-    c.g[A1][0] = 0x31;
-    if t {
-    break 'b_1d81f0;
-    } else {
-    break 'b_1d81a8;
-    }
-    }
-    }
-    c.cycles += 11;
-    c.g[A1][0] = 0u64;
-    call_ptr(c, 0x0023fb18, 0x001d81b0)?;
-    c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x434));
-    c.g[A1][0] = 0u64;
-    c.g[V1][0] = c.lw((c.g[A2][0] as u32));
-    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x1a0));
-    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1a4));
-    let t = c.g[V0][0] as u32;
-    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.g[RA][0] = sx(0x001d81cc);
-    c.pc = t;
-    ssx3_ee_rt::funcs::call_indirect(c, t);
-    if c.pc != 0x001d81cc { return Err(crate::call::Unwound); }
-    let t = c.g[V0][0] != 0u64;
+        'b_1d8234: {
+            'b_1d8210: {
+                'b_1d8208: {
+                    'b_1d81f0: {
+                        'b_1d81a8: {
+                            c.cycles += 13;
+                            c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x20));
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+                            c.sq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                            c.sd((c.g[SP][0] as u32), c.g[RA][0]);
+                            call_ptr(c, 0x00227f80, 0x001d8178)?;
+                            c.g[S0][0] = c.g[V0][0];
+                            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x428));
+                            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x424));
+                            c.g[A1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x1));
+                            c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            if c.g[V0][0] == 0u64 {
+                                c.g[A0][0] = c.g[S0][0];
+                                break 'b_1d81a8;
+                            } else {
+                                c.cycles += 5;
+                                c.g[A0][0] = c.g[S0][0];
+                                call_ptr(c, 0x0023fb18, 0x001d819c)?;
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x748));
+                                let t = true;
+                                c.g[A1][0] = 0x31;
+                                if t {
+                                    break 'b_1d81f0;
+                                } else {
+                                    break 'b_1d81a8;
+                                }
+                            }
+                        }
+                        c.cycles += 11;
+                        c.g[A1][0] = 0u64;
+                        call_ptr(c, 0x0023fb18, 0x001d81b0)?;
+                        c.g[A2][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x434));
+                        c.g[A1][0] = 0u64;
+                        c.g[V1][0] = c.lw((c.g[A2][0] as u32));
+                        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x1a0));
+                        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1a4));
+                        let t = c.g[V0][0] as u32;
+                        c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                        c.g[RA][0] = sx(0x001d81cc);
+                        c.pc = t;
+                        ssx3_ee_rt::funcs::call_indirect(c, t);
+                        if c.pc != 0x001d81cc {
+                            return Err(crate::call::Unwound);
+                        }
+                        let t = c.g[V0][0] != 0u64;
 
-    if t {
-    break 'b_1d8210;
-    } else {
-    c.cycles += 4;
-    c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x10c8));
-    c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x208));
-    let t = c.g[V0][0] == 0u64;
-    c.g[V1][0] = 0x6;
-    if t {
-    break 'b_1d8208;
-    } else {
-    c.cycles += 3;
-    c.g[A1][0] = 0x2;
-    c.sw((c.g[A0][0] as u32).wrapping_add(0x1c0), c.g[V1][0]);
-    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x748));
-    break 'b_1d81f0;
-    }
-    }
-    }
-    c.cycles += 6;
-    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
-    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
-    let t = c.g[V1][0] as u32;
-    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.g[RA][0] = sx(0x001d8200);
-    c.pc = t;
-    ssx3_ee_rt::funcs::call_indirect(c, t);
-    if c.pc != 0x001d8200 { return Err(crate::call::Unwound); }
-    let t = true;
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-    if t {
-    break 'b_1d8234;
-    } else {
-    break 'b_1d8208;
-    }
-    }
-    c.cycles += 2;
-    c.g[A0][0] = c.g[S0][0];
-    call_ptr(c, 0x00241400, 0x001d8210)?;
-    break 'b_1d8210;
-    }
-    c.cycles += 9;
-    c.g[A0][0] = c.g[S0][0];
-    call_ptr(c, 0x0023fae0, 0x001d8218)?;
-    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x748));
-    c.g[A1][0] = 0x36;
-    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
-    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
-    let t = c.g[V1][0] as u32;
-    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
-    c.g[RA][0] = sx(0x001d8230);
-    c.pc = t;
-    ssx3_ee_rt::funcs::call_indirect(c, t);
-    if c.pc != 0x001d8230 { return Err(crate::call::Unwound); }
-    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
-    break 'b_1d8234;
-    }
-    c.cycles += 3;
-    c.g[RA][0] = c.ld((c.g[SP][0] as u32));
-    let t = c.g[RA][0] as u32;
-    c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
-    c.pc = t; return Ok(());
+                        if t {
+                            break 'b_1d8210;
+                        } else {
+                            c.cycles += 4;
+                            c.g[A0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x10c8));
+                            c.g[V0][0] = c.lw((c.g[A0][0] as u32).wrapping_add(0x208));
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V1][0] = 0x6;
+                            if t {
+                                break 'b_1d8208;
+                            } else {
+                                c.cycles += 3;
+                                c.g[A1][0] = 0x2;
+                                c.sw((c.g[A0][0] as u32).wrapping_add(0x1c0), c.g[V1][0]);
+                                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x748));
+                                break 'b_1d81f0;
+                            }
+                        }
+                    }
+                    c.cycles += 6;
+                    c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
+                    c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+                    let t = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                    c.g[RA][0] = sx(0x001d8200);
+                    c.pc = t;
+                    ssx3_ee_rt::funcs::call_indirect(c, t);
+                    if c.pc != 0x001d8200 {
+                        return Err(crate::call::Unwound);
+                    }
+                    let t = true;
+                    c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+                    if t {
+                        break 'b_1d8234;
+                    } else {
+                        break 'b_1d8208;
+                    }
+                }
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x00241400, 0x001d8210)?;
+                break 'b_1d8210;
+            }
+            c.cycles += 9;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x0023fae0, 0x001d8218)?;
+            c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0x748));
+            c.g[A1][0] = 0x36;
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0xc));
+            let t = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+            c.g[RA][0] = sx(0x001d8230);
+            c.pc = t;
+            ssx3_ee_rt::funcs::call_indirect(c, t);
+            if c.pc != 0x001d8230 {
+                return Err(crate::call::Unwound);
+            }
+            c.lq(16, (c.g[SP][0] as u32).wrapping_add(0x10));
+            break 'b_1d8234;
+        }
+        c.cycles += 3;
+        c.g[RA][0] = c.ld((c.g[SP][0] as u32));
+        let t = c.g[RA][0] as u32;
+        c.g[SP][0] = sx((c.g[SP][0] as u32).wrapping_add(0x20));
+        c.pc = t;
+        return Ok(());
         Ok(())
     });
 }
-
 
 /// `MemCardUI_OnNoCards(self)` (0x001d8240): the "no memory cards" reply
 /// arrived; mark the screen as busy, ask the front end to show the "no cards"
@@ -1369,7 +1415,6 @@ pub fn memcard_ui_on_no_cards(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `MemCardStateBase_HandleInput(self, input)` (0x001d8c50): let the input
 /// object's "confirm" and "cancel" slots drive the two save/load actions and
@@ -1490,106 +1535,105 @@ pub fn memcard_state_base_handle_input(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::compare;
+    use crate::difftest::elf_image;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::check;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::fill;
+    use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::seed_count;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
     use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::put_words;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::check_lohi;
-    use crate::difftest::elf_image;
-    use crate::difftest::scramble;
     use crate::difftest::RA as TEST_RA;
-    use crate::difftest::SP as STACK_TOP;
-    use ssx3_ee as ee;
-    use ssx3_ee_rt::funcs::GuestFn;
     use crate::difftest::RA as RET;
     use crate::difftest::RA as SENTINEL;
-    use crate::difftest::compare;
-    use crate::difftest::seed_count;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    pub(crate) use crate::game::movie::movieplayer::tests::BE_LIBRARY;
-    pub(crate) use crate::game::movie::movieplayer::tests::globals;
-    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
-    pub(crate) use crate::game::fe::fememcard::tests::vtable_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS;
-    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
-    pub(crate) use crate::game::dirtysock::tags2::tests::clear;
-    pub(crate) use crate::game::dirtysock::tags2::tests::dummy_world;
-    pub(crate) use crate::game::dirtysock::tags2::tests::common;
-    pub(crate) use crate::game::fe::fepopup3::tests::setup;
-    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
-    pub(crate) use crate::game::fe::festateoptions::tests::rng;
-    pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
-    pub(crate) use crate::game::fe::festateoptions::tests::setup as setup_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_2 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;
-    pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
-    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
+    use crate::difftest::SP as STACK_TOP;
     pub(crate) use crate::game::ai::ai::tests::w16;
-    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
     pub(crate) use crate::game::ai::rider::tests::hh;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::belib_2 as belib;
-    pub(crate) use crate::game::dirtysock::tags2::tests::world_2 as world;
     pub(crate) use crate::game::ai::rider::tests::slot_2 as slot;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_setup;
-    pub(crate) use crate::game::movie::movieplayer::tests::BE_2;
-    pub(crate) use crate::game::movie::movieplayer::tests::W as W_2;
-    pub(crate) use crate::game::movie::movieplayer::tests::MEM_HEAP;
-    pub(crate) use crate::game::movie::movieplayer::tests::run_2 as run;
-    pub(crate) use crate::game::movie::movieplayer::tests::heap_init_2 as heap_init;
-    pub(crate) use crate::game::movie::movieplayer::tests::pool_allocator;
-    pub(crate) use crate::game::movie::movieplayer::tests::base_3 as base_2;
-    pub(crate) use crate::game::movie::movieplayer::tests::alloc_base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::run_6 as run_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::str_hash;
-    pub(crate) use crate::game::fe::feasyncfile::tests::put_str_3 as put_str;
-    pub(crate) use crate::game::fe::feasyncfile::tests::screen_with;
-    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::RM as RM_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::be::bedbprofile::tests::strict;
+    pub(crate) use crate::game::bx::bxstring2::tests::base_3;
+    pub(crate) use crate::game::bx::bxstring2::tests::f;
+    pub(crate) use crate::game::bx::bxstring2::tests::run as run_3;
+    pub(crate) use crate::game::bx::bxstring2::tests::slot_2;
     pub(crate) use crate::game::bx::bxstring2::tests::BE_2 as BE_3;
     pub(crate) use crate::game::bx::bxstring2::tests::DB;
+    pub(crate) use crate::game::bx::bxstring2::tests::RIDERS;
+    pub(crate) use crate::game::bx::bxstring2::tests::RM as RM_2;
     pub(crate) use crate::game::bx::bxstring2::tests::VTS;
-    pub(crate) use crate::game::bx::bxstring2::tests::run as run_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::base_3;
-    pub(crate) use crate::game::bx::bxstring2::tests::slot_2;
-    pub(crate) use crate::game::bx::bxstring2::tests::f;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
+    pub(crate) use crate::game::bx::bxstring2::tests::W_2 as W_3;
+    pub(crate) use crate::game::camera::cameracontroller::tests::put_vtable;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::gpf;
+    pub(crate) use crate::game::dirtysock::tags2::tests::clear;
+    pub(crate) use crate::game::dirtysock::tags2::tests::common;
+    pub(crate) use crate::game::dirtysock::tags2::tests::dummy_world;
+    pub(crate) use crate::game::dirtysock::tags2::tests::gp_at;
+    pub(crate) use crate::game::dirtysock::tags2::tests::world_2 as world;
+    pub(crate) use crate::game::dirtysock::tags2::tests::zero;
+    pub(crate) use crate::game::dirtysock::tags2::tests::SEEDS_7 as SEEDS;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_5;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::check_all_2 as check_all;
+    pub(crate) use crate::game::fe::feasyncfile::tests::diff;
+    pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_12 as globals_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_12 as heap_init_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_10 as pool_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::put_str_3 as put_str;
+    pub(crate) use crate::game::fe::feasyncfile::tests::run_6 as run_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::screen_with;
+    pub(crate) use crate::game::fe::feasyncfile::tests::str_hash;
+    pub(crate) use crate::game::fe::feasyncfile::tests::ui;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_6;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE_5;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_2 as BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ as OBJ_2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_4 as OBJ2;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ3_2 as OBJ3;
     pub(crate) use crate::game::fe::feasyncfile::tests::OBJ4_2 as OBJ4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_11 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_9 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_15 as base_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_4 as OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::RM;
     pub(crate) use crate::game::fe::feasyncfile::tests::RM_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE_5;
-    pub(crate) use crate::game::be::bedbprofile::tests::strict;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ as OBJ_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_6;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_12 as globals_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::ui;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_12 as heap_init_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_10 as pool_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::diff;
-    pub(crate) use crate::game::fe::feasyncfile::tests::fe_base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::check_all_2 as check_all;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::W;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_6 as WORLD;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W_4;
+    pub(crate) use crate::game::fe::fememcard::tests::vtable_at;
+    pub(crate) use crate::game::fe::fepopup3::tests::setup;
+    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
+    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2;
+    pub(crate) use crate::game::fe::festateoptions::tests::rng;
+    pub(crate) use crate::game::fe::festateoptions::tests::setup as setup_2;
+    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
+    pub(crate) use crate::game::movie::movieplayer::tests::alloc_base;
+    pub(crate) use crate::game::movie::movieplayer::tests::base_3 as base_2;
+    pub(crate) use crate::game::movie::movieplayer::tests::globals;
+    pub(crate) use crate::game::movie::movieplayer::tests::heap_init_2 as heap_init;
+    pub(crate) use crate::game::movie::movieplayer::tests::pool_allocator;
+    pub(crate) use crate::game::movie::movieplayer::tests::run_2 as run;
+    pub(crate) use crate::game::movie::movieplayer::tests::BE_2;
+    pub(crate) use crate::game::movie::movieplayer::tests::BE_LIBRARY;
+    pub(crate) use crate::game::movie::movieplayer::tests::MEM_HEAP;
+    pub(crate) use crate::game::movie::movieplayer::tests::W as W_2;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::belib_2 as belib;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_setup;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::w;
+    use ssx3_ee as ee;
+    use ssx3_ee_rt::funcs::GuestFn;
 
     #[test]
     fn c_fe_popup_confirm_v25_matches() {
@@ -1610,7 +1654,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn mem_card_state_base_step_slot_dir_matches() {
         check(
@@ -1629,7 +1672,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn mem_card_state_base_set_mode_menu_matches() {
         check(
@@ -1646,51 +1688,56 @@ pub(crate) mod tests {
         );
     }
 
-
     // -----------------------------------------------------------------------
     // 0x1d23e0 cFEStateVideoPlayer_Init.
-
-    
 
     // -----------------------------------------------------------------------
     // 0x1d8358 MemCardUI_ShowFileDisplay.
 
     #[test]
     fn mem_card_ui_show_file_display_matches() {
-        check(ee::s04::f_001d8358__generated, mem_card_ui_show_file_display, 16, &|c, seed| {
-            let mut r = machine(c, seed, 0x1d83_58, 1);
-            let fe = DATA + 0x100;
-            c.bus.write32(GAME_GP.wrapping_sub(0x10c8), fe);
-            match seed % 3 {
-                0 => c.bus.write32(fe + 0x214, 2),      // already in mode 2
-                1 => c.bus.write32(fe + 0x1c0, 1),      // a save is in progress
-                _ => {
-                    c.bus.write32(fe + 0x214, 0);
-                    c.bus.write32(fe + 0x1c0, 0);
-                    let vt = vtable(c, &mut r, &[0x118]);
-                    c.bus.write32(fe + 8, vt);
+        check(
+            ee::s04::f_001d8358__generated,
+            mem_card_ui_show_file_display,
+            16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1d83_58, 1);
+                let fe = DATA + 0x100;
+                c.bus.write32(GAME_GP.wrapping_sub(0x10c8), fe);
+                match seed % 3 {
+                    0 => c.bus.write32(fe + 0x214, 2), // already in mode 2
+                    1 => c.bus.write32(fe + 0x1c0, 1), // a save is in progress
+                    _ => {
+                        c.bus.write32(fe + 0x214, 0);
+                        c.bus.write32(fe + 0x1c0, 0);
+                        let vt = vtable(c, &mut r, &[0x118]);
+                        c.bus.write32(fe + 8, vt);
+                    }
                 }
-            }
-        });
+            },
+        );
     }
-
 
     // -----------------------------------------------------------------------
     // 0x1d86b0 MemCardStateBase_v45.
 
     #[test]
     fn mem_card_state_base_v45_matches() {
-        check(ee::s04::f_001d86b0__generated, mem_card_state_base_v45, 16, &|c, seed| {
-            let mut r = machine(c, seed, 0x1d86_b0, 2);
-            let this = DATA + 0x100;
-            c.g[A0][0] = sx(this);
-            let vt = vtable(c, &mut r, &[0x178]);
-            c.bus.write32(this + 8, vt);
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), 0);
-            c.bus.write32(GAME_GP.wrapping_sub(0x47c), DATA + 0x2000);
-        });
+        check(
+            ee::s04::f_001d86b0__generated,
+            mem_card_state_base_v45,
+            16,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1d86_b0, 2);
+                let this = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                let vt = vtable(c, &mut r, &[0x178]);
+                c.bus.write32(this + 8, vt);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), 0);
+                c.bus.write32(GAME_GP.wrapping_sub(0x47c), DATA + 0x2000);
+            },
+        );
     }
-
 
     #[test]
     fn mem_card_state_base_reset_state_matches() {
@@ -1706,7 +1753,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn mem_card_state_base_set_use_save_title_matches() {
@@ -1733,7 +1779,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn mem_card_state_base_on_activate_matches() {
         check(
@@ -1750,31 +1795,42 @@ pub(crate) mod tests {
         );
     }
 
-
     // ------------------------------------------------------------------
     // Memory-card and overlay states.
 
     #[test]
     fn mem_card_state_base_v46_matches() {
-        check(ee::s04::f_001d8670__generated, mem_card_state_base_v46, 200, &|c, seed| {
-            let mut r = setup_2(c, seed, 31);
-            gpf(c, -0x10c8, AUX);
-            put(c, AUX + 0x1c0, if seed % 2 == 0 { 4 } else { r.next_u32() % 8 });
-            put(c, AUX + 0x1a8, r.next_u32());
-            put(c, AUX + 0x1e0, r.next_u32());
-        });
+        check(
+            ee::s04::f_001d8670__generated,
+            mem_card_state_base_v46,
+            200,
+            &|c, seed| {
+                let mut r = setup_2(c, seed, 31);
+                gpf(c, -0x10c8, AUX);
+                put(
+                    c,
+                    AUX + 0x1c0,
+                    if seed % 2 == 0 { 4 } else { r.next_u32() % 8 },
+                );
+                put(c, AUX + 0x1a8, r.next_u32());
+                put(c, AUX + 0x1e0, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn mem_card_state_base_transition_out_matches() {
-        check(ee::s04::f_001d93d8__generated, mem_card_state_base_transition_out, 200, &|c, seed| {
-            setup_2(c, seed, 32);
-            c.g[A0][0] = AUX as u64;
-            put(c, AUX + 0x1c0, [6u32, 5, 7, 0x100][(seed % 4) as usize]);
-        });
+        check(
+            ee::s04::f_001d93d8__generated,
+            mem_card_state_base_transition_out,
+            200,
+            &|c, seed| {
+                setup_2(c, seed, 32);
+                c.g[A0][0] = AUX as u64;
+                put(c, AUX + 0x1c0, [6u32, 5, 7, 0x100][(seed % 4) as usize]);
+            },
+        );
     }
-
 
     // -----------------------------------------------------------------------
 
@@ -1801,39 +1857,46 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn c_fe_popup_confirm_v27_matches() {
-        check(ssx3_ee::s04::f_001d9ca8__generated, c_fe_popup_confirm_v27, SEEDS_2, &|c, seed| {
-            let _ = machine(c, seed, 0x1d9ca8, 0);
-            let s = DATA + 0x1000;
-            let src = DATA + 0x2000;
-            c.g[A0][0] = s as u64;
-            c.g[A1][0] = if seed % 4 == 0 { 0 } else { src as u64 };
-            // A short UTF-16 string.
-            w16(c, src, if seed % 3 == 0 { 0 } else { 0x41 });
-            w16(c, src + 2, 0x42);
-            w16(c, src + 4, 0);
-            w32(c, s + 0x40, if seed % 2 == 0 { 0 } else { 1 });
-            w32(c, s + 0x2bc, 0); // ResetLayout path avoided
-        });
+        check(
+            ssx3_ee::s04::f_001d9ca8__generated,
+            c_fe_popup_confirm_v27,
+            SEEDS_2,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x1d9ca8, 0);
+                let s = DATA + 0x1000;
+                let src = DATA + 0x2000;
+                c.g[A0][0] = s as u64;
+                c.g[A1][0] = if seed % 4 == 0 { 0 } else { src as u64 };
+                // A short UTF-16 string.
+                w16(c, src, if seed % 3 == 0 { 0 } else { 0x41 });
+                w16(c, src + 2, 0x42);
+                w16(c, src + 4, 0);
+                w32(c, s + 0x40, if seed % 2 == 0 { 0 } else { 1 });
+                w32(c, s + 0x2bc, 0); // ResetLayout path avoided
+            },
+        );
     }
-
 
     #[test]
     fn mem_card_state_base_show_status_matches() {
-        check(ee::s04::f_001d8d68__generated, mem_card_state_base_show_status, 12, &|c, seed| {
-            machine(c, seed, 0x1d_8d68, 3);
-            belib(c);
-            world(c);
-            heap_setup(c);
-            c.g[A0][0] = (DATA + 0x2000) as u64;
-            w(c, DATA + 0x2000 + 0x8, DATA + 0x2400);
-            slot(c, DATA + 0x2400, 0x120, 0, FAKE);
-            c.pc = 0x001d_8d68;
-        });
+        check(
+            ee::s04::f_001d8d68__generated,
+            mem_card_state_base_show_status,
+            12,
+            &|c, seed| {
+                machine(c, seed, 0x1d_8d68, 3);
+                belib(c);
+                world(c);
+                heap_setup(c);
+                c.g[A0][0] = (DATA + 0x2000) as u64;
+                w(c, DATA + 0x2000 + 0x8, DATA + 0x2400);
+                slot(c, DATA + 0x2400, 0x120, 0, FAKE);
+                c.pc = 0x001d_8d68;
+            },
+        );
     }
-
 
     /// A real heap block of `size` bytes.
     pub(crate) fn alloc(c: &mut Cpu, size: u32) -> u32 {
@@ -1844,7 +1907,6 @@ pub(crate) mod tests {
             &[size as u64, 0x0048_0000, 0, 0],
         ) as u32
     }
-
 
     #[test]
     fn mem_card_state_base_alloc_read_buffer_matches() {
@@ -1863,7 +1925,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn mem_card_state_base_play_widget_anim_matches() {
@@ -1890,7 +1951,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// A screen at `screen` whose object list holds `node` for the string at
     /// `name` (the zeroed game string). `+0x38` points at the object count and
     /// `+0x3c` at the object array, as `cUIScreen_getObjectByHashName` reads
@@ -1905,7 +1965,6 @@ pub(crate) mod tests {
         c.bus.write32(list, node);
         c.bus.write32(node + 0x38, h);
     }
-
 
     #[test]
     fn memcard_state_base_sync_menu_selection_matches() {
@@ -1934,8 +1993,7 @@ pub(crate) mod tests {
         );
     }
 
-
-        // ------------------------------------------------------------ more screens
+    // ------------------------------------------------------------ more screens
 
     #[test]
     fn cfe_popup_confirm_ctor_matches() {
@@ -1959,7 +2017,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn memcard_state_base_is_card_ready_matches() {
@@ -1987,23 +2044,26 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn mem_card_ui_try_next_slot_matches() {
-        diff(ee::s04::f_001d8160__generated, mem_card_ui_try_next_slot, 30, &|c, seed| {
-            let mut r = fe_base(c, seed, 0x1d_8160);
-            c.g[A0][0] = sx(DATA);
-            w(c, DATA + 0x424, (seed % 4) as u32);
-            w(c, DATA + 0x428, (seed % 3) as u32);
-            w(c, DATA + 0x434, r.next_u32());
-            w(c, DATA + 0x1a0, r.next_u32());
-            w(c, DATA + 0x1a4, r.next_u32());
-            w(c, DATA + 0x1c0, r.next_u32());
-        });
+        diff(
+            ee::s04::f_001d8160__generated,
+            mem_card_ui_try_next_slot,
+            30,
+            &|c, seed| {
+                let mut r = fe_base(c, seed, 0x1d_8160);
+                c.g[A0][0] = sx(DATA);
+                w(c, DATA + 0x424, (seed % 4) as u32);
+                w(c, DATA + 0x428, (seed % 3) as u32);
+                w(c, DATA + 0x434, r.next_u32());
+                w(c, DATA + 0x1a0, r.next_u32());
+                w(c, DATA + 0x1a4, r.next_u32());
+                w(c, DATA + 0x1c0, r.next_u32());
+            },
+        );
     }
 
-
-                #[test]
+    #[test]
     fn memcard_state_base_handle_input_matches() {
         check_all(
             ee::s04::f_001d8c50__generated,

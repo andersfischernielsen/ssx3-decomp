@@ -10,10 +10,7 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x002b_b370, wpfile_ctor, "WPFile_ctor"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x002b_b370, wpfile_ctor, "WPFile_ctor")];
 
 /// `WPFile* WPFile_ctor(WPFile* f)` (0x2bb370): clear the two half-word fields
 /// at +0/+2, set +4 to -1 and +8 to 0.
@@ -38,7 +35,6 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-
 
     #[test]
     fn wpfile_ctor_matches() {

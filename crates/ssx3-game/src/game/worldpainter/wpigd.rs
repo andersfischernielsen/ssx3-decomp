@@ -2,39 +2,47 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+pub(crate) use crate::game::visualfx::boardwakefx::lh_2 as lh;
+pub(crate) use crate::game::visualfx::boardwakefx::lw_2 as lw;
+pub(crate) use crate::game::visualfx::boardwakefx::p;
+pub(crate) use crate::game::visualfx::boardwakefx::r32_2 as r32;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::visualfx::boardwakefx::p;
-pub(crate) use crate::game::visualfx::boardwakefx::lw_2 as lw;
-pub(crate) use crate::game::visualfx::boardwakefx::lh_2 as lh;
-pub(crate) use crate::game::visualfx::boardwakefx::r32_2 as r32;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x002b_c6f8, twpigd_music_trigger_ctor, "tWPIGD_MusicTrigger_ctor"),
+    (
+        0x002b_c6f8,
+        twpigd_music_trigger_ctor,
+        "tWPIGD_MusicTrigger_ctor",
+    ),
     (0x002b_c728, twpigd_mix_ctor, "tWPIGD_Mix_ctor"),
     (0x002b_c750, twpigd_ambience_ctor, "tWPIGD_Ambience_ctor"),
     (0x002b_c778, twpigd_speech_ctor, "tWPIGD_Speech_ctor"),
     (0x002b_c7a0, twpigd_camera_ctor, "tWPIGD_Camera_ctor"),
     (0x002b_c7c8, twpigd_fog_ctor, "tWPIGD_Fog_ctor"),
     (0x002b_c830, twpigd_light_glow_ctor, "tWPIGD_LightGlow_ctor"),
-    (0x002b_c890, twpigd_screen_tint_ctor, "tWPIGD_ScreenTint_ctor"),
+    (
+        0x002b_c890,
+        twpigd_screen_tint_ctor,
+        "tWPIGD_ScreenTint_ctor",
+    ),
     (0x002b_c8e8, twpigd_sky_box_ctor, "tWPIGD_SkyBox_ctor"),
     (0x002b_c910, twpigd_sun_ctor, "tWPIGD_Sun_ctor"),
     (0x002b_c980, twpigd_surface_ctor, "tWPIGD_Surface_ctor"),
@@ -42,7 +50,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002b_cbd0, twpigd_danger_ctor, "tWPIGD_Danger_ctor"),
     (0x002b_feb0, weather_save_state, "tWPIGD_Weather_SaveState"),
 ];
-
 
 // ---------------------------------------------------------------------------
 // World-painter instance-data constructors.
@@ -68,7 +75,6 @@ pub fn twpigd_music_trigger_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// Shared body of the simple `tWPIGD_*_ctor`s: descriptor at +4, one float
 /// literal at +0, and -1 sentinels at +8/+0xc.
 pub(crate) fn wpigd_simple_ctor(c: &mut Cpu, lit_off: u32, kind: u32) {
@@ -87,24 +93,20 @@ pub(crate) fn wpigd_simple_ctor(c: &mut Cpu, lit_off: u32, kind: u32) {
     abi::ret(c);
 }
 
-
 /// `tWPIGD_Mix* tWPIGD_Mix_ctor(tWPIGD_Mix* self)` (0x2bc728).
 pub fn twpigd_mix_ctor(c: &mut Cpu) {
     wpigd_simple_ctor(c, 0x42f8, 0x58c0);
 }
-
 
 /// `tWPIGD_Ambience* tWPIGD_Ambience_ctor(tWPIGD_Ambience* self)` (0x2bc750).
 pub fn twpigd_ambience_ctor(c: &mut Cpu) {
     wpigd_simple_ctor(c, 0x42f4, 0x5688);
 }
 
-
 /// `tWPIGD_Speech* tWPIGD_Speech_ctor(tWPIGD_Speech* self)` (0x2bc778).
 pub fn twpigd_speech_ctor(c: &mut Cpu) {
     wpigd_simple_ctor(c, 0x42f0, 0x5450);
 }
-
 
 /// `tWPIGD_Camera* tWPIGD_Camera_ctor(tWPIGD_Camera* self)` (0x2bc7a0):
 /// descriptor at +4, float literal f0 at +8/+0xc and f1 at +0.
@@ -125,14 +127,12 @@ pub fn twpigd_camera_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// Store a list of (offset, float-register) pairs on `base`.
 pub(crate) fn store_fregs(c: &mut Cpu, base: Addr, items: &[(u32, usize)]) {
     for &(off, f) in items {
         base.off(off).write_fpu(c, FpuF32(c.f[f]));
     }
 }
-
 
 /// `tWPIGD_Fog* tWPIGD_Fog_ctor(tWPIGD_Fog* self)` (0x2bc7c8): descriptor at
 /// +4, floats at +0/+8..+0x34 with f6 = 0 duplicated.
@@ -173,7 +173,6 @@ pub fn twpigd_fog_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `tWPIGD_LightGlow* tWPIGD_LightGlow_ctor(tWPIGD_LightGlow* self)`
 /// (0x2bc830): descriptor at +4, f0 = 1.0, f1 = 0 and f2 = literal.
 pub fn twpigd_light_glow_ctor(c: &mut Cpu) {
@@ -211,7 +210,6 @@ pub fn twpigd_light_glow_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `tWPIGD_ScreenTint* tWPIGD_ScreenTint_ctor(tWPIGD_ScreenTint* self)`
 /// (0x2bc890): descriptor at +4, f0 = 1.0, f1 = 0 and f2 = literal.
 pub fn twpigd_screen_tint_ctor(c: &mut Cpu) {
@@ -247,7 +245,6 @@ pub fn twpigd_screen_tint_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `tWPIGD_SkyBox* tWPIGD_SkyBox_ctor(tWPIGD_SkyBox* self)` (0x2bc8e8):
 /// descriptor at +4, f0 = 0 at +8/+0xc, f1 = literal at +0.
 pub fn twpigd_sky_box_ctor(c: &mut Cpu) {
@@ -264,7 +261,6 @@ pub fn twpigd_sky_box_ctor(c: &mut Cpu) {
     obj.off(0xc).write_fpu(c, FpuF32(c.f[0]));
     abi::ret(c);
 }
-
 
 /// `tWPIGD_Sun* tWPIGD_Sun_ctor(tWPIGD_Sun* self)` (0x2bc910): descriptor at
 /// +4, f0 = 1.0, f1 = 0, f2 = literal, plus two zero words at +0x38/+0x3c.
@@ -305,7 +301,6 @@ pub fn twpigd_sun_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `tWPIGD_Surface* tWPIGD_Surface_ctor(tWPIGD_Surface* self)` (0x2bc980):
 /// descriptor at +4, f0 = 1.0 at +8/+0xc, f1 = literal at +0.
 pub fn twpigd_surface_ctor(c: &mut Cpu) {
@@ -323,7 +318,6 @@ pub fn twpigd_surface_ctor(c: &mut Cpu) {
     obj.off(0xc).write_fpu(c, FpuF32(c.f[0]));
     abi::ret(c);
 }
-
 
 /// `tWPIGD_Weather* tWPIGD_Weather_ctor(tWPIGD_Weather* self)` (0x2bcaf8):
 /// descriptor at +4; f0 = 1.0, f1 = 0, f2 = literal, f3 = 6.0, f4 = 10.0,
@@ -346,7 +340,6 @@ pub fn twpigd_weather_ctor(c: &mut Cpu) {
     obj_weather_stores(c, Addr(abi::arg(c, 0)), c.g[V1][0]);
     abi::ret(c);
 }
-
 
 /// The store list of [`twpigd_weather_ctor`] (kept separate to stay readable).
 pub(crate) fn obj_weather_stores(c: &mut Cpu, obj: Addr, desc: u64) {
@@ -398,7 +391,6 @@ pub(crate) fn obj_weather_stores(c: &mut Cpu, obj: Addr, desc: u64) {
     );
 }
 
-
 /// `tWPIGD_Danger* tWPIGD_Danger_ctor(tWPIGD_Danger* self)` (0x2bcbd0):
 /// descriptor at +4, f0 = literal at +0, f1 = 0 at +0x10/+0x14, two zero words
 /// at +8/+0xc.
@@ -418,7 +410,6 @@ pub fn twpigd_danger_ctor(c: &mut Cpu) {
     obj.off(0x14).write_fpu(c, FpuF32(c.f[1]));
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Weather.
@@ -469,17 +460,16 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
+    use crate::difftest::elf_image;
     use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::elf_image;
     use crate::difftest::put_words;
-
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
 
     pub(crate) fn ctor_simple_setup(c: &mut Cpu, seed: u32, lit_off: u32, salt: u64) {
         let mut r = Rng(salt ^ seed as u64);
@@ -489,18 +479,21 @@ pub(crate) mod tests {
         c.g[A0][0] = ((r.next_u32() as u64) << 32) | DATA as u64;
     }
 
-
     #[test]
     fn twpigd_music_trigger_ctor_matches() {
-        check(ssx3_ee::s08::f_002bc6f8, twpigd_music_trigger_ctor, 50, &|c, seed| {
-            let mut r = Rng(0xc6f8 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GAME_GP.wrapping_sub(0x42fc), r.next_u32());
-            c.g[A0][0] = ((r.next_u32() as u64) << 32) | DATA as u64;
-        });
+        check(
+            ssx3_ee::s08::f_002bc6f8,
+            twpigd_music_trigger_ctor,
+            50,
+            &|c, seed| {
+                let mut r = Rng(0xc6f8 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP.wrapping_sub(0x42fc), r.next_u32());
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | DATA as u64;
+            },
+        );
     }
-
 
     #[test]
     fn twpigd_mix_ctor_matches() {
@@ -509,22 +502,29 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn twpigd_ambience_ctor_matches() {
-        check(ssx3_ee::s08::f_002bc750, twpigd_ambience_ctor, 50, &|c, seed| {
-            ctor_simple_setup(c, seed, 0x42f4, 0xc750);
-        });
+        check(
+            ssx3_ee::s08::f_002bc750,
+            twpigd_ambience_ctor,
+            50,
+            &|c, seed| {
+                ctor_simple_setup(c, seed, 0x42f4, 0xc750);
+            },
+        );
     }
-
 
     #[test]
     fn twpigd_speech_ctor_matches() {
-        check(ssx3_ee::s08::f_002bc778, twpigd_speech_ctor, 50, &|c, seed| {
-            ctor_simple_setup(c, seed, 0x42f0, 0xc778);
-        });
+        check(
+            ssx3_ee::s08::f_002bc778,
+            twpigd_speech_ctor,
+            50,
+            &|c, seed| {
+                ctor_simple_setup(c, seed, 0x42f0, 0xc778);
+            },
+        );
     }
-
 
     /// Setup for the multi-literal world-painter constructors: `lits` are the
     /// `gp`-relative literal offsets the ctor reads.
@@ -538,46 +538,65 @@ pub(crate) mod tests {
         c.g[A0][0] = ((r.next_u32() as u64) << 32) | DATA as u64;
     }
 
-
     #[test]
     fn twpigd_camera_ctor_matches() {
-        check(ssx3_ee::s08::f_002bc7a0, twpigd_camera_ctor, 50, &|c, seed| {
-            ctor_multi_setup(c, seed, 0xc7a0, &[0x42ec, 0x42e8]);
-        });
+        check(
+            ssx3_ee::s08::f_002bc7a0,
+            twpigd_camera_ctor,
+            50,
+            &|c, seed| {
+                ctor_multi_setup(c, seed, 0xc7a0, &[0x42ec, 0x42e8]);
+            },
+        );
     }
-
 
     #[test]
     fn twpigd_fog_ctor_matches() {
         check(ssx3_ee::s08::f_002bc7c8, twpigd_fog_ctor, 50, &|c, seed| {
-            ctor_multi_setup(c, seed, 0xc7c8, &[0x42e4, 0x42e0, 0x42dc, 0x42d8, 0x42d4, 0x42d0]);
+            ctor_multi_setup(
+                c,
+                seed,
+                0xc7c8,
+                &[0x42e4, 0x42e0, 0x42dc, 0x42d8, 0x42d4, 0x42d0],
+            );
         });
     }
-
 
     #[test]
     fn twpigd_light_glow_ctor_matches() {
-        check(ssx3_ee::s08::f_002bc830, twpigd_light_glow_ctor, 50, &|c, seed| {
-            ctor_multi_setup(c, seed, 0xc830, &[0x42cc]);
-        });
+        check(
+            ssx3_ee::s08::f_002bc830,
+            twpigd_light_glow_ctor,
+            50,
+            &|c, seed| {
+                ctor_multi_setup(c, seed, 0xc830, &[0x42cc]);
+            },
+        );
     }
-
 
     #[test]
     fn twpigd_screen_tint_ctor_matches() {
-        check(ssx3_ee::s08::f_002bc890, twpigd_screen_tint_ctor, 50, &|c, seed| {
-            ctor_multi_setup(c, seed, 0xc890, &[0x42c8]);
-        });
+        check(
+            ssx3_ee::s08::f_002bc890,
+            twpigd_screen_tint_ctor,
+            50,
+            &|c, seed| {
+                ctor_multi_setup(c, seed, 0xc890, &[0x42c8]);
+            },
+        );
     }
-
 
     #[test]
     fn twpigd_sky_box_ctor_matches() {
-        check(ssx3_ee::s08::f_002bc8e8, twpigd_sky_box_ctor, 50, &|c, seed| {
-            ctor_multi_setup(c, seed, 0xc8e8, &[0x42c4]);
-        });
+        check(
+            ssx3_ee::s08::f_002bc8e8,
+            twpigd_sky_box_ctor,
+            50,
+            &|c, seed| {
+                ctor_multi_setup(c, seed, 0xc8e8, &[0x42c4]);
+            },
+        );
     }
-
 
     #[test]
     fn twpigd_sun_ctor_matches() {
@@ -586,30 +605,41 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn twpigd_surface_ctor_matches() {
-        check(ssx3_ee::s08::f_002bc980, twpigd_surface_ctor, 50, &|c, seed| {
-            ctor_multi_setup(c, seed, 0xc980, &[0x42bc]);
-        });
+        check(
+            ssx3_ee::s08::f_002bc980,
+            twpigd_surface_ctor,
+            50,
+            &|c, seed| {
+                ctor_multi_setup(c, seed, 0xc980, &[0x42bc]);
+            },
+        );
     }
-
 
     #[test]
     fn twpigd_weather_ctor_matches() {
-        check(ssx3_ee::s08::f_002bcaf8, twpigd_weather_ctor, 50, &|c, seed| {
-            ctor_multi_setup(c, seed, 0xcaf8, &[0x42b4, 0x42b0]);
-        });
+        check(
+            ssx3_ee::s08::f_002bcaf8,
+            twpigd_weather_ctor,
+            50,
+            &|c, seed| {
+                ctor_multi_setup(c, seed, 0xcaf8, &[0x42b4, 0x42b0]);
+            },
+        );
     }
-
 
     #[test]
     fn twpigd_danger_ctor_matches() {
-        check(ssx3_ee::s08::f_002bcbd0, twpigd_danger_ctor, 50, &|c, seed| {
-            ctor_multi_setup(c, seed, 0xcbd0, &[0x42ac]);
-        });
+        check(
+            ssx3_ee::s08::f_002bcbd0,
+            twpigd_danger_ctor,
+            50,
+            &|c, seed| {
+                ctor_multi_setup(c, seed, 0xcbd0, &[0x42ac]);
+            },
+        );
     }
-
 
     #[test]
     fn weather_save_state_matches() {
@@ -625,7 +655,8 @@ pub(crate) mod tests {
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = owner as u64;
                 c.bus.write32(owner, vt);
-                c.bus.write16(vt + 8, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus
+                    .write16(vt + 8, (r.next_u32() as i16 as i32 & !3) as u16);
                 c.bus.write32(vt + 0xc, FAKE + 0x10 * (r.next_u32() % 4));
             },
         );

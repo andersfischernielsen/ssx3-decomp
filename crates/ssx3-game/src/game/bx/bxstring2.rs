@@ -2,134 +2,342 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use crate::abi::r32;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::control::handplantcontrol::fr as fr_2;
+pub(crate) use crate::game::ai::control::handplantcontrol::setf as setf_2;
+pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_3;
+pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
+pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
+pub(crate) use crate::game::fe::feasyncfile::lw as lw_2;
+pub(crate) use crate::game::fe::feasyncfile::p_6 as p_3;
+pub(crate) use crate::game::fe::feasyncfile::r;
+pub(crate) use crate::game::fe::feasyncfile::sub;
+pub(crate) use crate::game::fe::festateloadhint::lqsp;
+pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
+pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
+#[cfg(test)]
+pub(crate) use crate::game::render::bezierman::f;
+pub(crate) use crate::game::render::particle::add32;
+pub(crate) use crate::game::render::particle::at;
+pub(crate) use crate::game::render::particle::copy_q;
+pub(crate) use crate::game::render::particle::eq;
+pub(crate) use crate::game::render::particle::fconst;
+pub(crate) use crate::game::render::particle::fr;
+pub(crate) use crate::game::render::particle::gp;
+pub(crate) use crate::game::render::particle::ldf;
+pub(crate) use crate::game::render::particle::le;
+pub(crate) use crate::game::render::particle::leave;
+pub(crate) use crate::game::render::particle::lt;
+pub(crate) use crate::game::render::particle::p;
+pub(crate) use crate::game::render::particle::setf;
+pub(crate) use crate::game::render::particle::shl32;
+pub(crate) use crate::game::render::particle::srl32;
+pub(crate) use crate::game::render::particle::vadd;
+pub(crate) use crate::game::render::particle::vscale;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::VSlot;
-use ssx3_ee_rt::funcs::call_indirect;
-use crate::call;
-use crate::call::Unwound;
-pub(crate) use crate::game::render::particle::p;
-pub(crate) use crate::game::render::particle::at;
-pub(crate) use crate::game::render::particle::gp;
-pub(crate) use crate::game::render::particle::ldf;
-pub(crate) use crate::game::render::particle::fr;
-pub(crate) use crate::game::render::particle::setf;
-pub(crate) use crate::game::render::particle::fconst;
-pub(crate) use crate::game::render::particle::lt;
-pub(crate) use crate::game::render::particle::le;
-pub(crate) use crate::game::render::particle::eq;
-pub(crate) use crate::game::render::particle::add32;
-pub(crate) use crate::game::render::particle::shl32;
-pub(crate) use crate::game::render::particle::srl32;
-pub(crate) use crate::game::render::particle::copy_q;
-pub(crate) use crate::game::render::particle::vadd;
-pub(crate) use crate::game::render::particle::vscale;
-pub(crate) use crate::game::render::particle::leave;
-#[cfg(test)]
-pub(crate) use crate::game::render::bezierman::f;
-pub(crate) use crate::game::ai::control::handplantcontrol::fr as fr_2;
-pub(crate) use crate::game::ai::control::handplantcontrol::setf as setf_2;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
-pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
-pub(crate) use crate::game::fe::festateloadhint::sqsp;
-pub(crate) use crate::game::fe::festateloadhint::lqsp;
-pub(crate) use crate::game::fe::feasyncfile::lw as lw_2;
-pub(crate) use crate::game::fe::feasyncfile::gp as gp_2;
-pub(crate) use crate::game::fe::feasyncfile::r;
-pub(crate) use crate::game::fe::feasyncfile::gp as gp_3;
-pub(crate) use crate::game::fe::feasyncfile::p_6 as p_3;
-pub(crate) use crate::game::fe::feasyncfile::sub;
-pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_3;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_8950, c_challenger_dtor, "cChallenger_dtor"),
-    (0x0026_8a90, lobby_man_on_user_list_changed_thunk, "LobbyMan_OnUserListChanged_Thunk"),
-    (0x0026_8ab8, lobby_man_on_room_list_changed_thunk, "LobbyMan_OnRoomListChanged_Thunk"),
-    (0x0026_8ae0, lobby_man_on_rank_list_changed_thunk, "LobbyMan_OnRankListChanged_Thunk"),
-    (0x0026_8b08, lobby_man_on_recv_debug_thunk, "LobbyMan_OnRecvDebug_Thunk"),
-    (0x0026_8b30, lobby_man_on_message_thunk, "LobbyMan_OnMessage_Thunk"),
-    (0x0026_8b58, lobby_man_on_disconnect_thunk, "LobbyMan_OnDisconnect_Thunk"),
-    (0x0026_8b80, lobby_man_on_game_start_thunk, "LobbyMan_OnGameStart_Thunk"),
-    (0x0026_8ba8, lobby_man_on_connect_reply_thunk, "LobbyMan_OnConnectReply_Thunk"),
-    (0x0026_8bd0, lobby_man_on_create_account_reply_thunk, "LobbyMan_OnCreateAccountReply_Thunk"),
-    (0x0026_8bf8, lobby_man_on_edit_account_reply_thunk, "LobbyMan_OnEditAccountReply_Thunk"),
-    (0x0026_8c20, lobby_man_on_lost_by_email_reply_thunk, "LobbyMan_OnLostByEmailReply_Thunk"),
-    (0x0026_8c48, lobby_man_on_lost_by_name_reply_thunk, "LobbyMan_OnLostByNameReply_Thunk"),
-    (0x0026_8c70, lobby_man_on_login_reply_thunk, "LobbyMan_OnLoginReply_Thunk"),
-    (0x0026_8c98, lobby_man_on_select_persona_reply_thunk, "LobbyMan_OnSelectPersonaReply_Thunk"),
-    (0x0026_8cc0, lobby_man_on_own_stats_reply_thunk, "LobbyMan_OnOwnStatsReply_Thunk"),
-    (0x0026_8ce8, lobby_man_on_create_persona_reply_thunk, "LobbyMan_OnCreatePersonaReply_Thunk"),
-    (0x0026_8d10, lobby_man_on_delete_persona_reply_thunk, "LobbyMan_OnDeletePersonaReply_Thunk"),
-    (0x0026_8d38, lobby_man_on_move_to_room_reply_thunk, "LobbyMan_OnMoveToRoomReply_Thunk"),
-    (0x0026_8d60, lobby_man_on_create_room_reply_thunk, "LobbyMan_OnCreateRoomReply_Thunk"),
-    (0x0026_8d88, lobby_man_on_ping_reply_thunk, "LobbyMan_OnPingReply_Thunk"),
-    (0x0026_8db0, lobby_man_on_report_user_reply_thunk, "LobbyMan_OnReportUserReply_Thunk"),
-    (0x0026_8dd8, lobby_man_on_news_reply_thunk, "LobbyMan_OnNewsReply_Thunk"),
-    (0x0026_8e00, lobby_man_on_snapshot_reply_thunk, "LobbyMan_OnSnapshotReply_Thunk"),
-    (0x0026_8e28, lobby_man_on_lookup_user_reply_thunk, "LobbyMan_OnLookupUserReply_Thunk"),
-    (0x0026_8e78, lobby_man_on_quick_play_reply_thunk, "LobbyMan_OnQuickPlayReplyThunk"),
-    (0x0026_8ea0, lobby_man_on_chal_reply_thunk, "LobbyMan_OnChalReplyThunk"),
-    (0x0026_8ec8, lobby_man_on_mesg_reply_thunk, "LobbyMan_OnMesgReplyThunk"),
-    (0x0026_8ef0, lobby_man_on_rank_reply_thunk, "LobbyMan_OnRankReplyThunk"),
-    (0x0026_8f18, buddy_man_on_connect_event_thunk, "BuddyMan_OnConnectEventThunk"),
-    (0x0026_8f40, buddy_man_on_message_received_thunk, "BuddyMan_OnMessageReceivedThunk"),
-    (0x0026_8f68, buddy_man_on_roster_event_thunk, "BuddyMan_OnRosterEventThunk"),
-    (0x0026_8f90, buddy_man_on_roster_remove_reply_thunk, "BuddyMan_OnRosterRemoveReplyThunk"),
-    (0x0026_8fb8, buddy_man_on_roster_add_reply_thunk, "BuddyMan_OnRosterAddReplyThunk"),
-    (0x0026_8fe0, buddy_man_on_send_message_reply_thunk, "BuddyMan_OnSendMessageReplyThunk"),
-    (0x0026_9188, setup_man_client_recv_msg5, "cSetupMan_ClientRecvMsg5"),
-    (0x0026_93c0, setup_man_client_recv_msg4, "cSetupMan_ClientRecvMsg4"),
-    (0x0026_9538, csetup_man_host_recv_msg9, "cSetupMan_HostRecvMsg9"),
-    (0x0026_9608, csetupman_host_recv_msg11, "cSetupMan_HostRecvMsg11"),
-    (0x0026_9890, setup_man_client_recv_msg7, "cSetupMan_ClientRecvMsg7"),
-    (0x0026_9948, csetup_man_client_recv_msg8, "cSetupMan_ClientRecvMsg8"),
-    (0x0026_9a18, csetup_man_client_recv_msg9, "cSetupMan_ClientRecvMsg9"),
-    (0x0026_9ae0, csetup_man_client_recv_msg10, "cSetupMan_ClientRecvMsg10"),
-    (0x0026_9b90, csetup_man_client_recv_msg11, "cSetupMan_ClientRecvMsg11"),
-    (0x0026_9c40, csetup_man_client_recv_msg12, "cSetupMan_ClientRecvMsg12"),
-    (0x0026_9cf0, csetup_man_client_recv_msg13, "cSetupMan_ClientRecvMsg13"),
+    (
+        0x0026_8a90,
+        lobby_man_on_user_list_changed_thunk,
+        "LobbyMan_OnUserListChanged_Thunk",
+    ),
+    (
+        0x0026_8ab8,
+        lobby_man_on_room_list_changed_thunk,
+        "LobbyMan_OnRoomListChanged_Thunk",
+    ),
+    (
+        0x0026_8ae0,
+        lobby_man_on_rank_list_changed_thunk,
+        "LobbyMan_OnRankListChanged_Thunk",
+    ),
+    (
+        0x0026_8b08,
+        lobby_man_on_recv_debug_thunk,
+        "LobbyMan_OnRecvDebug_Thunk",
+    ),
+    (
+        0x0026_8b30,
+        lobby_man_on_message_thunk,
+        "LobbyMan_OnMessage_Thunk",
+    ),
+    (
+        0x0026_8b58,
+        lobby_man_on_disconnect_thunk,
+        "LobbyMan_OnDisconnect_Thunk",
+    ),
+    (
+        0x0026_8b80,
+        lobby_man_on_game_start_thunk,
+        "LobbyMan_OnGameStart_Thunk",
+    ),
+    (
+        0x0026_8ba8,
+        lobby_man_on_connect_reply_thunk,
+        "LobbyMan_OnConnectReply_Thunk",
+    ),
+    (
+        0x0026_8bd0,
+        lobby_man_on_create_account_reply_thunk,
+        "LobbyMan_OnCreateAccountReply_Thunk",
+    ),
+    (
+        0x0026_8bf8,
+        lobby_man_on_edit_account_reply_thunk,
+        "LobbyMan_OnEditAccountReply_Thunk",
+    ),
+    (
+        0x0026_8c20,
+        lobby_man_on_lost_by_email_reply_thunk,
+        "LobbyMan_OnLostByEmailReply_Thunk",
+    ),
+    (
+        0x0026_8c48,
+        lobby_man_on_lost_by_name_reply_thunk,
+        "LobbyMan_OnLostByNameReply_Thunk",
+    ),
+    (
+        0x0026_8c70,
+        lobby_man_on_login_reply_thunk,
+        "LobbyMan_OnLoginReply_Thunk",
+    ),
+    (
+        0x0026_8c98,
+        lobby_man_on_select_persona_reply_thunk,
+        "LobbyMan_OnSelectPersonaReply_Thunk",
+    ),
+    (
+        0x0026_8cc0,
+        lobby_man_on_own_stats_reply_thunk,
+        "LobbyMan_OnOwnStatsReply_Thunk",
+    ),
+    (
+        0x0026_8ce8,
+        lobby_man_on_create_persona_reply_thunk,
+        "LobbyMan_OnCreatePersonaReply_Thunk",
+    ),
+    (
+        0x0026_8d10,
+        lobby_man_on_delete_persona_reply_thunk,
+        "LobbyMan_OnDeletePersonaReply_Thunk",
+    ),
+    (
+        0x0026_8d38,
+        lobby_man_on_move_to_room_reply_thunk,
+        "LobbyMan_OnMoveToRoomReply_Thunk",
+    ),
+    (
+        0x0026_8d60,
+        lobby_man_on_create_room_reply_thunk,
+        "LobbyMan_OnCreateRoomReply_Thunk",
+    ),
+    (
+        0x0026_8d88,
+        lobby_man_on_ping_reply_thunk,
+        "LobbyMan_OnPingReply_Thunk",
+    ),
+    (
+        0x0026_8db0,
+        lobby_man_on_report_user_reply_thunk,
+        "LobbyMan_OnReportUserReply_Thunk",
+    ),
+    (
+        0x0026_8dd8,
+        lobby_man_on_news_reply_thunk,
+        "LobbyMan_OnNewsReply_Thunk",
+    ),
+    (
+        0x0026_8e00,
+        lobby_man_on_snapshot_reply_thunk,
+        "LobbyMan_OnSnapshotReply_Thunk",
+    ),
+    (
+        0x0026_8e28,
+        lobby_man_on_lookup_user_reply_thunk,
+        "LobbyMan_OnLookupUserReply_Thunk",
+    ),
+    (
+        0x0026_8e78,
+        lobby_man_on_quick_play_reply_thunk,
+        "LobbyMan_OnQuickPlayReplyThunk",
+    ),
+    (
+        0x0026_8ea0,
+        lobby_man_on_chal_reply_thunk,
+        "LobbyMan_OnChalReplyThunk",
+    ),
+    (
+        0x0026_8ec8,
+        lobby_man_on_mesg_reply_thunk,
+        "LobbyMan_OnMesgReplyThunk",
+    ),
+    (
+        0x0026_8ef0,
+        lobby_man_on_rank_reply_thunk,
+        "LobbyMan_OnRankReplyThunk",
+    ),
+    (
+        0x0026_8f18,
+        buddy_man_on_connect_event_thunk,
+        "BuddyMan_OnConnectEventThunk",
+    ),
+    (
+        0x0026_8f40,
+        buddy_man_on_message_received_thunk,
+        "BuddyMan_OnMessageReceivedThunk",
+    ),
+    (
+        0x0026_8f68,
+        buddy_man_on_roster_event_thunk,
+        "BuddyMan_OnRosterEventThunk",
+    ),
+    (
+        0x0026_8f90,
+        buddy_man_on_roster_remove_reply_thunk,
+        "BuddyMan_OnRosterRemoveReplyThunk",
+    ),
+    (
+        0x0026_8fb8,
+        buddy_man_on_roster_add_reply_thunk,
+        "BuddyMan_OnRosterAddReplyThunk",
+    ),
+    (
+        0x0026_8fe0,
+        buddy_man_on_send_message_reply_thunk,
+        "BuddyMan_OnSendMessageReplyThunk",
+    ),
+    (
+        0x0026_9188,
+        setup_man_client_recv_msg5,
+        "cSetupMan_ClientRecvMsg5",
+    ),
+    (
+        0x0026_93c0,
+        setup_man_client_recv_msg4,
+        "cSetupMan_ClientRecvMsg4",
+    ),
+    (
+        0x0026_9538,
+        csetup_man_host_recv_msg9,
+        "cSetupMan_HostRecvMsg9",
+    ),
+    (
+        0x0026_9608,
+        csetupman_host_recv_msg11,
+        "cSetupMan_HostRecvMsg11",
+    ),
+    (
+        0x0026_9890,
+        setup_man_client_recv_msg7,
+        "cSetupMan_ClientRecvMsg7",
+    ),
+    (
+        0x0026_9948,
+        csetup_man_client_recv_msg8,
+        "cSetupMan_ClientRecvMsg8",
+    ),
+    (
+        0x0026_9a18,
+        csetup_man_client_recv_msg9,
+        "cSetupMan_ClientRecvMsg9",
+    ),
+    (
+        0x0026_9ae0,
+        csetup_man_client_recv_msg10,
+        "cSetupMan_ClientRecvMsg10",
+    ),
+    (
+        0x0026_9b90,
+        csetup_man_client_recv_msg11,
+        "cSetupMan_ClientRecvMsg11",
+    ),
+    (
+        0x0026_9c40,
+        csetup_man_client_recv_msg12,
+        "cSetupMan_ClientRecvMsg12",
+    ),
+    (
+        0x0026_9cf0,
+        csetup_man_client_recv_msg13,
+        "cSetupMan_ClientRecvMsg13",
+    ),
     (0x0026_9dc0, net_event_fd_clone, "NetEventFD_Clone"),
     (0x0026_9e40, net_event_fe_clone, "NetEventFE_Clone"),
     (0x0026_9ed8, path_read_a_i_field, "Path_ReadAIField"),
-    (0x0026_9f18, path_find_marker_boundary, "Path_FindMarkerBoundary"),
+    (
+        0x0026_9f18,
+        path_find_marker_boundary,
+        "Path_FindMarkerBoundary",
+    ),
     (0x0026_a070, path_read_track_field, "Path_ReadTrackField"),
-    (0x0026_a090, path_query_events_reversed, "Path_QueryEventsReversed"),
-    (0x0026_a0b8, path_has_event_in_range_reversed, "Path_HasEventInRangeReversed"),
+    (
+        0x0026_a090,
+        path_query_events_reversed,
+        "Path_QueryEventsReversed",
+    ),
+    (
+        0x0026_a0b8,
+        path_has_event_in_range_reversed,
+        "Path_HasEventInRangeReversed",
+    ),
     (0x0026_a338, path_read_segment, "Path_ReadSegment"),
     (0x0026_a378, path_read_event, "Path_ReadEvent"),
-    (0x0026_a638, path_get_closest_point_from, "Path_GetClosestPointFrom"),
-    (0x0026_a8b8, path_get_dir_at_distance, "Path_GetDirAtDistance"),
+    (
+        0x0026_a638,
+        path_get_closest_point_from,
+        "Path_GetClosestPointFrom",
+    ),
+    (
+        0x0026_a8b8,
+        path_get_dir_at_distance,
+        "Path_GetDirAtDistance",
+    ),
     (0x0026_a9b0, path_bounds_distance, "Path_BoundsDistance"),
     (0x0026_aa80, path_query_events, "Path_QueryEvents"),
-    (0x0026_ab20, path_get_point_at_distance, "Path_GetPointAtDistance"),
+    (
+        0x0026_ab20,
+        path_get_point_at_distance,
+        "Path_GetPointAtDistance",
+    ),
     (0x0026_ac88, path_has_event_in_range, "Path_HasEventInRange"),
     (0x0026_ad70, path_data_set_buffer, "PathData_SetBuffer"),
     (0x0026_adf0, path_data_parse, "PathData_Parse"),
     (0x0026_af00, path_data_free, "PathData_Free"),
-    (0x0026_af70, path_data_get_track_path, "PathData_GetTrackPath"),
+    (
+        0x0026_af70,
+        path_data_get_track_path,
+        "PathData_GetTrackPath",
+    ),
     (0x0026_af88, path_data_get_ai_path, "PathData_GetAIPath"),
 ];
 
@@ -160,143 +368,142 @@ pub(crate) mod cursor {
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::be::beintnetwork::callee::MEM_MAN_ALLOC;
     pub(crate) use crate::game::be::beintnetwork::callee::C_BOLTON_FX_REFRESH_EMITTERS;
+    pub(crate) use crate::game::be::beintnetwork::callee::INPUT_MAP_EVAL_FLOAT;
+    pub(crate) use crate::game::be::beintnetwork::callee::INPUT_VM_EXECUTE;
+    pub(crate) use crate::game::be::beintnetwork::callee::INPUT_VM_INIT;
     pub(crate) use crate::game::be::beintnetwork::callee::IRRADIANCE_REF_GET_ENTRY;
-    pub(crate) use crate::game::be::beintnetwork::callee::WORLD_PAINTER_GET_IRRADIANCE_NAME0;
-    pub(crate) use crate::game::be::beintnetwork::callee::WORLD_PAINTER_GET_IRRADIANCE_NAME1;
+    pub(crate) use crate::game::be::beintnetwork::callee::MEM_MAN_ALLOC;
     pub(crate) use crate::game::be::beintnetwork::callee::PATH_QUERY_EVENTS;
     pub(crate) use crate::game::be::beintnetwork::callee::SSX_AUDIO_SYSTEM_GET_APP;
     pub(crate) use crate::game::be::beintnetwork::callee::SSX_AUDIO_SYSTEM_GET_VIEW_COUNT;
-    pub(crate) use crate::game::be::beintnetwork::callee::INPUT_VM_INIT;
-    pub(crate) use crate::game::be::beintnetwork::callee::INPUT_VM_EXECUTE;
-    pub(crate) use crate::game::be::beintnetwork::callee::INPUT_MAP_EVAL_FLOAT;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::EVENT_SELECT_HANDLE_INPUT;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::MC_MANAGER_GET_INSTANCE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STATS_PROCESS_UPDATE_STUB;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STATS_PROCESS_RENDER_STUB;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_ENGINE_PUSH_FREE_NODE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_OBJ_DEACTIVATE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_DUMMY_OBJ_READ_FIELDS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::PATH_DATA_READ_FLOAT;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::EA_MEM_COPY;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RAND_NEXT_MAIN;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RAND_NEXT;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::TEX_MAN_SET_ALLOC_FLAGS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::GRAPHICS_MAN_EMPTY_HOOK;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_STATE_MGR_RENDER_STUB;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_PUSH_BACK;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_FIRST;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_NODE_UNLINK;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_RESET_SECTIONS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STRLEN_AND_STRCPY;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::CBXSTRING_ASSIGN_CSTR;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::LOBBY_MAN_REQUEST_STATS_PAGE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SSX_APP_BOOT_LOAD;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::USTR_FROM_ASCII;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::PATH_SET_TRACK_CONTROL_VALUE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_INFO;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_NAME;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STREAM_BUFFER_GET_STATUS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::MENU_SYS_GET_INPUT_CODE;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::IRRADIANCE_REF_GET_ENTRY as IRRADIANCE_REF_GET_ENTRY_2;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::C_WORLD_SOUND_UNLINK_EMITTERS;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RIDER_METRIX_BANK_COMBO;
-    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::BUILTIN_DELETE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::GAME_STATE_GOTO_NEXT_2 as GAME_STATE_GOTO_NEXT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PS2_MEMCARD_CREATE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::LOBBY_LIST_GET_AT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BUDDY_MAN_CONNECT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::STR_CASE_CMP;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SLOGIN_MC_GET_PORT_SLOT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MEMCARD_REQUEST_GET_INFO_NOW;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_INT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_VEC3;
-    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_FLOAT_2;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_LIST_ADD_CHOICE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_POLL_ASYNC_LOADS;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_END_SCRIPT_MUSIC;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WORLD_PAINTER_SET_SCRIPT_SURFACE_MODE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_BINDING_CTOR;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_GET_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_MEMORY_BANK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_BANK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MUSIC_PLAYER_GET_SONG_TAG;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SPEECH_SYSTEM_STOP_INSTANCE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BANK_MONITOR_TIMER_KILL;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SNDSTRM_SET_PREBUFFER;
+    pub(crate) use crate::game::be::beintnetwork::callee::WORLD_PAINTER_GET_IRRADIANCE_NAME0;
+    pub(crate) use crate::game::be::beintnetwork::callee::WORLD_PAINTER_GET_IRRADIANCE_NAME1;
+    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE_2 as AUDIO_GET_GAME_MODULE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_INTERFACE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_SOMETHING;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_ALLOC_BUFFER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_CTOR_COPY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_RELEASE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_FREE_TRIGGERS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_PARSE_2 as CAMERA_TRIGGER_MAN_PARSE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_DAY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_GENDER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_LEGAL;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_MONTH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_YEAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FREE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FREE2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::GET_LANGUAGE_MASK;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_EMPTY_STUB;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_NEXT_CHAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_WRITE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MALLOC;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_12 as NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_DTOR_4 as NET_FE_STATE_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_SELECTED_USER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_INIT_3 as NET_FE_STATE_INIT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OPTIONS_HUD_REFRESH_SELECTION;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OV_STATE_OVERLAY_INIT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_FIRST_2 as PROCESS_LIST_FIRST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_NEXT_2 as PROCESS_LIST_NEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_INIT_PAGES;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_REQUEST_SHAPE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_BINDING_BIND;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SET_EVENT_CONTEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SPEECH_NEW;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TRACK_TO_CATEGORY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::VEC3_MAX_COMPONENT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_INSTANCE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_MANAGER_LOAD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WSCRIPT_CACHE_CTOR;
+    pub(crate) use crate::game::sound::bankmonitor::callee::ADF_DATA_SOURCE_SET_DATA;
     pub(crate) use crate::game::sound::bankmonitor::callee::AUDIO_RAND;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SONG_INSTANCE_GET_REQUEST_STATUS;
-    pub(crate) use crate::game::sound::bankmonitor::callee::USTR_TO_ASCII;
-    pub(crate) use crate::game::sound::bankmonitor::callee::MENU_SYS_ITEM_DRAW_ROW;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_MAN_CALL_TASK_FUNC;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_REMOVE;
-    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BANK_MONITOR_TIMER_KILL;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BE_GET_EVENT_RECORD_INDEX;
     pub(crate) use crate::game::sound::bankmonitor::callee::BE_LIBRARY_GET_INSTANCE_3 as BE_LIBRARY_GET_INSTANCE;
     pub(crate) use crate::game::sound::bankmonitor::callee::BE_LIBRARY_GET_INTERFACE;
     pub(crate) use crate::game::sound::bankmonitor::callee::BE_MISSION_INT_GET_COLLECTED_COUNT;
-    pub(crate) use crate::game::sound::bankmonitor::callee::ADF_DATA_SOURCE_SET_DATA;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BOLTS_FREE_DB;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BUDDY_MAN_CONNECT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE_2;
+    pub(crate) use crate::game::sound::bankmonitor::callee::CROWD_MAN3D_GROUP_CREATE_MESHES;
     pub(crate) use crate::game::sound::bankmonitor::callee::EA_FILE_LOAD_DECOMPRESSED;
     pub(crate) use crate::game::sound::bankmonitor::callee::GAME_ANIM_MAP_FIND_HASH;
+    pub(crate) use crate::game::sound::bankmonitor::callee::GAME_STATE_GOTO_NEXT_2 as GAME_STATE_GOTO_NEXT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::LOBBY_LIST_GET_AT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::MEMCARD_REQUEST_GET_INFO_NOW;
     pub(crate) use crate::game::sound::bankmonitor::callee::MEMSET_2 as MEMSET;
-    pub(crate) use crate::game::sound::bankmonitor::callee::CROWD_MAN3D_GROUP_CREATE_MESHES;
+    pub(crate) use crate::game::sound::bankmonitor::callee::MENU_SYS_ITEM_DRAW_ROW;
+    pub(crate) use crate::game::sound::bankmonitor::callee::MUSIC_PLAYER_GET_SONG_TAG;
+    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_FLOAT_2;
+    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_INT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::PATH_DATA_READ_VEC3;
+    pub(crate) use crate::game::sound::bankmonitor::callee::PS2_MEMCARD_CREATE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_CLEAR_PEAK_A4;
+    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_SHOW_HUD_NUMBER;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_BINDING_CTOR;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_GET_INSTANCE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_ENGINE_POLL_ASYNC_LOADS;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SCRIPT_LIST_ADD_CHOICE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SECTION_ALLOCATOR_DTOR;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SLOGIN_MC_GET_PORT_SLOT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SNDSTRM_SET_PREBUFFER;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_BANK;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SND_BANK_MAN_UNLOAD_MEMORY_BANK;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SONG_INSTANCE_GET_REQUEST_STATUS;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SPEECH_SYSTEM_STOP_INSTANCE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_END_SCRIPT_MUSIC;
+    pub(crate) use crate::game::sound::bankmonitor::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::STREAM_FILE_RELEASE_CHUNK;
+    pub(crate) use crate::game::sound::bankmonitor::callee::STR_CASE_CMP;
     pub(crate) use crate::game::sound::bankmonitor::callee::TEX_MAN_FREE_TEXTURE;
     pub(crate) use crate::game::sound::bankmonitor::callee::UI_LIST_COUNT;
     pub(crate) use crate::game::sound::bankmonitor::callee::UI_MENU_SET_NAV_BUTTONS;
     pub(crate) use crate::game::sound::bankmonitor::callee::UI_OBJECT_LOAD;
-    pub(crate) use crate::game::sound::bankmonitor::callee::SECTION_ALLOCATOR_DTOR;
-    pub(crate) use crate::game::sound::bankmonitor::callee::STREAM_FILE_RELEASE_CHUNK;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE_2;
-    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_SHOW_HUD_NUMBER;
-    pub(crate) use crate::game::sound::bankmonitor::callee::RIDER_METRIX_CLEAR_PEAK_A4;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BE_GET_EVENT_RECORD_INDEX;
-    pub(crate) use crate::game::sound::bankmonitor::callee::BOLTS_FREE_DB;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MALLOC;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FREE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FREE2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::VEC3_MAX_COMPONENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_12 as NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_DTOR_4 as NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_INIT_3 as NET_FE_STATE_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_SELECTED_USER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WSCRIPT_CACHE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_INSTANCE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_MANAGER_LOAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_FIRST_2 as PROCESS_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_NEXT_2 as PROCESS_LIST_NEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_FREE_TRIGGERS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_PARSE_2 as CAMERA_TRIGGER_MAN_PARSE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_MONTH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_DAY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_YEAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_GENDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_LEGAL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_INIT_PAGES;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_REQUEST_SHAPE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OV_STATE_OVERLAY_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPTIONS_HUD_REFRESH_SELECTION;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_BINDING_BIND;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_WRITE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_NEXT_CHAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_EMPTY_STUB;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_CTOR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_RELEASE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_ALLOC_BUFFER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TRACK_TO_CATEGORY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE_2 as AUDIO_GET_GAME_MODULE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_INTERFACE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_SOMETHING;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SPEECH_NEW;
-
+    pub(crate) use crate::game::sound::bankmonitor::callee::USTR_TO_ASCII;
+    pub(crate) use crate::game::sound::bankmonitor::callee::WORLD_PAINTER_SET_SCRIPT_SURFACE_MODE;
+    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_MAN_CALL_TASK_FUNC;
+    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_PUSH_FRONT;
+    pub(crate) use crate::game::sound::bankmonitor::callee::WSCRIPT_PROCESS_LIST_REMOVE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::BUILTIN_DELETE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::CBXSTRING_ASSIGN_CSTR;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::C_WORLD_SOUND_UNLINK_EMITTERS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::EA_MEM_COPY;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::EVENT_SELECT_HANDLE_INPUT;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::GRAPHICS_MAN_EMPTY_HOOK;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::IRRADIANCE_REF_GET_ENTRY as IRRADIANCE_REF_GET_ENTRY_2;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::LOBBY_MAN_REQUEST_STATS_PAGE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::MC_MANAGER_GET_INSTANCE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::MENU_SYS_GET_INPUT_CODE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::PATH_DATA_READ_FLOAT;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::PATH_SET_TRACK_CONTROL_VALUE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RAND_NEXT;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RAND_NEXT_MAIN;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::RIDER_METRIX_BANK_COMBO;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_DUMMY_OBJ_READ_FIELDS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_ENGINE_PUSH_FREE_NODE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SCRIPT_OBJ_DEACTIVATE;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::SSX_APP_BOOT_LOAD;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STATS_PROCESS_RENDER_STUB;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STATS_PROCESS_UPDATE_STUB;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STREAM_BUFFER_GET_STATUS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::STRLEN_AND_STRCPY;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::TEX_MAN_SET_ALLOC_FLAGS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_FIRST;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_NODE_UNLINK;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_PUSH_BACK;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_STATE_MGR_RENDER_STUB;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::USTR_FROM_ASCII;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_RESET_SECTIONS;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_INFO;
+    pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_NAME;
 
     pub const FE_MODULE_RIDER_PREVIEW_REQUEST_CHAR: Callee = Callee {
         addr: 0x0019_e588,
@@ -403,7 +610,6 @@ pub(crate) mod callee {
         f: ee::s10::EA_MemAllocNamed,
     };
 
-
     pub const PATH_GET_LENGTH: Callee = Callee {
         addr: 0x0026_ac48,
         f: ee::s07::Path_GetLength,
@@ -419,7 +625,6 @@ pub(crate) mod callee {
         f: ee::s07::SndBankMan_InitLoadRequest,
     };
 
-
     pub const USTR_FROM_ASCII_2: Callee = Callee {
         addr: 0x002c_2540,
         f: ee::s08::f_002c2540,
@@ -429,7 +634,6 @@ pub(crate) mod callee {
         addr: 0x002c_26d0,
         f: ee::s08::f_002c26d0,
     };
-
 
     pub const POPUP_SET_WIDGET_ALIGN: Callee = Callee {
         addr: 0x001c_8930,
@@ -441,7 +645,6 @@ pub(crate) mod callee {
         f: ee::s03::f_001c97e0,
     };
 
-
     pub const RIDER_CAMERA_ALGORITHM_CTOR: Callee = Callee {
         addr: 0x0016_22b0,
         f: ee::s01::f_001622b0,
@@ -451,7 +654,6 @@ pub(crate) mod callee {
         addr: 0x0017_a158,
         f: ee::s02::f_0017a158,
     };
-
 
     pub const WSCRIPT_MISSION_CTOR: Callee = Callee {
         addr: 0x0030_7128,
@@ -468,7 +670,6 @@ pub(crate) mod callee {
         f: ee::s10::f_0030b2c0,
     };
 
-
     pub const MULTIPARTICLE_MAN_CLEAR: Callee = Callee {
         addr: 0x0035_7b38,
         f: ee::s11::f_00357b38,
@@ -479,12 +680,10 @@ pub(crate) mod callee {
         f: ee::s11::f_00357e80,
     };
 
-
     pub const MUSIC_PLAYER_SET_EVENT_STATE: Callee = Callee {
         addr: 0x002b_3bc0,
         f: ee::s08::f_002b3bc0,
     };
-
 
     pub const UI_STATE_UPDATE: Callee = Callee {
         addr: 0x0039_e510,
@@ -495,7 +694,6 @@ pub(crate) mod callee {
         addr: 0x0018_d108,
         f: ee::s02::f_0018d108,
     };
-
 
     pub const STR_HASH: Callee = Callee {
         addr: 0x0031_7670,
@@ -517,12 +715,10 @@ pub(crate) mod callee {
         f: ee::s13::f_0039b960,
     };
 
-
     pub const STRLEN: Callee = Callee {
         addr: 0x0041_6810,
         f: ee::s15::f_00416810,
     };
-
 
     pub const SECTION_MAN_DEQUEUE_SECTION: Callee = Callee {
         addr: 0x0022_e360,
@@ -533,7 +729,6 @@ pub(crate) mod callee {
         addr: 0x0022_e278,
         f: ee::s05::f_0022e278,
     };
-
 
     pub const UI_LISTBOX_ADD_ITEM_STR_ID: Callee = Callee {
         addr: 0x0039_a568,
@@ -550,7 +745,6 @@ pub(crate) mod callee {
         f: ee::s13::f_0039a7a8,
     };
 
-
     pub const NET_FE_STATE_GET_POPUP: Callee = Callee {
         addr: 0x001a_9c50,
         f: ee::s03::f_001a9c50,
@@ -566,12 +760,10 @@ pub(crate) mod callee {
         f: ee::s03::f_001c57c0,
     };
 
-
     pub const MESSAGE_CENTER_GET_INBOX: Callee = Callee {
         addr: 0x001e_39f8,
         f: ee::s04::f_001e39f8,
     };
-
 
     pub const CBXSTRING_CTOR_COPY: Callee = Callee {
         addr: 0x0031_7fe8,
@@ -582,7 +774,6 @@ pub(crate) mod callee {
         addr: 0x0031_8260,
         f: ee::s10::f_00318260,
     };
-
 
     pub const SSX_AUDIO_IS_DJ_SPEECH_ON: Callee = Callee {
         addr: 0x0029_f0d8,
@@ -604,7 +795,6 @@ pub(crate) mod callee {
         f: ee::s08::f_002a1bd8,
     };
 
-
     pub const INI_PARSER_SKIP_WHITESPACE: Callee = Callee {
         addr: 0x002a_78f8,
         f: ee::s08::f_002a78f8,
@@ -620,7 +810,6 @@ pub(crate) mod callee {
         f: ee::s08::f_002a78e0,
     };
 
-
     pub const CHUNK_RESOLVE_RELOCATE_DMA: Callee = Callee {
         addr: 0x003a_c358,
         f: ee::s13::f_003ac358,
@@ -630,7 +819,6 @@ pub(crate) mod callee {
         addr: 0x0034_b228,
         f: ee::s11::f_0034b228,
     };
-
 
     pub const BE_GET_RIDER_CHARACTER: Callee = Callee {
         addr: 0x0014_a080,
@@ -646,7 +834,6 @@ pub(crate) mod callee {
         addr: 0x0015_2398,
         f: ee::s01::f_00152398,
     };
-
 
     pub const OV_STATE_OVERLAY_UPDATE: Callee = Callee {
         addr: 0x0020_e900,
@@ -672,7 +859,6 @@ pub(crate) mod callee {
         addr: 0x0026_ba88,
         f: ee::s07::f_0026ba88,
     };
-
 
     pub const SUPERPIPE_COMPUTE_DESIRED_EYE: Callee = Callee {
         addr: 0x0017_85f0,
@@ -744,7 +930,6 @@ pub(crate) mod callee {
         f: ee::s06::f_00258160,
     };
 
-
     pub const OPERATOR_NEW_NAMED: Callee = Callee {
         addr: 0x0031_7e30,
         f: ee::s10::f_00317e30,
@@ -810,7 +995,6 @@ pub(crate) mod addr {
     /// The McManager query behind `cPS2MemCard_DoGetInfo`.
     pub const MC_MANAGER_GET_INFO: u32 = 0x0040_a498;
 }
-
 
 /// `float Path_BoundsDistance(const PathBounds *box, const Vec3 *p)`
 /// (0x26a9b0): signed distance from `p` to the AABB whose X/Y/Z minima are at
@@ -900,7 +1084,6 @@ pub fn path_bounds_distance(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `PathTrack *PathData_GetTrackPath(PathData *self, int index)` (0x26af70):
 /// `self->track_paths[index]`, records of 60 bytes after the pointer at +0x14.
 pub fn path_data_get_track_path(c: &mut Cpu) {
@@ -917,7 +1100,6 @@ pub fn path_data_get_track_path(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `PathAI *PathData_GetAIPath(PathData *self, int index)` (0x26af88):
 /// `self->ai_paths[index]`, records of 64 bytes after the pointer at +0xc.
 pub fn path_data_get_ai_path(c: &mut Cpu) {
@@ -931,7 +1113,6 @@ pub fn path_data_get_ai_path(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `lqc2 vf3, a; lqc2 vf4, b; vsub vf5, vf3, vf4; sqc2 vf5, out`.
 #[inline(always)]
 pub(crate) fn vsub(c: &mut Cpu, a: u32, b: u32, out: u32) {
@@ -940,7 +1121,6 @@ pub(crate) fn vsub(c: &mut Cpu, a: u32, b: u32, out: u32) {
     c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
     c.sqc2(5, out);
 }
-
 
 /// The inlined 4-component dot product: `lqc2 vf3, a; lqc2 vf5, b;
 /// vaddw.x vf6, vf0, vf0w (1); vmul vf4, vf3, vf5; vaddy.x/vmaddz.x/
@@ -959,10 +1139,8 @@ pub(crate) fn vdot4(c: &mut Cpu, a: u32, b: u32, rt: usize) -> FpuF32 {
     FpuF32(c.g[rt][0] as u32)
 }
 
-
 /// Head of the segment loop (event checks).
 pub(crate) const PATH_LOOP: u32 = 0x0026_a6c8;
-
 
 /// `float Path_GetClosestPointFrom(const Path* path, const Vec4* point,
 /// Vec4* closest, float* dist, PathCursor* cursor /*t0*/, int flat /*t1*/)`
@@ -1033,7 +1211,6 @@ pub fn path_get_closest_point_from(c: &mut Cpu) {
     c.swc1(1, abi::arg(c, 3));
     leave(c, 0x60);
 }
-
 
 /// One segment of [`path_get_closest_point_from`]: segment `t2` of the
 /// array in v1, starting at the point at `sp+0`. True when the walk goes
@@ -1173,7 +1350,6 @@ pub(crate) fn path_segment(c: &mut Cpu, sp: u32) -> bool {
     false
 }
 
-
 // ---------------------------------------------------------------------------
 // Path_QueryEvents.
 
@@ -1255,7 +1431,6 @@ pub fn path_query_events(c: &mut Cpu) {
     c.g[V0][0] = c.g[A3][0];
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // Path_GetPointAtDistance.
@@ -1370,7 +1545,6 @@ pub fn path_get_point_at_distance(c: &mut Cpu) {
     frame.close(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Path events.
 
@@ -1397,7 +1571,6 @@ pub fn path_query_events_reversed(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Copies of a field, conditional on the arguments.
 
@@ -1421,7 +1594,6 @@ pub fn path_read_track_field(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // LobbyMan_On*_Thunk.
 
@@ -1429,7 +1601,6 @@ pub fn path_read_track_field(c: &mut Cpu) {
 /// per-thunk `slot` is the offset the original adds (`0x2fb0`, `0x2fb8`, ...),
 /// so the entry lives at `0x4a0000 + slot` (`D_004A2FB0`-ish).
 pub(crate) const LOBBY_CALLBACKS: u32 = 0x004a_0000;
-
 
 /// The shared shape of the seventeen lobby callbacks: add the (16-bit) lobby
 /// object offset published in the callback table to the handler's third
@@ -1447,13 +1618,11 @@ pub(crate) fn lobby_thunk(c: &mut Cpu, ret: u32, slot: u32, target: u32) -> Flow
     Ok(())
 }
 
-
 /// `void LobbyMan_OnUserListChanged_Thunk(void* m, void* h, void* obj)`
 /// (0x268a90).
 pub fn lobby_man_on_user_list_changed_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8aa8, 0x2fb0, 0x0025_d6c0))
 }
-
 
 /// `void LobbyMan_OnRoomListChanged_Thunk(void* m, void* h, void* obj)`
 /// (0x268ab8).
@@ -1461,37 +1630,31 @@ pub fn lobby_man_on_room_list_changed_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8ad0, 0x2fb8, 0x0025_99b0))
 }
 
-
 /// `void LobbyMan_OnRankListChanged_Thunk(void* m, void* h, void* obj)`
 /// (0x268ae0).
 pub fn lobby_man_on_rank_list_changed_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8af8, 0x2fc0, 0x0025_9a60))
 }
 
-
 /// `void LobbyMan_OnRecvDebug_Thunk(void* m, void* h, void* obj)` (0x268b08).
 pub fn lobby_man_on_recv_debug_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8b20, 0x2ff0, 0x0025_98a8))
 }
-
 
 /// `void LobbyMan_OnMessage_Thunk(void* m, void* h, void* obj)` (0x268b30).
 pub fn lobby_man_on_message_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8b48, 0x2ff8, 0x0025_9b10))
 }
 
-
 /// `void LobbyMan_OnDisconnect_Thunk(void* m, void* h, void* obj)` (0x268b58).
 pub fn lobby_man_on_disconnect_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8b70, 0x3000, 0x0025_98c8))
 }
 
-
 /// `void LobbyMan_OnGameStart_Thunk(void* m, void* h, void* obj)` (0x268b80).
 pub fn lobby_man_on_game_start_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8b98, 0x3008, 0x0025_a1d0))
 }
-
 
 /// `void LobbyMan_OnConnectReply_Thunk(void* m, void* h, void* obj)`
 /// (0x268ba8).
@@ -1499,13 +1662,11 @@ pub fn lobby_man_on_connect_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8bc0, 0x3020, 0x0025_b848))
 }
 
-
 /// `void LobbyMan_OnCreateAccountReply_Thunk(void* m, void* h, void* obj)`
 /// (0x268bd0).
 pub fn lobby_man_on_create_account_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8be8, 0x3088, 0x0025_bd30))
 }
-
 
 /// `void LobbyMan_OnEditAccountReply_Thunk(void* m, void* h, void* obj)`
 /// (0x268bf8).
@@ -1513,13 +1674,11 @@ pub fn lobby_man_on_edit_account_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8c10, 0x30a8, 0x0025_c0c0))
 }
 
-
 /// `void LobbyMan_OnLostByEmailReply_Thunk(void* m, void* h, void* obj)`
 /// (0x268c20).
 pub fn lobby_man_on_lost_by_email_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8c38, 0x30b0, 0x0025_c2d8))
 }
-
 
 /// `void LobbyMan_OnLostByNameReply_Thunk(void* m, void* h, void* obj)`
 /// (0x268c48).
@@ -1527,12 +1686,10 @@ pub fn lobby_man_on_lost_by_name_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8c60, 0x30b8, 0x0025_c4f0))
 }
 
-
 /// `void LobbyMan_OnLoginReply_Thunk(void* m, void* h, void* obj)` (0x268c70).
 pub fn lobby_man_on_login_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8c88, 0x30e8, 0x0025_c8a8))
 }
-
 
 /// `void LobbyMan_OnSelectPersonaReply_Thunk(void* m, void* h, void* obj)`
 /// (0x268c98).
@@ -1540,13 +1697,11 @@ pub fn lobby_man_on_select_persona_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8cb0, 0x3118, 0x0025_ceb0))
 }
 
-
 /// `void LobbyMan_OnOwnStatsReply_Thunk(void* m, void* h, void* obj)`
 /// (0x268cc0).
 pub fn lobby_man_on_own_stats_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8cd8, 0x3120, 0x0025_d048))
 }
-
 
 /// `void LobbyMan_OnCreatePersonaReply_Thunk(void* m, void* h, void* obj)`
 /// (0x268ce8).
@@ -1554,13 +1709,11 @@ pub fn lobby_man_on_create_persona_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8d00, 0x3138, 0x0025_d2d8))
 }
 
-
 /// `void LobbyMan_OnDeletePersonaReply_Thunk(void* m, void* h, void* obj)`
 /// (0x268d10).
 pub fn lobby_man_on_delete_persona_reply_thunk(c: &mut Cpu) {
     guest(c, |c| lobby_thunk(c, 0x0026_8d28, 0x3140, 0x0025_d538))
 }
-
 
 // ---------------------------------------------------------------------------
 // Message-map thunks.
@@ -1568,7 +1721,6 @@ pub fn lobby_man_on_delete_persona_reply_thunk(c: &mut Cpu) {
 /// Base of the message maps: the thunk's `lui v0, 0x4a` and the `int16`
 /// member offsets live at `0x4a3148..` (`D_004A3148` and friends).
 pub(crate) const MESSAGE_MAP: u32 = 0x004a_0000;
-
 
 /// The shared body of the reply-callback thunks:
 /// `handler(a2 + message_map[entry], a1, ...)`.
@@ -1591,125 +1743,141 @@ pub(crate) fn message_thunk(c: &mut Cpu, entry: u32, target: u32, ret: u32) -> F
     Ok(())
 }
 
-
 /// `void LobbyMan_OnMoveToRoomReply_Thunk(LobbyMan *self, void *msg, void *obj)`
 /// (0x268d38): `LobbyMan_OnMoveToRoomReply(obj + D_004A3148, msg)`.
 pub fn lobby_man_on_move_to_room_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3148, 0x0025_d8f8, 0x0026_8d50))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3148, 0x0025_d8f8, 0x0026_8d50)
+    })
 }
-
 
 /// `void LobbyMan_OnCreateRoomReply_Thunk(...)` (0x268d60):
 /// `LobbyMan_OnCreateRoomReply(obj + D_004A3158, msg)`.
 pub fn lobby_man_on_create_room_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3158, 0x0025_db80, 0x0026_8d78))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3158, 0x0025_db80, 0x0026_8d78)
+    })
 }
-
 
 /// `void LobbyMan_OnPingReply_Thunk(...)` (0x268d88):
 /// `LobbyMan_OnPingReply(obj + D_004A3160, msg)`.
 pub fn lobby_man_on_ping_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3160, 0x0025_dde0, 0x0026_8da0))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3160, 0x0025_dde0, 0x0026_8da0)
+    })
 }
-
 
 /// `void LobbyMan_OnReportUserReply_Thunk(...)` (0x268db0):
 /// `LobbyMan_OnReportUserReply(obj + D_004A3170, msg)`.
 pub fn lobby_man_on_report_user_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3170, 0x0025_df98, 0x0026_8dc8))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3170, 0x0025_df98, 0x0026_8dc8)
+    })
 }
-
 
 /// `void LobbyMan_OnNewsReply_Thunk(...)` (0x268dd8):
 /// `LobbyMan_OnNewsReply(obj + D_004A3178, msg)`.
 pub fn lobby_man_on_news_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3178, 0x0025_e138, 0x0026_8df0))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3178, 0x0025_e138, 0x0026_8df0)
+    })
 }
-
 
 /// `void LobbyMan_OnSnapshotReply_Thunk(...)` (0x268e00):
 /// `LobbyMan_OnSnapshotReply(obj + D_004A31B0, msg)`.
 pub fn lobby_man_on_snapshot_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_31b0, 0x0025_e590, 0x0026_8e18))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_31b0, 0x0025_e590, 0x0026_8e18)
+    })
 }
-
 
 /// `void LobbyMan_OnLookupUserReply_Thunk(...)` (0x268e28):
 /// `LobbyMan_OnLookupUserReply(obj + D_004A31B8, msg)`.
 pub fn lobby_man_on_lookup_user_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_31b8, 0x0025_e7f0, 0x0026_8e40))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_31b8, 0x0025_e7f0, 0x0026_8e40)
+    })
 }
-
 
 /// `void LobbyMan_OnQuickPlayReplyThunk(...)` (0x268e78):
 /// `LobbyMan_OnQuickPlayReply(obj + D_004A3210, msg)`.
 pub fn lobby_man_on_quick_play_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3210, 0x0025_f030, 0x0026_8e90))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3210, 0x0025_f030, 0x0026_8e90)
+    })
 }
-
 
 /// `void LobbyMan_OnChalReplyThunk(...)` (0x268ea0):
 /// `LobbyMan_OnChalReply(obj + D_004A3248, msg)`.
 pub fn lobby_man_on_chal_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3248, 0x0025_f8a0, 0x0026_8eb8))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3248, 0x0025_f8a0, 0x0026_8eb8)
+    })
 }
-
 
 /// `void LobbyMan_OnMesgReplyThunk(...)` (0x268ec8):
 /// `LobbyMan_OnMesgReply(obj + D_004A3268, msg)`.
 pub fn lobby_man_on_mesg_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3268, 0x0025_fc20, 0x0026_8ee0))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3268, 0x0025_fc20, 0x0026_8ee0)
+    })
 }
-
 
 /// `void LobbyMan_OnRankReplyThunk(...)` (0x268ef0):
 /// `LobbyMan_OnRankReply(obj + D_004A3318, msg)`.
 pub fn lobby_man_on_rank_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3318, 0x0026_0c68, 0x0026_8f08))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3318, 0x0026_0c68, 0x0026_8f08)
+    })
 }
-
 
 /// `void BuddyMan_OnConnectEventThunk(...)` (0x268f18):
 /// `BuddyMan_OnConnectEvent(obj + D_004A3340, msg)`.
 pub fn buddy_man_on_connect_event_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3340, 0x0026_15c8, 0x0026_8f30))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3340, 0x0026_15c8, 0x0026_8f30)
+    })
 }
-
 
 /// `void BuddyMan_OnMessageReceivedThunk(...)` (0x268f40):
 /// `BuddyMan_OnMessageReceived(obj + D_004A3348, msg)`.
 pub fn buddy_man_on_message_received_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3348, 0x0026_1a28, 0x0026_8f58))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3348, 0x0026_1a28, 0x0026_8f58)
+    })
 }
-
 
 /// `void BuddyMan_OnRosterEventThunk(...)` (0x268f68):
 /// `BuddyMan_OnRosterEvent(obj + D_004A3350, msg)`.
 pub fn buddy_man_on_roster_event_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3350, 0x0026_1770, 0x0026_8f80))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3350, 0x0026_1770, 0x0026_8f80)
+    })
 }
-
 
 /// `void BuddyMan_OnRosterRemoveReplyThunk(...)` (0x268f90):
 /// `BuddyMan_OnRosterRemoveReply(obj + D_004A3380, msg)`.
 pub fn buddy_man_on_roster_remove_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3380, 0x0026_1970, 0x0026_8fa8))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3380, 0x0026_1970, 0x0026_8fa8)
+    })
 }
-
 
 /// `void BuddyMan_OnRosterAddReplyThunk(...)` (0x268fb8):
 /// `BuddyMan_OnRosterAddReply(obj + D_004A3388, msg)`.
 pub fn buddy_man_on_roster_add_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_3388, 0x0026_18c0, 0x0026_8fd0))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_3388, 0x0026_18c0, 0x0026_8fd0)
+    })
 }
-
 
 /// `void BuddyMan_OnSendMessageReplyThunk(...)` (0x268fe0):
 /// `BuddyMan_OnSendMessageReply(obj + D_004A33A0, msg)`.
 pub fn buddy_man_on_send_message_reply_thunk(c: &mut Cpu) {
-    guest(c, |c| message_thunk(c, 0x004a_33a0, 0x0026_1a20, 0x0026_8ff8))
+    guest(c, |c| {
+        message_thunk(c, 0x004a_33a0, 0x0026_1a20, 0x0026_8ff8)
+    })
 }
-
 
 // ---------------------------------------------------------------------------
 // Path data, playback and the replay snapshot list.
@@ -1735,7 +1903,6 @@ pub fn path_data_set_buffer(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Path readers.
@@ -1773,7 +1940,6 @@ pub fn path_read_a_i_field(c: &mut Cpu) {
     })
 }
 
-
 /// `void Path_ReadSegment(u32 unused, const void* src /*a1*/, void* dst
 /// /*a2*/)` (0x26a338): copy a segment's three floats and its length from
 /// `src` to `dst`.
@@ -1798,7 +1964,6 @@ pub fn path_read_segment(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Path events.
@@ -1858,7 +2023,6 @@ pub fn path_has_event_in_range_reversed(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `int Path_HasEventInRange(Path* path, float lo, float hi)` (0x26ac88):
 /// 1 if any segment of the path overlaps `[lo, hi]` and is a scripted event
@@ -1932,19 +2096,16 @@ pub fn path_has_event_in_range(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `sNode* NetEventFD_Clone(sNode* self)` (0x269DC0): allocate a 12-byte
 /// `0xFD` node carrying `self->value`.
 pub fn net_event_fd_clone(c: &mut Cpu) {
     net_event_clone(c, 0xfd, 0x13e0, 0x0026_9de8);
 }
 
-
 /// `sNode* NetEventFE_Clone(sNode* self)` (0x269E40): the `0xFE` variant.
 pub fn net_event_fe_clone(c: &mut Cpu) {
     net_event_clone(c, 0xfe, 0x13c0, 0x0026_9e68);
 }
-
 
 /// The shared body of the two `NetEvent*_Clone` nodes: `vtable_off` is the
 /// node vtable's offset from 0x480000.
@@ -1976,7 +2137,6 @@ pub(crate) fn net_event_clone(c: &mut Cpu, kind: u64, vtable_off: u32, ret: u32)
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // cBXString, cChallenger.
@@ -2020,7 +2180,6 @@ pub fn c_challenger_dtor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `sVec4_12F398 Path_GetDirAtDistance(Path* self, float t)` (0x26a8b8):
 /// walk the path segments (16 bytes each, `fC` at +0xc) subtracting each
@@ -2074,7 +2233,6 @@ pub fn path_get_dir_at_distance(c: &mut Cpu) {
     c.g[V0][0] = c.g[A2][0];
     abi::ret(c);
 }
-
 
 /// `void PathData_Free(PathData* d)` (0x26af00): free the three owned
 /// buffers and clear their pointers.
@@ -2133,7 +2291,6 @@ pub fn path_data_free(c: &mut Cpu) {
     });
 }
 
-
 /// `void PathData_Parse(PathData* p)` (0x0026adf0): read the path header and
 /// each of the four sections in turn, advancing the cursor by each section's
 /// returned size.
@@ -2175,7 +2332,6 @@ pub fn path_data_parse(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `cSetupMan_ClientRecvMsg11` (0x269b90): store the message id in the caller's
@@ -2233,7 +2389,6 @@ pub(crate) fn recv_msg_node(
     Ok(())
 }
 
-
 /// `cSetupMan_ClientRecvMsg11` (0x269b90): queue message kind 0xFD.
 pub fn csetup_man_client_recv_msg11(c: &mut Cpu) {
     guest(c, |c| {
@@ -2249,7 +2404,6 @@ pub fn csetup_man_client_recv_msg11(c: &mut Cpu) {
     })
 }
 
-
 /// `cSetupMan_ClientRecvMsg13` (0x269cf0): queue message kind 0xFE.
 pub fn csetup_man_client_recv_msg13(c: &mut Cpu) {
     guest(c, |c| {
@@ -2264,7 +2418,6 @@ pub fn csetup_man_client_recv_msg13(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `cSetupMan_ClientRecvMsg10` (0x269ae0): queue message kind 0xFD with the
 /// extra word 1.
@@ -2282,7 +2435,6 @@ pub fn csetup_man_client_recv_msg10(c: &mut Cpu) {
     })
 }
 
-
 /// `cSetupMan_ClientRecvMsg12` (0x269c40): queue message kind 0xFE with the
 /// extra word 1.
 pub fn csetup_man_client_recv_msg12(c: &mut Cpu) {
@@ -2298,7 +2450,6 @@ pub fn csetup_man_client_recv_msg12(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // `Path_ReadEvent` (0x26a378): read an event key, look it up in the fixed
@@ -2372,7 +2523,6 @@ pub fn path_read_event(c: &mut Cpu) {
     })
 }
 
-
 /// The `addiu sp; jr ra` tail of a frame whose `ra` was reloaded from
 /// `off(sp)` by the body.
 #[inline(always)]
@@ -2381,7 +2531,6 @@ pub(crate) fn frame_less_return(c: &mut Cpu, size: u32) {
     c.g[SP][0] = sx(r(c, SP).wrapping_add(size));
     c.pc = ra;
 }
-
 
 // ---------------------------------------------------------------------------
 // cSetupMan message handlers.
@@ -2444,18 +2593,19 @@ pub(crate) fn setup_man_client_recv_msg_alloc(c: &mut Cpu, ret1: u32, ret2: u32)
     Ok(())
 }
 
-
 /// `void cSetupMan_ClientRecvMsg5(void* q, int payload)` (0x269188).
 pub fn setup_man_client_recv_msg5(c: &mut Cpu) {
-    guest(c, |c| setup_man_client_recv_msg_alloc(c, 0x0026_91c0, 0x0026_91f4))
+    guest(c, |c| {
+        setup_man_client_recv_msg_alloc(c, 0x0026_91c0, 0x0026_91f4)
+    })
 }
-
 
 /// `void cSetupMan_ClientRecvMsg4(void* q, int payload)` (0x2693c0).
 pub fn setup_man_client_recv_msg4(c: &mut Cpu) {
-    guest(c, |c| setup_man_client_recv_msg_alloc(c, 0x0026_93f8, 0x0026_942c))
+    guest(c, |c| {
+        setup_man_client_recv_msg_alloc(c, 0x0026_93f8, 0x0026_942c)
+    })
 }
-
 
 /// `void cSetupMan_ClientRecvMsg7(void* q, int payload)` (0x269890): build a
 /// 0x10-byte host message with the payload at `+0xc` and queue it.
@@ -2511,7 +2661,6 @@ pub fn setup_man_client_recv_msg7(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Setup-manager message helpers.
@@ -2635,7 +2784,6 @@ pub fn csetup_man_host_recv_msg9(c: &mut Cpu) {
     })
 }
 
-
 /// `void cSetupMan_ClientRecvMsg8(cSetupMan *self, u32 a1, u32 a2)`
 /// (0x269948): queue message kind 0xFC with the extra word 1.
 pub fn csetup_man_client_recv_msg8(c: &mut Cpu) {
@@ -2693,7 +2841,6 @@ pub fn csetup_man_client_recv_msg8(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Path_FindMarkerBoundary (0x00269f18).
@@ -2814,13 +2961,11 @@ pub fn path_find_marker_boundary(c: &mut Cpu) {
     });
 }
 
-
 /// A `gp_4`-relative global.
 #[inline(always)]
 pub(crate) fn gp_4(c: &Cpu, off: i32) -> u32 {
     (c.g[GP][0] as u32).wrapping_add(off as u32)
 }
-
 
 /// `cSetupMan_HostRecvMsg11(self, msg)` (0x269608): handle message type 11
 /// from the host: normalise the message type (6..7 -> 8, 9 -> 10), forward
@@ -2920,183 +3065,203 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::compare;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
     use crate::difftest::scramble;
+    use crate::difftest::seed_count;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fill;
-    use crate::difftest::put_words;
-    use crate::difftest::SP as TEST_SP;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::put_vec;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::SP;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::fakes;
-    use ssx3_ee as ee;
     use crate::difftest::RA as SENTINEL;
-    use crate::difftest::compare;
-    use crate::difftest::seed_count;
-    pub(crate) use crate::game::render::particle::tests::SEEDS;
-    pub(crate) use crate::game::render::particle::tests::f;
-    pub(crate) use crate::game::render::particle::tests::uf;
-    pub(crate) use crate::game::render::particle::tests::base;
-    pub(crate) use crate::game::render::particle::tests::put_vec3;
-    pub(crate) use crate::game::render::particle::tests::gp_at;
-    pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2;
-    pub(crate) use crate::game::movie::movieplayer::tests::BE_LIBRARY;
-    pub(crate) use crate::game::movie::movieplayer::tests::globals;
-    pub(crate) use crate::game::sound::bankmonitor::tests::SEEDS_4 as SEEDS_3;
-    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
-    pub(crate) use crate::game::fe::festateoptions::tests::rng;
-    pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
-    pub(crate) use crate::game::fe::festateoptions::tests::setup;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_4;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup as setup_2;
-    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
-    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_3 as WORLD;
-    pub(crate) use crate::game::fe::feasyncfile::tests::wh;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_4 as slot;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_6 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_3 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_8 as BE_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_6 as W_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_11 as slot_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::eafile_pools;
-    pub(crate) use crate::game::fe::feasyncfile::tests::run_9 as run_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_11 as heap_init;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_11 as pool_allocator_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_4 as alloc_base_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE_4;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_5;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_12 as globals_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::diff;
+    use crate::difftest::SP as TEST_SP;
+    use crate::difftest::SP;
+    pub(crate) use crate::game::ai::ai::tests::strict;
     pub(crate) use crate::game::ai::ai::tests::uf as uf_3;
     pub(crate) use crate::game::ai::ai::tests::SEEDS as SEEDS_6;
-    pub(crate) use crate::game::ai::ai::tests::strict;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::SEEDS_2;
+    pub(crate) use crate::game::be::bestate2::tests::belib;
+    pub(crate) use crate::game::be::bestate2::tests::w;
+    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_4;
+    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::globals_3 as globals_4;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::pool_4 as pool_2;
-    pub(crate) use crate::game::camera::trigger::cameratriggerfactory::tests::base_6;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_4 as alloc_base_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_17 as base_5;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_6 as base_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::diff;
+    pub(crate) use crate::game::fe::feasyncfile::tests::eafile_pools;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_12 as globals_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_6 as globals_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_11 as heap_init;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_3 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_11 as pool_allocator_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::run_9 as run_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot_11 as slot_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot_4 as slot;
+    pub(crate) use crate::game::fe::feasyncfile::tests::wh;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_10 as BE_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_8 as BE_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_3 as WORLD;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W_6 as W_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W_7 as W_4;
+    pub(crate) use crate::game::fe::festateloadhint::tests::w32;
+    pub(crate) use crate::game::fe::festateloadhint::tests::SEEDS_2 as SEEDS_5;
+    pub(crate) use crate::game::fe::festateoptions::tests::rng;
+    pub(crate) use crate::game::fe::festateoptions::tests::setup;
+    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup as setup_2;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+    pub(crate) use crate::game::movie::movieplayer::tests::globals;
+    pub(crate) use crate::game::movie::movieplayer::tests::BE_LIBRARY;
+    pub(crate) use crate::game::render::particle::tests::base;
+    pub(crate) use crate::game::render::particle::tests::f;
+    pub(crate) use crate::game::render::particle::tests::gp_at;
+    pub(crate) use crate::game::render::particle::tests::put_vec3;
+    pub(crate) use crate::game::render::particle::tests::uf;
+    pub(crate) use crate::game::render::particle::tests::SEEDS;
+    pub(crate) use crate::game::sound::bankmonitor::tests::SEEDS_4 as SEEDS_3;
+    use ssx3_ee as ee;
 
     #[test]
     fn path_bounds_distance_matches() {
-        check(ssx3_ee::s07::f_0026a9b0, path_bounds_distance, 300, &|c, seed| {
-            let mut r = Rng(0x0c13_0006 ^ seed as u64);
-            scramble(c, &mut r);
-            let point = DATA;
-            let bounds = DATA + 0x100;
-            c.g[A0][0] = bounds as u64; // box
-            c.g[A1][0] = point as u64; // point
-            if seed % 3 == 0 {
-                // Degenerate box at 0 so the per-axis distance equals |d|;
-                // the table picks each of the four combine branches.
-                let d: [f32; 3] = match (seed / 3) % 8 {
-                    0 => [2.0, 1.0, 3.0],
-                    1 => [2.0, 1.0, 1.0],
-                    2 => [1.0, 2.0, 5.0],
-                    3 => [1.0, 3.0, 2.0],
-                    4 => [-2.0, -1.0, -3.0],
-                    5 => [-2.0, -1.0, -1.0],
-                    6 => [1.0, -2.0, 5.0],
-                    _ => [0.0, 3.0, 0.0],
-                };
-                for i in 0..3 {
-                    c.bus.write32(point + i * 4, d[i as usize].to_bits());
+        check(
+            ssx3_ee::s07::f_0026a9b0,
+            path_bounds_distance,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0c13_0006 ^ seed as u64);
+                scramble(c, &mut r);
+                let point = DATA;
+                let bounds = DATA + 0x100;
+                c.g[A0][0] = bounds as u64; // box
+                c.g[A1][0] = point as u64; // point
+                if seed % 3 == 0 {
+                    // Degenerate box at 0 so the per-axis distance equals |d|;
+                    // the table picks each of the four combine branches.
+                    let d: [f32; 3] = match (seed / 3) % 8 {
+                        0 => [2.0, 1.0, 3.0],
+                        1 => [2.0, 1.0, 1.0],
+                        2 => [1.0, 2.0, 5.0],
+                        3 => [1.0, 3.0, 2.0],
+                        4 => [-2.0, -1.0, -3.0],
+                        5 => [-2.0, -1.0, -1.0],
+                        6 => [1.0, -2.0, 5.0],
+                        _ => [0.0, 3.0, 0.0],
+                    };
+                    for i in 0..3 {
+                        c.bus.write32(point + i * 4, d[i as usize].to_bits());
+                    }
+                    for off in [0x1c, 0x20, 0x24, 0x28, 0x2c, 0x30] {
+                        c.bus.write32(bounds + off, 0);
+                    }
+                } else {
+                    for off in [0x1c, 0x20, 0x24, 0x28, 0x2c, 0x30] {
+                        c.bus.write32(bounds + off, r.edge_f32());
+                    }
+                    for i in 0..3 {
+                        c.bus.write32(point + i * 4, r.edge_f32());
+                    }
                 }
-                for off in [0x1c, 0x20, 0x24, 0x28, 0x2c, 0x30] {
-                    c.bus.write32(bounds + off, 0);
-                }
-            } else {
-                for off in [0x1c, 0x20, 0x24, 0x28, 0x2c, 0x30] {
-                    c.bus.write32(bounds + off, r.edge_f32());
-                }
-                for i in 0..3 {
-                    c.bus.write32(point + i * 4, r.edge_f32());
-                }
-            }
-        });
+            },
+        );
     }
-
 
     #[test]
     fn path_data_get_track_path_matches() {
-        check_lohi(ssx3_ee::s07::f_0026af70, path_data_get_track_path, 200, &|c, seed| {
-            let mut r = Rng(0x0c13_0007 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
-            c.bus.write32(DATA + 0x14, r.next_u32());
-        });
+        check_lohi(
+            ssx3_ee::s07::f_0026af70,
+            path_data_get_track_path,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0c13_0007 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                c.bus.write32(DATA + 0x14, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn path_data_get_ai_path_matches() {
-        check(ssx3_ee::s07::f_0026af88, path_data_get_ai_path, 200, &|c, seed| {
-            let mut r = Rng(0x0c13_0008 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
-            c.bus.write32(DATA + 0xc, r.next_u32());
-        });
+        check(
+            ssx3_ee::s07::f_0026af88,
+            path_data_get_ai_path,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0c13_0008 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                c.bus.write32(DATA + 0xc, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn path_get_closest_point_from_matches() {
-        check(ee::s07::f_0026a638__generated, path_get_closest_point_from, SEEDS, &|c, seed| {
-            let mut r = base(c, seed, 0x26a6);
-            let (pth, point, out, dist, cur, segs) =
-                (DATA, DATA + 0x80, DATA + 0x90, DATA + 0xa0, DATA + 0xc0, DATA + 0x100);
-            let n = 1 + r.next_u32() % 5;
-            c.bus.write32(pth + 8, n);
-            put_vec3(c, &mut r, pth + 0xc, -10.0, 10.0);
-            c.bus.write32(pth + 0x18, segs);
-            for i in 0..n {
-                let s = segs + 0x10 * i;
-                put_vec3(c, &mut r, s, -1.0, 1.0);
-                c.bus.write32(s + 0xc, f(uf(&mut r, 0.5, 10.0)));
-            }
-            put_vec3(c, &mut r, point, -20.0, 20.0);
-            c.bus.write32(point + 0xc, f(uf(&mut r, -1.0, 1.0)));
-            if seed % 3 == 0 {
-                c.bus.write32(cur + 0x14, u32::MAX);
-            } else {
-                put_vec3(c, &mut r, cur, -10.0, 10.0);
-                c.bus.write32(cur + 0xc, f(1.0));
-                c.bus.write32(cur + 0x10, f(uf(&mut r, 0.0, 20.0)));
-                c.bus.write32(cur + 0x14, r.next_u32() % n);
-            }
-            c.bus.write32(gp_at(-0x4a54), f(1.0e30));
-            c.bus.write32(gp_at(-0x4a50), f(uf(&mut r, 0.0, 15.0)));
-            c.g[A0][0] = sx(pth);
-            c.g[A1][0] = sx(point);
-            c.g[A2][0] = sx(out);
-            c.g[A3][0] = sx(dist);
-            c.g[T0][0] = sx(cur);
-            c.g[T1][0] = (seed / 3 % 2) as u64;
-        });
+        check(
+            ee::s07::f_0026a638__generated,
+            path_get_closest_point_from,
+            SEEDS,
+            &|c, seed| {
+                let mut r = base(c, seed, 0x26a6);
+                let (pth, point, out, dist, cur, segs) = (
+                    DATA,
+                    DATA + 0x80,
+                    DATA + 0x90,
+                    DATA + 0xa0,
+                    DATA + 0xc0,
+                    DATA + 0x100,
+                );
+                let n = 1 + r.next_u32() % 5;
+                c.bus.write32(pth + 8, n);
+                put_vec3(c, &mut r, pth + 0xc, -10.0, 10.0);
+                c.bus.write32(pth + 0x18, segs);
+                for i in 0..n {
+                    let s = segs + 0x10 * i;
+                    put_vec3(c, &mut r, s, -1.0, 1.0);
+                    c.bus.write32(s + 0xc, f(uf(&mut r, 0.5, 10.0)));
+                }
+                put_vec3(c, &mut r, point, -20.0, 20.0);
+                c.bus.write32(point + 0xc, f(uf(&mut r, -1.0, 1.0)));
+                if seed % 3 == 0 {
+                    c.bus.write32(cur + 0x14, u32::MAX);
+                } else {
+                    put_vec3(c, &mut r, cur, -10.0, 10.0);
+                    c.bus.write32(cur + 0xc, f(1.0));
+                    c.bus.write32(cur + 0x10, f(uf(&mut r, 0.0, 20.0)));
+                    c.bus.write32(cur + 0x14, r.next_u32() % n);
+                }
+                c.bus.write32(gp_at(-0x4a54), f(1.0e30));
+                c.bus.write32(gp_at(-0x4a50), f(uf(&mut r, 0.0, 15.0)));
+                c.g[A0][0] = sx(pth);
+                c.g[A1][0] = sx(point);
+                c.g[A2][0] = sx(out);
+                c.g[A3][0] = sx(dist);
+                c.g[T0][0] = sx(cur);
+                c.g[T1][0] = (seed / 3 % 2) as u64;
+            },
+        );
     }
-
 
     pub(crate) fn uf_2(r: &mut Rng, lo: f32, hi: f32) -> u32 {
         f(lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo))
     }
-
 
     // Path_QueryEvents -----------------------------------------------------
 
@@ -3105,7 +3270,6 @@ pub(crate) mod tests {
     pub(crate) const RANGES: u32 = DATA + 0x400;
 
     pub(crate) const RANGE_OUT: u32 = DATA + 0x800;
-
 
     #[test]
     fn path_query_events_matches() {
@@ -3140,7 +3304,6 @@ pub(crate) mod tests {
         );
     }
 
-
     // Path_GetPointAtDistance ---------------------------------------------
 
     pub(crate) const TRACK: u32 = DATA;
@@ -3150,7 +3313,6 @@ pub(crate) mod tests {
     pub(crate) const POINT: u32 = DATA + 0x800;
 
     pub(crate) const IN_RANGE: u32 = DATA + 0x900;
-
 
     pub(crate) fn put_track(c: &mut Cpu, r: &mut Rng, count: u32) {
         c.bus.write32(TRACK + 8, count);
@@ -3166,7 +3328,6 @@ pub(crate) mod tests {
             );
         }
     }
-
 
     #[test]
     fn path_get_point_at_distance_matches() {
@@ -3191,54 +3352,65 @@ pub(crate) mod tests {
         );
     }
 
-
     // ------------------------------------------------------------------- paths
 
     #[test]
     fn path_query_events_reversed_matches() {
-        check(ee::s07::f_0026a090__generated, path_query_events_reversed, SEEDS_2, &|c, seed| {
-            let mut r = Rng(0x0026_a090 ^ seed as u64);
-            scramble(c, &mut r);
-            let path = DATA + 0x1000;
-            c.g[A0][0] = path as u64;
-            c.g[A1][0] = (DATA + 0x3000) as u64; // out
-            c.g[A2][0] = (seed % 4) as u64; // maxOut
-            let count = seed % 4;
-            c.bus.write32(path + 0x0, count);
-            c.bus.write32(path + 0x4, DATA + 0x2000);
-            // base 100, window [base-100, base-99] = [0, 1].
-            c.bus.write32(path + 0x38, 100.0f32.to_bits());
-            c.f[12] = 100.0f32.to_bits();
-            c.f[13] = 99.0f32.to_bits();
-            for i in 0..count {
-                let e = DATA + 0x2000 + 16 * i;
-                c.bus.write32(e + 8, 0.5f32.to_bits());
-                c.bus.write32(e + 0xc, 0.75f32.to_bits());
-            }
-            let _ = r.next_u32();
-        });
+        check(
+            ee::s07::f_0026a090__generated,
+            path_query_events_reversed,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = Rng(0x0026_a090 ^ seed as u64);
+                scramble(c, &mut r);
+                let path = DATA + 0x1000;
+                c.g[A0][0] = path as u64;
+                c.g[A1][0] = (DATA + 0x3000) as u64; // out
+                c.g[A2][0] = (seed % 4) as u64; // maxOut
+                let count = seed % 4;
+                c.bus.write32(path + 0x0, count);
+                c.bus.write32(path + 0x4, DATA + 0x2000);
+                // base 100, window [base-100, base-99] = [0, 1].
+                c.bus.write32(path + 0x38, 100.0f32.to_bits());
+                c.f[12] = 100.0f32.to_bits();
+                c.f[13] = 99.0f32.to_bits();
+                for i in 0..count {
+                    let e = DATA + 0x2000 + 16 * i;
+                    c.bus.write32(e + 8, 0.5f32.to_bits());
+                    c.bus.write32(e + 0xc, 0.75f32.to_bits());
+                }
+                let _ = r.next_u32();
+            },
+        );
     }
-
 
     #[test]
     fn path_read_track_field_matches() {
-        check(ee::s07::f_0026a070__generated, path_read_track_field, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x26_a070, 0);
-            c.g[A0][0] = DATA as u64;
-            // Half the seeds use the very same object, skipping the copy.
-            c.g[A1][0] = if seed % 2 == 0 { (DATA + 0x38) as u64 } else { (DATA + 0x800) as u64 };
-            c.g[A2][0] = if seed % 3 == 0 { 1 } else { 0 };
-            c.bus.write32(DATA + 0x800, r.next_u32());
-        });
+        check(
+            ee::s07::f_0026a070__generated,
+            path_read_track_field,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x26_a070, 0);
+                c.g[A0][0] = DATA as u64;
+                // Half the seeds use the very same object, skipping the copy.
+                c.g[A1][0] = if seed % 2 == 0 {
+                    (DATA + 0x38) as u64
+                } else {
+                    (DATA + 0x800) as u64
+                };
+                c.g[A2][0] = if seed % 3 == 0 { 1 } else { 0 };
+                c.bus.write32(DATA + 0x800, r.next_u32());
+            },
+        );
     }
-
 
     /// The lazily built BELibrary singleton (`gp - 0x1f04`): a zeroed dummy so
     /// the file/allocator paths fail fast instead of waiting on the disc.
     pub(crate) fn be_library(c: &mut Cpu) {
-        c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
+        c.bus
+            .write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
     }
-
 
     /// One lobby-thunk test: the handler's `a2` points at a zeroed object, the
     /// callback table slot holds a small offset (so the `lh` + add is
@@ -3248,13 +3420,19 @@ pub(crate) mod tests {
         be_library(c);
         c.g[A1][0] = sx(DATA + 0x400);
         c.g[A2][0] = sx(DATA + 0x10);
-        c.bus.write16(LOBBY_CALLBACKS.wrapping_add(slot), if seed % 3 == 0 { 0 } else { (4 * (r.next_u32() % 8)) as u16 });
+        c.bus.write16(
+            LOBBY_CALLBACKS.wrapping_add(slot),
+            if seed % 3 == 0 {
+                0
+            } else {
+                (4 * (r.next_u32() % 8)) as u16
+            },
+        );
         // The packet `LobbyApi_DebugPacket`/`TagField*` read: zeroed fields.
         for k in 0..8u32 {
             c.bus.write32(DATA + 0x400 + 4 * k, 0);
         }
     }
-
 
     /// The engine's size-class pool allocator (`MEM_PoolAlloc`): blocks up to
     /// 0x400 bytes are popped from per-size free lists hanging off
@@ -3266,7 +3444,7 @@ pub(crate) mod tests {
     /// class makes each allocation pop a node instead, as it does in the game.
     pub(crate) fn pool_allocator(c: &mut Cpu) {
         c.bus.write32(GAME_GP + 0xdd8, 1); // pools ready
-        // (pool pointer global, free-list head offset within the pool object)
+                                           // (pool pointer global, free-list head offset within the pool object)
         const POOLS: [(u32, u32); 7] = [
             (0x2a70, 0x800),   // 8-byte blocks
             (0x2a60, 0x2000),  // 16
@@ -3292,7 +3470,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// [`lobby_setup`] plus the pool allocator: for the reply handlers that
     /// allocate a message node on every call.
     pub(crate) fn lobby_alloc_setup(c: &mut Cpu, seed: u32, salt: u64, slot: u32) {
@@ -3300,147 +3477,213 @@ pub(crate) mod tests {
         pool_allocator(c);
     }
 
-
     #[test]
     fn lobby_man_on_user_list_changed_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268a90__generated, lobby_man_on_user_list_changed_thunk, 30, &|c, seed| {
-            lobby_alloc_setup(c, seed, 0x268a_90, 0x2fb0);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268a90__generated,
+            lobby_man_on_user_list_changed_thunk,
+            30,
+            &|c, seed| {
+                lobby_alloc_setup(c, seed, 0x268a_90, 0x2fb0);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_room_list_changed_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268ab8__generated, lobby_man_on_room_list_changed_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268a_b8, 0x2fb8);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268ab8__generated,
+            lobby_man_on_room_list_changed_thunk,
+            30,
+            &|c, seed| {
+                lobby_setup(c, seed, 0x268a_b8, 0x2fb8);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_rank_list_changed_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268ae0__generated, lobby_man_on_rank_list_changed_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268a_e0, 0x2fc0);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268ae0__generated,
+            lobby_man_on_rank_list_changed_thunk,
+            30,
+            &|c, seed| {
+                lobby_setup(c, seed, 0x268a_e0, 0x2fc0);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_recv_debug_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268b08__generated, lobby_man_on_recv_debug_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268b_08, 0x2ff0);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268b08__generated,
+            lobby_man_on_recv_debug_thunk,
+            30,
+            &|c, seed| {
+                lobby_setup(c, seed, 0x268b_08, 0x2ff0);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_message_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268b30__generated, lobby_man_on_message_thunk, 24, &|c, seed| {
-            lobby_setup(c, seed, 0x268b_30, 0x2ff8);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268b30__generated,
+            lobby_man_on_message_thunk,
+            24,
+            &|c, seed| {
+                lobby_setup(c, seed, 0x268b_30, 0x2ff8);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_disconnect_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268b58__generated, lobby_man_on_disconnect_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268b_58, 0x3000);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268b58__generated,
+            lobby_man_on_disconnect_thunk,
+            30,
+            &|c, seed| {
+                lobby_setup(c, seed, 0x268b_58, 0x3000);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_game_start_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268b80__generated, lobby_man_on_game_start_thunk, 24, &|c, seed| {
-            lobby_alloc_setup(c, seed, 0x268b_80, 0x3008);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268b80__generated,
+            lobby_man_on_game_start_thunk,
+            24,
+            &|c, seed| {
+                lobby_alloc_setup(c, seed, 0x268b_80, 0x3008);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_connect_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268ba8__generated, lobby_man_on_connect_reply_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268b_a8, 0x3020);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268ba8__generated,
+            lobby_man_on_connect_reply_thunk,
+            30,
+            &|c, seed| {
+                lobby_setup(c, seed, 0x268b_a8, 0x3020);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_create_account_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268bd0__generated, lobby_man_on_create_account_reply_thunk, 30, &|c, seed| {
-            lobby_alloc_setup(c, seed, 0x268b_d0, 0x3088);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268bd0__generated,
+            lobby_man_on_create_account_reply_thunk,
+            30,
+            &|c, seed| {
+                lobby_alloc_setup(c, seed, 0x268b_d0, 0x3088);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_edit_account_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268bf8__generated, lobby_man_on_edit_account_reply_thunk, 30, &|c, seed| {
-            lobby_alloc_setup(c, seed, 0x268b_f8, 0x30a8);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268bf8__generated,
+            lobby_man_on_edit_account_reply_thunk,
+            30,
+            &|c, seed| {
+                lobby_alloc_setup(c, seed, 0x268b_f8, 0x30a8);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_lost_by_email_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268c20__generated, lobby_man_on_lost_by_email_reply_thunk, 30, &|c, seed| {
-            lobby_alloc_setup(c, seed, 0x268c_20, 0x30b0);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268c20__generated,
+            lobby_man_on_lost_by_email_reply_thunk,
+            30,
+            &|c, seed| {
+                lobby_alloc_setup(c, seed, 0x268c_20, 0x30b0);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_lost_by_name_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268c48__generated, lobby_man_on_lost_by_name_reply_thunk, 30, &|c, seed| {
-            lobby_alloc_setup(c, seed, 0x268c_48, 0x30b8);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268c48__generated,
+            lobby_man_on_lost_by_name_reply_thunk,
+            30,
+            &|c, seed| {
+                lobby_alloc_setup(c, seed, 0x268c_48, 0x30b8);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_login_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268c70__generated, lobby_man_on_login_reply_thunk, 24, &|c, seed| {
-            lobby_setup(c, seed, 0x268c_70, 0x30e8);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268c70__generated,
+            lobby_man_on_login_reply_thunk,
+            24,
+            &|c, seed| {
+                lobby_setup(c, seed, 0x268c_70, 0x30e8);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_select_persona_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268c98__generated, lobby_man_on_select_persona_reply_thunk, 30, &|c, seed| {
-            lobby_alloc_setup(c, seed, 0x268c_98, 0x3118);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268c98__generated,
+            lobby_man_on_select_persona_reply_thunk,
+            30,
+            &|c, seed| {
+                lobby_alloc_setup(c, seed, 0x268c_98, 0x3118);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_own_stats_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268cc0__generated, lobby_man_on_own_stats_reply_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268c_c0, 0x3120);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268cc0__generated,
+            lobby_man_on_own_stats_reply_thunk,
+            30,
+            &|c, seed| {
+                lobby_setup(c, seed, 0x268c_c0, 0x3120);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_create_persona_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268ce8__generated, lobby_man_on_create_persona_reply_thunk, 30, &|c, seed| {
-            lobby_alloc_setup(c, seed, 0x268c_e8, 0x3138);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268ce8__generated,
+            lobby_man_on_create_persona_reply_thunk,
+            30,
+            &|c, seed| {
+                lobby_alloc_setup(c, seed, 0x268c_e8, 0x3138);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_delete_persona_reply_thunk_matches() {
-        crate::difftest::check(ee::s07::f_00268d10__generated, lobby_man_on_delete_persona_reply_thunk, 30, &|c, seed| {
-            lobby_setup(c, seed, 0x268d_10, 0x3140);
-        });
+        crate::difftest::check(
+            ee::s07::f_00268d10__generated,
+            lobby_man_on_delete_persona_reply_thunk,
+            30,
+            &|c, seed| {
+                lobby_setup(c, seed, 0x268d_10, 0x3140);
+            },
+        );
     }
-
 
     /// `this`/`self` scratch object, message object and other fixtures all
     /// live in the (unused) data area the differential tests own.
     pub(crate) const SCRATCH: u32 = DATA + 0x1000;
-
 
     /// The game singletons a real callee may reach: a zeroed world at
     /// `gp - 0x848` (`+0x84` module, `+0xc` race manager, no riders at `+0x7c`)
@@ -3459,14 +3702,12 @@ pub(crate) mod tests {
         c.bus.write32(gp - 0x1efc, 0);
     }
 
-
     /// [`machine`] plus the game singletons (most callees read them).
     pub(crate) fn game(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
         let r = machine(c, seed, salt, calls);
         game_globals(c);
         r
     }
-
 
     /// A fixture for the message-map thunks: a fake-call machine (so the
     /// handler's own indirect calls and any unwind are compared), a reply
@@ -3480,13 +3721,16 @@ pub(crate) mod tests {
         c.g[A1][0] = if seed % 2 == 0 { 0 } else { message as u64 };
         c.g[A2][0] = SCRATCH as u64;
         c.g[A0][0] = ptr(&mut r) as u64;
-        c.bus.write32(message + 8, if seed % 4 == 0 { r.next_u32() } else { 0 });
-        c.bus.write32(message + 0xc, if seed % 4 == 1 { r.next_u32() % 8 } else { 0 });
+        c.bus
+            .write32(message + 8, if seed % 4 == 0 { r.next_u32() } else { 0 });
+        c.bus.write32(
+            message + 0xc,
+            if seed % 4 == 1 { r.next_u32() % 8 } else { 0 },
+        );
         // The member offset the thunk adds to the object base (positive, so
         // the adjusted `this` stays inside the scratch area).
         c.bus.write16(entry, (r.next_u32() & 0xff8) as u16);
     }
-
 
     /// The engine's size-class pool allocator (`MEM_PoolAlloc`): blocks up to
     /// 0x400 bytes are popped from per-size free lists hanging off the seven
@@ -3501,8 +3745,8 @@ pub(crate) mod tests {
     pub(crate) fn pool_allocator_2(c: &mut Cpu) {
         let gp = crate::difftest::GAME_GP;
         c.bus.write32(gp + 0xdd8, 1); // pools ready
-        // (pool pointer global, free-list head offset in the pool object) for
-        // the 8, 16, 32, 64, 128, 256 and 512-byte size classes.
+                                      // (pool pointer global, free-list head offset in the pool object) for
+                                      // the 8, 16, 32, 64, 128, 256 and 512-byte size classes.
         const POOLS: [(u32, u32); 7] = [
             (0x2a70, 0x800),
             (0x2a60, 0x2000),
@@ -3528,7 +3772,6 @@ pub(crate) mod tests {
         }
     }
 
-
     /// [`thunk_setup`] plus the pool allocator: for the reply handlers that
     /// allocate on every call.
     pub(crate) fn thunk_setup_alloc(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
@@ -3536,145 +3779,212 @@ pub(crate) mod tests {
         pool_allocator_2(c);
     }
 
-
     #[test]
     fn lobby_man_on_move_to_room_reply_thunk_matches() {
-        check(ee::s07::f_00268d38__generated, lobby_man_on_move_to_room_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268d38, 0x004a_3148);
-        });
+        check(
+            ee::s07::f_00268d38__generated,
+            lobby_man_on_move_to_room_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268d38, 0x004a_3148);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_create_room_reply_thunk_matches() {
-        check(ee::s07::f_00268d60__generated, lobby_man_on_create_room_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268d60, 0x004a_3158);
-        });
+        check(
+            ee::s07::f_00268d60__generated,
+            lobby_man_on_create_room_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268d60, 0x004a_3158);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_ping_reply_thunk_matches() {
-        check(ee::s07::f_00268d88__generated, lobby_man_on_ping_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268d88, 0x004a_3160);
-        });
+        check(
+            ee::s07::f_00268d88__generated,
+            lobby_man_on_ping_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268d88, 0x004a_3160);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_report_user_reply_thunk_matches() {
-        check(ee::s07::f_00268db0__generated, lobby_man_on_report_user_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268db0, 0x004a_3170);
-        });
+        check(
+            ee::s07::f_00268db0__generated,
+            lobby_man_on_report_user_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268db0, 0x004a_3170);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_news_reply_thunk_matches() {
-        check(ee::s07::f_00268dd8__generated, lobby_man_on_news_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268dd8, 0x004a_3178);
-        });
+        check(
+            ee::s07::f_00268dd8__generated,
+            lobby_man_on_news_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268dd8, 0x004a_3178);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_snapshot_reply_thunk_matches() {
-        check(ee::s07::f_00268e00__generated, lobby_man_on_snapshot_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268e00, 0x004a_31b0);
-        });
+        check(
+            ee::s07::f_00268e00__generated,
+            lobby_man_on_snapshot_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268e00, 0x004a_31b0);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_lookup_user_reply_thunk_matches() {
-        check(ee::s07::f_00268e28__generated, lobby_man_on_lookup_user_reply_thunk, 48, &|c, seed| {
-            thunk_setup_alloc(c, seed, 0x268e28, 0x004a_31b8);
-        });
+        check(
+            ee::s07::f_00268e28__generated,
+            lobby_man_on_lookup_user_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup_alloc(c, seed, 0x268e28, 0x004a_31b8);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_quick_play_reply_thunk_matches() {
-        check(ee::s07::f_00268e78__generated, lobby_man_on_quick_play_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268e78, 0x004a_3210);
-        });
+        check(
+            ee::s07::f_00268e78__generated,
+            lobby_man_on_quick_play_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268e78, 0x004a_3210);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_chal_reply_thunk_matches() {
-        check(ee::s07::f_00268ea0__generated, lobby_man_on_chal_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268ea0, 0x004a_3248);
-        });
+        check(
+            ee::s07::f_00268ea0__generated,
+            lobby_man_on_chal_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268ea0, 0x004a_3248);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_mesg_reply_thunk_matches() {
-        check(ee::s07::f_00268ec8__generated, lobby_man_on_mesg_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268ec8, 0x004a_3268);
-        });
+        check(
+            ee::s07::f_00268ec8__generated,
+            lobby_man_on_mesg_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268ec8, 0x004a_3268);
+            },
+        );
     }
-
 
     #[test]
     fn lobby_man_on_rank_reply_thunk_matches() {
-        check(ee::s07::f_00268ef0__generated, lobby_man_on_rank_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268ef0, 0x004a_3318);
-        });
+        check(
+            ee::s07::f_00268ef0__generated,
+            lobby_man_on_rank_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268ef0, 0x004a_3318);
+            },
+        );
     }
-
 
     #[test]
     fn buddy_man_on_connect_event_thunk_matches() {
-        check(ee::s07::f_00268f18__generated, buddy_man_on_connect_event_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268f18, 0x004a_3340);
-        });
+        check(
+            ee::s07::f_00268f18__generated,
+            buddy_man_on_connect_event_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268f18, 0x004a_3340);
+            },
+        );
     }
-
 
     #[test]
     fn buddy_man_on_message_received_thunk_matches() {
-        check(ee::s07::f_00268f40__generated, buddy_man_on_message_received_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268f40, 0x004a_3348);
-        });
+        check(
+            ee::s07::f_00268f40__generated,
+            buddy_man_on_message_received_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268f40, 0x004a_3348);
+            },
+        );
     }
-
 
     #[test]
     fn buddy_man_on_roster_event_thunk_matches() {
-        check(ee::s07::f_00268f68__generated, buddy_man_on_roster_event_thunk, 48, &|c, seed| {
-            thunk_setup_alloc(c, seed, 0x268f68, 0x004a_3350);
-        });
+        check(
+            ee::s07::f_00268f68__generated,
+            buddy_man_on_roster_event_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup_alloc(c, seed, 0x268f68, 0x004a_3350);
+            },
+        );
     }
-
 
     #[test]
     fn buddy_man_on_roster_remove_reply_thunk_matches() {
-        check(ee::s07::f_00268f90__generated, buddy_man_on_roster_remove_reply_thunk, 48, &|c, seed| {
-            thunk_setup_alloc(c, seed, 0x268f90, 0x004a_3380);
-        });
+        check(
+            ee::s07::f_00268f90__generated,
+            buddy_man_on_roster_remove_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup_alloc(c, seed, 0x268f90, 0x004a_3380);
+            },
+        );
     }
-
 
     #[test]
     fn buddy_man_on_roster_add_reply_thunk_matches() {
-        check(ee::s07::f_00268fb8__generated, buddy_man_on_roster_add_reply_thunk, 48, &|c, seed| {
-            thunk_setup_alloc(c, seed, 0x268fb8, 0x004a_3388);
-        });
+        check(
+            ee::s07::f_00268fb8__generated,
+            buddy_man_on_roster_add_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup_alloc(c, seed, 0x268fb8, 0x004a_3388);
+            },
+        );
     }
-
 
     #[test]
     fn buddy_man_on_send_message_reply_thunk_matches() {
-        check(ee::s07::f_00268fe0__generated, buddy_man_on_send_message_reply_thunk, 48, &|c, seed| {
-            thunk_setup(c, seed, 0x268fe0, 0x004a_33a0);
-        });
+        check(
+            ee::s07::f_00268fe0__generated,
+            buddy_man_on_send_message_reply_thunk,
+            48,
+            &|c, seed| {
+                thunk_setup(c, seed, 0x268fe0, 0x004a_33a0);
+            },
+        );
     }
 
     /// The memory-card/setup heap mutex the allocator waits on.
     pub(crate) const MEM_MUTEX: u32 = 0x0053_8b00;
-
 
     /// The allocator's mutex looks held by this thread, so `EA_MemAllocNamed`
     /// takes its fast path (the `dispatch.rs` tests' recipe).
@@ -3683,7 +3993,6 @@ pub(crate) mod tests {
         c.bus.write32(LOG_RESULTS, 0x42);
         c.bus.write32(MEM_MUTEX + 8, r.next_u32() % 4);
     }
-
 
     #[test]
     fn path_data_set_buffer_matches() {
@@ -3703,7 +4012,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // ------------------------------------------------------------------
     // Path readers.
@@ -3733,22 +4041,25 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn path_read_segment_matches() {
-        check(ee::s07::f_0026a338__generated, path_read_segment, SEEDS_3, &|c, seed| {
-            let mut r = machine(c, seed, 0x26a338, 0);
-            let src = DATA + 0x300;
-            let dst = if seed % 3 == 0 { src } else { DATA + 0x400 };
-            c.g[A1][0] = src as u64;
-            c.g[A2][0] = dst as u64;
-            for k in 0..4u32 {
-                let v = r.next_u32();
-                c.bus.write32(src + 4 * k, v);
-            }
-        });
+        check(
+            ee::s07::f_0026a338__generated,
+            path_read_segment,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x26a338, 0);
+                let src = DATA + 0x300;
+                let dst = if seed % 3 == 0 { src } else { DATA + 0x400 };
+                c.g[A1][0] = src as u64;
+                c.g[A2][0] = dst as u64;
+                for k in 0..4u32 {
+                    let v = r.next_u32();
+                    c.bus.write32(src + 4 * k, v);
+                }
+            },
+        );
     }
-
 
     /// The object under test.
     pub(crate) const W: u32 = DATA;
@@ -3756,87 +4067,141 @@ pub(crate) mod tests {
     /// Segment table for `Path_GetLength`.
     pub(crate) const SEGMENTS: u32 = AUX + 0x600;
 
-
     pub(crate) fn fbits(x: f32) -> u32 {
         x.to_bits()
     }
-
 
     // ------------------------------------------------------------------
     // Path events.
 
     #[test]
     fn path_has_event_in_range_reversed_matches() {
-        check(ee::s07::f_0026a0b8__generated, path_has_event_in_range_reversed, 200, &|c, seed| {
-            let mut r = setup(c, seed, 7);
-            c.g[A0][0] = W as u64;
-            put(c, W + 0x38, r.f32(10.0));
-            let neg = |x: u32| x | 0x8000_0000;
-            c.f[12] = if seed % 3 == 0 { neg(r.f32(2.0)) } else { r.f32(2.0) };
-            c.f[13] = if seed % 4 == 0 { neg(r.f32(2.0)) } else { r.f32(2.0) };
-            // `Path_HasEventInRange` reads the count at +0 and 0x10-byte
-            // items from +4; `Path_GetLength` the count at +8 and 0x10-byte
-            // segments (length at +0xc) from the pointer at +0x18.
-            let count = seed % 3;
-            for i in 0..count {
-                let item = W + 4 + 0x10 * i;
-                put(c, item, match (seed + i) % 3 { 0 => 0x14, 1 => 0x12, _ => 0 });
-                put(c, item + 8, r.f32(2.0));
-                put(c, item + 0xc, r.f32(2.0));
-                put(c, SEGMENTS + 0x10 * i + 0xc, r.f32(2.0));
-            }
-            // The same object is both the segment list (`Path_GetLength`
-            // reads the count at +8 and the segments at +0x18) and the item
-            // list, so set those two words last (`count` is tiny).
-            put(c, W, count);
-            put(c, W + 8, count);
-            put(c, W + 0x18, SEGMENTS);
-        });
+        check(
+            ee::s07::f_0026a0b8__generated,
+            path_has_event_in_range_reversed,
+            200,
+            &|c, seed| {
+                let mut r = setup(c, seed, 7);
+                c.g[A0][0] = W as u64;
+                put(c, W + 0x38, r.f32(10.0));
+                let neg = |x: u32| x | 0x8000_0000;
+                c.f[12] = if seed % 3 == 0 {
+                    neg(r.f32(2.0))
+                } else {
+                    r.f32(2.0)
+                };
+                c.f[13] = if seed % 4 == 0 {
+                    neg(r.f32(2.0))
+                } else {
+                    r.f32(2.0)
+                };
+                // `Path_HasEventInRange` reads the count at +0 and 0x10-byte
+                // items from +4; `Path_GetLength` the count at +8 and 0x10-byte
+                // segments (length at +0xc) from the pointer at +0x18.
+                let count = seed % 3;
+                for i in 0..count {
+                    let item = W + 4 + 0x10 * i;
+                    put(
+                        c,
+                        item,
+                        match (seed + i) % 3 {
+                            0 => 0x14,
+                            1 => 0x12,
+                            _ => 0,
+                        },
+                    );
+                    put(c, item + 8, r.f32(2.0));
+                    put(c, item + 0xc, r.f32(2.0));
+                    put(c, SEGMENTS + 0x10 * i + 0xc, r.f32(2.0));
+                }
+                // The same object is both the segment list (`Path_GetLength`
+                // reads the count at +8 and the segments at +0x18) and the item
+                // list, so set those two words last (`count` is tiny).
+                put(c, W, count);
+                put(c, W + 8, count);
+                put(c, W + 0x18, SEGMENTS);
+            },
+        );
     }
-
 
     #[test]
     fn path_has_event_in_range_matches() {
-        check(ee::s07::f_0026ac88__generated, path_has_event_in_range, 250, &|c, seed| {
-            let mut r = setup(c, seed, 8);
-            c.g[A0][0] = W as u64;
-            c.f[12] = r.f32(3.0);
-            c.f[13] = r.f32(3.0);
-            let count = seed % 4;
-            put(c, W, count);
-            for i in 0..count {
-                let item = W + 4 + 0x10 * i;
-                put(c, item, match (seed + i) % 4 { 0 => 0x14, 1 => 0x12, _ => 0 });
-                put(c, item + 8, if (seed + i) % 5 == 0 { fbits(10.0) } else { r.f32(2.0) });
-                put(c, item + 0xc, if (seed + i) % 7 == 0 { fbits(-10.0) } else { r.f32(2.0) });
-            }
-        });
+        check(
+            ee::s07::f_0026ac88__generated,
+            path_has_event_in_range,
+            250,
+            &|c, seed| {
+                let mut r = setup(c, seed, 8);
+                c.g[A0][0] = W as u64;
+                c.f[12] = r.f32(3.0);
+                c.f[13] = r.f32(3.0);
+                let count = seed % 4;
+                put(c, W, count);
+                for i in 0..count {
+                    let item = W + 4 + 0x10 * i;
+                    put(
+                        c,
+                        item,
+                        match (seed + i) % 4 {
+                            0 => 0x14,
+                            1 => 0x12,
+                            _ => 0,
+                        },
+                    );
+                    put(
+                        c,
+                        item + 8,
+                        if (seed + i) % 5 == 0 {
+                            fbits(10.0)
+                        } else {
+                            r.f32(2.0)
+                        },
+                    );
+                    put(
+                        c,
+                        item + 0xc,
+                        if (seed + i) % 7 == 0 {
+                            fbits(-10.0)
+                        } else {
+                            r.f32(2.0)
+                        },
+                    );
+                }
+            },
+        );
     }
-
 
     #[test]
     fn net_event_fd_clone_matches() {
-        check(ee::s07::f_00269dc0__generated, net_event_fd_clone, SEEDS_4, &|c, seed| {
-            machine(c, seed, 0x0026_9dc0, 1);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            w(c, DATA + 8, seed.wrapping_mul(0x1234_5678));
-            pool_allocator_3(c);
-        });
+        check(
+            ee::s07::f_00269dc0__generated,
+            net_event_fd_clone,
+            SEEDS_4,
+            &|c, seed| {
+                machine(c, seed, 0x0026_9dc0, 1);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                w(c, DATA + 8, seed.wrapping_mul(0x1234_5678));
+                pool_allocator_3(c);
+            },
+        );
     }
-
 
     #[test]
     fn net_event_fe_clone_matches() {
-        check(ee::s07::f_00269e40__generated, net_event_fe_clone, SEEDS_4, &|c, seed| {
-            machine(c, seed, 0x0026_9e40, 1);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            w(c, DATA + 8, seed.wrapping_mul(0x1234_5678));
-            pool_allocator_3(c);
-        });
+        check(
+            ee::s07::f_00269e40__generated,
+            net_event_fe_clone,
+            SEEDS_4,
+            &|c, seed| {
+                machine(c, seed, 0x0026_9e40, 1);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                w(c, DATA + 8, seed.wrapping_mul(0x1234_5678));
+                pool_allocator_3(c);
+            },
+        );
     }
-
 
     /// The engine's size-class pool allocator: blocks up to 0x400 bytes come
     /// from per-size free lists hanging off `gp + 0x2a60..0x2a84` once the
@@ -3867,7 +4232,6 @@ pub(crate) mod tests {
         }
     }
 
-
     // ------------------------------------------------------- challenger/string
 
     #[test]
@@ -3892,7 +4256,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // ------------------------------------------------------------ path/search
 
@@ -3926,37 +4289,44 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn path_data_free_matches() {
-        check(ssx3_ee::s07::f_0026af00__generated, path_data_free, SEEDS_5, &|c, seed| {
-            let _ = machine(c, seed, 0x26af00, 0);
-            let d = DATA + 0x1000;
-            c.g[A0][0] = d as u64;
-            // No owned buffers: no frees (a free of an arbitrary pointer walks
-            // the heap headers and can run away).
-            w32(c, d + 0xc, 0);
-            w32(c, d + 0x14, 0);
-            w32(c, d + 0x48, if seed % 2 == 0 { 0 } else { DATA + 0x3000 });
-            w32(c, d + 0x4c, 0);
-            w32(c, DATA + 0x3000, 0);
-        });
+        check(
+            ssx3_ee::s07::f_0026af00__generated,
+            path_data_free,
+            SEEDS_5,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x26af00, 0);
+                let d = DATA + 0x1000;
+                c.g[A0][0] = d as u64;
+                // No owned buffers: no frees (a free of an arbitrary pointer walks
+                // the heap headers and can run away).
+                w32(c, d + 0xc, 0);
+                w32(c, d + 0x14, 0);
+                w32(c, d + 0x48, if seed % 2 == 0 { 0 } else { DATA + 0x3000 });
+                w32(c, d + 0x4c, 0);
+                w32(c, DATA + 0x3000, 0);
+            },
+        );
     }
-
 
     #[test]
     fn path_data_parse_matches() {
-        check(ee::s07::f_0026adf0__generated, path_data_parse, 60, &|c, seed| {
-            let _ = base_2(c, seed, 0x26ad, 3);
-            w(c, DATA + 0x48, DATA + 0x1000);
-            // The section buffer is zeroed, so every reader stops at once
-            // (a random count walks billions of entries). Half the seeds give
-            // the AI-path section one entry to run its loop once.
-            w(c, DATA + 0x1004, (seed % 2) as u32);
-            c.g[A0][0] = sx(DATA);
-        });
+        check(
+            ee::s07::f_0026adf0__generated,
+            path_data_parse,
+            60,
+            &|c, seed| {
+                let _ = base_2(c, seed, 0x26ad, 3);
+                w(c, DATA + 0x48, DATA + 0x1000);
+                // The section buffer is zeroed, so every reader stops at once
+                // (a random count walks billions of entries). Half the seeds give
+                // the AI-path section one entry to run its loop once.
+                w(c, DATA + 0x1004, (seed % 2) as u32);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
     }
-
 
     pub(crate) const W_2: u32 = DATA + 0x5_0000;
 
@@ -3972,7 +4342,6 @@ pub(crate) mod tests {
 
     pub(crate) const MEM_HEAP: u32 = 0x004f_f250;
 
-
     pub(crate) fn run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
         for (i, a) in args.iter().enumerate() {
             c.g[[A0, A1, A2, A3, T0, T1][i]][0] = *a;
@@ -3983,7 +4352,6 @@ pub(crate) mod tests {
         assert_eq!(c.pc, SENTINEL, "setup call {addr:#x} did not return");
         c.g[V0][0]
     }
-
 
     /// A dummy world (`gp-0x848`), its player/bolt manager, the script DB and
     /// the BELibrary singleton (`gp-0x1f04`).
@@ -3999,7 +4367,6 @@ pub(crate) mod tests {
         c.bus.write32(DB + 4, VTS);
         r
     }
-
 
     /// [`base_3`] plus the size-class pool allocator and a dlmalloc arena.
     pub(crate) fn alloc_base(c: &mut Cpu, seed: u32, salt: u64) -> Rng {
@@ -4035,13 +4402,11 @@ pub(crate) mod tests {
         r
     }
 
-
     /// A `{delta = 0, fn = fake}` vtable pair at `off` in `vt`.
     pub(crate) fn slot_2(c: &mut Cpu, vt: u32, off: u32, index: u32) {
         c.bus.write16(vt + off, 0);
         c.bus.write32(vt + off + 4, FAKE + 0x10 * index);
     }
-
 
     #[test]
     fn csetup_man_recv_msg11_matches() {
@@ -4060,7 +4425,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn csetup_man_recv_msg13_matches() {
         check(
@@ -4076,7 +4440,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn csetup_man_recv_msg10_matches() {
@@ -4094,7 +4457,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn csetup_man_recv_msg12_matches() {
         check(
@@ -4111,60 +4473,87 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn path_read_event_matches() {
-        check(ee::s07::f_0026a378__generated, path_read_event, 80, &|c, seed| {
-            let mut r = base_3(c, seed, 0x26a3);
-            let src = DATA + 0x1000;
-            let dst = DATA + 0x2000;
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(src);
-            c.g[A2][0] = sx(dst);
-            c.bus.write32(src + 4, (seed % 25) as u32);
-            for i in 0..21u32 {
-                c.bus.write32(0x0044_53d0 + 4 * i, i * 3);
-            }
-            fill(c, &mut r, dst, 0x20);
-            fill(c, &mut r, src + 8, 0x10);
-        });
+        check(
+            ee::s07::f_0026a378__generated,
+            path_read_event,
+            80,
+            &|c, seed| {
+                let mut r = base_3(c, seed, 0x26a3);
+                let src = DATA + 0x1000;
+                let dst = DATA + 0x2000;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(src);
+                c.g[A2][0] = sx(dst);
+                c.bus.write32(src + 4, (seed % 25) as u32);
+                for i in 0..21u32 {
+                    c.bus.write32(0x0044_53d0 + 4 * i, i * 3);
+                }
+                fill(c, &mut r, dst, 0x20);
+                fill(c, &mut r, src + 8, 0x10);
+            },
+        );
     }
-
 
     // ------------------------------------------------------ cSetupMan queue
 
     #[test]
     fn setup_man_client_recv_msg5_matches() {
-        check(ee::s07::f_00269188__generated, setup_man_client_recv_msg5, 40, &|c, seed| {
-            let mut r = alloc_base_2(c, seed, 0x2691, 3);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-            w(c, GAME_GP.wrapping_sub(0xc8), if seed % 2 == 0 { 0 } else { DATA + 0x800 });
-        });
+        check(
+            ee::s07::f_00269188__generated,
+            setup_man_client_recv_msg5,
+            40,
+            &|c, seed| {
+                let mut r = alloc_base_2(c, seed, 0x2691, 3);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                w(
+                    c,
+                    GAME_GP.wrapping_sub(0xc8),
+                    if seed % 2 == 0 { 0 } else { DATA + 0x800 },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn setup_man_client_recv_msg4_matches() {
-        check(ee::s07::f_002693c0__generated, setup_man_client_recv_msg4, 40, &|c, seed| {
-            let mut r = alloc_base_2(c, seed, 0x2693, 3);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-            w(c, GAME_GP.wrapping_sub(0xc8), if seed % 2 == 0 { 0 } else { DATA + 0x800 });
-        });
+        check(
+            ee::s07::f_002693c0__generated,
+            setup_man_client_recv_msg4,
+            40,
+            &|c, seed| {
+                let mut r = alloc_base_2(c, seed, 0x2693, 3);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                w(
+                    c,
+                    GAME_GP.wrapping_sub(0xc8),
+                    if seed % 2 == 0 { 0 } else { DATA + 0x800 },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn setup_man_client_recv_msg7_matches() {
-        check(ee::s07::f_00269890__generated, setup_man_client_recv_msg7, 40, &|c, seed| {
-            let mut r = alloc_base_2(c, seed, 0x2698, 3);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = r.next_u32() as u64;
-            w(c, GAME_GP.wrapping_sub(0xc8), if seed % 2 == 0 { 0 } else { DATA + 0x800 });
-        });
+        check(
+            ee::s07::f_00269890__generated,
+            setup_man_client_recv_msg7,
+            40,
+            &|c, seed| {
+                let mut r = alloc_base_2(c, seed, 0x2698, 3);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+                w(
+                    c,
+                    GAME_GP.wrapping_sub(0xc8),
+                    if seed % 2 == 0 { 0 } else { DATA + 0x800 },
+                );
+            },
+        );
     }
-
 
     #[test]
     fn csetup_man_host_recv_msg9_matches() {
@@ -4184,7 +4573,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn csetup_man_recv_msg8_matches() {
         check(
@@ -4202,7 +4590,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn csetup_man_recv_msg9_matches() {
@@ -4222,61 +4609,73 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn path_find_marker_boundary_matches() {
-        diff(ee::s07::f_00269f18__generated, path_find_marker_boundary, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0x26_9f18, 0);
-            globals_3(c);
-            let list = DATA + 0x1000;
-            let entries = DATA + 0x2000;
-            let count = (seed % 4) as u32;
-            w(c, list, count);
-            w(c, list + 4, entries);
-            w(c, list + 8, (seed / 4 % 4) as u32);
-            for i in 0..4 {
-                w(c, list + 0xc + 4 * i, uf_3(&mut r, 20.0));
-            }
-            let segs = DATA + 0x2500;
-            w(c, list + 0x18, segs);
-            for i in 0..4 {
-                for j in 0..3 {
-                    w(c, segs + 0x10 * i + 4 * j, uf_3(&mut r, 2.0));
+        diff(
+            ee::s07::f_00269f18__generated,
+            path_find_marker_boundary,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x26_9f18, 0);
+                globals_3(c);
+                let list = DATA + 0x1000;
+                let entries = DATA + 0x2000;
+                let count = (seed % 4) as u32;
+                w(c, list, count);
+                w(c, list + 4, entries);
+                w(c, list + 8, (seed / 4 % 4) as u32);
+                for i in 0..4 {
+                    w(c, list + 0xc + 4 * i, uf_3(&mut r, 20.0));
                 }
-                w(c, segs + 0x10 * i + 0xc, 10.0f32.to_bits() + (r.next_u32() % 0x40));
-            }
-            for i in 0..count {
-                let e = entries + 0x10 * i;
-                let kind = [12u32, 16, 14, 7][(seed as usize + i as usize) % 4];
-                w(c, e, kind);
-                w(c, e + 8, uf_3(&mut r, 50.0));
-                w(c, e + 0xc, uf_3(&mut r, 50.0));
-            }
-            w(c, DATA + 0x3000, uf_3(&mut r, 60.0));
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = sx(list);
-            c.g[A2][0] = sx(DATA + 0x3000);
-        });
+                let segs = DATA + 0x2500;
+                w(c, list + 0x18, segs);
+                for i in 0..4 {
+                    for j in 0..3 {
+                        w(c, segs + 0x10 * i + 4 * j, uf_3(&mut r, 2.0));
+                    }
+                    w(
+                        c,
+                        segs + 0x10 * i + 0xc,
+                        10.0f32.to_bits() + (r.next_u32() % 0x40),
+                    );
+                }
+                for i in 0..count {
+                    let e = entries + 0x10 * i;
+                    let kind = [12u32, 16, 14, 7][(seed as usize + i as usize) % 4];
+                    w(c, e, kind);
+                    w(c, e + 8, uf_3(&mut r, 50.0));
+                    w(c, e + 0xc, uf_3(&mut r, 50.0));
+                }
+                w(c, DATA + 0x3000, uf_3(&mut r, 60.0));
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(DATA + 0x3000);
+            },
+        );
     }
 
-
-            #[test]
+    #[test]
     fn csetupman_host_recv_msg11_matches() {
-        strict(ee::s07::f_00269608__generated, csetupman_host_recv_msg11, SEEDS_6, &|c, seed| {
-            let mut r = base_6(c, seed, 0x9608, 0);
-            let _ = r;
-            let msg = DATA + 0x100;
-            w(c, msg, (seed % 12) as u32);
-            // the setup manager's packet list behind gp_4 - 0xc8
-            let list = DATA + 0x2000;
-            let node = DATA + 0x2100;
-            let prev = DATA + 0x2200;
-            w(c, GAME_GP.wrapping_sub(0xc8), list);
-            w(c, list + 0xf0, node);
-            w(c, node + 4, prev);
-            w(c, prev, 0);
-            c.g[A0][0] = sx(DATA + 0x3000);
-            c.g[A1][0] = sx(msg);
-        });
+        strict(
+            ee::s07::f_00269608__generated,
+            csetupman_host_recv_msg11,
+            SEEDS_6,
+            &|c, seed| {
+                let mut r = base_6(c, seed, 0x9608, 0);
+                let _ = r;
+                let msg = DATA + 0x100;
+                w(c, msg, (seed % 12) as u32);
+                // the setup manager's packet list behind gp_4 - 0xc8
+                let list = DATA + 0x2000;
+                let node = DATA + 0x2100;
+                let prev = DATA + 0x2200;
+                w(c, GAME_GP.wrapping_sub(0xc8), list);
+                w(c, list + 0xf0, node);
+                w(c, node + 4, prev);
+                w(c, prev, 0);
+                c.g[A0][0] = sx(DATA + 0x3000);
+                c.g[A1][0] = sx(msg);
+            },
+        );
     }
 }

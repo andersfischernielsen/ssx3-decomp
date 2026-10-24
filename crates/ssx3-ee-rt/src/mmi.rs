@@ -16,11 +16,19 @@ fn uq(v: u128) -> [u64; 2] {
 }
 #[inline]
 fn w(r: [u64; 2]) -> [u32; 4] {
-    [r[0] as u32, (r[0] >> 32) as u32, r[1] as u32, (r[1] >> 32) as u32]
+    [
+        r[0] as u32,
+        (r[0] >> 32) as u32,
+        r[1] as u32,
+        (r[1] >> 32) as u32,
+    ]
 }
 #[inline]
 fn uw(v: [u32; 4]) -> [u64; 2] {
-    [v[0] as u64 | (v[1] as u64) << 32, v[2] as u64 | (v[3] as u64) << 32]
+    [
+        v[0] as u64 | (v[1] as u64) << 32,
+        v[2] as u64 | (v[3] as u64) << 32,
+    ]
 }
 #[inline]
 fn h(r: [u64; 2]) -> [u16; 8] {
@@ -88,21 +96,52 @@ impl Cpu {
     lanes!(psubh, h, uh, u16, 8, |a, b| a.wrapping_sub(b));
     lanes!(paddb, b, ub, u8, 16, |a, b| a.wrapping_add(b));
     lanes!(psubb, b, ub, u8, 16, |a, b| a.wrapping_sub(b));
-    lanes!(paddsw, w, uw, u32, 4, |a, b| sat32(a as i32 as i64 + b as i32 as i64));
-    lanes!(psubsw, w, uw, u32, 4, |a, b| sat32(a as i32 as i64 - b as i32 as i64));
-    lanes!(paddsh, h, uh, u16, 8, |a, b| sat16(a as i16 as i32 + b as i16 as i32));
-    lanes!(psubsh, h, uh, u16, 8, |a, b| sat16(a as i16 as i32 - b as i16 as i32));
-    lanes!(paddsb, b, ub, u8, 16, |a, b| sat8(a as i8 as i32 + b as i8 as i32));
-    lanes!(psubsb, b, ub, u8, 16, |a, b| sat8(a as i8 as i32 - b as i8 as i32));
-    lanes!(padduw, w, uw, u32, 4, |a, b| (a as u64 + b as u64).min(u32::MAX as u64) as u32);
+    lanes!(paddsw, w, uw, u32, 4, |a, b| sat32(
+        a as i32 as i64 + b as i32 as i64
+    ));
+    lanes!(psubsw, w, uw, u32, 4, |a, b| sat32(
+        a as i32 as i64 - b as i32 as i64
+    ));
+    lanes!(paddsh, h, uh, u16, 8, |a, b| sat16(
+        a as i16 as i32 + b as i16 as i32
+    ));
+    lanes!(psubsh, h, uh, u16, 8, |a, b| sat16(
+        a as i16 as i32 - b as i16 as i32
+    ));
+    lanes!(paddsb, b, ub, u8, 16, |a, b| sat8(
+        a as i8 as i32 + b as i8 as i32
+    ));
+    lanes!(psubsb, b, ub, u8, 16, |a, b| sat8(
+        a as i8 as i32 - b as i8 as i32
+    ));
+    lanes!(
+        padduw,
+        w,
+        uw,
+        u32,
+        4,
+        |a, b| (a as u64 + b as u64).min(u32::MAX as u64) as u32
+    );
     lanes!(psubuw, w, uw, u32, 4, |a, b| a.saturating_sub(b));
     lanes!(padduh, h, uh, u16, 8, |a, b| a.saturating_add(b));
     lanes!(psubuh, h, uh, u16, 8, |a, b| a.saturating_sub(b));
     lanes!(paddub, b, ub, u8, 16, |a, b| a.saturating_add(b));
     lanes!(psubub, b, ub, u8, 16, |a, b| a.saturating_sub(b));
-    lanes!(pcgtw, w, uw, u32, 4, |a, b| if (a as i32) > (b as i32) { !0 } else { 0 });
-    lanes!(pcgth, h, uh, u16, 8, |a, b| if (a as i16) > (b as i16) { !0 } else { 0 });
-    lanes!(pcgtb, b, ub, u8, 16, |a, b| if (a as i8) > (b as i8) { !0 } else { 0 });
+    lanes!(pcgtw, w, uw, u32, 4, |a, b| if (a as i32) > (b as i32) {
+        !0
+    } else {
+        0
+    });
+    lanes!(pcgth, h, uh, u16, 8, |a, b| if (a as i16) > (b as i16) {
+        !0
+    } else {
+        0
+    });
+    lanes!(pcgtb, b, ub, u8, 16, |a, b| if (a as i8) > (b as i8) {
+        !0
+    } else {
+        0
+    });
     lanes!(pceqw, w, uw, u32, 4, |a, b| if a == b { !0 } else { 0 });
     lanes!(pceqh, h, uh, u16, 8, |a, b| if a == b { !0 } else { 0 });
     lanes!(pceqb, b, ub, u8, 16, |a, b| if a == b { !0 } else { 0 });
@@ -118,14 +157,22 @@ impl Cpu {
     pub fn pabsw(&mut self, rd: usize, rt: usize) {
         let mut x = w(self.g[rt]);
         for v in x.iter_mut() {
-            *v = if *v == 0x8000_0000 { 0x7fff_ffff } else { (*v as i32).unsigned_abs() };
+            *v = if *v == 0x8000_0000 {
+                0x7fff_ffff
+            } else {
+                (*v as i32).unsigned_abs()
+            };
         }
         self.wr(rd, uw(x));
     }
     pub fn pabsh(&mut self, rd: usize, rt: usize) {
         let mut x = h(self.g[rt]);
         for v in x.iter_mut() {
-            *v = if *v == 0x8000 { 0x7fff } else { (*v as i16).unsigned_abs() };
+            *v = if *v == 0x8000 {
+                0x7fff
+            } else {
+                (*v as i16).unsigned_abs()
+            };
         }
         self.wr(rd, uh(x));
     }
@@ -134,7 +181,11 @@ impl Cpu {
         let y = h(self.g[rt]);
         let mut o = [0u16; 8];
         for i in 0..8 {
-            o[i] = if i < 4 { x[i].wrapping_sub(y[i]) } else { x[i].wrapping_add(y[i]) };
+            o[i] = if i < 4 {
+                x[i].wrapping_sub(y[i])
+            } else {
+                x[i].wrapping_add(y[i])
+            };
         }
         self.wr(rd, uh(o));
     }
@@ -283,7 +334,8 @@ impl Cpu {
     }
     pub fn psrah(&mut self, rd: usize, rt: usize, sa: u32) {
         let mut t = h(self.g[rt]);
-        t.iter_mut().for_each(|v| *v = ((*v as i16) >> (sa & 15)) as u16);
+        t.iter_mut()
+            .for_each(|v| *v = ((*v as i16) >> (sa & 15)) as u16);
         self.wr(rd, uh(t));
     }
     pub fn psllw(&mut self, rd: usize, rt: usize, sa: u32) {
@@ -298,7 +350,8 @@ impl Cpu {
     }
     pub fn psraw(&mut self, rd: usize, rt: usize, sa: u32) {
         let mut t = w(self.g[rt]);
-        t.iter_mut().for_each(|v| *v = ((*v as i32) >> (sa & 31)) as u32);
+        t.iter_mut()
+            .for_each(|v| *v = ((*v as i32) >> (sa & 31)) as u32);
         self.wr(rd, uw(t));
     }
     pub fn psllvw(&mut self, rd: usize, rs: usize, rt: usize) {
@@ -313,14 +366,21 @@ impl Cpu {
         let (s, t) = (w(self.g[rs]), w(self.g[rt]));
         self.wr(
             rd,
-            [sx(((t[0] as i32) >> (s[0] & 31)) as u32), sx(((t[2] as i32) >> (s[2] & 31)) as u32)],
+            [
+                sx(((t[0] as i32) >> (s[0] & 31)) as u32),
+                sx(((t[2] as i32) >> (s[2] & 31)) as u32),
+            ],
         );
     }
     pub fn qfsrv(&mut self, rd: usize, rs: usize, rt: usize) {
         let s = self.sa & 127;
         let hi = q(self.g[rs]);
         let lo = q(self.g[rt]);
-        let v = if s == 0 { lo } else { (lo >> s) | (hi << (128 - s)) };
+        let v = if s == 0 {
+            lo
+        } else {
+            (lo >> s) | (hi << (128 - s))
+        };
         self.wr(rd, uq(v));
     }
     pub fn mtsab(&mut self, rs: usize, imm: u32) {
@@ -361,7 +421,16 @@ impl Cpu {
             }
             4 => {
                 let s = |x: u32| sat16(x as i32);
-                uh([s(lo[0]), s(lo[1]), s(hi[0]), s(hi[1]), s(lo[2]), s(lo[3]), s(hi[2]), s(hi[3])])
+                uh([
+                    s(lo[0]),
+                    s(lo[1]),
+                    s(hi[0]),
+                    s(hi[1]),
+                    s(lo[2]),
+                    s(lo[3]),
+                    s(hi[2]),
+                    s(hi[3]),
+                ])
             }
             _ => return,
         };
@@ -438,7 +507,11 @@ impl Cpu {
         let (s, t) = (w(self.g[rs]), w(self.g[rt]));
         for (k, i) in [0usize, 2].into_iter().enumerate() {
             let (n, d) = (s[i], t[i]);
-            let (qq, r) = if d == 0 { (u32::MAX, n) } else { (n / d, n % d) };
+            let (qq, r) = if d == 0 {
+                (u32::MAX, n)
+            } else {
+                (n / d, n % d)
+            };
             self.lo[k] = sx(qq);
             self.hi[k] = sx(r);
         }
@@ -469,9 +542,22 @@ impl Cpu {
         let mut lo = w(self.lo);
         let mut hi = w(self.hi);
         // lane i → (lo|hi, word index)
-        let map = [(0, 0), (0, 1), (1, 0), (1, 1), (0, 2), (0, 3), (1, 2), (1, 3)];
+        let map = [
+            (0, 0),
+            (0, 1),
+            (1, 0),
+            (1, 1),
+            (0, 2),
+            (0, 3),
+            (1, 2),
+            (1, 3),
+        ];
         for (i, (which, idx)) in map.into_iter().enumerate() {
-            let dst = if which == 0 { &mut lo[idx] } else { &mut hi[idx] };
+            let dst = if which == 0 {
+                &mut lo[idx]
+            } else {
+                &mut hi[idx]
+            };
             *dst = match op {
                 0 => p(i) as u32,
                 1 => (*dst as i32).wrapping_add(p(i)) as u32,

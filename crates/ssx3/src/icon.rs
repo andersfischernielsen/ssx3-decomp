@@ -7,7 +7,9 @@
 
 /// The icon as RGBA at `size` x `size`, from the disc (`None` without one).
 pub fn from_disc(size: u32) -> Option<Vec<u8>> {
-    let iso = std::env::var("SSX3_ISO").map(std::path::PathBuf::from).unwrap_or_else(|_| crate::game::repo_root().join("SSX 3 (USA).iso"));
+    let iso = std::env::var("SSX3_ISO")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| crate::game::repo_root().join("SSX 3 (USA).iso"));
     let mut disc = ssx3_core::iso::Disc::open(&iso).ok()?;
     let e = disc.find("DATA/UI/FE_1.SSH")?;
     let mut sheet = disc.read_vec(e.sector, e.size.div_ceil(2048));
@@ -19,14 +21,22 @@ pub fn from_disc(size: u32) -> Option<Vec<u8>> {
 
 /// (width, height, RGBA) of an 8-bit paletted SSH entry.
 fn ssh_entry(d: &[u8], name: &[u8; 4]) -> Option<(usize, usize, Vec<u8>)> {
-    let u32_at = |o: usize| d.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let u32_at = |o: usize| {
+        d.get(o..o + 4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+    };
     if d.get(..4)? != b"SHPS" {
         return None;
     }
     let count = u32_at(8)? as usize;
-    let off = (0..count).find(|i| d.get(16 + 8 * i..20 + 8 * i) == Some(name)).and_then(|i| u32_at(20 + 8 * i))? as usize;
+    let off = (0..count)
+        .find(|i| d.get(16 + 8 * i..20 + 8 * i) == Some(name))
+        .and_then(|i| u32_at(20 + 8 * i))? as usize;
     let next = (u32_at(off)? >> 8) as usize;
-    let (w, h) = (u16::from_le_bytes([d[off + 4], d[off + 5]]) as usize, u16::from_le_bytes([d[off + 6], d[off + 7]]) as usize);
+    let (w, h) = (
+        u16::from_le_bytes([d[off + 4], d[off + 5]]) as usize,
+        u16::from_le_bytes([d[off + 6], d[off + 7]]) as usize,
+    );
     if d[off] != 0x02 || next == 0 || d.get(off + next)? != &0x21 {
         return None;
     }
@@ -69,8 +79,14 @@ fn crop_logo(w: usize, h: usize, rgba: &[u8]) -> Option<(usize, usize, Vec<u8>)>
 fn compose(size: u32, lw: usize, lh: usize, logo: &[u8]) -> Vec<u8> {
     let s = size as f32;
     let scale = (s * 0.84 / lw as f32).min(s * 0.84 / lh as f32);
-    let (tw, th) = ((lw as f32 * scale).round().max(1.0) as usize, (lh as f32 * scale).round().max(1.0) as usize);
-    let (ox, oy) = (((s - tw as f32) / 2.0).round() as usize, ((s - th as f32) / 2.0).round() as usize);
+    let (tw, th) = (
+        (lw as f32 * scale).round().max(1.0) as usize,
+        (lh as f32 * scale).round().max(1.0) as usize,
+    );
+    let (ox, oy) = (
+        ((s - tw as f32) / 2.0).round() as usize,
+        ((s - th as f32) / 2.0).round() as usize,
+    );
     let n = size as usize;
     let mut out = vec![0u8; n * n * 4];
     for y in 0..n {
@@ -104,7 +120,12 @@ fn compose(size: u32, lw: usize, lh: usize, logo: &[u8]) -> Vec<u8> {
                 }
             }
             let o = 4 * (y * n + x);
-            out[o..o + 4].copy_from_slice(&[c[0].round() as u8, c[1].round() as u8, c[2].round() as u8, 255]);
+            out[o..o + 4].copy_from_slice(&[
+                c[0].round() as u8,
+                c[1].round() as u8,
+                c[2].round() as u8,
+                255,
+            ]);
         }
     }
     out
@@ -125,6 +146,16 @@ mod tests {
         assert_eq!(rgba[4 * (64 * 128 + 64) + 3], 255);
         let dir = crate::game::repo_root().join("target/bundle/icon-preview");
         let _ = std::fs::create_dir_all(&dir);
-        let _ = std::fs::write(dir.join("window128.png"), crate::png::encode(128, 128, &rgba.chunks(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect::<Vec<_>>()));
+        let _ = std::fs::write(
+            dir.join("window128.png"),
+            crate::png::encode(
+                128,
+                128,
+                &rgba
+                    .chunks(4)
+                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                    .collect::<Vec<_>>(),
+            ),
+        );
     }
 }

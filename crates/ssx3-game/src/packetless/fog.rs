@@ -105,7 +105,11 @@ fn build_clut(c: &mut Cpu, gm: u32, clut: u32, view: u32) {
     let lo = clamp(p1[2]);
     let span = {
         let s = hi.wrapping_sub(lo).wrapping_add(1);
-        if s > 0 { s } else { 1 }
+        if s > 0 {
+            s
+        } else {
+            1
+        }
     };
     let k255 = FpuF32(0x437f_0000);
     let g = (f(c, rec + 0x18) * k255).to_i32() as u32;
@@ -144,7 +148,11 @@ fn build_clut(c: &mut Cpu, gm: u32, clut: u32, view: u32) {
             // (Generated order: f2 = density * k0 * (hi - max(i, lo) + 1)
             // * inv_span, squared for exp², negated; a Horner polynomial in
             // it; clamped to 0..1; × 128.)
-            let base = if m == 1 { gp.wrapping_sub(0x289c) } else { gp.wrapping_sub(0x2884) };
+            let base = if m == 1 {
+                gp.wrapping_sub(0x289c)
+            } else {
+                gp.wrapping_sub(0x2884)
+            };
             let k: [FpuF32; 6] = std::array::from_fn(|j| f(c, base + 4 * j as u32));
             let half = FpuF32(0x3f00_0000);
             let k128 = FpuF32(0x4300_0000);
@@ -171,7 +179,11 @@ fn build_clut(c: &mut Cpu, gm: u32, clut: u32, view: u32) {
                 p = p + FpuF32::ONE;
                 p = p * x;
                 p = p + FpuF32::ONE;
-                let t = if FpuF32::ZERO.le(p) { p.min(FpuF32::ONE) } else { FpuF32::ZERO };
+                let t = if FpuF32::ZERO.le(p) {
+                    p.min(FpuF32::ONE)
+                } else {
+                    FpuF32::ZERO
+                };
                 let a = (t * k128).to_i32() as u32;
                 put(c, i, colour | a << 24);
             }
@@ -213,7 +225,10 @@ fn z_copy(c: &mut Cpu, gm: u32, b80: u32, b84: u32, h2: u32, gif: &mut Vec<u128>
     let h1 = height(c, gm, 0x0036_aea4);
     let n = (if w > -1 { w } else { w.wrapping_add(7) }) >> 3;
     let zb = r32(c, gm + 0x5a80);
-    gif.push(qw(sx64((n as u32).wrapping_shl(1).wrapping_add(0xb)) | 1 << 60, 0xe));
+    gif.push(qw(
+        sx64((n as u32).wrapping_shl(1).wrapping_add(0xb)) | 1 << 60,
+        0xe,
+    ));
     let y0 = centre(h1);
     let w2 = width(c, gm, 0x0036_af0c);
     let frame = sx64(b84) | ((w2 >> 6) as u64) << 16 | 0x3fff_0200_0000;
@@ -294,7 +309,8 @@ fn blend(c: &mut Cpu, gm: u32, view: u32, tbp: u32, gif: &mut Vec<u128>) {
     gif.push(qw(scissor, 0x40));
     gif.push(qw(0, 0x14));
     let w3 = width(c, gm, 0x0036_b374);
-    let tex0 = (b84 << 5) as u64 | ((w3 >> 6) as u64) << 14 | sx64(tbp) << 37 | 0xe_a9b0_0000 | 1 << 61;
+    let tex0 =
+        (b84 << 5) as u64 | ((w3 >> 6) as u64) << 14 | sx64(tbp) << 37 | 0xe_a9b0_0000 | 1 << 61;
     gif.push(qw(tex0, 6));
     gif.push(qw(0x156, 0));
     gif.push(qw(0x3f80_0000_8080_8080, 1));
@@ -330,8 +346,16 @@ fn blend(c: &mut Cpu, gm: u32, view: u32, tbp: u32, gif: &mut Vec<u128>) {
     let oy = centre(height(c, gm, 0x0036_b540));
     gif.push(qw(sx64(ox) | (oy as u64) << 32, 0x18));
     let h16 = |c: &mut Cpu, o: u32| c.bus.read16(gm + o) as u32;
-    let (sx0, sw, sy0, sh) = (h16(c, 0x5900), h16(c, 0x5904), h16(c, 0x5902), h16(c, 0x5906));
-    let sc = sx0 as u64 | sx64(sx0.wrapping_sub(1).wrapping_add(sw)) << 16 | (sy0 as u64) << 32 | sx64(sy0.wrapping_sub(1).wrapping_add(sh)) << 48;
+    let (sx0, sw, sy0, sh) = (
+        h16(c, 0x5900),
+        h16(c, 0x5904),
+        h16(c, 0x5902),
+        h16(c, 0x5906),
+    );
+    let sc = sx0 as u64
+        | sx64(sx0.wrapping_sub(1).wrapping_add(sw)) << 16
+        | (sy0 as u64) << 32
+        | sx64(sy0.wrapping_sub(1).wrapping_add(sh)) << 48;
     gif.push(qw(sc, 0x40));
 }
 
@@ -364,7 +388,12 @@ pub fn render_depth_fog(c: &mut Cpu) {
         let clut = CLUTS.wrapping_add(view << 10);
         build_clut(c, gm, clut, view);
         let heap = r32(c, gm + 0x18f4).wrapping_add(0x1f60);
-        let block = guest_call(c, VRAM_HEAP_ALLOC, &[heap, 0x400, 0x7fff_ffff, 0, 0, 1], 0x0036_ace8);
+        let block = guest_call(
+            c,
+            VRAM_HEAP_ALLOC,
+            &[heap, 0x400, 0x7fff_ffff, 0, 0, 1],
+            0x0036_ace8,
+        );
         let tm = r32(c, gm + 0x18f4);
         let node = r32(c, tm + 0x3f50).wrapping_add(block.wrapping_mul(0x1c));
         let tbp = (r32(c, node) as i32 >> 8) as u32;
@@ -380,6 +409,15 @@ pub fn render_depth_fog(c: &mut Cpu) {
         // (`TexMan_EmitPath3Window`: one REF in the VIF chain.)
         windows = 1;
     }
-    ssx3_render::direct::record(Recorded { start: at, end: at, first_tag: 0, cmd: Cmd::Post { kind: PostKind::DepthFog, gif, windows } });
+    ssx3_render::direct::record(Recorded {
+        start: at,
+        end: at,
+        first_tag: 0,
+        cmd: Cmd::Post {
+            kind: PostKind::DepthFog,
+            gif,
+            windows,
+        },
+    });
     ret(c, if windows == 0 { 40 } else { 3000 });
 }

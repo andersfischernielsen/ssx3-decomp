@@ -76,7 +76,10 @@ pub struct VuState {}
 
 /// Entries [`run`] implements natively (MSCAL byte addresses).
 pub fn implemented(entry: u32) -> bool {
-    matches!(entry, 0x12b8 | 0x3a08 | 0x2400 | 0x3bf0 | 0x2270 | 0x22c8 | 0x2320 | 0x2358)
+    matches!(
+        entry,
+        0x12b8 | 0x3a08 | 0x2400 | 0x3bf0 | 0x2270 | 0x22c8 | 0x2320 | 0x2358
+    )
 }
 
 /// Run the program at `entry` with VIF `top`/`itop` on VU1 data memory
@@ -120,7 +123,9 @@ impl Mem<'_> {
     }
     fn ld(&self, a: u16) -> V {
         let o = Self::off(a);
-        std::array::from_fn(|l| u32::from_le_bytes(self.0[o + 4 * l..o + 4 * l + 4].try_into().unwrap()))
+        std::array::from_fn(|l| {
+            u32::from_le_bytes(self.0[o + 4 * l..o + 4 * l + 4].try_into().unwrap())
+        })
     }
     /// Store the lanes of `v` selected by `mask` (bit 3 = x .. bit 0 = w).
     fn st_mask(&mut self, a: u16, v: V, mask: u8) {
@@ -148,7 +153,13 @@ impl Mem<'_> {
         let n = 1024u32;
         let mut q = a as u32 & (n - 1);
         let mut out = Vec::new();
-        let read = |q: u32| -> u128 { u128::from_le_bytes(self.0[q as usize * 16..q as usize * 16 + 16].try_into().unwrap()) };
+        let read = |q: u32| -> u128 {
+            u128::from_le_bytes(
+                self.0[q as usize * 16..q as usize * 16 + 16]
+                    .try_into()
+                    .unwrap(),
+            )
+        };
         loop {
             let tag = read(q);
             out.push(tag);
@@ -317,7 +328,12 @@ fn float_strip(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
     if n3 < 9 || !n3.is_multiple_of(3) {
         return false;
     }
-    let mat = [m.ld(MATRIX), m.ld(MATRIX + 1), m.ld(MATRIX + 2), m.ld(MATRIX + 3)];
+    let mat = [
+        m.ld(MATRIX),
+        m.ld(MATRIX + 1),
+        m.ld(MATRIX + 2),
+        m.ld(MATRIX + 3),
+    ];
     let (gs, go) = guard(m);
     let out = top.wrapping_add(OUT);
     let end = top.wrapping_add(n3).wrapping_add(9);
@@ -407,8 +423,18 @@ fn float_strip(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
 /// clipper takes the triangle's colours from the program's output, which
 /// are the input's (`n` ≤ 72 vertices: the output never reaches unread
 /// input).
-fn float_strip_clip(m: &mut Mem, top: u16, n: u16, kick: &mut dyn FnMut(&[u128])) -> Vec<(V, bool)> {
-    let mat = [m.ld(MATRIX), m.ld(MATRIX + 1), m.ld(MATRIX + 2), m.ld(MATRIX + 3)];
+fn float_strip_clip(
+    m: &mut Mem,
+    top: u16,
+    n: u16,
+    kick: &mut dyn FnMut(&[u128]),
+) -> Vec<(V, bool)> {
+    let mat = [
+        m.ld(MATRIX),
+        m.ld(MATRIX + 1),
+        m.ld(MATRIX + 2),
+        m.ld(MATRIX + 3),
+    ];
     let (gs, go) = guard(m);
     let mut cur = xform_xyzw(&mat, m.ld(top.wrapping_add(4)));
     let mut next = xform_xyzw(&mat, m.ld(top.wrapping_add(7)));
@@ -479,11 +505,26 @@ impl Plane {
 
 /// Plane order of the original: z-, x-, x+, y+, y-.
 const PLANES: [Plane; 5] = [
-    Plane { lane: 2, minus: true },
-    Plane { lane: 0, minus: true },
-    Plane { lane: 0, minus: false },
-    Plane { lane: 1, minus: false },
-    Plane { lane: 1, minus: true },
+    Plane {
+        lane: 2,
+        minus: true,
+    },
+    Plane {
+        lane: 0,
+        minus: true,
+    },
+    Plane {
+        lane: 0,
+        minus: false,
+    },
+    Plane {
+        lane: 1,
+        minus: false,
+    },
+    Plane {
+        lane: 1,
+        minus: true,
+    },
 ];
 
 /// Clip the triangle in CLIP_BUF_A (3 × {pos, ST, RGBA float}) against the
@@ -570,7 +611,11 @@ fn clip_triangle(m: &mut Mem, clip: &mut ClipFlags, gs: V, go: V, kick: &mut dyn
 /// Kick the clipped polygon at `buf` (`qw` qwords) as a fan through the
 /// fan packet not used last time.
 fn emit_fan(m: &mut Mem, buf: u16, qw: u16, gs: V, go: V, kick: &mut dyn FnMut(&[u128])) {
-    let tag = if m.ilw(FAN_TOGGLE, 3) == FAN_TAG_A { FAN_TAG_B } else { FAN_TAG_A };
+    let tag = if m.ilw(FAN_TOGGLE, 3) == FAN_TAG_A {
+        FAN_TAG_B
+    } else {
+        FAN_TAG_A
+    };
     m.isw(FAN_TOGGLE, 3, tag);
     let mut o = tag.wrapping_add(1);
     let mut n = 0u16;
@@ -721,7 +766,11 @@ struct Mesh {
 impl Mesh {
     fn read(m: &Mem, base: u16) -> Mesh {
         let h = m.ld(base.wrapping_add(1));
-        Mesh { base, strips: h[0] as u16, n: h[2] as u16 }
+        Mesh {
+            base,
+            strips: h[0] as u16,
+            n: h[2] as u16,
+        }
     }
     fn lengths(&self) -> u16 {
         self.base.wrapping_add(2)
@@ -771,8 +820,19 @@ fn mesh_entry(m: &mut Mem, entry: u32, top: u16, itop: u32, kick: &mut dyn FnMut
 }
 
 /// Pass 1 (ITOP == 0): texgen, transform, ctx1 strips (+ clipped fans).
-fn mesh_pass1(m: &mut Mem, top: u16, base: u16, setup: bool, link: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
-    let flags = if setup { m.ilw(base.wrapping_sub(23), 3) } else { m.ilw(MESH_FLAGS, 3) };
+fn mesh_pass1(
+    m: &mut Mem,
+    top: u16,
+    base: u16,
+    setup: bool,
+    link: u16,
+    kick: &mut dyn FnMut(&[u128]),
+) -> bool {
+    let flags = if setup {
+        m.ilw(base.wrapping_sub(23), 3)
+    } else {
+        m.ilw(MESH_FLAGS, 3)
+    };
     let mesh = Mesh::read(m, base);
     // Not implemented natively: the pass-1 sphere map. (It reads the
     // positions through vi11, which pass 1 never sets: a pointer left over
@@ -787,7 +847,12 @@ fn mesh_pass1(m: &mut Mem, top: u16, base: u16, setup: bool, link: u16, kick: &m
             lighting_setup(m, top);
         }
         // qw6-9 = M × model, qw10-13 = the texgen matrix.
-        let mat = [m.ld(MATRIX), m.ld(MATRIX + 1), m.ld(MATRIX + 2), m.ld(MATRIX + 3)];
+        let mat = [
+            m.ld(MATRIX),
+            m.ld(MATRIX + 1),
+            m.ld(MATRIX + 2),
+            m.ld(MATRIX + 3),
+        ];
         let model: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(i as u16)));
         let tex: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(5 + i as u16)));
         for i in 0..4 {
@@ -810,7 +875,12 @@ fn mesh_pass1(m: &mut Mem, top: u16, base: u16, setup: bool, link: u16, kick: &m
     }
 
     m.st(out, m.ld(base));
-    let mat = [m.ld(MESH_MATRIX), m.ld(MESH_MATRIX + 1), m.ld(MESH_MATRIX + 2), m.ld(MESH_MATRIX + 3)];
+    let mat = [
+        m.ld(MESH_MATRIX),
+        m.ld(MESH_MATRIX + 1),
+        m.ld(MESH_MATRIX + 2),
+        m.ld(MESH_MATRIX + 3),
+    ];
     let (gs, mut go) = guard(m);
     go[3] = ONE; // MOVE.w vf6, vf0
     if flags & flag::CLIP != 0 {
@@ -844,7 +914,12 @@ fn mesh_pass2(m: &mut Mem, top: u16, base: u16, link: u16, kick: &mut dyn FnMut(
     let tag = m.ld(base);
     m.st(out, [tag[0], m.ld(PASS2_TAG_Y)[1], tag[2], tag[3]]);
     if flags & flag::CLIP != 0 {
-        let mat = [m.ld(MESH_MATRIX), m.ld(MESH_MATRIX + 1), m.ld(MESH_MATRIX + 2), m.ld(MESH_MATRIX + 3)];
+        let mat = [
+            m.ld(MESH_MATRIX),
+            m.ld(MESH_MATRIX + 1),
+            m.ld(MESH_MATRIX + 2),
+            m.ld(MESH_MATRIX + 3),
+        ];
         let (gs, go) = guard(m);
         let fan_y = m.ld(PASS2_FAN_TAG_Y)[1];
         let (save_a, save_b) = (m.ld(FAN_TAG_A)[1], m.ld(FAN_TAG_B)[1]);
@@ -892,7 +967,15 @@ fn texgen_normal(m: &mut Mem, src: u16, dst: u16, n: u16) {
     let a: [V; 4] = std::array::from_fn(|i| m.ld(TEXGEN_MATRIX + i as u16));
     for i in 0..n {
         let nrm = itof15(m.ld(src.wrapping_add(i)));
-        let r = madd(madd(madd(mul(a[0], bc(nrm[0])), a[1], bc(nrm[1])), a[2], bc(nrm[2])), a[3], bc(ONE));
+        let r = madd(
+            madd(
+                madd(mul(a[0], bc(nrm[0])), a[1], bc(nrm[1])),
+                a[2],
+                bc(nrm[2]),
+            ),
+            a[3],
+            bc(ONE),
+        );
         let f = ftoi12(r);
         m.st(dst.wrapping_add(i), [f[0], f[1], ONE, ONE]);
     }
@@ -919,7 +1002,11 @@ fn texgen_sphere(m: &mut Mem, pos: u16, normals: u16, dst: u16, n: u16) {
     for i in 0..n {
         let p = m.ld(pos.wrapping_add(i));
         let pf = itof15(p);
-        let e = madd(madd(madd(mul(s[0], bc(pf[0])), s[1], bc(pf[1])), s[2], bc(pf[2])), t, bc(p[3]));
+        let e = madd(
+            madd(madd(mul(s[0], bc(pf[0])), s[1], bc(pf[1])), s[2], bc(pf[2])),
+            t,
+            bc(p[3]),
+        );
         let eye = mul(e, bc(float::rsqrt(ONE, len2(mul(e, e))).value));
         let nf = itof15(m.ld(normals.wrapping_add(i)));
         let nrm = madd(madd(mul(a[0], bc(nf[0])), a[1], bc(nf[1])), a[2], bc(nf[2]));
@@ -945,7 +1032,11 @@ fn lighting_setup(m: &mut Mem, top: u16) {
     }
     for i in 0..10u16 {
         let k = mul(m.ld(top.wrapping_add(15 + i)), i128);
-        let w = if i == 0 { max(VF0, i128)[3] } else { min(VF0, bc(VF0[0]))[3] };
+        let w = if i == 0 {
+            max(VF0, i128)[3]
+        } else {
+            min(VF0, bc(VF0[0]))[3]
+        };
         m.st(LIGHT_COEFFS + i, [k[0], k[1], k[2], w]);
     }
 }
@@ -959,7 +1050,11 @@ fn light(m: &mut Mem, normals: u16, dst: u16, n: u16) {
     let k: [V; 10] = std::array::from_fn(|i| m.ld(LIGHT_COEFFS + i as u16));
     for i in 0..n {
         let nrm = itof15(m.ld(normals.wrapping_add(i)));
-        let d = madd(madd(mul(b[0], bc(nrm[0])), b[1], bc(nrm[1])), b[2], bc(nrm[2]));
+        let d = madd(
+            madd(mul(b[0], bc(nrm[0])), b[1], bc(nrm[1])),
+            b[2],
+            bc(nrm[2]),
+        );
         let sq = mul(d, d);
         // OPMULA d × d, then + vf0·vf0: (dy dz, dz dx, dx dy).
         let cross = madd(mul([d[1], d[2], d[0], 0], [d[2], d[0], d[1], 0]), VF0, VF0);
@@ -990,7 +1085,15 @@ fn mesh_strips(m: &mut Mem, mesh: &Mesh, out: u16, mat: &[V; 4], gs: V, go: V, w
         let strip_out = o;
         for _ in 0..len {
             let p = itof15(m.ld(xyz));
-            let c = madd(madd(madd(mul(screen[0], bc(p[0])), screen[1], bc(p[1])), screen[2], bc(p[2])), screen[3], bc(ONE));
+            let c = madd(
+                madd(
+                    madd(mul(screen[0], bc(p[0])), screen[1], bc(p[1])),
+                    screen[2],
+                    bc(p[2]),
+                ),
+                screen[3],
+                bc(ONE),
+            );
             let q = div(ONE, c[3]);
             let t = itof12(m.ld(uv));
             m.st(o, mul([t[0], t[1], ONE, ONE], bc(q)));
@@ -1060,7 +1163,8 @@ fn mesh_strips_clipped(
                         let i = k - 2 + j;
                         buf[3 * j as usize] = xform_xyzw(mat, pos(m, xyz.wrapping_add(i)));
                         buf[3 * j as usize + 1] = tex(m, uv.wrapping_add(i));
-                        buf[3 * j as usize + 2] = itof0(m.ld(o.wrapping_sub(3 * (2 - j)).wrapping_add(1)));
+                        buf[3 * j as usize + 2] =
+                            itof0(m.ld(o.wrapping_sub(3 * (2 - j)).wrapping_add(1)));
                     }
                     for (i, v) in buf.iter().enumerate() {
                         m.st(CLIP_BUF_A + i as u16, *v);
@@ -1093,7 +1197,12 @@ fn line_shape(m: &mut Mem, top: u16, kick: &mut dyn FnMut(&[u128])) -> bool {
     if n == 0 {
         return false;
     }
-    let mat = [m.ld(MATRIX), m.ld(MATRIX + 1), m.ld(MATRIX + 2), m.ld(MATRIX + 3)];
+    let mat = [
+        m.ld(MATRIX),
+        m.ld(MATRIX + 1),
+        m.ld(MATRIX + 2),
+        m.ld(MATRIX + 3),
+    ];
     // Coefficients in clip space (x, y, z, w order, each with its own w).
     let c0 = xform_xyzw(&mat, m.ld(top.wrapping_add(6)));
     let c1 = xform_xyzw(&mat, m.ld(top.wrapping_add(5)));
@@ -1165,7 +1274,13 @@ pub mod gpu_mesh {
 /// untouched) for what the CPU program keeps: other entries, the pass-1
 /// sphere map, malformed meshes. `kept`: the renderer keeps this mesh's data
 /// (`GpuCall::mesh_key`), whose alpha maximum is this; the data is left out.
-pub fn plan_gpu(entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u8; 16384]) -> Option<crate::gpu::GpuCall> {
+pub fn plan_gpu(
+    entry: u32,
+    top: u32,
+    itop: u32,
+    kept: Option<f32>,
+    mem: &mut [u8; 16384],
+) -> Option<crate::gpu::GpuCall> {
     let top = (top & 0x3ff) as u16;
     let mut m = Mem(mem);
     let m = &mut m;
@@ -1177,7 +1292,11 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u
         (0x22c8, true) => (false, false, top, 0x47c),
         _ => return None,
     };
-    let flags = if setup { m.ilw(base.wrapping_sub(23), 3) } else { m.ilw(MESH_FLAGS, 3) };
+    let flags = if setup {
+        m.ilw(base.wrapping_sub(23), 3)
+    } else {
+        m.ilw(MESH_FLAGS, 3)
+    };
     let mesh = Mesh::read(m, base);
     if (pass1 && flags & flag::TEXGEN1 == 0x10) || !mesh.well_formed(m) {
         return None;
@@ -1188,14 +1307,23 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u
     }
     let lit = flags & flag::LIT != 0;
     let tag = m.ld(base);
-    let tag = if pass1 { tag } else { [tag[0], m.ld(PASS2_TAG_Y)[1], tag[2], tag[3]] };
+    let tag = if pass1 {
+        tag
+    } else {
+        [tag[0], m.ld(PASS2_TAG_Y)[1], tag[2], tag[3]]
+    };
     if pass1 {
         if setup {
             m.isw(MESH_FLAGS, 3, flags);
             if lit {
                 lighting_setup(m, top);
             }
-            let mat = [m.ld(MATRIX), m.ld(MATRIX + 1), m.ld(MATRIX + 2), m.ld(MATRIX + 3)];
+            let mat = [
+                m.ld(MATRIX),
+                m.ld(MATRIX + 1),
+                m.ld(MATRIX + 2),
+                m.ld(MATRIX + 3),
+            ];
             let model: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(i as u16)));
             let tex: [V; 4] = std::array::from_fn(|i| m.ld(top.wrapping_add(5 + i as u16)));
             for i in 0..4 {
@@ -1221,13 +1349,23 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u
         }
     }
     let mut u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
-    let mat = [m.ld(MESH_MATRIX), m.ld(MESH_MATRIX + 1), m.ld(MESH_MATRIX + 2), m.ld(MESH_MATRIX + 3)];
+    let mat = [
+        m.ld(MESH_MATRIX),
+        m.ld(MESH_MATRIX + 1),
+        m.ld(MESH_MATRIX + 2),
+        m.ld(MESH_MATRIX + 3),
+    ];
     let (gs, mut go) = guard(m);
     go[3] = ONE;
     for i in 0..4 {
         u[gpu_mesh::SCREEN + i] = madd(mul(gs, mat[i]), go, bc(mat[i][3]));
     }
-    u[gpu_mesh::INFO] = [lit as u32, mesh.n as u32, if pass1 { 1 } else { 2 }, (flags & flag::CLIP != 0) as u32];
+    u[gpu_mesh::INFO] = [
+        lit as u32,
+        mesh.n as u32,
+        if pass1 { 1 } else { 2 },
+        (flags & flag::CLIP != 0) as u32,
+    ];
     u[gpu_mesh::GUARD_Z] = [gs[2], go[2], 0, 0];
     if lit {
         for i in 0..3 {
@@ -1282,10 +1420,27 @@ pub fn plan_gpu(entry: u32, top: u32, itop: u32, kept: Option<f32>, mem: &mut [u
         }
         first += len;
     }
-    let tag = tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
-    let link = if pass1 { crate::gpu::Link::Source(out as u32) } else { crate::gpu::Link::Reuse(out as u32) };
+    let tag =
+        tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
+    let link = if pass1 {
+        crate::gpu::Link::Source(out as u32)
+    } else {
+        crate::gpu::Link::Reuse(out as u32)
+    };
     let mesh_key = keyed.then_some(0);
-    Some(crate::gpu::GpuCall { program: crate::gpu::Program::Mat3Mesh, pre: Vec::new(), tag, uniforms: u, data, indices, index_mode: 0, alpha_max, link, split: None, mesh_key })
+    Some(crate::gpu::GpuCall {
+        program: crate::gpu::Program::Mat3Mesh,
+        pre: Vec::new(),
+        tag,
+        uniforms: u,
+        data,
+        indices,
+        index_mode: 0,
+        alpha_max,
+        link,
+        split: None,
+        mesh_key,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1327,7 +1482,6 @@ fn gpu_strip_tag(tag: V, n: u16) -> Option<bool> {
         && (regs & 0xf == 2 || (regs & 0xf == 0xf && !tme));
     ok.then_some(prim & 8 == 0)
 }
-
 
 /// Plan a float strip (0x12b8) or ribbon (0x3a08) for the GPU
 /// (`crate::gpu::plan`).
@@ -1402,13 +1556,28 @@ pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<cra
     let vertex = |m: &Mem, k: u16| -> [V; 4] {
         let a = top.wrapping_add(2 + 3 * k);
         let (c, adc) = clip[k as usize];
-        [m.ld(a), m.ld(a.wrapping_add(1)), c, [adc as u32, k as u32, 0, 0]]
+        [
+            m.ld(a),
+            m.ld(a.wrapping_add(1)),
+            c,
+            [adc as u32, k as u32, 0, 0],
+        ]
     };
     let verts: Vec<[V; 4]> = (0..n).map(|k| vertex(m, k)).collect();
     let drawn = (2..n as usize).filter(|&k| !clip[k].1);
     // (Over the drawn triangles' vertices, as the GS side takes it.)
     let alpha_of = |k: usize| verts[k][1][3] & 0xff;
-    let alpha_max = drawn.clone().map(|k| if flat { alpha_of(k) } else { alpha_of(k - 2).max(alpha_of(k - 1)).max(alpha_of(k)) }).max().unwrap_or(0) as f32;
+    let alpha_max = drawn
+        .clone()
+        .map(|k| {
+            if flat {
+                alpha_of(k)
+            } else {
+                alpha_of(k - 2).max(alpha_of(k - 1)).max(alpha_of(k))
+            }
+        })
+        .max()
+        .unwrap_or(0) as f32;
     let (data, indices): (Vec<V>, Vec<u32>) = if flat {
         let mut data = Vec::with_capacity(3 * n as usize * gpu_strip::VERTEX_QWORDS);
         for k in drawn {
@@ -1421,9 +1590,15 @@ pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<cra
         (data, (0..count).collect())
     } else {
         let data = verts.iter().flatten().copied().collect();
-        (data, drawn.flat_map(|k| [k as u32 - 2, k as u32 - 1, k as u32]).collect())
+        (
+            data,
+            drawn
+                .flat_map(|k| [k as u32 - 2, k as u32 - 1, k as u32])
+                .collect(),
+        )
     };
-    let tag = tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
+    let tag =
+        tag[0] as u128 | (tag[1] as u128) << 32 | (tag[2] as u128) << 64 | (tag[3] as u128) << 96;
     Some(crate::gpu::GpuCall {
         program: crate::gpu::Program::Mat3Strip,
         pre,
@@ -1444,7 +1619,14 @@ pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<cra
 /// the CPU) would plan it from the packet the game built, on a memory with
 /// what the program reads: the header (qw0-5), the fan packets' tags (`fans`,
 /// static: the material setup's) and the batch's input at its TOP (`tops`).
-pub fn plan_strip_cmd(entry: u32, prim: u32, verts: &[[u128; 3]], tops: &[u32], header: &[u128; 6], fans: [u128; 2]) -> Vec<crate::direct::Out> {
+pub fn plan_strip_cmd(
+    entry: u32,
+    prim: u32,
+    verts: &[[u128; 3]],
+    tops: &[u32],
+    header: &[u128; 6],
+    fans: [u128; 2],
+) -> Vec<crate::direct::Out> {
     use crate::direct::Out;
     thread_local! {
         static SCRATCH: std::cell::RefCell<Box<[u8; 16384]>> = std::cell::RefCell::new(Box::new([0; 16384]));
@@ -1466,7 +1648,10 @@ pub fn plan_strip_cmd(entry: u32, prim: u32, verts: &[[u128; 3]], tops: &[u32], 
             m.st(FAN_TAG_A, q4(fans[0]));
             m.st(FAN_TAG_B, q4(fans[1]));
             let t = (top & 0x3ff) as u16;
-            m.st(t, q4(k | 0x8000 | (prim as u128) << 47 | 1 << 46 | 3 << 60 | regs << 64));
+            m.st(
+                t,
+                q4(k | 0x8000 | (prim as u128) << 47 | 1 << 46 | 3 << 60 | regs << 64),
+            );
             m.st(t.wrapping_add(1), q4(3 * k));
             for (j, v) in verts[r].iter().enumerate() {
                 for (l, &q) in v.iter().enumerate() {
@@ -1491,7 +1676,13 @@ pub fn plan_strip_cmd(entry: u32, prim: u32, verts: &[[u128; 3]], tops: &[u32], 
 /// each program start as [`plan_gpu_strip`] (or [`ribbon`] where that keeps
 /// the CPU) plans it, on a memory holding the header, the fan tags and the
 /// start's input at its TOP.
-pub fn plan_ribbon_cmd(entry: u32, calls: &[Vec<(u16, u128)>], tops: &[u32], header: &[u128; 6], fans: [u128; 2]) -> Vec<crate::direct::Out> {
+pub fn plan_ribbon_cmd(
+    entry: u32,
+    calls: &[Vec<(u16, u128)>],
+    tops: &[u32],
+    header: &[u128; 6],
+    fans: [u128; 2],
+) -> Vec<crate::direct::Out> {
     use crate::direct::Out;
     thread_local! {
         static SCRATCH: std::cell::RefCell<Box<[u8; 16384]>> = std::cell::RefCell::new(Box::new([0; 16384]));
@@ -1538,16 +1729,31 @@ pub fn check_gpu_strip(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<Strin
     use gpu_strip as g;
     let f = |q: usize| -> [f32; 4] { call.uniforms[q].map(f32::from_bits) };
     let n = (call.tag & 0x7fff) as usize;
-    let Some(strip) = gif.len().checked_sub(1 + 3 * n).filter(|&s| gif[..s] == call.pre[..]) else {
-        return Some(format!("mat3 strip: {n} vertices, {} qwords of fans; the program kicked {} qwords", call.pre.len(), gif.len()));
+    let Some(strip) = gif
+        .len()
+        .checked_sub(1 + 3 * n)
+        .filter(|&s| gif[..s] == call.pre[..])
+    else {
+        return Some(format!(
+            "mat3 strip: {n} vertices, {} qwords of fans; the program kicked {} qwords",
+            call.pre.len(),
+            gif.len()
+        ));
     };
     let strip = strip + 1;
     let (gs, go) = (f(g::GUARD_SCALE), f(g::GUARD_OFFSET));
     let flat = (call.tag >> 47) & 8 == 0;
     let mut bad = Vec::new();
     // The triangles: the strip's whose last vertex has no ADC.
-    let want: Vec<u32> = (2..n).filter(|&k| (gif[strip + 3 * k + 2] >> 111) & 1 == 0).map(|k| k as u32).collect();
-    let got: Vec<u32> = call.indices.chunks(3).map(|t| call.data[g::VERTEX_QWORDS * t[2] as usize + 3][1]).collect();
+    let want: Vec<u32> = (2..n)
+        .filter(|&k| (gif[strip + 3 * k + 2] >> 111) & 1 == 0)
+        .map(|k| k as u32)
+        .collect();
+    let got: Vec<u32> = call
+        .indices
+        .chunks(3)
+        .map(|t| call.data[g::VERTEX_QWORDS * t[2] as usize + 3][1])
+        .collect();
     if got != want {
         bad.push(format!("triangles {got:?} want {want:?}"));
     }
@@ -1555,9 +1761,15 @@ pub fn check_gpu_strip(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<Strin
     for &i in &call.indices {
         used[i as usize] = true;
     }
-    for (v, _) in call.data.chunks(g::VERTEX_QWORDS).zip(&used).filter(|(_, &u)| u) {
+    for (v, _) in call
+        .data
+        .chunks(g::VERTEX_QWORDS)
+        .zip(&used)
+        .filter(|(_, &u)| u)
+    {
         let k = v[3][1] as usize;
-        let w: [u32; 12] = std::array::from_fn(|i| (gif[strip + 3 * k + i / 4] >> (32 * (i % 4))) as u32);
+        let w: [u32; 12] =
+            std::array::from_fn(|i| (gif[strip + 3 * k + i / 4] >> (32 * (i % 4))) as u32);
         if (w[11] >> 15) & 1 != v[3][0] {
             bad.push(format!("v{k}: ADC {} want {}", v[3][0], (w[11] >> 15) & 1));
         }
@@ -1567,12 +1779,17 @@ pub fn check_gpu_strip(call: &crate::gpu::GpuCall, gif: &[u128]) -> Option<Strin
         let sx: [f32; 3] = std::array::from_fn(|l| (go[l] + gs[l] * hc[l] * q) * 16.0);
         let stq = [st[0] * q, st[1] * q, st[2] * q];
         let got_xyz = [w[8] as f32, w[9] as f32, w[10] as i32 as f32];
-        let got_stq = [f32::from_bits(w[0]), f32::from_bits(w[1]), f32::from_bits(w[2])];
+        let got_stq = [
+            f32::from_bits(w[0]),
+            f32::from_bits(w[1]),
+            f32::from_bits(w[2]),
+        ];
         let col = v[1].map(|c| c & 0xff);
         let got_col = [w[4] & 0xff, w[5] & 0xff, w[6] & 0xff, w[7] & 0xff];
         let close = |a: f32, b: f32, tol: f32| (a - b).abs() <= tol * (1.0 + b.abs());
         // (x, y within 1/8 pixel; Z within 2 GS units.)
-        let ok_xyz = (0..2).all(|l| (sx[l] - got_xyz[l]).abs() <= 2.0) && (sx[2] - got_xyz[2]).abs() <= 32.0;
+        let ok_xyz =
+            (0..2).all(|l| (sx[l] - got_xyz[l]).abs() <= 2.0) && (sx[2] - got_xyz[2]).abs() <= 32.0;
         let ok_stq = (0..3).all(|l| close(stq[l], got_stq[l], 1e-3));
         // (Flat: a triangle's vertices carry its last vertex's colour.)
         let ok_col = flat || col == got_col;
@@ -1625,7 +1842,14 @@ mod tests {
     fn strip_inside_guard_band() {
         let mut mem = strip_input(0.5);
         let mut kicks = Vec::new();
-        assert!(run(0x12b8, 0x26, 0, &mut mem, &mut VuState::default(), &mut |p| kicks.push(p.to_vec())));
+        assert!(run(
+            0x12b8,
+            0x26,
+            0,
+            &mut mem,
+            &mut VuState::default(),
+            &mut |p| kicks.push(p.to_vec())
+        ));
         assert_eq!(kicks.len(), 1);
         let k = &kicks[0];
         assert_eq!(k.len(), 10);
@@ -1666,13 +1890,24 @@ mod tests {
             m.st(MATRIX + 3, [0, 0, 0, f(2.0)]);
             m.st(GUARD_SCALE, [f(1024.0), f(-1024.0), f(-8388467.5), 0]);
             m.st(GUARD_OFFSET, [f(2047.5), f(2047.5), f(8388467.5), 0]);
-            m.st(FAN_TOGGLE, [0, 0, 0, if case % 3 == 0 { FAN_TAG_B as u32 } else { 0 }]);
+            m.st(
+                FAN_TOGGLE,
+                [0, 0, 0, if case % 3 == 0 { FAN_TAG_B as u32 } else { 0 }],
+            );
             m.st(FAN_TAG_A, [0x8003, 0x302e_c000, 0x412, 0]);
             m.st(FAN_TAG_B, [0x8004, 0x302e_c000, 0x412, 0]);
             let top = if case % 5 == 0 { 0x1b6u16 } else { 0x26 };
-            let (prim, regs) = if flat { (0x04u64, 0x41fu32) } else { (0x5c, 0x412) };
+            let (prim, regs) = if flat {
+                (0x04u64, 0x41fu32)
+            } else {
+                (0x5c, 0x412)
+            };
             let pairs = 2 + (rnd() % 20) as u16;
-            let n = if ribbon { 2 * pairs } else { 3 + (rnd() % 30) as u16 };
+            let n = if ribbon {
+                2 * pairs
+            } else {
+                3 + (rnd() % 30) as u16
+            };
             let lo = n as u64 | 1 << 15 | 1 << 46 | prim << 47 | 3 << 60;
             m.st(top, [lo as u32, (lo >> 32) as u32, regs, 0]);
             let scale = [0.5, 1.5, 3.0][case % 3];
@@ -1686,29 +1921,58 @@ mod tests {
                 let r: [u64; 7] = std::array::from_fn(|_| rnd());
                 let unit = |x: u64| (x % 20001) as f32 / 10000.0 - 1.0;
                 m.st(a, [f(unit(r[0])), f(unit(r[1])), f(1.0), 0]);
-                m.st(a + 1, [(r[2] % 256) as u32, 0x40, 0x20, (r[3] % 256) as u32]);
-                m.st(a + 2, [f(unit(r[4]) * scale), f(unit(r[5]) * scale), f(unit(r[6]) * scale), f(1.0)]);
+                m.st(
+                    a + 1,
+                    [(r[2] % 256) as u32, 0x40, 0x20, (r[3] % 256) as u32],
+                );
+                m.st(
+                    a + 2,
+                    [
+                        f(unit(r[4]) * scale),
+                        f(unit(r[5]) * scale),
+                        f(unit(r[6]) * scale),
+                        f(1.0),
+                    ],
+                );
             }
             drop(m);
             let entry = if ribbon { 0x3a08 } else { 0x12b8 };
 
             let mut want_mem = mem.clone();
             let mut kicks: Vec<Vec<u128>> = Vec::new();
-            assert!(run(entry, top as u32, 0, &mut want_mem, &mut VuState::default(), &mut |p| kicks.push(p.to_vec())));
+            assert!(run(
+                entry,
+                top as u32,
+                0,
+                &mut want_mem,
+                &mut VuState::default(),
+                &mut |p| kicks.push(p.to_vec())
+            ));
             let call = plan_gpu_strip(entry, top as u32, &mut mem).expect("planned");
             // Memory: all but the per-vertex output.
             let out = (top + OUT + 1) as usize..(top + OUT + 1 + 3 * n) as usize;
             for q in (0..1024).filter(|q| !out.contains(q)) {
-                assert_eq!(mem[q * 16..q * 16 + 16], want_mem[q * 16..q * 16 + 16], "case {case}: qw {q:#x}");
+                assert_eq!(
+                    mem[q * 16..q * 16 + 16],
+                    want_mem[q * 16..q * 16 + 16],
+                    "case {case}: qw {q:#x}"
+                );
             }
             // The fans, then the strip.
             let (strip, fans) = kicks.split_last().unwrap();
             assert_eq!(call.pre, fans.concat(), "case {case}");
             clipped += fans.len();
             let adc = |k: usize| (strip[1 + 3 * k + 2] >> 111) & 1 == 1;
-            let mut want_tris: Vec<u32> = (2..n as usize).filter(|&k| !adc(k)).map(|k| k as u32).collect();
+            let mut want_tris: Vec<u32> = (2..n as usize)
+                .filter(|&k| !adc(k))
+                .map(|k| k as u32)
+                .collect();
             culled += n as usize - 2 - want_tris.len();
-            let mut got_tris: Vec<u32> = call.indices.chunks(3).map(|t| call.data[gpu_strip::VERTEX_QWORDS * t[2] as usize + 3][1]).collect();
+            let mut got_tris: Vec<u32> = call
+                .indices
+                .chunks(3)
+                .map(|t| call.data[gpu_strip::VERTEX_QWORDS * t[2] as usize + 3][1])
+                .collect();
             want_tris.sort();
             got_tris.sort();
             assert_eq!(got_tris, want_tris, "case {case}");
@@ -1716,14 +1980,24 @@ mod tests {
             let gif: Vec<u128> = kicks.concat();
             assert_eq!(check_gpu_strip(&call, &gif), None, "case {case}");
         }
-        assert!(clipped > 50 && culled > 100 && flat_calls > 0, "clipped {clipped} culled {culled}");
+        assert!(
+            clipped > 50 && culled > 100 && flat_calls > 0,
+            "clipped {clipped} culled {culled}"
+        );
     }
 
     #[test]
     fn strip_crossing_near_plane_is_clipped() {
         let mut mem = strip_input(-3.0);
         let mut kicks = Vec::new();
-        assert!(run(0x12b8, 0x26, 0, &mut mem, &mut VuState::default(), &mut |p| kicks.push(p.to_vec())));
+        assert!(run(
+            0x12b8,
+            0x26,
+            0,
+            &mut mem,
+            &mut VuState::default(),
+            &mut |p| kicks.push(p.to_vec())
+        ));
         // The fan (through the other fan tag) comes before the strip.
         assert_eq!(kicks.len(), 2);
         assert_eq!(Mem(&mut mem).ilw(FAN_TOGGLE, 3), FAN_TAG_B);
@@ -1762,14 +2036,25 @@ mod tests {
                 let mut vu = r.setup();
                 let mut ref_kicks: Vec<Vec<u128>> = Vec::new();
                 if !vu.run(5_000_000, &mut |p| ref_kicks.push(p.to_vec())) {
-                    eprintln!("(record seq {} entry {:#x}: the translated program does not end; skipped)", r.seq, r.pc);
+                    eprintln!(
+                        "(record seq {} entry {:#x}: the translated program does not end; skipped)",
+                        r.seq, r.pc
+                    );
                     continue;
                 }
                 r.kicks = ref_kicks;
                 r.data_out = vu.data.clone();
-                let mut mem: Box<[u8; 16384]> = r.data_in.clone().into_boxed_slice().try_into().unwrap();
+                let mut mem: Box<[u8; 16384]> =
+                    r.data_in.clone().into_boxed_slice().try_into().unwrap();
                 let mut kicks: Vec<Vec<u128>> = Vec::new();
-                let ok = run(r.pc, r.top, r.itop, &mut mem, &mut VuState::default(), &mut |p| kicks.push(p.to_vec()));
+                let ok = run(
+                    r.pc,
+                    r.top,
+                    r.itop,
+                    &mut mem,
+                    &mut VuState::default(),
+                    &mut |p| kicks.push(p.to_vec()),
+                );
                 let e = stats.entry(r.pc).or_default();
                 if !ok {
                     e.2 += 1;
@@ -1804,7 +2089,14 @@ mod tests {
         }
         let mut mem: Box<[u8; 16384]> = r.data_in.clone().into_boxed_slice().try_into().unwrap();
         let mut kicks: Vec<Vec<u128>> = Vec::new();
-        if !run(r.pc, r.top, r.itop, &mut mem, &mut VuState::default(), &mut |p| kicks.push(p.to_vec())) {
+        if !run(
+            r.pc,
+            r.top,
+            r.itop,
+            &mut mem,
+            &mut VuState::default(),
+            &mut |p| kicks.push(p.to_vec()),
+        ) {
             return None;
         }
         let ok = kicks == ref_kicks && mem[..] == vu.data[..];
@@ -1842,12 +2134,18 @@ mod tests {
                     continue;
                 }
                 let top = r.top as usize & 0x3ff;
-                let n = (u32::from_le_bytes(r.data_in[(top + 1) * 16..(top + 1) * 16 + 4].try_into().unwrap()) / 3) as usize;
+                let n = (u32::from_le_bytes(
+                    r.data_in[(top + 1) * 16..(top + 1) * 16 + 4]
+                        .try_into()
+                        .unwrap(),
+                ) / 3) as usize;
                 for _ in 0..20 {
                     let mut rr = r.clone();
                     let pos = |d: &[u8], k: usize| -> [f32; 3] {
                         let o = (top + 4 + 3 * k) * 16;
-                        std::array::from_fn(|l| f32::from_le_bytes(d[o + 4 * l..o + 4 * l + 4].try_into().unwrap()))
+                        std::array::from_fn(|l| {
+                            f32::from_le_bytes(d[o + 4 * l..o + 4 * l + 4].try_into().unwrap())
+                        })
                     };
                     for k in 0..n {
                         let a = pos(&r.data_in, (rnd() as usize) % n);
@@ -1893,16 +2191,25 @@ mod tests {
         };
         let (mut ok, mut bad, mut clipped, mut ni, mut ok2) = (0, 0, 0, 0, 0);
         let mut shown = 0;
-        let rd = |d: &[u8], q: usize, l: usize| u32::from_le_bytes(d[q * 16 + 4 * l..q * 16 + 4 * l + 4].try_into().unwrap());
+        let rd = |d: &[u8], q: usize, l: usize| {
+            u32::from_le_bytes(d[q * 16 + 4 * l..q * 16 + 4 * l + 4].try_into().unwrap())
+        };
         for path in paths.split(',') {
             let bytes = std::fs::read(path).unwrap();
             for r in Record::read_all(&bytes) {
-                if r.hash != HASH || r.unit != 1 || !matches!(r.pc, 0x2270 | 0x22c8 | 0x2320 | 0x2358) {
+                if r.hash != HASH
+                    || r.unit != 1
+                    || !matches!(r.pc, 0x2270 | 0x22c8 | 0x2320 | 0x2358)
+                {
                     continue;
                 }
                 let top = r.top as usize & 0x3ff;
                 let setup = matches!((r.pc, r.itop != 0), (0x2270, false) | (0x2320, _));
-                let base = if matches!(r.pc, 0x2270 | 0x2320) { top + 0x1b } else { top };
+                let base = if matches!(r.pc, 0x2270 | 0x2320) {
+                    top + 0x1b
+                } else {
+                    top
+                };
                 let strips = rd(&r.data_in, base + 1, 0) as usize & 0xffff;
                 let n = rd(&r.data_in, base + 1, 2) as usize & 0xffff;
                 let xyz = base + 2 + strips;
@@ -1913,7 +2220,11 @@ mod tests {
                     let f = rd(&rr.data_in, flags_at, 3);
                     let tex1 = [0u32, 2, 4, 8, 6][(rnd() % 5) as usize];
                     let tex2 = [0u32, 0x40, 0x80, 0x100, 0xc0, 0x200][(rnd() % 6) as usize];
-                    let f = (f & !0x3ff) | if variant & 1 != 0 { 0x20 } else { 0 } | (variant >> 1) & 1 | tex1 | tex2;
+                    let f = (f & !0x3ff)
+                        | if variant & 1 != 0 { 0x20 } else { 0 }
+                        | (variant >> 1) & 1
+                        | tex1
+                        | tex2;
                     rr.data_in[o..o + 4].copy_from_slice(&f.to_le_bytes());
                     if variant >= 4 {
                         for k in 0..n {
@@ -1965,9 +2276,16 @@ mod tests {
     }
 
     fn report(r: &Record, kicks: &[Vec<u128>], mem: &[u8]) {
-        eprintln!("--- mismatch: entry {:#06x} top {:#x} itop {} frame {} seq {}", r.pc, r.top, r.itop, r.frame, r.seq);
+        eprintln!(
+            "--- mismatch: entry {:#06x} top {:#x} itop {} frame {} seq {}",
+            r.pc, r.top, r.itop, r.frame, r.seq
+        );
         if kicks.len() != r.kicks.len() {
-            eprintln!("  kick count native {} translated {}", kicks.len(), r.kicks.len());
+            eprintln!(
+                "  kick count native {} translated {}",
+                kicks.len(),
+                r.kicks.len()
+            );
         }
         for (i, (a, b)) in kicks.iter().zip(&r.kicks).enumerate() {
             if a != b {

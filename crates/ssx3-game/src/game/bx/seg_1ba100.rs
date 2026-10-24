@@ -10,10 +10,8 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x002b_9100, audio_debug_printf, "Audio_DebugPrintf"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] =
+    &[(0x002b_9100, audio_debug_printf, "Audio_DebugPrintf")];
 
 // ---------------------------------------------------------------------------
 // Audio.
@@ -51,12 +49,16 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-
     #[test]
     fn audio_debug_printf_matches() {
-        check(ssx3_ee::s08::f_002b9100, audio_debug_printf, 100, &|c, seed| {
-            let mut r = Rng(0x9100 ^ seed as u64);
-            scramble(c, &mut r);
-        });
+        check(
+            ssx3_ee::s08::f_002b9100,
+            audio_debug_printf,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x9100 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
     }
 }

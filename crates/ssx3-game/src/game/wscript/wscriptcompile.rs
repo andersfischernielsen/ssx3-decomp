@@ -2,13 +2,6 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::float;
-use ssx3_ee_rt::Cpu;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -16,42 +9,52 @@ use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::feasyncfile::at;
+pub(crate) use crate::game::wscript::wscriptman::p;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::float;
+use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::wscript::wscriptman::p;
-pub(crate) use crate::game::fe::feasyncfile::at;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_1120, instances_man_dtor, "InstancesMan_dtor"),
     (0x0035_1170, instances_man_alloc, "InstancesMan_Alloc"),
-    (0x0035_11d0, instances_man_alloc_by_handle, "InstancesMan_AllocByHandle"),
+    (
+        0x0035_11d0,
+        instances_man_alloc_by_handle,
+        "InstancesMan_AllocByHandle",
+    ),
     (0x0035_1260, instances_man_free, "InstancesMan_Free"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
 pub(crate) mod table {
-    pub(crate) use crate::game::wscript::wscriptman::table::IS_REPLAY_PLAYING;
-    pub(crate) use crate::game::wscript::wscriptman::table::GET_CHANNEL_VOLUME;
-    pub(crate) use crate::game::wscript::wscriptman::table::SND_BANK_REMOVE;
-    pub(crate) use crate::game::wscript::wscriptman::table::SND_MIDI_RESUME;
-    pub(crate) use crate::game::wscript::wscriptman::table::SCE_MC_FLUSH;
     pub(crate) use crate::game::wscript::wscriptman::table::BUILTIN_DELETE;
     pub(crate) use crate::game::wscript::wscriptman::table::BUILTIN_VEC_DELETE;
+    pub(crate) use crate::game::wscript::wscriptman::table::BXFILE_EXISTS;
+    pub(crate) use crate::game::wscript::wscriptman::table::GET_CHANNEL_VOLUME;
+    pub(crate) use crate::game::wscript::wscriptman::table::IS_REPLAY_PLAYING;
     pub(crate) use crate::game::wscript::wscriptman::table::MEM_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::table::WORLD_GET_OBJECT_SCRIPT_FUNC;
-    pub(crate) use crate::game::wscript::wscriptman::table::WSCRIPT_PROCESS_LIST_POP_FRONT;
-    pub(crate) use crate::game::wscript::wscriptman::table::STR_HASH;
+    pub(crate) use crate::game::wscript::wscriptman::table::SCE_MC_FLUSH;
     pub(crate) use crate::game::wscript::wscriptman::table::SERIALIZE_READ_U32;
     pub(crate) use crate::game::wscript::wscriptman::table::SERIALIZE_READ_U32_2;
-    pub(crate) use crate::game::wscript::wscriptman::table::BXFILE_EXISTS;
+    pub(crate) use crate::game::wscript::wscriptman::table::SND_BANK_REMOVE;
+    pub(crate) use crate::game::wscript::wscriptman::table::SND_MIDI_RESUME;
     pub(crate) use crate::game::wscript::wscriptman::table::STREAM_FILE_DESTROY;
+    pub(crate) use crate::game::wscript::wscriptman::table::STR_HASH;
     pub(crate) use crate::game::wscript::wscriptman::table::UI_SCREEN_FIND_OBJECT;
+    pub(crate) use crate::game::wscript::wscriptman::table::WORLD_GET_OBJECT_SCRIPT_FUNC;
+    pub(crate) use crate::game::wscript::wscriptman::table::WSCRIPT_PROCESS_LIST_POP_FRONT;
 }
-
 
 // ---------------------------------------------------------------------------
 // Instance manager.
@@ -90,7 +93,6 @@ pub fn instances_man_alloc(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void InstancesMan_Free(InstancesMan *man, void *inst)` (0x351260): push
 /// `inst` on the free list.
 pub fn instances_man_free(c: &mut Cpu) {
@@ -102,7 +104,6 @@ pub fn instances_man_free(c: &mut Cpu) {
     man.off(8).sw(c, inst);
     abi::ret(c);
 }
-
 
 /// `void InstancesMan_dtor(InstancesMan* self, int flags)` (0x351120): free
 /// the instance table and, when `flags & 1`, the object.
@@ -138,7 +139,6 @@ pub fn instances_man_dtor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void* InstancesMan_AllocByHandle(InstancesMan* self, unsigned id)`
 /// (0x3511d0): unlink the free node whose 16-byte slot index matches
@@ -210,59 +210,66 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::put_words;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
     use crate::difftest::RA as TEST_RA;
-    use ssx3_ee as ee;
-    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
-    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear;
-    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
-    pub(crate) use crate::game::object::animnode::tests::heap_block;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_12 as SEEDS_2;
     pub(crate) use crate::game::dirtysock::tags2::tests::w8;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w32;
-    pub(crate) use crate::game::fe::feasyncfile::tests::gpat;
     pub(crate) use crate::game::fe::feasyncfile::tests::be_library_8 as be_library;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_4 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::world_5 as world;
     pub(crate) use crate::game::fe::feasyncfile::tests::env;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::gpat;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_4 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w32;
+    pub(crate) use crate::game::fe::feasyncfile::tests::world_5 as world;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_12 as SEEDS_2;
+    pub(crate) use crate::game::object::animnode::tests::heap_block;
+    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
+    pub(crate) use crate::game::wscript::wscriptman::tests::clear_3 as clear;
+    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS;
+    use ssx3_ee as ee;
 
     #[test]
     fn instances_man_alloc_matches() {
-        check_lohi(ssx3_ee::s11::f_00351170, instances_man_alloc, 200, &|c, seed| {
-            let mut r = Rng(0x1017 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write8(DATA, (r.next_u32() & 0xff) as u8);
-            c.bus.write32(DATA + 0xc, r.next_u32());
-            let slot = if seed % 3 == 0 { 0 } else { DATA + 0x100 };
-            c.bus.write32(DATA + 8, slot);
-            c.bus.write32(slot, r.next_u32());
-            c.bus.write32(slot + 8, r.next_u32());
-            c.bus.write8(slot + 0x78, (r.next_u32() & 0xff) as u8);
-        });
+        check_lohi(
+            ssx3_ee::s11::f_00351170,
+            instances_man_alloc,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1017 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write8(DATA, (r.next_u32() & 0xff) as u8);
+                c.bus.write32(DATA + 0xc, r.next_u32());
+                let slot = if seed % 3 == 0 { 0 } else { DATA + 0x100 };
+                c.bus.write32(DATA + 8, slot);
+                c.bus.write32(slot, r.next_u32());
+                c.bus.write32(slot + 8, r.next_u32());
+                c.bus.write8(slot + 0x78, (r.next_u32() & 0xff) as u8);
+            },
+        );
     }
-
 
     #[test]
     fn instances_man_free_matches() {
-        check(ssx3_ee::s11::f_00351260, instances_man_free, 200, &|c, seed| {
-            let mut r = Rng(0x1018 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA as u64 + 0x100) | ((r.next_u32() as u64) << 32);
-            c.bus.write32(DATA + 8, r.next_u32());
-        });
+        check(
+            ssx3_ee::s11::f_00351260,
+            instances_man_free,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1018 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA as u64 + 0x100) | ((r.next_u32() as u64) << 32);
+                c.bus.write32(DATA + 8, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn instances_man_dtor_matches() {
@@ -286,7 +293,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn instances_man_alloc_by_handle_matches() {

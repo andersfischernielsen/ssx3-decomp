@@ -27,8 +27,8 @@
 
 use crate::abi::{addu, c_lt_s, r32, ret, set_fpr};
 use crate::call::{call_ptr, guest, Callee, Flow, Frame, VSlot};
-use crate::guest::Addr;
 use crate::events::{deliver_event_here, event_due};
+use crate::guest::Addr;
 use crate::ps2f::{vu0_scratch, FpuF32, Vec4};
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::{reg::*, sx};
@@ -37,16 +37,56 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this package: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x003a_9800, streamer_get_section_count, "cWorldCache_StreamerGetSectionCount"),
-    (0x003a_9d60, streamer_update_view, "cWorldCache_StreamerUpdateView"),
-    (0x0031_1b20, anim_controller_get_layer_sequence, "AnimController_GetLayerSequence"),
-    (0x0031_1ae8, anim_controller_get_layer_anim_entry, "AnimController_GetLayerAnimEntry"),
-    (0x0031_2ae8, anim_controller_is_layer_anim_finished, "AnimController_IsLayerAnimFinished"),
-    (0x0031_1e88, anim_controller_fade_out_layer, "AnimController_FadeOutLayer"),
-    (0x0031_1b48, anim_controller_rotate_roots, "AnimController_RotateRoots"),
-    (0x0035_a5d8, multi_spline_modifier_v03, "MultiSplineModifier_v03"),
-    (0x0035_abf0, multi_spline_modifier_v04, "MultiSplineModifier_v04"),
-    (0x0036_1c20, multi_spline_modifier_v18, "MultiSplineModifier_v18"),
+    (
+        0x003a_9800,
+        streamer_get_section_count,
+        "cWorldCache_StreamerGetSectionCount",
+    ),
+    (
+        0x003a_9d60,
+        streamer_update_view,
+        "cWorldCache_StreamerUpdateView",
+    ),
+    (
+        0x0031_1b20,
+        anim_controller_get_layer_sequence,
+        "AnimController_GetLayerSequence",
+    ),
+    (
+        0x0031_1ae8,
+        anim_controller_get_layer_anim_entry,
+        "AnimController_GetLayerAnimEntry",
+    ),
+    (
+        0x0031_2ae8,
+        anim_controller_is_layer_anim_finished,
+        "AnimController_IsLayerAnimFinished",
+    ),
+    (
+        0x0031_1e88,
+        anim_controller_fade_out_layer,
+        "AnimController_FadeOutLayer",
+    ),
+    (
+        0x0031_1b48,
+        anim_controller_rotate_roots,
+        "AnimController_RotateRoots",
+    ),
+    (
+        0x0035_a5d8,
+        multi_spline_modifier_v03,
+        "MultiSplineModifier_v03",
+    ),
+    (
+        0x0035_abf0,
+        multi_spline_modifier_v04,
+        "MultiSplineModifier_v04",
+    ),
+    (
+        0x0036_1c20,
+        multi_spline_modifier_v18,
+        "MultiSplineModifier_v18",
+    ),
     (0x0034_dc90, anim_object_v51, "AnimObject_v51"),
     (0x0034_2150, anim_object_save, "AnimObject_Save"),
     (0x0034_e3d8, anim_object_base_save, "AnimObject_BaseSave"),
@@ -86,45 +126,103 @@ fn virtual_call(c: &mut Cpu, obj: u64, vt: u64, slot: u32, func_reg: usize, ret:
 mod callee {
     use super::{ee, Callee};
 
-    pub const ANIM_SEQ_LIST_GET_AT: Callee = Callee { addr: 0x0031_4760, f: ee::s10::AnimSeqList_GetAt };
-    pub const ANIM_TABLE_GET_ENTRY: Callee = Callee { addr: 0x0031_15c8, f: ee::s10::AnimTable_GetEntry };
-    pub const ANIM_SEQ_LIST_REMOVE_EVENT_TRIGGER: Callee =
-        Callee { addr: 0x0031_4718, f: ee::s10::AnimSeqList_RemoveEventTrigger };
-    pub const ANIM_SEQ_LIST_FADE_OUT_ALL: Callee =
-        Callee { addr: 0x0031_46d0, f: ee::s10::AnimSeqList_FadeOutAll };
-    pub const MATH_SIN_COS: Callee = Callee { addr: 0x0031_be50, f: ee::s10::Math_SinCos };
-    pub const ANIM_CONTROLLER_TRANSFORM_ROOTS: Callee =
-        Callee { addr: 0x0031_1bf0, f: ee::s10::AnimController_TransformRoots };
+    pub const ANIM_SEQ_LIST_GET_AT: Callee = Callee {
+        addr: 0x0031_4760,
+        f: ee::s10::AnimSeqList_GetAt,
+    };
+    pub const ANIM_TABLE_GET_ENTRY: Callee = Callee {
+        addr: 0x0031_15c8,
+        f: ee::s10::AnimTable_GetEntry,
+    };
+    pub const ANIM_SEQ_LIST_REMOVE_EVENT_TRIGGER: Callee = Callee {
+        addr: 0x0031_4718,
+        f: ee::s10::AnimSeqList_RemoveEventTrigger,
+    };
+    pub const ANIM_SEQ_LIST_FADE_OUT_ALL: Callee = Callee {
+        addr: 0x0031_46d0,
+        f: ee::s10::AnimSeqList_FadeOutAll,
+    };
+    pub const MATH_SIN_COS: Callee = Callee {
+        addr: 0x0031_be50,
+        f: ee::s10::Math_SinCos,
+    };
+    pub const ANIM_CONTROLLER_TRANSFORM_ROOTS: Callee = Callee {
+        addr: 0x0031_1bf0,
+        f: ee::s10::AnimController_TransformRoots,
+    };
 
-    pub const STREAMER_UPDATE_VIEW: Callee = Callee { addr: 0x003a_9d60, f: ee::s13::f_003a9d60 };
-    pub const STREAMER_UPDATE_VIEW_NODE: Callee =
-        Callee { addr: 0x003a_a028, f: ee::s13::f_003aa028 };
-    pub const STREAMER_POINT_BOX_DISTANCE: Callee =
-        Callee { addr: 0x003a_9e50, f: ee::s13::cWorldCache_PointBoxDistance };
-    pub const STREAMER_IS_HULL_RESIDENT: Callee =
-        Callee { addr: 0x003a_8618, f: ee::s13::cWorldCache_IsHullResident };
-    pub const STREAMER_REQUEST_HULL: Callee =
-        Callee { addr: 0x003a_8448, f: ee::s13::cWorldCache_RequestHull };
+    pub const STREAMER_UPDATE_VIEW: Callee = Callee {
+        addr: 0x003a_9d60,
+        f: ee::s13::f_003a9d60,
+    };
+    pub const STREAMER_UPDATE_VIEW_NODE: Callee = Callee {
+        addr: 0x003a_a028,
+        f: ee::s13::f_003aa028,
+    };
+    pub const STREAMER_POINT_BOX_DISTANCE: Callee = Callee {
+        addr: 0x003a_9e50,
+        f: ee::s13::cWorldCache_PointBoxDistance,
+    };
+    pub const STREAMER_IS_HULL_RESIDENT: Callee = Callee {
+        addr: 0x003a_8618,
+        f: ee::s13::cWorldCache_IsHullResident,
+    };
+    pub const STREAMER_REQUEST_HULL: Callee = Callee {
+        addr: 0x003a_8448,
+        f: ee::s13::cWorldCache_RequestHull,
+    };
 
-    pub const RIDER_GET_MAIN_STATE: Callee = Callee { addr: 0x0011_fe98, f: ee::s00::Rider_GetMainState };
-    pub const RIDER_GET_SUB_STATE: Callee = Callee { addr: 0x0011_fee8, f: ee::s00::Rider_GetSubState };
-    pub const ANIM_SEQ_FIRE_TRIGGERS_AT_TIME: Callee =
-        Callee { addr: 0x0031_3938, f: ee::s10::AnimSequence_FireTriggersAtTime };
-    pub const ANIM_SEQ_FIRE_END_TRIGGERS: Callee =
-        Callee { addr: 0x0031_39a8, f: ee::s10::AnimSequence_FireEndTriggers };
+    pub const RIDER_GET_MAIN_STATE: Callee = Callee {
+        addr: 0x0011_fe98,
+        f: ee::s00::Rider_GetMainState,
+    };
+    pub const RIDER_GET_SUB_STATE: Callee = Callee {
+        addr: 0x0011_fee8,
+        f: ee::s00::Rider_GetSubState,
+    };
+    pub const ANIM_SEQ_FIRE_TRIGGERS_AT_TIME: Callee = Callee {
+        addr: 0x0031_3938,
+        f: ee::s10::AnimSequence_FireTriggersAtTime,
+    };
+    pub const ANIM_SEQ_FIRE_END_TRIGGERS: Callee = Callee {
+        addr: 0x0031_39a8,
+        f: ee::s10::AnimSequence_FireEndTriggers,
+    };
 
-    pub const MULTI_SPLINE_MODIFIER_UPDATE_NODES: Callee =
-        Callee { addr: 0x0035_ac20, f: ee::s11::MultiSplineModifier_UpdateNodes };
-    pub const ANIM_OBJECT_BASE_SAVE: Callee = Callee { addr: 0x0034_e3d8, f: ee::s11::AnimObject_BaseSave };
-    pub const MOD_OBJ_SAVE: Callee = Callee { addr: 0x0035_6b30, f: ee::s11::ModObj_Save };
-    pub const ANIM_OBJECT_STEP_LOOP: Callee = Callee { addr: 0x0034_1e48, f: ee::s11::AnimObject_StepLoop };
-    pub const ANIM_OBJECT_STEP_PING_PONG: Callee =
-        Callee { addr: 0x0034_1ec0, f: ee::s11::AnimObject_StepPingPong };
-    pub const ANIM_OBJECT_STEP_CLAMP: Callee = Callee { addr: 0x0034_1f38, f: ee::s11::AnimObject_StepClamp };
+    pub const MULTI_SPLINE_MODIFIER_UPDATE_NODES: Callee = Callee {
+        addr: 0x0035_ac20,
+        f: ee::s11::MultiSplineModifier_UpdateNodes,
+    };
+    pub const ANIM_OBJECT_BASE_SAVE: Callee = Callee {
+        addr: 0x0034_e3d8,
+        f: ee::s11::AnimObject_BaseSave,
+    };
+    pub const MOD_OBJ_SAVE: Callee = Callee {
+        addr: 0x0035_6b30,
+        f: ee::s11::ModObj_Save,
+    };
+    pub const ANIM_OBJECT_STEP_LOOP: Callee = Callee {
+        addr: 0x0034_1e48,
+        f: ee::s11::AnimObject_StepLoop,
+    };
+    pub const ANIM_OBJECT_STEP_PING_PONG: Callee = Callee {
+        addr: 0x0034_1ec0,
+        f: ee::s11::AnimObject_StepPingPong,
+    };
+    pub const ANIM_OBJECT_STEP_CLAMP: Callee = Callee {
+        addr: 0x0034_1f38,
+        f: ee::s11::AnimObject_StepClamp,
+    };
     /// Unnamed 0x34eba0: runs the object's script hook, true to go on.
-    pub const ANIM_OBJECT_SCRIPT_CONTINUES: Callee = Callee { addr: 0x0034_eba0, f: ee::s11::f_0034eba0 };
+    pub const ANIM_OBJECT_SCRIPT_CONTINUES: Callee = Callee {
+        addr: 0x0034_eba0,
+        f: ee::s11::f_0034eba0,
+    };
     /// Unnamed 0x345430: runs a spline modifier's attached script.
-    pub const RUN_SPLINE_SCRIPT: Callee = Callee { addr: 0x0034_5430, f: ee::s11::f_00345430 };
+    pub const RUN_SPLINE_SCRIPT: Callee = Callee {
+        addr: 0x0034_5430,
+        f: ee::s11::f_00345430,
+    };
 }
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -152,7 +250,11 @@ pub fn streamer_get_section_count(c: &mut Cpu) {
     let db = lw(c, at(c, A0, streamer::DB));
     c.g[V0][0] = db;
     c.cycles += 2;
-    c.g[V0][0] = if db == 0 { 0 } else { lw(c, (db as u32).wrapping_add(streamer::DB_SECTION_COUNT)) };
+    c.g[V0][0] = if db == 0 {
+        0
+    } else {
+        lw(c, (db as u32).wrapping_add(streamer::DB_SECTION_COUNT))
+    };
     ret(c);
 }
 
@@ -999,10 +1101,20 @@ pub fn multi_spline_modifier_v24(c: &mut Cpu) {
 
 /// `a ± b` lane by lane (VSUB / VADD with all lanes).
 fn vsub(a: Vec4, b: Vec4) -> Vec4 {
-    Vec4 { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z, w: a.w - b.w }
+    Vec4 {
+        x: a.x - b.x,
+        y: a.y - b.y,
+        z: a.z - b.z,
+        w: a.w - b.w,
+    }
 }
 fn vadd(a: Vec4, b: Vec4) -> Vec4 {
-    Vec4 { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z, w: a.w + b.w }
+    Vec4 {
+        x: a.x + b.x,
+        y: a.y + b.y,
+        z: a.z + b.z,
+        w: a.w + b.w,
+    }
 }
 
 /// One iteration of `v24` (node index in s4, s1 = 0x60 on entry).
@@ -1162,7 +1274,16 @@ pub fn multi_spline_modifier_v11(c: &mut Cpu) {
             callee::RUN_SPLINE_SCRIPT.call(c, 0x0035_b578)?;
         }
         c.cycles += 11;
-        for (reg, off) in [(S0, 0xc0), (S1, 0xb0), (S2, 0xa0), (S3, 0x90), (S4, 0x80), (S5, 0x70), (S6, 0x60), (S7, 0x50)] {
+        for (reg, off) in [
+            (S0, 0xc0),
+            (S1, 0xb0),
+            (S2, 0xa0),
+            (S3, 0x90),
+            (S4, 0x80),
+            (S5, 0x70),
+            (S6, 0x60),
+            (S7, 0x50),
+        ] {
             frame.restore(c, reg, off);
         }
         frame.restore_ra(c, 0x40);
@@ -1336,7 +1457,14 @@ pub fn anim_controller_dispatch_end_events(c: &mut Cpu) {
             }
         }
         c.cycles += 9;
-        for (reg, off) in [(S0, 0x160), (S1, 0x150), (S2, 0x140), (S3, 0x130), (S4, 0x120), (S5, 0x110)] {
+        for (reg, off) in [
+            (S0, 0x160),
+            (S1, 0x150),
+            (S2, 0x140),
+            (S3, 0x130),
+            (S4, 0x120),
+            (S5, 0x110),
+        ] {
             frame.restore(c, reg, off);
         }
         frame.restore_ra(c, 0x100);
@@ -1397,7 +1525,10 @@ mod tests {
             }
         }
         for s in sites {
-            assert!(seen.contains(s), "call site returning to {s:#x} never reached (seen {seen:x?})");
+            assert!(
+                seen.contains(s),
+                "call site returning to {s:#x} never reached (seen {seen:x?})"
+            );
         }
     }
 
@@ -1436,7 +1567,13 @@ mod tests {
 
     /// Calls only through real (direct) callees: plain `check` with the fake
     /// hooks installed, plus the listed total-cycle paths.
-    fn real_calls(gen: GuestFn, hand: GuestFn, salt: u64, paths: &[u64], setup: &dyn Fn(&mut Cpu, &mut Rng, u32)) {
+    fn real_calls(
+        gen: GuestFn,
+        hand: GuestFn,
+        salt: u64,
+        paths: &[u64],
+        setup: &dyn Fn(&mut Cpu, &mut Rng, u32),
+    ) {
         let s = |c: &mut Cpu, seed: u32| {
             let mut r = machine(c, seed, salt, 0);
             c.hooks.miss = fake_varied;
@@ -1450,12 +1587,18 @@ mod tests {
 
     #[test]
     fn streamer_get_section_count() {
-        real_calls(ssx3_ee::s13::f_003a9800, super::streamer_get_section_count, 0x5343, &[5], &|c, r, seed| {
-            let db = if seed % 3 == 0 { 0 } else { DATA + 0x100 };
-            c.bus.write32(DATA + 4, db);
-            c.bus.write32(DATA + 0x108, r.next_u32());
-            c.g[A0][0] = DATA as u64;
-        });
+        real_calls(
+            ssx3_ee::s13::f_003a9800,
+            super::streamer_get_section_count,
+            0x5343,
+            &[5],
+            &|c, r, seed| {
+                let db = if seed % 3 == 0 { 0 } else { DATA + 0x100 };
+                c.bus.write32(DATA + 4, db);
+                c.bus.write32(DATA + 0x108, r.next_u32());
+                c.g[A0][0] = DATA as u64;
+            },
+        );
     }
 
     /// A `cWorldCache` streamer at `DATA` with a graphics manager and one
@@ -1473,7 +1616,8 @@ mod tests {
         c.bus.write32(DATA + 4, db);
         c.bus.write32(db + 8, n);
         c.bus.write32(DATA + 8, sections);
-        c.bus.write32(rec + 0x240, if seed % 5 == 0 { 0 } else { 1 });
+        c.bus
+            .write32(rec + 0x240, if seed % 5 == 0 { 0 } else { 1 });
         c.bus.write32(rec + 0x280, r.f32(100.0));
         // A huge view bound so the node's early-out compare always returns 0.
         c.bus.write32(rec + 0x260, r.f32(1000.0));
@@ -1491,23 +1635,35 @@ mod tests {
 
     #[test]
     fn streamer_get_view_clearance() {
-        real_calls(ssx3_ee::s13::f_003a96e0, super::streamer_get_view_clearance, 0x5344, &[], &|c, r, seed| {
-            let (rec, view) = streamer(c, r, seed);
-            for i in 0..4 {
-                c.bus.write32(rec + 0x250 + 4 * i, r.edge_f32());
-            }
-            c.bus.write32(rec + 0x284, r.edge_f32());
-            c.g[A1][0] = view as u64;
-            c.g[A2][0] = (DATA + 0x1000) as u64;
-            c.g[A3][0] = (DATA + 0x2000) as u64;
-        });
+        real_calls(
+            ssx3_ee::s13::f_003a96e0,
+            super::streamer_get_view_clearance,
+            0x5344,
+            &[],
+            &|c, r, seed| {
+                let (rec, view) = streamer(c, r, seed);
+                for i in 0..4 {
+                    c.bus.write32(rec + 0x250 + 4 * i, r.edge_f32());
+                }
+                c.bus.write32(rec + 0x284, r.edge_f32());
+                c.g[A1][0] = view as u64;
+                c.g[A2][0] = (DATA + 0x1000) as u64;
+                c.g[A3][0] = (DATA + 0x2000) as u64;
+            },
+        );
     }
 
     #[test]
     fn streamer_update_view() {
-        real_calls(ssx3_ee::s13::f_003a9d60, super::streamer_update_view, 0x5345, &[], &|c, r, seed| {
-            streamer(c, r, seed);
-        });
+        real_calls(
+            ssx3_ee::s13::f_003a9d60,
+            super::streamer_update_view,
+            0x5345,
+            &[],
+            &|c, r, seed| {
+                streamer(c, r, seed);
+            },
+        );
     }
 
     // ------------------------------------------------------- AnimController
@@ -1522,7 +1678,11 @@ mod tests {
         fill(c, r, CTRL, 0x20);
         c.bus.write32(CTRL + 0x50, LISTS);
         for layer in 0..6 {
-            let id = if r.next_u32() % 3 == 0 { 0x1b6 } else { r.next_u32() % 0x300 };
+            let id = if r.next_u32() % 3 == 0 {
+                0x1b6
+            } else {
+                r.next_u32() % 0x300
+            };
             c.bus.write32(CTRL + 4 * layer, id);
             let list = LISTS + 8 * layer;
             let n = r.next_u32() % 4;
@@ -1540,64 +1700,95 @@ mod tests {
 
     #[test]
     fn anim_controller_get_layer_sequence() {
-        real_calls(ssx3_ee::s10::f_00311b20, super::anim_controller_get_layer_sequence, 0x4153, &[], &|c, r, _| {
-            anim_controller(c, r);
-            c.g[A0][0] = CTRL as u64;
-            c.g[A1][0] = (r.next_u32() % 6) as u64;
-        });
+        real_calls(
+            ssx3_ee::s10::f_00311b20,
+            super::anim_controller_get_layer_sequence,
+            0x4153,
+            &[],
+            &|c, r, _| {
+                anim_controller(c, r);
+                c.g[A0][0] = CTRL as u64;
+                c.g[A1][0] = (r.next_u32() % 6) as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_controller_is_layer_anim_finished() {
-        real_calls(ssx3_ee::s10::f_00312ae8, super::anim_controller_is_layer_anim_finished, 0x4146, &[], &|c, r, _| {
-            anim_controller(c, r);
-            // Every layer non-empty (the result is dereferenced).
-            for layer in 0..6 {
-                if c.bus.read32(LISTS + 8 * layer + 4) == 0 {
-                    c.bus.write32(LISTS + 8 * layer + 4, SEQS + 0x100 * (24 + layer));
+        real_calls(
+            ssx3_ee::s10::f_00312ae8,
+            super::anim_controller_is_layer_anim_finished,
+            0x4146,
+            &[],
+            &|c, r, _| {
+                anim_controller(c, r);
+                // Every layer non-empty (the result is dereferenced).
+                for layer in 0..6 {
+                    if c.bus.read32(LISTS + 8 * layer + 4) == 0 {
+                        c.bus
+                            .write32(LISTS + 8 * layer + 4, SEQS + 0x100 * (24 + layer));
+                    }
                 }
-            }
-            c.g[A0][0] = CTRL as u64;
-            c.g[A1][0] = (r.next_u32() % 6) as u64;
-        });
+                c.g[A0][0] = CTRL as u64;
+                c.g[A1][0] = (r.next_u32() % 6) as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_controller_get_layer_anim_entry() {
-        real_calls(ssx3_ee::s10::f_00311ae8, super::anim_controller_get_layer_anim_entry, 0x4145, &[11, 20], &|c, r, _| {
-            anim_controller(c, r);
-            fill(c, r, 0x0044_6990, 0x300 * 7);
-            c.g[A0][0] = CTRL as u64;
-            c.g[A1][0] = (r.next_u32() % 6) as u64;
-        });
+        real_calls(
+            ssx3_ee::s10::f_00311ae8,
+            super::anim_controller_get_layer_anim_entry,
+            0x4145,
+            &[11, 20],
+            &|c, r, _| {
+                anim_controller(c, r);
+                fill(c, r, 0x0044_6990, 0x300 * 7);
+                c.g[A0][0] = CTRL as u64;
+                c.g[A1][0] = (r.next_u32() % 6) as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_controller_fade_out_layer() {
         // The real list walkers run (sequence fade-out / trigger removal on
         // random sequences); empty and non-empty layers.
-        real_calls(ssx3_ee::s10::f_00311e88, super::anim_controller_fade_out_layer, 0x464f, &[], &|c, r, _| {
-            anim_controller(c, r);
-            c.f[12] = r.edge_f32();
-            c.g[A0][0] = CTRL as u64;
-            c.g[A1][0] = (r.next_u32() % 6) as u64;
-        });
+        real_calls(
+            ssx3_ee::s10::f_00311e88,
+            super::anim_controller_fade_out_layer,
+            0x464f,
+            &[],
+            &|c, r, _| {
+                anim_controller(c, r);
+                c.f[12] = r.edge_f32();
+                c.g[A0][0] = CTRL as u64;
+                c.g[A1][0] = (r.next_u32() % 6) as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_controller_rotate_roots() {
-        real_calls(ssx3_ee::s10::f_00311b48, super::anim_controller_rotate_roots, 0x5252, &[], &|c, r, _| {
-            anim_controller(c, r);
-            // Empty layers: TransformRoots walks nothing.
-            for layer in 0..6 {
-                c.bus.write32(LISTS + 8 * layer, 0);
-            }
-            for i in 0..12 {
-                c.bus.write32(super::ROOT_TRANSLATION + 4 * i, r.f32(2.0));
-            }
-            c.f[12] = r.f32(7.0);
-            c.g[A0][0] = CTRL as u64;
-        });
+        real_calls(
+            ssx3_ee::s10::f_00311b48,
+            super::anim_controller_rotate_roots,
+            0x5252,
+            &[],
+            &|c, r, _| {
+                anim_controller(c, r);
+                // Empty layers: TransformRoots walks nothing.
+                for layer in 0..6 {
+                    c.bus.write32(LISTS + 8 * layer, 0);
+                }
+                for i in 0..12 {
+                    c.bus.write32(super::ROOT_TRANSLATION + 4 * i, r.f32(2.0));
+                }
+                c.f[12] = r.f32(7.0);
+                c.g[A0][0] = CTRL as u64;
+            },
+        );
     }
 
     // ------------------------------------------- MultiSpline / AnimObject
@@ -1607,122 +1798,187 @@ mod tests {
     #[test]
     fn multi_spline_modifier_v03() {
         // UpdateNodes on a modifier with no spline nodes.
-        real_calls(ssx3_ee::s11::f_0035a5d8, super::multi_spline_modifier_v03, 0x7633, &[], &|c, r, _| {
-            fill(c, r, OBJ, 0x20);
-            for off in [0x4, 0x30] {
-                c.bus.write32(OBJ + off, 0);
-            }
-            c.bus.write32(OBJ + 0x1c, 0);
-            c.g[A0][0] = OBJ as u64;
-        });
+        real_calls(
+            ssx3_ee::s11::f_0035a5d8,
+            super::multi_spline_modifier_v03,
+            0x7633,
+            &[],
+            &|c, r, _| {
+                fill(c, r, OBJ, 0x20);
+                for off in [0x4, 0x30] {
+                    c.bus.write32(OBJ + off, 0);
+                }
+                c.bus.write32(OBJ + 0x1c, 0);
+                c.g[A0][0] = OBJ as u64;
+            },
+        );
     }
 
     #[test]
     fn multi_spline_modifier_v04() {
-        calls_and_events(ssx3_ee::s11::f_0035abf0, super::multi_spline_modifier_v04, None, 0x7634, 1, &[0x0035_ac14], &|c, r, _| {
-            put_vtable(c, r);
-            let owner = DATA + 0x300;
-            let object = DATA + 0x380;
-            c.bus.write32(OBJ + 0x40, owner);
-            c.bus.write32(owner + 0xc, object);
-            c.bus.write32(object + 0xc, VT);
-            c.g[A0][0] = OBJ as u64;
-        });
+        calls_and_events(
+            ssx3_ee::s11::f_0035abf0,
+            super::multi_spline_modifier_v04,
+            None,
+            0x7634,
+            1,
+            &[0x0035_ac14],
+            &|c, r, _| {
+                put_vtable(c, r);
+                let owner = DATA + 0x300;
+                let object = DATA + 0x380;
+                c.bus.write32(OBJ + 0x40, owner);
+                c.bus.write32(owner + 0xc, object);
+                c.bus.write32(object + 0xc, VT);
+                c.g[A0][0] = OBJ as u64;
+            },
+        );
     }
 
     #[test]
     fn multi_spline_modifier_v18() {
-        calls_and_events(ssx3_ee::s12::f_00361c20, super::multi_spline_modifier_v18, None, 0x7618, 1, &[0x0036_1c50], &|c, r, seed| {
-            put_vtable(c, r);
-            fill(c, r, OBJ, 0x20);
-            c.bus.write32(OBJ, VT);
-            c.bus.write32(OBJ + 0x30, if seed % 2 == 0 { 0 } else { 1 });
-            c.bus.write32(OBJ + 0x44, DATA + 0x400);
-            c.bus.write32(DATA + 0x400, r.next_u32());
-            c.g[A0][0] = OBJ as u64;
-        });
+        calls_and_events(
+            ssx3_ee::s12::f_00361c20,
+            super::multi_spline_modifier_v18,
+            None,
+            0x7618,
+            1,
+            &[0x0036_1c50],
+            &|c, r, seed| {
+                put_vtable(c, r);
+                fill(c, r, OBJ, 0x20);
+                c.bus.write32(OBJ, VT);
+                c.bus.write32(OBJ + 0x30, if seed % 2 == 0 { 0 } else { 1 });
+                c.bus.write32(OBJ + 0x44, DATA + 0x400);
+                c.bus.write32(DATA + 0x400, r.next_u32());
+                c.g[A0][0] = OBJ as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_object_v51() {
-        calls_and_events(ssx3_ee::s11::f_0034dc90, super::anim_object_v51, None, 0x4f51, 3, &[0x0034_dcbc, 0x0034_dcdc, 0x0034_dcf0], &|c, r, _| {
-            put_vtable(c, r);
-            fill(c, r, OBJ, 0x20);
-            c.bus.write32(OBJ + 0x20, VT);
-            c.g[A0][0] = OBJ as u64;
-        });
+        calls_and_events(
+            ssx3_ee::s11::f_0034dc90,
+            super::anim_object_v51,
+            None,
+            0x4f51,
+            3,
+            &[0x0034_dcbc, 0x0034_dcdc, 0x0034_dcf0],
+            &|c, r, _| {
+                put_vtable(c, r);
+                fill(c, r, OBJ, 0x20);
+                c.bus.write32(OBJ + 0x20, VT);
+                c.g[A0][0] = OBJ as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_object_save() {
         // BaseSave and ModObj_Save run for real; ModObj_Save's writes go
         // through the stream's (fake) vtable.
-        calls_and_events(ssx3_ee::s11::f_00342150, super::anim_object_save, None, 0x4f53, 6, &[0x0034_218c, 0x0034_e414, 0x0034_e430], &|c, r, _| {
-            put_vtable(c, r);
-            fill(c, r, OBJ, 0x40);
-            // No modifier blocks to save.
-            c.bus.write32(OBJ + 0x30, 0);
-            c.bus.write32(OBJ + 0x4c, 0);
-            let stream = DATA + 0x500;
-            c.bus.write32(stream, VT);
-            c.g[A0][0] = OBJ as u64;
-            c.g[A1][0] = stream as u64;
-        });
+        calls_and_events(
+            ssx3_ee::s11::f_00342150,
+            super::anim_object_save,
+            None,
+            0x4f53,
+            6,
+            &[0x0034_218c, 0x0034_e414, 0x0034_e430],
+            &|c, r, _| {
+                put_vtable(c, r);
+                fill(c, r, OBJ, 0x40);
+                // No modifier blocks to save.
+                c.bus.write32(OBJ + 0x30, 0);
+                c.bus.write32(OBJ + 0x4c, 0);
+                let stream = DATA + 0x500;
+                c.bus.write32(stream, VT);
+                c.g[A0][0] = OBJ as u64;
+                c.g[A1][0] = stream as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_object_base_save() {
-        calls_and_events(ssx3_ee::s11::f_0034e3d8, super::anim_object_base_save, None, 0x4f42, 5, &[0x0034_e414, 0x0034_e430], &|c, r, _| {
-            put_vtable(c, r);
-            fill(c, r, OBJ, 0x40);
-            // No modifier blocks to save.
-            c.bus.write32(OBJ + 0x30, 0);
-            c.bus.write32(OBJ + 0x4c, 0);
-            let stream = DATA + 0x500;
-            c.bus.write32(stream, VT);
-            c.g[A0][0] = OBJ as u64;
-            c.g[A1][0] = stream as u64;
-        });
+        calls_and_events(
+            ssx3_ee::s11::f_0034e3d8,
+            super::anim_object_base_save,
+            None,
+            0x4f42,
+            5,
+            &[0x0034_e414, 0x0034_e430],
+            &|c, r, _| {
+                put_vtable(c, r);
+                fill(c, r, OBJ, 0x40);
+                // No modifier blocks to save.
+                c.bus.write32(OBJ + 0x30, 0);
+                c.bus.write32(OBJ + 0x4c, 0);
+                let stream = DATA + 0x500;
+                c.bus.write32(stream, VT);
+                c.g[A0][0] = OBJ as u64;
+                c.g[A1][0] = stream as u64;
+            },
+        );
     }
 
     // ------------------------------------------------- batch 2: loops
 
     #[test]
     fn anim_object_v52() {
-        calls_and_events(ssx3_ee::s11::f_0034e348, super::anim_object_v52, Some(0x0034_e348), 0x4f52, 6, &[0x0034_e3a4], &|c, r, seed| {
-            put_vtable(c, r);
-            fill(c, r, OBJ, 0x20);
-            let nodes = DATA + 0x1000;
-            c.bus.write32(OBJ + 0x48, if seed % 7 == 0 { 0 } else { nodes });
-            let n = [0u32, 1, 2, 5, 0xffff_fffe][(seed / 7 % 5) as usize];
-            c.bus.write32(OBJ + 0x40, n);
-            for i in 0..6 {
-                c.bus.write32(nodes + 0xd0 * i + 0x84, VT);
-            }
-            c.g[A0][0] = OBJ as u64;
-        });
+        calls_and_events(
+            ssx3_ee::s11::f_0034e348,
+            super::anim_object_v52,
+            Some(0x0034_e348),
+            0x4f52,
+            6,
+            &[0x0034_e3a4],
+            &|c, r, seed| {
+                put_vtable(c, r);
+                fill(c, r, OBJ, 0x20);
+                let nodes = DATA + 0x1000;
+                c.bus
+                    .write32(OBJ + 0x48, if seed % 7 == 0 { 0 } else { nodes });
+                let n = [0u32, 1, 2, 5, 0xffff_fffe][(seed / 7 % 5) as usize];
+                c.bus.write32(OBJ + 0x40, n);
+                for i in 0..6 {
+                    c.bus.write32(nodes + 0xd0 * i + 0x84, VT);
+                }
+                c.g[A0][0] = OBJ as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_object_v15() {
         // The real step functions and script hook (0x34eba0) run.
-        real_calls(ssx3_ee::s11::f_00341d48, super::anim_object_v15, 0x4f15, &[], &|c, r, seed| {
-            put_vtable(c, r);
-            fill(c, r, OBJ, 0x20);
-            c.bus.write16(OBJ, [1u16, 2, 3, 0][(seed % 4) as usize]);
-            c.bus.write32(OBJ + 4, (seed / 4 % 3 != 0) as u32);
-            c.bus.write32(OBJ + 8, (seed / 12 % 4 == 0) as u32);
-            c.bus.write32(OBJ + 0xc, [0u32, 0, 0, 3, 0xffff_ffff][(seed / 48 % 5) as usize]);
-            for off in [0x10u32, 0x14, 0x18, 0x1c] {
-                c.bus.write32(OBJ + off, r.f32(10.0));
-            }
-            c.bus.write32(OBJ + 0x3c, VT);
-            // Script hook: (OBJ+0x48)->+0xc == OBJ+0x30 means "go on".
-            let p = DATA + 0x600;
-            c.bus.write32(OBJ + 0x48, p);
-            c.bus.write32(p + 0xc, if r.next_u32() % 2 == 0 { OBJ + 0x30 } else { 0 });
-            c.g[A0][0] = OBJ as u64;
-        });
+        real_calls(
+            ssx3_ee::s11::f_00341d48,
+            super::anim_object_v15,
+            0x4f15,
+            &[],
+            &|c, r, seed| {
+                put_vtable(c, r);
+                fill(c, r, OBJ, 0x20);
+                c.bus.write16(OBJ, [1u16, 2, 3, 0][(seed % 4) as usize]);
+                c.bus.write32(OBJ + 4, (seed / 4 % 3 != 0) as u32);
+                c.bus.write32(OBJ + 8, (seed / 12 % 4 == 0) as u32);
+                c.bus.write32(
+                    OBJ + 0xc,
+                    [0u32, 0, 0, 3, 0xffff_ffff][(seed / 48 % 5) as usize],
+                );
+                for off in [0x10u32, 0x14, 0x18, 0x1c] {
+                    c.bus.write32(OBJ + off, r.f32(10.0));
+                }
+                c.bus.write32(OBJ + 0x3c, VT);
+                // Script hook: (OBJ+0x48)->+0xc == OBJ+0x30 means "go on".
+                let p = DATA + 0x600;
+                c.bus.write32(OBJ + 0x48, p);
+                c.bus
+                    .write32(p + 0xc, if r.next_u32() % 2 == 0 { OBJ + 0x30 } else { 0 });
+                c.g[A0][0] = OBJ as u64;
+            },
+        );
     }
 
     /// Fake for `v11`: the frustum test (vtable slot 0x2e8) answers 0, 1
@@ -1739,9 +1995,11 @@ mod tests {
         fill(c, r, OBJ, 0x30);
         c.bus.write32(OBJ, VT);
         c.bus.write32(OBJ + 0x30, (seed % 3 == 0) as u32);
-        c.bus.write32(OBJ + 4, [0u32, 1, 2, 4, 6][(seed / 3 % 5) as usize]);
+        c.bus
+            .write32(OBJ + 4, [0u32, 1, 2, 4, 6][(seed / 3 % 5) as usize]);
         c.bus.write32(OBJ + 0x18, r.f32(50.0));
-        let (splines, target, nodes, objs) = (DATA + 0x400, DATA + 0x480, DATA + 0x1000, DATA + 0x2000);
+        let (splines, target, nodes, objs) =
+            (DATA + 0x400, DATA + 0x480, DATA + 0x1000, DATA + 0x2000);
         c.bus.write32(OBJ + 0x40, splines);
         c.bus.write32(splines + 0xc, target);
         c.bus.write32(target + 0xc, VT);
@@ -1766,12 +2024,22 @@ mod tests {
             Some(0x0035_b418),
             0x7611,
             12,
-            &[0x0035_b464, 0x0035_b4bc, 0x0035_b4d4, 0x0035_b50c, 0x0035_b52c, 0x0035_b550],
+            &[
+                0x0035_b464,
+                0x0035_b4bc,
+                0x0035_b4d4,
+                0x0035_b50c,
+                0x0035_b52c,
+                0x0035_b550,
+            ],
             &|c, r, seed| {
                 spline_modifier(c, r, seed);
                 c.hooks.miss = fake_classify;
                 let gfx = DATA + 0x10000;
-                c.bus.write32(super::GRAPHICS_GP_PLUS.wrapping_add(crate::difftest::GAME_GP), gfx);
+                c.bus.write32(
+                    super::GRAPHICS_GP_PLUS.wrapping_add(crate::difftest::GAME_GP),
+                    gfx,
+                );
                 c.bus.write32(gfx + 0x10d8, VT);
                 // The script (0x345430) with no entries.
                 c.bus.write32(OBJ + 0x1c, (seed % 4 == 1) as u32);
@@ -1799,7 +2067,11 @@ mod tests {
                 spline_modifier(c, r, seed);
                 // SpatialKey_FromAABB's constants (gp-0x2df8 / -0x2df4): with
                 // zeroes its grow-until-contained loop need not end.
-                crate::difftest::put_words(c, crate::difftest::GAME_GP - 0x2df8, &[0x3f36_db6e, 0x3e4c_cccd]);
+                crate::difftest::put_words(
+                    c,
+                    crate::difftest::GAME_GP - 0x2df8,
+                    &[0x3f36_db6e, 0x3e4c_cccd],
+                );
                 // Node bounds already at pos -/+ half (1 ulp off for some
                 // seeds), so the real SpatialHash_Update sees the same key.
                 use crate::ps2f::VuF32;

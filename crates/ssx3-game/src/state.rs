@@ -23,25 +23,69 @@ use ssx3_ee_rt::Cpu;
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0014_a080, be_get_rider_character, "BE_GetRiderCharacter"),
     (0x0014_a0e0, be_get_rider_profile, "BE_GetRiderProfile"),
-    (0x0014_7798, be_new_player_int_get_slot, "BENewPlayerInt_GetSlot"),
-    (0x0014_4bc0, be_new_race_int_get_track_info, "BENewRaceInt_GetTrackInfo"),
+    (
+        0x0014_7798,
+        be_new_player_int_get_slot,
+        "BENewPlayerInt_GetSlot",
+    ),
+    (
+        0x0014_4bc0,
+        be_new_race_int_get_track_info,
+        "BENewRaceInt_GetTrackInfo",
+    ),
     (0x002d_1bd8, world_get_instance, "World_GetInstance"),
-    (0x0023_1278, game_module_request_overlay_state, "GameModule_RequestOverlayState"),
+    (
+        0x0023_1278,
+        game_module_request_overlay_state,
+        "GameModule_RequestOverlayState",
+    ),
     (0x002c_c098, menu_sys_is_active, "MenuSys_IsActive"),
     (0x0032_6cc8, pad_queue_get_pad_data, "PadQueue_GetPadData"),
-    (0x0032_6ca0, pad_queue_get_pad_status, "PadQueue_GetPadStatus"),
-    (0x0032_6b48, pad_queue_advance_write, "PadQueue_AdvanceWrite"),
+    (
+        0x0032_6ca0,
+        pad_queue_get_pad_status,
+        "PadQueue_GetPadStatus",
+    ),
+    (
+        0x0032_6b48,
+        pad_queue_advance_write,
+        "PadQueue_AdvanceWrite",
+    ),
     (0x0026_f4a0, replay_set_state, "Replay_SetState"),
-    (0x0026_e9c0, replay_stream_rewind_write, "ReplayStream_RewindWrite"),
-    (0x0026_e5d0, snapshot_list_push_back, "SnapshotList_PushBack"),
-    (0x0022_e348, section_man_next_queued, "SectionMan_NextQueued"),
+    (
+        0x0026_e9c0,
+        replay_stream_rewind_write,
+        "ReplayStream_RewindWrite",
+    ),
+    (
+        0x0026_e5d0,
+        snapshot_list_push_back,
+        "SnapshotList_PushBack",
+    ),
+    (
+        0x0022_e348,
+        section_man_next_queued,
+        "SectionMan_NextQueued",
+    ),
     (0x0039_7840, ui_list_first, "UIList_First"),
-    (0x0039_7718, ui_list_node_is_sentinel, "UIListNode_IsSentinel"),
+    (
+        0x0039_7718,
+        ui_list_node_is_sentinel,
+        "UIListNode_IsSentinel",
+    ),
     (0x0039_7740, ui_list_node_unlink, "UIListNode_Unlink"),
     (0x003d_0b18, path_queue_append, "PATH_QueueAppend"),
     (0x003d_5450, path_select_map, "PATH_SelectMap"),
-    (0x0034_fc78, world_obj_link_instance, "WorldObj_LinkInstance"),
-    (0x0034_fc80, world_obj_unlink_instance, "WorldObj_UnlinkInstance"),
+    (
+        0x0034_fc78,
+        world_obj_link_instance,
+        "WorldObj_LinkInstance",
+    ),
+    (
+        0x0034_fc80,
+        world_obj_unlink_instance,
+        "WorldObj_UnlinkInstance",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -203,7 +247,10 @@ pub fn pad_queue_get_pad_data(c: &mut Cpu) {
     let pad_off = abi::mult(c, abi::arg(c, 1), PadQueue::PAD_SIZE);
     let frame_off = abi::mult(c, read, PadQueue::FRAME_SIZE);
     c.g[V1][0] = sx(frame_off);
-    let p = frame_off.wrapping_add(q.0 .0).wrapping_add(pad_off).wrapping_add(4);
+    let p = frame_off
+        .wrapping_add(q.0 .0)
+        .wrapping_add(pad_off)
+        .wrapping_add(4);
     abi::set_ret(c, p);
     abi::ret(c);
 }
@@ -298,7 +345,9 @@ pub fn snapshot_list_push_back(c: &mut Cpu) {
     // The tail is read again after the node stores (they may alias it).
     let tail = list.tail().lw(c);
     if tail != 0 {
-        Addr(tail as u32).off(SnapshotList::NODE_NEXT).sw(c, node.0 as u64);
+        Addr(tail as u32)
+            .off(SnapshotList::NODE_NEXT)
+            .sw(c, node.0 as u64);
     }
     c.cycles += 3;
     let head = list.head().lw(c);
@@ -433,7 +482,8 @@ pub fn path_queue_append(c: &mut Cpu) {
     let header = q.off(0xc).lw(c) as u32;
     let index = (header >> 16) & 0x3f;
     let next = (index + 1) & 0x3f;
-    q.off(0xc).sw(c, ((header & 0xffc0_ffff) | (next << 16)) as u64);
+    q.off(0xc)
+        .sw(c, ((header & 0xffc0_ffff) | (next << 16)) as u64);
     let slot = (index << 4).wrapping_add(q.off(0x10).0);
     let lo = Addr(src).read_u64_unaligned(c);
     let hi = Addr(src).off(8).read_u64_unaligned(c);
@@ -571,7 +621,6 @@ mod tests {
         }
     }
 
-
     /// Race setup: random slot table and records (slots 0..15, some
     /// profile words -1).
     fn race_setup(c: &mut Cpu, seed: u32) {
@@ -592,65 +641,107 @@ mod tests {
 
     #[test]
     fn be_get_rider_character_matches() {
-        check_lohi(ssx3_ee::s01::f_0014a080__generated, be_get_rider_character, SEEDS, &race_setup);
+        check_lohi(
+            ssx3_ee::s01::f_0014a080__generated,
+            be_get_rider_character,
+            SEEDS,
+            &race_setup,
+        );
     }
 
     #[test]
     fn be_get_rider_profile_matches() {
-        check_lohi(ssx3_ee::s01::f_0014a0e0__generated, be_get_rider_profile, SEEDS, &race_setup);
+        check_lohi(
+            ssx3_ee::s01::f_0014a0e0__generated,
+            be_get_rider_profile,
+            SEEDS,
+            &race_setup,
+        );
     }
 
     #[test]
     fn be_new_player_int_get_slot_matches() {
-        check(ssx3_ee::s01::f_00147798__generated, be_new_player_int_get_slot, SEEDS, &race_setup);
+        check(
+            ssx3_ee::s01::f_00147798__generated,
+            be_new_player_int_get_slot,
+            SEEDS,
+            &race_setup,
+        );
     }
 
     #[test]
     fn be_new_race_int_get_track_info_matches() {
-        check_lohi(ssx3_ee::s01::f_00144bc0__generated, be_new_race_int_get_track_info, SEEDS, &|c, seed| {
-            race_setup(c, seed);
-            // Any index, including negative ones (32-bit multiply).
-            let mut r = rng(seed, 2);
-            c.bus.write32(0x0053_5c08, r.next_u32());
-        });
+        check_lohi(
+            ssx3_ee::s01::f_00144bc0__generated,
+            be_new_race_int_get_track_info,
+            SEEDS,
+            &|c, seed| {
+                race_setup(c, seed);
+                // Any index, including negative ones (32-bit multiply).
+                let mut r = rng(seed, 2);
+                c.bus.write32(0x0053_5c08, r.next_u32());
+            },
+        );
     }
 
     #[test]
     fn world_get_instance_matches() {
-        check(ssx3_ee::s09::f_002d1bd8__generated, world_get_instance, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 3);
-            junk_regs(c, &mut r);
-            let gp = if seed % 2 == 0 { crate::difftest::GAME_GP } else { DATA + (r.next_u32() & 0xfffc) };
-            c.g[GP][0] = sx(gp);
-            c.bus.write32(gp + 0x16c8, r.next_u32());
-        });
+        check(
+            ssx3_ee::s09::f_002d1bd8__generated,
+            world_get_instance,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 3);
+                junk_regs(c, &mut r);
+                let gp = if seed % 2 == 0 {
+                    crate::difftest::GAME_GP
+                } else {
+                    DATA + (r.next_u32() & 0xfffc)
+                };
+                c.g[GP][0] = sx(gp);
+                c.bus.write32(gp + 0x16c8, r.next_u32());
+            },
+        );
     }
 
     #[test]
     fn game_module_request_overlay_state_matches() {
-        check(ssx3_ee::s06::f_00231278__generated, game_module_request_overlay_state, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 4);
-            junk_regs(c, &mut r);
-            c.g[A0][0] = { let a = DATA + (r.next_u32() & 0xffc); ptr(&mut r, a) };
-            c.g[A1][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
-        });
+        check(
+            ssx3_ee::s06::f_00231278__generated,
+            game_module_request_overlay_state,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 4);
+                junk_regs(c, &mut r);
+                c.g[A0][0] = {
+                    let a = DATA + (r.next_u32() & 0xffc);
+                    ptr(&mut r, a)
+                };
+                c.g[A1][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+            },
+        );
     }
 
     #[test]
     fn menu_sys_is_active_matches() {
-        check(ssx3_ee::s09::f_002cc098__generated, menu_sys_is_active, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 5);
-            junk_regs(c, &mut r);
-            c.g[A0][0] = sx(DATA);
-            let first = if seed % 3 == 0 { 0 } else { r.next_u32() };
-            c.bus.write32(DATA, first);
-            let v = match seed % 4 {
-                0 => 0,
-                1 => 0x8000_0000 | r.next_u32(),
-                _ => r.next_u32() >> 1,
-            };
-            c.bus.write32(DATA + 0x54, v);
-        });
+        check(
+            ssx3_ee::s09::f_002cc098__generated,
+            menu_sys_is_active,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 5);
+                junk_regs(c, &mut r);
+                c.g[A0][0] = sx(DATA);
+                let first = if seed % 3 == 0 { 0 } else { r.next_u32() };
+                c.bus.write32(DATA, first);
+                let v = match seed % 4 {
+                    0 => 0,
+                    1 => 0x8000_0000 | r.next_u32(),
+                    _ => r.next_u32() >> 1,
+                };
+                c.bus.write32(DATA + 0x54, v);
+            },
+        );
     }
 
     /// A PadQueue at DATA with random ring contents and indices.
@@ -665,80 +756,122 @@ mod tests {
             1 => 29,
             _ => r.next_u32() % 30,
         };
-        let write = if seed % 3 == 0 { (read.wrapping_add(1)) % 30 } else { r.next_u32() % 32 };
+        let write = if seed % 3 == 0 {
+            (read.wrapping_add(1)) % 30
+        } else {
+            r.next_u32() % 32
+        };
         c.bus.write32(DATA + 0x2ee0, read);
         c.bus.write32(DATA + 0x2ee4, write);
     }
 
     #[test]
     fn pad_queue_get_pad_data_matches() {
-        check_lohi(ssx3_ee::s10::f_00326cc8__generated, pad_queue_get_pad_data, SEEDS, &pad_setup);
+        check_lohi(
+            ssx3_ee::s10::f_00326cc8__generated,
+            pad_queue_get_pad_data,
+            SEEDS,
+            &pad_setup,
+        );
     }
 
     #[test]
     fn pad_queue_get_pad_status_matches() {
-        check_lohi(ssx3_ee::s10::f_00326ca0__generated, pad_queue_get_pad_status, SEEDS, &|c, seed| {
-            pad_setup(c, seed);
-            // Keep the status address inside the ring.
-            let read = c.bus.read32(DATA + 0x2ee0) % 30;
-            c.bus.write32(DATA + 0x2ee0, read);
-        });
+        check_lohi(
+            ssx3_ee::s10::f_00326ca0__generated,
+            pad_queue_get_pad_status,
+            SEEDS,
+            &|c, seed| {
+                pad_setup(c, seed);
+                // Keep the status address inside the ring.
+                let read = c.bus.read32(DATA + 0x2ee0) % 30;
+                c.bus.write32(DATA + 0x2ee0, read);
+            },
+        );
     }
 
     #[test]
     fn pad_queue_advance_write_matches() {
-        check_lohi(ssx3_ee::s10::f_00326b48__generated, pad_queue_advance_write, SEEDS, &pad_setup);
+        check_lohi(
+            ssx3_ee::s10::f_00326b48__generated,
+            pad_queue_advance_write,
+            SEEDS,
+            &pad_setup,
+        );
     }
 
     #[test]
     fn replay_set_state_matches() {
-        check(ssx3_ee::s07::f_0026f4a0__generated, replay_set_state, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 7);
-            junk_regs(c, &mut r);
-            c.g[A0][0] = { let a = DATA + (r.next_u32() & 0xffc); ptr(&mut r, a) };
-            c.g[A1][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
-        });
+        check(
+            ssx3_ee::s07::f_0026f4a0__generated,
+            replay_set_state,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 7);
+                junk_regs(c, &mut r);
+                c.g[A0][0] = {
+                    let a = DATA + (r.next_u32() & 0xffc);
+                    ptr(&mut r, a)
+                };
+                c.g[A1][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+            },
+        );
     }
 
     #[test]
     fn replay_stream_rewind_write_matches() {
-        check(ssx3_ee::s07::f_0026e9c0__generated, replay_stream_rewind_write, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 8);
-            junk_regs(c, &mut r);
-            c.g[A0][0] = ptr(&mut r, DATA);
-            scribble(c, &mut r, DATA, 8);
-        });
+        check(
+            ssx3_ee::s07::f_0026e9c0__generated,
+            replay_stream_rewind_write,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 8);
+                junk_regs(c, &mut r);
+                c.g[A0][0] = ptr(&mut r, DATA);
+                scribble(c, &mut r, DATA, 8);
+            },
+        );
     }
 
     #[test]
     fn snapshot_list_push_back_matches() {
-        check(ssx3_ee::s07::f_0026e5d0__generated, snapshot_list_push_back, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 9);
-            junk_regs(c, &mut r);
-            let (list, node) = (DATA, DATA + 0x40);
-            scribble(c, &mut r, DATA, 0x100 / 4);
-            let tail = [0, DATA + 0x80, node, list][(seed % 4) as usize];
-            let head = [0, DATA + 0xc0][(seed / 4 % 2) as usize];
-            c.bus.write32(list, head);
-            c.bus.write32(list + 4, tail);
-            c.g[A0][0] = ptr(&mut r, list);
-            c.g[A1][0] = sx(node);
-        });
+        check(
+            ssx3_ee::s07::f_0026e5d0__generated,
+            snapshot_list_push_back,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 9);
+                junk_regs(c, &mut r);
+                let (list, node) = (DATA, DATA + 0x40);
+                scribble(c, &mut r, DATA, 0x100 / 4);
+                let tail = [0, DATA + 0x80, node, list][(seed % 4) as usize];
+                let head = [0, DATA + 0xc0][(seed / 4 % 2) as usize];
+                c.bus.write32(list, head);
+                c.bus.write32(list + 4, tail);
+                c.g[A0][0] = ptr(&mut r, list);
+                c.g[A1][0] = sx(node);
+            },
+        );
     }
 
     #[test]
     fn section_man_next_queued_matches() {
-        check(ssx3_ee::s05::f_0022e348__generated, section_man_next_queued, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 10);
-            junk_regs(c, &mut r);
-            scribble(c, &mut r, DATA, 0x200 / 4);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = match seed % 3 {
-                0 => 0,
-                1 => sx(DATA + 0x1a0),
-                _ => 1 << 40, // non-null on 64 bits, address 0
-            };
-        });
+        check(
+            ssx3_ee::s05::f_0022e348__generated,
+            section_man_next_queued,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 10);
+                junk_regs(c, &mut r);
+                scribble(c, &mut r, DATA, 0x200 / 4);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0,
+                    1 => sx(DATA + 0x1a0),
+                    _ => 1 << 40, // non-null on 64 bits, address 0
+                };
+            },
+        );
     }
 
     /// A UI list node at DATA+0x100 whose links are each one of: null, the
@@ -751,7 +884,8 @@ mod tests {
         let pick = |k: u32| [0, n, DATA + 0x200, DATA + 0x300][k as usize % 4];
         c.bus.write32(n, pick(seed));
         c.bus.write32(n + 4, pick(seed / 4));
-        c.bus.write32(DATA + 4, if seed % 2 == 0 { n } else { DATA + 0x200 });
+        c.bus
+            .write32(DATA + 4, if seed % 2 == 0 { n } else { DATA + 0x200 });
         // Empty list: anchor's +4 points back at the anchor node.
         if seed % 5 == 0 {
             c.bus.write32(DATA + 0x204, DATA + 0x200);
@@ -761,81 +895,128 @@ mod tests {
 
     #[test]
     fn ui_list_first_matches() {
-        check(ssx3_ee::s13::f_00397840__generated, ui_list_first, SEEDS, &|c, seed| {
-            ui_setup(c, seed);
-            c.g[A0][0] = sx(DATA);
-        });
+        check(
+            ssx3_ee::s13::f_00397840__generated,
+            ui_list_first,
+            SEEDS,
+            &|c, seed| {
+                ui_setup(c, seed);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
     }
 
     #[test]
     fn ui_list_node_is_sentinel_matches() {
-        check(ssx3_ee::s13::f_00397718__generated, ui_list_node_is_sentinel, SEEDS, &ui_setup);
+        check(
+            ssx3_ee::s13::f_00397718__generated,
+            ui_list_node_is_sentinel,
+            SEEDS,
+            &ui_setup,
+        );
     }
 
     #[test]
     fn ui_list_node_unlink_matches() {
-        check(ssx3_ee::s13::f_00397740__generated, ui_list_node_unlink, SEEDS, &ui_setup);
+        check(
+            ssx3_ee::s13::f_00397740__generated,
+            ui_list_node_unlink,
+            SEEDS,
+            &ui_setup,
+        );
     }
 
     #[test]
     fn path_queue_append_matches() {
-        check(ssx3_ee::s14::f_003d0b18__generated, path_queue_append, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 12);
-            junk_regs(c, &mut r);
-            let q = DATA + (seed % 4) * 4;
-            scribble(c, &mut r, DATA, 0x500 / 4);
-            scribble(c, &mut r, DATA + 0x800, 0x40 / 4);
-            // Source: unaligned, or overlapping the ring.
-            let src = if seed % 7 == 0 {
-                q + 0x10 + (r.next_u32() % 0x400)
-            } else {
-                DATA + 0x800 + r.next_u32() % 16
-            };
-            c.g[A0][0] = sx(q);
-            c.g[A1][0] = sx(src);
-        });
+        check(
+            ssx3_ee::s14::f_003d0b18__generated,
+            path_queue_append,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 12);
+                junk_regs(c, &mut r);
+                let q = DATA + (seed % 4) * 4;
+                scribble(c, &mut r, DATA, 0x500 / 4);
+                scribble(c, &mut r, DATA + 0x800, 0x40 / 4);
+                // Source: unaligned, or overlapping the ring.
+                let src = if seed % 7 == 0 {
+                    q + 0x10 + (r.next_u32() % 0x400)
+                } else {
+                    DATA + 0x800 + r.next_u32() % 16
+                };
+                c.g[A0][0] = sx(q);
+                c.g[A1][0] = sx(src);
+            },
+        );
     }
 
     #[test]
     fn path_select_map_matches() {
-        check_lohi(ssx3_ee::s14::f_003d5450__generated, path_select_map, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 13);
-            junk_regs(c, &mut r);
-            for m in 0..4 {
-                let map = 0x0051_7610 + m * 0x928;
-                c.bus.write32(map + 0x30, r.next_u32());
-                c.bus.write32(map + 0x34, if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() });
-            }
-            c.bus.write32(0x0044_f420, r.next_u32());
-            c.bus.write32(0x0044_f430, if seed % 3 == 0 { 0 } else { r.next_u32() });
-            c.g[A0][0] = match seed % 6 {
-                0 => u64::MAX,
-                1 => 0xffff_ffff, // -1 on 32 bits only
-                2 => 4 + r.next_u32() as u64 % 100,
-                _ => (r.next_u32() % 4) as u64,
-            };
-        });
+        check_lohi(
+            ssx3_ee::s14::f_003d5450__generated,
+            path_select_map,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 13);
+                junk_regs(c, &mut r);
+                for m in 0..4 {
+                    let map = 0x0051_7610 + m * 0x928;
+                    c.bus.write32(map + 0x30, r.next_u32());
+                    c.bus.write32(
+                        map + 0x34,
+                        if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            r.next_u32()
+                        },
+                    );
+                }
+                c.bus.write32(0x0044_f420, r.next_u32());
+                c.bus
+                    .write32(0x0044_f430, if seed % 3 == 0 { 0 } else { r.next_u32() });
+                c.g[A0][0] = match seed % 6 {
+                    0 => u64::MAX,
+                    1 => 0xffff_ffff, // -1 on 32 bits only
+                    2 => 4 + r.next_u32() as u64 % 100,
+                    _ => (r.next_u32() % 4) as u64,
+                };
+            },
+        );
     }
 
     #[test]
     fn world_obj_link_instance_matches() {
-        check(ssx3_ee::s11::f_0034fc78__generated, world_obj_link_instance, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 14);
-            junk_regs(c, &mut r);
-            c.g[A0][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
-            c.g[A1][0] = { let a = DATA + (r.next_u32() & 0xffc); ptr(&mut r, a) };
-        });
+        check(
+            ssx3_ee::s11::f_0034fc78__generated,
+            world_obj_link_instance,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 14);
+                junk_regs(c, &mut r);
+                c.g[A0][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+                c.g[A1][0] = {
+                    let a = DATA + (r.next_u32() & 0xffc);
+                    ptr(&mut r, a)
+                };
+            },
+        );
     }
 
     #[test]
     fn world_obj_unlink_instance_matches() {
-        check(ssx3_ee::s11::f_0034fc80__generated, world_obj_unlink_instance, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 15);
-            junk_regs(c, &mut r);
-            let inst = DATA + 0x400;
-            c.g[A0][0] = ptr(&mut r, inst);
-            c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(DATA) };
-            c.bus.write32(DATA + 0xc, if seed % 2 == 0 { inst } else { r.next_u32() });
-        });
+        check(
+            ssx3_ee::s11::f_0034fc80__generated,
+            world_obj_unlink_instance,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 15);
+                junk_regs(c, &mut r);
+                let inst = DATA + 0x400;
+                c.g[A0][0] = ptr(&mut r, inst);
+                c.g[A1][0] = if seed % 4 == 0 { 0 } else { sx(DATA) };
+                c.bus
+                    .write32(DATA + 0xc, if seed % 2 == 0 { inst } else { r.next_u32() });
+            },
+        );
     }
 }

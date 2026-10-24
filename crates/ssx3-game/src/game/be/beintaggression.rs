@@ -1,29 +1,36 @@
 //! `src/be/beintaggression.cpp`: hand-written replacements (moved from the
 //! batch modules by `tools/reorg_modules.py`).
 
-use crate::events::deliver_event_here;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+pub(crate) use crate::game::be::beintmission::lw;
+pub(crate) use crate::game::be::beintmission::BE_GET_RIDER_CHARACTER;
+pub(crate) use crate::game::be::beintmission::BE_GET_RIDER_PROFILE;
+pub(crate) use crate::game::be::beintmission::BUILTIN_DELETE;
+pub(crate) use crate::game::be::beintmission::RIDER_STRIDE;
 use crate::guest::Addr;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-pub(crate) use crate::game::be::beintmission::lw;
-pub(crate) use crate::game::be::beintmission::BUILTIN_DELETE;
-pub(crate) use crate::game::be::beintmission::BE_GET_RIDER_CHARACTER;
-pub(crate) use crate::game::be::beintmission::BE_GET_RIDER_PROFILE;
-pub(crate) use crate::game::be::beintmission::RIDER_STRIDE;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0015_5ab0, be_aggression_int_get_rival_state, "BEAggressionInt_GetRivalState"),
-    (0x0015_c7e0, be_aggression_int_destroy_instance, "BEAggressionInt_DestroyInstance"),
+    (
+        0x0015_5ab0,
+        be_aggression_int_get_rival_state,
+        "BEAggressionInt_GetRivalState",
+    ),
+    (
+        0x0015_c7e0,
+        be_aggression_int_destroy_instance,
+        "BEAggressionInt_DestroyInstance",
+    ),
 ];
-
 
 /// `void BEAggressionInt_DestroyInstance(void)` (0x15c7e0).
 pub fn be_aggression_int_destroy_instance(c: &mut Cpu) {
@@ -40,10 +47,15 @@ pub fn be_aggression_int_destroy_instance(c: &mut Cpu) {
     })
 }
 
-pub(crate) const NEW_RACE_GET_INSTANCE: Callee = Callee { addr: 0x0014_48d8, f: ssx3_ee::s01::f_001448d8 };
+pub(crate) const NEW_RACE_GET_INSTANCE: Callee = Callee {
+    addr: 0x0014_48d8,
+    f: ssx3_ee::s01::f_001448d8,
+};
 
-pub(crate) const F_00145750: Callee = Callee { addr: 0x0014_5750, f: ssx3_ee::s01::f_00145750 };
-
+pub(crate) const F_00145750: Callee = Callee {
+    addr: 0x0014_5750,
+    f: ssx3_ee::s01::f_00145750,
+};
 
 /// `int BEAggressionInt_GetRivalState(BEAggressionInt *self, int rider,
 /// int rival)` (0x155ab0): compare the rival's current race position with the
@@ -102,22 +114,26 @@ pub fn be_aggression_int_get_rival_state(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::difftest::fakes::machine;
     use crate::difftest::check;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fill;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fill;
-
 
     #[test]
     fn be_aggression_int_get_rival_state_matches() {
-        check(ssx3_ee::s01::f_00155ab0, be_aggression_int_get_rival_state, 30, &|c, seed| {
-            let mut r = machine(c, seed, 0x5ab0, 0);
-            c.g[A1][0] = (seed % 8) as u64;
-            c.g[A2][0] = (seed % 8) as u64;
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), DATA + 0x400);
-            fill(c, &mut r, DATA, 0x2000);
-        });
+        check(
+            ssx3_ee::s01::f_00155ab0,
+            be_aggression_int_get_rival_state,
+            30,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x5ab0, 0);
+                c.g[A1][0] = (seed % 8) as u64;
+                c.g[A2][0] = (seed % 8) as u64;
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), DATA + 0x400);
+                fill(c, &mut r, DATA, 0x2000);
+            },
+        );
     }
 }

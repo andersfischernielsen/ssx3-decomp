@@ -11,7 +11,10 @@
 use std::path::{Path, PathBuf};
 
 fn main() {
-    let root: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
+    let root: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
     let iso = std::env::args()
         .nth(1)
         .map(PathBuf::from)
@@ -22,7 +25,10 @@ fn main() {
             for l in o.report.lines().filter(|l| !l.starts_with("load-delay")) {
                 println!("{l}");
             }
-            println!("wrote generated/iop/modules ({} bytes of Rust)", o.code.len());
+            println!(
+                "wrote generated/iop/modules ({} bytes of Rust)",
+                o.code.len()
+            );
         }
         Err(e) => {
             eprintln!("recomp-iop: {e}");

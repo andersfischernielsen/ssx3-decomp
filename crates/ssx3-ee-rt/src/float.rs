@@ -80,7 +80,11 @@ pub fn add(a: u32, b: u32) -> (u32, Exc) {
     let diff = e - (la >> 23) as i32;
     let ma = mantissa(ha) << 1;
     let ml = mantissa(la) << 1;
-    let mb = if diff > 25 { 0 } else { ml >> (diff as u32 & 31) };
+    let mb = if diff > 25 {
+        0
+    } else {
+        ml >> (diff as u32 & 31)
+    };
     let sub = (a ^ b) & SIGN != 0;
     // Subtraction: renormalise left.
     let ms = ma - mb;
@@ -98,7 +102,13 @@ pub fn add(a: u32, b: u32) -> (u32, Exc) {
     let o = e >= 255;
     let u = e <= 0;
     let normal = sign | (((e as u32) & 0xff) << 23) | ((m >> 1) & 0x7f_ffff);
-    let packed = if o { sign | MAX } else if u { sign } else { normal };
+    let packed = if o {
+        sign | MAX
+    } else if u {
+        sign
+    } else {
+        normal
+    };
     // Exact cancellation and zero operands bypass rounding and flags.
     let cancel = sub && ma == mb;
     let special = ba == 0 || aa == 0 || cancel;
@@ -140,7 +150,13 @@ pub fn mul(a: u32, b: u32) -> (u32, Exc) {
     let o = e >= 255;
     let u = e <= 0;
     let normal = sign | (((e as u32) & 0xff) << 23) | (m & 0x7f_ffff);
-    let packed = if o { sign | MAX } else if u { sign } else { normal };
+    let packed = if o {
+        sign | MAX
+    } else if u {
+        sign
+    } else {
+        normal
+    };
     if ea == 0 || eb == 0 {
         (sign, Exc::default())
     } else {

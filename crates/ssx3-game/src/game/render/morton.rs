@@ -10,10 +10,7 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0036_a3b0, morton_spread8, "Morton_Spread8"),
-];
-
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0036_a3b0, morton_spread8, "Morton_Spread8")];
 
 /// `uint Morton_Spread8(uint x)` (0x36a3b0): spread the low 8 bits of `x` into
 /// every other bit.
@@ -41,7 +38,6 @@ pub(crate) mod tests {
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-
 
     #[test]
     fn morton_spread8_matches() {

@@ -12,81 +12,81 @@
 //! byte-identical. [`install`] puts them into the generated crates' slots.
 
 // The generated EE code in the chosen form (features `ee-threads` / `ee-unwind`).
-#[cfg(feature = "ee-unwind")]
-extern crate ssx3_ee_unwind as ssx3_ee;
 #[cfg(all(feature = "ee-threads", not(feature = "ee-unwind")))]
 extern crate ssx3_ee_threads as ssx3_ee;
+#[cfg(feature = "ee-unwind")]
+extern crate ssx3_ee_unwind as ssx3_ee;
 
 use ssx3_ee_rt::funcs::GuestFn;
 
 pub mod abi;
-/// Debug-only overrides behind environment switches.
-pub mod capture;
-pub mod packetless;
-pub mod movie;
-pub mod shadow;
-/// The replacements, laid out like the C++ source tree (`src/<dir>/<unit>`).
-pub mod game;
-pub mod debug;
-pub mod call;
-#[cfg(test)]
-pub mod difftest;
-pub mod events;
-pub mod guest;
-pub mod mmi;
-pub mod ps2f;
-pub mod rider;
-#[cfg(feature = "math")]
-pub mod math;
+#[cfg(feature = "ai")]
+pub mod ai;
 #[cfg(feature = "anim")]
 pub mod anim;
+#[cfg(feature = "audio")]
+pub mod audio;
+pub mod call;
 #[cfg(feature = "camera")]
 pub mod camera;
+/// Debug-only overrides behind environment switches.
+pub mod capture;
+#[cfg(feature = "chase")]
+pub mod chase;
+#[cfg(feature = "containers")]
+pub mod containers;
+pub mod debug;
+#[cfg(test)]
+pub mod difftest;
+#[cfg(feature = "dispatch")]
+pub mod dispatch;
+pub mod events;
+/// The replacements, laid out like the C++ source tree (`src/<dir>/<unit>`).
+pub mod game;
+pub mod guest;
+#[cfg(feature = "math")]
+pub mod math;
+pub mod mmi;
+pub mod movie;
+pub mod packetless;
+pub mod ps2f;
 #[cfg(feature = "render")]
 pub mod render;
+#[cfg(feature = "replay_script")]
+pub mod replay_script;
+pub mod rider;
+#[cfg(feature = "rider_states")]
+pub mod rider_states;
+pub mod shadow;
+#[cfg(feature = "skeleton")]
+pub mod skeleton;
 #[cfg(feature = "sound")]
 pub mod sound;
 #[cfg(feature = "state")]
 pub mod state;
-#[cfg(feature = "util")]
-pub mod util;
-#[cfg(feature = "dispatch")]
-pub mod dispatch;
-#[cfg(feature = "rider_states")]
-pub mod rider_states;
-#[cfg(feature = "skeleton")]
-pub mod skeleton;
-#[cfg(feature = "chase")]
-pub mod chase;
-#[cfg(feature = "ai")]
-pub mod ai;
-#[cfg(feature = "world")]
-pub mod world;
-#[cfg(feature = "ui")]
-pub mod ui;
-#[cfg(feature = "audio")]
-pub mod audio;
-#[cfg(feature = "containers")]
-pub mod containers;
-#[cfg(feature = "world_cache")]
-pub mod world_cache;
-#[cfg(feature = "replay_script")]
-pub mod replay_script;
 #[cfg(feature = "streaming")]
 pub mod streaming;
+#[cfg(feature = "ui")]
+pub mod ui;
+#[cfg(feature = "util")]
+pub mod util;
+#[cfg(feature = "world")]
+pub mod world;
+#[cfg(feature = "world_cache")]
+pub mod world_cache;
 // Phase 3: game files from the host (SSX3_NATIVE_FILES); uses `streaming`.
-#[cfg(feature = "streaming")]
-pub mod native_files;
-#[cfg(feature = "graphics")]
-pub mod graphics;
-#[cfg(feature = "rider_logic")]
-pub mod rider_logic;
-#[cfg(feature = "world_painter")]
-pub mod world_painter;
 #[cfg(feature = "audio_system")]
 pub mod audio_system;
+#[cfg(feature = "graphics")]
+pub mod graphics;
+#[cfg(feature = "streaming")]
+pub mod native_files;
+#[cfg(feature = "rider_logic")]
+pub mod rider_logic;
 #[cfg(feature = "snd_lib")]
 pub mod snd_lib;
+#[cfg(feature = "world_painter")]
+pub mod world_painter;
 
 /// The configurable tick rate.
 pub mod tick;
@@ -95,9 +95,11 @@ pub mod tick;
 pub mod detail;
 
 /// Replacements outside the work-package modules: (address, function, name).
-const CORE: &[(u32, GuestFn, &str)] = &[
-    (0x0011_e098, rider::build_world_matrix, "Rider_BuildWorldMatrix"),
-];
+const CORE: &[(u32, GuestFn, &str)] = &[(
+    0x0011_e098,
+    rider::build_world_matrix,
+    "Rider_BuildWorldMatrix",
+)];
 
 /// Every installed replacement (core + enabled work packages). Each package
 /// module exports its own `OVERRIDES`; all of them must be listed in
@@ -173,7 +175,11 @@ pub fn install() -> usize {
     });
     // `SSX3_SKIP_OVERRIDES=addr,addr`: all but these (bisecting a wave).
     let skip: Vec<u32> = std::env::var("SSX3_SKIP_OVERRIDES")
-        .map(|s| s.split(',').filter_map(|a| u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).ok()).collect())
+        .map(|s| {
+            s.split(',')
+                .filter_map(|a| u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).ok())
+                .collect()
+        })
         .unwrap_or_default();
     let shadow = shadow::wanted();
     let mut n = 0;
@@ -184,7 +190,9 @@ pub fn install() -> usize {
         // (`SSX3_SHADOW`: the replacement checked against the generated
         // body at run time, `shadow.rs`.)
         let f = match &shadow {
-            Some(list) if list.as_ref().is_none_or(|l| l.contains(&addr)) => shadow::wrap(addr, name, f).unwrap_or(f),
+            Some(list) if list.as_ref().is_none_or(|l| l.contains(&addr)) => {
+                shadow::wrap(addr, name, f).unwrap_or(f)
+            }
             _ => f,
         };
         assert!(
@@ -210,7 +218,10 @@ mod tests {
             })
             .collect();
         for (a, _, name) in super::overrides() {
-            assert!(txt.contains(&a), "{name} ({a:#x}) is not listed in overrides.txt");
+            assert!(
+                txt.contains(&a),
+                "{name} ({a:#x}) is not listed in overrides.txt"
+            );
         }
     }
 }

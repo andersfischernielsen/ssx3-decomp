@@ -262,7 +262,12 @@ fn classify(d: &Draw, dual_ok: bool, exact: bool) -> Result<State, Fallback> {
             None => return Ok(dr_state(key, fb_only)),
         }
     }
-    Ok(State { key, fix, dst_as, fb_only })
+    Ok(State {
+        key,
+        fix,
+        dst_as,
+        fb_only,
+    })
 }
 
 /// The destination-read form of a state with pipeline key `key` (only its
@@ -292,7 +297,11 @@ fn fixed_blend(d: &Draw, dual_ok: bool) -> Option<(u32, u32, bool)> {
     if cd.1 != 0 && c_as && !dual_ok {
         return None;
     }
-    let (fc, fic) = if c_as { (F_SRC1A, F_INV_SRC1A) } else { (F_CONST, F_INV_CONST) };
+    let (fc, fic) = if c_as {
+        (F_SRC1A, F_INV_SRC1A)
+    } else {
+        (F_CONST, F_INV_CONST)
+    };
     // The source term is premultiplied (and biased) in the shader and
     // added with factor One; only its sign matters here.
     let src_pos = match cs {
@@ -349,7 +358,14 @@ struct Edges {
 
 impl Geo {
     fn tri(t: &super::super::raster::TriSetup, p: &Prim) -> Geo {
-        Geo::Tri(Edges { bx0: t.bx0, by0: t.by0, e0: t.e0, edx: t.edx, edy: t.edy, bb: [p.x0, p.y0, p.x1, p.y1] })
+        Geo::Tri(Edges {
+            bx0: t.bx0,
+            by0: t.by0,
+            e0: t.e0,
+            edx: t.edx,
+            edy: t.edy,
+            bb: [p.x0, p.y0, p.x1, p.y1],
+        })
     }
 
     /// Bounding box x0, y0, x1, y1.
@@ -372,7 +388,12 @@ impl Geo {
                 let j = (y - t.by0) as i64;
                 let (mut lo, mut hi) = (0i64, (t.bb[2] - t.bx0) as i64);
                 for k in 0..3 {
-                    super::super::raster::edge_span(t.e0[k] + t.edy[k] * j, t.edx[k], &mut lo, &mut hi);
+                    super::super::raster::edge_span(
+                        t.e0[k] + t.edy[k] * j,
+                        t.edx[k],
+                        &mut lo,
+                        &mut hi,
+                    );
                 }
                 (t.bx0 as i64 + lo, t.bx0 as i64 + hi)
             }
@@ -403,7 +424,12 @@ impl Coverage {
         if self.lazy.is_empty() {
             *r = b;
         } else {
-            *r = [r[0].min(b[0]), r[1].min(b[1]), r[2].max(b[2]), r[3].max(b[3])];
+            *r = [
+                r[0].min(b[0]),
+                r[1].min(b[1]),
+                r[2].max(b[2]),
+                r[3].max(b[3]),
+            ];
         }
         self.lazy.push(g);
     }
@@ -505,7 +531,14 @@ fn span_mask(a: i64, b: i64, w: usize) -> u64 {
 /// Emit an FB_ONLY group: the passing pixels, then the failing ones.
 fn close_group(group: &mut Option<(Call, usize)>, calls: &mut Vec<Call>) {
     if let Some((c, pipe_b)) = group.take() {
-        let b = Call { pipe: pipe_b, scissor: c.scissor, fix: c.fix, first: c.first, count: c.count, inst: 1 };
+        let b = Call {
+            pipe: pipe_b,
+            scissor: c.scissor,
+            fix: c.fix,
+            first: c.first,
+            count: c.count,
+            inst: 1,
+        };
         calls.push(c);
         calls.push(b);
     }
@@ -526,7 +559,12 @@ pub(crate) struct AlphaCache {
 
 impl Default for AlphaCache {
     fn default() -> Self {
-        AlphaCache { map: HashMap::new(), page_gen: Box::new([0; 512]), clock: 1, hits: 0 }
+        AlphaCache {
+            map: HashMap::new(),
+            page_gen: Box::new([0; 512]),
+            clock: 1,
+            hits: 0,
+        }
     }
 }
 
@@ -575,7 +613,13 @@ impl AlphaCache {
 /// stays inside it): from the palette, TEXA, or by reading the texels from
 /// the VRAM mirror (0..=255 when the mirror is not current there). Also
 /// returns the texels read.
-fn tex_alpha_range(d: &Draw, vram: &[u32], gpu_dirty: &Pages, cpu_dirty: &Pages, cache: &mut AlphaCache) -> ((u32, u32), u64) {
+fn tex_alpha_range(
+    d: &Draw,
+    vram: &[u32],
+    gpu_dirty: &Pages,
+    cpu_dirty: &Pages,
+    cache: &mut AlphaCache,
+) -> ((u32, u32), u64) {
     use super::super::raster::TexKind;
     let Some(t0) = &d.tex else { return ((0, 0), 0) };
     match t0.kind {
@@ -597,7 +641,15 @@ fn tex_alpha_range(d: &Draw, vram: &[u32], gpu_dirty: &Pages, cpu_dirty: &Pages,
             for t in &levels {
                 let (u0, u1) = super::super::raster::wrap_range(t.wms, t.tw, t.minu, t.maxu);
                 let (v0, v1) = super::super::raster::wrap_range(t.wmt, t.th, t.minv, t.maxv);
-                key.extend_from_slice(&[t.surf.base, t.surf.psm, t.surf.pages_per_row, u0, u1, v0, v1]);
+                key.extend_from_slice(&[
+                    t.surf.base,
+                    t.surf.psm,
+                    t.surf.pages_per_row,
+                    u0,
+                    u1,
+                    v0,
+                    v1,
+                ]);
             }
             let cacheable = !d.tex_pages.hits(cpu_dirty);
             if cacheable {
@@ -678,7 +730,12 @@ pub fn diag_knob() -> bool {
 /// (`SSX3_N3_EPS`, default 1e-4): a parity knob (see native3.wgsl).
 fn eps_knob() -> f32 {
     static E: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_N3_EPS").ok().and_then(|v| v.parse().ok()).unwrap_or(1e-4))
+    *E.get_or_init(|| {
+        std::env::var("SSX3_N3_EPS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1e-4)
+    })
 }
 
 struct Tri {
@@ -826,11 +883,15 @@ impl N3 {
         if self.deferred.is_empty() {
             return;
         }
-        let bb = self.deferred[0].iter().fold([i32::MAX, i32::MAX, i32::MIN, i32::MIN], |r, t| {
-            let [x0, y0, x1, y1] = t.bbox();
-            [r[0].min(x0), r[1].min(y0), r[2].max(x1), r[3].max(y1)]
-        });
-        let outside = self.last_copy.is_some_and(|c| bb[0] < c[0] || bb[1] < c[1] || bb[2] > c[2] || bb[3] > c[3]);
+        let bb = self.deferred[0]
+            .iter()
+            .fold([i32::MAX, i32::MAX, i32::MIN, i32::MIN], |r, t| {
+                let [x0, y0, x1, y1] = t.bbox();
+                [r[0].min(x0), r[1].min(y0), r[2].max(x1), r[3].max(y1)]
+            });
+        let outside = self
+            .last_copy
+            .is_some_and(|c| bb[0] < c[0] || bb[1] < c[1] || bb[2] > c[2] || bb[3] > c[3]);
         let layers = std::mem::take(&mut self.deferred);
         let mut nd = std::mem::take(&mut self.deferred_nd);
         let n = layers.len();
@@ -841,7 +902,15 @@ impl N3 {
                     let t = &d[0].d;
                     let k = format!(
                         "copy {why} layer{} need{} out{} prim{} blend{}{}{}{} fbpsm{:x} n{}",
-                        i.min(3), self.need_copy as u8, outside as u8, d[0].prim, t.ba, t.bb, t.bc, t.bd, t.fb.psm,
+                        i.min(3),
+                        self.need_copy as u8,
+                        outside as u8,
+                        d[0].prim,
+                        t.ba,
+                        t.bb,
+                        t.bc,
+                        t.bd,
+                        t.fb.psm,
                         d.len().next_power_of_two()
                     );
                     *self.diag.entry(k).or_default() += 1;
@@ -881,8 +950,17 @@ impl N3 {
     }
 }
 
-fn entry(binding: u32, vis: wgpu::ShaderStages, ty: wgpu::BindingType) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry { binding, visibility: vis, ty, count: None }
+fn entry(
+    binding: u32,
+    vis: wgpu::ShaderStages,
+    ty: wgpu::BindingType,
+) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: vis,
+        ty,
+        count: None,
+    }
 }
 
 fn storage(read_only: bool) -> wgpu::BindingType {
@@ -895,7 +973,9 @@ fn storage(read_only: bool) -> wgpu::BindingType {
 
 impl Gpu {
     fn new(dev: &wgpu::Device) -> Gpu {
-        let dual = dev.features().contains(wgpu::Features::DUAL_SOURCE_BLENDING);
+        let dual = dev
+            .features()
+            .contains(wgpu::Features::DUAL_SOURCE_BLENDING);
         use wgpu::ShaderStages as S;
         let bgl = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("gs-n3-bgl"),
@@ -955,16 +1035,29 @@ impl Gpu {
         } else {
             // SAFETY: see `GpuGs::new`; vertex records are offsets the CPU
             // encoded into the data buffer it sized.
-            unsafe { dev.create_shader_module_trusted(desc, wgpu::ShaderRuntimeChecks::unchecked()) }
+            unsafe {
+                dev.create_shader_module_trusted(desc, wgpu::ShaderRuntimeChecks::unchecked())
+            }
         };
-        Gpu { bgl, layout, module, dual, pipes: HashMap::new(), pipelines: Vec::new() }
+        Gpu {
+            bgl,
+            layout,
+            module,
+            dual,
+            pipes: HashMap::new(),
+            pipelines: Vec::new(),
+        }
     }
 
     fn pipeline(&mut self, dev: &wgpu::Device, key: u32) -> usize {
         if let Some(&i) = self.pipes.get(&key) {
             return i;
         }
-        let op = if key & K_DR != 0 { 0 } else { (key >> K_OP) & 3 };
+        let op = if key & K_DR != 0 {
+            0
+        } else {
+            (key >> K_OP) & 3
+        };
         let blend = (op != 0).then(|| wgpu::BlendState {
             color: wgpu::BlendComponent {
                 src_factor: factor((key >> K_SRC) & 15),
@@ -1046,7 +1139,10 @@ impl GpuGs {
             Err(r) => {
                 self.n3.stats.fallback[r as usize] += 1;
                 if diag_knob() {
-                    let tk = d.tex.as_ref().map(|t| format!("{:?}/psm{:x}", t.kind, t.surf.psm));
+                    let tk = d
+                        .tex
+                        .as_ref()
+                        .map(|t| format!("{:?}/psm{:x}", t.kind, t.surf.psm));
                     let k = format!(
                         "{} prim{} fbpsm{:x} dith{} scan{} abe{} blend{}{}{}{} fix{:x} pabe{} date{} ate{} atst{} afail{} tex{:?} tfx{} tcc{} iip{}",
                         REASONS[r as usize], prim, d.fb.psm, d.dither.is_some() as u8, d.scanmsk, d.abe as u8, d.ba, d.bb, d.bc, d.bd, d.fix,
@@ -1117,7 +1213,13 @@ impl GpuGs {
                 Some((ld, b)) if Arc::ptr_eq(ld, d) => *b,
                 _ => {
                     let h0 = self.n3.alpha_cache.hits;
-                    let (b, n) = tex_alpha_range(d, vram, &self.gpu_dirty, &self.cpu_dirty, &mut self.n3.alpha_cache);
+                    let (b, n) = tex_alpha_range(
+                        d,
+                        vram,
+                        &self.gpu_dirty,
+                        &self.cpu_dirty,
+                        &mut self.n3.alpha_cache,
+                    );
                     self.n3.stats.scanned_texels += n;
                     self.n3.stats.alpha_cache_hits += self.n3.alpha_cache.hits - h0;
                     self.n3.last_tex = Some((d.clone(), b));
@@ -1168,8 +1270,15 @@ impl GpuGs {
         }
         // Join the pending run, or start a new one.
         let mut flushed = false;
-        let mut joins = self.n3.surf.is_some_and(|r| r.frame == s.frame && (s.z.is_none() || s.z == r.z));
-        if joins && d.tex.is_some() && d.tex_pages.hits(&self.n3.target_pages) && self.n3_tex_reads_run(d, p, prim, verts) {
+        let mut joins = self
+            .n3
+            .surf
+            .is_some_and(|r| r.frame == s.frame && (s.z.is_none() || s.z == r.z));
+        if joins
+            && d.tex.is_some()
+            && d.tex_pages.hits(&self.n3.target_pages)
+            && self.n3_tex_reads_run(d, p, prim, verts)
+        {
             // It samples texels the run has drawn: those are in the run's
             // targets, not in VRAM. End the run (its pixels go back to
             // VRAM) and start another.
@@ -1196,7 +1305,8 @@ impl GpuGs {
             self.n3.tex_pages = Pages::default();
         }
         self.n3.tex_pages.union(&d.tex_pages);
-        let feedback = flushed || (d.tex.is_some() && (d.tex_self || d.tex_pages.hits(&self.n3.target_pages)));
+        let feedback =
+            flushed || (d.tex.is_some() && (d.tex_self || d.tex_pages.hits(&self.n3.target_pages)));
         if feedback {
             // Blended filters over the frame (colour filter, depth fog)
             // take the exact GS blend: the blend unit rounds the
@@ -1228,8 +1338,17 @@ impl GpuGs {
                 ];
                 (zp, None)
             }
-            Shape::Sprite { x0, y0, a0, at, dsdx, dtdy, base, .. } => {
-                use super::super::raster::{S, T, Q};
+            Shape::Sprite {
+                x0,
+                y0,
+                a0,
+                at,
+                dsdx,
+                dtdy,
+                base,
+                ..
+            } => {
+                use super::super::raster::{Q, S, T};
                 use super::{f, z_u32, PK_LINEAR};
                 // `GpuGs::encode`, kind 1 (setup offset 0: the shader is
                 // given the setup record separately).
@@ -1242,12 +1361,22 @@ impl GpuGs {
                 w[8] = f(*dsdx);
                 w[9] = f(*dtdy);
                 w[10] = f(at[Q]);
-                w[11] = (base.r as u32 & 0xFF) | (base.g as u32 & 0xFF) << 8 | (base.b as u32 & 0xFF) << 16 | (base.a as u32 & 0xFF) << 24;
+                w[11] = (base.r as u32 & 0xFF)
+                    | (base.g as u32 & 0xFF) << 8
+                    | (base.b as u32 & 0xFF) << 16
+                    | (base.a as u32 & 0xFF) << 24;
                 w[12] = base.f as u32;
                 w[13] = z_u32(base.z);
                 ([0; 5], Some(Box::new(([p.x0, p.y0, p.x1, p.y1], w))))
             }
-            Shape::Line { x0, y0, x1, y1, a0, a1 } => {
+            Shape::Line {
+                x0,
+                y0,
+                x1,
+                y1,
+                a0,
+                a1,
+            } => {
                 use super::super::raster::{A, B, F, G, NATTR, Q, R, S, T};
                 use super::{f, z_u32, PK_LINEAR};
                 // `GpuGs::encode`, kind 2.
@@ -1270,7 +1399,11 @@ impl GpuGs {
                 let (x0, y0, x1, y1) = (*x0 + 0.5, *y0 + 0.5, *x1 + 0.5, *y1 + 0.5);
                 let (dx, dy) = (x1 - x0, y1 - y0);
                 let len = (dx * dx + dy * dy).sqrt();
-                let (ux, uy) = if len > 1e-9 { (dx / len * 1.5, dy / len * 1.5) } else { (1.5, 0.0) };
+                let (ux, uy) = if len > 1e-9 {
+                    (dx / len * 1.5, dy / len * 1.5)
+                } else {
+                    (1.5, 0.0)
+                };
                 let (nx, ny) = (-uy, ux);
                 let q = [
                     (x0 - ux + nx) as f32,
@@ -1292,13 +1425,20 @@ impl GpuGs {
         if fresh {
             *r = bb;
         } else {
-            *r = [r[0].min(bb[0]), r[1].min(bb[1]), r[2].max(bb[2]), r[3].max(bb[3])];
+            *r = [
+                r[0].min(bb[0]),
+                r[1].min(bb[1]),
+                r[2].max(bb[2]),
+                r[3].max(bb[3]),
+            ];
         }
         // Triangles sampling their own surfaces (screen-space filters over
         // what was drawn) take their attributes from the compute GS's planes,
         // not hardware interpolation, so they sample the same texels.
         let planes = ((planes_knob() || feedback) && !is_sprite && !is_line).then(|| {
-            let Shape::Tri(t) = &p.shape else { unreachable!() };
+            let Shape::Tri(t) = &p.shape else {
+                unreachable!()
+            };
             use super::super::raster::{A, B, F, G, Q, R, S, T};
             let mut w = [0u32; 25];
             w[0] = zp[0];
@@ -1343,7 +1483,10 @@ impl GpuGs {
             let mut layer = 0;
             if self.n3.cov_any.hits(geo) {
                 let n = self.n3.deferred.len();
-                layer = (0..n).rev().find(|&l| self.n3.cov_d[l].hits(geo)).map_or(0, |l| l + 1);
+                layer = (0..n)
+                    .rev()
+                    .find(|&l| self.n3.cov_d[l].hits(geo))
+                    .map_or(0, |l| l + 1);
                 if layer >= MAX_DR_LAYERS {
                     self.n3.emit_deferred("dr");
                     layer = 0;
@@ -1401,7 +1544,9 @@ impl GpuGs {
     /// drawn (its bounding box in its frame, and in its Z buffer).
     fn n3_tex_reads_run(&mut self, d: &Draw, p: &Prim, prim: u32, verts: &[Vertex]) -> bool {
         use super::super::swizzle::Surface;
-        let (Some(ts), Some(run)) = (d.tex_surface(), self.n3.surf) else { return false };
+        let (Some(ts), Some(run)) = (d.tex_surface(), self.n3.surf) else {
+            return false;
+        };
         if !self.n3.pending() {
             return false;
         }
@@ -1418,14 +1563,17 @@ impl GpuGs {
         }
         n3.run_region.clear();
         for f in [run.frame, run.z].into_iter().flatten() {
-            n3.run_region.add_rect(&Surface::new(f.psm, f.bp, f.bw), x0, y0, x1, y1);
+            n3.run_region
+                .add_rect(&Surface::new(f.psm, f.bp, f.bw), x0, y0, x1, y1);
         }
         n3.run_region.hits(&n3.tex_region)
     }
 
     /// Queue the pending run if `pages` hits what it draws or samples.
     pub(crate) fn n3_touch(&mut self, pages: &Pages, vram: &[u32]) {
-        if self.n3.pending() && (pages.hits(&self.n3.target_pages) || pages.hits(&self.n3.tex_pages)) {
+        if self.n3.pending()
+            && (pages.hits(&self.n3.target_pages) || pages.hits(&self.n3.tex_pages))
+        {
             self.n3_flush_why(vram, 2);
         }
     }
@@ -1466,14 +1614,20 @@ impl GpuGs {
             self.n3.stats.refused_runs += 1;
             for t in &tris {
                 self.n3.stats.fallback[Fallback::Surface as usize] += 1;
-                let n = if t.sprite.is_some() || t.line.is_some() { 2 } else { 3 };
+                let n = if t.sprite.is_some() || t.line.is_some() {
+                    2
+                } else {
+                    3
+                };
                 if let Some(p) = super::super::raster::setup(&t.d, 0, t.prim, &t.v[..n]) {
                     self.push(&t.d, &p, t.prim, &t.v[..n], vram);
                 }
             }
             return;
         }
-        let Ok(run) = self.begin_native_run_at(&s, rx0, ry0, vram) else { unreachable!("checked") };
+        let Ok(run) = self.begin_native_run_at(&s, rx0, ry0, vram) else {
+            unreachable!("checked")
+        };
         let rid = run.run;
         let g: &mut GpuGs = &mut *run.gs;
         let (vw, vh) = g.native_viewport();
@@ -1497,11 +1651,21 @@ impl GpuGs {
         // The pixels the run's primitives can cover: only those are
         // swizzled back.
         let mut drawn = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
-        let run_frame = s.frame.map(|f| super::hires::Key { bp: f.bp, bw: f.bw, psm: f.psm, depth: false });
+        let run_frame = s.frame.map(|f| super::hires::Key {
+            bp: f.bp,
+            bw: f.bw,
+            psm: f.psm,
+            depth: false,
+        });
         let mut src: Option<super::hires::Key> = None;
         for t in &tris {
             let b = t.bbox();
-            drawn = [drawn[0].min(b[0]), drawn[1].min(b[1]), drawn[2].max(b[2]), drawn[3].max(b[3])];
+            drawn = [
+                drawn[0].min(b[0]),
+                drawn[1].min(b[1]),
+                drawn[2].max(b[2]),
+                drawn[3].max(b[3]),
+            ];
             let ptr = Arc::as_ptr(&t.d);
             let si = match setups.iter().rposition(|(p, _)| *p == ptr) {
                 Some(i) => i,
@@ -1540,16 +1704,32 @@ impl GpuGs {
                 // the primitives of a group cover disjoint pixels.
                 let pipe_b = n3gpu.pipeline(dev, t.st.key & !K_ZWRITE);
                 let fits = !t.brk
-                    && group.as_ref().is_some_and(|gr| gr.0.pipe == pipe && gr.0.scissor == scissor && gr.0.fix == t.st.fix);
+                    && group.as_ref().is_some_and(|gr| {
+                        gr.0.pipe == pipe && gr.0.scissor == scissor && gr.0.fix == t.st.fix
+                    });
                 if fits {
                     group.as_mut().expect("group").0.count += nv;
                 } else {
                     close_group(&mut group, &mut calls);
-                    group = Some((Call { pipe, scissor, fix: t.st.fix, first, count: nv, inst: 0 }, pipe_b));
+                    group = Some((
+                        Call {
+                            pipe,
+                            scissor,
+                            fix: t.st.fix,
+                            first,
+                            count: nv,
+                            inst: 0,
+                        },
+                        pipe_b,
+                    ));
                 }
             } else {
                 close_group(&mut group, &mut calls);
-                let (pipe, inst) = if t.mode == 1 { (n3gpu.pipeline(dev, t.st.key & !K_ZWRITE), 1) } else { (pipe, 0) };
+                let (pipe, inst) = if t.mode == 1 {
+                    (n3gpu.pipeline(dev, t.st.key & !K_ZWRITE), 1)
+                } else {
+                    (pipe, 0)
+                };
                 let can_merge = calls.len() > seg_start;
                 match calls.last_mut() {
                     Some(c)
@@ -1562,7 +1742,14 @@ impl GpuGs {
                     {
                         c.count += nv
                     }
-                    _ => calls.push(Call { pipe, scissor, fix: t.st.fix, first, count: nv, inst }),
+                    _ => calls.push(Call {
+                        pipe,
+                        scissor,
+                        fix: t.st.fix,
+                        first,
+                        count: nv,
+                        inst,
+                    }),
                 }
             }
             tri_rec.push((si, recs.len(), nv as usize));
@@ -1585,7 +1772,12 @@ impl GpuGs {
                     hs[3] += 1;
                 }
                 if let (Some(cv), true) = (conv, t.d.mip.is_none()) {
-                    let key = super::hires::Key { bp: tx.surf.base / 64, bw: tx.surf.pages_per_row, psm: tx.surf.psm, depth: false };
+                    let key = super::hires::Key {
+                        bp: tx.surf.base / 64,
+                        bw: tx.surf.pages_per_row,
+                        psm: tx.surf.psm,
+                        depth: false,
+                    };
                     if Some(key) == run_frame {
                         hflags = (1 << 9) | cv;
                         hs[0] += 1;
@@ -1644,7 +1836,11 @@ impl GpuGs {
                 w[0] = (((v.x as i32 - d.ofx) as f64 / 16.0 + 0.5) as f32).to_bits();
                 w[1] = (((v.y as i32 - d.ofy) as f64 / 16.0 + 0.5) as f32).to_bits();
                 w[2] = u32::from_le_bytes(flat.unwrap_or(v.rgba));
-                let (ss, tt, q) = if d.fst { (v.u as f32, v.v as f32, 1.0) } else { (v.s, v.t, v.q) };
+                let (ss, tt, q) = if d.fst {
+                    (v.u as f32, v.v as f32, 1.0)
+                } else {
+                    (v.s, v.t, v.q)
+                };
                 w[3] = ss.to_bits();
                 w[4] = tt.to_bits();
                 w[5] = q.to_bits();
@@ -1717,7 +1913,16 @@ impl GpuGs {
         g.n3.stats.runs += 1;
         g.n3.stats.draws += calls.len() as u64;
         g.n3.stats.dr_copies += segs.len() as u64;
-        g.n3.lists.push(List { run: rid, slot, hslot, src, vw, vh, calls, segs });
+        g.n3.lists.push(List {
+            run: rid,
+            slot,
+            hslot,
+            src,
+            vw,
+            vh,
+            calls,
+            segs,
+        });
         let x0 = (drawn[0].max(0) as u32).max(rx0);
         let y0 = (drawn[1].max(0) as u32).max(ry0);
         let x1 = ((drawn[2] + 1).max(0) as u32).min(s.width).max(x0);
@@ -1734,47 +1939,62 @@ impl GpuGs {
 
     /// `n3_bind_group` with `prev` as the destination-read copy (the N×
     /// one for `hires` passes).
-    pub(super) fn n3_bind_group_with(&self, prev: &wgpu::TextureView, src: &wgpu::TextureView) -> Option<wgpu::BindGroup> {
+    pub(super) fn n3_bind_group_with(
+        &self,
+        prev: &wgpu::TextureView,
+        src: &wgpu::TextureView,
+    ) -> Option<wgpu::BindGroup> {
         if self.n3.lists.is_empty() {
             return None;
         }
         let g = self.n3.gpu.as_ref()?;
         fn b(i: u32, buf: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
-            wgpu::BindGroupEntry { binding: i, resource: buf.as_entire_binding() }
+            wgpu::BindGroupEntry {
+                binding: i,
+                resource: buf.as_entire_binding(),
+            }
         }
-        Some(self.ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("gs-n3-bg"),
-            layout: &g.bgl,
-            entries: &[
-                b(0, &self.vram),
-                b(1, &self.tables),
-                b(2, &self.data),
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.params,
-                        offset: 0,
-                        size: wgpu::BufferSize::new(64),
-                    }),
-                },
-                b(4, &self.snap),
-                b(6, &self.dec),
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::TextureView(prev),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::TextureView(src),
-                },
-            ],
-        }))
+        Some(
+            self.ctx
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("gs-n3-bg"),
+                    layout: &g.bgl,
+                    entries: &[
+                        b(0, &self.vram),
+                        b(1, &self.tables),
+                        b(2, &self.data),
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: &self.params,
+                                offset: 0,
+                                size: wgpu::BufferSize::new(64),
+                            }),
+                        },
+                        b(4, &self.snap),
+                        b(6, &self.dec),
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: wgpu::BindingResource::TextureView(prev),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::TextureView(src),
+                        },
+                    ],
+                }),
+        )
     }
 
     /// The draw list of native run `run`, if it has one.
     pub(super) fn n3_list_of(&self, run: u32) -> Option<u32> {
         // Lists are queued in run order; few per submission.
-        self.n3.lists.iter().rposition(|l| l.run == run).map(|i| i as u32)
+        self.n3
+            .lists
+            .iter()
+            .rposition(|l| l.run == run)
+            .map(|i| i as u32)
     }
 
     /// Segments of draw list `list` (1 + its destination-read breaks).
@@ -1790,12 +2010,25 @@ impl GpuGs {
     /// Encode segment `seg` of a run's draw list into `pass` (segment 0 in
     /// the run's unswizzle pass, so a run without destination-read breaks
     /// costs one render pass and one compute pass).
-    pub(super) fn n3_encode(&self, bg: &wgpu::BindGroup, list: u32, seg: usize, pass: &mut wgpu::RenderPass<'_>) {
+    pub(super) fn n3_encode(
+        &self,
+        bg: &wgpu::BindGroup,
+        list: u32,
+        seg: usize,
+        pass: &mut wgpu::RenderPass<'_>,
+    ) {
         self.n3_encode_at(bg, list, seg, pass, 1)
     }
 
     /// `n3_encode` at `scale` × the resolution (`hires`).
-    pub(super) fn n3_encode_at(&self, bg: &wgpu::BindGroup, list: u32, seg: usize, pass: &mut wgpu::RenderPass<'_>, scale: u32) {
+    pub(super) fn n3_encode_at(
+        &self,
+        bg: &wgpu::BindGroup,
+        list: u32,
+        seg: usize,
+        pass: &mut wgpu::RenderPass<'_>,
+        scale: u32,
+    ) {
         let l = &self.n3.lists[list as usize];
         let g = self.n3.gpu.as_ref().expect("n3 gpu");
         let c0 = if seg == 0 { 0 } else { l.segs[seg - 1].0 };
@@ -1822,7 +2055,12 @@ impl GpuGs {
             }
             if c.fix != fix {
                 let k = c.fix as f64 / 128.0;
-                pass.set_blend_constant(wgpu::Color { r: k, g: k, b: k, a: k });
+                pass.set_blend_constant(wgpu::Color {
+                    r: k,
+                    g: k,
+                    b: k,
+                    a: k,
+                });
                 fix = c.fix;
             }
             pass.draw(c.first..c.first + c.count, c.inst..c.inst + 1);

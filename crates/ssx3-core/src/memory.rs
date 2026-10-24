@@ -56,8 +56,7 @@ impl Memory {
             return Region::Ram((addr - MAIN_RAM_UNCACHED) as usize);
         }
         // The accelerated alias is a full 32 MiB mirror starting at 0x3000_0000.
-        if (MAIN_RAM_UNCACHED_ACCEL..MAIN_RAM_UNCACHED_ACCEL + MAIN_RAM_SIZE as u32)
-            .contains(&addr)
+        if (MAIN_RAM_UNCACHED_ACCEL..MAIN_RAM_UNCACHED_ACCEL + MAIN_RAM_SIZE as u32).contains(&addr)
         {
             return Region::Ram((addr - MAIN_RAM_UNCACHED_ACCEL) as usize);
         }

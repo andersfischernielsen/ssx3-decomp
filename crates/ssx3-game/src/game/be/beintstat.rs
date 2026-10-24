@@ -5,31 +5,35 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::back_edge_unwinds;
+use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::festaterewards::r;
+pub(crate) use crate::game::sound::soundsys::gp_4 as gp;
+pub(crate) use crate::game::sound::soundsys::p;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
-use ssx3_ee_rt::Cpu;
-use crate::call::Callee;
-use crate::events::deliver_event;
-use ssx3_ee as ee;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-pub(crate) use crate::game::sound::soundsys::p;
-pub(crate) use crate::game::sound::soundsys::gp_4 as gp;
-pub(crate) use crate::game::fe::festaterewards::r;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x0014_9778, bechar_int_is_trick_score_above_rating, "BECharInt_IsTrickScoreAboveRating"),
+    (
+        0x0014_9778,
+        bechar_int_is_trick_score_above_rating,
+        "BECharInt_IsTrickScoreAboveRating",
+    ),
     (0x0014_99a8, belibrary_dtor, "BELibrary_dtor"),
 ];
 
@@ -37,103 +41,102 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 // Callees and fixed addresses.
 
 pub(crate) mod callee {
-    use super::*;
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::fe::festaterewards::callee::IS_DJ_SPEECH_ON_2 as IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::fe::festaterewards::callee::IS_ARCADE_SPEECH_ON;
-    pub(crate) use crate::game::fe::festaterewards::callee::GET_LANGUAGE_MASK_2 as GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_STOP_INSTANCE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_POP_FREE_NODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_PUSH_FREE_NODE;
-    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_START_SCRIPT;
-    pub(crate) use crate::game::fe::festaterewards::callee::MOD_OBJ_RUN_SCRIPT_EVENT;
-    pub(crate) use crate::game::fe::festaterewards::callee::REWARD_GALLERY_REGISTER_TEXTURES;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SERVER_TIMEOUT;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_OPPONENT_DISCONNECTED;
-    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SHOW_CANCEL;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INSTANCE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INTERFACE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_SET_BIT;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_GET_FILE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_SPEND_MONEY;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_GET_MONEY;
-    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_COPY_TAG;
-    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_SET_RAW;
-    pub(crate) use crate::game::fe::festaterewards::callee::BRAGGING_RIGHTS_UPDATE_ROW_COLORS;
-    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_IS_SHARING_CHAR_RECORD;
-    pub(crate) use crate::game::fe::festaterewards::callee::BECHAR_GET_OVERALL_RATING;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_IS_FLAG_SET;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_SET_FLAG;
-    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_POST;
-    pub(crate) use crate::game::fe::festaterewards::callee::TEXFLIP_SET_FRAME;
-    pub(crate) use crate::game::fe::festaterewards::callee::BE_GET_RIDER_PROFILE_2 as BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_GET_SLOT;
-    pub(crate) use crate::game::fe::festaterewards::callee::VFX_PLANTS_GET_SWAY_MATRIX;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEMSET_3 as MEMSET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STR_HASH_4 as STR_HASH;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_6 as SPRINTF;
-    pub(crate) use crate::game::dirtysock::tags2::callee::FORMAT_TAGGED;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_RESET_PROFILE_CHARACTERS_2 as BE_RESET_PROFILE_CHARACTERS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_NEW_PLAYER_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BE_CHAR_INT_GET_INSTANCE;
+    use super::*;
+    pub(crate) use crate::game::dirtysock::tags2::callee::ANIM_GET_LAYER_SEQUENCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_ADD_TIMER_2 as BANK_MONITOR_ADD_TIMER;
     pub(crate) use crate::game::dirtysock::tags2::callee::BE_BAGT_INT_GET_INSTANCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::C_MEM_MAN_ALLOC;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_FIND;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_GET_NUMBER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_CHAR_INT_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_NEW_PLAYER_INT_GET_INSTANCE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::BE_RESET_PROFILE_CHARACTERS_2 as BE_RESET_PROFILE_CHARACTERS;
     pub(crate) use crate::game::dirtysock::tags2::callee::CBE_GET_BE;
     pub(crate) use crate::game::dirtysock::tags2::callee::CBE_GET_INTERFACE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_CHAR_ID;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_ALT_CHAR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GM_PICK_OPPONENTS;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_SET_MODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_PRODUCT_CODE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_SAVE_TYPE_TAG;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152BA8;
+    pub(crate) use crate::game::dirtysock::tags2::callee::C_MEM_MAN_ALLOC;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_ALLOC;
+    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_CTOR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::FORMAT_TAGGED;
     pub(crate) use crate::game::dirtysock::tags2::callee::F_00152948;
+    pub(crate) use crate::game::dirtysock::tags2::callee::F_00152BA8;
     pub(crate) use crate::game::dirtysock::tags2::callee::F_002C2540;
     pub(crate) use crate::game::dirtysock::tags2::callee::F_002C26D0;
+    pub(crate) use crate::game::dirtysock::tags2::callee::F_0039E2A0;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_ALT_CHAR;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_CHAR_ID;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_FINISH_SPEECH_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_LANGUAGE_MASK as GET_LANGUAGE_MASK_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_RIDER_VOICE_MASK;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GET_TRANSITION_MAN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::GM_PICK_OPPONENTS;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IS_LOCAL_PLAYER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IS_PA_SPEECH_ON;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IS_RACE_TYPE_4OR5;
+    pub(crate) use crate::game::dirtysock::tags2::callee::IS_REPLAY_PLAYING;
+    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBYMAN_SEND_REQUEST;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_PRODUCT_CODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_GET_SAVE_TYPE_TAG;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MC_SET_MODE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_PLAIN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_WRAP;
+    pub(crate) use crate::game::dirtysock::tags2::callee::MEMSET_3 as MEMSET;
     pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_IS_FLAG_SET_2 as MESSAGE_CENTER_IS_FLAG_SET;
     pub(crate) use crate::game::dirtysock::tags2::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG;
-    pub(crate) use crate::game::dirtysock::tags2::callee::STR_INTERN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::F_0039E2A0;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SNPRINTF;
-    pub(crate) use crate::game::dirtysock::tags2::callee::LOBBYMAN_SEND_REQUEST;
     pub(crate) use crate::game::dirtysock::tags2::callee::NET_1;
     pub(crate) use crate::game::dirtysock::tags2::callee::NET_2;
     pub(crate) use crate::game::dirtysock::tags2::callee::NET_3;
     pub(crate) use crate::game::dirtysock::tags2::callee::NET_4;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FLUSH;
     pub(crate) use crate::game::dirtysock::tags2::callee::NET_5;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_PA_SPEECH_ON;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_REPLAY_PLAYING;
-    pub(crate) use crate::game::dirtysock::tags2::callee::RIDER_123168;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_RACE_TYPE_4OR5;
-    pub(crate) use crate::game::dirtysock::tags2::callee::BANK_MONITOR_ADD_TIMER_2 as BANK_MONITOR_ADD_TIMER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_SET_EVENT_CONTEXT as SPEECH_SET_EVENT_CONTEXT_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_LANGUAGE_MASK as GET_LANGUAGE_MASK_2;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_RIDER_VOICE_MASK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_FINISH_SPEECH_MASK;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_QUEUE;
     pub(crate) use crate::game::dirtysock::tags2::callee::NET_FIND;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_FLUSH;
     pub(crate) use crate::game::dirtysock::tags2::callee::NET_REMOVE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::NET_RESET;
+    pub(crate) use crate::game::dirtysock::tags2::callee::RIDER_123168;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SETUPMAN_DESTROY;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SNPRINTF;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_QUEUE;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SPEECH_SET_EVENT_CONTEXT as SPEECH_SET_EVENT_CONTEXT_2;
+    pub(crate) use crate::game::dirtysock::tags2::callee::SPRINTF_6 as SPRINTF;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STR_HASH_4 as STR_HASH;
+    pub(crate) use crate::game::dirtysock::tags2::callee::STR_INTERN;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_FIND;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TAG_FIELD_GET_NUMBER;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TEXT_OBJ;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_START;
+    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_STOP;
     pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_DEACTIVATE;
     pub(crate) use crate::game::dirtysock::tags2::callee::VOIP_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::SETUPMAN_DESTROY;
-    pub(crate) use crate::game::dirtysock::tags2::callee::NET_RESET;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TEXT_OBJ;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_PLAIN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::MEASURE_WRAP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::ANIM_GET_LAYER_SEQUENCE;
-    pub(crate) use crate::game::dirtysock::tags2::callee::IS_LOCAL_PLAYER;
-    pub(crate) use crate::game::dirtysock::tags2::callee::GET_TRANSITION_MAN;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_STOP;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_ALLOC;
-    pub(crate) use crate::game::dirtysock::tags2::callee::EFFECT_CTOR;
-    pub(crate) use crate::game::dirtysock::tags2::callee::TRANSITION_START;
+    pub(crate) use crate::game::fe::festaterewards::callee::BECHAR_GET_OVERALL_RATING;
+    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_GET_SLOT;
+    pub(crate) use crate::game::fe::festaterewards::callee::BENEWPLAYER_IS_SHARING_CHAR_RECORD;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_GET_MONEY;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_ECON_SPEND_MONEY;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_GET_RIDER_PROFILE_2 as BE_GET_RIDER_PROFILE;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INSTANCE;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_LIBRARY_INTERFACE;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_GET_FILE;
+    pub(crate) use crate::game::fe::festaterewards::callee::BE_REWARD_SET_BIT;
+    pub(crate) use crate::game::fe::festaterewards::callee::BRAGGING_RIGHTS_UPDATE_ROW_COLORS;
+    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_OPPONENT_DISCONNECTED;
+    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SERVER_TIMEOUT;
+    pub(crate) use crate::game::fe::festaterewards::callee::GAME_ERROR_SHOW_CANCEL;
+    pub(crate) use crate::game::fe::festaterewards::callee::GET_LANGUAGE_MASK_2 as GET_LANGUAGE_MASK;
+    pub(crate) use crate::game::fe::festaterewards::callee::IS_ARCADE_SPEECH_ON;
+    pub(crate) use crate::game::fe::festaterewards::callee::IS_DJ_SPEECH_ON_2 as IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_IS_FLAG_SET;
+    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_POST;
+    pub(crate) use crate::game::fe::festaterewards::callee::MESSAGE_SET_FLAG;
+    pub(crate) use crate::game::fe::festaterewards::callee::MOD_OBJ_RUN_SCRIPT_EVENT;
+    pub(crate) use crate::game::fe::festaterewards::callee::REWARD_GALLERY_REGISTER_TEXTURES;
+    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_POP_FREE_NODE;
+    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_PUSH_FREE_NODE;
+    pub(crate) use crate::game::fe::festaterewards::callee::SCRIPT_START_SCRIPT;
+    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_SET_EVENT_CONTEXT;
+    pub(crate) use crate::game::fe::festaterewards::callee::SPEECH_STOP_INSTANCE;
+    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_COPY_TAG;
+    pub(crate) use crate::game::fe::festaterewards::callee::TAG_FIELD_SET_RAW;
+    pub(crate) use crate::game::fe::festaterewards::callee::TEXFLIP_SET_FRAME;
+    pub(crate) use crate::game::fe::festaterewards::callee::VFX_PLANTS_GET_SWAY_MATRIX;
 }
-
 
 // ---------------------------------------------------------------------------
 // BE library.
@@ -204,7 +207,6 @@ pub fn belibrary_dtor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // BE character queries.
@@ -292,7 +294,6 @@ pub fn bechar_int_is_trick_score_above_rating(c: &mut Cpu) {
     })
 }
 
-
 /// The `lq s0-s2; ld ra; addiu sp; jr ra` tail.
 pub(crate) fn bechar_rating_tail(c: &mut Cpu, frame: Frame) -> Flow {
     c.cycles += 6;
@@ -303,7 +304,6 @@ pub(crate) fn bechar_rating_tail(c: &mut Cpu, frame: Frame) -> Flow {
     frame.close(c);
     Ok(())
 }
-
 
 /// `void BELibrary_ResetPlayerProfile(BELibrary *self, int idx)` (0x149a88):
 /// clear and initialise the rider-table entry for `idx`, format its label,
@@ -384,9 +384,24 @@ pub fn belibrary_reset_player_profile(c: &mut Cpu) {
             return Err(crate::call::Unwound);
         }
 
-        reset_interface(c, callee::BE_NEW_PLAYER_INT_GET_INSTANCE, 0x0014_9b50, 0x0014_9b64)?;
-        reset_interface(c, callee::BE_CHAR_INT_GET_INSTANCE, 0x0014_9b6c, 0x0014_9b80)?;
-        reset_interface(c, callee::BE_BAGT_INT_GET_INSTANCE, 0x0014_9b88, 0x0014_9b9c)?;
+        reset_interface(
+            c,
+            callee::BE_NEW_PLAYER_INT_GET_INSTANCE,
+            0x0014_9b50,
+            0x0014_9b64,
+        )?;
+        reset_interface(
+            c,
+            callee::BE_CHAR_INT_GET_INSTANCE,
+            0x0014_9b6c,
+            0x0014_9b80,
+        )?;
+        reset_interface(
+            c,
+            callee::BE_BAGT_INT_GET_INSTANCE,
+            0x0014_9b88,
+            0x0014_9b9c,
+        )?;
 
         frame.restore(c, 16, 0x80);
         frame.restore(c, 17, 0x70);
@@ -398,10 +413,14 @@ pub fn belibrary_reset_player_profile(c: &mut Cpu) {
     })
 }
 
-
 /// The tail shared by the three interfaces: get the singleton, then call its
 /// vtable slot `{int16 delta; fn}`(+0x10/+0x14) with `this + delta`.
-pub(crate) fn reset_interface(c: &mut Cpu, get: Callee, get_ret: u32, vt_ret: u32) -> crate::call::Flow {
+pub(crate) fn reset_interface(
+    c: &mut Cpu,
+    get: Callee,
+    get_ret: u32,
+    vt_ret: u32,
+) -> crate::call::Flow {
     get.call(c, get_ret)?;
     let obj = c.g[V0][0];
     c.g[V1][0] = c.lw((obj as u32).wrapping_add(0xc));
@@ -416,58 +435,61 @@ pub(crate) fn reset_interface(c: &mut Cpu, get: Callee, get_ret: u32, vt_ret: u3
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::FAKE;
-    use crate::difftest::check;
-    use crate::difftest::check_lohi;
     use crate::difftest::put_vec;
+    use crate::difftest::seed_count;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     use crate::difftest::SP;
-    use ssx3_ee as ee;
-    use crate::difftest::fakes;
-    use crate::difftest::seed_count;
-    pub(crate) use crate::game::sound::soundsys::tests::BE;
-    pub(crate) use crate::game::sound::soundsys::tests::WORLD;
-    pub(crate) use crate::game::sound::soundsys::tests::w;
     pub(crate) use crate::game::ai::rider::tests::clear_2 as clear;
-    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals;
-    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool;
-    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
-    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
-    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base;
-    pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE_2;
-    pub(crate) use crate::game::fe::festaterewards::tests::W;
-    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
-    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
+    pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base_2;
     pub(crate) use crate::game::fe::festaterewards::tests::hook;
     pub(crate) use crate::game::fe::festaterewards::tests::strict;
-    pub(crate) use crate::game::fe::festaterewards::tests::base_9 as base_2;
+    pub(crate) use crate::game::fe::festaterewards::tests::BE_7 as BE_2;
+    pub(crate) use crate::game::fe::festaterewards::tests::HOOKS;
+    pub(crate) use crate::game::fe::festaterewards::tests::KEEP_F0;
+    pub(crate) use crate::game::fe::festaterewards::tests::W;
+    pub(crate) use crate::game::sound::soundsys::tests::alloc_ready;
+    pub(crate) use crate::game::sound::soundsys::tests::base_9 as base;
+    pub(crate) use crate::game::sound::soundsys::tests::globals_7 as globals;
+    pub(crate) use crate::game::sound::soundsys::tests::load_2 as load;
+    pub(crate) use crate::game::sound::soundsys::tests::pool_7 as pool;
+    pub(crate) use crate::game::sound::soundsys::tests::w;
+    pub(crate) use crate::game::sound::soundsys::tests::BE;
+    pub(crate) use crate::game::sound::soundsys::tests::WORLD;
+    use ssx3_ee as ee;
 
-
-        #[test]
+    #[test]
     fn belibrary_dtor_matches() {
-        check(ee::s01::f_001499a8__generated, belibrary_dtor, 8, &|c, seed| {
-            let _ = base(c, seed, 0x1499a8, 2);
-            let this = DATA;
-            clear(c, this, 0x100);
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = 0;
-            for off in [
-                -0x1f3ci32, -0x1f30, -0x1ee8, -0x1f2c, -0x1ee4, -0x1ee0, -0x1eec, -0x1ea8, -0x1f28,
-                -0x1eb8, -0x1edc, -0x1ea4, -0x1e8c,
-            ] {
-                w(
-                    c,
-                    GAME_GP.wrapping_sub(off as u32),
-                    if seed % 2 == 0 { 0 } else { 0 },
-                );
-            }
-        });
+        check(
+            ee::s01::f_001499a8__generated,
+            belibrary_dtor,
+            8,
+            &|c, seed| {
+                let _ = base(c, seed, 0x1499a8, 2);
+                let this = DATA;
+                clear(c, this, 0x100);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = 0;
+                for off in [
+                    -0x1f3ci32, -0x1f30, -0x1ee8, -0x1f2c, -0x1ee4, -0x1ee0, -0x1eec, -0x1ea8,
+                    -0x1f28, -0x1eb8, -0x1edc, -0x1ea4, -0x1e8c,
+                ] {
+                    w(
+                        c,
+                        GAME_GP.wrapping_sub(off as u32),
+                        if seed % 2 == 0 { 0 } else { 0 },
+                    );
+                }
+            },
+        );
     }
-
 
     /// Call a setup helper (a generated function) with up to six arguments.
     pub(crate) fn call(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
@@ -479,7 +501,6 @@ pub(crate) mod tests {
         f(c);
         c.g[V0][0]
     }
-
 
     /// The engine's size-class pool allocator, enabled through `gp + 0xdd8`.
     pub(crate) fn pool_allocator(c: &mut Cpu) {
@@ -507,10 +528,8 @@ pub(crate) mod tests {
         }
     }
 
-
     /// The dlmalloc arena the named allocators fall back to.
     pub(crate) const MEM_HEAP: u32 = 0x004f_f250;
-
 
     pub(crate) fn allocator(c: &mut Cpu) {
         pool_allocator(c);
@@ -521,7 +540,6 @@ pub(crate) mod tests {
             &[MEM_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
         );
     }
-
 
     // ------------------------------------------------------------ BE_2 char
 

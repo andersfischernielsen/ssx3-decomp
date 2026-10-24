@@ -54,7 +54,10 @@ pub mod layout {
     pub const CMD_RECV: u32 = 0x0001_E000;
 
     pub fn base_of(name: &str) -> Option<u32> {
-        MODULES.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, b)| *b)
+        MODULES
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, b)| *b)
     }
 }
 
@@ -139,7 +142,11 @@ impl Irx {
     }
     /// Address ranges inside `.text` that are tables, not code.
     pub fn table_ranges(&self) -> Vec<(u32, u32)> {
-        let mut v: Vec<(u32, u32)> = self.imports.iter().map(|i| (i.table, i.table_end)).collect();
+        let mut v: Vec<(u32, u32)> = self
+            .imports
+            .iter()
+            .map(|i| (i.table, i.table_end))
+            .collect();
         v.extend(self.exports.iter().map(|e| (e.table, e.table_end)));
         v.sort();
         v
@@ -170,7 +177,11 @@ pub fn load(data: &[u8], base: u32) -> Result<Irx, String> {
         match u32_at(data, ph) {
             0x7000_0080 => iopmod = Some(u32_at(data, ph + 4) as usize),
             1 if load_seg.is_none() => {
-                load_seg = Some((u32_at(data, ph + 4) as usize, u32_at(data, ph + 16) as usize, u32_at(data, ph + 20) as usize))
+                load_seg = Some((
+                    u32_at(data, ph + 4) as usize,
+                    u32_at(data, ph + 16) as usize,
+                    u32_at(data, ph + 20) as usize,
+                ))
             }
             _ => {}
         }
@@ -202,7 +213,13 @@ pub fn load(data: &[u8], base: u32) -> Result<Irx, String> {
         info: usize,
     }
     let str_off = u32_at(data, shoff + shstrndx * shentsize + 16) as usize;
-    let cstr = |o: usize| -> String { data[o..].iter().take_while(|&&b| b != 0).map(|&b| b as char).collect() };
+    let cstr = |o: usize| -> String {
+        data[o..]
+            .iter()
+            .take_while(|&&b| b != 0)
+            .map(|&b| b as char)
+            .collect()
+    };
     let shs: Vec<Sh> = (0..shnum)
         .map(|i| {
             let s = shoff + i * shentsize;
@@ -228,8 +245,14 @@ pub fn load(data: &[u8], base: u32) -> Result<Irx, String> {
     let mut hilo_code_ptrs = BTreeSet::new();
     let text_end = base + text_size;
     let get = |img: &[u8], o: u32| -> u32 { u32_at(img, o as usize) };
-    let put = |img: &mut [u8], o: u32, v: u32| img[o as usize..o as usize + 4].copy_from_slice(&v.to_le_bytes());
-    let data_start = shs.iter().find(|s| s.name == ".data").map(|s| s.addr).unwrap_or(u32::MAX);
+    let put = |img: &mut [u8], o: u32, v: u32| {
+        img[o as usize..o as usize + 4].copy_from_slice(&v.to_le_bytes())
+    };
+    let data_start = shs
+        .iter()
+        .find(|s| s.name == ".data")
+        .map(|s| s.addr)
+        .unwrap_or(u32::MAX);
     for sh in shs.iter().filter(|s| s.kind == 9) {
         let target_is_text = shs.get(sh.info).map(|t| t.name == ".text").unwrap_or(false);
         let _ = target_is_text;
@@ -258,7 +281,11 @@ pub fn load(data: &[u8], base: u32) -> Result<Irx, String> {
                 }
                 4 => {
                     let t = ((insn & 0x03FF_FFFF) << 2).wrapping_add(base);
-                    put(&mut image, at, (insn & !0x03FF_FFFF) | ((t >> 2) & 0x03FF_FFFF));
+                    put(
+                        &mut image,
+                        at,
+                        (insn & !0x03FF_FFFF) | ((t >> 2) & 0x03FF_FFFF),
+                    );
                 }
                 5 => {
                     if v2 && k + 1 < count {
@@ -274,7 +301,11 @@ pub fn load(data: &[u8], base: u32) -> Result<Irx, String> {
                 6 => {
                     let lo = insn as u16 as i16 as i32 as u32;
                     if v2 {
-                        put(&mut image, at, (insn & 0xFFFF_0000) | (lo.wrapping_add(base) & 0xFFFF));
+                        put(
+                            &mut image,
+                            at,
+                            (insn & 0xFFFF_0000) | (lo.wrapping_add(base) & 0xFFFF),
+                        );
                     } else {
                         let hi_word = pending_hi.first().map(|&h| get(&image, h)).unwrap_or(0);
                         let v = (hi_word << 16).wrapping_add(lo).wrapping_add(base);
@@ -314,7 +345,12 @@ pub fn load(data: &[u8], base: u32) -> Result<Irx, String> {
             if name.is_empty() || shndx == 0 || shndx >= 0xFF00 {
                 continue;
             }
-            symbols.push(Symbol { addr: base + value, size, name, func: info & 15 == 2 });
+            symbols.push(Symbol {
+                addr: base + value,
+                size,
+                name,
+                func: info & 15 == 2,
+            });
         }
     }
     symbols.sort_by_key(|s| s.addr);
@@ -345,8 +381,18 @@ pub fn load(data: &[u8], base: u32) -> Result<Irx, String> {
                     }
                 }
                 // Terminator: two zero words.
-                let end = if s + 8 <= text_size && get(&image, s) == 0 && get(&image, s + 4) == 0 { s + 8 } else { s };
-                imports.push(Import { lib, version, table: base + a, table_end: base + end, stubs });
+                let end = if s + 8 <= text_size && get(&image, s) == 0 && get(&image, s + 4) == 0 {
+                    s + 8
+                } else {
+                    s
+                };
+                imports.push(Import {
+                    lib,
+                    version,
+                    table: base + a,
+                    table_end: base + end,
+                    stubs,
+                });
                 a = end;
                 continue;
             } else {
@@ -360,7 +406,13 @@ pub fn load(data: &[u8], base: u32) -> Result<Irx, String> {
                     entries.push(v);
                     s += 4;
                 }
-                exports.push(Export { lib, version, table: base + a, table_end: base + s + 4, entries });
+                exports.push(Export {
+                    lib,
+                    version,
+                    table: base + a,
+                    table_end: base + s + 4,
+                    entries,
+                });
                 a = s + 4;
                 continue;
             }
@@ -404,8 +456,9 @@ pub fn module_name_of(path: &str) -> String {
 /// Libraries the native IOP kernel provides, by name. The generator emits
 /// `imports::call(c, LIB, index)` with these numeric ids.
 pub const LIBRARIES: &[&str] = &[
-    "sysmem", "loadcore", "intrman", "thbase", "thsemap", "thevent", "thmsgbx", "sifman", "sifcmd", "sysclib", "stdio",
-    "timrman", "dmacman", "vblank", "ssbusc", "modload", "ioman", "secrman", "cdvdman",
+    "sysmem", "loadcore", "intrman", "thbase", "thsemap", "thevent", "thmsgbx", "sifman", "sifcmd",
+    "sysclib", "stdio", "timrman", "dmacman", "vblank", "ssbusc", "modload", "ioman", "secrman",
+    "cdvdman",
 ];
 
 pub fn library_id(name: &str) -> Option<usize> {
@@ -423,7 +476,12 @@ pub fn describe(irx: &Irx) -> String {
         s += &format!("  import {} v{:#x}: {:?}\n", i.lib, i.version, idx);
     }
     for e in &irx.exports {
-        s += &format!("  export {} v{:#x}: {} entries\n", e.lib, e.version, e.entries.len());
+        s += &format!(
+            "  export {} v{:#x}: {} entries\n",
+            e.lib,
+            e.version,
+            e.entries.len()
+        );
     }
     let _ = BTreeMap::<u32, u32>::new();
     s

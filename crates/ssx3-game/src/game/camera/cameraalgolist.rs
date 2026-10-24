@@ -4,22 +4,22 @@
 use crate::abi;
 use crate::call;
 use crate::call::call_ptr;
+use crate::call::guest;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE_ADDR;
+pub(crate) use crate::game::fe::feasyncfile::p;
+pub(crate) use crate::game::fe::feasyncfile::r;
 use crate::guest::Addr;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-use crate::call::guest;
-pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE_ADDR;
-pub(crate) use crate::game::fe::feasyncfile::p;
-pub(crate) use crate::game::fe::feasyncfile::r;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -34,54 +34,53 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MALLOC;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FREE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FREE2;
-    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::VEC3_MAX_COMPONENT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_12 as NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_DTOR_4 as NET_FE_STATE_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_INIT_3 as NET_FE_STATE_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_SELECTED_USER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WSCRIPT_CACHE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_INSTANCE_CTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_MANAGER_LOAD;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_FIRST_2 as PROCESS_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_NEXT_2 as PROCESS_LIST_NEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_FREE_TRIGGERS;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_PARSE_2 as CAMERA_TRIGGER_MAN_PARSE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_MONTH;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_DAY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_YEAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_GENDER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_LEGAL;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_INIT_PAGES;
-    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_REQUEST_SHAPE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OV_STATE_OVERLAY_INIT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::OPTIONS_HUD_REFRESH_SELECTION;
-    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_BINDING_BIND;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_WRITE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_NEXT_CHAR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_EMPTY_STUB;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_CTOR_COPY;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_RELEASE;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_ALLOC_BUFFER;
-    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_DTOR;
-    pub(crate) use crate::game::fe::feasyncfile::callee::IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::fe::feasyncfile::callee::GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::fe::feasyncfile::callee::SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::fe::feasyncfile::callee::TRACK_TO_CATEGORY;
     pub(crate) use crate::game::fe::feasyncfile::callee::AUDIO_GET_GAME_MODULE_2 as AUDIO_GET_GAME_MODULE;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_INTERFACE;
     pub(crate) use crate::game::fe::feasyncfile::callee::BE_GET_SOMETHING;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_ALLOC_BUFFER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_CTOR_COPY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::BXSTRING_RELEASE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_FREE_TRIGGERS;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CAMERA_TRIGGER_MAN_PARSE_2 as CAMERA_TRIGGER_MAN_PARSE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_DAY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_GENDER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_LEGAL;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_MONTH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::CREATE_STEP2_SET_YEAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FE_STRING_HASH;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FREE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::FREE2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::GET_LANGUAGE_MASK;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_EMPTY_STUB;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_NEXT_CHAR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::INPUT_PREPROC_WRITE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MALLOC;
+    pub(crate) use crate::game::fe::feasyncfile::callee::MESSAGE_CENTER_SET_FLAG_2 as MESSAGE_CENTER_SET_FLAG;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_CTOR_12 as NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_DTOR_4 as NET_FE_STATE_DTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_GET_SELECTED_USER;
+    pub(crate) use crate::game::fe::feasyncfile::callee::NET_FE_STATE_INIT_3 as NET_FE_STATE_INIT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OPTIONS_HUD_REFRESH_SELECTION;
+    pub(crate) use crate::game::fe::feasyncfile::callee::OV_STATE_OVERLAY_INIT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_FIRST_2 as PROCESS_LIST_FIRST;
+    pub(crate) use crate::game::fe::feasyncfile::callee::PROCESS_LIST_NEXT_2 as PROCESS_LIST_NEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_INIT_PAGES;
+    pub(crate) use crate::game::fe::feasyncfile::callee::REWARD_GALLERY_REQUEST_SHAPE;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SCRIPT_BINDING_BIND;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SET_EVENT_CONTEXT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::SONG_INSTANCE_CTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::SPEECH_NEW;
+    pub(crate) use crate::game::fe::feasyncfile::callee::TRACK_TO_CATEGORY;
+    pub(crate) use crate::game::fe::feasyncfile::callee::VEC3_MAX_COMPONENT;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_CACHE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_INSTANCE_CTOR;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WORLD_TRIGGER_MANAGER_LOAD;
+    pub(crate) use crate::game::fe::feasyncfile::callee::WSCRIPT_CACHE_CTOR;
 }
 
 pub(crate) const OPERATOR_NEW_NAMED_ADDR: u32 = 0x0031_7d70;
-
 
 /// `void AlgorithmList_Push(AlgorithmList *list, void *payload, void *arg, float blend f12)`
 /// (0x15c988): allocate a 0x1c-byte node, run the payload's prepare slot
@@ -152,14 +151,12 @@ pub fn algorithm_list_push(c: &mut Cpu) {
     })
 }
 
-
 /// A node in an `AlgorithmList`: payload at +0, next at +0x14, flags at +0x18.
 pub(crate) const ALG_NODE_PAYLOAD: u32 = 0x0;
 
 pub(crate) const ALG_NODE_NEXT: u32 = 0x14;
 
 pub(crate) const ALG_NODE_FLAGS: u32 = 0x18;
-
 
 /// `void AlgorithmList_Clear(AlgorithmList *list)` (0x15cb08): delete every
 /// node (running its payload destructor first) and null the head and count.
@@ -179,11 +176,9 @@ pub fn algorithm_list_clear(c: &mut Cpu) {
             c.cycles += 1;
             loop {
                 c.cycles += 2;
-                c.g[S1][0] =
-                    Addr((c.g[S0][0] as u32).wrapping_add(ALG_NODE_NEXT)).lw(c);
+                c.g[S1][0] = Addr((c.g[S0][0] as u32).wrapping_add(ALG_NODE_NEXT)).lw(c);
                 c.cycles += 3;
-                c.g[A2][0] =
-                    Addr((c.g[S0][0] as u32).wrapping_add(ALG_NODE_PAYLOAD)).lw(c);
+                c.g[A2][0] = Addr((c.g[S0][0] as u32).wrapping_add(ALG_NODE_PAYLOAD)).lw(c);
                 if c.g[A2][0] == 0 {
                     c.sw(c.g[S0][0] as u32, 0);
                 } else {
@@ -229,7 +224,6 @@ pub fn algorithm_list_clear(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Algorithm list.
@@ -332,104 +326,122 @@ pub fn algorithm_list_remove(c: &mut Cpu) {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use super::ee;
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::check_lohi;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::ptr;
     use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
     use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::check;
-    use crate::difftest::check_lohi;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use super::ee;
-    use crate::difftest::fakes::FAKE;
-    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
-    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
     pub(crate) use crate::game::ai::aianimeventmap::tests::alloc_setup;
-    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_15 as SEEDS_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_8 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W_6 as W;
-    pub(crate) use crate::game::fe::feasyncfile::tests::MEM_HEAP;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w;
-    pub(crate) use crate::game::fe::feasyncfile::tests::slot_11 as slot;
+    pub(crate) use crate::game::ai::aianimeventmap::tests::MEM_MUTEX;
+    pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_4 as alloc_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base;
     pub(crate) use crate::game::fe::feasyncfile::tests::eafile_pools;
-    pub(crate) use crate::game::fe::feasyncfile::tests::run_9 as run;
     pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_11 as heap_init;
     pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_11 as pool_allocator;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_16 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base_4 as alloc_base;
-
+    pub(crate) use crate::game::fe::feasyncfile::tests::run_9 as run;
+    pub(crate) use crate::game::fe::feasyncfile::tests::slot_11 as slot;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_8 as BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::MEM_HEAP;
+    pub(crate) use crate::game::fe::feasyncfile::tests::SEEDS_15 as SEEDS_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W_6 as W;
+    pub(crate) use crate::game::world::wscriptcache::tests::SEEDS;
 
     #[test]
     fn algorithm_list_push_matches() {
-        check(ee::s01::f_0015c988, algorithm_list_push, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xc988, 0);
-            alloc_setup(c, &mut r);
-            let list = DATA;
-            let obj = DATA + 0x100;
-            c.g[A0][0] = list as u64;
-            c.g[A1][0] = obj as u64;
-            c.g[A2][0] = sx(r.next_u32());
-            c.bus.write32(list, if seed % 3 == 0 { 0 } else { DATA + 0x300 });
-            c.bus.write32(list + 4, r.next_u32());
-            let vt = vtable(c, &mut r, &[0x20]);
-            c.bus.write32(obj + 0x10, vt);
-            c.f[12] = if seed % 2 == 0 { 0x3f80_0000 } else { r.edge_f32() };
-        });
+        check(
+            ee::s01::f_0015c988,
+            algorithm_list_push,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xc988, 0);
+                alloc_setup(c, &mut r);
+                let list = DATA;
+                let obj = DATA + 0x100;
+                c.g[A0][0] = list as u64;
+                c.g[A1][0] = obj as u64;
+                c.g[A2][0] = sx(r.next_u32());
+                c.bus
+                    .write32(list, if seed % 3 == 0 { 0 } else { DATA + 0x300 });
+                c.bus.write32(list + 4, r.next_u32());
+                let vt = vtable(c, &mut r, &[0x20]);
+                c.bus.write32(obj + 0x10, vt);
+                c.f[12] = if seed % 2 == 0 {
+                    0x3f80_0000
+                } else {
+                    r.edge_f32()
+                };
+            },
+        );
     }
-
 
     #[test]
     fn algorithm_list_clear_matches() {
-        check(ee::s01::f_0015cb08, algorithm_list_clear, SEEDS, &|c, seed| {
-            let mut r = machine(c, seed, 0xcb08, 0);
-            alloc_setup(c, &mut r);
-            let list = DATA;
-            c.g[A0][0] = list as u64;
-            if seed % 2 == 0 {
-                c.bus.write32(list, 0);
-                c.bus.write32(list + 4, 0);
-            } else {
-                let node = DATA + 0x100;
-                c.bus.write32(list, node);
-                c.bus.write32(list + 4, 1);
-                c.bus.write32(node + 0x14, 0);
-                if seed % 4 == 0 {
-                    c.bus.write32(node, 0);
+        check(
+            ee::s01::f_0015cb08,
+            algorithm_list_clear,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0xcb08, 0);
+                alloc_setup(c, &mut r);
+                let list = DATA;
+                c.g[A0][0] = list as u64;
+                if seed % 2 == 0 {
+                    c.bus.write32(list, 0);
+                    c.bus.write32(list + 4, 0);
                 } else {
-                    let payload = DATA + 0x200;
-                    c.bus.write32(node, payload);
-                    let vt = vtable(c, &mut r, &[8]);
-                    c.bus.write32(payload + 0x10, vt);
+                    let node = DATA + 0x100;
+                    c.bus.write32(list, node);
+                    c.bus.write32(list + 4, 1);
+                    c.bus.write32(node + 0x14, 0);
+                    if seed % 4 == 0 {
+                        c.bus.write32(node, 0);
+                    } else {
+                        let payload = DATA + 0x200;
+                        c.bus.write32(node, payload);
+                        let vt = vtable(c, &mut r, &[8]);
+                        c.bus.write32(payload + 0x10, vt);
+                    }
+                    c.bus
+                        .write32(node + 0x18, if seed % 6 == 0 { 0 } else { 1 });
                 }
-                c.bus.write32(node + 0x18, if seed % 6 == 0 { 0 } else { 1 });
-            }
-        });
+            },
+        );
     }
-
 
     // -------------------------------------------------------- algorithm list
 
     #[test]
     fn algorithm_list_remove_matches() {
-        check(ee::s01::f_0015ca50__generated, algorithm_list_remove, SEEDS_2, &|c, seed| {
-            let mut r = alloc_base(c, seed, 0x15ca, 3);
-            let list = DATA;
-            let node = DATA + 0x100;
-            w(c, list + 4, r.next_u32() % 4);
-            w(c, node + 0x10, if seed % 2 == 0 { 0 } else { DATA + 0x200 });
-            w(c, node + 0x14, if seed & 2 == 0 { 0 } else { DATA + 0x300 });
-            w(c, node, if seed & 4 == 0 { 0 } else { DATA + 0x400 });
-            w(c, node + 0x18, 0);
-            let vt = DATA + 0x500;
-            w(c, DATA + 0x400, vt);
-            slot(c, vt, 0x10, FAKE);
-            slot(c, vt, 0x14, FAKE);
-            c.g[A0][0] = list as u64;
-            c.g[A1][0] = node as u64;
-        });
+        check(
+            ee::s01::f_0015ca50__generated,
+            algorithm_list_remove,
+            SEEDS_2,
+            &|c, seed| {
+                let mut r = alloc_base(c, seed, 0x15ca, 3);
+                let list = DATA;
+                let node = DATA + 0x100;
+                w(c, list + 4, r.next_u32() % 4);
+                w(c, node + 0x10, if seed % 2 == 0 { 0 } else { DATA + 0x200 });
+                w(c, node + 0x14, if seed & 2 == 0 { 0 } else { DATA + 0x300 });
+                w(c, node, if seed & 4 == 0 { 0 } else { DATA + 0x400 });
+                w(c, node + 0x18, 0);
+                let vt = DATA + 0x500;
+                w(c, DATA + 0x400, vt);
+                slot(c, vt, 0x10, FAKE);
+                slot(c, vt, 0x14, FAKE);
+                c.g[A0][0] = list as u64;
+                c.g[A1][0] = node as u64;
+            },
+        );
     }
 }

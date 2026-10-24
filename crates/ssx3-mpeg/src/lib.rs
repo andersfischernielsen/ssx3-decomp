@@ -97,7 +97,15 @@ pub fn luts() -> &'static Luts {
 /// Dequantise one block's coefficients (`coef` in scan order) into raster
 /// order: intra DC times `dc_mult`, the rest by weight and scale, saturated
 /// to [-2048, 2047], then MPEG-2 mismatch control (MPEG-1: oddification).
-pub fn dequantise(coef: &[i32; 64], scan: &[u8; 64], weights: &[u8; 64], intra: bool, scale: i32, dc_mult: i32, mpeg1: bool) -> [i32; 64] {
+pub fn dequantise(
+    coef: &[i32; 64],
+    scan: &[u8; 64],
+    weights: &[u8; 64],
+    intra: bool,
+    scale: i32,
+    dc_mult: i32,
+    mpeg1: bool,
+) -> [i32; 64] {
     let mut f = [0i32; 64];
     let mut sum = 0i32;
     for (k, &v) in coef.iter().enumerate() {
@@ -129,4 +137,3 @@ pub fn dequantise(coef: &[i32; 64], scan: &[u8; 64], weights: &[u8; 64], intra: 
     }
     f
 }
-

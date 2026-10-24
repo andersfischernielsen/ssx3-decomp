@@ -2,13 +2,6 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::float;
-use ssx3_ee_rt::Cpu;
 use crate::abi::addu;
 use crate::abi::r32;
 use crate::call::call_ptr;
@@ -19,64 +12,131 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
 use crate::call::VSlot;
+use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use ssx3_ee as ee;
-use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::vu0::X;
-use crate::events;
-use ssx3_ee_rt::vu0::W;
-use ssx3_ee_rt::vu0::Y;
-use ssx3_ee_rt::vu0::Z;
-use callee::*;
-use gather_callee::*;
-use ssx3_ee_rt::funcs::call_indirect;
-pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
-pub(crate) use crate::game::be::bestate2::ea;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::lw as lw_2;
-pub(crate) use crate::game::be::beintplayer::lh;
-pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
-pub(crate) use crate::game::fe::feasyncfile::at_2;
-pub(crate) use crate::game::main::gamemode::low;
-pub(crate) use crate::game::main::gamemode::sp_2 as sp_3;
-pub(crate) use crate::game::main::gamemode::lw_r;
-pub(crate) use crate::game::main::gamemode::lh_r;
-pub(crate) use crate::game::main::gamemode::sw_r;
-pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
-pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_3;
-pub(crate) use crate::game::intersect::riderspheretree::collision_direction;
-pub(crate) use crate::game::intersect::riderspheretree::frame_restore_s0;
-pub(crate) use crate::game::intersect::riderspheretree::coll_sphere_tree_common;
-pub(crate) use crate::game::render::graphicsman::RegMem;
-pub(crate) use crate::game::fe::fepopup::sw_4 as sw_2;
 pub(crate) use crate::game::ai::computer::lh_2;
-pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::ai::computer::sd;
+pub(crate) use crate::game::be::beintplayer::lh;
+pub(crate) use crate::game::be::bestate2::ea;
+pub(crate) use crate::game::fe::feasyncfile::at_2;
+pub(crate) use crate::game::fe::feasyncfile::lw_5 as lw_3;
+pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lq;
 pub(crate) use crate::game::fe::fepopup::sq;
+pub(crate) use crate::game::fe::fepopup::sw_4 as sw_2;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::lw as lw_2;
+pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
+pub(crate) use crate::game::intersect::riderspheretree::coll_sphere_tree_common;
+pub(crate) use crate::game::intersect::riderspheretree::collision_direction;
+pub(crate) use crate::game::intersect::riderspheretree::frame_restore_s0;
+pub(crate) use crate::game::main::gamemode::lh_r;
+pub(crate) use crate::game::main::gamemode::low;
+pub(crate) use crate::game::main::gamemode::lw_r;
+pub(crate) use crate::game::main::gamemode::sp_2 as sp_3;
+pub(crate) use crate::game::main::gamemode::sw_r;
+pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
+pub(crate) use crate::game::render::graphicsman::RegMem;
+pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use callee::*;
+use gather_callee::*;
+use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::float;
+use ssx3_ee_rt::funcs::call_indirect;
+use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0033_04e8, coll_sphere_tree_dtor, "CollSphereTree_dtor"),
-    (0x0033_0540, coll_sphere_tree_overlaps_aabb, "CollSphereTree_OverlapsAABB"),
-    (0x0033_06d8, coll_sphere_tree_get_diameter, "CollSphereTree_GetDiameter"),
-    (0x0033_0710, coll_sphere_tree_transform, "CollSphereTree_Transform"),
-    (0x0033_0788, coll_sphere_tree_collide_triangle, "CollSphereTree_CollideTriangle"),
-    (0x0033_0828, coll_sphere_tree_collide_triangle2_sided, "CollSphereTree_CollideTriangle2Sided"),
-    (0x0033_08c8, collspheretree_collide_sphere_tree, "CollSphereTree_CollideSphereTree"),
-    (0x0033_0950, collspheretree_collide_aabb, "CollSphereTree_CollideAABB"),
+    (
+        0x0033_0540,
+        coll_sphere_tree_overlaps_aabb,
+        "CollSphereTree_OverlapsAABB",
+    ),
+    (
+        0x0033_06d8,
+        coll_sphere_tree_get_diameter,
+        "CollSphereTree_GetDiameter",
+    ),
+    (
+        0x0033_0710,
+        coll_sphere_tree_transform,
+        "CollSphereTree_Transform",
+    ),
+    (
+        0x0033_0788,
+        coll_sphere_tree_collide_triangle,
+        "CollSphereTree_CollideTriangle",
+    ),
+    (
+        0x0033_0828,
+        coll_sphere_tree_collide_triangle2_sided,
+        "CollSphereTree_CollideTriangle2Sided",
+    ),
+    (
+        0x0033_08c8,
+        collspheretree_collide_sphere_tree,
+        "CollSphereTree_CollideSphereTree",
+    ),
+    (
+        0x0033_0950,
+        collspheretree_collide_aabb,
+        "CollSphereTree_CollideAABB",
+    ),
     (0x0033_09d8, cell_gather_objects, "Cell_GatherObjects"),
-    (0x0033_3ef8, overlap_list_collide_volume, "OverlapList_CollideVolume"),
-    (0x0033_4458, overlap_list_collide_objects, "OverlapList_CollideObjects"),
-    (0x0033_4800, nash_create_fwd_diff_cache, "Nash_CreateFwdDiffCache"),
-    (0x0033_4850, nash_destroy_fwd_diff_cache, "Nash_DestroyFwdDiffCache"),
-    (0x0033_5128, rail_find_nearest_point, "Rail_FindNearestPoint"),
+    (
+        0x0033_3ef8,
+        overlap_list_collide_volume,
+        "OverlapList_CollideVolume",
+    ),
+    (
+        0x0033_4458,
+        overlap_list_collide_objects,
+        "OverlapList_CollideObjects",
+    ),
+    (
+        0x0033_4800,
+        nash_create_fwd_diff_cache,
+        "Nash_CreateFwdDiffCache",
+    ),
+    (
+        0x0033_4850,
+        nash_destroy_fwd_diff_cache,
+        "Nash_DestroyFwdDiffCache",
+    ),
+    (
+        0x0033_5128,
+        rail_find_nearest_point,
+        "Rail_FindNearestPoint",
+    ),
     (0x0033_5960, cell_collide_instance, "Cell_CollideInstance"),
     (0x0033_5b90, cell_collide_object, "Cell_CollideObject"),
-    (0x0033_b748, cell_gather_all_recursive, "Cell_GatherAllRecursive"),
-    (0x0033_ccf8, cell_collide_volume_recursive, "Cell_CollideVolumeRecursive"),
-    (0x0034_0a18, coll_sphere_get_diameter, "CollSphere_GetDiameter"),
+    (
+        0x0033_b748,
+        cell_gather_all_recursive,
+        "Cell_GatherAllRecursive",
+    ),
+    (
+        0x0033_ccf8,
+        cell_collide_volume_recursive,
+        "Cell_CollideVolumeRecursive",
+    ),
+    (
+        0x0034_0a18,
+        coll_sphere_get_diameter,
+        "CollSphere_GetDiameter",
+    ),
     (0x0034_1548, boost_ctor_2, "Boost_ctor_2"),
     (0x0034_15d0, boost_update, "Boost_Update"),
     (0x0034_1770, boost_v48, "Boost_v48"),
@@ -84,9 +144,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_1a50, boost_save, "Boost_Save"),
     (0x0034_1c80, anim_object_ctor_2, "AnimObject_ctor_2"),
     (0x0034_1e48, anim_object_step_loop, "AnimObject_StepLoop"),
-    (0x0034_1ec0, anim_object_step_ping_pong, "AnimObject_StepPingPong"),
+    (
+        0x0034_1ec0,
+        anim_object_step_ping_pong,
+        "AnimObject_StepPingPong",
+    ),
     (0x0034_1f38, anim_object_step_clamp, "AnimObject_StepClamp"),
-    (0x0034_1fc8, anim_object_kill_restorable, "AnimObject_KillRestorable"),
+    (
+        0x0034_1fc8,
+        anim_object_kill_restorable,
+        "AnimObject_KillRestorable",
+    ),
     (0x0034_1fe8, anim_object_v36, "AnimObject_v36"),
     (0x0034_22e8, anim_teeter_ctor_2, "AnimTeeter_ctor_2"),
     (0x0034_24d0, anim_teeter_v53, "AnimTeeter_v53"),
@@ -94,9 +162,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_2808, boost_modifier_ctor_2, "BoostModifier_ctor_2"),
     (0x0034_2880, boost_modifier_v02, "BoostModifier_v02"),
     (0x0034_29e0, boost_modifier_v08, "BoostModifier_v08"),
-    (0x0034_2b80, boost_modifier_handle_event, "BoostModifier_HandleEvent"),
+    (
+        0x0034_2b80,
+        boost_modifier_handle_event,
+        "BoostModifier_HandleEvent",
+    ),
     (0x0034_2ba0, boost_modifier_v06, "BoostModifier_v06"),
-    (0x0035_84b8, boost_modifier_base_save, "BoostModifier_BaseSave"),
+    (
+        0x0035_84b8,
+        boost_modifier_base_save,
+        "BoostModifier_BaseSave",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -105,173 +181,178 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
 pub(crate) mod callee {
     use super::ee;
     use super::Callee;
-    pub(crate) use crate::game::be::beintmission::callee::WORLD_OBJ_RUN_KILL_SCRIPT;
-    pub(crate) use crate::game::be::beintmission::callee::UITEXT_SET_WIDE_STRING_INTERNAL;
-    pub(crate) use crate::game::be::beintmission::callee::MPEG2_ERROR;
+    pub(crate) use crate::game::be::beintmission::callee::BUY_ATTRIB_UPDATE_BARS;
+    pub(crate) use crate::game::be::beintmission::callee::CAMERA_TRIGGER_EMPTY_STUB;
+    pub(crate) use crate::game::be::beintmission::callee::CAREER_STATS_SHOW_HIGHLIGHTS;
+    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM;
+    pub(crate) use crate::game::be::beintmission::callee::MEMCARD_SCAN_STEP;
     pub(crate) use crate::game::be::beintmission::callee::MISSION_COUNT;
     pub(crate) use crate::game::be::beintmission::callee::MISSION_NTH;
-    pub(crate) use crate::game::be::beintmission::callee::REWARDS_FILE_LOAD;
-    pub(crate) use crate::game::be::beintmission::callee::CHASE_CAM_SET_ALGORITHM;
-    pub(crate) use crate::game::be::beintmission::callee::CAMERA_TRIGGER_EMPTY_STUB;
-    pub(crate) use crate::game::be::beintmission::callee::UBER_TRICK_REFRESH;
-    pub(crate) use crate::game::be::beintmission::callee::MEMCARD_SCAN_STEP;
+    pub(crate) use crate::game::be::beintmission::callee::MPEG2_ERROR;
     pub(crate) use crate::game::be::beintmission::callee::NET_FE_STATE_ON_WIDGET_ACTION;
+    pub(crate) use crate::game::be::beintmission::callee::REWARDS_FILE_LOAD;
+    pub(crate) use crate::game::be::beintmission::callee::UBER_TRICK_REFRESH;
+    pub(crate) use crate::game::be::beintmission::callee::UITEXT_SET_WIDE_STRING_INTERNAL;
     pub(crate) use crate::game::be::beintmission::callee::VIEW_POPUP_SHOW_MESSAGE;
-    pub(crate) use crate::game::be::beintmission::callee::BUY_ATTRIB_UPDATE_BARS;
-    pub(crate) use crate::game::be::beintmission::callee::CAREER_STATS_SHOW_HIGHLIGHTS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_REFRESH_CARD_INFO;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_RESET_SLOT_LIST;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GAME_STATE_GOTO_NEXT_3 as GAME_STATE_GOTO_NEXT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_INSTALL_MEM_HOOKS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_PLAYER_INIT_OPEN_PARAMS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_CLEAR_LOGIN;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_CLEAR_MESSAGES;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_DISCONNECT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_SAVE_EMIT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_DATA_GET_INFO;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_LIST_STOP_2 as SCRIPT_ENGINE_LIST_STOP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_BINDING_CTOR_2 as SCRIPT_BINDING_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_OBJ_CTOR;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SSX_AUDIO_SYSTEM_DJ_SAY_20E5;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SPEECH_SYSTEM_CANCEL_PENDING_INSTANCE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MUSIC_PLAYER_GET_SELECTED_SONG_SED_VALUE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BANK_MONITOR_RESET_INSTANCE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_TRANSITION_MAN_START;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WSCRIPT_MAN_DEACTIVATE_PROCESS;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WSCRIPT_MAN_UNLOAD_SECTION;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_BX_STRING_COPY_BEFORE_WRITE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SYNC_PROCESS_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ANIM_OBJECT_SAVE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MOD_OBJ_CREATE_MODIFIER_BLOCK;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RAIL_MODIFIER_LIST_PUSH_FRONT;
-    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INTC_TABLE_ADD_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
-    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
-    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
-    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
-    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
-    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
-    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
-    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
-    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
-    pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_OPPONENT_CHAR;
+    pub(crate) use crate::game::be::beintmission::callee::WORLD_OBJ_RUN_KILL_SCRIPT;
+    pub(crate) use crate::game::main::gamestate::callee::ADF_DATA_SOURCE_DTOR;
+    pub(crate) use crate::game::main::gamestate::callee::ANIM_DATA_BASE_FREE_CHAN_CACHES;
+    pub(crate) use crate::game::main::gamestate::callee::BANK_MONITOR_STOP_HANDLE;
+    pub(crate) use crate::game::main::gamestate::callee::BE_ECON_INT_GET_TOTAL_EARNED;
+    pub(crate) use crate::game::main::gamestate::callee::BE_GET_RIDER_PROFILE;
+    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INSTANCE_3 as BE_LIBRARY_GET_INSTANCE;
+    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INTERFACE_3 as BE_LIBRARY_GET_INTERFACE;
+    pub(crate) use crate::game::main::gamestate::callee::BE_NEW_PLAYER_INT_GET_SLOT;
+    pub(crate) use crate::game::main::gamestate::callee::BOLTS_FIND_BOLT_INDEX;
+    pub(crate) use crate::game::main::gamestate::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE;
+    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_BRAGGING_RIGHTS_INIT_PLAYER_ROWS;
     pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_CHAR_STATS;
-    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_REMOVE_MESSAGE;
+    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_SHOW_OPPONENT_CHAR;
+    pub(crate) use crate::game::main::gamestate::callee::C_GAME_COMM_RECV_GAME_PACKET;
+    pub(crate) use crate::game::main::gamestate::callee::C_KEYBOARD_POPUP_SET_KEY_ENABLED;
+    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_ALLOC_NAMED_3 as EA_MEM_ALLOC_NAMED_2;
+    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_FREE_4 as EA_MEM_FREE;
+    pub(crate) use crate::game::main::gamestate::callee::GAME_ANIM_MAP_UNREGISTER_BANK;
+    pub(crate) use crate::game::main::gamestate::callee::GAME_STATE_LOAD_STATE;
+    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_CLEAR_SLOTS;
+    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_INSTALL_VIF_VU_HANDLERS;
+    pub(crate) use crate::game::main::gamestate::callee::MEMCARD_STATE_BASE_INSTALL_CALLBACKS;
+    pub(crate) use crate::game::main::gamestate::callee::MEM_FREE;
+    pub(crate) use crate::game::main::gamestate::callee::MEM_MOVE;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_HANDLE_INPUT;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_IS_DISABLED;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_NEXT;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_PREV;
+    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
     pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_COUNT_GROUP_MESSAGES;
     pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_GET_MESSAGE_COUNT;
+    pub(crate) use crate::game::main::gamestate::callee::MESSAGE_CENTER_REMOVE_MESSAGE;
+    pub(crate) use crate::game::main::gamestate::callee::NET_FE_STATE_OPEN_KEYBOARD_TEXT_ID;
     pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_REFRESH_LIST;
     pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_COUNT_TEXT;
     pub(crate) use crate::game::main::gamestate::callee::OV_SCREEN_MESSAGE_CENTER_UPDATE_SCROLL_ARROWS;
-    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_CLEAR_SLOTS;
-    pub(crate) use crate::game::main::gamestate::callee::INTC_TABLE_INSTALL_VIF_VU_HANDLERS;
-    pub(crate) use crate::game::main::gamestate::callee::GAME_STATE_LOAD_STATE;
-    pub(crate) use crate::game::main::gamestate::callee::VD_TEXTURE_SINK_CTOR;
-    pub(crate) use crate::game::main::gamestate::callee::BE_GET_RIDER_PROFILE;
-    pub(crate) use crate::game::main::gamestate::callee::BE_NEW_PLAYER_INT_GET_SLOT;
-    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INSTANCE_3 as BE_LIBRARY_GET_INSTANCE;
-    pub(crate) use crate::game::main::gamestate::callee::BE_LIBRARY_GET_INTERFACE_3 as BE_LIBRARY_GET_INTERFACE;
-    pub(crate) use crate::game::main::gamestate::callee::BE_ECON_INT_GET_TOTAL_EARNED;
-    pub(crate) use crate::game::main::gamestate::callee::BOLTS_FIND_BOLT_INDEX;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_CMD_QUEUE_AT_2 as SCRIPT_CMD_QUEUE_AT;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_LIST_IS_MOVIE_ENTRY;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::SECTION_ALLOCATOR_CTOR;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR;
-    pub(crate) use crate::game::main::gamestate::callee::MEMCARD_STATE_BASE_INSTALL_CALLBACKS;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_MGR_FIND_STATE;
-    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_SHUTDOWN_2 as UI_STATE_SHUTDOWN;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_START;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE_2 as SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_RESET_RACE_SOUNDS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_SCRIPT_OBJ;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_IS_BOUND_TO_PROCESS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_IS_OBJ_BOUND_TO_PROCESS;
-    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_HAS_BINDING;
-    pub(crate) use crate::game::main::gamestate::callee::SPEECH_INSTANCE_DTOR;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_IS_DJ_SPEECH_ON;
-    pub(crate) use crate::game::main::gamestate::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_LANGUAGE_MASK;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_VALIDATE_SELECTION;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_NEXT;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_PAGE_SELECT_PREV;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_HANDLE_INPUT;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_IS_DISABLED;
-    pub(crate) use crate::game::main::gamestate::callee::MENU_SYS_ITEM_GET_INPUT_CODE;
+    pub(crate) use crate::game::main::gamestate::callee::RIDER_CLEAR_NEARBY_LIGHTS;
     pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_PAUSE_SEQ;
     pub(crate) use crate::game::main::gamestate::callee::SCRIPT_BINDING_RESUME_SEQ;
-    pub(crate) use crate::game::main::gamestate::callee::GAME_ANIM_MAP_UNREGISTER_BANK;
-    pub(crate) use crate::game::main::gamestate::callee::ANIM_DATA_BASE_FREE_CHAN_CACHES;
-    pub(crate) use crate::game::main::gamestate::callee::ADF_DATA_SOURCE_DTOR;
-    pub(crate) use crate::game::main::gamestate::callee::C_KEYBOARD_POPUP_SET_KEY_ENABLED;
-    pub(crate) use crate::game::main::gamestate::callee::RIDER_CLEAR_NEARBY_LIGHTS;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_CMD_QUEUE_AT_2 as SCRIPT_CMD_QUEUE_AT;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_PROCESS_IN_SEQ;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_GET_SCRIPT_OBJ;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_IS_OBJ_BOUND_TO_PROCESS;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_ENGINE_LIST_START;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_LIST_IS_MOVIE_ENTRY;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_HAS_BINDING;
+    pub(crate) use crate::game::main::gamestate::callee::SCRIPT_OBJ_CAM_IS_BOUND_TO_PROCESS;
+    pub(crate) use crate::game::main::gamestate::callee::SECTION_ALLOCATOR_CTOR;
     pub(crate) use crate::game::main::gamestate::callee::SNDSTRM_CLOSE;
-    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_FREE_4 as EA_MEM_FREE;
-    pub(crate) use crate::game::main::gamestate::callee::BUILTIN_DELETE_4 as BUILTIN_DELETE;
-    pub(crate) use crate::game::main::gamestate::callee::NET_FE_STATE_OPEN_KEYBOARD_TEXT_ID;
-    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_CHANNEL_GAIN_PTR;
-    pub(crate) use crate::game::main::gamestate::callee::BANK_MONITOR_STOP_HANDLE;
-    pub(crate) use crate::game::main::gamestate::callee::UI_LIST_FIRST_2 as UI_LIST_FIRST;
-    pub(crate) use crate::game::main::gamestate::callee::C_GAME_COMM_RECV_GAME_PACKET;
-    pub(crate) use crate::game::main::gamestate::callee::C_FE_STATE_BRAGGING_RIGHTS_INIT_PLAYER_ROWS;
-    pub(crate) use crate::game::main::gamestate::callee::EA_MEM_ALLOC_NAMED_3 as EA_MEM_ALLOC_NAMED_2;
-    pub(crate) use crate::game::main::gamestate::callee::MEM_MOVE;
-    pub(crate) use crate::game::main::gamestate::callee::STR_COPY;
-    pub(crate) use crate::game::main::gamestate::callee::TAG_FIELD_SET_STRING;
-    pub(crate) use crate::game::main::gamestate::callee::STR_N_COPY;
-    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_SPHERE_TREE;
-    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_AABB;
-    pub(crate) use crate::game::main::gamestate::callee::SPCH_SHUTDOWN;
     pub(crate) use crate::game::main::gamestate::callee::SPCH_MAKE_ID;
-    pub(crate) use crate::game::main::gamestate::callee::MEM_FREE;
+    pub(crate) use crate::game::main::gamestate::callee::SPCH_SHUTDOWN;
+    pub(crate) use crate::game::main::gamestate::callee::SPEECH_INSTANCE_DTOR;
+    pub(crate) use crate::game::main::gamestate::callee::SPEECH_SYSTEM_SET_EVENT_CONTEXT;
+    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_AABB;
+    pub(crate) use crate::game::main::gamestate::callee::SPHERE_TREE_COLLIDE_SPHERE_TREE;
+    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_CHANNEL_GAIN_PTR;
+    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_INSTANCE_2 as SSX_AUDIO_SYSTEM_GET_INSTANCE;
+    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_GET_LANGUAGE_MASK;
+    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_IS_DJ_SPEECH_ON;
+    pub(crate) use crate::game::main::gamestate::callee::SSX_AUDIO_SYSTEM_RESET_RACE_SOUNDS;
+    pub(crate) use crate::game::main::gamestate::callee::STR_COPY;
     pub(crate) use crate::game::main::gamestate::callee::STR_HASH;
+    pub(crate) use crate::game::main::gamestate::callee::STR_N_COPY;
+    pub(crate) use crate::game::main::gamestate::callee::TAG_FIELD_SET_STRING;
+    pub(crate) use crate::game::main::gamestate::callee::UI_LIST_FIRST_2 as UI_LIST_FIRST;
+    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_CTOR_3 as UI_STATE_CTOR;
+    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_MGR_FIND_STATE;
+    pub(crate) use crate::game::main::gamestate::callee::UI_STATE_SHUTDOWN_2 as UI_STATE_SHUTDOWN;
+    pub(crate) use crate::game::main::gamestate::callee::VD_TEXTURE_SINK_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::ANIM_OBJECT_SAVE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BANK_MONITOR_RESET_INSTANCE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_CLEAR_LOGIN;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_CLEAR_MESSAGES;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::BUDDY_MAN_DISCONNECT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_BX_STRING_COPY_BEFORE_WRITE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::C_TRANSITION_MAN_START;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::GAME_STATE_GOTO_NEXT_3 as GAME_STATE_GOTO_NEXT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::INTC_TABLE_ADD_HANDLER;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MOD_OBJ_CREATE_MODIFIER_BLOCK;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::MUSIC_PLAYER_GET_SELECTED_SONG_SED_VALUE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_REFRESH_CARD_INFO;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::OV_SCREEN_PROFILE_SAVE_PDA_RESET_SLOT_LIST;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::RAIL_MODIFIER_LIST_PUSH_FRONT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::REPLAY_SAVE_EMIT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_BINDING_CTOR_2 as SCRIPT_BINDING_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_DATA_GET_INFO;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_GET_INSTANCE_SCRIPT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_ENGINE_LIST_STOP_2 as SCRIPT_ENGINE_LIST_STOP;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_LIST_IS_PLAYING_SCRIPT;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SCRIPT_OBJ_CTOR;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SPEECH_SYSTEM_CANCEL_PENDING_INSTANCE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SSX_AUDIO_SYSTEM_DJ_SAY_20E5;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::SYNC_PROCESS_SAVE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_INSTALL_MEM_HOOKS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::VID_ENGINE_PLAYER_INIT_OPEN_PARAMS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WORLD_OBJ_SAVE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WSCRIPT_MAN_DEACTIVATE_PROCESS;
+    pub(crate) use crate::game::scripter::ssxscriptengine::callee::WSCRIPT_MAN_UNLOAD_SECTION;
+    pub(crate) use crate::game::wscript::wscriptman::callee::ALGORITHM_LIST_PUSH;
+    pub(crate) use crate::game::wscript::wscriptman::callee::APP_MODULE_UPDATE_FADE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AVALANCHE_BAKE_NODE_HISTORY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::AV_PLAYER_INIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_ADD_TIMER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_POLL_FREE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::BANK_MONITOR_INSTANCE_SET_PITCH;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CAM_CONTROLLER_CLEAR_ALGORITHMS;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_CHUNK_RESOLVE_CTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CPS2_MEMCARD_SET_STATE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_REMOVE_ALL_SOURCES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_AUDIO_INSTANCE_STOP_SOUND;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_CREATE_MESHES_2 as CROWD_MAN3D_GROUP_CREATE_MESHES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::CROWD_MAN3D_GROUP_FREE_MESHES;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_FE_STATE_ONLINE_CHARACTER_SELECT_EMPTY_CHILD_HANDLER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_FLAG_MANAGER_GROUP_LOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::C_SETUP_MAN_SEND_QUIT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DEBUG_MENU_MODULE_UPDATE_CURSOR_TRAIL;
+    pub(crate) use crate::game::wscript::wscriptman::callee::DISABLE_INTC;
+    pub(crate) use crate::game::wscript::wscriptman::callee::EA_FILE_MOUNT_BIG;
+    pub(crate) use crate::game::wscript::wscriptman::callee::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLEX_RAIL_UPDATE_SPACE_NODE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FLOATING_V49;
+    pub(crate) use crate::game::wscript::wscriptman::callee::FOCUS_MAN_ADD_FOCUS_BOX;
+    pub(crate) use crate::game::wscript::wscriptman::callee::LIGHT_MAN_EMPTY_HOOK_A;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::MOD_OBJ_DTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_CTOR;
+    pub(crate) use crate::game::wscript::wscriptman::callee::NET_FE_STATE_ON_CHILD_EVENT;
+    pub(crate) use crate::game::wscript::wscriptman::callee::RAIL_MODIFIER_LIST_UNLINK;
+    pub(crate) use crate::game::wscript::wscriptman::callee::REMOVE_INTC_HANDLER;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SET_FADE_GAIN;
+    pub(crate) use crate::game::wscript::wscriptman::callee::SND_BANK_UNLOAD;
+    pub(crate) use crate::game::wscript::wscriptman::callee::TEX_MAN_LOAD_TEXTURE;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_LIST_NODE_DTOR_BODY;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_GET_STATE_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SET_USER_DATA;
+    pub(crate) use crate::game::wscript::wscriptman::callee::UI_OBJECT_SHOW_CLAMP_ALPHA_HALF;
+    pub(crate) use crate::game::wscript::wscriptman::callee::WSCRIPT_MAN_CALL_FUNC;
 
+    pub const COLLIDE_VOLUME_OBJECT: Callee = Callee {
+        addr: 0x0033_4888,
+        f: ee::s11::Collide_VolumeObject,
+    };
 
-    pub const COLLIDE_VOLUME_OBJECT: Callee = Callee { addr: 0x0033_4888, f: ee::s11::Collide_VolumeObject };
+    pub const WORLD_PAINTER_LOOKUP_CELL: Callee = Callee {
+        addr: 0x002c_0a10,
+        f: ee::s08::WorldPainterQuery_LookupCell,
+    };
 
-    pub const WORLD_PAINTER_LOOKUP_CELL: Callee =
-        Callee { addr: 0x002c_0a10, f: ee::s08::WorldPainterQuery_LookupCell };
-
-    pub const WORLD_SOUND_QUERY_TREE_NODE: Callee =
-        Callee { addr: 0x002b_83f8, f: ee::s08::cWorldSound_QueryTreeNode };
+    pub const WORLD_SOUND_QUERY_TREE_NODE: Callee = Callee {
+        addr: 0x002b_83f8,
+        f: ee::s08::cWorldSound_QueryTreeNode,
+    };
 
     /// Cross-shard direct calls the generator emitted as `call_indirect`.
     pub const AI_FWD_DIFF_CACHE_GET: u32 = 0x0032_79d0;
 
     pub const AI_FWD_DIFF_CACHE_COLLIDE_ENTRY: u32 = 0x0032_b6e0;
-
 
     pub const WP_DATA_FIND_CELL_INDEX: Callee = Callee {
         addr: 0x002b_af90,
@@ -318,65 +399,110 @@ pub(crate) mod callee {
         f: ee::s11::Rail_FindNearestPoint,
     };
 
+    pub const SCRIPT_ENGINE_GET_INSTANCE: Callee = Callee {
+        addr: 0x0027_d2e8,
+        f: ee::s07::f_0027d2e8,
+    };
 
-    pub const SCRIPT_ENGINE_GET_INSTANCE: Callee =
-        Callee { addr: 0x0027_d2e8, f: ee::s07::f_0027d2e8 };
+    pub const SCRIPT_ENGINE_BINDING_HAS_PROCESS: Callee = Callee {
+        addr: 0x0027_d2c8,
+        f: ee::s07::f_0027d2c8,
+    };
 
-    pub const SCRIPT_ENGINE_BINDING_HAS_PROCESS: Callee =
-        Callee { addr: 0x0027_d2c8, f: ee::s07::f_0027d2c8 };
+    pub const MENU_SYS_ITEM_CTOR: Callee = Callee {
+        addr: 0x002c_a258,
+        f: ee::s09::f_002ca258,
+    };
 
-    pub const MENU_SYS_ITEM_CTOR: Callee = Callee { addr: 0x002c_a258, f: ee::s09::f_002ca258 };
+    pub const MENU_SYS_ITEM_DRAW_ROW: Callee = Callee {
+        addr: 0x002c_a988,
+        f: ee::s09::f_002ca988,
+    };
 
-    pub const MENU_SYS_ITEM_DRAW_ROW: Callee = Callee { addr: 0x002c_a988, f: ee::s09::f_002ca988 };
+    pub const MEMCARD_SJIS_CHAR_TO_ASCII: Callee = Callee {
+        addr: 0x002c_2430,
+        f: ee::s08::f_002c2430,
+    };
 
-    pub const MEMCARD_SJIS_CHAR_TO_ASCII: Callee =
-        Callee { addr: 0x002c_2430, f: ee::s08::f_002c2430 };
+    pub const PS2_MEMCARD_SET_STATE: Callee = Callee {
+        addr: 0x002c_48c0,
+        f: ee::s08::f_002c48c0,
+    };
 
-    pub const PS2_MEMCARD_SET_STATE: Callee = Callee { addr: 0x002c_48c0, f: ee::s08::f_002c48c0 };
+    pub const WSCRIPT_PROCESS_LIST_CONTAINS: Callee = Callee {
+        addr: 0x0030_b428,
+        f: ee::s10::f_0030b428,
+    };
 
-    pub const WSCRIPT_PROCESS_LIST_CONTAINS: Callee =
-        Callee { addr: 0x0030_b428, f: ee::s10::f_0030b428 };
+    pub const WSCRIPT_PROCESS_LIST_REMOVE: Callee = Callee {
+        addr: 0x0030_b2d0,
+        f: ee::s10::f_0030b2d0,
+    };
 
-    pub const WSCRIPT_PROCESS_LIST_REMOVE: Callee =
-        Callee { addr: 0x0030_b2d0, f: ee::s10::f_0030b2d0 };
+    pub const WSCRIPT_PROCESS_LIST_PUSH_FRONT: Callee = Callee {
+        addr: 0x0030_b260,
+        f: ee::s10::f_0030b260,
+    };
 
-    pub const WSCRIPT_PROCESS_LIST_PUSH_FRONT: Callee =
-        Callee { addr: 0x0030_b260, f: ee::s10::f_0030b260 };
+    pub const POSITION_MODIFIER_CTOR: Callee = Callee {
+        addr: 0x0035_6eb8,
+        f: ee::s11::f_00356eb8,
+    };
 
-    pub const POSITION_MODIFIER_CTOR: Callee = Callee { addr: 0x0035_6eb8, f: ee::s11::f_00356eb8 };
+    pub const MOD_OBJ_SET_TRANSFORM_MODIFIER: Callee = Callee {
+        addr: 0x0035_54b0,
+        f: ee::s11::f_003554b0,
+    };
 
-    pub const MOD_OBJ_SET_TRANSFORM_MODIFIER: Callee =
-        Callee { addr: 0x0035_54b0, f: ee::s11::f_003554b0 };
+    pub const SSX_AUDIO_SYSTEM_RESTART_PEAK_MUSIC: Callee = Callee {
+        addr: 0x0028_ef90,
+        f: ee::s07::f_0028ef90,
+    };
 
-    pub const SSX_AUDIO_SYSTEM_RESTART_PEAK_MUSIC: Callee =
-        Callee { addr: 0x0028_ef90, f: ee::s07::f_0028ef90 };
+    pub const SCRIPT_ENGINE_STOP_PROCESS_SEQ: Callee = Callee {
+        addr: 0x0028_2338,
+        f: ee::s07::f_00282338,
+    };
 
-    pub const SCRIPT_ENGINE_STOP_PROCESS_SEQ: Callee =
-        Callee { addr: 0x0028_2338, f: ee::s07::f_00282338 };
+    pub const SCRIPT_ENGINE_KILL_PROCESS: Callee = Callee {
+        addr: 0x0028_2540,
+        f: ee::s07::f_00282540,
+    };
 
-    pub const SCRIPT_ENGINE_KILL_PROCESS: Callee =
-        Callee { addr: 0x0028_2540, f: ee::s07::f_00282540 };
+    pub const SCRIPT_ENGINE_GET_PROCESS: Callee = Callee {
+        addr: 0x0028_2cb0,
+        f: ee::s07::f_00282cb0,
+    };
 
-    pub const SCRIPT_ENGINE_GET_PROCESS: Callee =
-        Callee { addr: 0x0028_2cb0, f: ee::s07::f_00282cb0 };
+    pub const SCRIPT_ENGINE_LAUNCH_PENDING_PROCESS: Callee = Callee {
+        addr: 0x0028_2908,
+        f: ee::s07::f_00282908,
+    };
 
-    pub const SCRIPT_ENGINE_LAUNCH_PENDING_PROCESS: Callee =
-        Callee { addr: 0x0028_2908, f: ee::s07::f_00282908 };
+    pub const WORLD_OBJ_CTOR_2: Callee = Callee {
+        addr: 0x0034_fb90,
+        f: ee::s11::f_0034fb90,
+    };
 
-    pub const WORLD_OBJ_CTOR_2: Callee = Callee { addr: 0x0034_fb90, f: ee::s11::f_0034fb90 };
+    pub const SONG_INSTANCE_GET_BEAT_MS: Callee = Callee {
+        addr: 0x002b_2690,
+        f: ee::s08::f_002b2690,
+    };
 
-    pub const SONG_INSTANCE_GET_BEAT_MS: Callee =
-        Callee { addr: 0x002b_2690, f: ee::s08::f_002b2690 };
+    pub const SONG_INSTANCE_GET_POSITION_MS: Callee = Callee {
+        addr: 0x002b_2600,
+        f: ee::s08::f_002b2600,
+    };
 
-    pub const SONG_INSTANCE_GET_POSITION_MS: Callee =
-        Callee { addr: 0x002b_2600, f: ee::s08::f_002b2600 };
+    pub const SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP2: Callee = Callee {
+        addr: 0x002a_41c8,
+        f: ee::s08::f_002a41c8,
+    };
 
-    pub const SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP2: Callee =
-        Callee { addr: 0x002a_41c8, f: ee::s08::f_002a41c8 };
-
-    pub const SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP3: Callee =
-        Callee { addr: 0x002a_4238, f: ee::s08::f_002a4238 };
-
+    pub const SSX_AUDIO_SYSTEM_IS_TRACK_ID_GROUP3: Callee = Callee {
+        addr: 0x002a_4238,
+        f: ee::s08::f_002a4238,
+    };
 
     /// `Cell_CollideInstance(ctx, instance)` (0x00335960).
     pub const COLLIDE_INSTANCE: Callee = Callee {
@@ -452,68 +578,67 @@ pub(crate) mod obj {
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
 pub(crate) mod table {
     pub(crate) use crate::game::ai::computer::table::DELETE;
+    pub(crate) use crate::game::ai::computer::table::EA_MEM_ALLOC_NAMED;
     pub(crate) use crate::game::ai::computer::table::EA_MEM_FREE;
     pub(crate) use crate::game::ai::computer::table::OPERATOR_NEW_NAMED;
-    pub(crate) use crate::game::ai::computer::table::EA_MEM_ALLOC_NAMED;
+    pub(crate) use crate::game::ai::computer::table::SLEEP_THREAD;
+    pub(crate) use crate::game::ai::computer::table::SSX_AUDIO_SYSTEM_GET_INSTANCE;
+    pub(crate) use crate::game::ai::computer::table::STR_HASH;
     pub(crate) use crate::game::ai::computer::table::WAIT_SEMA;
     pub(crate) use crate::game::ai::computer::table::WAKEUP_THREAD;
-    pub(crate) use crate::game::ai::computer::table::SLEEP_THREAD;
-    pub(crate) use crate::game::ai::computer::table::STR_HASH;
-    pub(crate) use crate::game::ai::computer::table::SSX_AUDIO_SYSTEM_GET_INSTANCE;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_SCREEN_FIND_OBJECT;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_TEXT_ID;
-    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_ASSIGN;
-    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_RELEASE;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_MENU_RESET_SCROLL;
-    pub(crate) use crate::game::fe::feasyncfile::table::PS2_MEM_CARD_CREATE;
-    pub(crate) use crate::game::fe::feasyncfile::table::PATH_STOP_TRACKS;
-    pub(crate) use crate::game::fe::feasyncfile::table::BUILTIN_DELETE;
-    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_START;
-    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_SET_PARAMS;
-    pub(crate) use crate::game::fe::feasyncfile::table::AUDIO_GET_RACE_MAN;
     pub(crate) use crate::game::fe::feasyncfile::table::ASYNC_FILE_GET_RESULT;
-    pub(crate) use crate::game::fe::feasyncfile::table::SCRIPT_ENGINE_GET_RESULT_VTABLE;
-    pub(crate) use crate::game::fe::feasyncfile::table::RIDER_MODEL_FIND;
+    pub(crate) use crate::game::fe::feasyncfile::table::AUDIO_GET_RACE_MAN;
     pub(crate) use crate::game::fe::feasyncfile::table::BE_GET_INSTANCE;
     pub(crate) use crate::game::fe::feasyncfile::table::BE_GET_INTERFACE;
-    pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_GAME_MODE;
     pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_EVENT_TYPE;
-    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_END_SAVE;
-    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_BEGIN_PLAYBACK;
-    pub(crate) use crate::game::fe::feasyncfile::table::OPERATOR_NEW_TAG;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_FIRST;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_NODE_IS_SENTINEL;
-    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_WIDE_STRING;
-    pub(crate) use crate::game::fe::feasyncfile::table::SPRINTF;
-    pub(crate) use crate::game::fe::feasyncfile::table::EAC_GET_UNPACKED_SIZE;
-    pub(crate) use crate::game::fe::feasyncfile::table::EAC_UNPACK;
-    pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_TREE_TRIANGLE;
+    pub(crate) use crate::game::fe::feasyncfile::table::BE_NEW_RACE_SET_GAME_MODE;
+    pub(crate) use crate::game::fe::feasyncfile::table::BUILTIN_DELETE;
+    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_ASSIGN;
+    pub(crate) use crate::game::fe::feasyncfile::table::BXSTRING_RELEASE;
     pub(crate) use crate::game::fe::feasyncfile::table::COLL_HULL_TRIANGLE;
     pub(crate) use crate::game::fe::feasyncfile::table::COLL_HULL_TRIANGLE2;
     pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_CALC;
+    pub(crate) use crate::game::fe::feasyncfile::table::COLL_SPHERE_TREE_TRIANGLE;
+    pub(crate) use crate::game::fe::feasyncfile::table::EAC_GET_UNPACKED_SIZE;
+    pub(crate) use crate::game::fe::feasyncfile::table::EAC_UNPACK;
+    pub(crate) use crate::game::fe::feasyncfile::table::OPERATOR_NEW_TAG;
+    pub(crate) use crate::game::fe::feasyncfile::table::PATH_STOP_TRACKS;
+    pub(crate) use crate::game::fe::feasyncfile::table::PS2_MEM_CARD_CREATE;
+    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_BEGIN_PLAYBACK;
+    pub(crate) use crate::game::fe::feasyncfile::table::REPLAY_END_SAVE;
+    pub(crate) use crate::game::fe::feasyncfile::table::RIDER_MODEL_FIND;
+    pub(crate) use crate::game::fe::feasyncfile::table::SCRIPT_ENGINE_GET_RESULT_VTABLE;
+    pub(crate) use crate::game::fe::feasyncfile::table::SPRINTF;
     pub(crate) use crate::game::fe::feasyncfile::table::STR_CASECMP;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_FIRST;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_LIST_NODE_IS_SENTINEL;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_MENU_RESET_SCROLL;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_SCREEN_FIND_OBJECT;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_TEXT_ID;
+    pub(crate) use crate::game::fe::feasyncfile::table::UI_TEXT_SET_WIDE_STRING;
+    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_SET_PARAMS;
+    pub(crate) use crate::game::fe::feasyncfile::table::VOIP_RPC_START;
 }
 
 pub(crate) mod addr {
+    pub(crate) use crate::game::bx::bxstring2::addr::BANK_MONITOR_TIMER_RESET;
+    pub(crate) use crate::game::bx::bxstring2::addr::BE_INTERFACE_LOOKUP;
     pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_BE;
     pub(crate) use crate::game::bx::bxstring2::addr::CBE_GET_INTERFACE;
-    pub(crate) use crate::game::bx::bxstring2::addr::BE_INTERFACE_LOOKUP;
-    pub(crate) use crate::game::bx::bxstring2::addr::BANK_MONITOR_TIMER_RESET;
-    pub(crate) use crate::game::bx::bxstring2::addr::SPEECH_BANK_FREE_CALLBACK;
-    pub(crate) use crate::game::bx::bxstring2::addr::UI_ENGINE_TEARDOWN;
-    pub(crate) use crate::game::bx::bxstring2::addr::SPRINTF;
     pub(crate) use crate::game::bx::bxstring2::addr::FMODF;
+    pub(crate) use crate::game::bx::bxstring2::addr::MC_MANAGER_GET_INFO;
     pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_ALLOC;
     pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE;
     pub(crate) use crate::game::bx::bxstring2::addr::MEM_MAN_FREE_NOSIZE;
-    pub(crate) use crate::game::bx::bxstring2::addr::MC_MANAGER_GET_INFO;
+    pub(crate) use crate::game::bx::bxstring2::addr::SPEECH_BANK_FREE_CALLBACK;
+    pub(crate) use crate::game::bx::bxstring2::addr::SPRINTF;
+    pub(crate) use crate::game::bx::bxstring2::addr::UI_ENGINE_TEARDOWN;
 }
 
 /// The other gathers this function calls (through their generated aliases).
 pub(crate) mod gather_callee {
     use super::ee;
     use super::Callee;
-
 
     /// `Cell_GatherObjects(ctx, tree)` (0x003309d8): append the node's
     /// objects that overlap `ctx->nodes.box` to `ctx->nodes`.
@@ -536,12 +661,10 @@ pub(crate) mod gather_callee {
     };
 }
 
-
 /// `cvt.w.s`: the bits of the truncated float (same as the FPU op).
 pub(crate) fn cvt_w_s(x: FpuF32) -> FpuF32 {
     FpuF32(float::to_fixed(x.0, 0))
 }
-
 
 // ---------------------------------------------------------------------------
 // Anim objects: advance a parameter toward its loop bounds.
@@ -592,7 +715,6 @@ pub fn anim_object_step_loop(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void AnimObject_StepPingPong(AnimObject *o)` (0x341ec0): advance `+0x1c`
 /// within `[+0x10, +0x14]`, reversing the sign of the rate at `+0x10` at a
@@ -648,7 +770,6 @@ pub fn anim_object_step_ping_pong(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `void AnimObject_StepClamp(AnimObject *o)` (0x341f38): clamp `+0x1c` to the
 /// bounds at `+0x10`/`+0x14` (or `+0x18`), flagging the hit in `+0x8`.
@@ -710,7 +831,6 @@ pub fn anim_object_step_clamp(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Boost modifier.
 
@@ -766,10 +886,8 @@ pub fn boost_modifier_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// The identity-matrix rows (`.rodata`) copied into every contact record.
 pub(crate) const IDENTITY_ROWS: u32 = 0x004f_f120;
-
 
 // ---------------------------------------------------------------------------
 // Small register helpers.
@@ -780,20 +898,17 @@ pub(crate) fn lw(c: &mut Cpu, a: u32) -> u64 {
     c.lw(a)
 }
 
-
 /// The address `reg + off` (32-bit address arithmetic).
 #[inline(always)]
 pub(crate) fn at(c: &Cpu, reg: usize, off: u32) -> u32 {
     r32(c, reg).wrapping_add(off)
 }
 
-
 /// `lwc1`.
 #[inline(always)]
 pub(crate) fn fpu(c: &mut Cpu, a: u32) -> FpuF32 {
     Addr(a).read_fpu(c)
 }
-
 
 /// `swc1` of FPU register `f`.
 #[inline(always)]
@@ -802,7 +917,6 @@ pub(crate) fn store_fpr(c: &mut Cpu, f: usize, a: u32) {
     Addr(a).write_fpu(c, v);
 }
 
-
 /// `sw` of a register.
 #[inline(always)]
 pub(crate) fn sw_reg(c: &mut Cpu, a: u32, reg: usize) {
@@ -810,25 +924,29 @@ pub(crate) fn sw_reg(c: &mut Cpu, a: u32, reg: usize) {
     c.sw(a, v);
 }
 
-
 /// `p + off`.
 #[inline(always)]
 pub(crate) fn p(a: u32, off: u32) -> u32 {
     a.wrapping_add(off)
 }
 
-
 /// A gcc 2.9x virtual call `vt[slot](obj + delta)`: reads the slot (`lh`
 /// delta, `lw` function), leaves the function in `func_reg` and the
 /// adjusted `this` in a0, and calls through the function table.
 #[inline]
-pub(crate) fn virtual_call(c: &mut Cpu, obj: u64, vt: u64, slot: u32, func_reg: usize, ret: u32) -> Flow {
+pub(crate) fn virtual_call(
+    c: &mut Cpu,
+    obj: u64,
+    vt: u64,
+    slot: u32,
+    func_reg: usize,
+    ret: u32,
+) -> Flow {
     let m = VSlot::read(c, vt, slot);
     c.g[func_reg][0] = m.func;
     c.g[A0][0] = m.this(obj);
     call_ptr(c, m.func as u32, ret)
 }
-
 
 /// One compare of an AABB rejection chain: `f1 = [f1_at]`, `f0 = [f0_at]`,
 /// then `c.lt.s`/`c.le.s f0, f1` (or `f1, f0` when `rev`); the chain goes
@@ -840,11 +958,9 @@ pub(crate) struct Bound {
     rev: bool,
 }
 
-
 pub(crate) const fn b(f1_at: u32, f0_at: u32, rev: bool) -> Bound {
     Bound { f1_at, f0_at, rev }
 }
-
 
 /// The six-compare overlap chain the collision code inlines: `first`
 /// cycles before the first compare, 5 before each next one, 6 before the
@@ -871,12 +987,17 @@ pub(crate) fn overlap(c: &mut Cpu, le: bool, first: u64, tests: [Bound; 6]) -> b
     true
 }
 
-
 /// The next free contact record of a collision query (`query+4` records,
 /// `query+0xc` count pointer), re-read as the original does: leaves the
 /// count pointer in `count_reg`, the array in `base_reg` and the record in
 /// `rec_reg`.
-pub(crate) fn next_contact(c: &mut Cpu, query: u32, count_reg: usize, base_reg: usize, rec_reg: usize) -> u32 {
+pub(crate) fn next_contact(
+    c: &mut Cpu,
+    query: u32,
+    count_reg: usize,
+    base_reg: usize,
+    rec_reg: usize,
+) -> u32 {
     c.g[count_reg][0] = lw(c, p(query, 0xc));
     c.g[base_reg][0] = lw(c, p(query, 4));
     c.g[rec_reg][0] = lw(c, r32(c, count_reg));
@@ -884,7 +1005,6 @@ pub(crate) fn next_contact(c: &mut Cpu, query: u32, count_reg: usize, base_reg: 
     c.g[rec_reg][0] = addu(c.g[rec_reg][0], c.g[base_reg][0]);
     r32(c, rec_reg)
 }
-
 
 /// `void Cell_GatherObjects(GatherQuery* q, Cell* cell)` (0x3309d8): walks
 /// the cell's object list (`cell+0x20`) and appends every object whose box
@@ -912,14 +1032,19 @@ pub fn cell_gather_objects(c: &mut Cpu) {
                     c.g[V0][0] = lw(c, at(c, S1, 0xc));
                     c.g[V1][0] = 0;
                     let (o, q) = (r32(c, S0), r32(c, V0));
-                    let hit = overlap(c, true, 7, [
-                        b(p(o, obj::BOX_MAX), q, false),
-                        b(p(q, 0x10), p(o, obj::BOX_MIN), false),
-                        b(p(q, 4), p(o, obj::BOX_MAX + 4), true),
-                        b(p(q, 0x14), p(o, obj::BOX_MIN + 4), false),
-                        b(p(q, 8), p(o, obj::BOX_MAX + 8), true),
-                        b(p(q, 0x18), p(o, obj::BOX_MIN + 8), false),
-                    ]);
+                    let hit = overlap(
+                        c,
+                        true,
+                        7,
+                        [
+                            b(p(o, obj::BOX_MAX), q, false),
+                            b(p(q, 0x10), p(o, obj::BOX_MIN), false),
+                            b(p(q, 4), p(o, obj::BOX_MAX + 4), true),
+                            b(p(q, 0x14), p(o, obj::BOX_MIN + 4), false),
+                            b(p(q, 8), p(o, obj::BOX_MAX + 8), true),
+                            b(p(q, 0x18), p(o, obj::BOX_MIN + 8), false),
+                        ],
+                    );
                     if hit {
                         c.g[V1][0] = 1;
                     }
@@ -948,14 +1073,19 @@ pub fn cell_gather_objects(c: &mut Cpu) {
                             c.g[V1][0] = lw(c, at(c, S1, 0xc));
                             c.g[A0][0] = 0;
                             let (bx, q) = (r32(c, V0), r32(c, V1));
-                            let hit = overlap(c, true, 0, [
-                                b(p(bx, 0x10), q, false),
-                                b(p(q, 0x10), bx, false),
-                                b(p(q, 4), p(bx, 0x14), true),
-                                b(p(q, 0x14), p(bx, 4), false),
-                                b(p(q, 8), p(bx, 0x18), true),
-                                b(p(q, 0x18), p(bx, 8), false),
-                            ]);
+                            let hit = overlap(
+                                c,
+                                true,
+                                0,
+                                [
+                                    b(p(bx, 0x10), q, false),
+                                    b(p(q, 0x10), bx, false),
+                                    b(p(q, 4), p(bx, 0x14), true),
+                                    b(p(q, 0x14), p(bx, 4), false),
+                                    b(p(q, 8), p(bx, 0x18), true),
+                                    b(p(q, 0x18), p(bx, 8), false),
+                                ],
+                            );
                             if hit {
                                 c.g[A0][0] = 1;
                             }
@@ -996,7 +1126,6 @@ pub fn cell_gather_objects(c: &mut Cpu) {
     })
 }
 
-
 /// `void Cell_CollideInstance(CollideQuery* q, Instance* inst)` (0x335960):
 /// for a collidable instance (flags `+0xa` & 0x41 == 0x41) whose box
 /// (`+0x158`/`+0x164`) strictly overlaps the volume's box (`q->volume`
@@ -1026,19 +1155,23 @@ pub fn cell_collide_instance(c: &mut Cpu) {
     })
 }
 
-
 pub(crate) fn collide_instance_body(c: &mut Cpu, frame: Frame) -> Flow {
     c.g[V0][0] = lw(c, at(c, S0, 0));
     c.g[V1][0] = 0;
     let (q, i) = (r32(c, V0), r32(c, S1));
-    let hit = overlap(c, false, 7, [
-        b(p(i, 0x158), p(q, 0x20), true),
-        b(p(q, 0x30), p(i, 0x164), true),
-        b(p(q, 0x24), p(i, 0x15c), false),
-        b(p(q, 0x34), p(i, 0x168), true),
-        b(p(q, 0x28), p(i, 0x160), false),
-        b(p(q, 0x38), p(i, 0x16c), true),
-    ]);
+    let hit = overlap(
+        c,
+        false,
+        7,
+        [
+            b(p(i, 0x158), p(q, 0x20), true),
+            b(p(q, 0x30), p(i, 0x164), true),
+            b(p(q, 0x24), p(i, 0x15c), false),
+            b(p(q, 0x34), p(i, 0x168), true),
+            b(p(q, 0x28), p(i, 0x160), false),
+            b(p(q, 0x38), p(i, 0x16c), true),
+        ],
+    );
     if hit {
         c.g[V1][0] = 1;
     }
@@ -1099,7 +1232,11 @@ pub(crate) fn collide_instance_body(c: &mut Cpu, frame: Frame) -> Flow {
     sw_reg(c, p(rec, contact::ID), A1);
     let rec = next_contact(c, s0, V1, A0, V0);
     sw_reg(c, p(rec, contact::OWNER), S1);
-    for (from, to) in [(0x34, contact::DEPTH), (0x20, contact::U), (0x24, contact::V)] {
+    for (from, to) in [
+        (0x34, contact::DEPTH),
+        (0x20, contact::U),
+        (0x24, contact::V),
+    ] {
         c.f[0] = fpu(c, frame.at(c, from)).0;
         let rec = next_contact(c, s0, V1, A0, V0);
         store_fpr(c, 0, p(rec, to));
@@ -1111,7 +1248,6 @@ pub(crate) fn collide_instance_body(c: &mut Cpu, frame: Frame) -> Flow {
     sw_reg(c, r32(c, V1), V0);
     Ok(())
 }
-
 
 /// `void Cell_CollideObject(CollideQuery* q, WorldObject* o)` (0x335b90):
 /// for an object with a shape (`+0x88`) whose box strictly overlaps the
@@ -1128,7 +1264,11 @@ pub fn cell_collide_object(c: &mut Cpu) {
         frame.save_ra(c, 0);
         c.g[V0][0] = lw(c, at(c, S0, obj::SHAPE));
         c.g[S1][0] = c.g[A0][0];
-        let extra = if c.g[V0][0] == 0 { 1 } else { collide_object_body(c)? };
+        let extra = if c.g[V0][0] == 0 {
+            1
+        } else {
+            collide_object_body(c)?
+        };
         c.cycles += extra;
         frame.restore(c, S0, 0x20);
         c.cycles += 4;
@@ -1138,7 +1278,6 @@ pub fn cell_collide_object(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// The tests and the collision; returns the cycles charged on the way out
 /// before the epilogue (1 after a collision, else 0).
@@ -1151,14 +1290,19 @@ pub(crate) fn collide_object_body(c: &mut Cpu) -> Result<u64, Unwound> {
         c.g[V0][0] = lw(c, at(c, S1, 0));
         c.g[V1][0] = 0;
         let (q, o) = (r32(c, V0), r32(c, S0));
-        let hit = overlap(c, false, 7, [
-            b(p(o, obj::BOX_MIN), p(q, 0x20), true),
-            b(p(q, 0x30), p(o, obj::BOX_MAX), true),
-            b(p(q, 0x24), p(o, obj::BOX_MIN + 4), false),
-            b(p(q, 0x34), p(o, obj::BOX_MAX + 4), true),
-            b(p(q, 0x28), p(o, obj::BOX_MIN + 8), false),
-            b(p(q, 0x38), p(o, obj::BOX_MAX + 8), true),
-        ]);
+        let hit = overlap(
+            c,
+            false,
+            7,
+            [
+                b(p(o, obj::BOX_MIN), p(q, 0x20), true),
+                b(p(q, 0x30), p(o, obj::BOX_MAX), true),
+                b(p(q, 0x24), p(o, obj::BOX_MIN + 4), false),
+                b(p(q, 0x34), p(o, obj::BOX_MAX + 4), true),
+                b(p(q, 0x28), p(o, obj::BOX_MIN + 8), false),
+                b(p(q, 0x38), p(o, obj::BOX_MAX + 8), true),
+            ],
+        );
         if hit {
             c.g[V1][0] = 1;
         }
@@ -1194,14 +1338,19 @@ pub(crate) fn collide_object_body(c: &mut Cpu) -> Result<u64, Unwound> {
         c.g[V1][0] = lw(c, at(c, S1, 0));
         c.g[A0][0] = 0;
         let (bx, q) = (r32(c, V0), r32(c, V1));
-        let hit = overlap(c, false, 0, [
-            b(bx, p(q, 0x20), true),
-            b(p(q, 0x30), p(bx, 0x10), true),
-            b(p(q, 0x24), p(bx, 4), false),
-            b(p(q, 0x34), p(bx, 0x14), true),
-            b(p(q, 0x28), p(bx, 8), false),
-            b(p(q, 0x38), p(bx, 0x18), true),
-        ]);
+        let hit = overlap(
+            c,
+            false,
+            0,
+            [
+                b(bx, p(q, 0x20), true),
+                b(p(q, 0x30), p(bx, 0x10), true),
+                b(p(q, 0x24), p(bx, 4), false),
+                b(p(q, 0x34), p(bx, 0x14), true),
+                b(p(q, 0x28), p(bx, 8), false),
+                b(p(q, 0x38), p(bx, 0x18), true),
+            ],
+        );
         if hit {
             c.g[A0][0] = 1;
         }
@@ -1230,7 +1379,6 @@ pub(crate) fn collide_object_body(c: &mut Cpu) -> Result<u64, Unwound> {
     sw_reg(c, r32(c, A0), V1);
     Ok(1)
 }
-
 
 // ---------------------------------------------------------------------------
 // Overlap lists.
@@ -1341,20 +1489,24 @@ pub fn overlap_list_collide_volume(c: &mut Cpu) {
     })
 }
 
-
 /// One collidable instance (s1) against the volume (s2); a hit writes the
 /// record at s0 and advances s0/s3.
 pub(crate) fn overlap_list_instance(c: &mut Cpu, frame: Frame) -> Flow {
     let (v, i) = (r32(c, S2), r32(c, S1));
     c.g[V0][0] = 0;
-    let hit = overlap(c, false, 6, [
-        b(p(v, 0x20), p(i, 0x158), false),
-        b(p(v, 0x30), p(i, 0x164), true),
-        b(p(v, 0x24), p(i, 0x15c), false),
-        b(p(v, 0x34), p(i, 0x168), true),
-        b(p(v, 0x28), p(i, 0x160), false),
-        b(p(v, 0x38), p(i, 0x16c), true),
-    ]);
+    let hit = overlap(
+        c,
+        false,
+        6,
+        [
+            b(p(v, 0x20), p(i, 0x158), false),
+            b(p(v, 0x30), p(i, 0x164), true),
+            b(p(v, 0x24), p(i, 0x15c), false),
+            b(p(v, 0x34), p(i, 0x168), true),
+            b(p(v, 0x28), p(i, 0x160), false),
+            b(p(v, 0x38), p(i, 0x16c), true),
+        ],
+    );
     if hit {
         c.g[V0][0] = 1;
     }
@@ -1418,7 +1570,6 @@ pub(crate) fn overlap_list_instance(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
-
 /// One object with a shape (s0) against the volume (s2); ends with
 /// `v0 = l->object_count` as every path of the original does.
 pub(crate) fn overlap_list_object(c: &mut Cpu, frame: Frame) -> Flow {
@@ -1429,14 +1580,19 @@ pub(crate) fn overlap_list_object(c: &mut Cpu, frame: Frame) -> Flow {
     let collide = if flags & 0x20 != 0 {
         c.g[V0][0] = 0;
         let (v, o) = (r32(c, S2), r32(c, S0));
-        let hit = overlap(c, false, 6, [
-            b(p(v, 0x20), p(o, obj::BOX_MIN), false),
-            b(p(v, 0x30), p(o, obj::BOX_MAX), true),
-            b(p(v, 0x24), p(o, obj::BOX_MIN + 4), false),
-            b(p(v, 0x34), p(o, obj::BOX_MAX + 4), true),
-            b(p(v, 0x28), p(o, obj::BOX_MIN + 8), false),
-            b(p(v, 0x38), p(o, obj::BOX_MAX + 8), true),
-        ]);
+        let hit = overlap(
+            c,
+            false,
+            6,
+            [
+                b(p(v, 0x20), p(o, obj::BOX_MIN), false),
+                b(p(v, 0x30), p(o, obj::BOX_MAX), true),
+                b(p(v, 0x24), p(o, obj::BOX_MIN + 4), false),
+                b(p(v, 0x34), p(o, obj::BOX_MAX + 4), true),
+                b(p(v, 0x28), p(o, obj::BOX_MIN + 8), false),
+                b(p(v, 0x38), p(o, obj::BOX_MAX + 8), true),
+            ],
+        );
         if hit {
             c.g[V0][0] = 1;
         }
@@ -1475,14 +1631,19 @@ pub(crate) fn overlap_list_object(c: &mut Cpu, frame: Frame) -> Flow {
         virtual_call(c, sub, vt, 0x168, V0, 0x0033_41dc)?;
         c.g[V1][0] = 0;
         let (v, bx) = (r32(c, S2), r32(c, V0));
-        let hit = overlap(c, false, 0, [
-            b(p(v, 0x20), bx, false),
-            b(p(v, 0x30), p(bx, 0x10), true),
-            b(p(v, 0x24), p(bx, 4), false),
-            b(p(v, 0x34), p(bx, 0x14), true),
-            b(p(v, 0x28), p(bx, 8), false),
-            b(p(bx, 0x18), p(v, 0x38), false),
-        ]);
+        let hit = overlap(
+            c,
+            false,
+            0,
+            [
+                b(p(v, 0x20), bx, false),
+                b(p(v, 0x30), p(bx, 0x10), true),
+                b(p(v, 0x24), p(bx, 4), false),
+                b(p(v, 0x34), p(bx, 0x14), true),
+                b(p(v, 0x28), p(bx, 8), false),
+                b(p(bx, 0x18), p(v, 0x38), false),
+            ],
+        );
         if hit {
             c.g[V1][0] = 1;
         }
@@ -1510,13 +1671,11 @@ pub(crate) fn overlap_list_object(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
-
 /// The current stack pointer (the frame moves it, so read it afresh).
 #[inline(always)]
 pub(crate) fn sp_2(c: &Cpu) -> u32 {
     c.g[SP][0] as u32
 }
-
 
 // ---------------------------------------------------------------------------
 // Overlap list: collide objects.
@@ -1534,7 +1693,6 @@ pub(crate) fn box_pair(c: &mut Cpu, x: u32, y: u32, first_lt: bool) -> bool {
     }
     c.fcc()
 }
-
 
 /// `int OverlapList_CollideObjects(sOverlapList* self, sQuery* q, char* buf,
 /// int cap, int full)` (0x00334458): collide every object of the list whose
@@ -1719,7 +1877,6 @@ pub fn overlap_list_collide_objects(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Overlap list: nearest rail.
 
@@ -1867,7 +2024,6 @@ pub fn overlap_list_find_nearest_rail(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // AnimObject_KillRestorable / MultiParticle_Update.
 
@@ -1892,14 +2048,19 @@ pub fn anim_object_kill_restorable(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Vtable forwarders: `obj->slot(a1, a2)` where the vtable pointer is the
 // first word of the argument object.
 
 /// Forward to slot `slot` of the vtable found at the first word of `a1`.
 /// `a1_off` selects `a1 = self + off` (else `a1 = self`).
-pub(crate) fn forward_to_arg_vtable(c: &mut Cpu, ret: u32, slot: u32, a2: u32, a1_off: Option<u32>) -> Flow {
+pub(crate) fn forward_to_arg_vtable(
+    c: &mut Cpu,
+    ret: u32,
+    slot: u32,
+    a2: u32,
+    a1_off: Option<u32>,
+) -> Flow {
     c.cycles += 13;
     let frame = Frame::open(c, 0x10);
     let target = c.g[A1][0];
@@ -1921,7 +2082,6 @@ pub(crate) fn forward_to_arg_vtable(c: &mut Cpu, ret: u32, slot: u32, a2: u32, a
     Ok(())
 }
 
-
 /// `void BoostModifier_BaseSave(BoostModifier* mod, sWScriptStream* stream)`
 /// (0x3584b8).
 pub fn boost_modifier_base_save(c: &mut Cpu) {
@@ -1933,7 +2093,6 @@ pub(crate) const SPHERE_TREE_GET_RADIUS: u32 = 0x0032_c590;
 
 /// `AIFwdDiffCache_dtor` (0x327828).
 pub(crate) const AI_FWD_DIFF_CACHE_DTOR: u32 = 0x0032_7828;
-
 
 /// `float CollSphereTree_GetDiameter(tree)` (0x3306d8): twice the radius of
 /// the root sphere, or -1 when the tree is empty.
@@ -1960,7 +2119,6 @@ pub fn coll_sphere_tree_get_diameter(c: &mut Cpu) {
     })
 }
 
-
 /// `void Nash_DestroyFwdDiffCache(this)` (0x334850): destroy the forward
 /// difference cache at `+0xa4` (when there is one) and clear the field.
 pub fn nash_destroy_fwd_diff_cache(c: &mut Cpu) {
@@ -1986,13 +2144,19 @@ pub fn nash_destroy_fwd_diff_cache(c: &mut Cpu) {
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // World object save family.
 
 /// The shared save tail: run the type's `save` prelude, then call the stream's
 /// serialiser slot (`vt[1]`) on `obj + off` for `size` bytes.
-pub(crate) fn save_field_block(c: &mut Cpu, pre: Callee, off: u32, size: u32, r1: u32, r2: u32) -> Flow {
+pub(crate) fn save_field_block(
+    c: &mut Cpu,
+    pre: Callee,
+    off: u32,
+    size: u32,
+    r1: u32,
+    r2: u32,
+) -> Flow {
     c.cycles += 19;
     let frame = Frame::open(c, 0x30);
     frame.save(c, S0, 0x20);
@@ -2017,15 +2181,20 @@ pub(crate) fn save_field_block(c: &mut Cpu, pre: Callee, off: u32, size: u32, r1
     Ok(())
 }
 
-
 /// `void Boost_Save(Boost* self, Stream* stream)` (0x341a50): 0x30 bytes at
 /// `+0x20`.
 pub fn boost_save(c: &mut Cpu) {
     guest(c, |c| {
-        save_field_block(c, callee::WORLD_OBJ_SAVE, 0x20, 0x30, 0x0034_1a6c, 0x0034_1a88)
+        save_field_block(
+            c,
+            callee::WORLD_OBJ_SAVE,
+            0x20,
+            0x30,
+            0x0034_1a6c,
+            0x0034_1a88,
+        )
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Objects and world.
@@ -2057,7 +2226,6 @@ pub fn nash_create_fwd_diff_cache(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void CollSphereTree_dtor(CollSphereTree* t, int flags)` (0x3304e8): set
 /// the vtable, delete the child array at `+0x68`, and `delete this` when bit
@@ -2093,7 +2261,6 @@ pub fn coll_sphere_tree_dtor(c: &mut Cpu) {
     frame.close(c);
 }
 
-
 // ---------------------------------------------------------------------------
 // Collision primitives (intersect/riderspheretree.cpp).
 
@@ -2115,7 +2282,6 @@ pub fn coll_sphere_get_diameter(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void Boost_HandleEvent(Boost* self, int event)` (0x341a30): on event 1
 /// (start) remember the current boost level as the event's baseline.
 pub fn boost_handle_event(c: &mut Cpu) {
@@ -2129,7 +2295,6 @@ pub fn boost_handle_event(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `float AnimTeeter_v53(AnimTeeter* self)` (0x3424d0): clamp the lean value
 /// at `+0x4` to the [lower, upper] limits (`+0x10`, `+0x14`) only while the
@@ -2182,7 +2347,6 @@ pub fn anim_teeter_v53(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void BoostModifier_HandleEvent(BoostModifier* self, int event)`
 /// (0x342b80): on the boost-start event (0x258) remember the boost level as
 /// the modifier's baseline.
@@ -2197,7 +2361,6 @@ pub fn boost_modifier_handle_event(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
 }
-
 
 /// `Boost* Boost_ctor_2(Boost* self, void* a1, void* stream)` (0x341548): the
 /// instance-node constructor plus the boost vtable and the stream's
@@ -2231,7 +2394,6 @@ pub fn boost_ctor_2(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `CollSphereTree_Transform(CollSphereTree* self, SphereTree* tree)`
 /// (0x330710): copy the tree's matrix block into the collision tree, apply
@@ -2268,7 +2430,6 @@ pub fn coll_sphere_tree_transform(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `BoostModifier_v06(BoostModifier* self, void* stream)` (0x342ba0): save
 /// the base modifier, then write `self+0x10` (0x30 bytes) and `self+0x40`
@@ -2307,7 +2468,6 @@ pub fn boost_modifier_v06(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 // ---------------------------------------------------------------------------
 // Rail_FindNearestPoint: the rail's bounding box test, then two VU0 passes
@@ -2989,7 +3149,6 @@ pub fn rail_find_nearest_point(c: &mut Cpu) {
     }
 }
 
-
 /// The shared tail of the two animation-node constructors: construct the
 /// embedded base object at_2 `self + base`, install the class v-table, run the
 /// stream's node constructor for the base and set the object's flag bit.
@@ -3035,7 +3194,6 @@ pub(crate) fn anim_node_ctor(
     Ok(())
 }
 
-
 /// `void* AnimObject_ctor_2(AnimObject* self, void* arg, Stream* stream)`
 /// (0x341c80): construct the base node at_2 +0x1c, install the class v-table,
 /// let the stream build the node and set flag bit 0.
@@ -3045,7 +3203,6 @@ pub fn anim_object_ctor_2(c: &mut Cpu) {
     })
 }
 
-
 /// `void* AnimTeeter_ctor_2(AnimTeeter* self, void* arg, Stream* stream)`
 /// (0x3422e8): same for the teeter object at_2 +0x30.
 pub fn anim_teeter_ctor_2(c: &mut Cpu) {
@@ -3053,7 +3210,6 @@ pub fn anim_teeter_ctor_2(c: &mut Cpu) {
         anim_node_ctor(c, 0x30, 0x4908_f8, 0x30, 0x56, 0x0034_2308, 0x0034_2330)
     })
 }
-
 
 /// `void Cell_CollideVolumeRecursive(void* unused, CollideCtx* q,
 /// CollideCtx* volume_q, const float* box, TreeNode* tree, const Cell* cell)`
@@ -6083,7 +6239,6 @@ pub fn cell_collide_volume_recursive(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void Cell_GatherAllRecursive(void* unused, GatherCtx* q,
 /// GatherCtx* collect_q, const float* box, TreeNode* tree, const Cell* cell)`
@@ -10247,7 +10402,6 @@ break 'b_33c978;
     })
 }
 
-
 // ---------------------------------------------------------------------------
 // Object constructors / destructors and small managers.
 
@@ -10294,7 +10448,6 @@ pub fn boost_modifier_ctor_2(c: &mut Cpu) {
     })
 }
 
-
 /// `int CollSphereTree_CollideSphereTree(self, other, hit)` (0x3308c8): test
 /// the tree against another tree; on a hit normalise the contact direction
 /// into `hit->dir` and store its length, returning 1.
@@ -10324,7 +10477,6 @@ pub fn collspheretree_collide_sphere_tree(c: &mut Cpu) {
     })
 }
 
-
 /// `int CollSphereTree_CollideAABB(self, aabb, hit)` (0x330950): the AABB
 /// twin of [`collspheretree_collide_sphere_tree`].
 pub fn collspheretree_collide_aabb(c: &mut Cpu) {
@@ -10353,7 +10505,6 @@ pub fn collspheretree_collide_aabb(c: &mut Cpu) {
     })
 }
 
-
 /// The VU0 tail shared by the two `CollSphereTree` collisions: the length of
 /// `hit->dir` (`hit+0x10`) into `hit+0x40` and the normalised direction back
 /// into `hit+0x10`, with the original's COP2 macro sequence.
@@ -10378,19 +10529,20 @@ pub(crate) fn collide_normalise(c: &mut Cpu, hit: u32) {
     c.sqc2(5, p(hit, 0x10));
 }
 
-
 /// `int CollSphereTree_CollideTriangle(self, ..., outLen, outDir)` (0x330788):
 /// collide the tree with a triangle and compute the contact direction.
 pub fn coll_sphere_tree_collide_triangle(c: &mut Cpu) {
-    guest(c, |c| coll_sphere_tree_common(c, table::COLL_SPHERE_TREE_TRIANGLE, 0x0033_07b0))
+    guest(c, |c| {
+        coll_sphere_tree_common(c, table::COLL_SPHERE_TREE_TRIANGLE, 0x0033_07b0)
+    })
 }
-
 
 /// `int CollSphereTree_CollideTriangle2Sided(...)` (0x330828).
 pub fn coll_sphere_tree_collide_triangle2_sided(c: &mut Cpu) {
-    guest(c, |c| coll_sphere_tree_common(c, table::COLL_HULL_TRIANGLE, 0x0033_0850))
+    guest(c, |c| {
+        coll_sphere_tree_common(c, table::COLL_HULL_TRIANGLE, 0x0033_0850)
+    })
 }
-
 
 // ---------------------------------------------------------------------------
 // Modifiers.
@@ -10444,19 +10596,16 @@ pub(crate) fn boost_scale(c: &mut Cpu, gain_off: u32, entry: u32) -> Flow {
     Ok(())
 }
 
-
 /// `void Boost_v48(self, obj)` (0x341770): boost the object's velocity using
 /// the effect's `+0x34` gain.
 pub fn boost_v48(c: &mut Cpu) {
     guest(c, |c| boost_scale(c, 0x34, 0x0034_1770))
 }
 
-
 /// `void BoostModifier_v08(self, obj)` (0x3429e0): same with `+0x24`.
 pub fn boost_modifier_v08(c: &mut Cpu) {
     guest(c, |c| boost_scale(c, 0x24, 0x0034_29e0))
 }
-
 
 /// `cWorldSphTree* func_003303F0(cWorldSphTree* self, SphereNode* owner, int flag)`
 /// (0x3303f0): construct a collision sphere tree over `owner`: set its vtable
@@ -10533,7 +10682,6 @@ pub fn coll_sphere_tree_ctor(c: &mut Cpu) {
         Ok(())
     })
 }
-
 
 /// `void AnimObject_v36(ClampFloat* self, int msg, float v)` (0x341fe8):
 /// the clamp object's message handler: 0x64 sets the frame count from the
@@ -10760,7 +10908,6 @@ pub fn anim_object_v36(c: &mut Cpu) {
     return;
 }
 
-
 /// `void* AnimTeeter_ctor(Teeter* self, int a1, void* obj, const Def* def)`
 /// (0x3421a0): construct a teeter animation: the base flag-set at `+0x30`,
 /// then the rates from the definition (`+4..+0x24`) and the object (`obj +
@@ -10901,7 +11048,6 @@ pub fn anim_teeter_ctor(c: &mut Cpu) {
     c.pc = ra;
     return;
 }
-
 
 // ---------------------------------------------------------------------------
 // 0x00330540 CollSphereTree_OverlapsAABB
@@ -11077,7 +11223,6 @@ pub fn coll_sphere_tree_overlaps_aabb(c: &mut Cpu) {
     })
 }
 
-
 /// `void BoostModifier_v02(void* mod)` (0x342880): the boost modifier's
 /// update: step the boost meter for the current rider (gain while boosting,
 /// decay otherwise), and drive the effect's fade and sound.
@@ -11152,7 +11297,7 @@ pub fn boost_modifier_v02(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x003428e8);
                 c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x003428e8).is_err() {
-                return;
+                    return;
                 }
                 c.g[A0][0] = lw(c, at(c, S1, 0x30));
                 c.g[V0][0] = 0x1;
@@ -11200,8 +11345,8 @@ pub fn boost_modifier_v02(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x00342920);
                 c.g[A0][0] = c.g[S2][0];
                 if call_ptr(c, 0x002d1b08, 0x00342920).is_err() {
-                return;
-}
+                    return;
+                }
                 c.g[S0][0] = c.g[V0][0];
                 c.g[A1][0] = lw(c, at(c, S1, 0x40));
                 c.g[V1][0] = lw(c, r32(c, S0));
@@ -11211,7 +11356,7 @@ pub fn boost_modifier_v02(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x0034293c);
                 c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x0034293c).is_err() {
-                return;
+                    return;
                 }
 
                 if c.g[V0][0] == 0u64 {
@@ -11245,7 +11390,7 @@ pub fn boost_modifier_v02(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x00342970);
                 c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x00342970).is_err() {
-                return;
+                    return;
                 }
                 let t = true;
                 c.g[S2][0] = sx(at(c, S2, 0x1));
@@ -11266,7 +11411,7 @@ pub fn boost_modifier_v02(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x00342990);
                 c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x00342990).is_err() {
-                return;
+                    return;
                 }
                 c.g[S2][0] = sx(at(c, S2, 0x1));
                 pc = 0x00342994;
@@ -11276,8 +11421,8 @@ pub fn boost_modifier_v02(c: &mut Cpu) {
                 c.cycles += 5;
                 c.g[RA][0] = sx(0x0034299c);
                 if call_ptr(c, 0x002d1af0, 0x0034299c).is_err() {
-                return;
-}
+                    return;
+                }
                 c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
                 let t = c.g[V0][0] != 0u64;
 
@@ -11305,7 +11450,7 @@ pub fn boost_modifier_v02(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x003429bc);
                 c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x003429bc).is_err() {
-                return;
+                    return;
                 }
                 lq(c, 16, at(c, SP, 0x40));
                 lq(c, 17, at(c, SP, 0x30));
@@ -11325,7 +11470,6 @@ pub fn boost_modifier_v02(c: &mut Cpu) {
         }
     }
 }
-
 
 /// `void Boost_Update(void* boost)` (0x3415d0): per-frame boost update: read
 /// the rider, advance the boost timers and meter, and spawn/refresh the
@@ -11397,7 +11541,7 @@ pub fn boost_update(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x00341634);
                 c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x00341634).is_err() {
-                return;
+                    return;
                 }
                 c.g[V0][0] = lw(c, at(c, S1, 0x40));
                 let t = c.g[V0][0] == c.g[S0][0];
@@ -11444,8 +11588,8 @@ pub fn boost_update(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x00341668);
                 c.g[A0][0] = c.g[S3][0];
                 if call_ptr(c, 0x002d1b08, 0x00341668).is_err() {
-                return;
-}
+                    return;
+                }
                 c.g[S0][0] = c.g[V0][0];
                 c.g[V0][0] = lw(c, at(c, S1, 0x40));
                 let t = c.g[V0][0] != c.g[S4][0];
@@ -11465,7 +11609,7 @@ pub fn boost_update(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x00341688);
                 c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x00341688).is_err() {
-                return;
+                    return;
                 }
 
                 if c.g[V0][0] != 0u64 {
@@ -11491,7 +11635,7 @@ pub fn boost_update(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x003416a8);
                 c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x003416a8).is_err() {
-                return;
+                    return;
                 }
 
                 if c.g[V0][0] == 0u64 {
@@ -11525,7 +11669,7 @@ pub fn boost_update(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x003416dc);
                 c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x003416dc).is_err() {
-                return;
+                    return;
                 }
                 let t = true;
                 c.g[S3][0] = sx(at(c, S3, 0x1));
@@ -11546,7 +11690,7 @@ pub fn boost_update(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x003416fc);
                 c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x003416fc).is_err() {
-                return;
+                    return;
                 }
                 c.g[S3][0] = sx(at(c, S3, 0x1));
                 pc = 0x00341700;
@@ -11556,8 +11700,8 @@ pub fn boost_update(c: &mut Cpu) {
                 c.cycles += 5;
                 c.g[RA][0] = sx(0x00341708);
                 if call_ptr(c, 0x002d1af0, 0x00341708).is_err() {
-                return;
-}
+                    return;
+                }
                 c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
                 let t = c.g[V0][0] != 0u64;
 
@@ -11585,7 +11729,7 @@ pub fn boost_update(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x00341728);
                 c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x00341728).is_err() {
-                return;
+                    return;
                 }
                 let t = c.g[S2][0] != 0u64;
                 lq(c, 16, at(c, SP, 0x50));
@@ -11606,7 +11750,7 @@ pub fn boost_update(c: &mut Cpu) {
                 c.g[RA][0] = sx(0x00341748);
                 c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
                 if call_ptr(c, t, 0x00341748).is_err() {
-                return;
+                    return;
                 }
                 lq(c, 16, at(c, SP, 0x50));
                 pc = 0x0034174c;
@@ -11638,99 +11782,98 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
+    use crate::difftest::compare;
+    use crate::difftest::events::check_events;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::schedule;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::fake_call;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::fakes::*;
+    use crate::difftest::fill;
+    use crate::difftest::put_vec;
+    use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
-    use crate::difftest::fakes::fake_call;
-    use crate::difftest::fakes::machine;
-    use crate::difftest::fakes::FAKE;
-    use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::events::check_events;
-    use crate::difftest::events::driven;
-    use crate::difftest::events::schedule;
-    use crate::difftest::fill;
     use crate::difftest::RA as SENTINEL_RA;
-    use crate::difftest::SP as STACK_TOP;
-    use crate::difftest::fakes::ptr;
-    use crate::difftest::fakes::vtable;
-    use crate::difftest::fakes::LOG_RESULTS;
-    use crate::difftest::put_words;
     use crate::difftest::RA as TEST_RA;
-    use crate::difftest::fakes::covered;
-    use crate::difftest::put_vec;
-    use ssx3_ee as ee;
-    use ssx3_ee_rt::funcs::GuestFn;
-    use crate::difftest::fakes::*;
+    use crate::difftest::SP as STACK_TOP;
     use crate::difftest::SP as STACK;
-    use crate::difftest::fakes;
-    use crate::difftest::compare;
-    pub(crate) use crate::game::be::beintmission::tests::SEEDS as SEEDS_3;
-    pub(crate) use crate::game::worldpainter::quadtree::tests::put_vtable;
-    pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::small_pointer;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
-    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_5;
-    pub(crate) use crate::game::wscript::wscriptman::tests::load;
-    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::MEM_HEAP;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA_SIZE;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::run;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_init;
-    pub(crate) use crate::game::scripter::ssxscriptengine::tests::alloc;
-    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
-    pub(crate) use crate::game::fe::festateoptions::tests::rng;
-    pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
-    pub(crate) use crate::game::bx::bxstring2::tests::fbits;
-    pub(crate) use crate::game::fe::festateoptions::tests::setup;
-    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_6;
-    pub(crate) use crate::game::be::bestate2::tests::w;
-    pub(crate) use crate::game::be::bestate2::tests::belib;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
-    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup as setup_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::W;
-    pub(crate) use crate::game::fe::feasyncfile::tests::RM;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE_2 as BE;
-    pub(crate) use crate::game::fe::feasyncfile::tests::run_4 as run_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_4 as heap_init_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_7 as pool_allocator;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;
-    pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
-    pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_8;
-    pub(crate) use crate::game::main::gamemode::tests::h;
-    pub(crate) use crate::game::main::gamemode::tests::be_library;
-    pub(crate) use crate::game::main::gamemode::tests::slot;
-    pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS_9;
-    pub(crate) use crate::game::main::gamestate::tests::base_3 as base_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::w_4 as w_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_9 as globals;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_7 as pool;
-    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_9 as heap_init_3;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_3;
-    pub(crate) use crate::game::intersect::riderspheretree::tests::coll_args;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
-    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_3 as OBJ2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_5 as WORLD;
-    pub(crate) use crate::game::ai::ai::tests::wf;
-    pub(crate) use crate::game::fe::feasyncfile::tests::globals_10 as globals_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::pool_8 as pool_2;
-    pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_4;
-    pub(crate) use crate::game::render::graphicsman::tests::same;
     pub(crate) use crate::game::ai::ai::tests::generic;
     pub(crate) use crate::game::ai::ai::tests::globals_8 as globals_3;
-    pub(crate) use crate::game::util::menu::tests::wf_2;
-    pub(crate) use crate::game::fe::fepopup::tests::BEL;
-    pub(crate) use crate::game::fe::fepopup::tests::WORLD_4 as WORLD_2;
+    pub(crate) use crate::game::ai::ai::tests::wf;
+    pub(crate) use crate::game::ai::control::handplantcontrol::tests::put;
+    pub(crate) use crate::game::be::beintmission::tests::SEEDS as SEEDS_3;
+    pub(crate) use crate::game::be::bestate2::tests::belib;
+    pub(crate) use crate::game::be::bestate2::tests::w;
+    pub(crate) use crate::game::be::bestate2::tests::SEEDS as SEEDS_6;
+    pub(crate) use crate::game::bx::bxstring2::tests::fbits;
+    pub(crate) use crate::game::camera::trigger::cameratriggerlist::tests::small_pointer;
+    pub(crate) use crate::game::fe::feasyncfile::tests::alloc_base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_11 as base_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_12 as base_4;
+    pub(crate) use crate::game::fe::feasyncfile::tests::base_4 as base;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_10 as globals_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::globals_9 as globals;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_4 as heap_init_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::heap_init_9 as heap_init_3;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_7 as pool;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_8 as pool_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::pool_allocator_7 as pool_allocator;
+    pub(crate) use crate::game::fe::feasyncfile::tests::run_4 as run_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::w_4 as w_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE as BE_2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::BE_2 as BE;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ2_3 as OBJ2;
+    pub(crate) use crate::game::fe::feasyncfile::tests::OBJ_3 as OBJ;
+    pub(crate) use crate::game::fe::feasyncfile::tests::RM;
+    pub(crate) use crate::game::fe::feasyncfile::tests::W;
+    pub(crate) use crate::game::fe::feasyncfile::tests::WORLD_5 as WORLD;
+    pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_5;
+    pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
     pub(crate) use crate::game::fe::fepopup::tests::AUX as AUX_2;
-    pub(crate) use crate::game::fe::fepopup::tests::SYS;
+    pub(crate) use crate::game::fe::fepopup::tests::BEL;
     pub(crate) use crate::game::fe::fepopup::tests::RACE;
     pub(crate) use crate::game::fe::fepopup::tests::RMAN_2 as RMAN;
-    pub(crate) use crate::game::fe::fepopup::tests::check_all_3 as check_all;
-    pub(crate) use crate::game::fe::fepopup::tests::base_14 as base_5;
-
+    pub(crate) use crate::game::fe::fepopup::tests::SYS;
+    pub(crate) use crate::game::fe::fepopup::tests::WORLD_4 as WORLD_2;
+    pub(crate) use crate::game::fe::festateoptions::tests::rng;
+    pub(crate) use crate::game::fe::festateoptions::tests::setup;
+    pub(crate) use crate::game::fe::festateoptions::tests::AUX;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::setup as setup_2;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY;
+    pub(crate) use crate::game::fe::ovtemplatepausemenu::tests::EMPTY_PTR;
+    pub(crate) use crate::game::intersect::riderspheretree::tests::coll_args;
+    pub(crate) use crate::game::main::gamemode::tests::be_library;
+    pub(crate) use crate::game::main::gamemode::tests::h;
+    pub(crate) use crate::game::main::gamemode::tests::slot;
+    pub(crate) use crate::game::main::gamemode::tests::SEEDS_2 as SEEDS_8;
+    pub(crate) use crate::game::main::gamestate::tests::base_3 as base_2;
+    pub(crate) use crate::game::main::gamestate::tests::SEEDS_5 as SEEDS_9;
+    pub(crate) use crate::game::render::graphicsman::tests::same;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::alloc;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::clear;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::heap_init;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::run;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::ARENA_SIZE;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::MEM_HEAP;
+    pub(crate) use crate::game::scripter::ssxscriptengine::tests::SEEDS_4;
+    pub(crate) use crate::game::util::menu::tests::wf_2;
+    pub(crate) use crate::game::worldpainter::quadtree::tests::put_vtable;
+    pub(crate) use crate::game::wscript::wscriptman::tests::alloc_ready;
+    pub(crate) use crate::game::wscript::wscriptman::tests::load;
+    pub(crate) use crate::game::wscript::wscriptman::tests::SEEDS_6 as SEEDS_5;
+    use ssx3_ee as ee;
+    use ssx3_ee_rt::funcs::GuestFn;
 
     /// Setup for the three `AnimObject_Step*` functions: random edge floats on
     /// the parameter, bounds and rate fields.
@@ -11744,64 +11887,77 @@ pub(crate) mod tests {
         c.bus.write32(DATA + 8, r.next_u32());
     }
 
-
     #[test]
     fn anim_object_step_loop_matches() {
-        check(ssx3_ee::s11::f_00341e48, anim_object_step_loop, 300, &|c, seed| {
-            anim_step_setup(c, seed, 0x341e48);
-        });
+        check(
+            ssx3_ee::s11::f_00341e48,
+            anim_object_step_loop,
+            300,
+            &|c, seed| {
+                anim_step_setup(c, seed, 0x341e48);
+            },
+        );
     }
-
 
     #[test]
     fn anim_object_step_ping_pong_matches() {
-        check(ssx3_ee::s11::f_00341ec0, anim_object_step_ping_pong, 300, &|c, seed| {
-            anim_step_setup(c, seed, 0x341ec0);
-        });
+        check(
+            ssx3_ee::s11::f_00341ec0,
+            anim_object_step_ping_pong,
+            300,
+            &|c, seed| {
+                anim_step_setup(c, seed, 0x341ec0);
+            },
+        );
     }
-
 
     #[test]
     fn anim_object_step_clamp_matches() {
-        check(ssx3_ee::s11::f_00341f38, anim_object_step_clamp, 300, &|c, seed| {
-            anim_step_setup(c, seed, 0x341f38);
-        });
+        check(
+            ssx3_ee::s11::f_00341f38,
+            anim_object_step_clamp,
+            300,
+            &|c, seed| {
+                anim_step_setup(c, seed, 0x341f38);
+            },
+        );
     }
-
 
     #[test]
     fn boost_modifier_ctor_matches() {
-        check(ssx3_ee::s11::f_00342768, boost_modifier_ctor, 200, &|c, seed| {
-            let mut r = Rng(0x1010 ^ seed as u64);
-            scramble(c, &mut r);
-            let desc = DATA + 0x100;
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = desc as u64;
-            c.g[A2][0] = (DATA as u64 + 0x200) | ((r.next_u32() as u64) << 32);
-            c.g[GP][0] = GAME_GP as u64;
-            c.bus.write32(GAME_GP + 0x2a74, DATA + 0x300);
-            c.bus.write32(DATA + 0x300 + 0x10, r.next_u32());
-            c.bus.write16(desc + 4, (r.next_u32() & 0xfffe) as u16 | (seed as u16 & 1));
-            for off in [8u32, 0xc, 0x10, 0x14, 0x18, 0x1c] {
-                c.bus.write32(desc + off, r.edge_f32());
-            }
-        });
+        check(
+            ssx3_ee::s11::f_00342768,
+            boost_modifier_ctor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1010 ^ seed as u64);
+                scramble(c, &mut r);
+                let desc = DATA + 0x100;
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = desc as u64;
+                c.g[A2][0] = (DATA as u64 + 0x200) | ((r.next_u32() as u64) << 32);
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP + 0x2a74, DATA + 0x300);
+                c.bus.write32(DATA + 0x300 + 0x10, r.next_u32());
+                c.bus
+                    .write16(desc + 4, (r.next_u32() & 0xfffe) as u16 | (seed as u16 & 1));
+                for off in [8u32, 0xc, 0x10, 0x14, 0x18, 0x1c] {
+                    c.bus.write32(desc + off, r.edge_f32());
+                }
+            },
+        );
     }
 
-
     pub(crate) const SEEDS: u32 = 250;
-
 
     pub(crate) fn f(x: f32) -> u32 {
         x.to_bits()
     }
 
-
     /// A float in [lo, hi).
     pub(crate) fn uf(r: &mut Rng, lo: f32, hi: f32) -> f32 {
         lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo)
     }
-
 
     /// Sub-object vtable: 0x130/0x138 (`Collide_VolumeObject` delegate),
     /// 0x160 (active), 0x168 (box); volume vtable: 0x20 (triangle test);
@@ -11815,7 +11971,6 @@ pub(crate) mod tests {
     /// The box the fake 0x168 returns.
     pub(crate) const BOX2: u32 = DATA + 0x3_0800;
 
-
     pub(crate) fn put_vtables(c: &mut Cpu, r: &mut Rng) {
         for (i, off) in [0x130u32, 0x138, 0x160, 0x168].into_iter().enumerate() {
             c.bus.write16(VT_SUB + off, 0);
@@ -11825,7 +11980,8 @@ pub(crate) mod tests {
         c.bus.write32(VT_VOL + 0x24, FAKE + 0x40);
         for (i, off) in [0x210u32, 0x220, 0x228].into_iter().enumerate() {
             c.bus.write16(VT_PAINTER + off, 0);
-            c.bus.write32(VT_PAINTER + off + 4, FAKE + 0x50 + 0x10 * i as u32);
+            c.bus
+                .write32(VT_PAINTER + off + 4, FAKE + 0x50 + 0x10 * i as u32);
         }
         // BOX2: min at +0, max at +0x10.
         for k in 0..3 {
@@ -11834,7 +11990,6 @@ pub(crate) mod tests {
             c.bus.write32(BOX2 + 0x10 + 4 * k, f(lo + uf(r, 0.0, 3.0)));
         }
     }
-
 
     /// `fakes::fake_call`, then a result that depends on the method.
     pub(crate) fn fake_varied(c: &mut Cpu, target: u32) {
@@ -11850,14 +12005,12 @@ pub(crate) mod tests {
         }
     }
 
-
     pub(crate) fn setup_machine(c: &mut Cpu, seed: u32, salt: u64, calls: u32) -> Rng {
         let mut r = machine(c, seed, salt, calls);
         c.hooks.miss = fake_varied;
         put_vtables(c, &mut r);
         r
     }
-
 
     /// A box at `at`: min at `+min`, max at `+max`, random in ±5.
     pub(crate) fn put_box(c: &mut Cpu, r: &mut Rng, at: u32, min: u32, max: u32) {
@@ -11867,7 +12020,6 @@ pub(crate) mod tests {
             c.bus.write32(at + max + 4 * k, f(lo + uf(r, 0.0, 3.0)));
         }
     }
-
 
     /// A collision volume at `vol` (box max +0x20, min +0x30 around the
     /// origin, so the zero cells of the cache entry overlap it).
@@ -11881,9 +12033,7 @@ pub(crate) mod tests {
         c.bus.write32(vol + 0x50, VT_VOL);
     }
 
-
     pub(crate) const KEY: u32 = 7;
-
 
     /// A forward-difference cache at `cache` whose one bucket holds an entry
     /// for `KEY`: cell 0 has a non-sentinel normal, so `CollideEntry`
@@ -11902,134 +12052,158 @@ pub(crate) mod tests {
         c.bus.write32(GAME_GP.wrapping_sub(0x2d94), f(-99.0));
     }
 
-
     /// A collidable instance at `inst`.
     pub(crate) fn put_instance(c: &mut Cpu, r: &mut Rng, inst: u32, seed: u32) {
-        let flags = if seed % 7 == 0 { 0x01 } else { 0x41 | (r.next_u32() & 0xff00) };
+        let flags = if seed % 7 == 0 {
+            0x01
+        } else {
+            0x41 | (r.next_u32() & 0xff00)
+        };
         c.bus.write16(inst + 0xa, flags as u16);
         c.bus.write16(inst + 8, r.next_u32() as u16);
         c.bus.write32(inst + 0x150, KEY);
         put_box(c, r, inst, 0x158, 0x164);
     }
 
-
     /// A world object at `o` (flags, sub-object with `VT_SUB`, shape).
     pub(crate) fn put_object(c: &mut Cpu, r: &mut Rng, o: u32) {
         let flags = [0x20u32, 0x40, 0x60, 0, 0x21][(r.next_u32() % 5) as usize];
         c.bus.write32(o + 8, flags);
         let sub = o + 0x90;
-        c.bus.write32(o + 0xc, if r.next_u32() % 6 == 0 { 0 } else { sub });
+        c.bus
+            .write32(o + 0xc, if r.next_u32() % 6 == 0 { 0 } else { sub });
         c.bus.write32(sub + 0xc, VT_SUB);
         // Shape record whose type (0) makes Collide_VolumeObject return 0
         // when it has no delegate.
-        c.bus.write32(o + 0x88, if r.next_u32() % 6 == 0 { 0 } else { o + 0xc0 });
+        c.bus
+            .write32(o + 0x88, if r.next_u32() % 6 == 0 { 0 } else { o + 0xc0 });
         put_box(c, r, o, 0x60, 0x6c);
     }
 
-
     #[test]
     fn cell_gather_objects_matches() {
-        check(ee::s11::f_003309d8__generated, cell_gather_objects, SEEDS, &|c, seed| {
-            let mut r = setup_machine(c, seed, 0x3309, 4);
-            let (cell, q, qbox, out, count) = (DATA, DATA + 0x1000, DATA + 0x1200, DATA + 0x2000, DATA + 0x1100);
-            c.bus.write32(q, out);
-            c.bus.write32(q + 4, count);
-            c.bus.write32(q + 0xc, qbox);
-            c.bus.write32(count, r.next_u32() % 4);
-            put_box(c, &mut r, qbox, 0, 0x10);
-            let mut next = 0;
-            for i in (0..seed % 4).rev() {
-                let o = DATA + 0x4000 + 0x100 * i;
-                put_object(c, &mut r, o);
-                c.bus.write32(o, next);
-                next = o;
-            }
-            c.bus.write32(cell + 0x20, next);
-            c.g[A0][0] = sx(q);
-            c.g[A1][0] = sx(cell);
-        });
+        check(
+            ee::s11::f_003309d8__generated,
+            cell_gather_objects,
+            SEEDS,
+            &|c, seed| {
+                let mut r = setup_machine(c, seed, 0x3309, 4);
+                let (cell, q, qbox, out, count) = (
+                    DATA,
+                    DATA + 0x1000,
+                    DATA + 0x1200,
+                    DATA + 0x2000,
+                    DATA + 0x1100,
+                );
+                c.bus.write32(q, out);
+                c.bus.write32(q + 4, count);
+                c.bus.write32(q + 0xc, qbox);
+                c.bus.write32(count, r.next_u32() % 4);
+                put_box(c, &mut r, qbox, 0, 0x10);
+                let mut next = 0;
+                for i in (0..seed % 4).rev() {
+                    let o = DATA + 0x4000 + 0x100 * i;
+                    put_object(c, &mut r, o);
+                    c.bus.write32(o, next);
+                    next = o;
+                }
+                c.bus.write32(cell + 0x20, next);
+                c.g[A0][0] = sx(q);
+                c.g[A1][0] = sx(cell);
+            },
+        );
     }
-
 
     #[test]
     fn cell_collide_instance_matches() {
-        check(ee::s11::f_00335960__generated, cell_collide_instance, SEEDS, &|c, seed| {
-            let mut r = setup_machine(c, seed, 0x5960, 3);
-            let (q, inst, vol, cache, count) = (DATA, DATA + 0x400, DATA + 0x800, DATA + 0xc00, DATA + 0xd00);
-            put_volume(c, &mut r, vol);
-            put_cache(c, cache);
-            put_instance(c, &mut r, inst, seed);
-            c.bus.write32(q, vol);
-            c.bus.write32(q + 4, DATA + 0x2_0000);
-            c.bus.write32(q + 0xc, count);
-            c.bus.write32(q + 0x10, 0);
-            c.bus.write32(q + 0x14, cache);
-            c.bus.write32(count, r.next_u32() % 4);
-            c.g[A0][0] = sx(q);
-            c.g[A1][0] = sx(inst);
-        });
+        check(
+            ee::s11::f_00335960__generated,
+            cell_collide_instance,
+            SEEDS,
+            &|c, seed| {
+                let mut r = setup_machine(c, seed, 0x5960, 3);
+                let (q, inst, vol, cache, count) =
+                    (DATA, DATA + 0x400, DATA + 0x800, DATA + 0xc00, DATA + 0xd00);
+                put_volume(c, &mut r, vol);
+                put_cache(c, cache);
+                put_instance(c, &mut r, inst, seed);
+                c.bus.write32(q, vol);
+                c.bus.write32(q + 4, DATA + 0x2_0000);
+                c.bus.write32(q + 0xc, count);
+                c.bus.write32(q + 0x10, 0);
+                c.bus.write32(q + 0x14, cache);
+                c.bus.write32(count, r.next_u32() % 4);
+                c.g[A0][0] = sx(q);
+                c.g[A1][0] = sx(inst);
+            },
+        );
     }
-
 
     #[test]
     fn cell_collide_object_matches() {
-        check(ee::s11::f_00335b90__generated, cell_collide_object, SEEDS, &|c, seed| {
-            let mut r = setup_machine(c, seed, 0x5b90, 4);
-            let (q, o, vol, count) = (DATA, DATA + 0x400, DATA + 0x800, DATA + 0xd00);
-            put_volume(c, &mut r, vol);
-            put_object(c, &mut r, o);
-            c.bus.write32(q, vol);
-            c.bus.write32(q + 4, DATA + 0x2_0000);
-            c.bus.write32(q + 8, 8 + r.next_u32() % 8);
-            c.bus.write32(q + 0xc, count);
-            c.bus.write32(count, r.next_u32() % 4);
-            c.g[A0][0] = sx(q);
-            c.g[A1][0] = sx(o);
-        });
+        check(
+            ee::s11::f_00335b90__generated,
+            cell_collide_object,
+            SEEDS,
+            &|c, seed| {
+                let mut r = setup_machine(c, seed, 0x5b90, 4);
+                let (q, o, vol, count) = (DATA, DATA + 0x400, DATA + 0x800, DATA + 0xd00);
+                put_volume(c, &mut r, vol);
+                put_object(c, &mut r, o);
+                c.bus.write32(q, vol);
+                c.bus.write32(q + 4, DATA + 0x2_0000);
+                c.bus.write32(q + 8, 8 + r.next_u32() % 8);
+                c.bus.write32(q + 0xc, count);
+                c.bus.write32(count, r.next_u32() % 4);
+                c.g[A0][0] = sx(q);
+                c.g[A1][0] = sx(o);
+            },
+        );
     }
-
 
     #[test]
     fn overlap_list_collide_volume_matches() {
-        check(ee::s11::f_00333ef8__generated, overlap_list_collide_volume, SEEDS, &|c, seed| {
-            let mut r = setup_machine(c, seed, 0x3ef8, 6);
-            let (list, world, vol, cache) = (DATA, DATA + 0x200, DATA + 0x800, DATA + 0xc00);
-            put_volume(c, &mut r, vol);
-            put_cache(c, cache);
-            c.bus.write32(list, world);
-            c.bus.write32(world + 0xa4, cache);
-            let instances = seed % 3;
-            c.bus.write32(list + 0x10c, instances);
-            for i in 0..instances {
-                let inst = DATA + 0x4000 + 0x200 * i;
-                put_instance(c, &mut r, inst, seed + i);
-                c.bus.write32(list + 0x110 + 4 * i, inst);
-            }
-            let objects = (seed / 3) % 3;
-            c.bus.write32(list + 8, objects);
-            for i in 0..objects {
-                let o = DATA + 0x5000 + 0x100 * i;
-                put_object(c, &mut r, o);
-                c.bus.write32(list + 0xc + 4 * i, o);
-            }
-            c.g[A0][0] = sx(list);
-            c.g[A1][0] = sx(vol);
-            c.g[A2][0] = sx(DATA + 0x2_0000);
-            c.g[A3][0] = sx(r.next_u32() % 8);
-            c.g[T0][0] = 0;
-        });
+        check(
+            ee::s11::f_00333ef8__generated,
+            overlap_list_collide_volume,
+            SEEDS,
+            &|c, seed| {
+                let mut r = setup_machine(c, seed, 0x3ef8, 6);
+                let (list, world, vol, cache) = (DATA, DATA + 0x200, DATA + 0x800, DATA + 0xc00);
+                put_volume(c, &mut r, vol);
+                put_cache(c, cache);
+                c.bus.write32(list, world);
+                c.bus.write32(world + 0xa4, cache);
+                let instances = seed % 3;
+                c.bus.write32(list + 0x10c, instances);
+                for i in 0..instances {
+                    let inst = DATA + 0x4000 + 0x200 * i;
+                    put_instance(c, &mut r, inst, seed + i);
+                    c.bus.write32(list + 0x110 + 4 * i, inst);
+                }
+                let objects = (seed / 3) % 3;
+                c.bus.write32(list + 8, objects);
+                for i in 0..objects {
+                    let o = DATA + 0x5000 + 0x100 * i;
+                    put_object(c, &mut r, o);
+                    c.bus.write32(list + 0xc + 4 * i, o);
+                }
+                c.g[A0][0] = sx(list);
+                c.g[A1][0] = sx(vol);
+                c.g[A2][0] = sx(DATA + 0x2_0000);
+                c.g[A3][0] = sx(r.next_u32() % 8);
+                c.g[T0][0] = 0;
+            },
+        );
     }
 
-
     pub(crate) const SEEDS_2: u32 = 200;
-
 
     pub(crate) fn put_v(c: &mut Cpu, at: u32, v: [f32; 4]) {
         for (k, x) in v.iter().enumerate() {
             c.bus.write32(at + 4 * k as u32, f(*x));
         }
     }
-
 
     #[test]
     fn overlap_list_collide_objects_matches() {
@@ -12101,7 +12275,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// Not listed in `OVERRIDES`: the rail finders it calls
     /// (`RailModifier_FindClosestPoint`, `FlexRail_FindClosestPoint`,
     /// `Rail_FindNearestPoint`) are dispatchers that need real rail data, so
@@ -12140,19 +12313,26 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn anim_object_kill_restorable_matches() {
-        crate::difftest::check(ee::s11::f_00341fc8__generated, anim_object_kill_restorable, SEEDS_3, &|c, seed| {
-            let mut r = machine(c, seed, 0x341f_c8, 2);
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = if seed % 2 == 0 { 0 } else { 1 + (r.next_u32() & 0x10) as u64 };
-            // The kill-script handle `WorldObj_RunKillScript` follows
-            // (`o + 0x30 + 0x18`).
-            c.bus.write32(DATA + 0x48, 0);
-        });
+        crate::difftest::check(
+            ee::s11::f_00341fc8__generated,
+            anim_object_kill_restorable,
+            SEEDS_3,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x341f_c8, 2);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    1 + (r.next_u32() & 0x10) as u64
+                };
+                // The kill-script handle `WorldObj_RunKillScript` follows
+                // (`o + 0x30 + 0x18`).
+                c.bus.write32(DATA + 0x48, 0);
+            },
+        );
     }
-
 
     // -------------------------------------------------- vtable forwarders
 
@@ -12170,41 +12350,56 @@ pub(crate) mod tests {
         fill(c, &mut r, obj, 8);
     }
 
-
     #[test]
     fn boost_modifier_base_save_matches() {
-        check(ee::s11::f_003584b8__generated, boost_modifier_base_save, 120, &|c, seed| {
-            forward_setup(c, seed, 0x3584_b8, 8);
-        });
+        check(
+            ee::s11::f_003584b8__generated,
+            boost_modifier_base_save,
+            120,
+            &|c, seed| {
+                forward_setup(c, seed, 0x3584_b8, 8);
+            },
+        );
     }
-
 
     #[test]
     fn coll_sphere_tree_get_diameter_matches() {
-        check(ssx3_ee::s11::f_003306d8__generated, coll_sphere_tree_get_diameter, 64, &|c, seed| {
-            let mut r = machine(c, seed, 0x3306_d8, 0);
-            c.g[A0][0] = DATA as u64;
-            c.bus.write32(DATA, (seed % 3 != 0) as u32);
-            c.bus.write32(DATA + 0x60, DATA + 0x200);
-            c.bus.write32(DATA + 0x200 + 0x98, DATA + 0x300);
-            c.bus.write32(DATA + 0x300 + 0x20, DATA + 0x400);
-            c.bus.write32(DATA + 0x200 + 0x90, r.f32(100.0));
-            c.bus.write32(DATA + 0x400, r.f32(100.0));
-        });
+        check(
+            ssx3_ee::s11::f_003306d8__generated,
+            coll_sphere_tree_get_diameter,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3306_d8, 0);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA, (seed % 3 != 0) as u32);
+                c.bus.write32(DATA + 0x60, DATA + 0x200);
+                c.bus.write32(DATA + 0x200 + 0x98, DATA + 0x300);
+                c.bus.write32(DATA + 0x300 + 0x20, DATA + 0x400);
+                c.bus.write32(DATA + 0x200 + 0x90, r.f32(100.0));
+                c.bus.write32(DATA + 0x400, r.f32(100.0));
+            },
+        );
     }
-
 
     #[test]
     fn nash_destroy_fwd_diff_cache_matches() {
-        check(ssx3_ee::s11::f_00334850__generated, nash_destroy_fwd_diff_cache, 64, &|c, seed| {
-            let mut r = machine(c, seed, 0x3348_50, 0);
-            c.g[A0][0] = DATA as u64;
-            let p = if seed % 3 == 0 { 0 } else { small_pointer(seed) };
-            c.bus.write32(DATA + 0xa4, p);
-            c.bus.write32(DATA + 0x10, r.next_u32());
-        });
+        check(
+            ssx3_ee::s11::f_00334850__generated,
+            nash_destroy_fwd_diff_cache,
+            64,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3348_50, 0);
+                c.g[A0][0] = DATA as u64;
+                let p = if seed % 3 == 0 {
+                    0
+                } else {
+                    small_pointer(seed)
+                };
+                c.bus.write32(DATA + 0xa4, p);
+                c.bus.write32(DATA + 0x10, r.next_u32());
+            },
+        );
     }
-
 
     /// A stream whose first word is a vtable with slot `off` pointing at the
     /// fake callee.
@@ -12213,7 +12408,6 @@ pub(crate) mod tests {
         let vt = vtable(c, r, &[off]);
         c.bus.write32(stream, vt);
     }
-
 
     // ------------------------------------------------------------------
     // World object save family.
@@ -12227,19 +12421,18 @@ pub(crate) mod tests {
             let stream = DATA + 0x400;
             clear(c, this, 0x300);
             fake_stream(c, &mut r, stream, 8);
-            c.bus.write32(this + off, if seed % 3 == 0 { 0 } else { DATA + 0x800 });
+            c.bus
+                .write32(this + off, if seed % 3 == 0 { 0 } else { DATA + 0x800 });
             clear(c, DATA + 0x800, 0x40);
             c.g[A0][0] = sx(this);
             c.g[A1][0] = sx(stream);
         });
     }
 
-
     #[test]
     fn boost_save_matches() {
         save_test(ee::s11::f_00341a50__generated, boost_save, 0x341a_50, 0x20);
     }
-
 
     // ------------------------------------------------------------------
     // Objects and world.
@@ -12260,7 +12453,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn coll_sphere_tree_dtor_matches() {
         check(
@@ -12279,34 +12471,41 @@ pub(crate) mod tests {
         );
     }
 
-
     // ------------------------------------------------------------------
     // Collision.
 
     #[test]
     fn coll_sphere_get_diameter_matches() {
-        check(ee::s11::f_00340a18__generated, coll_sphere_get_diameter, 200, &|c, seed| {
-            let mut r = setup(c, seed, 41);
-            c.g[A0][0] = AUX as u64;
-            put(c, AUX, if seed % 3 == 0 { 0 } else { r.next_u32() });
-            put(c, AUX + 0x70, r.f32(10.0));
-            c.f[0] = r.f32(1.0);
-            c.f[1] = r.f32(1.0);
-        });
+        check(
+            ee::s11::f_00340a18__generated,
+            coll_sphere_get_diameter,
+            200,
+            &|c, seed| {
+                let mut r = setup(c, seed, 41);
+                c.g[A0][0] = AUX as u64;
+                put(c, AUX, if seed % 3 == 0 { 0 } else { r.next_u32() });
+                put(c, AUX + 0x70, r.f32(10.0));
+                c.f[0] = r.f32(1.0);
+                c.f[1] = r.f32(1.0);
+            },
+        );
     }
-
 
     #[test]
     fn boost_handle_event_matches() {
-        check(ee::s11::f_00341a30__generated, boost_handle_event, 200, &|c, seed| {
-            let mut r = setup(c, seed, 42);
-            c.g[A0][0] = AUX as u64;
-            c.g[A1][0] = [1u64, 0, 1, 2][(seed % 4) as usize];
-            put(c, AUX + 0x38, r.next_u32());
-            put(c, AUX + 0x3c, r.next_u32());
-        });
+        check(
+            ee::s11::f_00341a30__generated,
+            boost_handle_event,
+            200,
+            &|c, seed| {
+                let mut r = setup(c, seed, 42);
+                c.g[A0][0] = AUX as u64;
+                c.g[A1][0] = [1u64, 0, 1, 2][(seed % 4) as usize];
+                put(c, AUX + 0x38, r.next_u32());
+                put(c, AUX + 0x3c, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn anim_teeter_v53_matches() {
@@ -12321,43 +12520,63 @@ pub(crate) mod tests {
             [-1.0, 2.0, -2.0, -5.0], // velocity <= upper, lean < 0 -> 0
             [0.0, 2.0, -2.0, 1.0],   // velocity <= upper, lean == 0 -> lean
         ];
-        check(ee::s11::f_003424d0__generated, anim_teeter_v53, 200, &|c, seed| {
-            let mut r = setup(c, seed, 43);
-            c.g[A0][0] = AUX as u64;
-            let k = CASES[(seed % 6) as usize];
-            put(c, AUX + 4, if seed % 7 == 0 { r.f32(2.0) } else { fbits(k[0]) });
-            put(c, AUX + 0x10, fbits(k[1]));
-            put(c, AUX + 0x14, fbits(k[2]));
-            put(c, AUX + 0x30, fbits(k[3]));
-        });
+        check(
+            ee::s11::f_003424d0__generated,
+            anim_teeter_v53,
+            200,
+            &|c, seed| {
+                let mut r = setup(c, seed, 43);
+                c.g[A0][0] = AUX as u64;
+                let k = CASES[(seed % 6) as usize];
+                put(
+                    c,
+                    AUX + 4,
+                    if seed % 7 == 0 {
+                        r.f32(2.0)
+                    } else {
+                        fbits(k[0])
+                    },
+                );
+                put(c, AUX + 0x10, fbits(k[1]));
+                put(c, AUX + 0x14, fbits(k[2]));
+                put(c, AUX + 0x30, fbits(k[3]));
+            },
+        );
     }
-
 
     #[test]
     fn boost_modifier_handle_event_matches() {
-        check(ee::s11::f_00342b80__generated, boost_modifier_handle_event, 200, &|c, seed| {
-            let mut r = setup(c, seed, 44);
-            c.g[A0][0] = AUX as u64;
-            c.g[A1][0] = [0x258u64, 0, 0x258, 0x100][(seed % 4) as usize];
-            put(c, AUX + 0x28, r.next_u32());
-            put(c, AUX + 0x2c, r.next_u32());
-        });
+        check(
+            ee::s11::f_00342b80__generated,
+            boost_modifier_handle_event,
+            200,
+            &|c, seed| {
+                let mut r = setup(c, seed, 44);
+                c.g[A0][0] = AUX as u64;
+                c.g[A1][0] = [0x258u64, 0, 0x258, 0x100][(seed % 4) as usize];
+                put(c, AUX + 0x28, r.next_u32());
+                put(c, AUX + 0x2c, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn boost_ctor_2_matches() {
-        check(ee::s11::f_00341548__generated, boost_ctor_2, SEEDS_6, &|c, seed| {
-            let mut r = machine(c, seed, 0x0034_1548, 2);
-            belib(c);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x200) as u64;
-            c.g[A2][0] = (DATA + 0x300) as u64;
-            let vt = vtable(c, &mut r, &[0x10]);
-            w(c, DATA + 0x300, vt);
-        });
+        check(
+            ee::s11::f_00341548__generated,
+            boost_ctor_2,
+            SEEDS_6,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_1548, 2);
+                belib(c);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x200) as u64;
+                c.g[A2][0] = (DATA + 0x300) as u64;
+                let vt = vtable(c, &mut r, &[0x10]);
+                w(c, DATA + 0x300, vt);
+            },
+        );
     }
-
 
     // ------------------------------------------------------ transform/boost/sphere
 
@@ -12382,7 +12601,6 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn boost_modifier_v06_matches() {
         check(
@@ -12399,7 +12617,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn rail_find_nearest_point_matches() {
@@ -12446,10 +12663,15 @@ pub(crate) mod tests {
                         [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.next_u32()],
                     );
                 }
-                put_vec(c, vec, [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.next_u32()]);
+                put_vec(
+                    c,
+                    vec,
+                    [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.next_u32()],
+                );
                 // The result word read at 0x335804 / 0x335824, and the float
                 // at t0 compared on the way to the success block.
-                c.bus.write32(DATA + 0x600, if seed % 2 == 0 { 0 } else { 1 });
+                c.bus
+                    .write32(DATA + 0x600, if seed % 2 == 0 { 0 } else { 1 });
                 c.bus.write32(DATA + 0x700, r.edge_f32());
                 // The gp-relative constants the pass-2 setup scales by.
                 c.bus.write32(GAME_GP - 0x2d68, r.edge_f32());
@@ -12462,40 +12684,45 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn anim_object_ctor_2_matches() {
-        check(ee::s11::f_00341c80__generated, anim_object_ctor_2, 60, &|c, seed| {
-            let mut r = alloc_base(c, seed, 0x341c_80);
-            let obj = DATA + 0x1000;
-            c.g[A0][0] = sx(obj);
-            c.g[A1][0] = r.next_u32() as u64;
-            c.g[A2][0] = 0;
-            c.bus.write32(STACK_TOP - 0xd0, 0);
-        });
+        check(
+            ee::s11::f_00341c80__generated,
+            anim_object_ctor_2,
+            60,
+            &|c, seed| {
+                let mut r = alloc_base(c, seed, 0x341c_80);
+                let obj = DATA + 0x1000;
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = 0;
+                c.bus.write32(STACK_TOP - 0xd0, 0);
+            },
+        );
     }
-
 
     #[test]
     fn anim_teeter_ctor_2_matches() {
-        check(ee::s11::f_003422e8__generated, anim_teeter_ctor_2, 60, &|c, seed| {
-            let mut r = alloc_base(c, seed, 0x3422_e8);
-            let obj = DATA + 0x1000;
-            c.g[A0][0] = sx(obj);
-            c.g[A1][0] = r.next_u32() as u64;
-            c.g[A2][0] = 0;
-            c.bus.write32(STACK_TOP - 0xd0, 0);
-        });
+        check(
+            ee::s11::f_003422e8__generated,
+            anim_teeter_ctor_2,
+            60,
+            &|c, seed| {
+                let mut r = alloc_base(c, seed, 0x3422_e8);
+                let obj = DATA + 0x1000;
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = 0;
+                c.bus.write32(STACK_TOP - 0xd0, 0);
+            },
+        );
     }
 
-
     pub(crate) const SEEDS_7: u32 = 200;
-
 
     pub(crate) fn gp_at(off: i32) -> u32 {
         GAME_GP.wrapping_add(off as u32)
     }
-
 
     #[test]
     fn cell_collide_volume_recursive_matches() {
@@ -12569,7 +12796,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn cell_gather_all_recursive_matches() {
@@ -12661,24 +12887,27 @@ pub(crate) mod tests {
         );
     }
 
-
     #[test]
     fn boost_modifier_ctor_2_matches() {
-        check(ee::s11::f_00342808__generated, boost_modifier_ctor_2, SEEDS_8, &|c, seed| {
-            let mut r = machine(c, seed, 0x342808, 2);
-            be_library(c);
-            let obj = DATA;
-            let stream = DATA + 0x800;
-            c.g[A0][0] = obj as u64;
-            c.g[A1][0] = stream as u64;
-            let vt = DATA + 0x3000;
-            w(c, stream, vt);
-            slot(c, vt, 0x10, 0x10, FAKE);
-            slot(c, vt, 0x18, 0x18, FAKE + 0x40);
-            w(c, obj + 0x40, r.next_u32());
-        });
+        check(
+            ee::s11::f_00342808__generated,
+            boost_modifier_ctor_2,
+            SEEDS_8,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x342808, 2);
+                be_library(c);
+                let obj = DATA;
+                let stream = DATA + 0x800;
+                c.g[A0][0] = obj as u64;
+                c.g[A1][0] = stream as u64;
+                let vt = DATA + 0x3000;
+                w(c, stream, vt);
+                slot(c, vt, 0x10, 0x10, FAKE);
+                slot(c, vt, 0x18, 0x18, FAKE + 0x40);
+                w(c, obj + 0x40, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn collspheretree_collide_matches() {
@@ -12703,14 +12932,23 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn coll_sphere_tree_collide_triangle_matches() {
-        check(ssx3_ee::s11::f_00330788__generated, coll_sphere_tree_collide_triangle, 20, &|c, seed| {
-            coll_args(c, seed, 0x330788, DATA + 0x3000, ssx3_ee::s11::f_00330788__generated);
-        });
+        check(
+            ssx3_ee::s11::f_00330788__generated,
+            coll_sphere_tree_collide_triangle,
+            20,
+            &|c, seed| {
+                coll_args(
+                    c,
+                    seed,
+                    0x330788,
+                    DATA + 0x3000,
+                    ssx3_ee::s11::f_00330788__generated,
+                );
+            },
+        );
     }
-
 
     #[test]
     fn coll_sphere_tree_collide_triangle2_sided_matches() {
@@ -12719,30 +12957,29 @@ pub(crate) mod tests {
             coll_sphere_tree_collide_triangle2_sided,
             20,
             &|c, seed| {
-                coll_args(c, seed, 0x330828, DATA + 0x3000, ssx3_ee::s11::f_00330828__generated);
+                coll_args(
+                    c,
+                    seed,
+                    0x330828,
+                    DATA + 0x3000,
+                    ssx3_ee::s11::f_00330828__generated,
+                );
             },
         );
     }
-
 
     #[test]
     fn boost_v48_matches() {
-        check(
-            ee::s11::f_00341770__generated,
-            boost_v48,
-            8,
-            &|c, seed| {
-                let mut r = base_4(c, seed, 0x341770, 3);
-                c.g[A0][0] = OBJ as u64;
-                c.g[A1][0] = OBJ2 as u64;
-                let vt4 = vtable(c, &mut r, &[0x10, 0x14, 0x20, 0x24]);
-                w(c, OBJ2, vt4);
-                wf(c, OBJ + 0x34, 0.5);
-                w(c, OBJ + 0x60, 0);
-            },
-        );
+        check(ee::s11::f_00341770__generated, boost_v48, 8, &|c, seed| {
+            let mut r = base_4(c, seed, 0x341770, 3);
+            c.g[A0][0] = OBJ as u64;
+            c.g[A1][0] = OBJ2 as u64;
+            let vt4 = vtable(c, &mut r, &[0x10, 0x14, 0x20, 0x24]);
+            w(c, OBJ2, vt4);
+            wf(c, OBJ + 0x34, 0.5);
+            w(c, OBJ + 0x60, 0);
+        });
     }
-
 
     #[test]
     fn boost_modifier_v08_matches() {
@@ -12761,7 +12998,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     #[test]
     fn anim_object_v36_matches() {
@@ -12796,7 +13032,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     // -- 0x00330540 CollSphereTree_OverlapsAABB -------------------------
 
@@ -12834,28 +13069,29 @@ pub(crate) mod tests {
         );
     }
 
-
     pub(crate) const BOOST_MOD: u32 = DATA + 0x1_0000;
-
 
     #[test]
     fn boost_modifier_v02_matches() {
-        check_all(ee::s11::f_00342880__generated, boost_modifier_v02, 20, &|c, seed| {
-            let mut r = base_5(c, seed, 0x3428_80, 14);
-            c.pc = 0x0034_2880;
-            c.g[A0][0] = sx(BOOST_MOD);
-            c.bus.write32(BOOST_MOD + 0x0, (seed % 4) as u32);
-            c.bus.write32(BOOST_MOD + 0x4, r.edge_f32());
-            c.bus.write32(BOOST_MOD + 0x8, r.f32(1.0));
-            c.bus.write32(BOOST_MOD + 0x10, (seed % 3) as u32);
-            c.bus.write32(BOOST_MOD + 0x1c, r.f32(2.0));
-            c.bus.write32(RMAN + 0x7c, 1);
-        });
+        check_all(
+            ee::s11::f_00342880__generated,
+            boost_modifier_v02,
+            20,
+            &|c, seed| {
+                let mut r = base_5(c, seed, 0x3428_80, 14);
+                c.pc = 0x0034_2880;
+                c.g[A0][0] = sx(BOOST_MOD);
+                c.bus.write32(BOOST_MOD + 0x0, (seed % 4) as u32);
+                c.bus.write32(BOOST_MOD + 0x4, r.edge_f32());
+                c.bus.write32(BOOST_MOD + 0x8, r.f32(1.0));
+                c.bus.write32(BOOST_MOD + 0x10, (seed % 3) as u32);
+                c.bus.write32(BOOST_MOD + 0x1c, r.f32(2.0));
+                c.bus.write32(RMAN + 0x7c, 1);
+            },
+        );
     }
 
-
     pub(crate) const BOOST: u32 = DATA + 0x1_0000;
-
 
     /// The boost window (`+0x3c`, 30 frames) lasts 0.5 s at any rate: the
     /// zone (mode 0) stays active without testing riders until it runs out.
@@ -12864,7 +13100,8 @@ pub(crate) mod tests {
         for (hz, ticks) in [(60, 30), (120, 59), (240, 117)] {
             let mut c = crate::difftest::fresh();
             c.hooks.miss = crate::difftest::fakes::fake_call;
-            c.bus.write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+            c.bus
+                .write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
             crate::tick::set_for_test(&mut c, hz);
             // Its vtable (+0xc) is empty: the effect calls are fakes.
             c.bus.write32(BOOST + 0xc, BOOST + 0x1000);
@@ -12886,20 +13123,24 @@ pub(crate) mod tests {
         }
     }
 
-
     #[test]
     fn boost_update_matches() {
-        check_all(ee::s11::f_003415d0__generated, boost_update, 20, &|c, seed| {
-            let mut r = base_5(c, seed, 0x3415_d0, 14);
-            c.pc = 0x0034_15d0;
-            c.g[A0][0] = sx(BOOST);
-            c.bus.write32(BOOST + 0x0, (seed % 4) as u32);
-            c.bus.write32(BOOST + 0x4, r.edge_f32());
-            c.bus.write32(BOOST + 0x8, r.f32(1.0));
-            c.bus.write32(BOOST + 0xc, r.edge_f32());
-            c.bus.write32(BOOST + 0x10, (seed % 3) as u32);
-            c.bus.write32(BOOST + 0x1c, r.f32(2.0));
-            c.bus.write32(RMAN + 0x7c, 1);
-        });
+        check_all(
+            ee::s11::f_003415d0__generated,
+            boost_update,
+            20,
+            &|c, seed| {
+                let mut r = base_5(c, seed, 0x3415_d0, 14);
+                c.pc = 0x0034_15d0;
+                c.g[A0][0] = sx(BOOST);
+                c.bus.write32(BOOST + 0x0, (seed % 4) as u32);
+                c.bus.write32(BOOST + 0x4, r.edge_f32());
+                c.bus.write32(BOOST + 0x8, r.f32(1.0));
+                c.bus.write32(BOOST + 0xc, r.edge_f32());
+                c.bus.write32(BOOST + 0x10, (seed % 3) as u32);
+                c.bus.write32(BOOST + 0x1c, r.f32(2.0));
+                c.bus.write32(RMAN + 0x7c, 1);
+            },
+        );
     }
 }

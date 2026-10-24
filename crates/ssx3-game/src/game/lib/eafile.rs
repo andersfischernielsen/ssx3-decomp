@@ -18,9 +18,11 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
-    (0x003d_d310, ea_file_release_request, "EAFile_ReleaseRequest"),
-];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
+    0x003d_d310,
+    ea_file_release_request,
+    "EAFile_ReleaseRequest",
+)];
 
 // ---------------------------------------------------------------------------
 // Callees.
@@ -30,8 +32,6 @@ pub(crate) mod callee {
     use super::Callee;
     pub(crate) use crate::game::ai::ai::callee::EA_FILE_FREE_FILE_HANDLE;
     pub(crate) use crate::game::ai::ai::callee::EA_FILE_FREE_REQUEST;
-    pub(crate) use crate::game::ai::ai::callee::SPCH_FIND_BANK_TYPE;
-    pub(crate) use crate::game::ai::ai::callee::RIDER_WIPEOUT_UPDATE_ANIM_SPEED;
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE00;
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE01;
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE02;
@@ -43,8 +43,9 @@ pub(crate) mod callee {
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE08;
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE09;
     pub(crate) use crate::game::ai::ai::callee::RIDER_ANIM_SEQ_END_TYPE0A;
+    pub(crate) use crate::game::ai::ai::callee::RIDER_WIPEOUT_UPDATE_ANIM_SPEED;
+    pub(crate) use crate::game::ai::ai::callee::SPCH_FIND_BANK_TYPE;
 }
-
 
 // ---------------------------------------------------------------------------
 // EAFile_ReleaseRequest: a release path chosen from flags in the request and
@@ -76,7 +77,11 @@ pub fn ea_file_release_request(c: &mut Cpu) {
                     c.g[S1][0] = 0;
                     c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     c.g[V1][0] = Addr(c.g[S0][0] as u32).off(0x8).lw(c);
-                    pc = if c.g[V1][0] == 0 { 0x003d_d414 } else { 0x003d_d34c };
+                    pc = if c.g[V1][0] == 0 {
+                        0x003d_d414
+                    } else {
+                        0x003d_d34c
+                    };
                 }
                 0x003d_d34c => {
                     c.cycles += 2;
@@ -87,7 +92,11 @@ pub fn ea_file_release_request(c: &mut Cpu) {
                 0x003d_d354 => {
                     c.cycles += 3;
                     c.g[V0][0] = ((c.g[V1][0] as i64) < -2i64) as u64;
-                    pc = if c.g[V0][0] != 0 { 0x003d_d414 } else { 0x003d_d360 };
+                    pc = if c.g[V0][0] != 0 {
+                        0x003d_d414
+                    } else {
+                        0x003d_d360
+                    };
                 }
                 0x003d_d360 => {
                     c.cycles += 2;
@@ -96,7 +105,11 @@ pub fn ea_file_release_request(c: &mut Cpu) {
                 }
                 0x003d_d368 => {
                     c.cycles += 2;
-                    pc = if c.g[V1][0] != c.g[V0][0] { 0x003d_d414 } else { 0x003d_d370 };
+                    pc = if c.g[V1][0] != c.g[V0][0] {
+                        0x003d_d414
+                    } else {
+                        0x003d_d370
+                    };
                 }
                 0x003d_d370 => {
                     c.cycles += 7;
@@ -113,8 +126,7 @@ pub fn ea_file_release_request(c: &mut Cpu) {
                     c.cycles += 6;
                     c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
                     c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x5d40));
-                    c.g[V1][0] =
-                        sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
                     let target = Addr(c.g[V1][0] as u32).lw(c) as u32;
                     c.g[A0][0] = sx(target);
                     pc = match target {
@@ -221,37 +233,42 @@ pub fn ea_file_release_request(c: &mut Cpu) {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::difftest::check;
+    use crate::difftest::elf_image;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
     use crate::difftest::fakes::LOG_UNWIND_AT;
-    use crate::difftest::check;
-    use crate::difftest::elf_image;
     use crate::difftest::put_words;
     use crate::difftest::scramble;
     use crate::difftest::Rng;
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
     use crate::difftest::SP as STACK;
-    pub(crate) use crate::game::lib::sif::tests::SEEDS;
     pub(crate) use crate::game::ai::ai::tests::fake_check;
-
+    pub(crate) use crate::game::lib::sif::tests::SEEDS;
 
     // -------------------------------------------------- EAFile_ReleaseRequest
 
     #[test]
     fn ea_file_release_request_matches() {
-        fake_check(ssx3_ee::s14::f_003dd310__generated, ea_file_release_request, 44, &|c, _seed, r| {
-            c.g[A0][0] = DATA as u64; // its top byte is 0
-            c.g[SP][0] = (STACK - 0x100) as u64;
-            // The hash table entry for top byte 0 points at the request.
-            c.bus.write32(0x0051_ad98, DATA);
-            // A positive state that equals itself in the compare.
-            c.bus.write32(DATA + 8, 1);
-            // Request flags: channel class 2..10, so the dispatch is taken.
-            let lane = 2 + r.next_u32() % 9;
-            c.bus.write32(DATA, (lane << 20) | (r.next_u32() & 0x000f_ffff));
-            // The state table (0x495d40) stays zero: default jump_out.
-        });
+        fake_check(
+            ssx3_ee::s14::f_003dd310__generated,
+            ea_file_release_request,
+            44,
+            &|c, _seed, r| {
+                c.g[A0][0] = DATA as u64; // its top byte is 0
+                c.g[SP][0] = (STACK - 0x100) as u64;
+                // The hash table entry for top byte 0 points at the request.
+                c.bus.write32(0x0051_ad98, DATA);
+                // A positive state that equals itself in the compare.
+                c.bus.write32(DATA + 8, 1);
+                // Request flags: channel class 2..10, so the dispatch is taken.
+                let lane = 2 + r.next_u32() % 9;
+                c.bus
+                    .write32(DATA, (lane << 20) | (r.next_u32() & 0x000f_ffff));
+                // The state table (0x495d40) stays zero: default jump_out.
+            },
+        );
     }
 }

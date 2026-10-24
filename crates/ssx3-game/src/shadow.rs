@@ -37,12 +37,23 @@ static INSIDE: AtomicBool = AtomicBool::new(false);
 
 fn every() -> u64 {
     static E: OnceLock<u64> = OnceLock::new();
-    *E.get_or_init(|| std::env::var("SSX3_SHADOW_EVERY").ok().and_then(|v| v.parse().ok()).unwrap_or(1).max(1))
+    *E.get_or_init(|| {
+        std::env::var("SSX3_SHADOW_EVERY")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1)
+            .max(1)
+    })
 }
 
 fn first() -> u64 {
     static F: OnceLock<u64> = OnceLock::new();
-    *F.get_or_init(|| std::env::var("SSX3_SHADOW_FIRST").ok().and_then(|v| v.parse().ok()).unwrap_or(20))
+    *F.get_or_init(|| {
+        std::env::var("SSX3_SHADOW_FIRST")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20)
+    })
 }
 
 /// The functions to shadow (`SSX3_SHADOW`), if any: `None` when the
@@ -52,14 +63,27 @@ pub fn wanted() -> Option<Option<Vec<u32>>> {
     if v == "all" {
         return Some(None);
     }
-    Some(Some(v.split(',').filter_map(|a| u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).ok()).collect()))
+    Some(Some(
+        v.split(',')
+            .filter_map(|a| u32::from_str_radix(a.trim().trim_start_matches("0x"), 16).ok())
+            .collect(),
+    ))
 }
 
 /// Register `addr` for shadowing; returns the function to install in its
 /// slot (the shadow entry), or `None` when its generated body is unknown.
 pub fn wrap(addr: u32, name: &'static str, native: GuestFn) -> Option<GuestFn> {
     let generated = ssx3_ee::generated_body(addr)?;
-    TABLE.get_or_init(Default::default).lock().unwrap().insert(addr, Entry { name, native, generated, calls: 0, bad: 0 });
+    TABLE.get_or_init(Default::default).lock().unwrap().insert(
+        addr,
+        Entry {
+            name,
+            native,
+            generated,
+            calls: 0,
+            bad: 0,
+        },
+    );
     Some(entry)
 }
 
@@ -70,7 +94,8 @@ fn entry(c: &mut Cpu) {
         let mut t = TABLE.get().unwrap().lock().unwrap();
         let e = t.get_mut(&addr).expect("shadowed function");
         e.calls += 1;
-        let check = !INSIDE.load(Ordering::Relaxed) && (e.calls <= first() || e.calls % every() == 0);
+        let check =
+            !INSIDE.load(Ordering::Relaxed) && (e.calls <= first() || e.calls % every() == 0);
         (e.native, e.generated, e.name, check)
     };
     if !check {
@@ -89,7 +114,12 @@ fn entry(c: &mut Cpu) {
                 "[shadow] {name} ({addr:#x}) call {} (a0-a3 {args:x?}): {} differences: {}",
                 e.calls,
                 diffs.len(),
-                diffs.iter().take(16).cloned().collect::<Vec<_>>().join("; ")
+                diffs
+                    .iter()
+                    .take(16)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("; ")
             );
         }
     }
@@ -112,17 +142,33 @@ struct Regs {
     ctrl: Vec<u32>,
 }
 
-const CTRL: [u32; 22] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22];
+const CTRL: [u32; 22] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21, 22,
+];
 
 fn regs(c: &mut Cpu) -> Regs {
     let vf = (0..32).map(|r| c.vu0().vf(r)).collect();
     let acc = c.vu0().acc();
     let ctrl = CTRL.iter().map(|&r| c.vu0().read_ctrl(r)).collect();
-    Regs { g: c.g, hi: c.hi, lo: c.lo, sa: c.sa, f: c.f, facc: c.facc, fcr31: c.fcr31, pc: c.pc, cycles: c.cycles, vf, acc, ctrl }
+    Regs {
+        g: c.g,
+        hi: c.hi,
+        lo: c.lo,
+        sa: c.sa,
+        f: c.f,
+        facc: c.facc,
+        fcr31: c.fcr31,
+        pc: c.pc,
+        cycles: c.cycles,
+        vf,
+        acc,
+        ctrl,
+    }
 }
 
 fn set_regs(c: &mut Cpu, r: &Regs) {
-    (c.g, c.hi, c.lo, c.sa, c.f, c.facc, c.fcr31, c.pc, c.cycles) = (r.g, r.hi, r.lo, r.sa, r.f, r.facc, r.fcr31, r.pc, r.cycles);
+    (c.g, c.hi, c.lo, c.sa, c.f, c.facc, c.fcr31, c.pc, c.cycles) =
+        (r.g, r.hi, r.lo, r.sa, r.f, r.facc, r.fcr31, r.pc, r.cycles);
     for (i, v) in r.vf.iter().enumerate() {
         c.vu0().set_vf(i, *v);
     }
@@ -149,8 +195,15 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
     let after_native = regs(c);
     let mut wn = vec![0u64; pending.len()];
     ssx3_ee_rt::bus::take_written(&mut wn);
-    let bits = |b: &[u64]| -> Vec<usize> { (0..pages).filter(|&p| b[p >> 6] >> (p & 63) & 1 != 0).collect() };
-    let native_pages: Vec<(usize, Vec<u8>)> = bits(&wn).into_iter().map(|p| (p, c.bus.ram[p * 4096..(p + 1) * 4096].to_vec())).collect();
+    let bits = |b: &[u64]| -> Vec<usize> {
+        (0..pages)
+            .filter(|&p| b[p >> 6] >> (p & 63) & 1 != 0)
+            .collect()
+    };
+    let native_pages: Vec<(usize, Vec<u8>)> = bits(&wn)
+        .into_iter()
+        .map(|p| (p, c.bus.ram[p * 4096..(p + 1) * 4096].to_vec()))
+        .collect();
     let native_spr = c.bus.spr.clone();
     for (p, _) in &native_pages {
         c.bus.ram[p * 4096..(p + 1) * 4096].copy_from_slice(&pre_ram[p * 4096..(p + 1) * 4096]);
@@ -159,7 +212,11 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
     set_regs(c, &pre);
     c.next_event = u64::MAX;
     generated(c);
-    c.next_event = if c.next_event == u64::MAX { next } else { c.next_event.min(next) };
+    c.next_event = if c.next_event == u64::MAX {
+        next
+    } else {
+        c.next_event.min(next)
+    };
     let after_gen = regs(c);
     let mut wg = vec![0u64; pending.len()];
     ssx3_ee_rt::bus::take_written(&mut wg);
@@ -168,13 +225,22 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
     let (a, b) = (&after_native, &after_gen);
     for r in 0..32 {
         if a.g[r] != b.g[r] {
-            bad.push(format!("gpr{r}: native {:x?} generated {:x?}", a.g[r], b.g[r]));
+            bad.push(format!(
+                "gpr{r}: native {:x?} generated {:x?}",
+                a.g[r], b.g[r]
+            ));
         }
         if a.f[r] != b.f[r] {
-            bad.push(format!("f{r}: native {:#x} generated {:#x}", a.f[r], b.f[r]));
+            bad.push(format!(
+                "f{r}: native {:#x} generated {:#x}",
+                a.f[r], b.f[r]
+            ));
         }
         if a.vf[r] != b.vf[r] {
-            bad.push(format!("vf{r}: native {:x?} generated {:x?}", a.vf[r], b.vf[r]));
+            bad.push(format!(
+                "vf{r}: native {:x?} generated {:x?}",
+                a.vf[r], b.vf[r]
+            ));
         }
     }
     for (what, x, y) in [("hi", a.hi, b.hi), ("lo", a.lo, b.lo)] {
@@ -183,17 +249,33 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
         }
     }
     if (a.facc, a.fcr31, a.sa) != (b.facc, b.fcr31, b.sa) {
-        bad.push(format!("facc/fcr31/sa: native {:x?} generated {:x?}", (a.facc, a.fcr31, a.sa), (b.facc, b.fcr31, b.sa)));
+        bad.push(format!(
+            "facc/fcr31/sa: native {:x?} generated {:x?}",
+            (a.facc, a.fcr31, a.sa),
+            (b.facc, b.fcr31, b.sa)
+        ));
     }
     if a.pc != b.pc || a.cycles != b.cycles {
-        bad.push(format!("pc/cycles: native {:#x}/{} generated {:#x}/{}", a.pc, a.cycles - pre.cycles, b.pc, b.cycles - pre.cycles));
+        bad.push(format!(
+            "pc/cycles: native {:#x}/{} generated {:#x}/{}",
+            a.pc,
+            a.cycles - pre.cycles,
+            b.pc,
+            b.cycles - pre.cycles
+        ));
     }
     if a.acc != b.acc {
-        bad.push(format!("vu0 acc: native {:x?} generated {:x?}", a.acc, b.acc));
+        bad.push(format!(
+            "vu0 acc: native {:x?} generated {:x?}",
+            a.acc, b.acc
+        ));
     }
     for (k, &reg) in CTRL.iter().enumerate() {
         if a.ctrl[k] != b.ctrl[k] {
-            bad.push(format!("vu0 ctrl {reg}: native {:#x} generated {:#x}", a.ctrl[k], b.ctrl[k]));
+            bad.push(format!(
+                "vu0 ctrl {reg}: native {:#x} generated {:#x}",
+                a.ctrl[k], b.ctrl[k]
+            ));
         }
     }
     // Memory: every page either run wrote (stack scratch below sp aside).
@@ -202,11 +284,18 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
     all.sort_unstable();
     all.dedup();
     for p in all {
-        let nat = native_pages.iter().find(|x| x.0 == p).map_or(&pre_ram[p * 4096..(p + 1) * 4096], |x| &x.1[..]);
+        let nat = native_pages
+            .iter()
+            .find(|x| x.0 == p)
+            .map_or(&pre_ram[p * 4096..(p + 1) * 4096], |x| &x.1[..]);
         for o in (0..4096).step_by(4) {
             let addr = (p * 4096 + o) as u32;
             let x = u32::from_le_bytes(nat[o..o + 4].try_into().unwrap());
-            let y = u32::from_le_bytes(c.bus.ram[p * 4096 + o..p * 4096 + o + 4].try_into().unwrap());
+            let y = u32::from_le_bytes(
+                c.bus.ram[p * 4096 + o..p * 4096 + o + 4]
+                    .try_into()
+                    .unwrap(),
+            );
             if x != y && !(sp.wrapping_sub(0x4000)..sp).contains(&addr) {
                 bad.push(format!("{addr:#x}: native {x:#x} generated {y:#x}"));
             }
@@ -216,7 +305,10 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
         let x = u32::from_le_bytes(native_spr[o..o + 4].try_into().unwrap());
         let y = u32::from_le_bytes(c.bus.spr[o..o + 4].try_into().unwrap());
         if x != y {
-            bad.push(format!("spr {:#x}: native {x:#x} generated {y:#x}", 0x7000_0000 + o));
+            bad.push(format!(
+                "spr {:#x}: native {x:#x} generated {y:#x}",
+                0x7000_0000 + o
+            ));
         }
     }
     for b in [&pending, &wn, &wg] {
@@ -230,9 +322,20 @@ fn run_both(c: &mut Cpu, native: GuestFn, generated: GuestFn) -> Vec<String> {
 /// One line per shadowed function that was called: calls, calls that
 /// differed.
 pub fn report() -> Vec<String> {
-    let Some(t) = TABLE.get() else { return Vec::new() };
+    let Some(t) = TABLE.get() else {
+        return Vec::new();
+    };
     let t = t.lock().unwrap();
-    let mut v: Vec<_> = t.iter().filter(|(_, e)| e.calls > 0).map(|(a, e)| (e.bad, format!("{} ({a:#x}): {} calls, {} differ", e.name, e.calls, e.bad))).collect();
+    let mut v: Vec<_> = t
+        .iter()
+        .filter(|(_, e)| e.calls > 0)
+        .map(|(a, e)| {
+            (
+                e.bad,
+                format!("{} ({a:#x}): {} calls, {} differ", e.name, e.calls, e.bad),
+            )
+        })
+        .collect();
     v.sort_by(|x, y| y.0.cmp(&x.0));
     v.into_iter().map(|x| x.1).collect()
 }

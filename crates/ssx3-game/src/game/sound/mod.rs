@@ -2,10 +2,10 @@
 
 use ssx3_ee_rt::funcs::GuestFn;
 
-pub mod icepick;
 pub mod asyncsys;
 pub mod bankmanager;
 pub mod bankmonitor;
+pub mod icepick;
 pub mod ps2soundman;
 pub mod soundsys;
 pub mod ssxaudio;

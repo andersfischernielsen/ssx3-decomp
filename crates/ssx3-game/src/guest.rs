@@ -157,7 +157,8 @@ impl Addr {
         let s = hi_at & 7;
         let mem = c.bus.read64(hi_at & !7);
         let keep = if s == 7 { 0 } else { u64::MAX << ((s + 1) * 8) };
-        c.bus.write64(hi_at & !7, (mem & keep) | (v >> (56 - s * 8)));
+        c.bus
+            .write64(hi_at & !7, (mem & keep) | (v >> (56 - s * 8)));
         let s = a & 7;
         let mem = c.bus.read64(a & !7);
         let keep = if s == 0 { 0 } else { u64::MAX >> ((8 - s) * 8) };

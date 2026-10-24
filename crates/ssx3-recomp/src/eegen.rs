@@ -49,7 +49,11 @@ pub enum Ctl {
     /// Not a control transfer.
     None,
     /// Conditional branch (with delay slot). `likely`: delay slot only if taken.
-    Branch { target: u32, likely: bool, link: bool },
+    Branch {
+        target: u32,
+        likely: bool,
+        link: bool,
+    },
     /// `j`.
     Jump { target: u32 },
     /// `jal`.
@@ -65,7 +69,8 @@ pub enum Ctl {
 }
 
 fn branch_target(pc: u32, w: u32) -> u32 {
-    pc.wrapping_add(4).wrapping_add(((w as i16 as i32) << 2) as u32)
+    pc.wrapping_add(4)
+        .wrapping_add(((w as i16 as i32) << 2) as u32)
 }
 
 fn classify(pc: u32, w: u32) -> Ctl {
@@ -73,11 +78,18 @@ fn classify(pc: u32, w: u32) -> Ctl {
     let rs = ((w >> 21) & 31) as u8;
     let rt = (w >> 16) & 31;
     let funct = w & 63;
-    let b = |likely, link| Ctl::Branch { target: branch_target(pc, w), likely, link };
+    let b = |likely, link| Ctl::Branch {
+        target: branch_target(pc, w),
+        likely,
+        link,
+    };
     match op {
         0x00 => match funct {
             0x08 => Ctl::JumpReg { rs },
-            0x09 => Ctl::CallReg { rd: ((w >> 11) & 31) as u8, rs },
+            0x09 => Ctl::CallReg {
+                rd: ((w >> 11) & 31) as u8,
+                rs,
+            },
             0x0C => Ctl::Syscall,
             0x0D => Ctl::Stop,
             _ => Ctl::None,
@@ -89,8 +101,12 @@ fn classify(pc: u32, w: u32) -> Ctl {
             0x12 | 0x13 => b(true, true),
             _ => Ctl::None,
         },
-        0x02 => Ctl::Jump { target: (pc & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2) },
-        0x03 => Ctl::Call { target: (pc & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2) },
+        0x02 => Ctl::Jump {
+            target: (pc & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2),
+        },
+        0x03 => Ctl::Call {
+            target: (pc & 0xF000_0000) | ((w & 0x03FF_FFFF) << 2),
+        },
         0x04..=0x07 => b(false, false),
         0x14..=0x17 => b(true, false),
         0x10 => {
@@ -112,8 +128,20 @@ fn branch_cond(w: u32) -> String {
     let op = w >> 26;
     let rs = (w >> 21) & 31;
     let rt = (w >> 16) & 31;
-    let r = |n: u32| if n == 0 { "0u64".to_string() } else { format!("c.g[{n}][0]") };
-    let s = |n: u32| if n == 0 { "0i64".to_string() } else { format!("(c.g[{n}][0] as i64)") };
+    let r = |n: u32| {
+        if n == 0 {
+            "0u64".to_string()
+        } else {
+            format!("c.g[{n}][0]")
+        }
+    };
+    let s = |n: u32| {
+        if n == 0 {
+            "0i64".to_string()
+        } else {
+            format!("(c.g[{n}][0] as i64)")
+        }
+    };
     match op {
         0x04 | 0x14 => {
             if rs == rt {
@@ -193,9 +221,24 @@ pub fn lower(pc: u32, w: u32) -> Option<String> {
             0x03 => set(rd, format!("sx(({} as i32 >> {sa}) as u32)", r32(rt))),
             0x04 => set(rd, format!("sx({} << ({} & 31))", r32(rt), r32(rs))),
             0x06 => set(rd, format!("sx({} >> ({} & 31))", r32(rt), r32(rs))),
-            0x07 => set(rd, format!("sx(({} as i32 >> ({} & 31)) as u32)", r32(rt), r32(rs))),
-            0x0A => if rd == 0 { String::new() } else { format!("if {} == 0 {{ {} = {}; }}", r64(rt), reg(rd), r64(rs)) },
-            0x0B => if rd == 0 { String::new() } else { format!("if {} != 0 {{ {} = {}; }}", r64(rt), reg(rd), r64(rs)) },
+            0x07 => set(
+                rd,
+                format!("sx(({} as i32 >> ({} & 31)) as u32)", r32(rt), r32(rs)),
+            ),
+            0x0A => {
+                if rd == 0 {
+                    String::new()
+                } else {
+                    format!("if {} == 0 {{ {} = {}; }}", r64(rt), reg(rd), r64(rs))
+                }
+            }
+            0x0B => {
+                if rd == 0 {
+                    String::new()
+                } else {
+                    format!("if {} != 0 {{ {} = {}; }}", r64(rt), reg(rd), r64(rs))
+                }
+            }
             0x0F => String::new(), // sync
             0x10 => set(rd, "c.hi[0]".into()),
             0x11 => format!("c.hi[0] = {};", r64(rs)),
@@ -203,7 +246,10 @@ pub fn lower(pc: u32, w: u32) -> Option<String> {
             0x13 => format!("c.lo[0] = {};", r64(rs)),
             0x14 => set(rd, format!("{} << ({} & 63)", r64(rt), r64(rs))),
             0x16 => set(rd, format!("{} >> ({} & 63)", r64(rt), r64(rs))),
-            0x17 => set(rd, format!("(({} as i64) >> ({} & 63)) as u64", r64(rt), r64(rs))),
+            0x17 => set(
+                rd,
+                format!("(({} as i64) >> ({} & 63)) as u64", r64(rt), r64(rs)),
+            ),
             0x18 => format!("c.mult(0, {rd}, {rs}, {rt});"),
             0x19 => format!("c.multu(0, {rd}, {rs}, {rt});"),
             0x1A => format!("c.div(0, {rs}, {rt});"),
@@ -218,7 +264,10 @@ pub fn lower(pc: u32, w: u32) -> Option<String> {
             0x27 => set(rd, format!("!({} | {})", r64(rs), r64(rt))),
             0x28 => set(rd, "c.sa as u64".into()),
             0x29 => format!("c.sa = {} as u32;", r64(rs)),
-            0x2A => set(rd, format!("(({} as i64) < ({} as i64)) as u64", r64(rs), r64(rt))),
+            0x2A => set(
+                rd,
+                format!("(({} as i64) < ({} as i64)) as u64", r64(rs), r64(rt)),
+            ),
             0x2B => set(rd, format!("({} < {}) as u64", r64(rs), r64(rt))),
             0x2C | 0x2D if rt == 0 => set(rd, r64(rs)), // move
             0x2C | 0x2D if rs == 0 => set(rd, r64(rt)),
@@ -240,18 +289,30 @@ pub fn lower(pc: u32, w: u32) -> Option<String> {
             _ => return None,
         },
         0x08 | 0x09 if rs == 0 => set(rt, format!("{:#x}", simm as i64 as u64)), // li
-        0x08 | 0x09 => set(rt, format!("sx({}.wrapping_add({:#x}))", r32(rs), simm as i32 as u32)),
+        0x08 | 0x09 => set(
+            rt,
+            format!("sx({}.wrapping_add({:#x}))", r32(rs), simm as i32 as u32),
+        ),
         0x0A => set(rt, format!("(({} as i64) < {}i64) as u64", r64(rs), simm)),
-        0x0B => set(rt, format!("({} < {:#x}u64) as u64", r64(rs), simm as i64 as u64)),
+        0x0B => set(
+            rt,
+            format!("({} < {:#x}u64) as u64", r64(rs), simm as i64 as u64),
+        ),
         0x0C => set(rt, format!("{} & {:#x}", r64(rs), imm)),
         0x0D if rs == 0 => set(rt, format!("{:#x}", imm)),
         0x0D => set(rt, format!("{} | {:#x}", r64(rs), imm)),
         0x0E => set(rt, format!("{} ^ {:#x}", r64(rs), imm)),
-        0x0F => set(rt, format!("{:#x}", (((imm as u32) << 16) as i32 as i64) as u64)),
+        0x0F => set(
+            rt,
+            format!("{:#x}", (((imm as u32) << 16) as i32 as i64) as u64),
+        ),
         0x10 => lower_cop0(w, rs, rt, rd)?,
         0x11 => lower_cop1(w, rs, rt, rd, sa)?,
         0x12 => lower_cop2(w, rs, rt, rd)?,
-        0x18 | 0x19 => set(rt, format!("{}.wrapping_add({:#x})", r64(rs), simm as i64 as u64)),
+        0x18 | 0x19 => set(
+            rt,
+            format!("{}.wrapping_add({:#x})", r64(rs), simm as i64 as u64),
+        ),
         0x1A => format!("c.ldl({rt}, {});", ea(rs, simm)),
         0x1B => format!("c.ldr({rt}, {});", ea(rs, simm)),
         0x1C => lower_mmi(w, rs, rt, rd, sa)?,
@@ -517,12 +578,25 @@ pub struct Stats {
 }
 
 /// Emit one function. `shard` is the index of the crate it is emitted into.
-pub fn emit_function(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, out: &mut String) -> Stats {
+pub fn emit_function(
+    img: &dyn Image,
+    f: &Func,
+    shard: usize,
+    ctx: &Ctx,
+    out: &mut String,
+) -> Stats {
     emit_function_named(img, f, shard, ctx, out, &fn_name(f.start))
 }
 
 /// `emit_function` with an explicit Rust name (dispatch twins of structured functions).
-pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, out: &mut String, name: &str) -> Stats {
+pub fn emit_function_named(
+    img: &dyn Image,
+    f: &Func,
+    shard: usize,
+    ctx: &Ctx,
+    out: &mut String,
+    name: &str,
+) -> Stats {
     let mut st = Stats::default();
     // Instruction list in address order.
     let mut insns: Vec<(u32, u32)> = Vec::new();
@@ -535,7 +609,11 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
     }
     st.instructions = insns.len();
     let is_insn: BTreeSet<u32> = insns.iter().map(|(a, _)| *a).collect();
-    let index: BTreeMap<u32, usize> = insns.iter().enumerate().map(|(i, (a, _))| (*a, i)).collect();
+    let index: BTreeMap<u32, usize> = insns
+        .iter()
+        .enumerate()
+        .map(|(i, (a, _))| (*a, i))
+        .collect();
     let inside = |a: u32| a >= f.start && a < f.end && is_insn.contains(&a);
 
     // Labels.
@@ -550,7 +628,9 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
     // where its cycle charges split): structured (`structure.rs`) or this
     // emitter's dispatch form.
     let as_structured = ctx.structured.is_some_and(|s| s.contains(&f.start));
-    let has_switch = insns.iter().any(|&(pc, w)| matches!(classify(pc, w), Ctl::JumpReg { rs } if rs != 31));
+    let has_switch = insns
+        .iter()
+        .any(|&(pc, w)| matches!(classify(pc, w), Ctl::JumpReg { rs } if rs != 31));
     for &(pc, w) in &insns {
         match classify(pc, w) {
             Ctl::Branch { target, link, .. } => {
@@ -581,12 +661,22 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
     }
     // Data references: block starts of the structured form only as jump-table
     // targets (functions with a computed jump).
-    let refs: Vec<u32> = ctx.data_refs.range(f.start..f.end).copied().filter(|a| inside(*a)).collect();
+    let refs: Vec<u32> = ctx
+        .data_refs
+        .range(f.start..f.end)
+        .copied()
+        .filter(|a| inside(*a))
+        .collect();
     if !as_structured || has_switch {
         labels.extend(refs.iter().copied());
     }
     if !as_structured {
-        labels.extend(ctx.extra_labels.range(f.start..f.end).copied().filter(|a| inside(*a) && !cont_labels.contains(a)));
+        labels.extend(
+            ctx.extra_labels
+                .range(f.start..f.end)
+                .copied()
+                .filter(|a| inside(*a) && !cont_labels.contains(a)),
+        );
     }
     // Extra entries (resume points, entries from elsewhere) and other data
     // references of a structured function: labels its main body does not
@@ -625,7 +715,9 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
     let label_list: Vec<u32> = labels.iter().copied().collect();
     for (li, &l) in label_list.iter().enumerate() {
         let next_label = label_list.get(li + 1).copied();
-        let Some(&start_i) = index.get(&l) else { continue };
+        let Some(&start_i) = index.get(&l) else {
+            continue;
+        };
         let _ = writeln!(out, "            {l:#010x} => {{");
         let mut body = String::new();
         let mut count = 0usize;
@@ -675,7 +767,10 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                 continue;
             }
             // Control transfer: include the delay slot where applicable.
-            let delay = insns.get(i + 1).filter(|(a, _)| *a == pc + 4).map(|(_, dw)| *dw);
+            let delay = insns
+                .get(i + 1)
+                .filter(|(a, _)| *a == pc + 4)
+                .map(|(_, dw)| *dw);
             let delay_code = |st: &mut Stats| -> String {
                 match delay {
                     Some(dw) if classify(pc + 4, dw) == Ctl::None => match lower(pc + 4, dw) {
@@ -724,7 +819,8 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                         let ds = delay_code(&mut st);
                         let _ = writeln!(body, "                let t = c.g[{rs}][0] as u32;");
                         if rd != 0 {
-                            let _ = writeln!(body, "                c.g[{rd}][0] = sx({ret:#010x});");
+                            let _ =
+                                writeln!(body, "                c.g[{rd}][0] = sx({ret:#010x});");
                         }
                         if !ds.is_empty() {
                             let _ = writeln!(body, "                {ds}");
@@ -739,7 +835,10 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                             body,
                             "                c.pc = {ret:#010x}; c.syscall({pc:#010x}); if c.pc != {ret:#010x} {{ return; }}"
                         );
-                        let _ = writeln!(body, "                if c.cycles >= c.next_event {{ c.event(); }}");
+                        let _ = writeln!(
+                            body,
+                            "                if c.cycles >= c.next_event {{ c.event(); }}"
+                        );
                     }
                 }
                 if !inside(ret) {
@@ -751,11 +850,23 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                 continue;
             }
             match ctl {
-                Ctl::Branch { target, likely, link } => {
+                Ctl::Branch {
+                    target,
+                    likely,
+                    link,
+                } => {
                     let cond = branch_cond(w);
                     let ds = delay_code(&mut st);
-                    let link_s = if link { format!("c.g[31][0] = sx({:#010x});", pc + 8) } else { String::new() };
-                    let fall = if inside(pc + 8) { format!("pc = {:#010x}; continue;", pc + 8) } else { tail(pc + 8, shard, ctx) };
+                    let link_s = if link {
+                        format!("c.g[31][0] = sx({:#010x});", pc + 8)
+                    } else {
+                        String::new()
+                    };
+                    let fall = if inside(pc + 8) {
+                        format!("pc = {:#010x}; continue;", pc + 8)
+                    } else {
+                        tail(pc + 8, shard, ctx)
+                    };
                     let take = if link {
                         call_code(target, pc + 8, shard, ctx, &labels, f)
                     } else {
@@ -780,7 +891,11 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                     let ds = delay_code(&mut st);
                     let _ = writeln!(body, "                c.g[31][0] = sx({:#010x});", pc + 8);
                     let _ = writeln!(body, "                {ds}");
-                    let _ = writeln!(body, "                {}", call_code(target, pc + 8, shard, ctx, &labels, f));
+                    let _ = writeln!(
+                        body,
+                        "                {}",
+                        call_code(target, pc + 8, shard, ctx, &labels, f)
+                    );
                     if inside(pc + 8) {
                         cont_edge.insert(l, pc + 8);
                         let _ = writeln!(body, "                pc = {:#010x}; continue;", pc + 8);
@@ -803,7 +918,8 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                     let ds = delay_code(&mut st);
                     let _ = writeln!(body, "                let t = c.g[{rs}][0] as u32;");
                     if rd != 0 {
-                        let _ = writeln!(body, "                c.g[{rd}][0] = sx({:#010x});", pc + 8);
+                        let _ =
+                            writeln!(body, "                c.g[{rd}][0] = sx({:#010x});", pc + 8);
                     }
                     let _ = writeln!(body, "                {ds}");
                     let _ = writeln!(
@@ -840,7 +956,11 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
                     if (w >> 26) == 0x10 {
                         let _ = writeln!(body, "                c.pc = c.cop0[14]; return;");
                     } else {
-                        let _ = writeln!(body, "                c.brk({pc:#010x}, {}); return;", (w >> 6) & 0xFFFFF);
+                        let _ = writeln!(
+                            body,
+                            "                c.brk({pc:#010x}, {}); return;",
+                            (w >> 6) & 0xFFFFF
+                        );
                     }
                 }
                 Ctl::None => unreachable!(),
@@ -886,12 +1006,24 @@ pub fn emit_function_named(img: &dyn Image, f: &Func, shard: usize, ctx: &Ctx, o
             }
         }
     }
-    let entry = if entry.is_empty() { String::new() } else { format!("    match pc {{\n{entry}        _ => {{}}\n    }}\n") };
+    let entry = if entry.is_empty() {
+        String::new()
+    } else {
+        format!("    match pc {{\n{entry}        _ => {{}}\n    }}\n")
+    };
     text = text.replacen("@@ENTRY@@\n", &entry, 1);
     for (&l, &n) in &raw_count {
-        let charge = if pass.contains(&l) { 0 } else { n + cont_edge.get(&l).map_or(0, |&y| chain(y, &pass)) };
+        let charge = if pass.contains(&l) {
+            0
+        } else {
+            n + cont_edge.get(&l).map_or(0, |&y| chain(y, &pass))
+        };
         let ph = format!("                c.cycles += @@CYC{l:08x}@@;\n");
-        let rep = if charge == 0 { String::new() } else { format!("                c.cycles += {charge};\n") };
+        let rep = if charge == 0 {
+            String::new()
+        } else {
+            format!("                c.cycles += {charge};\n")
+        };
         text = text.replacen(&ph, &rep, 1);
     }
     out.push_str(&text);
@@ -916,9 +1048,7 @@ fn tail(target: u32, shard: usize, ctx: &Ctx) -> String {
     if ctx.threads {
         return format!("c.pc = {target:#010x}; {callee}; return;");
     }
-    format!(
-        "if !c.enter({target:#010x}) {{ return; }} {callee}; c.leave(); return;"
-    )
+    format!("if !c.enter({target:#010x}) {{ return; }} {callee}; c.leave(); return;")
 }
 
 fn direct_callee(target: u32, shard: usize, ctx: &Ctx) -> String {
@@ -932,7 +1062,14 @@ fn direct_callee(target: u32, shard: usize, ctx: &Ctx) -> String {
 }
 
 /// Code for a call to `target` returning to `ret`.
-fn call_code(target: u32, ret: u32, shard: usize, ctx: &Ctx, _labels: &BTreeSet<u32>, _f: &Func) -> String {
+fn call_code(
+    target: u32,
+    ret: u32,
+    shard: usize,
+    ctx: &Ctx,
+    _labels: &BTreeSet<u32>,
+    _f: &Func,
+) -> String {
     let callee = direct_callee(target, shard, ctx);
     if ctx.threads {
         return format!("c.pc = {target:#010x}; {callee}; if c.pc != {ret:#010x} {{ return; }}");
@@ -1084,8 +1221,9 @@ pub fn tail_pub(target: u32, shard: usize, ctx: &Ctx) -> String {
 }
 
 const ABI: [&str; 32] = [
-    "ZERO", "AT", "V0", "V1", "A0", "A1", "A2", "A3", "T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7",
-    "S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "T8", "T9", "K0", "K1", "GP", "SP", "FP", "RA",
+    "ZERO", "AT", "V0", "V1", "A0", "A1", "A2", "A3", "T0", "T1", "T2", "T3", "T4", "T5", "T6",
+    "T7", "S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "T8", "T9", "K0", "K1", "GP", "SP", "FP",
+    "RA",
 ];
 
 /// Readability pass over emitted code: `c.g[29]` → `c.g[SP]`, and

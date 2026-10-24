@@ -36,45 +36,432 @@ pub fn install() -> bool {
         return false;
     }
     for (a, f, name) in [
-        (DRAW_TRI_STRIP, (|c: &mut Cpu| crate::packetless::dispatch(c, "DrawTriStrip", 1, crate::packetless::draw_tri_strip, draw_tri_strip)) as fn(&mut Cpu), "PS2GraphicsMan_DrawTriStrip"),
-        (EMIT_BOARD_WAKE_STRIPS, emit_board_wake_strips, "PS2GraphicsMan_EmitBoardWakeStrips"),
-        (EMIT_SHADOW_STRIPS, emit_shadow_strips, "PS2GraphicsMan_EmitShadowStrips"),
-        (BEGIN_TRI_STRIP, |c: &mut Cpu| crate::packetless::dispatch_with(c, "BeginTriStrip", 0, &[0x5a28, 0x5a2c], crate::packetless::begin_tri_strip, begin_tri_strip), "PS2GraphicsMan_BeginTriStrip"),
-        (END_TRI_STRIP, |c: &mut Cpu| crate::packetless::dispatch_with(c, "EndTriStrip", 1, &[0x5a28, 0x5a2c], crate::packetless::end_tri_strip, end_tri_strip), "PS2GraphicsMan_EndTriStrip"),
-        (DRAW_EMITTER, |c: &mut Cpu| crate::packetless::dispatch(c, "DrawEmitter", 8, crate::packetless::draw_emitter, draw_emitter), "PS2GraphicsMan_DrawEmitter"),
-        (DRAW_DYNAMIC_EMITTER, |c: &mut Cpu| crate::packetless::dispatch(c, "DrawDynamicEmitter", 8, crate::packetless::draw_dynamic_emitter, draw_dynamic_emitter), "PS2GraphicsMan_DrawDynamicEmitter"),
-        (DRAW_M_EMITTER, |c: &mut Cpu| crate::packetless::dispatch(c, "DrawMEmitter", 8, crate::packetless::draw_m_emitter, draw_m_emitter), "PS2GraphicsMan_DrawMEmitter"),
-        (DRAW_TRAIL, |c: &mut Cpu| crate::packetless::dispatch(c, "DrawTrail", 8, crate::packetless::draw_trail, draw_trail), "PS2GraphicsMan_DrawTrail"),
-        (DRAW_TRAIL_B, |c: &mut Cpu| crate::packetless::dispatch(c, "DrawTrailB", 8, crate::packetless::draw_trail_b, draw_trail_b), "PS2GraphicsMan_DrawTrailB"),
-        (DRAW_PATCH_FX, |c: &mut Cpu| crate::packetless::dispatch_patch_fx(c, draw_patch_fx), "PS2BezierMan_DrawPatchFX"),
-        (DRAW_MODEL, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawModel", crate::packetless::draw_model, draw_model), "PS2GraphicsMan_DrawModel"),
-        (DRAW_SKINNED_MODEL, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawSkinnedModel", crate::packetless::draw_skinned_model, draw_skinned_model), "PS2GraphicsMan_DrawSkinnedModel"),
-        (BEZIER_END_PASS, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "BezierEndPass", crate::packetless::bezier_end_pass, bezier_end_pass), "PS2BezierMan_v18"),
-        (0x0036_ac00, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "RenderDepthFog", crate::packetless::render_depth_fog, render_depth_fog), "PS2GraphicsMan_RenderDepthFog"),
-        (0x0036_c790, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "RenderBloom", crate::packetless::render_bloom, render_bloom), "PS2GraphicsMan_RenderBloom"),
-        (0x0039_04a0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "RenderColorFilter", crate::packetless::render_color_filter, render_color_filter), "PS2GraphicsMan_RenderColorFilter"),
-        (0x0039_6b40, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "EmitLightingPacket", crate::packetless::emit_lighting_packet, emit_lighting_packet), "PS2GraphicsMan_EmitLightingPacket"),
-        (0x0037_ba50, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "SetShadowHeader", crate::packetless::set_shadow_header, set_shadow_header), "PS2GraphicsMan_SetShadowHeader"),
-        (DEFER_MAN_APPEND_PACKET, append_packet, "DeferMan_AppendPacket"),
-        (DRAW_SKINNED_MODEL_SHADOW, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawSkinnedModelShadow", crate::packetless::draw_skinned_model_shadow, draw_skinned_model_shadow), "PS2GraphicsMan_DrawSkinnedModelShadow"),
-        (0x0037_d348, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "SetRenderTargetTexture", crate::packetless::set_render_target_texture, capture_setrendertargettexture), "SetRenderTargetTexture"),
-        (0x0037_d450, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "RestoreRenderTarget", crate::packetless::restore_render_target, capture_restorerendertarget), "RestoreRenderTarget"),
-        (0x0037_d800, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "FillRenderTarget", crate::packetless::fill_render_target, capture_fillrendertarget), "FillRenderTarget"),
-        (0x0037_cc98, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawTransition", crate::packetless::draw_transition, capture_drawtransition), "DrawTransition"),
-        (0x0037_9bd0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawIndexedTriangles", crate::packetless::draw_indexed_triangles, capture_drawindexedtriangles), "DrawIndexedTriangles"),
-        (0x0038_1ad0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawLineStrip", crate::packetless::draw_line_strip, capture_drawlinestrip), "DrawLineStrip"),
-        (0x0038_1f10, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawLineShape", crate::packetless::draw_line_shape, capture_drawlineshape), "DrawLineShape"),
-        (0x0037_7cf0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawSprite3D", crate::packetless::draw_sprite_3d, capture_drawsprite3d), "DrawSprite3D"),
-        (0x0037_81a0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawRotatedSprites", crate::packetless::draw_rotated_sprites, capture_drawrotatedsprites), "DrawRotatedSprites"),
-        (0x0037_8808, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawGlyphs", crate::packetless::draw_glyphs, capture_drawglyphs), "DrawGlyphs"),
-        (0x0037_9028, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawGlyphsW", crate::packetless::draw_glyphs_w, capture_drawglyphsw), "DrawGlyphsW"),
-        (0x0038_6e78, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawShadowVolume", crate::packetless::draw_shadow_volume, capture_drawshadowvolume), "DrawShadowVolume"),
-        (0x0038_83b8, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "DrawBoardWake", crate::packetless::draw_board_wake, capture_drawboardwake), "DrawBoardWake"),
-        (0x002d_c7b0, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "FogParticles", crate::packetless::fog_particles, capture_fogparticleman_drawparticles), "FogParticleMan_DrawParticles"),
-        (0x0036_3490, |c: &mut Cpu| crate::packetless::dispatch_render_frame(c, ssx3_ee::s12::f_00363490__generated), "PS2GraphicsMan_RenderFrame"),
-        (GRID_MESH_DRAW, |c: &mut Cpu| crate::packetless::dispatch_ram(c, "GridMeshDraw", crate::packetless::grid_mesh_draw, grid_mesh_draw), "cPS2GridMesh_Draw"),
+        (
+            DRAW_TRI_STRIP,
+            (|c: &mut Cpu| {
+                crate::packetless::dispatch(
+                    c,
+                    "DrawTriStrip",
+                    1,
+                    crate::packetless::draw_tri_strip,
+                    draw_tri_strip,
+                )
+            }) as fn(&mut Cpu),
+            "PS2GraphicsMan_DrawTriStrip",
+        ),
+        (
+            EMIT_BOARD_WAKE_STRIPS,
+            emit_board_wake_strips,
+            "PS2GraphicsMan_EmitBoardWakeStrips",
+        ),
+        (
+            EMIT_SHADOW_STRIPS,
+            emit_shadow_strips,
+            "PS2GraphicsMan_EmitShadowStrips",
+        ),
+        (
+            BEGIN_TRI_STRIP,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_with(
+                    c,
+                    "BeginTriStrip",
+                    0,
+                    &[0x5a28, 0x5a2c],
+                    crate::packetless::begin_tri_strip,
+                    begin_tri_strip,
+                )
+            },
+            "PS2GraphicsMan_BeginTriStrip",
+        ),
+        (
+            END_TRI_STRIP,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_with(
+                    c,
+                    "EndTriStrip",
+                    1,
+                    &[0x5a28, 0x5a2c],
+                    crate::packetless::end_tri_strip,
+                    end_tri_strip,
+                )
+            },
+            "PS2GraphicsMan_EndTriStrip",
+        ),
+        (
+            DRAW_EMITTER,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch(
+                    c,
+                    "DrawEmitter",
+                    8,
+                    crate::packetless::draw_emitter,
+                    draw_emitter,
+                )
+            },
+            "PS2GraphicsMan_DrawEmitter",
+        ),
+        (
+            DRAW_DYNAMIC_EMITTER,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch(
+                    c,
+                    "DrawDynamicEmitter",
+                    8,
+                    crate::packetless::draw_dynamic_emitter,
+                    draw_dynamic_emitter,
+                )
+            },
+            "PS2GraphicsMan_DrawDynamicEmitter",
+        ),
+        (
+            DRAW_M_EMITTER,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch(
+                    c,
+                    "DrawMEmitter",
+                    8,
+                    crate::packetless::draw_m_emitter,
+                    draw_m_emitter,
+                )
+            },
+            "PS2GraphicsMan_DrawMEmitter",
+        ),
+        (
+            DRAW_TRAIL,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch(
+                    c,
+                    "DrawTrail",
+                    8,
+                    crate::packetless::draw_trail,
+                    draw_trail,
+                )
+            },
+            "PS2GraphicsMan_DrawTrail",
+        ),
+        (
+            DRAW_TRAIL_B,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch(
+                    c,
+                    "DrawTrailB",
+                    8,
+                    crate::packetless::draw_trail_b,
+                    draw_trail_b,
+                )
+            },
+            "PS2GraphicsMan_DrawTrailB",
+        ),
+        (
+            DRAW_PATCH_FX,
+            |c: &mut Cpu| crate::packetless::dispatch_patch_fx(c, draw_patch_fx),
+            "PS2BezierMan_DrawPatchFX",
+        ),
+        (
+            DRAW_MODEL,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawModel",
+                    crate::packetless::draw_model,
+                    draw_model,
+                )
+            },
+            "PS2GraphicsMan_DrawModel",
+        ),
+        (
+            DRAW_SKINNED_MODEL,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawSkinnedModel",
+                    crate::packetless::draw_skinned_model,
+                    draw_skinned_model,
+                )
+            },
+            "PS2GraphicsMan_DrawSkinnedModel",
+        ),
+        (
+            BEZIER_END_PASS,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "BezierEndPass",
+                    crate::packetless::bezier_end_pass,
+                    bezier_end_pass,
+                )
+            },
+            "PS2BezierMan_v18",
+        ),
+        (
+            0x0036_ac00,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "RenderDepthFog",
+                    crate::packetless::render_depth_fog,
+                    render_depth_fog,
+                )
+            },
+            "PS2GraphicsMan_RenderDepthFog",
+        ),
+        (
+            0x0036_c790,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "RenderBloom",
+                    crate::packetless::render_bloom,
+                    render_bloom,
+                )
+            },
+            "PS2GraphicsMan_RenderBloom",
+        ),
+        (
+            0x0039_04a0,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "RenderColorFilter",
+                    crate::packetless::render_color_filter,
+                    render_color_filter,
+                )
+            },
+            "PS2GraphicsMan_RenderColorFilter",
+        ),
+        (
+            0x0039_6b40,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "EmitLightingPacket",
+                    crate::packetless::emit_lighting_packet,
+                    emit_lighting_packet,
+                )
+            },
+            "PS2GraphicsMan_EmitLightingPacket",
+        ),
+        (
+            0x0037_ba50,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "SetShadowHeader",
+                    crate::packetless::set_shadow_header,
+                    set_shadow_header,
+                )
+            },
+            "PS2GraphicsMan_SetShadowHeader",
+        ),
+        (
+            DEFER_MAN_APPEND_PACKET,
+            append_packet,
+            "DeferMan_AppendPacket",
+        ),
+        (
+            DRAW_SKINNED_MODEL_SHADOW,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawSkinnedModelShadow",
+                    crate::packetless::draw_skinned_model_shadow,
+                    draw_skinned_model_shadow,
+                )
+            },
+            "PS2GraphicsMan_DrawSkinnedModelShadow",
+        ),
+        (
+            0x0037_d348,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "SetRenderTargetTexture",
+                    crate::packetless::set_render_target_texture,
+                    capture_setrendertargettexture,
+                )
+            },
+            "SetRenderTargetTexture",
+        ),
+        (
+            0x0037_d450,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "RestoreRenderTarget",
+                    crate::packetless::restore_render_target,
+                    capture_restorerendertarget,
+                )
+            },
+            "RestoreRenderTarget",
+        ),
+        (
+            0x0037_d800,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "FillRenderTarget",
+                    crate::packetless::fill_render_target,
+                    capture_fillrendertarget,
+                )
+            },
+            "FillRenderTarget",
+        ),
+        (
+            0x0037_cc98,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawTransition",
+                    crate::packetless::draw_transition,
+                    capture_drawtransition,
+                )
+            },
+            "DrawTransition",
+        ),
+        (
+            0x0037_9bd0,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawIndexedTriangles",
+                    crate::packetless::draw_indexed_triangles,
+                    capture_drawindexedtriangles,
+                )
+            },
+            "DrawIndexedTriangles",
+        ),
+        (
+            0x0038_1ad0,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawLineStrip",
+                    crate::packetless::draw_line_strip,
+                    capture_drawlinestrip,
+                )
+            },
+            "DrawLineStrip",
+        ),
+        (
+            0x0038_1f10,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawLineShape",
+                    crate::packetless::draw_line_shape,
+                    capture_drawlineshape,
+                )
+            },
+            "DrawLineShape",
+        ),
+        (
+            0x0037_7cf0,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawSprite3D",
+                    crate::packetless::draw_sprite_3d,
+                    capture_drawsprite3d,
+                )
+            },
+            "DrawSprite3D",
+        ),
+        (
+            0x0037_81a0,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawRotatedSprites",
+                    crate::packetless::draw_rotated_sprites,
+                    capture_drawrotatedsprites,
+                )
+            },
+            "DrawRotatedSprites",
+        ),
+        (
+            0x0037_8808,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawGlyphs",
+                    crate::packetless::draw_glyphs,
+                    capture_drawglyphs,
+                )
+            },
+            "DrawGlyphs",
+        ),
+        (
+            0x0037_9028,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawGlyphsW",
+                    crate::packetless::draw_glyphs_w,
+                    capture_drawglyphsw,
+                )
+            },
+            "DrawGlyphsW",
+        ),
+        (
+            0x0038_6e78,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawShadowVolume",
+                    crate::packetless::draw_shadow_volume,
+                    capture_drawshadowvolume,
+                )
+            },
+            "DrawShadowVolume",
+        ),
+        (
+            0x0038_83b8,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "DrawBoardWake",
+                    crate::packetless::draw_board_wake,
+                    capture_drawboardwake,
+                )
+            },
+            "DrawBoardWake",
+        ),
+        (
+            0x002d_c7b0,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "FogParticles",
+                    crate::packetless::fog_particles,
+                    capture_fogparticleman_drawparticles,
+                )
+            },
+            "FogParticleMan_DrawParticles",
+        ),
+        (
+            0x0036_3490,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_render_frame(c, ssx3_ee::s12::f_00363490__generated)
+            },
+            "PS2GraphicsMan_RenderFrame",
+        ),
+        (
+            GRID_MESH_DRAW,
+            |c: &mut Cpu| {
+                crate::packetless::dispatch_ram(
+                    c,
+                    "GridMeshDraw",
+                    crate::packetless::grid_mesh_draw,
+                    grid_mesh_draw,
+                )
+            },
+            "cPS2GridMesh_Draw",
+        ),
     ] {
-        assert!(ssx3_ee::set_override(a, f), "no override slot for {name}: list it in overrides.txt");
+        assert!(
+            ssx3_ee::set_override(a, f),
+            "no override slot for {name}: list it in overrides.txt"
+        );
     }
     true
 }
@@ -83,7 +470,9 @@ fn qword(c: &mut Cpu, a: u32) -> u128 {
     if a & 15 == 0 {
         return c.bus.read128(a);
     }
-    (0..4).fold(0u128, |q, l| q | (c.bus.read32(a + 4 * l) as u128) << (32 * l))
+    (0..4).fold(0u128, |q, l| {
+        q | (c.bus.read32(a + 4 * l) as u128) << (32 * l)
+    })
 }
 
 /// `PS2GraphicsMan_DrawTriStrip(gm, n, verts)` (slot 71, 0x379860): n
@@ -92,24 +481,41 @@ fn draw_tri_strip(c: &mut Cpu) {
     let ret = c.g[RA][0] as u32;
     let (gm, n, verts) = (c.g[A0][0] as u32, c.g[A1][0] as i64, c.g[A2][0] as u32);
     let pre = direct::active().then(|| {
-        let entry = if c.bus.read32(c.g[GP][0] as u32 + 0x1290) == 0 { 0x12b8 } else { 0x12b0 };
+        let entry = if c.bus.read32(c.g[GP][0] as u32 + 0x1290) == 0 {
+            0x12b8
+        } else {
+            0x12b0
+        };
         let state = c.bus.read32(gm + 0xe84);
-        let prim = if (c.bus.read32(state + 0x10) as u16 as i16) < 0 { 0x4c } else { 0x5c };
+        let prim = if (c.bus.read32(state + 0x10) as u16 as i16) < 0 {
+            0x4c
+        } else {
+            0x5c
+        };
         let start = c.bus.read32(gm + 0x5a00);
         let n = n.max(0) as u32;
-        let v: Vec<[u128; 3]> = (0..if n > 2 { n } else { 0 }).map(|i| std::array::from_fn(|k| qword(c, verts + 48 * i + 16 * k as u32))).collect();
+        let v: Vec<[u128; 3]> = (0..if n > 2 { n } else { 0 })
+            .map(|i| std::array::from_fn(|k| qword(c, verts + 48 * i + 16 * k as u32)))
+            .collect();
         (entry, prim, start, v)
     });
     ssx3_ee::s12::f_00379860__generated(c);
     // (Not when the body unwound: the packet takes the decoding path.)
-    let Some((entry, prim, start, verts)) = pre.filter(|p| c.pc == ret && !p.3.is_empty()) else { return };
+    let Some((entry, prim, start, verts)) = pre.filter(|p| c.pc == ret && !p.3.is_empty()) else {
+        return;
+    };
     // The packet's first DMA tag: CNT over the first batch (tag, count,
     // 3 qwords per vertex, the MSCAL qword), VIF NOPs; built in the
     // scratchpad, so not read back from RAM here.
     let k = verts.len().min(STRIP_BATCH) as u128;
     let first_tag = (3 * k + 4) | 0x1000_0000;
     let end = c.bus.read32(gm + 0x5a00).wrapping_sub(0x10);
-    direct::record(Recorded { start, end, first_tag, cmd: Cmd::Strip { entry, prim, verts } });
+    direct::record(Recorded {
+        start,
+        end,
+        first_tag,
+        cmd: Cmd::Strip { entry, prim, verts },
+    });
 }
 
 /// A ribbon emitter's packet as VU1 input, per program start: (offset from
@@ -125,7 +531,12 @@ pub(crate) struct RibbonInput {
 
 impl RibbonInput {
     fn new() -> Self {
-        Self { calls: Vec::new(), cur: Vec::new(), segs: Vec::new(), seg_cur: Vec::new() }
+        Self {
+            calls: Vec::new(),
+            cur: Vec::new(),
+            segs: Vec::new(),
+            seg_cur: Vec::new(),
+        }
     }
     /// `n` vertices (3 qwords each) from guest memory at `src`, unpacked at
     /// offset `at`; `None` for a count the packet could not have.
@@ -166,7 +577,11 @@ impl RibbonInput {
         for call in self.segs {
             for (at, data) in call {
                 out.push(Step::Cycle(0x0101));
-                out.push(Step::Write { addr: at, rel: true, data });
+                out.push(Step::Write {
+                    addr: at,
+                    rel: true,
+                    data,
+                });
             }
             out.push(Step::Start(entry));
         }
@@ -176,7 +591,11 @@ impl RibbonInput {
 /// The emitters' entry: 0x3a08, or 0x3a00 once after the flag at
 /// `gp + flag` was set (the body clears it).
 pub(crate) fn ribbon_entry(c: &mut Cpu, flag: u32) -> u32 {
-    if c.bus.read32(c.g[GP][0] as u32 + flag) == 0 { 0x3a08 } else { 0x3a00 }
+    if c.bus.read32(c.g[GP][0] as u32 + flag) == 0 {
+        0x3a08
+    } else {
+        0x3a00
+    }
 }
 
 /// Run a ribbon emitter's body and record its segment of the packet.
@@ -185,9 +604,19 @@ fn capture_ribbon(c: &mut Cpu, body: fn(&mut Cpu), input: Option<(u32, RibbonInp
     let gm = c.g[A0][0] as u32;
     let start = c.bus.read32(gm + 0x5a00);
     body(c);
-    let Some((entry, input)) = input.filter(|(_, i)| c.pc == ret && !i.calls.is_empty()) else { return };
+    let Some((entry, input)) = input.filter(|(_, i)| c.pc == ret && !i.calls.is_empty()) else {
+        return;
+    };
     let end = c.bus.read32(gm + 0x5a00);
-    direct::record(Recorded { start, end, first_tag: 0x1000_0003, cmd: Cmd::Ribbon { entry, calls: input.calls } });
+    direct::record(Recorded {
+        start,
+        end,
+        first_tag: 0x1000_0003,
+        cmd: Cmd::Ribbon {
+            entry,
+            calls: input.calls,
+        },
+    });
 }
 
 /// `PS2GraphicsMan_EmitBoardWakeStrips(f12 alpha, f13 step, gm, rings,
@@ -197,7 +626,14 @@ fn emit_board_wake_strips(c: &mut Cpu) {
         .then(|| {
             let entry = ribbon_entry(c, 0x12c0);
             let g = |r: usize| c.g[r][0] as u32;
-            let args = (g(A1), g(A2) as i32, g(A3) as i32, g(T0) as i32, g(T1), g(T2));
+            let args = (
+                g(A1),
+                g(A2) as i32,
+                g(A3) as i32,
+                g(T0) as i32,
+                g(T1),
+                g(T2),
+            );
             board_wake_input(c, entry, FpuF32(c.f[12]), FpuF32(c.f[13]), args)
         })
         .flatten();
@@ -206,7 +642,13 @@ fn emit_board_wake_strips(c: &mut Cpu) {
 
 /// EmitBoardWakeStrips' input: (rings, first, ring size, count, ring A,
 /// ring B) its arguments.
-pub(crate) fn board_wake_input(c: &mut Cpu, entry: u32, alpha: FpuF32, step: FpuF32, args: (u32, i32, i32, i32, u32, u32)) -> Option<(u32, RibbonInput)> {
+pub(crate) fn board_wake_input(
+    c: &mut Cpu,
+    entry: u32,
+    alpha: FpuF32,
+    step: FpuF32,
+    args: (u32, i32, i32, i32, u32, u32),
+) -> Option<(u32, RibbonInput)> {
     let mut alpha = alpha;
     let (rings, mut p5, p6, mut p7, ia, ib) = args;
     let ring_a = c.bus.read32(rings.wrapping_add(4 * ia));
@@ -271,12 +713,22 @@ fn emit_shadow_strips(c: &mut Cpu) {
 
 /// EmitShadowStrips' input: (rings, first, count, ring A, ring B,
 /// textured) its arguments.
-pub(crate) fn shadow_input(c: &mut Cpu, entry: u32, alpha: FpuF32, step: FpuF32, args: (u32, i32, i32, u32, u32, bool)) -> Option<(u32, RibbonInput)> {
+pub(crate) fn shadow_input(
+    c: &mut Cpu,
+    entry: u32,
+    alpha: FpuF32,
+    step: FpuF32,
+    args: (u32, i32, i32, u32, u32, bool),
+) -> Option<(u32, RibbonInput)> {
     let mut alpha = alpha;
     let (rings, mut p5, mut p6, ia, ib, textured) = args;
     let ring_a = c.bus.read32(rings.wrapping_add(4 * ia));
     let ring_b = c.bus.read32(rings.wrapping_add(4 * ib));
-    let (prim, regs) = if !textured { (4u64, 0x41f) } else { (0x5c, 0x412) };
+    let (prim, regs) = if !textured {
+        (4u64, 0x41f)
+    } else {
+        (0x5c, 0x412)
+    };
     let tag_lo = 0x8000 | prim << 47 | 1 << 46 | 3 << 60;
     // The closing pair's default (a game global, -1/-1 when unused).
     let default_pair = c.bus.read32(0x004a_43a8) as u64 | (c.bus.read32(0x004a_43ac) as u64) << 32;
@@ -290,7 +742,8 @@ pub(crate) fn shadow_input(c: &mut Cpu, entry: u32, alpha: FpuF32, step: FpuF32,
         let mut i12 = (n - l14).max(0);
         let mut pair = default_pair;
         if p6 <= n {
-            pair = (((p5 + n - 1) % 0x36) as u32 as u64) << 32 | ((p5 + n - 2) % 0x36) as u32 as u64;
+            pair =
+                (((p5 + n - 1) % 0x36) as u32 as u64) << 32 | ((p5 + n - 2) % 0x36) as u32 as u64;
             if i12 < 2 {
                 l14 = l14 - 2 + i12;
                 i12 = 0;
@@ -310,8 +763,18 @@ pub(crate) fn shadow_input(c: &mut Cpu, entry: u32, alpha: FpuF32, step: FpuF32,
                 at += 3 * i12 as u32;
             }
             if pair as i32 >= 0 {
-                r.verts(c, at, ring.wrapping_add((pair as u32).wrapping_mul(0x30)), 1)?;
-                r.verts_join(c, at + 3, ring.wrapping_add(((pair >> 32) as u32).wrapping_mul(0x30)), 1)?;
+                r.verts(
+                    c,
+                    at,
+                    ring.wrapping_add((pair as u32).wrapping_mul(0x30)),
+                    1,
+                )?;
+                r.verts_join(
+                    c,
+                    at + 3,
+                    ring.wrapping_add(((pair >> 32) as u32).wrapping_mul(0x30)),
+                    1,
+                )?;
                 at += 6;
             }
         }
@@ -328,7 +791,8 @@ pub(crate) fn shadow_input(c: &mut Cpu, entry: u32, alpha: FpuF32, step: FpuF32,
 
 /// A strip begun with `BeginTriStrip`: entry, PRIM, packet start, vertex
 /// count, where the caller writes the vertices (scratchpad).
-static OPEN_STRIP: std::sync::Mutex<Option<(u32, u32, u32, u32, u32)>> = std::sync::Mutex::new(None);
+static OPEN_STRIP: std::sync::Mutex<Option<(u32, u32, u32, u32, u32)>> =
+    std::sync::Mutex::new(None);
 
 /// `PS2GraphicsMan_BeginTriStrip(gm, n)` (0x37a260): one strip of `n`
 /// vertices in a scratchpad block; the caller writes the vertices at
@@ -337,16 +801,26 @@ fn begin_tri_strip(c: &mut Cpu) {
     let ret = c.g[RA][0] as u32;
     let (gm, n) = (c.g[A0][0] as u32, c.g[A1][0] as i64);
     let pre = direct::active().then(|| {
-        let entry = if c.bus.read32(c.g[GP][0] as u32 + 0x1290) == 0 { 0x12b8 } else { 0x12b0 };
+        let entry = if c.bus.read32(c.g[GP][0] as u32 + 0x1290) == 0 {
+            0x12b8
+        } else {
+            0x12b0
+        };
         let state = c.bus.read32(gm + 0xe84);
-        let prim = if (c.bus.read32(state + 0x10) as u16 as i16) < 0 { 0x4c } else { 0x5c };
+        let prim = if (c.bus.read32(state + 0x10) as u16 as i16) < 0 {
+            0x4c
+        } else {
+            0x5c
+        };
         (entry, prim, c.bus.read32(gm + 0x5a00))
     });
     ssx3_ee::s12::f_0037a260__generated(c);
     let mut open = OPEN_STRIP.lock().unwrap();
     *open = None;
     // (One batch: the strip program takes at most 72 vertices.)
-    if let Some((entry, prim, start)) = pre.filter(|_| c.pc == ret && (3..=STRIP_BATCH as i64).contains(&n)) {
+    if let Some((entry, prim, start)) =
+        pre.filter(|_| c.pc == ret && (3..=STRIP_BATCH as i64).contains(&n))
+    {
         let n = n as u32;
         let verts = c.bus.read32(gm + 0x5a2c).wrapping_sub(0x10 + 0x30 * n);
         *open = Some((entry, prim, start, n, verts));
@@ -359,14 +833,23 @@ fn end_tri_strip(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
     let open = OPEN_STRIP.lock().unwrap().take();
     let pre = open.map(|(entry, prim, start, n, at)| {
-        let verts: Vec<[u128; 3]> = (0..n).map(|i| std::array::from_fn(|k| qword(c, at + 48 * i + 16 * k as u32))).collect();
+        let verts: Vec<[u128; 3]> = (0..n)
+            .map(|i| std::array::from_fn(|k| qword(c, at + 48 * i + 16 * k as u32)))
+            .collect();
         (entry, prim, start, verts)
     });
     ssx3_ee::s12::f_0037a430__generated(c);
-    let Some((entry, prim, start, verts)) = pre.filter(|_| c.pc == ret) else { return };
+    let Some((entry, prim, start, verts)) = pre.filter(|_| c.pc == ret) else {
+        return;
+    };
     let first_tag = (3 * verts.len() as u128 + 4) | 0x1000_0000;
     let end = c.bus.read32(gm + 0x5a00).wrapping_sub(0x10);
-    direct::record(Recorded { start, end, first_tag, cmd: Cmd::Strip { entry, prim, verts } });
+    direct::record(Recorded {
+        start,
+        end,
+        first_tag,
+        cmd: Cmd::Strip { entry, prim, verts },
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -484,12 +967,22 @@ fn capture_records(c: &mut Cpu, body: fn(&mut Cpu), gm: u32) {
         // (A packet the reader does not take stays on the decoding path.)
         let Some(steps) = read_range(c, start, end) else {
             if debug() {
-                let tags: Vec<String> = (0..6).map(|k| format!("{:x}", qword(c, start + 16 * k) as u64)).collect();
-                eprintln!("[capture] packet {start:#x}..{end:#x} not read: {}", tags.join(" "));
+                let tags: Vec<String> = (0..6)
+                    .map(|k| format!("{:x}", qword(c, start + 16 * k) as u64))
+                    .collect();
+                eprintln!(
+                    "[capture] packet {start:#x}..{end:#x} not read: {}",
+                    tags.join(" ")
+                );
             }
             continue;
         };
-        out.push(Recorded { start, end, first_tag: qword(c, start), cmd: Cmd::Vu(steps) });
+        out.push(Recorded {
+            start,
+            end,
+            first_tag: qword(c, start),
+            cmd: Cmd::Vu(steps),
+        });
     }
     for r in out {
         direct::record(r);
@@ -519,7 +1012,11 @@ fn parse_codes(words: &[u32], steps: &mut Vec<Step>) -> Option<()> {
                 let n = if imm == 0 { 65536 } else { imm as usize };
                 let d = words.get(p..p + 4 * n)?;
                 p += 4 * n;
-                steps.push(Step::Gif(d.chunks_exact(4).map(|w| (0..4).fold(0u128, |q, l| q | (w[l] as u128) << (32 * l))).collect()));
+                steps.push(Step::Gif(
+                    d.chunks_exact(4)
+                        .map(|w| (0..4).fold(0u128, |q, l| q | (w[l] as u128) << (32 * l)))
+                        .collect(),
+                ));
             }
             _ if op & 0x60 == 0x60 && op & 0x10 == 0 => {
                 let (vn, vl, usn) = ((cmd >> 26) & 3, (cmd >> 24) & 3, (cmd >> 14) & 1 != 0);
@@ -531,7 +1028,11 @@ fn parse_codes(words: &[u32], steps: &mut Vec<Step>) -> Option<()> {
                 if vl == 3 && vn != 3 {
                     return None;
                 }
-                let (elems, bits) = if vl == 3 { (1, 16) } else { (vn as usize + 1, 32 >> vl) };
+                let (elems, bits) = if vl == 3 {
+                    (1, 16)
+                } else {
+                    (vn as usize + 1, 32 >> vl)
+                };
                 let n_words = (num * elems * bits).div_ceil(32);
                 let d = words.get(p..p + n_words)?;
                 p += n_words;
@@ -552,7 +1053,12 @@ fn parse_codes(words: &[u32], steps: &mut Vec<Step>) -> Option<()> {
                     match (vl, elems) {
                         (3, _) => {
                             let c = e(0);
-                            [(c & 0x1f) << 3, ((c >> 5) & 0x1f) << 3, ((c >> 10) & 0x1f) << 3, ((c >> 15) & 1) << 7]
+                            [
+                                (c & 0x1f) << 3,
+                                ((c >> 5) & 0x1f) << 3,
+                                ((c >> 10) & 0x1f) << 3,
+                                ((c >> 15) & 1) << 7,
+                            ]
                         }
                         (_, 1) => [e(0); 4],
                         (_, 2) => [e(0), e(1), e(0), e(1)],
@@ -560,15 +1066,30 @@ fn parse_codes(words: &[u32], steps: &mut Vec<Step>) -> Option<()> {
                         _ => [e(0), e(1), e(2), e(3)],
                     }
                 };
-                let data = (0..num).map(|i| vector(i).iter().enumerate().fold(0u128, |q, (l, &x)| q | (x as u128) << (32 * l))).collect();
-                steps.push(Step::Write { addr: (cmd & 0x3ff) as u16, rel: (cmd >> 15) & 1 != 0, data });
+                let data = (0..num)
+                    .map(|i| {
+                        vector(i)
+                            .iter()
+                            .enumerate()
+                            .fold(0u128, |q, (l, &x)| q | (x as u128) << (32 * l))
+                    })
+                    .collect();
+                steps.push(Step::Write {
+                    addr: (cmd & 0x3ff) as u16,
+                    rel: (cmd >> 15) & 1 != 0,
+                    data,
+                });
             }
             // (Anything else: the rest as VIFcodes for the VIF to run,
             // padded with NOPs to whole quadwords.)
             _ => {
                 let mut rest = words[p - 1..].to_vec();
                 rest.resize(rest.len().next_multiple_of(4), 0);
-                steps.push(Step::Raw(rest.chunks_exact(4).map(|w| (0..4).fold(0u128, |q, l| q | (w[l] as u128) << (32 * l))).collect()));
+                steps.push(Step::Raw(
+                    rest.chunks_exact(4)
+                        .map(|w| (0..4).fold(0u128, |q, l| q | (w[l] as u128) << (32 * l)))
+                        .collect(),
+                ));
                 return Some(());
             }
         }
@@ -592,8 +1113,15 @@ fn capture_packets(c: &mut Cpu, body: fn(&mut Cpu), cursor: u32, kill: Option<u3
     let mut at = start;
     let mut out = Vec::new();
     while at + 0x10 < end {
-        let Some((e, steps)) = read_packet(c, at, shape) else { return };
-        out.push(Recorded { start: at, end: e, first_tag: qword(c, at), cmd: Cmd::Vu(steps) });
+        let Some((e, steps)) = read_packet(c, at, shape) else {
+            return;
+        };
+        out.push(Recorded {
+            start: at,
+            end: e,
+            first_tag: qword(c, at),
+            cmd: Cmd::Vu(steps),
+        });
         at = e + 0x10;
     }
     if at != end {
@@ -607,54 +1135,102 @@ fn capture_packets(c: &mut Cpu, body: fn(&mut Cpu), cursor: u32, kill: Option<u3
 /// Slot 82 `DrawEmitter(gm, desc)` (0x380518): a type-4 emitter.
 fn draw_emitter(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_00380518__generated, gm + 0x5a00, Some(0x1408), Shape::OneCnt);
+    capture_packets(
+        c,
+        ssx3_ee::s12::f_00380518__generated,
+        gm + 0x5a00,
+        Some(0x1408),
+        Shape::OneCnt,
+    );
 }
 
 /// Slot 83 `DrawDynamicEmitter(gm, e)` (0x3807a0): ring emitters, batches of
 /// 64.
 fn draw_dynamic_emitter(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_003807a0__generated, gm + 0x5a00, Some(0x140c), Shape::OneCnt);
+    capture_packets(
+        c,
+        ssx3_ee::s12::f_003807a0__generated,
+        gm + 0x5a00,
+        Some(0x140c),
+        Shape::OneCnt,
+    );
 }
 
 /// Slot 84 `DrawMEmitter(gm, e)` (0x380ce0): ring emitters with colours,
 /// batches of 43.
 fn draw_m_emitter(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_00380ce0__generated, gm + 0x5a00, Some(0x140c), Shape::OneCnt);
+    capture_packets(
+        c,
+        ssx3_ee::s12::f_00380ce0__generated,
+        gm + 0x5a00,
+        Some(0x140c),
+        Shape::OneCnt,
+    );
 }
 
 /// Slot 85 `DrawTrail(gm, d)` (0x381310): SnowBox flakes (type 5).
 fn draw_trail(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_00381310__generated, gm + 0x5a00, None, Shape::OneCnt);
+    capture_packets(
+        c,
+        ssx3_ee::s12::f_00381310__generated,
+        gm + 0x5a00,
+        None,
+        Shape::OneCnt,
+    );
 }
 
 /// Slot 86 `DrawTrailB(gm, d)` (0x3816f0): the depth-faded variant.
 fn draw_trail_b(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_003816f0__generated, gm + 0x5a00, None, Shape::OneCnt);
+    capture_packets(
+        c,
+        ssx3_ee::s12::f_003816f0__generated,
+        gm + 0x5a00,
+        None,
+        Shape::OneCnt,
+    );
 }
 
 /// `PS2BezierMan_DrawPatchFX(bm, patch, entry, cursor)` (0x38d690): patch
 /// glitter (type 4, entry 0x1460).
 fn draw_patch_fx(c: &mut Cpu) {
     let cursor = c.g[A3][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_0038d690__generated, cursor, None, Shape::OneCnt);
+    capture_packets(
+        c,
+        ssx3_ee::s12::f_0038d690__generated,
+        cursor,
+        None,
+        Shape::OneCnt,
+    );
 }
 
 /// Slot 95 `DrawModel(f12 alpha, gm, inst, ...)` (0x37e238): per strip
 /// group a header packet and a CALL into the model's mesh chain.
 fn draw_model(c: &mut Cpu) {
     let gm = c.g[A0][0] as u32;
-    capture_packets(c, ssx3_ee::s12::f_0037e238__generated, gm + 0x5a00, None, Shape::UntilCall);
+    capture_packets(
+        c,
+        ssx3_ee::s12::f_0037e238__generated,
+        gm + 0x5a00,
+        None,
+        Shape::UntilCall,
+    );
 }
 
 /// `cPS2GridMesh_Draw(this, matrix, texId, mat2)` (0x385c10): one header
 /// packet and a CALL into the grid's (double-buffered) chain.
 fn grid_mesh_draw(c: &mut Cpu) {
     let gm = c.bus.read32(c.g[A0][0] as u32 + 0x1c4);
-    capture_packets(c, ssx3_ee::s12::f_00385c10__generated, gm + 0x5a00, None, Shape::UntilCall);
+    capture_packets(
+        c,
+        ssx3_ee::s12::f_00385c10__generated,
+        gm + 0x5a00,
+        None,
+        Shape::UntilCall,
+    );
 }
 
 /// Slot 99 `DrawSkinnedModel(gm, model, base, outline)` (0x37a610): per
@@ -732,7 +1308,10 @@ fn append_packet(c: &mut Cpu) {
     #[cfg(feature = "render")]
     let native = !*GENERATED.get_or_init(|| std::env::var_os("SSX3_NO_OVERRIDES").is_some());
     #[cfg(not(feature = "render"))]
-    let native = { let _ = &GENERATED; false };
+    let native = {
+        let _ = &GENERATED;
+        false
+    };
     if native {
         #[cfg(feature = "render")]
         crate::render::defer_man_append_packet(c);
@@ -743,7 +1322,12 @@ fn append_packet(c: &mut Cpu) {
         return;
     }
     if let Some(steps) = read_range(c, start, end) {
-        direct::record(Recorded { start, end, first_tag: qword(c, start), cmd: Cmd::Vu(steps) });
+        direct::record(Recorded {
+            start,
+            end,
+            first_tag: qword(c, start),
+            cmd: Cmd::Vu(steps),
+        });
     }
 }
 
@@ -794,7 +1378,12 @@ fn capture_post(c: &mut Cpu, body: fn(&mut Cpu), kind: PostKind) {
             _ => return,
         };
     }
-    direct::record(Recorded { start: vif0, end: vif1, first_tag: qword(c, vif0), cmd: Cmd::Post { kind, gif, windows } });
+    direct::record(Recorded {
+        start: vif0,
+        end: vif1,
+        first_tag: qword(c, vif0),
+        cmd: Cmd::Post { kind, gif, windows },
+    });
 }
 
 fn render_depth_fog(c: &mut Cpu) {
@@ -806,7 +1395,11 @@ fn render_bloom(c: &mut Cpu) {
 }
 
 fn render_color_filter(c: &mut Cpu) {
-    capture_post(c, ssx3_ee::s12::f_003904a0__generated, PostKind::ColorFilter);
+    capture_post(
+        c,
+        ssx3_ee::s12::f_003904a0__generated,
+        PostKind::ColorFilter,
+    );
 }
 
 /// A packet that is one RET transfer with its data (the w3 packets the
@@ -831,7 +1424,12 @@ fn capture_ret_packet(c: &mut Cpu, body: fn(&mut Cpu)) {
     }
     let mut steps = Vec::new();
     if parse_codes(&words, &mut steps).is_some() {
-        direct::record(Recorded { start, end: start + 16 * (qwc + 1), first_tag: tag, cmd: Cmd::Vu(steps) });
+        direct::record(Recorded {
+            start,
+            end: start + 16 * (qwc + 1),
+            first_tag: tag,
+            cmd: Cmd::Vu(steps),
+        });
     }
 }
 

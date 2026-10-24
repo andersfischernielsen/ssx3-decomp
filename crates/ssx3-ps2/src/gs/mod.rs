@@ -56,9 +56,9 @@ mod ref_raster;
 #[cfg(all(test, feature = "emu-gs"))]
 mod tests;
 
-pub use mtgs::{Mtgs, MtgsStats};
 #[cfg(feature = "emu-gs")]
 pub use mtgs::NativeJob;
+pub use mtgs::{Mtgs, MtgsStats};
 
 /// CSR event bits.
 pub const CSR_SIGNAL: u64 = 1 << 0;
@@ -100,7 +100,8 @@ pub fn render_native_type3() -> bool {
 
 /// `SSX3_RENDER_NATIVE` lists `name` (comma separated).
 fn render_native_has(name: &str) -> bool {
-    std::env::var("SSX3_RENDER_NATIVE").is_ok_and(|v| v.split(',').any(|x| x.trim() == name || x.trim() == "all"))
+    std::env::var("SSX3_RENDER_NATIVE")
+        .is_ok_and(|v| v.split(',').any(|x| x.trim() == name || x.trim() == "all"))
 }
 
 /// The VU1 program with this segment hash is drawn natively
@@ -109,7 +110,14 @@ fn render_native_has(name: &str) -> bool {
 pub fn render_native_hash(hash: u64) -> bool {
     use ssx3_render::{mat1, mat2, mat3, mat4, mat5, mat6};
     static E: std::sync::OnceLock<[bool; 4]> = std::sync::OnceLock::new();
-    let on = E.get_or_init(|| [render_native_has("type3"), render_native_has("terrain"), render_native_has("rider"), render_native_has("particles")]);
+    let on = E.get_or_init(|| {
+        [
+            render_native_has("type3"),
+            render_native_has("terrain"),
+            render_native_has("rider"),
+            render_native_has("particles"),
+        ]
+    });
     match hash {
         mat3::HASH => on[0],
         mat1::HASH | mat2::HASH => on[1],
@@ -122,7 +130,11 @@ pub fn render_native_hash(hash: u64) -> bool {
 /// Any material is drawn natively (enables the native pipelines).
 fn render_native_type3_cached() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *E.get_or_init(|| ["type3", "terrain", "rider", "particles", "2d", "post"].iter().any(|n| render_native_has(n)))
+    *E.get_or_init(|| {
+        ["type3", "terrain", "rider", "particles", "2d", "post"]
+            .iter()
+            .any(|n| render_native_has(n))
+    })
 }
 
 /// Blended PATH2 (2D) primitives use the exact destination-read blend
@@ -158,4 +170,3 @@ fn path3_mask_enabled() -> bool {
     static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *E.get_or_init(|| std::env::var("SSX3_PATH3_MASK").map_or(true, |v| v != "0"))
 }
-

@@ -11,7 +11,11 @@ use crate::float as F;
 /// read as zero (ps2-web-recomp `fp::key`).
 #[inline]
 fn key(x: u32) -> i32 {
-    let x = if x & 0x7f80_0000 == 0 { x & 0x8000_0000 } else { x };
+    let x = if x & 0x7f80_0000 == 0 {
+        x & 0x8000_0000
+    } else {
+        x
+    };
     let m = (x & 0x7fff_ffff) as i32;
     if x & 0x8000_0000 != 0 {
         -m
@@ -66,7 +70,13 @@ impl Cpu {
         self.f[fs] = self.g[rt][0] as u32;
     }
     pub fn cfc1(&mut self, rt: usize, fs: usize) {
-        let v = if fs == 31 { self.fcr31 } else if fs == 0 { 0x2e30 } else { 0 };
+        let v = if fs == 31 {
+            self.fcr31
+        } else if fs == 0 {
+            0x2e30
+        } else {
+            0
+        };
         if rt != 0 {
             self.g[rt][0] = sx(v);
         }

@@ -33,7 +33,10 @@ fn syscalls_become_native_sdk_calls() {
         "expected a native InitHeap call"
     );
     // No runtime syscall-number dispatcher on the folded path.
-    assert!(!src.contains("c.dynamic_syscall"), "constant syscalls must not fall back");
+    assert!(
+        !src.contains("c.dynamic_syscall"),
+        "constant syscalls must not fall back"
+    );
 }
 
 #[test]
@@ -50,7 +53,10 @@ fn direct_calls_are_direct_name_calls() {
         src.contains("f_0042c300(c);"),
         "expected a direct call to f_0042c300:\n{src}"
     );
-    assert!(!src.contains("dispatch("), "no address dispatcher should appear");
+    assert!(
+        !src.contains("dispatch("),
+        "no address dispatcher should appear"
+    );
     assert!(!src.contains("generated::"));
 }
 
@@ -80,12 +86,21 @@ fn untranslated_callee_is_a_graceful_stop() {
 fn every_emitted_function_is_syntactically_balanced() {
     // A cheap guard against emitting broken Rust: braces must balance.
     let Some(p) = open_program() else { return };
-    let translated: BTreeSet<u32> = index().functions().iter().take(64).map(|f| f.address).collect();
+    let translated: BTreeSet<u32> = index()
+        .functions()
+        .iter()
+        .take(64)
+        .map(|f| f.address)
+        .collect();
     for f in index().functions().iter().take(64) {
         let src = codegen::emit_function(&p, f, &translated);
         let open = src.matches('{').count();
         let close = src.matches('}').count();
-        assert_eq!(open, close, "unbalanced braces in {} @ {:08x}", f.name, f.address);
+        assert_eq!(
+            open, close,
+            "unbalanced braces in {} @ {:08x}",
+            f.name, f.address
+        );
     }
 }
 
@@ -118,6 +133,9 @@ fn structured_function_has_no_dispatcher_or_pc() {
     let f = index().by_address(0x0042_4020).unwrap();
     let translated: BTreeSet<u32> = [0x0042_4020u32].into_iter().collect();
     let src = codegen::emit_function(&p, f, &translated);
-    assert!(!src.contains("match pc"), "expected structured output:\n{src}");
+    assert!(
+        !src.contains("match pc"),
+        "expected structured output:\n{src}"
+    );
     assert!(!src.contains("pc = "), "structured output must not use pc");
 }

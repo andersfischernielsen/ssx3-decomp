@@ -58,7 +58,8 @@ fn frac(x: FpuF32) -> FpuF32 {
 
 /// The DeferMan hash of a key (`InternState`, buckets).
 pub(super) fn hash8(k: u32) -> u32 {
-    let mix = |sh: u32| -> u32 { ((((k as i32 >> sh) as u32) << 5).wrapping_add(k) as i32 >> sh) as u32 };
+    let mix =
+        |sh: u32| -> u32 { ((((k as i32 >> sh) as u32) << 5).wrapping_add(k) as i32 >> sh) as u32 };
     ((k << 5).wrapping_add(k) ^ mix(8) ^ mix(16) ^ mix(24)) & 0xff
 }
 
@@ -99,15 +100,29 @@ fn bucket(c: &mut Cpu, dm: u32, state: u32, tex: u32, matrix: u32, rets: (u32, u
 /// fractional x / y, times the bias.
 fn shine_matrix(c: &mut Cpu, cam: [FpuF32; 3]) -> M {
     let gp = c.g[GP][0] as u32;
-    let (k1, k2, k3) = (f(c, gp + 0x1350), f(c, gp.wrapping_sub(0x26bc)), f(c, gp.wrapping_sub(0x26b8)));
+    let (k1, k2, k3) = (
+        f(c, gp + 0x1350),
+        f(c, gp.wrapping_sub(0x26bc)),
+        f(c, gp.wrapping_sub(0x26b8)),
+    );
     let ay = frac(cam[1] * k1 * k2) * k3;
     let ax = frac(cam[0] * k1 * k2) * k3;
     let (s1, c1) = sin_cos(c, ay, 0x0038_b58c);
     let (s2, c2) = sin_cos(c, ax, 0x0038_b59c);
     let neg = |v: FpuF32| v.0 ^ 0x8000_0000;
     let one = vu0::ONE;
-    let a: M = [[one, 0, 0, 0], [0, s1.0, c1.0, 0], [0, neg(c1), s1.0, 0], [0, 0, 0, one]];
-    let b: M = [[s2.0, 0, neg(c2), 0], [0, one, 0, 0], [c2.0, 0, s2.0, 0], [0, 0, 0, one]];
+    let a: M = [
+        [one, 0, 0, 0],
+        [0, s1.0, c1.0, 0],
+        [0, neg(c1), s1.0, 0],
+        [0, 0, 0, one],
+    ];
+    let b: M = [
+        [s2.0, 0, neg(c2), 0],
+        [0, one, 0, 0],
+        [c2.0, 0, s2.0, 0],
+        [0, 0, 0, one],
+    ];
     let cm = vu0::mul_m(&a, &b);
     vu0::mul_m(&qm(c, SHINE_BIAS), &cm)
 }
@@ -116,9 +131,17 @@ fn shine_matrix(c: &mut Cpu, cam: [FpuF32; 3]) -> M {
 /// axes by angles from the camera position.
 fn fx_matrix(c: &mut Cpu, cam: [FpuF32; 3]) -> M {
     let gp = c.g[GP][0] as u32;
-    let (k4, k2, k3) = (f(c, gp + 0x1254), f(c, gp.wrapping_sub(0x26bc)), f(c, gp.wrapping_sub(0x26b8)));
+    let (k4, k2, k3) = (
+        f(c, gp + 0x1254),
+        f(c, gp.wrapping_sub(0x26bc)),
+        f(c, gp.wrapping_sub(0x26b8)),
+    );
     let one = FpuF32(vu0::ONE);
-    let angles = [frac(cam[1] * k4 * k2) * k3, frac(cam[0] * k4 * k2) * k3, frac(cam[2] * k4 * k2) * k3];
+    let angles = [
+        frac(cam[1] * k4 * k2) * k3,
+        frac(cam[0] * k4 * k2) * k3,
+        frac(cam[2] * k4 * k2) * k3,
+    ];
     let rets = [0x0038_b870, 0x0038_b9b8, 0x0038_baf8];
     let mut fx = qm(c, IDENTITY);
     for k in 0..3 {
@@ -161,7 +184,12 @@ pub fn end_pass(c: &mut Cpu) {
     let r = qm(c, rp);
     let view = r32(c, gm + 0x274);
     // The camera position: the matrix's 3×3 transposed times −translation.
-    let t: M = [[r[0][0], r[1][0], r[2][0], r[0][3]], [r[0][1], r[1][1], r[2][1], r[1][3]], [r[0][2], r[1][2], r[2][2], r[2][3]], r[3]];
+    let t: M = [
+        [r[0][0], r[1][0], r[2][0], r[0][3]],
+        [r[0][1], r[1][1], r[2][1], r[1][3]],
+        [r[0][2], r[1][2], r[2][2], r[2][3]],
+        r[3],
+    ];
     let mut p = vu0::mul(&r[3], &[0xbf80_0000; 4]);
     p[3] = 0;
     let cam = vu0::xform(&t, &p);
@@ -173,7 +201,10 @@ pub fn end_pass(c: &mut Cpu) {
     for k in 0..4 {
         w32(c, bm + 0x420 + 4 * k, 0x4300_0000);
     }
-    for (k, a) in [0x004a_434c, 0x004a_4350, 0x004a_4354].into_iter().enumerate() {
+    for (k, a) in [0x004a_434c, 0x004a_4350, 0x004a_4354]
+        .into_iter()
+        .enumerate()
+    {
         let v = r32(c, a);
         w32(c, bm + 0x430 + 4 * k as u32, v);
     }
@@ -188,11 +219,21 @@ pub fn end_pass(c: &mut Cpu) {
     state_word(c, st, 1, 0xffff_f07f, 0x400);
     let cache = bm + 0x10;
     // The queues: (count, entries, entry size, lod).
-    let queues = [(bm + 0x458, 0x10, 0), (bm + 0x3c9c, 0x10, 1), (bm + 0x4a60, 0x10, 2), (bm + 0x4d84, 0x14, 2)];
+    let queues = [
+        (bm + 0x458, 0x10, 0),
+        (bm + 0x3c9c, 0x10, 1),
+        (bm + 0x4a60, 0x10, 2),
+        (bm + 0x4d84, 0x14, 2),
+    ];
     for (i, &(q, _, lod)) in queues.iter().enumerate() {
         let n = r32(c, q);
         let rets = [0x0038_bd84, 0x0038_bd9c, 0x0038_bdb4, 0x0038_bdcc];
-        guest_call(c, if i == 3 { MARK_USED2 } else { MARK_USED }, &[cache, n, q + 4, lod, view], rets[i]);
+        guest_call(
+            c,
+            if i == 3 { MARK_USED2 } else { MARK_USED },
+            &[cache, n, q + 4, lod, view],
+            rets[i],
+        );
     }
     if view == 0 {
         guest_call(c, RELEASE_UNUSED, &[cache], 0x0038_bddc);
@@ -203,9 +244,18 @@ pub fn end_pass(c: &mut Cpu) {
     let scissor = r32(c, dm + dmf::SCISSOR) & 0x1f;
     state_word(c, st, 2, !0x1f, scissor);
     let words: Vec<u32> = (0..4).map(|k| r32(c, st + 4 * k)).collect();
-    let base = guest_call(c, INTERN_STATE, &[dm, st, hash8(words[0] ^ words[1] ^ words[2] ^ words[3])], 0x0038_bea4);
+    let base = guest_call(
+        c,
+        INTERN_STATE,
+        &[dm, st, hash8(words[0] ^ words[1] ^ words[2] ^ words[3])],
+        0x0038_bea4,
+    );
     // Uniform queues: lod 2, 1, 0.
-    let uniform = [(bm + 0x4a60, 2u32, [0x0038_bee8, 0x0038_bf04]), (bm + 0x3c9c, 1, [0x0038_bf70, 0x0038_bf8c]), (bm + 0x458, 0, [0x0038_bfe8, 0x0038_c004])];
+    let uniform = [
+        (bm + 0x4a60, 2u32, [0x0038_bee8, 0x0038_bf04]),
+        (bm + 0x3c9c, 1, [0x0038_bf70, 0x0038_bf8c]),
+        (bm + 0x458, 0, [0x0038_bfe8, 0x0038_c004]),
+    ];
     for &(q, lod, rets) in &uniform {
         let n = r32(c, q) as i32;
         for i in 0..n.max(0) as u32 {
@@ -237,14 +287,27 @@ pub fn end_pass(c: &mut Cpu) {
 
 /// A queued patch's cache slot, tessellated (and its slot packet built)
 /// when it has none.
-fn slot_of(c: &mut Cpu, bm: u32, cache: u32, entry: u32, lod: u32, view: u32, rets: [u32; 2]) -> i32 {
+fn slot_of(
+    c: &mut Cpu,
+    bm: u32,
+    cache: u32,
+    entry: u32,
+    lod: u32,
+    view: u32,
+    rets: [u32; 2],
+) -> i32 {
     let slot = c.bus.read16(entry + 0xc) as i16 as i32;
     if slot >= 0 {
         return slot;
     }
     let patch = r32(c, entry);
     let normals = lod != 0 && r32(c, patch + 0xc) & 0x60_0000 != 0;
-    let s = guest_call(c, TESSELLATE, &[cache, patch, lod, view, normals as u32], rets[0]) as u16 as i16;
+    let s = guest_call(
+        c,
+        TESSELLATE,
+        &[cache, patch, lod, view, normals as u32],
+        rets[0],
+    ) as u16 as i16;
     c.bus.write16(entry + 0xc, s as u16);
     if s >= 0 {
         guest_call(c, BUILD_PATCH_PACKET, &[bm, lod, s as i32 as u32], rets[1]);
@@ -326,7 +389,17 @@ fn emit_type1(c: &mut Cpu, gm: u32, bm: u32, lod: u32, slot: i32, entry: u32, cu
     record(start, Cmd::Vu(vec![Step::Chain(pkt), Step::Start(e)]));
     add_record(c, gm, start, start, false);
     if shine {
-        matrix_pass(c, gm, bm, slots.wrapping_add((slot * 0xc) as u32), patch, lod, table, entry, cursor);
+        matrix_pass(
+            c,
+            gm,
+            bm,
+            slots.wrapping_add((slot * 0xc) as u32),
+            patch,
+            lod,
+            table,
+            entry,
+            cursor,
+        );
     }
     if proj {
         projector_passes(c, gm, table, entry, lights, cursor);
@@ -351,7 +424,9 @@ fn emit_type2(c: &mut Cpu, gm: u32, bm: u32, slot: i32, entry: u32, lods: u32, c
     c.bus.write16(st + 0x12, t1);
     clamp(c, gm, flags);
     let l = r32(c, lods);
-    let lodq = q4(std::array::from_fn(|k| (l >> (8 * k)) as u8 as i8 as i32 as u32));
+    let lodq = q4(std::array::from_fn(|k| {
+        (l >> (8 * k)) as u8 as i8 as i32 as u32
+    }));
     let flag = r32(c, entry + 4);
     let e = mscal(c, TYPE2_TABLE, 2 + flag);
     let coeffs = qwords(c, patch + 0x40, 16);
@@ -359,11 +434,34 @@ fn emit_type2(c: &mut Cpu, gm: u32, bm: u32, slot: i32, entry: u32, lods: u32, c
     w32(c, cursor, start + 0x10);
     record(
         start,
-        Cmd::Vu(vec![Step::Write { addr: 0xd0, rel: true, data: vec![lodq] }, Step::Write { addr: 0xc0, rel: true, data: coeffs }, Step::Chain(pkt), Step::Start(e)]),
+        Cmd::Vu(vec![
+            Step::Write {
+                addr: 0xd0,
+                rel: true,
+                data: vec![lodq],
+            },
+            Step::Write {
+                addr: 0xc0,
+                rel: true,
+                data: coeffs,
+            },
+            Step::Chain(pkt),
+            Step::Start(e),
+        ]),
     );
     add_record(c, gm, start, start, false);
     if shine {
-        matrix_pass(c, gm, bm, slots.wrapping_add((slot * 0xc) as u32), patch, 2, TYPE2_TABLE, entry, cursor);
+        matrix_pass(
+            c,
+            gm,
+            bm,
+            slots.wrapping_add((slot * 0xc) as u32),
+            patch,
+            2,
+            TYPE2_TABLE,
+            entry,
+            cursor,
+        );
     }
     if proj {
         projector_passes(c, gm, TYPE2_TABLE, entry, lights, cursor);
@@ -375,7 +473,17 @@ fn emit_type2(c: &mut Cpu, gm: u32, bm: u32, slot: i32, entry: u32, lods: u32, c
 /// packet has them) and the shine matrix; a continuation record in a
 /// pushed state.
 #[allow(clippy::too_many_arguments)]
-fn matrix_pass(c: &mut Cpu, gm: u32, bm: u32, slot_info: u32, patch: u32, lod: u32, table: u32, entry: u32, cursor: u32) {
+fn matrix_pass(
+    c: &mut Cpu,
+    gm: u32,
+    bm: u32,
+    slot_info: u32,
+    patch: u32,
+    lod: u32,
+    table: u32,
+    entry: u32,
+    cursor: u32,
+) {
     let st = push_state(c, gm);
     let nrm = match lod {
         0 => r32(c, bm + 0x1c4).wrapping_add(r32(c, slot_info + 8).wrapping_mul(0xc0)),
@@ -390,13 +498,21 @@ fn matrix_pass(c: &mut Cpu, gm: u32, bm: u32, slot_info: u32, patch: u32, lod: u
     }
     c.bus.write16(st + 0x12, t as u16);
     state_word(c, st, 0, !0, 0x30);
-    let blend = if r32(c, patch + 0xc) & 0x40_0000 == 0 { 0x100 } else { 0x880 };
+    let blend = if r32(c, patch + 0xc) & 0x40_0000 == 0 {
+        0x100
+    } else {
+        0x880
+    };
     state_word(c, st, 1, 0xffff_f07f, blend);
     let n = (2 * lod + 4) * (2 * lod + 4);
     // (A REF with address bit 31 reads the scratchpad: a lod-0 slot has no
     // normals, its index -1 points there, and the pass takes whatever is
     // in it.)
-    let nrm = if nrm & 0x8000_0000 != 0 { 0x7000_0000 | (nrm & 0x3ff0) } else { nrm };
+    let nrm = if nrm & 0x8000_0000 != 0 {
+        0x7000_0000 | (nrm & 0x3ff0)
+    } else {
+        nrm
+    };
     let mut words = vec![0x7800_8040 | n << 16];
     for i in 0..(3 * n).div_ceil(4) {
         let v = q(c, nrm.wrapping_add(16 * i));
@@ -410,10 +526,16 @@ fn matrix_pass(c: &mut Cpu, gm: u32, bm: u32, slot_info: u32, patch: u32, lod: u
     let flag = r32(c, entry + 4);
     words.extend([0, 0, 0, 0x1400_0000 | r32(c, table + 0x40 + 8 * flag)]);
     words.resize(words.len().next_multiple_of(4), 0);
-    let raw = words.chunks_exact(4).map(|w| q4([w[0], w[1], w[2], w[3]])).collect();
+    let raw = words
+        .chunks_exact(4)
+        .map(|w| q4([w[0], w[1], w[2], w[3]]))
+        .collect();
     let start = r32(c, cursor);
     w32(c, cursor, start + 0x10);
-    record(start, Cmd::Vu(vec![Step::Mask(0x4040_4040), Step::Raw(raw)]));
+    record(
+        start,
+        Cmd::Vu(vec![Step::Mask(0x4040_4040), Step::Raw(raw)]),
+    );
     add_record(c, gm, start, start, true);
     pop_state(c, gm);
 }
@@ -436,7 +558,18 @@ fn projector_passes(c: &mut Cpu, gm: u32, table: u32, entry: u32, lights: u32, c
         let e = mscal(c, table, 6 + flag);
         let start = r32(c, cursor);
         w32(c, cursor, start + 0x10);
-        record(start, Cmd::Vu(vec![Step::Mask(0), Step::Write { addr: 0x80, rel: true, data: m }, Step::Start(e)]));
+        record(
+            start,
+            Cmd::Vu(vec![
+                Step::Mask(0),
+                Step::Write {
+                    addr: 0x80,
+                    rel: true,
+                    data: m,
+                },
+                Step::Start(e),
+            ]),
+        );
         add_record(c, gm, start, start, true);
     }
 }

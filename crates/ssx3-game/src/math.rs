@@ -28,7 +28,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_c228, atan, "Math_Atan"),
     (0x0016_bce0, wrap_angle_pi, "Math_WrapAnglePi"),
     (0x002d_18b0, noise_sample_1d, "Noise_Sample1D"),
-    (0x0031_d5a8, cubic_spline_eval_segment, "cCSICubicSpline_EvalSegment"),
+    (
+        0x0031_d5a8,
+        cubic_spline_eval_segment,
+        "cCSICubicSpline_EvalSegment",
+    ),
     (0x0031_7a08, rand_next, "Rand_Next"),
     (0x0031_7958, rand_seed, "Rand_Seed"),
     (0x0040_f8a0, fabsf, "fabsf"),
@@ -37,7 +41,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0040_fb58, copysignf, "copysignf"),
     (0x0040_f8e8, floorf, "floorf"),
     (0x0041_14d0, muldi3, "__muldi3"),
-    (0x002b_2690, song_instance_get_beat_ms, "SongInstance_GetBeatMs"),
+    (
+        0x002b_2690,
+        song_instance_get_beat_ms,
+        "SongInstance_GetBeatMs",
+    ),
     (0x0023_1f80, load_indicator_advance, "LoadIndicator_Advance"),
 ];
 
@@ -54,10 +62,18 @@ const TWO_OVER_PI: FpuF32 = FpuF32(0x3f22_f983);
 const HALF_PI: FpuF32 = FpuF32(0x3fc9_0fdb);
 /// sin(p) ~ p + p*s*(S3 + s*(S2 + s*(S1 + s*S0))), s = p^2: the Taylor-like
 /// coefficients -1/6, 1/120, ... from highest to lowest power.
-const SIN_POLY: [FpuF32; 4] =
-    [FpuF32(0x3638_ef1f), FpuF32(0xb950_0d03), FpuF32(0x3c08_8889), FpuF32(0xbe2a_aaab)];
+const SIN_POLY: [FpuF32; 4] = [
+    FpuF32(0x3638_ef1f),
+    FpuF32(0xb950_0d03),
+    FpuF32(0x3c08_8889),
+    FpuF32(0xbe2a_aaab),
+];
 /// cos(p) ~ 1 - s/2 + s^2*(C2 + s*(C1 + s*C0)), s = p^2.
-const COS_POLY: [FpuF32; 3] = [FpuF32(0x37d0_0d03), FpuF32(0xbab6_0b62), FpuF32(0x3d2a_aaab)];
+const COS_POLY: [FpuF32; 3] = [
+    FpuF32(0x37d0_0d03),
+    FpuF32(0xbab6_0b62),
+    FpuF32(0x3d2a_aaab),
+];
 /// -sqrt(1/2) / +sqrt(1/2): the switch points between the direct arcsine
 /// series and the `pi/2 - asin(sqrt(1-x^2))` identity (0x4a0290 / 0x4a0298).
 const NEG_SQRT_HALF: FpuF32 = FpuF32(0xbf35_04f3);
@@ -402,7 +418,12 @@ pub fn cubic_spline_eval_segment(c: &mut Cpu) {
     c.cycles += 15;
     let t = x - seg.x0(c);
     let t2 = t * t;
-    let (a, b, lin, d) = (seg.coeff(c, 0), seg.coeff(c, 1), seg.coeff(c, 2), seg.coeff(c, 3));
+    let (a, b, lin, d) = (
+        seg.coeff(c, 0),
+        seg.coeff(c, 1),
+        seg.coeff(c, 2),
+        seg.coeff(c, 3),
+    );
     let quad = b * t2;
     let low = (lin * t + d) + quad;
     let v = (t * a) * t2 + low;
@@ -446,7 +467,14 @@ impl RandState {
 /// Offsets added to the seed for each state word (cumulative sums of the
 /// constants the original adds one after another).
 const RAND_SEED_OFFSETS: [u32; 6] = {
-    let steps = [0xf22d_0e56u32, 0x9604_1893, 0x3df3_b646, 0x40dd_e76d, 0x9732_7ae1, 0xd1a9_fbe7];
+    let steps = [
+        0xf22d_0e56u32,
+        0x9604_1893,
+        0x3df3_b646,
+        0x40dd_e76d,
+        0x9732_7ae1,
+        0xd1a9_fbe7,
+    ];
     let mut out = [0u32; 6];
     let mut acc = 0u32;
     let mut i = 0;
@@ -682,7 +710,9 @@ pub fn muldi3(c: &mut Cpu) {
     let (a, b) = (c.g[A0][0], c.g[A1][0]);
     let (a_lo, a_hi, b_lo, b_hi) = (a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32);
     // The cross terms the original sums in v1 (low words only).
-    let cross = a_lo.wrapping_mul(b_hi).wrapping_add(a_hi.wrapping_mul(b_lo));
+    let cross = a_lo
+        .wrapping_mul(b_hi)
+        .wrapping_add(a_hi.wrapping_mul(b_lo));
     c.g[V0][0] = a.wrapping_mul(b);
     abi::set_reg(c, V1, sx(cross));
     abi::ret(c);
@@ -703,10 +733,15 @@ mod tests {
             0x3f22f983, 0x3fc90fdb, 0x37d00d03, 0xbab60b62, 0x3d2aaaab, 0x3638ef1f, // Sin
             0xb9500d03, 0x3c088889, 0xbe2aaaab, 0x3f22f983, 0x3fc90fdb, 0x3638ef1f, // Sin/Cos
             0xb9500d03, 0x3c088889, 0xbe2aaaab, 0x37d00d03, 0xbab60b62, 0x3d2aaaab, // Cos
-            0xbf3504f3, 0xbfc90fdb, 0x3f3504f3, 0x3fc90fdb, 0xbfc90fdb, 0x3fc90fdb, // Asin/Atan
+            0xbf3504f3, 0xbfc90fdb, 0x3f3504f3, 0x3fc90fdb, 0xbfc90fdb,
+            0x3fc90fdb, // Asin/Atan
         ];
         put_words(c, 0x004a_0230, &LIT_4A0230);
-        put_words(c, 0x004a_3ee0, &[0x3e2bba25, 0x3d8a908b, 0x3d55033a, 0x3d6137ab]);
+        put_words(
+            c,
+            0x004a_3ee0,
+            &[0x3e2bba25, 0x3d8a908b, 0x3d55033a, 0x3d6137ab],
+        );
         put_words(c, 0x0049_cc78, &[INV_TWO_PI.0, TWO_PI.0]);
         put_words(c, 0x0049_df48, &[LOAD_INDICATOR_STEP.0]);
     }
@@ -718,7 +753,7 @@ mod tests {
         let sign = r.next_u32() & 0x8000_0000;
         match r.next_u32() % 16 {
             0 => sign,
-            1 => sign | (r.next_u32() & 0x007f_ffff),               // denormal
+            1 => sign | (r.next_u32() & 0x007f_ffff), // denormal
             2 => sign | 0x7f80_0000 | (r.next_u32() & 0x007f_ffff), // exp 255
             3 => sign | 0x7f7f_ffff,
             4 => {
@@ -726,10 +761,19 @@ mod tests {
                 let k = (r.next_u32() % 2001) as f32 - 1000.0;
                 (if r.next_u32() % 2 == 0 { k } else { k + 0.5 }).to_bits()
             }
-            5 => sign | [0x3f80_0000, 0x3f35_04f3, 0x3fc9_0fdb, 0x4049_0fdb, 0x3f00_0000][r.next_u32() as usize % 5],
+            5 => {
+                sign | [
+                    0x3f80_0000,
+                    0x3f35_04f3,
+                    0x3fc9_0fdb,
+                    0x4049_0fdb,
+                    0x3f00_0000,
+                ][r.next_u32() as usize % 5]
+            }
             6 => {
                 // One ulp around a switch point.
-                let base = [0x3f80_0000u32, 0x3f35_04f3, 0x3f00_0000, 0x3fc9_0fdb][r.next_u32() as usize % 4];
+                let base = [0x3f80_0000u32, 0x3f35_04f3, 0x3f00_0000, 0x3fc9_0fdb]
+                    [r.next_u32() as usize % 4];
                 sign | base.wrapping_add(r.next_u32() % 3).wrapping_sub(1)
             }
             7 => r.next_u32(), // any bits
@@ -788,12 +832,21 @@ mod tests {
     }
     #[test]
     fn math_sin_cos() {
-        check(ssx3_ee::s10::f_0031be50__generated, sin_cos, SEEDS, &|c, seed| {
-            let mut r = float_setup(c, seed);
-            c.g[4][0] = DATA as u64;
-            // Aliased outputs on some seeds (the store order then matters).
-            c.g[5][0] = if r.next_u32() % 8 == 0 { DATA as u64 } else { DATA as u64 + 0x40 };
-        });
+        check(
+            ssx3_ee::s10::f_0031be50__generated,
+            sin_cos,
+            SEEDS,
+            &|c, seed| {
+                let mut r = float_setup(c, seed);
+                c.g[4][0] = DATA as u64;
+                // Aliased outputs on some seeds (the store order then matters).
+                c.g[5][0] = if r.next_u32() % 8 == 0 {
+                    DATA as u64
+                } else {
+                    DATA as u64 + 0x40
+                };
+            },
+        );
     }
     #[test]
     fn math_fabsf() {
@@ -818,57 +871,90 @@ mod tests {
 
     #[test]
     fn math_wrap_angle_pi() {
-        check(ssx3_ee::s02::f_0016bce0__generated, wrap_angle_pi, SEEDS, &|c, seed| {
-            let mut r = float_setup(c, seed);
-            c.g[4][0] = DATA as u64;
-            let v = interesting(&mut r);
-            c.bus.write32(DATA, v);
-        });
+        check(
+            ssx3_ee::s02::f_0016bce0__generated,
+            wrap_angle_pi,
+            SEEDS,
+            &|c, seed| {
+                let mut r = float_setup(c, seed);
+                c.g[4][0] = DATA as u64;
+                let v = interesting(&mut r);
+                c.bus.write32(DATA, v);
+            },
+        );
     }
     #[test]
     fn math_load_indicator_advance() {
-        check(ssx3_ee::s06::f_00231f80__generated, load_indicator_advance, SEEDS, &|c, seed| {
-            let mut r = float_setup(c, seed);
-            c.g[4][0] = DATA as u64;
-            let v = interesting(&mut r);
-            c.bus.write32(DATA, v);
-        });
+        check(
+            ssx3_ee::s06::f_00231f80__generated,
+            load_indicator_advance,
+            SEEDS,
+            &|c, seed| {
+                let mut r = float_setup(c, seed);
+                c.g[4][0] = DATA as u64;
+                let v = interesting(&mut r);
+                c.bus.write32(DATA, v);
+            },
+        );
     }
     #[test]
     fn math_noise_sample_1d() {
-        check(ssx3_ee::s09::f_002d18b0__generated, noise_sample_1d, SEEDS, &|c, seed| {
-            let mut r = float_setup(c, seed);
-            // The table and the words before it (negative indices).
-            for i in -160i32..=161 {
-                let v = r.f32(1.0);
-                c.bus.write32(NOISE_TABLE.0.wrapping_add((i * 4) as u32), v);
-            }
-            if seed % 4 == 0 {
-                c.f[12] = r.f32(3.0);
-            }
-        });
+        check(
+            ssx3_ee::s09::f_002d18b0__generated,
+            noise_sample_1d,
+            SEEDS,
+            &|c, seed| {
+                let mut r = float_setup(c, seed);
+                // The table and the words before it (negative indices).
+                for i in -160i32..=161 {
+                    let v = r.f32(1.0);
+                    c.bus.write32(NOISE_TABLE.0.wrapping_add((i * 4) as u32), v);
+                }
+                if seed % 4 == 0 {
+                    c.f[12] = r.f32(3.0);
+                }
+            },
+        );
     }
     #[test]
     fn math_cubic_spline_eval_segment() {
-        check(ssx3_ee::s10::f_0031d5a8__generated, cubic_spline_eval_segment, SEEDS, &|c, seed| {
-            let mut r = float_setup(c, seed);
-            c.g[4][0] = DATA as u64;
-            for k in 0..5 {
-                let v = if seed % 3 == 0 { interesting(&mut r) } else { r.f32(1000.0) };
-                c.bus.write32(DATA + 4 * k, v);
-            }
-        });
+        check(
+            ssx3_ee::s10::f_0031d5a8__generated,
+            cubic_spline_eval_segment,
+            SEEDS,
+            &|c, seed| {
+                let mut r = float_setup(c, seed);
+                c.g[4][0] = DATA as u64;
+                for k in 0..5 {
+                    let v = if seed % 3 == 0 {
+                        interesting(&mut r)
+                    } else {
+                        r.f32(1000.0)
+                    };
+                    c.bus.write32(DATA + 4 * k, v);
+                }
+            },
+        );
     }
     #[test]
     fn math_song_instance_get_beat_ms() {
-        check(ssx3_ee::s08::f_002b2690__generated, song_instance_get_beat_ms, SEEDS, &|c, seed| {
-            let mut r = float_setup(c, seed);
-            c.g[4][0] = DATA as u64;
-            let info = DATA + 0x100 + (r.next_u32() % 64) * 4;
-            c.bus.write32(DATA, info);
-            let bpm = if seed % 2 == 0 { r.f32(300.0) } else { interesting(&mut r) };
-            c.bus.write32(info + 0x90, bpm);
-        });
+        check(
+            ssx3_ee::s08::f_002b2690__generated,
+            song_instance_get_beat_ms,
+            SEEDS,
+            &|c, seed| {
+                let mut r = float_setup(c, seed);
+                c.g[4][0] = DATA as u64;
+                let info = DATA + 0x100 + (r.next_u32() % 64) * 4;
+                c.bus.write32(DATA, info);
+                let bpm = if seed % 2 == 0 {
+                    r.f32(300.0)
+                } else {
+                    interesting(&mut r)
+                };
+                c.bus.write32(info + 0x90, bpm);
+            },
+        );
     }
 
     fn rand_setup(c: &mut Cpu, seed: u32) {
@@ -901,25 +987,40 @@ mod tests {
     }
     #[test]
     fn math_rand_next() {
-        check(ssx3_ee::s10::f_00317a08__generated, rand_next, SEEDS, &rand_setup);
+        check(
+            ssx3_ee::s10::f_00317a08__generated,
+            rand_next,
+            SEEDS,
+            &rand_setup,
+        );
     }
     #[test]
     fn math_rand_seed() {
-        check(ssx3_ee::s10::f_00317958__generated, rand_seed, SEEDS, &rand_setup);
+        check(
+            ssx3_ee::s10::f_00317958__generated,
+            rand_seed,
+            SEEDS,
+            &rand_setup,
+        );
     }
     #[test]
     fn math_muldi3() {
-        check(ssx3_ee::s15::f_004114d0__generated, muldi3, SEEDS, &|c, seed| {
-            let mut r = Rng(0x1234_5678_9abc_def0 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
-            let mut w = || match r.next_u32() % 5 {
-                0 => 0xffff_ffff,
-                1 => 0x8000_0000,
-                2 => 0,
-                _ => r.next_u32(),
-            } as u64;
-            c.g[4][0] = (w() << 32) | w();
-            c.g[5][0] = (w() << 32) | w();
-            c.g[3][0] = 0x5555;
-        });
+        check(
+            ssx3_ee::s15::f_004114d0__generated,
+            muldi3,
+            SEEDS,
+            &|c, seed| {
+                let mut r = Rng(0x1234_5678_9abc_def0 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                let mut w = || match r.next_u32() % 5 {
+                    0 => 0xffff_ffff,
+                    1 => 0x8000_0000,
+                    2 => 0,
+                    _ => r.next_u32(),
+                } as u64;
+                c.g[4][0] = (w() << 32) | w();
+                c.g[5][0] = (w() << 32) | w();
+                c.g[3][0] = 0x5555;
+            },
+        );
     }
 }

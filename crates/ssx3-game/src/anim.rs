@@ -22,24 +22,80 @@ use ssx3_ee_rt::Cpu;
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0011_fe98, rider_get_main_state, "Rider_GetMainState"),
     (0x0011_fee8, rider_get_sub_state, "Rider_GetSubState"),
-    (0x0011_ff48, rider_get_hips_position, "Rider_GetHipsPosition"),
+    (
+        0x0011_ff48,
+        rider_get_hips_position,
+        "Rider_GetHipsPosition",
+    ),
     (0x0011_d640, rider_is_loaded, "Rider_IsLoaded"),
     (0x0012_0e30, rider_update_focus_box, "Rider_UpdateFocusBox"),
-    (0x0012_0d58, rider_reset_boost_meter, "Rider_ResetBoostMeter"),
-    (0x0011_9310, rider_metrix_get_score_tier, "RiderMetrix_GetScoreTier"),
-    (0x0013_6978, rider_static_state_post_update, "RiderStaticState_PostUpdate"),
-    (0x0031_2aa0, anim_controller_get_layer_anim_id, "AnimController_GetLayerAnimId"),
+    (
+        0x0012_0d58,
+        rider_reset_boost_meter,
+        "Rider_ResetBoostMeter",
+    ),
+    (
+        0x0011_9310,
+        rider_metrix_get_score_tier,
+        "RiderMetrix_GetScoreTier",
+    ),
+    (
+        0x0013_6978,
+        rider_static_state_post_update,
+        "RiderStaticState_PostUpdate",
+    ),
+    (
+        0x0031_2aa0,
+        anim_controller_get_layer_anim_id,
+        "AnimController_GetLayerAnimId",
+    ),
     (0x0031_15c8, anim_table_get_entry, "AnimTable_GetEntry"),
-    (0x0031_3cf0, anim_sequence_set_track_time, "AnimSequence_SetTrackTime"),
-    (0x0031_3a10, anim_sequence_set_weight_fade, "AnimSequence_SetWeightFade"),
-    (0x0031_3800, anim_sequence_update_weight_fade, "AnimSequence_UpdateWeightFade"),
+    (
+        0x0031_3cf0,
+        anim_sequence_set_track_time,
+        "AnimSequence_SetTrackTime",
+    ),
+    (
+        0x0031_3a10,
+        anim_sequence_set_weight_fade,
+        "AnimSequence_SetWeightFade",
+    ),
+    (
+        0x0031_3800,
+        anim_sequence_update_weight_fade,
+        "AnimSequence_UpdateWeightFade",
+    ),
     (0x0031_3a20, anim_sequence_fade_out, "AnimSequence_FadeOut"),
-    (0x0031_3d70, anim_sequence_get_track_blend_weight, "AnimSequence_GetTrackBlendWeight"),
-    (0x0031_3c50, anim_sequence_set_track_anim, "AnimSequence_SetTrackAnim"),
-    (0x0013_8b48, rider_handplant_state_enter, "RiderHandplantState_Enter"),
-    (0x0013_c5a0, rider_railslide_state_exit, "RiderRailslideState_Exit"),
-    (0x0013_1d08, rider_railslide_sub_enter, "RiderRailslideSub_Enter"),
-    (0x0012_fe98, rider_board_press_sub_exit, "RiderBoardPressSub_Exit"),
+    (
+        0x0031_3d70,
+        anim_sequence_get_track_blend_weight,
+        "AnimSequence_GetTrackBlendWeight",
+    ),
+    (
+        0x0031_3c50,
+        anim_sequence_set_track_anim,
+        "AnimSequence_SetTrackAnim",
+    ),
+    (
+        0x0013_8b48,
+        rider_handplant_state_enter,
+        "RiderHandplantState_Enter",
+    ),
+    (
+        0x0013_c5a0,
+        rider_railslide_state_exit,
+        "RiderRailslideState_Exit",
+    ),
+    (
+        0x0013_1d08,
+        rider_railslide_sub_enter,
+        "RiderRailslideSub_Enter",
+    ),
+    (
+        0x0012_fe98,
+        rider_board_press_sub_exit,
+        "RiderBoardPressSub_Exit",
+    ),
 ];
 
 // ---------------------------------------------------------------- registers
@@ -368,7 +424,11 @@ pub fn rider_metrix_get_score_tier(c: &mut Cpu) {
         // `movn`: v1 holds the alternative.
         c.cycles += 2 + 2 + 2 + 4;
         c.g[V1][0] = 4;
-        if score < 11500 { 4 } else { 5 }
+        if score < 11500 {
+            4
+        } else {
+            5
+        }
     };
     c.g[V0][0] = tier;
     abi::ret(c);
@@ -634,7 +694,12 @@ pub fn rider_handplant_state_enter(c: &mut Cpu) {
     abi::set_word(c, V1, rider.0 .0);
     let target = state.0.off(0x30).read_vec4(c);
     let pos = rider.position().read_vec4(c);
-    let delta = Vec4 { x: target.x - pos.x, y: target.y - pos.y, z: target.z - pos.z, w: target.w - pos.w };
+    let delta = Vec4 {
+        x: target.x - pos.x,
+        y: target.y - pos.y,
+        z: target.z - pos.z,
+        w: target.w - pos.w,
+    };
     frame.off(0x20).write_vec4(c, delta);
     frame.off(0x10).write_vec4(c, delta);
     let duration = state.0.off(0x84).read_u32(c);
@@ -642,11 +707,21 @@ pub fn rider_handplant_state_enter(c: &mut Cpu) {
     // `mfc1 a0` then `qmtc2 a0, vf3`: lanes z/w come from a0's upper half.
     c.g[A0][0] = sx(duration);
     let a0 = c.g[A0];
-    let vf3 = [a0[0] as u32, (a0[0] >> 32) as u32, a0[1] as u32, (a0[1] >> 32) as u32];
+    let vf3 = [
+        a0[0] as u32,
+        (a0[0] >> 32) as u32,
+        a0[1] as u32,
+        (a0[1] >> 32) as u32,
+    ];
     c.bus.plat.set_vf(3, vf3);
     // Q = vf0.w / duration = 1 / duration (VU divider).
     let inv = VuF32::div(VuF32::ONE, VuF32(duration));
-    let vel = Vec4 { x: delta.x * inv, y: delta.y * inv, z: delta.z * inv, w: delta.w * inv };
+    let vel = Vec4 {
+        x: delta.x * inv,
+        y: delta.y * inv,
+        z: delta.z * inv,
+        w: delta.w * inv,
+    };
     frame.off(0x20).write_vec4(c, vel);
     abi::set_gpr128(c, V0, vel.to_bits());
     frame.write_vec4(c, vel);
@@ -701,7 +776,9 @@ pub fn rider_railslide_sub_enter(c: &mut Cpu) {
     c.g[V1][0] = u64::MAX;
     state.0.write_u32(c, 0);
     rider.jump_rearm().write_u32(c, 0);
-    let step = Addr(c.g[GP][0] as u32).off(0u32.wrapping_sub(0x75ac)).read_fpu(c);
+    let step = Addr(c.g[GP][0] as u32)
+        .off(0u32.wrapping_sub(0x75ac))
+        .read_fpu(c);
     state.0.off(4).write_u32(c, u32::MAX);
     let slew = rider.slew(1);
     slew.max_step().write_fpu(c, step);
@@ -769,7 +846,10 @@ mod tests {
         }
         c.fcr31 = r.next_u32() & ssx3_ee_rt::fpu::FCC;
         for reg in 1..32 {
-            c.bus.plat.set_vf(reg, [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()]);
+            c.bus.plat.set_vf(
+                reg,
+                [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+            );
         }
         c.g[GP][0] = crate::difftest::GAME_GP as u64;
     }
@@ -797,7 +877,10 @@ mod tests {
     #[test]
     fn rider_get_main_and_sub_state() {
         for (generated, hand) in [
-            (s00::f_0011fe98__generated as GuestFn, rider_get_main_state as GuestFn),
+            (
+                s00::f_0011fe98__generated as GuestFn,
+                rider_get_main_state as GuestFn,
+            ),
             (s00::f_0011fee8__generated, rider_get_sub_state),
         ] {
             check(generated, hand, SEEDS, &|c, seed| {
@@ -807,7 +890,10 @@ mod tests {
                 let owner = ptr(&mut r, 1);
                 c.g[A0][0] = sx(rider);
                 c.bus.write32(rider + 0x77c, owner);
-                c.bus.write32(owner + 0xde0, r.next_u32() % 7 | (r.next_u32() & 0x8000_0000));
+                c.bus.write32(
+                    owner + 0xde0,
+                    r.next_u32() % 7 | (r.next_u32() & 0x8000_0000),
+                );
                 c.bus.write32(owner + 0xde4, r.next_u32());
             });
         }
@@ -815,117 +901,165 @@ mod tests {
 
     #[test]
     fn rider_get_hips_position_matches() {
-        check(s00::f_0011ff48__generated, rider_get_hips_position, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 2);
-            scramble(c, &mut r);
-            let out = ptr(&mut r, 0) + (r.next_u32() & 0xf) * (seed & 1);
-            let rider = ptr(&mut r, 1);
-            let model = ptr(&mut r, 2);
-            let bones = ptr(&mut r, 3);
-            let hips = r.next_u32() % 64;
-            c.g[A0][0] = sx(out);
-            c.g[A1][0] = sx(rider);
-            c.bus.write32(rider + 0x780, model);
-            c.bus.write32(rider + 0x89c, hips);
-            c.bus.write32(model + 0x2c, bones + (r.next_u32() & 0x10));
-            for i in 0..80 {
-                put_vec(c, bones + i * 16, [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()]);
-            }
-        });
+        check(
+            s00::f_0011ff48__generated,
+            rider_get_hips_position,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 2);
+                scramble(c, &mut r);
+                let out = ptr(&mut r, 0) + (r.next_u32() & 0xf) * (seed & 1);
+                let rider = ptr(&mut r, 1);
+                let model = ptr(&mut r, 2);
+                let bones = ptr(&mut r, 3);
+                let hips = r.next_u32() % 64;
+                c.g[A0][0] = sx(out);
+                c.g[A1][0] = sx(rider);
+                c.bus.write32(rider + 0x780, model);
+                c.bus.write32(rider + 0x89c, hips);
+                c.bus.write32(model + 0x2c, bones + (r.next_u32() & 0x10));
+                for i in 0..80 {
+                    put_vec(
+                        c,
+                        bones + i * 16,
+                        [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                    );
+                }
+            },
+        );
     }
 
     #[test]
     fn rider_is_loaded_matches() {
-        check(s00::f_0011d640__generated, rider_is_loaded, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 3);
-            scramble(c, &mut r);
-            let rider = ptr(&mut r, 0);
-            c.g[A0][0] = sx(rider);
-            let step = match seed % 3 {
-                0 => 7,
-                1 => r.next_u32() % 8,
-                _ => r.next_u32(),
-            };
-            c.bus.write32(rider + 0x880, step);
-        });
+        check(
+            s00::f_0011d640__generated,
+            rider_is_loaded,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 3);
+                scramble(c, &mut r);
+                let rider = ptr(&mut r, 0);
+                c.g[A0][0] = sx(rider);
+                let step = match seed % 3 {
+                    0 => 7,
+                    1 => r.next_u32() % 8,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(rider + 0x880, step);
+            },
+        );
     }
 
     #[test]
     fn rider_update_focus_box_matches() {
-        check(s00::f_00120e30__generated, rider_update_focus_box, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 4);
-            scramble(c, &mut r);
-            let rider = ptr(&mut r, 0);
-            c.g[A0][0] = sx(rider);
-            let focus_box = if seed % 3 == 0 { 0 } else { ptr(&mut r, 1) };
-            c.bus.write32(rider + 0x78c, focus_box);
-            put_vec(c, rider + 0x110, [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()]);
-        });
+        check(
+            s00::f_00120e30__generated,
+            rider_update_focus_box,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 4);
+                scramble(c, &mut r);
+                let rider = ptr(&mut r, 0);
+                c.g[A0][0] = sx(rider);
+                let focus_box = if seed % 3 == 0 { 0 } else { ptr(&mut r, 1) };
+                c.bus.write32(rider + 0x78c, focus_box);
+                put_vec(
+                    c,
+                    rider + 0x110,
+                    [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                );
+            },
+        );
     }
 
     #[test]
     fn rider_reset_boost_meter_matches() {
-        check(s00::f_00120d58__generated, rider_reset_boost_meter, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 5);
-            scramble(c, &mut r);
-            let rider = ptr(&mut r, 0);
-            c.g[A0][0] = sx(rider);
-            let mode = match seed % 5 {
-                4 => r.next_u32(),
-                m => m,
-            };
-            c.bus.write32(rider + 0x304, mode);
-            c.bus.write32(rider + 0xb24, r.next_u32());
-            c.bus.write32(rider + 0x2f8, r.next_u32());
-        });
+        check(
+            s00::f_00120d58__generated,
+            rider_reset_boost_meter,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 5);
+                scramble(c, &mut r);
+                let rider = ptr(&mut r, 0);
+                c.g[A0][0] = sx(rider);
+                let mode = match seed % 5 {
+                    4 => r.next_u32(),
+                    m => m,
+                };
+                c.bus.write32(rider + 0x304, mode);
+                c.bus.write32(rider + 0xb24, r.next_u32());
+                c.bus.write32(rider + 0x2f8, r.next_u32());
+            },
+        );
     }
 
     #[test]
     fn rider_metrix_get_score_tier_matches() {
-        check(s00::f_00119310__generated, rider_metrix_get_score_tier, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 6);
-            scramble(c, &mut r);
-            const EDGES: [i64; 5] = [1000, 2500, 4000, 7500, 11500];
-            let score: i64 = match seed % 4 {
-                0 => EDGES[(seed / 4 % 5) as usize] - 1 + (seed as i64 / 20 % 2),
-                1 => (r.next_u32() % 14000) as i64,
-                2 => ((r.next_u32() as i64) << 32) | r.next_u32() as i64,
-                _ => -((r.next_u32() % 5000) as i64),
-            };
-            c.g[A1][0] = score as u64;
-        });
+        check(
+            s00::f_00119310__generated,
+            rider_metrix_get_score_tier,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 6);
+                scramble(c, &mut r);
+                const EDGES: [i64; 5] = [1000, 2500, 4000, 7500, 11500];
+                let score: i64 = match seed % 4 {
+                    0 => EDGES[(seed / 4 % 5) as usize] - 1 + (seed as i64 / 20 % 2),
+                    1 => (r.next_u32() % 14000) as i64,
+                    2 => ((r.next_u32() as i64) << 32) | r.next_u32() as i64,
+                    _ => -((r.next_u32() % 5000) as i64),
+                };
+                c.g[A1][0] = score as u64;
+            },
+        );
     }
 
     #[test]
     fn rider_static_state_post_update_matches() {
-        check(s01::f_00136978__generated, rider_static_state_post_update, 50, &|c, seed| {
-            let mut r = rng(seed, 7);
-            scramble(c, &mut r);
-        });
+        check(
+            s01::f_00136978__generated,
+            rider_static_state_post_update,
+            50,
+            &|c, seed| {
+                let mut r = rng(seed, 7);
+                scramble(c, &mut r);
+            },
+        );
     }
 
     #[test]
     fn anim_controller_get_layer_anim_id_matches() {
-        check(s10::f_00312aa0__generated, anim_controller_get_layer_anim_id, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 8);
-            scramble(c, &mut r);
-            let ctl = ptr(&mut r, 0);
-            let layer = r.next_u32() % 16;
-            c.g[A0][0] = sx(ctl);
-            c.g[A1][0] = layer as u64 | (c.g[A1][0] & !0xffff_ffff);
-            c.bus.write32(ctl + layer * 4, r.next_u32());
-        });
+        check(
+            s10::f_00312aa0__generated,
+            anim_controller_get_layer_anim_id,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 8);
+                scramble(c, &mut r);
+                let ctl = ptr(&mut r, 0);
+                let layer = r.next_u32() % 16;
+                c.g[A0][0] = sx(ctl);
+                c.g[A1][0] = layer as u64 | (c.g[A1][0] & !0xffff_ffff);
+                c.bus.write32(ctl + layer * 4, r.next_u32());
+            },
+        );
     }
 
     #[test]
     fn anim_table_get_entry_matches() {
-        check(s10::f_003115c8__generated, anim_table_get_entry, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 9);
-            scramble(c, &mut r);
-            if seed % 2 == 0 {
-                c.g[A0][0] = (r.next_u32() % 600) as u64;
-            }
-        });
+        check(
+            s10::f_003115c8__generated,
+            anim_table_get_entry,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 9);
+                scramble(c, &mut r);
+                if seed % 2 == 0 {
+                    c.g[A0][0] = (r.next_u32() % 600) as u64;
+                }
+            },
+        );
     }
 
     /// A sequence with random tracks and fade fields.
@@ -937,121 +1071,169 @@ mod tests {
 
     #[test]
     fn anim_sequence_set_track_time_matches() {
-        check(s10::f_00313cf0__generated, anim_sequence_set_track_time, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 10);
-            scramble(c, &mut r);
-            let seq = ptr(&mut r, 0);
-            put_sequence(c, &mut r, seq);
-            c.g[A0][0] = sx(seq);
-            c.g[A1][0] = (r.next_u32() % 5) as u64;
-        });
+        check(
+            s10::f_00313cf0__generated,
+            anim_sequence_set_track_time,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 10);
+                scramble(c, &mut r);
+                let seq = ptr(&mut r, 0);
+                put_sequence(c, &mut r, seq);
+                c.g[A0][0] = sx(seq);
+                c.g[A1][0] = (r.next_u32() % 5) as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_sequence_set_weight_fade_matches() {
-        check(s10::f_00313a10__generated, anim_sequence_set_weight_fade, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 11);
-            scramble(c, &mut r);
-            let seq = ptr(&mut r, 0);
-            put_sequence(c, &mut r, seq);
-            c.g[A0][0] = sx(seq);
-        });
+        check(
+            s10::f_00313a10__generated,
+            anim_sequence_set_weight_fade,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 11);
+                scramble(c, &mut r);
+                let seq = ptr(&mut r, 0);
+                put_sequence(c, &mut r, seq);
+                c.g[A0][0] = sx(seq);
+            },
+        );
     }
 
     #[test]
     fn anim_sequence_update_weight_fade_matches() {
-        check(s10::f_00313800__generated, anim_sequence_update_weight_fade, 600, &|c, seed| {
-            let mut r = rng(seed, 12);
-            scramble(c, &mut r);
-            let seq = ptr(&mut r, 0);
-            put_sequence(c, &mut r, seq);
-            c.g[A0][0] = sx(seq);
-            c.f[12] = float(&mut r);
-            if seed % 4 == 0 {
-                c.bus.write32(seq + 0x9c, c.f[12]);
-            }
-            c.bus.write32(seq + 0xa0, if seed % 3 == 0 { 0 } else { r.next_u32() });
-        });
+        check(
+            s10::f_00313800__generated,
+            anim_sequence_update_weight_fade,
+            600,
+            &|c, seed| {
+                let mut r = rng(seed, 12);
+                scramble(c, &mut r);
+                let seq = ptr(&mut r, 0);
+                put_sequence(c, &mut r, seq);
+                c.g[A0][0] = sx(seq);
+                c.f[12] = float(&mut r);
+                if seed % 4 == 0 {
+                    c.bus.write32(seq + 0x9c, c.f[12]);
+                }
+                c.bus
+                    .write32(seq + 0xa0, if seed % 3 == 0 { 0 } else { r.next_u32() });
+            },
+        );
     }
 
     #[test]
     fn anim_sequence_fade_out_matches() {
-        check(s10::f_00313a20__generated, anim_sequence_fade_out, 600, &|c, seed| {
-            let mut r = rng(seed, 13);
-            scramble(c, &mut r);
-            let seq = ptr(&mut r, 0);
-            put_sequence(c, &mut r, seq);
-            c.g[A0][0] = sx(seq);
-            c.f[12] = float(&mut r);
-            if seed % 5 == 0 {
-                c.bus.write32(seq + 0x9c, c.f[12]);
-            }
-        });
+        check(
+            s10::f_00313a20__generated,
+            anim_sequence_fade_out,
+            600,
+            &|c, seed| {
+                let mut r = rng(seed, 13);
+                scramble(c, &mut r);
+                let seq = ptr(&mut r, 0);
+                put_sequence(c, &mut r, seq);
+                c.g[A0][0] = sx(seq);
+                c.f[12] = float(&mut r);
+                if seed % 5 == 0 {
+                    c.bus.write32(seq + 0x9c, c.f[12]);
+                }
+            },
+        );
     }
 
     #[test]
     fn anim_sequence_get_track_blend_weight_matches() {
-        check(s10::f_00313d70__generated, anim_sequence_get_track_blend_weight, 600, &|c, seed| {
-            let mut r = rng(seed, 14);
-            scramble(c, &mut r);
-            let seq = ptr(&mut r, 0);
-            put_sequence(c, &mut r, seq);
-            c.g[A0][0] = sx(seq);
-            c.g[A1][0] = (r.next_u32() % 5) as u64;
-        });
+        check(
+            s10::f_00313d70__generated,
+            anim_sequence_get_track_blend_weight,
+            600,
+            &|c, seed| {
+                let mut r = rng(seed, 14);
+                scramble(c, &mut r);
+                let seq = ptr(&mut r, 0);
+                put_sequence(c, &mut r, seq);
+                c.g[A0][0] = sx(seq);
+                c.g[A1][0] = (r.next_u32() % 5) as u64;
+            },
+        );
     }
 
     #[test]
     fn anim_sequence_set_track_anim_matches() {
-        check(s10::f_00313c50__generated, anim_sequence_set_track_anim, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 15);
-            scramble(c, &mut r);
-            let gp = c.g[GP][0] as u32;
-            let seq = ptr(&mut r, 0);
-            let table = ptr(&mut r, 1);
-            let bank = ptr(&mut r, 2);
-            let clips = ptr(&mut r, 3);
-            put_sequence(c, &mut r, seq);
-            let track = r.next_u32() % 5;
-            let bank_ix = r.next_u32() & 0xff;
-            let clip_ix = r.next_u32() % 0x400;
-            c.g[A0][0] = sx(seq);
-            c.g[A1][0] = track as u64;
-            c.g[A2][0] = sx(clip_ix << 8 | bank_ix);
-            c.bus.write32(gp + 0xd08, table);
-            c.bus.write32(gp.wrapping_sub(0x3224), float(&mut r));
-            c.bus.write32(table + bank_ix * 4, bank);
-            c.bus.write32(bank + 8, clips);
-            let frames = match seed % 4 {
-                0 => 0,
-                1 => 0xffff,
-                _ => r.next_u32() & 0x3ff,
-            };
-            c.bus.write16(clips + clip_ix * 0x14 + 0xc, frames as u16);
-            let active = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
-            c.bus.write32(seq + track * 0x1c + 0x18, active);
-        });
+        check(
+            s10::f_00313c50__generated,
+            anim_sequence_set_track_anim,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 15);
+                scramble(c, &mut r);
+                let gp = c.g[GP][0] as u32;
+                let seq = ptr(&mut r, 0);
+                let table = ptr(&mut r, 1);
+                let bank = ptr(&mut r, 2);
+                let clips = ptr(&mut r, 3);
+                put_sequence(c, &mut r, seq);
+                let track = r.next_u32() % 5;
+                let bank_ix = r.next_u32() & 0xff;
+                let clip_ix = r.next_u32() % 0x400;
+                c.g[A0][0] = sx(seq);
+                c.g[A1][0] = track as u64;
+                c.g[A2][0] = sx(clip_ix << 8 | bank_ix);
+                c.bus.write32(gp + 0xd08, table);
+                c.bus.write32(gp.wrapping_sub(0x3224), float(&mut r));
+                c.bus.write32(table + bank_ix * 4, bank);
+                c.bus.write32(bank + 8, clips);
+                let frames = match seed % 4 {
+                    0 => 0,
+                    1 => 0xffff,
+                    _ => r.next_u32() & 0x3ff,
+                };
+                c.bus.write16(clips + clip_ix * 0x14 + 0xc, frames as u16);
+                let active = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(seq + track * 0x1c + 0x18, active);
+            },
+        );
     }
 
     #[test]
     fn rider_handplant_state_enter_matches() {
-        check(s01::f_00138b48__generated, rider_handplant_state_enter, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 16);
-            scramble(c, &mut r);
-            let state = ptr(&mut r, 0);
-            let rider = ptr(&mut r, 1);
-            c.g[A0][0] = sx(state);
-            c.bus.write32(state + 0xa0, rider);
-            put_vec(c, state + 0x30, [r.f32(1e4), r.f32(1e4), r.f32(1e4), float(&mut r)]);
-            put_vec(c, rider + 0x110, [r.f32(1e4), r.f32(1e4), r.f32(1e4), float(&mut r)]);
-            c.bus.write32(state + 0x84, float(&mut r));
-        });
+        check(
+            s01::f_00138b48__generated,
+            rider_handplant_state_enter,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 16);
+                scramble(c, &mut r);
+                let state = ptr(&mut r, 0);
+                let rider = ptr(&mut r, 1);
+                c.g[A0][0] = sx(state);
+                c.bus.write32(state + 0xa0, rider);
+                put_vec(
+                    c,
+                    state + 0x30,
+                    [r.f32(1e4), r.f32(1e4), r.f32(1e4), float(&mut r)],
+                );
+                put_vec(
+                    c,
+                    rider + 0x110,
+                    [r.f32(1e4), r.f32(1e4), r.f32(1e4), float(&mut r)],
+                );
+                c.bus.write32(state + 0x84, float(&mut r));
+            },
+        );
     }
 
     #[test]
     fn rider_state_slew_resets_match() {
         for (generated, hand, rider_at) in [
-            (s01::f_0013c5a0__generated as GuestFn, rider_railslide_state_exit as GuestFn, 0x50),
+            (
+                s01::f_0013c5a0__generated as GuestFn,
+                rider_railslide_state_exit as GuestFn,
+                0x50,
+            ),
             (s00::f_00131d08__generated, rider_railslide_sub_enter, 0x8),
             (s00::f_0012fe98__generated, rider_board_press_sub_exit, 0x14),
         ] {
@@ -1087,8 +1269,10 @@ mod tests {
             c.g[GP][0] = gp as u64;
             // The game's values: 1/30 for the rail and the press, 1/60 (the
             // pool entry the rate patches) for the pivot.
-            c.bus.write32(gp.wrapping_sub(0x70f8), (1.0f32 / 30.0).to_bits());
-            c.bus.write32(gp.wrapping_sub(0x76d0), (1.0f32 / 30.0).to_bits());
+            c.bus
+                .write32(gp.wrapping_sub(0x70f8), (1.0f32 / 30.0).to_bits());
+            c.bus
+                .write32(gp.wrapping_sub(0x76d0), (1.0f32 / 30.0).to_bits());
             c.bus.write32(gp.wrapping_sub(0x76d4), tick::step_bits(hz));
             tick::set_for_test(&mut c, hz);
             // Railslide: state +0x50 -> rider, slew #9 (rail value).

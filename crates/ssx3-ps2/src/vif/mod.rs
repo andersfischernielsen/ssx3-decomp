@@ -77,7 +77,14 @@ pub struct Vif {
 /// UNPACK of format V(VN+1)-(32>>VL) (VL 3: V4-5) without mask, mode or
 /// cycle skipping, to `num` consecutive qwords from `addr` (wrapping):
 /// the same element decoding as the general loop in `Vif::unpack`.
-fn unpack_plain<const VN: u32, const VL: u32>(data: &[u32], num: usize, addr: u32, qwords: u32, usn: bool, dst: &mut [u8]) {
+fn unpack_plain<const VN: u32, const VL: u32>(
+    data: &[u32],
+    num: usize,
+    addr: u32,
+    qwords: u32,
+    usn: bool,
+    dst: &mut [u8],
+) {
     let n = VN as usize + 1;
     let elem = |e: usize| -> u32 {
         match VL {
@@ -103,7 +110,12 @@ fn unpack_plain<const VN: u32, const VL: u32>(data: &[u32], num: usize, addr: u3
     for i in 0..num {
         let v: [u32; 4] = if VL == 3 {
             let c = (data[i / 2] >> (16 * (i % 2))) & 0xffff;
-            [(c & 0x1f) << 3, ((c >> 5) & 0x1f) << 3, ((c >> 10) & 0x1f) << 3, ((c >> 15) & 1) << 7]
+            [
+                (c & 0x1f) << 3,
+                ((c >> 5) & 0x1f) << 3,
+                ((c >> 10) & 0x1f) << 3,
+                ((c >> 15) & 1) << 7,
+            ]
         } else {
             let b = i * n;
             match n {
@@ -252,7 +264,13 @@ impl Vif {
             // release a single packet.
             gs.path3_flow();
         }
-        if crate::trace_path3() && self.index == 1 && matches!(op, 0x06 | 0x10 | 0x11 | 0x13 | 0x14 | 0x15 | 0x17 | 0x50 | 0x51) {
+        if crate::trace_path3()
+            && self.index == 1
+            && matches!(
+                op,
+                0x06 | 0x10 | 0x11 | 0x13 | 0x14 | 0x15 | 0x17 | 0x50 | 0x51
+            )
+        {
             eprintln!("[p3] vif1 cmd {cmd:#010x}");
         }
         match op {
@@ -351,16 +369,23 @@ impl Vif {
             let hash = vu.segment_hash_pub(pc);
             let mem: &mut [u8; 16384] = (&mut vu.data[..16384]).try_into().unwrap();
             let type3 = crate::gs::render_native_hash(hash);
-            let done = ssx3_render::run_native(hash, pc, self.top, self.itop, mem, &mut |p: &[Qword]| {
-                if crate::gifstats::enabled() {
-                    crate::gifstats::scan(p);
-                }
-                if type3 {
-                    gs.gif_write_type3(p)
-                } else {
-                    gs.gif_write(1, p)
-                }
-            });
+            let done = ssx3_render::run_native(
+                hash,
+                pc,
+                self.top,
+                self.itop,
+                mem,
+                &mut |p: &[Qword]| {
+                    if crate::gifstats::enabled() {
+                        crate::gifstats::scan(p);
+                    }
+                    if type3 {
+                        gs.gif_write_type3(p)
+                    } else {
+                        gs.gif_write(1, p)
+                    }
+                },
+            );
             if done {
                 return;
             }
@@ -369,13 +394,29 @@ impl Vif {
         let mut cap = crate::vu::capture::begin(vu, pc);
         let vif1 = self.index == 1;
         // SSX3_VERIFY_MAT3: native type 3 program vs the translated one.
-        let mut mat3 = if vif1 { crate::mat3_verify::begin(vu, pc, self.top, self.itop) } else { None };
+        let mut mat3 = if vif1 {
+            crate::mat3_verify::begin(vu, pc, self.top, self.itop)
+        } else {
+            None
+        };
         // SSX3_VERIFY_MAT6: native rider program vs the translated one.
-        let mut mat6 = if vif1 { crate::mat6_verify::begin(vu, pc, self.top, self.itop) } else { None };
+        let mut mat6 = if vif1 {
+            crate::mat6_verify::begin(vu, pc, self.top, self.itop)
+        } else {
+            None
+        };
         // SSX3_VERIFY_BEZIER: native Bezier programs (types 1/2) vs the translated ones.
-        let mut bezier = if vif1 { crate::bezier_verify::begin(vu, pc, self.top, self.itop) } else { None };
+        let mut bezier = if vif1 {
+            crate::bezier_verify::begin(vu, pc, self.top, self.itop)
+        } else {
+            None
+        };
         // SSX3_VERIFY_PARTICLES: native particle/snow programs (types 4/5) vs the translated ones.
-        let mut particles = if vif1 { crate::particle_verify::begin(vu, pc, self.top, self.itop) } else { None };
+        let mut particles = if vif1 {
+            crate::particle_verify::begin(vu, pc, self.top, self.itop)
+        } else {
+            None
+        };
         let watch = crate::hw::watch_qword_pub();
         let type3 = vif1 && crate::gs::render_native_hash(vu.segment_hash_pub(pc));
         let mut hit: Option<(usize, u128)> = None;
@@ -398,7 +439,8 @@ impl Vif {
             if let Some(w) = watch {
                 if let Some((k, q)) = p.iter().enumerate().find(|(_, q)| **q as u64 == w) {
                     if hit.is_none() {
-                        static ONCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                        static ONCE: std::sync::atomic::AtomicBool =
+                            std::sync::atomic::AtomicBool::new(false);
                         if !ONCE.swap(true, std::sync::atomic::Ordering::Relaxed) {
                             for (i, x) in p.iter().enumerate().take(48) {
                                 eprintln!("[vu-pkt] {i:3}: {x:#034x}");

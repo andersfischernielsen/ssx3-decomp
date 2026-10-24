@@ -25,23 +25,75 @@ use ssx3_ee_rt::Cpu;
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0038_abf8, irradiance_get_entry, "Irradiance_GetEntry"),
     (0x0038_9260, irradiance_clear, "Irradiance_Clear"),
-    (0x0038_9810, irradiance_scale_in_place, "Irradiance_ScaleInPlace"),
+    (
+        0x0038_9810,
+        irradiance_scale_in_place,
+        "Irradiance_ScaleInPlace",
+    ),
     (0x0038_9730, irradiance_add, "Irradiance_Add"),
-    (0x0038_9520, irradiance_add_directional, "Irradiance_AddDirectional"),
+    (
+        0x0038_9520,
+        irradiance_add_directional,
+        "Irradiance_AddDirectional",
+    ),
     (0x0038_ac50, irradiance_find_index, "Irradiance_FindIndex"),
     (0x002b_cea8, twpigd_camera_blend, "tWPIGD_Camera_Blend"),
     (0x002b_cf38, twpigd_fog_blend, "tWPIGD_Fog_Blend"),
-    (0x002e_d1d0, world_painter_blend_view_colours, "WorldPainter_BlendViewColours"),
-    (0x002e_e400, world_painter_get_sky_box08, "WorldPainter_GetSkyBox08"),
-    (0x002e_eed0, world_painter_get_light_glow28, "WorldPainter_GetLightGlow28"),
-    (0x002e_e220, world_painter_get_sun_texture, "WorldPainter_GetSunTexture"),
-    (0x002e_e3b8, world_painter_get_camera08, "WorldPainter_GetCamera08"),
-    (0x002e_e570, world_painter_get_weather20, "WorldPainter_GetWeather20"),
-    (0x002e_e7c8, world_painter_get_weather68, "WorldPainter_GetWeather68"),
-    (0x002e_e810, world_painter_get_weather70, "WorldPainter_GetWeather70"),
-    (0x002e_e858, world_painter_get_weather78, "WorldPainter_GetWeather78"),
-    (0x002e_e9c0, world_painter_get_fog08, "WorldPainter_GetFog08"),
-    (0x002e_ea08, world_painter_get_fog10, "WorldPainter_GetFog10"),
+    (
+        0x002e_d1d0,
+        world_painter_blend_view_colours,
+        "WorldPainter_BlendViewColours",
+    ),
+    (
+        0x002e_e400,
+        world_painter_get_sky_box08,
+        "WorldPainter_GetSkyBox08",
+    ),
+    (
+        0x002e_eed0,
+        world_painter_get_light_glow28,
+        "WorldPainter_GetLightGlow28",
+    ),
+    (
+        0x002e_e220,
+        world_painter_get_sun_texture,
+        "WorldPainter_GetSunTexture",
+    ),
+    (
+        0x002e_e3b8,
+        world_painter_get_camera08,
+        "WorldPainter_GetCamera08",
+    ),
+    (
+        0x002e_e570,
+        world_painter_get_weather20,
+        "WorldPainter_GetWeather20",
+    ),
+    (
+        0x002e_e7c8,
+        world_painter_get_weather68,
+        "WorldPainter_GetWeather68",
+    ),
+    (
+        0x002e_e810,
+        world_painter_get_weather70,
+        "WorldPainter_GetWeather70",
+    ),
+    (
+        0x002e_e858,
+        world_painter_get_weather78,
+        "WorldPainter_GetWeather78",
+    ),
+    (
+        0x002e_e9c0,
+        world_painter_get_fog08,
+        "WorldPainter_GetFog08",
+    ),
+    (
+        0x002e_ea08,
+        world_painter_get_fog10,
+        "WorldPainter_GetFog10",
+    ),
 ];
 
 const ADD_DIRECTIONAL_SCALED: Callee = Callee {
@@ -660,20 +712,29 @@ mod tests {
 
     #[test]
     fn irradiance_get_entry_matches() {
-        check_lohi(ee::s12::f_0038abf8, irradiance_get_entry, 400, &|c, seed| {
-            let mut r = Rng(0x0e37_0001 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            let index = match seed % 3 {
-                0 => 0u64,
-                1 => (seed / 3 % 5) as u64,
-                _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
-            };
-            c.g[A1][0] = index;
-            let count = if seed % 7 == 0 { -1i32 } else { (seed % 4) as i32 };
-            c.bus.write32(DATA + 4, count as u32);
-            c.bus.write32(DATA + 8, r.next_u32());
-        });
+        check_lohi(
+            ee::s12::f_0038abf8,
+            irradiance_get_entry,
+            400,
+            &|c, seed| {
+                let mut r = Rng(0x0e37_0001 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                let index = match seed % 3 {
+                    0 => 0u64,
+                    1 => (seed / 3 % 5) as u64,
+                    _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+                };
+                c.g[A1][0] = index;
+                let count = if seed % 7 == 0 {
+                    -1i32
+                } else {
+                    (seed % 4) as i32
+                };
+                c.bus.write32(DATA + 4, count as u32);
+                c.bus.write32(DATA + 8, r.next_u32());
+            },
+        );
     }
 
     #[test]
@@ -690,15 +751,20 @@ mod tests {
 
     #[test]
     fn irradiance_scale_in_place_matches() {
-        check(ee::s12::f_00389810, irradiance_scale_in_place, 200, &|c, seed| {
-            let mut r = Rng(0x0e37_0003 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = (DATA + 0x1000) as u64;
-            c.f[12] = r.edge_f32();
-            for i in 0..0x30 {
-                c.bus.write32(DATA + 0x1000 + i * 4, r.edge_f32());
-            }
-        });
+        check(
+            ee::s12::f_00389810,
+            irradiance_scale_in_place,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0e37_0003 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.f[12] = r.edge_f32();
+                for i in 0..0x30 {
+                    c.bus.write32(DATA + 0x1000 + i * 4, r.edge_f32());
+                }
+            },
+        );
     }
 
     #[test]
@@ -718,48 +784,58 @@ mod tests {
 
     #[test]
     fn irradiance_add_directional_matches() {
-        check(ee::s12::f_00389520, irradiance_add_directional, 60, &|c, seed| {
-            let mut r = Rng(0x0e37_0005 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = (DATA + 0x1000) as u64;
-            c.g[A1][0] = (DATA + 0x2000) as u64;
-            c.g[A2][0] = (DATA + 0x4000) as u64;
-            for i in 0..0x100 {
-                c.bus.write32(DATA + 0x1000 + i * 4, r.next_u32());
-            }
-            for i in 0..0x100 {
-                c.bus.write32(DATA + 0x2000 + i * 4, r.edge_f32());
-            }
-            for i in 0..0x100 {
-                c.bus.write32(DATA + 0x4000 + i * 4, r.next_u32());
-            }
-        });
+        check(
+            ee::s12::f_00389520,
+            irradiance_add_directional,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x0e37_0005 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = (DATA + 0x4000) as u64;
+                for i in 0..0x100 {
+                    c.bus.write32(DATA + 0x1000 + i * 4, r.next_u32());
+                }
+                for i in 0..0x100 {
+                    c.bus.write32(DATA + 0x2000 + i * 4, r.edge_f32());
+                }
+                for i in 0..0x100 {
+                    c.bus.write32(DATA + 0x4000 + i * 4, r.next_u32());
+                }
+            },
+        );
     }
 
     #[test]
     fn irradiance_find_index_matches() {
-        check(ee::s12::f_0038ac50, irradiance_find_index, 100, &|c, seed| {
-            let mut r = Rng(0x0e37_0006 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            let set = DATA + 0x100;
-            c.g[A0][0] = set as u64;
-            c.g[A1][0] = (DATA + 0x300) as u64;
-            let base = DATA + 0x200;
-            let count = if seed % 11 == 0 { 0 } else { 3 };
-            c.bus.write32(set + 4, count);
-            c.bus.write32(set + 0xc, base);
-            for (i, name) in [b"aaa\0".as_slice(), b"bbb\0", b"ccc\0"].iter().enumerate() {
-                for (j, b) in name.iter().enumerate() {
-                    c.bus.write8(base + (i * 8) as u32 + j as u32, *b);
+        check(
+            ee::s12::f_0038ac50,
+            irradiance_find_index,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0e37_0006 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let set = DATA + 0x100;
+                c.g[A0][0] = set as u64;
+                c.g[A1][0] = (DATA + 0x300) as u64;
+                let base = DATA + 0x200;
+                let count = if seed % 11 == 0 { 0 } else { 3 };
+                c.bus.write32(set + 4, count);
+                c.bus.write32(set + 0xc, base);
+                for (i, name) in [b"aaa\0".as_slice(), b"bbb\0", b"ccc\0"].iter().enumerate() {
+                    for (j, b) in name.iter().enumerate() {
+                        c.bus.write8(base + (i * 8) as u32 + j as u32, *b);
+                    }
                 }
-            }
-            let name: &[u8] = if seed % 2 == 0 { b"bbb\0" } else { b"zzz\0" };
-            for (j, b) in name.iter().enumerate() {
-                c.bus.write8(DATA + 0x300 + j as u32, *b);
-            }
-        });
+                let name: &[u8] = if seed % 2 == 0 { b"bbb\0" } else { b"zzz\0" };
+                for (j, b) in name.iter().enumerate() {
+                    c.bus.write8(DATA + 0x300 + j as u32, *b);
+                }
+            },
+        );
     }
 
     // ------------------------------------------------------------- tWPIGD blends
@@ -803,21 +879,30 @@ mod tests {
 
     #[test]
     fn world_painter_blend_view_colours_matches() {
-        check(ee::s09::f_002ed1d0, world_painter_blend_view_colours, 200, &|c, seed| {
-            let mut r = Rng(0x0e37_0007 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = (DATA + 0x1000) as u64;
-            c.g[A1][0] = (DATA + 0x2000) as u64;
-            c.g[A2][0] = (DATA + 0x3000) as u64;
-            c.g[A3][0] = if seed % 2 == 0 { 0 } else { r.next_u32() as u64 };
-            c.bus.write32(GAME_GP.wrapping_sub(0x3978), r.edge_f32()); // global k
-            for i in 0..0x20 {
-                c.bus.write32(DATA + 0x1000 + i * 4, r.edge_f32());
-                c.bus.write32(DATA + 0x2000 + i * 4, r.edge_f32());
-                c.bus.write32(DATA + 0x3000 + i * 4, r.edge_f32());
-            }
-        });
+        check(
+            ee::s09::f_002ed1d0,
+            world_painter_blend_view_colours,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0e37_0007 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = (DATA + 0x1000) as u64;
+                c.g[A1][0] = (DATA + 0x2000) as u64;
+                c.g[A2][0] = (DATA + 0x3000) as u64;
+                c.g[A3][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.bus.write32(GAME_GP.wrapping_sub(0x3978), r.edge_f32()); // global k
+                for i in 0..0x20 {
+                    c.bus.write32(DATA + 0x1000 + i * 4, r.edge_f32());
+                    c.bus.write32(DATA + 0x2000 + i * 4, r.edge_f32());
+                    c.bus.write32(DATA + 0x3000 + i * 4, r.edge_f32());
+                }
+            },
+        );
     }
 
     // ------------------------------------------------------------- getters
@@ -840,71 +925,121 @@ mod tests {
 
     #[test]
     fn world_painter_get_sky_box08_matches() {
-        fakes::covered(ee::s09::f_002ee400, world_painter_get_sky_box08, 200, &|c, seed| {
-            getter_setup(c, seed, 0x10, 0xd0);
-        });
+        fakes::covered(
+            ee::s09::f_002ee400,
+            world_painter_get_sky_box08,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x10, 0xd0);
+            },
+        );
     }
 
     #[test]
     fn world_painter_get_light_glow28_matches() {
-        fakes::covered(ee::s09::f_002eeed0, world_painter_get_light_glow28, 200, &|c, seed| {
-            getter_setup(c, seed, 0x8, 0x88);
-        });
+        fakes::covered(
+            ee::s09::f_002eeed0,
+            world_painter_get_light_glow28,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x8, 0x88);
+            },
+        );
     }
 
     #[test]
     fn world_painter_get_sun_texture_matches() {
-        fakes::covered(ee::s09::f_002ee220, world_painter_get_sun_texture, 200, &|c, seed| {
-            getter_setup(c, seed, 0x14, 0x108);
-        });
+        fakes::covered(
+            ee::s09::f_002ee220,
+            world_painter_get_sun_texture,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x14, 0x108);
+            },
+        );
     }
 
     #[test]
     fn world_painter_get_camera08_matches() {
-        fakes::covered(ee::s09::f_002ee3b8, world_painter_get_camera08, 200, &|c, seed| {
-            getter_setup(c, seed, 0x0, 0x30);
-        });
+        fakes::covered(
+            ee::s09::f_002ee3b8,
+            world_painter_get_camera08,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x0, 0x30);
+            },
+        );
     }
 
     #[test]
     fn world_painter_get_weather20_matches() {
-        fakes::covered(ee::s09::f_002ee570, world_painter_get_weather20, 200, &|c, seed| {
-            getter_setup(c, seed, 0x20, 0x170);
-        });
+        fakes::covered(
+            ee::s09::f_002ee570,
+            world_painter_get_weather20,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x20, 0x170);
+            },
+        );
     }
 
     #[test]
     fn world_painter_get_weather68_matches() {
-        fakes::covered(ee::s09::f_002ee7c8, world_painter_get_weather68, 200, &|c, seed| {
-            getter_setup(c, seed, 0x20, 0x1b8);
-        });
+        fakes::covered(
+            ee::s09::f_002ee7c8,
+            world_painter_get_weather68,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x20, 0x1b8);
+            },
+        );
     }
 
     #[test]
     fn world_painter_get_weather70_matches() {
-        fakes::covered(ee::s09::f_002ee810, world_painter_get_weather70, 200, &|c, seed| {
-            getter_setup(c, seed, 0x20, 0x1c0);
-        });
+        fakes::covered(
+            ee::s09::f_002ee810,
+            world_painter_get_weather70,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x20, 0x1c0);
+            },
+        );
     }
 
     #[test]
     fn world_painter_get_weather78_matches() {
-        fakes::covered(ee::s09::f_002ee858, world_painter_get_weather78, 200, &|c, seed| {
-            getter_setup(c, seed, 0x20, 0x1c8);
-        });
+        fakes::covered(
+            ee::s09::f_002ee858,
+            world_painter_get_weather78,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x20, 0x1c8);
+            },
+        );
     }
 
     #[test]
     fn world_painter_get_fog08_matches() {
-        fakes::covered(ee::s09::f_002ee9c0, world_painter_get_fog08, 200, &|c, seed| {
-            getter_setup(c, seed, 0x4, 0x38);
-        });
+        fakes::covered(
+            ee::s09::f_002ee9c0,
+            world_painter_get_fog08,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x4, 0x38);
+            },
+        );
     }
 
     #[test]
     fn world_painter_get_fog10_matches() {
-        fakes::covered(ee::s09::f_002eea08, world_painter_get_fog10, 200, &|c, seed| {
-            getter_setup(c, seed, 0x4, 0x40);
-        });
+        fakes::covered(
+            ee::s09::f_002eea08,
+            world_painter_get_fog10,
+            200,
+            &|c, seed| {
+                getter_setup(c, seed, 0x4, 0x40);
+            },
+        );
     }
 }

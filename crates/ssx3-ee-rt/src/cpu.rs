@@ -241,7 +241,9 @@ impl Cpu {
     pub fn lw(&mut self, a: u32) -> u64 {
         if a < 0x0200_0000 {
             let o = (a & !3) as usize;
-            return sx(u32::from_le_bytes(self.bus.ram[o..o + 4].try_into().unwrap()));
+            return sx(u32::from_le_bytes(
+                self.bus.ram[o..o + 4].try_into().unwrap(),
+            ));
         }
         self.bus.plat.set_now(self.cycles);
         sx(self.bus.read32(a))
@@ -376,7 +378,12 @@ impl Cpu {
     pub fn lqc2(&mut self, ft: usize, a: u32) {
         let v = self.bus.read128(a);
         if ft != 0 {
-            let r = [v as u32, (v >> 32) as u32, (v >> 64) as u32, (v >> 96) as u32];
+            let r = [
+                v as u32,
+                (v >> 32) as u32,
+                (v >> 64) as u32,
+                (v >> 96) as u32,
+            ];
             self.bus.plat.set_vf(ft, r);
         }
     }
@@ -423,7 +430,11 @@ impl Cpu {
     pub fn divu(&mut self, p: usize, rs: usize, rt: usize) {
         let n = self.g[rs][0] as u32;
         let d = self.g[rt][0] as u32;
-        let (q, r) = if d == 0 { (u32::MAX, n) } else { (n / d, n % d) };
+        let (q, r) = if d == 0 {
+            (u32::MAX, n)
+        } else {
+            (n / d, n % d)
+        };
         self.lo[p] = sx(q);
         self.hi[p] = sx(r);
     }

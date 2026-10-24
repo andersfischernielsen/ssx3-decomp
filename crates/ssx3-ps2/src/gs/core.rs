@@ -9,7 +9,6 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use swizzle::Surface;
 
-
 /// Per-context drawing registers.
 #[derive(Clone, Copy, Default, Debug)]
 pub(crate) struct Ctx {
@@ -93,7 +92,6 @@ impl Default for Regs {
         }
     }
 }
-
 
 pub struct Gs {
     pub vram: Vec<u32>,
@@ -271,10 +269,16 @@ impl Gs {
     /// GPU backend statistics (`None` on the CPU backend).
     /// `SSX3_N3_DIAG`: the native-path fallback tallies, largest first.
     pub fn n3_diag_report(&self) -> String {
-        let Some(g) = self.gpu.as_ref() else { return String::new() };
+        let Some(g) = self.gpu.as_ref() else {
+            return String::new();
+        };
         let mut v: Vec<_> = g.n3.diag.iter().collect();
         v.sort_by(|a, b| b.1.cmp(a.1));
-        let o: String = v.iter().take(60).map(|(k, n)| format!("  {n:>10} {k}\n")).collect();
+        let o: String = v
+            .iter()
+            .take(60)
+            .map(|(k, n)| format!("  {n:>10} {k}\n"))
+            .collect();
         o
     }
 
@@ -350,8 +354,14 @@ impl Gs {
     /// The image `display_gpu` shows (N× with `SSX3_RENDER_SCALE`), read
     /// back; (0, 0) on the CPU backend or when nothing is displayed.
     pub fn display_presented(&mut self, out: &mut Vec<u32>) -> (u32, u32) {
-        let Some(f) = self.display_gpu() else { return (0, 0) };
-        *out = self.gpu.as_mut().map(|g| g.read_frame(&f)).unwrap_or_default();
+        let Some(f) = self.display_gpu() else {
+            return (0, 0);
+        };
+        *out = self
+            .gpu
+            .as_mut()
+            .map(|g| g.read_frame(&f))
+            .unwrap_or_default();
         (f.width, f.height)
     }
 
@@ -697,7 +707,10 @@ impl Gs {
     /// The N× copies (`SSX3_RENDER_SCALE`) as (label, w, h, RGBA words).
     pub fn hires_snapshots(&mut self) -> Vec<(String, u32, u32, Vec<u32>)> {
         self.sync();
-        self.gpu.as_mut().map(|g| g.hires_snapshots()).unwrap_or_default()
+        self.gpu
+            .as_mut()
+            .map(|g| g.hires_snapshots())
+            .unwrap_or_default()
     }
 
     /// Tell the GS that `vram` was modified directly (not through GIF or
@@ -1016,4 +1029,3 @@ pub(crate) fn qword_bytes(q: &[Qword]) -> &[u8] {
     // layout is `to_le_bytes`.
     unsafe { std::slice::from_raw_parts(q.as_ptr() as *const u8, q.len() * 16) }
 }
-

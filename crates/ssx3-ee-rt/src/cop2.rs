@@ -12,14 +12,25 @@ impl Cpu {
             return;
         }
         let r = self.bus.plat.vf(fd);
-        self.g[rt] = [r[0] as u64 | (r[1] as u64) << 32, r[2] as u64 | (r[3] as u64) << 32];
+        self.g[rt] = [
+            r[0] as u64 | (r[1] as u64) << 32,
+            r[2] as u64 | (r[3] as u64) << 32,
+        ];
     }
     pub fn qmtc2(&mut self, rt: usize, fd: usize) {
         if fd == 0 {
             return;
         }
         let g = self.g[rt];
-        self.bus.plat.set_vf(fd, [g[0] as u32, (g[0] >> 32) as u32, g[1] as u32, (g[1] >> 32) as u32]);
+        self.bus.plat.set_vf(
+            fd,
+            [
+                g[0] as u32,
+                (g[0] >> 32) as u32,
+                g[1] as u32,
+                (g[1] >> 32) as u32,
+            ],
+        );
     }
     pub fn cfc2(&mut self, rt: usize, id: usize) {
         let v = self.bus.plat.read_ctrl(id as u32);

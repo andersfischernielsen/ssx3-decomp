@@ -332,8 +332,8 @@ const EBIT: u32 = 0x4000_0000;
 
 fn ibit_prog() -> [(u32, u32); 4] {
     [
-        (IBIT | up_addi(8, 1, 0), f(1.0)),        // ADDi.x vf1, vf0, I  | LOI 1.0
-        (IBIT | up_addi(4, 1, 0), f(2.0)),        // ADDi.y vf1, vf0, I  | LOI 2.0
+        (IBIT | up_addi(8, 1, 0), f(1.0)), // ADDi.x vf1, vf0, I  | LOI 1.0
+        (IBIT | up_addi(4, 1, 0), f(2.0)), // ADDi.y vf1, vf0, I  | LOI 2.0
         (IBIT | EBIT | up_addi(2, 1, 0), f(3.0)), // ADDi.z vf1, vf0, I  | LOI 3.0  [E]
         (UNOP, LNOP),
     ]
@@ -375,8 +375,8 @@ const WAITQ: u32 = 0x8000_03bf;
 /// one pair later. vf1 = (1, 4, -9, 0), vf2.x = 10.
 fn q_wait_prog(lower: u32) -> [(u32, u32); 4] {
     [
-        (UNOP, div(2, 0, 1, 1)),        // DIV Q, vf2.x, vf1.y  (10 / 4)
-        (up_mulq(8, 3, 1), lower),      // MULq.x vf3, vf1, Q | lower
+        (UNOP, div(2, 0, 1, 1)),         // DIV Q, vf2.x, vf1.y  (10 / 4)
+        (up_mulq(8, 3, 1), lower),       // MULq.x vf3, vf1, Q | lower
         (EBIT | up_mulq(4, 3, 1), LNOP), // MULq.y vf3, vf1, Q [E]
         (UNOP, LNOP),
     ]
@@ -398,7 +398,11 @@ fn waitq_pair_upper_reads_new_q() {
     vu.q = f(100.0);
     vu.start(0);
     assert!(vu.run(100, &mut |_| {}));
-    assert_eq!(vu.vf[3][0], f(2.5), "upper in the WAITQ pair sees the new Q");
+    assert_eq!(
+        vu.vf[3][0],
+        f(2.5),
+        "upper in the WAITQ pair sees the new Q"
+    );
     assert_eq!(vu.vf[3][1], f(10.0));
 }
 
@@ -437,7 +441,10 @@ fn waitq_translation_stalls_before_upper() {
         let stall = arm.find("vu.stall_q();").expect("stall_q");
         let q = arm.find("&[vu.q; 4]").expect("Q read");
         let wait = arm.find("vu.waitq();").expect("waitq");
-        assert!(stall < q && q < wait, "stall_q, upper, waitq in order:\n{arm}");
+        assert!(
+            stall < q && q < wait,
+            "stall_q, upper, waitq in order:\n{arm}"
+        );
     }
 }
 
@@ -502,10 +509,10 @@ fn branch_reads_old_vi_written_by_previous_pair() {
 fn stalled_branch_reads_current_vi() {
     let mut vu = interp_vu(1);
     let mut p = vec![
-        (UNOP, iaddiu(1, 0, 1)),               // 0x00 vi1 = 1
-        (up_add(15, 1, 0, 0), LNOP),           // 0x08 vf1 = vf0 + vf0
-        (UNOP, iaddi(1, 1, -1)),               // 0x10 vi1 = 0
-        (up_add(15, 2, 1, 1), ibne(0, 1, 3)),  // 0x18 stalls on vf1 -> current vi1 (0)
+        (UNOP, iaddiu(1, 0, 1)),              // 0x00 vi1 = 1
+        (up_add(15, 1, 0, 0), LNOP),          // 0x08 vf1 = vf0 + vf0
+        (UNOP, iaddi(1, 1, -1)),              // 0x10 vi1 = 0
+        (up_add(15, 2, 1, 1), ibne(0, 1, 3)), // 0x18 stalls on vf1 -> current vi1 (0)
     ];
     vi_backup_tail(&mut p);
     load_prog(&mut vu, &p);
@@ -520,13 +527,13 @@ fn jr_reads_current_vi() {
     let jr = |is: u32| 0x24 << 25 | is << 11;
     let mut vu = interp_vu(1);
     let p = [
-        (UNOP, iaddiu(2, 0, 5)),               // 0x00 vi2 = 5 (0x28)
-        (UNOP, LNOP),                          // 0x08
-        (UNOP, iaddiu(2, 0, 6)),               // 0x10 vi2 = 6 (0x30)
-        (UNOP, jr(2)),                         // 0x18 -> 0x30
-        (UNOP, LNOP),                          // 0x20 delay
-        (EBIT | UNOP, iaddiu(7, 0, 1)),        // 0x28 old target
-        (EBIT | UNOP, iaddiu(8, 0, 2)),        // 0x30 new target
+        (UNOP, iaddiu(2, 0, 5)),        // 0x00 vi2 = 5 (0x28)
+        (UNOP, LNOP),                   // 0x08
+        (UNOP, iaddiu(2, 0, 6)),        // 0x10 vi2 = 6 (0x30)
+        (UNOP, jr(2)),                  // 0x18 -> 0x30
+        (UNOP, LNOP),                   // 0x20 delay
+        (EBIT | UNOP, iaddiu(7, 0, 1)), // 0x28 old target
+        (EBIT | UNOP, iaddiu(8, 0, 2)), // 0x30 new target
         (UNOP, LNOP),
         (UNOP, LNOP),
     ];

@@ -413,16 +413,76 @@ const TIMER_REG_NAMES: [[&str; 4]; 4] = [
 
 /// Readable names for the DMA channel registers, indexed by `[channel][register]`.
 const DMA_REG_NAMES: [[&str; 5]; 10] = [
-    ["D0_VIF0_CHCR", "D0_VIF0_MADR", "D0_VIF0_QWC", "D0_VIF0_TADR", "D0_VIF0_ASR"],
-    ["D1_VIF1_CHCR", "D1_VIF1_MADR", "D1_VIF1_QWC", "D1_VIF1_TADR", "D1_VIF1_ASR"],
-    ["D2_GIF_CHCR", "D2_GIF_MADR", "D2_GIF_QWC", "D2_GIF_TADR", "D2_GIF_ASR"],
-    ["D3_IPUF_CHCR", "D3_IPUF_MADR", "D3_IPUF_QWC", "D3_IPUF_TADR", "D3_IPUF_ASR"],
-    ["D4_IPUT_CHCR", "D4_IPUT_MADR", "D4_IPUT_QWC", "D4_IPUT_TADR", "D4_IPUT_ASR"],
-    ["D5_SIF0_CHCR", "D5_SIF0_MADR", "D5_SIF0_QWC", "D5_SIF0_TADR", "D5_SIF0_ASR"],
-    ["D6_SIF1_CHCR", "D6_SIF1_MADR", "D6_SIF1_QWC", "D6_SIF1_TADR", "D6_SIF1_ASR"],
-    ["D7_SIF2_CHCR", "D7_SIF2_MADR", "D7_SIF2_QWC", "D7_SIF2_TADR", "D7_SIF2_ASR"],
-    ["D8_SPRF_CHCR", "D8_SPRF_MADR", "D8_SPRF_QWC", "D8_SPRF_TADR", "D8_SPRF_ASR"],
-    ["D9_SPRT_CHCR", "D9_SPRT_MADR", "D9_SPRT_QWC", "D9_SPRT_TADR", "D9_SPRT_ASR"],
+    [
+        "D0_VIF0_CHCR",
+        "D0_VIF0_MADR",
+        "D0_VIF0_QWC",
+        "D0_VIF0_TADR",
+        "D0_VIF0_ASR",
+    ],
+    [
+        "D1_VIF1_CHCR",
+        "D1_VIF1_MADR",
+        "D1_VIF1_QWC",
+        "D1_VIF1_TADR",
+        "D1_VIF1_ASR",
+    ],
+    [
+        "D2_GIF_CHCR",
+        "D2_GIF_MADR",
+        "D2_GIF_QWC",
+        "D2_GIF_TADR",
+        "D2_GIF_ASR",
+    ],
+    [
+        "D3_IPUF_CHCR",
+        "D3_IPUF_MADR",
+        "D3_IPUF_QWC",
+        "D3_IPUF_TADR",
+        "D3_IPUF_ASR",
+    ],
+    [
+        "D4_IPUT_CHCR",
+        "D4_IPUT_MADR",
+        "D4_IPUT_QWC",
+        "D4_IPUT_TADR",
+        "D4_IPUT_ASR",
+    ],
+    [
+        "D5_SIF0_CHCR",
+        "D5_SIF0_MADR",
+        "D5_SIF0_QWC",
+        "D5_SIF0_TADR",
+        "D5_SIF0_ASR",
+    ],
+    [
+        "D6_SIF1_CHCR",
+        "D6_SIF1_MADR",
+        "D6_SIF1_QWC",
+        "D6_SIF1_TADR",
+        "D6_SIF1_ASR",
+    ],
+    [
+        "D7_SIF2_CHCR",
+        "D7_SIF2_MADR",
+        "D7_SIF2_QWC",
+        "D7_SIF2_TADR",
+        "D7_SIF2_ASR",
+    ],
+    [
+        "D8_SPRF_CHCR",
+        "D8_SPRF_MADR",
+        "D8_SPRF_QWC",
+        "D8_SPRF_TADR",
+        "D8_SPRF_ASR",
+    ],
+    [
+        "D9_SPRT_CHCR",
+        "D9_SPRT_MADR",
+        "D9_SPRT_QWC",
+        "D9_SPRT_TADR",
+        "D9_SPRT_ASR",
+    ],
 ];
 
 /// Map a timer-relative offset to its index in [`TIMER_REG_NAMES`].
@@ -502,7 +562,10 @@ mod tests {
     fn timer_counts_and_reloads() {
         let mut d = Devices::new();
         // T0: count up, zero-return at the compare value.
-        assert!(d.write32(TIMER_BASES[0] + timer_reg::MODE, timer_mode::CUE | timer_mode::ZRET));
+        assert!(d.write32(
+            TIMER_BASES[0] + timer_reg::MODE,
+            timer_mode::CUE | timer_mode::ZRET
+        ));
         assert!(d.write32(TIMER_BASES[0] + timer_reg::COMP, 10));
 
         d.timers_tick(4);
@@ -549,7 +612,10 @@ mod tests {
             (dma_reg::ASR, 0x0000_0001),
         ];
         for (reg, val) in cases {
-            assert!(d.write32(base + reg, val), "write {reg:#x} should be handled");
+            assert!(
+                d.write32(base + reg, val),
+                "write {reg:#x} should be handled"
+            );
             assert_eq!(d.read32(base + reg), Some(val));
         }
         assert_eq!(d.dma[2].madr, 0x0010_0000);
@@ -589,10 +655,22 @@ mod tests {
 
     #[test]
     fn register_names_cover_the_window() {
-        assert_eq!(register_name(TIMER_BASES[0] + timer_reg::COUNT), Some("T0_COUNT"));
-        assert_eq!(register_name(TIMER_BASES[2] + timer_reg::MODE), Some("T2_MODE"));
-        assert_eq!(register_name(DMA_CHANNEL_BASES[2] + dma_reg::CHCR), Some("D2_GIF_CHCR"));
-        assert_eq!(register_name(DMA_CHANNEL_BASES[9] + dma_reg::ASR), Some("D9_SPRT_ASR"));
+        assert_eq!(
+            register_name(TIMER_BASES[0] + timer_reg::COUNT),
+            Some("T0_COUNT")
+        );
+        assert_eq!(
+            register_name(TIMER_BASES[2] + timer_reg::MODE),
+            Some("T2_MODE")
+        );
+        assert_eq!(
+            register_name(DMA_CHANNEL_BASES[2] + dma_reg::CHCR),
+            Some("D2_GIF_CHCR")
+        );
+        assert_eq!(
+            register_name(DMA_CHANNEL_BASES[9] + dma_reg::ASR),
+            Some("D9_SPRT_ASR")
+        );
         assert_eq!(register_name(DMA_CTRL), Some("D_CTRL"));
         assert_eq!(register_name(DMA_STAT), Some("D_STAT"));
         assert_eq!(register_name(DPCR), Some("D_PCR"));

@@ -20,7 +20,13 @@ use super::super::raster::Pages;
 /// `SSX3_RENDER_SCALE` (1 = off; at most 8).
 pub(crate) fn scale() -> u32 {
     static S: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
-    *S.get_or_init(|| std::env::var("SSX3_RENDER_SCALE").ok().and_then(|v| v.parse().ok()).unwrap_or(1).clamp(1, 8))
+    *S.get_or_init(|| {
+        std::env::var("SSX3_RENDER_SCALE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1)
+            .clamp(1, 8)
+    })
 }
 
 /// A buffer: base (64-word blocks), width (in 64 pixels), format, and
@@ -67,15 +73,28 @@ fn each_page(p: &Pages, mut f: impl FnMut(usize)) {
     }
 }
 
-fn texture(dev: &wgpu::Device, label: &str, w: u32, h: u32, format: wgpu::TextureFormat, extra: wgpu::TextureUsages) -> wgpu::TextureView {
+fn texture(
+    dev: &wgpu::Device,
+    label: &str,
+    w: u32,
+    h: u32,
+    format: wgpu::TextureFormat,
+    extra: wgpu::TextureUsages,
+) -> wgpu::TextureView {
     dev.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
-        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | extra,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | extra,
         view_formats: &[],
     })
     .create_view(&Default::default())
@@ -107,9 +126,30 @@ impl Hires {
         self.h = h;
         self.surfs.clear();
         let c = wgpu::TextureUsages::COPY_SRC;
-        self.prev = Some(texture(dev, "gs-hires-prev", w, h, super::native::COLOR_FORMAT, wgpu::TextureUsages::COPY_DST));
-        self.dummy_color = Some(texture(dev, "gs-hires-dummy-c", w, h, super::native::COLOR_FORMAT, c));
-        self.dummy_depth = Some(texture(dev, "gs-hires-dummy-z", w, h, super::native::DEPTH_FORMAT, c));
+        self.prev = Some(texture(
+            dev,
+            "gs-hires-prev",
+            w,
+            h,
+            super::native::COLOR_FORMAT,
+            wgpu::TextureUsages::COPY_DST,
+        ));
+        self.dummy_color = Some(texture(
+            dev,
+            "gs-hires-dummy-c",
+            w,
+            h,
+            super::native::COLOR_FORMAT,
+            c,
+        ));
+        self.dummy_depth = Some(texture(
+            dev,
+            "gs-hires-dummy-z",
+            w,
+            h,
+            super::native::DEPTH_FORMAT,
+            c,
+        ));
     }
 
     /// Any VRAM write to `pages` (native runs included).
@@ -124,9 +164,27 @@ impl Hires {
     pub fn acquire(&mut self, dev: &wgpu::Device, key: Key, pages: &Pages) -> bool {
         let fresh = !self.surfs.contains_key(&key);
         if fresh {
-            let format = if key.depth { super::native::DEPTH_FORMAT } else { super::native::COLOR_FORMAT };
-            let view = texture(dev, "gs-hires-surface", self.w, self.h, format, wgpu::TextureUsages::COPY_SRC);
-            self.surfs.insert(key, Surf { view, pages: *pages, clock: 0 });
+            let format = if key.depth {
+                super::native::DEPTH_FORMAT
+            } else {
+                super::native::COLOR_FORMAT
+            };
+            let view = texture(
+                dev,
+                "gs-hires-surface",
+                self.w,
+                self.h,
+                format,
+                wgpu::TextureUsages::COPY_SRC,
+            );
+            self.surfs.insert(
+                key,
+                Surf {
+                    view,
+                    pages: *pages,
+                    clock: 0,
+                },
+            );
         }
         if let Some(s) = self.surfs.get_mut(&key) {
             s.pages.union(pages);
@@ -141,7 +199,9 @@ impl Hires {
     /// Whether the N× copy of `key` exists and nothing wrote `pages` since
     /// it was current (a texture can then be sampled from it).
     pub fn is_current(&self, key: &Key, pages: &Pages) -> bool {
-        let Some(s) = self.surfs.get(key) else { return false };
+        let Some(s) = self.surfs.get(key) else {
+            return false;
+        };
         // Only the texture pages inside the buffer: a texture's extent is a
         // power of two and can reach past the buffer into other buffers.
         let mut inside = *pages;
@@ -156,9 +216,13 @@ impl Hires {
     /// Whether the N× copy of `key` stands for all of `pages` and is
     /// current there (a displayed rectangle).
     pub fn covers(&self, key: &Key, pages: &Pages) -> bool {
-        let Some(s) = self.surfs.get(key) else { return false };
+        let Some(s) = self.surfs.get(key) else {
+            return false;
+        };
         let mut ok = true;
-        each_page(pages, |p| ok &= s.pages.0[p / 64] & 1 << (p % 64) != 0 && self.page_clock[p] <= s.clock);
+        each_page(pages, |p| {
+            ok &= s.pages.0[p / 64] & 1 << (p % 64) != 0 && self.page_clock[p] <= s.clock
+        });
         ok
     }
 

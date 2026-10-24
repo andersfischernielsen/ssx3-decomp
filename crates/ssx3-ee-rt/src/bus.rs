@@ -14,7 +14,8 @@ pub const SPR_SIZE: usize = 16 * 1024;
 /// RAM pages (4 KiB) written since the last [`take_written`]: every store
 /// into RAM marks its page ([`mark_written`]; the bus and the DMA paths do),
 /// so the frame snapshots copy only what changed.
-static WRITTEN: [std::sync::atomic::AtomicBool; RAM_SIZE / 4096] = [const { std::sync::atomic::AtomicBool::new(false) }; RAM_SIZE / 4096];
+static WRITTEN: [std::sync::atomic::AtomicBool; RAM_SIZE / 4096] =
+    [const { std::sync::atomic::AtomicBool::new(false) }; RAM_SIZE / 4096];
 
 /// Mark the RAM page holding byte offset `o` written.
 #[inline(always)]
@@ -28,7 +29,9 @@ pub fn mark_written(o: usize) {
 /// and clear them.
 pub fn take_written(bits: &mut [u64]) {
     for (i, p) in WRITTEN.iter().enumerate() {
-        if p.load(std::sync::atomic::Ordering::Relaxed) && p.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        if p.load(std::sync::atomic::Ordering::Relaxed)
+            && p.swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
             bits[i >> 6] |= 1 << (i & 63);
         }
     }
@@ -260,9 +263,9 @@ impl Bus {
             let a = addr.wrapping_add(i as u32);
             match target(a) {
                 Target::Ram(o) => {
-                self.mark(o);
-                self.ram[o] = *b;
-            }
+                    self.mark(o);
+                    self.ram[o] = *b;
+                }
                 Target::Spr(o) => self.spr[o] = *b,
                 _ => {}
             }

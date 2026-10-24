@@ -40,7 +40,16 @@ pub struct Pack {
 
 impl Pack {
     pub fn from_env() -> Pack {
-        let dump = std::env::var("SSX3_TEX_DUMP").ok().filter(|v| !v.is_empty() && v != "0").map(|v| if v == "1" { PathBuf::from("textures/dump") } else { PathBuf::from(v) });
+        let dump = std::env::var("SSX3_TEX_DUMP")
+            .ok()
+            .filter(|v| !v.is_empty() && v != "0")
+            .map(|v| {
+                if v == "1" {
+                    PathBuf::from("textures/dump")
+                } else {
+                    PathBuf::from(v)
+                }
+            });
         if let Some(d) = &dump {
             match std::fs::create_dir_all(d) {
                 Ok(()) => eprintln!("[gfx] dumping textures to {}", d.display()),
@@ -64,7 +73,11 @@ impl Pack {
                 eprintln!("[gfx] {} replacement textures in {dir}", replace.len());
             }
         }
-        Pack { dump, dumped: HashSet::new(), replace }
+        Pack {
+            dump,
+            dumped: HashSet::new(),
+            replace,
+        }
     }
 
     /// Write `d` as `<name>.png` in the dump directory (once).
@@ -78,10 +91,14 @@ impl Pack {
         if path.exists() {
             return;
         }
-        let rgba: Vec<u8> = d.rgba.iter().flat_map(|p| {
-            let [r, g, b, a] = p.to_le_bytes();
-            [r, g, b, (a as u32 * 2).min(255) as u8]
-        }).collect();
+        let rgba: Vec<u8> = d
+            .rgba
+            .iter()
+            .flat_map(|p| {
+                let [r, g, b, a] = p.to_le_bytes();
+                [r, g, b, (a as u32 * 2).min(255) as u8]
+            })
+            .collect();
         if let Err(e) = write_png(&path, d.width, d.height, &rgba) {
             eprintln!("[gfx] {}: {e}", path.display());
         }
@@ -92,8 +109,15 @@ impl Pack {
         let path = self.replace.get(&name(k))?;
         match read_png(path) {
             Ok((w, h, rgba)) => {
-                let px: Vec<u32> = rgba.chunks(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], ((c[3] as u32 + 1) / 2) as u8])).collect();
-                Some(mips(Decoded { width: w, height: h, rgba: px }))
+                let px: Vec<u32> = rgba
+                    .chunks(4)
+                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], ((c[3] as u32 + 1) / 2) as u8]))
+                    .collect();
+                Some(mips(Decoded {
+                    width: w,
+                    height: h,
+                    rgba: px,
+                }))
             }
             Err(e) => {
                 eprintln!("[gfx] {}: {e}", path.display());
@@ -126,7 +150,10 @@ fn read_png(path: &std::path::Path) -> Result<(u32, u32, Vec<u8>), String> {
     let rgba = match info.color_type {
         png::ColorType::Rgba => px.to_vec(),
         png::ColorType::Rgb => px.chunks(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect(),
-        png::ColorType::GrayscaleAlpha => px.chunks(2).flat_map(|c| [c[0], c[0], c[0], c[1]]).collect(),
+        png::ColorType::GrayscaleAlpha => px
+            .chunks(2)
+            .flat_map(|c| [c[0], c[0], c[0], c[1]])
+            .collect(),
         png::ColorType::Grayscale => px.iter().flat_map(|&g| [g, g, g, 255]).collect(),
         png::ColorType::Indexed => return Err("indexed PNG not expanded".into()),
     };
@@ -143,11 +170,17 @@ pub fn mips(d: Decoded) -> Vec<Decoded> {
             break;
         }
         let (w, h) = ((p.width / 2).max(1), (p.height / 2).max(1));
-        let at = |x: u32, y: u32| p.rgba[(y.min(p.height - 1) * p.width + x.min(p.width - 1)) as usize];
+        let at =
+            |x: u32, y: u32| p.rgba[(y.min(p.height - 1) * p.width + x.min(p.width - 1)) as usize];
         let mut rgba = Vec::with_capacity((w * h) as usize);
         for y in 0..h {
             for x in 0..w {
-                let q = [at(2 * x, 2 * y), at(2 * x + 1, 2 * y), at(2 * x, 2 * y + 1), at(2 * x + 1, 2 * y + 1)];
+                let q = [
+                    at(2 * x, 2 * y),
+                    at(2 * x + 1, 2 * y),
+                    at(2 * x, 2 * y + 1),
+                    at(2 * x + 1, 2 * y + 1),
+                ];
                 let mut v = 0u32;
                 for c in 0..4 {
                     let s: u32 = q.iter().map(|t| (t >> (8 * c)) & 0xff).sum();
@@ -156,7 +189,11 @@ pub fn mips(d: Decoded) -> Vec<Decoded> {
                 rgba.push(v);
             }
         }
-        out.push(Decoded { width: w, height: h, rgba });
+        out.push(Decoded {
+            width: w,
+            height: h,
+            rgba,
+        });
     }
     out
 }
@@ -167,7 +204,11 @@ mod tests {
 
     #[test]
     fn mip_chain_halves_to_one_pixel() {
-        let d = Decoded { width: 8, height: 2, rgba: vec![0x8040_2010; 16] };
+        let d = Decoded {
+            width: 8,
+            height: 2,
+            rgba: vec![0x8040_2010; 16],
+        };
         let m = mips(d);
         let sizes: Vec<(u32, u32)> = m.iter().map(|d| (d.width, d.height)).collect();
         assert_eq!(sizes, [(8, 2), (4, 1), (2, 1), (1, 1)]);
@@ -178,9 +219,25 @@ mod tests {
     fn png_round_trip_keeps_gs_alpha() {
         let dir = std::env::temp_dir().join(format!("ssx3-pack-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let k = TexKey { info: 1, pixels: 2, clut: 3, format: 4, tex0: 5, texa: 6, hash: 7 };
-        let d = Decoded { width: 2, height: 1, rgba: vec![0x8011_2233, 0x0044_5566] };
-        let mut p = Pack { dump: Some(dir.clone()), dumped: HashSet::new(), replace: HashMap::new() };
+        let k = TexKey {
+            info: 1,
+            pixels: 2,
+            clut: 3,
+            format: 4,
+            tex0: 5,
+            texa: 6,
+            hash: 7,
+        };
+        let d = Decoded {
+            width: 2,
+            height: 1,
+            rgba: vec![0x8011_2233, 0x0044_5566],
+        };
+        let mut p = Pack {
+            dump: Some(dir.clone()),
+            dumped: HashSet::new(),
+            replace: HashMap::new(),
+        };
         p.dump(&k, &d);
         let file = dir.join(format!("{}.png", name(&k)));
         assert!(file.exists());

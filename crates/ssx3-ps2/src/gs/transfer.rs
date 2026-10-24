@@ -95,16 +95,32 @@ impl Gs {
             if p.dsax + p.rrw > 2048 || p.dsay + p.rrh > 2048 {
                 r.add_pages(&Pages::ALL);
             } else {
-                r.add_rect(&surf, p.dsax, p.dsay, p.dsax + p.rrw - 1, p.dsay + p.rrh - 1);
+                r.add_rect(
+                    &surf,
+                    p.dsax,
+                    p.dsay,
+                    p.dsax + p.rrw - 1,
+                    p.dsay + p.rrh - 1,
+                );
             }
             Box::new(r)
         });
         // Queued primitives must not see (or be overwritten by) this data.
         // Formats that store whole words cover whole pages of the mirror.
-        let whole = matches!(surf.kind, super::swizzle::Kind::W32 | super::swizzle::Kind::H16 | super::swizzle::Kind::B8 | super::swizzle::Kind::N4);
+        let whole = matches!(
+            surf.kind,
+            super::swizzle::Kind::W32
+                | super::swizzle::Kind::H16
+                | super::swizzle::Kind::B8
+                | super::swizzle::Kind::N4
+        );
         // GPU backend: partial-word formats (CT24, T8H, T4HL/HH) into pages
         // drawn on the GPU are written on the GPU instead of reading back.
-        let direct = !whole && self.gpu.as_mut().is_some_and(|g| g.direct_upload(&r, &self.vram));
+        let direct = !whole
+            && self
+                .gpu
+                .as_mut()
+                .is_some_and(|g| g.direct_upload(&r, &self.vram));
         if !direct {
             self.before_vram_write_full(&r, whole);
         }
@@ -119,7 +135,10 @@ impl Gs {
         let mut vals = std::mem::take(&mut self.xfer_vals);
         vals.clear();
         match bits_per_pixel(p.dpsm) {
-            32 => vals.extend(data.chunks_exact(4).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))),
+            32 => vals.extend(
+                data.chunks_exact(4)
+                    .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+            ),
             24 => {
                 let xf = &mut self.xfer;
                 for &b in data {
@@ -127,11 +146,19 @@ impl Gs {
                     xf.ncarry += 1;
                     if xf.ncarry == 3 {
                         xf.ncarry = 0;
-                        vals.push(u32::from_le_bytes([xf.carry[0], xf.carry[1], xf.carry[2], 0]));
+                        vals.push(u32::from_le_bytes([
+                            xf.carry[0],
+                            xf.carry[1],
+                            xf.carry[2],
+                            0,
+                        ]));
                     }
                 }
             }
-            16 => vals.extend(data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]]) as u32)),
+            16 => vals.extend(
+                data.chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]) as u32),
+            ),
             8 => vals.extend(data.iter().map(|&b| b as u32)),
             _ => {
                 for &b in data {
@@ -253,7 +280,10 @@ impl Gs {
         if std::env::var_os("SSX3_TRACE_DOWNLOAD").is_some() {
             let z = &self.regs.ctx[0].zbuf;
             let f = &self.regs.ctx[0].frame;
-            let vals: Vec<u32> = bytes.chunks(3).map(|c| c.iter().rev().fold(0u32, |a, b| a << 8 | *b as u32)).collect();
+            let vals: Vec<u32> = bytes
+                .chunks(3)
+                .map(|c| c.iter().rev().fold(0u32, |a, b| a << 8 | *b as u32))
+                .collect();
             eprintln!(
                 "[local->host] sbp {:#x} sbw {} spsm {:#x} at {},{} {}x{} | ctx0 zbuf zbp {:#x} psm {:#x} frame fbp {:#x} | max {:#x} nonzero {}/{}",
                 p.sbp, p.sbw, p.spsm, p.ssax, p.ssay, p.rrw, p.rrh,
@@ -274,7 +304,10 @@ impl Gs {
         let src = Surface::new(p.spsm, p.sbp, p.sbw);
         let dst = Surface::new(p.dpsm, p.dbp, p.dbw);
         if let Some(g) = self.gpu.as_mut() {
-            g.hires_l2l([p.sbp, p.sbw, p.spsm, p.ssax, p.ssay, p.dbp, p.dbw, p.dpsm, p.dsax, p.dsay, p.rrw, p.rrh]);
+            g.hires_l2l([
+                p.sbp, p.sbw, p.spsm, p.ssax, p.ssay, p.dbp, p.dbw, p.dpsm, p.dsax, p.dsay, p.rrw,
+                p.rrh,
+            ]);
         }
         self.before_rect_read(&src, p.ssax, p.ssay, p.rrw, p.rrh);
         // Read everything first so overlapping copies behave deterministically.

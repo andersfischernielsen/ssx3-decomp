@@ -29,7 +29,6 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_33b0, focus_man_add_focus_box, "FocusMan_AddFocusBox"),
 ];
 
-
 // ---------------------------------------------------------------------------
 // Focus manager.
 
@@ -71,7 +70,6 @@ pub fn focus_man_add_object(c: &mut Cpu) {
     Addr(this).off(COUNT).sw(c, c.g[V1][0]);
     c.pc = ret;
 }
-
 
 /// `void FocusMan_AddFocusBox(FocusMan *self, FocusBox *box)` (0x1033b0):
 /// clear `self->active` (+0xd0) to -1, store `box` in slot `self->count`
@@ -197,8 +195,14 @@ const WORLD: u32 = 0x848;
 /// `WScriptMan*` (`gp+0xce8`).
 const SCRIPT_MAN: u32 = 0xce8;
 
-const COLLECT_NODE_OBJECTS: Callee = Callee { addr: 0x0010_1a28, f: ssx3_ee::s00::f_00101a28 };
-const AI_GET_FRAME_COUNTER: Callee = Callee { addr: 0x0012_98c8, f: ssx3_ee::s00::f_001298c8 };
+const COLLECT_NODE_OBJECTS: Callee = Callee {
+    addr: 0x0010_1a28,
+    f: ssx3_ee::s00::f_00101a28,
+};
+const AI_GET_FRAME_COUNTER: Callee = Callee {
+    addr: 0x0012_98c8,
+    f: ssx3_ee::s00::f_001298c8,
+};
 /// `FocusMan_CollectOctreeNode(scan, node, key)` (through the table).
 const COLLECT_OCTREE_NODE: u32 = 0x0014_4368;
 /// `EA_MemCopy(dst, src, bytes)`.
@@ -235,14 +239,62 @@ struct Level {
 }
 
 const LEVELS: [Level; 8] = [
-    Level { head: 0x0010_1ce8, desc: Desc::Reg(S5), node: S1, margin: 0x7f90, next: 0x24 },
-    Level { head: 0x0010_1f80, desc: Desc::Reg(S1), node: S2, margin: 0x7f8c, next: 0x38 },
-    Level { head: 0x0010_21f0, desc: Desc::Reg(S3), node: S1, margin: 0x7f88, next: 0x4c },
-    Level { head: 0x0010_2460, desc: Desc::Reg(S4), node: S1, margin: 0x7f84, next: 0x60 },
-    Level { head: 0x0010_26d0, desc: Desc::Reg(S6), node: S1, margin: 0x7f80, next: 0x74 },
-    Level { head: 0x0010_2940, desc: Desc::Reg(FP), node: S1, margin: 0x7f7c, next: 0x88 },
-    Level { head: 0x0010_2bb8, desc: Desc::Slot6, node: S1, margin: 0x7f78, next: 0x9c },
-    Level { head: 0x0010_2e38, desc: Desc::Slot7, node: S1, margin: 0x7f74, next: 0 },
+    Level {
+        head: 0x0010_1ce8,
+        desc: Desc::Reg(S5),
+        node: S1,
+        margin: 0x7f90,
+        next: 0x24,
+    },
+    Level {
+        head: 0x0010_1f80,
+        desc: Desc::Reg(S1),
+        node: S2,
+        margin: 0x7f8c,
+        next: 0x38,
+    },
+    Level {
+        head: 0x0010_21f0,
+        desc: Desc::Reg(S3),
+        node: S1,
+        margin: 0x7f88,
+        next: 0x4c,
+    },
+    Level {
+        head: 0x0010_2460,
+        desc: Desc::Reg(S4),
+        node: S1,
+        margin: 0x7f84,
+        next: 0x60,
+    },
+    Level {
+        head: 0x0010_26d0,
+        desc: Desc::Reg(S6),
+        node: S1,
+        margin: 0x7f80,
+        next: 0x74,
+    },
+    Level {
+        head: 0x0010_2940,
+        desc: Desc::Reg(FP),
+        node: S1,
+        margin: 0x7f7c,
+        next: 0x88,
+    },
+    Level {
+        head: 0x0010_2bb8,
+        desc: Desc::Slot6,
+        node: S1,
+        margin: 0x7f78,
+        next: 0x9c,
+    },
+    Level {
+        head: 0x0010_2e38,
+        desc: Desc::Slot7,
+        node: S1,
+        margin: 0x7f74,
+        next: 0,
+    },
 ];
 
 /// The children visited after a matching root, in the original's order:
@@ -472,7 +524,9 @@ fn walk_octree(c: &mut Cpu) -> Flow {
     }
     // Levels 2-5.
     for lv in &LEVELS[2..6] {
-        let Desc::Reg(desc) = lv.desc else { unreachable!() };
+        let Desc::Reg(desc) = lv.desc else {
+            unreachable!()
+        };
         c.cycles += 2;
         let empty = c.g[V0][0] == 0;
         c.g[A3][0] = 0;
@@ -912,13 +966,31 @@ fn update_focus_set(c: &mut Cpu) -> Flow {
     c.g[A0][0] = sx(sp_at(c, LEFT));
     if c.g[S3][0] != 0 {
         c.cycles += 9;
-        notify(c, S3, SORT_FLAG, 0x0010_3210, FOCUS_LEAVE, 0x0010_3238, 0x0010_3228, false)?;
+        notify(
+            c,
+            S3,
+            SORT_FLAG,
+            0x0010_3210,
+            FOCUS_LEAVE,
+            0x0010_3238,
+            0x0010_3228,
+            false,
+        )?;
     }
     c.cycles += 2;
     c.g[A0][0] = sx(sp_at(c, ENTERED));
     if c.g[S2][0] != 0 {
         c.cycles += 9;
-        notify(c, S2, SORT_FLAG + 1, 0x0010_3264, FOCUS_ENTER, 0x0010_3288, 0x0010_3278, true)?;
+        notify(
+            c,
+            S2,
+            SORT_FLAG + 1,
+            0x0010_3264,
+            FOCUS_ENTER,
+            0x0010_3288,
+            0x0010_3278,
+            true,
+        )?;
     }
     Ok(())
 }
@@ -983,39 +1055,47 @@ pub(crate) mod tests {
     use crate::difftest::DATA;
     use crate::difftest::GAME_GP;
 
-
     #[test]
     fn focus_man_add_object_matches() {
-        check(ssx3_ee::s00::f_001032c0, focus_man_add_object, 300, &|c, seed| {
-            let mut r = Rng(0x1032_c000 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[A0][0] = DATA as u64;
-            c.g[A1][0] = (DATA + 0x400) as u64;
-            let count = (seed % 5) as u32;
-            c.bus.write32(DATA + 0xd4, if seed % 3 == 0 { 0 } else { r.next_u32() });
-            c.bus.write32(DATA + 0xd8, count);
-            c.bus.write32(DATA + 0x400 + 0x8, r.next_u32());
-            c.bus.write32(DATA + count * 4 + 0xdc, r.next_u32());
-        });
+        check(
+            ssx3_ee::s00::f_001032c0,
+            focus_man_add_object,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x1032_c000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (DATA + 0x400) as u64;
+                let count = (seed % 5) as u32;
+                c.bus
+                    .write32(DATA + 0xd4, if seed % 3 == 0 { 0 } else { r.next_u32() });
+                c.bus.write32(DATA + 0xd8, count);
+                c.bus.write32(DATA + 0x400 + 0x8, r.next_u32());
+                c.bus.write32(DATA + count * 4 + 0xdc, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn focus_man_add_focus_box_matches() {
-        check(ssx3_ee::s00::f_001033b0, focus_man_add_focus_box, 200, &|c, seed| {
-            let mut r = Rng(0x1033_b000 ^ seed as u64);
-            scramble(c, &mut r);
-            let count = (seed % 4) as u32;
-            c.g[A0][0] = DATA as u64;
-            // Odd seeds use a misaligned box to cover `lq` masking.
-            c.g[A1][0] = (DATA + 0x600 + (seed % 2) * 8) as u64;
-            c.bus.write32(DATA, count);
-            for i in 0..4 {
-                c.bus.write32(DATA + 0x600 + i * 4, r.next_u32());
-            }
-        });
+        check(
+            ssx3_ee::s00::f_001033b0,
+            focus_man_add_focus_box,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1033_b000 ^ seed as u64);
+                scramble(c, &mut r);
+                let count = (seed % 4) as u32;
+                c.g[A0][0] = DATA as u64;
+                // Odd seeds use a misaligned box to cover `lq` masking.
+                c.g[A1][0] = (DATA + 0x600 + (seed % 2) * 8) as u64;
+                c.bus.write32(DATA, count);
+                for i in 0..4 {
+                    c.bus.write32(DATA + 0x600 + i * 4, r.next_u32());
+                }
+            },
+        );
     }
-
 
     // FocusMan_Update fixtures.
     use crate::difftest::fakes::{covered, machine, FAKE};
@@ -1104,16 +1184,22 @@ pub(crate) mod tests {
         let old = r.next_u32() % 5;
         c.bus.write32(SELF + 0xd8, old);
         for k in 0..old {
-            c.bus.write32(SELF + 0xdc + 4 * k, OBJECTS + 0x20 * (r.next_u32() % POOL));
+            c.bus
+                .write32(SELF + 0xdc + 4 * k, OBJECTS + 0x20 * (r.next_u32() % POOL));
         }
         let mut leaf = 8u32;
         for k in 0..8u32 {
             let d = OCTREE + 0x14 * k;
-            c.bus.write32(d, [10u32, 12, 14, 15][(r.next_u32() % 4) as usize]);
+            c.bus
+                .write32(d, [10u32, 12, 14, 15][(r.next_u32() % 4) as usize]);
             for a in 1..4 {
                 c.bus.write32(d + 4 * a, (r.next_u32() % 3).wrapping_sub(1));
             }
-            let node = if r.next_u32() % 5 == 0 { 0 } else { NODES + 0x40 * k };
+            let node = if r.next_u32() % 5 == 0 {
+                0
+            } else {
+                NODES + 0x40 * k
+            };
             c.bus.write32(d + 0x10, node);
             if node == 0 {
                 continue;
@@ -1138,7 +1224,12 @@ pub(crate) mod tests {
 
     #[test]
     fn focus_man_update_matches() {
-        covered(ssx3_ee::s00::f_00101b60__generated, focus_man_update, 300, &focus_update_fixture);
+        covered(
+            ssx3_ee::s00::f_00101b60__generated,
+            focus_man_update,
+            300,
+            &focus_update_fixture,
+        );
     }
 
     /// Rescans in one second of ticks at `hz` (one still box, an empty

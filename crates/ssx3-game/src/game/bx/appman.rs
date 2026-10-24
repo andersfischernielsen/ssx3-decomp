@@ -2,12 +2,6 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
-use crate::guest::Addr;
-use crate::ps2f::FpuF32;
-use ssx3_ee_rt::cpu::reg::*;
-use ssx3_ee_rt::cpu::sx;
-use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -15,8 +9,14 @@ use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use ssx3_ee as ee;
 pub(crate) use crate::game::render::particle::this_with_delta;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -25,10 +25,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_7458, ps2_exec_man_ctor, "PS2ExecMan_ctor"),
     (0x0031_7520, app_get_exec_man, "App_GetExecMan"),
     (0x0031_7530, app_load_progress_init, "App_LoadProgressInit"),
-    (0x0031_7550, app_load_progress_set_target, "App_LoadProgressSetTarget"),
-    (0x0031_7600, app_load_progress_complete, "App_LoadProgressComplete"),
+    (
+        0x0031_7550,
+        app_load_progress_set_target,
+        "App_LoadProgressSetTarget",
+    ),
+    (
+        0x0031_7600,
+        app_load_progress_complete,
+        "App_LoadProgressComplete",
+    ),
 ];
-
 
 // ---------------------------------------------------------------- app / exec man
 
@@ -47,7 +54,6 @@ pub fn ps2_exec_man_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void App_LoadProgressInit(LoadProgress *p, float step)` (0x317530):
 /// reset the progress bar: store `step` at `p+0xc` and clear the words at
 /// `+0`, `+8`, `+0x14`, `+0x18` and `+0x1c`.
@@ -63,7 +69,6 @@ pub fn app_load_progress_init(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `void App_LoadProgressComplete(LoadProgress *p)` (0x317600): snap the bar
 /// to 100% — f0 = 100.0, the value (`+0`) and displayed value (`+0x14`) are
 /// both set to it and the fade timer at `+0x18` cleared.
@@ -78,7 +83,6 @@ pub fn app_load_progress_complete(c: &mut Cpu) {
     p.off(0x14).write_fpu(c, HUNDRED);
     abi::ret(c);
 }
-
 
 /// `App *App_ctor(App *this)` (0x316cd0): initialise the app and publish it
 /// at `gp+0x2a74`.
@@ -108,7 +112,6 @@ pub fn app_ctor(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
 /// `ExecMan *App_GetExecMan(void)` (0x317520): `app->execMan` at `app+8`.
 pub fn app_get_exec_man(c: &mut Cpu) {
     c.cycles += 3;
@@ -116,7 +119,6 @@ pub fn app_get_exec_man(c: &mut Cpu) {
     c.g[V0][0] = Addr(c.g[V1][0] as u32).off(0x8).lw(c);
     abi::ret(c);
 }
-
 
 /// `void App_LoadProgressSetTarget(App *this, float target)` (0x317550):
 /// set up the loading progress interpolation from the current values and the
@@ -145,7 +147,6 @@ pub fn app_load_progress_set_target(c: &mut Cpu) {
     c.swc1(2, this.wrapping_add(0x1c));
     abi::ret(c);
 }
-
 
 // ---------------------------------------------------------------------------
 // App and strings (s10).
@@ -193,76 +194,84 @@ pub fn app_v02(c: &mut Cpu) {
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
-    use crate::difftest::scramble;
-    use crate::difftest::Rng;
-    use crate::difftest::DATA;
-    use crate::difftest::GAME_GP;
-    use ssx3_ee::s09;
-    use ssx3_ee::s10;
     use crate::difftest::check_lohi;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::FAKE;
     use crate::difftest::put_words;
-    pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_2;
-    pub(crate) use crate::game::render::particle::tests::gp_at;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
     pub(crate) use crate::game::render::particle::tests::clear;
     pub(crate) use crate::game::render::particle::tests::common;
+    pub(crate) use crate::game::render::particle::tests::gp_at;
     pub(crate) use crate::game::render::particle::tests::vtable_2 as vtable;
-
+    pub(crate) use crate::game::render::particle::tests::SEEDS_7 as SEEDS_2;
+    use ssx3_ee::s09;
+    use ssx3_ee::s10;
 
     pub(crate) const SEEDS: u32 = 400;
-
 
     pub(crate) fn rng(seed: u32, salt: u64) -> Rng {
         Rng(0x9e37_79b9_7f4a_7c15 ^ ((seed as u64) << 20) ^ salt)
     }
-
 
     /// A pointer into test RAM (16-byte aligned).
     pub(crate) fn ptr(r: &mut Rng, region: u32) -> u32 {
         DATA + region * 0x10_0000 + (r.next_u32() & 0x7fff0)
     }
 
-
     #[test]
     fn ps2_exec_man_ctor_matches() {
-        check(s10::f_00317458__generated, ps2_exec_man_ctor, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 8);
-            scramble(c, &mut r);
-            let this = ptr(&mut r, 0);
-            c.g[A0][0] = sx(this);
-        });
+        check(
+            s10::f_00317458__generated,
+            ps2_exec_man_ctor,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 8);
+                scramble(c, &mut r);
+                let this = ptr(&mut r, 0);
+                c.g[A0][0] = sx(this);
+            },
+        );
     }
-
 
     #[test]
     fn app_load_progress_init_matches() {
-        check(s10::f_00317530__generated, app_load_progress_init, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 9);
-            scramble(c, &mut r);
-            let p = ptr(&mut r, 0);
-            c.g[A0][0] = sx(p);
-            c.f[12] = r.edge_f32();
-            for off in (0..0x20).step_by(4) {
-                c.bus.write32(p + off, r.next_u32());
-            }
-        });
+        check(
+            s10::f_00317530__generated,
+            app_load_progress_init,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 9);
+                scramble(c, &mut r);
+                let p = ptr(&mut r, 0);
+                c.g[A0][0] = sx(p);
+                c.f[12] = r.edge_f32();
+                for off in (0..0x20).step_by(4) {
+                    c.bus.write32(p + off, r.next_u32());
+                }
+            },
+        );
     }
-
 
     #[test]
     fn app_load_progress_complete_matches() {
-        check(s10::f_00317600__generated, app_load_progress_complete, SEEDS, &|c, seed| {
-            let mut r = rng(seed, 10);
-            scramble(c, &mut r);
-            let p = ptr(&mut r, 0);
-            c.g[A0][0] = sx(p);
-            for off in (0..0x20).step_by(4) {
-                c.bus.write32(p + off, r.next_u32());
-            }
-        });
+        check(
+            s10::f_00317600__generated,
+            app_load_progress_complete,
+            SEEDS,
+            &|c, seed| {
+                let mut r = rng(seed, 10);
+                scramble(c, &mut r);
+                let p = ptr(&mut r, 0);
+                c.g[A0][0] = sx(p);
+                for off in (0..0x20).step_by(4) {
+                    c.bus.write32(p + off, r.next_u32());
+                }
+            },
+        );
     }
-
 
     #[test]
     fn app_ctor_matches() {
@@ -276,61 +285,73 @@ pub(crate) mod tests {
         });
     }
 
-
     #[test]
     fn app_get_exec_man_matches() {
-        check(ssx3_ee::s10::f_00317520, app_get_exec_man, 100, &|c, seed| {
-            let mut r = Rng(0x2015 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            let app = DATA + 0x100;
-            c.bus.write32(GAME_GP + 0x2a74, app);
-            c.bus.write32(app + 8, r.next_u32());
-        });
+        check(
+            ssx3_ee::s10::f_00317520,
+            app_get_exec_man,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x2015 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let app = DATA + 0x100;
+                c.bus.write32(GAME_GP + 0x2a74, app);
+                c.bus.write32(app + 8, r.next_u32());
+            },
+        );
     }
-
 
     #[test]
     fn app_load_progress_set_target_matches() {
-        check(ssx3_ee::s10::f_00317550, app_load_progress_set_target, 300, &|c, seed| {
-            let mut r = Rng(0x2016 ^ seed as u64);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = DATA as u64;
-            c.f[12] = match seed % 4 {
-                0 => 0,
-                1 => 0x3f80_0000,
-                2 => 0x8000_0000,
-                _ => r.edge_f32(),
-            };
-            c.bus.write32(GAME_GP - 0x2ef4, r.edge_f32());
-            let app = DATA + 0x200;
-            c.bus.write32(GAME_GP + 0x2a74, app);
-            c.bus.write32(app + 0x1c, r.next_u32());
-            for off in [0u32, 4, 8, 0xc] {
-                c.bus.write32(DATA + off, r.edge_f32());
-            }
-        });
+        check(
+            ssx3_ee::s10::f_00317550,
+            app_load_progress_set_target,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2016 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                c.f[12] = match seed % 4 {
+                    0 => 0,
+                    1 => 0x3f80_0000,
+                    2 => 0x8000_0000,
+                    _ => r.edge_f32(),
+                };
+                c.bus.write32(GAME_GP - 0x2ef4, r.edge_f32());
+                let app = DATA + 0x200;
+                c.bus.write32(GAME_GP + 0x2a74, app);
+                c.bus.write32(app + 0x1c, r.next_u32());
+                for off in [0u32, 4, 8, 0xc] {
+                    c.bus.write32(DATA + off, r.edge_f32());
+                }
+            },
+        );
     }
-
 
     // ------------------------------------------------------------------
     // App and strings.
 
     #[test]
     fn app_v02_matches() {
-        check(ee::s10::f_00317400__generated, app_v02, SEEDS_2, &|c, seed| {
-            let _ = common(c, seed, 0x317400, 2);
-            let this = DATA + 0x100;
-            let obj = DATA + 0x200;
-            let vt = DATA + 0x300;
-            clear(c, this, 0x100);
-            clear(c, obj, 0x200);
-            clear(c, vt, 0xf00);
-            c.bus.write32(this + 8, if seed % 3 == 0 { 0 } else { obj });
-            c.bus.write32(obj + 8, vt);
-            vtable(c, vt, &[(0x18, 0, FAKE), (0x8, 0, FAKE + 0x10)]);
-            c.g[A0][0] = sx(this);
-        });
+        check(
+            ee::s10::f_00317400__generated,
+            app_v02,
+            SEEDS_2,
+            &|c, seed| {
+                let _ = common(c, seed, 0x317400, 2);
+                let this = DATA + 0x100;
+                let obj = DATA + 0x200;
+                let vt = DATA + 0x300;
+                clear(c, this, 0x100);
+                clear(c, obj, 0x200);
+                clear(c, vt, 0xf00);
+                c.bus.write32(this + 8, if seed % 3 == 0 { 0 } else { obj });
+                c.bus.write32(obj + 8, vt);
+                vtable(c, vt, &[(0x18, 0, FAKE), (0x8, 0, FAKE + 0x10)]);
+                c.g[A0][0] = sx(this);
+            },
+        );
     }
 }
