@@ -595,6 +595,7 @@ pub(super) fn build(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         path3: Some(path3),
         path3_post,
         flip: super::flip_packet(m),
+        casters: None,
     }
 }
 

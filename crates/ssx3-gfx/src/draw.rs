@@ -265,6 +265,8 @@ pub struct Pipelines {
     shadow_module: wgpu::ShaderModule,
     shadow_pl: wgpu::PipelineLayout,
     shadow_cache: HashMap<ssx3_render::gpu::Program, wgpu::RenderPipeline>,
+    /// The world's casters (shadow.wgsl `vs_caster`).
+    pub caster: wgpu::RenderPipeline,
 }
 
 impl Pipelines {
@@ -376,7 +378,30 @@ impl Pipelines {
             bind_group_layouts: &[Some(&layout), Some(&gpu_layout)],
             immediate_size: 0,
         });
+        let caster = dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ssx3-gfx world casters"),
+            layout: Some(&shadow_pl),
+            vertex: wgpu::VertexState {
+                module: &shadow_module,
+                entry_point: Some("vs_caster"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout { array_stride: 24, step_mode: wgpu::VertexStepMode::Vertex, attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3] })],
+            },
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: SHADOW_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: wgpu::DepthBiasState { constant: 2, slope_scale: 1.5, clamp: 0.0 },
+            }),
+            multisample: Default::default(),
+            fragment: None,
+            multiview_mask: None,
+            cache: None,
+        });
         Pipelines {
+            caster,
             module,
             layout,
             pl,

@@ -848,6 +848,8 @@ pub struct Built {
     pub path3_post: [Vec<Option<crate::direct::PostKind>>; 2],
     /// The flip packet sent before the frame's drawing ([`flip_packet`]).
     pub flip: Vec<u128>,
+    /// Sun-shadow casters from the world data (`crate::world_casters`).
+    pub casters: Option<std::sync::Arc<crate::world_casters::Casters>>,
 }
 
 /// Inputs carried from frame to frame.
@@ -1681,6 +1683,7 @@ pub fn build_cached(m: &dyn Mem, g: u32, carry: &Carry, cache: &mut ChainCache, 
         path3_post: Default::default(),
         path3: Some([path3_packets(m, gif_heads[0]), path3_packets(m, gif_heads[1])]),
         flip: flip_packet(m),
+        casters: None,
     }
 }
 

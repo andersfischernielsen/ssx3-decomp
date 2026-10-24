@@ -410,9 +410,6 @@ pub fn aspect_box() -> Option<f32> {
 pub fn gfx_options() -> ssx3_gfx::Options {
     let get = |k: &str| crate::settings::get(k);
     let on = |k: &str| get(k).is_some_and(|v| v != "0");
-    // Sun shadows: the world cull widened for casters off screen
-    // (`SSX3_SHADOW_CULL=0` keeps the original cull).
-    ssx3_game::world::set_shadow_cull(on("SSX3_SHADOWS") && std::env::var("SSX3_SHADOW_CULL").map_or(true, |v| v != "0"));
     ssx3_gfx::Options {
         aa: match get("SSX3_AA").as_deref() {
             Some("fxaa") => ssx3_gfx::Aa::Fxaa,

@@ -63,6 +63,8 @@ pub struct FrameBuilder {
     carry: Carry,
     /// Mesh chains decoded once (`frame::ChainCache`).
     cache: frame::ChainCache,
+    /// The world's shadow casters (`ssx3_render::world_casters`).
+    casters: ssx3_render::world_casters::CasterCache,
     /// Time spent building, frames built.
     pub ms: f64,
     pub frames: u64,
@@ -74,7 +76,10 @@ impl FrameBuilder {
     pub fn build(&mut self, gm: u32, mem: &dyn Mem, direct: std::sync::Arc<Vec<ssx3_render::direct::Recorded>>) -> (Built, Carry) {
         let t = web_time::Instant::now();
         let carry = self.carry.clone();
-        let b = if native_frame(&direct) { frame::build_native(mem, gm, &carry, &mut self.cache, direct) } else { frame::build_cached(mem, gm, &carry, &mut self.cache, direct) };
+        let mut b = if native_frame(&direct) { frame::build_native(mem, gm, &carry, &mut self.cache, direct) } else { frame::build_cached(mem, gm, &carry, &mut self.cache, direct) };
+        if ssx3_render::world_casters::enabled() {
+            b.casters = self.casters.update(mem);
+        }
         static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         if *CHECK.get_or_init(|| std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some()) {
             let bad = b.issues.iter().filter(|i| i.starts_with("chain cache")).count();

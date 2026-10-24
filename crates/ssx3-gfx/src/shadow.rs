@@ -39,6 +39,8 @@ pub struct Light {
     pub texel: f32,
     /// World units per texel, per cascade.
     pub world_texel: [f32; CASCADES],
+    /// The point world positions are relative to (absolute world).
+    pub origin: [f32; 3],
 }
 
 fn env_f(k: &str) -> Option<Vec<f64>> {
@@ -186,12 +188,15 @@ pub fn light(c: &Cam, key: [f32; 3]) -> Option<Light> {
         eye: [(e[0] - o[0]) as f32, (e[1] - o[1]) as f32, (e[2] - o[2]) as f32],
         texel: 1.0 / t.size as f32,
         world_texel,
+        origin: o.map(|x| x as f32),
     })
 }
 
 /// The shadow map, its sampler and the uniforms (`ShadowU` in gpuvu.wgsl).
 pub struct Shadow {
     pub size: u32,
+    /// The world's casters on the GPU: (generation, buffer, vertices).
+    pub casters: Option<(u64, wgpu::Buffer, u32)>,
     pub view: wgpu::TextureView,
     /// A 1×1 map for the shadow pass itself (it draws into `view`).
     pub dummy: wgpu::TextureView,
@@ -200,7 +205,7 @@ pub struct Shadow {
 }
 
 /// `ShadowU`'s size in bytes.
-const U_BYTES: u64 = 384;
+const U_BYTES: u64 = 400;
 
 impl Shadow {
     pub fn new(dev: &wgpu::Device, size: u32) -> Shadow {
@@ -232,7 +237,7 @@ impl Shadow {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
-        Shadow { size, view: depth(size, "ssx3-gfx shadow map"), dummy: depth(1, "ssx3-gfx shadow dummy"), cmp, ubuf }
+        Shadow { size, casters: None, view: depth(size, "ssx3-gfx shadow map"), dummy: depth(1, "ssx3-gfx shadow dummy"), cmp, ubuf }
     }
 
     /// This frame's uniforms (`None`: shadows off).
@@ -246,11 +251,31 @@ impl Shadow {
                 w.extend([l.eye[0], l.eye[1], l.eye[2], 1.0]);
                 w.extend([l.texel, 0.0, 1.0, show]);
                 w.extend(l.world_texel);
+                w.extend([l.origin[0], l.origin[1], l.origin[2], 0.0]);
             }
             None => w.resize(U_BYTES as usize / 4, 0.0),
         }
         let b: Vec<u8> = w.iter().flat_map(|v| v.to_le_bytes()).collect();
         queue.write_buffer(&self.ubuf, 0, &b);
+    }
+
+    /// The world's casters, uploaded when they changed.
+    pub fn set_casters(&mut self, dev: &wgpu::Device, queue: &wgpu::Queue, c: &ssx3_render::world_casters::Casters) {
+        if self.casters.as_ref().is_some_and(|(g, _, _)| *g == c.generation) {
+            return;
+        }
+        let bytes: Vec<u8> = c.triangles.iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
+        let buf = dev.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ssx3-gfx world casters"),
+            size: (bytes.len() as u64).max(16),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&buf, 0, &bytes);
+        if debug("print") {
+            eprintln!("shadow: world casters generation {}: {} patches, {} triangles", c.generation, c.patches, c.triangles.len() / 3);
+        }
+        self.casters = Some((c.generation, buf, c.triangles.len() as u32));
     }
 
     /// Bind group 1's shadow entries: the map, or the placeholder (for

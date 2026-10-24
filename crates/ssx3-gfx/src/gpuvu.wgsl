@@ -70,6 +70,8 @@ struct ShadowU {
     eye: vec4<f32>,
     p: vec4<f32>,
     wt: vec4<f32>,
+    // The point world positions are relative to (absolute world).
+    origin: vec4<f32>,
 }
 @group(1) @binding(5) var<uniform> sh: ShadowU;
 @group(1) @binding(6) var smap: texture_depth_2d;

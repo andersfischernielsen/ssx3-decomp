@@ -15,6 +15,20 @@ fn shadow_out(o_in: VOut, hc: vec4<f32>) -> VOut {
     return o;
 }
 
+// The world's casters (ssx3_render::world_casters): absolute world
+// positions and their triangle's upward normal, into cascade `inst` (depth
+// only). Only triangles turned away from the sun cast: a ridge, wall or
+// kicker casts from its far side, and terrain facing the sun never shadows
+// itself (the game's terrain mesh, at its own LOD, differs from this one by
+// more than any bias).
+@vertex
+fn vs_caster(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @builtin(instance_index) inst: u32) -> @builtin(position) vec4<f32> {
+    if (dot(n, sh.sun.xyz) > 0.0) {
+        return vec4<f32>(2.0, 2.0, 2.0, 1.0);
+    }
+    return sh.lights[inst] * vec4<f32>(p - sh.origin.xyz, 1.0);
+}
+
 // Depth only; cut-outs (alpha test, blended texels below half) let the
 // light through.
 @fragment

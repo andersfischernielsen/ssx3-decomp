@@ -137,6 +137,8 @@ pub struct Inner {
     shadow: Option<shadow::Shadow>,
     /// The game's key light (towards it), eased from frame to frame.
     key_light: [f32; 3],
+    /// The world's shadow casters of the frame being drawn.
+    world_casters: Option<std::sync::Arc<ssx3_render::world_casters::Casters>>,
     /// Seconds since the renderer started (animated effects).
     t0: web_time::Instant,
     /// Batches of VIF phase 1 (the 3D scene) in this frame.
@@ -263,6 +265,7 @@ impl Renderer {
             post: None,
             shadow: None,
             key_light: [0.0, 0.6, 0.8],
+            world_casters: None,
             t0: web_time::Instant::now(),
             phase1_end: usize::MAX,
             want_depth: false,
@@ -334,6 +337,7 @@ impl Renderer {
         }
         g.opts = o;
         ssx3_render::bezier::gpu::set_tessellation(o.terrain);
+        ssx3_render::world_casters::set_enabled(o.shadows);
     }
 
     /// Anisotropic filtering: 1 (off) to 16 (the default).
@@ -732,6 +736,7 @@ impl Inner {
         self.stats.frames += 1;
         let t_start = web_time::Instant::now();
         let mut b = self.take_build();
+        self.world_casters = built.casters.clone();
         Build::run(&mut b, built, mem);
         self.put_build(b);
         self.timing.1[0] += t_start.elapsed().as_secs_f64() * 1e3;
@@ -787,6 +792,12 @@ impl Inner {
         if self.shadow.as_ref().is_none_or(|s| s.size != map_size) {
             self.shadow = Some(shadow::Shadow::new(&self.dev, map_size));
         }
+        if let (Some(c), true) = (self.world_casters.clone(), light.is_some()) {
+            self.shadow.as_mut().unwrap().set_casters(&self.dev, &self.queue, &c);
+        }
+        // With the world's casters the terrain casts from them (the game's
+        // terrain draws only cover what the camera sees).
+        let native_terrain = light.is_some() && self.world_casters.is_some() && !shadow::debug("no-world");
         let sh = self.shadow.as_ref().unwrap();
         sh.upload(&self.queue, light.as_ref(), shadow::show());
         // GPU-computed draws (ssx3_render::gpu): their uniforms, inputs and
@@ -1160,7 +1171,7 @@ impl Inner {
                     && it.tag.post.is_none()
                     && it.key.depth_write
                     && it.scissor.is_some()
-                    && it.gpu.is_some_and(|g| shadow::receives(g.program))
+                    && it.gpu.is_some_and(|g| shadow::receives(g.program) && !(native_terrain && g.program == ssx3_render::gpu::Program::Bezier))
             };
             let end = ao_at.min(items.len());
             if shadow::debug("items") {
@@ -1202,6 +1213,12 @@ impl Inner {
                     }
                     sp.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
                     sp.draw(g.first..g.first + g.count, c..c + 1);
+                }
+                if let (true, Some((_, buf, n))) = (native_terrain, sh.casters.as_ref()) {
+                    sp.set_pipeline(&self.pipes.caster);
+                    sp.set_bind_group(0, &groups[0], &[0]);
+                    sp.set_vertex_buffer(0, buf.slice(..));
+                    sp.draw(0..*n, c..c + 1);
                 }
             }
         }
