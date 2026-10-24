@@ -11,6 +11,7 @@ site	function	func_addr	ported	class	kind	constant	reason	conversion
 0x125538	Rider_UpdateScriptSounds	0x00125448	no	NOT_PER_TICK	COUNTER	+1	audio push-stack index (*(audio+500) += 1, Audio_PlayPushedSound pops it) when a rider script sound key fires; key time compared with the script frame passed in (param), no per-tick timing here	
 0x129f90	AI_CreateComputerRiders	0x00129e20	no	NOT_PER_TICK	COUNTER	+1	rider-slot/loop counters while creating AI riders (setup)	
 0x129fc0	AI_CreateComputerRiders	0x00129e20	no	NOT_PER_TICK	COUNTER	+1	rider-slot/loop counters while creating AI riders (setup)	
+0x12f9f4	RiderNaturalAirSub_HandleInput	0x0012f730	no	PER_TICK	SLEW	0.05000000447034836	Single GP load at 0x12f9f4 writes rider+0x1f4/0x200/0x224/0x218; Rider_UpdateSlewedParams consumes the four rates directly per tick	PER_TICK Step at 0x49ba0c (original bits 3d4cccce); 120: 3cccccce, 240: 3c4cccce; exact at 60
 0x134d3c	RiderSpinSub_Exit	0x00134cb0	no	NOT_PER_TICK	OTHER	0.750038	rider+0x2dc spin offset *= 0.75 once in RiderSpinSub_Exit (state exit, event), then clamped to fixed values	
 0x14c388	Bolts_IndexTable2ByChar	0x0014c320	yes	NOT_PER_TICK	COUNTER	+1	loop index building a font character table	
 0x154e28	BEScoreInt_SubmitRaceResult	0x00154ab8	no	NOT_PER_TICK	COUNTER	+1	loop/list counter while submitting a race result (once per race)	

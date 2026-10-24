@@ -135,6 +135,10 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // Rider_UpdateTweakLayerAnim (0x1163b0): the tweak layer's weight
     // (+0x350) approaches 1 by time scale / 90 per tick.
     (0x0049_b5d0, 0x3c36_0b62, PerTick::Step),
+    // RiderNaturalAirSub_HandleInput (0x12f730), load 0x12f9f4: the four
+    // natural-air slew rates (+0x1f4, +0x200, +0x224, +0x218) are steps
+    // consumed directly by Rider_UpdateSlewedParams each tick.
+    (0x0049_ba0c, 0x3d4c_ccce, PerTick::Step),
     // RiderSpinSub_HandleInput (0x133308): the spin and flip leans (+0x28,
     // +0x2c) approach the stick by at most 0.05 (scaled) per tick; their
     // change also turns the rider.
