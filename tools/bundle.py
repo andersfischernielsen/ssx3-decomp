@@ -1,27 +1,29 @@
 #!/usr/bin/env python3
-"""Build a standalone SSX 3 for macOS, Linux or Windows: the ssx3 window
-binary with the game data packed from your disc image.
+"""Build a standalone SSX 3 for this machine's OS: the ssx3 window binary
+with the game data packed from your disc image.
 
-    python3 tools/bundle.py TARGET... [--iso PATH] [--out DIR]
+    python3 tools/bundle.py [--iso PATH] [--out DIR]
     python3 tools/bundle.py pack [--iso PATH] [OUT]      # only the data pack
 
-TARGET: macos (this Mac's architecture), linux-x86_64, linux-aarch64,
-windows-x86_64, or all. The Linux and Windows builds run in Docker
-(tools/bundle/Dockerfile: a cross toolchain and MinGW); macOS builds natively
-and needs a Mac.
+It builds for the OS it runs on, no cross-building: run it on a Mac for
+macOS, on Linux for Linux, on Windows for Windows. A Linux build can be made
+on any machine with Docker (tools/bundle/Dockerfile is a Linux build
+environment; see the README).
+
+- macOS: `dist/SSX3.app`, the pack in `Contents/Resources` (a signed binary
+  cannot carry appended data, and Apple Silicon runs only signed code; the
+  bundle is signed ad hoc).
+- Linux: `dist/ssx3-linux-<arch>`, one file: the pack appended to the
+  executable, which reads it back from itself.
+- Windows: `dist\ssx3-windows-<arch>.exe`, one file, the same way.
 
 The pack (`ssx3-core/src/pack.rs`) is the disc image without the padding
-files (PAD0.000, PAD1.000) and all-zero sectors, about 2.4 GB. It is
-appended to the Linux and Windows executables, which read it back from
-themselves (a single file). macOS gets `SSX3.app` with the pack in
-`Contents/Resources`: a signed binary cannot carry appended data, and Apple
-Silicon runs only signed code (the bundle is signed ad hoc).
+files (PAD0.000, PAD1.000) and all-zero sectors, about 2.4 GB. The result
+plays from anywhere: no ISO, no repository. Saves and settings go to the
+user's data folder (see `game::init_standalone`).
 
-The result plays from anywhere: no ISO, no repository. Saves and settings go
-to the user's data folder (see `game::init_standalone`).
-
-The build needs the generated code (built from your game, not in git), so it
-can only be made on a machine that has it. The output contains the game:
+The build needs the generated code (built from your game, not in git), so
+it can only be made on a machine that has it. The output contains the game:
 it is for your own use, do not distribute it.
 """
 import argparse
@@ -37,12 +39,8 @@ SECTOR = 2048
 MAGIC, TRAILER = b"SSX3PAK1", b"SSX3PAKT"
 # Files the game never reads (disc padding).
 SKIP = {"/PAD0.000", "/PAD1.000"}
-TARGETS = {
-    "linux-x86_64": ("x86_64-unknown-linux-gnu", "ssx3", "/usr/lib/x86_64-linux-gnu/pkgconfig"),
-    "linux-aarch64": ("aarch64-unknown-linux-gnu", "ssx3", "/usr/lib/aarch64-linux-gnu/pkgconfig"),
-    "windows-x86_64": ("x86_64-pc-windows-gnu", "ssx3.exe", None),
-}
-IMAGE = "ssx3-bundle"
+# Cargo's output directory (CARGO_TARGET_DIR, as cargo itself reads it).
+TARGET_DIR = os.environ.get("CARGO_TARGET_DIR", os.path.join(ROOT, "target"))
 
 
 def run(cmd, **kw):
@@ -147,15 +145,19 @@ def append_pack(exe, pack, out):
     print(f"bundle: {out} ({os.path.getsize(out) / 1e9:.2f} GB)")
 
 
-def build_macos(pack, out_dir):
-    if platform.system() != "Darwin":
-        sys.exit("macos: build it on a Mac")
+def build_binary():
+    """The ssx3 window binary for this machine (cargo's `game` profile)."""
     run(["cargo", "build", "--profile", "game", "-p", "ssx3", "--bin", "ssx3"], cwd=ROOT)
+    exe = "ssx3.exe" if os.name == "nt" else "ssx3"
+    return os.path.join(TARGET_DIR if os.path.isabs(TARGET_DIR) else os.path.join(ROOT, TARGET_DIR), "game", exe)
+
+
+def bundle_macos(exe, pack, out_dir):
     app = os.path.join(out_dir, "SSX3.app")
     shutil.rmtree(app, ignore_errors=True)
     os.makedirs(os.path.join(app, "Contents/MacOS"))
     os.makedirs(os.path.join(app, "Contents/Resources"))
-    shutil.copy2(os.path.join(ROOT, "target/game/ssx3"), os.path.join(app, "Contents/MacOS/ssx3"))
+    shutil.copy2(exe, os.path.join(app, "Contents/MacOS/ssx3"))
     # A hard link where possible (same volume), else a copy.
     res = os.path.join(app, "Contents/Resources/ssx3.pack")
     try:
@@ -181,45 +183,31 @@ def build_macos(pack, out_dir):
     print(f"bundle: {app}")
 
 
-def build_docker(name, pack, out_dir):
-    triple, exe, pkg = TARGETS[name]
-    run(["docker", "build", "-t", IMAGE, os.path.join(ROOT, "tools/bundle")])
-    # Per-target build directory inside the repo (kept between runs), and a
-    # shared cargo registry cache.
-    target_dir = f"target/bundle-{triple}"
-    env = ["-e", f"CARGO_TARGET_DIR=/src/{target_dir}"]
-    if pkg:
-        env += ["-e", f"PKG_CONFIG_PATH={pkg}", "-e", "PKG_CONFIG_SYSROOT_DIR=/"]
-    run(["docker", "run", "--rm", "-v", f"{ROOT}:/src", "-v", "ssx3-cargo-registry:/usr/local/cargo/registry",
-         "-w", "/src", *env, IMAGE,
-         "cargo", "build", "--profile", "game", "-p", "ssx3", "--bin", "ssx3", "--target", triple])
-    built = os.path.join(ROOT, target_dir, triple, "game", exe)
-    suffix = ".exe" if exe.endswith(".exe") else ""
-    append_pack(built, pack, os.path.join(out_dir, f"ssx3-{name}{suffix}"))
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("targets", nargs="+", help="macos, linux-x86_64, linux-aarch64, windows-x86_64, all, or pack [OUT]")
+    ap.add_argument("cmd", nargs="*", help="nothing (build the standalone game), or: pack [OUT]")
     ap.add_argument("--iso", default=os.environ.get("SSX3_ISO", os.path.join(ROOT, "SSX 3 (USA).iso")))
     ap.add_argument("--out", default=os.path.join(ROOT, "dist"))
     a = ap.parse_args()
-    pack = os.path.join(ROOT, "target/bundle/ssx3.pack")
-    if a.targets[0] == "pack":
-        make_pack(a.iso, a.targets[1] if len(a.targets) > 1 else pack)
+    pack = os.path.join(ROOT, "target", "bundle", "ssx3.pack")
+    if a.cmd[:1] == ["pack"]:
+        make_pack(a.iso, a.cmd[1] if len(a.cmd) > 1 else pack)
         return
-    targets = ["macos", *TARGETS] if a.targets == ["all"] else a.targets
-    for t in targets:
-        if t != "macos" and t not in TARGETS:
-            sys.exit(f"unknown target {t}")
+    if a.cmd:
+        sys.exit(f"unknown command {' '.join(a.cmd)} (this tool builds for the OS it runs on)")
+    system = platform.system()
+    if system not in ("Darwin", "Linux", "Windows"):
+        sys.exit(f"unsupported OS {system}")
     make_pack(a.iso, pack)
     os.makedirs(a.out, exist_ok=True)
-    # One build at a time (the machine's limit).
-    for t in targets:
-        if t == "macos":
-            build_macos(pack, a.out)
-        else:
-            build_docker(t, pack, a.out)
+    exe = build_binary()
+    arch = {"amd64": "x86_64", "arm64": "aarch64"}.get(platform.machine().lower(), platform.machine().lower())
+    if system == "Darwin":
+        bundle_macos(exe, pack, a.out)
+    elif system == "Linux":
+        append_pack(exe, pack, os.path.join(a.out, f"ssx3-linux-{arch}"))
+    else:
+        append_pack(exe, pack, os.path.join(a.out, f"ssx3-windows-{arch}.exe"))
 
 
 if __name__ == "__main__":

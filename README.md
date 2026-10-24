@@ -132,21 +132,31 @@ Saves go to `saves/ssx3-mc0.ps2`.
 ### 4. A standalone build (optional)
 
 `tools/bundle.py` packs the game data from your disc image into a build that runs on its own,
-without the ISO or this repository:
+without the ISO or this repository. It builds for the OS it runs on:
 
 ```sh
-python3 tools/bundle.py macos            # dist/SSX3.app
-python3 tools/bundle.py linux-x86_64     # dist/ssx3-linux-x86_64 (one file)
-python3 tools/bundle.py windows-x86_64   # dist/ssx3-windows-x86_64.exe (one file)
-python3 tools/bundle.py all              # all of the above, plus linux-aarch64
+python3 tools/bundle.py
 ```
+
+| Run on | Result |
+| --- | --- |
+| macOS | `dist/SSX3.app` |
+| Linux | `dist/ssx3-linux-<arch>` (one file) |
+| Windows | `dist\ssx3-windows-<arch>.exe` (one file) |
 
 The data pack is the disc without its padding files and empty sectors (about 2.4 GB). On
 Linux and Windows it is appended to the executable. On macOS it sits inside the app bundle,
-because a signed binary cannot carry appended data. The Linux and Windows builds are
-cross-compiled in Docker (`tools/bundle/Dockerfile`); the macOS build needs a Mac. A
-standalone build keeps its saves and settings in the user's data folder:
-`~/Library/Application Support/SSX3`, `%APPDATA%\SSX3` or `~/.local/share/ssx3`.
+because a signed binary cannot carry appended data. A standalone build keeps its saves and
+settings in the user's data folder: `~/Library/Application Support/SSX3`, `%APPDATA%\SSX3`
+or `~/.local/share/ssx3`.
+
+To make and try the Linux build on a machine with Docker, use the Linux build environment in
+`tools/bundle/Dockerfile` (the build is for the container's architecture):
+
+```sh
+docker build -t ssx3-linux tools/bundle
+docker run --rm -v "$PWD:/src" -w /src -e CARGO_TARGET_DIR=target/linux ssx3-linux python3 tools/bundle.py
+```
 
 The result contains the game. It is for your own use with your own disc; do not share it.
 
