@@ -15,7 +15,7 @@ jobs:
     name: Assert no game material is present
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check that no disc, executable or translated code is tracked
         run: |
           bad=$(git ls-files | grep -Ei '\.iso$|^orig/|^generated/(ee|ee-unwind|iop|vu)/|SLUS_207\.72|(^|/)(ram|vram)[^/]*\.bin$' || true)
