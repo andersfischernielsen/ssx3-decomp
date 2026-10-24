@@ -64,13 +64,15 @@ pub struct Casters {
     pub generation: u64,
     pub triangles: Vec<[f32; 6]>,
     pub patches: u32,
+    pub instances: u32,
 }
 
 /// The tessellated patches, kept from frame to frame.
 #[derive(Default)]
 pub struct CasterCache {
     meshes: HashMap<u32, (u64, Vec<[f32; 6]>)>,
-    set: Vec<(u32, u64)>,
+    /// (object, its hash, an instance (else a patch)).
+    set: Vec<(u32, u64, bool)>,
     current: Option<Arc<Casters>>,
     generation: u64,
 }
@@ -106,6 +108,25 @@ impl CasterCache {
                 && word(m, sections + section * 8 + 0x24) == 6
                 && word(m, sections.wrapping_add((slot as u32) * 0x18) + 0x3f0) == 3
         };
+        // Instances (`docs/investigation/world-instances.md`): the static
+        // models (kind 3) in shown sections (0xff: shared, always shown).
+        let shown_instance = |i: u32| {
+            let w = word(m, i + 0x7c);
+            let (section, slot) = ((w >> 8) & 0xff, (w >> 16) as i16);
+            // (The lists also hold other objects: a valid descriptor and a
+            // plausible slot keep to the instances.)
+            let desc = word(m, i + 0x80);
+            word(m, i + 8) & 3 == 3
+                && ram(desc)
+                && (1..=64).contains(&word(m, desc + 4))
+                && (section == 0xff || (0..4096).contains(&slot))
+                && (section == 0xff
+                    || (word(m, sections + section * 8 + 0x24) == 6
+                        && word(
+                            m,
+                            sections.wrapping_add((slot as i32 as u32) * 0x18) + 0x3f0,
+                        ) == 3))
+        };
         let mut set = Vec::new();
         let mut seen = std::collections::HashSet::new();
         let mut stack: Vec<(u32, u32)> = (0..8)
@@ -119,9 +140,18 @@ impl CasterCache {
             let mut n = 0;
             while ram(p) && n < 100_000 {
                 if shown(p) {
-                    set.push((p, coeff_hash(m, p)));
+                    set.push((p, coeff_hash(m, p), false));
                 }
                 p = word(m, p);
+                n += 1;
+            }
+            let mut i = word(m, node + 0x20);
+            let mut n = 0;
+            while ram(i) && n < 100_000 {
+                if shown_instance(i) {
+                    set.push((i, instance_hash(m, i), true));
+                }
+                i = word(m, i);
                 n += 1;
             }
             stack.extend((0..8).map(|i| (word(m, node + 4 * i), depth + 1)));
@@ -130,26 +160,300 @@ impl CasterCache {
         if set == self.set {
             return self.current.clone();
         }
+        if std::env::var_os("SSX3_CASTERS_DEBUG").is_some() {
+            let old: std::collections::HashMap<u32, u64> =
+                self.set.iter().map(|e| (e.0, e.1)).collect();
+            let new: std::collections::HashMap<u32, u64> = set.iter().map(|e| (e.0, e.1)).collect();
+            for (a, h) in &new {
+                match old.get(a) {
+                    None => eprintln!(
+                        "casters: + {a:#x} flags {:#x} sec {:#x}",
+                        word(m, a + 8),
+                        word(m, a + 0x7c)
+                    ),
+                    Some(o) if o != h => eprintln!("casters: ~ {a:#x}"),
+                    _ => {}
+                }
+            }
+            for a in old.keys().filter(|a| !new.contains_key(a)) {
+                eprintln!(
+                    "casters: - {a:#x} flags {:#x} sec {:#x}",
+                    word(m, a + 8),
+                    word(m, a + 0x7c)
+                );
+            }
+        }
         // The set changed: tessellate what is new, drop what is gone.
-        let keep: std::collections::HashSet<u32> = set.iter().map(|&(p, _)| p).collect();
+        let keep: std::collections::HashSet<u32> = set.iter().map(|&(p, _, _)| p).collect();
         self.meshes.retain(|p, _| keep.contains(p));
         let mut triangles = Vec::new();
-        for &(p, h) in &set {
+        for &(p, h, instance) in &set {
             let fresh = self.meshes.get(&p).is_none_or(|(mh, _)| *mh != h);
             if fresh {
-                self.meshes.insert(p, (h, tessellate(m, p)));
+                let t = if instance {
+                    decode_instance(m, p)
+                } else {
+                    tessellate(m, p)
+                };
+                self.meshes.insert(p, (h, t));
             }
             triangles.extend_from_slice(&self.meshes[&p].1);
         }
         self.generation += 1;
+        let instances = set.iter().filter(|e| e.2).count() as u32;
         self.set = set;
         self.current = Some(Arc::new(Casters {
             generation: self.generation,
-            patches: self.set.len() as u32,
+            patches: self.set.len() as u32 - instances,
+            instances,
             triangles,
         }));
         self.current.clone()
     }
+}
+
+/// A hash of what an instance's geometry comes from: its matrix, scale,
+/// descriptor, material table and chain base.
+fn instance_hash(m: &dyn Mem, i: u32) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    let words = (0..16)
+        .map(|k| i + 0x10 + 4 * k)
+        .chain([i + 0x80, i + 0x84, i + 0x94, i + 0x98]);
+    for a in words {
+        h = (h ^ word(m, a) as u64).wrapping_mul(0x100_0000_01b3);
+    }
+    h
+}
+
+/// A row-vector 4×4 matrix at `a` (rows of four f32).
+fn matrix(m: &dyn Mem, a: u32) -> [[f64; 4]; 4] {
+    std::array::from_fn(|r| {
+        let q = m.qword(a + 16 * r as u32);
+        std::array::from_fn(|c| f32::from_bits((q >> (32 * c)) as u32) as f64)
+    })
+}
+
+/// `a · b` (row vectors: `a`'s rows through `b`).
+fn mul(a: &[[f64; 4]; 4], b: &[[f64; 4]; 4]) -> [[f64; 4]; 4] {
+    std::array::from_fn(|r| std::array::from_fn(|c| (0..4).map(|k| a[r][k] * b[k][c]).sum()))
+}
+
+/// An instance's triangles in world space (normal 0: they cast from both
+/// faces; fences and cards are single sheets). Per mesh node i, the matrix
+/// `H = S · N[i] · W` of `PS2GraphicsMan_DrawModel` (0x37e238): S the
+/// descriptor's dequantisation scale × the instance scale, N the node
+/// hierarchy (local translations × the instance scale), W the instance's
+/// world matrix (+0x10). Each group's DMA chain (base +0x98, or the
+/// descriptor's +0x24 for SH-lit instances) holds batches of triangle
+/// strips: header (UNPACK V4-32 ×2), strip lengths (V2-8), positions (the
+/// first V3-16 after the header, int16 / 32768). Blended materials (glass,
+/// decals) do not cast.
+fn decode_instance(m: &dyn Mem, i: u32) -> Vec<[f32; 6]> {
+    let mut out = Vec::new();
+    let desc = word(m, i + 0x80);
+    let sc = f32::from_bits(word(m, i + 0x84)) as f64;
+    if !ram(desc) || !sc.is_finite() {
+        return out;
+    }
+    let ds = |k: u32| f32::from_bits(word(m, desc + 0x18 + 4 * k)) as f64 * sc;
+    let s = [
+        [ds(0), 0.0, 0.0, 0.0],
+        [0.0, ds(1), 0.0, 0.0],
+        [0.0, 0.0, ds(2), 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let w = matrix(m, i + 0x10);
+    let lit = word(m, i + 8) & 0x4000 != 0;
+    let base = if lit {
+        word(m, desc + 0x24)
+    } else {
+        word(m, i + 0x98)
+    };
+    let count = word(m, desc + 4) as usize;
+    let nodes = word(m, desc + 8);
+    if count == 0 || count > 64 || !ram(nodes) {
+        return out;
+    }
+    let mats = word(m, i + 0x94);
+    let mut n: Vec<[[f64; 4]; 4]> = Vec::with_capacity(count);
+    for k in 0..count {
+        let e = nodes + 16 * k as u32;
+        let parent = word(m, e) as i32;
+        let la = word(m, e + 12);
+        let mut l = if ram(la) {
+            matrix(m, la)
+        } else {
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        };
+        for c in 0..3 {
+            l[3][c] *= sc;
+        }
+        let nk = if parent >= 0 && (parent as usize) < k {
+            mul(&l, &n[parent as usize])
+        } else {
+            l
+        };
+        n.push(nk);
+    }
+    for (k, nk) in n.iter().enumerate() {
+        let ml = word(m, nodes + 16 * k as u32 + 4);
+        if !ram(ml) {
+            continue;
+        }
+        let h = mul(&mul(&s, nk), &w);
+        let groups = word(m, ml + 0x1c).min(256);
+        let list = word(m, ml + 0x20);
+        for g in 0..groups {
+            let ga = word(m, list + 4 * g);
+            if !ram(ga) {
+                continue;
+            }
+            let gw = word(m, ga);
+            let material = gw as u16 as i16;
+            if ram(mats) && material >= 0 && (material as u32) < word(m, mats) {
+                let mat = word(m, mats + 4 + 4 * material as u32);
+                if ram(mat) && matches!(word(m, mat + 0xc) & 0x66_0000, 0x4_0000 | 0x6_0000) {
+                    continue;
+                }
+            }
+            let chain = base.wrapping_add(word(m, ga + 4));
+            for (lens, xyz) in batches(&chain_words(m, chain)) {
+                let world: Vec<[f32; 3]> = xyz
+                    .iter()
+                    .map(|p| {
+                        let v = [
+                            p[0] as f64 / 32768.0,
+                            p[1] as f64 / 32768.0,
+                            p[2] as f64 / 32768.0,
+                            1.0,
+                        ];
+                        std::array::from_fn(|c| (0..4).map(|r| v[r] * h[r][c]).sum::<f64>() as f32)
+                    })
+                    .collect();
+                let mut at = 0usize;
+                for len in lens {
+                    let len = len as usize;
+                    for t in 0..len.saturating_sub(2) {
+                        for v in &world[(at + t).min(world.len())..(at + t + 3).min(world.len())] {
+                            out.push([v[0], v[1], v[2], 0.0, 0.0, 0.0]);
+                        }
+                    }
+                    at += len;
+                }
+                // (A short last strip would leave a partial triangle.)
+                out.truncate(out.len() / 3 * 3);
+            }
+        }
+    }
+    out
+}
+
+/// The VIF words a group's DMA chain transfers (tag upper halves, then each
+/// transfer's data), up to its RET/END.
+fn chain_words(m: &dyn Mem, mut t: u32) -> Vec<u32> {
+    let mut w = Vec::new();
+    for _ in 0..256 {
+        if !ram(t & 0x1ff_fff0) {
+            break;
+        }
+        let tag = m.qword(t);
+        let qwc = (tag & 0xffff) as u32;
+        let id = ((tag >> 28) & 7) as u32;
+        let addr = ((tag >> 32) & 0x7fff_fff0) as u32;
+        w.push((tag >> 64) as u32);
+        w.push((tag >> 96) as u32);
+        let data = match id {
+            1 | 2 => t + 16,
+            3 | 4 => addr,
+            _ => break,
+        };
+        for k in 0..qwc {
+            let q = m.qword(data + 16 * k);
+            w.extend((0..4).map(|l| (q >> (32 * l)) as u32));
+        }
+        t = match id {
+            1 => t + 16 + 16 * qwc,
+            2 => addr,
+            _ => t + 16,
+        };
+        if id == 4 || w.len() > 1 << 20 {
+            break;
+        }
+    }
+    w
+}
+
+/// The pass-1 batches of a type-3 mesh chain: per batch (a V4-32 ×2 header
+/// up to its MSCAL), its strip lengths and positions.
+fn batches(w: &[u32]) -> Vec<(Vec<u8>, Vec<[i16; 3]>)> {
+    let mut out = Vec::new();
+    // (lens, positions, base address, closed)
+    let mut cur: Option<(Option<Vec<u8>>, Option<Vec<[i16; 3]>>, u32)> = None;
+    let mut i = 0;
+    while i < w.len() {
+        let c = w[i];
+        let (cmd, num, imm) = ((c >> 24) & 0x7f, (c >> 16) & 0xff, c & 0xffff);
+        i += 1;
+        if cmd >= 0x60 {
+            let (vn, vl) = ((cmd >> 2) & 3, cmd & 3);
+            let n = if num == 0 { 256 } else { num } as usize;
+            let size = if vn == 3 && vl == 3 {
+                (n * 2).div_ceil(4)
+            } else {
+                (n * (vn as usize + 1) * (32 >> vl)).div_ceil(32)
+            };
+            let raw = &w[i.min(w.len())..(i + size).min(w.len())];
+            i += size;
+            let bytes: Vec<u8> = raw.iter().flat_map(|x| x.to_le_bytes()).collect();
+            match (vn, vl) {
+                (3, 0) if n == 2 => cur = Some((None, None, imm & 0x3ff)),
+                (1, 2) => {
+                    if let Some((lens @ None, _, _)) = cur.as_mut() {
+                        *lens = Some(
+                            (0..n)
+                                .map(|k| bytes.get(2 * k).copied().unwrap_or(0))
+                                .collect(),
+                        );
+                    }
+                }
+                (2, 1) => {
+                    if let Some((Some(_), pos @ None, _)) = cur.as_mut() {
+                        *pos = Some(
+                            (0..n)
+                                .map(|k| {
+                                    std::array::from_fn(|l| {
+                                        bytes
+                                            .get(6 * k + 2 * l..6 * k + 2 * l + 2)
+                                            .map_or(0, |b| i16::from_le_bytes([b[0], b[1]]))
+                                    })
+                                })
+                                .collect(),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            match cmd {
+                0x20 => i += 1,
+                0x30 | 0x31 => i += 4,
+                0x50 | 0x51 => i += (if imm == 0 { 65536 } else { imm as usize }) * 4,
+                // MSCAL / MSCALF: the batch is complete.
+                0x14 | 0x15 => {
+                    if let Some((Some(lens), Some(pos), _)) = cur.take() {
+                        out.push((lens, pos));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    out
 }
 
 /// A hash of the patch's coefficients (a patch slot reused by another

@@ -341,9 +341,10 @@ impl Shadow {
         queue.write_buffer(&buf, 0, &bytes);
         if debug("print") {
             eprintln!(
-                "shadow: world casters generation {}: {} patches, {} triangles",
+                "shadow: world casters generation {}: {} patches, {} instances, {} triangles",
                 c.generation,
                 c.patches,
+                c.instances,
                 c.triangles.len() / 3
             );
         }

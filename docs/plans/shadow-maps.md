@@ -91,3 +91,19 @@ match `main`.
     cycles. Off: race gate identical.
   - Behind the camera, and the views from big jumps, need the native caster
     pass (option 2): next.
+- 2026-10-24: native caster pass (option 2), `ssx3_render::world_casters`,
+  on the game thread at frame build (no game code, RAM reads only):
+  - Terrain: every shown patch of the Nash octree (`Nash_CollectPatches`'
+    section test: about a third of the loaded patches on Snow Jam),
+    tessellated once on an 8×8 grid from its power-basis coefficients.
+    Only triangles turned away from the sun cast: the game's terrain mesh
+    (its own LOD per patch) differs from ours by more than any bias, and
+    sun-facing terrain shadowed itself in a lattice along the patch grid.
+  - Instances (`docs/investigation/world-instances.md`): kind-3 models in
+    shown sections, meshes decoded from their DMA chains (V2-8 strip
+    lengths, V3-16 positions) through `S · N[i] · W`; both faces cast.
+    Blended materials do not cast; alpha cut-outs (trees) cast solid for now.
+  - The set is renewed as sections stream (about every 10 frames on Snow
+    Jam; the whole buffer is uploaded again then). The game's own terrain
+    draws no longer cast. `SSX3_SHADOW_DEBUG=no-world` uses them instead.
+  - The world cull widening is gone.
