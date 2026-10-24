@@ -5310,6 +5310,12 @@
 0x00274a30    InSeq_InstanceUpdate
 # Phase 2 wave: oc2
 0x0018ca10    cFEStateOptionsController_OnWidgetAction
+# Event boot investigation (2026-10-24)
+0x00317670    StrHash
+0x00144df0    BENewRaceInt_SetEventType
+0x001451e8    BENewRaceInt_SetEvent
+0x00191c68    cFEStateRuleSelect_OnWidgetAction
+0x001867a8    cFEStateEventSelect_OnWidgetAction
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks

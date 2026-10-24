@@ -34,6 +34,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cFEStateEventSelect_Shutdown",
     ),
     (
+        0x0018_67a8,
+        c_fe_state_event_select_on_widget_action,
+        "cFEStateEventSelect_OnWidgetAction",
+    ),
+    (
         0x0018_6950,
         c_fe_state_event_select_on_widget_notify,
         "cFEStateEventSelect_OnWidgetNotify",
@@ -529,6 +534,176 @@ pub fn cfe_state_event_select_init(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Widget actions.
+
+/// `EventSelect_OnWidgetAction` (0x2018a8).
+const EVENT_SELECT_ON_WIDGET_ACTION: u32 = 0x0020_18a8;
+/// `StrHash` (0x317670).
+const STR_HASH: u32 = 0x0031_7670;
+/// `UIScreen_LookupValue` (0x39c778).
+const UI_SCREEN_LOOKUP_VALUE: u32 = 0x0039_c778;
+/// `UIScreen_StartThread` (0x39c870).
+const UI_SCREEN_START_THREAD: u32 = 0x0039_c870;
+/// `UIStateMgr_CloseTopStates` (0x39f190).
+const UI_STATE_MGR_CLOSE_TOP_STATES: u32 = 0x0039_f190;
+/// `UIStateMgr_SwitchState` (0x39f400).
+const UI_STATE_MGR_SWITCH_STATE: u32 = 0x0039_f400;
+/// The screen's "play the intro" thread name (`D_0045DC60`).
+const INTRO_THREAD_NAME: u32 = 0x0045_dc60;
+/// `gp-0x1680`: 1 while the front end runs its quick (overlay) flow.
+const QUICK_FLOW: i32 = -0x1680;
+
+/// Start the screen's intro thread (`StrHash(D_0045DC60)` looked up in the
+/// screen at `+0x40`), when the screen has one.
+fn event_select_play_intro(c: &mut Cpu, this: u32, rets: [u32; 3]) -> Flow {
+    c.cycles += 10;
+    c.g[A0][0] = sx(INTRO_THREAD_NAME);
+    call_ptr(c, STR_HASH, rets[0])?;
+    c.g[A0][0] = Addr(at(this, 0x40)).lw(c);
+    c.g[A1][0] = c.g[V0][0];
+    call_ptr(c, UI_SCREEN_LOOKUP_VALUE, rets[1])?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[V0][0] = 0xffff;
+    let missing = c.g[A1][0] == c.g[V0][0];
+    c.g[A1][0] &= 0xffff;
+    if !missing {
+        c.cycles += 3;
+        c.g[A0][0] = Addr(at(this, 0x40)).lw(c);
+        c.g[A2][0] = 1;
+        call_ptr(c, UI_SCREEN_START_THREAD, rets[2])?;
+    }
+    Ok(())
+}
+
+/// `void cFEStateEventSelect_OnWidgetAction(self, UIWidget* w, int action)`
+/// (0x1867a8): pass the action to the event-select panel at `self+0x48`.
+/// When accept (5) or back (6) leaves the panel (it returns 1): in the quick
+/// flow play the intro and close the top state; otherwise ask the flow
+/// object (`**(self+0x10)`) for the next/previous state (slot 0x20/0x28,
+/// `m(self, w->id)`) and, if there is one, tell the current top state it is
+/// leaving (slot 0xc0 of `(*(self+0x10))->top`), play the intro and switch.
+pub fn c_fe_state_event_select_on_widget_action(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 5;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        let this = c.g[S0][0] as u32;
+        let widget = c.g[S1][0] as u32;
+        let action = c.g[A2][0];
+        // The flow slot to ask on a leaving accept/back.
+        let mut flow_slot = None;
+        if action == 5 {
+            c.cycles += 6;
+            c.g[A0][0] = sx(at(this, 0x48));
+            c.g[A2][0] = 5;
+            call_ptr(c, EVENT_SELECT_ON_WIDGET_ACTION, 0x0018_67d4)?;
+            c.g[V1][0] = 1;
+            if c.g[V0][0] == c.g[V1][0] {
+                c.cycles += 4;
+                c.g[V0][0] = Addr(glo(c, QUICK_FLOW)).lw(c) ^ 1;
+                c.g[A1][0] = c.g[S0][0];
+                if c.g[V0][0] == 0 {
+                    flow_slot = Some(0);
+                } else {
+                    c.cycles += 7;
+                    flow_slot = Some(0x20);
+                }
+            }
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 6;
+            c.g[A0][0] = sx(at(this, 0x48));
+            if action != 6 {
+                c.cycles += 3;
+                c.g[A1][0] = c.g[S1][0];
+                call_ptr(c, EVENT_SELECT_ON_WIDGET_ACTION, 0x0018_6938)?;
+            } else {
+                c.cycles += 6;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = 6;
+                call_ptr(c, EVENT_SELECT_ON_WIDGET_ACTION, 0x0018_6824)?;
+                c.g[V1][0] = 1;
+                if c.g[V0][0] == c.g[V1][0] {
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(glo(c, QUICK_FLOW)).lw(c) ^ 1;
+                    if c.g[V0][0] == 0 {
+                        flow_slot = Some(0);
+                    } else {
+                        c.cycles += 6;
+                        c.g[A1][0] = c.g[S0][0];
+                        flow_slot = Some(0x28);
+                    }
+                }
+            }
+        }
+        match flow_slot {
+            None => {}
+            Some(0) => {
+                // Quick flow: play the intro and close the top state.
+                event_select_play_intro(c, this, [0x0018_684c, 0x0018_6858, 0x0018_6874])?;
+                c.cycles += 6;
+                c.g[A0][0] = Addr(at(this, 0x10)).lw(c);
+                c.g[A1][0] = 1;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+                call_ptr(c, UI_STATE_MGR_CLOSE_TOP_STATES, 0x0018_6884)?;
+            }
+            Some(slot) => {
+                // owner->next/prev(self, w->id).
+                let mgr = Addr(at(this, 0x10)).lw(c);
+                c.g[V0][0] = mgr;
+                c.g[A2][0] = Addr(at(widget, 0x18)).lw(c);
+                c.g[A3][0] = Addr(mgr as u32).lw(c);
+                let owner = c.g[A3][0] as u32;
+                c.g[V1][0] = Addr(at(owner, 4)).lw(c);
+                let m = VSlot::read(c, c.g[V1][0], slot);
+                c.g[A0][0] = m.delta;
+                c.g[V0][0] = m.func;
+                c.cycles += 5;
+                c.g[A0][0] = sx(owner.wrapping_add(m.delta as u32));
+                call_ptr(c, m.func as u32, 0x0018_68ac)?;
+                c.g[S1][0] = c.g[V0][0];
+                if c.g[S1][0] != 0 {
+                    // Tell the current top state it is being left.
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(at(this, 0x10)).lw(c);
+                    c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                    c.g[A3][0] = Addr(at(c.g[V1][0] as u32, 0x10)).lw(c);
+                    c.g[A1][0] = 1;
+                    if c.g[A3][0] != 0 {
+                        c.cycles += 6;
+                        let top = c.g[A3][0];
+                        c.g[V1][0] = Addr(at(top as u32, 8)).lw(c);
+                        c.g[A2][0] = 0;
+                        let leave = VSlot::read(c, c.g[V1][0], 0xc0);
+                        c.g[A0][0] = leave.delta;
+                        c.g[V0][0] = leave.func;
+                        c.g[A0][0] = sx((top as u32).wrapping_add(leave.delta as u32));
+                        call_ptr(c, leave.func as u32, 0x0018_68e4)?;
+                    }
+                    event_select_play_intro(c, this, [0x0018_68f0, 0x0018_68fc, 0x0018_6918])?;
+                    c.cycles += 6;
+                    c.g[A0][0] = Addr(at(this, 0x10)).lw(c);
+                    c.g[A1][0] = c.g[S1][0];
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x18));
+                    call_ptr(c, UI_STATE_MGR_SWITCH_STATE, 0x0018_6928)?;
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -701,6 +876,132 @@ pub(crate) mod tests {
                 vtable_at(c, &mut r, DATA + 0x3000, 0x88);
                 // Mode 3 keeps `EventSelect_PostInput` on its short path.
                 c.bus.write32(GAME_GP - 0xb54, 3);
+            },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 0x1867a8 cFEStateEventSelect_OnWidgetAction.
+
+    /// `UIListNode_IsSentinel` behind a vtable slot: returns 0 here (a flow
+    /// method with no next state).
+    const RET_ZERO: u32 = 0x001a_8828;
+
+    /// The real `EventSelect_OnWidgetAction` (0x2018a8) runs behind the
+    /// state: action 6 on the peak panel leaves (1) or, in flow 4, stays (0);
+    /// action 5 on the event panel starts an unlocked event (1) or denies a
+    /// locked one (0); other actions return 0 at once.
+    #[test]
+    fn c_fe_state_event_select_on_widget_action_matches() {
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::game::be::bedbreward::tests::alloc_ready;
+        check(
+            ee::s02::f_001867a8__generated,
+            c_fe_state_event_select_on_widget_action,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0018_67a8, 1);
+                alloc_ready(c);
+                let this = DATA;
+                let es = this + 0x48;
+                let widget = DATA + 0x1000;
+                let state = DATA + 0x2000;
+                let sound = DATA + 0x2100;
+                let player = DATA + 0x2200;
+                let flow = DATA + 0x2400;
+                let owner = DATA + 0x2500;
+                let top = DATA + 0x2600;
+                let screen = DATA + 0x2800;
+                let world = DATA + 0x3000;
+                let iface = DATA + 0x3400;
+                let vt = DATA + 0x3800;
+                for i in 0..0x1000 {
+                    c.bus.write32(DATA + i * 4, 0);
+                }
+                // BELibrary dummy (its interfaces come from the fakes) and the
+                // world.
+                c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x6_c000);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                // EventSelect_OnWidgetAction's jump table (`D_00470780`).
+                put_words(
+                    c,
+                    0x0047_0780,
+                    &[
+                        0x0020_23d4,
+                        0x0020_261c,
+                        0x0020_270c,
+                        0x0020_270c,
+                        0x0020_193c,
+                        0x0020_21d8,
+                        0x0020_22bc,
+                    ],
+                );
+                // Its sound player, and the new-race interface (fake call 2,
+                // `GetInterface`) an event start commits.
+                c.bus.write32(es + 0x2ec, state);
+                c.bus.write32(state + 0x10, sound);
+                c.bus.write32(sound + 0x14, player);
+                c.bus.write32(player, vt);
+                c.bus.write32(vt + 0x14, FAKE);
+                c.bus.write32(LOG_RESULTS + 8, iface);
+                c.bus.write32(iface + 0xc, vt + 0x100);
+                c.bus.write32(vt + 0x10c, FAKE);
+                // The panel state.
+                let action: u64 = match seed % 5 {
+                    0 | 1 => 5,
+                    2 | 3 => 6,
+                    _ => [0u64, 3, 9][(seed / 5 % 3) as usize],
+                };
+                let mode: u32 = if action == 5 && seed % 3 != 0 {
+                    2
+                } else if action == 5 {
+                    0xffff_ffff
+                } else {
+                    0
+                };
+                let flow_kind = if action == 6 && seed % 4 == 3 { 4 } else { 0 };
+                c.bus.write32(GAME_GP.wrapping_sub(0xb54), mode);
+                c.bus.write32(GAME_GP.wrapping_sub(0xb5c), flow_kind);
+                c.bus.write32(GAME_GP.wrapping_sub(0xb4c), 0);
+                c.bus.write32(GAME_GP.wrapping_sub(0xb50), 0);
+                let row = r.next_u32() % 3;
+                c.bus.write32(widget + 0x18, row);
+                c.bus.write32(es + 0x20 + row * 4, (seed / 2) % 2);
+                // The quick flow, or the flow object's next/previous state
+                // (none, or a fake one) and the current top state.
+                c.bus.write32(
+                    GAME_GP.wrapping_sub(0x1680),
+                    if (seed / 7) % 2 == 0 { 1 } else { 0 },
+                );
+                c.bus.write32(this + 0x10, flow);
+                c.bus.write32(flow, owner);
+                c.bus.write32(flow + 0x18, flow + 0x18);
+                c.bus.write32(flow + 0x1c, flow + 0x18);
+                c.bus.write32(owner + 4, vt + 0x200);
+                for slot in [0x20u32, 0x28] {
+                    c.bus
+                        .write16(vt + 0x200 + slot, (r.next_u32() & 0x3c) as u16);
+                    let m = if (seed / 11) % 3 == 0 { RET_ZERO } else { FAKE };
+                    c.bus.write32(vt + 0x204 + slot, m);
+                }
+                c.bus
+                    .write32(owner + 0x10, if seed % 2 == 0 { top } else { 0 });
+                c.bus.write32(top + 8, vt + 0x300);
+                c.bus.write32(vt + 0x3c4, FAKE);
+                // The screen's thread table: "TransitionOut" (the string is
+                // empty in test RAM, hash 0) found (thread 2) or not.
+                c.bus.write32(this + 0x40, screen);
+                c.bus.write32(screen + 0x34, screen + 0x100);
+                c.bus.write32(screen + 0x100, 1);
+                c.bus
+                    .write32(screen + 0x104, if seed % 3 == 1 { 0x1234 } else { 0 });
+                c.bus.write32(screen + 0x108, 0xc);
+                c.bus.write32(screen + 0x10c, 2);
+                c.bus.write32(screen + 0x18, screen + 0x18);
+                c.bus.write32(screen + 0x1c, screen + 0x18);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = if seed % 31 == 30 { 0 } else { sx(widget) };
+                c.g[A2][0] = action;
             },
         );
     }
