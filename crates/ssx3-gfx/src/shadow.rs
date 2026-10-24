@@ -153,6 +153,24 @@ pub fn eye(c: &Cam) -> Option<([f64; 3], [f64; 3])> {
     Some((e, norm(sub(b, a))))
 }
 
+/// The direction towards the point the game draws the sun at: frame pixel
+/// (`x`, `y`) at depth `z` (GS Z), from the lens flare's visibility query,
+/// back through the terrain camera.
+pub fn sun_from_screen(c: &Cam, x: f32, y: f32, z: u32) -> Option<[f64; 3]> {
+    let s = post::screen_matrix(c);
+    let inv = post::invert(s)?;
+    let k = if c.xyzf { 1.0 } else { 16.0 };
+    let p = post::unproject(
+        &inv,
+        x as f64 + c.off[0] as f64,
+        y as f64 + c.off[1] as f64,
+        z as f64 / k,
+    );
+    let (e, _) = eye(c)?;
+    let d = norm(sub(p, e));
+    d.iter().all(|v| v.is_finite()).then_some(d)
+}
+
 /// The direction towards the sun (world, z up) at azimuth and elevation
 /// (degrees).
 pub fn sun_dir(azimuth: f64, elevation: f64) -> [f64; 3] {

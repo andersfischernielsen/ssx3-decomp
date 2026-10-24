@@ -25,7 +25,7 @@ ssx3-mpeg = { path = "../ssx3-mpeg" }
 # breaking each other's builds; reviewed packages are added to `default`.
 [features]
 default = ["packages", "ee-threads"]
-packages = ["math", "anim", "camera", "state", "render", "sound", "util", "dispatch", "rider_states", "skeleton", "world", "ai", "ui", "audio", "containers", "chase", "rider_logic", "world_cache", "world_painter", "graphics", "streaming", "replay_script", "snd_lib", "audio_system"]
+packages = ["math", "anim", "camera", "state", "render", "sound", "util", "dispatch", "rider_states", "skeleton", "world", "ai", "ui", "audio", "containers", "chase", "rider_logic", "world_cache", "world_painter", "graphics", "streaming", "replay_script", "snd_lib", "audio_system", "oc200"]
 ee-threads = ["dep:ssx3-ee-threads"]
 ee-unwind = ["dep:ssx3-ee-unwind"]
 math = []
@@ -48,6 +48,7 @@ containers = []
 
 snd_lib = []
 audio_system = []
+oc200 = []
 world_painter = []
 rider_logic = []
 graphics = []

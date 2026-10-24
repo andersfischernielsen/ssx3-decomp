@@ -348,6 +348,9 @@ fn lensfx_query_native(c: &mut Cpu) {
         return;
     };
     c.bus.write32(out, v.to_bits());
+    // (Sun shadows: where the sun is.)
+    let depth = if f[9] < 0.0 { 0 } else { f[9] as u32 };
+    ssx3_ps2::frame_sink::note_light(f[0] + f[2] * 0.5, f[1] + f[3] * 0.5, depth);
     c.g[V0][0] = 1;
     // Return to the caller.
     c.pc = c.g[RA][0] as u32;

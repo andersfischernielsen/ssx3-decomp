@@ -137,6 +137,9 @@ pub struct Inner {
     shadow: Option<shadow::Shadow>,
     /// The game's key light (towards it), eased from frame to frame.
     key_light: [f32; 3],
+    /// The sun's direction where the game last drew it (the lens flare's
+    /// query), eased from frame to frame.
+    flare_sun: Option<[f32; 3]>,
     /// The world's shadow casters of the frame being drawn.
     world_casters: Option<std::sync::Arc<ssx3_render::world_casters::Casters>>,
     /// Seconds since the renderer started (animated effects).
@@ -296,6 +299,7 @@ impl Renderer {
                 shadow: None,
                 key_light: [0.0, 0.6, 0.8],
                 world_casters: None,
+                flare_sun: None,
                 t0: web_time::Instant::now(),
                 phase1_end: usize::MAX,
                 want_depth: false,
@@ -999,7 +1003,28 @@ impl Inner {
             let mn = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt().max(1e-6);
             self.key_light = m.map(|x| x / mn);
         }
-        let key = self.key_light;
+        // The sun: the meshes' key light (`SSX3_SHADOW_DEBUG=flare-sun`:
+        // where the game draws the sun sprite instead).
+        if let (Some((x, y, z)), Some(cam)) =
+            (ssx3_ps2::frame_sink::take_light(), self.gs.cam.as_ref())
+        {
+            if let Some(d) = shadow::sun_from_screen(cam, x, y, z) {
+                let d = d.map(|v| v as f32);
+                let m = match self.flare_sun {
+                    Some(p) => std::array::from_fn(|i| p[i] * 0.9 + d[i] * 0.1),
+                    None => d,
+                };
+                let l = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt().max(1e-6);
+                self.flare_sun = Some(m.map(|v: f32| v / l));
+            }
+        }
+        if shadow::debug("print") {
+            eprintln!("shadow: flare sun {:?}", self.flare_sun);
+        }
+        let key = match self.flare_sun {
+            Some(f) if shadow::debug("flare-sun") => f,
+            _ => self.key_light,
+        };
         let light = if self.opts.shadows {
             self.gs.cam.as_ref().and_then(|c| shadow::light(c, key))
         } else {

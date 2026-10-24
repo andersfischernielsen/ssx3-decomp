@@ -897,3 +897,21 @@ pub fn native_frame(direct: &[ssx3_render::direct::Recorded]) -> bool {
     *ON.get_or_init(|| std::env::var("SSX3_NATIVE_FRAME").map_or(true, |v| v != "0"))
         && !direct.is_empty()
 }
+
+/// The light the lens flare queried farthest away this frame (the sun):
+/// the centre of its rectangle in frame pixels and its depth (GS Z). Sun
+/// shadows take the sun's direction from it.
+static LIGHT: std::sync::Mutex<Option<(f32, f32, u32)>> = std::sync::Mutex::new(None);
+
+/// A lens-flare visibility query: rectangle centre (frame pixels), depth.
+pub fn note_light(x: f32, y: f32, z: u32) {
+    let mut l = LIGHT.lock().unwrap();
+    if l.is_none_or(|(_, _, lz)| z <= lz) {
+        *l = Some((x, y, z));
+    }
+}
+
+/// The light noted since the last call (and forget it).
+pub fn take_light() -> Option<(f32, f32, u32)> {
+    LIGHT.lock().unwrap().take()
+}

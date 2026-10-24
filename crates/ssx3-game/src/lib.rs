@@ -83,6 +83,8 @@ pub mod audio_system;
 pub mod graphics;
 #[cfg(feature = "streaming")]
 pub mod native_files;
+#[cfg(feature = "oc200")]
+pub mod oc200;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
 #[cfg(feature = "snd_lib")]
@@ -158,6 +160,8 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(audio_system::OVERRIDES);
     #[cfg(feature = "snd_lib")]
     v.extend_from_slice(snd_lib::OVERRIDES);
+    #[cfg(feature = "oc200")]
+    v.extend_from_slice(oc200::OVERRIDES);
     v
 }
 
