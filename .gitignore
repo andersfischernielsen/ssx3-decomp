@@ -7,6 +7,7 @@
 *.rep/
 *.lock
 *.lock~
+!/Cargo.lock
 
 # OS
 .DS_Store
