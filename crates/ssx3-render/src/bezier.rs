@@ -859,6 +859,47 @@ pub mod gpu {
     /// Qwords per vertex in a draw's data: position, UV, normal.
     pub const DATA_STRIDE: usize = 3;
 
+    #[cfg(test)]
+    mod normal_tests {
+        use super::*;
+
+        /// Two strips over a flat 3×3 grid (z = 5): every vertex gets the
+        /// same unit normal along z, the row the strips share included.
+        #[test]
+        fn flat_grid_has_one_normal() {
+            let at = |r: usize, c: usize| {
+                [
+                    (c as f32 * 10.0).to_bits(),
+                    (r as f32 * 10.0).to_bits(),
+                    5f32.to_bits(),
+                    1f32.to_bits(),
+                ]
+            };
+            let mut s = Strips::default();
+            s.packet(PACKET_A);
+            let mut data = Vec::new();
+            for r in 0..2 {
+                let verts: Vec<Vertex> = (0..6).map(|_| Vertex { pos: 0, uv: 0 }).collect();
+                for k in 0..6 {
+                    data.push(at(r + k % 2, k / 2));
+                    data.push([0; 4]);
+                }
+                s.strip(&verts);
+            }
+            let out = with_normals(&s, &data);
+            assert_eq!(out.len(), 12 * DATA_STRIDE);
+            let n0 = out[2];
+            for v in 0..12 {
+                let n = out[DATA_STRIDE * v + 2].map(f32::from_bits);
+                assert!(
+                    (n[2].abs() - 1.0).abs() < 1e-6 && n[0] == 0.0 && n[1] == 0.0,
+                    "{n:?}"
+                );
+                assert_eq!(out[DATA_STRIDE * v + 2], n0);
+            }
+        }
+    }
+
     /// The mark of the last GPU-planned draw: (vertex count, n, program,
     /// colour).
     pub fn mark(m: &Mem) -> Option<(u32, u16, u32, V)> {

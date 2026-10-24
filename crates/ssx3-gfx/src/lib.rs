@@ -1015,8 +1015,11 @@ impl Inner {
         }
         if shadow::debug("lightlog") {
             eprintln!(
-                "[light] {} amb {:.1} {:.1} {:.1} col {:.1} {:.1} {:.1}",
+                "[light] {} sun {:.3} {:.3} {:.3} amb {:.1} {:.1} {:.1} col {:.1} {:.1} {:.1}",
                 self.world_casters.as_ref().map_or("", |c| c.world.as_str()),
+                self.key_light[0],
+                self.key_light[1],
+                self.key_light[2],
                 self.live_ambient[0],
                 self.live_ambient[1],
                 self.live_ambient[2],
@@ -1265,7 +1268,9 @@ impl Inner {
                 && b.gpu
                     .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
                 && (st.prim & (1 << 6) == 0 || terrain_blend == Some(0x2a));
-            if native_light && (terrain_blend == Some(0x81) || (shadow::show() >= 4.0 && !lit_base))
+            if native_light
+                && (terrain_blend == Some(0x81)
+                    || (shadow::show() >= 4.0 && !lit_base && st.target == self.gs.main_fbp))
             {
                 continue;
             }
@@ -1798,7 +1803,13 @@ impl Inner {
                         depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
+                            // (The lighting fit's views start from black:
+                            // they draw the terrain only.)
+                            load: if first && fbp == main && shadow::show() >= 4.0 {
+                                wgpu::LoadOp::Clear(wgpu::Color::BLACK)
+                            } else {
+                                wgpu::LoadOp::Load
+                            },
                             store: wgpu::StoreOp::Store,
                         },
                     })],

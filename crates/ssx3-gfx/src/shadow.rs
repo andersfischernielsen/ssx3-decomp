@@ -69,20 +69,45 @@ pub struct Lighting {
     pub ground: [f32; 3],
 }
 
-/// Each course's terrain lighting, fitted to its baked look
-/// (`tools/fit_lighting.py`), by world file name.
-const COURSES: &[(&str, Lighting)] = &[];
+/// Each course's tone: the gains from the game's live light to the terrain's
+/// that make the mean terrain light equal the bake's
+/// (`tools/fit_lighting.py --tone`, the scenarios' reference shots,
+/// 2026-10-25), by track code; the sun gain is 0.6 everywhere (the spatial
+/// structure is the real sun's, the bake's pattern is art).
+const COURSES: &[(&str, Lighting)] = &[
+    ("ARA1", tone([1.266, 1.268, 1.189])), // Snow Jam
+    ("BRA2", tone([0.432, 0.572, 0.787])), // Metro City (night)
+    ("CRA3", tone([1.028, 1.444, 1.619])), // Ruthless Ridge
+    ("DRA4", tone([0.619, 0.722, 0.779])), // Intimidator
+    ("ERA5", tone([0.961, 1.255, 1.468])), // Gravitude
+    ("ASS1", tone([0.940, 0.987, 1.065])), // R&B
+    ("DSS2", tone([0.953, 0.828, 0.897])), // Style Mile
+    ("ESS3", tone([1.228, 0.906, 1.265])), // Kick Doubt
+    ("ABA1", tone([1.422, 1.331, 1.391])), // Crow's Nest
+    ("CBA2", tone([1.439, 1.873, 1.994])), // Launch Time
+    ("EBA3", tone([2.019, 1.618, 0.864])), // Much-2-Much
+    ("BHP1", tone([1.529, 1.027, 0.882])), // The Junction
+    ("CHP2", tone([0.909, 1.147, 2.110])), // Schizophrenia
+    ("EHP3", tone([1.520, 1.001, 1.560])), // Perpendiculous
+    ("ABC1", tone([1.214, 1.221, 1.251])), // Happiness (and its jam)
+    ("DBC2", tone([0.909, 0.790, 0.782])), // Ruthless (and its jam)
+    ("EBC3", tone([0.964, 1.055, 1.242])), // The Throne (and its jam)
+];
+
+/// A course's lighting: its ambient gain, the common sun gain.
+const fn tone(ambient: [f32; 3]) -> Lighting {
+    Lighting {
+        sun: [0.6, 0.6, 0.6],
+        sky: ambient,
+        ground: ambient,
+    }
+}
 
 /// The gains from the game's live light (the lit meshes' ambient and key
-/// colour, 128 = 1) to the terrain's: sun ← key colour, sky and ground ←
-/// ambient (fitted to the baked look: `tools/fit_lighting.py`).
-const DEFAULT_LIGHTING: Lighting = Lighting {
-    sun: [1.0, 1.0, 1.0],
-    sky: [1.0, 1.0, 1.0],
-    ground: [0.8, 0.8, 0.8],
-};
+/// colour, 128 = 1) to the terrain's for a course not in the table.
+const DEFAULT_LIGHTING: Lighting = tone([1.1, 1.1, 1.15]);
 
-/// The terrain lighting of world `world`: `SSX3_LIGHT=sun r,g,b;sky r,g,b;
+/// The terrain lighting of course `world` (track code): `SSX3_LIGHT=sun r,g,b;sky r,g,b;
 /// ground r,g,b` (parts given override), else the course's fit.
 pub fn lighting(world: &str) -> Lighting {
     let mut l = COURSES
@@ -124,6 +149,8 @@ pub fn show() -> f32 {
         // (For fitting the lighting: the lit terrain only, unprocessed.)
         Ok("normals") => 4.0,
         Ok("sunlit") => 5.0,
+        // (n.x, n.y as 0..1, lit as 0.5..1: one run for the fit.)
+        Ok("fit") => 6.0,
         _ => 0.0,
     })
 }

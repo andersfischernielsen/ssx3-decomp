@@ -69,8 +69,10 @@ pub struct Casters {
     pub cutout_runs: Vec<(i16, u32, u32)>,
     pub patches: u32,
     pub instances: u32,
-    /// The world file's name (`BAM` for Snow Jam): cWorldCache +0x304 holds
-    /// `|data/worlds/<name>.ssb`.
+    /// The course being played: the current track's code (`ARA1` Snow Jam,
+    /// `BRA2` Metro City, ...). The whole mountain is one world (`BAM`), so
+    /// the course comes from the race setup: track index 0x535c08 into the
+    /// track table 0x43d950 (17 records of 100 bytes, the code at +0x34).
     pub world: String,
 }
 
@@ -239,32 +241,24 @@ impl CasterCache {
             triangles,
             cutouts,
             cutout_runs,
-            world: world_name(m, module),
+            world: course_code(m),
         }));
         self.current.clone()
     }
 }
 
-/// The world file's name from cWorldCache (GameModule+0x10 → World → cache)
-/// +0x304: `|data/worlds/<name>.ssb`.
-fn world_name(m: &dyn Mem, module: u32) -> String {
-    let world = word(m, module + GAME_MODULE_SECTIONS);
-    let cache = if ram(world) { word(m, world) } else { 0 };
-    if !ram(cache) {
+/// The current track's code (`BENewRaceInt`'s track 0x535c08; the track
+/// table 0x43d950, 100 bytes a record, the code at +0x34).
+fn course_code(m: &dyn Mem) -> String {
+    let track = word(m, 0x0053_5c08);
+    if track >= 17 {
         return String::new();
     }
-    let bytes: Vec<u8> = (0..12)
-        .flat_map(|k| word(m, cache + 0x304 + 4 * k).to_le_bytes())
-        .take_while(|&b| b != 0)
-        .collect();
-    let path = String::from_utf8_lossy(&bytes);
-    path.rsplit('/')
-        .next()
-        .unwrap_or("")
-        .split('.')
-        .next()
-        .unwrap_or("")
-        .to_string()
+    let code = word(m, 0x0043_d950 + 100 * track + 0x34).to_le_bytes();
+    code.iter()
+        .take_while(|&&b| b != 0)
+        .map(|&b| b as char)
+        .collect()
 }
 
 /// A hash of what an instance's geometry comes from: its matrix, scale,

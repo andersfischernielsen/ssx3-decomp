@@ -2,7 +2,13 @@
 """Fit the renderer's terrain lighting to the game's baked look
 (docs/plans/terrain-lighting.md).
 
-    tools/fit_lighting.py REF NOSUB NORMALS SUNLIT [--sun x,y,z]
+    tools/fit_lighting.py REF NOSUB NORMALS SUNLIT
+    tools/fit_lighting.py REF NOSUB FIT
+    tools/fit_lighting.py --tone REF NOSUB      (NOSUB run with lightlog too)
+
+FIT (one run instead of NORMALS and SUNLIT): SSX3_SHADOWS=1
+SSX3_SHADOW_SHOW=fit SSX3_SHADOW_DEBUG=lightlog (n.x, n.y as 0..1, the lit
+amount as 0.5..1; N·L from the logged sun).
 
 Each argument is a directory of headless screenshots of the same frames:
 
@@ -15,11 +21,10 @@ SUNLIT's log.txt (run with SSX3_SHADOW_DEBUG=lightlog) gives the game's live
 light at each screenshot (the lit meshes' ambient and key colour, 128 = 1):
 the lighting triggers change it along a course.
 
-On the lit terrain pixels (SUNLIT blue = 255) of the lower half of each frame
-(near terrain: the game's distance fog adds least there) the ratio
+On the lit terrain pixels (SUNLIT blue = 255) that show snow in NOSUB, the ratio
 REF / NOSUB is the bake's light. Per channel it is fitted, by least squares,
-as  sun·colour·(N·L·lit) + sky·ambient·h + ground·ambient·(1 − h),
-h = n.z·0.5 + 0.5: the gains from the live light to the terrain's. Prints the
+as  sun·colour·(N·L·lit) + ambient_gain·ambient (sky = ground: terrain
+normals barely vary in z, the two are not separable): the gains from the live light to the terrain's. Prints the
 SSX3_LIGHT string (the gains), the fit's error, and the sun direction (no
 shadows) that would match the bake best, for comparison.
 """
@@ -35,10 +40,65 @@ def load(d, f):
     return np.asarray(Image.open(os.path.join(d, f)).convert("RGB")).astype(np.float64)
 
 
+def live_light(log):
+    """The live light at each screenshot of a lightlog run: (ambient, key
+    colour), 128 = 1."""
+    out, cur = {}, None
+    for line in open(log, errors="replace"):
+        if line.startswith("[light]"):
+            v = line.split()
+            try:
+                cur = (
+                    np.array([float(x) for x in v[v.index("amb") + 1 : v.index("amb") + 4]]) / 128,
+                    np.array([float(x) for x in v[v.index("col") + 1 : v.index("col") + 4]]) / 128,
+                )
+            except ValueError:
+                pass
+        elif line.startswith("[shot]") and cur:
+            out[f"frame{int(line.split()[1]):05}.png"] = cur
+    return out
+
+
+def tone(ref, nosub, sun_gain=0.6, sunlit_share=0.7):
+    """The bake's tone: the per-channel ambient gain that makes the mean
+    terrain light match the bake's mean (REF / NOSUB on snow), with the sun
+    gain fixed (the bake's spatial pattern is art: the spatial structure is
+    the real sun's). `sunlit_share`: the assumed mean N·L·lit."""
+    live = live_light(os.path.join(nosub, "log.txt"))
+    gains = []
+    for f in sorted(live):
+        if not os.path.exists(os.path.join(ref, f)):
+            continue
+        r, b = load(ref, f), load(nosub, f)
+        m = (b.min(2) > 120) & (b.max(2) - b.min(2) < 60)
+        if m.sum() < 1000:
+            continue
+        rat = (r[m] / np.maximum(b[m], 1)).mean(0)
+        if rat.mean() < 0.6 or rat.mean() > 1.2:
+            continue
+        amb, col = live[f]
+        gains.append((rat - sun_gain * col * sunlit_share) / np.maximum(amb, 1e-3))
+    if not gains:
+        sys.exit("no snow frames")
+    g = np.median(np.array(gains), 0)
+    print(f"frames {len(gains)}  ambient gain {g.round(3)}  (sun gain {sun_gain})")
+    fmt = lambda c: ",".join(f"{x:.3f}" for x in c)
+    print(f'SSX3_LIGHT="sun {sun_gain},{sun_gain},{sun_gain};sky {fmt(g)};ground {fmt(g)}"')
+    return g
+
+
 def main(argv):
-    if len(argv) < 4:
+    if argv and argv[0] == "--tone":
+        tone(argv[1], argv[2])
+        return
+    if len(argv) < 3:
         sys.exit(__doc__)
-    ref, nosub, normals, sunlit = argv[:4]
+    combined = len(argv) == 3
+    if combined:
+        ref, nosub, sunlit = argv[:3]
+        normals = sunlit
+    else:
+        ref, nosub, normals, sunlit = argv[:4]
     frames = sorted(os.path.basename(p) for p in glob.glob(os.path.join(sunlit, "frame*.png")))
     # The live light at each screenshot (the last [light] before its [shot]).
     live, cur = {}, None
@@ -46,7 +106,12 @@ def main(argv):
         if line.startswith("[light]"):
             v = line.split()
             try:
-                cur = ([float(x) for x in v[v.index("amb") + 1 : v.index("amb") + 4]], [float(x) for x in v[v.index("col") + 1 : v.index("col") + 4]])
+                sun = [float(x) for x in v[v.index("sun") + 1 : v.index("sun") + 4]] if "sun" in v else [0, 0, 1]
+                cur = (
+                    [float(x) for x in v[v.index("amb") + 1 : v.index("amb") + 4]],
+                    [float(x) for x in v[v.index("col") + 1 : v.index("col") + 4]],
+                    sun,
+                )
             except ValueError:
                 pass
         elif line.startswith("[shot]") and cur:
@@ -55,12 +120,30 @@ def main(argv):
     for f in frames:
         if not all(os.path.exists(os.path.join(d, f)) for d in (ref, nosub, normals)) or f not in live:
             continue
-        amb, col = (np.array(x) / 128 for x in live[f])
+        amb, col = (np.array(x) / 128 for x in live[f][:2])
+        sun = np.array(live[f][2])
         r, b, n, s = load(ref, f), load(nosub, f), load(normals, f), load(sunlit, f)
-        h = r.shape[0]
-        mask = (s[..., 2] > 250) & (b.min(2) > 40)
-        mask[: h // 2] = False
-        if mask.sum() < 100:
+        if combined:
+            # Back to the separate views: normals (z from x, y: facing the
+            # camera, mostly up) and (lit, N·L, mask).
+            nx, ny = n[..., 0] / 255 * 2 - 1, n[..., 1] / 255 * 2 - 1
+            nz = np.sqrt(np.clip(1 - nx * nx - ny * ny, 0, 1))
+            nv = np.stack([nx, ny, nz], -1)
+            lit = np.clip((s[..., 2] / 255 - 0.5) * 2, 0, 1)
+            terr = s[..., 2] >= 120
+            n = (nv * 0.5 + 0.5) * 255
+            ndl = np.clip(nv @ sun, 0, 1)
+            s = np.stack([lit * 255, ndl * 255, np.where(terr, 255.0, 0.0)], -1)
+        # Lit terrain that shows as snow in the bake-free frame (riders and
+        # objects in front of it are not snow); frames whose ratio is far
+        # off (menus, results screens over the course) left out.
+        # Only where our sun shadows leave the surface lit: the bake's own
+        # shadows are elsewhere (art), and fitting across them would flatten
+        # the light; the shade's colour comes from the sky terms.
+        mask = (s[..., 2] > 250) & (b.min(2) > 120) & (b.max(2) - b.min(2) < 60) & (s[..., 0] > 250)
+        if mask.sum() < 1000:
+            continue
+        if (r[mask] / np.maximum(b[mask], 1)).mean() < 0.6:
             continue
         idx = np.flatnonzero(mask)
         if len(idx) > 4000:
@@ -79,10 +162,12 @@ def main(argv):
     hz = nn[:, 2] * 0.5 + 0.5
     sunterm = ss[:, 0] * ss[:, 1]
     g, k, u, errs = [], [], [], []
+    # One ambient gain (sky = ground: the terrain's normals barely vary in
+    # z, so the two are not separable) and one sun gain per channel.
     for c in range(3):
-        a = np.stack([am[:, c] * (1 - hz), am[:, c] * hz, co[:, c] * sunterm], 1)
+        a = np.stack([am[:, c], co[:, c] * sunterm], 1)
         f = np.linalg.lstsq(a, rr[:, c], rcond=None)[0]
-        g.append(f[0]); k.append(f[1]); u.append(f[2])
+        g.append(f[0]); k.append(f[0]); u.append(f[1])
         errs.append(np.abs(a @ f - rr[:, c]).mean())
     err = float(np.mean(errs))
     base = np.abs(rr - rr.mean(0)).mean()

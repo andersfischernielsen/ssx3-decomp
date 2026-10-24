@@ -239,6 +239,8 @@ fn fs_gpu(v: VOut) -> FsOut {
             o.color = vec4<f32>(t[2] * 0.5 + 0.5, 1.0);
         } else if (sh.p.w == 5.0) {
             o.color = vec4<f32>(t[1], 1.0);
+        } else if (sh.p.w == 6.0) {
+            o.color = vec4<f32>(t[2].xy * 0.5 + 0.5, 0.5 + 0.5 * t[1].x, 1.0);
         } else {
             o.color = vec4<f32>(o.color.rgb * t[0], o.color.a);
         }

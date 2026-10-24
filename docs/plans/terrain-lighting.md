@@ -70,8 +70,23 @@ bake).
 - The model: `gpuvu.wgsl` `terrain_light` on the base layer (flag 16384);
   the bake layer (ALPHA 0x81) is not drawn with "Native shadows" on
   (`SSX3_SHADOW_DEBUG=baked` keeps it).
-- Per-course colours: `shadow.rs` `COURSES` by world file name (cWorldCache
+- Live light: the terrain's colours follow the game's own lighting as the
+  lighting triggers change it along a course: the lit meshes' SH lighting
+  (ambient L0, key colour = the linear terms' length per channel, ×255),
+  collected per frame (`gs::Gs::key_ambient` / `key_colour`) and eased.
+  Terrain L = sun_gain · key colour · N·L · lit + ambient_gain · ambient.
+- Per-course gains: `shadow.rs` `COURSES` by world file name (cWorldCache
   +0x304, `|data/worlds/BAM.ssb` = Snow Jam), `SSX3_LIGHT` overrides.
-- Fitting: reference shots of all 20 race/freestyle courses taken once
-  (scenario inputs, every 150 frames of play, the default look), then
-  `tools/fit_lighting.py REF NOSUB NORMALS SUNLIT` per course.
+- Fitting (`tools/fit_lighting.py`): reference shots of all 20 race and
+  freestyle courses taken once (scenario inputs, every 150 frames of play,
+  the default look); per course one bake-free run (`SSX3_SHADOW_DEBUG=
+  no-sub,lightlog`).
+- Findings: the bake's light (REF / NOSUB on snow) is mostly not
+  directional: N·L with the key light (or any sun direction) explains
+  little of it (fit error 0.12 against 0.13–0.14 for a constant; on the
+  night course the bake anti-correlates with the sun). Its pattern is art
+  (painted regional shading, its own shadows). So the spatial structure is
+  the real sun's (owner: realistic over the artists' light) and only the
+  tone is matched: with the sun gain fixed (0.6), the ambient gain per
+  channel that makes the mean terrain light equal the bake's
+  (`--tone`); 0.4–2.1 across the courses.
