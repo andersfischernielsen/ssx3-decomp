@@ -235,7 +235,7 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     let device = host.default_output_device().ok_or("no default output device")?;
     let supported = device.default_output_config().map_err(|e| e.to_string())?;
     let channels = supported.channels() as usize;
-    let device_rate = supported.sample_rate().0;
+    let device_rate = supported.sample_rate();
     let config = cpal::StreamConfig {
         channels: supported.channels(),
         sample_rate: supported.sample_rate(),
@@ -243,7 +243,7 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     };
     eprintln!(
         "[audio] output: {} ({} ch, {} Hz, {:?})",
-        device.name().unwrap_or_default(),
+        device.description().map(|d| d.name().to_string()).unwrap_or_default(),
         channels,
         device_rate,
         supported.sample_format()
@@ -277,7 +277,7 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     let err = |e| eprintln!("[audio] stream error: {e}");
     let stream = match supported.sample_format() {
         cpal::SampleFormat::F32 => device.build_output_stream(
-            &config,
+            config,
             move |data: &mut [f32], _| {
                 let frames = data.len() / channels;
                 fill(&mut |i, v| data[i] = v, frames);
@@ -286,7 +286,7 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
             None,
         ),
         cpal::SampleFormat::I16 => device.build_output_stream(
-            &config,
+            config,
             move |data: &mut [i16], _| {
                 let frames = data.len() / channels;
                 fill(&mut |i, v| data[i] = (v * 32767.0) as i16, frames);
