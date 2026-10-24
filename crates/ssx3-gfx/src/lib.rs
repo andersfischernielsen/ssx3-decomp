@@ -984,6 +984,13 @@ impl Inner {
             );
             st.clear();
         }
+        let projector = ssx3_render::bezier::take_projector();
+        if shadow::debug("print") {
+            eprintln!(
+                "shadow: key light {:?} projector {:?}",
+                self.key_light, projector
+            );
+        }
         let k = self.gs.key_light;
         let kn = (k[0] * k[0] + k[1] * k[1] + k[2] * k[2]).sqrt();
         if kn > 1e-3 {
@@ -1094,6 +1101,24 @@ impl Inner {
         });
         // Plans per batch, uniforms, bind groups.
         let batches = std::mem::take(&mut self.gs.batches);
+        // With sun shadows the game's own rider shadows go: the render
+        // targets its silhouettes (mat6 entry 0x20) are drawn into, and every
+        // draw that projects them (`SSX3_SHADOW_DEBUG=game-shadows` keeps
+        // them).
+        let silhouette_rts: std::collections::HashSet<u32> =
+            if light.is_some() && !shadow::debug("game-shadows") {
+                batches
+                    .iter()
+                    .filter(|b| {
+                        b.gpu
+                            .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat6Shadow)
+                    })
+                    .map(|b| b.state.target)
+                    .filter(|&t| t != self.gs.main_fbp)
+                    .collect()
+            } else {
+                Default::default()
+            };
         self.stats.batches += batches.len() as u64;
         struct Item {
             /// Samples the frame: needs a fresh snapshot unless the previous
@@ -1142,6 +1167,16 @@ impl Inner {
             let st = &b.state;
             // The game's bloom, replaced or off.
             if !opts.keeps_post(b.tag.post) {
+                continue;
+            }
+            if !silhouette_rts.is_empty()
+                && (silhouette_rts.contains(&st.target)
+                    || st.tex.is_some_and(|t| {
+                        t != gs::FRAME_TEX
+                            && t & gs::RT_TEX != 0
+                            && silhouette_rts.contains(&(t & !gs::RT_TEX))
+                    }))
+            {
                 continue;
             }
             // Debug: the terrain without its second pass.
@@ -1327,6 +1362,7 @@ impl Inner {
                 }
                 // Sun shadows: the 3D draws receive them.
                 if light.is_some()
+                    && !shadow::debug("no-recv")
                     && st.target == self.gs.main_fbp
                     && !b.tag.hud
                     && b.tag.post.is_none()
@@ -1493,7 +1529,9 @@ impl Inner {
         // The renderer's own passes: AO before the game's post passes, the
         // rest before the HUD (or at the end of a frame without them).
         let hud_post = opts.bloom == Bloom::Modern || opts.aa != Aa::Off;
-        let ao_at = if opts.ao || opts.shadows {
+        // (Sun shadows are applied by the draws themselves: they need the
+        // split only for their debug views.)
+        let ao_at = if opts.ao || (opts.shadows && post::debug_view() != 0.0) {
             items
                 .iter()
                 .position(|it| it.tag.post.is_some() || it.tag.hud)
@@ -1509,7 +1547,7 @@ impl Inner {
         } else {
             usize::MAX
         };
-        if (opts.ao || opts.shadows || hud_post) && self.post.is_none() {
+        if (opts.ao || ao_at != usize::MAX || hud_post) && self.post.is_none() {
             self.post = Some(post::Post::new(&self.dev));
         }
         if let Some(po) = self.post.as_mut() {
@@ -1522,7 +1560,11 @@ impl Inner {
         let main = self.gs.main_fbp;
         // Sun shadows: the 3D draws before the game's post passes again,
         // into the shadow map (shadow.rs), before everything else.
-        if let (Some(_), Some(gb)) = (light.as_ref(), gpu_bind_shadow.as_ref()) {
+        if let (Some(_), Some(gb), false) = (
+            light.as_ref(),
+            gpu_bind_shadow.as_ref(),
+            shadow::debug("no-pass"),
+        ) {
             let sh = self.shadow.as_ref().unwrap();
             let casts = |it: &Item| {
                 it.target == main

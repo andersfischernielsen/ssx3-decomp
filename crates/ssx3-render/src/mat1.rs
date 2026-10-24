@@ -265,7 +265,10 @@ fn exec(
             // 0x0b60 / 0x0bc8 (BAL vi14: nothing saved).
             let mat = m.matrix(top.wrapping_add(0x80));
             let src = match first {
-                First::Projector => m.ilw(LAST_TOP, 0),
+                First::Projector => {
+                    crate::bezier::note_projector(&mat);
+                    m.ilw(LAST_TOP, 0)
+                }
                 _ => top.wrapping_add(NORMALS),
             };
             project_xy(&mut m, &mat, src, top.wrapping_add(UV2), pk[0]);

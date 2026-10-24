@@ -345,6 +345,32 @@ pub fn rewrite_st(m: &mut Mem, out: u16, uv2: impl IntoIterator<Item = u16>) {
 /// Transform `count` points from `src` with `mat` and store (x, y, 1, 1)
 /// from `dst` on (the projector / shine UV generators: f4babac5 0x1b98,
 /// 9790369f 0x0800).
+/// The direction the game's rider shadows are cast along this frame (the
+/// projector passes' matrices; sun shadows follow it): the cross product of
+/// the projector's U and V gradients over world positions, oriented up.
+static PROJECTOR: std::sync::Mutex<Option<[f32; 3]>> = std::sync::Mutex::new(None);
+
+/// A projector pass's matrix (columns, `project_xy` over world positions).
+pub fn note_projector(mat: &[V; 4]) {
+    let f = |c: usize, l: usize| f32::from_bits(mat[c][l]) as f64;
+    let (gu, gv) = ([f(0, 0), f(1, 0), f(2, 0)], [f(0, 1), f(1, 1), f(2, 1)]);
+    let d = [
+        gu[1] * gv[2] - gu[2] * gv[1],
+        gu[2] * gv[0] - gu[0] * gv[2],
+        gu[0] * gv[1] - gu[1] * gv[0],
+    ];
+    let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    if l > 0.0 && l.is_finite() {
+        let s = if d[2] < 0.0 { -1.0 / l } else { 1.0 / l };
+        *PROJECTOR.lock().unwrap() = Some(d.map(|x| (x * s) as f32));
+    }
+}
+
+/// The projector direction noted since the last call (and forget it).
+pub fn take_projector() -> Option<[f32; 3]> {
+    PROJECTOR.lock().unwrap().take()
+}
+
 pub fn project_xy(m: &mut Mem, mat: &[V; 4], src: u16, dst: u16, count: u16) {
     let zw = [0, 0, ONE, ONE];
     for i in 0..count {

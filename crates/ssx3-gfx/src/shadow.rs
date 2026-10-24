@@ -87,6 +87,9 @@ pub struct Tuning {
     pub range: f64,
     pub size: u32,
     pub strength: f32,
+    /// `SSX3_SHADOW_TINT=r,g,b`: full shadow's multiplier (default the
+    /// cool shade of the game's baked shadows on Snow Jam's snow).
+    pub tint: [f32; 3],
 }
 
 pub fn tuning() -> Tuning {
@@ -97,7 +100,12 @@ pub fn tuning() -> Tuning {
             .map(|v| (v[0], v[1])),
         range: env_f("SSX3_SHADOW_RANGE").map_or(24000.0, |v| v[0]),
         size: env_f("SSX3_SHADOW_SIZE").map_or(8192, |v| (v[0] as u32).clamp(512, 8192)),
-        strength: env_f("SSX3_SHADOW_STRENGTH").map_or(0.5, |v| v[0] as f32),
+        strength: env_f("SSX3_SHADOW_STRENGTH").map_or(1.0, |v| v[0] as f32),
+        tint: env_f("SSX3_SHADOW_TINT")
+            .filter(|v| v.len() >= 3)
+            .map_or([0.55, 0.6, 0.75], |v| {
+                [v[0] as f32, v[1] as f32, v[2] as f32]
+            }),
     })
 }
 
@@ -246,7 +254,7 @@ pub struct Shadow {
 }
 
 /// `ShadowU`'s size in bytes.
-const U_BYTES: u64 = 400;
+const U_BYTES: u64 = 416;
 
 impl Shadow {
     pub fn new(dev: &wgpu::Device, size: u32) -> Shadow {
@@ -305,6 +313,8 @@ impl Shadow {
                 w.extend([l.texel, 0.0, 1.0, show]);
                 w.extend(l.world_texel);
                 w.extend([l.origin[0], l.origin[1], l.origin[2], 0.0]);
+                let t = tuning().tint;
+                w.extend([t[0], t[1], t[2], 0.0]);
             }
             None => w.resize(U_BYTES as usize / 4, 0.0),
         }

@@ -370,6 +370,7 @@ fn exec(
             border_normals(&mut m, last, top);
             let mat = m.matrix(top.wrapping_add(0x80));
             let src = if entry == 0x0c48 {
+                crate::bezier::note_projector(&mat);
                 last
             } else {
                 top.wrapping_add(NORMALS)

@@ -72,6 +72,9 @@ struct ShadowU {
     wt: vec4<f32>,
     // The point world positions are relative to (absolute world).
     origin: vec4<f32>,
+    // Full shadow: the colour lit surfaces are multiplied by (sky-lit
+    // shade, cool like the game's baked shadows).
+    shade: vec4<f32>,
 }
 @group(1) @binding(5) var<uniform> sh: ShadowU;
 @group(1) @binding(6) var smap: texture_depth_2d;
@@ -107,17 +110,30 @@ fn sun_lit(w: vec3<f32>, n: vec3<f32>) -> f32 {
     return 1.0;
 }
 
-// The shadow factor at world point `w` with face derivatives `dx`, `dy`.
-// Surfaces turned away from the sun are left alone: the game's baked
-// lighting already darkens them.
+// How much of the sun is missing at world point `w` with face derivatives
+// `dx`, `dy` (0 lit .. 1 in shadow, times the strength). Surfaces turned away
+// from the sun are left alone: the game's baked lighting already darkens
+// them.
 fn sun_factor(w: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) -> f32 {
-    var n = normalize(cross(dx, dy));
+    // (No surface to speak of, e.g. a pixel whose neighbours lie on the
+    // same point: lit. A NaN here would poison the blended layers.)
+    let c = cross(dx, dy);
+    let cl = dot(c, c);
+    if (!(cl > 1e-20) || !(cl < 1e30)) {
+        return 0.0;
+    }
+    var n = c * inverseSqrt(cl);
     if (dot(n, sh.eye.xyz - w) < 0.0) {
         n = -n;
     }
     let ndl = dot(n, sh.sun.xyz);
     let lit = mix(1.0, sun_lit(w, n), smoothstep(0.0, 0.2, ndl));
-    return 1.0 - sh.sun.w * (1.0 - lit);
+    return sh.sun.w * (1.0 - lit);
+}
+
+// The colour a lit surface is multiplied by for shadow amount `s`.
+fn shadow_tint(s: f32) -> vec3<f32> {
+    return mix(vec3<f32>(1.0), sh.shade.rgb, s);
 }
 
 // A call's data qword: from the arena when the index has gs::ARENA_BIT.
@@ -196,7 +212,8 @@ fn fs_gpu(v: VOut) -> FsOut {
     o.color = shade(v);
     // Sun shadows on the receivers (flag 4096).
     if ((b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u) {
-        let f = sun_factor(v.wp.xyz, dx, dy);
+        let s = sun_factor(v.wp.xyz, dx, dy);
+        let f = 1.0 - s;
         // (Debug views: on the opaque layer only; the blended ones would
         // add or subtract the view's colours.)
         if (sh.p.w > 0.0 && b.src_mode != 0u) {
@@ -215,7 +232,7 @@ fn fs_gpu(v: VOut) -> FsOut {
             let ndl = dot(n, sh.sun.xyz);
             o.color = vec4<f32>(max(ndl, 0.0), max(-ndl, 0.0), select(0.0, 1.0, ndl > 0.0 && ndl < 0.2), o.color.a);
         } else {
-            o.color = vec4<f32>(o.color.rgb * f, o.color.a);
+            o.color = vec4<f32>(o.color.rgb * shadow_tint(s), o.color.a);
         }
     }
     o.depth = d;
