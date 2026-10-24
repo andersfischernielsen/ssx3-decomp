@@ -15,7 +15,7 @@ entry	site	function	class	reason
 0x49b8b0	0x12c050	RiderGateSub_IsStartTimeReached	STEP	0x12c050: (float)race->frames(+0xc) * 1/60 = seconds, vs rider+0xb30 (port calls it seconds per frame)
 0x49b8d0	0x12c2dc	RiderGateSub_UpdateCharge	STEP	0x12c2dc: step = min(|target-cur|*4.5, cap) * 1/60 -- per-tick move of gate charge +0x10
 0x49b8d4	0x12c320	RiderGateSub_UpdateCharge	STEP	0x12c320: gate+0x4 += 1/60 per tick -- a seconds counter vs the 0x49b8d8 threshold
-0x49b928	0x12cc3c	RiderWipeoutSub_HandleInput	STEP	0x12cc3c: +0x70 += rate * 1/60, cue at >= 1.0 s -- elapsed seconds
+0x49b928	0x12cc3c	RiderWipeoutSub_HandleInput	NOT_A_STEP	0x12cc3c: +0x70 += strength * 1/60 per press of the recover button (input bit 0x2000 is set on the press tick): a fixed amount per press, not per tick (corrected 2026-10-24: as a step, mashing filled the meter 4x slower at 240 Hz)
 0x49b990	0x12ed94	RiderPrewindSub_HandleInput	STEP	0x12ed94: +0x2a8/+0x2b4 = rate * |target-cur| * 1/60 -- per-tick slew steps
 0x49ba1c	0x12fe9c	RiderBoardPressSub_Exit	STEP	0x12fe9c: +0x278 = 1/60 = DELTA_TIME * 1.0 per-tick spin step (same field is DELTA*1/60 elsewhere)
 0x49ba40	0x13029c	RiderBoardPressSub_UpdateStart	STEP	0x13029c: +0x26c = (2*DELTA_TIME) * 1/60 -- per-tick board-press step

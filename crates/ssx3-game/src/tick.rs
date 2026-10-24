@@ -75,6 +75,11 @@ pub const NOT_A_STEP: &[u32] = &[
     0x0049_b4a0,
     // AirPredictor_Simulate (0x113200): the trajectory preview's step.
     0x0049_b480,
+    // RiderWipeoutSub_HandleInput (0x12cb68): the recover meter (+0x70)
+    // gains `strength * 1/60` per *press* (the input's 0x2000 bit is set on
+    // the tick a press happens), not per tick; its fall-back is per tick
+    // (tick::PER_TICK). As a step, a press filled 1/4 as much at 240 Hz.
+    0x0049_b928,
     // ChaseCameraAlgorithm_ApplyJumpCurves (0x1635f8): `(16 - n) * 1/60`,
     // the air time of the takeoff countdown n, which counts 60 Hz frames.
     0x0049_c650,
