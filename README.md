@@ -78,7 +78,8 @@ A controller is picked up automatically (buttons map by position: bottom ✕, ri
 Most options are in the settings overlay (F10) and are saved to `saves/ssx3-settings.cfg`;
 saves go to `saves/ssx3-mc0.ps2`. Every option is also an environment variable, e.g.
 `SSX3_SKIP_MOVIES=1`, `SSX3_PAD2=1` (second player), `SSX3_TICK_HZ=120`,
-`SSX3_RENDER_SIZE=2560x1080`, `SSX3_FOV=1.2`. Full list, texture packs and the
+`SSX3_RENDER_SIZE=2560x1080`, `SSX3_FOV=1.2`. `SSX3_EVENT=BRA2 SSX3_RIDER=moby`
+boots straight into an event (here Metro City as Moby), skipping the menus. Full list, texture packs and the
 emulated reference paths: [`docs/options.md`](docs/options.md).
 
 ## Architecture

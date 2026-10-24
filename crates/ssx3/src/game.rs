@@ -89,6 +89,8 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     machine::set_vblank_hook(vblank);
     ssx3_game::detail::set(detail_distance());
     ssx3_game::debug::install();
+    // SSX3_EVENT / SSX3_RIDER: straight into an event.
+    ssx3_game::event_boot::install();
     // Phase 3: the draw functions record their draws for the renderer.
     if !ssx3_game::capture::install() {
         eprintln!("[ssx3-game] draw capture off");
