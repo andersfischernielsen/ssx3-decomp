@@ -1,3 +1,6 @@
+# Port while you look:
+- Whenever you study a function (in Ghidra, `generated/ee` or the C++ reference) for any task, also port it to hand-written Rust while you are there, with its differential test (porting loop below), if it is still generated.
+
 # Goals:
 - Get the entire game ported to native Rust with no PS2 machine emulation in the codebase.
 
