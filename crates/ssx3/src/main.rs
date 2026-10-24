@@ -195,6 +195,8 @@ impl App {
         if open_menu && self.menu.is_none() {
             self.toggle_menu();
         }
+        // SSX3_EVENT: the boot presses through the title and the prompts.
+        state[0].0 |= ssx3_game::event_boot::pad_buttons();
         let sif = &mut ssx3_ps2::m!(self.cpu).sif;
         for (port, (buttons, sticks)) in state.into_iter().enumerate() {
             sif.pad_buttons[port] = buttons;

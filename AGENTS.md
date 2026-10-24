@@ -13,6 +13,8 @@ Keep the decompilation work:
 
 Never co-author commits.
 
+Debugging aid: `SSX3_EVENT=<code>` (`SSX3_RIDER=<name>`) boots straight into an event (racing at about frame 1,050, no menus); codes in `docs/options.md`, `SSX3_EVENT=list`. Use it to look at or measure one course; keep the menu replay for the gate and the scenarios.
+
 ---
 
 ## Porting loop (typed Rust replacements)
