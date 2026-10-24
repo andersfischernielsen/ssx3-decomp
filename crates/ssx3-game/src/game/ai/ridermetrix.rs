@@ -856,7 +856,11 @@ pub fn rider_metrix_update(c: &mut Cpu) {
             c.cycles += 15;
             let score = ldf(c, 0, p(m, 0x14));
             let t = setf(c, 2, t + dt);
-            let bonus = ldf(c, 1, p(m, 0x3c));
+            ldf(c, 1, p(m, 0x3c));
+            // `+= award` per tick (a held trick's points/sec / 600000, from
+            // `RiderMetrix_AddTrick`): the hold pays out in real time.
+            per_tick_60(c, 1);
+            let bonus = fr(c, 1);
             c.g[A2][0] = sx(0x0045_9e20);
             c.g[A0][0] = c.g[S0][0];
             setf(c, 0, score + bonus);
@@ -4631,6 +4635,63 @@ pub(crate) mod tests {
             assert!(
                 (at - at_60).abs() < 1e-3,
                 "{hz} Hz: {at} after 1 s, 60 Hz: {at_60}"
+            );
+        }
+    }
+
+    /// `RiderMetrix_Update`'s continuous held-trick award (+0x3c into the
+    /// score +0x14 while the +0x40 timer runs): the award is per tick, so two
+    /// ticks at 120 Hz (four at 240) must add what one tick at 60 adds.
+    #[test]
+    fn rider_metrix_update_held_bonus_follows_the_rate() {
+        use crate::tick;
+        const HELD: f32 = 400.0 / 600_000.0;
+        // A quiet metrix: only the held-trick timer runs, so the score
+        // moves only through the held award.
+        let run = |hz: u32, ticks: u32| -> f32 {
+            let mut c = crate::difftest::fresh();
+            machine(&mut c, 0x3c40, 0x3c, 0);
+            elf_image(&mut c);
+            tick::set_for_test(&mut c, hz);
+            let m = DATA + 0x8000;
+            // The BELibrary singleton (gp-0x1f04) already exists: otherwise
+            // `BELibrary_GetInstance` builds it and waits forever on its
+            // rewards file.
+            c.bus.write32(GAME_GP - 0x1f04, DATA + 0xa000);
+            c.bus.write32(m + 0x1ac, RIDER);
+            for k in 0..3 {
+                c.bus.write32(RIDER + 0x1e0 + k * 4, 10.0f32.to_bits());
+            }
+            // dt = time scale * the `.lit4` step (gp-0x7b00).
+            c.bus.write32(RIDER + 0x300, 1.0f32.to_bits());
+            c.bus.write32(GAME_GP - 0x7b00, tick::step_bits(hz));
+            // Only the held-trick timer runs.
+            for off in [0xa4, 0x30, 0x24, 0x2c, 0x6c, 0x78] {
+                c.bus.write32(m + off, (-1.0f32).to_bits());
+            }
+            c.bus.write32(m + 0x40, 0.0f32.to_bits());
+            c.bus.write32(m + 0x14, 0.0f32.to_bits());
+            // A 400 point/sec hold (`RiderMetrix_AddTrick` stores
+            // points/sec / 600000).
+            c.bus.write32(m + 0x3c, HELD.to_bits());
+            c.bus.write32(m + 0x84, 0);
+            c.bus.write32(m + 0x8c, 0);
+            c.bus.write32(m + 0x1b0, 0);
+            c.bus.write32(m + 0x1b4, 0);
+            for _ in 0..ticks {
+                c.g[A0][0] = sx(m);
+                rider_metrix_update(&mut c);
+            }
+            f32::from_bits(c.bus.read32(m + 0x14))
+        };
+        let at_60 = run(60, 1);
+        assert_eq!(at_60, HELD, "60 Hz");
+        for hz in [120u32, 240] {
+            let ticks = hz / 60;
+            let at = run(hz, ticks);
+            assert!(
+                (at - at_60).abs() < at_60 * 1e-6,
+                "{hz} Hz: {ticks} ticks add {at}, 60 Hz adds {at_60}"
             );
         }
     }
