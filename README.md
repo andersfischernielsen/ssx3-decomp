@@ -73,15 +73,15 @@ issues.
   extraction step checks the executable's SHA-256:
   `1b49d05ca2793922180851b9e1ce9ae2291d61a7863565ac4e71f12e967af7bc`.
 - **Rust**, current stable, via [rustup](https://rustup.rs).
-- **bsdtar** (libarchive) to read the image. macOS has it built in. On Debian/Ubuntu
-  install `libarchive-tools`.
+- **Python 3** for the setup and packaging scripts.
 - **On Linux:** `pkg-config` and the ALSA and udev headers for sound and controllers
   (`libasound2-dev libudev-dev` on Debian/Ubuntu).
 - **A GPU with Metal, Vulkan or DX12.** The GS runs on wgpu.
 - **Disk:** about 7 GB free: the 3 GB image, 64 MB of generated code and about 3 GB of build output.
 - **OS:** developed and tested on macOS (Apple Silicon). On Linux (Ubuntu 24.04,
-  x86_64) the setup, the tests and the build work; playing is untested. Windows needs
-  a POSIX shell for the two setup scripts.
+  x86_64) the setup, the tests and the build work; playing is untested. On Windows, use
+  the native tools (Rust with the MSVC toolchain, Python), not WSL: WSL builds the Linux
+  version.
 
 ### 2. Set up (once)
 
@@ -93,12 +93,14 @@ cd ssx3-decomp
 # (or point SSX3_ISO at it, see "Options" below):
 cp /path/to/your/image.iso "SSX 3 (USA).iso"
 
-tools/extract-from-iso.sh   # -> orig/SLUS_207.72, checks the SHA-256
-tools/bootstrap.sh          # translates EE, VU and IOP code into generated/ (Rust)
+python3 tools/setup.py      # orig/SLUS_207.72 (SHA-256 checked), then the game in generated/
 ```
 
-`bootstrap.sh` builds the recompiler and writes the translated game into `generated/`.
-Run it again after pulling changes to the recompiler (`crates/ssx3-recomp`).
+`setup.py` reads the executable from the image, checks it, builds the recompiler and writes
+the translated game (EE, VU and IOP code, as Rust) into `generated/`. It works the same on
+macOS, Linux and Windows (`python tools\setup.py`). Run it again after pulling changes to
+the recompiler (`crates/ssx3-recomp`). The older `tools/extract-from-iso.sh` and
+`tools/bootstrap.sh` do the same in a POSIX shell.
 
 ### 3. Build and play
 
@@ -132,7 +134,8 @@ Saves go to `saves/ssx3-mc0.ps2`.
 ### 4. A standalone build (optional)
 
 `tools/bundle.py` packs the game data from your disc image into a build that runs on its own,
-without the ISO or this repository. It builds for the OS it runs on:
+without the ISO or this repository. It builds for the OS it runs on (and runs the setup
+first on a fresh checkout):
 
 ```sh
 python3 tools/bundle.py

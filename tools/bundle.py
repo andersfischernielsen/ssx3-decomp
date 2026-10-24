@@ -234,6 +234,11 @@ def main():
     system = platform.system()
     if system not in ("Darwin", "Linux", "Windows"):
         sys.exit(f"unsupported OS {system}")
+    # A fresh checkout: the one-time setup first (the generated game).
+    import setup
+    if not setup.is_set_up():
+        print("setup: generated/ is missing: running tools/setup.py first")
+        setup.main(["--iso", a.iso])
     make_pack(a.iso, pack)
     icons = os.path.join(ROOT, "target", "bundle", "icon")
     make_icons(a.iso, icons)
