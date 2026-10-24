@@ -17,6 +17,10 @@ environment; see the README).
   executable, which reads it back from itself.
 - Windows: `dist\ssx3-windows-<arch>.exe`, one file, the same way.
 
+The icon is the game's own SSX 3 logo (tools/bundle_icon.py): the app's
+icon on macOS, compiled into the executable on Windows; the window sets it
+at run time on every OS (Linux executables carry none).
+
 The pack (`ssx3-core/src/pack.rs`) is the disc image without the padding
 files (PAD0.000, PAD1.000) and all-zero sectors, about 2.4 GB. The result
 plays from anywhere: no ISO, no repository. Saves and settings go to the
@@ -33,6 +37,9 @@ import shutil
 import struct
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bundle_icon  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECTOR = 2048
@@ -134,6 +141,30 @@ def make_pack(iso, out):
     print(f"pack: {out}: {kept / 1e9:.2f} GB of {total * SECTOR / 1e9:.2f} GB, {len(extents)} extents")
 
 
+def make_icons(iso, out_dir):
+    """The app icon from the game's logo (tools/bundle_icon.py): `ssx3.ico`
+    (Windows) and `ssx3.iconset` (macOS) in `out_dir`."""
+    stamp = f"{os.path.getsize(iso)} {int(os.path.getmtime(iso))} {bundle_icon.LOGO_WIDTH}\n"
+    stamp_file = os.path.join(out_dir, "stamp")
+    if os.path.exists(stamp_file) and open(stamp_file).read() == stamp:
+        return
+    os.makedirs(out_dir, exist_ok=True)
+    with open(iso, "rb") as f:
+        files = {p: (lba, size) for p, lba, size in iso_files(f)}
+
+        def read(path):
+            lba, size = files[path]
+            f.seek(lba * SECTOR)
+            return f.read(size)
+
+        print("icon: from the logo in DATA/UI/FE_1.SSH")
+        icon = bundle_icon.compose(bundle_icon.logo_from_disc(read), 1024)
+    pngs = bundle_icon.sizes(icon, [16, 32, 48, 64, 128, 256, 512, 1024])
+    bundle_icon.write_ico({k: v for k, v in pngs.items() if k <= 256}, os.path.join(out_dir, "ssx3.ico"))
+    bundle_icon.write_iconset(pngs, os.path.join(out_dir, "ssx3.iconset"))
+    open(stamp_file, "w").write(stamp)
+
+
 def append_pack(exe, pack, out):
     """`out` = `exe` + `pack` + trailer (the pack's file offset)."""
     shutil.copyfile(exe, out)
@@ -145,14 +176,16 @@ def append_pack(exe, pack, out):
     print(f"bundle: {out} ({os.path.getsize(out) / 1e9:.2f} GB)")
 
 
-def build_binary():
-    """The ssx3 window binary for this machine (cargo's `game` profile)."""
-    run(["cargo", "build", "--profile", "game", "-p", "ssx3", "--bin", "ssx3"], cwd=ROOT)
+def build_binary(ico=None):
+    """The ssx3 window binary for this machine (cargo's `game` profile); on
+    Windows with `ico` compiled in as its icon (crates/ssx3/build.rs)."""
+    env = dict(os.environ, SSX3_ICON=os.path.abspath(ico)) if ico else None
+    run(["cargo", "build", "--profile", "game", "-p", "ssx3", "--bin", "ssx3"], cwd=ROOT, env=env)
     exe = "ssx3.exe" if os.name == "nt" else "ssx3"
     return os.path.join(TARGET_DIR if os.path.isabs(TARGET_DIR) else os.path.join(ROOT, TARGET_DIR), "game", exe)
 
 
-def bundle_macos(exe, pack, out_dir):
+def bundle_macos(exe, pack, icons, out_dir):
     app = os.path.join(out_dir, "SSX3.app")
     shutil.rmtree(app, ignore_errors=True)
     os.makedirs(os.path.join(app, "Contents/MacOS"))
@@ -164,6 +197,8 @@ def bundle_macos(exe, pack, out_dir):
         os.link(pack, res)
     except OSError:
         shutil.copyfile(pack, res)
+    run(["iconutil", "-c", "icns", os.path.join(icons, "ssx3.iconset"),
+         "-o", os.path.join(app, "Contents/Resources/ssx3.icns")])
     with open(os.path.join(app, "Contents/Info.plist"), "w") as f:
         f.write("""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -172,6 +207,7 @@ def bundle_macos(exe, pack, out_dir):
   <key>CFBundleDisplayName</key><string>SSX 3</string>
   <key>CFBundleIdentifier</key><string>local.ssx3.native</string>
   <key>CFBundleExecutable</key><string>ssx3</string>
+  <key>CFBundleIconFile</key><string>ssx3</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
@@ -199,11 +235,13 @@ def main():
     if system not in ("Darwin", "Linux", "Windows"):
         sys.exit(f"unsupported OS {system}")
     make_pack(a.iso, pack)
+    icons = os.path.join(ROOT, "target", "bundle", "icon")
+    make_icons(a.iso, icons)
     os.makedirs(a.out, exist_ok=True)
-    exe = build_binary()
+    exe = build_binary(os.path.join(icons, "ssx3.ico") if system == "Windows" else None)
     arch = {"amd64": "x86_64", "arm64": "aarch64"}.get(platform.machine().lower(), platform.machine().lower())
     if system == "Darwin":
-        bundle_macos(exe, pack, a.out)
+        bundle_macos(exe, pack, icons, a.out)
     elif system == "Linux":
         append_pack(exe, pack, os.path.join(a.out, f"ssx3-linux-{arch}"))
     else:

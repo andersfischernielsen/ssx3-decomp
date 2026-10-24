@@ -4,6 +4,7 @@ description = "SSX 3 (USA) native recompilation — entry point."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
 
 [[bin]]
 name = "ssx3"
@@ -45,3 +46,7 @@ ssx3-iop = { path = "../ssx3-iop" }
 ssx3-iop-gen = { path = "../../generated/iop/modules" }
 wgpu = "30.0.1"
 winit = "0.30.13"
+
+[build-dependencies]
+# The Windows executable's icon (tools/bundle.py passes SSX3_ICON).
+embed-resource = "3"

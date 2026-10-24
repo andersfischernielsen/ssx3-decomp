@@ -24,6 +24,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
 mod game;
+mod icon;
 mod png;
 mod present;
 mod settings;
@@ -216,6 +217,12 @@ impl ApplicationHandler for App {
             .with_inner_size(winit::dpi::LogicalSize::new(960.0, 672.0));
         // SSX3_FULLSCREEN=1: start in borderless fullscreen (F11 toggles).
         let attrs = if settings::get("SSX3_FULLSCREEN").is_some_and(|v| v != "0") { attrs.with_fullscreen(Some(Fullscreen::Borderless(None))) } else { attrs };
+        // The SSX 3 logo from the disc (title bar and taskbar on Windows and
+        // Linux; macOS takes the app bundle's icon).
+        let attrs = match icon::from_disc(128).and_then(|rgba| winit::window::Icon::from_rgba(rgba, 128, 128).ok()) {
+            Some(i) => attrs.with_window_icon(Some(i)),
+            None => attrs,
+        };
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
         let gs = ssx3_ps2::gpu::context();
         self.gpu_ctx = gs;

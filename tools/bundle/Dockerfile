@@ -13,3 +13,7 @@ FROM rust:1-bookworm
 RUN apt-get update && \
     apt-get install -y --no-install-recommends pkg-config libasound2-dev libudev-dev python3 && \
     rm -rf /var/lib/apt/lists/*
+
+# The generated game's shards each need a lot of memory to compile; Docker's
+# VM is often small (4 GB on a Mac by default). Two at a time fit.
+ENV CARGO_BUILD_JOBS=2
