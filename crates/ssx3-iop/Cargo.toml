@@ -6,4 +6,4 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-cpal = "0.15"
+cpal = "0.18"

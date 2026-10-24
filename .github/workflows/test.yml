@@ -1,0 +1,43 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: System libraries (ALSA, udev)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev libudev-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+  
+      - name: Stub crates for the generated code
+        run: python3 tools/setup.py --stubs-only
+
+      - name: Python tools
+        run: python3 -m py_compile tools/*.py
+
+      - name: Test
+        run: >
+          cargo test
+          -p ssx3-ee-rt -p ssx3-recomp -p ssx3-vu -p ssx3-ps2 -p ssx3-iop -p ssx3-core
+          -p ssx3-mc -p ssx3-mpeg -p ssx3-snd -p ssx3-gfx

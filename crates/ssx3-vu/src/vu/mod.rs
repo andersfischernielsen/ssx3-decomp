@@ -72,6 +72,7 @@ pub mod vu0lib;
 /// path.
 #[cfg(feature = "microcode")]
 #[path = "../../../../generated/vu/mod.rs"]
+#[rustfmt::skip] // generated code (not in git)
 pub mod generated;
 
 use crate::Qword;

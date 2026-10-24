@@ -100,3 +100,31 @@ needs `--features vu1-microcode` (which brings `emu-gs`):
 `SSX3_TRACE_THREADS`, `SSX3_TRACE_SYSCALLS`, `SSX3_TRACE_SIF`,
 `SSX3_WAV=file` (audio). Runtime misses (untranslated code) are appended to
 `generated/entries.txt`; rerun `recomp-ee`.
+
+## What the disc contains
+
+| File | Purpose |
+| --- | --- |
+| `SYSTEM.CNF` | Boot config: `BOOT2=cdrom0:\SLUS_207.72;1` |
+| `SLUS_207.72` | The executable: ELF32, little-endian, MIPS R5900, stripped |
+| `DATA/` | ~2.3 GB of level and asset archives |
+| `NETGUI/` | ~8 MB network UI |
+
+Image base `0x00100000`, entry point `0x00100008`, 93 segments; `.vutext`
+(`0x0042e590`) holds the VU1 microcode. The ELF is stripped, but it was built
+with `-ffunction-sections`, so its `.gnu.linkonce.t.*` section names still
+carry mangled C++ symbol names.
+
+## Analysis in Ghidra
+
+Optional: the function inventory (`generated/functions.tsv`) is committed.
+
+1. Import `orig/SLUS_207.72` as an ELF.
+2. Set the language to `r5900:LE:32:default` from
+   [ghidra-emotionengine-reloaded](https://github.com/chaoticgd/ghidra-emotionengine-reloaded)
+   (plain MIPS does not decode EE instructions).
+3. Run Analysis → Auto Analyze.
+4. `tools/import-ghidra-names.py` imports the project's names; with the
+   GhidraMCP plugin running, `tools/export-ghidra-functions.py` writes them
+   back to `generated/functions.{json,tsv}`. See
+   [`investigation/ghidra-mcp.md`](investigation/ghidra-mcp.md).

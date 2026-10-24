@@ -1,0 +1,28 @@
+name: Format
+
+on:
+  push:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Stub crates for the generated code
+        run: python3 tools/setup.py --stubs-only
+
+      - name: Check formatting
+        run: cargo fmt --all --check
