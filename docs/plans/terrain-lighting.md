@@ -90,3 +90,13 @@ bake).
   tone is matched: with the sun gain fixed (0.6), the ambient gain per
   channel that makes the mean terrain light equal the bake's
   (`--tone`); 0.4–2.1 across the courses.
+- Tone: per-course neutral gains (the colour is the live light's); the
+  bake's colour kept (its grey part dropped: the artists' zone tints
+  stay); a live tone estimate from texture means was tried and dropped
+  (too light; it lost the triggers' brightness).
+- Courses are keyed by the current track's code (the mountain is one world
+  file, `BAM`): `BENewRaceInt` track 0x535c08 → track table 0x43d950
+  (+0x34 code).
+- Open: the stylised zones (Kick Doubt's cyan ice, Much-2-Much's dark neon
+  cave) keep colour from elsewhere (not the bake layer) or depend on its
+  darkening; night courses read brighter than the game.

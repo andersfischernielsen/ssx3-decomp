@@ -107,3 +107,22 @@ match `main`.
     Jam; the whole buffer is uploaded again then). The game's own terrain
     draws no longer cast. `SSX3_SHADOW_DEBUG=no-world` uses them instead.
   - The world cull widening is gone.
+- 2026-10-24/25 (overnight): "Native shadows" (F10, `SSX3_SHADOWS`) became
+  the one setting: it replaces the terrain's baked lighting
+  (`terrain-lighting.md`). Also:
+  - The game's own rider shadows (silhouette render targets and their
+    projections) are hidden with it on; the game's projector is straight
+    down (a drop shadow, not a sun).
+  - Shade tint, sun: the key light (owner's pick); the lens flare's sun
+    position is recorded too (`SSX3_SHADOW_DEBUG=flare-sun`).
+  - Tree cut-outs: alpha-tested instance groups cast through their textures
+    (TexMan id → TexInfo → the renderer's texture cache).
+  - Casters from every active section's loaded geometry (shadows no longer
+    pop in as sections switch on); the game's mesh draws no longer cast.
+  - Flicker: a camera dipping under a lip flipped the terrain normals
+    (eye-facing); terrain normals now face the sky. Dense check
+    (every 2 frames, 5800-6000): median excess frame-to-frame change over
+    the original 0.31 levels, no pops left.
+  - Ports: the functions read on the way (oc200: Nash_GatherVisible,
+    Nash_CollectPatches, Vu0_UploadMatrixPair, BezierPatchCache_Tess*,
+    LensFX_UpdateSunPosition, WorldPainter_GetSun*, tWPIGD_Sun getters).
