@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -145,6 +146,41 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002e_e6f0,
         world_painter_get_weather30,
         "WorldPainter_GetWeather30",
+    ),
+    (
+        0x002e_e070,
+        world_painter_get_sun_elevation,
+        "WorldPainter_GetSunElevation",
+    ),
+    (
+        0x002e_e0b8,
+        world_painter_get_sun_azimuth,
+        "WorldPainter_GetSunAzimuth",
+    ),
+    (
+        0x002e_e100,
+        world_painter_get_sun_red,
+        "WorldPainter_GetSunRed",
+    ),
+    (
+        0x002e_e148,
+        world_painter_get_sun_green,
+        "WorldPainter_GetSunGreen",
+    ),
+    (
+        0x002e_e190,
+        world_painter_get_sun_blue,
+        "WorldPainter_GetSunBlue",
+    ),
+    (
+        0x002e_e1d8,
+        world_painter_get_sun_intensity,
+        "WorldPainter_GetSunIntensity",
+    ),
+    (
+        0x002e_e2b0,
+        world_painter_get_sun_size,
+        "WorldPainter_GetSunSize",
     ),
 ];
 
@@ -1792,6 +1828,83 @@ pub fn world_painter_free_view_queries(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Helpers.
+
+/// The world-painter view table `D_004FA370` (built as `0x500000 -
+/// 0x5c90`), stride 0xf0; the sun interface holder at +0x14.
+pub(crate) const PAINTER_VIEWS_HI: u64 = 0x50_0000;
+
+pub(crate) const PAINTER_VIEWS_LO: u32 = 0x5c90;
+
+pub(crate) const PAINTER_VIEW_SUN: u32 = 0x14;
+
+/// The `WorldPainter_GetSun*` float getters (index in a0): `obj =
+/// *views[index].sun`, call its virtual slot `vt_off` (`{delta, fn}` at
+/// `obj->vtable + vt_off`) with `obj + delta`, and return the float the
+/// method's result points at.
+pub(crate) fn sun_float_getter(c: &mut Cpu, vt_off: u32, ret_addr: u32) {
+    guest(c, |c| {
+        c.cycles += 18;
+        c.g[V1][0] = 0xf0;
+        let frame = Frame::open(c, 0x10);
+        c.mult(0, A0, A0, V1); // a0 = index * 0xf0
+        c.g[V0][0] = PAINTER_VIEWS_HI;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx((PAINTER_VIEWS_HI as u32).wrapping_sub(PAINTER_VIEWS_LO));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = c.lw(at(c, A0, PAINTER_VIEW_SUN));
+        c.g[A2][0] = c.lw(r32(c, V1));
+        c.g[A1][0] = c.lw(at(c, A2, 4));
+        c.g[A0][0] = c.lh(at(c, A1, vt_off));
+        c.g[V0][0] = c.lw(at(c, A1, vt_off + 4));
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+        call_ptr(c, method, ret_addr)?;
+        c.lwc1(0, r32(c, V0));
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float WorldPainter_GetSunElevation(int view)` (0x2ee070): sun slot
+/// 27 (`tWPIGD_Sun_GetElevation`).
+pub fn world_painter_get_sun_elevation(c: &mut Cpu) {
+    sun_float_getter(c, 0xd8, 0x002e_e0a8);
+}
+
+/// `float WorldPainter_GetSunAzimuth(int view)` (0x2ee0b8): sun slot 28
+/// (`tWPIGD_Sun_GetAzimuth`).
+pub fn world_painter_get_sun_azimuth(c: &mut Cpu) {
+    sun_float_getter(c, 0xe0, 0x002e_e0f0);
+}
+
+/// `float WorldPainter_GetSunRed(int view)` (0x2ee100): sun slot 29.
+pub fn world_painter_get_sun_red(c: &mut Cpu) {
+    sun_float_getter(c, 0xe8, 0x002e_e138);
+}
+
+/// `float WorldPainter_GetSunGreen(int view)` (0x2ee148): sun slot 30.
+pub fn world_painter_get_sun_green(c: &mut Cpu) {
+    sun_float_getter(c, 0xf0, 0x002e_e180);
+}
+
+/// `float WorldPainter_GetSunBlue(int view)` (0x2ee190): sun slot 31.
+pub fn world_painter_get_sun_blue(c: &mut Cpu) {
+    sun_float_getter(c, 0xf8, 0x002e_e1c8);
+}
+
+/// `float WorldPainter_GetSunIntensity(int view)` (0x2ee1d8): sun slot 32.
+pub fn world_painter_get_sun_intensity(c: &mut Cpu) {
+    sun_float_getter(c, 0x100, 0x002e_e210);
+}
+
+/// `float WorldPainter_GetSunSize(int view)` (0x2ee2b0): sun slot 35.
+pub fn world_painter_get_sun_size(c: &mut Cpu) {
+    sun_float_getter(c, 0x118, 0x002e_e2e8);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2425,4 +2538,97 @@ pub(crate) mod tests {
             },
         );
     }
+    use crate::difftest::events::{check_events, schedule};
+    use crate::difftest::fakes::{self, covered, fake_call, machine, FAKE, LOG_COUNT};
+    use crate::difftest::{check, fill, scramble, Rng, DATA, GAME_GP};
+    use ssx3_ee_rt::cpu::{reg::*, sx};
+    use ssx3_ee_rt::Cpu;
+
+    /// The painter view table entry `view`: its sun holder -> object ->
+    /// vtable whose slots `slots` are fakes (FAKE + 0x10 i).
+    pub(crate) fn painter_sun(
+        c: &mut Cpu,
+        r: &mut Rng,
+        view: u32,
+        holder: u32,
+        vt: u32,
+        slots: &[u32],
+    ) {
+        let entry = 0x004f_a370u32.wrapping_add(view.wrapping_mul(0xf0));
+        let obj = holder + 0x40;
+        c.bus.write32(entry + 0x14, holder);
+        c.bus.write32(holder, obj);
+        c.bus.write32(obj + 4, vt);
+        for (i, &off) in slots.iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 % 64) & !3;
+            c.bus.write16(vt + off, delta as u16);
+            c.bus.write32(vt + off + 4, FAKE + 0x10 * i as u32);
+        }
+    }
+
+    pub(crate) fn sun_getter_setup(c: &mut Cpu, seed: u32, vt_off: u32) {
+        let mut r = machine(c, seed, 0x5375_6e00 ^ vt_off as u64, 1);
+        let view = seed % 8;
+        c.g[A0][0] = view as u64 | (r.next_u32() as u64) << 32;
+        painter_sun(c, &mut r, view, DATA + 0x200, DATA + 0x6000, &[vt_off]);
+    }
+
+    macro_rules! sun_getter_test {
+        ($name:ident, $gen:path, $hand:path, $off:expr) => {
+            #[test]
+            fn $name() {
+                covered($gen, $hand, 160, &|c, seed| sun_getter_setup(c, seed, $off));
+            }
+        };
+    }
+    pub(crate) use sun_getter_test;
+
+    sun_getter_test!(
+        world_painter_get_sun_elevation_matches,
+        ssx3_ee::s09::f_002ee070__generated,
+        super::world_painter_get_sun_elevation,
+        0xd8
+    );
+
+    sun_getter_test!(
+        world_painter_get_sun_azimuth_matches,
+        ssx3_ee::s09::f_002ee0b8__generated,
+        super::world_painter_get_sun_azimuth,
+        0xe0
+    );
+
+    sun_getter_test!(
+        world_painter_get_sun_red_matches,
+        ssx3_ee::s09::f_002ee100__generated,
+        super::world_painter_get_sun_red,
+        0xe8
+    );
+
+    sun_getter_test!(
+        world_painter_get_sun_green_matches,
+        ssx3_ee::s09::f_002ee148__generated,
+        super::world_painter_get_sun_green,
+        0xf0
+    );
+
+    sun_getter_test!(
+        world_painter_get_sun_blue_matches,
+        ssx3_ee::s09::f_002ee190__generated,
+        super::world_painter_get_sun_blue,
+        0xf8
+    );
+
+    sun_getter_test!(
+        world_painter_get_sun_intensity_matches,
+        ssx3_ee::s09::f_002ee1d8__generated,
+        super::world_painter_get_sun_intensity,
+        0x100
+    );
+
+    sun_getter_test!(
+        world_painter_get_sun_size_matches,
+        ssx3_ee::s09::f_002ee2b0__generated,
+        super::world_painter_get_sun_size,
+        0x118
+    );
 }

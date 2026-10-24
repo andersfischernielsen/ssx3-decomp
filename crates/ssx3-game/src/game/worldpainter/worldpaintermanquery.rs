@@ -2,17 +2,29 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Frame;
 use crate::events;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
 pub(crate) use crate::game::visualfx::worldlightman::DELETE;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -38,6 +50,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         quad_tree_free_children,
         "QuadTree_FreeChildren",
     ),
+    (
+        0x002c_1560,
+        twpigd_sun_get_elevation,
+        "tWPIGD_Sun_GetElevation",
+    ),
+    (0x002c_1568, twpigd_sun_get_azimuth, "tWPIGD_Sun_GetAzimuth"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -131,6 +149,21 @@ pub fn quad_tree_free_children(c: &mut Cpu) {
 /// `WorldPainterQuery_BaseDtor` (0x2c1460): vtable at `+0x4`.
 pub fn world_painter_query_base_dtor(c: &mut Cpu) {
     deleting_dtor(c, 0x4, 0x0048_5d30, 0x002c_1484);
+}
+
+/// `float* tWPIGD_Sun::GetElevation()` (0x2c1560): `&this->elevation`
+/// (+0x08).
+pub fn twpigd_sun_get_elevation(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x8));
+    ret(c);
+}
+
+/// `float* tWPIGD_Sun::GetAzimuth()` (0x2c1568): `&this->azimuth` (+0x10).
+pub fn twpigd_sun_get_azimuth(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x10));
+    ret(c);
 }
 
 #[cfg(test)]
@@ -236,6 +269,37 @@ pub(crate) mod tests {
             ee::s08::f_002c1460__generated,
             world_painter_query_base_dtor,
             0x2c1460,
+        );
+    }
+    use crate::difftest::events::{check_events, schedule};
+    use crate::difftest::fakes::{self, covered, fake_call, machine, FAKE, LOG_COUNT};
+    use crate::difftest::{check, fill, scramble, Rng, DATA, GAME_GP};
+    use ssx3_ee_rt::cpu::{reg::*, sx};
+    use ssx3_ee_rt::Cpu;
+
+    #[test]
+    fn twpigd_sun_get_elevation_matches() {
+        check(
+            ssx3_ee::s08::f_002c1560__generated,
+            super::twpigd_sun_get_elevation,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x2c15_60 ^ seed as u64);
+                scramble(c, &mut r);
+            },
+        );
+    }
+
+    #[test]
+    fn twpigd_sun_get_azimuth_matches() {
+        check(
+            ssx3_ee::s08::f_002c1568__generated,
+            super::twpigd_sun_get_azimuth,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x2c15_68 ^ seed as u64);
+                scramble(c, &mut r);
+            },
         );
     }
 }

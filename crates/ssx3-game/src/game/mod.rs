@@ -45,7 +45,6 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend(camera::overrides());
     v.extend(dirtysock::overrides());
     v.extend(fe::overrides());
-    v.extend_from_slice(hashvalue::OVERRIDES);
     v.extend(input::overrides());
     v.extend(intersect::overrides());
     v.extend(lib::overrides());
@@ -66,6 +65,7 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend(world::overrides());
     v.extend(worldpainter::overrides());
     v.extend(wscript::overrides());
+    v.extend_from_slice(hashvalue::OVERRIDES);
     v.extend_from_slice(md5::OVERRIDES);
     v.extend_from_slice(misc::OVERRIDES);
     v
