@@ -19,6 +19,7 @@
 //! - [`gs`]: GS register state and primitive assembly.
 //! - [`draw`]: pipelines for GS draw states.
 
+mod bake_blur;
 pub mod debug;
 mod depth_query;
 mod draw;
@@ -83,6 +84,7 @@ struct RtTarget {
 }
 
 struct CachedTex {
+    tex: wgpu::Texture,
     view: wgpu::TextureView,
     used: u64,
     /// Largest texel alpha (GS units).
@@ -103,6 +105,8 @@ pub struct Inner {
     gs: gs::Gs,
     vu: Box<[u8; 16384]>,
     texcache: HashMap<tex::TexKey, CachedTex>,
+    /// The terrain bake's textures blurred (real-time lighting, flag 32768).
+    bake_blur: bake_blur::BakeBlur<(tex::TexKey, draw::SampKey)>,
     /// Texture keys reused while their memory is not written.
     texkeys: tex::KeyCache,
     samplers: HashMap<draw::SampKey, wgpu::Sampler>,
@@ -285,6 +289,7 @@ impl Renderer {
         );
         let shared = Arc::new(Shared::default());
         let depth_query = depth_query::DepthQuery::new(&dev);
+        let bake_blur = bake_blur::BakeBlur::new(&dev);
         Renderer(
             Arc::new(Mutex::new(Inner {
                 shared: shared.clone(),
@@ -296,6 +301,7 @@ impl Renderer {
                 gs: gs::Gs::new(),
                 vu: Box::new([0; 16384]),
                 texcache: HashMap::new(),
+                bake_blur,
                 texkeys: Default::default(),
                 samplers: HashMap::new(),
                 aniso: 16,
@@ -768,11 +774,37 @@ impl Inner {
         self.texcache.insert(
             key,
             CachedTex {
+                tex: t,
                 view: view.clone(),
                 used: frame,
                 amax,
             },
         );
+        Some((view, amax))
+    }
+
+    /// A bake texture blurred through sampler `sk` (`bake_blur`); its alpha
+    /// is at most the texture's.
+    fn bake_texture(
+        &mut self,
+        info: u32,
+        texa: u64,
+        sk: draw::SampKey,
+        mem: &dyn Mem,
+    ) -> Option<(wgpu::TextureView, u8)> {
+        let (_, amax) = self.texture(info, texa, mem)?;
+        let key = self.texkeys.key(mem, info, texa);
+        let src = self.texcache.get(&key)?.tex.clone();
+        let aniso = self.aniso;
+        let samp = self
+            .samplers
+            .entry(sk)
+            .or_insert_with(|| draw::sampler(&self.dev, sk, aniso))
+            .clone();
+        let frame = self.stats.frames;
+        let view = self
+            .bake_blur
+            .blurred(&self.dev, &self.queue, (key, sk), &src, &samp, frame);
         Some((view, amax))
     }
 
@@ -1265,12 +1297,15 @@ impl Inner {
             /// What produced it (the renderer's own passes go before the
             /// game's post passes and before the HUD).
             tag: gs::Tag,
+            /// The lighting paths its GPU pipeline compiles in
+            /// (`draw::lit_paths`).
+            lit: u32,
         }
         let mut items = Vec::new();
         let mut ubytes: Vec<u8> = Vec::new();
         let mut binds: Vec<(Option<wgpu::TextureView>, draw::SampKey)> = Vec::new();
         let mut bind_amax: Vec<u8> = Vec::new();
-        let mut bind_ix: HashMap<(Option<u32>, u64, draw::SampKey), usize> = HashMap::new();
+        let mut bind_ix: HashMap<(Option<u32>, u64, draw::SampKey, bool), usize> = HashMap::new();
         // Debug: SSX3_GFX_SKIPTEST=hex,... drops batches with that TEST.
         // A trailing `c`/`a`: only colour-writing / only alpha-only batches.
         let dbg = debug::get();
@@ -1281,6 +1316,7 @@ impl Inner {
             .probe
             .filter(|_| dbg.trace.is_none_or(|f| f == self.stats.frames));
         let opts = self.opts;
+        let show = shadow::show();
         let time = self.t0.elapsed().as_secs_f32();
         for (bi, b) in batches.iter().enumerate() {
             let st = &b.state;
@@ -1395,7 +1431,7 @@ impl Inner {
                 continue;
             }
             let sk = draw::samp_key(st);
-            let bkey = (st.tex, st.texa, sk);
+            let bkey = (st.tex, st.texa, sk, bake_tint);
             let bind = match bind_ix.get(&bkey) {
                 Some(&i) => i,
                 None => {
@@ -1419,7 +1455,12 @@ impl Inner {
                                 let k = tex::key(mem, info, st.texa);
                                 eprintln!("[gfx-tex] info {info:#x} format {:#x} pixels {:#x} tex0 {:#x} hash {:#x}", k.format, k.pixels, k.tex0, k.hash);
                             }
-                            match self.texture(info, st.texa, mem) {
+                            let t = if bake_tint {
+                                self.bake_texture(info, st.texa, sk, mem)
+                            } else {
+                                self.texture(info, st.texa, mem)
+                            };
+                            match t {
                                 Some((v, a)) => (Some(v), a),
                                 None => (None, 128),
                             }
@@ -1676,6 +1717,7 @@ impl Inner {
                     String::new()
                 };
                 items.push(Item {
+                    lit: draw::lit_paths(light.is_some(), show, p.u.flags),
                     tag: b.tag,
                     batch: bi,
                     gpu: b.gpu,
@@ -1766,8 +1808,7 @@ impl Inner {
         for it in &items {
             match it.gpu {
                 Some(g) => {
-                    self.pipes
-                        .get_gpu(&self.dev, it.key, g.program, light.is_some());
+                    self.pipes.get_gpu(&self.dev, it.key, g.program, it.lit);
                 }
                 None => {
                     self.pipes.get(&self.dev, it.key);
@@ -1854,12 +1895,15 @@ impl Inner {
         let main = self.gs.main_fbp;
         // Sun shadows: the 3D draws before the game's post passes again,
         // into the shadow map (shadow.rs), before everything else.
-        if let (Some(_), Some(gb), false) = (
+        if let (Some(l), Some(gb), false) = (
             light.as_ref(),
             gpu_bind_shadow.as_ref(),
             shadow::debug("no-pass"),
         ) {
             let sh = self.shadow.as_ref().unwrap();
+            let caster_runs: Vec<Vec<(u32, u32)>> = (0..shadow::CASCADES)
+                .map(|k| sh.caster_runs(l, k))
+                .collect();
             let casts = |it: &Item| {
                 !shadow::debug("no-items")
                     && it.target == main
@@ -1937,11 +1981,13 @@ impl Inner {
                     sp.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
                     sp.draw(g.first..g.first + g.count, c..c + 1);
                 }
-                if let (true, Some((_, buf, n))) = (native_terrain, sh.casters.as_ref()) {
+                if let (true, Some((_, buf, _))) = (native_terrain, sh.casters.as_ref()) {
                     sp.set_pipeline(&self.pipes.caster);
                     sp.set_bind_group(0, &groups[0], &[0]);
                     sp.set_vertex_buffer(0, buf.slice(..));
-                    sp.draw(0..*n, c..c + 1);
+                    for &(first, n) in &caster_runs[c as usize] {
+                        sp.draw(first..first + n, c..c + 1);
+                    }
                 }
                 if let (false, Some((buf, _))) = (cut_groups.is_empty(), sh.cutouts.as_ref()) {
                     sp.set_pipeline(&self.pipes.caster_cut);
@@ -2214,7 +2260,7 @@ impl Inner {
                 }
                 last.pipe = Some((it.key, program));
                 pass.set_pipeline(match program {
-                    Some(p) => self.pipes.cached_gpu(it.key, p, light.is_some()),
+                    Some(p) => self.pipes.cached_gpu(it.key, p, it.lit),
                     None => self.pipes.cached(it.key),
                 });
             }
@@ -2476,6 +2522,7 @@ impl Inner {
         // Drop textures unused for a while.
         let frame = self.stats.frames;
         self.texcache.retain(|_, t| frame - t.used < 600);
+        self.bake_blur.evict(frame, 600);
     }
 
     /// The image on screen: the display buffer when the game blends frames

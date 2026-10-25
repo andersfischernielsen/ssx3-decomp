@@ -576,6 +576,9 @@ pub struct Shadow {
     pub size: u32,
     /// The world's casters on the GPU: (generation, buffer, vertices).
     pub casters: Option<(u64, wgpu::Buffer, u32)>,
+    /// The casters' buffer is in cells of a grid over the world's x, y:
+    /// per cell (first vertex, vertices, box centre, half extent).
+    caster_cells: Vec<(u32, u32, [f32; 3], [f32; 3])>,
     /// Their alpha cut-outs: buffer (position, UV) and runs per texture.
     pub cutouts: Option<(wgpu::Buffer, Vec<(i16, u32, u32)>)>,
     pub view: wgpu::TextureView,
@@ -633,6 +636,7 @@ impl Shadow {
         Shadow {
             size,
             casters: None,
+            caster_cells: Vec::new(),
             cutouts: None,
             view: depth(size, "ssx3-gfx shadow map"),
             dummy: depth(1, "ssx3-gfx shadow dummy"),
@@ -725,12 +729,51 @@ impl Shadow {
         {
             return;
         }
-        let bytes: Vec<u8> = c
-            .triangles
+        // In cells of a grid over x, y (by each triangle's centre), each
+        // with its box: a cascade draws the cells that reach into it.
+        const GRID: usize = 48;
+        let tris: Vec<&[[f32; 6]]> = c.triangles.chunks_exact(3).collect();
+        let (mut lo, mut hi) = ([f32::MAX; 2], [f32::MIN; 2]);
+        for v in &c.triangles {
+            for k in 0..2 {
+                lo[k] = lo[k].min(v[k]);
+                hi[k] = hi[k].max(v[k]);
+            }
+        }
+        let cell_of = |t: &[[f32; 6]]| -> usize {
+            let at = |k: usize| {
+                let m = (t[0][k] + t[1][k] + t[2][k]) / 3.0;
+                (((m - lo[k]) / (hi[k] - lo[k]).max(1.0) * GRID as f32) as usize).min(GRID - 1)
+            };
+            at(1) * GRID + at(0)
+        };
+        let mut order: Vec<(usize, usize)> = tris
             .iter()
-            .flatten()
-            .flat_map(|v| v.to_le_bytes())
+            .enumerate()
+            .map(|(i, t)| (cell_of(t), i))
             .collect();
+        order.sort_unstable();
+        let mut bytes: Vec<u8> = Vec::with_capacity(c.triangles.len() * 24);
+        self.caster_cells.clear();
+        for run in order.chunk_by(|a, b| a.0 == b.0) {
+            let first = (bytes.len() / 24) as u32;
+            let (mut bl, mut bh) = ([f32::MAX; 3], [f32::MIN; 3]);
+            for &(_, i) in run {
+                for v in tris[i] {
+                    for k in 0..3 {
+                        bl[k] = bl[k].min(v[k]);
+                        bh[k] = bh[k].max(v[k]);
+                    }
+                    bytes.extend(v.iter().flat_map(|x| x.to_le_bytes()));
+                }
+            }
+            self.caster_cells.push((
+                first,
+                3 * run.len() as u32,
+                std::array::from_fn(|k| (bl[k] + bh[k]) * 0.5),
+                std::array::from_fn(|k| (bh[k] - bl[k]) * 0.5),
+            ));
+        }
         let buf = dev.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ssx3-gfx world casters"),
             size: (bytes.len() as u64).max(16),
@@ -769,6 +812,32 @@ impl Shadow {
         }
         self.casters = Some((c.generation, buf, c.triangles.len() as u32));
         self.world_lights = c.lights.clone();
+    }
+
+    /// The caster vertex runs that reach into cascade `k` of `l` (whole
+    /// cells: a cell wholly outside its clip volume draws nothing there).
+    pub fn caster_runs(&self, l: &Light, k: usize) -> Vec<(u32, u32)> {
+        let m = &l.lights[k];
+        let mut runs: Vec<(u32, u32)> = Vec::new();
+        for &(first, n, c, e) in &self.caster_cells {
+            // The box in clip space: centre and half extent (|M| e).
+            let p = [c[0] - l.origin[0], c[1] - l.origin[1], c[2] - l.origin[2]];
+            let reach = |r: usize, lo: f32, hi: f32| {
+                let at = m[0][r] * p[0] + m[1][r] * p[1] + m[2][r] * p[2] + m[3][r];
+                let ext = m[0][r].abs() * e[0] + m[1][r].abs() * e[1] + m[2][r].abs() * e[2];
+                // (A margin for rounding.)
+                let s = 1e-3 * (1.0 + at.abs() + ext);
+                at + ext >= lo - s && at - ext <= hi + s
+            };
+            if !(reach(0, -1.0, 1.0) && reach(1, -1.0, 1.0) && reach(2, 0.0, 1.0)) {
+                continue;
+            }
+            match runs.last_mut() {
+                Some((f, cnt)) if *f + *cnt == first => *cnt += n,
+                _ => runs.push((first, n)),
+            }
+        }
+        runs
     }
 
     /// Bind group 1's shadow entries: the map, or the placeholder (for

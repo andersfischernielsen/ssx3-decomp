@@ -144,8 +144,6 @@ var<private> pre_fog: vec3<f32> = vec3<f32>(1.0);
 // and spray): applied in linear light with a filmic highlight shoulder
 // (`lit_linear`), not as a gamma-space multiplier.
 var<private> hdr: bool = false;
-// (The texture's blur radius in texels, 0: none.)
-var<private> blur_texels: f32 = 0.0;
 // (The linear luminance `lit_linear` shoulders: the exposure fit's view.)
 var<private> hdr_y: f32 = 0.0;
 
@@ -175,19 +173,6 @@ fn shade(v: VOut) -> vec4<f32> {
     if ((b.flags & 1u) != 0u) {
         let uv = v.stq.xy / v.stq.z;
         var ts = textureSampleBias(tex, samp, uv, b.lod_bias);
-        // A wide blur (`blur_texels`): the baked layer's colour without
-        // its shapes (tree shadows), 16 taps on two rings.
-        if (blur_texels > 0.0) {
-            let px = blur_texels / vec2<f32>(textureDimensions(tex));
-            var acc = ts;
-            for (var i = 0; i < 8; i = i + 1) {
-                let a = f32(i) * 0.7853982;
-                let d = vec2<f32>(cos(a), sin(a));
-                acc = acc + textureSampleLevel(tex, samp, uv + d * px, 0.0);
-                acc = acc + textureSampleLevel(tex, samp, uv + d * px * 0.5, 0.0);
-            }
-            ts = acc / 17.0;
-        }
         if ((b.flags & 256u) != 0u) {
             let z = u32(round(textureLoad(zsnap, vec2<i32>(v.pos.xy), 0) * b.zscale));
             ts = textureLoad(tex, vec2<i32>(i32((z >> 8u) & 255u), 0), 0);
