@@ -306,6 +306,7 @@ fn fs_gpu(v: VOut) -> FsOut {
     let receiver = !terrain && (b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u;
     var t: mat3x3<f32>;
     var s = 0.0;
+    var spray = false;
     if ((b.flags & 65536u) != 0u && v.wp.w > 0.5) {
         // Decals on the terrain (board trails, flag 65536): lit as the
         // surface they lie on (their face, turned to the sky).
@@ -313,6 +314,12 @@ fn fs_gpu(v: VOut) -> FsOut {
         if (dot(c, c) > 1e-20) {
             pre_fog = terrain_light(v.wp.xyz, normalize(c))[0];
         }
+    } else if ((b.flags & 131072u) != 0u && v.wp.w > 0.5) {
+        // Snow spray (flag 131072): its colour is the baked light where it
+        // flew up; neutral, lit as the terrain there (facing up). (The
+        // glowing effects are additive: not flagged.)
+        spray = true;
+        pre_fog = terrain_light(v.wp.xyz, vec3<f32>(0.0, 0.0, 1.0))[0];
     } else if (terrain) {
         // The terrain's lighting (flag 16384).
         t = terrain_light(v.wp.xyz, v.nrm.xyz);
@@ -322,7 +329,7 @@ fn fs_gpu(v: VOut) -> FsOut {
         pre_fog = shadow_tint(s);
     }
     var vs = v;
-    if ((b.flags & 65536u) != 0u) {
+    if ((b.flags & 65536u) != 0u || spray) {
         vs.col = vec4<f32>(vec3<f32>(128.0), v.col.a);
     }
     var o: FsOut;

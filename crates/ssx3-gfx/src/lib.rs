@@ -385,6 +385,7 @@ impl Renderer {
         let mut g = self.0.lock().unwrap();
         g.opts = o;
         ssx3_render::world_casters::set_enabled(o.shadows);
+        ssx3_render::mat3::set_hw_clip(o.shadows);
     }
 
     /// Anisotropic filtering: 1 (off) to 16 (the default).
@@ -1239,6 +1240,13 @@ impl Inner {
             {
                 continue;
             }
+            // Debug: no GPU particles.
+            if shadow::debug("no-particles")
+                && b.gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat4Particles)
+            {
+                continue;
+            }
             // Debug: no board trails and wakes.
             if shadow::debug("no-strips")
                 && b.gpu
@@ -1468,6 +1476,20 @@ impl Inner {
                     // their colour (the bake's light where they were laid)
                     // neutral (flag 65536).
                     p.u.flags |= 65536;
+                } else if native_light
+                    && st.target == self.gs.main_fbp
+                    && !b.tag.hud
+                    && b.tag.post.is_none()
+                    && b.gpu
+                        .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat4Particles)
+                    && p.u.src_mode == 1
+                    && p.u.cs_a == 1.0
+                    && p.u.cs_b == 0.0
+                {
+                    // Snow spray (alpha-blended particles, their colour the
+                    // baked light where they flew up): lit as the terrain,
+                    // their colour neutral (flag 131072).
+                    p.u.flags |= 131072;
                 } else if bake_tint {
                     p.u.flags |= 32768;
                 } else if light.is_some()
