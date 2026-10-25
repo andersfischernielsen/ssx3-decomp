@@ -181,8 +181,8 @@ pub struct Inner {
     /// work, copying the depth out, creating the next buffer.
     depth_parts: [f64; 3],
     /// Per frame (summed): passes begun, colour snapshots, depth snapshots,
-    /// target switches, draws.
-    pass_counts: [u64; 5],
+    /// target switches, draws, frame copied into snapshots (%).
+    pass_counts: [u64; 6],
     /// The image on screen, for presenting (sRGB view allowed).
     present: Vec<wgpu::Texture>,
     /// Vertex and uniform buffers, kept across frames (grown as needed).
@@ -327,7 +327,7 @@ impl Renderer {
                 zscale: 16777216.0,
                 timing: (0, [0.0; 4]),
                 depth_parts: [0.0; 3],
-                pass_counts: [0; 5],
+                pass_counts: [0; 6],
                 present: Vec::new(),
                 staged: None,
                 vbuf: None,
@@ -852,7 +852,7 @@ impl Inner {
     pub fn reset_timing(&mut self) {
         self.timing = (0, [0.0; 4]);
         self.depth_parts = [0.0; 3];
-        self.pass_counts = [0; 5];
+        self.pass_counts = [0; 6];
     }
 
     /// Mean time per frame in each stage of `render` (ms).
@@ -864,10 +864,10 @@ impl Inner {
             t[0] / n, t[1] / n, t[2] / n, t[3] / n,
             self.depth_parts[0] / n, self.depth_parts[1] / n, self.depth_parts[2] / n, self.timing.0
         ) + &format!(
-            "; per frame: {:.1} passes, {:.1} colour snapshots, {:.1} depth snapshots, {:.1} target switches, {:.0} draws",
+            "; per frame: {:.1} passes, {:.1} colour snapshots, {:.1} depth snapshots, {:.1} target switches, {:.0} draws, {:.0}% of the frame copied to snapshots",
             self.pass_counts[0] as f64 / n, self.pass_counts[1] as f64 / n,
             self.pass_counts[2] as f64 / n, self.pass_counts[3] as f64 / n,
-            self.pass_counts[4] as f64 / n
+            self.pass_counts[4] as f64 / n, self.pass_counts[5] as f64 / n
         )
     }
 
@@ -1255,6 +1255,9 @@ impl Inner {
             first: u32,
             count: u32,
             scissor: Option<[u32; 4]>,
+            /// The target pixels it can change (x0, y0, x1, y1): its
+            /// scissor, narrowed to its vertices' bounds where known.
+            area: [u32; 4],
             /// What it is (pixel probe).
             desc: String,
             /// Its batch.
@@ -1469,9 +1472,39 @@ impl Inner {
                     px((y1 + 1).min(th), fy).max(b + 1) - b,
                 ]
             });
-            if scissor.is_none() {
+            let Some([sx, sy, sw, sh]) = scissor else {
                 continue;
-            }
+            };
+            // (Vertex bounds in target pixels, a pixel's margin: the GPU
+            // samples at pixel centres.)
+            let bounds = match b.gpu {
+                Some(g) => g.bounds,
+                None => Some(
+                    self.gs.verts[b.first as usize..(b.first + b.count) as usize]
+                        .iter()
+                        .fold([f32::MAX, f32::MAX, f32::MIN, f32::MIN], |m, v| {
+                            [
+                                m[0].min(v.pos[0]),
+                                m[1].min(v.pos[1]),
+                                m[2].max(v.pos[0]),
+                                m[3].max(v.pos[1]),
+                            ]
+                        }),
+                ),
+            };
+            let area = match bounds.filter(|b| b[0] <= b[2] && b[1] <= b[3]) {
+                Some(b) => {
+                    let lo = |v: f32, f: f32| ((v * f).floor() - 2.0).max(0.0) as u32;
+                    let hi = |v: f32, f: f32| ((v + 1.0) * f).ceil().max(0.0) as u32 + 2;
+                    [
+                        lo(b[0], fx).max(sx),
+                        lo(b[1], fy).max(sy),
+                        hi(b[2], fx).min(sx + sw),
+                        hi(b[3], fy).min(sy + sh),
+                    ]
+                }
+                None => [sx, sy, sx + sw, sy + sh],
+            };
             let rt_psm = st
                 .tex
                 .filter(|t| *t != gs::FRAME_TEX && t & gs::RT_TEX != 0)
@@ -1660,6 +1693,7 @@ impl Inner {
                     first: b.first,
                     count: b.count,
                     scissor,
+                    area,
                 });
             }
         }
@@ -1923,7 +1957,8 @@ impl Inner {
             }
         }
         let rts = &self.rts;
-        let mut counts = [0u64; 5];
+        let mut counts = [0u64; 6];
+        let mut copied = 0u64;
         // A pass on target `fbp`; depth starts cleared on a target's first
         // pass of the frame.
         let begin =
@@ -1992,6 +2027,12 @@ impl Inner {
         }
         let mut last = Last::default();
         let mut prev_frame = false;
+        // The main target's pixels drawn since the snapshot was last taken
+        // (x0, y0, x1, y1; empty when x0 >= x1): a snapshot copies only
+        // these, the rest of it is current. (The frame before, the renderer's
+        // passes: all.)
+        let all = [0, 0, t.w, t.h];
+        let mut changed = all;
         let mut probed: Vec<String> = Vec::new();
         let probe_buf = probe.map(|_| {
             self.dev.create_buffer(&wgpu::BufferDescriptor {
@@ -2074,6 +2115,7 @@ impl Inner {
                 last = Last::default();
                 // (They overwrote the snapshot.)
                 prev_frame = false;
+                changed = all;
             }
             if self.want_depth && !depth_taken && it.batch >= phase1_end {
                 depth_taken = true;
@@ -2087,6 +2129,10 @@ impl Inner {
             let Some([x, y, sw, sh]) = it.scissor else {
                 continue;
             };
+            // (Nothing to draw: its vertices are outside the scissor.)
+            if it.area[0] >= it.area[2] || it.area[1] >= it.area[3] {
+                continue;
+            }
             // (Frame-sampling items may draw into another target: the
             // display buffer copy.)
             // A new run of frame-sampling items, or one into another target
@@ -2121,27 +2167,43 @@ impl Inner {
                         },
                     );
                 }
-                if snapshot {
-                    // Snapshot the frame as drawn so far.
+                // A destination alpha test reads only the item's own pixels:
+                // what changed there (the rest stays marked as changed).
+                // Frame-sampling items share a snapshot over their run: all
+                // that changed.
+                let date_only = !(it.frame && (!prev_frame || it.target != cur_target));
+                let [mut x0, mut y0, mut x1, mut y1] = changed;
+                if date_only {
+                    let a = it.area;
+                    (x0, y0, x1, y1) = (x0.max(a[0]), y0.max(a[1]), x1.min(a[2]), y1.min(a[3]));
+                }
+                let (x1, y1) = (x1.min(t.w), y1.min(t.h));
+                if snapshot && x0 < x1 && y0 < y1 {
+                    // Snapshot the frame as drawn so far (what changed).
+                    let origin = wgpu::Origin3d { x: x0, y: y0, z: 0 };
                     enc.copy_texture_to_texture(
                         wgpu::TexelCopyTextureInfo {
                             texture: &t.color,
                             mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
+                            origin,
                             aspect: wgpu::TextureAspect::All,
                         },
                         wgpu::TexelCopyTextureInfo {
                             texture: &t.snapshot,
                             mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
+                            origin,
                             aspect: wgpu::TextureAspect::All,
                         },
                         wgpu::Extent3d {
-                            width: t.w,
-                            height: t.h,
+                            width: x1 - x0,
+                            height: y1 - y0,
                             depth_or_array_layers: 1,
                         },
                     );
+                    copied += ((x1 - x0) * (y1 - y0)) as u64;
+                }
+                if snapshot && !date_only {
+                    changed = [u32::MAX, u32::MAX, 0, 0];
                 }
                 cur_target = it.target;
                 let first = started.insert(cur_target);
@@ -2198,6 +2260,15 @@ impl Inner {
                 Some(g) => pass.draw(g.first..g.first + g.count, 0..1),
                 None => pass.draw(it.first..it.first + it.count, 0..1),
             }
+            if it.target == main {
+                let a = it.area;
+                changed = [
+                    changed[0].min(a[0]),
+                    changed[1].min(a[1]),
+                    changed[2].max(a[2]),
+                    changed[3].max(a[3]),
+                ];
+            }
             if let (Some((px, py)), Some(pb)) = (probe, probe_buf.as_ref()) {
                 if it.target == main {
                     drop(pass);
@@ -2230,6 +2301,7 @@ impl Inner {
             }
         }
         drop(pass);
+        counts[5] = copied * 100 / (t.w as u64 * t.h as u64);
         for (a, b) in self.pass_counts.iter_mut().zip(counts) {
             *a += b;
         }

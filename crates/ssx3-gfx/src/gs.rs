@@ -139,6 +139,42 @@ pub struct GpuBatch {
     pub count: u32,
     /// The largest vertex alpha (GS units).
     pub alpha_max: f32,
+    /// Target pixels (x0, y0, x1, y1) that hold all its vertices, when
+    /// known on the CPU (type 3 strips: [`strip_bounds`]).
+    pub bounds: Option<[f32; 4]>,
+}
+
+/// The screen bounds of a type 3 strip call (`gpuvu/mat3_strip.wgsl`):
+/// its vertices' clip positions are the CPU's, mapped as the shader maps
+/// them (guardOffset + guardScale · clip / w, then `gs_vertex`'s XYOFFSET
+/// and HUD squeeze). None when a vertex is behind the eye (its triangles
+/// reach past its vertices; the GPU's clipping only takes away).
+fn strip_bounds(
+    call: &ssx3_render::gpu::GpuCall,
+    off: [f32; 2],
+    squeeze: f32,
+    cx: f32,
+) -> Option<[f32; 4]> {
+    use ssx3_render::mat3::gpu_strip;
+    let fl = |q: [u32; 4]| q.map(f32::from_bits);
+    let (gs, go) = (
+        fl(call.uniforms[gpu_strip::GUARD_SCALE]),
+        fl(call.uniforms[gpu_strip::GUARD_OFFSET]),
+    );
+    let mut b = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+    for v in call.data.chunks_exact(gpu_strip::VERTEX_QWORDS) {
+        let c = fl(v[2]);
+        if !(c[3] > 0.0) {
+            return None;
+        }
+        let x = squeeze * (go[0] + gs[0] * c[0] / c[3] - off[0]) + cx * (1.0 - squeeze);
+        let y = go[1] + gs[1] * c[1] / c[3] - off[1];
+        if !x.is_finite() || !y.is_finite() {
+            return None;
+        }
+        b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+    }
+    Some(b)
 }
 
 /// The GPU-computed draws of a frame: per-call uniforms, vertex inputs and
@@ -1137,6 +1173,19 @@ impl Gs {
             first: self.gpu.verts,
             count: call.draw_len() as u32,
             alpha_max: call.alpha_max,
+            bounds: (call.program == ssx3_render::gpu::Program::Mat3Strip)
+                .then(|| {
+                    strip_bounds(
+                        &call,
+                        [
+                            bits(xy, 0, 16) as f32 / 16.0,
+                            bits(xy, 32, 16) as f32 / 16.0,
+                        ],
+                        squeeze,
+                        cx,
+                    )
+                })
+                .flatten(),
         };
         use ssx3_render::gpu::GS_PARAMS;
         let n = u[..GS_PARAMS]
@@ -1180,6 +1229,14 @@ impl Gs {
             {
                 g.count += gb.count;
                 g.alpha_max = g.alpha_max.max(gb.alpha_max);
+                g.bounds = g.bounds.zip(gb.bounds).map(|(a, b)| {
+                    [
+                        a[0].min(b[0]),
+                        a[1].min(b[1]),
+                        a[2].max(b[2]),
+                        a[3].max(b[3]),
+                    ]
+                });
             }
             _ => self.batches.push(Batch {
                 state: st,
