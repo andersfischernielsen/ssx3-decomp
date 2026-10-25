@@ -115,7 +115,7 @@ pub const ITEMS: &[Item] = &[
     Item {
         key: "SSX3_SHADOWS",
         label: "Real-time lighting",
-        choices: &[("", "Off"), ("1", "On")],
+        choices: &[("", "Off"), ("1", "On (exp.)")],
         live: true,
     },
     Item {
