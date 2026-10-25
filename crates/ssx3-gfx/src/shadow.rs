@@ -306,6 +306,9 @@ pub struct Tuning {
     /// `SSX3_SHADOW_TINT=r,g,b`: full shadow's multiplier (default the
     /// cool shade of the game's baked shadows on Snow Jam's snow).
     pub tint: [f32; 3],
+    /// `SSX3_LAMPS=gain`: the world lights' strength on the terrain (the
+    /// game's own formula gives the riders' light; 0: off).
+    pub lamps: f32,
 }
 
 pub fn tuning() -> Tuning {
@@ -320,6 +323,7 @@ pub fn tuning() -> Tuning {
             .map_or([0.55, 0.6, 0.75], |v| {
                 [v[0] as f32, v[1] as f32, v[2] as f32]
             }),
+        lamps: env_f("SSX3_LAMPS").map_or(1.0, |v| v[0] as f32),
     });
     // (The sun follows the debug knob.)
     t.sun = *knobs().sun.read().unwrap();
@@ -488,10 +492,17 @@ pub struct Shadow {
     pub dummy: wgpu::TextureView,
     pub cmp: wgpu::Sampler,
     pub ubuf: wgpu::Buffer,
+    /// The world's point and spot lights (`world_casters`).
+    world_lights: Vec<ssx3_render::world_casters::WorldLight>,
 }
 
 /// `ShadowU`'s size in bytes.
-const U_BYTES: u64 = 464;
+/// The uniforms' size: the light block, then [`MAX_LIGHTS`] world lights
+/// (4 vec4 each) after a (count, gain) vec4.
+const U_BYTES: u64 = 464 + 16 + MAX_LIGHTS as u64 * 64;
+
+/// The most world lights a frame lights the terrain with (the nearest).
+pub const MAX_LIGHTS: usize = 64;
 
 impl Shadow {
     pub fn new(dev: &wgpu::Device, size: u32) -> Shadow {
@@ -536,6 +547,7 @@ impl Shadow {
             dummy: depth(1, "ssx3-gfx shadow dummy"),
             cmp,
             ubuf,
+            world_lights: Vec::new(),
         }
     }
 
@@ -556,6 +568,42 @@ impl Shadow {
                 for c in [lt.sun, lt.sky, lt.ground] {
                     w.extend([c[0], c[1], c[2], 0.0]);
                 }
+                // The world lights nearest the camera that can reach it
+                // (within their radius of a point 20000 away), rebased.
+                let eye = [0, 1, 2].map(|k| l.eye[k] as f64 + l.origin[k] as f64);
+                let mut near: Vec<(f64, &ssx3_render::world_casters::WorldLight)> = self
+                    .world_lights
+                    .iter()
+                    .map(|wl| {
+                        let d = (0..3)
+                            .map(|k| (wl.pos[k] as f64 - eye[k]).powi(2))
+                            .sum::<f64>()
+                            .sqrt();
+                        (d - wl.radius as f64, wl)
+                    })
+                    .filter(|(g, _)| *g < 20000.0)
+                    .collect();
+                near.sort_by(|a, b| a.0.total_cmp(&b.0));
+                near.truncate(MAX_LIGHTS);
+                w.extend([near.len() as f32, tuning().lamps, 0.0, 0.0]);
+                for (_, wl) in &near {
+                    let o = l.origin;
+                    w.extend([
+                        wl.pos[0] - o[0],
+                        wl.pos[1] - o[1],
+                        wl.pos[2] - o[2],
+                        wl.radius,
+                    ]);
+                    w.extend([wl.colour[0], wl.colour[1], wl.colour[2], wl.intensity]);
+                    w.extend([wl.dir[0], wl.dir[1], wl.dir[2], wl.kind as f32]);
+                    w.extend([
+                        wl.cos_inner,
+                        wl.cos_outer,
+                        wl.falloff as f32,
+                        wl.exponent as f32,
+                    ]);
+                }
+                w.resize(U_BYTES as usize / 4, 0.0);
             }
             None => w.resize(U_BYTES as usize / 4, 0.0),
         }
@@ -606,14 +654,17 @@ impl Shadow {
         self.cutouts = Some((cbuf, c.cutout_runs.clone()));
         if debug("print") {
             eprintln!(
-                "shadow: world casters generation {}: {} patches, {} instances, {} triangles",
+                "shadow: world casters generation {}: {} patches, {} instances, {} triangles, {} lights ({} spots)",
                 c.generation,
                 c.patches,
                 c.instances,
-                c.triangles.len() / 3
+                c.triangles.len() / 3,
+                c.lights.len(),
+                c.lights.iter().filter(|l| l.kind == 1).count()
             );
         }
         self.casters = Some((c.generation, buf, c.triangles.len() as u32));
+        self.world_lights = c.lights.clone();
     }
 
     /// Bind group 1's shadow entries: the map, or the placeholder (for

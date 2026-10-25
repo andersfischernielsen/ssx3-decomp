@@ -79,6 +79,11 @@ struct ShadowU {
     sun_col: vec4<f32>,
     sky_col: vec4<f32>,
     ground_col: vec4<f32>,
+    // The world lights (shadow.rs `MAX_LIGHTS`): (count, gain), then per
+    // light (position, radius), (colour, intensity), (spot axis, kind:
+    // 1 spot, 2 point), (cos inner, cos outer, falloff, exponent).
+    nl: vec4<f32>,
+    pl: array<vec4<f32>, 256>,
 }
 @group(1) @binding(5) var<uniform> sh: ShadowU;
 @group(1) @binding(6) var smap: texture_depth_2d;
@@ -144,6 +149,60 @@ fn sun_factor(w: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, vn: vec4<f32>) -> f32 
     return sh.sun.w * (1.0 - lit);
 }
 
+// The world lights' light at world point `w` with normal `n`: the game's
+// formula for its riders (`Irradiance_AddDynamicLight`,
+// docs/investigation/world-lights.md): k = falloff (100/d)^power ·
+// intensity · the far fade of radius-5000 lights · the spot cone, at most
+// 5; light = colour · k · N·L.
+fn world_lights(w: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+    var acc = vec3<f32>(0.0);
+    let count = u32(sh.nl.x);
+    for (var i = 0u; i < count; i = i + 1u) {
+        let p0 = sh.pl[4u * i];
+        let v = p0.xyz - w;
+        let d2 = dot(v, v);
+        if (d2 > p0.w * p0.w) {
+            continue;
+        }
+        let d = max(sqrt(d2), 1.0);
+        let l = v / d;
+        let ndl = dot(n, l);
+        if (ndl <= 0.0) {
+            continue;
+        }
+        let p1 = sh.pl[4u * i + 1u];
+        let p2 = sh.pl[4u * i + 2u];
+        let p3 = sh.pl[4u * i + 3u];
+        let spot = p2.w < 1.5;
+        let cs = -dot(l, p2.xyz);
+        if (spot && cs < p3.y) {
+            continue;
+        }
+        let lin = select(1.0, 1.0 - (d - 3750.0) * 0.0008, p0.w >= 5000.0 && d > 3750.0);
+        let x = 100.0 / d;
+        var fall = 1.0;
+        if (x < 1.0) {
+            if (p3.z == 1.0) {
+                fall = x;
+            } else if (p3.z == 2.0) {
+                fall = x * x;
+            } else if (p3.z == 3.0) {
+                fall = x * x * x;
+            }
+        }
+        var k = fall * p1.w * lin;
+        if (spot) {
+            if (cs >= p3.x) {
+                k = k * pow(cs, p3.w);
+            } else {
+                k = k * pow(p3.x, p3.w) * (cs - p3.y) / max(p3.x - p3.y, 1e-6);
+            }
+        }
+        acc = acc + p1.rgb * clamp(k, 0.0, 5.0) * ndl;
+    }
+    return acc * sh.nl.y;
+}
+
 // The renderer's terrain lighting at world point `w` with smooth normal `n`
 // (flag 16384, the terrain's base layer; its baked layer is not drawn):
 // sky fill + sun · N·L · lit. Returns (L, the lit amount, N·L).
@@ -160,7 +219,7 @@ fn terrain_light(w: vec3<f32>, n_in: vec3<f32>) -> mat3x3<f32> {
         lit = sun_lit(w, n);
     }
     let sky = mix(sh.ground_col.rgb, sh.sky_col.rgb, n.z * 0.5 + 0.5);
-    let l = sky + sh.sun_col.rgb * (ndl * lit);
+    let l = sky + sh.sun_col.rgb * (ndl * lit) + world_lights(w, n);
     return mat3x3<f32>(l, vec3<f32>(lit, ndl, 1.0), n);
 }
 

@@ -138,6 +138,57 @@ pub struct Casters {
     /// the course comes from the race setup: track index 0x535c08 into the
     /// track table 0x43d950 (17 records of 100 bytes, the code at +0x34).
     pub world: String,
+    /// The world's point and spot lights (`docs/investigation/world-lights.md`),
+    /// [`WorldLight`] records.
+    pub lights: Vec<WorldLight>,
+}
+
+/// A placed world light (Nash effects list, kind 6; a 0x70-byte record):
+/// world position, radius (hard cut-off, ≤ 5000), colour (0..1),
+/// intensity, spot axis (into the lit area), kind (1 spot, 2 point), cos
+/// inner / outer cone, distance falloff power (0..3), spot exponent.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WorldLight {
+    pub pos: [f32; 3],
+    pub radius: f32,
+    pub colour: [f32; 3],
+    pub intensity: f32,
+    pub dir: [f32; 3],
+    pub kind: u32,
+    pub cos_inner: f32,
+    pub cos_outer: f32,
+    pub falloff: i8,
+    pub exponent: i8,
+}
+
+impl WorldLight {
+    /// The record at `a`, if it is a light the game lights with (flag
+    /// 0x100 clear, a spot or a point).
+    fn read(m: &dyn Mem, a: u32) -> Option<WorldLight> {
+        let f = |o: u32| f32::from_bits(word(m, a + o));
+        let v = |o: u32| [f(o), f(o + 4), f(o + 8)];
+        let kind = word(m, a + 0x10);
+        if word(m, a + 0xc) & 0x100 != 0 || !(1..=2).contains(&kind) {
+            return None;
+        }
+        let b = word(m, a + 0x64);
+        let l = WorldLight {
+            pos: v(0x38),
+            radius: f(0x1c).min(5000.0),
+            colour: v(0x20),
+            intensity: f(0x14),
+            dir: v(0x2c),
+            kind,
+            cos_inner: f(0x5c),
+            cos_outer: f(0x60),
+            falloff: b as u8 as i8,
+            exponent: (b >> 8) as u8 as i8,
+        };
+        (l.pos.iter().chain(&l.colour).all(|x| x.is_finite())
+            && l.radius.is_finite()
+            && l.intensity.is_finite())
+        .then_some(l)
+    }
 }
 
 /// One object's casters: solid triangles, and alpha cut-outs per texture
@@ -156,6 +207,7 @@ pub struct CasterCache {
     set: Vec<(u32, u64, bool)>,
     current: Option<Arc<Casters>>,
     generation: u64,
+    lights: Vec<WorldLight>,
 }
 
 fn word(m: &dyn Mem, a: u32) -> u32 {
@@ -214,6 +266,7 @@ impl CasterCache {
                             ) == 3)))
         };
         let mut set = Vec::new();
+        let mut lights = Vec::new();
         let mut seen = std::collections::HashSet::new();
         let mut stack: Vec<(u32, u32)> = (0..8)
             .map(|k| (word(m, nash + 0x14 * k + 0x10), 0))
@@ -231,6 +284,18 @@ impl CasterCache {
                 p = word(m, p);
                 n += 1;
             }
+            // The lights (effects list, kind 6).
+            let mut e = word(m, node + 0x28);
+            let mut n = 0;
+            while ram(e) && n < 100_000 {
+                if word(m, e + 8) == 6 {
+                    if let Some(l) = WorldLight::read(m, e) {
+                        lights.push(l);
+                    }
+                }
+                e = word(m, e);
+                n += 1;
+            }
             let mut i = word(m, node + 0x20);
             let mut n = 0;
             while ram(i) && n < 100_000 {
@@ -243,7 +308,7 @@ impl CasterCache {
             stack.extend((0..8).map(|i| (word(m, node + 4 * i), depth + 1)));
         }
         set.sort_unstable();
-        if set == self.set {
+        if set == self.set && lights == self.lights {
             return self.current.clone();
         }
         if std::env::var_os("SSX3_CASTERS_DEBUG").is_some() {
@@ -361,7 +426,9 @@ impl CasterCache {
             cutouts,
             cutout_runs,
             world: course_code(m),
+            lights: lights.clone(),
         }));
+        self.lights = lights;
         self.current.clone()
     }
 }
