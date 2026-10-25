@@ -11,6 +11,7 @@ pub mod bx;
 pub mod camera;
 pub mod dirtysock;
 pub mod fe;
+pub mod hashvalue;
 pub mod input;
 pub mod intersect;
 pub mod lib;
@@ -44,6 +45,7 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend(camera::overrides());
     v.extend(dirtysock::overrides());
     v.extend(fe::overrides());
+    v.extend_from_slice(hashvalue::OVERRIDES);
     v.extend(input::overrides());
     v.extend(intersect::overrides());
     v.extend(lib::overrides());

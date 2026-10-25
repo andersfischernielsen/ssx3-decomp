@@ -195,6 +195,8 @@ impl App {
         if open_menu && self.menu.is_none() {
             self.toggle_menu();
         }
+        // SSX3_EVENT: the boot presses through the title and the prompts.
+        state[0].0 |= ssx3_game::event_boot::pad_buttons();
         let sif = &mut ssx3_ps2::m!(self.cpu).sif;
         for (port, (buttons, sticks)) in state.into_iter().enumerate() {
             sif.pad_buttons[port] = buttons;
@@ -247,6 +249,9 @@ impl ApplicationHandler for App {
             None => attrs,
         };
         let window = Arc::new(event_loop.create_window(attrs).expect("window"));
+        // No mouse in the game (the overlay too is keys and pad only): hide
+        // the pointer while it is over the window.
+        window.set_cursor_visible(false);
         let gs = ssx3_ps2::gpu::context();
         self.gpu_ctx = gs;
         self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));

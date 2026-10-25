@@ -2,6 +2,7 @@ name: No game material present
 
 on:
   push:
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
