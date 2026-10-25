@@ -132,7 +132,20 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_pre_fe_load_screen_render,
         "cPreFELoadScreen_Render",
     ),
+    (
+        0x0023_2930,
+        c_pre_game_load_screen_update,
+        "cPreGameLoadScreen_Update",
+    ),
+    (
+        0x0023_2a08,
+        c_pre_fe_load_screen_update,
+        "cPreFELoadScreen_Update",
+    ),
+    (0x0023_2b28, start_screen_load, "StartScreen_Load"),
     (0x0023_2c98, start_screen_enter, "StartScreen_Enter"),
+    (0x0023_2cf8, start_screen_try_exit, "StartScreen_TryExit"),
+    (0x0023_2d18, start_screen_update, "StartScreen_Update"),
     (0x0023_2d50, start_screen_unload, "StartScreen_Unload"),
     (0x0023_2da8, start_screen_render, "StartScreen_Render"),
     (
@@ -240,6 +253,7 @@ pub(crate) mod callee {
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::VRAM_HEAP_INIT;
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::WORLD_GET_INSTANCE;
     pub(crate) use crate::game::fe::feasyncfile::callee::ANIM_CONTROLLER_IS_LAYER_ANIM_FINISHED;
+    pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_CTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_RENDER_FADE;
     pub(crate) use crate::game::fe::feasyncfile::callee::APP_MODULE_TRY_EXIT_2 as APP_MODULE_TRY_EXIT;
     pub(crate) use crate::game::fe::feasyncfile::callee::ATOI;
@@ -621,6 +635,141 @@ pub fn c_pre_fe_load_screen_dtor(c: &mut Cpu) {
 // ---------------------------------------------------------------------------
 // Start screen, movie manager.
 
+/// `void StartScreen_Load(StartScreen* self)` (0x232b28): tell the graphics
+/// manager to load (`v44(0x100)`), build the screen's UI engine (`+0xc`),
+/// load its package and hook it to the app's pad and text tables, then push
+/// the first UI state by the screen's mode (`+0x18`): 0 the memory-card
+/// check (`cFEStateMemCard`), 2 a plain `UIState`, anything else none.
+pub fn start_screen_load(c: &mut Cpu) {
+    // `operator new(size, name, flags, 0)` and the UIStateMgr behind the engine.
+    const ALLOC: u32 = 0x0031_7d70;
+    const UI_ENGINE_CTOR: u32 = 0x0039_7b08;
+    const UI_ENGINE_LOAD_PACKAGE: u32 = 0x0039_7c40;
+    const MEM_CARD_STATE_CTOR: u32 = 0x0018_6a08;
+    const UI_STATE_CTOR: u32 = 0x0039_e2a0;
+    const UI_STATE_MGR_SWITCH_STATE: u32 = 0x0039_f400;
+    /// The screen's UI engine.
+    const ENGINE: u32 = 0xc;
+    /// Which first state to push.
+    const MODE: u32 = 0x18;
+    guest(c, |c| {
+        c.cycles += 52;
+        let frame = Frame::open(c, 0x30);
+        let gfx = Addr(r32(c, GP).wrapping_sub(0x854)).lw(c);
+        c.g[A2][0] = gfx;
+        frame.save(c, S1, 0x10);
+        c.g[A1][0] = 0x100;
+        frame.save(c, S0, 0x20);
+        let self_ = r32(c, A0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        // gfx->v44(0x100): the vtable lives at +0x10d8, slot `{delta, fn}` at 0x160.
+        c.g[V0][0] = Addr(gfx as u32).off(0x10d8).lw(c);
+        let vt = r32(c, V0);
+        c.g[A0][0] = Addr(vt).off(0x160).lh(c);
+        c.g[V1][0] = Addr(vt).off(0x164).lw(c);
+        let target = r32(c, V1);
+        c.g[A0][0] = abi::addu(gfx, c.g[A0][0]);
+        call_ptr(c, target, 0x0023_2b58)?;
+
+        // The UI engine: new(0x70), ctor, load the start screen package.
+        c.g[A1][0] = 0x0047_b698;
+        c.g[A2][0] = 0x100;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x70;
+        call_ptr(c, ALLOC, 0x0023_2b70)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, UI_ENGINE_CTOR, 0x0023_2b78)?;
+        c.g[A1][0] = 0x0047_b9e0;
+        c.g[A0][0] = c.g[V0][0];
+        let v = c.g[V0][0];
+        Addr(self_).off(ENGINE).sw(c, v);
+        call_ptr(c, UI_ENGINE_LOAD_PACKAGE, 0x0023_2b8c)?;
+
+        // engine+0x10 = app+0x8c; then a zeroed 0x1c-byte node (vtable at +8)
+        // at engine+0xc.
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        c.g[A1][0] = 0x0047_b9f0;
+        c.g[T0][0] = Addr(self_).off(ENGINE).lw(c);
+        c.g[A0][0] = 0x1c;
+        c.g[V0][0] = Addr(r32(c, V1)).off(0x8c).lw(c);
+        c.g[A2][0] = 0x100;
+        c.g[A3][0] = 0;
+        let v = c.g[V0][0];
+        Addr(r32(c, T0)).off(0x10).sw(c, v);
+        call_ptr(c, ALLOC, 0x0023_2bb4)?;
+        let node = Addr(r32(c, V0));
+        c.g[A0][0] = Addr(self_).off(ENGINE).lw(c);
+        c.g[V1][0] = 0x0046_d1d0;
+        node.off(0x4).sb(c, 0);
+        let v = c.g[V1][0];
+        node.off(0x8).sw(c, v);
+        node.off(0x18).sw(c, 0);
+        node.off(0xc).sw(c, 0);
+        node.off(0x10).sw(c, 0);
+        node.off(0x14).sw(c, 0);
+        let v = c.g[V0][0];
+        Addr(r32(c, A0)).off(0xc).sw(c, v);
+        // engine+8 = app+0x88.
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        c.g[A0][0] = Addr(self_).off(ENGINE).lw(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(0x88).lw(c);
+        let v = c.g[V0][0];
+        Addr(r32(c, A0)).off(0x8).sw(c, v);
+
+        c.g[V1][0] = Addr(self_).off(MODE).lw(c);
+        c.g[V0][0] = 2;
+        if c.g[V1][0] == 0 {
+            // The memory-card check state.
+            c.cycles += 15;
+            c.g[A1][0] = 0x0047_b978;
+            c.g[A0][0] = 0x248;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            call_ptr(c, ALLOC, 0x0023_2c10)?;
+            c.g[A1][0] = Addr(self_).off(ENGINE).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, MEM_CARD_STATE_CTOR, 0x0023_2c1c)?;
+            c.g[A0][0] = Addr(self_).off(ENGINE).lw(c);
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x18));
+            call_ptr(c, UI_STATE_MGR_SWITCH_STATE, 0x0023_2c2c)?;
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 2;
+            let mode2 = c.g[V1][0] == c.g[V0][0];
+            frame.restore(c, S0, 0x20);
+            if mode2 {
+                // A plain UIState with the start screen's vtable.
+                c.cycles += 18;
+                c.g[A1][0] = 0x0047_ba00;
+                c.g[A0][0] = 0x48;
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 0;
+                call_ptr(c, ALLOC, 0x0023_2c54)?;
+                c.g[S0][0] = c.g[V0][0];
+                let state = r32(c, S0);
+                c.g[A1][0] = Addr(self_).off(ENGINE).lw(c);
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, UI_STATE_CTOR, 0x0023_2c64)?;
+                c.g[A0][0] = Addr(self_).off(ENGINE).lw(c);
+                c.g[V0][0] = 0x0047_ca18;
+                c.g[A1][0] = c.g[S0][0];
+                let v = c.g[V0][0];
+                Addr(state).off(0x8).sw(c, v);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x18));
+                call_ptr(c, UI_STATE_MGR_SWITCH_STATE, 0x0023_2c80)?;
+                frame.restore(c, S0, 0x20);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 /// `void StartScreen_Unload(StartScreen* s)` (0x232d50): free the world's
 /// loaded screen data, release the screen texture and unload the world.
 pub fn start_screen_unload(c: &mut Cpu) {
@@ -750,6 +899,45 @@ pub fn start_screen_enter(c: &mut Cpu) {
         call_ptr(c, target, 0x0023_2ce8)?;
         frame.restore(c, S0, 0x20);
         frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int StartScreen_TryExit(StartScreen* self)` (0x232cf8): forwards to
+/// `AppModule_TryExit` (0x231cf0) and returns its result.
+pub fn start_screen_try_exit(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Table(0x0023_1cf0),
+        0x0023_2d08,
+    );
+}
+
+/// `void StartScreen_Update(StartScreen* self)` (0x232d18): run the app
+/// module's fade, drive the screen's UI engine (`+0xc`) and count the frame
+/// (`+0x14`).
+pub fn start_screen_update(c: &mut Cpu) {
+    /// The screen's UI engine.
+    const ENGINE: u32 = 0xc;
+    /// Frames since the screen started.
+    const FRAMES: u32 = 0x14;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, callee::APP_MODULE_UPDATE, 0x0023_2d2c)?;
+        let this = r32(c, S0);
+        c.g[A0][0] = c.lw(p(this, ENGINE));
+        call_ptr(c, callee::UI_ENGINE_UPDATE, 0x0023_2d34)?;
+        let frames = (c.lw(p(this, FRAMES)) as u32).wrapping_add(1);
+        c.g[V0][0] = sx(frames);
+        c.sw(p(this, FRAMES), c.g[V0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
     })
@@ -1022,6 +1210,162 @@ pub fn init_load_screen_update(c: &mut Cpu) {
             call_ptr(c, 0x0031_6ef8, 0x0023_2640)?;
         }
         frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPreGameLoadScreen_Update(cPreGameLoadScreen *self)` (0x232930):
+/// advance the loading indicator, fade it in or out, and once the app has no
+/// next module, create the 0x18-byte game module (vtable 0x47d788) and queue it.
+pub fn c_pre_game_load_screen_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = sx(world(c));
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(p_4(c.g[V0][0], 0xa4)).lw(c);
+        callee::LOAD_INDICATOR_ADVANCE.call(c, 0x0023_294c)?;
+        c.g[V0][0] = Addr(p_4(c.g[S0][0], 0x4)).lw(c);
+        let fade_in = c.g[V0][0] == 0;
+        c.g[V0][0] = sx(world(c));
+        let fcc;
+        if !fade_in {
+            c.cycles += 8;
+            c.lwc1(1, gp(c, -0x5184));
+            c.g[V0][0] = Addr(p_4(c.g[V0][0], 0xa4)).lw(c);
+            c.mtc1(0, 2);
+            c.lwc1(0, p_4(c.g[V0][0], 0x4));
+            c.sub_s(0, 0, 1);
+            c.c_lt_s(0, 2);
+            fcc = c.fcc();
+            c.swc1(0, p_4(c.g[V0][0], 0x4));
+        } else {
+            c.cycles += 8;
+            c.lwc1(1, gp(c, -0x5180));
+            c.g[V0][0] = Addr(p_4(c.g[V0][0], 0xa4)).lw(c);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 2);
+            c.lwc1(0, p_4(c.g[V0][0], 0x4));
+            c.add_s(0, 0, 1);
+            c.c_lt_s(2, 0);
+            fcc = c.fcc();
+            c.swc1(0, p_4(c.g[V0][0], 0x4));
+        }
+        c.cycles += 2;
+        if fcc {
+            c.swc1(2, p_4(c.g[V0][0], 0x4));
+        }
+        c.cycles += 4;
+        c.g[V0][0] = sx(world(c));
+        c.g[V1][0] = Addr(p_4(c.g[V0][0], 0x4)).lw(c);
+        // Restored in the branch's delay slot: the callees below see the
+        // caller's s0.
+        frame.restore(c, S0, 0x10);
+        if c.g[V1][0] == 0 {
+            c.cycles += 19;
+            c.g[A1][0] = 0x0047_b8e8;
+            c.g[A0][0] = 0x18;
+            c.g[A2][0] = 0x100;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7d70, 0x0023_29c8)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S0][0];
+            callee::APP_MODULE_CTOR.call(c, 0x0023_29d4)?;
+            let module = Addr(r32(c, S0));
+            c.g[A0][0] = sx(world(c));
+            let vtable = 0x0047_d788;
+            c.g[V1][0] = vtable;
+            c.g[A1][0] = c.g[S0][0];
+            module.sw(c, vtable);
+            module.off(0xc).sw(c, 0);
+            module.off(0x10).sw(c, 0);
+            module.off(0x14).sw(c, 0);
+            call_ptr(c, 0x0031_6ef8, 0x0023_29f8)?;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void cPreFELoadScreen_Update(cPreFELoadScreen *self)` (0x232a08): twin of
+/// `cPreGameLoadScreen_Update` with its own fade steps; once the app has no
+/// next module, create the 0x1c-byte front-end module (vtable 0x47d740) and queue it.
+pub fn c_pre_fe_load_screen_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = sx(world(c));
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(p_4(c.g[V0][0], 0xa4)).lw(c);
+        callee::LOAD_INDICATOR_ADVANCE.call(c, 0x0023_2a24)?;
+        c.g[V0][0] = Addr(p_4(c.g[S0][0], 0x4)).lw(c);
+        let fade_in = c.g[V0][0] == 0;
+        c.g[V0][0] = sx(world(c));
+        let fcc;
+        if !fade_in {
+            c.cycles += 8;
+            c.lwc1(1, gp(c, -0x517c));
+            c.g[V0][0] = Addr(p_4(c.g[V0][0], 0xa4)).lw(c);
+            c.mtc1(0, 2);
+            c.lwc1(0, p_4(c.g[V0][0], 0x4));
+            c.sub_s(0, 0, 1);
+            c.c_lt_s(0, 2);
+            fcc = c.fcc();
+            c.swc1(0, p_4(c.g[V0][0], 0x4));
+        } else {
+            c.cycles += 8;
+            c.lwc1(1, gp(c, -0x5178));
+            c.g[V0][0] = Addr(p_4(c.g[V0][0], 0xa4)).lw(c);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 2);
+            c.lwc1(0, p_4(c.g[V0][0], 0x4));
+            c.add_s(0, 0, 1);
+            c.c_lt_s(2, 0);
+            fcc = c.fcc();
+            c.swc1(0, p_4(c.g[V0][0], 0x4));
+        }
+        c.cycles += 2;
+        if fcc {
+            c.swc1(2, p_4(c.g[V0][0], 0x4));
+        }
+        c.cycles += 4;
+        c.g[V0][0] = sx(world(c));
+        c.g[V1][0] = Addr(p_4(c.g[V0][0], 0x4)).lw(c);
+        // Restored in the branch's delay slot: the callees below see the
+        // caller's s0.
+        frame.restore(c, S0, 0x10);
+        if c.g[V1][0] == 0 {
+            c.cycles += 19;
+            c.g[A1][0] = 0x004a_2ab8;
+            c.g[A0][0] = 0x1c;
+            c.g[A2][0] = 0x100;
+            c.g[A3][0] = 0;
+            call_ptr(c, 0x0031_7d70, 0x0023_2aa0)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S0][0];
+            callee::APP_MODULE_CTOR.call(c, 0x0023_2aac)?;
+            let module = Addr(r32(c, S0));
+            c.g[A0][0] = sx(world(c));
+            let vtable = 0x0047_d740;
+            c.g[V1][0] = vtable;
+            c.g[A1][0] = c.g[S0][0];
+            module.sw(c, vtable);
+            module.off(0xc).sw(c, 0);
+            module.off(0x10).sw(c, 0);
+            module.off(0x14).sw(c, 0);
+            call_ptr(c, 0x0031_6ef8, 0x0023_2ad0)?;
+            frame.restore(c, S0, 0x10);
+        }
         c.cycles += 3;
         frame.restore_ra(c, 0);
         frame.close(c);
@@ -1312,6 +1656,39 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn start_screen_update_matches() {
+        check(
+            ee::s06::f_00232d18__generated,
+            start_screen_update,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x232d18, 4);
+                globals(c);
+                clear(c, DATA, 0x1000);
+                c.g[A0][0] = DATA as u64;
+                // AppModule fade: +8 fading in/out, +4 the fade level.
+                c.bus.write32(DATA + 8, seed & 1);
+                let level = [0.0f32, 0.01, 0.5, 1.0][(seed as usize >> 1) & 3];
+                c.bus.write32(DATA + 4, level.to_bits());
+                // Frame counter, including the wrap.
+                let frames = if seed % 7 == 0 {
+                    u32::MAX
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(DATA + 0x14, frames);
+                // UIEngine -> (+0xc) view -> (+8) vtable -> +0x170 slot.
+                let engine = DATA + 0x800;
+                let view = DATA + 0x900;
+                c.bus.write32(DATA + 0xc, engine);
+                c.bus.write32(engine + 0xc, view);
+                let vt = vtable(c, &mut r, &[0x170]);
+                c.bus.write32(view + 8, vt);
+            },
+        );
+    }
+
+    #[test]
     fn init_load_screen_dtor_matches() {
         dtor_case(
             ee::s06::f_00232538__generated,
@@ -1356,6 +1733,45 @@ pub(crate) mod tests {
                 c.bus.write32(world + 0x10d8, vt);
                 let tex = if seed % 3 == 0 { 0 } else { alloc(c, 0x40) };
                 c.bus.write32(screen + 0xc, tex);
+                c.g[A0][0] = screen as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn start_screen_load_matches() {
+        use crate::game::movie::movieplayer::tests::alloc_base as alloc_base_2;
+        use crate::game::render::lightman::tests::eafile_pools;
+        check(
+            ssx3_ee::s06::f_00232b28__generated,
+            start_screen_load,
+            24,
+            &|c, seed| {
+                // One fake call (the graphics manager's v44) that may unwind.
+                let mut r = alloc_base_2(c, seed, 0x232b28, 1);
+                eafile_pools(c);
+                // The BELibrary dummy and world of the cFEStateMemCard tests.
+                be_library(c);
+                world(c);
+                let wld = DATA + 0x1000;
+                c.bus.write32(wld + 0x88, r.next_u32());
+                c.bus.write32(wld + 0x8c, r.next_u32());
+                // The MCManager singleton already exists (no construction).
+                c.bus.write32(GAME_GP - 0x47c, DATA + 0xc000);
+                // The graphics manager: vtable at +0x10d8, slot 0x160 fake.
+                let gfx = DATA + 0x9000;
+                let vt = DATA + 0xb000;
+                c.bus.write32(GAME_GP - 0x854, gfx);
+                c.bus.write32(gfx + 0x10d8, vt);
+                c.bus.write16(vt + 0x160, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(vt + 0x164, FAKE);
+                let screen = DATA + 0x8000;
+                let mode = match seed % 3 {
+                    0 => 0,
+                    1 => 2,
+                    _ => 3 + r.next_u32() % 8,
+                };
+                c.bus.write32(screen + 0x18, mode);
                 c.g[A0][0] = screen as u64;
             },
         );
@@ -1447,6 +1863,31 @@ pub(crate) mod tests {
                 fakes::machine(c, seed, 0x232c98, 0);
                 w(c, GAME_GP - 0x854, 0);
                 c.g[A0][0] = OBJ as u64;
+            },
+        );
+    }
+
+    #[test]
+    fn start_screen_try_exit_matches() {
+        check(
+            ssx3_ee::s06::f_00232cf8__generated,
+            start_screen_try_exit,
+            SEEDS,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x232cf8, 0);
+                c.g[A0][0] = sx(DATA);
+                word(c, DATA + 8, 0);
+                c.g[GP][0] = GAME_GP as u64;
+                word(
+                    c,
+                    GAME_GP.wrapping_sub(0x51b4),
+                    pick(&mut r, &[0.0, 0.5, 1.0]),
+                );
+                word(
+                    c,
+                    DATA + 4,
+                    pick(&mut r, &[0.0, -0.0, 0.4999, 0.5, 0.75, 1.0, -1.0]),
+                );
             },
         );
     }
@@ -1570,6 +2011,52 @@ pub(crate) mod tests {
                 c.bus.write32(W_2 + 4, if seed % 8 == 0 { 0 } else { 1 });
                 c.bus.write32(gp_at(-0x518c), f(0.05));
                 c.bus.write32(gp_at(-0x5188), f(0.05));
+            },
+        );
+    }
+
+    #[test]
+    fn c_pre_game_load_screen_update_matches() {
+        check(
+            ee::s06::f_00232930__generated,
+            c_pre_game_load_screen_update,
+            40,
+            &|c, seed| {
+                let _r = alloc_base(c, seed, 0x2329);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA + 4, if seed % 2 == 0 { 0 } else { 1 });
+                c.bus.write32(W_2 + 0xa4, DATA + 0x3000);
+                // Fade value: mid-range, or close enough to 0/1 to clamp.
+                let fade = [0.5, 0.02, 0.98, -0.1][(seed as usize / 2) % 4];
+                c.bus.write32(DATA + 0x3004, f(fade));
+                // Create the game module only for a few seeds.
+                c.bus.write32(W_2 + 4, if seed % 8 < 2 { 0 } else { 1 });
+                c.bus.write32(gp_at(-0x5184), f(0.05));
+                c.bus.write32(gp_at(-0x5180), f(0.05));
+                c.bus.write32(gp_at(-0x51b8), f(0.25));
+            },
+        );
+    }
+
+    #[test]
+    fn c_pre_fe_load_screen_update_matches() {
+        check(
+            ee::s06::f_00232a08__generated,
+            c_pre_fe_load_screen_update,
+            40,
+            &|c, seed| {
+                let _r = alloc_base(c, seed, 0x232a);
+                c.g[A0][0] = DATA as u64;
+                c.bus.write32(DATA + 4, if seed % 2 == 0 { 0 } else { 1 });
+                c.bus.write32(W_2 + 0xa4, DATA + 0x3000);
+                // Fade value: mid-range, or close enough to 0/1 to clamp.
+                let fade = [0.5, 0.02, 0.98, -0.1][(seed as usize / 2) % 4];
+                c.bus.write32(DATA + 0x3004, f(fade));
+                // Create the front-end module only for a few seeds.
+                c.bus.write32(W_2 + 4, if seed % 8 < 2 { 0 } else { 1 });
+                c.bus.write32(gp_at(-0x517c), f(0.05));
+                c.bus.write32(gp_at(-0x5178), f(0.05));
+                c.bus.write32(gp_at(-0x51b8), f(0.25));
             },
         );
     }

@@ -108,6 +108,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "BENewRaceInt_SetNumAIRiders",
     ),
     (
+        0x0014_4df0,
+        be_new_race_int_set_event_type,
+        "BENewRaceInt_SetEventType",
+    ),
+    (
+        0x0014_51e8,
+        be_new_race_int_set_event,
+        "BENewRaceInt_SetEvent",
+    ),
+    (
         0x0014_5108,
         be_new_race_int_set_game_mode,
         "BENewRaceInt_SetGameMode",
@@ -189,6 +199,41 @@ pub(crate) mod callee {
     pub(crate) use crate::game::object::debouncenode::callee::GET_TRANSFORM_BOUNDS;
     pub(crate) use crate::game::object::debouncenode::callee::HAS_OBJECT_SCRIPT1;
     pub(crate) use crate::game::object::debouncenode::callee::HAS_OBJECT_SCRIPT3;
+    /// `BENewRaceInt_SetNumHumanPlayers` (0x144aa8).
+    pub(crate) const SET_NUM_HUMAN_PLAYERS: Callee = Callee {
+        addr: 0x0014_4aa8,
+        f: ee::s01::f_00144aa8,
+    };
+    /// `BENewRaceInt_SetNumAIRiders` (0x144d98).
+    pub(crate) const SET_NUM_AI_RIDERS: Callee = Callee {
+        addr: 0x0014_4d98,
+        f: ee::s01::f_00144d98,
+    };
+    /// `BENewRaceInt_SetNumExtraRiders` (0x144af8).
+    pub(crate) const SET_NUM_EXTRA_RIDERS: Callee = Callee {
+        addr: 0x0014_4af8,
+        f: ee::s01::f_00144af8,
+    };
+    /// `BENewRaceInt_SetEvent` (0x1451e8).
+    pub(crate) const SET_EVENT: Callee = Callee {
+        addr: 0x0014_51e8,
+        f: ee::s01::f_001451e8,
+    };
+    /// `BENewPlayerInt_ShareSlot0CharRecord` (0x147828).
+    pub(crate) const SHARE_SLOT0_CHAR_RECORD: Callee = Callee {
+        addr: 0x0014_7828,
+        f: ee::s01::f_00147828,
+    };
+    /// `BENewPlayerInt_IsSharingCharRecord` (0x1477e8).
+    pub(crate) const IS_SHARING_CHAR_RECORD: Callee = Callee {
+        addr: 0x0014_77e8,
+        f: ee::s01::f_001477e8,
+    };
+    /// `BENewPlayerInt_ClearSharedCharRecord` (0x147898).
+    pub(crate) const CLEAR_SHARED_CHAR_RECORD: Callee = Callee {
+        addr: 0x0014_7898,
+        f: ee::s01::f_00147898,
+    };
 }
 
 /// `gp`-relative globals used here.
@@ -565,6 +610,369 @@ pub fn be_new_race_int_set_game_mode(c: &mut Cpu) {
         c.cycles += 4;
         frame.restore(c, S1, 0x10);
         frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The new-race settings block (`BENewRaceInt`'s state): +0x48 game mode,
+/// +0x49 game type (1 or 2 players...), +0x4a event type.
+const RACE_INFO: u32 = 0x0053_5bc8;
+/// Per game type, the 0x43-byte row of modes allowed (`allowed[mode] == 1`).
+const MODE_ROWS: u32 = 0x0043_e700;
+/// Per event type, a 0x54-byte record whose first word is its game mode.
+const EVENT_ROWS: u32 = 0x0043_e978;
+
+/// gcc's inline block move of the first 0x40 bytes of a table row onto the
+/// stack: two 32-byte iterations from register `src` to register `dst`
+/// (`ld`/`sd` when the source is 8-aligned, else `ldl`/`ldr` and
+/// `sdl`/`sdr`), the four doublewords passing through `regs`, `cycles` per
+/// iteration and the event check at loop head `head` in between.
+fn move_row_head(
+    c: &mut Cpu,
+    src: usize,
+    dst: usize,
+    regs: [usize; 4],
+    cycles: u64,
+    head: u32,
+    aligned: bool,
+) {
+    for first in [true, false] {
+        c.cycles += cycles;
+        let s = c.g[src][0] as u32;
+        let d = c.g[dst][0] as u32;
+        let mut v = [0u64; 4];
+        for (k, w) in v.iter_mut().enumerate() {
+            let a = Addr(s.wrapping_add(8 * k as u32));
+            *w = if aligned {
+                a.ld(c)
+            } else {
+                a.read_u64_unaligned(c)
+            };
+        }
+        for (k, &w) in v.iter().enumerate() {
+            let a = Addr(d.wrapping_add(8 * k as u32));
+            if aligned {
+                a.sd(c, w)
+            } else {
+                a.write_u64_unaligned(c, w)
+            }
+            c.g[regs[k]][0] = w;
+        }
+        c.g[src][0] = sx(s.wrapping_add(0x20));
+        c.g[dst][0] = sx(d.wrapping_add(0x20));
+        if first && event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `this->vtable(+0xc)` slot `{+8 delta, +0xc fn}` of the new-player
+/// interface in `s0` (the "commit" method), returning to `ret`.
+fn player_commit(c: &mut Cpu, ret: u32) -> Flow {
+    let player = c.g[S0][0] as u32;
+    c.g[V0][0] = Addr(player.wrapping_add(0xc)).lw(c);
+    let slot = VSlot::read(c, c.g[V0][0], 8);
+    c.g[A0][0] = slot.delta;
+    c.g[V1][0] = slot.func;
+    c.g[A0][0] = sx(player.wrapping_add(slot.delta as u32));
+    call_ptr(c, slot.func as u32, ret)
+}
+
+/// `bool BENewRaceInt_SetEventType(self, int mode)` (0x144df0,
+/// `cBENewRaceInterface_setGameMode`): if the current game type's row
+/// allows `mode`, switch to it and set the rider counts it needs (1 or 2
+/// humans, AI riders, the mission slot); entering or leaving mode 4
+/// (missions) shares or un-shares player 1's character record. Returns
+/// whether the mode was allowed.
+pub fn be_new_race_int_set_event_type(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S2, 0x90);
+        frame.save(c, S0, 0xb0);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S5, 0x60);
+        frame.save_ra(c, 0x50);
+        c.g[S4][0] = 0x0053_0000;
+        c.g[A3][0] = 0x43;
+        c.g[V1][0] = sx(MODE_ROWS);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A1][0];
+        let this = c.g[S1][0];
+        let mode = c.g[S2][0];
+        // The game type's row of allowed modes, copied to the stack.
+        c.g[A2][0] = Addr(RACE_INFO + 0x49).lb(c);
+        c.mult(0, A2, A2, A3);
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(MODE_ROWS));
+        let aligned = c.g[A2][0] & 7 == 0;
+        c.g[A0][0] = c.g[SP][0];
+        c.cycles += 2;
+        c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(0x40));
+        let allowed_at = sp(c).wrapping_add(mode as u32);
+        c.g[A3][0] = sx(allowed_at);
+        if aligned {
+            move_row_head(c, A2, A0, [T2, T3, V1, A1], 11, 0x0014_4eac, true);
+            c.cycles += 1;
+        } else {
+            move_row_head(c, A2, A0, [V1, A1, T0, T1], 19, 0x0014_4e50, false);
+            c.cycles += 2;
+        }
+        c.g[A1][0] = sx(RACE_INFO);
+        c.cycles += 11;
+        c.g[S3][0] = 1;
+        c.g[V1][0] = Addr(RACE_INFO + 0x49).lb(c);
+        c.g[S5][0] = 5;
+        let (src, dst) = (c.g[A2][0] as u32, c.g[A0][0] as u32);
+        for (k, r) in [T0, T1, T2].into_iter().enumerate() {
+            c.g[r][0] = Addr(src.wrapping_add(k as u32)).lb(c);
+        }
+        for (k, r) in [T0, T1, T2].into_iter().enumerate() {
+            Addr(dst.wrapping_add(k as u32)).sb(c, c.g[r][0]);
+        }
+        c.g[V0][0] = 2;
+        if c.g[V1][0] == 2 {
+            // Two-player game type: 2 humans, 4 AI riders.
+            c.cycles += 2;
+            c.g[S3][0] = 2;
+            c.g[S5][0] = 4;
+        }
+        let humans = c.g[S3][0];
+        let ai = c.g[S5][0];
+
+        c.cycles += 4;
+        c.g[V1][0] = Addr(allowed_at).lb(c);
+        // (v0 = 0 in the branch delay slot: the result when the mode is
+        // not allowed, and what the first callees see.)
+        let allowed = c.g[V1][0] == 1;
+        c.g[V0][0] = 0;
+        if allowed {
+            c.cycles += 3;
+            c.g[V1][0] = 4;
+            if mode == 4 {
+                // Entering missions: one human, no AI, the mission rider.
+                c.cycles += 22;
+                Addr(RACE_INFO + 0x48).sb(c, mode);
+                c.g[A0][0] = this;
+                c.g[A1][0] = 1;
+                callee::SET_NUM_HUMAN_PLAYERS.call(c, 0x0014_4f3c)?;
+                c.g[A0][0] = this;
+                c.g[A1][0] = 0;
+                callee::SET_NUM_AI_RIDERS.call(c, 0x0014_4f48)?;
+                c.g[A0][0] = this;
+                c.g[A1][0] = 1;
+                callee::SET_NUM_EXTRA_RIDERS.call(c, 0x0014_4f54)?;
+                callee::GET_PLAYER_INSTANCE.call(c, 0x0014_4f5c)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[A0][0] = 1;
+                callee::SHARE_SLOT0_CHAR_RECORD.call(c, 0x0014_4f68)?;
+                player_commit(c, 0x0014_4f7c)?;
+            } else {
+                c.g[V0][0] = Addr(RACE_INFO + 0x48).lb(c);
+                c.cycles += 2;
+                if c.g[V0][0] == 4 {
+                    // Leaving missions.
+                    c.cycles += 16;
+                    c.g[A0][0] = this;
+                    c.g[A1][0] = humans;
+                    callee::SET_NUM_HUMAN_PLAYERS.call(c, 0x0014_4f98)?;
+                    c.g[A0][0] = this;
+                    c.g[A1][0] = 0;
+                    callee::SET_NUM_AI_RIDERS.call(c, 0x0014_4fa4)?;
+                    c.g[A0][0] = this;
+                    c.g[A1][0] = 0;
+                    callee::SET_NUM_EXTRA_RIDERS.call(c, 0x0014_4fb0)?;
+                    callee::GET_PLAYER_INSTANCE.call(c, 0x0014_4fb8)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[A0][0] = 1;
+                    callee::IS_SHARING_CHAR_RECORD.call(c, 0x0014_4fc4)?;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 9;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = 1;
+                        callee::CLEAR_SHARED_CHAR_RECORD.call(c, 0x0014_4fd8)?;
+                        player_commit(c, 0x0014_4fec)?;
+                    }
+                }
+            }
+            c.g[V0][0] = sx(RACE_INFO);
+
+            c.cycles += 3;
+            c.g[V1][0] = 3;
+            Addr(RACE_INFO + 0x48).sb(c, mode);
+            let mut free_ride = mode == 3;
+            if !free_ride {
+                c.cycles += 3;
+                c.g[V0][0] = 6;
+                free_ride = mode == 5;
+                if !free_ride {
+                    c.cycles += 2;
+                    free_ride = mode == 6;
+                }
+            }
+            if free_ride {
+                // Modes 3, 5, 6: the humans, one AI rider for event types
+                // 4/5 outside two-player games, no extra rider.
+                c.cycles += 9;
+                c.g[A0][0] = this;
+                c.g[A1][0] = humans;
+                callee::SET_NUM_HUMAN_PLAYERS.call(c, 0x0014_501c)?;
+                c.g[V1][0] = sx(RACE_INFO);
+                let event = Addr(RACE_INFO + 0x4a).lbu(c);
+                let event_45 = sx((event as u32).wrapping_sub(4)) < 2;
+                c.g[V0][0] = 2;
+                let mut one_ai = false;
+                if event_45 {
+                    c.cycles += 3;
+                    c.g[V1][0] = Addr(RACE_INFO + 0x49).lb(c);
+                    c.g[A0][0] = this;
+                    one_ai = c.g[V1][0] != 2;
+                }
+                c.cycles += 4;
+                if one_ai {
+                    c.g[A1][0] = 1;
+                    callee::SET_NUM_AI_RIDERS.call(c, 0x0014_5048)?;
+                } else {
+                    c.g[A0][0] = this;
+                    c.g[A1][0] = 0;
+                    callee::SET_NUM_AI_RIDERS.call(c, 0x0014_505c)?;
+                }
+                c.g[A0][0] = this;
+                c.cycles += 2;
+                c.g[A1][0] = 0;
+                callee::SET_NUM_EXTRA_RIDERS.call(c, 0x0014_5068)?;
+            }
+
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+            if mode == 0 {
+                // Race: the humans and the game type's AI riders.
+                c.cycles += 10;
+                c.g[A0][0] = this;
+                c.g[A1][0] = humans;
+                callee::SET_NUM_HUMAN_PLAYERS.call(c, 0x0014_507c)?;
+                c.g[A1][0] = ai;
+                c.g[A0][0] = this;
+                callee::SET_NUM_AI_RIDERS.call(c, 0x0014_5088)?;
+                c.g[A0][0] = this;
+                c.g[A1][0] = 0;
+                callee::SET_NUM_EXTRA_RIDERS.call(c, 0x0014_5094)?;
+                c.g[V0][0] = 1;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 5;
+            if mode == 1 {
+                // The humans and one AI rider.
+                c.cycles += 10;
+                c.g[A1][0] = humans;
+                c.g[A0][0] = this;
+                callee::SET_NUM_HUMAN_PLAYERS.call(c, 0x0014_50ac)?;
+                c.g[A0][0] = this;
+                c.g[A1][0] = 1;
+                callee::SET_NUM_AI_RIDERS.call(c, 0x0014_50b8)?;
+                c.g[A0][0] = this;
+                c.g[A1][0] = 0;
+                callee::SET_NUM_EXTRA_RIDERS.call(c, 0x0014_50c4)?;
+                c.g[V0][0] = 5;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+            if mode == 5 {
+                c.cycles += 4;
+                c.g[A0][0] = this;
+                c.g[A1][0] = 4;
+                callee::SET_EVENT.call(c, 0x0014_50dc)?;
+                c.g[V0][0] = 1;
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0xb0);
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `bool BENewRaceInt_SetEvent(self, int event)` (0x1451e8,
+/// `cBENewRaceInterface_setGameEvent`): store the event type; event types 4
+/// and 5 get one AI rider (none in two-player games). Returns whether the
+/// event's record belongs to the current game mode.
+pub fn be_new_race_int_set_event(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let event = c.g[A1][0];
+        c.g[A3][0] = event;
+        c.g[V0][0] = sx(EVENT_ROWS);
+        c.g[A1][0] = 0x54;
+        c.mult(0, A1, A3, A1);
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x70);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(EVENT_ROWS));
+        c.g[V1][0] = c.g[A1][0] & 7;
+        let aligned = c.g[V1][0] == 0;
+        frame.save_ra(c, 0x60);
+        // The event's record, copied to the stack.
+        c.cycles += 3;
+        c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(0x40));
+        c.g[S0][0] = 0x0053_0000;
+        c.g[T0][0] = ((event as i64) < 6) as u64;
+        if aligned {
+            move_row_head(c, A1, A2, [V1, T1, T2, T3], 11, 0x0014_5284, true);
+        } else {
+            move_row_head(c, A1, A2, [V1, T1, T2, T3], 19, 0x0014_5224, false);
+            c.cycles += 2;
+        }
+        c.cycles += 13;
+        let (src, dst) = (c.g[A1][0] as u32, c.g[A2][0] as u32);
+        c.g[V0][0] = Addr(src).read_u64_unaligned(c);
+        c.g[T1][0] = Addr(src.wrapping_add(8)).read_u64_unaligned(c);
+        c.g[T2][0] = Addr(src.wrapping_add(0x10)).lw(c);
+        Addr(dst).write_u64_unaligned(c, c.g[V0][0]);
+        Addr(dst.wrapping_add(8)).write_u64_unaligned(c, c.g[T1][0]);
+        c.g[V1][0] = sx(RACE_INFO);
+        Addr(dst.wrapping_add(0x10)).sw(c, c.g[T2][0]);
+        Addr(RACE_INFO + 0x4a).sb(c, event);
+        let record = sp(c);
+        if c.g[T0][0] == 0 {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(record).lw(c);
+        } else {
+            c.cycles += 3;
+            let below4 = (event as i64) < 4;
+            c.g[V0][0] = Addr(record).lw(c);
+            if !below4 {
+                // Event types 4 and 5.
+                c.cycles += 4;
+                c.g[V1][0] = Addr(RACE_INFO + 0x49).lb(c);
+                c.g[V0][0] = 2;
+                if c.g[V1][0] == 2 {
+                    c.cycles += 4;
+                    c.g[A1][0] = 0;
+                    callee::SET_NUM_AI_RIDERS.call(c, 0x0014_5308)?;
+                } else {
+                    c.cycles += 3;
+                    c.g[A1][0] = 1;
+                    callee::SET_NUM_AI_RIDERS.call(c, 0x0014_5318)?;
+                }
+                c.g[V1][0] = sx(RACE_INFO);
+                c.cycles += 1;
+                c.g[V0][0] = Addr(record).lw(c);
+            }
+        }
+        c.cycles += 7;
+        c.g[A0][0] = Addr(RACE_INFO + 0x48).lb(c);
+        c.g[V0][0] ^= c.g[A0][0];
+        c.g[V0][0] = (c.g[V0][0] < 1) as u64;
+        frame.restore(c, S0, 0x70);
+        frame.restore_ra(c, 0x60);
         frame.close(c);
         Ok(())
     })
@@ -1861,6 +2269,127 @@ pub(crate) mod tests {
                 c.bus.write16(0x0044_0b38 + 0xe, 0x1234);
                 for i in 1..30u32 {
                     w(c, 0x0044_0b38 + 0x10 * i, 0xffff_ffff);
+                }
+            },
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 0x144df0 BENewRaceInt_SetEventType, 0x1451e8 BENewRaceInt_SetEvent.
+
+    /// Random new-race state: game type `gt`, current mode, event type; the
+    /// player-slot table small (`BENewPlayerInt_GetSlot`).
+    fn new_race_state(c: &mut Cpu, r: &mut Rng, gt: u8, mode: u8, event: u8) {
+        for i in 0..0x14 {
+            c.bus.write32(RACE_INFO + i * 4, r.next_u32());
+        }
+        c.bus.write8(RACE_INFO + 0x48, mode);
+        c.bus.write8(RACE_INFO + 0x49, gt);
+        c.bus.write8(RACE_INFO + 0x4a, event);
+        for i in 0..8 {
+            c.bus.write32(0x0053_05b0 + i * 4, r.next_u32() % 6);
+        }
+        for i in 0..8 {
+            c.bus.write32(0x0053_4fe0 + i * 0x1c + 0x10, r.next_u32());
+        }
+    }
+
+    #[test]
+    fn be_new_race_int_set_event_type_matches() {
+        use crate::difftest::events::schedule;
+        check(
+            ssx3_ee::s01::f_00144df0__generated,
+            be_new_race_int_set_event_type,
+            400,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0014_4df0, 1);
+                let this = DATA + 0x800;
+                let mode = seed % 8;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = mode as u64;
+                // Game types: aligned rows (0, 8), unaligned (1, 2), random.
+                let gt = match (seed / 8) % 5 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    3 => 8,
+                    _ => r.next_u32() as u8,
+                };
+                let current = if (seed / 40) % 2 == 0 {
+                    4
+                } else {
+                    (r.next_u32() % 8) as u8
+                };
+                let event = match (seed / 80) % 3 {
+                    0 => 4,
+                    1 => 5,
+                    _ => r.next_u32() as u8,
+                };
+                new_race_state(c, &mut r, gt, current, event);
+                // The game type's row: mostly "allowed".
+                let row = MODE_ROWS.wrapping_add((gt as i8 as i32 * 0x43) as u32);
+                for i in 0..0x43 {
+                    let b = if r.next_u32() % 6 == 0 {
+                        r.next_u32() as u8
+                    } else {
+                        1
+                    };
+                    c.bus.write8(row + i, b);
+                }
+                // `BENewPlayerInt_GetInstance` singleton with its commit slot.
+                let player = DATA + 0x1000;
+                let vt = DATA + 0x1100;
+                c.bus.write32(GAME_GP.wrapping_sub(0x1f30), player);
+                c.bus.write32(player + 0xc, vt);
+                c.bus.write16(vt + 8, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt + 0xc, FAKE);
+                // Event records for `SetEvent(4)` (mode 5).
+                for i in 0..0x15 {
+                    c.bus.write32(EVENT_ROWS + 4 * 0x54 + i * 4, r.next_u32());
+                }
+                if seed % 7 == 3 {
+                    c.g[RA][0] = SENTINEL as u64;
+                    schedule(c, &mut r, seed / 7, 0x0014_4df0);
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn be_new_race_int_set_event_matches() {
+        use crate::difftest::events::schedule;
+        check(
+            ssx3_ee::s01::f_001451e8__generated,
+            be_new_race_int_set_event,
+            320,
+            &|c, seed| {
+                let mut r = Rng(0x0014_51e8 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                // Events 0..7: below 4, 4/5 (AI riders), 6+; odd ones are
+                // unaligned rows.
+                let event = seed % 8;
+                c.g[A0][0] = sx(DATA + 0x800);
+                c.g[A1][0] = event as u64;
+                let mode = r.next_u32() as u8;
+                let gt = if (seed / 8) % 2 == 0 {
+                    2
+                } else {
+                    r.next_u32() as u8
+                };
+                let event_type = r.next_u32() as u8;
+                new_race_state(c, &mut r, gt, mode, event_type);
+                let row = EVENT_ROWS + event * 0x54;
+                for i in 0..0x15 {
+                    c.bus.write32(row + i * 4, r.next_u32());
+                }
+                if (seed / 16) % 2 == 0 {
+                    // The record's mode is the current one.
+                    c.bus.write32(row, mode as i8 as i32 as u32);
+                }
+                if seed % 5 == 4 {
+                    c.g[RA][0] = SENTINEL as u64;
+                    schedule(c, &mut r, seed / 5, 0x0014_51e8);
                 }
             },
         );

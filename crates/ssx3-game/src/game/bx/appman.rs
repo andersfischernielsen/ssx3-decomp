@@ -21,6 +21,7 @@ use ssx3_ee_rt::Cpu;
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_6cd0, app_ctor, "App_ctor"),
+    (0x0031_6ef8, app_set_next_state, "App_SetNextState"),
     (0x0031_7400, app_v02, "App_v02"),
     (0x0031_7458, ps2_exec_man_ctor, "PS2ExecMan_ctor"),
     (0x0031_7520, app_get_exec_man, "App_GetExecMan"),
@@ -109,6 +110,15 @@ pub fn app_ctor(c: &mut Cpu) {
     Addr(this).off(0x2c).sw(c, 0);
     Addr(this).off(0xc).sw(c, 0);
     Addr((c.g[GP][0] as u32).wrapping_add(0x2a74)).sw(c, c.g[A0][0]);
+    abi::ret(c);
+}
+
+/// `void App_SetNextState(App *this, u32 next)` (0x316ef8,
+/// `cAppMan_setNextModule`): `this->next = next` at `+4`.
+pub fn app_set_next_state(c: &mut Cpu) {
+    c.cycles += 2;
+    const NEXT: u32 = 0x4;
+    Addr(abi::arg(c, 0)).off(NEXT).sw(c, c.g[A1][0]);
     abi::ret(c);
 }
 
@@ -283,6 +293,22 @@ pub(crate) mod tests {
             c.bus.write32(GAME_GP - 0x2efc, r.edge_f32());
             c.bus.write32(GAME_GP + 0x2a74, r.next_u32());
         });
+    }
+
+    #[test]
+    fn app_set_next_state_matches() {
+        check(
+            ssx3_ee::s10::f_00316ef8__generated,
+            app_set_next_state,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x2017 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = ptr(&mut r, 0);
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 4, r.next_u32());
+            },
+        );
     }
 
     #[test]

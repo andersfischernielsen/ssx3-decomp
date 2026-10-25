@@ -126,6 +126,8 @@ fn main() {
                 held[*pad] |= bits;
             }
         }
+        // SSX3_EVENT: the boot presses through the title and the prompts.
+        held[0] |= ssx3_game::event_boot::pad_buttons();
         ssx3_ps2::m!(c).sif.pad_buttons = held;
         ssx3_ps2::vu::capture::set_frame(f);
         if let Some((n, from)) = forced_updates {

@@ -46,6 +46,9 @@ use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    // 0x0022_6900 ssx_app_init (SSXApp_Init) is ported but left out: its
+    // callees (graphics manager creation, the boot shape load from disc)
+    // cannot be bounded in a differential test.
     (0x0022_7e98, ssx_app_next_tick, "SSXApp_NextTick"),
     (0x0022_7f80, mc_manager_get, "MCManager_Get"),
     (
@@ -53,6 +56,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_app_start_game_module,
         "SSXApp_StartGameModule",
     ),
+    (0x0022_8238, ssx_app_start_fe_module, "SSXApp_StartFEModule"),
     (0x0022_9278, crowd_man2d_dtor, "CrowdMan2d_dtor"),
     (0x0022_92e0, crowd_man2d_reset, "CrowdMan2d_Reset"),
     (0x0022_9398, crowd_man2d_remove_all, "CrowdMan2d_RemoveAll"),
@@ -665,6 +669,225 @@ pub fn crowd_man2d_add(c: &mut Cpu) {
     })
 }
 
+/// `void SSXApp_Init(SSXApp* self, int argc, char** argv)` (0x226900): boot
+/// the application. Registers the app at `gp-0x848`, creates the pad queue
+/// (`gp-0x850`), the PS2 graphics manager (`gp-0x854`, then its vtable slot
+/// 0x10 init), the light and bezier managers, the small allocations (the byte
+/// at `gp-0x844`, the two 0x2a4-byte pad records at +0xa8), parses the command
+/// line, sets the graphics mode (slot 0x160, 0x100), loads the boot shape
+/// (`SHPS_Find` + slot 0x170) into the app's +0xa0, makes the 0x1c-byte tint
+/// (+0xa4, white), hands the pre-start screen to `App_SetNextState`, and
+/// records the game mode manager (+0xc0) and the async front end manager
+/// (+0x11c).
+///
+/// Not in `OVERRIDES`: its callees (graphics manager creation and init, the
+/// boot shape load from disc) cannot be bounded in a differential test; the
+/// port is otherwise exact (see the ignored `ssx_app_init_matches`).
+pub fn ssx_app_init(c: &mut Cpu) {
+    /// `SSXApp::mPadRecords[2]` (0x2a4 bytes each).
+    const PAD_RECORDS: u32 = 0xa8;
+    /// What `func_002C7440` (statemachine.cpp) returns.
+    const STATE_CONFIG: u32 = 0x9c;
+    const BOOT_SHAPE: u32 = 0xa0;
+    const TINT: u32 = 0xa4;
+    const GAME_MODE_MAN: u32 = 0xc0;
+    const FE_ASYNC_MANAGER: u32 = 0x11c;
+    /// `PS2GraphicsMan::vtable` pointer.
+    const GFX_VTABLE: u32 = 0x10d8;
+    /// `EA_MemAllocNamed(size, name, 0, 0)`.
+    const ALLOC: u32 = 0x0031_7d70;
+    guest(c, |c| {
+        c.cycles += 48;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x40);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S0, 0x80);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S1, 0x70);
+        let app = r32(c, S2);
+        c.g[S0][0] = sx(app.wrapping_add(PAD_RECORDS));
+        frame.save(c, S5, 0x30);
+        c.g[S1][0] = 1;
+        frame.save_ra(c, 0x20);
+        c.g[S5][0] = 0x0048_0000;
+        Addr(gp(c, -0x848)).sw(c, c.g[S2][0]);
+        // func_002C7440: the state machine configuration.
+        call_ptr(c, 0x002c_7440, 0x0022_6940)?;
+
+        // The pad queue (0x2efc bytes), kept in a stack slot.
+        alloc_args(c, 0x2efc, 0x0047_9a40);
+        Addr(app).off(STATE_CONFIG).sw(c, c.g[V0][0]);
+        call_ptr(c, ALLOC, 0x0022_695c)?;
+        Addr(sp(c)).sw(c, c.g[V0][0]);
+        c.g[A0][0] = Addr(sp(c)).lw(c);
+        // PadQueue_ctor
+        call_ptr(c, 0x0032_6a28, 0x0022_696c)?;
+        c.g[V0][0] = Addr(sp(c)).lw(c);
+        Addr(gp(c, -0x850)).sw(c, c.g[V0][0]);
+
+        // The graphics manager, then its init method (vtable slot 0x10).
+        // PS2GraphicsMan_Create
+        call_ptr(c, 0x0037_5a08, 0x0022_6978)?;
+        let gfx = c.g[V0][0];
+        c.g[V1][0] = Addr(gfx as u32).off(GFX_VTABLE).lw(c);
+        Addr(gp(c, -0x854)).sw(c, gfx);
+        let init = VSlot::read(c, c.g[V1][0], 0x10);
+        c.g[A1][0] = init.func;
+        c.g[A0][0] = init.this(gfx);
+        call_ptr(c, init.func as u32, 0x0022_6990)?;
+        // LightMan_construct, BezierMan_construct
+        call_ptr(c, 0x0038_dbd0, 0x0022_6998)?;
+        call_ptr(c, 0x0038_aef8, 0x0022_69a0)?;
+
+        // One byte at gp-0x844.
+        alloc_args(c, 1, 0x0047_9a50);
+        call_ptr(c, ALLOC, 0x0022_69b8)?;
+        Addr(gp(c, -0x844)).sw(c, c.g[V0][0]);
+
+        // The two pad records, each with its first word cleared.
+        loop {
+            c.cycles += 10;
+            c.g[A0][0] = 0x2a4;
+            c.g[A1][0] = sx(r32(c, S5).wrapping_sub(0x65a0));
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            call_ptr(c, ALLOC, 0x0022_69d4)?;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+            let record = r32(c, V0);
+            Addr(r32(c, S0)).sw(c, c.g[V0][0]);
+            Addr(record).sw(c, 0);
+            let more = (c.g[S1][0] as i64) >= 0;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_69c0);
+            }
+        }
+
+        c.cycles += 94;
+        Addr(app).off(0x84).sw(c, 0);
+        c.g[A2][0] = c.g[S3][0];
+        Addr(app).off(0x80).sw(c, 0);
+        c.g[A0][0] = c.g[S2][0];
+        Addr(app).off(0x7c).sw(c, 0);
+        c.g[A1][0] = c.g[S4][0];
+        // SSXApp_ParseCommandLine(self, argc, argv)
+        call_ptr(c, 0x0022_7bf0, 0x0022_6a04)?;
+
+        // Graphics vtable slot 0x160 (0x100).
+        c.g[A2][0] = Addr(gp(c, -0x854)).lw(c);
+        c.g[A1][0] = 0x100;
+        c.g[V0][0] = Addr(r32(c, A2)).off(GFX_VTABLE).lw(c);
+        let mode = VSlot::read(c, c.g[V0][0], 0x160);
+        c.g[V1][0] = mode.func;
+        c.g[A0][0] = mode.this(c.g[A2][0]);
+        call_ptr(c, mode.func as u32, 0x0022_6a20)?;
+
+        // The boot shape: SHPS_Find(0x47ab40, 0x4a28b0), then slot 0x170
+        // loads it (name 0x479a70, 0, 1, -1).
+        c.g[S0][0] = Addr(gp(c, -0x854)).lw(c);
+        c.g[A0][0] = 0x0047_ab40;
+        c.g[A1][0] = 0x004a_28b0;
+        c.g[S1][0] = Addr(r32(c, S0)).off(GFX_VTABLE).lw(c);
+        c.g[V0][0] = Addr(r32(c, S1)).off(0x170).lh(c);
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+        call_ptr(c, 0x003b_39b8, 0x0022_6a44)?;
+        c.g[T2][0] = Addr(r32(c, S1)).off(0x174).lw(c);
+        c.g[T0][0] = 1;
+        c.g[T1][0] = 0xffff_ffff_ffff_ffff;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A2][0] = 0x0047_9a70;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A3][0] = 0;
+        call_ptr(c, r32(c, T2), 0x0022_6a68)?;
+        c.g[V1][0] = Addr(gp(c, -0x848)).lw(c);
+        c.g[A0][0] = Addr(gp(c, -0x854)).lw(c);
+        Addr(r32(c, V1)).off(BOOT_SHAPE).sw(c, c.g[V0][0]);
+        // func_00369FF8(gfx)
+        call_ptr(c, 0x0036_9ff8, 0x0022_6a78)?;
+
+        // The tint: { 0, 0, 0, 1.0, 1.0, 1.0, 1.0 }, built on the stack.
+        alloc_args(c, 0x1c, 0x0047_9a80);
+        call_ptr(c, ALLOC, 0x0022_6a90)?;
+        let tint = r32(c, V0);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.g[A1][0] = 0x0048_0000;
+        Addr(tint).sw(c, 0);
+        c.g[A2][0] = 0x100;
+        frame_swc1(c, 0x1c);
+        c.g[A3][0] = 0;
+        frame_swc1(c, 0x10);
+        c.g[A1][0] = 0x0047_9a90;
+        frame_swc1(c, 0x14);
+        frame_swc1(c, 0x18);
+        Addr(tint).off(4).sw(c, 0);
+        Addr(tint).off(8).sw(c, 0);
+        Addr(app).off(TINT).sw(c, c.g[V0][0]);
+        // The unaligned doubleword copy (ldl/ldr, sdl/sdr) of the four
+        // floats into +0xc..+0x1c.
+        c.g[V1][0] = c.ld(sp(c).wrapping_add(0x10));
+        c.g[T0][0] = c.ld(sp(c).wrapping_add(0x18));
+        let (lo, hi) = (c.g[V1][0], c.g[T0][0]);
+        Addr(tint).off(0xc).sw(c, lo);
+        Addr(tint).off(0x10).sw(c, lo >> 32);
+        Addr(tint).off(0x14).sw(c, hi);
+        Addr(tint).off(0x18).sw(c, hi >> 32);
+
+        // The pre-start screen (0xc bytes, flags 0x100) as the next state.
+        c.g[A0][0] = 0xc;
+        call_ptr(c, ALLOC, 0x0022_6af0)?;
+        c.g[A0][0] = c.g[V0][0];
+        // PreStartScreen_ctor
+        call_ptr(c, 0x0023_2328, 0x0022_6af8)?;
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S2][0];
+        // App_SetNextState(self, screen)
+        call_ptr(c, 0x0031_6ef8, 0x0022_6b04)?;
+        // GameModeMan_GetGM
+        call_ptr(c, 0x0023_7cf8, 0x0022_6b0c)?;
+        alloc_args(c, 0x590, 0x0047_9aa0);
+        Addr(app).off(GAME_MODE_MAN).sw(c, c.g[V0][0]);
+        call_ptr(c, ALLOC, 0x0022_6b28)?;
+
+        // The async front end manager: construct, store, start.
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x001a_3590, 0x0022_6b30)?;
+        Addr(app).off(FE_ASYNC_MANAGER).sw(c, c.g[V0][0]);
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x001a_3648, 0x0022_6b3c)?;
+
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `EA_MemAllocNamed(size, name, 0, 0)` arguments as `SSXApp_Init` sets
+/// them (`a0` last).
+fn alloc_args(c: &mut Cpu, size: u64, name: u64) {
+    c.g[A1][0] = name;
+    c.g[A2][0] = 0;
+    c.g[A3][0] = 0;
+    c.g[A0][0] = size;
+}
+
+/// `swc1 f0, off(sp)`.
+fn frame_swc1(c: &mut Cpu, off: u32) {
+    c.swc1(0, sp(c).wrapping_add(off));
+}
+
 /// `void SSXApp_StartGameModule(SSXApp* self)` (0x2281d8): allocate and
 /// construct the game module, hand it to the app manager, and record the game
 /// mode manager.
@@ -690,6 +913,57 @@ pub fn ssx_app_start_game_module(c: &mut Cpu) {
         call_ptr(c, 0x0023_7cf8, 0x0022_8220)?;
         sw(c, p_2(c.g[S0][0], 0xc0), c.g[V0][0]);
         frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SSXApp_StartFEModule(SSXApp* self)` (0x228238): clear the global at
+/// `gp-0x10b4`, then allocate and construct the front end module (or, when
+/// the app's front end flag at +0x60 is clear, the debug menu module), store
+/// it in the app (+0x7c front end, +0x80 debug menu) and hand it to the app
+/// manager as the next state.
+pub fn ssx_app_start_fe_module(c: &mut Cpu) {
+    /// `SSXApp::mUseFrontEnd`: 0 boots the debug menu instead.
+    const USE_FRONT_END: u32 = 0x60;
+    const FE_MODULE: u32 = 0x7c;
+    const DEBUG_MENU_MODULE: u32 = 0x80;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        let gp = c.g[GP][0] as u32;
+        Addr(gp.wrapping_sub(0x10b4)).sw(c, 0);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let app = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(app).off(USE_FRONT_END).lw(c);
+        c.g[A1][0] = 0x0048_0000;
+        // Both allocations are named with the string at 0x47a818.
+        let (size, ctor, field, ret) = if c.g[V0][0] != 0 {
+            c.cycles += 14;
+            (0x000b_5ae0, 0x001a_1ce8, FE_MODULE, 0x0022_8270)
+        } else {
+            c.cycles += 12;
+            (0x238, 0x0017_f7b8, DEBUG_MENU_MODULE, 0x0022_82a4)
+        };
+        c.g[A0][0] = size;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x57e8));
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        // EA_MemAllocNamed(size, name, 0, 0)
+        call_ptr(c, 0x0031_7d70, ret)?;
+        c.g[A0][0] = c.g[V0][0];
+        // FEModule_ctor / DebugMenuModule_ctor
+        call_ptr(c, ctor, ret + 8)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[V0][0];
+        Addr(app).off(field).sw(c, c.g[V0][0]);
+        // App_SetNextState(self, module)
+        call_ptr(c, 0x0031_6ef8, ret + 0x18)?;
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -1327,55 +1601,6 @@ pub fn crowd_man2d_remove_by_type(c: &mut Cpu) {
         frame.restore(c, S2, 0x30);
         frame.restore(c, S3, 0x20);
         frame.restore(c, S4, 0x10);
-        frame.restore_ra(c, 0);
-        frame.close(c);
-        Ok(())
-    })
-}
-
-/// `void SSXApp_StartFEModule(self)` (0x228238): start the front-end module
-/// (the big one from +0x7C or the small one from +0x80).
-pub fn ssx_app_start_fe_module(c: &mut Cpu) {
-    guest(c, |c| {
-        c.cycles += 8;
-        let frame = Frame::open(c, 0x20);
-        Addr(gp_3(c, -0x10b4)).sw(c, 0);
-        frame.save(c, S0, 0x10);
-        frame.save_ra(c, 0);
-        c.g[S0][0] = c.g[A0][0];
-        c.g[V0][0] = lw_2(c, S0, 0x60);
-        let small = c.g[V0][0] == 0;
-        c.g[A1][0] = 0x480000;
-        if small {
-            c.cycles += 12;
-            c.g[A0][0] = 0x238;
-            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x57e8));
-            c.g[A2][0] = 0;
-            c.g[A3][0] = 0;
-            call_ptr(c, table_callee::EA_MEM_ALLOC_NAMED, 0x0022_82a4)?;
-            c.g[A0][0] = c.g[V0][0];
-            call_ptr(c, table_callee::FE_MODULE_SMALL_CTOR, 0x0022_82ac)?;
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A1][0] = c.g[V0][0];
-            Addr(c.g[S0][0] as u32).off(0x80).sw(c, c.g[V0][0]);
-            call_ptr(c, table_callee::APP_MAN_SET_NEXT_MODULE, 0x0022_82bc)?;
-        } else {
-            c.cycles += 14;
-            c.g[A0][0] = 0xb0000;
-            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x57e8));
-            c.g[A0][0] = c.g[A0][0] | 0x5ae0;
-            c.g[A2][0] = 0;
-            c.g[A3][0] = 0;
-            call_ptr(c, table_callee::EA_MEM_ALLOC_NAMED, 0x0022_8270)?;
-            c.g[A0][0] = c.g[V0][0];
-            call_ptr(c, table_callee::FE_MODULE_BIG_CTOR, 0x0022_8278)?;
-            c.g[A0][0] = c.g[S0][0];
-            c.g[A1][0] = c.g[V0][0];
-            Addr(c.g[S0][0] as u32).off(0x7c).sw(c, c.g[V0][0]);
-            call_ptr(c, table_callee::APP_MAN_SET_NEXT_MODULE, 0x0022_8288)?;
-        }
-        c.cycles += 3;
-        frame.restore(c, S0, 0x10);
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -2056,6 +2281,25 @@ pub(crate) mod tests {
         );
     }
 
+    /// The real boot callees (graphics manager creation and init, the boot
+    /// shape load from disc) do not finish in the test machine, so this is
+    /// ignored and `ssx_app_init` stays out of `OVERRIDES`; run it with
+    /// `--ignored` when trying a richer fixture.
+    #[test]
+    #[ignore]
+    fn ssx_app_init_matches() {
+        check(ssx3_ee::s05::f_00226900, ssx_app_init, 4, &|c, seed| {
+            let _r = setup(c, seed, 0x226900);
+            elf_image(c);
+            heap_init(c);
+            c.g[A0][0] = DATA as u64;
+            // No command line arguments.
+            c.g[A1][0] = 0;
+            c.g[A2][0] = (DATA + 0x800) as u64;
+            c.bus.write32(DATA + 0x800, 0);
+        });
+    }
+
     #[test]
     fn ssx_app_start_game_module_matches() {
         check(
@@ -2066,6 +2310,28 @@ pub(crate) mod tests {
                 let _r = setup(c, seed, 0x2281d8);
                 heap_init(c);
                 c.g[A0][0] = DATA as u64;
+            },
+        );
+    }
+
+    /// Both branches with the real allocator and constructors: the front
+    /// end module (0xb5ae0 bytes) still fits the test arena.
+    #[test]
+    fn ssx_app_start_fe_module_matches() {
+        check(
+            ssx3_ee::s05::f_00228238__generated,
+            ssx_app_start_fe_module,
+            40,
+            &|c, seed| {
+                let mut r = setup(c, seed, 0x228238);
+                heap_init(c);
+                // The front-end constructor opens files: keep the lazy disc
+                // load (0x3de768) bounded.
+                crate::game::render::lightman::tests::eafile_pools(c);
+                c.g[A0][0] = DATA as u64;
+                let use_front_end = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(DATA + 0x60, use_front_end);
+                c.bus.write32(GAME_GP.wrapping_sub(0x10b4), r.next_u32());
             },
         );
     }

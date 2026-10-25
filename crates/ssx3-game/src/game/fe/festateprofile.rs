@@ -61,6 +61,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cFEStateProfileLoad_v26",
     ),
     (
+        0x0018_faf0,
+        c_fe_state_profile_load_v33,
+        "cFEStateProfileLoad_v33",
+    ),
+    (
         0x0019_0858,
         c_fe_state_rider_bio_ctor,
         "cFEStateRiderBio_ctor",
@@ -556,6 +561,146 @@ pub fn c_fe_state_profile_load_v37(c: &mut Cpu) {
     })
 }
 
+/// `void cFEStateProfileLoad_v33(cFEStateProfileLoad* this)` (0x18faf0): once
+/// the profile load has finished (`+0x1ac` still 0), leave the screen by the
+/// exit mode at `+0x27c`: 0 asks the UI engine's owner (`+0x10`) for the next
+/// state and switches to it (closing popups); 1 sets up the race (event type
+/// 4, event 0xc, the rider's record field) and moves the app to a
+/// `cPreGameLoadScreen`; 2 switches to a new `cFEStateTitle`. Then `+0x1ac`
+/// is set to 1.
+pub fn c_fe_state_profile_load_v33(c: &mut Cpu) {
+    const DONE: u32 = 0x1ac;
+    const EXIT_MODE: u32 = 0x27c;
+    const ENGINE: u32 = 0x10;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S0, 0x40);
+        let this = abi::arg(c, 0);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(this).off(DONE).lw(c);
+        let done = c.g[V0][0] != 0;
+        c.g[V0][0] = 1;
+        if !done {
+            // `plus_one`: the paths through the shared `v0 = 1` block.
+            let mut plus_one = false;
+            c.cycles += 3;
+            c.g[S3][0] = Addr(this).off(EXIT_MODE).lw(c);
+            let mode = c.g[S3][0];
+            c.g[A1][0] = c.g[S2][0];
+            if mode == 0 {
+                // Ask the owner for the next state.
+                c.cycles += 10;
+                c.g[V0][0] = Addr(this).off(ENGINE).lw(c);
+                c.g[A2][0] = Addr(this).off(0x1bc).lw(c);
+                c.g[A3][0] = Addr(r32(c, V0)).lw(c);
+                c.g[V1][0] = Addr(r32(c, A3)).off(4).lw(c);
+                c.g[A0][0] = Addr(r32(c, V1)).off(0x28).lh(c);
+                c.g[V0][0] = Addr(r32(c, V1)).off(0x2c).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx(r32(c, A3).wrapping_add(r32(c, A0)));
+                call_ptr(c, target, 0x0018_fb44)?;
+                let next = c.g[V0][0];
+                c.g[A1][0] = next;
+                if next == 0 {
+                    plus_one = true;
+                } else {
+                    c.cycles += 5;
+                    c.g[A0][0] = Addr(this).off(ENGINE).lw(c);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x18));
+                    call_ptr(c, 0x0039_f4c0, 0x0018_fb58)?;
+                }
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 2;
+                if mode == 1 {
+                    // Into the race: set up the event and load the game.
+                    c.cycles += 41;
+                    call_ptr(c, 0x0014_dc80, 0x0018_fb70)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = 0;
+                    call_ptr(c, 0x0014_dd58, 0x0018_fb7c)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    call_ptr(c, 0x0014_dc80, 0x0018_fb84)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = 1;
+                    call_ptr(c, 0x0014_dd58, 0x0018_fb90)?;
+                    c.g[S1][0] = c.g[V0][0];
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 4;
+                    call_ptr(c, 0x0014_4df0, 0x0018_fba0)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = 0xc;
+                    call_ptr(c, 0x0014_51e8, 0x0018_fbac)?;
+                    c.g[A1][0] = 0;
+                    c.g[A0][0] = c.g[S1][0];
+                    call_ptr(c, 0x0014_6d98, 0x0018_fbb8)?;
+                    c.g[V1][0] = 0x0053_0000;
+                    Addr(r32(c, GP).wrapping_sub(0x1f38)).sw(c, c.g[S3][0]);
+                    Addr(0x0053_5c08).sw(c, c.g[V0][0]);
+                    // Commit the new-race interface (its vtable slot at +8).
+                    let race = r32(c, S0);
+                    c.g[V0][0] = Addr(race).off(0xc).lw(c);
+                    c.g[A0][0] = Addr(r32(c, V0)).off(8).lh(c);
+                    c.g[V1][0] = Addr(r32(c, V0)).off(0xc).lw(c);
+                    let target = r32(c, V1);
+                    c.g[A0][0] = sx(race.wrapping_add(r32(c, A0)));
+                    call_ptr(c, target, 0x0018_fbd8)?;
+                    // `App_SetNextState(app, new cPreGameLoadScreen)`.
+                    c.g[A0][0] = 8;
+                    c.g[A1][0] = sx(0x0045_ce60);
+                    c.g[A2][0] = 0x100;
+                    c.g[A3][0] = 0;
+                    call_ptr(c, 0x0031_7d70, 0x0018_fbf0)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    call_ptr(c, 0x0023_2720, 0x0018_fbf8)?;
+                    c.g[A0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, 0x0031_6ef8, 0x0018_fc04)?;
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 1;
+                    if mode == 2 {
+                        // Back to the title screen.
+                        c.cycles += 14;
+                        c.g[A0][0] = 0x4c;
+                        c.g[A1][0] = sx(0x0045_e290);
+                        c.g[A2][0] = 0;
+                        c.g[A3][0] = 0;
+                        Addr(r32(c, GP).wrapping_sub(0x1718)).sw(c, 0);
+                        call_ptr(c, 0x0031_7d70, 0x0018_fc30)?;
+                        c.g[A1][0] = Addr(this).off(ENGINE).lw(c);
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, 0x0019_4738, 0x0018_fc3c)?;
+                        c.g[A0][0] = Addr(this).off(ENGINE).lw(c);
+                        c.g[A1][0] = c.g[V0][0];
+                        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x18));
+                        call_ptr(c, 0x0039_f400, 0x0018_fc4c)?;
+                        plus_one = true;
+                    }
+                }
+            }
+            if plus_one {
+                c.cycles += 1;
+            }
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x40);
+        Addr(this).off(DONE).sw(c, c.g[V0][0]);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -713,6 +858,59 @@ pub(crate) mod tests {
                 state_switch_setup(c, seed, 0x18_ef70, 0x0, 10);
                 // The `gp-0x1b08` compare that skips the second widget.
                 w(c, GAME_GP.wrapping_sub(0x1b08), seed % 2);
+            },
+        );
+    }
+
+    #[test]
+    fn c_fe_state_profile_load_v33_matches() {
+        use crate::game::fe::feasyncfile::tests::alloc_base_4;
+        // A method that returns 0 (the owner has no next state).
+        const RET_ZERO: u32 = 0x001a_8828;
+        check(
+            ee::s02::f_0018faf0__generated,
+            c_fe_state_profile_load_v33,
+            60,
+            &|c, seed| {
+                // BELibrary at gp-0x1f04, the app at gp-0x848, pools and heap.
+                let mut r = alloc_base_4(c, seed, 0x18_faf0, 4);
+                // Away from the fake-call results (DATA..DATA+0x40000), the
+                // pools/heap (DATA+0x40000..0x80000) and the eafile pools.
+                let this = DATA + 0xa_0000;
+                let owner = DATA + 0xa_1000;
+                let engine = DATA + 0xa_2000;
+                let vt = DATA + 0xa_3000;
+                let next = DATA + 0xa_4000;
+                let case = seed % 6;
+                w(
+                    c,
+                    this + 0x1ac,
+                    if case == 5 { r.next_u32() | 1 } else { 0 },
+                );
+                let mode = match case {
+                    0 | 1 => 0,
+                    2 => 1,
+                    3 => 2,
+                    _ => r.next_u32() | 4,
+                };
+                w(c, this + 0x27c, mode);
+                w(c, this + 0x1bc, r.next_u32());
+                w(c, this + 0x10, owner);
+                // The owner: its engine object with the next-state method at
+                // vtable +0x28/+0x2c, and its UIStateMgr (an empty list) at +0x18.
+                w(c, owner, engine);
+                w(c, engine + 4, vt);
+                c.bus.write16(vt + 0x28, 0);
+                w(c, vt + 0x2c, if case == 0 { RET_ZERO } else { FAKE });
+                // The method is fake call 0: return a real (empty) state node.
+                w(c, LOG_RESULTS, next);
+                let mgr = owner + 0x18;
+                w(c, mgr, mgr);
+                w(c, mgr + 4, mgr);
+                // (Registers last: the fixture runs guest code.) The
+                // generated body has secondary entries and dispatches on `pc`.
+                c.g[A0][0] = sx(this);
+                c.pc = 0x0018_faf0;
             },
         );
     }

@@ -28,12 +28,20 @@ deterministically (fixed RTC). Common variables:
 | `SSX3_INPUT="frame:buttons:frames,..."` | Scripted pad input (libpad bits: Select 0x1, Start 0x8, Up 0x10, Right 0x20, Down 0x40, Left 0x80, L2 0x100, R2 0x200, L1 0x400, R1 0x800, Triangle 0x1000, Circle 0x2000, Cross 0x4000, Square 0x8000) |
 | `SSX3_SHOTS=dir` | Screenshots (with `--shot-every`) |
 | `SSX3_RAM_DUMP=file` | The 32 MiB of EE RAM at exit, for A/B comparisons |
+| `SSX3_EVENT=BRA2` (`SSX3_RIDER=moby`) | Boot straight into an event, racing at about frame 400 (`crates/ssx3-game/src/event_boot.rs`; codes in `options.md`, `SSX3_EVENT=list`) |
 | `SSX3_SKIP_MOVIES=0` | Play the boot movies (headless skips them by default) |
 | `SSX3_DEBUG_LENSFX_VIS=1` | The generated light-visibility query instead of the native one (deterministic everywhere) |
 
 The reference race: `tools/scenarios.py input p1_race_snow_jam`, or the
 classic `1600:0008:8,2000:4000:8,2500:4000:8,2700:4000:8,2900:4000:8,3100:4000:8,3300:4000:8,3500:4000:8,3700:4000:8,4250:4000:8,4600:4000:3000`
 to 6000 frames.
+
+To look at or measure one event without the ~4,600 frames of menus, use
+`SSX3_EVENT` instead: `SSX3_EVENT=BRA2 SSX3_RIDER=moby target/game/ssx3-headless 2000`
+is racing Metro City from about frame 400. Right after the boot load it sets the race up
+the way the menus do, and goes to the race load instead of the memory card check, the
+title and the front end (`event_boot.rs`), so it is not frame-identical to a menu replay: keep using
+the replay for the gate and the scenarios.
 
 ## Verifying hand-written code
 
