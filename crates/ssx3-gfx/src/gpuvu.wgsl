@@ -283,12 +283,13 @@ struct FsOut {
     @builtin(frag_depth) depth: f32,
 }
 
-// The GS fragment stage with the GS depth (the position's z is the clip z).
-@fragment
-fn fs_gpu(v: VOut) -> FsOut {
-    // (Derivatives before any discard.)
-    let dx = dpdx(v.wp.xyz);
-    let dy = dpdy(v.wp.xyz);
+// The renderer's lighting is on (`fs_gpu`'s pipelines are made with it
+// false when it is off: its code compiled out. Untaken, it still cost the
+// shader's registers: 18.5 -> 12.2 ms a frame at 1080p on an M1, Metro City).
+override LIGHTING: bool = true;
+
+// The GS depth of a fragment (the position's z is the clip z).
+fn gs_depth(v: VOut) -> f32 {
     // The program's FTOI4 depth (x16): XYZ2 takes it as is, XYZF2 / 16 (24
     // bits); negative values wrap (XYZ2: a huge Z; XYZF2: & 0xffffff).
     let sz = v.zw.x / v.zw.y;
@@ -299,7 +300,22 @@ fn fs_gpu(v: VOut) -> FsOut {
     } else {
         z = select(sz * 16.0, zmax, sz < 0.0);
     }
-    let d = min(z, zmax) / (zmax + 1.0);
+    return min(z, zmax) / (zmax + 1.0);
+}
+
+// The GS fragment stage with the GS depth.
+@fragment
+fn fs_gpu(v: VOut) -> FsOut {
+    if (!LIGHTING) {
+        var o: FsOut;
+        o.color = shade(v);
+        o.depth = gs_depth(v);
+        return o;
+    }
+    // (Derivatives before any discard.)
+    let dx = dpdx(v.wp.xyz);
+    let dy = dpdy(v.wp.xyz);
+    let d = gs_depth(v);
     // The renderer's lighting multiplies the colour before the fog (in
     // `shade`): fogged-out distant terrain stays the fog's colour.
     let terrain = (b.flags & 16384u) != 0u && v.wp.w > 0.5 && v.nrm.w > 0.5;

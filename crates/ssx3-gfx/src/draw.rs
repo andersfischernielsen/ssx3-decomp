@@ -371,7 +371,8 @@ pub struct Pipelines {
     gpu_module: wgpu::ShaderModule,
     pub gpu_layout: wgpu::BindGroupLayout,
     gpu_pl: wgpu::PipelineLayout,
-    gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program), wgpu::RenderPipeline>,
+    /// (Keyed also by whether the renderer's lighting is on: `LIGHTING`.)
+    gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program, bool), wgpu::RenderPipeline>,
     /// The shadow pass (shadow.wgsl; bind group 1 with a placeholder map).
     shadow_module: wgpu::ShaderModule,
     shadow_pl: wgpu::PipelineLayout,
@@ -691,8 +692,13 @@ impl Pipelines {
     }
 
     /// A GPU-vertex pipeline made earlier with [`Pipelines::get_gpu`].
-    pub fn cached_gpu(&self, k: PipeKey, p: ssx3_render::gpu::Program) -> &wgpu::RenderPipeline {
-        &self.gpu_cache[&(k, p)]
+    pub fn cached_gpu(
+        &self,
+        k: PipeKey,
+        p: ssx3_render::gpu::Program,
+        lit: bool,
+    ) -> &wgpu::RenderPipeline {
+        &self.gpu_cache[&(k, p, lit)]
     }
 
     /// The pipeline for `k` with the vertices of program `p` computed on
@@ -702,9 +708,10 @@ impl Pipelines {
         dev: &wgpu::Device,
         k: PipeKey,
         p: ssx3_render::gpu::Program,
+        lit: bool,
     ) -> &wgpu::RenderPipeline {
         let (module, pl) = (&self.gpu_module, &self.gpu_pl);
-        self.gpu_cache.entry((k, p)).or_insert_with(|| {
+        self.gpu_cache.entry((k, p, lit)).or_insert_with(|| {
             let entry = p.vs_entry();
             let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
                 color: wgpu::BlendComponent {
@@ -738,7 +745,12 @@ impl Pipelines {
                 fragment: Some(wgpu::FragmentState {
                     module,
                     entry_point: Some("fs_gpu"),
-                    compilation_options: Default::default(),
+                    // Without the renderer's lighting its code is compiled
+                    // out (`LIGHTING`, gpuvu.wgsl).
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants: &[("LIGHTING", if lit { 1.0 } else { 0.0 })],
+                        ..Default::default()
+                    },
                     targets: &[Some(wgpu::ColorTargetState {
                         format: COLOR_FORMAT,
                         blend,

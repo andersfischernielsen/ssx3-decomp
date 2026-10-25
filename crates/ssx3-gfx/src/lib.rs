@@ -177,6 +177,12 @@ pub struct Inner {
     /// Frames timed and the time (ms) in build, prepare, encode+submit,
     /// depth readback.
     timing: (u64, [f64; 4]),
+    /// The depth readback's parts (ms): waiting for the previous frame's GPU
+    /// work, copying the depth out, creating the next buffer.
+    depth_parts: [f64; 3],
+    /// Per frame (summed): passes begun, colour snapshots, depth snapshots,
+    /// target switches, draws.
+    pass_counts: [u64; 5],
     /// The image on screen, for presenting (sRGB view allowed).
     present: Vec<wgpu::Texture>,
     /// Vertex and uniform buffers, kept across frames (grown as needed).
@@ -320,6 +326,8 @@ impl Renderer {
                 frames_in: 0,
                 zscale: 16777216.0,
                 timing: (0, [0.0; 4]),
+                depth_parts: [0.0; 3],
+                pass_counts: [0; 5],
                 present: Vec::new(),
                 staged: None,
                 vbuf: None,
@@ -840,13 +848,26 @@ impl Inner {
         Some(t.create_view(&Default::default()))
     }
 
+    /// Start the stage timings over (a benchmark's window).
+    pub fn reset_timing(&mut self) {
+        self.timing = (0, [0.0; 4]);
+        self.depth_parts = [0.0; 3];
+        self.pass_counts = [0; 5];
+    }
+
     /// Mean time per frame in each stage of `render` (ms).
     pub fn timing_report(&self) -> String {
         let n = self.timing.0.max(1) as f64;
         let t = &self.timing.1;
         format!(
-            "gfx per frame: build {:.2} ms, prepare {:.2} ms, encode+submit {:.2} ms, depth readback {:.2} ms ({} frames)",
-            t[0] / n, t[1] / n, t[2] / n, t[3] / n, self.timing.0
+            "gfx per frame: build {:.2} ms, prepare {:.2} ms, encode+submit {:.2} ms, depth readback {:.2} ms (GPU wait {:.2}, copy {:.2}, buffer {:.2}) ({} frames)",
+            t[0] / n, t[1] / n, t[2] / n, t[3] / n,
+            self.depth_parts[0] / n, self.depth_parts[1] / n, self.depth_parts[2] / n, self.timing.0
+        ) + &format!(
+            "; per frame: {:.1} passes, {:.1} colour snapshots, {:.1} depth snapshots, {:.1} target switches, {:.0} draws",
+            self.pass_counts[0] as f64 / n, self.pass_counts[1] as f64 / n,
+            self.pass_counts[2] as f64 / n, self.pass_counts[3] as f64 / n,
+            self.pass_counts[4] as f64 / n
         )
     }
 
@@ -1713,7 +1734,8 @@ impl Inner {
         for it in &items {
             match it.gpu {
                 Some(g) => {
-                    self.pipes.get_gpu(&self.dev, it.key, g.program);
+                    self.pipes
+                        .get_gpu(&self.dev, it.key, g.program, light.is_some());
                 }
                 None => {
                     self.pipes.get(&self.dev, it.key);
@@ -1901,6 +1923,7 @@ impl Inner {
             }
         }
         let rts = &self.rts;
+        let mut counts = [0u64; 5];
         // A pass on target `fbp`; depth starts cleared on a target's first
         // pass of the frame.
         let begin =
@@ -1955,6 +1978,7 @@ impl Inner {
         let mut cur_target = main;
         started.insert(main);
         let mut pass = begin(&mut enc, main, true);
+        counts[0] += 1;
         pass.set_vertex_buffer(0, vbuf.slice(..));
         // The pass state last set (each command only when it changes; a new
         // pass starts with none).
@@ -2045,6 +2069,7 @@ impl Inner {
                     po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
                 }
                 pass = begin(&mut enc, cur_target, false);
+                counts[0] += 1;
                 pass.set_vertex_buffer(0, vbuf.slice(..));
                 last = Last::default();
                 // (They overwrote the snapshot.)
@@ -2055,6 +2080,7 @@ impl Inner {
                 drop(pass);
                 take_depth(&mut enc);
                 pass = begin(&mut enc, cur_target, false);
+                counts[0] += 1;
                 pass.set_vertex_buffer(0, vbuf.slice(..));
                 last = Last::default();
             }
@@ -2070,6 +2096,10 @@ impl Inner {
             let zsnapshot = it.zfog && it.target == main;
             if it.target != cur_target || snapshot || zsnapshot {
                 drop(pass);
+                counts[0] += 1;
+                counts[1] += snapshot as u64;
+                counts[2] += zsnapshot as u64;
+                counts[3] += (it.target != cur_target) as u64;
                 if zsnapshot {
                     enc.copy_texture_to_texture(
                         wgpu::TexelCopyTextureInfo {
@@ -2136,7 +2166,7 @@ impl Inner {
                 }
                 last.pipe = Some((it.key, program));
                 pass.set_pipeline(match program {
-                    Some(p) => self.pipes.cached_gpu(it.key, p),
+                    Some(p) => self.pipes.cached_gpu(it.key, p, light.is_some()),
                     None => self.pipes.cached(it.key),
                 });
             }
@@ -2163,6 +2193,7 @@ impl Inner {
                 last.scissor = Some([x, y, sw, sh]);
                 pass.set_scissor_rect(x, y, sw, sh);
             }
+            counts[4] += 1;
             match it.gpu {
                 Some(g) => pass.draw(g.first..g.first + g.count, 0..1),
                 None => pass.draw(it.first..it.first + it.count, 0..1),
@@ -2199,6 +2230,9 @@ impl Inner {
             }
         }
         drop(pass);
+        for (a, b) in self.pass_counts.iter_mut().zip(counts) {
+            *a += b;
+        }
         if ao_at == items.len() || hud_at == items.len() {
             let po = self.post.as_mut().expect("post passes");
             if ao_at == items.len() {
@@ -2290,6 +2324,7 @@ impl Inner {
             },
         );
         // Depth after phase 1, read back for the light queries.
+        let t_buf = web_time::Instant::now();
         let depth_buf = self.want_depth.then(|| {
             let buf = self.dev.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("ssx3-gfx depth readback"),
@@ -2320,6 +2355,7 @@ impl Inner {
             );
             buf
         });
+        self.depth_parts[2] += t_buf.elapsed().as_secs_f64() * 1e3;
         let sub_idx = self.queue.submit(std::iter::once(enc.finish()));
         let t_sub = web_time::Instant::now();
         self.timing.1[2] += (t_sub - t_prepared).as_secs_f64() * 1e3;
@@ -2331,6 +2367,7 @@ impl Inner {
                 self.pending_depth.take()
             {
                 let slice = prev.slice(..);
+                let t_wait = web_time::Instant::now();
                 if cfg!(target_arch = "wasm32") {
                     let _ = self.dev.poll(wgpu::PollType::Poll);
                 } else {
@@ -2339,6 +2376,8 @@ impl Inner {
                         timeout: None,
                     });
                 }
+                let t_copy = web_time::Instant::now();
+                self.depth_parts[0] += (t_copy - t_wait).as_secs_f64() * 1e3;
                 // (Not mapped yet in the browser: the queries keep the
                 // depth before.)
                 if let Some(v) = mapped
@@ -2370,6 +2409,7 @@ impl Inner {
                     ));
                     self.shared.depth_ready.notify_all();
                 }
+                self.depth_parts[1] += t_copy.elapsed().as_secs_f64() * 1e3;
             }
             let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let m = mapped.clone();

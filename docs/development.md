@@ -103,6 +103,10 @@ needs `--features vu1-microcode` (which brings `emu-gs`):
 
 ## Diagnostics
 
+`SSX3_BENCH=from:to` (headless: wall time per frame over those frames,
+with the render thread's stages, its GPU wait and the passes, snapshots and
+draws per frame; Metro City is the heaviest course:
+`SSX3_EVENT=BRA2 SSX3_TICK_HZ=120 SSX3_RENDER_SIZE=1920x1080 SSX3_BENCH=1000:3600 target/game/ssx3-headless 3600`),
 `SSX3_MMIO_PROFILE=1` (hardware registers the game touches),
 `SSX3_FRAME_ISSUES=1`, `SSX3_FRAME_DUMP=n` (+ `gfx_replay`),
 `SSX3_TRACE_THREADS`, `SSX3_TRACE_SYSCALLS`, `SSX3_TRACE_SIF`,

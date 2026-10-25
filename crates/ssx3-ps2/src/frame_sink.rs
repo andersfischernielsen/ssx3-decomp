@@ -164,6 +164,11 @@ static TIMING: Mutex<(u64, f64, f64)> = Mutex::new((0, 0.0, 0.0));
 /// [`frame::texture_ranges`] does not cover).
 static MISSES: AtomicU64 = AtomicU64::new(0);
 
+/// Start the timings over (a benchmark's window).
+pub fn reset_timing() {
+    *TIMING.lock().unwrap() = (0, 0.0, 0.0);
+}
+
 /// Mean time per published frame on the game's thread (building the typed
 /// frame, taking its memory, hand-over).
 pub fn timing_report() -> String {
