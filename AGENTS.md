@@ -12,8 +12,9 @@ Keep the decompilation work:
   - prefer unit tests to compare GS vs. native behavior
 
 Never co-author commits.
+Wait with the browser build as the final step of your work (smoke test). The browser is the lowest-priority platform target.
 
-Debugging aid: `SSX3_EVENT=<code>` (`SSX3_RIDER=<name>`) boots straight into an event (racing at about frame 1,050, no menus); codes in `docs/options.md`, `SSX3_EVENT=list`. Use it to look at or measure one course; keep the menu replay for the gate and the scenarios.
+Debugging aid: `SSX3_EVENT=<code>` (`SSX3_RIDER=<name>`) boots straight into an event (racing at about frame 400: no memory card, title or menus); codes in `docs/options.md`, `SSX3_EVENT=list`. Use it to look at or measure one course; keep the menu replay for the gate and the scenarios.
 
 ---
 

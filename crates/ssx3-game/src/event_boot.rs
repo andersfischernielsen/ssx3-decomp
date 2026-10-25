@@ -1,10 +1,14 @@
 //! `SSX3_EVENT=<code>[:<event>]` (and optionally `SSX3_RIDER=<name|index>`):
-//! boot straight into an event. When the front end's main menu first
-//! updates, set the race up through the game database the way the menus do
-//! (main menu "Single Event", character select, event select), then hand the
-//! app the pre-game load screen, as the rules screen's "Start" does
-//! (`FEUICustom_CreateState` 0x1a0830, states 0x14/0x15). Skips everything
-//! between the main menu and the race load.
+//! boot straight into an event. When the boot load is done
+//! (`InitLoadScreen_Update` 0x232588 hands the app the start screen: memory
+//! card check, profile load, title, then the front end), set the race up
+//! through the game database the way the menus do (main menu "Single
+//! Event", character select, event select) and hand the app the pre-game
+//! load screen instead, as the rules screen's "Start" does
+//! (`FEUICustom_CreateState` 0x1a0830, states 0x14/0x15). The memory card,
+//! the title and the whole front end never run (the profile load's
+//! "continue in the backcountry" goes the same way, `cFEStateProfileLoad_v33`
+//! 0x18faf0); the race uses the default profile.
 //!
 //! The codes are the course codes of the event select tables (0x4781d0
 //! races, 0x4786e0 freestyle): `ARA1` Snow Jam, `BRA2` Metro City, `CRA3`
@@ -13,9 +17,9 @@
 //! `ABC1`/`DBC2`/`EBC3` backcountry (several events each: add `:<event>`,
 //! e.g. `ABC1:6`; the first one by default). `SSX3_EVENT=list` prints them.
 //!
-//! The title's "Press START" and the prompts after the setup (the intro
-//! flythrough, the race card's "Continue") are pressed for you: the front
-//! ends add [`pad_buttons`] to pad 1 until the race's countdown starts.
+//! The prompts after the setup (the intro flythrough, the race card's
+//! "Continue") are pressed for you: the front ends add [`pad_buttons`] to
+//! pad 1 until the race's countdown starts.
 //!
 //! Off (and never installed) unless `SSX3_EVENT` is set.
 
@@ -30,7 +34,7 @@ use ssx3_ee_rt::Cpu;
 use crate::call::call_ptr;
 use crate::call::Flow;
 
-const MAIN_MENU_UPDATE: u32 = 0x0019_4dd0;
+const INIT_LOAD_SCREEN_UPDATE: u32 = 0x0023_2588;
 /// The race states that end the boot (no more presses): the countdown, and
 /// free ride (events without one).
 const RACE_STARTED: [u32; 2] = [0x0011_3d48, 0x0011_3cf0];
@@ -43,6 +47,7 @@ const BE_NEW_RACE_INT_SET_EVENT_TYPE: u32 = 0x0014_4df0;
 const BE_NEW_RACE_INT_SET_EVENT: u32 = 0x0014_51e8;
 const BE_NEW_PLAYER_INT_SET_CHARACTER: u32 = 0x0014_7338;
 const EA_MEM_ALLOC_NAMED: u32 = 0x0031_7d70;
+const EA_MEM_FREE: u32 = 0x0031_7e98;
 const PRE_GAME_LOAD_SCREEN_CTOR: u32 = 0x0023_2720;
 const APP_SET_NEXT_STATE: u32 = 0x0031_6ef8;
 
@@ -73,11 +78,11 @@ struct Config {
 }
 
 static CONFIG: OnceLock<Config> = OnceLock::new();
-/// Where the boot is: before the setup (pressing Start), after it (pressing
+/// Where the boot is: before the setup (booting), after it (pressing
 /// Cross), in the race (nothing more to do).
 static PHASE: AtomicU8 = AtomicU8::new(OFF);
 const OFF: u8 = 0;
-const TITLE: u8 = 1;
+const BOOT: u8 = 1;
 const LOADING: u8 = 2;
 const RACING: u8 = 3;
 
@@ -86,8 +91,8 @@ const RACING: u8 = 3;
 static INNER: OnceLock<Vec<(u32, GuestFn)>> = OnceLock::new();
 
 /// Buttons (libpad bits) the boot holds on pad 1, asked once per pad update
-/// by the front ends: Start pulses on the title, Cross pulses until the race
-/// starts, nothing otherwise. Pulsed (6 updates on, 6 off) so each press is
+/// by the front ends: Cross pulses from the setup until the race starts,
+/// nothing otherwise. Pulsed (6 updates on, 6 off) so each press is
 /// a new edge.
 pub fn pad_buttons() -> u16 {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -96,14 +101,13 @@ pub fn pad_buttons() -> u16 {
         return 0;
     }
     match PHASE.load(Ordering::Relaxed) {
-        TITLE => 0x0008,
         LOADING => 0x4000,
         _ => 0,
     }
 }
 
 /// Install the boot hook when `SSX3_EVENT` is set. Call after
-/// [`crate::install`] (it wraps the hand-written main menu update).
+/// [`crate::install`] (it wraps the hand-written boot load update).
 pub fn install() {
     let Ok(want) = std::env::var("SSX3_EVENT") else {
         return;
@@ -119,7 +123,7 @@ pub fn install() {
     });
     let _ = CONFIG.set(Config { want, rider });
     let installed = crate::overrides();
-    let inner = std::iter::once(MAIN_MENU_UPDATE)
+    let inner = std::iter::once(INIT_LOAD_SCREEN_UPDATE)
         .chain(RACE_STARTED)
         .map(|a| {
             let f = installed
@@ -132,10 +136,13 @@ pub fn install() {
         })
         .collect();
     let _ = INNER.set(inner);
-    assert!(ssx3_ee::set_override(MAIN_MENU_UPDATE, main_menu_update));
+    assert!(ssx3_ee::set_override(
+        INIT_LOAD_SCREEN_UPDATE,
+        init_load_screen_update
+    ));
     assert!(ssx3_ee::set_override(RACE_STARTED[0], countdown_update));
     assert!(ssx3_ee::set_override(RACE_STARTED[1], freeride_update));
-    PHASE.store(TITLE, Ordering::Relaxed);
+    PHASE.store(BOOT, Ordering::Relaxed);
 }
 
 fn inner(addr: u32) -> GuestFn {
@@ -199,13 +206,19 @@ pub fn find(events: &[Event], want: &str) -> Option<Event> {
         .cloned()
 }
 
-/// The main menu update, then (once) the race setup and the switch to the
-/// pre-game load screen.
-fn main_menu_update(c: &mut Cpu) {
-    inner(MAIN_MENU_UPDATE)(c);
-    if PHASE
-        .compare_exchange(TITLE, LOADING, Ordering::Relaxed, Ordering::Relaxed)
-        .is_err()
+/// The boot load screen's update; when it hands the app the start screen
+/// (the boot load is done), the race setup and the pre-game load screen
+/// instead.
+fn init_load_screen_update(c: &mut Cpu) {
+    inner(INIT_LOAD_SCREEN_UPDATE)(c);
+    let gp = c.g[GP][0] as u32;
+    let app = c.bus.read32(gp.wrapping_sub(0x848));
+    // `App_SetNextState` stores the next state at app+4.
+    let start_screen = c.bus.read32(app + 4);
+    if start_screen == 0
+        || PHASE
+            .compare_exchange(BOOT, LOADING, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
     {
         return;
     }
@@ -243,7 +256,11 @@ fn main_menu_update(c: &mut Cpu) {
     // returns nothing); the calls below only use caller-saved registers.
     let back = c.pc;
     let ra = c.g[RA][0];
-    if start(c, &ev, cfg.rider, back).is_err() {
+    // The start screen is only constructed (`StartScreen_ctor` sets fields):
+    // free it, the pre-game load screen replaces it.
+    if call(c, EA_MEM_FREE, &[start_screen], back).is_err()
+        || start(c, &ev, cfg.rider, back).is_err()
+    {
         // A callee switched away (host-thread unwind): the stack is gone.
         return;
     }

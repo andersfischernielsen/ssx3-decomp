@@ -5332,6 +5332,7 @@
 0x002ee2b0    WorldPainter_GetSunSize
 0x002c1560    tWPIGD_Sun_GetElevation
 0x002c1568    tWPIGD_Sun_GetAzimuth
+0x002018a8    EventSelect_OnWidgetAction
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
