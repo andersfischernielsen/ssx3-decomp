@@ -660,7 +660,11 @@ impl Shadow {
                 c.instances,
                 c.triangles.len() / 3,
                 c.lights.len(),
-                c.lights.iter().filter(|l| l.kind == 1).count()
+                c.lights.iter().filter(|l| l.kind == 1).count(),
+            );
+            eprintln!(
+                "shadow: {} halos",
+                c.lights.iter().filter(|l| l.halo).count()
             );
         }
         self.casters = Some((c.generation, buf, c.triangles.len() as u32));

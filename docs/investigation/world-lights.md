@@ -135,8 +135,67 @@ a reproduction: the baked terrain colours may already contain the lamps
 and `PS2GraphicsMan_ResetBloomParams` 0x36c740 copies to
 `PS2GraphicsMan+0x6cd4 + view·0x1c`: **screen bloom / glow parameters** (H for
 the data flow, M for "bloom" from the consumer's name). Halo sprites at lamps
-are the effects-list kind 8 lens flares, a separate record. Neither carries
+are the effects-list kind-8 records (§6). Neither carries
 light positions for shading.
+
+## 6. Light-glow flares (effects-list kind 8)
+
+The halo sprites at lamps and neon are the kind-8 effects-list records, which
+are separate from the type-6 lights. They are a world resource (chunk
+resource type 7). The resolver case 0x3ab0dc calls slot 20
+`cPS2ChunkResolve_v20` 0x3aabd8, sets `+8 = 8` and inserts the box
+`+0x28..+0x3c` (SpatialHash list type 2). Every frame
+`Nash_CollectEffects` 0x22a770 appends the kind-8 entries of visible nodes to
+`gm+0x7bc4` (count `+0x7bc0`); there is no per-record cull there.
+`GameModule_RenderLensFlares` 0x22c790 then calls `LensFX_AddSources`,
+`LensFX_PrepareView` (project) and `LensFX_DrawFlares`.
+
+Record (0x50 bytes):
+
+| Off | Type | Meaning | Conf |
+|---|---|---|---|
+| 0x00 / 0x04 | ptr | Nash list next / prev | H |
+| 0x08 | u32 | kind = 8 | H |
+| 0x0c | u32 | flags. **`& 0x70` = size class**: 0x10 → 180, 0x20 → 100, 0x40 → 350 world units (`LensFX_GetFlareSizeForRes` 0x2e27e8); any other value → size 0, so the flare is drawn at zero size. Other bits unused by LensFX | H (0x70), L (other bits) |
+| 0x10..0x18 | f32 ×3 | colour r, g, b. `LensFX_DrawFlareQuad` **normalises it to unit length** before drawing, so only the hue counts: the record carries no brightness | H |
+| 0x1c..0x24 | f32 ×3 | world position (sprite centre) | H |
+| 0x28..0x3c | f32 ×6 | AABB = centre ∓ size, written by v20 (Metro: ∓100 for class 0x20) | H |
+| 0x40 / 0x44 | f32 | per-view visibility 0..1 (views 0 / 1), zeroed at resolve. `LensFX_UpdateSourceVisibility` 0x2e3130 writes the renderer's occlusion-query result here (slot `+0x24` of the object at `LensFX+0x649c`; when no result is ready it keeps the previous value) | H (writes), M (occlusion query) |
+| 0x48 | u32 | e.g. 0x5553c5: never read by LensFX, Nash or the resolver code read here (an id or hash?) | L |
+| 0x4c | u32 | e.g. 0x21: never read by that code either | L |
+
+Drawing (`LensFX_DrawFlareQuad` 0x2e2868, per projected source that is on
+screen):
+
+- The sprite is a world-space billboard at `+0x1c` with width = height =
+  the class size (100 / 180 / 350).
+- Colour is `(alpha, normalize(+0x10))`. When the source passed projection
+  (`src+0x2e`), alpha is the record's view visibility; otherwise it is 1.0.
+  Alpha ≤ 0 means the flare is not drawn.
+- The texture comes from the renderer (`PS2GraphicsMan+0x1028` for class
+  0x20, `+0x1024` for 0x10 / 0x40), so it is per size class, not per
+  record. Additive-style blend state.
+- Projection (`LensFX_ProjectSource` 0x2e2b00): the flare is skipped when the
+  centre fails the renderer's view test or its depth·2⁻²⁴ is ≤ 0.005. For the
+  occlusion probe the point is moved 80 / 100 / 200 units towards the camera
+  (classes 0x20 / 0x10 / 0x40), and the probe rect is 1..16 × 1..8 pixels,
+  scaled with depth.
+- (H for the data flow; M for the blend and texture names.)
+
+| Question | Answer | Conf |
+|---|---|---|
+| Size / intensity | Only the size class (0x70 bits). The record and the class textures have no intensity, and the colour is normalised. For a point light, derive the strength from the class (e.g. radius ∝ 100 / 180 / 350) and take the colour hue from `+0x10` | H |
+| Not lamps? | The sun flare is not in the Nash: it is `LensFX_DrawSun` 0x2f4a08 at `LensFX+0x6070`, gated by gp+0xa28. The screen-space ghost set is `LensFX_SetDefaultFlares` / `DrawFlareSet`. Every kind-8 record is a placed world glow. Whether some mark non-lamps (e.g. snow sparkle) can only be judged from placement | H (sun), L (rest) |
+| Runtime toggles | Only the per-view occlusion visibility (`+0x40/+0x44`) and section streaming (Release removes them). No time-of-day input. Fog/LightGlow painter values do not touch them | M |
+| Relation to type-6 lights | None in code: separate resources, and no pointer either way. Lamps that have both sit at nearby positions | M |
+
+Generated functions studied for this (not hand-ported): 0x22c790
+GameModule_RenderLensFlares, 0x22a770 Nash_CollectEffects, 0x2e2868
+LensFX_DrawFlareQuad, 0x2e2b00 LensFX_ProjectSource, 0x2e2ff8
+LensFX_AddSources, 0x2e30d0 LensFX_Render, 0x2e3130
+LensFX_UpdateSourceVisibility, 0x2e3338 LensFX_PrepareView, 0x2e3478
+LensFX_DrawFlares, 0x3ad230 World_ChunkResolveHook. Already ported: 0x2e27e8,
+0x2e2fa8, 0x3aabd8, 0x22a270.
 
 ## Generated functions studied (not hand-ported yet)
 

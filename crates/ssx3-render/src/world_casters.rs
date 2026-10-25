@@ -159,9 +159,70 @@ pub struct WorldLight {
     pub cos_outer: f32,
     pub falloff: i8,
     pub exponent: i8,
+    /// From a lamp's glow (lens-flare entry), not a light record.
+    pub halo: bool,
+}
+
+/// A halo's light (`SSX3_HALOS=intensity`, 0: none): the game's lamps'
+/// point lights (falloff 2, intensity about 40; Metro City's street lamps
+/// 37.7).
+fn halo_intensity() -> f32 {
+    static I: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *I.get_or_init(|| {
+        std::env::var("SSX3_HALOS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(40.0)
+    })
 }
 
 impl WorldLight {
+    /// A lamp's glow (lens-flare entry, kind 8,
+    /// `docs/investigation/world-lights.md` §6: hue at +0x10, centre at
+    /// +0x1c, size class in the flags +0xc & 0x70: 100, 180 or 350 units)
+    /// as a point light: the artists placed a glow where a lamp shines;
+    /// the game lights nothing with it. Its strength follows the glow's
+    /// size, its colour the hue (the game draws the glow with the colour
+    /// scaled to unit length), its radius as the game's point lights':
+    /// where (100 / d)² · intensity · luminance falls to 0.05.
+    fn halo(m: &dyn Mem, a: u32) -> Option<WorldLight> {
+        let f = |o: u32| f32::from_bits(word(m, a + o));
+        let v = |o: u32| [f(o), f(o + 4), f(o + 8)];
+        let size = match word(m, a + 0xc) & 0x70 {
+            0x10 => 180.0,
+            0x20 => 100.0,
+            0x40 => 350.0,
+            _ => return None,
+        };
+        let c = v(0x10);
+        let top = c[0].max(c[1]).max(c[2]);
+        let colour = c.map(|x| x / top);
+        let pos = v(0x1c);
+        let intensity = halo_intensity() * size / 100.0;
+        let lum = 0.299 * colour[0] + 0.587 * colour[1] + 0.114 * colour[2];
+        if intensity <= 0.0
+            || !(top > 0.0)
+            || !pos.iter().chain(&colour).all(|x| x.is_finite())
+            || !c.iter().all(|x| *x >= 0.0)
+            || lum <= 0.0
+        {
+            return None;
+        }
+        Some(WorldLight {
+            pos,
+            radius: (100.0 * (intensity * lum / 0.05).sqrt()).min(5000.0),
+            colour,
+            intensity,
+            dir: [1.0, 0.0, 0.0],
+            kind: 2,
+            cos_inner: 0.0,
+            cos_outer: 0.0,
+            falloff: 2,
+            exponent: 0,
+            halo: true,
+        })
+    }
+
     /// The record at `a`, if it is a light the game lights with (flag
     /// 0x100 clear, a spot or a point).
     fn read(m: &dyn Mem, a: u32) -> Option<WorldLight> {
@@ -183,6 +244,7 @@ impl WorldLight {
             cos_outer: f(0x60),
             falloff: b as u8 as i8,
             exponent: (b >> 8) as u8 as i8,
+            halo: false,
         };
         (l.pos.iter().chain(&l.colour).all(|x| x.is_finite())
             && l.radius.is_finite()
@@ -288,11 +350,12 @@ impl CasterCache {
             let mut e = word(m, node + 0x28);
             let mut n = 0;
             while ram(e) && n < 100_000 {
-                if word(m, e + 8) == 6 {
-                    if let Some(l) = WorldLight::read(m, e) {
-                        lights.push(l);
-                    }
-                }
+                let l = match word(m, e + 8) {
+                    6 => WorldLight::read(m, e),
+                    8 => WorldLight::halo(m, e),
+                    _ => None,
+                };
+                lights.extend(l);
                 e = word(m, e);
                 n += 1;
             }
