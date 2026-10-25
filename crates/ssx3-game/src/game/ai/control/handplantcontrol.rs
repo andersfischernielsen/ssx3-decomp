@@ -459,7 +459,8 @@ pub(crate) mod air {
     /// The rider's sub-state object.
     pub const SUB: u32 = 0x77c;
 
-    /// Delta time of the frame.
+    /// The rider's time scale (normally 1.0): the tick's dt is this times the
+    /// step.
     pub const DT: u32 = 0x300;
 
     /// Predicted position / velocity buffers handed to the predictor.
@@ -1577,17 +1578,18 @@ pub(crate) const WORLD: i32 = -0x848;
 
 pub(crate) const SECTIONS: u32 = 0x44;
 
-/// The fraction of the remaining air-turn angle a *last partial* tick applies
-/// (`RiderAirState_Update`, 0x139a30): the original `dt * 59.999996` (the
-/// reciprocal of `1/60`, ~1.0 at 60 Hz), and the whole remaining angle at any
-/// other rate — the constant would halve the turn at 120 Hz and quarter it at
-/// 240.
+/// The turn gain `RiderAirState_Update` (0x139a20) hands
+/// `Rider_UpdateOrientation` (0x121aa0) when less than one tick of the air
+/// window is left. The gain is per second: the other branch passes `time scale
+/// / window left`, and the consumer turns by `min(angle * gain, cap) * step`.
+/// Here the window counts as one tick: the original `time scale * 59.999996`
+/// (the reciprocal of `1/60`), `time scale / step` at any other rate.
 #[inline]
-pub(crate) fn air_last_turn_fraction(c: &mut Cpu, dt: FpuF32, fallback: FpuF32) -> FpuF32 {
+pub(crate) fn air_last_turn_fraction(c: &mut Cpu, time_scale: FpuF32, fallback: FpuF32) -> FpuF32 {
     if crate::tick::rate(c) == 60 {
-        dt * fallback
+        time_scale * fallback
     } else {
-        FpuF32::ONE
+        time_scale * FpuF32::ONE.div(FpuF32::from_f32(crate::tick::dt(c)))
     }
 }
 
@@ -1696,9 +1698,8 @@ pub fn rider_air_state_update(c: &mut Cpu) {
                             }
                             c.cycles += 3;
                             c.lwc1(0, gp_5(c, -0x71cc));
-                            // `dt * 59.999996` is "the whole remaining turn"
-                            // at 60 Hz; in a shorter last partial tick at
-                            // another rate it is the whole of it.
+                            // Less than a tick of the window left: it counts
+                            // as one tick.
                             let fraction =
                                 air_last_turn_fraction(c, FpuF32(c.f[12]), FpuF32(c.f[0]));
                             c.f[20] = fraction.0;
@@ -6498,30 +6499,72 @@ pub(crate) mod tests {
         );
     }
 
-    /// `RiderAirState_Update`'s last-partial-tick turn: the original
-    /// `dt * 59.999996` (~1.0) at 60 Hz, the whole remaining angle at 120/240.
-    /// Without the conversion the fraction would halve per doubling of the
-    /// rate and the rider would stop short of its target orientation.
+    /// `RiderAirState_Update`'s last-partial-tick turn through the real
+    /// `Rider_UpdateOrientation` (0x121aa0), which turns by `min(angle * gain,
+    /// cap) * step`: the whole remaining turn at 60/120/240 when the cap does
+    /// not bind, the same turn per second when it does, and the original
+    /// multiply at 60. A gain of 1.0 would turn 1/rate of the angle per tick.
     #[test]
     fn rider_air_state_last_turn_follows_the_rate() {
         use crate::tick;
-        let mut c = crate::difftest::fresh();
+        const R: u32 = 0x0080_0000;
+        const TARGET: u32 = R + 0x1000;
         // The game's value at gp-0x71cc: 59.999996 (0x426fffff), the
         // reciprocal of the 1/60 bits.
         let fallback = FpuF32(0x426f_ffff);
         assert!((fallback.to_f32() - 59.999_996f32).abs() < 1e-4);
-        for hz in [60u32, 120, 240] {
+        // The heading after `ticks` last-partial turns towards a target 0.05
+        // rad away, at time scale 1.0 and angular cap `cap` (rad/s).
+        let turn = |hz: u32, cap: f32, ticks: u32| {
+            let mut c = crate::difftest::fresh();
+            elf_image(&mut c);
+            c.g[GP][0] = GAME_GP as u64;
             tick::set_for_test(&mut c, hz);
-            let dt = FpuF32::from_f32(1.0f32 / hz as f32);
-            let f = air_last_turn_fraction(&mut c, dt, fallback);
-            if hz == 60 {
-                // The same FPU multiply the guest does (rounding included).
-                let original = FpuF32::from_f32(1.0f32 / 60.0f32) * fallback;
-                assert_eq!(f, original, "60 Hz keeps the product");
-                assert!((f.to_f32() - 1.0).abs() < 1e-5);
-            } else {
-                assert_eq!(f, FpuF32::ONE, "{hz} Hz: the whole remaining turn");
+            // The consumer's `.lit4` step.
+            c.bus.write32(0x0049_b828, tick::step_bits(hz));
+            // Identity orientation (quaternion at +0x120).
+            c.bus.write32(R + 0x12c, 1.0f32.to_bits());
+            for (i, v) in [0.05f32.sin(), 0.0, 0.05f32.cos(), 0.0]
+                .into_iter()
+                .enumerate()
+            {
+                c.bus.write32(TARGET + i as u32 * 4, v.to_bits());
             }
+            for _ in 0..ticks {
+                c.g[A0][0] = R as u64;
+                c.g[A1][0] = TARGET as u64;
+                // The caller's default up vector (0x4ff120).
+                c.g[A2][0] = 0x004f_f120;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.f[12] = air_last_turn_fraction(&mut c, FpuF32::ONE, fallback).0;
+                c.f[13] = cap.to_bits();
+                s00::f_00121aa0(&mut c);
+                assert_eq!(c.pc, crate::difftest::RA);
+            }
+            let x = f32::from_bits(c.bus.read32(R + 0x1c0));
+            let z = f32::from_bits(c.bus.read32(R + 0x1c8));
+            x.atan2(z).abs()
+        };
+        // The cap does not bind: one tick lands the whole turn.
+        for hz in [60, 120, 240] {
+            let heading = turn(hz, 100.0, 1);
+            assert!((heading - 0.05).abs() < 0.0002, "{hz} Hz: {heading}");
+        }
+        // The game's cap (gp-0x71c8, 80°/s) binds: two ticks at 120 turn as
+        // far as one at 60, short of the target.
+        let at_60 = turn(60, 1.3962634, 1);
+        let at_120 = turn(120, 1.3962634, 2);
+        assert!(
+            (at_120 - at_60).abs() < 0.0002,
+            "capped: {at_120} at 120 Hz, {at_60} at 60"
+        );
+        assert!(at_120 < 0.03);
+        // At 60 the original multiply, at any time scale.
+        let mut c = crate::difftest::fresh();
+        tick::set_for_test(&mut c, 60);
+        for s in [0.5f32, 1.0, 1.15] {
+            let s = FpuF32::from_f32(s);
+            assert_eq!(air_last_turn_fraction(&mut c, s, fallback), s * fallback);
         }
     }
 
