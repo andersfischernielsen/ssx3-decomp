@@ -352,6 +352,23 @@ const GPUVU_SOURCES: &[&str] = &[
 
 /// The GPU-vertex module's shadow hook when it draws for the screen
 /// (shadow.wgsl replaces it in the shadow pass).
+/// The renderer's lighting paths a GPU draw with batch flags `flags` can
+/// take (`LIT` in gpuvu.wgsl): those of its flags; all of them with a debug
+/// view on (`show`, `SSX3_SHADOW_SHOW`); none with the lighting off.
+pub fn lit_paths(lighting: bool, show: f32, flags: u32) -> u32 {
+    if !lighting {
+        return 0;
+    }
+    if show != 0.0 {
+        return 63;
+    }
+    [(16384, 1), (4096, 2), (65536, 4), (131072, 8), (32768, 16)]
+        .iter()
+        .filter(|(f, _)| flags & f != 0)
+        .map(|(_, b)| b)
+        .sum()
+}
+
 /// The GPU-vertex module with the clip-depth entry points
 /// (`gpuvu/clip_depth.wgsl`): the programs' entry points become functions
 /// (`vsb_*`) that new entry points of the same names wrap.
@@ -390,8 +407,8 @@ pub struct Pipelines {
     clip_depth: bool,
     pub gpu_layout: wgpu::BindGroupLayout,
     gpu_pl: wgpu::PipelineLayout,
-    /// (Keyed also by whether the renderer's lighting is on: `LIGHTING`.)
-    gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program, bool), wgpu::RenderPipeline>,
+    /// (Keyed also by the lighting paths compiled in: [`lit_paths`].)
+    gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program, u32), wgpu::RenderPipeline>,
     /// The shadow pass (shadow.wgsl; bind group 1 with a placeholder map).
     shadow_module: wgpu::ShaderModule,
     shadow_pl: wgpu::PipelineLayout,
@@ -727,7 +744,7 @@ impl Pipelines {
         &self,
         k: PipeKey,
         p: ssx3_render::gpu::Program,
-        lit: bool,
+        lit: u32,
     ) -> &wgpu::RenderPipeline {
         &self.gpu_cache[&(k, p, lit)]
     }
@@ -739,7 +756,7 @@ impl Pipelines {
         dev: &wgpu::Device,
         k: PipeKey,
         p: ssx3_render::gpu::Program,
-        lit: bool,
+        lit: u32,
     ) -> &wgpu::RenderPipeline {
         let (module, pl, clip_depth) = (&self.gpu_module, &self.gpu_pl, self.clip_depth);
         self.gpu_cache.entry((k, p, lit)).or_insert_with(|| {
@@ -777,10 +794,10 @@ impl Pipelines {
                 fragment: Some(wgpu::FragmentState {
                     module,
                     entry_point: Some(if clip_depth { "fs_gpu_nd" } else { "fs_gpu" }),
-                    // Without the renderer's lighting its code is compiled
-                    // out (`LIGHTING`, gpuvu.wgsl).
+                    // The lighting paths the draw can take; the others are
+                    // compiled out (`LIT`, gpuvu.wgsl).
                     compilation_options: wgpu::PipelineCompilationOptions {
-                        constants: &[("LIGHTING", if lit { 1.0 } else { 0.0 })],
+                        constants: &[("LIT", lit as f64)],
                         ..Default::default()
                     },
                     targets: &[Some(wgpu::ColorTargetState {

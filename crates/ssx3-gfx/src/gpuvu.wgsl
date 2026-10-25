@@ -283,10 +283,14 @@ struct FsOut {
     @builtin(frag_depth) depth: f32,
 }
 
-// The renderer's lighting is on (`fs_gpu`'s pipelines are made with it
-// false when it is off: its code compiled out. Untaken, it still cost the
-// shader's registers: 18.5 -> 12.2 ms a frame at 1080p on an M1, Metro City).
-override LIGHTING: bool = true;
+// The renderer's lighting paths a pipeline's draws can take (draw.rs
+// `lit_paths`, from the draw's flags): 1 terrain (16384), 2 shadow
+// receivers (4096), 4 decals (65536), 8 spray (131072), 16 the bake's
+// colour (32768), 32 the debug views; 0: none (lighting off, or a draw it
+// does not light). The others are compiled out: untaken, they still cost
+// the shader's registers (lighting off: 18.5 -> 12.2 ms a frame at 1080p on
+// an M1, Metro City).
+override LIT: u32 = 63u;
 
 // The GS depth of a fragment (the position's z is the clip z).
 fn gs_depth(v: VOut) -> f32 {
@@ -317,7 +321,7 @@ fn fs_gpu_nd(v: VOut) -> @location(0) vec4<f32> {
 }
 
 fn gpu_fragment(v: VOut) -> FsOut {
-    if (!LIGHTING) {
+    if (LIT == 0u) {
         var o: FsOut;
         o.color = shade(v);
         o.depth = gs_depth(v);
@@ -329,12 +333,14 @@ fn gpu_fragment(v: VOut) -> FsOut {
     let d = gs_depth(v);
     // The renderer's lighting multiplies the colour before the fog (in
     // `shade`): fogged-out distant terrain stays the fog's colour.
-    let terrain = (b.flags & 16384u) != 0u && v.wp.w > 0.5 && v.nrm.w > 0.5;
-    let receiver = !terrain && (b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u;
+    let terrain = (LIT & 1u) != 0u && (b.flags & 16384u) != 0u && v.wp.w > 0.5 && v.nrm.w > 0.5;
+    let receiver = (LIT & 2u) != 0u && !terrain && (b.flags & 4096u) != 0u && v.wp.w > 0.5
+        && b.src_mode != 2u;
+    let decal = (LIT & 4u) != 0u && (b.flags & 65536u) != 0u;
     var t: mat3x3<f32>;
     var s = 0.0;
     var spray = false;
-    if ((b.flags & 65536u) != 0u && v.wp.w > 0.5) {
+    if (decal && v.wp.w > 0.5) {
         // Decals on the terrain (board trails, flag 65536): lit as the
         // surface they lie on (their face, turned to the sky).
         let c = cross(dx, dy);
@@ -342,7 +348,7 @@ fn gpu_fragment(v: VOut) -> FsOut {
             pre_fog = terrain_light(v.wp.xyz, normalize(c))[0];
             hdr = true;
         }
-    } else if ((b.flags & 131072u) != 0u && v.wp.w > 0.5) {
+    } else if ((LIT & 8u) != 0u && (b.flags & 131072u) != 0u && v.wp.w > 0.5) {
         // Snow spray (flag 131072): its colour is the baked light where it
         // flew up; neutral, lit as the terrain there (facing up). (The
         // glowing effects are additive: not flagged.)
@@ -359,7 +365,7 @@ fn gpu_fragment(v: VOut) -> FsOut {
         pre_fog = shadow_tint(s);
     }
     var vs = v;
-    if ((b.flags & 65536u) != 0u || spray) {
+    if (decal || spray) {
         vs.col = vec4<f32>(vec3<f32>(128.0), v.col.a);
     }
     // (The baked layer's colour, flag 32768: its texture blurred wide, the
@@ -369,11 +375,15 @@ fn gpu_fragment(v: VOut) -> FsOut {
     // The bake's colour only (flag 32768, real-time lighting): its source
     // (premultiplied: what it subtracts) less its grey part, and the
     // destination kept (alpha 1: the blend scales it by As).
-    if ((b.flags & 32768u) != 0u) {
+    if ((LIT & 16u) != 0u && (b.flags & 32768u) != 0u) {
         let c = o.color.rgb;
         o.color = vec4<f32>(max(c - vec3<f32>(min(min(c.r, c.g), c.b)), vec3<f32>(0.0)), 1.0);
     }
     // Debug views.
+    if ((LIT & 32u) == 0u) {
+        o.depth = d;
+        return o;
+    }
     if (sh.p.w == 9.0 && terrain) {
         // (Blue: the sun's share of the light.)
         let lum = vec3<f32>(0.2126, 0.7152, 0.0722);
@@ -392,7 +402,7 @@ fn gpu_fragment(v: VOut) -> FsOut {
         o.depth = d;
         return o;
     }
-    if ((b.flags & 65536u) != 0u && sh.p.w == 7.0) {
+    if (decal && sh.p.w == 7.0) {
         o.color = vec4<f32>(v.col.rgb / 128.0 * select(1.0, o.color.a, b.src_mode == 1u), o.color.a);
     }
     if (terrain) {

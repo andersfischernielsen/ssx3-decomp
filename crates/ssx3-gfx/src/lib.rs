@@ -1297,6 +1297,9 @@ impl Inner {
             /// What produced it (the renderer's own passes go before the
             /// game's post passes and before the HUD).
             tag: gs::Tag,
+            /// The lighting paths its GPU pipeline compiles in
+            /// (`draw::lit_paths`).
+            lit: u32,
         }
         let mut items = Vec::new();
         let mut ubytes: Vec<u8> = Vec::new();
@@ -1313,6 +1316,7 @@ impl Inner {
             .probe
             .filter(|_| dbg.trace.is_none_or(|f| f == self.stats.frames));
         let opts = self.opts;
+        let show = shadow::show();
         let time = self.t0.elapsed().as_secs_f32();
         for (bi, b) in batches.iter().enumerate() {
             let st = &b.state;
@@ -1713,6 +1717,7 @@ impl Inner {
                     String::new()
                 };
                 items.push(Item {
+                    lit: draw::lit_paths(light.is_some(), show, p.u.flags),
                     tag: b.tag,
                     batch: bi,
                     gpu: b.gpu,
@@ -1803,8 +1808,7 @@ impl Inner {
         for it in &items {
             match it.gpu {
                 Some(g) => {
-                    self.pipes
-                        .get_gpu(&self.dev, it.key, g.program, light.is_some());
+                    self.pipes.get_gpu(&self.dev, it.key, g.program, it.lit);
                 }
                 None => {
                     self.pipes.get(&self.dev, it.key);
@@ -2251,7 +2255,7 @@ impl Inner {
                 }
                 last.pipe = Some((it.key, program));
                 pass.set_pipeline(match program {
-                    Some(p) => self.pipes.cached_gpu(it.key, p, light.is_some()),
+                    Some(p) => self.pipes.cached_gpu(it.key, p, it.lit),
                     None => self.pipes.cached(it.key),
                 });
             }
