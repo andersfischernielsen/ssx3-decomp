@@ -1086,7 +1086,10 @@ impl Inner {
             },
         };
         let light = if self.opts.shadows {
-            self.gs.cam.as_ref().and_then(|c| shadow::light(c, key))
+            self.gs
+                .cam
+                .as_ref()
+                .and_then(|c| shadow::light(c, key, self.gs.size))
         } else {
             None
         };

@@ -46,6 +46,51 @@ pub struct Light {
     pub world_texel: [f32; CASCADES],
     /// The point world positions are relative to (absolute world).
     pub origin: [f32; 3],
+    /// The view's side planes and the eye's plane (absolute world, unit
+    /// normals into the view: `n·p + d`): [`Light::in_view`].
+    view: [[f64; 4]; 5],
+}
+
+impl Light {
+    /// Whether a sphere reaches into the view (conservatively: outside it,
+    /// nothing it holds can be in the image).
+    pub fn in_view(&self, p: [f32; 3], r: f32) -> bool {
+        let r = r as f64 * 1.01 + 1.0;
+        self.view
+            .iter()
+            .all(|q| q[0] * p[0] as f64 + q[1] * p[1] as f64 + q[2] * p[2] as f64 + q[3] >= -r)
+    }
+}
+
+/// The planes of [`Light::view`]: the frame (`size` GS pixels from
+/// XYOFFSET, a margin of 8) seen through the terrain camera.
+fn view_planes(c: &Cam, size: (u32, u32)) -> Option<[[f64; 4]; 5]> {
+    let s = post::screen_matrix(c);
+    // (The sign of w in front of the eye.)
+    let inv = post::invert(s)?;
+    let k = if c.xyzf { 1.0 } else { 16.0 };
+    let mid = post::unproject(&inv, 2048.0, 2048.0, c.zmax as f64 * 0.5 / k);
+    let sw = (s[3][0] * mid[0] + s[3][1] * mid[1] + s[3][2] * mid[2] + s[3][3]).signum();
+    let (x0, y0) = (c.off[0] as f64 - 8.0, c.off[1] as f64 - 8.0);
+    let (x1, y1) = (x0 + size.0 as f64 + 16.0, y0 + size.1 as f64 + 16.0);
+    let comb = |a: f64, ra: usize, b: f64, rb: usize| -> [f64; 4] {
+        std::array::from_fn(|i| sw * (a * s[ra][i] + b * s[rb][i]))
+    };
+    let mut v = [
+        comb(1.0, 0, -x0, 3),
+        comb(-1.0, 0, x1, 3),
+        comb(1.0, 1, -y0, 3),
+        comb(-1.0, 1, y1, 3),
+        comb(0.0, 0, 1.0, 3),
+    ];
+    for q in &mut v {
+        let n = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2]).sqrt();
+        if !(n > 0.0) {
+            return None;
+        }
+        q.iter_mut().for_each(|x| *x /= n);
+    }
+    Some(v)
 }
 
 fn env_f(k: &str) -> Option<Vec<f64>> {
@@ -445,8 +490,9 @@ pub fn sun_dir(azimuth: f64, elevation: f64) -> [f64; 3] {
 
 /// This frame's light, or None without a terrain camera. `key`: the
 /// game's key light (towards it), used unless `SSX3_SUN` is set.
-pub fn light(c: &Cam, key: [f32; 3]) -> Option<Light> {
+pub fn light(c: &Cam, key: [f32; 3], size: (u32, u32)) -> Option<Light> {
     let t = tuning();
+    let view = view_planes(c, size)?;
     let (_, s2w, o) = post::cam_matrices(c)?;
     let (e, f) = eye(c)?;
     let l = match t.sun {
@@ -521,6 +567,7 @@ pub fn light(c: &Cam, key: [f32; 3]) -> Option<Light> {
         texel: 1.0 / t.size as f32,
         world_texel,
         origin: o.map(|x| x as f32),
+        view,
     })
 }
 
@@ -635,6 +682,9 @@ impl Shadow {
                     .collect();
                 near.sort_by(|a, b| a.0.total_cmp(&b.0));
                 near.truncate(MAX_LIGHTS);
+                // (Those whose reach misses the view light no pixel of it:
+                // the shader would skip them everywhere.)
+                near.retain(|(_, wl)| l.in_view(wl.pos, wl.radius));
                 w.extend([near.len() as f32, tuning().lamps, 0.0, 0.0]);
                 for (_, wl) in &near {
                     let o = l.origin;
