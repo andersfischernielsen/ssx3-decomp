@@ -66,6 +66,11 @@ struct VOut {
     // (XYZF2, ZMAX) for the GS depth rules.
     @location(3) @interpolate(perspective) zw: vec2<f32>,
     @location(4) @interpolate(flat) zm: vec2<f32>,
+    // Sun shadows (gpuvu.wgsl): the world position (relative to a point
+    // near the camera), w = 1; w = 0 without.
+    @location(5) @interpolate(perspective) wp: vec4<f32>,
+    // The terrain's smooth normal (renderer lighting), w = 1; w = 0 without.
+    @location(6) @interpolate(perspective) nrm: vec4<f32>,
 }
 
 @vertex
@@ -79,6 +84,8 @@ fn vs(v: VIn) -> VOut {
     o.fog = v.fog;
     o.zw = vec2<f32>(0.0, 1.0);
     o.zm = vec2<f32>(0.0);
+    o.wp = vec4<f32>(0.0);
+    o.nrm = vec4<f32>(0.0);
     return o;
 }
 
@@ -130,6 +137,31 @@ fn fs(v: VOut) -> @location(0) vec4<f32> {
 }
 
 // The GS fragment stage: texture function, alpha test, blending inputs.
+// The renderer's lighting for this fragment (1: none), applied before the
+// fog (gpuvu.wgsl `fs_gpu` sets it).
+var<private> pre_fog: vec3<f32> = vec3<f32>(1.0);
+// `pre_fog` is irradiance (the renderer's lighting of the terrain, trails
+// and spray): applied in linear light with a filmic highlight shoulder
+// (`lit_linear`), not as a gamma-space multiplier.
+var<private> hdr: bool = false;
+// (The texture's blur radius in texels, 0: none.)
+var<private> blur_texels: f32 = 0.0;
+// (The linear luminance `lit_linear` shoulders: the exposure fit's view.)
+var<private> hdr_y: f32 = 0.0;
+
+// The lit colour of texel/vertex colour `c` (gamma, 0..255) under
+// irradiance `l` (linear): c in linear light (gamma 2.2) times l, its
+// channels past 0.8 rolled off towards white (no clipping: sunlit snow
+// keeps its texture), back to gamma.
+fn lit_linear(c: vec3<f32>, l: vec3<f32>) -> vec3<f32> {
+    let lin = pow(c / 255.0, vec3<f32>(2.2)) * l;
+    hdr_y = dot(lin, vec3<f32>(0.2126, 0.7152, 0.0722));
+    // (Per channel, like film: bright highlights go to white.)
+    let k = 0.8;
+    let out = select(lin, k + (1.0 - k) * (1.0 - exp(-(lin - k) / (1.0 - k))), lin > vec3<f32>(k));
+    return pow(clamp(out, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0 / 2.2)) * 255.0;
+}
+
 fn shade(v: VOut) -> vec4<f32> {
     if ((b.flags & 64u) != 0u) {
         // Destination alpha bit 7 (stored as a/128, so a >= 128 is 1.0).
@@ -143,6 +175,19 @@ fn shade(v: VOut) -> vec4<f32> {
     if ((b.flags & 1u) != 0u) {
         let uv = v.stq.xy / v.stq.z;
         var ts = textureSampleBias(tex, samp, uv, b.lod_bias);
+        // A wide blur (`blur_texels`): the baked layer's colour without
+        // its shapes (tree shadows), 16 taps on two rings.
+        if (blur_texels > 0.0) {
+            let px = blur_texels / vec2<f32>(textureDimensions(tex));
+            var acc = ts;
+            for (var i = 0; i < 8; i = i + 1) {
+                let a = f32(i) * 0.7853982;
+                let d = vec2<f32>(cos(a), sin(a));
+                acc = acc + textureSampleLevel(tex, samp, uv + d * px, 0.0);
+                acc = acc + textureSampleLevel(tex, samp, uv + d * px * 0.5, 0.0);
+            }
+            ts = acc / 17.0;
+        }
         if ((b.flags & 256u) != 0u) {
             let z = u32(round(textureLoad(zsnap, vec2<i32>(v.pos.xy), 0) * b.zscale));
             ts = textureLoad(tex, vec2<i32>(i32((z >> 8u) & 255u), 0), 0);
@@ -179,6 +224,11 @@ fn shade(v: VOut) -> vec4<f32> {
     if ((b.flags & 2048u) != 0u) {
         rgb = sparkle(rgb, v);
     }
+    if (hdr) {
+        rgb = lit_linear(rgb, pre_fog);
+    } else {
+        rgb = min(rgb * pre_fog, vec3<f32>(255.0));
+    }
     if ((b.flags & 4u) != 0u) {
         let f = clamp(floor(v.fog), 0.0, 255.0);
         rgb = floor((f * rgb + (255.0 - f) * b.fogcol.rgb) / 255.0);
@@ -199,6 +249,10 @@ fn shade(v: VOut) -> vec4<f32> {
         }
     }
     var out = rgb / 255.0;
+    // (Flag 262144: black, the exposure fit's occluders.)
+    if ((b.flags & 262144u) != 0u) {
+        out = vec3<f32>(0.0);
+    }
     if (b.src_mode == 1u) {
         out = out * abs(b.cs_a * c + b.cs_b);
     } else if (b.src_mode == 2u) {

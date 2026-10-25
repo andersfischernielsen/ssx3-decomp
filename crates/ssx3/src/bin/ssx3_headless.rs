@@ -113,7 +113,24 @@ fn main() {
         })
         .collect();
     let mut catch_sum = 0u64;
+    // SSX3_BENCH=from:to: wall time of each frame in [from, to] (the game's
+    // thread: guest code, building the typed frame, waiting for the render
+    // thread when it is a frame behind), reported with the render thread's
+    // and the frame sink's stage times over the same window.
+    let bench: Option<(u64, u64)> = std::env::var("SSX3_BENCH").ok().and_then(|v| {
+        let (a, b) = v.split_once(':')?;
+        Some((a.parse().ok()?, b.parse().ok()?))
+    });
+    let mut bench_ms: Vec<f64> = Vec::new();
     for f in 1..=frames {
+        let frame_start = std::time::Instant::now();
+        if let (Some((from, _)), Some(g)) = (bench, &gfx) {
+            if f == from {
+                g.flush();
+                g.0.lock().unwrap().reset_timing();
+                ssx3_ps2::frame_sink::reset_timing();
+            }
+        }
         #[cfg(feature = "emu-gs")]
         for (start, _, _) in &captures {
             if f == *start {
@@ -158,6 +175,33 @@ fn main() {
         }
         let alive = ssx3_ps2::machine::run_frame(&mut c);
         ssx3_ee_rt::prof::frame(f);
+        if let Some((from, to)) = bench {
+            if (from..=to).contains(&f) {
+                bench_ms.push(frame_start.elapsed().as_secs_f64() * 1000.0);
+            }
+            if f == to {
+                if let Some(g) = &gfx {
+                    g.flush();
+                }
+                let mut v = bench_ms.clone();
+                v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let n = v.len().max(1);
+                let pct = |p: f64| v[((n as f64 - 1.0) * p).round() as usize];
+                let mean = v.iter().sum::<f64>() / n as f64;
+                eprintln!(
+                    "[bench] frames {from}..{to}: mean {mean:.2} ms ({:.0} fps), p50 {:.2}, p95 {:.2}, p99 {:.2}, max {:.2} ms",
+                    1000.0 / mean,
+                    pct(0.5),
+                    pct(0.95),
+                    pct(0.99),
+                    v[n - 1]
+                );
+                if let Some(g) = &gfx {
+                    eprintln!("[bench] {}", g.0.lock().unwrap().timing_report());
+                }
+                eprintln!("[bench] {}", ssx3_ps2::frame_sink::timing_report());
+            }
+        }
         // Test knob for host clock mode: a host this many ms slower per frame.
         if let Some(ms) = slow_ms {
             std::thread::sleep(std::time::Duration::from_micros((ms * 1000.0) as u64));
@@ -190,6 +234,9 @@ fn main() {
         }
         if shot_every > 0 && f % shot_every == 0 && f >= shot_from {
             let path = format!("{shot_dir}/frame{f:05}.png");
+            if std::env::var("SSX3_SHADOW_DEBUG").is_ok_and(|v| v.contains("lightlog")) {
+                eprintln!("[shot] {f}");
+            }
             // Native: the draw-layer renderer's image is the one shown.
             match gfx
                 .as_ref()

@@ -96,12 +96,6 @@ pub const ITEMS: &[Item] = &[
         live: true,
     },
     Item {
-        key: "SSX3_MIPMAPS",
-        label: "Texture mipmaps",
-        choices: &[("", "Off"), ("1", "On")],
-        live: true,
-    },
-    Item {
         key: "SSX3_LOD_BIAS",
         label: "Texture sharpness",
         choices: &[
@@ -113,21 +107,15 @@ pub const ITEMS: &[Item] = &[
         live: true,
     },
     Item {
-        key: "SSX3_TERRAIN",
-        label: "Terrain detail",
-        choices: &[("", "Original"), ("2", "2x"), ("4", "4x")],
-        live: true,
-    },
-    Item {
-        key: "SSX3_DRAW_DIST",
-        label: "Rider detail dist.",
-        choices: &[("", "Original"), ("1.5", "1.5x"), ("2", "2x"), ("3", "3x")],
-        live: true,
-    },
-    Item {
         key: "SSX3_AO",
         label: "Ambient occlusion",
         choices: &[("", "Off"), ("1", "On")],
+        live: true,
+    },
+    Item {
+        key: "SSX3_SHADOWS",
+        label: "Real-time lighting",
+        choices: &[("", "Off"), ("1", "On (exp.)")],
         live: true,
     },
     Item {
@@ -172,7 +160,87 @@ pub const ITEMS: &[Item] = &[
         choices: &[("", "Play"), ("1", "Skip")],
         live: false,
     },
+    // Debug: the real-time lighting's views and switches (the renderer's
+    // debug knobs, `ssx3_gfx::DEBUG_KNOBS`, `docs/options.md`). Last, set
+    // apart in the overlay, and not saved: they last for this run.
+    Item {
+        key: "SSX3_SHADOW_SHOW",
+        label: "Lighting view",
+        choices: &[
+            ("", "Off"),
+            ("factor", "Shadow factor"),
+            ("cascade", "Cascades"),
+            ("ndl", "N.L"),
+            ("normals", "Normals"),
+            ("sunlit", "Sun lit"),
+            ("fit", "Fit data"),
+            ("stripcol", "Strip colour"),
+            ("wp", "World position"),
+        ],
+        live: true,
+    },
+    Item {
+        key: "SSX3_GFX_SHOW",
+        label: "Buffer view",
+        choices: &[
+            ("", "Off"),
+            ("shadow-map", "Shadow map"),
+            ("world", "World pos."),
+            ("normal", "Normals"),
+            ("light-uv", "Light UV"),
+            ("light-depth", "Light depth"),
+            ("ao", "AO mask"),
+        ],
+        live: true,
+    },
+    Item {
+        key: "SSX3_SUN",
+        label: "Sun direction",
+        choices: &[
+            ("", "Game"),
+            ("flare", "Sun sprite"),
+            ("90,85", "Overhead"),
+            ("0,45", "High +X"),
+            ("0,15", "Low +X"),
+            ("90,15", "Low +Y"),
+            ("180,15", "Low -X"),
+            ("270,15", "Low -Y"),
+        ],
+        live: true,
+    },
+    Item {
+        key: "SSX3_CASTERS",
+        label: "Shadow casters",
+        choices: &[
+            ("", "All"),
+            ("patches", "Patches only"),
+            ("instances", "Instances only"),
+            ("shown", "Shown sections"),
+            ("no-world", "On-screen only"),
+            ("no-items", "World only"),
+            ("no-pass", "None"),
+        ],
+        live: true,
+    },
+    Item {
+        key: "SSX3_BAKED",
+        label: "Baked lighting",
+        choices: &[
+            ("", "Off"),
+            ("tint", "Tint"),
+            ("baked", "Full bake"),
+            ("sub-only", "Bake only"),
+            ("no-sub", "No sub layer"),
+            ("no-add", "No add layer"),
+        ],
+        live: true,
+    },
 ];
+
+/// Whether `item` is one of the debug group's (not saved; drawn apart).
+pub fn is_debug(item: &Item) -> bool {
+    ssx3_gfx::DEBUG_KNOBS.contains(&item.key)
+}
 
 struct State {
     values: BTreeMap<String, String>,
@@ -254,7 +322,7 @@ pub fn set(key: &str, value: &str) {
     });
     s.values.insert(key.to_string(), value.to_string());
     let mut text = String::from("# SSX 3 settings (edited by the settings overlay, F10). The SSX3_* environment\n# variables of the same names override these.\n");
-    for item in ITEMS {
+    for item in ITEMS.iter().filter(|i| !is_debug(i)) {
         if let Some(v) = s.values.get(item.key).filter(|v| !v.is_empty()) {
             text += &format!("{} = {v}\n", item.key);
         }
@@ -328,12 +396,21 @@ pub fn draw(sel: usize, restart_pending: bool) -> (u32, u32, Vec<u32>) {
         if selected {
             fill(&mut img, 4, y - 2, W - 8, ROW, rgba(255, 120, 20, 90));
         }
-        let c = if selected { white } else { grey };
+        let mut c = if selected { white } else { grey };
         let Some(item) = ITEMS.get(i) else {
             text(&mut img, W, 10, y, "Close", c);
             y += ROW;
             continue;
         };
+        // The debug group: a rule above it, its labels in blue.
+        if is_debug(item) {
+            if i > 0 && !is_debug(&ITEMS[i - 1]) {
+                fill(&mut img, 10, y - 3, W - 20, 1, orange);
+            }
+            if !selected {
+                c = rgba(120, 190, 235, 255);
+            }
+        }
         let label = if item.live {
             item.label.to_string()
         } else {
@@ -428,6 +505,17 @@ mod tests {
             let (w, h, img) = draw(sel, false);
             assert_eq!(img.len(), (w * h) as usize);
             assert!(h <= 28 + VISIBLE as u32 * 12 + 26);
+        }
+    }
+
+    #[test]
+    fn debug_group_is_last_and_known() {
+        // The debug items come after every other one, and the renderer
+        // takes each of their keys.
+        let first = ITEMS.iter().position(is_debug).unwrap();
+        assert!(ITEMS[first..].iter().all(is_debug));
+        for i in &ITEMS[first..] {
+            assert!(i.live, "{}", i.key);
         }
     }
 

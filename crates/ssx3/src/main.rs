@@ -73,10 +73,9 @@ struct App {
 /// Settings that are renderer options (`game::gfx_options`).
 const GFX_KEYS: &[&str] = &[
     "SSX3_AA",
-    "SSX3_MIPMAPS",
     "SSX3_LOD_BIAS",
-    "SSX3_TERRAIN",
     "SSX3_AO",
+    "SSX3_SHADOWS",
     "SSX3_BLOOM",
     "SSX3_SNOW",
 ];
@@ -594,7 +593,6 @@ impl App {
     fn apply_setting(&mut self, key: &str) {
         match key {
             "SSX3_CATCHUP" => self.apply_catch_up(),
-            "SSX3_DRAW_DIST" => ssx3_game::detail::set(game::detail_distance()),
             "SSX3_ANISO" => {
                 if let Some(g) = self.gfx.as_ref() {
                     g.set_anisotropy(game::anisotropy());
@@ -610,6 +608,10 @@ impl App {
                     let on = settings::get("SSX3_FULLSCREEN").is_some_and(|v| v != "0");
                     w.set_fullscreen(on.then_some(Fullscreen::Borderless(None)));
                 }
+            }
+            // The renderer's debug knobs (the overlay's debug group).
+            k if ssx3_gfx::DEBUG_KNOBS.contains(&k) => {
+                ssx3_gfx::set_debug_knob(k, &settings::get(k).unwrap_or_default());
             }
             _ => {
                 if let Some(size) = self.window.as_ref().map(|w| w.inner_size()) {

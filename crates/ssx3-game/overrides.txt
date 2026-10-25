@@ -5316,6 +5316,22 @@
 0x001451e8    BENewRaceInt_SetEvent
 0x00191c68    cFEStateRuleSelect_OnWidgetAction
 0x001867a8    cFEStateEventSelect_OnWidgetAction
+# Phase 2 wave: oc200
+0x0022add8    Nash_GatherVisible
+0x0022a698    Nash_CollectPatches
+0x00229f30    Vu0_UploadMatrixPair
+0x00374180    BezierPatchCache_TessPositions
+0x00374518    BezierPatchCache_TessPositionsAlt
+0x002f4db8    LensFX_UpdateSunPosition
+0x002ee070    WorldPainter_GetSunElevation
+0x002ee0b8    WorldPainter_GetSunAzimuth
+0x002ee100    WorldPainter_GetSunRed
+0x002ee148    WorldPainter_GetSunGreen
+0x002ee190    WorldPainter_GetSunBlue
+0x002ee1d8    WorldPainter_GetSunIntensity
+0x002ee2b0    WorldPainter_GetSunSize
+0x002c1560    tWPIGD_Sun_GetElevation
+0x002c1568    tWPIGD_Sun_GetAzimuth
 0x002018a8    EventSelect_OnWidgetAction
 # Boot straight into an event (2026-10-25)
 0x0018faf0    cFEStateProfileLoad_v33

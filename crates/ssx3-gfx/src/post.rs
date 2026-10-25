@@ -5,6 +5,8 @@
 //! blend with.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::OnceLock;
 
 use crate::options::{Aa, Bloom, Options};
 
@@ -22,10 +24,15 @@ struct U {
     s2w: [[f32; 4]; 4],
     off: [f32; 4],
     zp: [f32; 4],
+    /// Sun shadows: rebased world → light clip (columns), towards the sun
+    /// and the strength, (texel in UV, normal offset, -, -).
+    light: [[f32; 4]; 4],
+    sun: [f32; 4],
+    sp: [f32; 4],
 }
 
 /// Uniform buffer size (`P` in post.wgsl).
-const U_BYTES: usize = 192;
+const U_BYTES: usize = 288;
 
 impl U {
     fn bytes(&self) -> Vec<u8> {
@@ -43,6 +50,10 @@ impl U {
             w.extend(m.iter().flatten().map(|v| v.to_bits()));
         }
         for v in [&self.off, &self.zp] {
+            w.extend(v.iter().map(|v| v.to_bits()));
+        }
+        w.extend(self.light.iter().flatten().map(|v| v.to_bits()));
+        for v in [&self.sun, &self.sp] {
             w.extend(v.iter().map(|v| v.to_bits()));
         }
         debug_assert_eq!(w.len() * 4, U_BYTES);
@@ -63,10 +74,64 @@ enum Write {
     Multiply,
 }
 
+/// Debug views (`SSX3_GFX_SHOW`): the shadow pass's (the first five,
+/// [`debug_view`]) and the AO mask (`ao`).
+const VIEWS: &[&str] = &[
+    "shadow-map",
+    "world",
+    "normal",
+    "light-uv",
+    "light-depth",
+    "ao",
+];
+
+/// The view shown: 1 + its index in [`VIEWS`], 0 for none. From
+/// `SSX3_GFX_SHOW`, changed while running by [`set_show`].
+fn view() -> &'static AtomicU8 {
+    static S: OnceLock<AtomicU8> = OnceLock::new();
+    S.get_or_init(|| {
+        let v = std::env::var("SSX3_GFX_SHOW").unwrap_or_default();
+        AtomicU8::new(view_code(&v))
+    })
+}
+
+fn view_code(v: &str) -> u8 {
+    VIEWS
+        .iter()
+        .position(|w| *w == v.trim())
+        .map_or(0, |i| i as u8 + 1)
+}
+
+/// Show debug view `v` (`SSX3_GFX_SHOW`'s values; empty: none).
+pub(crate) fn set_show(v: &str) {
+    view().store(view_code(v), Ordering::Relaxed);
+}
+
 /// Debug: `SSX3_GFX_SHOW=ao` shows the AO mask as the image.
-fn show(which: &str) -> bool {
-    static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    S.get_or_init(|| std::env::var("SSX3_GFX_SHOW").unwrap_or_default()) == which
+pub(crate) fn show(which: &str) -> bool {
+    match view().load(Ordering::Relaxed) {
+        0 => false,
+        c => VIEWS[c as usize - 1] == which,
+    }
+}
+
+/// The shadow pass's debug views (`SSX3_GFX_SHOW=shadow-map|world|normal|
+/// light-uv|light-depth`: 1..5, 0 for none).
+pub(crate) fn debug_view() -> f32 {
+    match view().load(Ordering::Relaxed) {
+        c @ 1..=5 => c as f32,
+        _ => 0.0,
+    }
+}
+
+/// The cascade the debug views show (`SSX3_SHADOW_CASCADE`, the widest by
+/// default).
+fn shadow_cascade() -> usize {
+    std::env::var("SSX3_SHADOW_CASCADE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(crate::shadow::CASCADES - 1)
+        .min(crate::shadow::CASCADES - 1)
 }
 
 /// Formats of the intermediate textures.
@@ -88,6 +153,8 @@ pub struct Post {
     /// Placeholders for unused bindings.
     dummy_tex: wgpu::TextureView,
     dummy_depth: wgpu::TextureView,
+    /// The shadow map's comparison sampler.
+    cmp: wgpu::Sampler,
     /// Bloom pyramid and AO buffers, for the size they were made for.
     bloom: Vec<(wgpu::Texture, u32, u32)>,
     ao: Vec<wgpu::Texture>,
@@ -142,6 +209,14 @@ impl Post {
                 },
                 tex_entry(3, wgpu::TextureSampleType::Depth),
                 tex_entry(4, wgpu::TextureSampleType::Float { filterable: true }),
+                // The shadow map and its comparison sampler.
+                tex_entry(5, wgpu::TextureSampleType::Depth),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
             ],
         });
         let pipe_layout = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -192,6 +267,15 @@ impl Post {
             crate::draw::DEPTH_FORMAT,
             wgpu::TextureUsages::TEXTURE_BINDING,
         );
+        let cmp = dev.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("ssx3-gfx shadow compare"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
         Post {
             module,
             layout,
@@ -202,6 +286,7 @@ impl Post {
             next_u: 0,
             dummy_tex,
             dummy_depth,
+            cmp,
             bloom: Vec::new(),
             ao: Vec::new(),
             size: (0, 0),
@@ -298,6 +383,27 @@ impl Post {
         image: Option<&wgpu::TextureView>,
         u: U,
     ) {
+        self.pass_with(
+            dev, queue, enc, entry, target, write, src, depth, image, None, u,
+        )
+    }
+
+    /// [`Post::pass`] with the shadow map bound.
+    #[allow(clippy::too_many_arguments)]
+    fn pass_with(
+        &mut self,
+        dev: &wgpu::Device,
+        queue: &wgpu::Queue,
+        enc: &mut wgpu::CommandEncoder,
+        entry: &'static str,
+        target: &wgpu::Texture,
+        write: Write,
+        src: Option<&wgpu::TextureView>,
+        depth: Option<&wgpu::TextureView>,
+        image: Option<&wgpu::TextureView>,
+        smap: Option<&wgpu::TextureView>,
+        u: U,
+    ) {
         let pipe = self.pipe(dev, entry, target.format(), write);
         if self.next_u >= self.ubufs.len() {
             return;
@@ -330,6 +436,14 @@ impl Post {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(image.unwrap_or(&self.dummy_tex)),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(smap.unwrap_or(&self.dummy_depth)),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Sampler(&self.cmp),
                 },
             ],
         });
@@ -430,7 +544,7 @@ impl Post {
             strength: 0.75,
             ..Default::default()
         };
-        if let Some((w2s, s2w)) = cam.and_then(cam_matrices) {
+        if let Some((w2s, s2w, _)) = cam.and_then(cam_matrices) {
             let c = cam.unwrap();
             u.w2s = w2s;
             u.s2w = s2w;
@@ -506,6 +620,64 @@ impl Post {
             Some(&v0),
             None,
             None,
+            u,
+        );
+    }
+
+    /// Sun shadows onto the image (before the game's post passes): `smap`
+    /// drawn from `light` (shadow.rs).
+    #[allow(clippy::too_many_arguments)]
+    pub fn shadow(
+        &mut self,
+        dev: &wgpu::Device,
+        queue: &wgpu::Queue,
+        enc: &mut wgpu::CommandEncoder,
+        f: &Frame,
+        cam: &crate::gs::Cam,
+        fxy: (f32, f32),
+        smap: &wgpu::TextureView,
+        light: &crate::shadow::Light,
+    ) {
+        self.ensure(dev, f.w, f.h);
+        let Some((w2s, s2w, _)) = cam_matrices(cam) else {
+            return;
+        };
+        let t = crate::shadow::tuning();
+        let u = U {
+            size: [f.w as f32, f.h as f32],
+            w2s,
+            s2w,
+            off: [cam.off[0], cam.off[1], fxy.0, fxy.1],
+            zp: [
+                cam.zmax as f32 + 1.0,
+                if cam.xyzf { 1.0 } else { 16.0 },
+                0.0,
+                0.0,
+            ],
+            light: light.lights[shadow_cascade()],
+            sun: [light.sun[0], light.sun[1], light.sun[2], t.strength],
+            sp: [
+                light.texel,
+                light.world_texel[shadow_cascade()] * 1.5,
+                debug_view(),
+                0.0,
+            ],
+            ..Default::default()
+        };
+        Self::copy(enc, f.depth, f.zsnap);
+        let zv = f.zsnap.create_view(&Default::default());
+        let w = Write::Rgb;
+        self.pass_with(
+            dev,
+            queue,
+            enc,
+            "fs_shadow_apply",
+            f.color,
+            w,
+            None,
+            Some(&zv),
+            None,
+            Some(smap),
             u,
         );
     }
@@ -625,7 +797,7 @@ impl Post {
 
 /// World → GS screen (homogeneous, rows) of a terrain camera:
 /// screen = gO·w + gS ∘ (M·p).
-fn screen_matrix(c: &crate::gs::Cam) -> [[f64; 4]; 4] {
+pub(crate) fn screen_matrix(c: &crate::gs::Cam) -> [[f64; 4]; 4] {
     let m = |r: usize, k: usize| c.m[k][r] as f64;
     let mut s = [[0f64; 4]; 4];
     for r in 0..4 {
@@ -640,12 +812,12 @@ fn screen_matrix(c: &crate::gs::Cam) -> [[f64; 4]; 4] {
     s
 }
 
-fn mul4(m: &[[f64; 4]; 4], v: [f64; 4]) -> [f64; 4] {
+pub(crate) fn mul4(m: &[[f64; 4]; 4], v: [f64; 4]) -> [f64; 4] {
     std::array::from_fn(|r| (0..4).map(|k| m[r][k] * v[k]).sum())
 }
 
 /// The world point of GS screen point (x, y, screen z).
-fn unproject(inv: &[[f64; 4]; 4], x: f64, y: f64, z: f64) -> [f64; 3] {
+pub(crate) fn unproject(inv: &[[f64; 4]; 4], x: f64, y: f64, z: f64) -> [f64; 3] {
     let h = mul4(inv, [x, y, z, 1.0]);
     [h[0] / h[3], h[1] / h[3], h[2] / h[3]]
 }
@@ -653,8 +825,8 @@ fn unproject(inv: &[[f64; 4]; 4], x: f64, y: f64, z: f64) -> [f64; 3] {
 /// The camera's world → screen and screen → world matrices (columns, for
 /// WGSL), in world coordinates relative to a point in front of the camera:
 /// the game's world coordinates are large (≈ 10⁵), too large for f32
-/// reconstruction.
-fn cam_matrices(c: &crate::gs::Cam) -> Option<([[f32; 4]; 4], [[f32; 4]; 4])> {
+/// reconstruction. Also that point (world).
+pub(crate) fn cam_matrices(c: &crate::gs::Cam) -> Option<([[f32; 4]; 4], [[f32; 4]; 4], [f64; 3])> {
     let s = screen_matrix(c);
     let inv = invert(s)?;
     let k = if c.xyzf { 1.0 } else { 16.0 };
@@ -673,11 +845,11 @@ fn cam_matrices(c: &crate::gs::Cam) -> Option<([[f32; 4]; 4], [[f32; 4]; 4])> {
     let cols = |a: [[f64; 4]; 4]| -> [[f32; 4]; 4] {
         std::array::from_fn(|k| std::array::from_fn(|r| a[r][k] as f32))
     };
-    Some((cols(s2), cols(inv2)))
+    Some((cols(s2), cols(inv2), o))
 }
 
 /// The inverse of a 4×4 matrix (rows), by Gauss-Jordan elimination.
-fn invert(a: [[f64; 4]; 4]) -> Option<[[f64; 4]; 4]> {
+pub(crate) fn invert(a: [[f64; 4]; 4]) -> Option<[[f64; 4]; 4]> {
     let mut m = a;
     let mut inv = [[0f64; 4]; 4];
     for (i, row) in inv.iter_mut().enumerate() {

@@ -345,6 +345,32 @@ pub fn rewrite_st(m: &mut Mem, out: u16, uv2: impl IntoIterator<Item = u16>) {
 /// Transform `count` points from `src` with `mat` and store (x, y, 1, 1)
 /// from `dst` on (the projector / shine UV generators: f4babac5 0x1b98,
 /// 9790369f 0x0800).
+/// The direction the game's rider shadows are cast along this frame (the
+/// projector passes' matrices; sun shadows follow it): the cross product of
+/// the projector's U and V gradients over world positions, oriented up.
+static PROJECTOR: std::sync::Mutex<Option<[f32; 3]>> = std::sync::Mutex::new(None);
+
+/// A projector pass's matrix (columns, `project_xy` over world positions).
+pub fn note_projector(mat: &[V; 4]) {
+    let f = |c: usize, l: usize| f32::from_bits(mat[c][l]) as f64;
+    let (gu, gv) = ([f(0, 0), f(1, 0), f(2, 0)], [f(0, 1), f(1, 1), f(2, 1)]);
+    let d = [
+        gu[1] * gv[2] - gu[2] * gv[1],
+        gu[2] * gv[0] - gu[0] * gv[2],
+        gu[0] * gv[1] - gu[1] * gv[0],
+    ];
+    let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+    if l > 0.0 && l.is_finite() {
+        let s = if d[2] < 0.0 { -1.0 / l } else { 1.0 / l };
+        *PROJECTOR.lock().unwrap() = Some(d.map(|x| (x * s) as f32));
+    }
+}
+
+/// The projector direction noted since the last call (and forget it).
+pub fn take_projector() -> Option<[f32; 3]> {
+    PROJECTOR.lock().unwrap().take()
+}
+
 pub fn project_xy(m: &mut Mem, mat: &[V; 4], src: u16, dst: u16, count: u16) {
     let zw = [0, 0, ONE, ONE];
     for i in 0..count {
@@ -722,7 +748,13 @@ pub mod gpu {
     ) {
         let r = Raster::load(m);
         let nv = s.verts.len() as u32;
-        let mut data = Some(data);
+        // (Smooth normals only for the renderer's lighting: without it a
+        // zero third qword, the layout unchanged.)
+        let mut data = Some(if crate::world_casters::enabled() {
+            with_normals(s, &data)
+        } else {
+            without_normals(s, &data)
+        });
         let alpha_max = colour[3] as i32 as f32;
         let fan = m.ld(FAN_TAG_A);
         let mut call =
@@ -746,15 +778,154 @@ pub mod gpu {
                 });
             };
         for (t, ps) in s.runs(m) {
-            // (A fan slot holding another program's data would make the
-            // GS read it as registers: `fan_tags_ok` keeps that on the CPU.)
-            if fans_draw(t, fan) {
+            // A fan slot holding another program's data (the program does
+            // not always write its fan tags) would make the GS read that
+            // data as registers. Here the clipped triangles are drawn with
+            // the program's own fan tag for the strip's context instead:
+            // what the slot was meant to hold (renderer only: no game state
+            // depends on it).
+            let fan = if fans_draw(t, fan) {
+                Some(fan)
+            } else {
+                [m.ld(FAN_TAG_CTX1), m.ld(FAN_TAG_CTX2)]
+                    .into_iter()
+                    .find(|&f| fans_draw(t, f))
+                    .map(|f| [fan[0], f[1], f[2], f[3]])
+            };
+            if let Some(fan) = fan {
                 call(FANS, fan, fan_indices(s.triangles(ps.clone())), out);
             }
             call(STRIPS, t, strip_indices(s.triangles(ps)), out);
         }
         m.st(PACKET_A + 1, [MARK, mark_nv, n as u32, program]);
         m.st(PACKET_A + 2, colour);
+    }
+
+    /// The draw's vertex data with a smooth normal per vertex: {position,
+    /// UV} per strip vertex in, {position, UV, normal} out (`DATA_STRIDE`).
+    /// The normal sums the faces around each grid point (keyed by its
+    /// position, so the strips sharing a row agree), consistently wound
+    /// (strip triangles alternate) and each strip turned up (its faces'
+    /// sum facing +z: strips of opposite winding would cancel where they
+    /// meet, leaving short normals in any direction that change as the
+    /// draws do). For the renderer's lighting; the game has none.
+    fn with_normals(s: &Strips, data: &[[u32; 4]]) -> Vec<[u32; 4]> {
+        let nv = s.verts.len().min(data.len() / 2);
+        let pos =
+            |v: usize| -> [f32; 3] { std::array::from_fn(|l| f32::from_bits(data[2 * v][l])) };
+        let key = |v: usize| -> [u32; 3] { [data[2 * v][0], data[2 * v][1], data[2 * v][2]] };
+        let mut acc: std::collections::HashMap<[u32; 3], [f32; 3]> = Default::default();
+        let mut start = 0usize;
+        let mut faces: Vec<([usize; 3], [f32; 3])> = Vec::new();
+        for &len in &s.lens {
+            let len = len as usize;
+            faces.clear();
+            let mut up = 0f32;
+            for k in 2..len {
+                let (a, b, c) = (start + k - 2, start + k - 1, start + k);
+                if c >= nv {
+                    break;
+                }
+                let (pa, pb, pc) = (pos(a), pos(b), pos(c));
+                let (u, w) = (
+                    [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]],
+                    [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]],
+                );
+                let sg = if k % 2 == 1 { -1.0 } else { 1.0 };
+                let n = [
+                    sg * (u[1] * w[2] - u[2] * w[1]),
+                    sg * (u[2] * w[0] - u[0] * w[2]),
+                    sg * (u[0] * w[1] - u[1] * w[0]),
+                ];
+                if !n.iter().all(|x| x.is_finite()) {
+                    continue;
+                }
+                up += n[2];
+                faces.push(([a, b, c], n));
+            }
+            let sg = if up < 0.0 { -1.0 } else { 1.0 };
+            for &(vs, n) in &faces {
+                for v in vs {
+                    let e = acc.entry(key(v)).or_default();
+                    for l in 0..3 {
+                        e[l] += sg * n[l];
+                    }
+                }
+            }
+            start += len;
+        }
+        let mut out = Vec::with_capacity(nv * DATA_STRIDE);
+        for v in 0..nv {
+            let n = acc.get(&key(v)).copied().unwrap_or_default();
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            let n = if l > 0.0 && l.is_finite() {
+                n.map(|x| x / l)
+            } else {
+                [0.0; 3]
+            };
+            out.extend_from_slice(&[
+                data[2 * v],
+                data[2 * v + 1],
+                [n[0].to_bits(), n[1].to_bits(), n[2].to_bits(), 0],
+            ]);
+        }
+        out
+    }
+
+    /// [`with_normals`]' layout with zero normals.
+    fn without_normals(s: &Strips, data: &[[u32; 4]]) -> Vec<[u32; 4]> {
+        let nv = s.verts.len().min(data.len() / 2);
+        let mut out = Vec::with_capacity(nv * DATA_STRIDE);
+        for v in 0..nv {
+            out.extend_from_slice(&[data[2 * v], data[2 * v + 1], [0; 4]]);
+        }
+        out
+    }
+
+    /// Qwords per vertex in a draw's data: position, UV, normal.
+    pub const DATA_STRIDE: usize = 3;
+
+    #[cfg(test)]
+    mod normal_tests {
+        use super::*;
+
+        /// Two strips over a flat 3×3 grid (z = 5), wound opposite ways:
+        /// every vertex gets the same unit normal, up, the row the strips
+        /// share included.
+        #[test]
+        fn flat_grid_has_one_normal() {
+            let at = |r: usize, c: usize| {
+                [
+                    (c as f32 * 10.0).to_bits(),
+                    (r as f32 * 10.0).to_bits(),
+                    5f32.to_bits(),
+                    1f32.to_bits(),
+                ]
+            };
+            let mut s = Strips::default();
+            s.packet(PACKET_A);
+            let mut data = Vec::new();
+            // (The second strip wound the other way: its rows swapped.)
+            for r in 0..2 {
+                let verts: Vec<Vertex> = (0..6).map(|_| Vertex { pos: 0, uv: 0 }).collect();
+                for k in 0..6 {
+                    data.push(at(r + if r == 0 { k % 2 } else { 1 - k % 2 }, k / 2));
+                    data.push([0; 4]);
+                }
+                s.strip(&verts);
+            }
+            let out = with_normals(&s, &data);
+            assert_eq!(out.len(), 12 * DATA_STRIDE);
+            let n0 = out[2];
+            for v in 0..12 {
+                let n = out[DATA_STRIDE * v + 2].map(f32::from_bits);
+                assert!(
+                    (n[2] - 1.0).abs() < 1e-6 && n[0] == 0.0 && n[1] == 0.0,
+                    "{n:?}"
+                );
+                assert_eq!(out[DATA_STRIDE * v + 2], n0);
+            }
+        }
     }
 
     /// The mark of the last GPU-planned draw: (vertex count, n, program,
@@ -796,142 +967,12 @@ pub mod gpu {
         }
     }
 
-    // -------------------------------------------------------------------
-    // Finer terrain (options: terrain detail)
-    // -------------------------------------------------------------------
-
-    static TESS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
-
-    /// Tessellate uniform-LOD patches `f` times finer (1: the game's grids).
-    pub fn set_tessellation(f: u32) {
-        TESS.store(f.clamp(1, 8), std::sync::atomic::Ordering::Relaxed);
-    }
-
-    pub fn tessellation() -> u32 {
-        TESS.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// A finer grid of an n×n patch grid (qwords row-major from `base` per
-    /// attribute): the patch through the grid points (Lagrange interpolation
-    /// of degree n − 1 reproduces the bicubic patch exactly), evaluated on
-    /// (f·(n − 1) + 1)² points. The border stays on the game's border samples
-    /// (straight between them), so it matches the neighbouring patches,
-    /// which may be at another LOD. Lanes 0..`lanes` are interpolated as
-    /// floats, the others are the nearest sample's.
-    pub fn fine_grid(m: &Mem, n: u16, f: u32, base: u16, lanes: usize) -> Vec<[u32; 4]> {
-        let n = n as usize;
-        let k = f as usize * (n - 1) + 1;
-        let at = |i: usize, j: usize| m.ld(base.wrapping_add((i * n + j) as u16));
-        let samples: Vec<[f64; 4]> = (0..n * n)
-            .map(|q| {
-                let v = at(q / n, q % n);
-                std::array::from_fn(|l| f32::from_bits(v[l]) as f64)
-            })
-            .collect();
-        // Lagrange weights at parameter t (nodes 0..n-1).
-        let weights = |t: f64| -> Vec<f64> {
-            (0..n)
-                .map(|a| {
-                    (0..n)
-                        .filter(|&b| b != a)
-                        .map(|b| (t - b as f64) / (a as f64 - b as f64))
-                        .product()
-                })
-                .collect()
-        };
-        // Straight between the two border samples around t.
-        let linear = |t: f64| -> Vec<f64> {
-            let a = (t.floor() as usize).min(n - 2);
-            let w = t - a as f64;
-            (0..n)
-                .map(|b| {
-                    if b == a {
-                        1.0 - w
-                    } else if b == a + 1 {
-                        w
-                    } else {
-                        0.0
-                    }
-                })
-                .collect()
-        };
-        let mut out = Vec::with_capacity(k * k);
-        for qi in 0..k {
-            for qj in 0..k {
-                let (u, v) = ((qi as f64) / f as f64, (qj as f64) / f as f64);
-                let edge_i = qi == 0 || qi == k - 1;
-                let edge_j = qj == 0 || qj == k - 1;
-                let wu = if edge_j && !edge_i {
-                    linear(u)
-                } else {
-                    weights(u)
-                };
-                let wv = if edge_i && !edge_j {
-                    linear(v)
-                } else {
-                    weights(v)
-                };
-                let mut acc = [0f64; 4];
-                for (i, &a) in wu.iter().enumerate() {
-                    if a == 0.0 {
-                        continue;
-                    }
-                    for (j, &b) in wv.iter().enumerate() {
-                        if b == 0.0 {
-                            continue;
-                        }
-                        let sm = &samples[i * n + j];
-                        for l in 0..lanes {
-                            acc[l] += a * b * sm[l];
-                        }
-                    }
-                }
-                let near = at(
-                    ((u + 0.5) as usize).min(n - 1),
-                    ((v + 0.5) as usize).min(n - 1),
-                );
-                out.push(std::array::from_fn(|l| {
-                    if l < lanes {
-                        (acc[l] as f32).to_bits()
-                    } else {
-                        near[l]
-                    }
-                }));
-            }
-        }
-        out
-    }
-
-    /// The strips of a k-wide fine grid: rows r, r+1 alternating; packet A
-    /// rows `0..rows_a`, packet B the rest (to `k - 1`). With `data` per
-    /// grid point, the per-strip-vertex data.
-    pub fn fine_strips(
-        k: usize,
-        rows_a: usize,
-        grid: &[[u32; 4]],
-        per_vertex: usize,
-    ) -> (Strips, Vec<[u32; 4]>) {
-        let mut s = Strips::default();
-        let mut data = Vec::new();
-        for (packet, rows) in [(PACKET_A, 0..rows_a), (PACKET_B, rows_a..k - 1)] {
-            s.packet(packet);
-            for r in rows {
-                let strip: Vec<Vertex> = (0..2 * k).map(|_| Vertex { pos: 0, uv: 0 }).collect();
-                for i in 0..2 * k {
-                    let g = (r + i % 2) * k + i / 2;
-                    data.extend_from_slice(&grid[g * per_vertex..(g + 1) * per_vertex]);
-                }
-                s.strip(&strip);
-            }
-        }
-        (s, data)
-    }
-
     /// Whether the fan tags a draw finds in memory (when it does not write
     /// them) are fan tags: other programs use the slots, and a clipped
     /// triangle kicked with what they leave there makes the GS read their
-    /// data as registers (texture setup among them). Such calls stay on the
-    /// CPU, which kicks exactly that.
+    /// data as registers (texture setup among them). The CPU programs kick
+    /// exactly that; the GPU draws use the program's own fan tag instead
+    /// ([`draw_data`]).
     pub fn fan_tags_ok(m: &Mem) -> bool {
         let (a, b) = (m.ld(FAN_TAG_A), m.ld(FAN_TAG_B));
         a[1..] == b[1..] && fans_draw(m.ld(STRIP_TAG_CTX1), a)
@@ -1034,12 +1075,12 @@ pub mod gpu {
         let (gs, go) = (f(uni::GUARD_SCALE), f(uni::GUARD_OFFSET));
         let nv = info[2] as usize;
         let h = |v: usize| -> F4 {
-            let p = src[2 * v].map(f32::from_bits);
+            let p = src[DATA_STRIDE * v].map(f32::from_bits);
             std::array::from_fn(|l| {
                 m[0][l] * p[0] + m[1][l] * p[1] + m[2][l] * p[2] + m[3][l] * p[3]
             })
         };
-        let uv = |v: usize| -> F4 { src[2 * v + 1].map(f32::from_bits) };
+        let uv = |v: usize| -> F4 { src[DATA_STRIDE * v + 1].map(f32::from_bits) };
         let screen = |c: F4| -> [f32; 3] {
             let q = 1.0 / c[3];
             std::array::from_fn(|l| go[l] + c[l] * q * gs[l])

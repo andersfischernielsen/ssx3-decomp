@@ -350,6 +350,34 @@ const GPUVU_SOURCES: &[&str] = &[
     include_str!("gpuvu/bezier.wgsl"),
 ];
 
+/// The GPU-vertex module's shadow hook when it draws for the screen
+/// (shadow.wgsl replaces it in the shadow pass).
+/// The GPU-vertex module with the clip-depth entry points
+/// (`gpuvu/clip_depth.wgsl`): the programs' entry points become functions
+/// (`vsb_*`) that new entry points of the same names wrap.
+fn clip_depth_source() -> String {
+    const ENTRY: &str = "@vertex\nfn vs_";
+    const ARGS: &str =
+        "(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut";
+    let body = GPUVU_SOURCES.join("\n") + "\n" + NO_SHADOW;
+    assert_eq!(body.matches(ENTRY).count(), 8, "gpuvu entry points");
+    "enable clip_distances;\n".to_string()
+        + &body
+            .replace(ENTRY, "fn vsb_")
+            .replace(ARGS, "(k: u32, inst: u32) -> VOut")
+        + "\n"
+        + include_str!("gpuvu/clip_depth.wgsl")
+}
+
+const NO_SHADOW: &str = "const SHADOW_PASS: bool = false;\nfn shadow_out(o: VOut, hc: vec4<f32>) -> VOut { return o; }\n";
+
+/// The shadow pass's depth format.
+pub const SHADOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// The shadow pass's largest depth bias: about 10 world units of the
+/// light's depth range (`shadow::light`: 1.5 × the shadow range).
+const SHADOW_BIAS_CLAMP: f32 = 10.0 / 36000.0;
+
 pub struct Pipelines {
     module: wgpu::ShaderModule,
     pub layout: wgpu::BindGroupLayout,
@@ -358,9 +386,21 @@ pub struct Pipelines {
     /// GPU-computed vertices (gpuvu.wgsl after draw.wgsl): bind group 1
     /// holds the calls' uniforms and inputs.
     gpu_module: wgpu::ShaderModule,
+    /// `gpu_module` takes the GS depth from the vertices (`clip_depth_source`).
+    clip_depth: bool,
     pub gpu_layout: wgpu::BindGroupLayout,
     gpu_pl: wgpu::PipelineLayout,
-    gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program), wgpu::RenderPipeline>,
+    /// (Keyed also by whether the renderer's lighting is on: `LIGHTING`.)
+    gpu_cache: HashMap<(PipeKey, ssx3_render::gpu::Program, bool), wgpu::RenderPipeline>,
+    /// The shadow pass (shadow.wgsl; bind group 1 with a placeholder map).
+    shadow_module: wgpu::ShaderModule,
+    shadow_pl: wgpu::PipelineLayout,
+    shadow_cache: HashMap<ssx3_render::gpu::Program, wgpu::RenderPipeline>,
+    /// The world's casters (shadow.wgsl `vs_caster`).
+    pub caster: wgpu::RenderPipeline,
+    /// Their alpha cut-outs (`vs_caster_cut`; group 2: texture, sampler).
+    pub caster_cut: wgpu::RenderPipeline,
+    pub cut_layout: wgpu::BindGroupLayout,
 }
 
 impl Pipelines {
@@ -428,9 +468,26 @@ impl Pipelines {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
+        // The GS depth from the vertices where the device can clip by
+        // distance with unclipped depth (`SSX3_CLIP_DEPTH=0`: from the
+        // fragments, as before; exact to the GS's per-pixel depth rules).
+        let clip_depth = dev
+            .features()
+            .contains(wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::CLIP_DISTANCES)
+            && std::env::var("SSX3_CLIP_DEPTH").map_or(true, |v| v != "0");
         let gpu_module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssx3-gfx gpuvu.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(GPUVU_SOURCES.join("\n").into()),
+            source: wgpu::ShaderSource::Wgsl(if clip_depth {
+                clip_depth_source().into()
+            } else {
+                (GPUVU_SOURCES.join("\n") + "\n" + NO_SHADOW).into()
+            }),
+        });
+        let shadow_module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ssx3-gfx shadow.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(
+                (GPUVU_SOURCES.join("\n") + "\n" + include_str!("shadow.wgsl")).into(),
+            ),
         });
         let storage = |binding| wgpu::BindGroupLayoutEntry {
             binding,
@@ -442,30 +499,237 @@ impl Pipelines {
             },
             count: None,
         };
+        // 5..7: sun shadows (shadow.rs): uniforms, the map, its sampler.
+        let shadow_entries = [
+            wgpu::BindGroupLayoutEntry {
+                binding: 5,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 6,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                count: None,
+            },
+        ];
         let gpu_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ssx3-gfx gpuvu"),
-            entries: &[storage(0), storage(1), storage(2), storage(3), storage(4)],
+            entries: &[
+                storage(0),
+                storage(1),
+                storage(2),
+                storage(3),
+                storage(4),
+                shadow_entries[0],
+                shadow_entries[1],
+                shadow_entries[2],
+            ],
         });
         let gpu_pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ssx3-gfx gpuvu"),
             bind_group_layouts: &[Some(&layout), Some(&gpu_layout)],
             immediate_size: 0,
         });
+        let shadow_pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ssx3-gfx shadow"),
+            bind_group_layouts: &[Some(&layout), Some(&gpu_layout)],
+            immediate_size: 0,
+        });
+        let caster = dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ssx3-gfx world casters"),
+            layout: Some(&shadow_pl),
+            vertex: wgpu::VertexState {
+                module: &shadow_module,
+                entry_point: Some("vs_caster"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: 24,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+                })],
+            },
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: SHADOW_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 1.5,
+                    // (At most ~10 world units: triangles edge-on to the
+                    // sun (a rider's sides) were pushed past the snow.)
+                    clamp: SHADOW_BIAS_CLAMP,
+                },
+            }),
+            multisample: Default::default(),
+            fragment: None,
+            multiview_mask: None,
+            cache: None,
+        });
+        let cut_layout = dev.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ssx3-gfx cut-out"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let cut_pl = dev.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("ssx3-gfx cut-out"),
+            bind_group_layouts: &[Some(&layout), Some(&gpu_layout), Some(&cut_layout)],
+            immediate_size: 0,
+        });
+        let caster_cut = dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ssx3-gfx world cut-outs"),
+            layout: Some(&cut_pl),
+            vertex: wgpu::VertexState {
+                module: &shadow_module,
+                entry_point: Some("vs_caster_cut"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: 20,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2],
+                })],
+            },
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: SHADOW_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: wgpu::DepthBiasState {
+                    constant: 2,
+                    slope_scale: 1.5,
+                    // (At most ~10 world units: triangles edge-on to the
+                    // sun (a rider's sides) were pushed past the snow.)
+                    clamp: SHADOW_BIAS_CLAMP,
+                },
+            }),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shadow_module,
+                entry_point: Some("fs_caster_cut"),
+                compilation_options: Default::default(),
+                targets: &[],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
         Pipelines {
+            caster,
+            caster_cut,
+            cut_layout,
             module,
             layout,
             pl,
             cache: HashMap::new(),
             gpu_module,
+            clip_depth,
             gpu_layout,
             gpu_pl,
             gpu_cache: HashMap::new(),
+            shadow_module,
+            shadow_pl,
+            shadow_cache: HashMap::new(),
         }
     }
 
+    /// A shadow pipeline made earlier with [`Pipelines::shadow`].
+    pub fn cached_shadow(&self, p: ssx3_render::gpu::Program) -> &wgpu::RenderPipeline {
+        &self.shadow_cache[&p]
+    }
+
+    /// The shadow pass's pipeline for program `p` (depth only, nearest
+    /// wins; a slope-scaled bias against self-shadowing).
+    pub fn shadow(
+        &mut self,
+        dev: &wgpu::Device,
+        p: ssx3_render::gpu::Program,
+    ) -> &wgpu::RenderPipeline {
+        let (module, pl) = (&self.shadow_module, &self.shadow_pl);
+        self.shadow_cache.entry(p).or_insert_with(|| {
+            dev.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("ssx3-gfx shadow"),
+                layout: Some(pl),
+                vertex: wgpu::VertexState {
+                    module,
+                    entry_point: Some(p.vs_entry()),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState {
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: SHADOW_FORMAT,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2,
+                        slope_scale: 1.5,
+                        clamp: SHADOW_BIAS_CLAMP,
+                    },
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module,
+                    entry_point: Some("fs_shadow"),
+                    compilation_options: Default::default(),
+                    targets: &[],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        })
+    }
+
     /// A GPU-vertex pipeline made earlier with [`Pipelines::get_gpu`].
-    pub fn cached_gpu(&self, k: PipeKey, p: ssx3_render::gpu::Program) -> &wgpu::RenderPipeline {
-        &self.gpu_cache[&(k, p)]
+    pub fn cached_gpu(
+        &self,
+        k: PipeKey,
+        p: ssx3_render::gpu::Program,
+        lit: bool,
+    ) -> &wgpu::RenderPipeline {
+        &self.gpu_cache[&(k, p, lit)]
     }
 
     /// The pipeline for `k` with the vertices of program `p` computed on
@@ -475,9 +739,10 @@ impl Pipelines {
         dev: &wgpu::Device,
         k: PipeKey,
         p: ssx3_render::gpu::Program,
+        lit: bool,
     ) -> &wgpu::RenderPipeline {
-        let (module, pl) = (&self.gpu_module, &self.gpu_pl);
-        self.gpu_cache.entry((k, p)).or_insert_with(|| {
+        let (module, pl, clip_depth) = (&self.gpu_module, &self.gpu_pl, self.clip_depth);
+        self.gpu_cache.entry((k, p, lit)).or_insert_with(|| {
             let entry = p.vs_entry();
             let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
                 color: wgpu::BlendComponent {
@@ -498,6 +763,7 @@ impl Pipelines {
                 },
                 primitive: wgpu::PrimitiveState {
                     cull_mode: None,
+                    unclipped_depth: clip_depth,
                     ..Default::default()
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
@@ -510,8 +776,13 @@ impl Pipelines {
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
                     module,
-                    entry_point: Some("fs_gpu"),
-                    compilation_options: Default::default(),
+                    entry_point: Some(if clip_depth { "fs_gpu_nd" } else { "fs_gpu" }),
+                    // Without the renderer's lighting its code is compiled
+                    // out (`LIGHTING`, gpuvu.wgsl).
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants: &[("LIGHTING", if lit { 1.0 } else { 0.0 })],
+                        ..Default::default()
+                    },
                     targets: &[Some(wgpu::ColorTargetState {
                         format: COLOR_FORMAT,
                         blend,

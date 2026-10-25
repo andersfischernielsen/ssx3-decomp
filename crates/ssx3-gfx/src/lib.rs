@@ -20,14 +20,17 @@
 //! - [`draw`]: pipelines for GS draw states.
 
 pub mod debug;
+mod depth_query;
 mod draw;
 pub mod gs;
 mod options;
 pub mod pack;
 mod post;
+mod shadow;
 pub mod tex;
 
 pub use options::{Aa, Bloom, Options};
+pub use shadow::{set_debug_knob, DEBUG_KNOBS};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -69,8 +72,6 @@ struct Targets {
     snapshot: wgpu::Texture,
     /// Copy of `depth` for the depth-fog pass.
     zsnap: wgpu::Texture,
-    /// Copy of `depth` after the 3D phase (light queries).
-    qdepth: wgpu::Texture,
 }
 
 /// An offscreen render target (`gs::Rt`) on the GPU.
@@ -132,19 +133,36 @@ pub struct Inner {
     opts: Options,
     /// The renderer's own passes (created on first use).
     post: Option<post::Post>,
+    /// The shadow map (options: shadows).
+    shadow: Option<shadow::Shadow>,
+    /// The game's key light (towards it), eased from frame to frame.
+    key_light: [f32; 3],
+    /// The sun's direction where the game last drew it (the lens flare's
+    /// query), eased from frame to frame.
+    flare_sun: Option<[f32; 3]>,
+    /// The game's live light (the lit meshes': ambient, key colour; ×255),
+    /// eased from frame to frame (`gs::Gs::key_ambient`).
+    live_ambient: [f32; 3],
+    live_colour: [f32; 3],
+    /// The GraphicsMan of the frame being drawn (TexMan for the cut-outs).
+    frame_gm: u32,
+    /// The world's shadow casters of the frame being drawn.
+    world_casters: Option<std::sync::Arc<ssx3_render::world_casters::Casters>>,
+    /// The world painter's sun (`world_casters::painter_sun`).
+    painter_sun: Option<ssx3_render::world_casters::PainterSun>,
     /// Seconds since the renderer started (animated effects).
     t0: web_time::Instant,
     /// Batches of VIF phase 1 (the 3D scene) in this frame.
     phase1_end: usize,
     /// Keep the depth after phase 1 (`depth()`, native mode).
     pub want_depth: bool,
-    /// This frame's depth readback in flight (buffer, size, ZMAX + 1).
+    /// The light queries' depth, one sample per GS pixel (`depth_query`).
+    depth_query: depth_query::DepthQuery,
+    /// This frame's depth readback in flight (buffer, ZMAX + 1, GS size).
     /// (The flag: mapped; the browser cannot wait for it.)
     pending_depth: Option<(
         wgpu::Buffer,
         wgpu::SubmissionIndex,
-        u32,
-        u32,
         f32,
         u32,
         u32,
@@ -158,6 +176,12 @@ pub struct Inner {
     /// Frames timed and the time (ms) in build, prepare, encode+submit,
     /// depth readback.
     timing: (u64, [f64; 4]),
+    /// The depth readback's parts (ms): waiting for the previous frame's GPU
+    /// work, copying the depth out, creating the next buffer.
+    depth_parts: [f64; 3],
+    /// Per frame (summed): passes begun, colour snapshots, depth snapshots,
+    /// target switches, draws, frame copied into snapshots (%).
+    pass_counts: [u64; 6],
     /// The image on screen, for presenting (sRGB view allowed).
     present: Vec<wgpu::Texture>,
     /// Vertex and uniform buffers, kept across frames (grown as needed).
@@ -260,6 +284,7 @@ impl Renderer {
             },
         );
         let shared = Arc::new(Shared::default());
+        let depth_query = depth_query::DepthQuery::new(&dev);
         Renderer(
             Arc::new(Mutex::new(Inner {
                 shared: shared.clone(),
@@ -286,13 +311,24 @@ impl Renderer {
                 hud_squeeze: 1.0,
                 opts: Options::default(),
                 post: None,
+                shadow: None,
+                key_light: [0.0, 0.6, 0.8],
+                world_casters: None,
+                painter_sun: None,
+                frame_gm: 0,
+                live_ambient: [110.0, 112.0, 120.0],
+                live_colour: [90.0, 85.0, 70.0],
+                flare_sun: None,
                 t0: web_time::Instant::now(),
                 phase1_end: usize::MAX,
                 want_depth: false,
+                depth_query,
                 pending_depth: None,
                 frames_in: 0,
                 zscale: 16777216.0,
                 timing: (0, [0.0; 4]),
+                depth_parts: [0.0; 3],
+                pass_counts: [0; 6],
                 present: Vec::new(),
                 staged: None,
                 vbuf: None,
@@ -359,12 +395,9 @@ impl Renderer {
     /// The modern graphics options.
     pub fn set_options(&self, o: Options) {
         let mut g = self.0.lock().unwrap();
-        if g.opts.mipmaps != o.mipmaps {
-            // Textures are made with or without mipmaps.
-            g.texcache.clear();
-        }
         g.opts = o;
-        ssx3_render::bezier::gpu::set_tessellation(o.terrain);
+        ssx3_render::world_casters::set_enabled(o.shadows);
+        ssx3_render::mat3::set_hw_clip(o.shadows);
     }
 
     /// Anisotropic filtering: 1 (off) to 16 (the default).
@@ -540,11 +573,6 @@ impl Inner {
             draw::DEPTH_FORMAT,
             wgpu::TextureUsages::COPY_DST,
         );
-        let qdepth = mk(
-            "ssx3-gfx query depth",
-            draw::DEPTH_FORMAT,
-            wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
-        );
         // Start cleared (the game clears with its own draws afterwards).
         let mut enc = self.dev.create_command_encoder(&Default::default());
         {
@@ -582,7 +610,6 @@ impl Inner {
             depth,
             snapshot,
             zsnap,
-            qdepth,
         });
     }
 
@@ -679,12 +706,7 @@ impl Inner {
                 );
             }
         }
-        // Options: mipmaps for the game's own textures.
-        let generated = (replaced.is_none() && self.opts.mipmaps).then(|| tex::mipmaps(&d));
-        let levels: &[tex::Decoded] = replaced
-            .as_deref()
-            .or(generated.as_deref())
-            .unwrap_or(std::slice::from_ref(&d));
+        let levels: &[tex::Decoded] = replaced.as_deref().unwrap_or(std::slice::from_ref(&d));
         let t = self.dev.create_texture(&wgpu::TextureDescriptor {
             label: Some("ssx3-gfx tex"),
             size: wgpu::Extent3d {
@@ -821,13 +843,26 @@ impl Inner {
         Some(t.create_view(&Default::default()))
     }
 
+    /// Start the stage timings over (a benchmark's window).
+    pub fn reset_timing(&mut self) {
+        self.timing = (0, [0.0; 4]);
+        self.depth_parts = [0.0; 3];
+        self.pass_counts = [0; 6];
+    }
+
     /// Mean time per frame in each stage of `render` (ms).
     pub fn timing_report(&self) -> String {
         let n = self.timing.0.max(1) as f64;
         let t = &self.timing.1;
         format!(
-            "gfx per frame: build {:.2} ms, prepare {:.2} ms, encode+submit {:.2} ms, depth readback {:.2} ms ({} frames)",
-            t[0] / n, t[1] / n, t[2] / n, t[3] / n, self.timing.0
+            "gfx per frame: build {:.2} ms, prepare {:.2} ms, encode+submit {:.2} ms, depth readback {:.2} ms (GPU wait {:.2}, copy {:.2}, buffer {:.2}) ({} frames)",
+            t[0] / n, t[1] / n, t[2] / n, t[3] / n,
+            self.depth_parts[0] / n, self.depth_parts[1] / n, self.depth_parts[2] / n, self.timing.0
+        ) + &format!(
+            "; per frame: {:.1} passes, {:.1} colour snapshots, {:.1} depth snapshots, {:.1} target switches, {:.0} draws, {:.0}% of the frame copied to snapshots",
+            self.pass_counts[0] as f64 / n, self.pass_counts[1] as f64 / n,
+            self.pass_counts[2] as f64 / n, self.pass_counts[3] as f64 / n,
+            self.pass_counts[4] as f64 / n, self.pass_counts[5] as f64 / n
         )
     }
 
@@ -911,6 +946,9 @@ impl Inner {
         self.stats.frames += 1;
         let t_start = web_time::Instant::now();
         let mut b = self.take_build();
+        self.world_casters = built.casters.clone();
+        self.painter_sun = built.sun;
+        self.frame_gm = built.frame.gm;
         Build::run(&mut b, built, mem);
         self.put_build(b);
         self.timing.1[0] += t_start.elapsed().as_secs_f64() * 1e3;
@@ -953,8 +991,157 @@ impl Inner {
         if !vbytes.is_empty() {
             self.queue.write_buffer(&vbuf, 0, vbytes);
         }
+        // Sun shadows (shadow.rs): this frame's light, the map and its
+        // uniforms (bound with the GPU draws, group 1).
+        if shadow::debug("gpustats") {
+            // The VU calls of this frame left to the CPU programs.
+            let mut st = ssx3_render::gpu::STATS.lock().unwrap();
+            let cpu: Vec<String> = st
+                .iter()
+                .filter(|(k, _)| !k.3)
+                .map(|((h, e, i, _), n)| {
+                    format!("{h:x}/{e:#x}{} x{n}", if *i { " itop" } else { "" })
+                })
+                .collect();
+            let gpu: u64 = st.iter().filter(|(k, _)| k.3).map(|(_, n)| n).sum();
+            eprintln!(
+                "gpustats frame {}: gpu {gpu} cpu {cpu:?}",
+                self.stats.frames
+            );
+            st.clear();
+        }
+        let projector = ssx3_render::bezier::take_projector();
+        if shadow::debug("print") {
+            eprintln!(
+                "shadow: key light {:?} projector {:?}",
+                self.key_light, projector
+            );
+        }
+        if self.gs.key_count > 0 {
+            let n = self.gs.key_count as f32;
+            for c in 0..3 {
+                self.live_ambient[c] =
+                    self.live_ambient[c] * 0.9 + self.gs.key_ambient[c] / n * 0.1;
+                self.live_colour[c] = self.live_colour[c] * 0.9 + self.gs.key_colour[c] / n * 0.1;
+            }
+        }
+        if shadow::debug("lightlog") {
+            eprintln!(
+                "[light] {} sun {:.3} {:.3} {:.3} amb {:.1} {:.1} {:.1} col {:.1} {:.1} {:.1}",
+                self.world_casters.as_ref().map_or("", |c| c.world.as_str()),
+                self.key_light[0],
+                self.key_light[1],
+                self.key_light[2],
+                self.live_ambient[0],
+                self.live_ambient[1],
+                self.live_ambient[2],
+                self.live_colour[0],
+                self.live_colour[1],
+                self.live_colour[2]
+            );
+        }
+        let k = self.gs.key_light;
+        let kn = (k[0] * k[0] + k[1] * k[1] + k[2] * k[2]).sqrt();
+        if kn > 1e-3 {
+            let p = self.key_light;
+            let m: [f32; 3] = std::array::from_fn(|i| p[i] * 0.9 + k[i] / kn * 0.1);
+            let mn = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt().max(1e-6);
+            self.key_light = m.map(|x| x / mn);
+        }
+        // The sun: the meshes' key light (`SSX3_SHADOW_DEBUG=flare-sun`:
+        // where the game draws the sun sprite instead).
+        if let (Some((x, y, z)), Some(cam)) =
+            (ssx3_ps2::frame_sink::take_light(), self.gs.cam.as_ref())
+        {
+            if let Some(d) = shadow::sun_from_screen(cam, x, y, z) {
+                let d = d.map(|v| v as f32);
+                let m = match self.flare_sun {
+                    Some(p) => std::array::from_fn(|i| p[i] * 0.9 + d[i] * 0.1),
+                    None => d,
+                };
+                let l = (m[0] * m[0] + m[1] * m[1] + m[2] * m[2]).sqrt().max(1e-6);
+                self.flare_sun = Some(m.map(|v: f32| v / l));
+            }
+        }
+        if shadow::debug("print") {
+            eprintln!("shadow: flare sun {:?}", self.flare_sun);
+        }
+        // The sun: the lit meshes' key light where it is one (well above
+        // the horizon); else the world painter's sun (the lens flare's:
+        // low, or none on overcast and night courses, whose key light is
+        // the snow's bounce from below). (direction, its colour's source:
+        // 0 the key light's, 1 the painter's, 2 none.)
+        let kl = {
+            let k = self.key_light;
+            let n = (k[0] * k[0] + k[1] * k[1] + k[2] * k[2]).sqrt().max(1e-6);
+            k.map(|x| x / n)
+        };
+        let painter = self.painter_sun.and_then(|p| p.dir().map(|d| (d, p)));
+        let (key, sun_source) = match self.flare_sun {
+            Some(f) if shadow::debug("flare-sun") => (f, 0),
+            _ if kl[2] >= 0.26 => (self.key_light, 0),
+            _ => match painter {
+                Some((d, _)) => (d, 1),
+                None => (self.key_light, 2),
+            },
+        };
+        let light = if self.opts.shadows {
+            self.gs.cam.as_ref().and_then(|c| shadow::light(c, key))
+        } else {
+            None
+        };
+        let map_size = if light.is_some() {
+            shadow::tuning().size
+        } else {
+            self.shadow.as_ref().map_or(1, |s| s.size)
+        };
+        if self.shadow.as_ref().is_none_or(|s| s.size != map_size) {
+            self.shadow = Some(shadow::Shadow::new(&self.dev, map_size));
+        }
+        if let (Some(c), true) = (self.world_casters.clone(), light.is_some()) {
+            self.shadow
+                .as_mut()
+                .unwrap()
+                .set_casters(&self.dev, &self.queue, &c);
+        }
+        // With the world's casters the terrain casts from them (the game's
+        // terrain draws only cover what the camera sees).
+        let native_terrain =
+            light.is_some() && self.world_casters.is_some() && !shadow::debug("no-world");
+        let sh = self.shadow.as_ref().unwrap();
+        let world = self.world_casters.as_ref().map_or("", |c| c.world.as_str());
+        let g = shadow::lighting(world);
+        let (amb, col) = (
+            self.live_ambient.map(|v| v / 128.0),
+            self.live_colour.map(|v| v / 128.0),
+        );
+        // (The painter's sun: its hue and intensity at the key light's
+        // strength.)
+        let sun_col: [f32; 3] = match (sun_source, painter) {
+            (0, _) => col,
+            (1, Some((_, p))) => {
+                let m = col.iter().fold(0f32, |a, &b| a.max(b));
+                p.colour.map(|c| c * p.intensity * m)
+            }
+            _ => [0.0; 3],
+        };
+        if shadow::debug("print") {
+            eprintln!(
+                "shadow: sun source {sun_source} key {kl:?} painter {:?}",
+                self.painter_sun
+            );
+        }
+        let lt = shadow::Lighting {
+            sun: std::array::from_fn(|c| g.sun[c] * sun_col[c]),
+            sky: std::array::from_fn(|c| g.sky[c] * amb[c]),
+            ground: std::array::from_fn(|c| g.ground[c] * amb[c]),
+            exposure: g.exposure,
+        };
+        sh.upload(&self.queue, light.as_ref(), shadow::show(), lt);
         // GPU-computed draws (ssx3_render::gpu): their uniforms, inputs and
-        // triangle lists, bound as group 1.
+        // triangle lists, bound as group 1 (and again with the placeholder
+        // shadow map for the shadow pass).
+        let mut gpu_bind_shadow = None;
         let gpu_bind = (!self.gs.gpu.calls.is_empty()).then(|| {
             let g = &self.gs.gpu;
             // (u32 slices as their bytes, no copy: the GPU reads little-endian
@@ -1003,21 +1190,48 @@ impl Inner {
                 }
                 ab
             };
-            let bg = self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("ssx3-gfx gpuvu"),
-                layout: &self.pipes.gpu_layout,
-                entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: cb.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: db.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 2, resource: ib.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 3, resource: ob.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 4, resource: ab.as_entire_binding() },
-                ],
-            });
-            bg
+            let group = |real: bool| {
+                let [s5, s6, s7] = sh.entries(real);
+                self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("ssx3-gfx gpuvu"),
+                    layout: &self.pipes.gpu_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry { binding: 0, resource: cb.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 1, resource: db.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 2, resource: ib.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 3, resource: ob.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 4, resource: ab.as_entire_binding() },
+                        s5,
+                        s6,
+                        s7,
+                    ],
+                })
+            };
+            if light.is_some() {
+                gpu_bind_shadow = Some(group(false));
+            }
+            group(true)
         });
         // Plans per batch, uniforms, bind groups.
         let batches = std::mem::take(&mut self.gs.batches);
+        // With sun shadows the game's own rider shadows go: the render
+        // targets its silhouettes (mat6 entry 0x20) are drawn into, and every
+        // draw that projects them (`SSX3_SHADOW_DEBUG=game-shadows` keeps
+        // them).
+        let silhouette_rts: std::collections::HashSet<u32> =
+            if light.is_some() && !shadow::debug("game-shadows") {
+                batches
+                    .iter()
+                    .filter(|b| {
+                        b.gpu
+                            .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat6Shadow)
+                    })
+                    .map(|b| b.state.target)
+                    .filter(|&t| t != self.gs.main_fbp)
+                    .collect()
+            } else {
+                Default::default()
+            };
         self.stats.batches += batches.len() as u64;
         struct Item {
             /// Samples the frame: needs a fresh snapshot unless the previous
@@ -1036,6 +1250,9 @@ impl Inner {
             first: u32,
             count: u32,
             scissor: Option<[u32; 4]>,
+            /// The target pixels it can change (x0, y0, x1, y1): its
+            /// scissor, narrowed to its vertices' bounds where known.
+            area: [u32; 4],
             /// What it is (pixel probe).
             desc: String,
             /// Its batch.
@@ -1067,6 +1284,94 @@ impl Inner {
             // The game's bloom, replaced or off.
             if !opts.keeps_post(b.tag.post) {
                 continue;
+            }
+            if !silhouette_rts.is_empty()
+                && (silhouette_rts.contains(&st.target)
+                    || st.tex.is_some_and(|t| {
+                        t != gs::FRAME_TEX
+                            && t & gs::RT_TEX != 0
+                            && silhouette_rts.contains(&(t & !gs::RT_TEX))
+                    }))
+            {
+                continue;
+            }
+            // Debug: no GPU particles.
+            if shadow::debug("no-particles")
+                && b.gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat4Particles)
+            {
+                continue;
+            }
+            // Debug: no board trails and wakes.
+            if shadow::debug("no-strips")
+                && b.gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat3Strip)
+            {
+                continue;
+            }
+            // Debug: the terrain without its second pass.
+            if b.tag.pass2 && shadow::debug("no-pass2") {
+                continue;
+            }
+            let terrain_blend = (b
+                .gpu
+                .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
+                && st.prim & (1 << 6) != 0)
+                .then_some(st.ctx.alpha & 0xff);
+            // The renderer's terrain lighting: the game's baked layer goes,
+            // the base layer is lit (flag 16384). For fitting
+            // (`SSX3_SHADOW_SHOW=normals|sunlit`) only the lit terrain draws.
+            let native_light = light.is_some() && !shadow::debug("baked");
+            let lit_base = native_light
+                && st.target == self.gs.main_fbp
+                && !b.tag.hud
+                && b.tag.post.is_none()
+                && b.gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
+                && (st.prim & (1 << 6) == 0 || terrain_blend == Some(0x2a));
+            // The bake's light is not drawn (the lighting is ours), only its
+            // colour, blurred wide (flag 32768: the artists' zone and shade
+            // colours without the shapes of its shadows);
+            // `SSX3_SHADOW_DEBUG=no-tint` drops that too.
+            let bake_tint = native_light && terrain_blend == Some(0x81);
+            // (The exposure fit's view: everything else drawn black, so it
+            // covers the terrain as in the game's image.)
+            let black = native_light
+                && shadow::show() == 9.0
+                && !lit_base
+                && st.target == self.gs.main_fbp
+                && b.tag.post.is_none()
+                && !b
+                    .gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier);
+            if native_light
+                && ((bake_tint && (shadow::debug("no-tint") || shadow::fitting_view()))
+                    || (shadow::fitting_view()
+                        && !lit_base
+                        && !black
+                        && st.target == self.gs.main_fbp))
+            {
+                continue;
+            }
+            if (terrain_blend == Some(0x81) && shadow::debug("no-sub"))
+                || (terrain_blend == Some(0x58) && shadow::debug("no-add"))
+            {
+                continue;
+            }
+            if shadow::debug("blend")
+                && b.gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
+            {
+                eprintln!(
+                    "blend: pass2 {} prim {:#x} alpha {:#x} tfx {} tcc {} test {:#x} zbuf-msk {}",
+                    b.tag.pass2,
+                    st.prim,
+                    st.ctx.alpha,
+                    (st.ctx.tex0 >> 35) & 3,
+                    (st.ctx.tex0 >> 34) & 1,
+                    st.ctx.test,
+                    (st.ctx.zbuf >> 32) & 1
+                );
             }
             let alpha_only = (st.ctx.frame >> 32) as u32 & 0x00ff_ffff == 0x00ff_ffff;
             // `z`: keep the batch but without depth writes.
@@ -1162,9 +1467,39 @@ impl Inner {
                     px((y1 + 1).min(th), fy).max(b + 1) - b,
                 ]
             });
-            if scissor.is_none() {
+            let Some([sx, sy, sw, sh]) = scissor else {
                 continue;
-            }
+            };
+            // (Vertex bounds in target pixels, a pixel's margin: the GPU
+            // samples at pixel centres.)
+            let bounds = match b.gpu {
+                Some(g) => g.bounds,
+                None => Some(
+                    self.gs.verts[b.first as usize..(b.first + b.count) as usize]
+                        .iter()
+                        .fold([f32::MAX, f32::MAX, f32::MIN, f32::MIN], |m, v| {
+                            [
+                                m[0].min(v.pos[0]),
+                                m[1].min(v.pos[1]),
+                                m[2].max(v.pos[0]),
+                                m[3].max(v.pos[1]),
+                            ]
+                        }),
+                ),
+            };
+            let area = match bounds.filter(|b| b[0] <= b[2] && b[1] <= b[3]) {
+                Some(b) => {
+                    let lo = |v: f32, f: f32| ((v * f).floor() - 2.0).max(0.0) as u32;
+                    let hi = |v: f32, f: f32| ((v + 1.0) * f).ceil().max(0.0) as u32 + 2;
+                    [
+                        lo(b[0], fx).max(sx),
+                        lo(b[1], fy).max(sy),
+                        hi(b[2], fx).min(sx + sw),
+                        hi(b[3], fy).min(sy + sh),
+                    ]
+                }
+                None => [sx, sy, sx + sw, sy + sh],
+            };
             let rt_psm = st
                 .tex
                 .filter(|t| *t != gs::FRAME_TEX && t & gs::RT_TEX != 0)
@@ -1194,9 +1529,24 @@ impl Inner {
                     _ => ta,
                 }
             };
+            // Debug: the terrain's subtractive (baked lighting) layer alone,
+            // drawn opaque (its colour is what it subtracts).
+            if shadow::debug("sub-only")
+                && b.gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
+                && terrain_blend != Some(0x81)
+            {
+                continue;
+            }
             for mut p in draw::plans(st, (tw, th), rt_psm, as_max) {
                 if no_zw {
                     p.key.depth_write = false;
+                }
+                if shadow::debug("sub-only") && terrain_blend == Some(0x81) {
+                    p.key.blend = None;
+                    p.u.src_mode = 0;
+                    p.key.depth = wgpu::CompareFunction::GreaterEqual;
+                    p.key.depth_write = true;
                 }
                 if dbg.planlog == Some(st.ctx.test) {
                     eprintln!("[gfx-plan] alpha {:#x} fba {} flags {:#x} tfx {} src_mode {} cs {} {} c_kind {} fix {} key {:?}", st.ctx.alpha, st.ctx.fba, p.u.flags, p.u.tfx, p.u.src_mode, p.u.cs_a, p.u.cs_b, p.u.c_kind, p.u.fix, p.key);
@@ -1204,6 +1554,64 @@ impl Inner {
                 let ubo = (ubytes.len() as u64 / draw::UNIFORM_STRIDE) as u32;
                 if date {
                     p.u.flags |= 64 | (((st.ctx.test >> 15) & 1) as u32) << 7;
+                }
+                if black {
+                    p.u.flags |= 262144;
+                }
+                // Sun shadows: the 3D draws receive them.
+                if lit_base {
+                    p.u.flags |= 16384;
+                } else if native_light
+                    && st.target == self.gs.main_fbp
+                    && !b.tag.hud
+                    && b.tag.post.is_none()
+                    && b.gpu
+                        .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat3Strip)
+                    && (st.ctx.test >> 16) & 1 != 0
+                    && (st.ctx.test >> 17) & 3 >= 2
+                {
+                    // Board trails and wakes on the snow (depth-tested: the
+                    // HUD's strips are not): lit as the terrain under them,
+                    // their colour (the bake's light where they were laid)
+                    // neutral (flag 65536).
+                    p.u.flags |= 65536;
+                } else if native_light
+                    && st.target == self.gs.main_fbp
+                    && !b.tag.hud
+                    && b.tag.post.is_none()
+                    && b.gpu
+                        .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat4Particles)
+                    && p.u.src_mode == 1
+                    && p.u.cs_a == 1.0
+                    && p.u.cs_b == 0.0
+                {
+                    // Snow spray (alpha-blended particles, their colour the
+                    // baked light where they flew up): lit as the terrain,
+                    // their colour neutral (flag 131072).
+                    p.u.flags |= 131072;
+                } else if bake_tint {
+                    p.u.flags |= 32768;
+                } else if light.is_some()
+                    && !shadow::debug("no-recv")
+                    && st.target == self.gs.main_fbp
+                    && !b.tag.hud
+                    && b.tag.post.is_none()
+                    && b.gpu.is_some_and(|g| shadow::receives(g.program))
+                {
+                    p.u.flags |= 4096;
+                }
+                if shadow::debug("recvlog") && st.target == self.gs.main_fbp && !b.tag.hud {
+                    eprintln!(
+                        "[recv] {:?} alpha {:#x} abe {} src_mode {} cs {} {} flags {:#x} tex {}",
+                        b.gpu.map(|g| g.program),
+                        st.ctx.alpha,
+                        st.prim & (1 << 6) != 0,
+                        p.u.src_mode,
+                        p.u.cs_a,
+                        p.u.cs_b,
+                        p.u.flags,
+                        st.tex.is_some()
+                    );
                 }
                 // Glints on bright snow (textured terrain).
                 if opts.snow && b.tag.terrain && st.tex.is_some() {
@@ -1280,6 +1688,7 @@ impl Inner {
                     first: b.first,
                     count: b.count,
                     scissor,
+                    area,
                 });
             }
         }
@@ -1354,7 +1763,8 @@ impl Inner {
         for it in &items {
             match it.gpu {
                 Some(g) => {
-                    self.pipes.get_gpu(&self.dev, it.key, g.program);
+                    self.pipes
+                        .get_gpu(&self.dev, it.key, g.program, light.is_some());
                 }
                 None => {
                     self.pipes.get(&self.dev, it.key);
@@ -1364,7 +1774,9 @@ impl Inner {
         // The renderer's own passes: AO before the game's post passes, the
         // rest before the HUD (or at the end of a frame without them).
         let hud_post = opts.bloom == Bloom::Modern || opts.aa != Aa::Off;
-        let ao_at = if opts.ao {
+        // (Sun shadows are applied by the draws themselves: they need the
+        // split only for their debug views.)
+        let ao_at = if opts.ao || (opts.shadows && post::debug_view() != 0.0) {
             items
                 .iter()
                 .position(|it| it.tag.post.is_some() || it.tag.hud)
@@ -1380,18 +1792,168 @@ impl Inner {
         } else {
             usize::MAX
         };
-        if (opts.ao || hud_post) && self.post.is_none() {
+        if (opts.ao || ao_at != usize::MAX || hud_post) && self.post.is_none() {
             self.post = Some(post::Post::new(&self.dev));
         }
         if let Some(po) = self.post.as_mut() {
             po.begin_frame();
+        }
+        // The world's cut-outs (trees): each texture's bind group.
+        let mut cut_groups: Vec<(wgpu::BindGroup, u32, u32)> = Vec::new();
+        let runs = self
+            .shadow
+            .as_ref()
+            .and_then(|s| s.cutouts.as_ref())
+            .map(|c| c.1.clone());
+        if let (true, Some(runs), Some(_)) = (native_terrain, runs, light.as_ref()) {
+            let texman = frame::word(mem, self.frame_gm + frame::gm::TEXMAN);
+            let samp = self.dev.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("ssx3-gfx cut-out"),
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            });
+            for (t, first, n) in runs {
+                let info = if texman != 0 {
+                    tex::info(mem, texman, t as u16)
+                } else {
+                    0
+                };
+                let Some((view, _)) = (info != 0)
+                    .then(|| self.texture(info, 0x80 << 32, mem))
+                    .flatten()
+                else {
+                    continue;
+                };
+                let bg = self.dev.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("ssx3-gfx cut-out"),
+                    layout: &self.pipes.cut_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&samp),
+                        },
+                    ],
+                });
+                cut_groups.push((bg, first, n));
+            }
         }
         let t = self.targets.as_ref().expect("targets");
         let cv = t.color.create_view(&Default::default());
         let dv = t.depth.create_view(&Default::default());
         let mut enc = self.dev.create_command_encoder(&Default::default());
         let main = self.gs.main_fbp;
+        // Sun shadows: the 3D draws before the game's post passes again,
+        // into the shadow map (shadow.rs), before everything else.
+        if let (Some(_), Some(gb), false) = (
+            light.as_ref(),
+            gpu_bind_shadow.as_ref(),
+            shadow::debug("no-pass"),
+        ) {
+            let sh = self.shadow.as_ref().unwrap();
+            let casts = |it: &Item| {
+                !shadow::debug("no-items")
+                    && it.target == main
+                    && !it.tag.hud
+                    && it.tag.post.is_none()
+                    // (Riders cast from every pass: the body is drawn
+                    // without depth writes, only the helmet and bindings
+                    // with.)
+                    && (it.key.depth_write
+                        || it
+                            .gpu
+                            .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat6Skin))
+                    && it.scissor.is_some()
+                    && it.gpu.is_some_and(|g| {
+                        shadow::receives(g.program)
+                            && !(native_terrain
+                                && matches!(
+                                    g.program,
+                                    ssx3_render::gpu::Program::Bezier
+                                        | ssx3_render::gpu::Program::Mat3Mesh
+                                ))
+                    })
+            };
+            let end = ao_at.min(items.len());
+            if shadow::debug("items") {
+                let mut by: std::collections::BTreeMap<String, (u32, u32)> = Default::default();
+                for it in items[..end]
+                    .iter()
+                    .filter(|it| it.target == main && !it.tag.hud)
+                {
+                    let k = format!("{:?} zw {}", it.gpu.map(|g| g.program), it.key.depth_write);
+                    let e = by.entry(k).or_default();
+                    e.0 += 1;
+                    e.1 += it.gpu.map_or(it.count, |g| g.count);
+                }
+                eprintln!("shadow items: {by:?}");
+            }
+            for it in items[..end].iter().filter(|it| casts(it)) {
+                self.pipes.shadow(&self.dev, it.gpu.unwrap().program);
+            }
+            let mut sp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ssx3-gfx shadow map"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &sh.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            sp.set_bind_group(1, gb, &[]);
+            // One quarter of the atlas per cascade (the instance index).
+            let tile = (sh.size / 2) as f32;
+            for c in 0..shadow::CASCADES as u32 {
+                sp.set_viewport(
+                    (c & 1) as f32 * tile,
+                    (c >> 1) as f32 * tile,
+                    tile,
+                    tile,
+                    0.0,
+                    1.0,
+                );
+                let mut last_prog = None;
+                for it in items[..end].iter().filter(|it| casts(it)) {
+                    let g = it.gpu.unwrap();
+                    if last_prog != Some(g.program) {
+                        last_prog = Some(g.program);
+                        sp.set_pipeline(self.pipes.cached_shadow(g.program));
+                    }
+                    sp.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
+                    sp.draw(g.first..g.first + g.count, c..c + 1);
+                }
+                if let (true, Some((_, buf, n))) = (native_terrain, sh.casters.as_ref()) {
+                    sp.set_pipeline(&self.pipes.caster);
+                    sp.set_bind_group(0, &groups[0], &[0]);
+                    sp.set_vertex_buffer(0, buf.slice(..));
+                    sp.draw(0..*n, c..c + 1);
+                }
+                if let (false, Some((buf, _))) = (cut_groups.is_empty(), sh.cutouts.as_ref()) {
+                    sp.set_pipeline(&self.pipes.caster_cut);
+                    sp.set_bind_group(0, &groups[0], &[0]);
+                    sp.set_vertex_buffer(0, buf.slice(..));
+                    for (bg, first, n) in &cut_groups {
+                        sp.set_bind_group(2, bg, &[]);
+                        sp.draw(*first..*first + *n, c..c + 1);
+                    }
+                }
+            }
+        }
         let rts = &self.rts;
+        let mut counts = [0u64; 6];
+        let mut copied = 0u64;
         // A pass on target `fbp`; depth starts cleared on a target's first
         // pass of the frame.
         let begin =
@@ -1412,7 +1974,13 @@ impl Inner {
                         depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
+                            // (The lighting fit's views start from black:
+                            // they draw the terrain only.)
+                            load: if first && fbp == main && shadow::fitting_view() {
+                                wgpu::LoadOp::Clear(wgpu::Color::BLACK)
+                            } else {
+                                wgpu::LoadOp::Load
+                            },
                             store: wgpu::StoreOp::Store,
                         },
                     })],
@@ -1440,6 +2008,7 @@ impl Inner {
         let mut cur_target = main;
         started.insert(main);
         let mut pass = begin(&mut enc, main, true);
+        counts[0] += 1;
         pass.set_vertex_buffer(0, vbuf.slice(..));
         // The pass state last set (each command only when it changes; a new
         // pass starts with none).
@@ -1453,6 +2022,12 @@ impl Inner {
         }
         let mut last = Last::default();
         let mut prev_frame = false;
+        // The main target's pixels drawn since the snapshot was last taken
+        // (x0, y0, x1, y1; empty when x0 >= x1): a snapshot copies only
+        // these, the rest of it is current. (The frame before, the renderer's
+        // passes: all.)
+        let all = [0, 0, t.w, t.h];
+        let mut changed = all;
         let mut probed: Vec<String> = Vec::new();
         let probe_buf = probe.map(|_| {
             self.dev.create_buffer(&wgpu::BufferDescriptor {
@@ -1464,26 +2039,14 @@ impl Inner {
         });
         let phase1_end = self.phase1_end;
         let mut depth_taken = false;
+        let gather = self.want_depth.then(|| {
+            self.depth_query
+                .prepare(&self.dev, &self.queue, &t.depth, (t.w, t.h), (w, h))
+        });
         let take_depth = |enc: &mut wgpu::CommandEncoder| {
-            enc.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &t.depth,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyTextureInfo {
-                    texture: &t.qdepth,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::Extent3d {
-                    width: t.w,
-                    height: t.h,
-                    depth_or_array_layers: 1,
-                },
-            );
+            if let Some(g) = &gather {
+                g.run(enc);
+            }
         };
         let post_frame = post::Frame {
             color: &t.color,
@@ -1498,35 +2061,61 @@ impl Inner {
                 drop(pass);
                 let po = self.post.as_mut().expect("post passes");
                 if k == ao_at {
-                    po.ao(
-                        &self.dev,
-                        &self.queue,
-                        &mut enc,
-                        &post_frame,
+                    if let (Some(l), Some(sh), Some(cam), true) = (
+                        light.as_ref(),
+                        self.shadow.as_ref(),
                         self.gs.cam.as_ref(),
-                        self.fxy,
-                    );
+                        post::debug_view() != 0.0,
+                    ) {
+                        po.shadow(
+                            &self.dev,
+                            &self.queue,
+                            &mut enc,
+                            &post_frame,
+                            cam,
+                            self.fxy,
+                            &sh.view,
+                            l,
+                        );
+                    }
+                    if opts.ao {
+                        po.ao(
+                            &self.dev,
+                            &self.queue,
+                            &mut enc,
+                            &post_frame,
+                            self.gs.cam.as_ref(),
+                            self.fxy,
+                        );
+                    }
                 }
                 if k == hud_at {
                     po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
                 }
                 pass = begin(&mut enc, cur_target, false);
+                counts[0] += 1;
                 pass.set_vertex_buffer(0, vbuf.slice(..));
                 last = Last::default();
                 // (They overwrote the snapshot.)
                 prev_frame = false;
+                changed = all;
             }
             if self.want_depth && !depth_taken && it.batch >= phase1_end {
                 depth_taken = true;
                 drop(pass);
                 take_depth(&mut enc);
                 pass = begin(&mut enc, cur_target, false);
+                counts[0] += 1;
                 pass.set_vertex_buffer(0, vbuf.slice(..));
                 last = Last::default();
             }
             let Some([x, y, sw, sh]) = it.scissor else {
                 continue;
             };
+            // (Nothing to draw: its vertices are outside the scissor.)
+            if it.area[0] >= it.area[2] || it.area[1] >= it.area[3] {
+                continue;
+            }
             // (Frame-sampling items may draw into another target: the
             // display buffer copy.)
             // A new run of frame-sampling items, or one into another target
@@ -1536,6 +2125,10 @@ impl Inner {
             let zsnapshot = it.zfog && it.target == main;
             if it.target != cur_target || snapshot || zsnapshot {
                 drop(pass);
+                counts[0] += 1;
+                counts[1] += snapshot as u64;
+                counts[2] += zsnapshot as u64;
+                counts[3] += (it.target != cur_target) as u64;
                 if zsnapshot {
                     enc.copy_texture_to_texture(
                         wgpu::TexelCopyTextureInfo {
@@ -1557,27 +2150,43 @@ impl Inner {
                         },
                     );
                 }
-                if snapshot {
-                    // Snapshot the frame as drawn so far.
+                // A destination alpha test reads only the item's own pixels:
+                // what changed there (the rest stays marked as changed).
+                // Frame-sampling items share a snapshot over their run: all
+                // that changed.
+                let date_only = !(it.frame && (!prev_frame || it.target != cur_target));
+                let [mut x0, mut y0, mut x1, mut y1] = changed;
+                if date_only {
+                    let a = it.area;
+                    (x0, y0, x1, y1) = (x0.max(a[0]), y0.max(a[1]), x1.min(a[2]), y1.min(a[3]));
+                }
+                let (x1, y1) = (x1.min(t.w), y1.min(t.h));
+                if snapshot && x0 < x1 && y0 < y1 {
+                    // Snapshot the frame as drawn so far (what changed).
+                    let origin = wgpu::Origin3d { x: x0, y: y0, z: 0 };
                     enc.copy_texture_to_texture(
                         wgpu::TexelCopyTextureInfo {
                             texture: &t.color,
                             mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
+                            origin,
                             aspect: wgpu::TextureAspect::All,
                         },
                         wgpu::TexelCopyTextureInfo {
                             texture: &t.snapshot,
                             mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
+                            origin,
                             aspect: wgpu::TextureAspect::All,
                         },
                         wgpu::Extent3d {
-                            width: t.w,
-                            height: t.h,
+                            width: x1 - x0,
+                            height: y1 - y0,
                             depth_or_array_layers: 1,
                         },
                     );
+                    copied += ((x1 - x0) * (y1 - y0)) as u64;
+                }
+                if snapshot && !date_only {
+                    changed = [u32::MAX, u32::MAX, 0, 0];
                 }
                 cur_target = it.target;
                 let first = started.insert(cur_target);
@@ -1602,7 +2211,7 @@ impl Inner {
                 }
                 last.pipe = Some((it.key, program));
                 pass.set_pipeline(match program {
-                    Some(p) => self.pipes.cached_gpu(it.key, p),
+                    Some(p) => self.pipes.cached_gpu(it.key, p, light.is_some()),
                     None => self.pipes.cached(it.key),
                 });
             }
@@ -1629,9 +2238,19 @@ impl Inner {
                 last.scissor = Some([x, y, sw, sh]);
                 pass.set_scissor_rect(x, y, sw, sh);
             }
+            counts[4] += 1;
             match it.gpu {
                 Some(g) => pass.draw(g.first..g.first + g.count, 0..1),
                 None => pass.draw(it.first..it.first + it.count, 0..1),
+            }
+            if it.target == main {
+                let a = it.area;
+                changed = [
+                    changed[0].min(a[0]),
+                    changed[1].min(a[1]),
+                    changed[2].max(a[2]),
+                    changed[3].max(a[3]),
+                ];
             }
             if let (Some((px, py)), Some(pb)) = (probe, probe_buf.as_ref()) {
                 if it.target == main {
@@ -1665,17 +2284,40 @@ impl Inner {
             }
         }
         drop(pass);
+        counts[5] = copied * 100 / (t.w as u64 * t.h as u64);
+        for (a, b) in self.pass_counts.iter_mut().zip(counts) {
+            *a += b;
+        }
         if ao_at == items.len() || hud_at == items.len() {
             let po = self.post.as_mut().expect("post passes");
             if ao_at == items.len() {
-                po.ao(
-                    &self.dev,
-                    &self.queue,
-                    &mut enc,
-                    &post_frame,
+                if let (Some(l), Some(sh), Some(cam), true) = (
+                    light.as_ref(),
+                    self.shadow.as_ref(),
                     self.gs.cam.as_ref(),
-                    self.fxy,
-                );
+                    post::debug_view() != 0.0,
+                ) {
+                    po.shadow(
+                        &self.dev,
+                        &self.queue,
+                        &mut enc,
+                        &post_frame,
+                        cam,
+                        self.fxy,
+                        &sh.view,
+                        l,
+                    );
+                }
+                if opts.ao {
+                    po.ao(
+                        &self.dev,
+                        &self.queue,
+                        &mut enc,
+                        &post_frame,
+                        self.gs.cam.as_ref(),
+                        self.fxy,
+                    );
+                }
             }
             if hud_at == items.len() {
                 po.before_hud(&self.dev, &self.queue, &mut enc, &post_frame, &opts);
@@ -1737,36 +2379,18 @@ impl Inner {
             },
         );
         // Depth after phase 1, read back for the light queries.
-        let depth_buf = self.want_depth.then(|| {
+        let t_buf = web_time::Instant::now();
+        let depth_buf = gather.as_ref().map(|g| {
             let buf = self.dev.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("ssx3-gfx depth readback"),
-                size: (t.w * 4).next_multiple_of(256) as u64 * t.h as u64,
+                size: g.len,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             });
-            enc.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &t.qdepth,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::DepthOnly,
-                },
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &buf,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some((t.w * 4).next_multiple_of(256)),
-                        rows_per_image: Some(t.h),
-                    },
-                },
-                wgpu::Extent3d {
-                    width: t.w,
-                    height: t.h,
-                    depth_or_array_layers: 1,
-                },
-            );
+            enc.copy_buffer_to_buffer(&g.out, 0, &buf, 0, g.len);
             buf
         });
+        self.depth_parts[2] += t_buf.elapsed().as_secs_f64() * 1e3;
         let sub_idx = self.queue.submit(std::iter::once(enc.finish()));
         let t_sub = web_time::Instant::now();
         self.timing.1[2] += (t_sub - t_prepared).as_secs_f64() * 1e3;
@@ -1774,10 +2398,11 @@ impl Inner {
             // The previous frame's depth (its readback has had a frame to
             // complete): the light queries see depth one frame late, and
             // the CPU does not wait for this frame's GPU work.
-            if let Some((prev, prev_idx, pw, ph, zs, lw, lh, mapped, prev_frame)) =
+            if let Some((prev, prev_idx, zs, lw, lh, mapped, prev_frame)) =
                 self.pending_depth.take()
             {
                 let slice = prev.slice(..);
+                let t_wait = web_time::Instant::now();
                 if cfg!(target_arch = "wasm32") {
                     let _ = self.dev.poll(wgpu::PollType::Poll);
                 } else {
@@ -1786,6 +2411,8 @@ impl Inner {
                         timeout: None,
                     });
                 }
+                let t_copy = web_time::Instant::now();
+                self.depth_parts[0] += (t_copy - t_wait).as_secs_f64() * 1e3;
                 // (Not mapped yet in the browser: the queries keep the
                 // depth before.)
                 if let Some(v) = mapped
@@ -1793,17 +2420,12 @@ impl Inner {
                     .then(|| slice.get_mapped_range())
                     .and_then(|r| r.ok())
                 {
-                    // In GS pixels: the sample at each pixel's centre,
-                    // converted when a query reads it.
+                    // In GS pixels (the sample at each pixel's centre,
+                    // `depth_query`), converted when a query reads it.
                     let raw = v.to_vec();
-                    let row = (pw * 4).next_multiple_of(256) as usize;
                     let zs = zs as f64;
                     let z = move |x: u32, y: u32| {
-                        let py = (((y as f32 + 0.5) * ph as f32 / lh as f32) as usize)
-                            .min(ph as usize - 1);
-                        let pxl = (((x as f32 + 0.5) * pw as f32 / lw as f32) as usize)
-                            .min(pw as usize - 1);
-                        let o = py * row + 4 * pxl;
+                        let o = 4 * (y as usize * lw as usize + x as usize);
                         let d = f32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
                         (d as f64 * zs).round().min(zs - 1.0) as u32
                     };
@@ -1817,23 +2439,15 @@ impl Inner {
                     ));
                     self.shared.depth_ready.notify_all();
                 }
+                self.depth_parts[1] += t_copy.elapsed().as_secs_f64() * 1e3;
             }
             let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let m = mapped.clone();
             buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
                 m.store(r.is_ok(), std::sync::atomic::Ordering::Release)
             });
-            self.pending_depth = Some((
-                buf,
-                sub_idx,
-                t.w,
-                t.h,
-                self.zscale,
-                w,
-                h,
-                mapped,
-                self.frames_in - 1,
-            ));
+            self.pending_depth =
+                Some((buf, sub_idx, self.zscale, w, h, mapped, self.frames_in - 1));
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
         }
         if let Some(pb) = probe_buf {

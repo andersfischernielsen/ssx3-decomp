@@ -74,7 +74,7 @@ fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
     let c0 = mat6_clip(c, b, k - 2u);
     let c1 = mat6_clip(c, b, k - 1u);
     let c2 = mat6_clip(c, b, k);
-    if (!(mat6_inside(c0) && mat6_inside(c1) && mat6_inside(c2))) {
+    if (!(mat6_inside(c0) && mat6_inside(c1) && mat6_inside(c2)) && !SHADOW_PASS) {
         return mat6_culled();
     }
     let v = k - 2u + corner;
@@ -99,6 +99,22 @@ fn mat6_skin_vertex(vi: u32, c: u32) -> VOut {
     let off = m6(b + 12u);
     let hc = mat6_snap(vec4<f32>(off.xyz * clip.w + scale.xyz * clip.xyz, clip.w));
     var o = gs_vertex(c, hc, clip.z, false, col, vec3<f32>(st * q, q));
+    // Real-time lighting: the smooth world normal (the flat faces' normals
+    // turn a low-poly rider's terminator into a patchwork of self-shadowed
+    // triangles): the point one unit along the model normal, through the
+    // same bone and screen transforms, back to the world.
+    if (sh.p.z > 0.5 && !SHADOW_PASS && !env) {
+        let vv = uq(c, 1).x + 3u * v;
+        let bo = b + 13u + rd(vv).z - 0x11u;
+        let pe = bitcast<vec4<f32>>(rd(vv + 2u)) + vec4<f32>(nr, 0.0);
+        let ce = m6(bo) * pe.x + m6(bo + 1u) * pe.y + m6(bo + 2u) * pe.z + m6(bo + 3u) * pe.w;
+        let he = sh.s2w * vec4<f32>(off.xyz * ce.w + scale.xyz * ce.xyz, ce.w);
+        let hp = sh.s2w * vec4<f32>(off.xyz * clip.w + scale.xyz * clip.xyz, clip.w);
+        let d = he.xyz / he.w - hp.xyz / hp.w;
+        if (dot(d, d) > 1e-12) {
+            o.nrm = vec4<f32>(normalize(d), 1.0);
+        }
+    }
     // XYZF2: the fog is the vertex's ADC word (0x7fff: 0xff; ADC
     // 0xffff8000: 0), ADC when it is one of its strip's first two or one of
     // it and the two before it fails CLIP (the triangle's own three pass).
@@ -143,13 +159,15 @@ fn mat6_shadow_vertex(vi: u32, c: u32) -> VOut {
 }
 
 @vertex
-fn vs_mat6_skin(@builtin(vertex_index) k: u32) -> VOut {
+fn vs_mat6_skin(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    cascade = inst;
     let c = call_of(k);
     return mat6_skin_vertex(call_index(k, c), c);
 }
 
 @vertex
-fn vs_mat6_shadow(@builtin(vertex_index) k: u32) -> VOut {
+fn vs_mat6_shadow(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    cascade = inst;
     let c = call_of(k);
     return mat6_shadow_vertex(call_index(k, c), c);
 }

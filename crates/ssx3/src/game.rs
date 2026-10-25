@@ -62,17 +62,9 @@ fn data_dir() -> PathBuf {
     }
 }
 
-/// At every VSync: the game rate and the detail distance tables.
+/// At every VSync: the game rate.
 fn vblank(c: &mut Cpu) {
     ssx3_game::tick::on_vblank(c);
-    ssx3_game::detail::on_vblank(c);
-}
-
-/// `SSX3_DRAW_DIST=<factor>` (settings "Detail distance"): 1 = original.
-pub fn detail_distance() -> f32 {
-    crate::settings::get("SSX3_DRAW_DIST")
-        .and_then(|v| v.parse::<f32>().ok())
-        .map_or(1.0, |f| f.clamp(1.0, 4.0))
 }
 
 /// Create the machine, load the disc and the executable, start the main thread.
@@ -87,7 +79,6 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
     // The tick rate (SSX3_TICK_HZ, settings "Game rate").
     machine::set_vsync_hz(ssx3_game::tick::install());
     machine::set_vblank_hook(vblank);
-    ssx3_game::detail::set(detail_distance());
     ssx3_game::debug::install();
     // SSX3_EVENT / SSX3_RIDER: straight into an event.
     ssx3_game::event_boot::install();
@@ -348,6 +339,9 @@ fn lensfx_query_native(c: &mut Cpu) {
         return;
     };
     c.bus.write32(out, v.to_bits());
+    // (Sun shadows: where the sun is.)
+    let depth = if f[9] < 0.0 { 0 } else { f[9] as u32 };
+    ssx3_ps2::frame_sink::note_light(f[0] + f[2] * 0.5, f[1] + f[3] * 0.5, depth);
     c.g[V0][0] = 1;
     // Return to the caller.
     c.pc = c.g[RA][0] as u32;
@@ -485,8 +479,8 @@ pub fn aspect_box() -> Option<f32> {
 }
 
 /// The modern graphics options from the settings (F10) or environment:
-/// `SSX3_AA`, `SSX3_MIPMAPS`, `SSX3_LOD_BIAS`, `SSX3_TERRAIN`, `SSX3_AO`,
-/// `SSX3_BLOOM`, `SSX3_SNOW`. Unset: the original look.
+/// `SSX3_AA`, `SSX3_LOD_BIAS`, `SSX3_AO`, `SSX3_SHADOWS`, `SSX3_BLOOM`,
+/// `SSX3_SNOW`. Unset: the original look.
 pub fn gfx_options() -> ssx3_gfx::Options {
     let get = |k: &str| crate::settings::get(k);
     let on = |k: &str| get(k).is_some_and(|v| v != "0");
@@ -495,14 +489,11 @@ pub fn gfx_options() -> ssx3_gfx::Options {
             Some("fxaa") => ssx3_gfx::Aa::Fxaa,
             _ => ssx3_gfx::Aa::Off,
         },
-        mipmaps: on("SSX3_MIPMAPS"),
         lod_bias: get("SSX3_LOD_BIAS")
             .and_then(|v| v.parse::<f32>().ok())
             .map_or(0.0, |b| b.clamp(-2.0, 2.0)),
-        terrain: get("SSX3_TERRAIN")
-            .and_then(|v| v.parse().ok())
-            .map_or(1, |n: u32| n.clamp(1, 4)),
         ao: on("SSX3_AO"),
+        shadows: on("SSX3_SHADOWS"),
         bloom: match get("SSX3_BLOOM").as_deref() {
             Some("modern") => ssx3_gfx::Bloom::Modern,
             Some("off") => ssx3_gfx::Bloom::Off,

@@ -428,7 +428,10 @@ fn float_strip_clip(
     top: u16,
     n: u16,
     kick: &mut dyn FnMut(&[u128]),
+    fanned: &mut Vec<bool>,
 ) -> Vec<(V, bool)> {
+    fanned.clear();
+    fanned.resize(n as usize, false);
     let mat = [
         m.ld(MATRIX),
         m.ld(MATRIX + 1),
@@ -453,6 +456,7 @@ fn float_strip_clip(
             let culled = clip.fcand(0x3_ffff);
             out[k as usize].1 = culled;
             if culled && !clip.triangle_dropped() {
+                fanned[k as usize] = true;
                 let spill = madd(acc, VF0, bc(VF0[0]));
                 m.st(ACC_SPILL, spill);
                 let pos = |d: u16| m.ld(src.wrapping_sub(d));
@@ -1513,6 +1517,21 @@ fn gpu_strip_tag(tag: V, n: u16) -> Option<bool> {
 /// would not end on, tags other than [`gpu_strip_tag`]'s, a nonzero
 /// guardScale.w, more than 72 vertices or an output reaching the clipper's
 /// buffers.
+static HW_CLIP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Hardware clipping for the GPU strips (the renderer's lighting is on):
+/// the triangles the program clips at the guard band and the near plane
+/// are drawn by the GPU, which clips them itself, instead of as the
+/// program's fans (CPU-drawn: without the GPU program they missed the
+/// lighting, e.g. a board trail's end nearest the camera).
+pub fn set_hw_clip(on: bool) {
+    HW_CLIP.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn hw_clip() -> bool {
+    HW_CLIP.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<crate::gpu::GpuCall> {
     let top = (top & 0x3ff) as u16;
     let mut m = Mem(mem);
@@ -1544,7 +1563,19 @@ pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<cra
     }
     m.st(top.wrapping_add(OUT), tag);
     let mut pre = Vec::new();
-    let clip = float_strip_clip(m, top, n, &mut |p| pre.extend_from_slice(p));
+    let mut fanned = Vec::new();
+    let hw = hw_clip();
+    let clip = float_strip_clip(
+        m,
+        top,
+        n,
+        &mut |p| {
+            if !hw {
+                pre.extend_from_slice(p)
+            }
+        },
+        &mut fanned,
+    );
 
     let mut u = [[0u32; 4]; crate::gpu::UNIFORM_QWORDS];
     u[gpu_strip::GUARD_SCALE] = gs;
@@ -1560,11 +1591,13 @@ pub fn plan_gpu_strip(entry: u32, top: u32, mem: &mut [u8; 16384]) -> Option<cra
             m.ld(a),
             m.ld(a.wrapping_add(1)),
             c,
-            [adc as u32, k as u32, 0, 0],
+            [adc as u32, k as u32, hw as u32, 0],
         ]
     };
     let verts: Vec<[V; 4]> = (0..n).map(|k| vertex(m, k)).collect();
-    let drawn = (2..n as usize).filter(|&k| !clip[k].1);
+    // (With hardware clipping the triangles the program clips into fans
+    // are drawn whole.)
+    let drawn = (2..n as usize).filter(|&k| !clip[k].1 || (hw && fanned[k]));
     // (Over the drawn triangles' vertices, as the GS side takes it.)
     let alpha_of = |k: usize| verts[k][1][3] & 0xff;
     let alpha_max = drawn

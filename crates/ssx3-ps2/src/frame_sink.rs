@@ -63,6 +63,8 @@ pub struct FrameBuilder {
     carry: Carry,
     /// Mesh chains decoded once (`frame::ChainCache`).
     cache: frame::ChainCache,
+    /// The world's shadow casters (`ssx3_render::world_casters`).
+    casters: ssx3_render::world_casters::CasterCache,
     /// Time spent building, frames built.
     pub ms: f64,
     pub frames: u64,
@@ -79,11 +81,15 @@ impl FrameBuilder {
     ) -> (Built, Carry) {
         let t = web_time::Instant::now();
         let carry = self.carry.clone();
-        let b = if native_frame(&direct) {
+        let mut b = if native_frame(&direct) {
             frame::build_native(mem, gm, &carry, &mut self.cache, direct)
         } else {
             frame::build_cached(mem, gm, &carry, &mut self.cache, direct)
         };
+        if ssx3_render::world_casters::enabled() {
+            b.casters = self.casters.update(mem);
+            b.sun = ssx3_render::world_casters::painter_sun(mem);
+        }
         static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         if *CHECK.get_or_init(|| std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some()) {
             let bad = b
@@ -157,6 +163,11 @@ static TIMING: Mutex<(u64, f64, f64)> = Mutex::new((0, 0.0, 0.0));
 /// Reads of [`FrameMem`] outside its pages (the renderer read memory
 /// [`frame::texture_ranges`] does not cover).
 static MISSES: AtomicU64 = AtomicU64::new(0);
+
+/// Start the timings over (a benchmark's window).
+pub fn reset_timing() {
+    *TIMING.lock().unwrap() = (0, 0.0, 0.0);
+}
 
 /// Mean time per published frame on the game's thread (building the typed
 /// frame, taking its memory, hand-over).
@@ -891,4 +902,22 @@ pub fn native_frame(direct: &[ssx3_render::direct::Recorded]) -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("SSX3_NATIVE_FRAME").map_or(true, |v| v != "0"))
         && !direct.is_empty()
+}
+
+/// The light the lens flare queried farthest away this frame (the sun):
+/// the centre of its rectangle in frame pixels and its depth (GS Z). Sun
+/// shadows take the sun's direction from it.
+static LIGHT: std::sync::Mutex<Option<(f32, f32, u32)>> = std::sync::Mutex::new(None);
+
+/// A lens-flare visibility query: rectangle centre (frame pixels), depth.
+pub fn note_light(x: f32, y: f32, z: u32) {
+    let mut l = LIGHT.lock().unwrap();
+    if l.is_none_or(|(_, _, lz)| z <= lz) {
+        *l = Some((x, y, z));
+    }
+}
+
+/// The light noted since the last call (and forget it).
+pub fn take_light() -> Option<(f32, f32, u32)> {
+    LIGHT.lock().unwrap().take()
 }

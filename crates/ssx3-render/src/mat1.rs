@@ -265,7 +265,10 @@ fn exec(
             // 0x0b60 / 0x0bc8 (BAL vi14: nothing saved).
             let mat = m.matrix(top.wrapping_add(0x80));
             let src = match first {
-                First::Projector => m.ilw(LAST_TOP, 0),
+                First::Projector => {
+                    crate::bezier::note_projector(&mat);
+                    m.ilw(LAST_TOP, 0)
+                }
                 _ => top.wrapping_add(NORMALS),
             };
             project_xy(&mut m, &mat, src, top.wrapping_add(UV2), pk[0]);
@@ -332,12 +335,6 @@ fn gpu_ok(m: &Mem, first: First, pass2: Pass2, g: Grid, top: u16) -> bool {
     }
 }
 
-/// Whether the strips cover the n×n grid row by row (packet B right after
-/// packet A): then a finer grid can replace them.
-fn fine_ok(g: Grid, s: &V2) -> bool {
-    s.b_offset == s.a * g.n && s.a + s.b + 1 == g.n
-}
-
 /// The strip draw (0x09b0 ctx1 / 0x0d40 ctx2 re-draw): packet A from the
 /// first row, packet B from row `b_offset`, both kicked from fixed slots.
 /// `ctx1` also writes the tags (NLOOP from the table, ctx1 PRIM) and resets
@@ -363,19 +360,6 @@ fn draw(
         m.st_mask(PACKET_B, m.ld(STRIP_TAG_CTX1), 0b0111);
     }
     if let Some(out) = gpu {
-        // Options: a finer grid through the same patch.
-        let f = gpu::tessellation();
-        if f > 1 && fine_ok(g, &s) {
-            let k = f as usize * (g.n as usize - 1) + 1;
-            let gp = gpu::fine_grid(m, g.n, f, pos, 3);
-            let gu = gpu::fine_grid(m, g.n, f, uv, 2);
-            let grid: Vec<[u32; 4]> = gp.iter().zip(&gu).flat_map(|(a, b)| [*a, *b]).collect();
-            let (strips, data) = gpu::fine_strips(k, s.a as usize * f as usize, &grid, 2);
-            let colour = m.ld(COLOUR);
-            let mark_nv = (s.a + s.b) as u32 * 2 * g.n as u32;
-            gpu::draw_data(m, &strips, data, mark_nv, colour, g.n, 1, out);
-            return;
-        }
         let mut strips = gpu::Strips::default();
         for (packet, count, off) in [(PACKET_A, s.a, 0), (PACKET_B, s.b, s.b_offset)] {
             strips.packet(packet);
@@ -414,15 +398,6 @@ fn pass2_st(
     let pk = g.packets(m);
     let n = g.n;
     if let Some(out) = gpu {
-        // Options: the finer grid of the draw (`draw`), its UV2s likewise.
-        let f = gpu::tessellation();
-        if f > 1 && fine_ok(g, &s) {
-            let k = f as usize * (n as usize - 1) + 1;
-            let uv2 = gpu::fine_grid(m, n, f, top.wrapping_add(UV2), 2);
-            let (strips, data) = gpu::fine_strips(k, s.a as usize * f as usize, &uv2, 1);
-            gpu::rewrite_st_data(m, &strips, data, out);
-            return;
-        }
         // The draw's strips with the UV2 of each vertex (as the rewrite
         // walks them: `gpu_ok` checked it covers the strips).
         let mut strips = gpu::Strips::default();

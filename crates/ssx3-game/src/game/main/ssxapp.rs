@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -86,12 +87,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_trigger_manager_destroy_instance,
         "WorldTriggerManager_DestroyInstance",
     ),
+    (0x0022_9f30, vu0_upload_matrix_pair, "Vu0_UploadMatrixPair"),
+    (0x0022_a698, nash_collect_patches, "Nash_CollectPatches"),
+    (0x0022_add8, nash_gather_visible, "Nash_GatherVisible"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
 pub(crate) mod callee {
-    use super::ee;
-    use super::Callee;
+    use super::{ee, Callee};
     pub(crate) use crate::game::ai::rider::callee::COMM_SYSTEM_UPDATE;
     pub(crate) use crate::game::ai::rider::callee::EMITTER_ADVANCE_DESC_TIME;
     pub(crate) use crate::game::ai::rider::callee::EMITTER_RENDER;
@@ -327,6 +330,66 @@ pub(crate) mod callee {
     pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_RESET_SECTIONS;
     pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_INFO;
     pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::WORLD_TRIGGER_GET_NAME;
+
+    pub const NASH_CULL_NODE: Callee = Callee {
+        addr: 0x0022_a830,
+        f: ee::s05::Nash_CullNode,
+    };
+
+    pub const VU0_UPLOAD_MATRIX_PAIR: Callee = Callee {
+        addr: 0x0022_9f30,
+        f: ee::s05::Vu0_UploadMatrixPair,
+    };
+
+    pub const NASH_EMPTY_HOOK: Callee = Callee {
+        addr: 0x0022_9f80,
+        f: ee::s05::Nash_EmptyHook,
+    };
+
+    pub const NASH_COLLECT_PATCHES: Callee = Callee {
+        addr: 0x0022_a698,
+        f: ee::s05::Nash_CollectPatches,
+    };
+
+    pub const NASH_COLLECT_INSTANCES: Callee = Callee {
+        addr: 0x0022_a5a0,
+        f: ee::s05::Nash_CollectInstances,
+    };
+
+    pub const NASH_COLLECT_EFFECTS: Callee = Callee {
+        addr: 0x0022_a770,
+        f: ee::s05::Nash_CollectEffects,
+    };
+
+    pub const NASH_CLASSIFY_PATCHES: Callee = Callee {
+        addr: 0x0022_a408,
+        f: ee::s05::Nash_ClassifyPatches,
+    };
+
+    pub const NASH_CLASSIFY_INSTANCES: Callee = Callee {
+        addr: 0x0022_a368,
+        f: ee::s05::Nash_ClassifyInstances,
+    };
+
+    pub const NASH_CLASSIFY_EFFECTS: Callee = Callee {
+        addr: 0x0022_a4a8,
+        f: ee::s05::Nash_ClassifyEffects,
+    };
+
+    pub const WORLD_PAINTER_GET_SUN_TEXTURE: Callee = Callee {
+        addr: 0x002e_e220,
+        f: ee::s09::WorldPainter_GetSunTexture,
+    };
+
+    pub const WORLD_PAINTER_GET_SUN_AZIMUTH: Callee = Callee {
+        addr: 0x002e_e0b8,
+        f: ee::s09::WorldPainter_GetSunAzimuth,
+    };
+
+    pub const WORLD_PAINTER_GET_SUN_ELEVATION: Callee = Callee {
+        addr: 0x002e_e070,
+        f: ee::s09::WorldPainter_GetSunElevation,
+    };
 }
 
 /// `gp`-relative globals used here.
@@ -393,6 +456,12 @@ pub(crate) mod table_callee {
     pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_RICH_STRING;
     pub(crate) use crate::game::fe::festaterewards::table_callee::UI_TEXT_SET_UNICODE_STRING_BY_ID;
     pub(crate) use crate::game::fe::festaterewards::table_callee::UPLOAD_TEXTURE_PIXELS;
+
+    /// `OcclusionMan_BuildVisible(man, arg)`.
+    pub const OCCLUSION_MAN_BUILD_VISIBLE: u32 = 0x0024_25c0;
+
+    /// `Math_SinCos(angle f12, float* sin, float* cos)`.
+    pub const MATH_SIN_COS: u32 = 0x0031_be50;
 }
 
 /// `uint CrowdMan2d_AddSprite(CrowdMan2d *man, const void *sprite, uint value)`
@@ -2032,6 +2101,303 @@ fn spawn_flash(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
+pub(crate) mod nash {
+
+    /// The occlusion manager (`OcclusionMan*`), +0x110 its occluder mask.
+    pub const OCCLUSION: u32 = 0x00;
+
+    /// Argument passed on to `OcclusionMan_BuildVisible` / the empty hook.
+    pub const HOOK_ARG: u32 = 0x04;
+
+    /// The camera view matrix (4 quads).
+    pub const VIEW_MATRIX: u32 = 0x10;
+
+    /// The world view matrix (4 quads, copied from graphics +0x5800).
+    pub const WORLD_MATRIX: u32 = 0x50;
+
+    /// Section tables (`*tables` = section/logical-section state arrays).
+    pub const SECTION_TABLES: u32 = 0x90;
+
+    /// Fully visible nodes: count, then (node, clipped) pairs.
+    pub const VISIBLE_COUNT: u32 = 0x94;
+
+    pub const VISIBLE: u32 = 0x98;
+
+    /// Partially visible nodes: count, then (node, clipped) pairs.
+    pub const PARTIAL_COUNT: u32 = 0x1098;
+
+    pub const PARTIAL: u32 = 0x109c;
+
+    /// The visible patch list (count, then patch pointers).
+    pub const PATCH_COUNT: u32 = 0x50a8;
+
+    pub const PATCHES: u32 = 0x50ac;
+
+    /// Every list count the pass resets, in the original store order.
+    pub const CLEARED: [u32; 13] = [
+        0x94, 0x1098, 0x209c, 0x40a0, 0x50a8, 0x70ac, 0x78b4, 0x7abc, 0x7bc0, 0x7fc4, 0x50a4,
+        0x78b0, 0x7ab8,
+    ];
+}
+
+/// gp offset (negative) of the graphics object (`D_004A289C`): the camera
+/// interface's vtable at +0x10d8, the world view matrix at +0x5800.
+pub(crate) const GRAPHICS_GP: u32 = 0x854;
+
+/// Copy a 4x4 matrix through VU0 registers vf1..vf4 (`lqc2` x4, `sqc2` x4).
+pub(crate) fn copy_matrix_vu0(c: &mut Cpu, src: u32, dst: u32) {
+    for (k, vf) in (1..=4).enumerate() {
+        c.lqc2(vf, src.wrapping_add(0x10 * k as u32));
+    }
+    for (k, vf) in (1..=4).enumerate() {
+        c.sqc2(vf, dst.wrapping_add(0x10 * k as u32));
+    }
+}
+
+/// `Nash* Nash_GatherVisible(Nash* this, NashRoot roots[8], OcclusionMan*
+/// occ, void* hook_arg, SectionTables* tables)` (0x22add8): the world
+/// pass. Stores its arguments, clears every visible list, copies the camera
+/// view matrix (graphics camera interface slot 43, returned on the stack)
+/// to +0x10 and the graphics world matrix (+0x5800) to +0x50, builds the
+/// occluder set, uploads both matrices to VU0 data memory, then culls the
+/// eight octant roots (`Nash_CullNode(ctx, node, cell)`; roots are 0x14
+/// apart: cell at +0, node at +0x10) with the context `{this, occ,
+/// occ->mask (+0x110), inside = 0}` on the stack, and collects / classifies
+/// the patches, instances and effects of the visible (+0x98) and partial
+/// (+0x109c) node lists. Returns `this`.
+pub fn nash_gather_visible(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 67;
+        let frame = Frame::open(c, 0x90);
+        c.g[T1][0] = c.lw(r32(c, GP).wrapping_sub(GRAPHICS_GP));
+        frame.save(c, S2, 0x60);
+        frame.save(c, S1, 0x70);
+        c.g[S2][0] = c.g[A0][0]; // this
+        frame.save(c, S3, 0x50);
+        c.g[A0][0] = c.g[SP][0]; // the returned matrix at sp+0
+        frame.save(c, S0, 0x80);
+        c.g[S3][0] = c.g[A1][0]; // roots
+        frame.save_ra(c, 0x40);
+        c.g[S1][0] = sx(at(c, S2, nash::VIEW_MATRIX));
+        let this = r32(c, S2);
+        c.sw(this.wrapping_add(nash::OCCLUSION), c.g[A2][0]);
+        c.sw(this.wrapping_add(nash::HOOK_ARG), c.g[A3][0]);
+        c.sw(this.wrapping_add(nash::SECTION_TABLES), c.g[T0][0]);
+        for off in nash::CLEARED {
+            c.sw(this.wrapping_add(off), 0);
+        }
+        // The camera view matrix: graphics camera interface slot 43.
+        let vt = c.lw(at(c, T1, 0x10d8));
+        c.g[V0][0] = vt;
+        c.g[A1][0] = c.lh((vt as u32).wrapping_add(0x158));
+        c.g[V1][0] = c.lw((vt as u32).wrapping_add(0x15c));
+        let method = r32(c, V1);
+        c.g[A1][0] = sx(r32(c, T1).wrapping_add(r32(c, A1)));
+        call_ptr(c, method, 0x0022_ae58)?;
+        copy_matrix_vu0(c, sp(c), r32(c, S1));
+        // The world matrix.
+        c.g[V0][0] = c.lw(r32(c, GP).wrapping_sub(GRAPHICS_GP));
+        c.g[S0][0] = sx(at(c, S2, nash::WORLD_MATRIX));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x5800));
+        copy_matrix_vu0(c, r32(c, V0), r32(c, S0));
+        c.g[A0][0] = c.lw(at(c, S2, nash::OCCLUSION));
+        c.g[A1][0] = c.lw(at(c, S2, nash::HOOK_ARG));
+        call_ptr(c, table_callee::OCCLUSION_MAN_BUILD_VISIBLE, 0x0022_aeb0)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S1][0];
+        callee::VU0_UPLOAD_MATRIX_PAIR.call(c, 0x0022_aebc)?;
+        c.g[A0][0] = c.lw(at(c, S2, nash::HOOK_ARG));
+        callee::NASH_EMPTY_HOOK.call(c, 0x0022_aec4)?;
+        // The cull context at sp+0: {this, occ, occ->mask, inside = 0}.
+        let occ = c.lw(at(c, S2, nash::OCCLUSION));
+        c.g[V0][0] = occ;
+        c.g[A1][0] = c.lw(at(c, S3, 0x10)); // root 0's node
+        c.g[V1][0] = c.lw((occ as u32).wrapping_add(0x110));
+        let ctx = sp(c);
+        c.sw(ctx.wrapping_add(4), c.g[V0][0]);
+        c.sw(ctx.wrapping_add(8), c.g[V1][0]);
+        c.sw(ctx, c.g[S2][0]);
+        c.sw(ctx.wrapping_add(0xc), 0);
+        if c.g[A1][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A2][0] = c.g[S3][0];
+            callee::NASH_CULL_NODE.call(c, 0x0022_aef0)?;
+        }
+        for k in 1..8u32 {
+            let root = 0x14 * k;
+            c.cycles += 3;
+            c.g[A1][0] = c.lw(at(c, S3, root + 0x10));
+            c.g[A2][0] = sx(at(c, S3, root));
+            if c.g[A1][0] != 0 {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[SP][0];
+                callee::NASH_CULL_NODE.call(c, 0x0022_aef0 + root)?;
+            }
+        }
+        // Collect from the visible list, classify the partial list.
+        c.cycles += 34;
+        c.g[S0][0] = sx(at(c, S2, nash::VISIBLE));
+        for (f, ret_addr) in [
+            (callee::NASH_COLLECT_PATCHES, 0x0022_af90),
+            (callee::NASH_COLLECT_INSTANCES, 0x0022_afa4),
+            (callee::NASH_COLLECT_EFFECTS, 0x0022_afb4),
+        ] {
+            if ret_addr == 0x0022_afa4 {
+                c.g[S1][0] = sx(at(c, S2, nash::PARTIAL));
+            }
+            c.g[A2][0] = c.lw(at(c, S2, nash::VISIBLE_COUNT));
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S0][0];
+            f.call(c, ret_addr)?;
+        }
+        for (f, ret_addr) in [
+            (callee::NASH_CLASSIFY_PATCHES, 0x0022_afc4),
+            (callee::NASH_CLASSIFY_INSTANCES, 0x0022_afd4),
+            (callee::NASH_CLASSIFY_EFFECTS, 0x0022_afe4),
+        ] {
+            c.g[A2][0] = c.lw(at(c, S2, nash::PARTIAL_COUNT));
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S1][0];
+            f.call(c, ret_addr)?;
+        }
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Nash_CollectPatches(Nash* this, NodePair* nodes, int count)`
+/// (0x22a698): append the Bézier patches of the visible nodes (each node's
+/// patch list at +0x24, linked through +0) to the patch list at
+/// `this + 0x50ac` (count +0x50a8), drawn by
+/// `GameModule_RenderBezierPatches`. A patch must belong to an active
+/// section: its logical section (`i16` at +0x156) is non-negative, the
+/// section (`u8` at +0x155) has state 6 (+0x24 of its 8-byte entry) and the
+/// logical section state 3 (+0x3f0 of its 0x18-byte entry; tables from
+/// `*(this + 0x90)`). Patches of clipped nodes (pair word +4 non-zero) are
+/// culled by the VU0 sphere test microprogram at 0xef0 on the sphere at
+/// +0x140 (`vi1 == 2` = outside).
+pub fn nash_collect_patches(c: &mut Cpu) {
+    const NODE_HEAD: u32 = 0x0022_a6a0;
+    const PATCH_HEAD: u32 = 0x0022_a6c8;
+    c.cycles += 2;
+    if (c.g[A2][0] as i64) > 0 {
+        loop {
+            c.cycles += 5;
+            let node = c.lw(r32(c, A1));
+            c.g[V0][0] = node;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+            c.g[T0][0] = c.lw((node as u32).wrapping_add(0x24)); // patch list
+            c.g[T4][0] = sx(at(c, A1, 8));
+            if c.g[T0][0] != 0 {
+                c.cycles += 5;
+                c.g[T6][0] = 0x18; // logical section entry size
+                c.g[T5][0] = 2; // "outside" from the sphere test
+                c.g[T3][0] = sx(at(c, A0, nash::PATCHES));
+                c.g[V0][0] = c.lw(at(c, A0, nash::SECTION_TABLES));
+                loop {
+                    collect_patch(c);
+                    c.cycles += 2;
+                    if c.g[T0][0] == 0 {
+                        break;
+                    }
+                    c.g[V0][0] = c.lw(at(c, A0, nash::SECTION_TABLES));
+                    if event_due(c) {
+                        deliver_event_here(c, PATCH_HEAD);
+                    }
+                }
+            }
+            c.cycles += 2;
+            let more = (c.g[A2][0] as i64) > 0;
+            c.g[A1][0] = c.g[T4][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, NODE_HEAD);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// One patch of `Nash_CollectPatches` (patch in t0, the section tables
+/// holder in v0): the section filter, the cull test and the append; leaves
+/// t0 at the next patch.
+pub(crate) fn collect_patch(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[T1][0] = c.lh(at(c, T0, 0x156)); // logical section
+    c.g[A3][0] = c.lw(r32(c, V0)); // section tables
+    c.g[T2][0] = c.lw(at(c, A1, 4)); // the node's "clipped" flag
+    c.g[V0][0] = 0;
+    if (c.g[T1][0] as i64) >= 0 {
+        c.cycles += 7;
+        let section = c.lbu(at(c, T0, 0x155));
+        c.g[V0][0] = sx((section as u32) << 3);
+        c.g[V0][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+        c.g[V1][0] = c.lw(at(c, V0, 0x24)) ^ 6;
+        if c.g[V1][0] != 0 {
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 5;
+            c.mult(0, V0, T1, T6); // logical * 0x18
+            c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, A3)));
+            c.g[V0][0] = c.lw(at(c, V1, 0x3f0)) ^ 3;
+            c.g[V0][0] = (c.g[V0][0] < 1) as u64;
+        }
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.g[V0][0] = sx(at(c, T0, 0x140)); // bounding sphere
+        let culled = c.g[T2][0] != 0 && {
+            c.cycles += 7;
+            c.lqc2(22, r32(c, V0));
+            c.ctc2(T2, 14);
+            c.vcallms(0xef0);
+            c.cfc2(V1, 1);
+            c.g[V1][0] == c.g[T5][0]
+        };
+        if !culled {
+            c.cycles += 7;
+            let n = c.lw(at(c, A0, nash::PATCH_COUNT));
+            c.g[V1][0] = n;
+            c.g[V0][0] = sx((n as u32) << 2);
+            c.g[V0][0] = sx(r32(c, T3).wrapping_add(r32(c, V0)));
+            c.g[V1][0] = sx((n as u32).wrapping_add(1));
+            c.sw(r32(c, V0), c.g[T0][0]);
+            c.sw(at(c, A0, nash::PATCH_COUNT), c.g[V1][0]);
+        }
+    }
+    c.g[T0][0] = c.lw(r32(c, T0));
+}
+
+/// `void Vu0_UploadMatrixPair(const Mat4* a, const Mat4* b)` (0x229f30):
+/// store both 4x4 matrices to VU0 data memory from qword 0x40 (`vi1 =
+/// 0x40`, eight `vsqi`), for the culling microprograms.
+pub fn vu0_upload_matrix_pair(c: &mut Cpu) {
+    c.cycles += 20;
+    c.g[V0][0] = 0x40;
+    c.ctc2(V0, 1);
+    for arg in [A0, A1] {
+        let m = r32(c, arg);
+        for (k, vf) in (1..=4).enumerate() {
+            c.lqc2(vf, m.wrapping_add(0x10 * k as u32));
+        }
+        for vf in 1..=4u8 {
+            c.vu0().sqi(0b1111, vf, 1);
+        }
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2820,5 +3186,215 @@ pub(crate) mod tests {
                 "{hz} Hz: shown {t} s vs {t60} s at 60"
             );
         }
+    }
+    use crate::difftest::events::{check_events, schedule};
+    use crate::difftest::fakes::{self, covered, fake_call, machine, FAKE, LOG_COUNT};
+    use crate::difftest::{check, fill, scramble, Rng, DATA, GAME_GP};
+    use ssx3_ee_rt::cpu::{reg::*, sx};
+    use ssx3_ee_rt::Cpu;
+
+    /// A random float in [-range, range) as bits.
+    pub(crate) fn f(r: &mut Rng, range: f32) -> u32 {
+        r.f32(range)
+    }
+
+    // ------------------------------------------------------------ Nash pass
+
+    /// The VU0 microprogram at 0xef0 for the tests: `vi1 = vi14` (the
+    /// node's clip word), so a clip word of 2 culls.
+    pub(crate) fn put_cull_microprogram(c: &mut Cpu) {
+        ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+            .hw
+            .vu0
+            .fallback = Some(ssx3_ps2::vu::reference::run_program);
+        let at = 0x1100_0000 + 0xef0;
+        c.bus.write32(at, 0x8000_7070); // IADD vi1, vi14, vi0
+        c.bus.write32(at + 4, 0x4000_02ff); // NOP, E bit
+        c.bus.write32(at + 8, 0x8000_033c); // NOP
+        c.bus.write32(at + 12, 0x0000_02ff); // NOP
+    }
+
+    /// `Nash_CollectPatches` input: `nodes` (node, clipped) pairs with up
+    /// to `per_node` patches each, the section tables, a patch count.
+    pub(crate) fn patches_setup(c: &mut Cpu, r: &mut Rng, nodes: u32, per_node: u32) -> u32 {
+        put_cull_microprogram(c);
+        let this = DATA + 0x400;
+        let tables = DATA + 0x40000;
+        c.bus.write32(this + 0x90, DATA + 0x100);
+        c.bus.write32(DATA + 0x100, tables);
+        for s in 0..16 {
+            let state = if r.next_u32() % 2 == 0 {
+                6
+            } else {
+                r.next_u32() % 8
+            };
+            c.bus.write32(tables + 8 * s + 0x24, state);
+        }
+        for l in 0..32u32 {
+            let state = if r.next_u32() % 2 == 0 {
+                3
+            } else {
+                r.next_u32() % 8
+            };
+            c.bus.write32(tables + 0x18 * l + 0x3f0, state);
+        }
+        c.bus.write32(this + 0x50a8, r.next_u32() % 10);
+        let pairs = DATA + 0x200;
+        let mut patch = DATA + 0x10000;
+        for i in 0..nodes {
+            let node = DATA + 0x8000 + 0x40 * i;
+            c.bus.write32(pairs + 8 * i, node);
+            c.bus.write32(
+                pairs + 8 * i + 4,
+                [0, 1, 2, 2, r.next_u32()][(r.next_u32() % 5) as usize],
+            );
+            let n = r.next_u32() % (per_node + 1);
+            let mut head = 0;
+            for _ in 0..n {
+                fill(c, r, patch + 0x140, 4);
+                c.bus.write32(patch, head);
+                c.bus.write8(patch + 0x155, (r.next_u32() % 16) as u8);
+                let logical = if r.next_u32() % 5 == 0 {
+                    -((r.next_u32() % 8) as i32) - 1
+                } else {
+                    (r.next_u32() % 32) as i32
+                };
+                c.bus.write16(patch + 0x156, logical as u16);
+                head = patch;
+                patch += 0x200;
+            }
+            c.bus.write32(node + 0x24, head);
+        }
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = pairs as u64;
+        c.g[A2][0] = if nodes == 0 && r.next_u32() % 2 == 0 {
+            sx(0xffff_fff0)
+        } else {
+            nodes as u64
+        };
+        this
+    }
+
+    #[test]
+    fn nash_collect_patches_matches() {
+        let gen = ssx3_ee::s05::f_0022a698__generated;
+        let hand = super::nash_collect_patches;
+        check_events(gen, hand, 300, &|c, seed| {
+            let mut r = Rng(0x7061_7463 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            let nodes = [0, 1, 3, 5][(seed / 3 % 4) as usize];
+            patches_setup(c, &mut r, nodes, 5);
+            schedule(c, &mut r, seed, 0x0022_a698)
+        });
+        // Every patch path (negative logical / section / logical filter,
+        // clipped kept / culled, unclipped) for one patch.
+        let mut seen = std::collections::BTreeSet::new();
+        for seed in 0..400 {
+            let mut c = crate::difftest::fresh();
+            let mut r = Rng(0x7031 ^ (seed as u64) << 20);
+            scramble(&mut c, &mut r);
+            let this = patches_setup(&mut c, &mut r, 1, 1);
+            let before = c.bus.read32(this + 0x50a8);
+            crate::difftest::run_generated(&mut c, gen);
+            seen.insert((c.cycles, c.bus.read32(this + 0x50a8) - before));
+        }
+        assert!(seen.len() >= 5, "patch paths seen: {seen:?}");
+    }
+
+    #[test]
+    fn vu0_upload_matrix_pair_matches() {
+        check(
+            ssx3_ee::s05::f_00229f30__generated,
+            super::vu0_upload_matrix_pair,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x7570_6c64 ^ seed as u64);
+                scramble(c, &mut r);
+                fill(c, &mut r, DATA, 32);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x40);
+            },
+        );
+    }
+
+    /// `Nash_GatherVisible` input: the world at `this`, the eight roots
+    /// (each present with probability 1/2; small octrees of level 11..12
+    /// with empty instance / patch / effect lists), an occlusion manager
+    /// with no views (`OcclusionMan_BuildVisible` takes its short path),
+    /// the graphics object with a fake camera interface slot 43 and a world
+    /// matrix. `Nash_CullNode` runs on the hand-written VU0 routines.
+    pub(crate) fn gather_setup(c: &mut Cpu, r: &mut Rng) {
+        ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+            .hw
+            .vu0
+            .fallback = Some(ssx3_vu::vu::vu0lib::run);
+        let this = DATA + 0x20000;
+        let roots = DATA + 0x300;
+        let occ = DATA + 0x600;
+        let tables = DATA + 0x700;
+        let gfx = DATA + 0x30000;
+        let vt = DATA + 0x38000;
+        c.bus.write32(GAME_GP - 0x854, gfx);
+        c.bus.write32(gfx + 0x10d8, vt);
+        let delta = (r.next_u32() as i16 as i32 % 64) & !3;
+        c.bus.write16(vt + 0x158, delta as u16);
+        c.bus.write32(vt + 0x15c, FAKE);
+        for i in 0..16 {
+            c.bus.write32(gfx + 0x5800 + 4 * i, f(r, 2.0));
+        }
+        // Stale list counts and patch counts (the pass clears them).
+        for off in [0x94u32, 0x1098, 0x209c, 0x50a8, 0x7fc4] {
+            c.bus.write32(this + off, r.next_u32() % 50);
+        }
+        c.bus.write32(occ + 4, 0);
+        c.bus.write32(occ + 0x110, r.next_u32());
+        c.bus.write32(tables, DATA + 0x800);
+        let mut next = DATA + 0x10000;
+        fn tree(c: &mut Cpu, r: &mut Rng, next: &mut u32, depth: u32) -> u32 {
+            let node = *next;
+            *next += 0x40;
+            for k in 0..8 {
+                let child = if depth > 0 && r.next_u32() % 2 == 0 {
+                    tree(c, r, next, depth - 1)
+                } else {
+                    0
+                };
+                c.bus.write32(node + 4 * k, child);
+            }
+            node
+        }
+        for k in 0..8u32 {
+            let cell = roots + 0x14 * k;
+            let level = 11 + r.next_u32() % 2;
+            c.bus.write32(cell, level);
+            for a in 1..4u32 {
+                c.bus
+                    .write32(cell + 4 * a, ((r.next_u32() % 9) as i32 - 4) as u32);
+            }
+            let node = if r.next_u32() % 2 == 0 {
+                tree(c, r, &mut next, level - 11)
+            } else {
+                0
+            };
+            c.bus.write32(cell + 0x10, node);
+        }
+        c.g[A0][0] = sx(this);
+        c.g[A1][0] = sx(roots);
+        c.g[A2][0] = sx(occ);
+        c.g[A3][0] = r.next_u32() as u64;
+        c.g[T0][0] = sx(tables);
+    }
+
+    #[test]
+    fn nash_gather_visible_matches() {
+        covered(
+            ssx3_ee::s05::f_0022add8__generated,
+            super::nash_gather_visible,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x6761_7468, 1);
+                gather_setup(c, &mut r);
+            },
+        );
     }
 }

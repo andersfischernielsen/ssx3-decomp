@@ -120,6 +120,9 @@ pub struct Tag {
     pub terrain: bool,
     /// HUD (layers 9 and up).
     pub hud: bool,
+    /// The terrain's second pass (its UV2 texture: the lightmap, a
+    /// projector or shine).
+    pub pass2: bool,
     /// The post pass it belongs to (`RenderDepthFog` / `RenderBloom` /
     /// `RenderColorFilter`).
     pub post: Option<ssx3_render::direct::PostKind>,
@@ -136,6 +139,42 @@ pub struct GpuBatch {
     pub count: u32,
     /// The largest vertex alpha (GS units).
     pub alpha_max: f32,
+    /// Target pixels (x0, y0, x1, y1) that hold all its vertices, when
+    /// known on the CPU (type 3 strips: [`strip_bounds`]).
+    pub bounds: Option<[f32; 4]>,
+}
+
+/// The screen bounds of a type 3 strip call (`gpuvu/mat3_strip.wgsl`):
+/// its vertices' clip positions are the CPU's, mapped as the shader maps
+/// them (guardOffset + guardScale · clip / w, then `gs_vertex`'s XYOFFSET
+/// and HUD squeeze). None when a vertex is behind the eye (its triangles
+/// reach past its vertices; the GPU's clipping only takes away).
+fn strip_bounds(
+    call: &ssx3_render::gpu::GpuCall,
+    off: [f32; 2],
+    squeeze: f32,
+    cx: f32,
+) -> Option<[f32; 4]> {
+    use ssx3_render::mat3::gpu_strip;
+    let fl = |q: [u32; 4]| q.map(f32::from_bits);
+    let (gs, go) = (
+        fl(call.uniforms[gpu_strip::GUARD_SCALE]),
+        fl(call.uniforms[gpu_strip::GUARD_OFFSET]),
+    );
+    let mut b = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+    for v in call.data.chunks_exact(gpu_strip::VERTEX_QWORDS) {
+        let c = fl(v[2]);
+        if !(c[3] > 0.0) {
+            return None;
+        }
+        let x = squeeze * (go[0] + gs[0] * c[0] / c[3] - off[0]) + cx * (1.0 - squeeze);
+        let y = go[1] + gs[1] * c[1] / c[3] - off[1];
+        if !x.is_finite() || !y.is_finite() {
+            return None;
+        }
+        b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+    }
+    Some(b)
 }
 
 /// The GPU-computed draws of a frame: per-call uniforms, vertex inputs and
@@ -266,6 +305,15 @@ pub struct Gs {
     pub tag: Tag,
     /// This frame's terrain camera (ambient occlusion).
     pub cam: Option<Cam>,
+    /// The lit meshes' key light this frame (unnormalised sum of unit
+    /// vectors towards it; zero without lit meshes).
+    pub key_light: [f32; 3],
+    /// The lit meshes' light this frame (the game's live lighting, after
+    /// its triggers), summed: the ambient (SH L0, ×255) and the key light's
+    /// colour (the linear terms' length per channel, ×255), and how many.
+    pub key_ambient: [f32; 3],
+    pub key_colour: [f32; 3],
+    pub key_count: u32,
     /// CLUTs of this frame's depth-fog passes (see ZFOG_TEX).
     pub fog_cluts: Vec<Upload>,
     /// XYOFFSET_1/2 written: the game sets context 2's once at startup,
@@ -328,6 +376,10 @@ impl Gs {
         self.gpu.sources.clear();
         self.gpu.last_split = None;
         self.cam = None;
+        self.key_light = [0.0; 3];
+        self.key_ambient = [0.0; 3];
+        self.key_colour = [0.0; 3];
+        self.key_count = 0;
         self.queue.clear();
         self.size = size;
         self.main_fbp = fbp;
@@ -1070,18 +1122,70 @@ impl Gs {
                 xyzf: vreg == 4,
             });
         }
+        // The key light (sun shadows): the lit meshes' SH lighting's
+        // linear terms (L7..L9: the irradiance's gradient over the world
+        // normal), summed as unit vectors.
+        if call.program == ssx3_render::gpu::Program::Mat3Mesh
+            && call.uniforms[4][0] != 0
+            && st.target == self.main_fbp
+        {
+            let lum = |q: [u32; 4]| {
+                let v = fl(q);
+                0.3 * v[0] + 0.59 * v[1] + 0.11 * v[2]
+            };
+            let g = [
+                lum(call.uniforms[15]),
+                lum(call.uniforms[16]),
+                lum(call.uniforms[17]),
+            ];
+            let n = (g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).sqrt();
+            if n > 1e-3 && n.is_finite() {
+                for (k, v) in self.key_light.iter_mut().zip(g) {
+                    *k += v / n;
+                }
+                let (a, l) = (
+                    fl(call.uniforms[8]),
+                    [
+                        fl(call.uniforms[15]),
+                        fl(call.uniforms[16]),
+                        fl(call.uniforms[17]),
+                    ],
+                );
+                for c in 0..3 {
+                    self.key_ambient[c] += a[c];
+                    self.key_colour[c] +=
+                        (l[0][c] * l[0][c] + l[1][c] * l[1][c] + l[2][c] * l[2][c]).sqrt();
+                }
+                self.key_count += 1;
+            }
+        }
         u[gpu_params::RGBAQ] = [
             u32::from_le_bytes(self.rgbaq),
             f(self.q),
             f(self.s),
             f(self.t),
         ];
+        // (The terrain's pass 2 draws with the ctx2 tags: PRIM.CTXT.)
+        let pass2 = call.program == ssx3_render::gpu::Program::Bezier && (st.prim >> 9) & 1 != 0;
         let gb = GpuBatch {
             program: call.program,
             call: self.gpu.call_start.first().copied().unwrap_or(0),
             first: self.gpu.verts,
             count: call.draw_len() as u32,
             alpha_max: call.alpha_max,
+            bounds: (call.program == ssx3_render::gpu::Program::Mat3Strip)
+                .then(|| {
+                    strip_bounds(
+                        &call,
+                        [
+                            bits(xy, 0, 16) as f32 / 16.0,
+                            bits(xy, 32, 16) as f32 / 16.0,
+                        ],
+                        squeeze,
+                        cx,
+                    )
+                })
+                .flatten(),
         };
         use ssx3_render::gpu::GS_PARAMS;
         let n = u[..GS_PARAMS]
@@ -1117,6 +1221,7 @@ impl Gs {
                 && *tag
                     == Tag {
                         hud: self.hud,
+                        pass2,
                         ..self.tag
                     }
                 && g.program == gb.program
@@ -1124,11 +1229,20 @@ impl Gs {
             {
                 g.count += gb.count;
                 g.alpha_max = g.alpha_max.max(gb.alpha_max);
+                g.bounds = g.bounds.zip(gb.bounds).map(|(a, b)| {
+                    [
+                        a[0].min(b[0]),
+                        a[1].min(b[1]),
+                        a[2].max(b[2]),
+                        a[3].max(b[3]),
+                    ]
+                });
             }
             _ => self.batches.push(Batch {
                 state: st,
                 tag: Tag {
                     hud: self.hud,
+                    pass2,
                     ..self.tag
                 },
                 first: 0,

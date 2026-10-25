@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -340,6 +341,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0038_ac20,
         irradiance_get_entry_by_name,
         "Irradiance_GetEntryByName",
+    ),
+    (
+        0x0037_4180,
+        bezier_patch_cache_tess_positions,
+        "BezierPatchCache_TessPositions",
+    ),
+    (
+        0x0037_4518,
+        bezier_patch_cache_tess_positions_alt,
+        "BezierPatchCache_TessPositionsAlt",
     ),
 ];
 
@@ -7803,6 +7814,301 @@ pub fn ps2_graphics_man_find_display_mode(c: &mut Cpu) {
     frame.close(c);
 }
 
+// ---------------------------------------------------------------------------
+// Bézier patch cache tessellation.
+
+/// Load the patch's 4x4 grid of control points (16 quads from `p`) into
+/// vf1..vf16.
+pub(crate) fn load_control_points(c: &mut Cpu, p: u32) {
+    for k in 0..16u32 {
+        c.lqc2(1 + k as usize, p.wrapping_add(0x10 * k));
+    }
+}
+
+/// The curve of one parameter row: weights from the basis entry at_2 `w`
+/// (vf17) applied to each column of control points, giving the curve's
+/// four control points in vf18..vf21.
+pub(crate) fn basis_row(c: &mut Cpu, w: u32) {
+    c.lqc2(17, w);
+    for (k, out) in (18u8..=21).enumerate() {
+        let col = 1 + 4 * k as u8;
+        c.vu0().mula(0b1111, col, Src::Bc(17, X));
+        c.vu0().madda(0b1111, col + 1, Src::Bc(17, Y));
+        c.vu0().madda(0b1111, col + 2, Src::Bc(17, Z));
+        c.vu0().madd(0b1111, out, col + 3, Src::Bc(17, W));
+    }
+}
+
+/// A point of the row curve (vf18..vf21): weights from the basis entry at_2
+/// `w` (vf22); the point in vf23.
+pub(crate) fn curve_point(c: &mut Cpu, w: u32) {
+    c.lqc2(22, w);
+    c.vu0().mula(0b1111, 18, Src::Bc(22, X));
+    c.vu0().madda(0b1111, 19, Src::Bc(22, Y));
+    c.vu0().madda(0b1111, 20, Src::Bc(22, Z));
+    c.vu0().madd(0b1111, 23, 21, Src::Bc(22, W));
+}
+
+/// The end of a row (both tessellators): `v1 = v0 (row + 1)`, `v0 = row
+/// < n`; true when another row follows, `v0 = row << 4` then.
+pub(crate) fn next_row(c: &mut Cpu, n_reg: usize) -> bool {
+    c.cycles += 4;
+    c.g[V1][0] = c.g[V0][0];
+    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[n_reg][0] as i64)) as u64;
+    let more = c.g[V0][0] != 0;
+    c.g[V0][0] = sx(r32(c, V1) << 4);
+    more
+}
+
+/// `void BezierPatchCache_TessPositions(BezierPatchCache* cache,
+/// BezierPatch* patch, Vec3* out, int lod)` (0x374180): evaluate the bicubic
+/// patch (control points at_2 patch+0x40) on the LOD's `n x n` parameter grid
+/// (basis table `cache->basis[lod]` at_2 +0x190, `n = cache->count[lod]` at_2
+/// +0x19c, one quad of weights per parameter) and write the positions as
+/// packed vec3s, row by row. The quad goes through a 16-byte stack slot
+/// (`ldl/ldr` + `lw`, then `sdl/sdr` + `sw`).
+pub fn bezier_patch_cache_tess_positions(c: &mut Cpu) {
+    const ROW_HEAD: u32 = 0x0037_41e8;
+    const POINT_HEAD: u32 = 0x0037_4240;
+    c.cycles += 25;
+    c.g[A3][0] = sx(r32(c, A3) << 2);
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x10));
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, A3)));
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x40));
+    c.g[A0][0] = c.g[V0][0];
+    c.g[T0][0] = c.lw(at(c, V0, 0x190)); // basis
+    c.g[A3][0] = c.lw(at(c, A0, 0x19c)); // n
+    load_control_points(c, r32(c, A1));
+    c.g[V1][0] = 0;
+    if (c.g[A3][0] as i64) > 0 {
+        c.cycles += 1;
+        c.g[V0][0] = sx(r32(c, V1) << 4);
+        loop {
+            c.cycles += 20;
+            c.g[V0][0] = sx(r32(c, T0).wrapping_add(r32(c, V0)));
+            basis_row(c, r32(c, V0));
+            let empty = (c.g[A3][0] as i64) <= 0;
+            c.g[V0][0] = sx(r32(c, V1).wrapping_add(1));
+            if !empty {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[T0][0];
+                c.g[V1][0] = c.g[A3][0];
+                loop {
+                    c.cycles += 16;
+                    curve_point(c, r32(c, A0));
+                    let tmp = sp(c);
+                    c.sqc2(23, tmp);
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+                    c.ldl(A1, tmp.wrapping_add(7));
+                    c.ldr(A1, tmp);
+                    c.g[T1][0] = c.lw(tmp.wrapping_add(8));
+                    let out = r32(c, A2);
+                    c.sdl(A1, out.wrapping_add(7));
+                    c.sdr(A1, out);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+                    c.sw(out.wrapping_add(8), c.g[T1][0]);
+                    let more = c.g[V1][0] != 0;
+                    c.g[A2][0] = sx(out.wrapping_add(0xc));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, POINT_HEAD);
+                    }
+                }
+            }
+            if !next_row(c, A3) {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, ROW_HEAD);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x10));
+    ret(c);
+}
+
+/// `void BezierPatchCache_TessPositionsAlt(BezierPatchCache* cache,
+/// BezierPatch* patch, Vec3* out, int lod)` (0x374518): two passes over the
+/// LOD's `n x n` grid (`n` at_2 +0x19c, value basis at_2 +0x190, derivative
+/// basis at_2 +0x310, per LOD). Pass 1 writes one tangent (derivative-basis
+/// rows, value-basis points) to `out`; pass 2 evaluates the other tangent
+/// (value-basis rows, derivative-basis points) and replaces each entry
+/// with the normalised cross product of the two (left unnormalised when
+/// its length is 0): the patch normals.
+pub fn bezier_patch_cache_tess_positions_alt(c: &mut Cpu) {
+    const DU_ROW_HEAD: u32 = 0x0037_4590;
+    const DU_POINT_HEAD: u32 = 0x0037_45e8;
+    const DV_ROW_HEAD: u32 = 0x0037_4648;
+    const DV_POINT_HEAD: u32 = 0x0037_46b0;
+    c.cycles += 28;
+    c.g[A3][0] = sx(r32(c, A3) << 2);
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x30));
+    c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, A3)));
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x40));
+    c.g[V0][0] = c.g[V1][0];
+    c.g[T2][0] = c.lw(at(c, V1, 0x310)); // derivative basis
+    c.g[A0][0] = c.g[V0][0];
+    c.g[T0][0] = c.lw(at(c, V0, 0x19c)); // n
+    c.g[T1][0] = c.lw(at(c, A0, 0x190)); // value basis
+    c.g[A3][0] = c.g[A2][0];
+    load_control_points(c, r32(c, A1));
+    c.g[V1][0] = 0;
+    // Pass 1: d/du into out.
+    if (c.g[T0][0] as i64) > 0 {
+        c.cycles += 2;
+        c.g[V0][0] = sx(r32(c, V1) << 4);
+        loop {
+            c.cycles += 20;
+            c.g[V0][0] = sx(r32(c, T2).wrapping_add(r32(c, V0)));
+            basis_row(c, r32(c, V0));
+            let empty = (c.g[T0][0] as i64) <= 0;
+            c.g[V0][0] = sx(r32(c, V1).wrapping_add(1));
+            if !empty {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[T1][0];
+                c.g[V1][0] = c.g[T0][0];
+                loop {
+                    c.cycles += 16;
+                    curve_point(c, r32(c, A0));
+                    let tmp = sp(c);
+                    c.sqc2(23, tmp);
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+                    c.ldl(A1, tmp.wrapping_add(7));
+                    c.ldr(A1, tmp);
+                    c.g[T3][0] = c.lw(tmp.wrapping_add(8));
+                    let out = r32(c, A3);
+                    c.sdl(A1, out.wrapping_add(7));
+                    c.sdr(A1, out);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+                    c.sw(out.wrapping_add(8), c.g[T3][0]);
+                    let more = c.g[V1][0] != 0;
+                    c.g[A3][0] = sx(out.wrapping_add(0xc));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, DU_POINT_HEAD);
+                    }
+                }
+            }
+            if !next_row(c, T0) {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, DU_ROW_HEAD);
+            }
+        }
+    }
+    // Pass 2: d/dv, crossed with d/du, normalised.
+    c.cycles += 3;
+    c.g[A3][0] = c.g[A2][0];
+    c.g[V1][0] = 0;
+    if (c.g[T0][0] as i64) > 0 {
+        c.cycles += 1;
+        c.g[V0][0] = sx(r32(c, V1) << 4);
+        loop {
+            c.cycles += 20;
+            c.g[V0][0] = sx(r32(c, T1).wrapping_add(r32(c, V0)));
+            basis_row(c, r32(c, V0));
+            let empty = (c.g[T0][0] as i64) <= 0;
+            c.g[V0][0] = sx(r32(c, V1).wrapping_add(1));
+            if !empty {
+                c.cycles += 6;
+                c.mtc1(0, 9); // f9 = 0
+                c.g[A0][0] = c.g[T2][0];
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 8); // f8 = 1
+                c.g[V1][0] = c.g[T0][0];
+                loop {
+                    c.cycles += 34;
+                    curve_point(c, r32(c, A0));
+                    normal_at(c);
+                    c.cycles += 10;
+                    let tmp = sp(c);
+                    c.ldl(A1, tmp.wrapping_add(0x17));
+                    c.ldr(A1, tmp.wrapping_add(0x10));
+                    c.g[A2][0] = c.lw(tmp.wrapping_add(0x18));
+                    let out = r32(c, A3);
+                    c.sdl(A1, out.wrapping_add(7));
+                    c.sdr(A1, out);
+                    c.sw(out.wrapping_add(8), c.g[A2][0]);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+                    let more = c.g[V1][0] != 0;
+                    c.g[A3][0] = sx(out.wrapping_add(0xc));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, DV_POINT_HEAD);
+                    }
+                }
+            }
+            if !next_row(c, T0) {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, DV_ROW_HEAD);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x30));
+    ret(c);
+}
+
+/// Pass 2 of `TessPositionsAlt` at_2 one grid entry: `a = out[i]` (d/du),
+/// `b = vf23` (d/dv, stored at_2 sp+0); `n = a × b` at_2 sp+0x20, then
+/// `n / |n|` (or `n` when `|n| == 0`) at_2 sp+0x10..0x18 (f9 = 0, f8 = 1).
+pub(crate) fn normal_at(c: &mut Cpu) {
+    let tmp = sp(c);
+    let out = r32(c, A3);
+    c.sqc2(23, tmp);
+    c.lwc1(1, out.wrapping_add(8)); // a.z
+    c.lwc1(6, out); // a.x
+    c.lwc1(4, tmp.wrapping_add(4)); // b.y
+    c.lwc1(0, tmp.wrapping_add(8)); // b.z
+    c.lwc1(3, out.wrapping_add(4)); // a.y
+    c.mul_s(7, 4, 1);
+    c.lwc1(2, tmp); // b.x
+    c.mul_s(5, 0, 6);
+    c.mul_s(0, 0, 3);
+    c.mul_s(1, 2, 1);
+    c.mul_s(2, 2, 3);
+    c.sub_s(7, 7, 0); // f7 = b.y a.z - b.z a.y
+    c.sub_s(5, 5, 1); // f5 = b.z a.x - b.x a.z
+    c.mul_s(4, 4, 6);
+    c.mul_s(0, 7, 7);
+    c.swc1(7, tmp.wrapping_add(0x20));
+    c.mul_s(3, 5, 5);
+    c.swc1(5, tmp.wrapping_add(0x24));
+    c.sub_s(2, 2, 4); // f2 = b.x a.y - b.y a.x
+    c.add_s(0, 0, 3);
+    c.mul_s(1, 2, 2);
+    c.swc1(2, tmp.wrapping_add(0x28));
+    c.add_s(0, 0, 1);
+    c.sqrt_s(0, 0);
+    c.c_eq_s(0, 9);
+    if c.fcc() {
+        c.swc1(7, tmp.wrapping_add(0x10));
+        c.cycles += 2;
+        c.swc1(5, tmp.wrapping_add(0x14));
+        c.swc1(2, tmp.wrapping_add(0x18));
+    } else {
+        c.cycles += 8;
+        c.div_s(0, 8, 0); // 1 / |n|
+        c.mul_s(1, 2, 0);
+        c.mul_s(2, 7, 0);
+        c.mul_s(0, 5, 0);
+        c.swc1(1, tmp.wrapping_add(0x18));
+        c.swc1(2, tmp.wrapping_add(0x10));
+        c.swc1(0, tmp.wrapping_add(0x14));
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10149,6 +10455,86 @@ pub(crate) mod tests {
                 for i in 0..0x40u32 {
                     c.bus.write32(DATA + 0x1000 + 4 * i, r.next_u32());
                 }
+            },
+        );
+    }
+    use crate::difftest::events::{check_events, schedule};
+    use crate::difftest::fakes::{self, covered, fake_call, machine, FAKE, LOG_COUNT};
+    use crate::difftest::{check, fill, scramble, Rng, DATA, GAME_GP};
+    pub(crate) use crate::game::main::ssxapp::tests::f as f_2;
+    use ssx3_ee_rt::cpu::{reg::*, sx};
+    use ssx3_ee_rt::Cpu;
+
+    // ---------------------------------------------------- patch tessellation
+
+    /// A patch cache with the LOD's basis tables and count, a patch with
+    /// control points (all zero for some seeds: zero normals), an output
+    /// grid. Returns nothing; sets a0..a3.
+    pub(crate) fn tess_setup(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let cache = DATA;
+        let patch = DATA + 0x1000;
+        let value = DATA + 0x2000;
+        let deriv = DATA + 0x3000;
+        let out = DATA + 0x8000;
+        let lod = r.next_u32() % 3;
+        for l in 0..3 {
+            c.bus.write32(cache + 0x190 + 4 * l, value + 0x100 * l);
+            c.bus.write32(cache + 0x310 + 4 * l, deriv + 0x100 * l);
+            let n = match (seed / 3) % 6 {
+                0 => 0,
+                1 => 0xffff_fffe,
+                k => k,
+            };
+            c.bus.write32(cache + 0x19c + 4 * l, n);
+        }
+        for i in 0..(3 * 0x40) {
+            c.bus.write32(value + 4 * i, f_2(r, 1.0));
+            c.bus.write32(deriv + 4 * i, f_2(r, 3.0));
+        }
+        let zero = seed % 5 == 0;
+        for i in 0..64 {
+            let v = if zero {
+                0
+            } else if i % 7 == 0 {
+                r.edge_f32()
+            } else {
+                f_2(r, 50.0)
+            };
+            c.bus.write32(patch + 0x40 + 4 * i, v);
+        }
+        fill(c, r, out, 80);
+        c.g[A0][0] = sx(cache);
+        c.g[A1][0] = sx(patch);
+        c.g[A2][0] = sx(out);
+        c.g[A3][0] = lod as u64 | (r.next_u32() as u64) << 32;
+    }
+
+    #[test]
+    fn bezier_patch_cache_tess_positions_matches() {
+        check_events(
+            ssx3_ee::s12::f_00374180__generated,
+            super::bezier_patch_cache_tess_positions,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x7465_7373 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                tess_setup(c, &mut r, seed);
+                schedule(c, &mut r, seed, 0x0037_4180)
+            },
+        );
+    }
+
+    #[test]
+    fn bezier_patch_cache_tess_positions_alt_matches() {
+        check_events(
+            ssx3_ee::s12::f_00374518__generated,
+            super::bezier_patch_cache_tess_positions_alt,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x616c_7474 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                tess_setup(c, &mut r, seed);
+                schedule(c, &mut r, seed, 0x0037_4518)
             },
         );
     }

@@ -318,9 +318,9 @@ fn exec(
     match entry {
         0x09a0 | 0x0a38 => {
             // (0x0a38 writes the fan tags before its draws.)
-            let fans_ok = entry == 0x0a38 || gpu::fan_tags_ok(&m);
-            if !Lods::read(&m, top).valid() || (gpu.is_some() && !(gpu::region_ok(top) && fans_ok))
-            {
+            // (Fan slots holding other data: the GPU draws use the
+            // program's fan tags, `gpu::draw_data`.)
+            if !Lods::read(&m, top).valid() || (gpu.is_some() && !gpu::region_ok(top)) {
                 return false;
             }
             let fans = (entry == 0x0a38).then_some(FAN_TAG_CTX1);
@@ -360,9 +360,7 @@ fn exec(
             {
                 return false;
             }
-            if gpu.is_some()
-                && !(gpu::region_ok(last) && gpu::region_ok(top) && gpu::fan_tags_ok(&m))
-            {
+            if gpu.is_some() && !(gpu::region_ok(last) && gpu::region_ok(top)) {
                 return false;
             }
             let uv2 = top.wrapping_add(UV2);
@@ -372,6 +370,7 @@ fn exec(
             border_normals(&mut m, last, top);
             let mat = m.matrix(top.wrapping_add(0x80));
             let src = if entry == 0x0c48 {
+                crate::bezier::note_projector(&mat);
                 last
             } else {
                 top.wrapping_add(NORMALS)
