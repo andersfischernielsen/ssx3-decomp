@@ -20,6 +20,7 @@
 //! - [`draw`]: pipelines for GS draw states.
 
 pub mod debug;
+mod depth_query;
 mod draw;
 pub mod gs;
 mod options;
@@ -71,8 +72,6 @@ struct Targets {
     snapshot: wgpu::Texture,
     /// Copy of `depth` for the depth-fog pass.
     zsnap: wgpu::Texture,
-    /// Copy of `depth` after the 3D phase (light queries).
-    qdepth: wgpu::Texture,
 }
 
 /// An offscreen render target (`gs::Rt`) on the GPU.
@@ -157,13 +156,13 @@ pub struct Inner {
     phase1_end: usize,
     /// Keep the depth after phase 1 (`depth()`, native mode).
     pub want_depth: bool,
-    /// This frame's depth readback in flight (buffer, size, ZMAX + 1).
+    /// The light queries' depth, one sample per GS pixel (`depth_query`).
+    depth_query: depth_query::DepthQuery,
+    /// This frame's depth readback in flight (buffer, ZMAX + 1, GS size).
     /// (The flag: mapped; the browser cannot wait for it.)
     pending_depth: Option<(
         wgpu::Buffer,
         wgpu::SubmissionIndex,
-        u32,
-        u32,
         f32,
         u32,
         u32,
@@ -285,6 +284,7 @@ impl Renderer {
             },
         );
         let shared = Arc::new(Shared::default());
+        let depth_query = depth_query::DepthQuery::new(&dev);
         Renderer(
             Arc::new(Mutex::new(Inner {
                 shared: shared.clone(),
@@ -322,6 +322,7 @@ impl Renderer {
                 t0: web_time::Instant::now(),
                 phase1_end: usize::MAX,
                 want_depth: false,
+                depth_query,
                 pending_depth: None,
                 frames_in: 0,
                 zscale: 16777216.0,
@@ -572,11 +573,6 @@ impl Inner {
             draw::DEPTH_FORMAT,
             wgpu::TextureUsages::COPY_DST,
         );
-        let qdepth = mk(
-            "ssx3-gfx query depth",
-            draw::DEPTH_FORMAT,
-            wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC,
-        );
         // Start cleared (the game clears with its own draws afterwards).
         let mut enc = self.dev.create_command_encoder(&Default::default());
         {
@@ -614,7 +610,6 @@ impl Inner {
             depth,
             snapshot,
             zsnap,
-            qdepth,
         });
     }
 
@@ -2044,26 +2039,14 @@ impl Inner {
         });
         let phase1_end = self.phase1_end;
         let mut depth_taken = false;
+        let gather = self.want_depth.then(|| {
+            self.depth_query
+                .prepare(&self.dev, &self.queue, &t.depth, (t.w, t.h), (w, h))
+        });
         let take_depth = |enc: &mut wgpu::CommandEncoder| {
-            enc.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &t.depth,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyTextureInfo {
-                    texture: &t.qdepth,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::Extent3d {
-                    width: t.w,
-                    height: t.h,
-                    depth_or_array_layers: 1,
-                },
-            );
+            if let Some(g) = &gather {
+                g.run(enc);
+            }
         };
         let post_frame = post::Frame {
             color: &t.color,
@@ -2397,34 +2380,14 @@ impl Inner {
         );
         // Depth after phase 1, read back for the light queries.
         let t_buf = web_time::Instant::now();
-        let depth_buf = self.want_depth.then(|| {
+        let depth_buf = gather.as_ref().map(|g| {
             let buf = self.dev.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("ssx3-gfx depth readback"),
-                size: (t.w * 4).next_multiple_of(256) as u64 * t.h as u64,
+                size: g.len,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
                 mapped_at_creation: false,
             });
-            enc.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &t.qdepth,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::DepthOnly,
-                },
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &buf,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some((t.w * 4).next_multiple_of(256)),
-                        rows_per_image: Some(t.h),
-                    },
-                },
-                wgpu::Extent3d {
-                    width: t.w,
-                    height: t.h,
-                    depth_or_array_layers: 1,
-                },
-            );
+            enc.copy_buffer_to_buffer(&g.out, 0, &buf, 0, g.len);
             buf
         });
         self.depth_parts[2] += t_buf.elapsed().as_secs_f64() * 1e3;
@@ -2435,7 +2398,7 @@ impl Inner {
             // The previous frame's depth (its readback has had a frame to
             // complete): the light queries see depth one frame late, and
             // the CPU does not wait for this frame's GPU work.
-            if let Some((prev, prev_idx, pw, ph, zs, lw, lh, mapped, prev_frame)) =
+            if let Some((prev, prev_idx, zs, lw, lh, mapped, prev_frame)) =
                 self.pending_depth.take()
             {
                 let slice = prev.slice(..);
@@ -2457,17 +2420,12 @@ impl Inner {
                     .then(|| slice.get_mapped_range())
                     .and_then(|r| r.ok())
                 {
-                    // In GS pixels: the sample at each pixel's centre,
-                    // converted when a query reads it.
+                    // In GS pixels (the sample at each pixel's centre,
+                    // `depth_query`), converted when a query reads it.
                     let raw = v.to_vec();
-                    let row = (pw * 4).next_multiple_of(256) as usize;
                     let zs = zs as f64;
                     let z = move |x: u32, y: u32| {
-                        let py = (((y as f32 + 0.5) * ph as f32 / lh as f32) as usize)
-                            .min(ph as usize - 1);
-                        let pxl = (((x as f32 + 0.5) * pw as f32 / lw as f32) as usize)
-                            .min(pw as usize - 1);
-                        let o = py * row + 4 * pxl;
+                        let o = 4 * (y as usize * lw as usize + x as usize);
                         let d = f32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
                         (d as f64 * zs).round().min(zs - 1.0) as u32
                     };
@@ -2488,17 +2446,8 @@ impl Inner {
             buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
                 m.store(r.is_ok(), std::sync::atomic::Ordering::Release)
             });
-            self.pending_depth = Some((
-                buf,
-                sub_idx,
-                t.w,
-                t.h,
-                self.zscale,
-                w,
-                h,
-                mapped,
-                self.frames_in - 1,
-            ));
+            self.pending_depth =
+                Some((buf, sub_idx, self.zscale, w, h, mapped, self.frames_in - 1));
             self.timing.1[3] += t_sub.elapsed().as_secs_f64() * 1e3;
         }
         if let Some(pb) = probe_buf {
