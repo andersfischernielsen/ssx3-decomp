@@ -91,12 +91,11 @@ impl Pack {
         Self::open_at(path, u64::from_le_bytes(t[..8].try_into().unwrap())).ok()
     }
 
-    /// Where a standalone build keeps its data, in this order: `SSX3_PACK`,
-    /// appended to the running executable, `ssx3.pack` next to it, or the
-    /// macOS bundle's `Contents/Resources/ssx3.pack`. Returns the file and the
-    /// pack's offset in it.
+    /// `SSX3_PACK` or an explicit data root selects the pack exclusively.
+    /// Otherwise search the executable's appended pack, adjacent `ssx3.pack`,
+    /// then `../Resources/ssx3.pack`. Returns the file and pack offset.
     pub fn locate() -> Option<(PathBuf, u64)> {
-        if let Some(p) = std::env::var_os("SSX3_PACK").map(PathBuf::from) {
+        if let Some(p) = crate::platform_paths::pack_override() {
             return Self::open_at(&p, 0).ok().map(|_| (p, 0));
         }
         let exe = std::env::current_exe().ok()?;
