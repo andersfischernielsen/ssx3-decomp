@@ -77,10 +77,10 @@ pub struct Lighting {
     pub exposure: f32,
 }
 
-/// Each course's lighting. Peak 1 (2026-10-25): the physical model
+/// Each course's lighting. Peaks 1 and 2 (2026-10-25): the physical model
 /// ([`sun_lit`]: the game's live light, one sun constant, an exposure per
 /// course fitted with `tools/fit_lighting.py --exposure` against the
-/// scenarios' reference shots). The others, until their peak is done: the
+/// scenarios' reference shots; the sun constant from Peak 1). Peak 3, until it is done: the
 /// earlier tone fit (the gain (neutral: the colour is the game's live
 /// light's, which follows the lighting triggers' zones; per-channel gains
 /// cast whole courses purple or green) from the game's live light to the
@@ -91,20 +91,20 @@ pub struct Lighting {
 const COURSES: &[(&str, Lighting)] = &[
     ("ARA1", sun_lit(0.169)),              // Snow Jam
     ("BRA2", sun_lit(0.150)),              // Metro City (night)
-    ("CRA3", tone([1.364, 1.364, 1.364])), // Ruthless Ridge
-    ("DRA4", tone([0.707, 0.707, 0.707])), // Intimidator
+    ("CRA3", sun_lit(0.159)),              // Ruthless Ridge
+    ("DRA4", tone([0.707, 0.707, 0.707])), // Intimidator (physical fit worse: zones without the sun went dark)
     ("ERA5", tone([1.228, 1.228, 1.228])), // Gravitude
     ("ASS1", sun_lit(0.133)),              // R&B
-    ("DSS2", tone([0.893, 0.893, 0.893])), // Style Mile
+    ("DSS2", sun_lit(0.105)),              // Style Mile
     ("ESS3", tone([1.133, 1.133, 1.133])), // Kick Doubt
     ("ABA1", sun_lit(0.179)),              // Crow's Nest
-    ("CBA2", tone([1.769, 1.769, 1.769])), // Launch Time
+    ("CBA2", sun_lit(0.241)),              // Launch Time
     ("EBA3", tone([1.500, 1.500, 1.500])), // Much-2-Much
     ("BHP1", sun_lit(0.065)),              // The Junction
-    ("CHP2", tone([1.389, 1.389, 1.389])), // Schizophrenia
+    ("CHP2", tone([1.389, 1.389, 1.389])), // Schizophrenia (physical fit worse: its sunless halfpipe walls went dark)
     ("EHP3", tone([1.360, 1.360, 1.360])), // Perpendiculous
     ("ABC1", sun_lit(0.169)),              // Happiness (and its jam)
-    ("DBC2", tone([0.827, 0.827, 0.827])), // Ruthless (and its jam)
+    ("DBC2", sun_lit(0.118)),              // Ruthless (and its jam)
     ("EBC3", tone([1.087, 1.087, 1.087])), // The Throne (and its jam)
 ];
 
