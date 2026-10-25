@@ -28,7 +28,7 @@
 //! and out along the course).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use crate::chain::Mem;
@@ -56,11 +56,68 @@ pub fn enabled() -> bool {
     ON.load(Ordering::Relaxed)
 }
 
-/// `SSX3_CASTERS_SHOWN=1`: cast only from the sections the game draws (the
-/// default casts from every active section's loaded geometry).
+/// The caster filter (debug): no terrain patches, no instances, only the
+/// sections the game draws; `FILTER_SET` once initialised.
+const NO_PATCHES: u8 = 1;
+const NO_INSTANCES: u8 = 2;
+const SHOWN_ONLY: u8 = 4;
+const FILTER_SET: u8 = 0x80;
+
+static FILTER: AtomicU8 = AtomicU8::new(0);
+
+/// `SSX3_CASTERS=patches|instances|shown` (comma-separated): keep one kind,
+/// or cast only from the sections the game draws (the default casts from
+/// every active section's loaded geometry). Its other values are the
+/// renderer's (`ssx3-gfx` shadow.rs).
+fn parse_filter(spec: &str) -> u8 {
+    spec.split(',').fold(FILTER_SET, |f, w| match w.trim() {
+        "patches" => f | NO_INSTANCES,
+        "instances" => f | NO_PATCHES,
+        "shown" => f | SHOWN_ONLY,
+        _ => f,
+    })
+}
+
+/// Change the caster filter while running (`SSX3_CASTERS`'s values; the
+/// settings overlay's "Shadow casters"). The set is rebuilt at the next
+/// update.
+pub fn set_filter(spec: &str) {
+    FILTER.store(parse_filter(spec), Ordering::Relaxed);
+}
+
+/// The filter: `SSX3_CASTERS`, and the older `SSX3_CASTERS_ONLY=patches|
+/// instances` and `SSX3_CASTERS_SHOWN=1`, until [`set_filter`].
+fn filter() -> u8 {
+    let f = FILTER.load(Ordering::Relaxed);
+    if f & FILTER_SET != 0 {
+        return f;
+    }
+    let mut f = parse_filter(&std::env::var("SSX3_CASTERS").unwrap_or_default());
+    if let Ok(k) = std::env::var("SSX3_CASTERS_ONLY") {
+        if k != "patches" {
+            f |= NO_PATCHES;
+        }
+        if k != "instances" {
+            f |= NO_INSTANCES;
+        }
+    }
+    if std::env::var_os("SSX3_CASTERS_SHOWN").is_some() {
+        f |= SHOWN_ONLY;
+    }
+    let _ = FILTER.compare_exchange(0, f, Ordering::Relaxed, Ordering::Relaxed);
+    FILTER.load(Ordering::Relaxed)
+}
+
+fn only(kind: &str) -> bool {
+    let f = filter();
+    match kind {
+        "patches" => f & NO_PATCHES == 0,
+        _ => f & NO_INSTANCES == 0,
+    }
+}
+
 fn shown_only() -> bool {
-    static S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *S.get_or_init(|| std::env::var_os("SSX3_CASTERS_SHOWN").is_some())
+    filter() & SHOWN_ONLY != 0
 }
 
 /// The world's casters: world-space triangles, per vertex its position and
@@ -130,7 +187,7 @@ impl CasterCache {
             let (section, slot) = ((w >> 8) & 0xff, (w >> 16) as i16);
             // (Its hull slot need not be resident yet: casting from what is
             // loaded keeps shadows from popping in as the game switches
-            // sections on; `SSX3_CASTERS_SHOWN=1` keeps to what it draws.)
+            // sections on; `SSX3_CASTERS=shown` keeps to what it draws.)
             slot >= 0
                 && word(m, sections + section * 8 + 0x24) == 6
                 && (!shown_only()
@@ -168,7 +225,7 @@ impl CasterCache {
             let mut p = word(m, node + 0x24);
             let mut n = 0;
             while ram(p) && n < 100_000 {
-                if shown(p) {
+                if only("patches") && shown(p) {
                     set.push((p, coeff_hash(m, p), false));
                 }
                 p = word(m, p);
@@ -177,7 +234,7 @@ impl CasterCache {
             let mut i = word(m, node + 0x20);
             let mut n = 0;
             while ram(i) && n < 100_000 {
-                if shown_instance(i) {
+                if only("instances") && shown_instance(i) {
                     set.push((i, instance_hash(m, i), true));
                 }
                 i = word(m, i);
@@ -230,6 +287,56 @@ impl CasterCache {
                 self.meshes.insert(p, (h, t));
             }
             triangles.extend_from_slice(&self.meshes[&p].1.solid);
+        }
+        // Debug: the largest instances (by their triangles' extent).
+        if std::env::var_os("SSX3_CASTERS_DEBUG").is_some() {
+            let mut ext: Vec<(f32, u32, [f32; 6])> = set
+                .iter()
+                .filter(|e| e.2)
+                .filter_map(|&(p, _, _)| {
+                    let t = &self.meshes[&p].1.solid;
+                    if t.is_empty() {
+                        return None;
+                    }
+                    let mut b = [f32::MAX, f32::MAX, f32::MAX, f32::MIN, f32::MIN, f32::MIN];
+                    for v in t {
+                        for l in 0..3 {
+                            b[l] = b[l].min(v[l]);
+                            b[l + 3] = b[l + 3].max(v[l]);
+                        }
+                    }
+                    let e = (0..3).map(|l| b[l + 3] - b[l]).fold(0f32, f32::max);
+                    Some((e, p, b))
+                })
+                .collect();
+            ext.sort_by(|a, b| b.0.total_cmp(&a.0));
+            if let Ok(path) = std::env::var("SSX3_CASTERS_BOXES") {
+                let txt: String = ext
+                    .iter()
+                    .map(|(_, p, b)| {
+                        format!(
+                            "{p:#x} {:#x} {:#x} {} {} {} {} {} {} {}\n",
+                            word(m, p + 0x7c),
+                            word(m, p + 0x80),
+                            b[0],
+                            b[1],
+                            b[2],
+                            b[3],
+                            b[4],
+                            b[5],
+                            self.meshes[p].1.solid.len()
+                        )
+                    })
+                    .collect();
+                let _ = std::fs::write(path, txt);
+            }
+            for (e, p, b) in ext.iter().take(8) {
+                eprintln!(
+                    "casters: big {p:#x} extent {e:.0} sec {:#x} desc {:#x} box {b:.0?}",
+                    word(m, p + 0x7c),
+                    word(m, p + 0x80)
+                );
+            }
         }
         // The cut-outs, gathered by texture.
         let mut by_tex: std::collections::BTreeMap<i16, Vec<[f32; 5]>> = Default::default();

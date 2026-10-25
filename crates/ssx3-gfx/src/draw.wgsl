@@ -137,6 +137,10 @@ fn fs(v: VOut) -> @location(0) vec4<f32> {
 }
 
 // The GS fragment stage: texture function, alpha test, blending inputs.
+// The renderer's lighting for this fragment (1: none), applied before the
+// fog (gpuvu.wgsl `fs_gpu` sets it).
+var<private> pre_fog: vec3<f32> = vec3<f32>(1.0);
+
 fn shade(v: VOut) -> vec4<f32> {
     if ((b.flags & 64u) != 0u) {
         // Destination alpha bit 7 (stored as a/128, so a >= 128 is 1.0).
@@ -186,6 +190,7 @@ fn shade(v: VOut) -> vec4<f32> {
     if ((b.flags & 2048u) != 0u) {
         rgb = sparkle(rgb, v);
     }
+    rgb = min(rgb * pre_fog, vec3<f32>(255.0));
     if ((b.flags & 4u) != 0u) {
         let f = clamp(floor(v.fog), 0.0, 255.0);
         rgb = floor((f * rgb + (255.0 - f) * b.fogcol.rgb) / 255.0);

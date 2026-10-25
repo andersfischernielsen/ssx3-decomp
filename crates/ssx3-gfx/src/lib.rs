@@ -29,6 +29,7 @@ mod shadow;
 pub mod tex;
 
 pub use options::{Aa, Bloom, Options};
+pub use shadow::{set_debug_knob, DEBUG_KNOBS};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -382,12 +383,7 @@ impl Renderer {
     /// The modern graphics options.
     pub fn set_options(&self, o: Options) {
         let mut g = self.0.lock().unwrap();
-        if g.opts.mipmaps != o.mipmaps {
-            // Textures are made with or without mipmaps.
-            g.texcache.clear();
-        }
         g.opts = o;
-        ssx3_render::bezier::gpu::set_tessellation(o.terrain);
         ssx3_render::world_casters::set_enabled(o.shadows);
     }
 
@@ -703,12 +699,7 @@ impl Inner {
                 );
             }
         }
-        // Options: mipmaps for the game's own textures.
-        let generated = (replaced.is_none() && self.opts.mipmaps).then(|| tex::mipmaps(&d));
-        let levels: &[tex::Decoded] = replaced
-            .as_deref()
-            .or(generated.as_deref())
-            .unwrap_or(std::slice::from_ref(&d));
+        let levels: &[tex::Decoded] = replaced.as_deref().unwrap_or(std::slice::from_ref(&d));
         let t = self.dev.create_texture(&wgpu::TextureDescriptor {
             label: Some("ssx3-gfx tex"),
             size: wgpu::Extent3d {
@@ -1248,6 +1239,13 @@ impl Inner {
             {
                 continue;
             }
+            // Debug: no board trails and wakes.
+            if shadow::debug("no-strips")
+                && b.gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat3Strip)
+            {
+                continue;
+            }
             // Debug: the terrain without its second pass.
             if b.tag.pass2 && shadow::debug("no-pass2") {
                 continue;
@@ -1268,13 +1266,16 @@ impl Inner {
                 && b.gpu
                     .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
                 && (st.prim & (1 << 6) == 0 || terrain_blend == Some(0x2a));
-            // The bake keeps only its colour (flag 32768: the artists' zone
-            // tints; its darkening is ours to give): `SSX3_SHADOW_DEBUG=
-            // no-tint` drops it as well.
+            // The bake is not drawn: the lighting is ours (its colour part
+            // still drew its tree shadows, blue shade on white).
+            // `SSX3_SHADOW_DEBUG=tint` keeps its colour (flag 32768: the
+            // artists' zone tints).
             let bake_tint = native_light && terrain_blend == Some(0x81);
             if native_light
-                && ((bake_tint && (shadow::debug("no-tint") || shadow::show() >= 4.0))
-                    || (shadow::show() >= 4.0 && !lit_base && st.target == self.gs.main_fbp))
+                && ((bake_tint && (!shadow::debug("tint") || (4.0..7.0).contains(&shadow::show())))
+                    || ((4.0..7.0).contains(&shadow::show())
+                        && !lit_base
+                        && st.target == self.gs.main_fbp))
             {
                 continue;
             }
@@ -1453,6 +1454,20 @@ impl Inner {
                 // Sun shadows: the 3D draws receive them.
                 if lit_base {
                     p.u.flags |= 16384;
+                } else if native_light
+                    && st.target == self.gs.main_fbp
+                    && !b.tag.hud
+                    && b.tag.post.is_none()
+                    && b.gpu
+                        .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat3Strip)
+                    && (st.ctx.test >> 16) & 1 != 0
+                    && (st.ctx.test >> 17) & 3 >= 2
+                {
+                    // Board trails and wakes on the snow (depth-tested: the
+                    // HUD's strips are not): lit as the terrain under them,
+                    // their colour (the bake's light where they were laid)
+                    // neutral (flag 65536).
+                    p.u.flags |= 65536;
                 } else if bake_tint {
                     p.u.flags |= 32768;
                 } else if light.is_some()
@@ -1724,7 +1739,13 @@ impl Inner {
                     && it.target == main
                     && !it.tag.hud
                     && it.tag.post.is_none()
-                    && it.key.depth_write
+                    // (Riders cast from every pass: the body is drawn
+                    // without depth writes, only the helmet and bindings
+                    // with.)
+                    && (it.key.depth_write
+                        || it
+                            .gpu
+                            .is_some_and(|g| g.program == ssx3_render::gpu::Program::Mat6Skin))
                     && it.scissor.is_some()
                     && it.gpu.is_some_and(|g| {
                         shadow::receives(g.program)
@@ -1830,7 +1851,7 @@ impl Inner {
                         ops: wgpu::Operations {
                             // (The lighting fit's views start from black:
                             // they draw the terrain only.)
-                            load: if first && fbp == main && shadow::show() >= 4.0 {
+                            load: if first && fbp == main && (4.0..7.0).contains(&shadow::show()) {
                                 wgpu::LoadOp::Clear(wgpu::Color::BLACK)
                             } else {
                                 wgpu::LoadOp::Load

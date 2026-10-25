@@ -17,6 +17,11 @@
 //! (degrees, the world's z is up; overrides the key light),
 //! `SSX3_SHADOW_RANGE` (the widest cascade's half width in world units),
 //! `SSX3_SHADOW_SIZE` (the atlas' texels), `SSX3_SHADOW_STRENGTH` (0..1).
+//! The debug knobs ([`DEBUG_KNOBS`]: views, sun, casters, the bake) also
+//! change while running, from the settings overlay's debug group.
+
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{OnceLock, RwLock};
 
 use crate::gs::Cam;
 use crate::post;
@@ -140,32 +145,157 @@ pub fn lighting(world: &str) -> Lighting {
     l
 }
 
-/// `SSX3_SHADOW_SHOW`: the receivers show the shadow factor (1), their
-/// cascade (2) or N·L (3) instead of their colour (0: off).
-pub fn show() -> f32 {
-    static S: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    *S.get_or_init(|| match std::env::var("SSX3_SHADOW_SHOW").as_deref() {
-        Ok("factor") => 1.0,
-        Ok("cascade") => 2.0,
-        Ok("ndl") => 3.0,
-        // (For fitting the lighting: the lit terrain only, unprocessed.)
-        Ok("normals") => 4.0,
-        Ok("sunlit") => 5.0,
-        // (n.x, n.y as 0..1, lit as 0.5..1: one run for the fit.)
-        Ok("fit") => 6.0,
-        _ => 0.0,
+/// The debug knobs that can change while running: the environment
+/// variables they start from, set again by [`set_debug_knob`] (the
+/// settings overlay's debug group, F10). `docs/options.md` lists them.
+pub const DEBUG_KNOBS: &[&str] = &[
+    "SSX3_SHADOW_SHOW",
+    "SSX3_GFX_SHOW",
+    "SSX3_SUN",
+    "SSX3_CASTERS",
+    "SSX3_BAKED",
+    "SSX3_SHADOW_DEBUG",
+];
+
+/// The `SSX3_SHADOW_DEBUG` switches that only change what is drawn: they
+/// follow [`set_debug_knob`] (bit i of the live masks). The others (logs:
+/// print, lightlog, recvlog, items, gpustats, blend) are read once from
+/// the environment.
+const LIVE_SWITCHES: &[&str] = &[
+    "no-pass",
+    "no-recv",
+    "no-world",
+    "no-items",
+    "no-strips",
+    "no-pass2",
+    "baked",
+    "tint",
+    "no-sub",
+    "no-add",
+    "sub-only",
+    "game-shadows",
+    "flare-sun",
+];
+
+/// The sources of live switches: `SSX3_SHADOW_DEBUG`, `SSX3_BAKED`,
+/// `SSX3_CASTERS`, `SSX3_SUN` (`flare`).
+const SW_DEBUG: usize = 0;
+const SW_BAKED: usize = 1;
+const SW_CASTERS: usize = 2;
+const SW_SUN: usize = 3;
+
+struct Knobs {
+    /// `SSX3_SHADOW_SHOW` (f32 bits).
+    show: AtomicU32,
+    /// Live switches per source.
+    switches: [AtomicU32; 4],
+    /// `SSX3_SUN=azimuth,elevation`.
+    sun: RwLock<Option<(f64, f64)>>,
+}
+
+fn knobs() -> &'static Knobs {
+    static K: OnceLock<Knobs> = OnceLock::new();
+    K.get_or_init(|| {
+        let env = |k: &str| std::env::var(k).unwrap_or_default();
+        let sun = env("SSX3_SUN");
+        Knobs {
+            show: AtomicU32::new(show_code(&env("SSX3_SHADOW_SHOW")).to_bits()),
+            switches: [
+                AtomicU32::new(switch_mask(&env("SSX3_SHADOW_DEBUG"))),
+                AtomicU32::new(switch_mask(&env("SSX3_BAKED"))),
+                AtomicU32::new(switch_mask(&env("SSX3_CASTERS"))),
+                AtomicU32::new(sun_switches(&sun)),
+            ],
+            sun: RwLock::new(sun_angles(&sun)),
+        }
     })
 }
 
-/// `SSX3_SHADOW_DEBUG` contains `what` (comma-separated switches).
+fn switch_mask(list: &str) -> u32 {
+    list.split(',')
+        .filter_map(|w| LIVE_SWITCHES.iter().position(|s| *s == w.trim()))
+        .fold(0, |m, i| m | 1 << i)
+}
+
+fn sun_switches(v: &str) -> u32 {
+    if v.trim() == "flare" {
+        switch_mask("flare-sun")
+    } else {
+        0
+    }
+}
+
+fn sun_angles(v: &str) -> Option<(f64, f64)> {
+    let r: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+    (r.len() >= 2).then(|| (r[0], r[1]))
+}
+
+/// `SSX3_SHADOW_SHOW`'s code for the shader (`sh.p.w`).
+fn show_code(v: &str) -> f32 {
+    match v.trim() {
+        "factor" => 1.0,
+        "cascade" => 2.0,
+        "ndl" => 3.0,
+        // (For fitting the lighting: the lit terrain only, unprocessed.)
+        "normals" => 4.0,
+        "sunlit" => 5.0,
+        // (n.x, n.y as 0..1, lit as 0.5..1: one run for the fit.)
+        "fit" => 6.0,
+        // (Board trails: their vertex colour, x2.)
+        "stripcol" => 7.0,
+        // (World position bands, 200 units, on every GPU draw.)
+        "wp" => 8.0,
+        _ => 0.0,
+    }
+}
+
+/// Set debug knob `key` (one of [`DEBUG_KNOBS`]) to `value` (as its
+/// environment variable takes it; empty: off) while running. Returns
+/// whether `key` is one.
+pub fn set_debug_knob(key: &str, value: &str) -> bool {
+    let k = knobs();
+    match key {
+        "SSX3_SHADOW_SHOW" => k.show.store(show_code(value).to_bits(), Ordering::Relaxed),
+        "SSX3_GFX_SHOW" => post::set_show(value),
+        "SSX3_SUN" => {
+            *k.sun.write().unwrap() = sun_angles(value);
+            k.switches[SW_SUN].store(sun_switches(value), Ordering::Relaxed);
+        }
+        "SSX3_CASTERS" => {
+            k.switches[SW_CASTERS].store(switch_mask(value), Ordering::Relaxed);
+            ssx3_render::world_casters::set_filter(value);
+        }
+        "SSX3_BAKED" => k.switches[SW_BAKED].store(switch_mask(value), Ordering::Relaxed),
+        "SSX3_SHADOW_DEBUG" => k.switches[SW_DEBUG].store(switch_mask(value), Ordering::Relaxed),
+        _ => return false,
+    }
+    true
+}
+
+/// `SSX3_SHADOW_SHOW`: the receivers show the shadow factor (1), their
+/// cascade (2) or N·L (3) instead of their colour (0: off); live.
+pub fn show() -> f32 {
+    f32::from_bits(knobs().show.load(Ordering::Relaxed))
+}
+
+/// Debug switch `what` is on: `SSX3_SHADOW_DEBUG` (comma-separated
+/// switches), `SSX3_BAKED`, `SSX3_CASTERS` or `SSX3_SUN=flare` holds it.
+/// The drawing switches (`LIVE_SWITCHES`) follow [`set_debug_knob`];
+/// the log switches stay as the environment set them.
 pub fn debug(what: &str) -> bool {
-    static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    if let Some(i) = LIVE_SWITCHES.iter().position(|s| *s == what) {
+        return knobs()
+            .switches
+            .iter()
+            .any(|m| m.load(Ordering::Relaxed) & (1 << i) != 0);
+    }
+    static S: OnceLock<String> = OnceLock::new();
     S.get_or_init(|| std::env::var("SSX3_SHADOW_DEBUG").unwrap_or_default())
         .split(',')
         .any(|w| w == what)
 }
 
-/// The tuning values (read once).
+/// The tuning values (read once; the sun is live, [`set_debug_knob`]).
 #[derive(Clone, Copy, Debug)]
 pub struct Tuning {
     /// `SSX3_SUN`: (azimuth, elevation) in degrees.
@@ -179,11 +309,9 @@ pub struct Tuning {
 }
 
 pub fn tuning() -> Tuning {
-    static T: std::sync::OnceLock<Tuning> = std::sync::OnceLock::new();
-    *T.get_or_init(|| Tuning {
-        sun: env_f("SSX3_SUN")
-            .filter(|v| v.len() >= 2)
-            .map(|v| (v[0], v[1])),
+    static T: OnceLock<Tuning> = OnceLock::new();
+    let mut t = *T.get_or_init(|| Tuning {
+        sun: None,
         range: env_f("SSX3_SHADOW_RANGE").map_or(24000.0, |v| v[0]),
         size: env_f("SSX3_SHADOW_SIZE").map_or(8192, |v| (v[0] as u32).clamp(512, 8192)),
         strength: env_f("SSX3_SHADOW_STRENGTH").map_or(1.0, |v| v[0] as f32),
@@ -192,7 +320,10 @@ pub fn tuning() -> Tuning {
             .map_or([0.55, 0.6, 0.75], |v| {
                 [v[0] as f32, v[1] as f32, v[2] as f32]
             }),
-    })
+    });
+    // (The sun follows the debug knob.)
+    t.sun = *knobs().sun.read().unwrap();
+    t
 }
 
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {

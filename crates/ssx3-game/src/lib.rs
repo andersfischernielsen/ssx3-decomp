@@ -94,7 +94,6 @@ pub mod world_painter;
 pub mod tick;
 
 /// Detail distance (terrain grids, rider LOD).
-pub mod detail;
 
 /// Replacements outside the work-package modules: (address, function, name).
 const CORE: &[(u32, GuestFn, &str)] = &[(

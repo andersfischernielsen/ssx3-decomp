@@ -5,6 +5,8 @@
 //! blend with.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::OnceLock;
 
 use crate::options::{Aa, Bloom, Options};
 
@@ -72,18 +74,54 @@ enum Write {
     Multiply,
 }
 
-/// Debug: `SSX3_GFX_SHOW=ao` shows the AO mask as the image.
-pub(crate) fn show(which: &str) -> bool {
-    static S: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    S.get_or_init(|| std::env::var("SSX3_GFX_SHOW").unwrap_or_default()) == which
+/// Debug views (`SSX3_GFX_SHOW`): the shadow pass's (the first five,
+/// [`debug_view`]) and the AO mask (`ao`).
+const VIEWS: &[&str] = &[
+    "shadow-map",
+    "world",
+    "normal",
+    "light-uv",
+    "light-depth",
+    "ao",
+];
+
+/// The view shown: 1 + its index in [`VIEWS`], 0 for none. From
+/// `SSX3_GFX_SHOW`, changed while running by [`set_show`].
+fn view() -> &'static AtomicU8 {
+    static S: OnceLock<AtomicU8> = OnceLock::new();
+    S.get_or_init(|| {
+        let v = std::env::var("SSX3_GFX_SHOW").unwrap_or_default();
+        AtomicU8::new(view_code(&v))
+    })
 }
 
-/// The shadow pass's debug views (`SSX3_GFX_SHOW=shadow-map|world|normal`).
-pub(crate) fn debug_view() -> f32 {
-    ["shadow-map", "world", "normal", "light-uv", "light-depth"]
+fn view_code(v: &str) -> u8 {
+    VIEWS
         .iter()
-        .position(|w| show(w))
-        .map_or(0.0, |i| i as f32 + 1.0)
+        .position(|w| *w == v.trim())
+        .map_or(0, |i| i as u8 + 1)
+}
+
+/// Show debug view `v` (`SSX3_GFX_SHOW`'s values; empty: none).
+pub(crate) fn set_show(v: &str) {
+    view().store(view_code(v), Ordering::Relaxed);
+}
+
+/// Debug: `SSX3_GFX_SHOW=ao` shows the AO mask as the image.
+pub(crate) fn show(which: &str) -> bool {
+    match view().load(Ordering::Relaxed) {
+        0 => false,
+        c => VIEWS[c as usize - 1] == which,
+    }
+}
+
+/// The shadow pass's debug views (`SSX3_GFX_SHOW=shadow-map|world|normal|
+/// light-uv|light-depth`: 1..5, 0 for none).
+pub(crate) fn debug_view() -> f32 {
+    match view().load(Ordering::Relaxed) {
+        c @ 1..=5 => c as f32,
+        _ => 0.0,
+    }
 }
 
 /// The cascade the debug views show (`SSX3_SHADOW_CASCADE`, the widest by

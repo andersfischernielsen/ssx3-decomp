@@ -4,7 +4,9 @@ Most options can be changed in the game with the settings overlay (F10): display
 field of view, aspect ratio, resolution, anisotropic filtering and fullscreen apply at once; renderer, sound,
 pads and memory card, game files and intro movies after a restart. They are saved in
 `saves/ssx3-settings.cfg` as `SSX3_*` lines; an environment variable of the same name
-overrides the file.
+overrides the file. The overlay's last rows are a debug group for the real-time
+lighting (views, sun, casters, the bake; not saved): see "Real-time lighting:
+tuning and debugging" below.
 
 All options are environment variables. The defaults are the verified, exact
 configuration. The plain command above is the recommended way to play.
@@ -42,11 +44,37 @@ through the native renderer too.
 | `SSX3_FOV=1.2` | Field of view relative to the game's (here 20% wider). |
 | `SSX3_ANISO=16` | Anisotropic filtering, 1 (off) to 16 (default), for textures with mipmaps (texture-pack replacements). |
 | `SSX3_CATCHUP=0` | Turn off catch-up (window; settings "Keep speed when slow", on by default). The window always runs the game on the wall clock at the game rate, whatever the display's refresh rate (a 60 Hz display at a 120 Hz game rate gets two game updates per image). When the host itself is too slow, catch-up queues extra updates per image (at most 4) and keeps the audio device fed from the wall clock; off, the game slows down instead. Replays and headless runs never use it. |
-| `SSX3_AA`, `SSX3_MIPMAPS`, `SSX3_LOD_BIAS`, `SSX3_TERRAIN`, `SSX3_DRAW_DIST`, `SSX3_AO`, `SSX3_BLOOM`, `SSX3_SNOW` | Modern graphics options (F10, all off by default): see [`plans/modern-graphics.md`](plans/modern-graphics.md). `SSX3_GFX_SHOW=ao` shows the AO mask. |
-| `SSX3_SHADOWS=1` | "Real-time lighting" (F10): the terrain lit by the renderer (real sun, sky fill, sun shadows from the whole loaded world, tree cut-outs) instead of the game's baked layer, whose colour tints stay; see [`plans/shadow-maps.md`](plans/shadow-maps.md) and [`plans/terrain-lighting.md`](plans/terrain-lighting.md). Tuning and debugging: `SSX3_SUN=az,el`, `SSX3_SHADOW_RANGE`, `SSX3_SHADOW_SIZE`, `SSX3_SHADOW_STRENGTH`, `SSX3_SHADOW_TINT`, `SSX3_LIGHT`, `SSX3_CASTERS_SHOWN`, `SSX3_SHADOW_SHOW=cascade\|factor\|ndl\|normals\|sunlit\|fit`, `SSX3_SHADOW_DEBUG=…` (switches listed in `crates/ssx3-gfx/src/shadow.rs`). |
+| `SSX3_AA`, `SSX3_LOD_BIAS`, `SSX3_AO`, `SSX3_BLOOM`, `SSX3_SNOW` | Modern graphics options (F10, all off by default): see [`plans/modern-graphics.md`](plans/modern-graphics.md). `SSX3_GFX_SHOW=ao` shows the AO mask. |
+| `SSX3_SHADOWS=1` | "Real-time lighting" (F10): the terrain lit by the renderer (real sun, sky fill, sun shadows from the whole loaded world, tree cut-outs) instead of the game's baked layer, whose colour tints stay; see [`plans/shadow-maps.md`](plans/shadow-maps.md) and [`plans/terrain-lighting.md`](plans/terrain-lighting.md). Tuning and debug views: "Real-time lighting: tuning and debugging" below. |
 | `SSX3_ASPECT=4:3\|16:9\|stretch` | The classic fixed-aspect image (512×448 scaled, letterboxed) instead of following the window. |
 | `SSX3_RENDER_SCALE=2` (up to 8) | N× internal resolution (native renderer; with `SSX3_RENDER=emu SSX3_RENDER_NATIVE=all`, the emulated GS's). |
 | `SSX3_RENDER=shadow` | Both: the native renderer draws next to the emulated GS, which is shown (headless writes `frameNNNNN-gfx.png` too). |
+
+**Real-time lighting: tuning and debugging.** These apply with `SSX3_SHADOWS=1`
+(except `SSX3_BAKED=no-sub|no-add|sub-only`, which apply either way). The first group
+also changes while the game runs: the settings overlay (F10) has them as its last rows,
+the debug group (blue labels below a rule). Those rows are not saved: the environment
+variable sets the start value, the overlay changes it for this run.
+
+| Variable (F10 row) | Values | Shows |
+| --- | --- | --- |
+| `SSX3_SHADOW_SHOW` ("Lighting view") | `factor`, `cascade`, `ndl`, `normals`, `sunlit`, `fit`, `stripcol`, `wp` | The receivers' shadow factor; their cascade; N·L; for the lighting fit (`tools/fit_lighting.py`) the lit terrain only: its normals (n·0.5+0.5), sun-lit amount, or both packed (`fit`); the board trails' vertex colour (×2); world-position bands (200 units) on every GPU draw. |
+| `SSX3_GFX_SHOW` ("Buffer view") | `shadow-map`, `world`, `normal`, `light-uv`, `light-depth`, `ao` | Full-screen views of the shadow post pass: the shadow atlas, world position from depth (1000-unit bands), the depth normals, light-space UV, light depth against the map (red: in shadow, green: in front); `ao`: the AO mask (with "Ambient occlusion" on). `SSX3_SHADOW_CASCADE=0..3` picks the cascade (env only; the widest by default). |
+| `SSX3_SUN` ("Sun direction") | `az,el` (degrees, z up) or `flare` | The sun towards azimuth/elevation instead of the game's key light (the meshes' SH light); `flare`: where the game draws the sun sprite. The overlay offers overhead (`90,85`), high (`0,45`) and four low (`…,15`) presets. |
+| `SSX3_CASTERS` ("Shadow casters") | `patches`, `instances`, `shown`, `no-world`, `no-items`, `no-pass` (comma list) | The world's casters (read from game memory, the whole loaded course): only terrain patches, only instances (trees, buildings), only the sections the game shows; `no-world`: none of those (the game's on-screen draws cast instead); `no-items`: the game's draws (riders, meshes) do not cast; `no-pass`: no shadow pass at all. The older `SSX3_CASTERS_ONLY=patches\|instances` and `SSX3_CASTERS_SHOWN=1` still set the start value. |
+| `SSX3_BAKED` ("Baked lighting") | `tint`, `baked`, `sub-only`, `no-sub`, `no-add` (comma list) | The game's baked terrain lighting: `tint` keeps its colour tints (the artists' zone tints), `baked` keeps the whole bake (the game's lighting, our shadows on the rest), `sub-only` draws only the subtractive (baked shade) layer, opaque; `no-sub` / `no-add` drop the subtractive / additive layer. |
+| `SSX3_SHADOW_DEBUG` (no row) | comma list | All the switches above by their names (`no-world`, `no-items`, `no-pass`, `tint`, `baked`, `sub-only`, `no-sub`, `no-add`, `flare-sun`), plus `no-recv` (nothing but the terrain receives shadows), `no-strips` (no board trails and wakes), `no-pass2` (no terrain second pass), `game-shadows` (keep the game's rider shadows). These drawing switches add to the rows above. Logs (read once): `print` (sun, light, cascades per frame), `lightlog` (the game's live light), `recvlog` (the receivers), `items` (what casts), `gpustats`, `blend` (the terrain's blend states). |
+
+Read once at start (environment only):
+
+| Variable | Effect |
+| --- | --- |
+| `SSX3_SHADOW_RANGE` | The widest cascade's half width in world units (default 24000; four cascades, each 3× the last). |
+| `SSX3_SHADOW_SIZE` | The shadow atlas' size in texels (512..8192, default 8192). |
+| `SSX3_SHADOW_STRENGTH` | Shadow strength 0..1 (default 1). |
+| `SSX3_SHADOW_TINT=r,g,b` | Full shadow's colour multiplier (default the cool shade of the game's baked shadows, `0.55,0.6,0.75`). |
+| `SSX3_LIGHT="sun r,g,b;sky r,g,b;ground r,g,b"` | The terrain lighting's gains over the game's live light (parts given override the course's fit; `tools/fit_lighting.py` prints them). |
+| `SSX3_CASTERS_DEBUG=1`, `SSX3_CASTERS_BOXES=<file>` | Log the caster set's changes and its largest instances; with both, write every instance's bounding box to the file. |
 
 **Texture packs.** Textures can be dumped and replaced, e.g. with upscaled versions:
 

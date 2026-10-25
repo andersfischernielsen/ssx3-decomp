@@ -357,6 +357,10 @@ const NO_SHADOW: &str = "const SHADOW_PASS: bool = false;\nfn shadow_out(o: VOut
 /// The shadow pass's depth format.
 pub const SHADOW_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// The shadow pass's largest depth bias: about 10 world units of the
+/// light's depth range (`shadow::light`: 1.5 × the shadow range).
+const SHADOW_BIAS_CLAMP: f32 = 10.0 / 36000.0;
+
 pub struct Pipelines {
     module: wgpu::ShaderModule,
     pub layout: wgpu::BindGroupLayout,
@@ -541,7 +545,9 @@ impl Pipelines {
                 bias: wgpu::DepthBiasState {
                     constant: 2,
                     slope_scale: 1.5,
-                    clamp: 0.0,
+                    // (At most ~10 world units: triangles edge-on to the
+                    // sun (a rider's sides) were pushed past the snow.)
+                    clamp: SHADOW_BIAS_CLAMP,
                 },
             }),
             multisample: Default::default(),
@@ -600,7 +606,9 @@ impl Pipelines {
                 bias: wgpu::DepthBiasState {
                     constant: 2,
                     slope_scale: 1.5,
-                    clamp: 0.0,
+                    // (At most ~10 world units: triangles edge-on to the
+                    // sun (a rider's sides) were pushed past the snow.)
+                    clamp: SHADOW_BIAS_CLAMP,
                 },
             }),
             multisample: Default::default(),
@@ -666,7 +674,7 @@ impl Pipelines {
                     bias: wgpu::DepthBiasState {
                         constant: 2,
                         slope_scale: 1.5,
-                        clamp: 0.0,
+                        clamp: SHADOW_BIAS_CLAMP,
                     },
                 }),
                 multisample: Default::default(),

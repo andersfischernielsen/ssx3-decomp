@@ -241,8 +241,33 @@ fn fs_gpu(v: VOut) -> FsOut {
         z = select(sz * 16.0, zmax, sz < 0.0);
     }
     let d = min(z, zmax) / (zmax + 1.0);
+    // The renderer's lighting multiplies the colour before the fog (in
+    // `shade`): fogged-out distant terrain stays the fog's colour.
+    let terrain = (b.flags & 16384u) != 0u && v.wp.w > 0.5 && v.nrm.w > 0.5;
+    let receiver = !terrain && (b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u;
+    var t: mat3x3<f32>;
+    var s = 0.0;
+    if ((b.flags & 65536u) != 0u && v.wp.w > 0.5) {
+        // Decals on the terrain (board trails, flag 65536): lit as the
+        // surface they lie on (their face, turned to the sky).
+        let c = cross(dx, dy);
+        if (dot(c, c) > 1e-20) {
+            pre_fog = terrain_light(v.wp.xyz, normalize(c))[0];
+        }
+    } else if (terrain) {
+        // The terrain's lighting (flag 16384).
+        t = terrain_light(v.wp.xyz, v.nrm.xyz);
+        pre_fog = t[0];
+    } else if (receiver) {
+        s = sun_factor(v.wp.xyz, dx, dy, v.nrm);
+        pre_fog = shadow_tint(s);
+    }
+    var vs = v;
+    if ((b.flags & 65536u) != 0u) {
+        vs.col = vec4<f32>(vec3<f32>(128.0), v.col.a);
+    }
     var o: FsOut;
-    o.color = shade(v);
+    o.color = shade(vs);
     // The bake's colour only (flag 32768, real-time lighting): its source
     // (premultiplied: what it subtracts) less its grey part, and the
     // destination kept (alpha 1: the blend scales it by As).
@@ -250,27 +275,36 @@ fn fs_gpu(v: VOut) -> FsOut {
         let c = o.color.rgb;
         o.color = vec4<f32>(max(c - vec3<f32>(min(min(c.r, c.g), c.b)), vec3<f32>(0.0)), 1.0);
     }
-    // The renderer's terrain lighting (flag 16384).
-    if ((b.flags & 16384u) != 0u && v.wp.w > 0.5 && v.nrm.w > 0.5) {
-        let t = terrain_light(v.wp.xyz, v.nrm.xyz);
+    // Debug views.
+    if (sh.p.w == 8.0) {
+        // (The opaque layers of the lit draws only.)
+        let opaque = b.src_mode == 0u && b.c_kind != 1u || b.src_mode == 1u && b.cs_a == 0.0 && b.cs_b == 1.0;
+        if (!(terrain || receiver) || !opaque || v.wp.w < 0.5) {
+            discard;
+        }
+        o.color = vec4<f32>(fract((v.wp.xyz + sh.origin.xyz) / 200.0), 1.0);
+        o.depth = d;
+        return o;
+    }
+    if ((b.flags & 65536u) != 0u && sh.p.w == 7.0) {
+        o.color = vec4<f32>(v.col.rgb / 128.0 * select(1.0, o.color.a, b.src_mode == 1u), o.color.a);
+    }
+    if (terrain) {
         if (sh.p.w == 4.0) {
             o.color = vec4<f32>(t[2] * 0.5 + 0.5, 1.0);
         } else if (sh.p.w == 5.0) {
             o.color = vec4<f32>(t[1], 1.0);
         } else if (sh.p.w == 6.0) {
             o.color = vec4<f32>(t[2].xy * 0.5 + 0.5, 0.5 + 0.5 * t[1].x, 1.0);
-        } else {
-            o.color = vec4<f32>(o.color.rgb * t[0], o.color.a);
         }
-    } else if ((b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u) {
-        let s = sun_factor(v.wp.xyz, dx, dy, v.nrm);
+    } else if (receiver && sh.p.w > 0.0) {
         let f = 1.0 - s;
-        // (Debug views: on the opaque layer and the plain alpha blend
-        // (premultiplied by As, as `shade` gives it: riders); the other
-        // blends would add or subtract the view's colours.)
+        // (On the opaque layer and the plain alpha blend (premultiplied by
+        // As, as `shade` gives it: riders); the other blends would add or
+        // subtract the view's colours.)
         let lerp = b.src_mode == 1u && b.cs_a == 1.0 && b.cs_b == 0.0;
         let plain = (b.src_mode == 0u && b.c_kind != 1u) || (b.src_mode == 1u && b.cs_a == 0.0 && b.cs_b == 1.0);
-        if (sh.p.w > 0.0 && !plain && !lerp) {
+        if (!plain && !lerp) {
             discard;
         }
         let pm = select(1.0, o.color.a, lerp);
@@ -286,8 +320,6 @@ fn fs_gpu(v: VOut) -> FsOut {
             }
             let ndl = dot(n, sh.sun.xyz);
             o.color = vec4<f32>(vec3<f32>(max(ndl, 0.0), max(-ndl, 0.0), select(0.0, 1.0, ndl > 0.0 && ndl < 0.2)) * pm, o.color.a);
-        } else {
-            o.color = vec4<f32>(o.color.rgb * shadow_tint(s), o.color.a);
         }
     }
     o.depth = d;

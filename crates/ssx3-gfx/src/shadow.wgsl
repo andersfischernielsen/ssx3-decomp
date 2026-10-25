@@ -60,7 +60,9 @@ fn fs_caster_cut(v: CutOut) {
 @fragment
 fn fs_shadow(v: VOut) {
     let s = shade(v);
-    if (b.src_mode != 0u && s.a < 0.5) {
+    // (Only where the blend uses the alpha: the riders' bodies are drawn
+    // with Cs (ALPHA 0x2a), their alpha anything.)
+    if (b.src_mode == 2u || (b.src_mode == 1u && b.cs_a != 0.0 && s.a < 0.5)) {
         discard;
     }
 }
