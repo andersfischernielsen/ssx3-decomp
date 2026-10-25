@@ -5317,6 +5317,15 @@
 0x00191c68    cFEStateRuleSelect_OnWidgetAction
 0x001867a8    cFEStateEventSelect_OnWidgetAction
 0x002018a8    EventSelect_OnWidgetAction
+# Boot straight into an event (2026-10-25)
+0x0018faf0    cFEStateProfileLoad_v33
+0x00228238    SSXApp_StartFEModule
+0x00232930    cPreGameLoadScreen_Update
+0x00232a08    cPreFELoadScreen_Update
+0x00232b28    StartScreen_Load
+0x00232cf8    StartScreen_TryExit
+0x00232d18    StartScreen_Update
+0x00316ef8    App_SetNextState
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
