@@ -1464,6 +1464,19 @@ impl Inner {
                 {
                     p.u.flags |= 4096;
                 }
+                if shadow::debug("recvlog") && st.target == self.gs.main_fbp && !b.tag.hud {
+                    eprintln!(
+                        "[recv] {:?} alpha {:#x} abe {} src_mode {} cs {} {} flags {:#x} tex {}",
+                        b.gpu.map(|g| g.program),
+                        st.ctx.alpha,
+                        st.prim & (1 << 6) != 0,
+                        p.u.src_mode,
+                        p.u.cs_a,
+                        p.u.cs_b,
+                        p.u.flags,
+                        st.tex.is_some()
+                    );
+                }
                 // Glints on bright snow (textured terrain).
                 if opts.snow && b.tag.terrain && st.tex.is_some() {
                     p.u.flags |= 2048;
@@ -1707,7 +1720,8 @@ impl Inner {
         ) {
             let sh = self.shadow.as_ref().unwrap();
             let casts = |it: &Item| {
-                it.target == main
+                !shadow::debug("no-items")
+                    && it.target == main
                     && !it.tag.hud
                     && it.tag.post.is_none()
                     && it.key.depth_write

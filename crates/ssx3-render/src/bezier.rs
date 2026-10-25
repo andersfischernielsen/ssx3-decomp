@@ -799,8 +799,10 @@ pub mod gpu {
     /// UV} per strip vertex in, {position, UV, normal} out (`DATA_STRIDE`).
     /// The normal sums the faces around each grid point (keyed by its
     /// position, so the strips sharing a row agree), consistently wound
-    /// (strip triangles alternate), not oriented (the shader turns it to
-    /// the camera). For the renderer's lighting; the game has none.
+    /// (strip triangles alternate) and each strip turned up (its faces'
+    /// sum facing +z: strips of opposite winding would cancel where they
+    /// meet, leaving short normals in any direction that change as the
+    /// draws do). For the renderer's lighting; the game has none.
     fn with_normals(s: &Strips, data: &[[u32; 4]]) -> Vec<[u32; 4]> {
         let nv = s.verts.len().min(data.len() / 2);
         let pos =
@@ -808,8 +810,11 @@ pub mod gpu {
         let key = |v: usize| -> [u32; 3] { [data[2 * v][0], data[2 * v][1], data[2 * v][2]] };
         let mut acc: std::collections::HashMap<[u32; 3], [f32; 3]> = Default::default();
         let mut start = 0usize;
+        let mut faces: Vec<([usize; 3], [f32; 3])> = Vec::new();
         for &len in &s.lens {
             let len = len as usize;
+            faces.clear();
+            let mut up = 0f32;
             for k in 2..len {
                 let (a, b, c) = (start + k - 2, start + k - 1, start + k);
                 if c >= nv {
@@ -829,10 +834,15 @@ pub mod gpu {
                 if !n.iter().all(|x| x.is_finite()) {
                     continue;
                 }
-                for v in [a, b, c] {
+                up += n[2];
+                faces.push(([a, b, c], n));
+            }
+            let sg = if up < 0.0 { -1.0 } else { 1.0 };
+            for &(vs, n) in &faces {
+                for v in vs {
                     let e = acc.entry(key(v)).or_default();
                     for l in 0..3 {
-                        e[l] += n[l];
+                        e[l] += sg * n[l];
                     }
                 }
             }
@@ -863,8 +873,9 @@ pub mod gpu {
     mod normal_tests {
         use super::*;
 
-        /// Two strips over a flat 3×3 grid (z = 5): every vertex gets the
-        /// same unit normal along z, the row the strips share included.
+        /// Two strips over a flat 3×3 grid (z = 5), wound opposite ways:
+        /// every vertex gets the same unit normal, up, the row the strips
+        /// share included.
         #[test]
         fn flat_grid_has_one_normal() {
             let at = |r: usize, c: usize| {
@@ -878,10 +889,11 @@ pub mod gpu {
             let mut s = Strips::default();
             s.packet(PACKET_A);
             let mut data = Vec::new();
+            // (The second strip wound the other way: its rows swapped.)
             for r in 0..2 {
                 let verts: Vec<Vertex> = (0..6).map(|_| Vertex { pos: 0, uv: 0 }).collect();
                 for k in 0..6 {
-                    data.push(at(r + k % 2, k / 2));
+                    data.push(at(r + if r == 0 { k % 2 } else { 1 - k % 2 }, k / 2));
                     data.push([0; 4]);
                 }
                 s.strip(&verts);
@@ -892,7 +904,7 @@ pub mod gpu {
             for v in 0..12 {
                 let n = out[DATA_STRIDE * v + 2].map(f32::from_bits);
                 assert!(
-                    (n[2].abs() - 1.0).abs() < 1e-6 && n[0] == 0.0 && n[1] == 0.0,
+                    (n[2] - 1.0).abs() < 1e-6 && n[0] == 0.0 && n[1] == 0.0,
                     "{n:?}"
                 );
                 assert_eq!(out[DATA_STRIDE * v + 2], n0);

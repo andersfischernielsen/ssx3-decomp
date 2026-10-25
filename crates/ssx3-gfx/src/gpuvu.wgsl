@@ -118,7 +118,7 @@ fn sun_lit(w: vec3<f32>, n: vec3<f32>) -> f32 {
 // `dx`, `dy` (0 lit .. 1 in shadow, times the strength). Surfaces turned away
 // from the sun are left alone: the game's baked lighting already darkens
 // them.
-fn sun_factor(w: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) -> f32 {
+fn sun_factor(w: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>, vn: vec4<f32>) -> f32 {
     // (No surface to speak of, e.g. a pixel whose neighbours lie on the
     // same point: lit. A NaN here would poison the blended layers.)
     let c = cross(dx, dy);
@@ -129,6 +129,15 @@ fn sun_factor(w: vec3<f32>, dx: vec3<f32>, dy: vec3<f32>) -> f32 {
     var n = c * inverseSqrt(cl);
     if (dot(n, sh.eye.xyz - w) < 0.0) {
         n = -n;
+    }
+    // A smooth vertex normal (riders): the terminator follows the shape
+    // (the game's own lighting darkens the side away from the sun), and
+    // the faces near it, which would shadow themselves, fade in later.
+    if (vn.w > 0.5) {
+        let ns = normalize(vn.xyz);
+        let ndl = dot(ns, sh.sun.xyz);
+        let lit = mix(1.0, sun_lit(w, ns), smoothstep(0.1, 0.4, ndl));
+        return sh.sun.w * (1.0 - lit);
     }
     let ndl = dot(n, sh.sun.xyz);
     let lit = mix(1.0, sun_lit(w, n), smoothstep(0.0, 0.2, ndl));
@@ -234,7 +243,7 @@ fn fs_gpu(v: VOut) -> FsOut {
     let d = min(z, zmax) / (zmax + 1.0);
     var o: FsOut;
     o.color = shade(v);
-    // The bake's colour only (flag 32768, Native shadows): its source
+    // The bake's colour only (flag 32768, real-time lighting): its source
     // (premultiplied: what it subtracts) less its grey part, and the
     // destination kept (alpha 1: the blend scales it by As).
     if ((b.flags & 32768u) != 0u) {
@@ -254,25 +263,29 @@ fn fs_gpu(v: VOut) -> FsOut {
             o.color = vec4<f32>(o.color.rgb * t[0], o.color.a);
         }
     } else if ((b.flags & 4096u) != 0u && v.wp.w > 0.5 && b.src_mode != 2u) {
-        let s = sun_factor(v.wp.xyz, dx, dy);
+        let s = sun_factor(v.wp.xyz, dx, dy, v.nrm);
         let f = 1.0 - s;
-        // (Debug views: on the opaque layer only; the blended ones would
-        // add or subtract the view's colours.)
-        if (sh.p.w > 0.0 && b.src_mode != 0u) {
+        // (Debug views: on the opaque layer and the plain alpha blend
+        // (premultiplied by As, as `shade` gives it: riders); the other
+        // blends would add or subtract the view's colours.)
+        let lerp = b.src_mode == 1u && b.cs_a == 1.0 && b.cs_b == 0.0;
+        let plain = (b.src_mode == 0u && b.c_kind != 1u) || (b.src_mode == 1u && b.cs_a == 0.0 && b.cs_b == 1.0);
+        if (sh.p.w > 0.0 && !plain && !lerp) {
             discard;
         }
+        let pm = select(1.0, o.color.a, lerp);
         if (sh.p.w == 1.0) {
-            o.color = vec4<f32>(vec3<f32>(f), o.color.a);
+            o.color = vec4<f32>(vec3<f32>(f) * pm, o.color.a);
         } else if (sh.p.w == 2.0) {
             let cc = array<vec3<f32>, 5>(vec3<f32>(1.0, 0.3, 0.3), vec3<f32>(0.3, 1.0, 0.3), vec3<f32>(0.3, 0.3, 1.0), vec3<f32>(1.0, 1.0, 0.3), vec3<f32>(0.5));
-            o.color = vec4<f32>(cc[used_cascade] * (0.4 + 0.6 * f), o.color.a);
+            o.color = vec4<f32>(cc[used_cascade] * (0.4 + 0.6 * f) * pm, o.color.a);
         } else if (sh.p.w == 3.0) {
             var n = normalize(cross(dx, dy));
             if (dot(n, sh.eye.xyz - v.wp.xyz) < 0.0) {
                 n = -n;
             }
             let ndl = dot(n, sh.sun.xyz);
-            o.color = vec4<f32>(max(ndl, 0.0), max(-ndl, 0.0), select(0.0, 1.0, ndl > 0.0 && ndl < 0.2), o.color.a);
+            o.color = vec4<f32>(vec3<f32>(max(ndl, 0.0), max(-ndl, 0.0), select(0.0, 1.0, ndl > 0.0 && ndl < 0.2)) * pm, o.color.a);
         } else {
             o.color = vec4<f32>(o.color.rgb * shadow_tint(s), o.color.a);
         }

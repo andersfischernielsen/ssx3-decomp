@@ -1,6 +1,6 @@
 # Terrain lighting
 
-In progress (2026-10-24, branch `shadow-maps`): the F10 setting "Native shadows"
+In progress (2026-10-24, branch `shadow-maps`): the F10 setting "Real-time lighting"
 (`SSX3_SHADOWS`) replaces the bake. Follows from the shadow-map work
 (`shadow-maps.md`).
 
@@ -68,7 +68,7 @@ bake).
   point, keyed by position), a third qword per vertex (`DATA_STRIDE`),
   passed to the fragment shader.
 - The model: `gpuvu.wgsl` `terrain_light` on the base layer (flag 16384);
-  the bake layer (ALPHA 0x81) is not drawn with "Native shadows" on
+  the bake layer (ALPHA 0x81) is not drawn with "Real-time lighting" on
   (`SSX3_SHADOW_DEBUG=baked` keeps it).
 - Live light: the terrain's colours follow the game's own lighting as the
   lighting triggers change it along a course: the lit meshes' SH lighting
