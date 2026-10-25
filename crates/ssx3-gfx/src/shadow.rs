@@ -77,35 +77,31 @@ pub struct Lighting {
     pub exposure: f32,
 }
 
-/// Each course's lighting. Peaks 1 and 2 (2026-10-25): the physical model
-/// ([`sun_lit`]: the game's live light, one sun constant, an exposure per
-/// course fitted with `tools/fit_lighting.py --exposure` against the
-/// scenarios' reference shots; the sun constant from Peak 1). Peak 3, until it is done: the
-/// earlier tone fit (the gain (neutral: the colour is the game's live
-/// light's, which follows the lighting triggers' zones; per-channel gains
-/// cast whole courses purple or green) from the game's live light to the
-/// terrain's that makes the mean terrain light equal the bake's
-/// (`tools/fit_lighting.py --tone`, the scenarios' reference shots,
-/// 2026-10-25), by track code; the sun gain is 0.6 everywhere (the spatial
-/// structure is the real sun's, the bake's pattern is art)).
+/// Each course's lighting (2026-10-25, peak by peak): the physical model
+/// ([`sun_lit`]: the game's live light, one sun constant from Peak 1, an
+/// exposure per course fitted with `tools/fit_lighting.py --exposure`
+/// against the scenarios' reference shots). The courses it did not improve
+/// (Intimidator, Schizophrenia, Kick Doubt) keep the earlier tone fit
+/// ([`tone`]: a neutral ambient gain on the game's live light that makes
+/// the mean terrain light equal the bake's, `--tone`; sun gain 0.6).
 const COURSES: &[(&str, Lighting)] = &[
     ("ARA1", sun_lit(0.169)),              // Snow Jam
     ("BRA2", sun_lit(0.150)),              // Metro City (night)
     ("CRA3", sun_lit(0.159)),              // Ruthless Ridge
     ("DRA4", tone([0.707, 0.707, 0.707])), // Intimidator (physical fit worse: zones without the sun went dark)
-    ("ERA5", tone([1.228, 1.228, 1.228])), // Gravitude
+    ("ERA5", sun_lit(0.179)),              // Gravitude
     ("ASS1", sun_lit(0.133)),              // R&B
     ("DSS2", sun_lit(0.105)),              // Style Mile
-    ("ESS3", tone([1.133, 1.133, 1.133])), // Kick Doubt
+    ("ESS3", tone([1.133, 1.133, 1.133])), // Kick Doubt (physical fit no better: its cyan ice is painted)
     ("ABA1", sun_lit(0.179)),              // Crow's Nest
     ("CBA2", sun_lit(0.241)),              // Launch Time
-    ("EBA3", tone([1.500, 1.500, 1.500])), // Much-2-Much
+    ("EBA3", sun_lit(0.048)),              // Much-2-Much
     ("BHP1", sun_lit(0.065)),              // The Junction
     ("CHP2", tone([1.389, 1.389, 1.389])), // Schizophrenia (physical fit worse: its sunless halfpipe walls went dark)
-    ("EHP3", tone([1.360, 1.360, 1.360])), // Perpendiculous
+    ("EHP3", sun_lit(0.054)),              // Perpendiculous
     ("ABC1", sun_lit(0.169)),              // Happiness (and its jam)
     ("DBC2", sun_lit(0.118)),              // Ruthless (and its jam)
-    ("EBC3", tone([1.087, 1.087, 1.087])), // The Throne (and its jam)
+    ("EBC3", sun_lit(0.325)),              // The Throne (and its jam)
 ];
 
 /// A course's lighting: its ambient gain, the common sun gain. The

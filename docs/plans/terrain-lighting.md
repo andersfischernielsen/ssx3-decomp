@@ -100,3 +100,14 @@ bake).
 - Open: the stylised zones (Kick Doubt's cyan ice, Much-2-Much's dark neon
   cave) keep colour from elsewhere (not the bake layer) or depend on its
   darkening; night courses read brighter than the game.
+- Physical model (2026-10-25, calibrated peak by peak): linear light with
+  a per-channel filmic shoulder; sky = the live ambient, the snow's bounce
+  below (0.5); sun = the key light × 10 when it is above the horizon, else
+  the world painter's sun, else none; the world's lights and lamp glows;
+  the bake's colour blurred wide. One exposure per course
+  (`fit_lighting.py --exposure`, view `SSX3_SHADOW_SHOW=hdr`). Mean abs
+  difference to the reference shots improved on 14 of 17 courses (e.g.
+  Ruthless Ridge 64.8 → 26.1, Much-2-Much 82.3 → 17.7); Intimidator,
+  Schizophrenia and Kick Doubt keep the tone fit (sunless or painted
+  zones went dark or lost their colour). The setting is marked
+  experimental in F10.
