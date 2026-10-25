@@ -10234,6 +10234,75 @@ pub(crate) mod tests {
         );
     }
 
+    /// `Rider_CheckRaceFinish` marks a human who has not finished
+    /// did-not-finish once the race clock (race +0xc, one count per tick)
+    /// passes the time limit (`[module + 0xc0] + 0x78`, in ticks: `seconds *
+    /// rate`, see `game::main::gamemode`). It turns the limit into ticks as
+    /// `trunc(limit * 1/60) * 60`; the `1/60` entry is not a step
+    /// (`tick::NOT_A_STEP`), so a timed event lasts the same game seconds at
+    /// every rate (60 s ended after 30 s at 120 Hz when the entry followed
+    /// the rate).
+    #[test]
+    fn rider_check_race_finish_time_limit_is_a_duration() {
+        use crate::tick;
+        assert!(tick::NOT_A_STEP.contains(&0x0049_b874));
+        assert!(tick::NOT_A_STEP.contains(&0x0049_d9b4));
+        // Whether the rider is did-not-finish with the limit at `limit`
+        // ticks and the race clock at `clock`.
+        let dnf = |hz: u32, limit: u32, clock: u32| -> bool {
+            let mut c = crate::difftest::fresh();
+            elf_image(&mut c);
+            machine(&mut c, 3, 0x125228, 0);
+            tick::set_for_test(&mut c, hz);
+            // The entry as the rate switch leaves it: a step follows the
+            // rate, a `NOT_A_STEP` entry keeps the executable's 1/60.
+            let entry = 0x0049_b874;
+            let at_rate = if tick::NOT_A_STEP.contains(&entry) {
+                tick::STEP_60
+            } else {
+                tick::step_bits(hz)
+            };
+            c.bus.write32(entry, at_rate);
+            let rider = RIDER;
+            c.g[A0][0] = rider as u64;
+            slot(&mut c, VT, 0x40, 0);
+            w(&mut c, rider + rider::BASE, VT);
+            w(&mut c, GAME_GP.wrapping_sub(0x1f04), OBJ + 0x3000);
+            w(&mut c, GAME_GP.wrapping_sub(0x1efc), 0);
+            w(&mut c, 0x0053_08a8, 0);
+            let world = OBJ + 0x2000;
+            let race = OBJ + 0x2400;
+            w(&mut c, GAME_GP.wrapping_sub(0x848), world);
+            w(&mut c, world + 0x84, world + 0x100);
+            w(&mut c, world + 0xc0, OBJ + 0x2200);
+            w(&mut c, world + 0x100 + 0x214, 0);
+            w(&mut c, world + 0x100 + 0xc, race);
+            w(&mut c, race + 0xc, clock);
+            // A timed event whose limit is not suspended.
+            w(&mut c, OBJ + 0x2200 + 0x88, 1);
+            w(&mut c, OBJ + 0x2200 + 0x78, limit);
+            c.bus.write32(0x0053_0000 + 0x8d0, 0);
+            w(&mut c, rider + rider::FINISH_TIME, (-1.0f32).to_bits());
+            w(&mut c, rider + rider::DID_NOT_FINISH, 0);
+            w(&mut c, rider + 0x87c, 0);
+            w(&mut c, rider + 0x150, 0);
+            w(&mut c, rider + rider::IS_HUMAN, 1);
+            // The is-human query answers yes.
+            c.bus.write32(fakes::LOG_RESULTS, 1);
+            rider_check_race_finish(&mut c);
+            c.bus.read32(rider + rider::DID_NOT_FINISH) == 1
+        };
+        // A 60 s limit.
+        for hz in [60u32, 120, 144, 240] {
+            let limit = 60 * hz;
+            assert!(!dnf(hz, limit, limit - 1), "{hz} Hz: inside 60 s");
+            assert!(!dnf(hz, limit, limit), "{hz} Hz: at 60 s");
+            assert!(dnf(hz, limit, limit + 1), "{hz} Hz: past 60 s");
+            // 30 s into the event, the limit's half way (the old failure).
+            assert!(!dnf(hz, limit, 30 * hz + 1), "{hz} Hz: 30 s is not the end");
+        }
+    }
+
     pub(crate) const AM_CTX: u32 = DATA + 0x25_0000;
 
     pub(crate) const AM_TOP: u32 = DATA + 0x26_0000;
