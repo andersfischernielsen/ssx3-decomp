@@ -25,7 +25,7 @@ configuration. The plain command above is the recommended way to play.
 
 | Variable | Effect |
 | --- | --- |
-| `SSX3_EVENT=<code>[:<event>]` | Boot straight into an event: the setup the menus would do is done through the game database, and the title, the intro and the race card are pressed through, so the race runs at about frame 1,050 instead of ~4,600. Codes: `ARA1` Snow Jam, `BRA2` Metro City, `CRA3` Ruthless Ridge, `DRA4` Intimidator, `ERA5` Gravitude; `ASS1`/`DSS2`/`ESS3` slopestyle, `ABA1`/`CBA2`/`EBA3` big air, `BHP1`/`CHP2`/`EHP3` superpipe; `ABC1`/`DBC2`/`EBC3` backcountry (add `:<event>`, e.g. `ABC1:6`). `SSX3_EVENT=list` prints them all when the main menu comes up. |
+| `SSX3_EVENT=<code>[:<event>]` | Boot straight into an event: right after the boot load, the setup the menus would do is done through the game database and the race loads; the memory card check, the title and the front end never run (default profile), and the race card and the intro are pressed through, so the race runs at about frame 400 instead of ~4,600. Codes: `ARA1` Snow Jam, `BRA2` Metro City, `CRA3` Ruthless Ridge, `DRA4` Intimidator, `ERA5` Gravitude; `ASS1`/`DSS2`/`ESS3` slopestyle, `ABA1`/`CBA2`/`EBA3` big air, `BHP1`/`CHP2`/`EHP3` superpipe; `ABC1`/`DBC2`/`EBC3` backcountry (add `:<event>`, e.g. `ABC1:6`). `SSX3_EVENT=list` prints them all after the boot load (then boots normally). |
 | `SSX3_RIDER=<name\|index>` | With `SSX3_EVENT`: the player's rider: `moby`, `kaori`, `allegra`, `mac`, `zoe`, `griff`, `elise`, `nate`, `psymon`, `viggo` (or the index 0..9). |
 
 **Rendering.** By default the game's frames are drawn by the native renderer
