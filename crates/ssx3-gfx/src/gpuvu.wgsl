@@ -362,11 +362,8 @@ fn gpu_fragment(v: VOut) -> FsOut {
     if ((b.flags & 65536u) != 0u || spray) {
         vs.col = vec4<f32>(vec3<f32>(128.0), v.col.a);
     }
-    // The baked layer's colour (flag 32768): blurred wide, its zone and
-    // shade colours without the shapes of its shadows.
-    if ((b.flags & 32768u) != 0u) {
-        blur_texels = 8.0;
-    }
+    // (The baked layer's colour, flag 32768: its texture blurred wide, the
+    // zone and shade colours without the shapes of its shadows: bake_blur.rs.)
     var o: FsOut;
     o.color = shade(vs);
     // The bake's colour only (flag 32768, real-time lighting): its source
