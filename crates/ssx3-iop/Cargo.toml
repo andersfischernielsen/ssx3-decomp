@@ -6,4 +6,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+ssx3-core = { path = "../ssx3-core" }
 cpal = "0.18"

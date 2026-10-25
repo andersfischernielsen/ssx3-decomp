@@ -45,7 +45,7 @@ impl Pack {
             .filter(|v| !v.is_empty() && v != "0")
             .map(|v| {
                 if v == "1" {
-                    PathBuf::from("textures/dump")
+                    ssx3_core::platform_paths::texture_dump()
                 } else {
                     PathBuf::from(v)
                 }
@@ -56,9 +56,9 @@ impl Pack {
                 Err(e) => eprintln!("[gfx] cannot create {}: {e}", d.display()),
             }
         }
-        let dir = std::env::var("SSX3_TEX_REPLACE").unwrap_or_else(|_| "textures/replace".into());
+        let dir = ssx3_core::platform_paths::texture_replacements();
         let mut replace = HashMap::new();
-        if dir != "0" {
+        if dir.as_os_str() != "0" {
             if let Ok(rd) = std::fs::read_dir(&dir) {
                 for e in rd.flatten() {
                     let p = e.path();
@@ -70,7 +70,11 @@ impl Pack {
                 }
             }
             if !replace.is_empty() {
-                eprintln!("[gfx] {} replacement textures in {dir}", replace.len());
+                eprintln!(
+                    "[gfx] {} replacement textures in {}",
+                    replace.len(),
+                    dir.display()
+                );
             }
         }
         Pack {

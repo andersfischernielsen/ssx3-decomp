@@ -17,6 +17,7 @@ pub mod iso;
 pub mod memory;
 pub mod memory_map;
 pub mod pack;
+pub mod platform_paths;
 pub mod syscall;
 
 pub use devices::Devices;
