@@ -1895,12 +1895,15 @@ impl Inner {
         let main = self.gs.main_fbp;
         // Sun shadows: the 3D draws before the game's post passes again,
         // into the shadow map (shadow.rs), before everything else.
-        if let (Some(_), Some(gb), false) = (
+        if let (Some(l), Some(gb), false) = (
             light.as_ref(),
             gpu_bind_shadow.as_ref(),
             shadow::debug("no-pass"),
         ) {
             let sh = self.shadow.as_ref().unwrap();
+            let caster_runs: Vec<Vec<(u32, u32)>> = (0..shadow::CASCADES)
+                .map(|k| sh.caster_runs(l, k))
+                .collect();
             let casts = |it: &Item| {
                 !shadow::debug("no-items")
                     && it.target == main
@@ -1978,11 +1981,13 @@ impl Inner {
                     sp.set_bind_group(0, &groups[it.bind], &[it.ubo * draw::UNIFORM_STRIDE as u32]);
                     sp.draw(g.first..g.first + g.count, c..c + 1);
                 }
-                if let (true, Some((_, buf, n))) = (native_terrain, sh.casters.as_ref()) {
+                if let (true, Some((_, buf, _))) = (native_terrain, sh.casters.as_ref()) {
                     sp.set_pipeline(&self.pipes.caster);
                     sp.set_bind_group(0, &groups[0], &[0]);
                     sp.set_vertex_buffer(0, buf.slice(..));
-                    sp.draw(0..*n, c..c + 1);
+                    for &(first, n) in &caster_runs[c as usize] {
+                        sp.draw(first..first + n, c..c + 1);
+                    }
                 }
                 if let (false, Some((buf, _))) = (cut_groups.is_empty(), sh.cutouts.as_ref()) {
                     sp.set_pipeline(&self.pipes.caster_cut);
