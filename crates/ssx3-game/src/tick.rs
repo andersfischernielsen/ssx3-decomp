@@ -83,6 +83,13 @@ pub const NOT_A_STEP: &[u32] = &[
     // ChaseCameraAlgorithm_ApplyJumpCurves (0x1635f8): `(16 - n) * 1/60`,
     // the air time of the takeoff countdown n, which counts 60 Hz frames.
     0x0049_c650,
+    // Rider_CheckRaceFinish (0x125228): `trunc(limit * 1/60) * 60`, the
+    // freestyle time limit (ticks, `game::main::gamemode`) rounded down to a
+    // multiple of 60 ticks. As a step, a 60 s event ended after 30 s at 120 Hz.
+    0x0049_b874,
+    // cOVStateHUD1P_Update (0x1ea930): the same rounding for the HUD clock
+    // (its 0x49d9b8, ticks left -> seconds, is a step).
+    0x0049_d9b4,
 ];
 
 /// 60 Hz frame counts in the game's *data* (not `.lit4`), rewritten to the
