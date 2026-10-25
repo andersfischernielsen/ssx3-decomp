@@ -100,6 +100,7 @@ needs `--features vu1-microcode` (which brings `emu-gs`):
 | `SSX3_NATIVE_MPEG=0` | libmpeg + the IPU model instead of the native movie decoder; `SSX3_MOVIE_HASH=1` prints a hash per picture |
 | `SSX3_DEPTH_SYNC=0` | Light queries read the latest depth instead of the frame two back |
 | `SSX3_PACKETLESS_SKIP=Name,...` | Keep these draw functions generated |
+| `SSX3_CLIP_DEPTH=0` | The GPU programs' GS depth written per pixel by the fragment shader (exact to the GS's depth rules) instead of from the vertices (clip distances, unclipped depth; ~1.6 ms a frame faster at 1080p, a few pixels differ where surfaces meet). Without the device features the renderer uses the per-pixel path anyway |
 
 ## Diagnostics
 

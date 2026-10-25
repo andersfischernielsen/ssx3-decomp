@@ -306,6 +306,17 @@ fn gs_depth(v: VOut) -> f32 {
 // The GS fragment stage with the GS depth.
 @fragment
 fn fs_gpu(v: VOut) -> FsOut {
+    return gpu_fragment(v);
+}
+
+// The same with the depth from the vertices (the clip-depth pipelines,
+// gpuvu/clip_depth.wgsl): the GPU keeps its early depth test.
+@fragment
+fn fs_gpu_nd(v: VOut) -> @location(0) vec4<f32> {
+    return gpu_fragment(v).color;
+}
+
+fn gpu_fragment(v: VOut) -> FsOut {
     if (!LIGHTING) {
         var o: FsOut;
         o.color = shade(v);

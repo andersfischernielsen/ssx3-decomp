@@ -352,6 +352,23 @@ const GPUVU_SOURCES: &[&str] = &[
 
 /// The GPU-vertex module's shadow hook when it draws for the screen
 /// (shadow.wgsl replaces it in the shadow pass).
+/// The GPU-vertex module with the clip-depth entry points
+/// (`gpuvu/clip_depth.wgsl`): the programs' entry points become functions
+/// (`vsb_*`) that new entry points of the same names wrap.
+fn clip_depth_source() -> String {
+    const ENTRY: &str = "@vertex\nfn vs_";
+    const ARGS: &str =
+        "(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut";
+    let body = GPUVU_SOURCES.join("\n") + "\n" + NO_SHADOW;
+    assert_eq!(body.matches(ENTRY).count(), 8, "gpuvu entry points");
+    "enable clip_distances;\n".to_string()
+        + &body
+            .replace(ENTRY, "fn vsb_")
+            .replace(ARGS, "(k: u32, inst: u32) -> VOut")
+        + "\n"
+        + include_str!("gpuvu/clip_depth.wgsl")
+}
+
 const NO_SHADOW: &str = "const SHADOW_PASS: bool = false;\nfn shadow_out(o: VOut, hc: vec4<f32>) -> VOut { return o; }\n";
 
 /// The shadow pass's depth format.
@@ -369,6 +386,8 @@ pub struct Pipelines {
     /// GPU-computed vertices (gpuvu.wgsl after draw.wgsl): bind group 1
     /// holds the calls' uniforms and inputs.
     gpu_module: wgpu::ShaderModule,
+    /// `gpu_module` takes the GS depth from the vertices (`clip_depth_source`).
+    clip_depth: bool,
     pub gpu_layout: wgpu::BindGroupLayout,
     gpu_pl: wgpu::PipelineLayout,
     /// (Keyed also by whether the renderer's lighting is on: `LIGHTING`.)
@@ -449,9 +468,20 @@ impl Pipelines {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
+        // The GS depth from the vertices where the device can clip by
+        // distance with unclipped depth (`SSX3_CLIP_DEPTH=0`: from the
+        // fragments, as before; exact to the GS's per-pixel depth rules).
+        let clip_depth = dev
+            .features()
+            .contains(wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::CLIP_DISTANCES)
+            && std::env::var("SSX3_CLIP_DEPTH").map_or(true, |v| v != "0");
         let gpu_module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssx3-gfx gpuvu.wgsl"),
-            source: wgpu::ShaderSource::Wgsl((GPUVU_SOURCES.join("\n") + "\n" + NO_SHADOW).into()),
+            source: wgpu::ShaderSource::Wgsl(if clip_depth {
+                clip_depth_source().into()
+            } else {
+                (GPUVU_SOURCES.join("\n") + "\n" + NO_SHADOW).into()
+            }),
         });
         let shadow_module = dev.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ssx3-gfx shadow.wgsl"),
@@ -631,6 +661,7 @@ impl Pipelines {
             pl,
             cache: HashMap::new(),
             gpu_module,
+            clip_depth,
             gpu_layout,
             gpu_pl,
             gpu_cache: HashMap::new(),
@@ -710,7 +741,7 @@ impl Pipelines {
         p: ssx3_render::gpu::Program,
         lit: bool,
     ) -> &wgpu::RenderPipeline {
-        let (module, pl) = (&self.gpu_module, &self.gpu_pl);
+        let (module, pl, clip_depth) = (&self.gpu_module, &self.gpu_pl, self.clip_depth);
         self.gpu_cache.entry((k, p, lit)).or_insert_with(|| {
             let entry = p.vs_entry();
             let blend = k.blend.map(|(s, d, op)| wgpu::BlendState {
@@ -732,6 +763,7 @@ impl Pipelines {
                 },
                 primitive: wgpu::PrimitiveState {
                     cull_mode: None,
+                    unclipped_depth: clip_depth,
                     ..Default::default()
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
@@ -744,7 +776,7 @@ impl Pipelines {
                 multisample: Default::default(),
                 fragment: Some(wgpu::FragmentState {
                     module,
-                    entry_point: Some("fs_gpu"),
+                    entry_point: Some(if clip_depth { "fs_gpu_nd" } else { "fs_gpu" }),
                     // Without the renderer's lighting its code is compiled
                     // out (`LIGHTING`, gpuvu.wgsl).
                     compilation_options: wgpu::PipelineCompilationOptions {
