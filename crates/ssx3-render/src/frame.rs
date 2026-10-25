@@ -944,6 +944,8 @@ pub struct Built {
     pub flip: Vec<u128>,
     /// Sun-shadow casters from the world data (`crate::world_casters`).
     pub casters: Option<std::sync::Arc<crate::world_casters::Casters>>,
+    /// The world painter's sun (`crate::world_casters::painter_sun`).
+    pub sun: Option<crate::world_casters::PainterSun>,
 }
 
 /// Inputs carried from frame to frame.
@@ -2019,6 +2021,7 @@ pub fn build_cached(
         ]),
         flip: flip_packet(m),
         casters: None,
+        sun: None,
     }
 }
 

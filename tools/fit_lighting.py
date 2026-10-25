@@ -5,6 +5,7 @@
     tools/fit_lighting.py REF NOSUB NORMALS SUNLIT
     tools/fit_lighting.py REF NOSUB FIT
     tools/fit_lighting.py --tone REF NOSUB      (NOSUB run with lightlog too)
+    tools/fit_lighting.py --exposure REF HDR    (sun scale and exposure)
 
 FIT (one run instead of NORMALS and SUNLIT): SSX3_SHADOWS=1
 SSX3_SHADOW_SHOW=fit SSX3_SHADOW_DEBUG=lightlog (n.x, n.y as 0..1, the lit
@@ -87,9 +88,60 @@ def tone(ref, nosub, sun_gain=0.6, sunlit_share=0.7):
     return g
 
 
+KNEE = 0.8
+
+
+def shoulder(y, k=KNEE):
+    """draw.wgsl `lit_linear`'s highlight shoulder on linear luminance."""
+    return np.where(y > k, k + (1 - k) * (1 - np.exp(-(y - k) / (1 - k))), y)
+
+
+def exposure(ref, hdr):
+    """The sun scale and exposure that make the lit terrain's brightness
+    match the reference (the game's baked look): HDR is a run with
+    SSX3_SHADOWS=1 SSX3_SHADOW_SHOW=hdr SSX3_BLOOM=off (red: log2 of the
+    terrain's linear luminance + 8 over 12, before the shoulder; blue: the
+    sun's share of its light; green 255: terrain the game's image shows,
+    everything else black). Fits the 10/50/90 % quantiles of the displayed
+    luminance and the per-pixel error; prints (sun scale, exposure)."""
+    ys, shares, refs = [], [], []
+    for f in sorted(os.listdir(hdr)):
+        if not f.endswith(".png") or not os.path.exists(os.path.join(ref, f)):
+            continue
+        h, r = load(hdr, f), load(ref, f)
+        m = (h[..., 1] > 250) & (h[..., 0] > 0)
+        if m.sum() < 2000:
+            continue
+        ys.append(2 ** (h[..., 0][m] / 255 * 12 - 8))
+        shares.append(h[..., 2][m] / 255)
+        refs.append((r @ [0.2126, 0.7152, 0.0722])[m])
+    if not ys:
+        sys.exit("no terrain")
+    y, s, lr = (np.concatenate(x) for x in (ys, shares, refs))
+    idx = np.random.default_rng(0).choice(len(y), min(len(y), 300000), replace=False)
+    y, s, lr = y[idx], s[idx], lr[idx]
+    qr = np.percentile(lr, [10, 50, 90])
+    best = None
+    for a in np.exp(np.linspace(np.log(0.25), np.log(12), 40)):
+        ya = y * ((1 - s) + s * a)
+        for e in np.exp(np.linspace(np.log(0.05), np.log(4), 80)):
+            pred = 255 * np.clip(shoulder(e * ya), 0, 1) ** (1 / 2.2)
+            err = np.abs(np.percentile(pred, [10, 50, 90]) - qr).mean() + 0.5 * np.median(np.abs(pred - lr))
+            if best is None or err < best[0]:
+                best = (err, a, e, np.percentile(pred, [10, 50, 90]), (pred >= 250).mean())
+    err, a, e, qp, clip = best
+    print(f"ref p10/50/90 {qr.round(1)} clipped {(lr >= 250).mean():.3f}")
+    print(f"fit p10/50/90 {qp.round(1)} clipped {clip:.3f} error {err:.1f}")
+    print(f"sun x{a:.3f} exposure {e:.3f}")
+    return a, e
+
+
 def main(argv):
     if argv and argv[0] == "--tone":
         tone(argv[1], argv[2])
+        return
+    if argv and argv[0] == "--exposure":
+        exposure(argv[1], argv[2])
         return
     if len(argv) < 3:
         sys.exit(__doc__)

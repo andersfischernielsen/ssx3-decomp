@@ -272,6 +272,60 @@ pub struct CasterCache {
     lights: Vec<WorldLight>,
 }
 
+/// The world painter's sun for view 0 (`tWPIGD_Sun`, the values
+/// `WorldPainter_GetSun*` return; it follows the zones): elevation and
+/// azimuth in degrees (the lens flare's sun; an elevation past 90 is past
+/// the zenith), colour, intensity. Night courses have none (all zero).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PainterSun {
+    pub elevation: f32,
+    pub azimuth: f32,
+    pub colour: [f32; 3],
+    pub intensity: f32,
+}
+
+impl PainterSun {
+    /// Towards the sun (world, z up), if it is above the horizon.
+    pub fn dir(&self) -> Option<[f32; 3]> {
+        let (mut el, mut az) = (self.elevation, self.azimuth);
+        if el > 90.0 {
+            el = 180.0 - el;
+            az += 180.0;
+        }
+        if !(el > 0.5 && el <= 90.0) || self.intensity <= 0.0 {
+            return None;
+        }
+        let (el, az) = (el.to_radians(), az.to_radians());
+        Some([el.cos() * az.cos(), el.cos() * az.sin(), el.sin()])
+    }
+}
+
+/// The painter views (`0x4fa370`, 0xf0 bytes each; the sun interface at
+/// +0x14) and the sun getters' fields (`tWPIGD_Sun_Get*` return `this` +
+/// 8, 0x10, ...; `this` adjusted by the vtable entry of slot 27).
+const PAINTER_VIEWS: u32 = 0x004f_a370;
+
+pub fn painter_sun(m: &dyn Mem) -> Option<PainterSun> {
+    let holder = word(m, PAINTER_VIEWS + 0x14);
+    if !ram(holder) {
+        return None;
+    }
+    let obj = word(m, holder);
+    if !ram(obj) || !ram(word(m, obj + 4)) {
+        return None;
+    }
+    let delta = word(m, word(m, obj + 4) + 0xd8) as u16 as i16 as i32;
+    let this = (obj as i32 + delta) as u32;
+    let f = |o: u32| f32::from_bits(word(m, this + o));
+    let s = PainterSun {
+        elevation: f(0x08),
+        azimuth: f(0x10),
+        colour: [f(0x18), f(0x20), f(0x28)],
+        intensity: f(0x30),
+    };
+    (s.elevation.is_finite() && s.azimuth.is_finite() && s.intensity.is_finite()).then_some(s)
+}
+
 fn word(m: &dyn Mem, a: u32) -> u32 {
     (m.qword(a & !15) >> ((a & 12) * 8)) as u32
 }

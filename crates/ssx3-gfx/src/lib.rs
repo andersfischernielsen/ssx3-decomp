@@ -149,6 +149,8 @@ pub struct Inner {
     frame_gm: u32,
     /// The world's shadow casters of the frame being drawn.
     world_casters: Option<std::sync::Arc<ssx3_render::world_casters::Casters>>,
+    /// The world painter's sun (`world_casters::painter_sun`).
+    painter_sun: Option<ssx3_render::world_casters::PainterSun>,
     /// Seconds since the renderer started (animated effects).
     t0: web_time::Instant,
     /// Batches of VIF phase 1 (the 3D scene) in this frame.
@@ -306,6 +308,7 @@ impl Renderer {
                 shadow: None,
                 key_light: [0.0, 0.6, 0.8],
                 world_casters: None,
+                painter_sun: None,
                 frame_gm: 0,
                 live_ambient: [110.0, 112.0, 120.0],
                 live_colour: [90.0, 85.0, 70.0],
@@ -928,6 +931,7 @@ impl Inner {
         let t_start = web_time::Instant::now();
         let mut b = self.take_build();
         self.world_casters = built.casters.clone();
+        self.painter_sun = built.sun;
         self.frame_gm = built.frame.gm;
         Build::run(&mut b, built, mem);
         self.put_build(b);
@@ -1046,9 +1050,24 @@ impl Inner {
         if shadow::debug("print") {
             eprintln!("shadow: flare sun {:?}", self.flare_sun);
         }
-        let key = match self.flare_sun {
-            Some(f) if shadow::debug("flare-sun") => f,
-            _ => self.key_light,
+        // The sun: the lit meshes' key light where it is one (well above
+        // the horizon); else the world painter's sun (the lens flare's:
+        // low, or none on overcast and night courses, whose key light is
+        // the snow's bounce from below). (direction, its colour's source:
+        // 0 the key light's, 1 the painter's, 2 none.)
+        let kl = {
+            let k = self.key_light;
+            let n = (k[0] * k[0] + k[1] * k[1] + k[2] * k[2]).sqrt().max(1e-6);
+            k.map(|x| x / n)
+        };
+        let painter = self.painter_sun.and_then(|p| p.dir().map(|d| (d, p)));
+        let (key, sun_source) = match self.flare_sun {
+            Some(f) if shadow::debug("flare-sun") => (f, 0),
+            _ if kl[2] >= 0.26 => (self.key_light, 0),
+            _ => match painter {
+                Some((d, _)) => (d, 1),
+                None => (self.key_light, 2),
+            },
         };
         let light = if self.opts.shadows {
             self.gs.cam.as_ref().and_then(|c| shadow::light(c, key))
@@ -1080,10 +1099,27 @@ impl Inner {
             self.live_ambient.map(|v| v / 128.0),
             self.live_colour.map(|v| v / 128.0),
         );
+        // (The painter's sun: its hue and intensity at the key light's
+        // strength.)
+        let sun_col: [f32; 3] = match (sun_source, painter) {
+            (0, _) => col,
+            (1, Some((_, p))) => {
+                let m = col.iter().fold(0f32, |a, &b| a.max(b));
+                p.colour.map(|c| c * p.intensity * m)
+            }
+            _ => [0.0; 3],
+        };
+        if shadow::debug("print") {
+            eprintln!(
+                "shadow: sun source {sun_source} key {kl:?} painter {:?}",
+                self.painter_sun
+            );
+        }
         let lt = shadow::Lighting {
-            sun: std::array::from_fn(|c| g.sun[c] * col[c]),
+            sun: std::array::from_fn(|c| g.sun[c] * sun_col[c]),
             sky: std::array::from_fn(|c| g.sky[c] * amb[c]),
             ground: std::array::from_fn(|c| g.ground[c] * amb[c]),
+            exposure: g.exposure,
         };
         sh.upload(&self.queue, light.as_ref(), shadow::show(), lt);
         // GPU-computed draws (ssx3_render::gpu): their uniforms, inputs and
@@ -1274,15 +1310,26 @@ impl Inner {
                 && b.gpu
                     .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier)
                 && (st.prim & (1 << 6) == 0 || terrain_blend == Some(0x2a));
-            // The bake is not drawn: the lighting is ours (its colour part
-            // still drew its tree shadows, blue shade on white).
-            // `SSX3_SHADOW_DEBUG=tint` keeps its colour (flag 32768: the
-            // artists' zone tints).
+            // The bake's light is not drawn (the lighting is ours), only its
+            // colour, blurred wide (flag 32768: the artists' zone and shade
+            // colours without the shapes of its shadows);
+            // `SSX3_SHADOW_DEBUG=no-tint` drops that too.
             let bake_tint = native_light && terrain_blend == Some(0x81);
+            // (The exposure fit's view: everything else drawn black, so it
+            // covers the terrain as in the game's image.)
+            let black = native_light
+                && shadow::show() == 9.0
+                && !lit_base
+                && st.target == self.gs.main_fbp
+                && b.tag.post.is_none()
+                && !b
+                    .gpu
+                    .is_some_and(|g| g.program == ssx3_render::gpu::Program::Bezier);
             if native_light
-                && ((bake_tint && (!shadow::debug("tint") || (4.0..7.0).contains(&shadow::show())))
-                    || ((4.0..7.0).contains(&shadow::show())
+                && ((bake_tint && (shadow::debug("no-tint") || shadow::fitting_view()))
+                    || (shadow::fitting_view()
                         && !lit_base
+                        && !black
                         && st.target == self.gs.main_fbp))
             {
                 continue;
@@ -1458,6 +1505,9 @@ impl Inner {
                 let ubo = (ubytes.len() as u64 / draw::UNIFORM_STRIDE) as u32;
                 if date {
                     p.u.flags |= 64 | (((st.ctx.test >> 15) & 1) as u32) << 7;
+                }
+                if black {
+                    p.u.flags |= 262144;
                 }
                 // Sun shadows: the 3D draws receive them.
                 if lit_base {
@@ -1873,7 +1923,7 @@ impl Inner {
                         ops: wgpu::Operations {
                             // (The lighting fit's views start from black:
                             // they draw the terrain only.)
-                            load: if first && fbp == main && (4.0..7.0).contains(&shadow::show()) {
+                            load: if first && fbp == main && shadow::fitting_view() {
                                 wgpu::LoadOp::Clear(wgpu::Color::BLACK)
                             } else {
                                 wgpu::LoadOp::Load

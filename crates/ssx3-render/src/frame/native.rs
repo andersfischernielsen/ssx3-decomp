@@ -725,6 +725,7 @@ pub(super) fn build(
         path3_post,
         flip: super::flip_packet(m),
         casters: None,
+        sun: None,
     }
 }
 

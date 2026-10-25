@@ -219,7 +219,7 @@ fn terrain_light(w: vec3<f32>, n_in: vec3<f32>) -> mat3x3<f32> {
         lit = sun_lit(w, n);
     }
     let sky = mix(sh.ground_col.rgb, sh.sky_col.rgb, n.z * 0.5 + 0.5);
-    let l = sky + sh.sun_col.rgb * (ndl * lit) + world_lights(w, n);
+    let l = (sky + sh.sun_col.rgb * (ndl * lit) + world_lights(w, n)) * sh.sun_col.w;
     return mat3x3<f32>(l, vec3<f32>(lit, ndl, 1.0), n);
 }
 
@@ -313,6 +313,7 @@ fn fs_gpu(v: VOut) -> FsOut {
         let c = cross(dx, dy);
         if (dot(c, c) > 1e-20) {
             pre_fog = terrain_light(v.wp.xyz, normalize(c))[0];
+            hdr = true;
         }
     } else if ((b.flags & 131072u) != 0u && v.wp.w > 0.5) {
         // Snow spray (flag 131072): its colour is the baked light where it
@@ -320,10 +321,12 @@ fn fs_gpu(v: VOut) -> FsOut {
         // glowing effects are additive: not flagged.)
         spray = true;
         pre_fog = terrain_light(v.wp.xyz, vec3<f32>(0.0, 0.0, 1.0))[0];
+        hdr = true;
     } else if (terrain) {
         // The terrain's lighting (flag 16384).
         t = terrain_light(v.wp.xyz, v.nrm.xyz);
         pre_fog = t[0];
+        hdr = true;
     } else if (receiver) {
         s = sun_factor(v.wp.xyz, dx, dy, v.nrm);
         pre_fog = shadow_tint(s);
@@ -331,6 +334,11 @@ fn fs_gpu(v: VOut) -> FsOut {
     var vs = v;
     if ((b.flags & 65536u) != 0u || spray) {
         vs.col = vec4<f32>(vec3<f32>(128.0), v.col.a);
+    }
+    // The baked layer's colour (flag 32768): blurred wide, its zone and
+    // shade colours without the shapes of its shadows.
+    if ((b.flags & 32768u) != 0u) {
+        blur_texels = 8.0;
     }
     var o: FsOut;
     o.color = shade(vs);
@@ -342,6 +350,14 @@ fn fs_gpu(v: VOut) -> FsOut {
         o.color = vec4<f32>(max(c - vec3<f32>(min(min(c.r, c.g), c.b)), vec3<f32>(0.0)), 1.0);
     }
     // Debug views.
+    if (sh.p.w == 9.0 && terrain) {
+        // (Blue: the sun's share of the light.)
+        let lum = vec3<f32>(0.2126, 0.7152, 0.0722);
+        let share = dot(sh.sun_col.rgb * (t[1].y * t[1].x), lum) / max(dot(t[0] / sh.sun_col.w, lum), 1e-6);
+        o.color = vec4<f32>(clamp((log2(max(hdr_y, 1e-4)) + 8.0) / 12.0, 0.0, 1.0), 1.0, clamp(share, 0.0, 1.0), 1.0);
+        o.depth = d;
+        return o;
+    }
     if (sh.p.w == 8.0) {
         // (The opaque layers of the lit draws only.)
         let opaque = b.src_mode == 0u && b.c_kind != 1u || b.src_mode == 1u && b.cs_a == 0.0 && b.cs_b == 1.0;

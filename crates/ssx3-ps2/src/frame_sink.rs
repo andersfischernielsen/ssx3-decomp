@@ -88,6 +88,7 @@ impl FrameBuilder {
         };
         if ssx3_render::world_casters::enabled() {
             b.casters = self.casters.update(mem);
+            b.sun = ssx3_render::world_casters::painter_sun(mem);
         }
         static CHECK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         if *CHECK.get_or_init(|| std::env::var_os("SSX3_CHAIN_CACHE_CHECK").is_some()) {

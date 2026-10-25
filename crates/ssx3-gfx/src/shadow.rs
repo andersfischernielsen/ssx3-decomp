@@ -72,41 +72,77 @@ pub struct Lighting {
     pub sun: [f32; 3],
     pub sky: [f32; 3],
     pub ground: [f32; 3],
+    /// The camera's exposure (the lighting is linear: irradiance, then a
+    /// filmic shoulder, `draw.wgsl` `lit_linear`).
+    pub exposure: f32,
 }
 
-/// Each course's tone: the gain (neutral: the colour is the game's live
+/// Each course's lighting. Peak 1 (2026-10-25): the physical model
+/// ([`sun_lit`]: the game's live light, one sun constant, an exposure per
+/// course fitted with `tools/fit_lighting.py --exposure` against the
+/// scenarios' reference shots). The others, until their peak is done: the
+/// earlier tone fit (the gain (neutral: the colour is the game's live
 /// light's, which follows the lighting triggers' zones; per-channel gains
 /// cast whole courses purple or green) from the game's live light to the
 /// terrain's that makes the mean terrain light equal the bake's
 /// (`tools/fit_lighting.py --tone`, the scenarios' reference shots,
 /// 2026-10-25), by track code; the sun gain is 0.6 everywhere (the spatial
-/// structure is the real sun's, the bake's pattern is art).
+/// structure is the real sun's, the bake's pattern is art)).
 const COURSES: &[(&str, Lighting)] = &[
-    ("ARA1", tone([1.241, 1.241, 1.241])), // Snow Jam
-    ("BRA2", tone([0.597, 0.597, 0.597])), // Metro City (night)
+    ("ARA1", sun_lit(0.169)),              // Snow Jam
+    ("BRA2", sun_lit(0.150)),              // Metro City (night)
     ("CRA3", tone([1.364, 1.364, 1.364])), // Ruthless Ridge
     ("DRA4", tone([0.707, 0.707, 0.707])), // Intimidator
     ("ERA5", tone([1.228, 1.228, 1.228])), // Gravitude
-    ("ASS1", tone([0.997, 0.997, 0.997])), // R&B
+    ("ASS1", sun_lit(0.133)),              // R&B
     ("DSS2", tone([0.893, 0.893, 0.893])), // Style Mile
     ("ESS3", tone([1.133, 1.133, 1.133])), // Kick Doubt
-    ("ABA1", tone([1.381, 1.381, 1.381])), // Crow's Nest
+    ("ABA1", sun_lit(0.179)),              // Crow's Nest
     ("CBA2", tone([1.769, 1.769, 1.769])), // Launch Time
     ("EBA3", tone([1.500, 1.500, 1.500])), // Much-2-Much
-    ("BHP1", tone([1.146, 1.146, 1.146])), // The Junction
+    ("BHP1", sun_lit(0.065)),              // The Junction
     ("CHP2", tone([1.389, 1.389, 1.389])), // Schizophrenia
     ("EHP3", tone([1.360, 1.360, 1.360])), // Perpendiculous
-    ("ABC1", tone([1.229, 1.229, 1.229])), // Happiness (and its jam)
+    ("ABC1", sun_lit(0.169)),              // Happiness (and its jam)
     ("DBC2", tone([0.827, 0.827, 0.827])), // Ruthless (and its jam)
     ("EBC3", tone([1.087, 1.087, 1.087])), // The Throne (and its jam)
 ];
 
-/// A course's lighting: its ambient gain, the common sun gain.
+/// A course's lighting: its ambient gain, the common sun gain. The
+/// ambient is a hemisphere: the sky above, the snow's bounce below (half
+/// the sky's: albedo about 0.8 times what a slope sees of it), so slopes
+/// and overcast courses keep their shape.
 const fn tone(ambient: [f32; 3]) -> Lighting {
     Lighting {
         sun: [0.6, 0.6, 0.6],
         sky: ambient,
-        ground: ambient,
+        ground: [
+            ambient[0] * BOUNCE,
+            ambient[1] * BOUNCE,
+            ambient[2] * BOUNCE,
+        ],
+        exposure: 1.0,
+    }
+}
+
+/// The snow's bounce light against the sky's (the ambient hemisphere's
+/// lower half).
+const BOUNCE: f32 = 0.5;
+
+/// The sun's irradiance against the lit meshes' key light (their SH
+/// lighting's linear terms understate a direct sun): one constant for all
+/// courses, fitted with the exposures (`tools/fit_lighting.py --joint`).
+const SUN_GAIN: f32 = 10.0;
+
+/// A course in the physical model: the game's live light as it is (sky =
+/// its ambient, the snow's bounce below, the sun = its key light ×
+/// [`SUN_GAIN`]), only the camera's exposure fitted to the course's look.
+const fn sun_lit(exposure: f32) -> Lighting {
+    Lighting {
+        sun: [SUN_GAIN, SUN_GAIN, SUN_GAIN],
+        sky: [1.0, 1.0, 1.0],
+        ground: [BOUNCE, BOUNCE, BOUNCE],
+        exposure,
     }
 }
 
@@ -245,6 +281,9 @@ fn show_code(v: &str) -> f32 {
         "stripcol" => 7.0,
         // (World position bands, 200 units, on every GPU draw.)
         "wp" => 8.0,
+        // (Fitting the exposure: the terrain's linear luminance before the
+        // shoulder, log2 + 8 over 12 in red; the terrain only.)
+        "hdr" => 9.0,
         _ => 0.0,
     }
 }
@@ -274,6 +313,12 @@ pub fn set_debug_knob(key: &str, value: &str) -> bool {
 
 /// `SSX3_SHADOW_SHOW`: the receivers show the shadow factor (1), their
 /// cascade (2) or N·L (3) instead of their colour (0: off); live.
+/// A fitting view (only the lit terrain is drawn, on black).
+pub fn fitting_view() -> bool {
+    let s = show();
+    (4.0..7.0).contains(&s) || s == 9.0
+}
+
 pub fn show() -> f32 {
     f32::from_bits(knobs().show.load(Ordering::Relaxed))
 }
@@ -309,6 +354,8 @@ pub struct Tuning {
     /// `SSX3_LAMPS=gain`: the world lights' strength on the terrain (the
     /// game's own formula gives the riders' light; 0: off).
     pub lamps: f32,
+    /// `SSX3_EXPOSURE=x`: scales the course's exposure (1: as fitted).
+    pub exposure: f32,
 }
 
 pub fn tuning() -> Tuning {
@@ -324,6 +371,7 @@ pub fn tuning() -> Tuning {
                 [v[0] as f32, v[1] as f32, v[2] as f32]
             }),
         lamps: env_f("SSX3_LAMPS").map_or(1.0, |v| v[0] as f32),
+        exposure: env_f("SSX3_EXPOSURE").map_or(1.0, |v| v[0] as f32),
     });
     // (The sun follows the debug knob.)
     t.sun = *knobs().sun.read().unwrap();
@@ -565,8 +613,14 @@ impl Shadow {
                 w.extend([l.origin[0], l.origin[1], l.origin[2], 0.0]);
                 let t = tuning();
                 w.extend([t.tint[0], t.tint[1], t.tint[2], 0.0]);
-                for c in [lt.sun, lt.sky, lt.ground] {
-                    w.extend([c[0], c[1], c[2], 0.0]);
+                for (i, c) in [lt.sun, lt.sky, lt.ground].iter().enumerate() {
+                    // (sun_col.w: the exposure.)
+                    let e = if i == 0 {
+                        lt.exposure * t.exposure
+                    } else {
+                        0.0
+                    };
+                    w.extend([c[0], c[1], c[2], e]);
                 }
                 // The world lights nearest the camera that can reach it
                 // (within their radius of a point 20000 away), rebased.
