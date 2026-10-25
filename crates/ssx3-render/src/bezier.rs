@@ -748,7 +748,13 @@ pub mod gpu {
     ) {
         let r = Raster::load(m);
         let nv = s.verts.len() as u32;
-        let mut data = Some(with_normals(s, &data));
+        // (Smooth normals only for the renderer's lighting: without it a
+        // zero third qword, the layout unchanged.)
+        let mut data = Some(if crate::world_casters::enabled() {
+            with_normals(s, &data)
+        } else {
+            without_normals(s, &data)
+        });
         let alpha_max = colour[3] as i32 as f32;
         let fan = m.ld(FAN_TAG_A);
         let mut call =
@@ -862,6 +868,16 @@ pub mod gpu {
                 data[2 * v + 1],
                 [n[0].to_bits(), n[1].to_bits(), n[2].to_bits(), 0],
             ]);
+        }
+        out
+    }
+
+    /// [`with_normals`]' layout with zero normals.
+    fn without_normals(s: &Strips, data: &[[u32; 4]]) -> Vec<[u32; 4]> {
+        let nv = s.verts.len().min(data.len() / 2);
+        let mut out = Vec::with_capacity(nv * DATA_STRIDE);
+        for v in 0..nv {
+            out.extend_from_slice(&[data[2 * v], data[2 * v + 1], [0; 4]]);
         }
         out
     }
