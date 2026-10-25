@@ -95,8 +95,9 @@ var<private> cascade: u32;
 // The cascade `sun_lit` last used (debug view), 4 = none.
 var<private> used_cascade: u32;
 
-// How much sun reaches world point `w` with normal `n` (3×3 PCF in the
-// first cascade that holds it): 1 outside them all.
+// How much sun reaches world point `w` with normal `n` (PCF over 3×3
+// texels in the first cascade that holds it: four filtered taps, each
+// blending 2×2, half a texel off the point): 1 outside them all.
 fn sun_lit(w: vec3<f32>, n: vec3<f32>) -> f32 {
     used_cascade = 4u;
     for (var c = 0u; c < 4u; c = c + 1u) {
@@ -108,13 +109,12 @@ fn sun_lit(w: vec3<f32>, n: vec3<f32>) -> f32 {
         }
         used_cascade = c;
         let at = (uv + vec2<f32>(f32(c & 1u), f32(c >> 1u))) * 0.5;
-        var s = 0.0;
-        for (var i = -1; i <= 1; i = i + 1) {
-            for (var j = -1; j <= 1; j = j + 1) {
-                s = s + textureSampleCompareLevel(smap, scmp, at + vec2<f32>(f32(i), f32(j)) * sh.p.x, lc.z);
-            }
-        }
-        return s / 9.0;
+        let h = 0.5 * sh.p.x;
+        let s = textureSampleCompareLevel(smap, scmp, at + vec2<f32>(-h, -h), lc.z)
+            + textureSampleCompareLevel(smap, scmp, at + vec2<f32>(h, -h), lc.z)
+            + textureSampleCompareLevel(smap, scmp, at + vec2<f32>(-h, h), lc.z)
+            + textureSampleCompareLevel(smap, scmp, at + vec2<f32>(h, h), lc.z);
+        return s * 0.25;
     }
     return 1.0;
 }
