@@ -394,7 +394,7 @@ fn gpu_fragment(v: VOut) -> FsOut {
     }
     if (sh.p.w == 8.0) {
         // (The opaque layers of the lit draws only.)
-        let opaque = b.src_mode == 0u && b.c_kind != 1u || b.src_mode == 1u && b.cs_a == 0.0 && b.cs_b == 1.0;
+        let opaque = (b.src_mode == 0u && b.c_kind != 1u) || (b.src_mode == 1u && b.cs_a == 0.0 && b.cs_b == 1.0);
         if (!(terrain || receiver) || !opaque || v.wp.w < 0.5) {
             discard;
         }
