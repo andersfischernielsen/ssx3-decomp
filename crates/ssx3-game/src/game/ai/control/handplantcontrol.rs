@@ -1460,6 +1460,16 @@ pub(crate) fn gp_4(c: &Cpu, off: i32) -> u32 {
     (c.g[GP][0] as u32).wrapping_add(off as u32)
 }
 
+/// On the ground the board turns towards the velocity by a share of its
+/// heading error every tick (0x13e6cc), stock once per 1/60 s. Keep the share
+/// left per 1/60 s at finer ticks; a share outside (0, 1) stays as it is.
+fn yaw_align_gain(hz: u32, gain: f32) -> f32 {
+    if hz == 60 || !(gain > 0.0 && gain < 1.0) {
+        return gain;
+    }
+    1.0 - (1.0 - gain).powf(60.0 / hz as f32)
+}
+
 /// `float RiderGroundState_ComputeFrictionAccel(RiderGroundState *gs,
 /// const float *p, float a, float b)` (0x13c878): the hand-plant ground
 /// friction model. Returns the friction acceleration and publishes the
@@ -4734,6 +4744,12 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                     c.c_lt_s(2, 3);
                     c.mul_s(1, 1, 24);
                     c.mul_s(7, 1, 25);
+                    // The yaw alignment's speed term, over the stock step (see
+                    // `yaw_align_gain`).
+                    let hz = crate::tick::rate(c);
+                    if hz != 60 {
+                        c.f[7] = (f32::from_bits(c.f[7]) * (hz as f32 / 60.0)).to_bits();
+                    }
                     let t = !c.fcc();
                     c.min_s(7, 7, 0);
                     if t {
@@ -4866,6 +4882,12 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                 c.mul_s(0, 7, 0);
                 c.mul_s(7, 0, 27);
                 break 'b_13e6cc;
+            }
+            // 0x13e6cc: f7 is the share of the board's heading error (f8)
+            // turned away this tick, a stock 60 Hz amount.
+            let hz = crate::tick::rate(c);
+            if hz != 60 {
+                c.f[7] = yaw_align_gain(hz, f32::from_bits(c.f[7])).to_bits();
             }
             'b_13e6e8: {
                 c.cycles += 7;
@@ -8160,6 +8182,22 @@ pub fn obj_ptr_array_merge_sort(c: &mut Cpu) {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    #[test]
+    fn yaw_align_gain_keeps_the_stock_share_per_sixtieth() {
+        for hz in [60, 120, 240] {
+            for gain in [0.05f32, 0.1, 0.5, 0.9] {
+                let mut error = 1.0f32;
+                for _ in 0..hz / 60 {
+                    error -= super::yaw_align_gain(hz, gain) * error;
+                }
+                assert!((error - (1.0 - gain)).abs() < 1e-6, "{hz} {gain}: {error}");
+            }
+            for gain in [0.0f32, 1.0, -0.5, 9.7] {
+                assert_eq!(super::yaw_align_gain(hz, gain).to_bits(), gain.to_bits());
+            }
+        }
+    }
+
     use super::*;
     use crate::abi;
     use crate::difftest::check;
@@ -9322,6 +9360,66 @@ pub(crate) mod tests {
         c.bus.write32(IFACE + 4, VT);
         c.bus.write16(VT + 8, 0);
         c.bus.write32(VT + 0xc, 0x7000_0000);
+    }
+
+    /// Exercise the actual ground update at both sides of the speed clamp.
+    /// The low coefficient keeps the random test geometry below the clamp;
+    /// the high coefficient saturates it. Both still reach the yaw gain.
+    #[test]
+    fn ground_yaw_runtime_gain_follows_the_rate() {
+        for (hz, seed, speed_coefficient, expected_gain) in [
+            (60, 0, 1e-30f32, 0.0019627037f32),
+            (120, 0, 1e-30f32, 0.00024539232f32),
+            (60, 1, 1.0f32, 0.1f32),
+            (120, 1, 1.0f32, 0.051316738f32),
+        ] {
+            let mut c = crate::difftest::fresh();
+            setup_2(&mut c, seed);
+            crate::tick::set_for_test(&mut c, hz);
+            for (a, bits) in crate::tick::per_tick_values(hz) {
+                c.bus.write32(a, bits);
+            }
+            c.bus.write32(GAME_GP - 0x7064, crate::tick::step_bits(hz));
+            c.bus.write32(GS + 4, 600.0f32.to_bits());
+            c.bus.write32(GS + 8, 0.0f32.to_bits());
+            c.bus.write32(GAME_GP - 0x7024, speed_coefficient.to_bits());
+            let material = GROUND + (seed % 4) * 0xb0;
+            for (off, value) in [
+                (0x14, 600.0f32),
+                (0x18, 0.0),
+                (0x28, 0.0),
+                (0x2c, 0.1),
+                (0x34, 1.0),
+            ] {
+                c.bus.write32(material + off, value.to_bits());
+            }
+            c.bus.write32(RIDER_3 + 0x300, 1.0f32.to_bits());
+            c.bus.write32(RIDER_3 + 0x1f0, 0.0f32.to_bits());
+            c.bus.write32(RIDER_3 + 0x2dc, 0.0f32.to_bits());
+            c.bus.write32(MODEL_2 + 0x140, 0.0f32.to_bits());
+            for reg in 1..32 {
+                c.bus.plat.set_vf(reg, [0; 4]);
+            }
+            c.bus.plat.set_acc([0; 4]);
+            for (off, v) in [
+                (0x1b0, [1.0f32, 0.0, 0.0, 0.0]),
+                (0x1e0, [0.0, 1.0, 0.0, 0.0]),
+                (0x370, [1.0, 0.0, 0.0, 0.0]),
+                (0x3a0, [0.0, 1.0, 0.0, 0.0]),
+                (0x3d0, [100.0, 1.0, 0.0, 0.0]),
+            ] {
+                for (i, value) in v.iter().enumerate() {
+                    c.bus.write32(RIDER_3 + off + 4 * i as u32, value.to_bits());
+                }
+            }
+            rider_ground_state_update(&mut c);
+            assert_eq!(c.pc, crate::difftest::RA, "{hz} Hz, seed {seed}");
+            let actual = f32::from_bits(c.f[7]);
+            assert!(
+                (actual - expected_gain).abs() < 1e-6,
+                "{hz} Hz, seed {seed}: yaw gain {actual} != {expected_gain}"
+            );
+        }
     }
 
     #[test]
