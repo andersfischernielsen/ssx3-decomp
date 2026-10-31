@@ -123,6 +123,9 @@ pub enum PerTick {
 /// executable), so the rewrite changes that site only; hand-written ports
 /// load them from memory as well. Nothing is written at 60.
 pub const PER_TICK: &[(u32, u32, PerTick)] = &[
+    // RiderGroundState_Update (0x13d818): low-speed lean braking keeps
+    // 0.9 of the rider-relative velocity per update on flat ground.
+    (0x0049_c0a8, 0x3f66_6666, PerTick::Decay),
     // Rider_HandleBoostInput (0x114130): the boost meter (rider +0x2f8)
     // drains 0.0015068 per tick while boost is held.
     (0x0049_b4fc, 0x3ac5_7fcc, PerTick::Step),

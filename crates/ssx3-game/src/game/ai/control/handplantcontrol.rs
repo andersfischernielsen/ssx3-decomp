@@ -9920,4 +9920,62 @@ pub(crate) mod tests {
         };
         check_events(ee::s01::f_0013f8f8__generated, obj_ptr_array_merge_sort, 300, &setup);
     }
+
+    #[test]
+    fn grounded_lean_brake_follows_the_rate() {
+        use crate::tick;
+        // Freeze the other forces with zero elapsed dt and use a flat
+        // ground packet. The actual ground update still applies its brake.
+        let run = |hz: u32, lean: f32, speed: f32, normal_z: f32| {
+            let mut velocity = speed;
+            for _ in 0..hz / 60 {
+                let mut c = crate::difftest::fresh();
+                setup_2(&mut c, 0);
+                tick::set_for_test(&mut c, hz);
+                for (a, bits) in tick::per_tick_values(hz) {
+                    c.bus.write32(a, bits);
+                }
+                c.bus.write32(RIDER_3 + 0x300, 0); // isolate non-dt brake
+                c.bus.write32(RIDER_3 + 0x2e4, 10000.0f32.to_bits());
+                c.bus.write32(RIDER_3 + 0x214, lean.to_bits());
+                for (off, values) in [
+                    (0x1e0, [velocity, 0.0, 0.0, 0.0]),
+                    (0x370, [0.0, 0.0, normal_z, 0.0]),
+                    (0x3d0, [0.0; 4]),
+                ] {
+                    for (i, value) in values.into_iter().enumerate() {
+                        c.bus.write32(RIDER_3 + off + 4 * i as u32, value.to_bits());
+                    }
+                }
+                c.g[A0][0] = GS as u64;
+                rider_ground_state_update(&mut c);
+                assert_eq!(c.pc, crate::difftest::RA);
+                velocity = f32::from_bits(c.bus.read32(RIDER_3 + 0x1e0));
+            }
+            velocity
+        };
+        for (lean, speed, normal_z) in [
+            (0.8, 400.0, 1.0),
+            (-0.8, 400.0, 1.0),
+            (0.0, 400.0, 1.0),
+            (0.8, 600.0, 1.0),
+            (0.8, 400.0, 0.5),
+            (0.8, 1.0, 1.0),
+        ] {
+            let stock = run(60, lean, speed, normal_z);
+            if lean.abs() > 0.5 && speed == 400.0 && normal_z == 1.0 {
+                assert!(
+                    (stock - 360.0).abs() < 0.001,
+                    "brake branch not reached: {stock}"
+                );
+            }
+            if speed == 1.0 {
+                assert_eq!(stock, 0.0, "near-zero brake clamp");
+            }
+            for hz in [120, 240] {
+                let value = run(hz, lean, speed, normal_z);
+                assert!((value - stock).abs() < 0.001, "{hz} Hz: {value} vs {stock}");
+            }
+        }
+    }
 }
