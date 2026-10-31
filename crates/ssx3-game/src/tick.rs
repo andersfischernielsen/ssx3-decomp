@@ -75,6 +75,9 @@ pub const NOT_A_STEP: &[u32] = &[
     0x0049_b4a0,
     // AirPredictor_Simulate (0x113200): the trajectory preview's step.
     0x0049_b480,
+    // AirPredictor_Simulate (0x113200): on contact, takes `hit fraction *
+    // steps` of that same fixed step back off the predicted air time.
+    0x0049_b48c,
     // RiderWipeoutSub_HandleInput (0x12cb68): the recover meter (+0x70)
     // gains `strength * 1/60` per *press* (the input's 0x2000 bit is set on
     // the tick a press happens), not per tick; its fall-back is per tick
@@ -1190,5 +1193,20 @@ mod tests {
         let pool = collect_pool(&mut c);
         assert!(pool.contains(&0x0049_b118));
         assert!(!pool.contains(&0x0049_db60));
+    }
+
+    /// `AirPredictor_Simulate` (0x113200) forecasts a jump in fixed 1/60
+    /// steps and, on contact, takes `hit fraction · steps · 1/60` back off the
+    /// predicted air time: both entries stay 1/60 at any rate.
+    #[test]
+    fn air_predictor_entries_are_not_the_tick_step() {
+        let mut c = ssx3_ps2::new_cpu();
+        for e in [0x0049_b480, 0x0049_b48c, 0x0049_b118] {
+            c.bus.write32(e, STEP_60);
+        }
+        let pool = collect_pool(&mut c);
+        assert!(pool.contains(&0x0049_b118));
+        assert!(!pool.contains(&0x0049_b480), "forecast step");
+        assert!(!pool.contains(&0x0049_b48c), "contact backtrack");
     }
 }
