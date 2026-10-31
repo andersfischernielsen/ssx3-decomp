@@ -126,6 +126,9 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // RiderGroundState_Update (0x13d818): low-speed lean braking keeps
     // 0.9 of the rider-relative velocity per update on flat ground.
     (0x0049_c0a8, 0x3f66_6666, PerTick::Decay),
+    // RiderNaturalAirSub_Enter (0x12f620): the spin/flip charge return
+    // steps, consumed once per update by Rider_UpdateSlewedParams.
+    (0x0049_b9e8, 0x3d08_8889, PerTick::Step),
     // Rider_HandleBoostInput (0x114130): the boost meter (rider +0x2f8)
     // drains 0.0015068 per tick while boost is held.
     (0x0049_b4fc, 0x3ac5_7fcc, PerTick::Step),
@@ -1151,5 +1154,42 @@ mod tests {
         assert_eq!(c.bus.read32(0x004a_17c0), 600);
         patch_frame_counts(&mut c, 240);
         assert_eq!(c.bus.read32(0x004a_17c0), 1200);
+    }
+
+    #[test]
+    fn natural_air_charge_decay_follows_the_rate() {
+        use crate::difftest::{fresh, DATA, GAME_GP, RA};
+        use ssx3_ee_rt::cpu::reg::{A0, GP};
+        for initial in [-0.8f32, -0.01, 0.01, 0.8] {
+            let mut expected = None;
+            for hz in [60, 120, 240] {
+                let mut c = fresh();
+                set_for_test(&mut c, hz);
+                c.g[GP][0] = GAME_GP as u64;
+                let sub = DATA;
+                let rider = DATA + 0x1000;
+                c.bus.write32(sub + 0x14, rider);
+                c.bus.write32(0x0049_b9e8, 0x3d08_8889);
+                patch_per_tick(&mut c, hz);
+                c.g[A0][0] = sub as u64;
+                // Zero launch axes take the real entry's no-atan path.
+                ssx3_ee::s00::f_0012f620(&mut c);
+                assert_eq!(c.pc, RA);
+                for offset in [0x2a4, 0x2b0] {
+                    let param = rider + offset;
+                    c.bus.write32(param, initial.to_bits());
+                    for _ in 0..hz / 60 {
+                        crate::game::ai::rider::slew(&mut c, param);
+                        c.bus.write32(param, c.f[1]);
+                    }
+                    let value = f32::from_bits(c.bus.read32(param));
+                    let want = *expected.get_or_insert(value);
+                    assert!(
+                        (value - want).abs() < 2e-7,
+                        "{hz} Hz {offset:x}: {value} vs {want}"
+                    );
+                }
+            }
+        }
     }
 }
