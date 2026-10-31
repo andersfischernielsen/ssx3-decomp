@@ -677,6 +677,15 @@ pub fn frame60_due(c: &mut Cpu, key: u32, frame: u32) -> bool {
     })
 }
 
+/// Whether update `count` (0 first) of a timeline that counts its own updates
+/// takes the next 60 Hz frame: every update at 60, one in `rate / 60` above.
+/// Unlike [`frame60_due`] it keeps no host-side state, so a timeline restored
+/// from a snapshot resumes on its saved phase.
+pub fn frame60_by_count(c: &mut Cpu, count: u32) -> bool {
+    let r = rate(c);
+    r == 60 || ((count as u64 * 60) % r as u64) < 60
+}
+
 /// Run `body` (one tick of an update) so that the integer countdowns at
 /// `addrs`, which the original takes down by 1 per tick and which count 60 Hz
 /// frames (a wait in frames, a delay before a skip is allowed), go down once
@@ -1109,6 +1118,22 @@ mod tests {
         assert!(pool.contains(&0x0049_b118));
         for &e in NOT_A_STEP {
             assert!(!pool.contains(&e), "{e:#x}");
+        }
+    }
+
+    /// 60 frames per second at any rate, starting on the first update.
+    #[test]
+    fn frame60_by_count_is_60_per_second() {
+        let mut c = ssx3_ps2::new_cpu();
+        set_for_test(&mut c, 60);
+        for n in 0..60 {
+            assert!(frame60_by_count(&mut c, n), "60 Hz update {n}");
+        }
+        for hz in [120u32, 144, 240] {
+            set_for_test(&mut c, hz);
+            assert!(frame60_by_count(&mut c, 0), "{hz} Hz: first update");
+            let due = (0..hz).filter(|&n| frame60_by_count(&mut c, n)).count();
+            assert_eq!(due, 60, "{hz} Hz");
         }
     }
 
