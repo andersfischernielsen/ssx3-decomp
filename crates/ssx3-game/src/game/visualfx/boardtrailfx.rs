@@ -979,9 +979,10 @@ pub(crate) fn sub_store(c: &mut Cpu, a: u32, b: u32, out: u32, store: u32) {
 
 /// `void RiderBase_UpdatePowerUpTrail(RiderBase* self)` (0x2eadd0): while the
 /// rider is fast (or the debug override is set) keep a four-point trail
-/// cross-section around the board: the two 12-unit side edges and four ring
-/// slots (70 units forward/back ± 18 units sideways) rebuilt from the board
-/// bone's frame each frame; otherwise clear the trail.
+/// cross-section around the board: two current 12-unit side edges and three
+/// history slots of four vertices (70 units forward/back ± 18 sideways).
+/// Keep the head and glow current each tick; sample history at 60 Hz.
+/// Otherwise clear the trail.
 pub fn rider_base_update_power_up_trail(c: &mut Cpu) {
     guest(c, |c| {
         c.cycles += 10;
@@ -1045,7 +1046,12 @@ pub fn rider_base_update_power_up_trail(c: &mut Cpu) {
                 c.sw(p(self_at, power_trail::COUNT), 0);
                 break 'out;
             }
-            // Advance the ring and rebuild the cross-section.
+            // Each trail starts immediately and samples history at 60 Hz.
+            // COUNT returning to zero restarts its clock after a reset/inactive tick.
+            let history_key = p(self_at, power_trail::COUNT);
+            let count = c.bus.read32(history_key);
+            let history_due = crate::tick::frame60_due(c, history_key, count);
+            // Rebuild the current cross-section every tick.
             c.cycles += 4;
             c.g[V1][0] = c.lw(p(self_at, power_trail::CURSOR));
             c.g[V0][0] = 3;
@@ -1063,9 +1069,14 @@ pub fn rider_base_update_power_up_trail(c: &mut Cpu) {
                 c.g[A1][0] = c.g[A0][0];
             }
             fconst(c, 2, 0x4190_0000); // 18
-            c.sw(p(self_at, power_trail::COUNT), c.g[A1][0]);
+            if history_due {
+                c.sw(p(self_at, power_trail::COUNT), c.g[A1][0]);
+            }
             c.g[A3][0] = c.hi[0];
-            c.sw(p(self_at, power_trail::CURSOR), c.g[A3][0]);
+            if history_due {
+                c.sw(p(self_at, power_trail::CURSOR), c.g[A3][0]);
+                crate::tick::frame60_ran(c, history_key, r32(c, A1));
+            }
             // node = skeleton->nodes[bone]
             c.g[V0][0] = c.lw(p(r32(c, A2), pt_rider::SKELETON));
             c.g[V1][0] = c.lw(p(r32(c, A2), pt_rider::BONE));
@@ -1108,6 +1119,9 @@ pub fn rider_base_update_power_up_trail(c: &mut Cpu) {
                 p(self_at, power_trail::EDGE1),
             );
             c.sq(2, p(sp0, 0x40));
+            if !history_due {
+                break 'out;
+            }
             // slot v0 = pos + fwd * 70 - side * 18
             scale_store(c, 0, p(sp0, 0x20), p(sp0, 0x70), p(sp0, 0x60));
             add_store(c, sp0, p(sp0, 0x60), p(sp0, 0x70), p(sp0, 0x50));
@@ -5352,6 +5366,71 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(s);
             },
         );
+    }
+
+    #[test]
+    fn rider_base_power_up_trail_history_follows_the_rate() {
+        for hz in [60, 120, 240] {
+            let mut c = crate::difftest::fresh();
+            machine(&mut c, 0, 0x2ead, 0);
+            crate::tick::set_for_test(&mut c, hz);
+            let (this, rider, model, skel, nodes) = (
+                DATA,
+                DATA + 0x2000,
+                DATA + 0x4000,
+                DATA + 0x4400,
+                DATA + 0x6000,
+            );
+            c.bus.write32(this, rider);
+            c.bus.write32(rider + pt_rider::SPEED, f(5.0));
+            c.bus.write32(rider + pt_rider::MODEL, model);
+            c.bus.write32(rider + pt_rider::SKELETON, skel);
+            c.bus.write32(skel + pt_rider::NODES, nodes);
+            c.bus.write32(model + 0xde0, 1);
+            c.bus.write32(nodes, f(1.0));
+            c.bus.write32(nodes + 0x28, f(1.0));
+            // Reset between two active stretches: the next sample is immediate.
+            for stretch in 0..2 {
+                c.g[A0][0] = sx(this);
+                rider_base_reset_power_up_trail(&mut c);
+                let mut previous = vec![0; 48];
+                let mut samples = 0;
+                for t in 0..(hz / 10) {
+                    // The full rider update resets its separate glow queue each
+                    // tick. Without that step repeated AddPoint calls overflow
+                    // its storage into the rider's main-state field.
+                    c.g[A0][0] = sx(model + 0xd30);
+                    crate::game::render::font::fx_trail_reset(&mut c);
+                    let x = t as f32 + 100.0;
+                    c.bus.write32(nodes + 0x30, f(x));
+                    c.g[A0][0] = sx(this);
+                    c.g[RA][0] = RET as u64;
+                    rider_base_update_power_up_trail(&mut c);
+                    assert_eq!(c.pc, RET);
+                    assert_eq!(c.bus.read32(model + 0xd30 + 0xc), 1, "glow each tick");
+                    assert_eq!(c.bus.read32(model + 0xde0), 1, "main state preserved");
+                    let due = t % (hz / 60) == 0;
+                    samples += u32::from(due);
+                    assert_eq!(
+                        c.bus.read32(this + power_trail::COUNT),
+                        samples.min(3),
+                        "{hz} Hz, stretch {stretch}, tick {t}"
+                    );
+                    assert_eq!(c.bus.read32(this + power_trail::CURSOR), (samples * 2) % 3);
+                    // The current head moves even when the history is held.
+                    assert_eq!(c.bus.read32(this + power_trail::EDGE0), f(x));
+                    assert_eq!(c.bus.read32(this + power_trail::EDGE1), f(x));
+                    let history: Vec<_> = (0..48)
+                        .map(|i| c.bus.read32(this + power_trail::SLOTS + 4 * i))
+                        .collect();
+                    if !due {
+                        assert_eq!(history, previous, "{hz} Hz, tick {t}");
+                    }
+                    previous = history;
+                }
+                assert_eq!(samples, 6, "{hz} Hz: samples in 1/10 s");
+            }
+        }
     }
 
     #[test]
