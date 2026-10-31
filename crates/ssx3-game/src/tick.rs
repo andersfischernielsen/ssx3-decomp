@@ -90,6 +90,10 @@ pub const NOT_A_STEP: &[u32] = &[
     // cOVStateHUD1P_Update (0x1ea930): the same rounding for the HUD clock
     // (its 0x49d9b8, ticks left -> seconds, is a step).
     0x0049_d9b4,
+    // cOVStateHUD1P_Render (0x1ec3f8): `(count % 60) * 1/60`, the start
+    // countdown digit's phase; the countdown (RaceState +0x1c) counts 60 Hz
+    // frames (`race_state_countdown_update`).
+    0x0049_db60,
 ];
 
 /// 60 Hz frame counts in the game's *data* (not `.lit4`), rewritten to the
@@ -1148,5 +1152,18 @@ mod tests {
         assert_eq!(c.bus.read32(0x004a_17c0), 600);
         patch_frame_counts(&mut c, 240);
         assert_eq!(c.bus.read32(0x004a_17c0), 1200);
+    }
+
+    /// The start countdown counts 60 Hz frames at any rate, so the HUD's
+    /// `(count % 60) * 1/60` digit phase keeps its 1/60.
+    #[test]
+    fn countdown_digit_phase_is_not_the_tick_step() {
+        let mut c = ssx3_ps2::new_cpu();
+        for e in [0x0049_db60, 0x0049_b118] {
+            c.bus.write32(e, STEP_60);
+        }
+        let pool = collect_pool(&mut c);
+        assert!(pool.contains(&0x0049_b118));
+        assert!(!pool.contains(&0x0049_db60));
     }
 }
