@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -290,6 +291,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0036_6fe8, tex_man_ctor, "TexMan_ctor"),
     (0x0036_7078, texman_reset_vram, "TexMan_ResetVram"),
     (0x0036_70e0, tex_man_init_table, "TexMan_InitTable"),
+    (
+        0x0035_fc20,
+        uv_scroll_modifier_get_matrix,
+        "UVScrollModifier_GetMatrix",
+    ),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -5028,6 +5034,159 @@ pub fn defer_man_emit_default_state(c: &mut Cpu) {
     }
 }
 
+pub(crate) mod uv_scroll {
+
+    /// Rotation angle (radians); 0 means no rotation.
+    pub const ANGLE: u32 = 0x10;
+
+    /// Rotation axis x, y, z.
+    pub const AXIS_X: u32 = 0x20;
+
+    pub const AXIS_Y: u32 = 0x24;
+
+    pub const AXIS_Z: u32 = 0x28;
+
+    /// Translation (u, v), written into the matrix's last row.
+    pub const TRANS_U: u32 = 0x30;
+
+    pub const TRANS_V: u32 = 0x34;
+}
+
+/// The identity matrix in `.rodata` (0x4ff1a0) copied when there is no
+/// rotation.
+pub(crate) const IDENTITY_MATRIX: u32 = 0x004f_f1a0;
+
+/// `Math_SinCos(float angle /* f12 */, float* sin, float* cos)`.
+pub(crate) const MATH_SIN_COS: Callee = Callee {
+    addr: 0x0031_be50,
+    f: ee::s10::f_0031be50,
+};
+
+/// `float* UVScrollModifier_GetMatrix(UVScrollModifier* self, float m[4][4])`
+/// (0x35fc20), hot during races (rail/surface UV animation): builds the texture
+/// matrix of a scrolling UV modifier. With a non-zero angle, `m` is the
+/// rotation by `angle` about the axis (the Rodrigues form
+/// `t*a*a^T + c*I + s*[a]x` with `t = 1 - c`; rows 0..2, column 3 zero,
+/// `m[3][3] = 1`); with angle 0 it is the identity (a VU0 quadword copy).
+/// Then `m[3][0] = u`, `m[3][1] = v` (the UV scroll offset). Returns `m`.
+pub fn uv_scroll_modifier_get_matrix(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use crate::ps2f::FpuF32;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save_fpr(c, 20, 0x40);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        let this = Addr(r32(c, S1));
+        let zero = FpuF32(0);
+        c.f[20] = zero.0;
+        let angle = this.off(uv_scroll::ANGLE).read_fpu(c);
+        c.f[12] = angle.0;
+        let no_rotation = angle.eq_s(zero);
+        crate::abi::set_fcc(c, no_rotation);
+        c.g[S0][0] = c.g[A1][0];
+        let m = Addr(r32(c, S0));
+
+        if no_rotation {
+            c.cycles += 10;
+            c.g[V0][0] = sx(IDENTITY_MATRIX);
+            for row in 0..4u32 {
+                c.lqc2(1 + row as usize, IDENTITY_MATRIX + row * 0x10);
+            }
+            for row in 0..4u32 {
+                c.sqc2(1 + row as usize, m.0.wrapping_add(row * 0x10));
+            }
+        } else {
+            c.cycles += 60;
+            // Math_SinCos(angle, &sin /* sp+0 */, &cos /* sp+4 */).
+            let s = sp(c);
+            c.g[A0][0] = c.g[SP][0];
+            c.g[A1][0] = c.g[SP][0] | 0x4;
+            MATH_SIN_COS.call(c, 0x0035_fc5c)?;
+            let ax_at = this.off(uv_scroll::AXIS_X);
+            let ay_at = this.off(uv_scroll::AXIS_Y);
+            let az_at = this.off(uv_scroll::AXIS_Z);
+
+            let cos = Addr(s.wrapping_add(4)).read_fpu(c);
+            c.g[AT][0] = 0x3f80_0000;
+            let one = FpuF32(0x3f80_0000);
+            let ax = ax_at.read_fpu(c);
+            let t = one - cos;
+            let sin = Addr(s).read_fpu(c);
+            let ay = ay_at.read_fpu(c);
+            let az = az_at.read_fpu(c);
+            let tx = t * ax;
+            let sy = sin * ay;
+            let sz = sin * az;
+            let m00 = tx * ax + cos;
+            let sx_ = sin * ax;
+            let ty = t * ay;
+            let tz = t * az;
+            m.write_fpu(c, m00);
+            // The axis is re-read before each use (m may alias self).
+            let m10 = tx * ay_at.read_fpu(c) + sz;
+            m.off(0x10).write_fpu(c, m10);
+            let az1 = az_at.read_fpu(c);
+            m.off(0x30).write_fpu(c, zero);
+            let m20 = tx * az1 - sy;
+            m.off(0x20).write_fpu(c, m20);
+            let m01 = ty * ax_at.read_fpu(c) - sz;
+            m.off(0x04).write_fpu(c, m01);
+            let m11 = ty * ay_at.read_fpu(c) + cos;
+            m.off(0x14).write_fpu(c, m11);
+            let az2 = az_at.read_fpu(c);
+            m.off(0x34).write_fpu(c, zero);
+            let m21 = ty * az2 + sx_;
+            m.off(0x24).write_fpu(c, m21);
+            let m02 = tz * ax_at.read_fpu(c) + sy;
+            m.off(0x08).write_fpu(c, m02);
+            let m12 = tz * ay_at.read_fpu(c) - sx_;
+            m.off(0x18).write_fpu(c, m12);
+            let az3 = az_at.read_fpu(c);
+            m.off(0x2c).write_fpu(c, zero);
+            let tz_az = tz * az3;
+            m.off(0x3c).write_fpu(c, one);
+            m.off(0x38).write_fpu(c, zero);
+            m.off(0x0c).write_fpu(c, zero);
+            let m22 = tz_az + cos;
+            m.off(0x1c).write_fpu(c, zero);
+            m.off(0x28).write_fpu(c, m22);
+
+            // FPU registers as the original leaves them.
+            c.f[0] = az3.0;
+            c.f[1] = m12.0;
+            c.f[2] = m20.0;
+            c.f[3] = m21.0;
+            c.f[4] = m22.0;
+            c.f[5] = sx_.0;
+            c.f[6] = az.0;
+            c.f[7] = cos.0;
+            c.f[8] = sz.0;
+            c.f[9] = sy.0;
+            c.f[10] = one.0;
+        }
+
+        // Translation into the last row, then return m.
+        c.cycles += 11;
+        let u = this.off(uv_scroll::TRANS_U).read_fpu(c);
+        c.f[1] = u.0;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x10);
+        m.off(0x30).write_fpu(c, u);
+        frame.restore_fpr(c, 20, 0x40);
+        let v = this.off(uv_scroll::TRANS_V).read_fpu(c);
+        c.f[0] = v.0;
+        frame.restore(c, S1, 0x20);
+        m.off(0x34).write_fpu(c, v);
+        frame.restore(c, S0, 0x30);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6896,5 +7055,59 @@ pub(crate) mod tests {
                 "{hz} Hz: average {v} vs {base} at 60"
             );
         }
+    }
+    use super::*;
+
+    /// UVScrollModifier_GetMatrix: rotation (angle != 0, through the real
+    /// Math_SinCos) and identity (angle == 0, also -0) paths, with edge-case
+    /// axis and translation values, and an `m` that overlaps `self` for some
+    /// seeds (the original re-reads the axis between stores).
+    #[test]
+    fn uv_scroll_modifier_get_matrix_matches() {
+        use crate::difftest::{check_paths, fill, scramble, Rng, DATA, GAME_GP};
+        const MATRIX: u32 = DATA + 0x100;
+        check_paths(
+            ee::s12::f_0035fc20__generated,
+            uv_scroll_modifier_get_matrix,
+            300,
+            &[12 + 10 + 11],
+            &|c, seed| {
+                let mut r = Rng(0x35fc_2000 ^ (seed as u64).wrapping_mul(0x9e37_79b9));
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                // Math_SinCos's .lit4 constants and the identity matrix.
+                fill(c, &mut r, GAME_GP - 0x2ec0, 8);
+                for i in 0..16u32 {
+                    let one = if i % 5 == 0 { 0x3f80_0000 } else { 0 };
+                    c.bus.write32(IDENTITY_MATRIX + i * 4, one);
+                }
+                fill(c, &mut r, DATA, 0x20);
+                let angle = match seed % 4 {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    _ => r.f32(6.3),
+                };
+                c.bus.write32(DATA + uv_scroll::ANGLE, angle);
+                for off in [
+                    uv_scroll::AXIS_X,
+                    uv_scroll::AXIS_Y,
+                    uv_scroll::AXIS_Z,
+                    uv_scroll::TRANS_U,
+                    uv_scroll::TRANS_V,
+                ] {
+                    let v = if seed % 3 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(2.0)
+                    };
+                    c.bus.write32(DATA + off, v);
+                }
+                fill(c, &mut r, MATRIX, 16);
+                c.g[A0][0] = sx(DATA);
+                // Some seeds: m overlaps self's axis (aliasing order).
+                c.g[A1][0] = sx(if seed % 7 == 5 { DATA + 0x10 } else { MATRIX });
+                c.pc = 0x0035_fc20;
+            },
+        );
     }
 }
