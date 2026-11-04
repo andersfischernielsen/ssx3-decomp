@@ -5356,6 +5356,17 @@
 0x002f1150    RiderBase_UpdateAttackFX
 0x002bd698    tWPIGD_Weather_Blend
 0x00101a28    FocusMan_CollectNodeObjects
+# Phase 2 wave: oc205, oc206, oc207, oc208, oc209, oc210, oc211, oc212
+0x00377458    PS2GraphicsMan_SetOrtho
+0x00389cb8    Irradiance_AddCameraRelativeLight
+0x00411b08    __pack_d
+0x00326eb0    PS2Pad_Update
+0x0035fc20    UVScrollModifier_GetMatrix
+0x002b7908    cWorldSound_ProcessEmitter
+0x003a9e50    cWorldCache_PointBoxDistance
+0x00411fd8    __muldf3
+0x003cde68    SND_UtkDecode
+0x0011b3f8    Rider_UpdateTargetSpeed
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
