@@ -5409,6 +5409,33 @@
 0x001668b8    ChaseCameraAlgorithm_RotateByPitch
 0x002f3e28    cSplashManager_Render
 0x002f1510    RiderBase_RenderAttackFX
+# Phase 2 wave: oc213, oc214, oc220
+0x003ad120    tWScriptCache_GetObjectSlot
+0x00127998    Player_GetControlInput
+0x003342d0    OverlapList_FindClosestContact
+0x00112fb0    Rider_UpdateDistToFinish
+0x00166f90    ChaseCameraAlgorithm_BuildOutputView
+0x001049c0    RiderAnim_UpdateSeqType02
+0x00113f88    Rider_SetSlew3And4Targets
+0x00334680    OverlapList_FindNearestRail
+0x0013f488    RiderGroundState_CollideWalls
+0x0035ac20    MultiSplineModifier_UpdateNodes
+0x0036d428    Emitter_UpdateDescriptor
+0x0013f178    RiderGroundState_PostUpdate
+0x003ca460    SND_DecEaxa_DecodeStream
+0x00389308    Irradiance_AddDirectionalScaled
+0x003c9520    SND_DecUtk_DecodeLoop
+0x002baf90    WPData_FindCellIndex
+0x00386bd0    PS2GraphicsMan_v111
+0x00335d78    Nash_CollideVolume
+0x001163b0    Rider_UpdateTweakLayerAnim
+0x0040f5a8    __kernel_tanf
+0x00165938    ChaseCameraAlgorithm_ApplyShake
+0x00122898    Rider_DrawShadow
+0x0034fed8    Instance_GetNodeMatrix
+0x0032a1c0    RiderSphereTree_CollideTriangle
+0x003c85d0    SND_EeMixBlock
+0x0010bd10    ComputerActorRider_SelectTargetRider
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
