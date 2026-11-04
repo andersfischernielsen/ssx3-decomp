@@ -5367,6 +5367,13 @@
 0x00411fd8    __muldf3
 0x003cde68    SND_UtkDecode
 0x0011b3f8    Rider_UpdateTargetSpeed
+# Phase 2 wave: oc219
+0x00164878    ChaseCameraAlgorithm_ApplyAirSwing
+0x00108a48    Rider_FindRail
+0x00389840    Irradiance_Rotate
+0x001477e8    BENewPlayerInt_IsSharingCharRecord
+0x0021e750    HUD_AlignX
+0x00134dd0    RiderSpinSub_ApplyPoseRotation
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
