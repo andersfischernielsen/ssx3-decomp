@@ -2,9 +2,12 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -13,6 +16,7 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -27,6 +31,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_1b60, focus_man_update, "FocusMan_Update"),
     (0x0010_32c0, focus_man_add_object, "FocusMan_AddObject"),
     (0x0010_33b0, focus_man_add_focus_box, "FocusMan_AddFocusBox"),
+    (
+        0x0010_1a28,
+        focus_man_collect_node_objects,
+        "FocusMan_CollectNodeObjects",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1046,6 +1055,138 @@ fn notify(
     }
 }
 
+pub(crate) mod focus_collect {
+
+    /// Tree node: eight child nodes (`kids[0..8]`, +0x00..+0x1c), then the
+    /// head of the node's object chain.
+    pub const KIDS: u32 = 0x00;
+
+    pub const KID_COUNT: u32 = 8;
+
+    pub const ITEMS: u32 = 0x20;
+
+    /// Object link: the next object of the chain.
+    pub const NEXT: u32 = 0x00;
+
+    /// Out list: `int n; Obj* items[]`.
+    pub const LIST_N: u32 = 0x00;
+
+    pub const LIST_ITEMS: u32 = 0x04;
+
+    /// `gp+0xce8` (`D_004A3DD8`): the world-script manager.
+    pub const SCRIPT_MAN: u32 = 0xce8;
+
+    /// `WScriptMan_IsScriptedInstance(man, obj)`.
+    pub const IS_SCRIPTED: u32 = 0x0030_a310;
+
+    /// Return addresses: the test call, then each child's recursion.
+    pub const RET_TEST: u32 = 0x0010_1a68;
+
+    pub const RET_KID: [u32; 8] = [
+        0x0010_1ab0,
+        0x0010_1ac4,
+        0x0010_1ad8,
+        0x0010_1aec,
+        0x0010_1b00,
+        0x0010_1b14,
+        0x0010_1b28,
+        0x0010_1b3c,
+    ];
+
+    /// The object loop's head (event checks at its back edge).
+    pub const LOOP_HEAD: u32 = 0x0010_1a60;
+}
+
+/// `void FocusMan_CollectNodeObjects(ObjList* list (a0), FocusNode* node
+/// (a1), int recurse (a2))` (0x101a28): appends every object of the node's
+/// chain that the world-script manager (`gp+0xce8`) reports as a scripted
+/// instance (`WScriptMan_IsScriptedInstance`) to `list` (`items[n++]`);
+/// with `recurse`, then walks the eight child nodes the same way (always
+/// recursing). Frame 0x60 (s0-s4).
+pub fn focus_man_collect_node_objects(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use focus_collect::*;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S4, 0x10);
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        frame.save(c, S0, 0x50);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A1][0];
+        c.g[S4][0] = c.g[A2][0];
+        let list = r32(c, S1);
+        let node = r32(c, S2);
+        let script_man = Addr(r32(c, GP).wrapping_add(SCRIPT_MAN));
+
+        // The node's own objects.
+        c.g[S0][0] = Addr(node.wrapping_add(ITEMS)).lw(c);
+        if c.g[S0][0] != 0 {
+            c.cycles += 2;
+            c.g[S3][0] = sx(list.wrapping_add(LIST_ITEMS));
+            c.g[A0][0] = script_man.lw(c);
+            loop {
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, IS_SCRIPTED, RET_TEST)?;
+                let obj = r32(c, S0);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 7;
+                    let n = Addr(list.wrapping_add(LIST_N)).lw(c);
+                    c.g[V1][0] = n;
+                    let slot = r32(c, S3).wrapping_add((n as u32) << 2);
+                    c.g[V0][0] = sx(slot);
+                    c.g[V1][0] = sx((n as u32).wrapping_add(1));
+                    Addr(slot).sw(c, c.g[S0][0]);
+                    Addr(list.wrapping_add(LIST_N)).sw(c, c.g[V1][0]);
+                }
+                c.g[S0][0] = Addr(obj.wrapping_add(NEXT)).lw(c);
+                c.cycles += 2;
+                c.g[A0][0] = script_man.lw(c);
+                if c.g[S0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LOOP_HEAD);
+                }
+            }
+        }
+
+        // The children.
+        c.cycles += 2;
+        if c.g[S4][0] != 0 {
+            let me = Callee {
+                addr: 0x0010_1a28,
+                f: ee::s00::f_00101a28,
+            };
+            for i in 0..KID_COUNT {
+                c.cycles += 3;
+                let kid = Addr(node.wrapping_add(KIDS + 4 * i)).lw(c);
+                c.g[A1][0] = kid;
+                c.g[A0][0] = c.g[S1][0];
+                if kid != 0 {
+                    c.cycles += 2;
+                    c.g[A2][0] = 1;
+                    me.call(c, RET_KID[i as usize])?;
+                }
+            }
+            c.cycles += 1;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1265,5 +1406,93 @@ pub(crate) mod tests {
         for hz in [60, 120, 240] {
             assert_eq!(rescans_in_one_second(hz), 3, "{hz} Hz");
         }
+    }
+    use super::*;
+
+    /// `FocusMan_CollectNodeObjects`: a random tree of up to 10 nodes (kid
+    /// slots null or a later node, so no cycles; the root sometimes with no
+    /// objects), each with a chain of 0..4 objects. The real
+    /// `WScriptMan_IsScriptedInstance` runs on its short paths: an object
+    /// with a script (+0xc != 0) is scripted, one without and a type entry
+    /// (`man+0x28c -> +4 -> +4`, 12 bytes per `obj+0x78`) other than 3 is
+    /// not. `recurse` is 0 on every fourth seed (junk upper bits otherwise);
+    /// the list starts with a random count 0..8. Recursion goes through the
+    /// generated body on both sides.
+    #[test]
+    fn focus_man_collect_node_objects_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA, GAME_GP};
+        use focus_collect::*;
+        const LIST: u32 = DATA;
+        const NODES: u32 = DATA + 0x1000;
+        const OBJS: u32 = DATA + 0x2000;
+        const MAN: u32 = DATA + 0x8000;
+        const TYPES: u32 = DATA + 0x8400;
+        check(
+            ee::s00::f_00101a28__generated,
+            focus_man_collect_node_objects,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x101a28 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.pc = 0x0010_1a28;
+                c.g[GP][0] = sx(GAME_GP);
+                // Script manager: man+0x28c -> A, A+4 -> B, B+4 -> type table.
+                c.bus.write32(GAME_GP + SCRIPT_MAN, MAN);
+                c.bus.write32(MAN + 0x28c, MAN + 0x100);
+                c.bus.write32(MAN + 0x104, MAN + 0x200);
+                c.bus.write32(MAN + 0x204, TYPES);
+                for t in 0..8u32 {
+                    let ty = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 2
+                    };
+                    c.bus.write16(TYPES + 12 * t, ty as u16);
+                }
+                // List.
+                c.bus.write32(LIST + LIST_N, r.next_u32() % 8);
+                // Nodes and their object chains.
+                let count = 1 + r.next_u32() % 10;
+                let mut obj = OBJS;
+                for k in 0..count {
+                    let n = NODES + 0x40 * k;
+                    for i in 0..KID_COUNT {
+                        let later = k + 1 + r.next_u32() % 10;
+                        let kid = if later < count && r.next_u32() % 3 == 0 {
+                            NODES + 0x40 * later
+                        } else {
+                            0
+                        };
+                        c.bus.write32(n + KIDS + 4 * i, kid);
+                    }
+                    let chain = if k == 0 && seed % 5 == 0 {
+                        0
+                    } else {
+                        r.next_u32() % 5
+                    };
+                    let mut link = n + ITEMS;
+                    for _ in 0..chain {
+                        c.bus.write32(link, obj);
+                        let script = if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            r.next_u32() | 1
+                        };
+                        c.bus.write32(obj + 0xc, script);
+                        c.bus.write8(obj + 0x78, (r.next_u32() % 8) as u8);
+                        link = obj + NEXT;
+                        obj += 0x80;
+                    }
+                    c.bus.write32(link, 0);
+                }
+                c.g[A0][0] = sx(LIST);
+                c.g[A1][0] = sx(NODES);
+                c.g[A2][0] = if seed % 4 == 0 {
+                    0
+                } else {
+                    (r.next_u32() as u64) << 32 | (1 + r.next_u32() % 4) as u64
+                };
+            },
+        );
     }
 }

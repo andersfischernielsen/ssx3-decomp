@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -210,6 +211,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_speed_boost_streamer_fx_render,
         "cSpeedBoostStreamerFX_Render",
     ),
+    (
+        0x002d_f920,
+        c_dynamic_spray_fx_update,
+        "cDynamicSprayFX_Update",
+    ),
+    (0x002e_4f50, snow_box_update, "SnowBox_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1087,6 +1094,103 @@ pub(crate) mod spray_callee {
         addr: 0x002e_e6f0,
         f: ee::s09::WorldPainter_GetWeather30,
     };
+
+    pub const SETUP_EMITTERS: Callee = Callee {
+        addr: 0x002d_f448,
+        f: ee::s09::cDynamicSprayFX_SetupEmitters,
+    };
+
+    pub const FIND_BONES: Callee = Callee {
+        addr: 0x002d_f4d0,
+        f: ee::s09::cDynamicSprayFX_FindBones,
+    };
+
+    pub const QUEUE_BURST: Callee = Callee {
+        addr: 0x002e_23e0,
+        f: ee::s09::cDynamicSprayFX_QueueBurst,
+    };
+
+    pub const UPDATE_EMITTER_ENABLES: Callee = Callee {
+        addr: 0x002e_2550,
+        f: ee::s09::cDynamicSprayFX_UpdateEmitterEnables,
+    };
+
+    /// The per-emitter updates in call order: (enable flag offset in the
+    /// emitter array, callee, return address).
+    pub const EMITTERS: [(u32, Callee, u32); 8] = [
+        (
+            0x384,
+            Callee {
+                addr: 0x002e_02b8,
+                f: ee::s09::cDynamicSprayFX_UpdateEmitter1,
+            },
+            0x002d_fdc4,
+        ),
+        (
+            0x7a4,
+            Callee {
+                addr: 0x002d_fe88,
+                f: ee::s09::cDynamicSprayFX_UpdateEmitter3,
+            },
+            0x002d_fddc,
+        ),
+        (
+            0x174,
+            Callee {
+                addr: 0x002e_0ee8,
+                f: ee::s09::cDynamicSprayFX_UpdateEmitter0,
+            },
+            0x002d_fdf4,
+        ),
+        (
+            0x9b4,
+            Callee {
+                addr: 0x002e_1120,
+                f: ee::s09::cDynamicSprayFX_UpdateEmitter4,
+            },
+            0x002d_fe0c,
+        ),
+        (
+            0xbc4,
+            Callee {
+                addr: 0x002e_1598,
+                f: ee::s09::cDynamicSprayFX_UpdateEmitter5,
+            },
+            0x002d_fe24,
+        ),
+        (
+            0xfe4,
+            Callee {
+                addr: 0x002e_1a80,
+                f: ee::s09::cDynamicSprayFX_UpdateEmitter7,
+            },
+            0x002d_fe3c,
+        ),
+        (
+            0x1404,
+            Callee {
+                addr: 0x002e_2260,
+                f: ee::s09::cDynamicSprayFX_UpdateEmitter9,
+            },
+            0x002d_fe54,
+        ),
+        (
+            0x11f4,
+            Callee {
+                addr: 0x002e_1f70,
+                f: ee::s09::cDynamicSprayFX_UpdateEmitter8,
+            },
+            0x002d_fe6c,
+        ),
+    ];
+
+    /// `AnimController_GetLayerAnimId(anim, layer)`.
+    pub const ANIM_LAYER_ID: u32 = 0x0031_2aa0;
+
+    /// `Rider_GetMainState(rider)` / `Rider_GetSubState(rider)`.
+    pub const RIDER_MAIN_STATE: u32 = 0x0011_fe98;
+
+    pub const RIDER_SUB_STATE: u32 = 0x0011_fee8;
 }
 
 /// Addresses the generator emitted as `call_indirect` (outside the shard's
@@ -9346,6 +9450,1016 @@ pub fn c_speed_boost_streamer_fx_update_points(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod snow_update {
+
+    /// Weather mode: 0 snow (record `f[0..2]`, colour `c0`), 1 the second
+    /// kind (record `f[2..4]`, colour `c1`), anything else keeps the
+    /// current parameters.
+    pub const MODE: u32 = 0x04;
+
+    /// Number of flakes drawn (`(int)(density * k)`).
+    pub const FLAKE_COUNT: u32 = 0x08;
+
+    /// Side length of the box (each position component wraps into
+    /// `(-size/2, size/2]`).
+    pub const SIZE: u32 = 0x0c;
+
+    /// Flake speed (scale of a new drift velocity).
+    pub const SPEED: u32 = 0x10;
+
+    /// Copied from the record's `f[4]` in mode 0.
+    pub const PARAM_14: u32 = 0x14;
+
+    /// First component of the colour (`c0.x`/`c1.x`).
+    pub const COLOR_X: u32 = 0x18;
+
+    /// Wind factor of this box (times the record's `f[7]`).
+    pub const WIND_SCALE: u32 = 0x1c;
+
+    /// Box offset (x, y, z, w), wrapped into the box.
+    pub const POS: u32 = 0x20;
+
+    /// Drift velocity being blended toward.
+    pub const VEL: u32 = 0x30;
+
+    /// Previous drift velocity (blended from).
+    pub const PREV_VEL: u32 = 0x40;
+
+    /// Seconds left until a new drift velocity is picked.
+    pub const TIMER: u32 = 0x90;
+
+    /// Length of the current drift period (seconds).
+    pub const PERIOD: u32 = 0x94;
+
+    /// Remaining colour components (`c.y`, `c.z`, `c.w`).
+    pub const COLOR_YZW: u32 = 0xa4;
+
+    /// Non-zero: snap: the previous velocity becomes the new one (cleared).
+    pub const SNAP: u32 = 0xb0;
+
+    /// The weather record (`sWakeRec_5DA0`): `float f[8]; Vec4 c0, c1;`.
+    pub const REC_DENSITY0: u32 = 0x00;
+
+    pub const REC_SPEED0: u32 = 0x04;
+
+    pub const REC_DENSITY1: u32 = 0x08;
+
+    pub const REC_SPEED1: u32 = 0x0c;
+
+    pub const REC_F4: u32 = 0x10;
+
+    /// Drift heading (scaled into the 512-entry sine table).
+    pub const REC_HEADING: u32 = 0x14;
+
+    /// How much of the random part goes into a new velocity (0..1).
+    pub const REC_RANDOMNESS: u32 = 0x18;
+
+    pub const REC_WIND: u32 = 0x1c;
+
+    pub const REC_C0: u32 = 0x20;
+
+    pub const REC_C1: u32 = 0x30;
+
+    /// gp+0x2a74: the frame-rate object (its int rate at +0x10).
+    pub const GP_RATE_OBJ: i32 = 0x2a74;
+
+    pub const RATE: u32 = 0x10;
+
+    /// gp+0xa0c: the snow's random seed (a float in [1, 2) as bits).
+    pub const GP_SEED: i32 = 0xa0c;
+
+    /// gp-0x3a18, gp-0x3a14: the heading-to-table-index factors.
+    pub const GP_HEADING_K1: i32 = -0x3a18;
+
+    pub const GP_HEADING_K2: i32 = -0x3a14;
+
+    /// The global wind vector.
+    pub const WIND: u32 = 0x004f_f160;
+
+    /// The 512-entry sine table (cos at +0x80 entries).
+    pub const SIN_TABLE: u32 = 0x0050_4fb8;
+
+    /// The seed's linear congruential step.
+    pub const LCG_MUL: u32 = 0x0001_8fcd;
+
+    pub const LCG_ADD: u32 = 0x00e9_507c;
+
+    pub const MANTISSA: u32 = 0x007f_ffff;
+
+    pub const ONE_BITS: u32 = 0x3f80_0000;
+}
+
+pub(crate) mod spray_fx {
+
+    /// The rider object (`cRider*`).
+    pub const OBJ: u32 = 0x00;
+
+    /// The ten particle emitters (0x210 bytes each).
+    pub const EMITTERS: u32 = 0x28;
+
+    /// Matrix rows 1, 2, 0 of the spray bone (copied each update).
+    pub const ROW1: u32 = 0x30;
+
+    pub const ROW2: u32 = 0x40;
+
+    pub const ROW0: u32 = 0x50;
+
+    /// Non-zero: the emitters still have to be set up.
+    pub const NEEDS_SETUP: u32 = 0x60;
+
+    /// Last update's speed.
+    pub const PREV_SPEED: u32 = 0x74;
+
+    /// Non-zero once the bones were looked up.
+    pub const BONES_FOUND: u32 = 0x80;
+
+    /// Surface colour of the snow under the board (rgb * 2, alpha 1).
+    pub const COLOUR: u32 = 0x90;
+
+    /// Spray bone position (matrix row 3).
+    pub const POS: u32 = 0xa0;
+
+    /// Whether the spray is active this update.
+    pub const ACTIVE: u32 = 0xb0;
+
+    /// Signed sideways speed.
+    pub const SIDE_SPEED: u32 = 0xb4;
+
+    /// Speed (length of the physics velocity) and its absolute value.
+    pub const SPEED: u32 = 0xb8;
+
+    pub const ABS_SPEED: u32 = 0xbc;
+
+    /// Direction of travel (normalised when the speed is positive).
+    pub const DIR: u32 = 0xc0;
+
+    /// This rider's race data (game + 0x44, 0xb0 bytes per rider).
+    pub const RACE_DATA: u32 = 0xd0;
+
+    /// The rider's main state, as of this update.
+    pub const MAIN_STATE: u32 = 0xd4;
+
+    /// The rider's emitter-enable state the emitters were last set for.
+    pub const ENABLE_STATE: u32 = 0x128;
+
+    /// Which side the spray goes to (-1, 0 or +1).
+    pub const SIDE: u32 = 0x12c;
+}
+
+pub(crate) mod spray_rider {
+
+    pub const VELOCITY: u32 = 0x1e0;
+
+    pub const FORWARD_SPEED: u32 = 0x1f0;
+
+    pub const SLIP: u32 = 0x214;
+
+    /// Non-zero: goofy stance (mirrors the spray side).
+    pub const GOOFY: u32 = 0x320;
+
+    /// Non-zero: in a trick (the side follows the trick animation).
+    pub const IN_TRICK: u32 = 0x330;
+
+    pub const BOARD_DIR: u32 = 0x370;
+
+    pub const INDEX: u32 = 0x438;
+
+    /// The physics sub-object (with its own vtable).
+    pub const PHYSICS: u32 = 0x6c0;
+
+    pub const MODEL: u32 = 0x780;
+
+    pub const ANIM: u32 = 0x784;
+
+    pub const ENABLE_STATE: u32 = 0x898;
+
+    pub const SPRAY_BONE: u32 = 0x8a4;
+
+    pub const GRINDING: u32 = 0xac4;
+
+    pub const GRIND_OFF: u32 = 0xad0;
+
+    pub const GRIND_RAIL: u32 = 0xafc;
+
+    pub const GRIND_SPRAY: u32 = 0xb00;
+}
+
+/// `void SnowBox_Update(SnowBox* box, const sWakeRec_5DA0* rec)` (0x2e4f50):
+/// the per-frame update of the weather flake box.
+///
+/// 1. Mode 0/1: take density (flake count), speed and colour from the
+///    record (the second set for mode 1).
+/// 2. Count the drift timer down by one tick (`1 / rate`); when it runs
+///    out, pick a new drift velocity (a heading from the record plus a
+///    random part, four steps of the seed LCG) and a new period in [1, 5).
+/// 3. Move the box offset by the velocity blended from the previous one
+///    (`lerp(prev, vel, 1 - timer/period)`) and the wind, both times the
+///    tick, then wrap it into the box (as `SnowBox_WrapOffset`).
+pub fn snow_box_update(c: &mut Cpu) {
+    use crate::game::visualfx::boardwakefx::{
+        copy_q, fconst, fr, frac_times, gp, ldf, p, setf, vadd_2,
+    };
+    use snow_update::*;
+
+    c.cycles += 5;
+    c.g[T2][0] = c.g[A0][0];
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x50));
+    let this = r32(c, T2);
+    let rec = r32(c, A1);
+    let mode = c.lw(p(this, MODE));
+    c.g[V1][0] = mode;
+    c.g[T3][0] = c.g[A1][0];
+
+    // Step 1: the weather parameters of the mode.
+    if mode == 0 {
+        c.cycles += 20;
+        c.lwc1(1, p(rec, REC_C0));
+        let k = fconst(c, 3, 0x43fa_0000); // 500
+        c.swc1(1, p(this, COLOR_X));
+        for i in 0..3u32 {
+            c.lwc1(i as usize, p(rec, REC_C0 + 4 + 4 * i));
+            c.swc1(i as usize, p(this, COLOR_YZW + 4 * i));
+        }
+        let n = ldf(c, 0, p(rec, REC_DENSITY0)) * k;
+        setf(c, 0, n);
+        c.cvt_w_s(1, 0);
+        c.swc1(1, p(this, FLAKE_COUNT));
+        let s = ldf(c, 1, p(rec, REC_SPEED0)) * k;
+        setf(c, 1, s);
+        c.swc1(1, p(this, SPEED));
+        c.lwc1(0, p(rec, REC_F4));
+        c.swc1(0, p(this, PARAM_14));
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(gp(c, GP_RATE_OBJ));
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(gp(c, GP_RATE_OBJ));
+        if mode == 1 {
+            c.cycles += 19;
+            c.lwc1(0, p(rec, REC_C1));
+            let k_count = fconst(c, 3, 0x40c0_0000); // 6
+            c.swc1(0, p(this, COLOR_X));
+            let k_speed = fconst(c, 4, 0x437a_0000); // 250
+            for i in 0..3u32 {
+                c.lwc1(i as usize, p(rec, REC_C1 + 4 + 4 * i));
+                c.swc1(i as usize, p(this, COLOR_YZW + 4 * i));
+            }
+            let n = ldf(c, 0, p(rec, REC_DENSITY1)) * k_count;
+            setf(c, 0, n);
+            c.cvt_w_s(1, 0);
+            c.swc1(1, p(this, FLAKE_COUNT));
+            let s = ldf(c, 1, p(rec, REC_SPEED1)) * k_speed;
+            setf(c, 1, s);
+            c.swc1(1, p(this, SPEED));
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(gp(c, GP_RATE_OBJ));
+        } else {
+            c.cycles += 2;
+        }
+    }
+
+    // Step 2: the drift timer (f11 = 1, f12 = tick, f13 = 0 stay live).
+    c.cycles += 12;
+    let one = fconst(c, 11, 0x3f80_0000);
+    let rate_obj = r32(c, V0);
+    c.lwc1(1, p(rate_obj, RATE));
+    c.cvt_s_w(1, 1);
+    let timer = ldf(c, 0, p(this, TIMER));
+    c.f[13] = 0;
+    let dt = one.div(fr(c, 1));
+    setf(c, 12, dt);
+    setf(c, 0, timer - dt);
+    c.c_lt_s(0, 13);
+    let expired = c.fcc();
+    c.swc1(0, p(this, TIMER));
+    if expired {
+        snow_box_new_drift(c, this, rec);
+    }
+
+    // Step 3: move by the blended velocity and the wind, then wrap.
+    c.cycles += 66;
+    let period = ldf(c, 2, p(this, PERIOD));
+    c.g[A0][0] = sx(WIND);
+    let timer = ldf(c, 1, p(this, TIMER));
+    let one = fconst(c, 0, 0x3f80_0000);
+    let t = timer.div(period);
+    setf(c, 1, t);
+    fconst(c, 3, 0x3f00_0000); // 0.5
+    setf(c, 0, one - t);
+    let sp = sp(c);
+    snow_scale_q(c, 0, p(this, VEL), p(sp, 0x30), p(sp, 0x20)); // vel * (1 - t)
+    snow_scale_q(c, 1, p(this, PREV_VEL), p(sp, 0x40), p(sp, 0x30)); // prev * t
+    vadd_2(c, p(sp, 0x20), p(sp, 0x30), p(sp, 0x40));
+    copy_q(c, V0, p(sp, 0x40), p(sp, 0x10));
+    snow_scale_q(c, 12, p(sp, 0x10), p(sp, 0x40), sp); // * tick
+    vadd_2(c, p(this, POS), sp, p(this, POS));
+    let wind = ldf(c, 0, p(this, WIND_SCALE)) * ldf(c, 1, p(rec, REC_WIND));
+    setf(c, 0, wind);
+    let wind = wind * fr(c, 12);
+    setf(c, 0, wind);
+    snow_scale_q(c, 0, WIND, p(sp, 0x10), sp); // wind * scale * tick
+    vadd_2(c, p(this, POS), sp, p(this, POS));
+
+    // The wrap: x in f4, y in f3, z in f5; results in f4, f6, f7.
+    c.lwc1(2, p(this, SIZE));
+    c.lwc1(4, p(this, POS));
+    c.mul_s(0, 2, 3); // f0 = h = size * 0.5
+    c.lwc1(6, p(this, POS + 4));
+    c.lwc1(7, p(this, POS + 8));
+    c.mov_s(3, 6);
+    c.c_lt_s(0, 4); // h < x ?
+    let x_above = c.fcc();
+    c.mov_s(5, 7);
+    'x: {
+        'x_tail: {
+            if x_above {
+                c.cycles += 9;
+                let (v, s) = (fr(c, 4), fr(c, 2));
+                let r = frac_times(c, v, s);
+                setf(c, 4, r - s);
+                break 'x_tail;
+            }
+            c.cycles += 5;
+            c.neg_s(0, 0); // f0 = -h
+            c.c_lt_s(4, 0); // x < -h ?
+            if !c.fcc() {
+                c.lwc1(0, p(this, SIZE));
+                break 'x;
+            }
+            c.cycles += 8;
+            let (v, s) = (fr(c, 4), fr(c, 2));
+            let r = frac_times(c, v, s);
+            setf(c, 4, r + s);
+        }
+        c.cycles += 1;
+        c.lwc1(0, p(this, SIZE));
+    }
+    'y: {
+        'y_below: {
+            c.cycles += 8;
+            fconst(c, 1, 0x3f00_0000);
+            c.mov_s(2, 0); // f2 = size
+            c.mul_s(0, 0, 1); // f0 = h
+            c.c_lt_s(0, 3); // h < y ?
+            if !c.fcc() {
+                c.neg_s(0, 0);
+                break 'y_below;
+            }
+            c.cycles += 9;
+            let (v, s) = (fr(c, 3), fr(c, 2));
+            let r = frac_times(c, v, s);
+            setf(c, 6, r - s);
+            break 'y;
+        }
+        c.cycles += 3;
+        c.c_lt_s(3, 0); // y < -h ?
+        if !c.fcc() {
+            break 'y;
+        }
+        c.cycles += 8;
+        let (v, s) = (fr(c, 3), fr(c, 2));
+        let r = frac_times(c, v, s);
+        setf(c, 6, r + s);
+    }
+    'z: {
+        'z_below: {
+            c.cycles += 7;
+            fconst(c, 0, 0x3f00_0000);
+            c.mul_s(0, 2, 0); // f0 = h
+            c.c_lt_s(0, 5); // h < z ?
+            if !c.fcc() {
+                c.neg_s(0, 0);
+                break 'z_below;
+            }
+            c.cycles += 9;
+            let (v, s) = (fr(c, 5), fr(c, 2));
+            let r = frac_times(c, v, s);
+            setf(c, 7, r - s);
+            break 'z;
+        }
+        c.cycles += 3;
+        c.c_lt_s(5, 0); // z < -h ?
+        if !c.fcc() {
+            break 'z;
+        }
+        c.cycles += 8;
+        let (v, s) = (fr(c, 5), fr(c, 2));
+        let r = frac_times(c, v, s);
+        setf(c, 7, r + s);
+    }
+    c.cycles += 10;
+    fconst(c, 0, 0x3f80_0000); // w = 1
+    c.swc1(4, sp);
+    c.swc1(6, p(sp, 4));
+    c.swc1(7, p(sp, 8));
+    c.swc1(0, p(sp, 0xc));
+    copy_q(c, V0, sp, p(this, POS));
+    c.g[SP][0] = sx(sp.wrapping_add(0x50));
+    ret(c);
+}
+
+/// `mfc1 v1, f; lqc2 vf4, src; qmtc2 v1, vf3; vmul.xyzw vf5, vf4, vf3x;
+/// sqc2 vf5, tmp; lq v0, tmp; sq v0, out`: `out = src * f` through the
+/// stack slot `tmp`.
+#[inline(always)]
+pub(crate) fn snow_scale_q(c: &mut Cpu, f: usize, src: u32, tmp: u32, out: u32) {
+    use ssx3_ee_rt::vu0::{Src, X};
+    c.mfc1(V1, f);
+    c.lqc2(4, src);
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, tmp);
+    c.lq(V0, tmp);
+    c.sq(V0, out);
+}
+
+/// One step of the snow seed: `((s * 0x18fcd + 0xe9507c) & 0x7fffff) |
+/// 0x3f800000` (a float in [1, 2)); the `mult` leaves LO/HI.
+#[inline(always)]
+pub(crate) fn snow_lcg(c: &mut Cpu, s: u32) -> u32 {
+    use snow_update::*;
+    let lo = crate::abi::mult(c, s, LCG_MUL);
+    lo.wrapping_add(LCG_ADD) & MANTISSA | ONE_BITS
+}
+
+/// The expired-timer block of [`snow_box_update`]: the previous velocity
+/// becomes the current one, a new velocity is picked (`speed` along the
+/// record's heading, mixed with a random vector in the speed cube by the
+/// record's randomness) with a new period in [1, 5), and with `SNAP` set the
+/// blend starts at the new velocity.
+pub(crate) fn snow_box_new_drift(c: &mut Cpu, this: u32, rec: u32) {
+    use crate::game::visualfx::boardwakefx::{copy_q, fr, gp, p, setf};
+    use crate::ps2f::FpuF32;
+    use snow_update::*;
+
+    c.cycles += 93;
+    let seed_at = gp(c, GP_SEED);
+    let seed = c.lw(seed_at) as u32;
+    copy_q(c, V1, p(this, VEL), p(this, PREV_VEL));
+    let speed = FpuF32(c.lw(p(this, SPEED)) as u32);
+    let heading = FpuF32(c.lw(p(rec, REC_HEADING)) as u32);
+    let k1 = FpuF32(c.lw(gp(c, GP_HEADING_K1)) as u32);
+    let k2 = FpuF32(c.lw(gp(c, GP_HEADING_K2)) as u32);
+    let mix = FpuF32(c.lw(p(rec, REC_RANDOMNESS)) as u32);
+    let one = fr(c, 11);
+
+    // Four LCG steps, each stored back as the seed.
+    let r1 = snow_lcg(c, seed);
+    c.sw(seed_at, r1 as u64);
+    let r2 = snow_lcg(c, r1);
+    c.sw(seed_at, r2 as u64);
+    let r3 = snow_lcg(c, r2);
+    c.sw(seed_at, r3 as u64);
+    let r4 = snow_lcg(c, r3);
+
+    // The heading's table index (cvt.w through f1 into v0).
+    setf(c, 0, heading * k1 * k2);
+    c.cvt_w_s(1, 0);
+    c.mfc1(V0, 1);
+    let idx = r32(c, V0) & 0x1ff;
+    let sin = FpuF32(c.lw(SIN_TABLE + idx * 4) as u32);
+    let cos = FpuF32(c.lw(SIN_TABLE + (idx + 0x80) * 4) as u32);
+
+    let low = -speed;
+    let span = speed - low;
+    let u1 = FpuF32(r1) - one;
+    let u2 = FpuF32(r2) - one;
+    let u3 = FpuF32(r3) - one;
+    let x0 = low + span * u1;
+    let y0 = low + span * u2;
+    let span_z = span * u3;
+    let z0 = low + span_z;
+    let sin_s = speed * sin;
+    let cos_s = speed * cos;
+    let keep = one - mix;
+    let mix_x = mix * x0;
+    let mix_y = mix * y0;
+    let vx = cos_s * keep + mix_x;
+    let vy = sin_s * keep + mix_y;
+    let vz = mix * z0;
+
+    c.g[V0][0] = c.lw(p(this, SNAP));
+    let sp = sp(c);
+    c.swc1(13, p(sp, 0x1c));
+    c.sw(p(sp, 4), sin_s.0 as u64);
+    c.sw(sp, cos_s.0 as u64);
+    c.swc1(13, p(sp, 8));
+    c.swc1(13, p(sp, 0xc));
+    c.sw(p(sp, 0x14), vy.0 as u64);
+    c.sw(p(sp, 0x18), vz.0 as u64);
+    c.sw(p(sp, 0x10), vx.0 as u64);
+    copy_q(c, V1, p(sp, 0x10), p(this, VEL));
+    c.sw(seed_at, r4 as u64);
+    let four = FpuF32(0x4080_0000);
+    let period = (FpuF32(r4) - one) * four + one;
+    c.sw(p(this, TIMER), period.0 as u64);
+    c.sw(p(this, PERIOD), period.0 as u64);
+
+    // The registers the original leaves.
+    c.g[AT][0] = 0x4080_0000;
+    c.g[A0][0] = r4 as u64;
+    c.g[A1][0] = sx(SIN_TABLE);
+    c.g[A2][0] = LCG_ADD as u64;
+    c.g[A3][0] = LCG_MUL as u64;
+    c.g[T0][0] = MANTISSA as u64;
+    c.g[T1][0] = ONE_BITS as u64;
+    setf(c, 0, period);
+    setf(c, 1, mix_y);
+    setf(c, 2, u3);
+    setf(c, 3, cos);
+    setf(c, 4, mix_x);
+    setf(c, 5, vx);
+    setf(c, 6, span_z);
+    setf(c, 7, vz);
+    setf(c, 8, z0);
+    setf(c, 9, keep);
+    setf(c, 10, four);
+
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.sq(V1, p(this, PREV_VEL));
+        c.sw(p(this, SNAP), 0);
+    }
+}
+
+/// `s0 + off` (the spray), `base + off` for any other object.
+#[inline(always)]
+pub(crate) fn spray_at(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
+/// `void cDynamicSprayFX_Update(cDynamicSprayFX* self)` (0x2df920): the
+/// per-tick update of a rider's board spray. Sets the emitters and bones up
+/// on first use, picks the spray side (from the trick animation and the
+/// stance), measures the rider's sideways and forward speed and direction,
+/// decides whether the spray is active (not in the air states, not in a
+/// sub-state 9, grinding only on a spraying rail), copies the spray bone's
+/// matrix, queues a burst on a sudden slow-down (or a rail landing), re-arms
+/// the emitters when the rider's enable state changed, samples the snow
+/// colour under the board, and runs every enabled emitter's update.
+pub fn c_dynamic_spray_fx_update(c: &mut Cpu) {
+    use spray_callee as callee;
+    use ssx3_ee_rt::vu0::{Src, X};
+    guest(c, |c| {
+        // Prologue: s0 = self; s0, s1, ra and f20 saved.
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 20, 0x60);
+        let this = c.g[S0][0];
+        c.g[V0][0] = c.lw(spray_at(this, spray_fx::NEEDS_SETUP));
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            callee::SETUP_EMITTERS.call(c, 0x002d_f94c)?;
+        }
+        c.g[V0][0] = c.lw(spray_at(this, spray_fx::BONES_FOUND));
+
+        c.cycles += 2;
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            c.g[A0][0] = this;
+            callee::FIND_BONES.call(c, 0x002d_f960)?;
+        }
+        c.sw(spray_at(this, spray_fx::SIDE), 0);
+
+        // The spray side: during a trick, from the trick animation (anims
+        // 23-28, 37 and 38 spray to the stance side, all others to the
+        // other side); mirrored for goofy riders.
+        c.cycles += 4;
+        c.g[V1][0] = c.lw(spray_at(this, spray_fx::OBJ));
+        c.g[V0][0] = c.lw(spray_at(c.g[V1][0], spray_rider::IN_TRICK));
+        if c.g[V0][0] != 0 {
+            c.cycles += 8;
+            c.g[A0][0] = c.lw(spray_at(c.g[V1][0], spray_rider::ANIM));
+            c.g[A1][0] = 0x2;
+            call_ptr(c, callee::ANIM_LAYER_ID, 0x002d_f980)?;
+            let anim = c.g[V0][0];
+            c.g[V1][0] = anim;
+            c.g[V0][0] = (sx((anim as u32).wrapping_sub(0x17)) < 0x6) as u64;
+            let stance_side = if c.g[V0][0] != 0 {
+                // Anims 23-28.
+                true
+            } else {
+                // Anims 37 and 38 (v0 is left 0x26 either way).
+                c.cycles += 3;
+                c.g[V0][0] = 0x26;
+                let hit = if anim == 0x25 {
+                    true
+                } else {
+                    c.cycles += 2;
+                    anim == 0x26
+                };
+                if hit {
+                    c.cycles += 1;
+                }
+                hit
+            };
+            c.g[V1][0] = c.lw(spray_at(this, spray_fx::OBJ));
+            // +1.0 or -1.0, the other one for goofy riders.
+            let (regular, goofy, goofy_cost): (u64, u64, u64) = if stance_side {
+                (0x3f80_0000, sx(0xbf80_0000), 4)
+            } else {
+                (sx(0xbf80_0000), 0x3f80_0000, 3)
+            };
+            c.cycles += 5;
+            c.g[AT][0] = regular;
+            c.mtc1(AT, 0);
+            c.g[V0][0] = c.lw(spray_at(c.g[V1][0], spray_rider::GOOFY));
+            if c.g[V0][0] != 0 {
+                c.cycles += goofy_cost;
+                c.g[AT][0] = goofy;
+                c.mtc1(AT, 0);
+            }
+            c.swc1(0, spray_at(this, spray_fx::SIDE));
+            c.cycles += 1;
+            c.g[V1][0] = c.lw(spray_at(this, spray_fx::OBJ));
+        }
+
+        // Sideways speed: -forward * (1 - |slip|), mirrored for goofy.
+        c.cycles += 12;
+        let obj = c.g[V1][0];
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 2);
+        c.lwc1(0, spray_at(obj, spray_rider::SLIP));
+        c.lwc1(1, spray_at(obj, spray_rider::FORWARD_SPEED));
+        c.abs_s(0, 0);
+        c.sub_s(2, 2, 0);
+        c.neg_s(1, 1);
+        c.mul_s(0, 1, 2);
+        c.swc1(0, spray_at(this, spray_fx::SIDE_SPEED));
+        c.g[V0][0] = c.lw(spray_at(obj, spray_rider::GOOFY));
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.neg_s(0, 0);
+            c.swc1(0, spray_at(this, spray_fx::SIDE_SPEED));
+        }
+        c.g[A0][0] = c.lw(spray_at(this, spray_fx::OBJ));
+
+        // Speed = |physics velocity| (virtual call on the physics
+        // sub-object), direction = the rider's velocity, normalised.
+        c.cycles += 26;
+        let obj = c.g[A0][0];
+        c.g[V1][0] = c.lw(spray_at(obj, spray_rider::PHYSICS));
+        c.g[A0][0] = sx(spray_at(obj, spray_rider::PHYSICS));
+        c.g[A1][0] = c.lh(spray_at(c.g[V1][0], 0x10));
+        c.g[V0][0] = c.lw(spray_at(c.g[V1][0], 0x14));
+        let method = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        call_ptr(c, method, 0x002d_fa48)?;
+        c.lqc2(3, c.g[V0][0] as u32);
+        spray_vu0_length(c);
+        c.cfc2(A0, 22);
+        c.mtc1(A0, 0);
+        c.g[V1][0] = c.lw(spray_at(this, spray_fx::OBJ));
+        c.abs_s(1, 0);
+        c.swc1(0, spray_at(this, spray_fx::SPEED));
+        c.swc1(1, spray_at(this, spray_fx::ABS_SPEED));
+        c.mtc1(0, 2);
+        c.lq(V0, spray_at(c.g[V1][0], spray_rider::VELOCITY));
+        c.c_lt_s(2, 0);
+        let moving = c.fcc();
+        c.sq(V0, spray_at(this, spray_fx::DIR));
+        if moving {
+            c.cycles += 17;
+            c.lqc2(3, spray_at(this, spray_fx::DIR));
+            spray_vu0_length(c);
+            c.cfc2(V0, 22);
+            c.mtc1(V0, 0);
+            c.mfc1(V1, 0);
+            c.qmtc2(V1, 3);
+            c.vu0().div(0, 3, 3, 0);
+            c.lqc2(4, spray_at(this, spray_fx::DIR));
+            c.vu0().waitq();
+            c.vu0().mul(0b1111, 5, 4, Src::Q);
+            c.sqc2(5, spray_at(this, spray_fx::DIR));
+        }
+
+        // Active unless the main state is 1, 2 or 4, the sub-state is 9, or
+        // the rider grinds a rail that does not spray.
+        c.cycles += 9;
+        c.g[S1][0] = 0x1;
+        c.g[A0][0] = c.lw(spray_at(this, spray_fx::OBJ));
+        c.sw(spray_at(this, spray_fx::ACTIVE), c.g[S1][0]);
+        call_ptr(c, callee::RIDER_MAIN_STATE, 0x002d_faec)?;
+        let main_state = c.g[V0][0];
+        c.g[V1][0] = main_state;
+        c.g[V0][0] = (sx((main_state as u32).wrapping_sub(0x1)) < 0x2) as u64;
+        c.sw(spray_at(this, spray_fx::MAIN_STATE), main_state);
+        // None: inactive through the shared store (+1); Some(true): store
+        // here; Some(false): stays active.
+        let inactive: Option<bool> = if c.g[V0][0] != 0 {
+            None
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 0x4;
+            if main_state == 0x4 {
+                Some(true)
+            } else {
+                c.cycles += 5;
+                c.g[A0][0] = c.lw(spray_at(this, spray_fx::OBJ));
+                call_ptr(c, callee::RIDER_SUB_STATE, 0x002d_fb14)?;
+                c.g[V1][0] = 0x9;
+                if c.g[V0][0] == 0x9 {
+                    Some(true)
+                } else {
+                    c.cycles += 4;
+                    let obj = c.lw(spray_at(this, spray_fx::OBJ));
+                    c.g[A0][0] = obj;
+                    c.g[V0][0] = c.lw(spray_at(obj, spray_rider::GRINDING));
+                    if c.g[V0][0] == 0 {
+                        Some(false)
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(spray_at(obj, spray_rider::GRIND_OFF));
+                        c.g[V1][0] = 0;
+                        if c.g[V0][0] == 0 {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw(spray_at(obj, spray_rider::GRIND_RAIL));
+                            c.g[V1][0] = if c.g[V0][0] == 0 { 0 } else { c.g[S1][0] };
+                        }
+                        c.cycles += 2;
+                        if c.g[V1][0] == 0 {
+                            Some(true)
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw(spray_at(obj, spray_rider::GRIND_SPRAY));
+                            if c.g[V0][0] != 0 {
+                                Some(false)
+                            } else {
+                                None
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        match inactive {
+            Some(false) => {}
+            Some(true) => {
+                c.sw(spray_at(this, spray_fx::ACTIVE), 0);
+                c.cycles += 1;
+            }
+            None => {
+                c.cycles += 1;
+                c.sw(spray_at(this, spray_fx::ACTIVE), 0);
+                c.cycles += 1;
+            }
+        }
+        c.g[T0][0] = c.lw(spray_at(this, spray_fx::OBJ));
+
+        // Copy the spray bone's matrix rows (model matrices + bone * 64),
+        // find this rider's race data, and the slow-down rate
+        // (prev - speed) * 60 (f20).
+        c.cycles += 49;
+        let obj = c.g[T0][0];
+        c.g[A3][0] = 0xb0;
+        c.g[A2][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x848));
+        c.g[T1][0] = 0;
+        c.g[A0][0] = c.lw(spray_at(obj, spray_rider::MODEL));
+        c.g[V0][0] = c.lw(spray_at(obj, spray_rider::SPRAY_BONE));
+        c.g[V1][0] = c.lw(spray_at(c.g[A0][0], 0x30));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 6);
+        c.lwc1(1, spray_at(this, spray_fx::PREV_SPEED));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.lwc1(2, spray_at(this, spray_fx::SPEED));
+        c.lq(V0, c.g[V1][0] as u32);
+        c.sub_s(1, 1, 2);
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x3b88));
+        c.sq(V0, spray_at(this, spray_fx::ROW0));
+        c.sq(V0, sp(c));
+        c.mul_s(20, 1, 0);
+        c.g[V0][0] = c.lw(spray_at(obj, spray_rider::MODEL));
+        c.g[A0][0] = c.lw(spray_at(obj, spray_rider::SPRAY_BONE));
+        c.g[V1][0] = c.lw(spray_at(c.g[V0][0], 0x30));
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 6);
+        c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x3b84));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        c.lq(V0, spray_at(c.g[V1][0], 0x10));
+        c.c_lt_s(0, 20);
+        c.sq(V0, spray_at(this, spray_fx::ROW1));
+        c.sq(V0, sp(c));
+        for (row, dst) in [(0x20u32, spray_fx::ROW2), (0x30, spray_fx::POS)] {
+            c.g[A1][0] = c.lw(spray_at(obj, spray_rider::MODEL));
+            c.g[V1][0] = c.lw(spray_at(obj, spray_rider::SPRAY_BONE));
+            c.g[A0][0] = c.lw(spray_at(c.g[A1][0], 0x30));
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 6);
+            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.lq(V0, spray_at(c.g[A0][0], row));
+            c.sq(V0, spray_at(this, dst));
+            c.sq(V0, sp(c));
+        }
+        c.g[V1][0] = c.lw(spray_at(obj, spray_rider::INDEX));
+        c.g[A0][0] = c.lw(spray_at(c.g[A2][0], 0x84));
+        c.mult(0, V1, V1, A3);
+        c.g[V0][0] = c.lw(spray_at(c.g[A0][0], 0x44));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        let fast_slowdown = c.fcc();
+        c.sw(spray_at(this, spray_fx::RACE_DATA), c.g[V0][0]);
+        // burst (t1): a hard slow-down from a high speed, not in sub-state 9.
+        let mut skip_reload_cost = false;
+        if fast_slowdown {
+            c.cycles += 4;
+            c.c_lt_s(0, 2);
+            if !c.fcc() {
+                skip_reload_cost = true;
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = obj;
+                call_ptr(c, callee::RIDER_SUB_STATE, 0x002d_fc40)?;
+                c.g[V0][0] ^= 0x9;
+                c.g[T1][0] = (0 < c.g[V0][0]) as u64;
+            }
+        }
+        if !skip_reload_cost {
+            c.cycles += 1;
+        }
+        c.g[V1][0] = c.lw(spray_at(this, spray_fx::OBJ));
+
+        // On a spraying rail the full rate counts and any slow-down of
+        // 27.8 or more bursts; otherwise half the rate (f12).
+        c.cycles += 6;
+        let obj = c.g[V1][0];
+        c.g[A0][0] = 0;
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 0);
+        c.g[V0][0] = c.lw(spray_at(obj, spray_rider::GRINDING));
+        c.mul_s(12, 20, 0);
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(spray_at(obj, spray_rider::GRIND_OFF));
+            if c.g[V0][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = c.lw(spray_at(obj, spray_rider::GRIND_RAIL));
+                c.g[A0][0] = (0 < c.g[V0][0]) as u64;
+            }
+        }
+        c.cycles += 2;
+        if c.g[A0][0] != 0 {
+            c.cycles += 5;
+            c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x3b80));
+            c.c_le_s(0, 20);
+            let burst = c.fcc();
+            c.g[T1][0] = 0x1;
+            if !burst {
+                c.cycles += 1;
+                c.g[T1][0] = 0;
+            }
+            c.cycles += 2;
+            c.mov_s(12, 20);
+        }
+        c.g[V0][0] = c.lw(spray_at(this, spray_fx::ACTIVE));
+
+        // Queue the burst at pos + board direction * 10.
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            let burst = c.g[T1][0] != 0;
+            c.g[A0][0] = this;
+            if burst {
+                c.cycles += 22;
+                c.g[V0][0] = c.lw(spray_at(this, spray_fx::OBJ));
+                c.g[AT][0] = 0x4120_0000;
+                c.mtc1(AT, 0);
+                c.g[A1][0] = c.g[SP][0];
+                c.mfc1(V1, 0);
+                c.lqc2(4, spray_at(c.g[V0][0], spray_rider::BOARD_DIR));
+                c.qmtc2(V1, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, frame.at(c, 0x20));
+                c.g[T0][0] = 0x1;
+                c.lq(V0, frame.at(c, 0x20));
+                c.sq(V0, frame.at(c, 0x10));
+                c.lqc2(3, spray_at(this, spray_fx::POS));
+                c.lqc2(4, frame.at(c, 0x10));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, frame.at(c, 0x20));
+                c.lq(V0, frame.at(c, 0x20));
+                c.g[V1][0] = c.lw(spray_at(this, spray_fx::OBJ));
+                c.sq(V0, sp(c));
+                c.g[A2][0] = sx(spray_at(c.g[V1][0], spray_rider::BOARD_DIR));
+                c.g[A3][0] = c.lw(spray_at(c.g[V1][0], spray_rider::INDEX));
+                callee::QUEUE_BURST.call(c, 0x002d_fd08)?;
+            }
+            c.cycles += 1;
+        }
+        c.lwc1(0, spray_at(this, spray_fx::SPEED));
+
+        // Remember the speed; re-arm the emitters when the rider's enable
+        // state changed.
+        c.cycles += 6;
+        c.g[A0][0] = c.lw(spray_at(this, spray_fx::OBJ));
+        c.swc1(0, spray_at(this, spray_fx::PREV_SPEED));
+        c.g[V1][0] = c.lw(spray_at(this, spray_fx::ENABLE_STATE));
+        c.g[V0][0] = c.lw(spray_at(c.g[A0][0], spray_rider::ENABLE_STATE));
+        if c.g[V1][0] != c.g[V0][0] {
+            c.cycles += 3;
+            c.g[A0][0] = this;
+            callee::UPDATE_EMITTER_ENABLES.call(c, 0x002d_fd2c)?;
+        }
+        c.g[A0][0] = c.lw(spray_at(this, spray_fx::OBJ));
+
+        // Snow colour: the physics sub-object's surface index (virtual
+        // call) selects an entry of the surface table (0xf0 bytes each);
+        // colour = (g, b, a, r) * 2 with alpha 1.
+        c.cycles += 35;
+        let obj = c.g[A0][0];
+        c.g[V1][0] = c.lw(spray_at(obj, spray_rider::PHYSICS));
+        c.g[A0][0] = sx(spray_at(obj, spray_rider::PHYSICS));
+        c.g[A1][0] = c.lh(spray_at(c.g[V1][0], 0x38));
+        c.g[V0][0] = c.lw(spray_at(c.g[V1][0], 0x3c));
+        let method = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        call_ptr(c, method, 0x002d_fd48)?;
+        c.g[A0][0] = 0xf0;
+        c.g[V1][0] = 0x50_0000;
+        c.mult(0, V0, V0, A0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x5c68));
+        c.g[AT][0] = 0x4000_0000;
+        c.mtc1(AT, 4);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 5);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+        let entry = c.g[V0][0];
+        c.lwc1(3, spray_at(entry, 0x0));
+        c.lwc1(0, spray_at(entry, 0x4));
+        c.lwc1(1, spray_at(entry, 0x8));
+        c.lwc1(2, spray_at(entry, 0xc));
+        c.swc1(0, sp(c));
+        c.swc1(1, frame.at(c, 0x4));
+        c.swc1(2, frame.at(c, 0x8));
+        c.swc1(3, frame.at(c, 0xc));
+        c.lq(V0, sp(c));
+        c.sq(V0, spray_at(this, spray_fx::COLOUR));
+        c.mfc1(V1, 4);
+        c.lqc2(4, spray_at(this, spray_fx::COLOUR));
+        c.qmtc2(V1, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, spray_at(this, spray_fx::COLOUR));
+        c.swc1(5, spray_at(this, spray_fx::COLOUR + 0xc));
+
+        // Run every enabled emitter (flag at emitters + 0x174 + n * 0x210).
+        let [first, second, middle @ .., last] = callee::EMITTERS;
+        c.g[V0][0] = c.lw(spray_at(this, spray_fx::EMITTERS));
+        c.g[V1][0] = c.lw(spray_at(c.g[V0][0], first.0));
+        if c.g[V1][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = this;
+            first.1.call(c, first.2)?;
+            c.g[V0][0] = c.lw(spray_at(this, spray_fx::EMITTERS));
+        }
+        c.g[V1][0] = c.lw(spray_at(c.g[V0][0], second.0));
+        c.cycles += 2;
+        if c.g[V1][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = this;
+            second.1.call(c, second.2)?;
+        }
+        c.g[V0][0] = c.lw(spray_at(this, spray_fx::EMITTERS));
+        for (flag, update, ret) in middle {
+            c.cycles += 3;
+            c.g[V1][0] = c.lw(spray_at(c.g[V0][0], flag));
+            if c.g[V1][0] != 0 {
+                c.cycles += 3;
+                c.g[A0][0] = this;
+                update.call(c, ret)?;
+            }
+            c.g[V0][0] = c.lw(spray_at(this, spray_fx::EMITTERS));
+        }
+        c.cycles += 3;
+        c.g[V1][0] = c.lw(spray_at(c.g[V0][0], last.0));
+        if c.g[V1][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = this;
+            last.1.call(c, last.2)?;
+        }
+
+        // Epilogue.
+        frame.restore(c, S0, 0x50);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// VU0 `|vf3.xyz|` into Q (vf4 = vf3 * vf3, vf6.w = vf0.w, ACC sum, sqrt).
+#[inline(always)]
+pub(crate) fn spray_vu0_length(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11614,5 +12728,599 @@ pub(crate) mod tests {
                 }
             }
         }
+    }
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::ai::ai::rider_spin_sub_handle_input;
+
+    // -- 0x00133308 RiderSpinSub_HandleInput -------------------------------
+
+    pub(crate) mod spin_input {
+        use super::*;
+        use crate::difftest::fakes::{fake_call, machine, FAKE};
+        use crate::difftest::{check, elf_image, put_vec, Rng, DATA, GAME_GP};
+
+        /// The objects (zeroed RAM except the fields written below).
+        const THIS: u32 = DATA + 0x5_0000;
+        const PAD: u32 = DATA + 0x5_0100;
+        const RIDER: u32 = DATA + 0x5_1000;
+        const STATE: u32 = DATA + 0x5_2000;
+        const CTRL: u32 = DATA + 0x5_3000;
+        const CTRL_VT: u32 = DATA + 0x5_3100;
+        const SEQ_LISTS: u32 = DATA + 0x5_3200;
+        const SEQ: u32 = DATA + 0x5_3300;
+        const ANIM_STATE: u32 = DATA + 0x5_4000;
+        const METRIX: u32 = DATA + 0x5_5000;
+        const OVERLAPS: u32 = DATA + 0x5_6000;
+        const BE_LIBRARY: u32 = DATA + 0x5_7000;
+        const BE_OBJ: u32 = DATA + 0x5_7100;
+        const BE_VT: u32 = DATA + 0x5_7200;
+        const WORLD: u32 = DATA + 0x5_8000;
+        const WORLD_84: u32 = DATA + 0x5_8100;
+        const WORLD_TABLE: u32 = DATA + 0x5_8200;
+        /// The static animation table (28-byte entries; `+0` the entry kind
+        /// `AnimController_GetLayerAnimEntry` returns).
+        const ANIM_TABLE: u32 = 0x0044_6990;
+        /// The behaviour library's interface objects (`BELibrary_GetInterface`).
+        const BE_INTERFACES: u32 = 0x0053_08a8;
+        /// Fake methods: the behaviour interface getter, and the controller's
+        /// "current animation kind" (answers 0x207: `PlayAnim` and
+        /// `GetCurrentAnimLength` stop there).
+        const FAKE_BE: u32 = FAKE;
+        const FAKE_ANIM_KIND: u32 = FAKE + 0x10;
+
+        fn f(x: f32) -> u32 {
+            x.to_bits()
+        }
+
+        /// The fake hook: the animation-kind method answers 0x207.
+        fn miss(c: &mut Cpu, target: u32) {
+            fake_call(c, target);
+            if target == FAKE_ANIM_KIND {
+                c.g[V0][0] = 0x207;
+            }
+        }
+
+        /// A 6-bit signed stick field: centred half of the time.
+        fn axis(r: &mut Rng) -> u32 {
+            if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                r.next_u32() & 0x3f
+            }
+        }
+
+        /// An angle-like float: 0, a half / whole turn, or random.
+        fn angle(r: &mut Rng) -> u32 {
+            match r.next_u32() % 6 {
+                0 | 1 => 0,
+                2 => f(std::f32::consts::PI),
+                3 => f(-std::f32::consts::PI),
+                4 => f(2.0 * std::f32::consts::PI),
+                _ => r.f32(7.0),
+            }
+        }
+
+        fn setup(c: &mut Cpu, seed: u32) {
+            let mut r = machine(c, seed, 0x0013_3308, 6);
+            let r = &mut r;
+            c.hooks.miss = miss;
+            elf_image(c);
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            // Runtime-computed globals past the image (gp+0x1ba0..): half
+            // turn, epsilon, lean limits, gains, full turns, clamp.
+            for (off, v) in [
+                (0x1ba0, std::f32::consts::PI),
+                (0x1ba4, 0.01),
+                (0x1ba8, 0.6),
+                (0x1bac, 0.5),
+                (0x1bb0, 0.3),
+                (0x1bb4, 2.0 * std::f32::consts::PI),
+                (0x1bb8, 2.0 * std::f32::consts::PI),
+                (0x1bbc, 1.0),
+            ] {
+                w(c, GAME_GP + off, f(v));
+            }
+            // The behaviour library: the singleton exists, interface 0 is an
+            // object whose getter is a fake; the character tables give a
+            // divisor (character 0 of player 0).
+            w(c, GAME_GP - 0x1f04, BE_LIBRARY);
+            w(c, GAME_GP - 0x1efc, 0);
+            w(c, BE_INTERFACES, BE_OBJ);
+            w(c, BE_OBJ + 4, BE_VT);
+            w(c, BE_VT + 0xc, FAKE_BE);
+            c.bus.write8(0x0053_08e2, 10);
+            c.bus.write8(0x0053_08e4, 10);
+            // The world chain `Rider_TryAirReverse` reads (entry 0: zero).
+            w(c, GAME_GP - 0x848, WORLD);
+            w(c, WORLD + 0x84, WORLD_84);
+            w(c, WORLD_84 + 0x44, WORLD_TABLE);
+
+            // The pad: never the reset bit (12); the other buttons, the
+            // trick byte and the axes at random, centred often. Every third
+            // seed has no lean input at all (and no lean): the animation
+            // choice at the end runs only then.
+            let calm = seed % 3 == 0;
+            let buttons = (r.next_u32() & !0x3f00_1000) | axis(r) << 24;
+            let mut sticks = axis(r) | axis(r) << 6 | axis(r) << 12 | (r.next_u32() & 3) << 18;
+            sticks |= r.next_u32() & 0xfff0_0000;
+            if calm {
+                sticks &= !0x000f_ffc0;
+            }
+            w(c, PAD, buttons);
+            w(c, PAD + 4, sticks);
+
+            // The spin sub-state.
+            w(c, THIS + 0x0, r.next_u32() % 5); // MODE
+            w(c, THIS + 0x4, 6); // trick state: `UpdateTrick` only reads the layer
+            w(c, THIS + 0x8, r.next_u32());
+            w(c, THIS + 0xc, r.next_u32() % 5); // PHASE
+            let spin_target = angle(r);
+            let flip_target = angle(r);
+            w(c, THIS + 0x10, flip_target);
+            w(c, THIS + 0x14, spin_target);
+            w(
+                c,
+                THIS + 0x18,
+                if r.next_u32() % 2 == 0 {
+                    flip_target
+                } else {
+                    angle(r)
+                },
+            );
+            w(
+                c,
+                THIS + 0x1c,
+                if r.next_u32() % 2 == 0 {
+                    spin_target
+                } else {
+                    angle(r)
+                },
+            );
+            for off in [0x20, 0x24, 0x30, 0x34] {
+                w(c, THIS + off, r.f32(10.0));
+            }
+            let (lean_x, lean_y) = if calm { (0, 0) } else { (angle(r), angle(r)) };
+            w(c, THIS + 0x28, lean_x);
+            w(c, THIS + 0x2c, lean_y);
+            w(c, THIS + 0x38, r.f32(8.0));
+            w(c, THIS + 0x3c, r.f32(8.0));
+            w(c, THIS + 0x44, r.next_u32() % 2);
+            for off in [0x48, 0x4c, 0x50, 0x54] {
+                w(
+                    c,
+                    THIS + off,
+                    if r.next_u32() % 3 == 0 { 0 } else { r.f32(1.0) },
+                );
+            }
+            w(c, THIS + 0x58, RIDER);
+
+            // The rider: in the air (main state 2: no rail or handplant
+            // search), no boost (`Rider_AddBoost` returns at once).
+            w(c, RIDER + 0x77c, STATE);
+            w(c, STATE + 0xde0, 2);
+            w(c, RIDER + 0x784, CTRL);
+            w(c, RIDER + 0x788, ANIM_STATE);
+            w(c, RIDER + 0x790, METRIX);
+            w(c, RIDER + 0x860, OVERLAPS);
+            w(c, RIDER + 0x304, 3);
+            w(c, RIDER + 0x2f4, r.next_u32() % 10);
+            w(c, RIDER + 0x86c, 0);
+            w(c, RIDER + 0xb34, 1 + r.next_u32() % 5);
+            w(c, RIDER + 0x2dc, r.f32(5.0));
+            w(c, RIDER + 0x2e0, r.f32(5.0));
+            w(
+                c,
+                RIDER + 0x2ec,
+                if r.next_u32() % 2 == 0 { 0 } else { r.f32(1.0) },
+            );
+            w(c, RIDER + 0x320, r.next_u32() % 2);
+            w(c, RIDER + 0x324, r.next_u32() % 2);
+            w(
+                c,
+                RIDER + 0x28c,
+                if r.next_u32() % 3 == 0 { 0 } else { r.f32(1.0) },
+            );
+            w(
+                c,
+                RIDER + 0x298,
+                if r.next_u32() % 3 == 0 { 0 } else { r.f32(1.0) },
+            );
+            // `Rider_TryAirReverse` (anim kinds 1 and 3) gives up: the
+            // rider's up vector points against the reference.
+            put_vec(c, RIDER + 0x180, [f(1.0), 0, 0, 0]);
+            put_vec(c, ANIM_STATE + 0x20, [f(-1.0), 0, 0, 0]);
+            w(c, ANIM_STATE + 0xac, r.next_u32() % 4);
+            w(c, ANIM_STATE + 0x98, r.f32(2.0));
+            w(c, ANIM_STATE + 0xa0, r.f32(2.0));
+            // The metrix: zeroed (no trick to announce); the spin flag.
+            w(c, METRIX + 0x14, r.f32(1.0));
+
+            // The animation controller: layer 2 plays `id` (spin poses
+            // 0x10d..0x128, 0x11f, 0x120, 0x131, tweaks, "none"), whose
+            // table kind is a trick (0x12..0x14), 2, 9 or other.
+            const IDS: [u32; 6] = [0x11f, 0x120, 0x131, 0x129, 0x1b6, 0x200];
+            let id = if r.next_u32() % 2 == 0 {
+                0x10d + r.next_u32() % 0x1c
+            } else {
+                IDS[(r.next_u32() % 6) as usize]
+            };
+            const KINDS: [u32; 7] = [0x12, 0x13, 0x14, 2, 2, 9, 0];
+            w(
+                c,
+                ANIM_TABLE + id * 0x1c,
+                KINDS[(r.next_u32() % 7) as usize],
+            );
+            w(c, CTRL + 8, id);
+            w(c, CTRL + 0x1c, f(1.0));
+            w(c, CTRL + 0x50, SEQ_LISTS);
+            w(c, CTRL + 0x58, CTRL_VT);
+            w(c, CTRL_VT + 0x24, FAKE_ANIM_KIND);
+            w(c, SEQ_LISTS + 0x14, SEQ);
+            w(c, SEQ + 0xc0, r.next_u32() % 2);
+
+            // Rare paths made common (on top of the random state, all with
+            // no lean and no trick on the layer):
+            match seed % 9 {
+                // The spin settles this tick (phase 1 → 2, stick centred,
+                // rotation at its targets): the landing-blend jump table on
+                // a spin pose (or the default).
+                3 => {
+                    w(c, THIS + 0xc, 1);
+                    w(c, PAD, buttons & !0x3f00_0000);
+                    w(c, PAD + 4, sticks & !0x3f);
+                    w(c, THIS + 0x18, flip_target);
+                    w(c, THIS + 0x1c, spin_target);
+                    w(c, THIS + 0x54, f(10.0));
+                    let id = if seed % 2 == 0 {
+                        0x10d + r.next_u32() % 0x1c
+                    } else {
+                        0x200
+                    };
+                    w(c, CTRL + 8, id);
+                    w(c, ANIM_TABLE + id * 0x1c, if seed % 4 == 1 { 0 } else { 2 });
+                }
+                // A further half turn queued in phase 1 with the layer on a
+                // kind-2 entry: the flip-pose choice.
+                6 => {
+                    w(c, THIS + 0xc, 1);
+                    w(c, THIS + 0x44, 1);
+                    let id = 0x10d + r.next_u32() % 0x1c;
+                    w(c, CTRL + 8, id);
+                    w(c, ANIM_TABLE + id * 0x1c, 2);
+                }
+                _ => {}
+            }
+
+            c.g[A0][0] = sx(THIS);
+            c.g[A1][0] = sx(PAD);
+            // The generated body (no override slot yet) dispatches on `pc`:
+            // enter at the start.
+            c.pc = 0x0013_3308;
+        }
+
+        /// `RiderSpinSub_HandleInput`: every hold mode and spin phase,
+        /// centred and pushed stick axes, targets reached or not, with and
+        /// without a trick on the layer, the animation choices (including
+        /// the landing-blend jump table) and fake callees that unwind.
+        #[test]
+        fn rider_spin_sub_handle_input_matches() {
+            check(
+                ssx3_ee::s01::f_00133308__generated,
+                rider_spin_sub_handle_input,
+                300,
+                &setup,
+            );
+        }
+    }
+
+    // -- 0x002e4f50 SnowBox_Update ------------------------------------------
+
+    /// `SnowBox_Update` moves the weather flake box: every mode (0, 1,
+    /// other), the drift timer running out or not, the snap flag, and each
+    /// position component ending inside, above or below the box (wrap).
+    #[test]
+    fn snow_box_update_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA, GAME_GP};
+        use snow_update::*;
+
+        const BOX: u32 = DATA;
+        const REC: u32 = DATA + 0x100;
+        const RATE_OBJ: u32 = DATA + 0x200;
+        let f = |x: f32| x.to_bits();
+        let gp = |o: i32| GAME_GP.wrapping_add(o as u32);
+
+        check(
+            ssx3_ee::s09::f_002e4f50__generated,
+            snow_box_update,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x002e_4f50 ^ (seed as u64) << 20 ^ 0x9e37_79b9);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x002e_4f50;
+
+                // Globals: the frame rate, the seed, the heading factors, the
+                // wind and the sine table.
+                c.bus.write32(gp(GP_RATE_OBJ), RATE_OBJ);
+                c.bus
+                    .write32(RATE_OBJ + RATE, if seed % 2 == 0 { 60 } else { 30 });
+                c.bus.write32(gp(GP_SEED), r.next_u32());
+                c.bus.write32(gp(GP_HEADING_K1), f(81.487_33));
+                c.bus
+                    .write32(gp(GP_HEADING_K2), f(1.0 + (r.next_u32() % 4) as f32));
+                for k in 0..4 {
+                    c.bus.write32(WIND + 4 * k, r.f32(2.0));
+                }
+                for i in 0..0x280 {
+                    c.bus.write32(SIN_TABLE + 4 * i, r.f32(1.0));
+                }
+
+                // The weather record.
+                c.bus
+                    .write32(REC + REC_DENSITY0, f((r.next_u32() % 1000) as f32 * 0.002));
+                c.bus
+                    .write32(REC + REC_SPEED0, f((r.next_u32() % 100) as f32 * 0.0002));
+                c.bus
+                    .write32(REC + REC_DENSITY1, f((r.next_u32() % 1000) as f32 * 0.3));
+                c.bus
+                    .write32(REC + REC_SPEED1, f((r.next_u32() % 100) as f32 * 0.0004));
+                c.bus.write32(REC + REC_F4, r.f32(10.0));
+                c.bus.write32(REC + REC_HEADING, r.f32(6.0));
+                c.bus
+                    .write32(REC + REC_RANDOMNESS, f((r.next_u32() % 101) as f32 * 0.01));
+                c.bus.write32(REC + REC_WIND, r.f32(1.0));
+                for k in 0..8 {
+                    c.bus.write32(REC + REC_C0 + 4 * k, r.f32(255.0));
+                }
+
+                // The box: mode by seed % 3, timer expiring on (seed / 3) % 2,
+                // snap on (seed / 6) % 2.
+                let mode = match seed % 3 {
+                    0 => 0,
+                    1 => 1,
+                    _ => [2, 7, 0xffff_ffff][(seed / 3 % 3) as usize],
+                };
+                c.bus.write32(BOX + MODE, mode);
+                c.bus
+                    .write32(BOX + SPEED, f((r.next_u32() % 100) as f32 * 0.1));
+                c.bus.write32(BOX + WIND_SCALE, r.f32(1.0));
+                let timer = if seed / 3 % 2 == 0 {
+                    0.001
+                } else {
+                    0.5 + (r.next_u32() % 4) as f32
+                };
+                c.bus.write32(BOX + TIMER, f(timer));
+                c.bus
+                    .write32(BOX + PERIOD, f(1.0 + (r.next_u32() % 4) as f32));
+                c.bus.write32(
+                    BOX + SNAP,
+                    if seed / 6 % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    },
+                );
+                for k in 0..4 {
+                    c.bus.write32(BOX + VEL + 4 * k, r.f32(5.0));
+                    c.bus.write32(BOX + PREV_VEL + 4 * k, r.f32(5.0));
+                }
+                // One position per component with its own wrap case (inside,
+                // above +h, below -h); the move per tick stays well under 1.
+                let size = 2.0 + (r.next_u32() % 200) as f32 * 0.25;
+                let h = size * 0.5;
+                c.bus.write32(BOX + SIZE, f(size));
+                for k in 0..3u32 {
+                    let v = match r.next_u32() % 3 {
+                        0 => (r.next_u32() as f32 / u32::MAX as f32 - 0.5) * h,
+                        1 => h + 2.0 + (r.next_u32() % 10) as f32,
+                        _ => -h - 2.0 - (r.next_u32() % 10) as f32,
+                    };
+                    c.bus.write32(BOX + POS + 4 * k, f(v));
+                }
+                c.bus.write32(BOX + POS + 0xc, r.f32(2.0));
+
+                c.g[A0][0] = sx(BOX);
+                c.g[A1][0] = sx(REC);
+            },
+        );
+    }
+
+    // ------------------------------------------- cDynamicSprayFX_Update
+
+    /// `cDynamicSprayFX_Update` against the generated body. Real callees run
+    /// on short paths: the emitter setup calls a real `return 0` method per
+    /// emitter, the bone lookup finds no bones, the rider-state and anim
+    /// getters are tiny leaves, the burst and enable updates are leaves, and
+    /// emitter 5 (switched on by the fixture or by the enable update) takes
+    /// its spawn path on two prepared emitter slots. The two virtual calls on
+    /// the physics sub-object are fakes (speed vector, surface index) and may
+    /// unwind. The other seven emitter updates stay off (their flags are 0
+    /// and the enable update, reached only with enable states 2/3, leaves
+    /// them off).
+    #[test]
+    fn c_dynamic_spray_fx_update_matches() {
+        use crate::difftest::fakes::{self, FAKE, LOG_RESULTS};
+        use crate::difftest::{put_vec, DATA};
+        use crate::game::visualfx::boardwakefx::tests::{f, gp_at, put_spray_slot, RETURN_ZERO};
+
+        const FX: u32 = DATA;
+        const OBJ: u32 = DATA + 0x1000;
+        const EM: u32 = DATA + 0x2000;
+        const VT_EMITTER: u32 = DATA + 0x3800;
+        const CURVES: u32 = DATA + 0x3900;
+        const VT_PHYSICS: u32 = DATA + 0x3a00;
+        const MODEL: u32 = DATA + 0x3b00;
+        const BONE_TABLE: u32 = DATA + 0x3b80;
+        const BONE_GROUPS: u32 = DATA + 0x3c00;
+        const MATRICES: u32 = DATA + 0x4000;
+        const ANIM: u32 = DATA + 0x4200;
+        const STATES: u32 = DATA + 0x4300;
+        const BONES: u32 = DATA + 0x5200;
+        const SPEED_VEC: u32 = DATA + 0x5300;
+        const WORLD: u32 = DATA + 0x5400;
+        const GAME: u32 = DATA + 0x5500;
+        const RACE: u32 = DATA + 0x5600;
+        const PLAYERS: u32 = DATA + 0x5900;
+        /// The surface colour table (0xf0 bytes per surface).
+        const SURFACES: u32 = 0x004f_a398;
+
+        fakes::covered(
+            ee::s09::f_002df920__generated,
+            c_dynamic_spray_fx_update,
+            250,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x2df9_20, 2);
+                let bit = |r: &mut crate::difftest::Rng| r.next_u32() & 1;
+
+                // .lit4 constants: 60, the fast slow-down rate and speed
+                // (555.6), the rail burst rate (27.8); emitter 5's.
+                for (off, v) in [
+                    (-0x3b88, 59.999996f32),
+                    (-0x3b84, 555.55554),
+                    (-0x3b80, 27.777779),
+                    (-0x3abc, 27.777778),
+                    (-0x3ab8, 277.77777),
+                    (-0x3ab4, 3333.3335),
+                    (-0x3ab0, 0.3),
+                    (-0x3aac, 0.4),
+                    (-0x3aa8, 0.8),
+                    (-0x3aa4, 0.2),
+                    (-0x3aa0, 1.0 / 60.0),
+                    (-0x3a9c, 83.333336),
+                    (-0x3a98, 0.4),
+                    (-0x3a94, 0.5),
+                ] {
+                    c.bus.write32(gp_at(off), f(v));
+                }
+                c.bus.write32(gp_at(0xa0c), r.next_u32());
+                c.bus.write32(gp_at(-0x848), WORLD);
+                c.bus.write32(WORLD + 0x84, GAME);
+                c.bus.write32(GAME + 0x44, RACE);
+                c.bus.write32(GAME + 0x84, PLAYERS);
+                c.bus.write32(PLAYERS + 0x10, 0);
+
+                // The spray.
+                for k in 0..0x4c {
+                    c.bus.write32(FX + 4 * k, r.edge_f32());
+                }
+                c.bus.write32(FX + spray_fx::OBJ, OBJ);
+                c.bus.write32(FX + spray_fx::EMITTERS, EM);
+                c.bus.write32(FX + 0x2c, CURVES);
+                c.bus
+                    .write32(FX + spray_fx::NEEDS_SETUP, (seed % 5 == 0) as u32);
+                c.bus.write32(FX + 0x7c, BONES);
+                c.bus
+                    .write32(FX + spray_fx::BONES_FOUND, (seed % 6 != 0) as u32);
+                c.bus.write32(FX + 0x124, bit(&mut r));
+
+                // The speed vector the physics sub-object returns, and the
+                // previous speed (slow-down rate = (prev - speed) * 60).
+                let (vec, prev) = match seed % 4 {
+                    0 => ([0; 4], r.f32(1500.0)),
+                    1 => {
+                        let x = 600.0 + (r.next_u32() % 400) as f32;
+                        let dv = [20.0f32, 5.0, 0.3, -5.0][((seed / 4) % 4) as usize];
+                        ([f(x), 0, 0, r.edge_f32()], f(x + dv))
+                    }
+                    2 => (
+                        [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()],
+                        r.edge_f32(),
+                    ),
+                    _ => (
+                        [r.f32(300.0), r.f32(300.0), r.f32(300.0), r.f32(1.0)],
+                        f(f32::from_bits(r.f32(800.0)).abs()),
+                    ),
+                };
+                put_vec(c, SPEED_VEC, vec);
+                c.bus.write32(FX + spray_fx::PREV_SPEED, prev);
+                c.bus.write32(LOG_RESULTS, SPEED_VEC);
+                let surface = 1 + seed % 7;
+                c.bus.write32(LOG_RESULTS + 4, surface);
+                for k in 0..4 {
+                    c.bus.write32(SURFACES + surface * 0xf0 + 4 * k, r.f32(1.0));
+                }
+
+                // The rider.
+                for k in 0..0x2c4 {
+                    c.bus.write32(OBJ + 4 * k, r.edge_f32());
+                }
+                c.bus
+                    .write32(OBJ + spray_rider::IN_TRICK, (seed % 3 != 0) as u32);
+                c.bus.write32(OBJ + spray_rider::ANIM, ANIM);
+                let anims = [23u32, 25, 28, 37, 38, 22, 29, 36, 39, 0];
+                c.bus.write32(ANIM + 8, anims[(r.next_u32() % 10) as usize]);
+                c.bus.write32(OBJ + spray_rider::GOOFY, bit(&mut r));
+                c.bus.write32(OBJ + spray_rider::SLIP, r.f32(1.5));
+                c.bus
+                    .write32(OBJ + spray_rider::FORWARD_SPEED, r.f32(500.0));
+                for k in 0..4 {
+                    c.bus
+                        .write32(OBJ + spray_rider::VELOCITY + 4 * k, r.edge_f32());
+                    c.bus
+                        .write32(OBJ + spray_rider::BOARD_DIR + 4 * k, r.f32(1.0));
+                }
+                if seed % 9 == 0 {
+                    put_vec(c, OBJ + spray_rider::VELOCITY, [0; 4]);
+                }
+                c.bus.write32(OBJ + spray_rider::INDEX, seed % 4);
+                c.bus.write32(OBJ + spray_rider::PHYSICS, VT_PHYSICS);
+                c.bus
+                    .write16(VT_PHYSICS + 0x10, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(VT_PHYSICS + 0x14, FAKE);
+                c.bus
+                    .write16(VT_PHYSICS + 0x38, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(VT_PHYSICS + 0x3c, FAKE + 0x10);
+                c.bus.write32(OBJ + 0x77c, STATES);
+                c.bus.write32(STATES + 0xde0, seed % 7);
+                c.bus
+                    .write32(STATES + 0xde4, if seed % 11 == 0 { 9 } else { 3 });
+                for off in [
+                    spray_rider::GRINDING,
+                    spray_rider::GRIND_OFF,
+                    spray_rider::GRIND_RAIL,
+                    spray_rider::GRIND_SPRAY,
+                ] {
+                    c.bus.write32(OBJ + off, bit(&mut r));
+                }
+                // The enable state: unchanged, or changed to 2/3 (which
+                // leaves only emitter 5 on).
+                let state = 2 + bit(&mut r);
+                c.bus.write32(OBJ + spray_rider::ENABLE_STATE, state);
+                let known = if seed % 4 == 3 { state ^ 1 } else { state };
+                c.bus.write32(FX + spray_fx::ENABLE_STATE, known);
+
+                // The model: matrices for the spray bone; no named bones.
+                c.bus.write32(OBJ + spray_rider::MODEL, MODEL);
+                c.bus.write32(OBJ + spray_rider::SPRAY_BONE, seed % 4);
+                c.bus.write32(MODEL + 0x30, MATRICES);
+                c.bus.write32(MODEL + 0x1c, BONE_TABLE);
+                c.bus.write32(MODEL + 0xc, BONE_GROUPS);
+                c.bus.write32(BONE_TABLE, 0);
+                c.bus.write32(BONE_GROUPS + 0x44, 0);
+                for k in 0..0x40 {
+                    c.bus.write32(MATRICES + 4 * k, r.edge_f32());
+                }
+
+                // The ten emitters: a `return 0` setup method each; slots 5
+                // and 6 ready for emitter 5's spawns; only emitter 5's flag
+                // may be on.
+                c.bus.write16(VT_EMITTER + 0x18, 0);
+                c.bus.write32(VT_EMITTER + 0x1c, RETURN_ZERO);
+                for k in 0..10 {
+                    let e = EM + k * 0x210;
+                    c.bus.write32(e + 0x1f8, VT_EMITTER);
+                    c.bus.write32(e + 0x58, r.f32(2.0));
+                }
+                put_spray_slot(c, &mut r, EM + 5 * 0x210, DATA + 0x8000);
+                put_spray_slot(c, &mut r, EM + 6 * 0x210, DATA + 0x8100);
+                for (flag, _, _) in spray_callee::EMITTERS {
+                    c.bus.write32(EM + flag, 0);
+                }
+                c.bus.write32(EM + 0xbc4, (seed % 5 == 1) as u32);
+
+                c.g[A0][0] = sx(FX);
+            },
+        );
     }
 }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -186,6 +187,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_8340,
         aivisual_effects_man_dtor,
         "AIVisualEffectsMan_dtor",
+    ),
+    (
+        0x002f_1150,
+        rider_base_update_attack_fx,
+        "RiderBase_UpdateAttackFX",
+    ),
+    (
+        0x002f_6518,
+        rider_base_update_cheat_code,
+        "RiderBase_UpdateCheatCode",
     ),
 ];
 
@@ -1958,6 +1969,840 @@ pub fn c_board_trail_fx_reset(c: &mut Cpu) {
     }
 }
 
+pub(crate) mod cheat {
+
+    /// The rider (`cRider*`).
+    pub const RIDER: u32 = 0x00;
+
+    /// Signed byte: 1 = the cheat is on, 0 = off, -1 = wrong input.
+    pub const STATE: u32 = 0x04;
+
+    /// Event and progress bits (bit 1: the cheat's variant flag).
+    pub const FLAGS: u32 = 0x07;
+}
+
+pub(crate) mod cheat_rider {
+
+    pub const VELOCITY: u32 = 0x1e0;
+
+    /// Three rates set to 60 while the cheat is on (0 when off).
+    pub const RATE_A: u32 = 0x2e8;
+
+    pub const RATE_B: u32 = 0x2ec;
+
+    pub const RATE_C: u32 = 0x2f0;
+
+    /// The movement mode (11 = cheat mode).
+    pub const MODE: u32 = 0x2f4;
+
+    /// 1.0 while the cheat is on.
+    pub const CHEAT_SCALE: u32 = 0x2f8;
+
+    /// Must be positive for the speed/steer assist to run.
+    pub const ASSIST: u32 = 0x2fc;
+
+    /// 0 while the cheat is on, 1 when off.
+    pub const NORMAL_PHYSICS: u32 = 0x304;
+
+    /// The cheat's variant flag (1 when off).
+    pub const VARIANT: u32 = 0x308;
+
+    pub const MAX_SPEED: u32 = 0x30c;
+
+    /// How much of the speed follows the steer direction (0 = none).
+    pub const STEER: u32 = 0x310;
+
+    /// How much of the speed is pulled up to the maximum.
+    pub const BLEND: u32 = 0x314;
+
+    /// The steer direction.
+    pub const STEER_DIR: u32 = 0x3a0;
+
+    /// The physics sub-object (with its own vtable).
+    pub const PHYSICS: u32 = 0x6c0;
+}
+
+pub(crate) mod cheat_callee {
+    use crate::call::Callee;
+    use ssx3_ee as ee;
+
+    pub const CLEAR: Callee = Callee {
+        addr: 0x002f_64f0,
+        f: ee::s09::RiderBase_ClearCheatCode,
+    };
+
+    pub const MATCH: Callee = Callee {
+        addr: 0x002f_6910,
+        f: ee::s09::RiderBase_MatchCheatCode,
+    };
+
+    /// `BELibrary_GetInterface` (through the function table).
+    pub const BE_LIBRARY_GET_INTERFACE: u32 = 0x0014_dd58;
+
+    /// gp+: how many clears are still due.
+    pub const CLEARS_DUE_GP: u32 = 0xad0;
+
+    /// gp-: the world.
+    pub const WORLD_GP: u32 = 0x848;
+
+    /// gp-: .lit4 0.001 (minimum steer-direction length) and 0.0001
+    /// (minimum velocity length).
+    pub const MIN_DIR_LEN_GP: u32 = 0x3898;
+
+    pub const MIN_VEL_LEN_GP: u32 = 0x3894;
+
+    /// Non-zero: cheats switched off globally.
+    pub const CHEATS_OFF: u32 = 0x0053_4b30;
+
+    /// The zero vector the velocity is reset to.
+    pub const ZERO_VEC: u32 = 0x004f_f130;
+}
+
+pub(crate) mod attack_fx {
+
+    /// `RiderBase* owner`.
+    pub const OWNER: u32 = 0x00;
+
+    /// `vec4 pos[4]`: the four spark positions.
+    pub const POS: u32 = 0x10;
+
+    /// `vec4 col[4]`: their colours `{1, c, c, c}`.
+    pub const COL: u32 = 0x50;
+
+    /// `float size[4]`.
+    pub const SIZE: u32 = 0x90;
+
+    /// `int active`.
+    pub const ACTIVE: u32 = 0xa0;
+
+    /// Rider: the attack strength (sparks while `> 0`).
+    pub const R_STRENGTH: u32 = 0x350;
+
+    /// Rider: facing flag (picks which hand's bone).
+    pub const R_FLIP: u32 = 0x320;
+
+    /// Rider: the model (`+0x30`: the bone matrix array, 64 bytes each).
+    pub const R_MODEL: u32 = 0x780;
+
+    pub const MODEL_BONES: u32 = 0x30;
+
+    /// Rider: the anim controller.
+    pub const R_ANIM: u32 = 0x784;
+
+    /// Rider: the left / right hand bones.
+    pub const R_BONE_A: u32 = 0x8b0;
+
+    pub const R_BONE_B: u32 = 0x8b8;
+
+    /// Anim states of the punches (track 0) and their track-1 variants.
+    pub const PUNCH_A: u64 = 0x146;
+
+    pub const PUNCH_B: u64 = 0x147;
+
+    pub const PUNCH_A1: u64 = 0x143;
+
+    pub const PUNCH_B1: u64 = 0x144;
+
+    /// Anim table type of a track-1 sequence that carries the punch flags.
+    pub const SEQ_TYPE_PUNCH: u64 = 0xd;
+
+    /// `D_004FF120`: the matrix's replacement translation row.
+    pub const ORIGIN_ROW: u32 = 0x004f_f120;
+
+    /// `gp+0xa0c`: the effects random seed; `gp-0x3930`: colour scale 0.9.
+    pub const RAND_SEED: u32 = 0xa0c;
+
+    pub const COLOUR_SCALE: u32 = 0x3930;
+}
+
+/// `base + off` for a guest pointer held in a register.
+#[inline(always)]
+pub(crate) fn cheat_at(base: u64, off: u32) -> u32 {
+    (base as u32).wrapping_add(off)
+}
+
+/// VU0 `|vf3.xyz|` into Q.
+#[inline(always)]
+pub(crate) fn cheat_vu0_length(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+}
+
+/// VU0 `vf5 = vf3 / |vf3.xyz|` (all four lanes).
+#[inline(always)]
+pub(crate) fn cheat_vu0_normalise(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().rsqrt(0, 3, 4, 0);
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 5, 3, Src::Q);
+}
+
+/// `void RiderBase_UpdateCheatCode(CheatCode* self)` (0x2f6518): the
+/// per-tick update of a rider's cheat code. Does nothing while the physics
+/// sub-object's virtual query (slot 0x48) says so; otherwise runs a pending
+/// clear, matches the input against the code, and switches the rider into
+/// cheat mode 11 (rates 60, scale 1, variant flag from the state bits) or
+/// back to mode 0. In cheat mode with a positive assist, pulls the speed up
+/// toward the maximum (`max * blend + speed * (1 - blend)`), then turns the
+/// velocity toward the steer direction (`dir * speed * steer + vel *
+/// speed * (1 - steer)`, both normalised).
+pub fn rider_base_update_cheat_code(c: &mut Cpu) {
+    guest(c, |c| {
+        // Prologue: s0 = self; s0 and ra saved.
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x70);
+        frame.save_ra(c, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0];
+
+        // The physics sub-object's virtual query (vtable slot 0x48).
+        c.g[A0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        let rider = c.g[A0][0];
+        c.g[V1][0] = c.lw(cheat_at(rider, cheat_rider::PHYSICS));
+        c.g[A0][0] = sx(cheat_at(rider, cheat_rider::PHYSICS));
+        c.g[A1][0] = c.lh(cheat_at(c.g[V1][0], 0x48));
+        c.g[V0][0] = c.lw(cheat_at(c.g[V1][0], 0x4c));
+        let method = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        call_ptr(c, method, 0x002f_6544)?;
+        if c.g[V0][0] == 0 {
+            update_cheat_code_body(c, frame, this)?;
+        }
+
+        // Epilogue.
+        frame.restore(c, S0, 0x70);
+        c.cycles += 3;
+        frame.restore_ra(c, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The body of `RiderBase_UpdateCheatCode` after the virtual query said 0;
+/// `Ok` on every normal exit (all go to the epilogue).
+pub(crate) fn update_cheat_code_body(c: &mut Cpu, frame: Frame, this: u64) -> crate::call::Flow {
+    use cheat_callee as callee;
+    use cheat_rider as rider_f;
+    use ssx3_ee_rt::vu0::{Src, X};
+
+    // A pending clear (while at least two are due).
+    c.cycles += 4;
+    let gp = c.g[GP][0] as u32;
+    c.g[V0][0] = c.lw(gp.wrapping_add(callee::CLEARS_DUE_GP));
+    c.g[V0][0] = ((c.g[V0][0] as i64) < 2) as u64;
+    if c.g[V0][0] == 0 {
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S0][0];
+        callee::CLEAR.call(c, 0x002f_6564)?;
+        let at = (c.g[GP][0] as u32).wrapping_add(callee::CLEARS_DUE_GP);
+        c.g[V0][0] = c.lw(at);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+        c.sw(at, c.g[V0][0]);
+    }
+
+    // Match the input, query the back end (result unused), and honour the
+    // global cheats-off switch.
+    c.cycles += 10;
+    c.g[A0][0] = c.g[S0][0];
+    callee::MATCH.call(c, 0x002f_6578)?;
+    let gp = c.g[GP][0] as u32;
+    c.g[V0][0] = c.lw(gp.wrapping_sub(callee::WORLD_GP));
+    c.g[A1][0] = 0x7;
+    c.g[A0][0] = c.lw(cheat_at(c.g[V0][0], 0x78));
+    call_ptr(c, callee::BE_LIBRARY_GET_INTERFACE, 0x002f_6588)?;
+    c.g[V1][0] = 0x53_0000;
+    c.g[V0][0] = c.lw(callee::CHEATS_OFF);
+    if c.g[V0][0] != 0 {
+        c.sb(cheat_at(this, cheat::STATE), 0);
+    }
+
+    // Enter or leave cheat mode.
+    c.cycles += 4;
+    c.g[V0][0] = c.lb(cheat_at(this, cheat::STATE));
+    c.g[A1][0] = 0x1;
+    if c.g[V0][0] != c.g[A1][0] {
+        // Off: variant flag 1; leave mode 11 (if in it) for mode 0.
+        c.g[V0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.cycles += 6;
+        c.g[V1][0] = 0xb;
+        c.sw(cheat_at(c.g[V0][0], rider_f::VARIANT), c.g[A1][0]);
+        c.g[A0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.g[V0][0] = c.lw(cheat_at(c.g[A0][0], rider_f::MODE));
+        if c.g[V0][0] != c.g[V1][0] {
+            return Ok(());
+        }
+        c.cycles += 11;
+        c.sw(cheat_at(c.g[A0][0], rider_f::MODE), 0);
+        c.g[V0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.sw(cheat_at(c.g[V0][0], rider_f::CHEAT_SCALE), 0);
+        c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.sw(cheat_at(c.g[V1][0], rider_f::RATE_C), 0);
+        c.g[V0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.sw(cheat_at(c.g[V0][0], rider_f::RATE_B), 0);
+        c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.sw(cheat_at(c.g[V1][0], rider_f::RATE_A), 0);
+        c.g[V0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.sw(cheat_at(c.g[V0][0], rider_f::NORMAL_PHYSICS), c.g[A1][0]);
+    } else {
+        // On: mode 11, scale 1.0, rates 60.0, variant from flag bit 1.
+        c.cycles += 23;
+        c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.g[V0][0] = 0xb;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 1);
+        c.sw(cheat_at(c.g[V1][0], rider_f::MODE), c.g[V0][0]);
+        c.g[AT][0] = 0x4270_0000;
+        c.mtc1(AT, 0);
+        c.g[V0][0] = c.lbu(cheat_at(this, cheat::FLAGS));
+        c.g[A0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 1);
+        c.g[V0][0] &= 0x1;
+        c.sw(cheat_at(c.g[A0][0], rider_f::VARIANT), c.g[V0][0]);
+        c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.swc1(1, cheat_at(c.g[V1][0], rider_f::CHEAT_SCALE));
+        c.g[V0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.swc1(0, cheat_at(c.g[V0][0], rider_f::RATE_C));
+        c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.swc1(0, cheat_at(c.g[V1][0], rider_f::RATE_B));
+        c.g[V0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.swc1(0, cheat_at(c.g[V0][0], rider_f::RATE_A));
+        c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+        c.sw(cheat_at(c.g[V1][0], rider_f::NORMAL_PHYSICS), 0);
+    }
+
+    // The assist runs only in cheat mode with a positive assist value.
+    c.cycles += 5;
+    c.g[A0][0] = c.lw(cheat_at(this, cheat::RIDER));
+    c.g[V1][0] = 0xb;
+    c.g[V0][0] = c.lw(cheat_at(c.g[A0][0], rider_f::MODE));
+    if c.g[V0][0] != c.g[V1][0] {
+        return Ok(());
+    }
+    c.cycles += 6;
+    let rider = c.g[A0][0];
+    c.lwc1(0, cheat_at(rider, rider_f::ASSIST));
+    c.mtc1(0, 1);
+    c.c_lt_s(1, 0);
+    if !c.fcc() {
+        return Ok(());
+    }
+
+    // speed = |vel|; below the maximum (and moving): vel = norm(vel) *
+    // (max * blend + speed * (1 - blend)), speed = |vel|.
+    c.cycles += 14;
+    c.lwc1(0, cheat_at(rider, rider_f::MAX_SPEED));
+    c.lqc2(3, cheat_at(rider, rider_f::VELOCITY));
+    cheat_vu0_length(c);
+    c.cfc2(V0, 22);
+    c.mtc1(V0, 3);
+    c.c_lt_s(3, 0);
+    if c.fcc() {
+        c.cycles += 3;
+        c.c_eq_s(3, 1);
+        if !c.fcc() {
+            c.cycles += 39;
+            c.lqc2(3, cheat_at(rider, rider_f::VELOCITY));
+            cheat_vu0_normalise(c);
+            c.sqc2(5, frame.at(c, 0x10));
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 1);
+            c.lq(V0, frame.at(c, 0x10));
+            c.sq(V0, frame.at(c, 0x0));
+            c.sq(V0, cheat_at(rider, rider_f::VELOCITY));
+            c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+            let r = c.g[V1][0];
+            c.lwc1(2, cheat_at(r, rider_f::BLEND));
+            c.lwc1(0, cheat_at(r, rider_f::MAX_SPEED));
+            c.sub_s(1, 1, 2);
+            c.mul_s(0, 0, 2);
+            c.mul_s(1, 3, 1);
+            c.add_s(0, 0, 1);
+            c.mfc1(A0, 0);
+            c.lqc2(4, cheat_at(r, rider_f::VELOCITY));
+            c.qmtc2(A0, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, cheat_at(r, rider_f::VELOCITY));
+            c.g[V0][0] = c.lw(cheat_at(this, cheat::RIDER));
+            c.lqc2(3, cheat_at(c.g[V0][0], rider_f::VELOCITY));
+            cheat_vu0_length(c);
+            c.cfc2(V1, 22);
+            c.mtc1(V1, 3);
+            c.g[A0][0] = c.lw(cheat_at(this, cheat::RIDER));
+        }
+    }
+
+    // Steering: only with a non-zero steer, a steer direction longer than
+    // 0.001 and a velocity longer than 0.0001.
+    c.cycles += 6;
+    c.mtc1(0, 2);
+    let rider = c.g[A0][0];
+    c.lwc1(0, cheat_at(rider, rider_f::STEER));
+    c.c_eq_s(0, 2);
+    if c.fcc() {
+        return Ok(());
+    }
+    c.cycles += 15;
+    let gp = c.g[GP][0] as u32;
+    c.lwc1(0, gp.wrapping_sub(callee::MIN_DIR_LEN_GP));
+    c.lqc2(3, cheat_at(rider, rider_f::STEER_DIR));
+    cheat_vu0_length(c);
+    c.cfc2(V0, 22);
+    c.mtc1(V0, 1);
+    c.c_lt_s(0, 1);
+    if !c.fcc() {
+        return Ok(());
+    }
+    c.cycles += 15;
+    c.lwc1(0, gp.wrapping_sub(callee::MIN_VEL_LEN_GP));
+    c.lqc2(3, cheat_at(rider, rider_f::VELOCITY));
+    cheat_vu0_length(c);
+    c.cfc2(V0, 22);
+    c.mtc1(V0, 1);
+    c.c_lt_s(0, 1);
+    if !c.fcc() {
+        return Ok(());
+    }
+
+    // vel = norm(dir) * (speed * steer) + norm(vel) * (speed * (1 - steer)).
+    c.cycles += 61;
+    c.lqc2(3, cheat_at(rider, rider_f::STEER_DIR));
+    cheat_vu0_normalise(c);
+    c.sqc2(5, frame.at(c, 0x30));
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 1);
+    c.lq(V0, frame.at(c, 0x30));
+    c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+    c.sq(V0, frame.at(c, 0x20));
+    c.lwc1(0, cheat_at(c.g[V1][0], rider_f::STEER));
+    c.mul_s(0, 3, 0);
+    c.mfc1(V1, 0);
+    c.lqc2(4, frame.at(c, 0x20));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0x30));
+    c.lq(V0, frame.at(c, 0x30));
+    c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+    c.sq(V0, frame.at(c, 0x10));
+    c.lqc2(3, cheat_at(c.g[V1][0], rider_f::VELOCITY));
+    cheat_vu0_normalise(c);
+    c.sqc2(5, frame.at(c, 0x50));
+    c.lq(V0, frame.at(c, 0x50));
+    c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
+    c.sq(V0, frame.at(c, 0x40));
+    c.lwc1(0, cheat_at(c.g[V1][0], rider_f::STEER));
+    c.sub_s(1, 1, 0);
+    c.mul_s(1, 3, 1);
+    c.mfc1(V1, 1);
+    c.lqc2(4, frame.at(c, 0x40));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, frame.at(c, 0x50));
+    c.lq(V0, frame.at(c, 0x50));
+    c.sq(V0, frame.at(c, 0x30));
+    c.lqc2(3, frame.at(c, 0x10));
+    c.lqc2(4, frame.at(c, 0x30));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0x50));
+    c.lq(V0, frame.at(c, 0x50));
+    c.sq(V0, frame.at(c, 0x0));
+    c.sq(V0, cheat_at(rider, rider_f::VELOCITY));
+
+    // The original's `x < 0 && x >= 0` guard (never both for a compare
+    // without NaN): reset the velocity to the zero vector.
+    c.g[A0][0] = c.lw(cheat_at(this, cheat::RIDER));
+    let rider = c.g[A0][0];
+    c.lwc1(0, cheat_at(rider, rider_f::VELOCITY));
+    c.c_lt_s(0, 2);
+    if !c.fcc() {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.c_le_s(2, 0);
+    c.g[V0][0] = 0x50_0000;
+    if !c.fcc() {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[V0][0] = sx(callee::ZERO_VEC);
+    c.lq(A3, callee::ZERO_VEC);
+    c.sq(A3, cheat_at(rider, rider_f::VELOCITY));
+    Ok(())
+}
+
+/// One step of the effects LCG: `prod = seed (reg) * 0x18fcd` (mult into
+/// `prod`), as the original interleaves it.
+#[inline(always)]
+pub(crate) fn afx_mult(c: &mut Cpu, prod: usize, seed: usize) {
+    c.mult(0, prod, seed, A1);
+}
+
+/// `out = ((prod + 0xe9507c) & 0x7fffff) | 0x3f800000`: the new seed, also a
+/// float in [1, 2).
+#[inline(always)]
+pub(crate) fn afx_bits(c: &mut Cpu, out: usize, prod: usize) {
+    c.g[out][0] = (sx(r32(c, prod).wrapping_add(r32(c, T4))) & c.g[A0][0]) | c.g[T1][0];
+}
+
+/// Store the seed in `reg` and read it back as a float minus 1 (`[0, 1)`).
+#[inline(always)]
+pub(crate) fn afx_store_unit(c: &mut Cpu, reg: usize) -> crate::ps2f::FpuF32 {
+    use crate::ps2f::FpuF32;
+    let seed_at = crate::guest::Addr(r32(c, GP).wrapping_add(attack_fx::RAND_SEED));
+    seed_at.sw(c, c.g[reg][0]);
+    seed_at.read_fpu(c) - FpuF32(c.f[6])
+}
+
+/// `void RiderBase_UpdateAttackFX(AttackFX* self)` (0x2f1150): the sparks
+/// of a rider's punch. Active while the owner's attack strength
+/// (`+0x350`) is positive. The owner's anim controller decides the hand:
+/// punch A (track 0 state 0x146, or track 1 state 0x143 with a type-0xd
+/// sequence whose flag bit 0 is set and bit 1 clear) uses bone `+0x8b0`
+/// (`+0x8b8` when `+0x320` is clear), punch B (0x147 / 0x144) the other;
+/// anything else switches the effect off. When active, the hand's bone
+/// translation plus `(8, 0, 0)` through the bone matrix (translation
+/// replaced by `D_004FF120`) is the centre, and four sparks get a random
+/// offset of `±3s` per axis, a size `15 .. 15 + 15s` and a colour `{1, c,
+/// c, c}` with `c = 0.9 s rand` (`s` the strength). Frame 0xf0 (s0-s4).
+pub fn rider_base_update_attack_fx(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use crate::ps2f::FpuF32;
+    use attack_fx::*;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xf0);
+        c.f[1] = 0;
+        for (reg, off) in [(S0, 0xe0), (S1, 0xd0)] {
+            frame.save(c, reg, off);
+        }
+        c.g[S0][0] = c.g[A0][0];
+        for (reg, off) in [(S2, 0xc0), (S3, 0xb0), (S4, 0xa0)] {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, 0x90);
+        let this = Addr(r32(c, S0));
+        let owner = this.lw(c);
+        c.g[V0][0] = owner;
+        let strength = Addr((owner as u32).wrapping_add(R_STRENGTH)).read_fpu(c);
+        c.f[0] = strength.0;
+        let on = FpuF32(0).lt(strength);
+        crate::abi::set_fcc(c, on);
+        c.g[V1][0] = 1;
+        if !on {
+            c.cycles += 1;
+            c.g[V1][0] = 0;
+        }
+        c.cycles += 2;
+        this.off(ACTIVE).sw(c, c.g[V1][0]);
+        if !on {
+            c.cycles += 1;
+            frame.restore(c, S0, 0xe0);
+        } else {
+            // The anim states of tracks 0 and 1, and the punch flags of a
+            // type-0xd track-1 sequence (bit 1 clear, bit 0 set).
+            c.cycles += 18;
+            c.g[A0][0] = Addr((owner as u32).wrapping_add(R_ANIM)).lw(c);
+            c.g[A1][0] = 0;
+            c.g[S1][0] = Addr((owner as u32).wrapping_add(R_BONE_A)).lw(c);
+            c.g[S2][0] = 0;
+            call_ptr(c, 0x0031_2aa0, 0x002f_11ac)?;
+            c.g[S4][0] = c.g[V0][0];
+            c.g[A1][0] = 1;
+            let owner = this.lw(c);
+            c.g[V0][0] = owner;
+            c.g[A0][0] = Addr((owner as u32).wrapping_add(R_ANIM)).lw(c);
+            call_ptr(c, 0x0031_2aa0, 0x002f_11c0)?;
+            c.g[S3][0] = c.g[V0][0];
+            c.g[A1][0] = 1;
+            let owner = this.lw(c);
+            c.g[V0][0] = owner;
+            c.g[A0][0] = Addr((owner as u32).wrapping_add(R_ANIM)).lw(c);
+            call_ptr(c, 0x0031_1ae8, 0x002f_11d4)?;
+            c.g[V1][0] = SEQ_TYPE_PUNCH;
+            let seq_type = c.g[V0][0];
+            c.g[V0][0] = PUNCH_A;
+            if seq_type == SEQ_TYPE_PUNCH {
+                // Flag bit `bit` of the track-1 sequence (`+0xb0`, 64 bits).
+                let test_flag =
+                    |c: &mut Cpu, bit: u64, ret1: u32, ret2: u32| -> crate::call::Flow {
+                        c.cycles += 9;
+                        let owner = this.lw(c);
+                        c.g[V0][0] = owner;
+                        c.g[A1][0] = 1;
+                        c.g[A0][0] = Addr((owner as u32).wrapping_add(R_ANIM)).lw(c);
+                        call_ptr(c, 0x0031_1b20, ret1)?;
+                        c.g[A0][0] = sx(r32(c, V0).wrapping_add(0xb0));
+                        c.g[A1][0] = bit;
+                        call_ptr(c, 0x0014_46a0, ret2)
+                    };
+                test_flag(c, 1, 0x002f_11f0, 0x002f_11fc)?;
+                let bit1 = c.g[V0][0] != 0;
+                c.g[V0][0] = PUNCH_A;
+                if !bit1 {
+                    test_flag(c, 0, 0x002f_1214, 0x002f_1220)?;
+                    c.g[S2][0] = (c.g[V0][0] != 0) as u64;
+                    c.g[V0][0] = PUNCH_A;
+                }
+            }
+            let (track0, track1, flagged) = (c.g[S4][0], c.g[S3][0], c.g[S2][0] != 0);
+
+            // Punch A?
+            c.cycles += 2;
+            let mut punch_a = track0 == PUNCH_A;
+            c.g[V0][0] = PUNCH_A1;
+            if !punch_a {
+                c.cycles += 2;
+                let t1_match = track1 == PUNCH_A1;
+                c.g[V0][0] = PUNCH_B;
+                if t1_match {
+                    c.cycles += 2;
+                    punch_a = flagged;
+                }
+            }
+            if punch_a {
+                c.cycles += 4;
+                let owner = this.lw(c);
+                c.g[A0][0] = owner;
+                c.g[V0][0] = Addr((owner as u32).wrapping_add(R_FLIP)).lw(c);
+                let bone = if c.g[V0][0] == 0 {
+                    R_BONE_B
+                } else {
+                    c.cycles += 2;
+                    R_BONE_A
+                };
+                c.g[S1][0] = Addr((owner as u32).wrapping_add(bone)).lw(c);
+            } else {
+                // Punch B?
+                c.cycles += 2;
+                let mut punch_b = track0 == PUNCH_B;
+                c.g[V0][0] = PUNCH_B1;
+                if !punch_b {
+                    c.cycles += 2;
+                    if track1 == PUNCH_B1 {
+                        c.cycles += 2;
+                        punch_b = flagged;
+                    }
+                }
+                if punch_b {
+                    c.cycles += 4;
+                    let owner = this.lw(c);
+                    c.g[A0][0] = owner;
+                    c.g[V0][0] = Addr((owner as u32).wrapping_add(R_FLIP)).lw(c);
+                    let bone = if c.g[V0][0] == 0 {
+                        R_BONE_A
+                    } else {
+                        c.cycles += 1;
+                        R_BONE_B
+                    };
+                    c.g[S1][0] = Addr((owner as u32).wrapping_add(bone)).lw(c);
+                } else {
+                    this.off(ACTIVE).sw(c, 0);
+                }
+            }
+
+            c.cycles += 3;
+            c.g[V0][0] = this.off(ACTIVE).lw(c);
+            if c.g[V0][0] == 0 {
+                frame.restore(c, S0, 0xe0);
+            } else {
+                afx_emit_sparks(c);
+                c.cycles += 1;
+                frame.restore(c, S0, 0xe0);
+            }
+        }
+
+        c.cycles += 7;
+        for (reg, off) in [(S1, 0xd0), (S2, 0xc0), (S3, 0xb0), (S4, 0xa0)] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x90);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// The spark positions, sizes and colours (s0 = self, s1 = bone): the
+/// 66-cycle setup and the four 85-cycle iterations. Frame: `base` at
+/// 0x00, the bone matrix copy at 0x10, the offset at 0x60, scratch
+/// vectors at 0x50/0x70/0x80.
+pub(crate) fn afx_emit_sparks(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use crate::ps2f::FpuF32;
+    use attack_fx::*;
+    use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
+    c.cycles += 66;
+    let s = sp(c);
+    let owner = Addr(r32(c, S0)).lw(c);
+    c.g[A1][0] = owner;
+    c.g[A0][0] = sx(r32(c, S1) << 6);
+    c.g[A2][0] = sx(s.wrapping_add(0x10));
+    // base = bones[bone].row3 (the bone's translation).
+    let model = Addr((owner as u32).wrapping_add(R_MODEL)).lw(c);
+    c.g[V1][0] = model;
+    let bones = Addr((model as u32).wrapping_add(MODEL_BONES)).lw(c);
+    c.g[V0][0] = sx((bones as u32).wrapping_add(r32(c, A0)));
+    c.lq(V1, r32(c, V0).wrapping_add(0x30));
+    c.sq(V1, s);
+    // m = bones[bone], with row 3 = D_004FF120.
+    let model = Addr((owner as u32).wrapping_add(R_MODEL)).lw(c);
+    c.g[V0][0] = model;
+    let bones = Addr((model as u32).wrapping_add(MODEL_BONES)).lw(c);
+    c.g[V1][0] = bones;
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(bones as u32));
+    let mat = r32(c, A0);
+    let copy = r32(c, A2);
+    for i in 0..4u32 {
+        c.lqc2(1 + i as usize, mat.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u32 {
+        c.sqc2(1 + i as usize, copy.wrapping_add(0x10 * i));
+    }
+    c.g[V0][0] = sx(ORIGIN_ROW);
+    c.g[AT][0] = 0x4100_0000;
+    c.f[0] = 0x4100_0000; // 8.0
+                          // The LCG constants: a1 = 0x18fcd, t4 = 0xe9507c, a0 = 0x7fffff,
+                          // t1 = 1.0f.
+    c.g[A1][0] = 0x1_8fcd;
+    c.lq(V1, ORIGIN_ROW);
+    c.g[T4][0] = 0xe9_507c;
+    Addr(s.wrapping_add(0x70)).write_fpu(c, FpuF32(c.f[0]));
+    c.g[A0][0] = 0x7f_ffff;
+    c.sq(V1, s.wrapping_add(0x40));
+    c.g[T1][0] = 0x3f80_0000;
+    for off in [0x74, 0x78, 0x7c] {
+        Addr(s.wrapping_add(off)).sw(c, 0);
+    }
+    // rnd = m * (8, 0, 0, 0); base += rnd.
+    c.lqc2(8, s.wrapping_add(0x70));
+    for i in 0..4u32 {
+        c.lqc2(4 + i as usize, copy.wrapping_add(0x10 * i));
+    }
+    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+    c.sqc2(12, s.wrapping_add(0x80));
+    c.g[AT][0] = 0x4040_0000;
+    c.f[9] = 0x4040_0000; // 3.0
+    c.lq(V0, s.wrapping_add(0x80));
+    c.g[T0][0] = sx(r32(c, S0).wrapping_add(SIZE));
+    c.g[AT][0] = 0x4170_0000;
+    c.f[7] = 0x4170_0000; // 15.0
+    c.g[A3][0] = c.g[S0][0];
+    c.sq(V0, s.wrapping_add(0x60));
+    c.g[A2][0] = 3;
+    c.lqc2(3, s);
+    c.lqc2(4, s.wrapping_add(0x60));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s.wrapping_add(0x80));
+    c.g[AT][0] = 0x3f80_0000;
+    c.f[6] = 0x3f80_0000; // 1.0
+    c.lq(V0, s.wrapping_add(0x80));
+    c.f[8] = Addr(r32(c, GP).wrapping_sub(COLOUR_SCALE)).read_fpu(c).0;
+    c.sq(V0, s);
+    c.sq(V0, s.wrapping_add(0x50));
+
+    // Four sparks: a2 counts 3..0, a3 walks self, t0 the sizes.
+    loop {
+        c.cycles += 85;
+        let s = sp(c);
+        let (one, fifteen, three) = (FpuF32(c.f[6]), FpuF32(c.f[7]), FpuF32(c.f[9]));
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(RAND_SEED)).lw(c);
+        c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+        let owner = Addr(r32(c, S0)).lw(c);
+        c.g[V1][0] = owner;
+        afx_mult(c, T2, V0);
+        let strength = Addr((owner as u32).wrapping_add(R_STRENGTH)).read_fpu(c);
+        Addr(s.wrapping_add(0x6c)).sw(c, 0);
+        // Offset range ±3s, size 15 .. 15 + 15s.
+        let spread = strength * three;
+        let lo = -spread;
+        let hi_size = strength * fifteen + fifteen;
+        let width = spread - lo;
+        afx_bits(c, V0, T2);
+        afx_mult(c, T2, V0);
+        let rx = afx_store_unit(c, V0);
+        afx_bits(c, V1, T2);
+        afx_mult(c, T2, V1);
+        let ry = afx_store_unit(c, V1);
+        afx_bits(c, V0, T2);
+        let ox = lo + width * rx;
+        let rz = afx_store_unit(c, V0);
+        let oy = lo + width * ry;
+        Addr(s.wrapping_add(0x60)).write_fpu(c, ox);
+        Addr(s.wrapping_add(0x64)).write_fpu(c, oy);
+        let oz_part = width * rz;
+        let oz = lo + oz_part;
+        Addr(s.wrapping_add(0x68)).write_fpu(c, oz);
+        // pos[i] = base + offset.
+        c.lqc2(3, s);
+        c.lqc2(4, s.wrapping_add(0x60));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, s.wrapping_add(0x70));
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_add(RAND_SEED)).lw(c);
+        c.lq(V0, s.wrapping_add(0x70));
+        afx_mult(c, T2, V1);
+        c.sq(V0, r32(c, A3).wrapping_add(POS));
+        c.sq(V0, s.wrapping_add(0x50));
+        // size[i] = 15 + (hi - 15) * rand.
+        afx_bits(c, V1, T2);
+        let size_range = hi_size - fifteen;
+        let rs = afx_store_unit(c, V1);
+        afx_mult(c, V0, V1);
+        afx_bits(c, V1, V0);
+        let size = size_range * rs + fifteen;
+        Addr(r32(c, T0)).write_fpu(c, size);
+        c.g[T0][0] = sx(r32(c, T0).wrapping_add(4));
+        // col[i] = {1, c, c, c}, c = 0.9 s rand.
+        let owner = Addr(r32(c, S0)).lw(c);
+        c.g[V0][0] = owner;
+        let strength = Addr((owner as u32).wrapping_add(R_STRENGTH)).read_fpu(c);
+        let scaled = strength * FpuF32(c.f[8]);
+        Addr(s.wrapping_add(0x50)).write_fpu(c, one);
+        let rc = afx_store_unit(c, V1);
+        let tint = scaled * rc;
+        for off in [0x5c, 0x54, 0x58] {
+            Addr(s.wrapping_add(off)).write_fpu(c, tint);
+        }
+        c.ldl(V1, s.wrapping_add(0x57));
+        c.ldr(V1, s.wrapping_add(0x50));
+        c.ldl(T2, s.wrapping_add(0x5f));
+        c.ldr(T2, s.wrapping_add(0x58));
+        let a3 = r32(c, A3);
+        c.sdl(V1, a3.wrapping_add(COL + 7));
+        c.sdr(V1, a3.wrapping_add(COL));
+        c.sdl(T2, a3.wrapping_add(COL + 0xf));
+        c.sdr(T2, a3.wrapping_add(COL + 8));
+        // The FPU registers as the original leaves them.
+        c.f[0] = rc.0;
+        c.f[1] = tint.0;
+        c.f[2] = ox.0;
+        c.f[3] = oz_part.0;
+        c.f[4] = size.0;
+        c.f[5] = oz.0;
+        let more = (c.g[A2][0] as i64) >= 0;
+        c.g[A3][0] = sx(a3.wrapping_add(0x10));
+        if more {
+            if event_due(c) {
+                deliver_event_here(c, 0x002f_1398);
+            }
+            continue;
+        }
+        break;
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2669,6 +3514,208 @@ pub(crate) mod tests {
                 for off in [0x14c0u32, 0x14c4, 0x14c8] {
                     f_2(c, crate::difftest::GAME_GP + off, r.edge_f32());
                 }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    // ---------------------------------------- RiderBase_UpdateCheatCode
+
+    /// `RiderBase_UpdateCheatCode` against the generated body. The physics
+    /// sub-object's query is either a real `return 0` (the update runs) or
+    /// a fake (non-zero: nothing to do, or an unwind); the clear, the match
+    /// and `BELibrary_GetInterface` run for real (the interface's method is
+    /// a fake). The state byte covers on/off/wrong; the rider covers cheat
+    /// mode or not, the assist sign, speeds below/above the maximum (and
+    /// zero), zero steer, short steer directions and short velocities. The
+    /// final `x < 0 && x >= 0` reset is unreachable without NaNs.
+    #[test]
+    fn rider_base_update_cheat_code_matches() {
+        use crate::difftest::fakes::{self, FAKE};
+        use crate::difftest::{put_vec, DATA, GAME_GP};
+        use crate::game::visualfx::boardwakefx::tests::{f, gp_at, RETURN_ZERO};
+
+        const SELF: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const PHYS_VT: u32 = DATA + 0x2000;
+        const LIB: u32 = DATA + 0x2100;
+        const LIB_VT: u32 = DATA + 0x2200;
+        const WORLD: u32 = DATA + 0x2300;
+        /// `g_beLibrary[]` and its index (gp-0x1efc).
+        const BE_LIBRARY: u32 = 0x0053_08a8;
+
+        fakes::covered(
+            ee::s09::f_002f6518__generated,
+            rider_base_update_cheat_code,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x2f_6518, 2);
+
+                // .lit4 minimum lengths, the clear counter, the world, the
+                // global cheats-off switch.
+                c.bus.write32(gp_at(-0x3898), f(0.001));
+                c.bus.write32(gp_at(-0x3894), f(0.0001));
+                let due = [0u32, 1, 2, 3, 8][(seed % 5) as usize];
+                c.bus.write32(gp_at(0xad0), due);
+                c.bus.write32(gp_at(-0x848), WORLD);
+                c.bus.write32(WORLD + 0x78, r.next_u32());
+                c.bus
+                    .write32(cheat_callee::CHEATS_OFF, (seed % 7 == 0) as u32);
+
+                // BELibrary_GetInterface: library 0, its method a fake.
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(BE_LIBRARY, LIB);
+                c.bus.write32(LIB + 4, LIB_VT);
+                c.bus.write16(LIB_VT + 8, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(LIB_VT + 0xc, FAKE + 0x10);
+
+                // The cheat state: on, off or wrong; flags without events
+                // mostly (the match then leaves the state alone).
+                c.bus.write32(SELF + cheat::RIDER, RIDER);
+                let state = [1u8, 1, 1, 0, 0xff, 2][(r.next_u32() % 6) as usize];
+                c.bus.write8(SELF + cheat::STATE, state);
+                c.bus.write8(SELF + 5, (r.next_u32() % 9) as u8);
+                c.bus.write8(SELF + 6, (r.next_u32() % 4) as u8);
+                let mut flags = r.next_u32() as u8;
+                if seed % 3 != 0 {
+                    flags &= 0x8f;
+                }
+                c.bus.write8(SELF + cheat::FLAGS, flags);
+
+                // The rider: the physics query (0 from a real function,
+                // or a fake), then the cheat-mode fields.
+                for k in 0..0x80 {
+                    c.bus.write32(RIDER + 0x1e0 + 4 * k, r.edge_f32());
+                }
+                c.bus.write32(RIDER + cheat_rider::PHYSICS, PHYS_VT);
+                c.bus.write16(PHYS_VT + 0x48, (r.next_u32() & 0x7c) as u16);
+                let query = if seed % 6 == 5 { FAKE } else { RETURN_ZERO };
+                c.bus.write32(PHYS_VT + 0x4c, query);
+                let mode = if seed % 8 == 3 { r.next_u32() % 12 } else { 11 };
+                c.bus.write32(RIDER + cheat_rider::MODE, mode);
+                let assist = match seed % 9 {
+                    0 => f(-1.0),
+                    1 => 0,
+                    2 => r.edge_f32(),
+                    _ => f(1.0),
+                };
+                c.bus.write32(RIDER + cheat_rider::ASSIST, assist);
+                let abs = |x: u32| f(f32::from_bits(x).abs());
+                let vel = match (seed / 2) % 6 {
+                    0 => [0, 0, 0, r.next_u32()],
+                    1 => [f(0.00002), f(-0.00003), f(0.00001), r.next_u32()],
+                    2 => [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()],
+                    _ => [r.f32(100.0), r.f32(100.0), r.f32(100.0), r.f32(1.0)],
+                };
+                put_vec(c, RIDER + cheat_rider::VELOCITY, vel);
+                let max = match (seed / 3) % 4 {
+                    0 => r.edge_f32(),
+                    1 => 0,
+                    _ => abs(r.f32(250.0)),
+                };
+                c.bus.write32(RIDER + cheat_rider::MAX_SPEED, max);
+                c.bus.write32(RIDER + cheat_rider::BLEND, r.f32(1.0));
+                let steer = match seed % 7 {
+                    1 => 0,
+                    2 => r.edge_f32(),
+                    _ => r.f32(1.0),
+                };
+                c.bus.write32(RIDER + cheat_rider::STEER, steer);
+                let dir = match (seed / 4) % 5 {
+                    0 => [f(0.0002), 0, f(0.0001), r.next_u32()],
+                    1 => [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()],
+                    _ => [r.f32(2.0), r.f32(2.0), r.f32(2.0), r.f32(1.0)],
+                };
+                put_vec(c, RIDER + cheat_rider::STEER_DIR, dir);
+
+                c.g[A0][0] = sx(SELF);
+            },
+        );
+    }
+
+    /// `RiderBase_UpdateAttackFX`: the effect at DATA, its rider with an
+    /// attack strength that is 0, -0, negative or denormal on one seed in
+    /// six (the effect switches off at once) and else 0.05..2; the rider's
+    /// anim controller (real callees) with track 0 in {punch A, punch B,
+    /// punch A1, other} and track 1 in {A1, B1, 0x1b6 (no table entry),
+    /// other}, the anim table type of those states 0xd on two seeds in
+    /// three, the track-1 sequence's 64-bit flags random (bits 0 and 1 pick
+    /// the flagged track-1 punches); the facing flag set or clear, bones
+    /// 0..3 into four random matrices, `D_004FF120`, the 0.9 colour scale
+    /// and a random seed. Covers both hands of both punches, the switched
+    /// off fall-through and the four-spark loop.
+    #[test]
+    fn rider_base_update_attack_fx_matches() {
+        use crate::difftest::{check_lohi, fill, scramble, Rng, DATA, GAME_GP, SP};
+        use attack_fx::*;
+        const FX: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const CTL: u32 = DATA + 0x2000;
+        const SEQS: u32 = DATA + 0x2100;
+        const SEQ: u32 = DATA + 0x2200;
+        const MODEL: u32 = DATA + 0x3000;
+        const BONES: u32 = DATA + 0x3100;
+        /// `AnimTable_GetEntry`'s table (0x1c bytes per state).
+        const ANIM_TABLE: u32 = 0x0044_6990;
+        check_lohi(
+            ee::s09::f_002f1150__generated,
+            rider_base_update_attack_fx,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2f11_5000_1234 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                fill(c, &mut r, SP - 0x100, 0x40);
+                fill(c, &mut r, FX, 0x30);
+                c.bus.write32(FX + OWNER, RIDER);
+                c.g[A0][0] = FX as u64;
+                // The rider.
+                let strength = if seed % 6 == 0 {
+                    [0, 0x8000_0000, 0xbf80_0000, 0x0000_0123][(r.next_u32() % 4) as usize]
+                } else {
+                    (0.05 + (r.next_u32() % 196) as f32 * 0.01).to_bits()
+                };
+                c.bus.write32(RIDER + R_STRENGTH, strength);
+                c.bus.write32(
+                    RIDER + R_FLIP,
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    },
+                );
+                c.bus.write32(RIDER + R_BONE_A, r.next_u32() % 4);
+                c.bus.write32(RIDER + R_BONE_B, r.next_u32() % 4);
+                c.bus.write32(RIDER + R_MODEL, MODEL);
+                c.bus.write32(MODEL + MODEL_BONES, BONES);
+                for i in 0..64 {
+                    c.bus.write32(BONES + 4 * i, r.f32(10.0));
+                }
+                for i in 0..4 {
+                    c.bus.write32(ORIGIN_ROW + 4 * i, r.f32(2.0));
+                }
+                c.bus.write32(GAME_GP - COLOUR_SCALE, 0.9f32.to_bits());
+                c.bus.write32(GAME_GP + RAND_SEED, r.next_u32());
+                // The anim controller: track states, the anim table, the
+                // track-1 sequence's flags.
+                c.bus.write32(RIDER + R_ANIM, CTL);
+                let track0 = [PUNCH_A, PUNCH_B, PUNCH_A1, 0x10][(r.next_u32() % 4) as usize];
+                let track1 = [PUNCH_A1, PUNCH_B1, 0x1b6, 0x20][(r.next_u32() % 4) as usize];
+                c.bus.write32(CTL, track0 as u32);
+                c.bus.write32(CTL + 4, track1 as u32);
+                for state in [PUNCH_A1, PUNCH_B1, 0x20] {
+                    let ty = if r.next_u32() % 3 != 0 {
+                        SEQ_TYPE_PUNCH as u32
+                    } else {
+                        r.next_u32() % 0x20
+                    };
+                    c.bus.write32(ANIM_TABLE + 0x1c * state as u32, ty);
+                }
+                c.bus.write32(CTL + 0x50, SEQS);
+                c.bus.write32(SEQS + 8 + 4, SEQ);
+                let flags = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+                c.bus.write64(SEQ + 0xb0, flags);
             },
         );
     }

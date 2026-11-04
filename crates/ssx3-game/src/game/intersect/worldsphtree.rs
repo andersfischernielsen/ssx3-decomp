@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -172,6 +173,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0035_84b8,
         boost_modifier_base_save,
         "BoostModifier_BaseSave",
+    ),
+    (
+        0x0033_2db8,
+        overlap_list_gather_all,
+        "OverlapList_GatherAll",
     ),
 ];
 
@@ -11777,6 +11783,601 @@ pub fn boost_update(c: &mut Cpu) {
     }
 }
 
+pub(crate) mod gather_all_list {
+
+    pub const GRID: u32 = 0x0;
+
+    pub const STAMP: u32 = 0x4;
+
+    pub const NODE_COUNT: u32 = 0x8;
+
+    pub const NODES: u32 = 0xc;
+
+    pub const OBJ_COUNT: u32 = 0x10c;
+
+    pub const OBJS: u32 = 0x110;
+
+    pub const ALL_COUNT: u32 = 0x210;
+
+    pub const ALL: u32 = 0x214;
+
+    /// `grid+0xa0`: copied to `STAMP`.
+    pub const GRID_STAMP: u32 = 0xa0;
+
+    /// The grid holds eight top-level cells of 0x14 bytes:
+    /// `{ int level, x, y, z; TreeNode* root; }`.
+    pub const CELL_SIZE: u32 = 0x14;
+
+    pub const CELL_ROOT: u32 = 0x10;
+}
+
+pub(crate) mod gather_all_node {
+
+    pub const OBJECTS: u32 = 0x24;
+
+    pub const ALL: u32 = 0x28;
+
+    /// An object's box: min at +0x158, max at +0x164.
+    pub const OBJ_MIN: u32 = 0x158;
+
+    pub const OBJ_MAX: u32 = 0x164;
+}
+
+/// `SpatialKey_ClassifyAABB(cell, box)` (0x00328360, through the function
+/// table): 0 the box lies within the cell (gather the whole subtree), 1
+/// disjoint (skip), 2 partly overlapping (recurse).
+pub(crate) const GATHER_ALL_CLASSIFY: u32 = 0x0032_8360;
+
+/// Where the eight inlined cell queries return to (each copy of the
+/// inlined `queryCell` has its own call sites and loop heads).
+pub(crate) struct GatherAllCell {
+    classify_ret: u32,
+    objects_ret: u32,
+    objs_loop: u32,
+    all_loop: u32,
+    subtree_ret: [u32; 8],
+    recursive_ret: u32,
+    /// Cycles of the block that calls `Cell_GatherObjects`.
+    objects_cycles: u64,
+    /// Cycles before the object scan loop.
+    scan_cycles: u64,
+}
+
+pub(crate) const GATHER_ALL_CELLS: [GatherAllCell; 8] = [
+    GatherAllCell {
+        classify_ret: 0x0033_2e80,
+        objects_ret: 0x0033_2e98,
+        objs_loop: 0x0033_2ea8,
+        all_loop: 0x0033_2f70,
+        subtree_ret: [
+            0x0033_2fac,
+            0x0033_2fc0,
+            0x0033_2fd4,
+            0x0033_2fe8,
+            0x0033_2ffc,
+            0x0033_3010,
+            0x0033_3024,
+            0x0033_3038,
+        ],
+        recursive_ret: 0x0033_3064,
+        objects_cycles: 6,
+        scan_cycles: 1,
+    },
+    GatherAllCell {
+        classify_ret: 0x0033_30a8,
+        objects_ret: 0x0033_30c0,
+        objs_loop: 0x0033_30d8,
+        all_loop: 0x0033_31a0,
+        subtree_ret: [
+            0x0033_31dc,
+            0x0033_31f0,
+            0x0033_3204,
+            0x0033_3218,
+            0x0033_322c,
+            0x0033_3240,
+            0x0033_3254,
+            0x0033_3268,
+        ],
+        recursive_ret: 0x0033_3294,
+        objects_cycles: 7,
+        scan_cycles: 2,
+    },
+    GatherAllCell {
+        classify_ret: 0x0033_32b0,
+        objects_ret: 0x0033_32c8,
+        objs_loop: 0x0033_32e0,
+        all_loop: 0x0033_33a8,
+        subtree_ret: [
+            0x0033_33e4,
+            0x0033_33f8,
+            0x0033_340c,
+            0x0033_3420,
+            0x0033_3434,
+            0x0033_3448,
+            0x0033_345c,
+            0x0033_3470,
+        ],
+        recursive_ret: 0x0033_349c,
+        objects_cycles: 7,
+        scan_cycles: 2,
+    },
+    GatherAllCell {
+        classify_ret: 0x0033_34b8,
+        objects_ret: 0x0033_34d0,
+        objs_loop: 0x0033_34e8,
+        all_loop: 0x0033_35b0,
+        subtree_ret: [
+            0x0033_35ec,
+            0x0033_3600,
+            0x0033_3614,
+            0x0033_3628,
+            0x0033_363c,
+            0x0033_3650,
+            0x0033_3664,
+            0x0033_3678,
+        ],
+        recursive_ret: 0x0033_36a4,
+        objects_cycles: 7,
+        scan_cycles: 2,
+    },
+    GatherAllCell {
+        classify_ret: 0x0033_36c0,
+        objects_ret: 0x0033_36d8,
+        objs_loop: 0x0033_36f0,
+        all_loop: 0x0033_37b8,
+        subtree_ret: [
+            0x0033_37f4,
+            0x0033_3808,
+            0x0033_381c,
+            0x0033_3830,
+            0x0033_3844,
+            0x0033_3858,
+            0x0033_386c,
+            0x0033_3880,
+        ],
+        recursive_ret: 0x0033_38ac,
+        objects_cycles: 7,
+        scan_cycles: 2,
+    },
+    GatherAllCell {
+        classify_ret: 0x0033_38cc,
+        objects_ret: 0x0033_38e4,
+        objs_loop: 0x0033_38f8,
+        all_loop: 0x0033_39c0,
+        subtree_ret: [
+            0x0033_39fc,
+            0x0033_3a10,
+            0x0033_3a24,
+            0x0033_3a38,
+            0x0033_3a4c,
+            0x0033_3a60,
+            0x0033_3a74,
+            0x0033_3a88,
+        ],
+        recursive_ret: 0x0033_3ab4,
+        objects_cycles: 7,
+        scan_cycles: 1,
+    },
+    GatherAllCell {
+        classify_ret: 0x0033_3ad4,
+        objects_ret: 0x0033_3aec,
+        objs_loop: 0x0033_3b00,
+        all_loop: 0x0033_3bc8,
+        subtree_ret: [
+            0x0033_3c04,
+            0x0033_3c18,
+            0x0033_3c2c,
+            0x0033_3c40,
+            0x0033_3c54,
+            0x0033_3c68,
+            0x0033_3c7c,
+            0x0033_3c90,
+        ],
+        recursive_ret: 0x0033_3cbc,
+        objects_cycles: 7,
+        scan_cycles: 1,
+    },
+    GatherAllCell {
+        classify_ret: 0x0033_3cdc,
+        objects_ret: 0x0033_3cf4,
+        objs_loop: 0x0033_3d08,
+        all_loop: 0x0033_3dd0,
+        subtree_ret: [
+            0x0033_3e0c,
+            0x0033_3e20,
+            0x0033_3e34,
+            0x0033_3e48,
+            0x0033_3e5c,
+            0x0033_3e70,
+            0x0033_3e84,
+            0x0033_3e98,
+        ],
+        recursive_ret: 0x0033_3ec4,
+        objects_cycles: 7,
+        scan_cycles: 1,
+    },
+];
+
+/// Where a cell query finds the cell pointer it passes to
+/// `Cell_GatherAllRecursive`: a register, or a frame slot.
+#[derive(Clone, Copy)]
+pub(crate) enum GatherAllCellPtr {
+    Reg(usize),
+    Slot(u32),
+}
+
+/// `void OverlapList_GatherAll(sOverlapList* self, const float* box)`
+/// (0x00332db8): rebuild the overlap list's three result lists (nodes,
+/// objects, all) for the query box. A gather context on the stack holds
+/// three `{ list, count*, cap, box }` sub-contexts (nodes at sp+0, objects
+/// at sp+0x10, all at sp+0x20); the three counts are reset, then each of the
+/// grid's eight top-level cells (the inlined `queryCell`) with a tree is
+/// classified against the box: a cell the box lies within has its root's
+/// nodes gathered (`Cell_GatherObjects`), its objects whose box touches the
+/// query box and its whole all-list appended, and its eight children
+/// gathered whole (`Cell_GatherAllSubtree`); a partly overlapping cell is
+/// recursed into (`Cell_GatherAllRecursive`); a disjoint one is skipped.
+pub fn overlap_list_gather_all(c: &mut Cpu) {
+    use gather_all_list as list;
+    guest(c, |c| {
+        // Frame and the gather context.
+        c.cycles += 46;
+        let frame = Frame::open(c, 0xf0);
+        frame.save(c, S0, 0xe0);
+        frame.save(c, S2, 0xc0);
+        frame.save(c, S4, 0xa0);
+        frame.save(c, S5, 0x90);
+        frame.save(c, S1, 0xd0);
+        frame.save(c, S3, 0xb0);
+        frame.save(c, S6, 0x80);
+        frame.save(c, S7, 0x70);
+        frame.save(c, FP, 0x60);
+        frame.save_ra(c, 0x50);
+        let this = r32(c, A0);
+        let s = sp(c);
+        c.g[A3][0] = 0x40;
+        c.g[V1][0] = sx(this.wrapping_add(list::NODES));
+        c.g[A2][0] = sx(this.wrapping_add(list::OBJS));
+        c.g[S2][0] = sx(s.wrapping_add(0x10));
+        c.g[T0][0] = sx(this.wrapping_add(list::ALL));
+        c.g[S5][0] = c.g[A1][0];
+        c.g[A1][0] = sx(this.wrapping_add(list::NODE_COUNT));
+        c.g[S4][0] = sx(s.wrapping_add(0x20));
+        c.g[V0][0] = c.lw(this.wrapping_add(list::GRID));
+        c.g[T1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(list::GRID_STAMP));
+        c.g[V0][0] = sx(this.wrapping_add(list::OBJ_COUNT));
+        // nodes = { this->nodes, &this->node_count, 0x40, box }
+        c.sw(s, c.g[V1][0]);
+        c.sw(s.wrapping_add(0x4), c.g[A1][0]);
+        c.g[V1][0] = 0x200;
+        // objects = { this->objs, &this->obj_count, 0x40, box }
+        c.sw(s.wrapping_add(0x10), c.g[A2][0]);
+        c.g[A1][0] = sx(this.wrapping_add(list::ALL_COUNT));
+        c.sw(s.wrapping_add(0x14), c.g[V0][0]);
+        c.sw(s.wrapping_add(0x18), c.g[A3][0]);
+        c.sw(s.wrapping_add(0x8), c.g[A3][0]);
+        c.sw(s.wrapping_add(0xc), c.g[S5][0]);
+        c.sw(s.wrapping_add(0x1c), c.g[S5][0]);
+        c.sw(this.wrapping_add(list::STAMP), c.g[T1][0]);
+        // node_count = 0; *objects.count = 0
+        c.g[V0][0] = c.lw(s.wrapping_add(0x14));
+        c.sw(this.wrapping_add(list::NODE_COUNT), 0);
+        c.sw(c.g[V0][0] as u32, 0);
+        // all = { this->all, &this->all_count, 0x200, box }; *all.count = 0
+        c.sw(s.wrapping_add(0x20), c.g[T0][0]);
+        c.sw(s.wrapping_add(0x24), c.g[A1][0]);
+        c.sw(s.wrapping_add(0x28), c.g[V1][0]);
+        c.sw(s.wrapping_add(0x2c), c.g[S5][0]);
+        c.g[V0][0] = c.lw(s.wrapping_add(0x24));
+        c.sw(c.g[V0][0] as u32, 0);
+        c.g[S6][0] = c.lw(this.wrapping_add(list::GRID));
+        let grid = r32(c, S6);
+        c.g[S1][0] = c.lw(grid.wrapping_add(list::CELL_ROOT));
+        c.g[S0][0] = c.g[SP][0];
+
+        // Cell 0 (the grid pointer itself is the cell).
+        if c.g[S1][0] != 0 {
+            c.cycles += 7;
+            c.g[S3][0] = sx(s.wrapping_add(0x30));
+            c.g[A0][0] = c.g[S6][0];
+            c.g[A1][0] = c.g[S5][0];
+            call_ptr(c, GATHER_ALL_CLASSIFY, GATHER_ALL_CELLS[0].classify_ret)?;
+            gather_all_query_cell(
+                c,
+                &GATHER_ALL_CELLS[0],
+                S1,
+                S3,
+                GatherAllCellPtr::Reg(S6),
+                true,
+            )?;
+        } else {
+            c.cycles += 1;
+        }
+        gather_all_next_root(c, 0);
+
+        // Cell 1; cells 2..4 are kept in s4/s7/fp, 5..7 in frame slots.
+        c.cycles += 11;
+        let cell = |k: u32| grid.wrapping_add(list::CELL_SIZE * k);
+        c.g[V1][0] = sx(cell(5));
+        c.sw(s.wrapping_add(0x38), c.g[V1][0]);
+        c.g[S1][0] = sx(cell(1));
+        c.g[V1][0] = sx(cell(6));
+        c.g[S4][0] = sx(cell(2));
+        c.sw(s.wrapping_add(0x3c), c.g[V1][0]);
+        c.g[S7][0] = sx(cell(3));
+        c.g[V1][0] = sx(cell(7));
+        c.g[FP][0] = sx(cell(4));
+        c.sw(s.wrapping_add(0x40), c.g[V1][0]);
+        if c.g[V0][0] != 0 {
+            c.cycles += 8;
+            c.g[S2][0] = c.lw(r32(c, S1).wrapping_add(list::CELL_ROOT));
+            c.g[S3][0] = sx(s.wrapping_add(0x31));
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S5][0];
+            call_ptr(c, GATHER_ALL_CLASSIFY, GATHER_ALL_CELLS[1].classify_ret)?;
+            gather_all_query_cell(
+                c,
+                &GATHER_ALL_CELLS[1],
+                S2,
+                S3,
+                GatherAllCellPtr::Reg(S1),
+                false,
+            )?;
+        } else {
+            c.cycles += 1;
+        }
+        gather_all_next_root(c, 1);
+
+        // Cells 2..4: the cell pointer is in a saved register.
+        for (i, cell_reg) in [(2usize, S4), (3, S7), (4, FP)] {
+            c.cycles += 2;
+            let present = c.g[V0][0] != 0;
+            c.g[S2][0] = sx(s.wrapping_add(0x30 + i as u32));
+            if present {
+                c.cycles += 7;
+                c.g[S1][0] = c.lw(r32(c, cell_reg).wrapping_add(list::CELL_ROOT));
+                c.g[A0][0] = c.g[cell_reg][0];
+                c.g[A1][0] = c.g[S5][0];
+                call_ptr(c, GATHER_ALL_CLASSIFY, GATHER_ALL_CELLS[i].classify_ret)?;
+                let ptr = GatherAllCellPtr::Reg(cell_reg);
+                gather_all_query_cell(c, &GATHER_ALL_CELLS[i], S1, S2, ptr, false)?;
+            } else {
+                c.cycles += 1;
+            }
+            gather_all_next_root(c, i);
+        }
+
+        // Cells 5..7: the cell pointer is reloaded from its frame slot (into
+        // v0, v1, v0).
+        for (i, slot, ptr_reg) in [(5usize, 0x38u32, V0), (6, 0x3c, V1), (7, 0x40, V0)] {
+            c.cycles += 2;
+            let present = c.g[V0][0] != 0;
+            c.g[ptr_reg][0] = c.lw(s.wrapping_add(slot));
+            if present {
+                c.cycles += 8;
+                c.g[S2][0] = sx(s.wrapping_add(0x30 + i as u32));
+                c.g[A1][0] = c.g[S5][0];
+                c.g[S1][0] = c.lw(r32(c, ptr_reg).wrapping_add(list::CELL_ROOT));
+                c.g[A0][0] = c.g[ptr_reg][0];
+                call_ptr(c, GATHER_ALL_CLASSIFY, GATHER_ALL_CELLS[i].classify_ret)?;
+                let ptr = GatherAllCellPtr::Slot(slot);
+                gather_all_query_cell(c, &GATHER_ALL_CELLS[i], S1, S2, ptr, false)?;
+            } else {
+                c.cycles += 1;
+            }
+            gather_all_next_root(c, i);
+        }
+
+        // Epilogue (s0 was reloaded by the last cell query).
+        c.cycles += 11;
+        frame.restore(c, S1, 0xd0);
+        frame.restore(c, S2, 0xc0);
+        frame.restore(c, S3, 0xb0);
+        frame.restore(c, S4, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore(c, S6, 0x80);
+        frame.restore(c, S7, 0x70);
+        frame.restore(c, FP, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// End of cell query `i`: load the next cell's tree root into v0 (after the
+/// last cell, the epilogue's first restore of s0 sits here).
+pub(crate) fn gather_all_next_root(c: &mut Cpu, i: usize) {
+    if i < 7 {
+        let next = gather_all_list::CELL_SIZE * (i as u32 + 1) + gather_all_list::CELL_ROOT;
+        c.g[V0][0] = c.lw(r32(c, S6).wrapping_add(next));
+    } else {
+        c.lq(S0, sp(c).wrapping_add(0xe0));
+    }
+}
+
+/// One inlined `queryCell` after `SpatialKey_ClassifyAABB` returned (v0):
+/// `root` holds the cell's tree root, `tag` the scratch pointer passed as
+/// `Cell_GatherAllRecursive`'s unused first argument. `first` is the copy
+/// for cell 0, which keeps the object context in s2 and leaves a3 alone.
+pub(crate) fn gather_all_query_cell(
+    c: &mut Cpu,
+    q: &GatherAllCell,
+    root: usize,
+    tag: usize,
+    cell: GatherAllCellPtr,
+    first: bool,
+) -> crate::call::Flow {
+    use crate::game::intersect::worldsphtree::gather_callee::{
+        GATHER_ALL_RECURSIVE, GATHER_ALL_SUBTREE, GATHER_OBJECTS,
+    };
+    use gather_all_node as node;
+    c.g[V1][0] = c.g[V0][0];
+    let class = c.g[V1][0];
+    c.g[V0][0] = 0x2;
+    if class != 0 {
+        // Partly overlapping: recurse; disjoint: skip.
+        c.cycles += 2;
+        if c.g[V1][0] != c.g[V0][0] {
+            return Ok(());
+        }
+        c.cycles += 7;
+        c.g[T1][0] = match cell {
+            GatherAllCellPtr::Reg(r) => c.g[r][0],
+            GatherAllCellPtr::Slot(off) => c.lw(sp(c).wrapping_add(off)),
+        };
+        c.g[A0][0] = c.g[tag][0];
+        c.g[T0][0] = c.g[root][0];
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A3][0] = c.g[S5][0];
+        GATHER_ALL_RECURSIVE.call(c, q.recursive_ret)?;
+        c.cycles += 1;
+        return Ok(());
+    }
+
+    // The box lies within the cell: gather the root's nodes...
+    c.cycles += q.objects_cycles;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[root][0];
+    GATHER_OBJECTS.call(c, q.objects_ret)?;
+    let tree = r32(c, root);
+    let ctx = r32(c, S0);
+    let objs = ctx.wrapping_add(0x10);
+    c.g[A2][0] = c.lw(tree.wrapping_add(node::OBJECTS));
+    if !first {
+        c.g[A3][0] = sx(objs);
+    }
+    c.g[T0][0] = sx(ctx.wrapping_add(0x20));
+
+    // ...its objects whose box touches the query box...
+    if c.g[A2][0] != 0 {
+        c.cycles += q.scan_cycles;
+        c.g[V0][0] = c.lw(objs.wrapping_add(0xc));
+        loop {
+            let obj = r32(c, A2);
+            let bx = r32(c, V0);
+            gather_all_object_overlaps(c, obj, bx);
+            c.cycles += 2;
+            if c.g[V1][0] != 0 {
+                // objects.list[(*objects.count)++] = obj
+                c.cycles += 9;
+                c.g[A1][0] = c.lw(objs.wrapping_add(4));
+                c.g[A0][0] = c.lw(objs);
+                c.g[V1][0] = c.lw(r32(c, A1));
+                c.g[V0][0] = sx(r32(c, V1) << 2);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+                c.sw(r32(c, V0), c.g[A2][0]);
+                c.sw(r32(c, A1), c.g[V1][0]);
+            }
+            c.g[A2][0] = c.lw(obj);
+            c.cycles += 2;
+            if c.g[A2][0] == 0 {
+                break;
+            }
+            c.g[V0][0] = c.lw(objs.wrapping_add(0xc));
+            if event_due(c) {
+                deliver_event_here(c, q.objs_loop);
+            }
+        }
+    }
+
+    // ...its whole all-list...
+    c.cycles += 3;
+    c.g[A2][0] = c.lw(tree.wrapping_add(node::ALL));
+    if c.g[A2][0] != 0 {
+        let all = r32(c, T0);
+        c.cycles += 2;
+        c.g[A1][0] = c.lw(all.wrapping_add(4));
+        loop {
+            // all.list[(*all.count)++] = item
+            c.cycles += 10;
+            c.g[A0][0] = c.lw(all);
+            c.g[V1][0] = c.lw(r32(c, A1));
+            c.g[V0][0] = sx(r32(c, V1) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+            c.sw(r32(c, V0), c.g[A2][0]);
+            c.sw(r32(c, A1), c.g[V1][0]);
+            c.g[A2][0] = c.lw(r32(c, A2));
+            if c.g[A2][0] == 0 {
+                c.cycles += 1;
+                break;
+            }
+            c.g[A1][0] = c.lw(all.wrapping_add(4));
+            if event_due(c) {
+                deliver_event_here(c, q.all_loop);
+            }
+        }
+    }
+    c.g[A0][0] = c.lw(tree);
+
+    // ...and its eight children whole.
+    for k in 0..8u32 {
+        c.cycles += 2;
+        if c.g[A0][0] != 0 {
+            c.cycles += if k == 7 { 4 } else { 3 };
+            c.g[A1][0] = c.g[S0][0];
+            GATHER_ALL_SUBTREE.call(c, q.subtree_ret[k as usize])?;
+        }
+        if k < 7 {
+            c.g[A0][0] = c.lw(tree.wrapping_add(4 * (k + 1)));
+        }
+    }
+    Ok(())
+}
+
+/// The inlined box test of an object (`obj`) against the query box (`bx`,
+/// min at +0, max at +0x10): `c.le.s` on each bound pair, leaving v1 = 1 on
+/// overlap (0 otherwise) and the last pair in f0/f1.
+#[inline(always)]
+pub(crate) fn gather_all_object_overlaps(c: &mut Cpu, obj: u32, bx: u32) {
+    use gather_all_node as node;
+    c.cycles += 6;
+    c.lwc1(1, obj.wrapping_add(node::OBJ_MAX));
+    c.lwc1(0, bx);
+    c.c_le_s(0, 1);
+    c.g[V1][0] = 0;
+    if !c.fcc() {
+        return;
+    }
+    c.cycles += 5;
+    c.lwc1(1, bx.wrapping_add(0x10));
+    c.lwc1(0, obj.wrapping_add(node::OBJ_MIN));
+    c.c_le_s(0, 1);
+    if !c.fcc() {
+        return;
+    }
+    c.cycles += 5;
+    c.lwc1(1, bx.wrapping_add(0x4));
+    c.lwc1(0, obj.wrapping_add(node::OBJ_MAX + 4));
+    c.c_le_s(1, 0);
+    if !c.fcc() {
+        return;
+    }
+    c.cycles += 5;
+    c.lwc1(1, bx.wrapping_add(0x14));
+    c.lwc1(0, obj.wrapping_add(node::OBJ_MIN + 4));
+    c.c_le_s(0, 1);
+    if !c.fcc() {
+        return;
+    }
+    c.cycles += 5;
+    c.lwc1(1, bx.wrapping_add(0x8));
+    c.lwc1(0, obj.wrapping_add(node::OBJ_MAX + 8));
+    c.c_le_s(1, 0);
+    if !c.fcc() {
+        return;
+    }
+    c.cycles += 6;
+    c.lwc1(1, bx.wrapping_add(0x18));
+    c.lwc1(0, obj.wrapping_add(node::OBJ_MIN + 8));
+    c.c_le_s(0, 1);
+    if c.fcc() {
+        c.g[V1][0] = 1;
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13140,6 +13741,115 @@ pub(crate) mod tests {
                 c.bus.write32(BOOST + 0x10, (seed % 3) as u32);
                 c.bus.write32(BOOST + 0x1c, r.f32(2.0));
                 c.bus.write32(RMAN + 0x7c, 1);
+            },
+        );
+    }
+    use super::*;
+
+    /// `OverlapList_GatherAll` against the generated body, with the real
+    /// callees (`SpatialKey_ClassifyAABB`, `Cell_GatherObjects`,
+    /// `Cell_GatherAllSubtree`, `Cell_GatherAllRecursive`) on short paths.
+    /// Every seed gives each of the eight top-level cells a random fate:
+    /// no tree, box inside the cell (gather the root's objects, all-list and
+    /// children whole), partly overlapping (recurse) or disjoint (skip).
+    #[test]
+    fn overlap_list_gather_all_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA, GAME_GP};
+        let f = |x: f32| x.to_bits();
+        check(
+            ee::s11::f_00332db8__generated,
+            overlap_list_gather_all,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x9e37_79b9_7f4a_7c15 ^ (seed as u64) << 8 ^ 0x2db8);
+                scramble(c, &mut r);
+                c.pc = 0x0033_2db8;
+                c.g[GP][0] = GAME_GP as u64;
+                let gp_at = |off: i32| (GAME_GP as i32 + off) as u32;
+                // The BELibrary dummy and the world (callees' globals).
+                let belib = DATA + 0x3_0000;
+                let world = DATA + 0x3_1000;
+                c.bus.write32(gp_at(-0x1f04), belib);
+                c.bus.write32(gp_at(-0x848), world);
+                c.bus.write32(world + 0x84, world + 0x100);
+                c.bus.write32(world + 0x100 + 0x7c, 0);
+                // SpatialKey_ClassifyAABB's cell margin: the cell [x, x+1]
+                // widened by 0.25 on each side, times 2^level.
+                c.bus.write32(gp_at(-0x2dfc), f(0.25));
+
+                let this = DATA;
+                let grid = DATA + 0x1000;
+                let bx = DATA + 0x1200;
+                let leaf = DATA + 0x3000; // all zero: no lists, no children
+                                          // Stale counts (the function resets them) and the grid stamp.
+                c.bus
+                    .write32(this + gather_all_list::NODE_COUNT, r.next_u32());
+                c.bus
+                    .write32(this + gather_all_list::OBJ_COUNT, r.next_u32());
+                c.bus
+                    .write32(this + gather_all_list::ALL_COUNT, r.next_u32());
+                c.bus.write32(this + gather_all_list::GRID, grid);
+                c.bus
+                    .write32(grid + gather_all_list::GRID_STAMP, r.next_u32());
+                // The query box. With min = (1.25, 1.25, 0) and max = 0.5, a
+                // level-0 cell at the origin (hi = 1.25) classifies 0 ("within"),
+                // a level-1 cell at the origin 2 (partly) and a cell at x = 100
+                // 1 (disjoint).
+                for (k, v) in [1.25f32, 1.25, 0.0].into_iter().enumerate() {
+                    c.bus.write32(bx + 4 * k as u32, f(v));
+                    c.bus.write32(bx + 0x10 + 4 * k as u32, f(0.5));
+                }
+                for i in 0..8u32 {
+                    let cell = grid + gather_all_list::CELL_SIZE * i;
+                    let root = DATA + 0x2000 + 0x100 * i;
+                    let (level, x) = match r.next_u32() % 4 {
+                        0 => (0, 0),
+                        1 => (1, 0),
+                        _ => (0, 100),
+                    };
+                    c.bus.write32(cell, level);
+                    c.bus.write32(cell + 4, x);
+                    c.bus.write32(cell + 8, 0);
+                    c.bus.write32(cell + 0xc, 0);
+                    let present = r.next_u32() % 5 != 0;
+                    c.bus.write32(
+                        cell + gather_all_list::CELL_ROOT,
+                        if present { root } else { 0 },
+                    );
+                    // The root: no node list; 0..2 objects (hit or random box);
+                    // 0..2 all-list items; random leaf children.
+                    c.bus.write32(root + 0x20, 0);
+                    let mut next = 0;
+                    for j in 0..r.next_u32() % 3 {
+                        let obj = DATA + 0x4000 + 0x200 * (2 * i + j);
+                        c.bus.write32(obj, next);
+                        let hit = r.next_u32() % 2 == 0;
+                        for k in 0..3u32 {
+                            let (lo, hi) = if hit {
+                                (f(-10.0), f(10.0))
+                            } else {
+                                (r.f32(20.0), r.f32(20.0))
+                            };
+                            c.bus.write32(obj + gather_all_node::OBJ_MIN + 4 * k, lo);
+                            c.bus.write32(obj + gather_all_node::OBJ_MAX + 4 * k, hi);
+                        }
+                        next = obj;
+                    }
+                    c.bus.write32(root + gather_all_node::OBJECTS, next);
+                    let mut next = 0;
+                    for j in 0..r.next_u32() % 3 {
+                        let item = DATA + 0x7000 + 0x10 * (2 * i + j);
+                        c.bus.write32(item, next);
+                        next = item;
+                    }
+                    c.bus.write32(root + gather_all_node::ALL, next);
+                    for k in 0..8u32 {
+                        let child = if r.next_u32() % 2 == 0 { leaf } else { 0 };
+                        c.bus.write32(root + 4 * k, child);
+                    }
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(bx);
             },
         );
     }

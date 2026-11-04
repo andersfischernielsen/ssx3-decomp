@@ -182,6 +182,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_painter_get_sun_size,
         "WorldPainter_GetSunSize",
     ),
+    (
+        0x002e_db20,
+        world_painter_sample_surface_colours,
+        "WorldPainter_SampleSurfaceColours",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1905,6 +1910,400 @@ pub fn world_painter_get_sun_size(c: &mut Cpu) {
     sun_float_getter(c, 0x118, 0x002e_e2e8);
 }
 
+pub(crate) mod world_painter {
+
+    /// Layer kinds, three bits per layer (layer i at bit 3i).
+    pub const LAYER_KINDS: u32 = 0xc;
+
+    /// Rectangle sampled by kind-5 layers: origin x, y, size x, y.
+    pub const RECT: u32 = 0x10;
+
+    /// Quad corners (x, y) sampled by kind-1 layers: P0, P1, P2, P3.
+    pub const QUAD: u32 = 0x20;
+
+    /// Byte: index into the surface table (8-byte entries).
+    pub const SURFACE_INDEX: u32 = 0x155;
+
+    /// Short: index into the material table (0x18-byte entries); negative
+    /// means none.
+    pub const MATERIAL_INDEX: u32 = 0x156;
+
+    /// One short sampler id per layer.
+    pub const LAYER_IDS: u32 = 0x1a0;
+
+    /// Layer kind: sample the rectangle at the clamped (u, v).
+    pub const KIND_RECT: u64 = 5;
+
+    /// Layer kind: sample the quad at (u, v), wrapped to the texel fraction.
+    pub const KIND_QUAD: u64 = 1;
+
+    /// Surface table entry: kind word (+0x24) that must be 6.
+    pub const SURFACE_KIND: u32 = 0x24;
+
+    pub const SURFACE_KIND_PAINTED: u64 = 6;
+
+    /// Material table entry (relative to the table base): kind word that
+    /// must be 3.
+    pub const MATERIAL_KIND: u32 = 0x3f0;
+
+    pub const MATERIAL_KIND_PAINTED: u64 = 3;
+
+    /// `gp+0x16c8`: pointer to the painter tables (first word: the table base).
+    pub const GP_TABLES: u32 = 0x16c8;
+
+    /// `gp-0x854`: the sampler object; its interface at +0x10d8, method slot
+    /// +0x1d0 (`{delta, fn}`) samples a colour.
+    pub const GP_SAMPLER: i32 = -0x854;
+
+    pub const SAMPLER_IFACE: u32 = 0x10d8;
+
+    pub const SAMPLE_SLOT: u32 = 0x1d0;
+
+    /// Per-channel colour weights (`0x500000 - 0x5500`).
+    pub const WEIGHTS_HI: u32 = 0x0050_0000;
+
+    pub const WEIGHTS: u32 = WEIGHTS_HI - 0x5500;
+
+    /// Offset added before splitting the quad sample into texel and fraction.
+    pub const TEXEL_BIAS: u32 = 0x447a_0000;
+}
+
+/// Unaligned 16-byte copy as gcc emits it (`ldl/ldr` into `ra`, `rb`, then
+/// `sdl/sdr`); the registers keep the copied doublewords.
+pub(crate) fn copy16_unaligned(c: &mut Cpu, src: u32, dst: u32, ra: usize, rb: usize) {
+    c.ldl(ra, src.wrapping_add(7));
+    c.ldr(ra, src);
+    c.ldl(rb, src.wrapping_add(0xf));
+    c.ldr(rb, src.wrapping_add(8));
+    c.sdl(ra, dst.wrapping_add(7));
+    c.sdr(ra, dst);
+    c.sdl(rb, dst.wrapping_add(0xf));
+    c.sdr(rb, dst.wrapping_add(8));
+}
+
+/// `void WorldPainter_SampleSurfaceColours(WorldPainter* this, Vec4* scale,
+/// Vec4* ratio, float u /*f12*/, float v /*f13*/)` (0x002edb20).
+///
+/// When the painter's surface and material are both of the painted kind,
+/// samples up to two colours through the sampler object's virtual method
+/// (`gp-0x854`, interface +0x10d8, slot +0x1d0): colour A from the layer of
+/// kind 5 (its rectangle at the clamped (u, v)), colour B from the layer of
+/// kind 1 (its quad bilinearly at (u, v), passed as the fraction of
+/// `x + 1000`). A layer of neither kind leaves the colour at zero; a later
+/// layer of the same kind overrides an earlier one. Then writes
+/// `scale = (B - A) * weights * 2 A.x` and `ratio = scale / B`, with the
+/// x components of both set to 0.5.
+pub fn world_painter_sample_surface_colours(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use crate::ps2f::FpuF32;
+    use world_painter as wp;
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x110);
+        frame.save(c, S0, 0xe0);
+        frame.save(c, S4, 0xa0);
+        frame.save(c, S6, 0x80);
+        frame.save_fpr(c, 21, 0xf8);
+        frame.save_fpr(c, 20, 0xf0);
+        frame.save(c, S1, 0xd0);
+        frame.save(c, S2, 0xc0);
+        frame.save(c, S3, 0xb0);
+        frame.save(c, S5, 0x90);
+        frame.save(c, S7, 0x70);
+        frame.save(c, FP, 0x60);
+        frame.save_ra(c, 0x50);
+        frame.save_fpr(c, 22, 0x100);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S4][0] = c.g[A1][0];
+        c.g[S6][0] = c.g[A2][0];
+        c.f[21] = c.f[12];
+        c.f[20] = c.f[13];
+        let u = FpuF32(c.f[21]);
+        let v = FpuF32(c.f[20]);
+        let this = r32(c, S0);
+        let scale_out = r32(c, S4);
+        let ratio_out = r32(c, S6);
+        // Colour A at sp+0, colour B at sp+0x10; both start at zero.
+        for k in 0..8u32 {
+            Addr(frame.at(c, 4 * k)).sw(c, 0);
+        }
+        'body: {
+            if c.g[S0][0] == 0 {
+                break 'body;
+            }
+
+            // Painted surface and painted material?
+            c.cycles += 5;
+            let tables = Addr(r32(c, GP).wrapping_add(wp::GP_TABLES)).lw(c);
+            let material = Addr(this.wrapping_add(wp::MATERIAL_INDEX)).lh(c);
+            let base = Addr(tables as u32).lw(c);
+            c.g[A1][0] = material;
+            c.g[A0][0] = base;
+            c.g[V0][0] = 0;
+            if (material as i64) >= 0 {
+                c.cycles += 7;
+                let surface = Addr(this.wrapping_add(wp::SURFACE_INDEX)).lbu(c);
+                let entry = sx((base as u32).wrapping_add((surface as u32) << 3));
+                let kind = Addr((entry as u32).wrapping_add(wp::SURFACE_KIND)).lw(c);
+                c.g[V1][0] = kind ^ wp::SURFACE_KIND_PAINTED;
+                if c.g[V1][0] == 0 {
+                    c.cycles += 6;
+                    c.g[V0][0] = 0x18;
+                    let off = crate::abi::mult(c, material as u32, 0x18);
+                    c.g[V1][0] = sx(off);
+                    let mat = sx(off.wrapping_add(base as u32));
+                    let kind = Addr((mat as u32).wrapping_add(wp::MATERIAL_KIND)).lw(c);
+                    c.g[V1][0] = kind ^ wp::MATERIAL_KIND_PAINTED;
+                    c.g[V0][0] = (c.g[V1][0] < 1) as u64;
+                } else {
+                    c.g[V0][0] = 0;
+                }
+            } else {
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 2;
+            c.g[FP][0] = wp::WEIGHTS_HI as u64;
+            if c.g[V0][0] == 0 {
+                break 'body;
+            }
+
+            c.cycles += 8;
+            c.g[AT][0] = wp::TEXEL_BIAS as u64;
+            c.f[22] = wp::TEXEL_BIAS;
+            let bias = FpuF32(wp::TEXEL_BIAS);
+            c.g[S7][0] = wp::KIND_RECT;
+            c.g[S1][0] = sx(this.wrapping_add(wp::LAYER_IDS));
+            c.g[S5][0] = 0;
+            c.g[S3][0] = 0;
+            c.g[S2][0] = 2;
+            let rd = |c: &mut Cpu, off: u32| Addr(this.wrapping_add(off)).read_fpu(c);
+            loop {
+                let shift = r32(c, S3) & 31;
+                let layer_id = Addr(r32(c, S1));
+
+                // Kind 5: colour A from the rectangle at the clamped (u, v).
+                c.cycles += 5;
+                let kinds = Addr(this.wrapping_add(wp::LAYER_KINDS)).lw(c);
+                c.g[V0][0] = sx(((kinds as u32) as i32 >> shift) as u32) & 7;
+                if c.g[V0][0] == wp::KIND_RECT {
+                    c.cycles += 7;
+                    c.g[AT][0] = 0x3f80_0000;
+                    let one = FpuF32::ONE;
+                    let u_ok = FpuF32::ZERO.le(u);
+                    crate::abi::set_fcc(c, u_ok);
+                    let mut cu = FpuF32::ZERO;
+                    if u_ok {
+                        c.cycles += 1;
+                        cu = u.min(one);
+                    }
+                    c.cycles += 6;
+                    let size_x = rd(c, wp::RECT + 8);
+                    let v_ok = FpuF32::ZERO.le(v);
+                    crate::abi::set_fcc(c, v_ok);
+                    let origin_x = rd(c, wp::RECT);
+                    let x = origin_x + size_x * cu;
+                    let mut cv = FpuF32::ZERO;
+                    if v_ok {
+                        c.cycles += 1;
+                        cv = v.min(one);
+                    }
+                    c.cycles += 22;
+                    let size_y = rd(c, wp::RECT + 0xc);
+                    let origin_y = rd(c, wp::RECT + 4);
+                    let y = origin_y + size_y * cv;
+                    // Registers at the call.
+                    c.f[0] = origin_y.0;
+                    c.f[1] = origin_x.0;
+                    c.f[2] = cv.0;
+                    c.f[3] = one.0;
+                    c.f[4] = cu.0;
+                    c.f[12] = x.0;
+                    c.f[13] = y.0;
+                    let sampler = Addr(r32(c, GP).wrapping_add(wp::GP_SAMPLER as u32)).lw(c);
+                    let iface = Addr((sampler as u32).wrapping_add(wp::SAMPLER_IFACE)).lw(c);
+                    let slot = crate::call::VSlot::read(c, iface, wp::SAMPLE_SLOT);
+                    c.g[A0][0] = sx(frame.at(c, 0x20));
+                    c.g[T0][0] = sampler;
+                    c.g[A3][0] = 1;
+                    c.g[V1][0] = iface;
+                    c.g[A2][0] = layer_id.lh(c);
+                    c.g[V0][0] = slot.func;
+                    c.g[A1][0] = slot.this(sampler);
+                    call_ptr(c, slot.func as u32, 0x002e_dc84)?;
+                    copy16_unaligned(c, frame.at(c, 0x20), frame.at(c, 0), A0, A1);
+                }
+                c.g[V0][0] = Addr(this.wrapping_add(wp::LAYER_KINDS)).lw(c);
+
+                // Kind 1: colour B from the quad at (u, v).
+                c.cycles += 5;
+                c.g[V1][0] = 1;
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> (r32(c, S5) & 31)) as u32) & 7;
+                if c.g[V0][0] == wp::KIND_QUAD {
+                    c.cycles += 56;
+                    let p0x = rd(c, wp::QUAD);
+                    let p0y = rd(c, wp::QUAD + 4);
+                    let p1x = rd(c, wp::QUAD + 8);
+                    let p1y = rd(c, wp::QUAD + 0xc);
+                    let p2x = rd(c, wp::QUAD + 0x10);
+                    let p2y = rd(c, wp::QUAD + 0x14);
+                    let p3x = rd(c, wp::QUAD + 0x18);
+                    let p3y = rd(c, wp::QUAD + 0x1c);
+                    // x: P0->P2 and P1->P3 by u, then between them by v;
+                    // y: P0->P1 and P2->P3 by v, then between them by u.
+                    let dx02 = (p2x - p0x) * u;
+                    let dy01 = (p1y - p0y) * v;
+                    let dy23 = (p3y - p2y) * v;
+                    let dx13 = (p3x - p1x) * u;
+                    let x02 = p0x + dx02;
+                    let x13 = p1x + dx13;
+                    let y01 = p0y + dy01;
+                    let y23 = p2y + dy23;
+                    let dx = (x13 - x02) * v;
+                    let dy = (y23 - y01) * u;
+                    let x = x02 + dx + bias;
+                    let y = y01 + dy + bias;
+                    let tx = x.to_i32();
+                    let ty = y.to_i32();
+                    let fx = x - FpuF32::from_i32(tx);
+                    let fy = y - FpuF32::from_i32(ty);
+                    // Registers at the call.
+                    c.f[0] = ty as u32;
+                    c.f[1] = dx.0;
+                    c.f[2] = y.0;
+                    c.f[3] = x.0;
+                    c.f[4] = dx02.0;
+                    c.f[5] = dy01.0;
+                    c.f[6] = dy23.0;
+                    c.f[7] = dx13.0;
+                    c.f[12] = fx.0;
+                    c.f[13] = fy.0;
+                    let sampler = Addr(r32(c, GP).wrapping_add(wp::GP_SAMPLER as u32)).lw(c);
+                    let iface = Addr((sampler as u32).wrapping_add(wp::SAMPLER_IFACE)).lw(c);
+                    let slot = crate::call::VSlot::read(c, iface, wp::SAMPLE_SLOT);
+                    c.g[A0][0] = sx(frame.at(c, 0x20));
+                    c.g[A3][0] = 1;
+                    c.g[A2][0] = layer_id.lh(c);
+                    c.g[A1][0] = slot.this(sampler);
+                    c.g[T0][0] = slot.func;
+                    c.g[V0][0] = sx(tx as u32);
+                    c.g[V1][0] = sx(ty as u32);
+                    call_ptr(c, slot.func as u32, 0x002e_dd78)?;
+                    copy16_unaligned(c, frame.at(c, 0x20), frame.at(c, 0x10), V0, V1);
+                }
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(2));
+
+                c.cycles += 4;
+                c.g[S5][0] = sx(r32(c, S5).wrapping_add(3));
+                c.g[S2][0] = sx(r32(c, S2).wrapping_sub(1));
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(3));
+                if (c.g[S2][0] as i64) < 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002e_dc00);
+                }
+            }
+
+            // scale = (B - A) * weights * 2 A.x; ratio = scale / B.
+            c.cycles += 70;
+            let sp_rd = |c: &mut Cpu, off: u32| Addr(frame.at(c, off)).read_fpu(c);
+            let sp_wr = |c: &mut Cpu, off: u32, v: FpuF32| Addr(frame.at(c, off)).write_fpu(c, v);
+            let a = [sp_rd(c, 0), sp_rd(c, 4), sp_rd(c, 8), sp_rd(c, 0xc)];
+            let b = [
+                sp_rd(c, 0x10),
+                sp_rd(c, 0x14),
+                sp_rd(c, 0x18),
+                sp_rd(c, 0x1c),
+            ];
+            c.g[V0][0] = sx(wp::WEIGHTS);
+            let weights = Addr(wp::WEIGHTS);
+            let w = [
+                weights.read_fpu(c),
+                weights.off(4).read_fpu(c),
+                weights.off(8).read_fpu(c),
+                weights.off(0xc).read_fpu(c),
+            ];
+            let two_ax = a[0] + a[0];
+            let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2], b[3] - a[3]];
+            let dw = [d[0] * w[0], d[1] * w[1], d[2] * w[2], d[3] * w[3]];
+            let scale = [
+                dw[0] * two_ax,
+                dw[1] * two_ax,
+                dw[2] * two_ax,
+                dw[3] * two_ax,
+            ];
+            for k in 0..4u32 {
+                sp_wr(c, 0x40 + 4 * k, d[k as usize]);
+            }
+            sp_wr(c, 0x30, dw[0]);
+            sp_wr(c, 0x24, scale[1]);
+            sp_wr(c, 0x20, scale[0]);
+            sp_wr(c, 0x34, dw[1]);
+            sp_wr(c, 0x28, scale[2]);
+            sp_wr(c, 0x2c, scale[3]);
+            sp_wr(c, 0x38, dw[2]);
+            sp_wr(c, 0x3c, dw[3]);
+            c.g[AT][0] = 0x3f00_0000;
+            let half = FpuF32(0x3f00_0000);
+            copy16_unaligned(c, frame.at(c, 0x20), scale_out, T1, V0);
+            let s = [
+                Addr(scale_out).read_fpu(c),
+                Addr(scale_out.wrapping_add(4)).read_fpu(c),
+                Addr(scale_out.wrapping_add(8)).read_fpu(c),
+                Addr(scale_out.wrapping_add(0xc)).read_fpu(c),
+            ];
+            let ratio = [
+                s[0].div(b[0]),
+                s[1].div(b[1]),
+                s[2].div(b[2]),
+                s[3].div(b[3]),
+            ];
+            for k in 0..4u32 {
+                sp_wr(c, 0x20 + 4 * k, ratio[k as usize]);
+            }
+            copy16_unaligned(c, frame.at(c, 0x20), ratio_out, A1, T1);
+            Addr(scale_out).write_fpu(c, half);
+            Addr(ratio_out).write_fpu(c, half);
+            // FPU registers as the original leaves them.
+            c.f[0] = ratio[3].0;
+            c.f[1] = ratio[0].0;
+            c.f[2] = ratio[1].0;
+            c.f[3] = ratio[2].0;
+            c.f[4] = half.0;
+            c.f[5] = d[3].0;
+            c.f[6] = dw[2].0;
+            c.f[7] = dw[3].0;
+            c.f[8] = scale[2].0;
+            c.f[9] = scale[0].0;
+            c.f[10] = b[3].0;
+            c.f[11] = b[0].0;
+            c.f[12] = b[2].0;
+            c.f[13] = b[1].0;
+        }
+
+        c.cycles += 15;
+        for (reg, off) in [
+            (S0, 0xe0),
+            (S1, 0xd0),
+            (S2, 0xc0),
+            (S3, 0xb0),
+            (S4, 0xa0),
+            (S5, 0x90),
+            (S6, 0x80),
+            (S7, 0x70),
+            (FP, 0x60),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x50);
+        frame.restore_fpr(c, 22, 0x100);
+        frame.restore_fpr(c, 21, 0xf8);
+        frame.restore_fpr(c, 20, 0xf0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2629,4 +3028,105 @@ pub(crate) mod tests {
         super::world_painter_get_sun_size,
         0x118
     );
+    use super::*;
+
+    /// `WorldPainter_SampleSurfaceColours` against the generated body. The
+    /// painter tables (`gp+0x16c8`) make the surface/material gate pass or
+    /// fail (null painter, negative material, wrong surface or material
+    /// kind); the three layer kinds are random among rect (5), quad (1) and
+    /// neither, so each seed samples zero to three colours through the
+    /// sampler's virtual method (`gp-0x854`, interface +0x10d8, slot +0x1d0,
+    /// a fake that sometimes unwinds). (u, v) cover below 0, inside and
+    /// above 1 (the rectangle clamps); the output vectors are sometimes only
+    /// word-aligned (the `sdl/sdr` copies).
+    #[test]
+    fn world_painter_sample_surface_colours_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::{DATA, GAME_GP};
+        let gp_at = |off: i32| (GAME_GP as i32 + off) as u32;
+        covered(
+            ee::s09::f_002edb20__generated,
+            world_painter_sample_surface_colours,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2edb20, 6);
+                c.pc = 0x002e_db20;
+                let this = DATA + 0x1000;
+                let tables = DATA + 0x2000;
+                let base = DATA + 0x3000;
+                let sampler = DATA + 0x6000;
+                // The gate: surface entry kind 6, material entry kind 3.
+                c.bus
+                    .write32(gp_at(world_painter::GP_TABLES as i32), tables);
+                c.bus.write32(tables, base);
+                let surface = r.next_u32() % 4;
+                let material = r.next_u32() % 4;
+                c.bus
+                    .write8(this + world_painter::SURFACE_INDEX, surface as u8);
+                let gate = r.next_u32() % 8;
+                let mat_index = if gate == 0 {
+                    0x8000 | material
+                } else {
+                    material
+                };
+                c.bus
+                    .write16(this + world_painter::MATERIAL_INDEX, mat_index as u16);
+                for k in 0..4 {
+                    c.bus.write32(base + 8 * k + world_painter::SURFACE_KIND, 6);
+                    c.bus
+                        .write32(base + 0x18 * k + world_painter::MATERIAL_KIND, 3);
+                }
+                if gate == 1 {
+                    c.bus
+                        .write32(base + 8 * surface + world_painter::SURFACE_KIND, 7);
+                }
+                if gate == 2 {
+                    c.bus
+                        .write32(base + 0x18 * material + world_painter::MATERIAL_KIND, 2);
+                }
+                // Layer kinds (3 bits each; upper bits random) and ids.
+                let mut kinds = r.next_u32() & !0x1ff;
+                for i in 0..3 {
+                    let k = [5u32, 1, 5, 1, 0, 7][(r.next_u32() % 6) as usize];
+                    kinds |= k << (3 * i);
+                }
+                c.bus.write32(this + world_painter::LAYER_KINDS, kinds);
+                for i in 0..3 {
+                    c.bus
+                        .write16(this + world_painter::LAYER_IDS + 2 * i, r.next_u32() as u16);
+                }
+                // Rectangle and quad.
+                for k in 0..12 {
+                    c.bus
+                        .write32(this + world_painter::RECT + 4 * k, r.f32(64.0));
+                }
+                // The sampler object and its interface's slot.
+                c.bus.write32(gp_at(world_painter::GP_SAMPLER), sampler);
+                let iface = vtable(c, &mut r, &[world_painter::SAMPLE_SLOT]);
+                c.bus.write32(sampler + world_painter::SAMPLER_IFACE, iface);
+                // Colour weights.
+                for k in 0..4 {
+                    c.bus.write32(world_painter::WEIGHTS + 4 * k, r.f32(2.0));
+                }
+                // Sampled colours: whatever the stack held (random fill) or
+                // the forced fake results do not reach memory, so seed the
+                // result slot area with random floats (frame at SP-0x110).
+                for k in 0..8 {
+                    c.bus
+                        .write32(crate::difftest::SP - 0x110 + 0x20 + 4 * k, r.f32(4.0));
+                }
+                let scale = DATA + 0x8000 + 4 * (r.next_u32() % 3);
+                let ratio = DATA + 0x8100 + 4 * (r.next_u32() % 3);
+                c.g[A0][0] = if seed % 16 == 0 { 0 } else { sx(this) };
+                c.g[A1][0] = sx(scale);
+                c.g[A2][0] = sx(ratio);
+                let uv = |r: &mut crate::difftest::Rng| match r.next_u32() % 4 {
+                    0 => r.edge_f32(),
+                    _ => r.f32(1.5),
+                };
+                c.f[12] = uv(&mut r);
+                c.f[13] = uv(&mut r);
+            },
+        );
+    }
 }

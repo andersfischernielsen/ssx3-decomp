@@ -2,8 +2,12 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
+use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -13,6 +17,7 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -118,6 +123,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_d320, fixdfdi, "__fixdfdi"),
     (0x0042_d380, fixunsdfdi, "__fixunsdfdi"),
     (0x0042_dad8, umoddi3, "__umoddi3"),
+    (0x0041_1c38, unpack_d, "__unpack_d"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2580,6 +2586,87 @@ pub fn umoddi3(c: &mut Cpu) {
     abi::ret(c);
 }
 
+pub(crate) mod fp_number {
+
+    /// Class: 0 signalling NaN, 1 quiet NaN, 2 zero, 3 normal, 4 infinity.
+    pub const CLASS: u32 = 0x00;
+
+    /// Sign bit (0 or 1).
+    pub const SIGN: u32 = 0x04;
+
+    /// Unbiased exponent.
+    pub const NORMAL_EXP: u32 = 0x08;
+
+    /// Fraction (u64); for normals the mantissa shifted left by 8 with the
+    /// implicit one at bit 60.
+    pub const FRACTION: u32 = 0x10;
+
+    pub const CLASS_SNAN: u64 = 0;
+
+    pub const CLASS_QNAN: u64 = 1;
+
+    pub const CLASS_ZERO: u64 = 2;
+
+    pub const CLASS_NUMBER: u64 = 3;
+
+    pub const CLASS_INFINITY: u64 = 4;
+}
+
+/// `void __unpack_d(const FLO_union_type* src, fp_number_type* dst)`
+/// (0x411c38, libgcc soft-float): splits the double at `a0` into sign,
+/// exponent and fraction. This build has no denormals: a zero exponent field
+/// is always class "zero" (fraction and exponent left unwritten). Exponent
+/// 0x7ff is infinity (zero fraction) or a NaN (quiet when fraction bit 51 is
+/// set); NaN and infinity leave the exponent field unwritten, infinity also
+/// the fraction. Normals get the unbiased exponent and the mantissa
+/// `<< 8` with the implicit one at bit 60.
+pub fn unpack_d(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use fp_number as fp;
+
+    c.cycles += 10;
+    let bits = Addr(c.g[A0][0] as u32).ld(c);
+    let dst = Addr(c.g[A1][0] as u32);
+    let fraction = bits & (u64::MAX >> 12);
+    let exp = (bits >> 52) & 0x7ff;
+    dst.off(fp::SIGN).sw(c, bits >> 63);
+    c.g[A0][0] = exp;
+    c.g[V1][0] = fraction;
+    if exp == 0 {
+        c.cycles += 3;
+        c.g[V0][0] = fp::CLASS_ZERO;
+        dst.off(fp::CLASS).sw(c, fp::CLASS_ZERO);
+    } else if exp != 0x7ff {
+        c.cycles += 11;
+        let mantissa = (fraction << 8) | (1u64 << 60);
+        let unbiased = sx((exp as u32).wrapping_sub(0x3ff));
+        c.g[V1][0] = mantissa;
+        c.g[A0][0] = unbiased;
+        c.g[V0][0] = fp::CLASS_NUMBER;
+        dst.off(fp::FRACTION).sd(c, mantissa);
+        dst.off(fp::NORMAL_EXP).sw(c, unbiased);
+        dst.off(fp::CLASS).sw(c, fp::CLASS_NUMBER);
+    } else if fraction == 0 {
+        c.cycles += 6;
+        c.g[V0][0] = fp::CLASS_INFINITY;
+        dst.off(fp::CLASS).sw(c, fp::CLASS_INFINITY);
+    } else {
+        c.cycles += 9;
+        // v0 holds 1 on both paths (the quiet class, also the store value).
+        c.g[V0][0] = 1;
+        if fraction & (1u64 << 51) != 0 {
+            c.cycles += 2;
+            dst.off(fp::CLASS).sw(c, fp::CLASS_QNAN);
+        } else {
+            c.cycles += 1;
+            dst.off(fp::CLASS).sw(c, fp::CLASS_SNAN);
+        }
+        c.cycles += 2;
+        dst.off(fp::FRACTION).sd(c, fraction);
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3488,6 +3575,44 @@ pub(crate) mod tests {
     fn umoddi3_matches() {
         check(ee::s15::f_0042dad8__generated, umoddi3, 500, &|c, seed| {
             div_setup(c, seed, 0x0049_af18)
+        });
+    }
+    use super::*;
+
+    // ------------------------------------------------------------ __unpack_d
+
+    /// `__unpack_d` against the generated body: random doubles plus each
+    /// class (zero exponent, normal, infinity, quiet and signalling NaN) with
+    /// both signs; the destination is pre-filled with junk so unwritten
+    /// fields show.
+    #[test]
+    fn unpack_d_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA};
+
+        const SRC: u32 = DATA;
+        const DST: u32 = DATA + 0x40;
+        check(ee::s15::f_00411c38__generated, unpack_d, 300, &|c, seed| {
+            let mut r = Rng(0x0411_c38d ^ seed as u64);
+            scramble(c, &mut r);
+            let sign = (r.next_u32() as u64 & 1) << 63;
+            let frac = ((r.next_u32() as u64) << 32 | r.next_u32() as u64) & (u64::MAX >> 12);
+            let rnd_exp = (r.next_u32() as u64) & 0x7ff;
+            let bits = match seed % 8 {
+                0 => sign | frac,                             // zero exponent (with fraction)
+                1 => sign,                                    // +-0
+                2 => sign | (0x7ff << 52),                    // +-inf
+                3 => sign | (0x7ff << 52) | (1 << 51) | frac, // quiet NaN
+                4 => sign | (0x7ff << 52) | ((frac & !(1 << 51)) | 1), // signalling NaN
+                5 => sign | (0x3ff << 52) | frac,             // exponent 0
+                _ => sign | (rnd_exp << 52) | frac,           // anything
+            };
+            for i in 0..8 {
+                c.bus.write32(DST + i * 4, r.next_u32());
+            }
+            c.bus.write32(SRC, bits as u32);
+            c.bus.write32(SRC + 4, (bits >> 32) as u32);
+            c.g[A0][0] = sx(SRC);
+            c.g[A1][0] = sx(DST);
         });
     }
 }

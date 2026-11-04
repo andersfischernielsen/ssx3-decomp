@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
+use crate::abi::ret;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -81,6 +82,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x003c_e0d8, snd_utk_set_mode, "SND_UtkSetMode"),
     (0x003c_e410, snd_utk_lpc_filter, "SND_UtkLpcFilter"),
+    (0x003c_d878, snd_utk_decode_frame, "SND_UtkDecodeFrame"),
 ];
 
 /// Fields of the driver state block.
@@ -2703,6 +2705,544 @@ pub(crate) fn epilogue(c: &mut Cpu) -> crate::call::Flow {
     Ok(())
 }
 
+pub(crate) mod utk_frame {
+
+    /// Non-zero: reduced bandwidth (only every other excitation sample is
+    /// coded; the others are zeroed or interpolated).
+    pub const REDUCED_BW: u32 = 0x0c;
+
+    /// First RC index that makes the frame unvoiced (excitation decoded with
+    /// the pulse model instead of the Huffman model).
+    pub const VOICED_THRESHOLD: u32 = 0x10;
+
+    /// `float[64]`: fixed-codebook gains.
+    pub const FIXED_GAINS: u32 = 0x14;
+
+    /// `float[12]`: reflection coefficients, stepped over the frame.
+    pub const RC: u32 = 0x114;
+
+    /// `float[324]`: adaptive codebook (the last 324 decoded samples).
+    pub const ADAPT_CB: u32 = 0x174;
+
+    /// `float[432]`: the frame's excitation (4 subframes of 108 samples).
+    pub const DECODED: u32 = 0x684;
+
+    /// `DECODED[108..]`: the 324 samples kept as the next adaptive codebook
+    /// (copied 32 bytes at a time up to `KEEP_END`, then 16 more).
+    pub const KEEP: u32 = 0x834;
+
+    pub const KEEP_END: u32 = 0xd34;
+
+    /// `D_0044E8E8`: the reflection-coefficient quantiser table (indices
+    /// 0..63 for RC 0..3, 16..47 for RC 4..11).
+    pub const RC_TABLE: u32 = 0x0044_e8e8;
+
+    /// Frame (0x2e0) slots: the excitation scratch, the 12 RC deltas and
+    /// the spilled pointers.
+    pub const SIZE: u32 = 0x2e0;
+
+    pub const EXC: u32 = 0x10;
+
+    pub const DELTA: u32 = 0x1e0;
+
+    pub const KEEP_PTR: u32 = 0x210;
+
+    pub const RC_PTR: u32 = 0x214;
+
+    pub const GAINS_PTR: u32 = 0x218;
+
+    pub const DECODED_PTR: u32 = 0x21c;
+
+    pub const KEEP_END_PTR: u32 = 0x220;
+}
+
+pub(crate) mod utk_frame_callee {
+    use crate::call::Callee;
+    use ssx3_ee as ee;
+
+    pub const READ_BITS: Callee = Callee {
+        addr: 0x003c_d1f8,
+        f: ee::s14::SND_UtkReadBits,
+    };
+
+    pub const DECODE_EXCITATION: Callee = Callee {
+        addr: 0x003c_d2b0,
+        f: ee::s14::SND_UtkDecodeExcitation,
+    };
+
+    pub const INTERPOLATE: Callee = Callee {
+        addr: 0x003c_d518,
+        f: ee::s14::SND_UtkInterpolate,
+    };
+
+    pub const SYNTHESIZE: Callee = Callee {
+        addr: 0x003c_d690,
+        f: ee::s14::SND_UtkSynthesize,
+    };
+}
+
+/// `addiu`/`addu` on a register value: 32-bit add, sign-extended.
+#[inline(always)]
+pub(crate) fn utk_add(v: u64, k: u32) -> u64 {
+    sx((v as u32).wrapping_add(k))
+}
+
+/// `void SND_UtkDecodeFrame(SND_Utk* u)` (0x3cd878): decode one 432-sample
+/// EA MicroTalk speech frame.
+///
+/// ```text
+/// delta[j] = (RC_TABLE[bits(6 or 5)] - rc[j]) / 4         j = 0..11
+/// voiced   = first index < voiced_threshold
+/// 4 subframes i: lag = (i+2)*108 - bits(8); pitch = bits(4) / 15;
+///   fixed = gains[bits(6)]; excitation (full, or every other sample with
+///   the rest zeroed or interpolated and fixed halved);
+///   decoded[i*108 + j] = pitch * adapt_cb[lag + j] + fixed * exc[j]
+/// adapt_cb = decoded[108..432]
+/// 4 times: rc += delta; synthesize 12 samples (the last time 33 blocks)
+/// ```
+///
+/// Every register, every callee-saved value the callees spill and every
+/// back-edge event check follows the generated body.
+pub fn snd_utk_decode_frame(c: &mut Cpu) {
+    guest(c, utk_decode_frame_body)
+}
+
+pub(crate) fn utk_decode_frame_body(c: &mut Cpu) -> crate::call::Flow {
+    use crate::ps2f::FpuF32;
+    use utk_frame as f;
+    use utk_frame_callee as callee;
+
+    let fmul = |a: u32, b: u32| (FpuF32(a) * FpuF32(b)).0;
+    let fadd = |a: u32, b: u32| (FpuF32(a) + FpuF32(b)).0;
+    let fsub = |a: u32, b: u32| (FpuF32(a) - FpuF32(b)).0;
+    const QUARTER: u32 = 0x3e80_0000;
+
+    // --- Prologue, first RC index.
+    c.cycles += 38;
+    let frame = Frame::open(c, f::SIZE);
+    let u = c.g[A0][0];
+    frame.save(c, S3, 0x290);
+    frame.save(c, S0, 0x2c0);
+    frame.save(c, S1, 0x2b0);
+    frame.save(c, S2, 0x2a0);
+    frame.save(c, S4, 0x280);
+    frame.save(c, S6, 0x260);
+    frame.save(c, FP, 0x240);
+    frame.save_fpr(c, 20, 0x2d0);
+    frame.save(c, S5, 0x270);
+    frame.save(c, S7, 0x250);
+    frame.save_ra(c, 0x230);
+    frame.save_fpr(c, 21, 0x2d8);
+    c.g[A1][0] = 6;
+    c.g[S3][0] = u;
+    let rc = utk_add(u, f::RC);
+    c.g[V0][0] = rc;
+    c.g[S2][0] = utk_add(u, f::RC + 4);
+    c.g[S0][0] = 2;
+    c.sw(frame.at(c, f::RC_PTR), rc);
+    callee::READ_BITS.call(c, 0x003c_d8c8)?;
+
+    // delta[0]; the first index also decides `voiced`.
+    let first = c.g[V0][0];
+    let table = sx(f::RC_TABLE);
+    c.g[A0][0] = sx(((first as u32) << 2).wrapping_add(f::RC_TABLE));
+    c.lwc1(2, utk_add(u, f::RC) as u32);
+    c.g[AT][0] = QUARTER as u64;
+    c.f[1] = QUARTER;
+    c.lwc1(0, c.g[A0][0] as u32);
+    c.g[S4][0] = table;
+    let threshold = c.lw(utk_add(u, f::VOICED_THRESHOLD) as u32);
+    c.g[V1][0] = threshold;
+    c.g[FP][0] = sx(frame.at(c, f::DELTA));
+    c.f[0] = fsub(c.f[0], c.f[2]);
+    c.g[S1][0] = sx(frame.at(c, f::DELTA + 4));
+    c.f[20] = c.f[1];
+    c.g[S6][0] = ((first as i64) < (threshold as i64)) as u64;
+    c.f[0] = fmul(c.f[0], c.f[1]);
+    c.swc1(0, frame.at(c, f::DELTA));
+
+    // delta[1..3]: 6-bit indices (s0 counts 2..0, s2 walks rc, s1 delta).
+    loop {
+        c.cycles += 14;
+        c.g[A0][0] = u;
+        c.g[A1][0] = 6;
+        callee::READ_BITS.call(c, 0x003c_d91c)?;
+        c.g[S0][0] = utk_add(c.g[S0][0], 0xffff_ffff);
+        let entry = sx(((c.g[V0][0] as u32) << 2).wrapping_add(c.g[S4][0] as u32));
+        c.g[V0][0] = entry;
+        let rc_j = c.g[S2][0];
+        c.lwc1(1, rc_j as u32);
+        c.g[S2][0] = utk_add(rc_j, 4);
+        c.lwc1(0, entry as u32);
+        c.f[0] = fmul(fsub(c.f[0], c.f[1]), c.f[20]);
+        let delta_j = c.g[S1][0];
+        c.swc1(0, delta_j as u32);
+        c.g[S1][0] = utk_add(delta_j, 4);
+        if (c.g[S0][0] as i64) < 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_d910);
+        }
+    }
+
+    // delta[4..11]: 5-bit indices into the table's second half.
+    c.cycles += 18;
+    c.g[V0][0] = 0x45_0000;
+    c.g[A0][0] = utk_add(u, f::FIXED_GAINS);
+    c.g[S4][0] = table;
+    c.g[A1][0] = utk_add(u, f::DECODED);
+    c.g[A2][0] = utk_add(u, f::KEEP);
+    c.g[A3][0] = utk_add(u, f::KEEP_END);
+    c.g[V0][0] = c.lw(frame.at(c, f::RC_PTR));
+    c.g[S7][0] = utk_add(u, f::ADAPT_CB);
+    c.g[AT][0] = QUARTER as u64;
+    c.f[20] = QUARTER;
+    c.g[S2][0] = utk_add(c.g[FP][0], 0x10);
+    c.sw(frame.at(c, f::GAINS_PTR), c.g[A0][0]);
+    c.g[S1][0] = utk_add(c.g[V0][0], 0x10);
+    c.sw(frame.at(c, f::DECODED_PTR), c.g[A1][0]);
+    c.g[S0][0] = 7;
+    c.sw(frame.at(c, f::KEEP_PTR), c.g[A2][0]);
+    c.sw(frame.at(c, f::KEEP_END_PTR), c.g[A3][0]);
+    loop {
+        c.cycles += 15;
+        c.g[A0][0] = u;
+        c.g[A1][0] = 5;
+        callee::READ_BITS.call(c, 0x003c_d99c)?;
+        c.g[S0][0] = utk_add(c.g[S0][0], 0xffff_ffff);
+        let rc_j = c.g[S1][0];
+        c.lwc1(1, rc_j as u32);
+        c.g[S1][0] = utk_add(rc_j, 4);
+        let entry =
+            sx(((c.g[V0][0] as u32).wrapping_add(0x10) << 2).wrapping_add(c.g[S4][0] as u32));
+        c.g[V0][0] = entry;
+        c.lwc1(0, entry as u32);
+        c.f[0] = fmul(fsub(c.f[0], c.f[1]), c.f[20]);
+        let delta_j = c.g[S2][0];
+        c.swc1(0, delta_j as u32);
+        c.g[S2][0] = utk_add(delta_j, 4);
+        if (c.g[S0][0] as i64) < 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_d990);
+        }
+    }
+
+    // --- Four subframes (s4 = i, s1 = i + 1 once decoded).
+    c.cycles += 3;
+    c.g[S4][0] = 0;
+    c.g[A1][0] = 8;
+    loop {
+        // Pitch lag (s5 = (i + 2) * 108 - bits(8)) and pitch gain bits(4) / 15
+        // (converted as unsigned: a value with the top bit set is halved,
+        // converted and doubled).
+        c.cycles += 11;
+        c.g[A0][0] = u;
+        callee::READ_BITS.call(c, 0x003c_d9e0)?;
+        c.g[V1][0] = utk_add(c.g[S4][0], 2);
+        c.g[A1][0] = 0x6c;
+        c.mult(0, V1, V1, A1);
+        c.g[A0][0] = u;
+        c.g[A1][0] = 4;
+        c.g[S5][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+        callee::READ_BITS.call(c, 0x003c_d9fc)?;
+        let gain_bits = c.g[V0][0];
+        c.g[V1][0] = sx((gain_bits as u32) >> 1);
+        if (gain_bits as i64) < 0 {
+            c.cycles += 5;
+            let halved = (gain_bits & 1) | c.g[V1][0];
+            c.g[V0][0] = halved;
+            let v = FpuF32::from_i32(halved as u32 as i32);
+            c.f[1] = (v + v).0;
+        } else {
+            c.cycles += 4;
+            c.f[1] = FpuF32::from_i32(gain_bits as u32 as i32).0;
+        }
+
+        // Fixed gain gains[bits(6)] in f20, pitch gain (* 1/15) in f21.
+        c.cycles += 13;
+        c.g[AT][0] = 0x3d88_8889;
+        c.f[0] = 0x3d88_8889;
+        c.g[A0][0] = u;
+        c.g[A1][0] = 6;
+        c.f[21] = fmul(c.f[1], c.f[0]);
+        callee::READ_BITS.call(c, 0x003c_da44)?;
+        let gains = c.lw(frame.at(c, f::GAINS_PTR));
+        c.g[A2][0] = gains;
+        let gain_at = sx(((c.g[V0][0] as u32) << 2).wrapping_add(gains as u32));
+        c.g[V0][0] = gain_at;
+        let reduced = c.lw(utk_add(u, f::REDUCED_BW) as u32);
+        c.g[V1][0] = reduced;
+        c.lwc1(20, gain_at as u32);
+
+        if reduced == 0 {
+            // Full excitation at EXC + 4.
+            c.cycles += 7;
+            c.g[A0][0] = u;
+            c.g[A1][0] = c.g[S6][0];
+            c.g[A2][0] = sx(frame.at(c, f::EXC + 4));
+            c.g[A3][0] = 1;
+            callee::DECODE_EXCITATION.call(c, 0x003c_da70)?;
+            c.g[S1][0] = utk_add(c.g[S4][0], 1);
+            c.cycles += 1;
+        } else {
+            // Every other sample (phase `align`), then zero or interpolate
+            // the others.
+            c.cycles += 17;
+            c.g[A0][0] = u;
+            c.g[A1][0] = 1;
+            callee::READ_BITS.call(c, 0x003c_da84)?;
+            let align = c.g[V0][0];
+            c.g[S2][0] = align;
+            c.g[A0][0] = u;
+            c.g[A1][0] = 1;
+            c.g[S1][0] = sx((align as u32) << 2);
+            callee::READ_BITS.call(c, 0x003c_da98)?;
+            let out = utk_add(c.g[S1][0], 0x14);
+            c.g[S0][0] = c.g[V0][0];
+            c.g[A2][0] = sx(sp(c).wrapping_add(out as u32));
+            c.g[A0][0] = u;
+            c.g[A1][0] = c.g[S6][0];
+            c.g[A3][0] = 2;
+            callee::DECODE_EXCITATION.call(c, 0x003c_dab4)?;
+            c.g[V1][0] = utk_add(c.g[S2][0], 0xffff_fffa);
+            if c.g[S0][0] != 0 {
+                // Zero the uncoded samples (54, walking down).
+                c.cycles += 5;
+                c.g[S1][0] = utk_add(c.g[S4][0], 1);
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[S0][0] = 0x6a;
+                c.g[V0][0] = utk_add(sx(sp(c).wrapping_sub(c.g[V1][0] as u32)), 0x1a8);
+                loop {
+                    c.cycles += 7;
+                    c.sw(c.g[V0][0] as u32, 0);
+                    c.g[S0][0] = utk_add(c.g[S0][0], 0xffff_fffe);
+                    c.g[V0][0] = utk_add(c.g[V0][0], 0xffff_fff8);
+                    if (c.g[S0][0] as i64) < 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_dad0);
+                    }
+                }
+                c.cycles += 2;
+            } else {
+                // Clear 5 samples on each side, interpolate, halve the gain.
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[S0][0] = 4;
+                c.g[S1][0] = utk_add(c.g[S4][0], 1);
+                c.g[V0][0] = sx(frame.at(c, f::EXC));
+                loop {
+                    c.cycles += 7;
+                    c.sw(c.g[V0][0] as u32, 0);
+                    c.g[S0][0] = utk_add(c.g[S0][0], 0xffff_ffff);
+                    c.g[V0][0] = utk_add(c.g[V0][0], 0xffff_fffc);
+                    if (c.g[S0][0] as i64) < 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_db08);
+                    }
+                }
+                c.cycles += 3;
+                c.g[V0][0] = sx(frame.at(c, 0x1c4));
+                c.g[S0][0] = 4;
+                loop {
+                    c.cycles += 7;
+                    c.sw(c.g[V0][0] as u32, 0);
+                    c.g[S0][0] = utk_add(c.g[S0][0], 0xffff_ffff);
+                    c.g[V0][0] = utk_add(c.g[V0][0], 4);
+                    if (c.g[S0][0] as i64) < 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_db30);
+                    }
+                }
+                c.cycles += 6;
+                let back = utk_add(c.g[A0][0], 0xffff_ffe8);
+                c.g[A0][0] = sx(sp(c).wrapping_sub(back as u32));
+                callee::INTERPOLATE.call(c, 0x003c_db58)?;
+                c.g[AT][0] = 0x3f00_0000;
+                c.f[0] = 0x3f00_0000;
+                c.f[20] = fmul(c.f[20], c.f[0]);
+                c.cycles += 1;
+            }
+        }
+        c.g[A3][0] = 0x6c;
+
+        // decoded[i*108 + j] = pitch * adapt_cb[lag + j] + fixed * exc[j].
+        c.cycles += 8;
+        c.g[V0][0] = sx((c.g[S5][0] as u32) << 2);
+        c.mult(0, V1, S4, A3);
+        let decoded = c.lw(frame.at(c, f::DECODED_PTR));
+        c.g[A2][0] = decoded;
+        c.g[A1][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S7][0] as u32));
+        c.g[A0][0] = sx(frame.at(c, f::EXC + 4));
+        c.g[S0][0] = 0x6b;
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(decoded as u32));
+        loop {
+            c.cycles += 11;
+            let past = c.g[A1][0];
+            let exc = c.g[A0][0];
+            c.lwc1(0, past as u32);
+            c.g[S0][0] = utk_add(c.g[S0][0], 0xffff_ffff);
+            c.lwc1(1, exc as u32);
+            c.g[A1][0] = utk_add(past, 4);
+            c.f[0] = fmul(c.f[21], c.f[0]);
+            c.g[A0][0] = utk_add(exc, 4);
+            c.f[1] = fmul(c.f[20], c.f[1]);
+            c.f[0] = fadd(c.f[0], c.f[1]);
+            let out = c.g[V0][0];
+            c.swc1(0, out as u32);
+            c.g[V0][0] = utk_add(out, 4);
+            if (c.g[S0][0] as i64) < 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_db88);
+            }
+        }
+        c.cycles += 4;
+        c.g[S4][0] = c.g[S1][0];
+        let more = (c.g[S4][0] as i64) < 4;
+        c.g[V0][0] = more as u64;
+        c.g[A1][0] = 8;
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_d9d8);
+        }
+    }
+
+    // --- adapt_cb = decoded[108..432] (0x510 bytes; doubleword copy when
+    // both are 8-aligned, else ldl/ldr + sdl/sdr).
+    c.cycles += 6;
+    c.g[V1][0] = c.lw(frame.at(c, f::KEEP_PTR));
+    c.g[A0][0] = c.g[S7][0];
+    c.g[V0][0] = (c.g[V1][0] | c.g[A0][0]) & 7;
+    if c.g[V0][0] == 0 {
+        loop {
+            c.cycles += 12;
+            let (src, dst) = (c.g[V1][0] as u32, c.g[A0][0] as u32);
+            c.g[V0][0] = c.ld(src);
+            c.g[A1][0] = c.ld(src.wrapping_add(8));
+            c.g[A2][0] = c.ld(src.wrapping_add(0x10));
+            c.g[A3][0] = c.ld(src.wrapping_add(0x18));
+            c.sd(dst, c.g[V0][0]);
+            c.sd(dst.wrapping_add(8), c.g[A1][0]);
+            c.sd(dst.wrapping_add(0x10), c.g[A2][0]);
+            c.sd(dst.wrapping_add(0x18), c.g[A3][0]);
+            c.g[V0][0] = c.lw(frame.at(c, f::KEEP_END_PTR));
+            c.g[V1][0] = utk_add(c.g[V1][0], 0x20);
+            c.g[A0][0] = utk_add(c.g[A0][0], 0x20);
+            if c.g[V1][0] == c.g[V0][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_dc34);
+            }
+        }
+    } else {
+        loop {
+            c.cycles += 20;
+            let (src, dst) = (c.g[V1][0] as u32, c.g[A0][0] as u32);
+            for (reg, off) in [(A3, 0u32), (V0, 8), (A1, 0x10), (A2, 0x18)] {
+                c.ldl(reg, src.wrapping_add(off + 7));
+                c.ldr(reg, src.wrapping_add(off));
+            }
+            for (reg, off) in [(A3, 0u32), (V0, 8), (A1, 0x10), (A2, 0x18)] {
+                c.sdl(reg, dst.wrapping_add(off + 7));
+                c.sdr(reg, dst.wrapping_add(off));
+            }
+            c.g[A3][0] = c.lw(frame.at(c, f::KEEP_END_PTR));
+            c.g[V1][0] = utk_add(c.g[V1][0], 0x20);
+            c.g[A0][0] = utk_add(c.g[A0][0], 0x20);
+            if c.g[V1][0] == c.g[A3][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_dbdc);
+            }
+        }
+        c.cycles += 2;
+    }
+    c.cycles += 11;
+    let (src, dst) = (c.g[V1][0] as u32, c.g[A0][0] as u32);
+    for (reg, off) in [(A1, 0u32), (A2, 8)] {
+        c.ldl(reg, src.wrapping_add(off + 7));
+        c.ldr(reg, src.wrapping_add(off));
+    }
+    for (reg, off) in [(A1, 0u32), (A2, 8)] {
+        c.sdl(reg, dst.wrapping_add(off + 7));
+        c.sdr(reg, dst.wrapping_add(off));
+    }
+
+    // --- Four steps: rc += delta, then synthesize from sample `offset`.
+    c.g[S0][0] = 0xb;
+    c.g[V0][0] = c.lw(frame.at(c, f::RC_PTR));
+    c.g[V1][0] = c.g[FP][0];
+    const STEPS: [(u32, u64, u64, u32); 4] = [
+        (0x003c_dc90, 0x00, 1, 0x003c_dcc4),
+        (0x003c_dcd0, 0x0c, 1, 0x003c_dd04),
+        (0x003c_dd10, 0x18, 1, 0x003c_dd44),
+        (0x003c_dd50, 0x24, 0x21, 0x003c_dd80),
+    ];
+    for (k, &(head, offset, blocks, ret_to)) in STEPS.iter().enumerate() {
+        loop {
+            c.cycles += 8;
+            let (rc_j, delta_j) = (c.g[V0][0], c.g[V1][0]);
+            c.lwc1(0, rc_j as u32);
+            c.g[S0][0] = utk_add(c.g[S0][0], 0xffff_ffff);
+            c.lwc1(1, delta_j as u32);
+            c.g[V1][0] = utk_add(delta_j, 4);
+            c.f[0] = fadd(c.f[0], c.f[1]);
+            c.swc1(0, rc_j as u32);
+            c.g[V0][0] = utk_add(rc_j, 4);
+            if (c.g[S0][0] as i64) < 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, head);
+            }
+        }
+        let last = k == STEPS.len() - 1;
+        c.cycles += if last { 18 } else { 8 };
+        c.g[A0][0] = u;
+        c.g[A1][0] = offset;
+        c.g[A2][0] = blocks;
+        if !last {
+            c.g[S0][0] = 0xb;
+        }
+        callee::SYNTHESIZE.call(c, ret_to)?;
+        if !last {
+            c.g[V0][0] = c.lw(frame.at(c, f::RC_PTR));
+            c.g[V1][0] = c.g[FP][0];
+        }
+    }
+
+    // --- Epilogue.
+    frame.restore(c, S0, 0x2c0);
+    frame.restore(c, S1, 0x2b0);
+    frame.restore(c, S2, 0x2a0);
+    frame.restore(c, S3, 0x290);
+    frame.restore(c, S4, 0x280);
+    frame.restore(c, S5, 0x270);
+    frame.restore(c, S6, 0x260);
+    frame.restore(c, S7, 0x250);
+    frame.restore(c, FP, 0x240);
+    frame.restore_ra(c, 0x230);
+    frame.restore_fpr(c, 21, 0x2d8);
+    frame.restore_fpr(c, 20, 0x2d0);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3272,6 +3812,71 @@ pub(crate) mod tests {
                 if seed < 2 {
                     c.bus.write32(fakes::LOG_UNWIND_AT, 0);
                 }
+            },
+        );
+    }
+    use super::*;
+
+    // ----------------------------------------------- SND_UtkDecodeFrame
+
+    /// `SND_UtkDecodeFrame` against the generated body, with the real
+    /// callees (bit reader, excitation decoder, interpolation, synthesis)
+    /// decoding random speech bits from the game's tables. Seeds alternate
+    /// the state's 8-byte alignment (the adaptive-codebook copy's
+    /// doubleword loop or its ldl/ldr loop) and full vs reduced bandwidth;
+    /// the random bits pick voiced/unvoiced frames and, in reduced frames,
+    /// both the zeroing and the interpolation of the uncoded samples. Every
+    /// seventh seed uses edge-case floats in the decoder state.
+    #[test]
+    fn snd_utk_decode_frame_matches() {
+        use crate::difftest::{check, elf_image, fill, scramble, Rng, DATA};
+        use utk_frame as f;
+
+        /// `float[12]` synthesis history after the reflection coefficients.
+        const SYNTH: u32 = 0x144;
+
+        check(
+            ee::s14::f_003cd878__generated,
+            snd_utk_decode_frame,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x003c_d878 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.pc = 0x003c_d878;
+                // 4 mod 8 makes both copy pointers 8-aligned.
+                let u = DATA + 0x1000 + 4 * (seed % 2);
+                let input = DATA + 0x8000;
+                fill(c, &mut r, input, 0x800);
+                // Bit reader {ptr, buf, count}.
+                c.bus.write32(u, input + r.next_u32() % 8);
+                c.bus.write32(u + 4, r.next_u32());
+                c.bus.write32(u + 8, 8 + r.next_u32() % 25);
+                let reduced = if (seed / 2) % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() | 1
+                };
+                c.bus.write32(u + f::REDUCED_BW, reduced);
+                c.bus.write32(u + f::VOICED_THRESHOLD, r.next_u32() % 72);
+                let edge = seed % 7 == 0;
+                let flt = |r: &mut Rng, range: f32| if edge { r.edge_f32() } else { r.f32(range) };
+                for i in 0..64 {
+                    let v = flt(&mut r, 2.0);
+                    c.bus.write32(u + f::FIXED_GAINS + 4 * i, v);
+                }
+                for i in 0..12 {
+                    let v = flt(&mut r, 0.9);
+                    c.bus.write32(u + f::RC + 4 * i, v);
+                    let h = flt(&mut r, 100.0);
+                    c.bus.write32(u + SYNTH + 4 * i, h);
+                }
+                for i in 0..324 {
+                    let v = flt(&mut r, 1000.0);
+                    c.bus.write32(u + f::ADAPT_CB + 4 * i, v);
+                }
+                fill(c, &mut r, u + f::DECODED, 432);
+                c.g[A0][0] = sx(u);
             },
         );
     }

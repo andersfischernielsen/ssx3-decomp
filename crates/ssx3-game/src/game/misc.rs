@@ -26,11 +26,14 @@ use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
-    0x002f_4db8,
-    lens_fx_update_sun_position,
-    "LensFX_UpdateSunPosition",
-)];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (
+        0x002f_4db8,
+        lens_fx_update_sun_position,
+        "LensFX_UpdateSunPosition",
+    ),
+    (0x0021_d1a0, hud_draw_meter_bar, "HUD_DrawMeterBar"),
+];
 
 // ---------------------------------------------------------------------------
 // Misc newlib: allocator glue and the cache-range loops.
@@ -161,6 +164,720 @@ pub fn calloc_r(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod meter_bar {
+
+    /// `float pos[2]` (HUD_GetElemPos).
+    pub const POS: u32 = 0x00;
+
+    /// `float x, y`: the aligned screen position. `y` walks up the bar as
+    /// the full bar is drawn.
+    pub const X: u32 = 0x10;
+
+    pub const Y: u32 = 0x14;
+
+    /// `float w, h` (HUD_GetElemSize, then scaled).
+    pub const W: u32 = 0x20;
+
+    pub const H: u32 = 0x24;
+
+    /// `float sx, sy` (HUD_GetElemScale, then scaled; `sy` also by the
+    /// segment scale: one segment is `23 * sy` high, the top cap `31 * sy`).
+    pub const SCALE: u32 = 0x30;
+
+    pub const SY: u32 = 0x34;
+
+    /// `float {1, 1}`: the scale passed to HUD_AlignElemPos.
+    pub const UNIT_SCALE: u32 = 0x40;
+
+    /// The quad: four 0x30-byte vertices.
+    pub const QUAD: u32 = 0x50;
+
+    pub const VERTEX: u32 = 0x30;
+
+    /// Vertex fields: texture `u, v`, `z = 1`, the colour as four ints,
+    /// screen `x, y`, `0`, `1`.
+    pub const V_U: u32 = 0x00;
+
+    pub const V_V: u32 = 0x04;
+
+    pub const V_Z: u32 = 0x08;
+
+    pub const V_COLOR: u32 = 0x10;
+
+    pub const V_X: u32 = 0x20;
+
+    pub const V_Y: u32 = 0x24;
+
+    pub const V_ZERO: u32 = 0x28;
+
+    pub const V_ONE: u32 = 0x2c;
+
+    /// HUD sprite fields: texture id (`lw`, stored as a short into the
+    /// render state), v of the top edge, u left, u right, v of the bottom.
+    pub const TEX_ID: u32 = 0x00;
+
+    pub const TEX_V0: u32 = 0x0c;
+
+    pub const TEX_U0: u32 = 0x10;
+
+    pub const TEX_U1: u32 = 0x14;
+
+    pub const TEX_V1: u32 = 0x18;
+
+    /// The sprite table of the HUD object: 12 bytes per meter style
+    /// (`top cap, segment, bottom cap` pointers).
+    pub const SPRITES: u32 = 0x4fc;
+
+    /// Renderer (`gp-0x854`) fields: the current render-state record and the
+    /// vptr; render-state fields: blend bits (5..9 of word 2), texture id.
+    pub const RENDERER: u32 = 0x854;
+
+    pub const STATE_TOP: u32 = 0xe84;
+
+    pub const VPTR: u32 = 0x10d8;
+
+    pub const STATE_FLAGS: u32 = 0x08;
+
+    pub const STATE_TEX: u32 = 0x10;
+
+    /// Renderer method `DrawPrims(count, verts, 0)`.
+    pub const DRAW_PRIMS: u32 = 0x238;
+
+    /// Layout element fields: horizontal / vertical alignment and the blend
+    /// mode byte.
+    pub const ELEM_HALIGN: u32 = 0x20;
+
+    pub const ELEM_VALIGN: u32 = 0x21;
+
+    pub const ELEM_BLEND: u32 = 0x22;
+
+    /// Segment and top cap heights in layout pixels.
+    pub const SEGMENT_H: u32 = 0x41b8_0000;
+    // 23.0
+    pub const TOP_CAP_H: u32 = 0x41f8_0000;
+}
+
+/// `f[n]` as an FPU float.
+#[inline(always)]
+pub(crate) fn mb_f(c: &Cpu, n: usize) -> crate::ps2f::FpuF32 {
+    crate::ps2f::FpuF32(c.f[n])
+}
+
+/// `f[n] = v`.
+#[inline(always)]
+pub(crate) fn mb_set(c: &mut Cpu, n: usize, v: crate::ps2f::FpuF32) {
+    c.f[n] = v.0;
+}
+
+/// `lwc1` from the frame.
+#[inline(always)]
+pub(crate) fn mb_ld(c: &mut Cpu, off: u32) -> crate::ps2f::FpuF32 {
+    crate::guest::Addr(sp(c).wrapping_add(off)).read_fpu(c)
+}
+
+/// `swc1` to the frame.
+#[inline(always)]
+pub(crate) fn mb_st(c: &mut Cpu, off: u32, v: crate::ps2f::FpuF32) {
+    crate::guest::Addr(sp(c).wrapping_add(off)).write_fpu(c, v)
+}
+
+/// `lwc1` of a sprite field.
+#[inline(always)]
+pub(crate) fn mb_tex(c: &mut Cpu, tex: u64, off: u32) -> crate::ps2f::FpuF32 {
+    crate::guest::Addr((tex as u32).wrapping_add(off)).read_fpu(c)
+}
+
+/// The renderer (`lw gp-0x854`).
+#[inline(always)]
+pub(crate) fn mb_renderer(c: &mut Cpu) -> u64 {
+    crate::guest::Addr(r32(c, GP).wrapping_sub(meter_bar::RENDERER)).lw(c)
+}
+
+/// The quad's texture coordinates from sprite `tex`, the top edge at
+/// `v_top` (the sprite's v0, or clipped). Leaves `f0 = v1`, `f1 = u1`, as
+/// the original's alternating loads do.
+pub(crate) fn mb_put_uvs(c: &mut Cpu, tex: u64, v_top: crate::ps2f::FpuF32) {
+    use meter_bar::*;
+    let u0 = mb_tex(c, tex, TEX_U0);
+    let u1 = mb_tex(c, tex, TEX_U1);
+    let v1 = mb_tex(c, tex, TEX_V1);
+    for (i, u, v) in [(0, u0, v_top), (1, u1, v_top), (2, u0, v1), (3, u1, v1)] {
+        mb_st(c, QUAD + VERTEX * i + V_U, u);
+        mb_st(c, QUAD + VERTEX * i + V_V, v);
+    }
+    mb_set(c, 0, v1);
+    mb_set(c, 1, u1);
+}
+
+/// The quad's screen corners: `(x0, top)`, `(x1, top)`, `(x0, bottom)`,
+/// `(x1, bottom)`.
+pub(crate) fn mb_put_xy(
+    c: &mut Cpu,
+    x0: crate::ps2f::FpuF32,
+    x1: crate::ps2f::FpuF32,
+    top: crate::ps2f::FpuF32,
+    bottom: crate::ps2f::FpuF32,
+) {
+    use meter_bar::*;
+    for (i, x, y) in [(0, x0, top), (1, x1, top), (2, x0, bottom), (3, x1, bottom)] {
+        mb_st(c, QUAD + VERTEX * i + V_X, x);
+        mb_st(c, QUAD + VERTEX * i + V_Y, y);
+    }
+}
+
+/// Bind sprite `tex`'s texture: `sh id, state+0x10`. The registers the
+/// original uses differ per block: the caller names them (`state_reg` holds
+/// the render-state record, `id_reg` the id).
+pub(crate) fn mb_bind(c: &mut Cpu, renderer: u64, tex: u64, state_reg: usize, id_reg: usize) {
+    use meter_bar::*;
+    let id = crate::guest::Addr((tex as u32).wrapping_add(TEX_ID)).lw(c);
+    c.g[id_reg][0] = id;
+    let state = crate::guest::Addr((renderer as u32).wrapping_add(STATE_TOP)).lw(c);
+    c.g[state_reg][0] = state;
+    crate::guest::Addr((state as u32).wrapping_add(STATE_TEX)).sh(c, id);
+}
+
+/// `renderer->DrawPrims(4, quad, 0)` returning to `ret` (t0 = renderer,
+/// v0 = vptr, v1 = method, a0 = adjusted this).
+pub(crate) fn mb_draw_quad(c: &mut Cpu, ret_to: u32) -> crate::call::Flow {
+    use meter_bar::*;
+    c.g[A1][0] = 4;
+    c.g[A2][0] = c.g[S3][0];
+    c.g[A3][0] = 0;
+    let renderer = mb_renderer(c);
+    c.g[T0][0] = renderer;
+    let vt = crate::guest::Addr((renderer as u32).wrapping_add(VPTR)).lw(c);
+    c.g[V0][0] = vt;
+    let m = crate::call::VSlot::read(c, vt, DRAW_PRIMS);
+    c.g[V1][0] = m.func;
+    c.g[A0][0] = m.this(renderer);
+    call_ptr(c, m.func as u32, ret_to)
+}
+
+/// The partial bar's clipped cap: when the cap's top `top` (f`top_reg`)
+/// reaches above the fill line (f21), its top edge moves down to the fill
+/// line and its top `v` (f2) moves proportionally: `v0 + (v1 - v0) *
+/// (fill - top) / height` (f3 = cap height).
+pub(crate) fn mb_clip_cap(c: &mut Cpu, tex: u64, top_reg: usize) {
+    use meter_bar::*;
+    c.cycles += 7;
+    let v1 = mb_tex(c, tex, TEX_V1);
+    let fill = mb_f(c, 21);
+    let cut = fill - mb_f(c, top_reg);
+    mb_set(c, 1, cut);
+    mb_set(c, top_reg, fill);
+    let dv = ((v1 - mb_f(c, 2)) * cut).div(mb_f(c, 3));
+    mb_set(c, 0, dv);
+    mb_set(c, 2, mb_f(c, 2) + dv);
+}
+
+/// A partial bar's cap from sprite `tex` (in a0's block): v top in f2,
+/// screen top in f`top_reg`, bottom in f4. 39 or 37 cycles are charged by
+/// the caller.
+pub(crate) fn mb_draw_partial_cap(
+    c: &mut Cpu,
+    tex: u64,
+    top_reg: usize,
+    ret_to: u32,
+) -> crate::call::Flow {
+    use meter_bar::*;
+    let renderer = c.g[V1][0];
+    mb_bind(c, renderer, tex, V0, A0);
+    let x = mb_ld(c, X);
+    let v_top = mb_f(c, 2);
+    mb_put_uvs(c, tex, v_top);
+    mb_set(c, 3, x);
+    let x1 = x + mb_ld(c, W);
+    mb_set(c, 2, x1);
+    let (top, bottom) = (mb_f(c, top_reg), mb_f(c, 4));
+    mb_put_xy(c, x, x1, top, bottom);
+    mb_draw_quad(c, ret_to)
+}
+
+/// `void HUD_DrawMeterBar(HUDState* hud (a0), HUDElem* elems (a1), s8 elem
+/// (a2), int style (a3), const MeterSeg* seg (t0: {float scale; int
+/// count}), const float colour[4] (t1), int flags (t2), float rect_out[4]
+/// or null (t3), float fill (f12), float sx (f13), float sy (f14))`
+/// (0x21d1a0): draws a vertical meter (the boost bar) at a HUD layout
+/// element. The element's position, size and scale (sy also times
+/// `seg->scale`) are aligned on screen; the colour (times 128, as ints)
+/// goes into the four vertices and the element's blend byte into the
+/// render state. A full bar (`fill == 1`) is drawn bottom to top: the
+/// bottom cap (sprite 2, 23 units high, its bottom at the element's
+/// bottom), `count` segments (sprite 1, 23 units each) and the top cap
+/// (sprite 0, 31 units). A partial bar fills from the bottom up to
+/// `y + h * (1 - fill)`: the same pieces, the one that crosses the fill line
+/// clipped (its top edge and top `v` moved down) and the drawing stopped
+/// there. The drawn rectangle goes to `rect_out` when given. Frame 0x1c0
+/// (s0-s7, f20-f22).
+pub fn hud_draw_meter_bar(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    use meter_bar::*;
+    guest(c, |c| {
+        c.cycles += 82;
+        let frame = Frame::open(c, 0x1c0);
+        for (reg, off) in [
+            (S0, 0x190),
+            (S1, 0x180),
+            (S2, 0x170),
+            (S3, 0x160),
+            (S4, 0x150),
+            (S5, 0x140),
+            (S6, 0x130),
+            (S7, 0x120),
+        ] {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, 0x110);
+        for (f, off) in [(22, 0x1b0), (21, 0x1a8), (20, 0x1a0)] {
+            frame.save_fpr(c, f, off);
+        }
+        // The element (elems + elem * 0x24) and the style's sprite triple
+        // (hud + 0x4fc + style * 12).
+        c.g[V0][0] = 0xc;
+        c.mult(0, A3, A3, V0);
+        c.g[S0][0] = c.g[A2][0] as u8 as i8 as i64 as u64;
+        c.g[V0][0] = 0x24;
+        c.mult(0, V1, S0, V0);
+        c.g[A3][0] = sx(r32(c, A3).wrapping_add(SPRITES));
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S3][0] = c.g[T2][0];
+        c.g[S0][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+        c.g[S6][0] = c.g[T0][0];
+        c.g[S7][0] = sx(r32(c, S2).wrapping_add(r32(c, A3)));
+        c.g[S5][0] = c.g[T1][0];
+        c.g[S4][0] = c.g[T3][0];
+        c.f[22] = c.f[12];
+        c.f[21] = c.f[14];
+        c.f[20] = c.f[13];
+        let elem = r32(c, S0);
+        let sprites = r32(c, S7);
+        let seg = r32(c, S6);
+        let colour = r32(c, S5);
+        let rect_out = c.g[S4][0];
+
+        // HUD_GetElemPos(elem, pos); HUD_GetElemSize(elem, size, null);
+        // HUD_GetElemScale(elem, scale).
+        c.g[A1][0] = sx(sp(c).wrapping_add(POS));
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x001e_91f8, 0x0021_d224)?;
+        c.g[S1][0] = sx(sp(c).wrapping_add(W));
+        c.g[A2][0] = 0;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, 0x001e_9220, 0x0021_d238)?;
+        c.g[A1][0] = sx(sp(c).wrapping_add(SCALE));
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x001e_9290, 0x0021_d244)?;
+
+        // Scale by (sx, sy) and the segment scale; align with scale {1, 1}.
+        let scale_x = mb_ld(c, SCALE) * mb_f(c, 20);
+        let scale_y = mb_ld(c, SY) * mb_f(c, 21);
+        let seg_scale = crate::guest::Addr(seg).read_fpu(c);
+        let w = mb_ld(c, W) * scale_x;
+        let h = mb_ld(c, H) * scale_y;
+        let sy = scale_y * seg_scale;
+        mb_set(c, 2, scale_x);
+        mb_set(c, 0, scale_y);
+        mb_set(c, 1, sy);
+        mb_set(c, 3, w);
+        mb_set(c, 4, h);
+        c.g[AT][0] = 0x3f80_0000;
+        mb_set(c, 5, FpuF32::ONE);
+        mb_st(c, SCALE, scale_x);
+        mb_st(c, SY, sy);
+        mb_st(c, W, w);
+        mb_st(c, H, h);
+        mb_st(c, UNIT_SCALE, FpuF32::ONE);
+        mb_st(c, UNIT_SCALE + 4, FpuF32::ONE);
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = sx(sp(c).wrapping_add(X));
+        c.g[A2][0] = sx(sp(c).wrapping_add(POS));
+        c.g[A3][0] = c.g[S1][0];
+        c.g[T0][0] = sx(sp(c).wrapping_add(UNIT_SCALE));
+        c.g[T1][0] = crate::guest::Addr(elem.wrapping_add(ELEM_HALIGN)).lb(c);
+        c.g[T2][0] = crate::guest::Addr(elem.wrapping_add(ELEM_VALIGN)).lb(c);
+        c.g[T3][0] = c.g[S3][0];
+        call_ptr(c, 0x001f_10f8, 0x0021_d2b0)?;
+
+        // The element's blend byte into bits 5..9 of the render state.
+        let renderer = mb_renderer(c);
+        c.g[V0][0] = renderer;
+        c.g[A1][0] = 0xffff_ffff_ffff_fc1f;
+        let blend = crate::guest::Addr(elem.wrapping_add(ELEM_BLEND)).lb(c);
+        c.g[S3][0] = sx(sp(c).wrapping_add(QUAD));
+        let state = crate::guest::Addr((renderer as u32).wrapping_add(STATE_TOP)).lw(c);
+        c.g[A0][0] = state;
+        c.g[A3][0] = u64::MAX;
+        c.g[V1][0] = sx((blend as u32) << 5) & 0x3e0;
+        c.g[A2][0] = 3;
+        let flags_at = crate::guest::Addr((state as u32).wrapping_add(STATE_FLAGS));
+        let flags = (flags_at.lw(c) & c.g[A1][0]) | c.g[V1][0];
+        c.g[V0][0] = flags;
+        flags_at.sw(c, flags);
+
+        // A countdown with no effect (a2 = 3 .. -1).
+        loop {
+            c.cycles += 7;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+            c.g[A0][0] = sx(sp(c).wrapping_add(QUAD + V_X));
+            if c.g[A2][0] != c.g[A3][0] {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0021_d2e8);
+                }
+                continue;
+            }
+            break;
+        }
+
+        // The colour as ints (times 128): t1, a3, a2, a1 = c[2], c[0],
+        // c[1], c[3].
+        c.cycles += 23;
+        c.g[AT][0] = 0x4300_0000;
+        let k = FpuF32(0x4300_0000);
+        let col = crate::guest::Addr(colour);
+        let c2 = col.off(8).read_fpu(c) * k;
+        let c3 = col.off(12).read_fpu(c) * k;
+        let c0 = col.read_fpu(c) * k;
+        let c1 = col.off(4).read_fpu(c) * k;
+        mb_set(c, 2, c1);
+        mb_set(c, 3, c0);
+        mb_set(c, 4, c3);
+        c.g[V1][0] = c.g[S3][0];
+        c.g[T0][0] = sx(r32(c, S3).wrapping_add(4 * VERTEX));
+        c.g[AT][0] = 0x3f80_0000;
+        mb_set(c, 5, FpuF32::ONE);
+        c.g[T1][0] = sx(c2.to_i32() as u32);
+        c.g[A3][0] = sx(c0.to_i32() as u32);
+        c.g[A2][0] = sx(c1.to_i32() as u32);
+        c.f[1] = c1.to_i32() as u32;
+        c.g[A1][0] = sx(c3.to_i32() as u32);
+        c.f[0] = c3.to_i32() as u32;
+
+        // The four vertices' constant fields.
+        loop {
+            c.cycles += 11;
+            let v = crate::guest::Addr(r32(c, V1));
+            v.off(V_COLOR + 0xc).sw(c, c.g[A3][0]);
+            v.off(V_COLOR).sw(c, c.g[A2][0]);
+            v.off(V_COLOR + 4).sw(c, c.g[T1][0]);
+            v.off(V_COLOR + 8).sw(c, c.g[A1][0]);
+            v.off(V_Z).write_fpu(c, mb_f(c, 5));
+            let tail = crate::guest::Addr(r32(c, A0));
+            tail.off(V_ZERO - V_X).sw(c, 0);
+            tail.off(V_ONE - V_X).write_fpu(c, mb_f(c, 5));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(VERTEX));
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[T0][0] as i64)) as u64;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(VERTEX));
+            if c.g[V0][0] != 0 {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0021_d360);
+                }
+                continue;
+            }
+            break;
+        }
+
+        c.cycles += 6;
+        c.g[AT][0] = 0x3f80_0000;
+        mb_set(c, 0, FpuF32::ONE);
+        let full = mb_f(c, 22).eq_s(FpuF32::ONE);
+        crate::abi::set_fcc(c, full);
+        if full {
+            // ---- Full bar: bottom cap, segments, top cap, bottom to top.
+            c.cycles += 2;
+            let t = mb_ld(c, X);
+            mb_set(c, 1, t);
+            if rect_out != 0 {
+                c.cycles += 7;
+                let (x, y, w, h) = (mb_f(c, 1), mb_ld(c, Y), mb_ld(c, W), mb_ld(c, H));
+                mb_set(c, 2, y);
+                mb_set(c, 3, w);
+                mb_set(c, 0, h);
+                let out = crate::guest::Addr(rect_out as u32);
+                out.write_fpu(c, x);
+                out.off(12).write_fpu(c, h);
+                out.off(4).write_fpu(c, y);
+                out.off(8).write_fpu(c, w);
+            }
+
+            // Bottom cap (sprite 2): from the element's bottom up 23 * sy.
+            c.cycles += 80;
+            let tex = crate::guest::Addr(sprites.wrapping_add(8)).lw(c);
+            let bottom = mb_ld(c, Y) + mb_ld(c, H);
+            mb_st(c, Y, bottom);
+            c.g[AT][0] = SEGMENT_H as u64;
+            mb_set(c, 21, FpuF32(SEGMENT_H));
+            c.g[S0][0] = 0;
+            let renderer = mb_renderer(c);
+            c.g[T0][0] = renderer;
+            mb_bind(c, renderer, tex, V1, V0);
+            let piece = mb_ld(c, SY) * mb_f(c, 21);
+            mb_set(c, 20, piece);
+            let x = mb_ld(c, X);
+            let x1 = x + mb_ld(c, W);
+            let top = bottom - piece;
+            mb_set(c, 3, x);
+            mb_set(c, 4, bottom);
+            mb_set(c, 2, x1);
+            mb_set(c, 5, top);
+            let v_top = mb_tex(c, tex, TEX_V0);
+            mb_put_uvs(c, tex, v_top);
+            mb_put_xy(c, x, x1, top, bottom);
+            mb_draw_quad(c, 0x0021_d498)?;
+
+            // Segments (sprite 1), `count` of them.
+            let y = mb_ld(c, Y) - mb_f(c, 20);
+            mb_set(c, 0, y);
+            mb_st(c, Y, y);
+            let tex = crate::guest::Addr(sprites.wrapping_add(4)).lw(c);
+            c.g[V1][0] = tex;
+            let renderer = mb_renderer(c);
+            c.g[A0][0] = renderer;
+            mb_bind(c, renderer, tex, A1, V0);
+            let t = mb_ld(c, SY);
+            mb_set(c, 1, t);
+            mb_set(c, 20, mb_f(c, 1) * mb_f(c, 21));
+            c.g[V0][0] = crate::guest::Addr(seg.wrapping_add(4)).lw(c);
+            let v_top = mb_tex(c, tex, TEX_V0);
+            mb_put_uvs(c, tex, v_top);
+            if (c.g[V0][0] as i64) > 0 {
+                loop {
+                    c.cycles += 29;
+                    let bottom = mb_ld(c, Y);
+                    let x = mb_ld(c, X);
+                    let x1 = x + mb_ld(c, W);
+                    let top = bottom - mb_f(c, 20);
+                    mb_set(c, 2, bottom);
+                    mb_set(c, 1, x);
+                    mb_set(c, 0, x1);
+                    mb_set(c, 3, top);
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    mb_put_xy(c, x, x1, top, bottom);
+                    mb_draw_quad(c, 0x0021_d564)?;
+                    let y = mb_ld(c, Y) - mb_f(c, 20);
+                    mb_set(c, 0, y);
+                    let count = crate::guest::Addr(seg.wrapping_add(4)).lw(c);
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (count as i64)) as u64;
+                    mb_st(c, Y, y);
+                    if c.g[V0][0] != 0 {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0021_d508);
+                        }
+                        continue;
+                    }
+                    break;
+                }
+            }
+
+            // Top cap (sprite 0): 31 * sy high.
+            c.cycles += 49;
+            let tex = crate::guest::Addr(sprites).lw(c);
+            c.g[V1][0] = tex;
+            let renderer = mb_renderer(c);
+            c.g[A0][0] = renderer;
+            mb_bind(c, renderer, tex, V0, T0);
+            c.g[AT][0] = TOP_CAP_H as u64;
+            let piece = mb_ld(c, SY) * FpuF32(TOP_CAP_H);
+            let x = mb_ld(c, X);
+            let bottom = mb_ld(c, Y);
+            let x1 = x + mb_ld(c, W);
+            let top = bottom - piece;
+            mb_set(c, 4, x);
+            mb_set(c, 5, bottom);
+            mb_set(c, 2, top);
+            mb_set(c, 3, x1);
+            let v_top = mb_tex(c, tex, TEX_V0);
+            mb_put_uvs(c, tex, v_top);
+            mb_put_xy(c, x, x1, top, bottom);
+            mb_draw_quad(c, 0x0021_d638)?;
+            frame.restore(c, S0, 0x190);
+        } else {
+            // ---- Partial bar: up to the fill line y + h * (1 - fill) (f21).
+            mb_set(c, 0, FpuF32::ONE - mb_f(c, 22));
+            c.cycles += 6;
+            let h = mb_ld(c, H);
+            let y = mb_ld(c, Y);
+            mb_set(c, 1, h);
+            mb_set(c, 2, y);
+            let empty = h * mb_f(c, 0);
+            mb_set(c, 0, empty);
+            let bottom = y + h;
+            mb_set(c, 4, bottom);
+            let fill = y + empty;
+            mb_set(c, 21, fill);
+            if rect_out != 0 {
+                c.cycles += 7;
+                let filled = bottom - fill;
+                let (x, w) = (mb_ld(c, X), mb_ld(c, W));
+                mb_set(c, 0, filled);
+                mb_set(c, 1, x);
+                mb_set(c, 2, w);
+                let out = crate::guest::Addr(rect_out as u32);
+                out.write_fpu(c, x);
+                out.off(12).write_fpu(c, filled);
+                out.off(8).write_fpu(c, w);
+                out.off(4).write_fpu(c, fill);
+            }
+
+            // Bottom cap (sprite 2), clipped at the fill line.
+            c.cycles += 11;
+            let sy = mb_ld(c, SY);
+            mb_set(c, 0, sy);
+            c.g[S0][0] = 1;
+            c.g[AT][0] = SEGMENT_H as u64;
+            mb_set(c, 22, FpuF32(SEGMENT_H));
+            let tex = crate::guest::Addr(sprites.wrapping_add(8)).lw(c);
+            c.g[T1][0] = tex;
+            let piece = sy * mb_f(c, 22);
+            mb_set(c, 3, piece);
+            let top = mb_f(c, 4) - piece;
+            mb_set(c, 20, top);
+            let clipped = top.le(mb_f(c, 21));
+            crate::abi::set_fcc(c, clipped);
+            let t = mb_tex(c, tex, TEX_V0);
+            mb_set(c, 2, t);
+            if !clipped {
+                c.cycles += 1;
+                c.g[S0][0] = 0;
+            }
+            c.cycles += 2;
+            c.g[V1][0] = mb_renderer(c);
+            if clipped {
+                mb_clip_cap(c, tex, 20);
+            }
+            c.cycles += 39;
+            mb_draw_partial_cap(c, tex, 20, 0x0021_d75c)?;
+            c.f[4] = c.f[20];
+            if !clipped {
+                // Segments (sprite 1) until one crosses the fill line.
+                c.cycles += 26;
+                let tex = crate::guest::Addr(sprites.wrapping_add(4)).lw(c);
+                c.g[S0][0] = tex;
+                c.g[S2][0] = 0;
+                let renderer = mb_renderer(c);
+                c.g[V0][0] = renderer;
+                mb_bind(c, renderer, tex, V1, A0);
+                let sy = mb_ld(c, SY);
+                mb_set(c, 0, sy);
+                mb_set(c, 22, sy * mb_f(c, 22));
+                let v_top = mb_tex(c, tex, TEX_V0);
+                mb_put_uvs(c, tex, v_top);
+                c.g[V0][0] = crate::guest::Addr(seg.wrapping_add(4)).lw(c);
+                let mut crossed = false;
+                if (c.g[V0][0] as i64) > 0 {
+                    c.cycles += 1;
+                    mb_set(c, 20, mb_f(c, 4) - mb_f(c, 22));
+                    loop {
+                        c.cycles += 4;
+                        let clipped = mb_f(c, 20).le(mb_f(c, 21));
+                        crate::abi::set_fcc(c, clipped);
+                        c.g[S1][0] = 1;
+                        if !clipped {
+                            c.cycles += 1;
+                            c.g[S1][0] = 0;
+                        }
+                        c.cycles += 2;
+                        let t = mb_ld(c, X);
+                        mb_set(c, 1, t);
+                        if clipped {
+                            c.cycles += 11;
+                            let tex = c.g[S0][0];
+                            let v0 = mb_tex(c, tex, TEX_V0);
+                            let fill = mb_f(c, 21);
+                            let cut = fill - mb_f(c, 20);
+                            mb_set(c, 2, cut);
+                            mb_set(c, 20, fill);
+                            let dv = ((mb_tex(c, tex, TEX_V1) - v0) * cut).div(mb_f(c, 22));
+                            let v_top = v0 + dv;
+                            mb_set(c, 0, v_top);
+                            mb_st(c, QUAD + VERTEX + V_V, v_top);
+                            mb_st(c, QUAD + V_V, v_top);
+                            let t = mb_ld(c, X);
+                            mb_set(c, 1, t);
+                        }
+                        c.cycles += 21;
+                        let x = mb_f(c, 1);
+                        let x1 = x + mb_ld(c, W);
+                        mb_set(c, 0, x1);
+                        let (top, bottom) = (mb_f(c, 20), mb_f(c, 4));
+                        mb_put_xy(c, x, x1, top, bottom);
+                        mb_draw_quad(c, 0x0021_d864)?;
+                        c.f[4] = c.f[20];
+                        if c.g[S1][0] != 0 {
+                            crossed = true;
+                            break;
+                        }
+                        c.cycles += 5;
+                        let count = crate::guest::Addr(seg.wrapping_add(4)).lw(c);
+                        c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                        c.g[V0][0] = ((c.g[S2][0] as i64) < (count as i64)) as u64;
+                        if c.g[V0][0] != 0 {
+                            mb_set(c, 20, mb_f(c, 4) - mb_f(c, 22));
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0021_d7d0);
+                            }
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                if !crossed {
+                    // Top cap (sprite 0), clipped at the fill line.
+                    c.cycles += 11;
+                    let sy = mb_ld(c, SY);
+                    mb_set(c, 1, sy);
+                    c.g[V0][0] = 1;
+                    c.g[AT][0] = TOP_CAP_H as u64;
+                    mb_set(c, 0, FpuF32(TOP_CAP_H));
+                    let tex = crate::guest::Addr(sprites).lw(c);
+                    c.g[S2][0] = tex;
+                    let piece = sy * FpuF32(TOP_CAP_H);
+                    mb_set(c, 3, piece);
+                    let top = mb_f(c, 4) - piece;
+                    mb_set(c, 5, top);
+                    let clipped = top.le(mb_f(c, 21));
+                    crate::abi::set_fcc(c, clipped);
+                    let t = mb_tex(c, tex, TEX_V0);
+                    mb_set(c, 2, t);
+                    if !clipped {
+                        c.cycles += 1;
+                        c.g[V0][0] = 0;
+                    }
+                    c.cycles += 2;
+                    c.g[V1][0] = mb_renderer(c);
+                    if clipped {
+                        mb_clip_cap(c, tex, 5);
+                    }
+                    c.cycles += 37;
+                    mb_draw_partial_cap(c, tex, 5, 0x0021_d968)?;
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x190);
+        }
+
+        c.cycles += 13;
+        for (reg, off) in [
+            (S1, 0x180),
+            (S2, 0x170),
+            (S3, 0x160),
+            (S4, 0x150),
+            (S5, 0x140),
+            (S6, 0x130),
+            (S7, 0x120),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x110);
+        for (f, off) in [(22, 0x1b0), (21, 0x1a8), (20, 0x1a0)] {
+            frame.restore_fpr(c, f, off);
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -279,6 +996,115 @@ pub(crate) mod tests {
             super::lens_fx_update_sun_position,
             300,
             &|c, seed| sun_setup(c, seed),
+        );
+    }
+    use super::*;
+
+    /// `HUD_DrawMeterBar`: a HUD object whose sprite table (+0x4fc, style
+    /// 0..3) points at three of four sprites with random UVs; layout
+    /// elements -1..4 (the element byte comes with junk upper bits) with
+    /// small positions, heights 8..300 (sometimes negative: no texture, so
+    /// 0), scales 0.25..2 and random align/blend bytes; segment scale
+    /// 0.5..1.5 and count -1..5; colour, align flags, an out rect on 3 of 4
+    /// seeds; fill (f12) exactly 1 (full bar) on every third seed, else
+    /// 0..1.1 (the partial bar's caps and segments clipped or not, the
+    /// segment loop ending at the fill line or at the count); sx/sy (f13,
+    /// f14) 0.5..2. The renderer at gp-0x854 has a render-state record and
+    /// a vtable whose `DrawPrims` (+0x238) is a fake that logs every
+    /// register and sometimes unwinds. The HUD layout callees run for real.
+    #[test]
+    fn hud_draw_meter_bar_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::difftest::{DATA, GAME_GP};
+        const HUD: u32 = DATA;
+        const ELEMS: u32 = DATA + 0x1000;
+        const SEG: u32 = DATA + 0x1400;
+        const COLOUR: u32 = DATA + 0x1410;
+        const RECT: u32 = DATA + 0x1420;
+        const SPRITE: u32 = DATA + 0x1500;
+        const RENDERER: u32 = DATA + 0x2000;
+        const STATE: u32 = DATA + 0x4000;
+        const VT: u32 = DATA + 0x4100;
+        covered(
+            ee::s05::f_0021d1a0__generated,
+            hud_draw_meter_bar,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x21d1a0, 8);
+                let unit = |r: &mut crate::difftest::Rng, lo: f32, steps: u32, step: f32| {
+                    (lo + (r.next_u32() % steps) as f32 * step).to_bits()
+                };
+                // Sprites: id, v0, u0, u1, v1.
+                for k in 0..4 {
+                    let s = SPRITE + 0x20 * k;
+                    c.bus.write32(s, r.next_u32());
+                    for off in [0xc, 0x10, 0x14, 0x18] {
+                        c.bus.write32(s + off, r.f32(1.0));
+                    }
+                }
+                for style in 0..4 {
+                    for i in 0..3 {
+                        let p = SPRITE + 0x20 * (r.next_u32() % 4);
+                        c.bus
+                            .write32(HUD + meter_bar::SPRITES + 0xc * style + 4 * i, p);
+                    }
+                }
+                // Layout elements -1..4.
+                for i in 0..6u32 {
+                    let e = ELEMS - 0x24 + 0x24 * i;
+                    c.bus.write16(e, (r.next_u32() % 640) as u16);
+                    c.bus.write16(e + 2, (r.next_u32() % 448) as u16);
+                    c.bus.write16(e + 4, (1 + r.next_u32() % 64) as u16);
+                    let h = if r.next_u32() % 8 == 0 {
+                        -((r.next_u32() % 16) as i16)
+                    } else {
+                        (8 + r.next_u32() % 293) as i16
+                    };
+                    c.bus.write16(e + 6, h as u16);
+                    for off in [8, 0xc] {
+                        let s = unit(&mut r, 0.25, 8, 0.25);
+                        c.bus.write32(e + off, s);
+                    }
+                    for off in [0x10, 0x14, 0x18, 0x1c] {
+                        c.bus.write32(e + off, r.f32(1.0));
+                    }
+                    c.bus.write8(e + 0x20, (r.next_u32() % 4) as u8);
+                    c.bus.write8(e + 0x21, (r.next_u32() % 4) as u8);
+                    c.bus.write8(e + 0x22, r.next_u32() as u8);
+                }
+                let seg_scale = unit(&mut r, 0.5, 5, 0.25);
+                c.bus.write32(SEG, seg_scale);
+                c.bus
+                    .write32(SEG + 4, ((r.next_u32() % 7) as i32 - 1) as u32);
+                for i in 0..4 {
+                    c.bus.write32(COLOUR + 4 * i, r.f32(1.0));
+                }
+                // The renderer: render state and DrawPrims.
+                c.bus.write32(GAME_GP - meter_bar::RENDERER, RENDERER);
+                c.bus.write32(RENDERER + meter_bar::STATE_TOP, STATE);
+                c.bus.write32(STATE + meter_bar::STATE_FLAGS, r.next_u32());
+                c.bus.write32(RENDERER + meter_bar::VPTR, VT);
+                c.bus
+                    .write16(VT + meter_bar::DRAW_PRIMS, ((r.next_u32() % 16) * 4) as u16);
+                c.bus.write32(VT + meter_bar::DRAW_PRIMS + 4, FAKE);
+                // Arguments.
+                let idx = (r.next_u32() % 6) as i32 - 1;
+                c.g[A0][0] = HUD as u64;
+                c.g[A1][0] = ELEMS as u64;
+                c.g[A2][0] = (r.next_u32() & !0xff) as u64 | (idx as u8) as u64;
+                c.g[A3][0] = (r.next_u32() % 4) as u64;
+                c.g[T0][0] = SEG as u64;
+                c.g[T1][0] = COLOUR as u64;
+                c.g[T2][0] = (r.next_u32() % 4) as u64;
+                c.g[T3][0] = if seed % 4 == 0 { 0 } else { RECT as u64 };
+                c.f[12] = if seed % 3 == 0 {
+                    0x3f80_0000
+                } else {
+                    ((r.next_u32() % 1101) as f32 / 1000.0).to_bits()
+                };
+                c.f[13] = unit(&mut r, 0.5, 7, 0.25);
+                c.f[14] = unit(&mut r, 0.5, 7, 0.25);
+            },
         );
     }
 }

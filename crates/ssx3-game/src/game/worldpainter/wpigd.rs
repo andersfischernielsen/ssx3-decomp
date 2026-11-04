@@ -2,12 +2,15 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::visualfx::boardwakefx::lh_2 as lh;
 pub(crate) use crate::game::visualfx::boardwakefx::lw_2 as lw;
 pub(crate) use crate::game::visualfx::boardwakefx::p;
@@ -49,6 +52,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002b_caf8, twpigd_weather_ctor, "tWPIGD_Weather_ctor"),
     (0x002b_cbd0, twpigd_danger_ctor, "tWPIGD_Danger_ctor"),
     (0x002b_feb0, weather_save_state, "tWPIGD_Weather_SaveState"),
+    (0x002b_d698, twpigd_weather_blend, "tWPIGD_Weather_Blend"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -455,6 +459,133 @@ pub fn weather_save_state(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod weather_blend {
+
+    /// `self`: the vtable pointer; the vtable's hook (called before and
+    /// after the blend) is `{i16 delta at +0x218, fn at +0x21c}`.
+    pub const VPTR: u32 = 0x04;
+
+    pub const VT_HOOK_DELTA: u32 = 0x218;
+
+    pub const VT_HOOK: u32 = 0x21c;
+
+    /// `self`: 19 pairs `{float current, float target}` from +0x08.
+    pub const PAIRS: u32 = 0x08;
+
+    /// `target`: the 19 keyframe values from +0x04.
+    pub const VALUES: u32 = 0x04;
+
+    /// Return addresses of the two hook calls.
+    pub const RET_PRE: u32 = 0x002b_d6d0;
+
+    pub const RET_POST: u32 = 0x002b_d950;
+}
+
+/// Call `self`'s vtable hook (`this + delta` in a0) returning to `ret`.
+#[inline(always)]
+pub(crate) fn wb_hook(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    use crate::guest::Addr;
+    use weather_blend::*;
+    let vt = r32(c, V1);
+    c.g[A0][0] = Addr(vt.wrapping_add(VT_HOOK_DELTA)).lh(c);
+    c.g[V0][0] = Addr(vt.wrapping_add(VT_HOOK)).lw(c);
+    let target = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+    call_ptr(c, target, ret)
+}
+
+/// One scheduling group of the blend, in the compiled code's memory order:
+/// pairs `first ..= first + olds.len()`. The first pair's `t * target` goes
+/// through `acc`, its old value through f0; the other pairs' old values are
+/// loaded up front into `olds` and pre-scaled by `1 - t` (f3). Then each
+/// pair stores `t * target + (1 - t) * current` and copies the target.
+/// With `tail`, the last pair's old value (in `olds`' last register) is
+/// scaled into f3 and blended through f20 (the compiled code's last pair).
+pub(crate) fn wb_group(c: &mut Cpu, first: u32, acc: usize, olds: &[usize], tail: bool) {
+    use crate::guest::Addr;
+    use crate::ps2f::FpuF32;
+    use weather_blend::*;
+    let this = Addr(r32(c, S0));
+    let key = Addr(r32(c, S1));
+    let cur = |n: u32| this.off(PAIRS + 8 * n);
+    let val = |n: u32| key.off(VALUES + 4 * n);
+    let t = FpuF32(c.f[20]);
+    let k = FpuF32(c.f[3]);
+    c.f[acc] = val(first).read_fpu(c).0;
+    c.f[0] = cur(first).read_fpu(c).0;
+    for (i, &r) in olds.iter().enumerate() {
+        c.f[r] = cur(first + 1 + i as u32).read_fpu(c).0;
+    }
+    c.f[acc] = (t * FpuF32(c.f[acc])).0;
+    c.f[0] = (k * FpuF32(c.f[0])).0;
+    for (i, &r) in olds.iter().enumerate() {
+        let dst = if tail && i + 1 == olds.len() { 3 } else { r };
+        c.f[dst] = (k * FpuF32(c.f[r])).0;
+    }
+    c.f[acc] = (FpuF32(c.f[acc]) + FpuF32(c.f[0])).0;
+    cur(first).write_fpu(c, FpuF32(c.f[acc]));
+    c.f[1] = val(first).read_fpu(c).0;
+    cur(first).off(4).write_fpu(c, FpuF32(c.f[1]));
+    for (i, &r) in olds.iter().enumerate() {
+        let n = first + 1 + i as u32;
+        if tail && i + 1 == olds.len() {
+            c.f[0] = val(n).read_fpu(c).0;
+            c.f[20] = (t * FpuF32(c.f[0]) + FpuF32(c.f[3])).0;
+            cur(n).write_fpu(c, FpuF32(c.f[20]));
+            c.f[0] = val(n).read_fpu(c).0;
+            cur(n).off(4).write_fpu(c, FpuF32(c.f[0]));
+        } else {
+            c.f[0] = val(n).read_fpu(c).0;
+            c.f[0] = (t * FpuF32(c.f[0]) + FpuF32(c.f[r])).0;
+            cur(n).write_fpu(c, FpuF32(c.f[0]));
+            c.f[1] = val(n).read_fpu(c).0;
+            cur(n).off(4).write_fpu(c, FpuF32(c.f[1]));
+        }
+    }
+}
+
+/// `void tWPIGD_Weather::Blend(const tWPIGD_Weather* target, float t)`
+/// (0x2bd698): blends the weather's 19 settings toward a keyframe with the
+/// eased weight `t^2`: each pair `{current, target}` (+0x08 + 8i) gets
+/// `current = t^2 * key[i] + (1 - t^2) * current` and `target = key[i]`
+/// (`key` from target+0x04). Calls its vtable hook (+0x218/+0x21c) before
+/// and after. Frame 0x40 (s0, s1, f20); 180 cycles charged at entry.
+pub fn twpigd_weather_blend(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use crate::ps2f::FpuF32;
+    use weather_blend::*;
+    guest(c, |c| {
+        c.cycles += 180;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        let t = FpuF32(c.f[12]);
+        c.f[20] = t.0;
+        c.g[V1][0] = Addr(r32(c, S0).wrapping_add(VPTR)).lw(c);
+        c.f[20] = (t * t).0;
+        wb_hook(c, RET_PRE)?;
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[3] = (FpuF32::ONE - FpuF32(c.f[20])).0;
+        // Pairs 0..=6 (+0x08..+0x38), 7..=13 (+0x40..+0x70), 14..=18
+        // (+0x78..+0x98), as the compiler grouped them.
+        wb_group(c, 0, 1, &[2, 4, 5, 6, 7, 8], false);
+        wb_group(c, 7, 2, &[4, 5, 6, 7, 8, 9], false);
+        wb_group(c, 14, 2, &[4, 5, 6, 1], true);
+        c.g[V1][0] = Addr(r32(c, S0).wrapping_add(VPTR)).lw(c);
+        wb_hook(c, RET_POST)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -658,6 +789,66 @@ pub(crate) mod tests {
                 c.bus
                     .write16(vt + 8, (r.next_u32() as i16 as i32 & !3) as u16);
                 c.bus.write32(vt + 0xc, FAKE + 0x10 * (r.next_u32() % 4));
+            },
+        );
+    }
+    use super::*;
+
+    /// `tWPIGD_Weather_Blend`: the weather at a random data address with
+    /// 19 random `{current, target}` pairs (an edge-case float on one pair
+    /// in four), a keyframe with random values (on one seed in seven it
+    /// overlaps the weather's pairs, which checks the load/store order),
+    /// t (f12) in [-1.2, 1.2) or an edge case on one seed in five, and a
+    /// vtable whose hook is a fake (random this-delta) that unwinds on
+    /// either of the two calls on some seeds.
+    #[test]
+    fn twpigd_weather_blend_matches() {
+        use crate::difftest::fakes::{covered, machine, ptr, FAKE};
+        use weather_blend::*;
+        covered(
+            ee::s08::f_002bd698__generated,
+            twpigd_weather_blend,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2bd698, 2);
+                c.pc = 0x002b_d698;
+                let this = ptr(&mut r) & !0xfff;
+                for i in 0..38 {
+                    let v = if r.next_u32() % 4 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(500.0)
+                    };
+                    c.bus.write32(this + PAIRS + 4 * i, v);
+                }
+                let key = if seed % 7 == 0 {
+                    this + 4 * (r.next_u32() % 16)
+                } else {
+                    let k = this + 0x400;
+                    for i in 0..19 {
+                        let v = if r.next_u32() % 8 == 0 {
+                            r.edge_f32()
+                        } else {
+                            r.f32(500.0)
+                        };
+                        c.bus.write32(k + VALUES + 4 * i, v);
+                    }
+                    k
+                };
+                // The vtable clear of the blended data (the blend cannot
+                // overwrite its hook slot before the second call).
+                let vt = this + 0x800;
+                c.bus
+                    .write16(vt + VT_HOOK_DELTA, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(vt + VT_HOOK, FAKE);
+                c.bus.write32(this + VPTR, vt);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = key as u64;
+                c.f[12] = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(1.2)
+                };
             },
         );
     }
