@@ -24,7 +24,7 @@ def all_sources():
     """(path -> text) for every C++ file of the reference."""
     for root, _dirs, files in os.walk(os.path.join(REF, "src")):
         for f in files:
-            if f.endswith(".cpp"):
+            if f.endswith((".cpp", ".c")):
                 p = os.path.join(root, f)
                 yield p, open(p, errors="replace").read()
 
@@ -60,7 +60,21 @@ def extract_body(text, start):
 
 
 def find_impl(name):
-    """(path, line, body or None, kind) for the function's implementation."""
+    """(path, line, body or None, kind) for the function's implementation
+    (also through a `T alias(...) __asm__("name")` declaration)."""
+    r = find_impl_named(name)
+    if r is None:
+        alias = re.compile(r'([A-Za-z_]\w*)\s*\([^;{}]*\)\s*__asm__\s*\(\s*"' + re.escape(name) + r'"\s*\)')
+        for _path, text in all_sources():
+            m = alias.search(text)
+            if m and m.group(1) != name:
+                r = find_impl_named(m.group(1))
+                if r:
+                    break
+    return r
+
+
+def find_impl_named(name):
     name_re = re.compile(r"\b" + re.escape(name) + r"\b")
     for path, text in all_sources():
         # A definition of `name` at the start of a line (allow attributes /
@@ -116,7 +130,7 @@ def find_decl(name):
     for root in ("include", "src"):
         for dirpath, _d, files in os.walk(os.path.join(REF, root)):
             for f in files:
-                if not f.endswith((".h", ".cpp")):
+                if not f.endswith((".h", ".cpp", ".c")):
                     continue
                 p = os.path.join(dirpath, f)
                 text = open(p, errors="replace").read()

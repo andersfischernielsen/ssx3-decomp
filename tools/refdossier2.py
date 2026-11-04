@@ -92,7 +92,8 @@ def main(argv):
                             "generated", "ee")
     for arg in addrs:
         a = int(arg, 16)
-        name = syms.get(a)
+        # (Functions without a symbol are `func_XXXXXXXX` in the reference.)
+        name = syms.get(a) or f"func_{a:08X}"
         impl = find_impl(name) if name else None
         decl = find_decl(name) if name else None
         asm = find_asm(name) if name else None

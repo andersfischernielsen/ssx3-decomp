@@ -48,7 +48,7 @@ def find_source(name):
     """(file, line, kind) for the function's definition, or None."""
     try:
         r = subprocess.run(
-            ["grep", "-rn", "--include=*.cpp", "--include=*.h", "-m1", name, "src", "include"],
+            ["grep", "-rn", "--include=*.cpp", "--include=*.c", "--include=*.h", "-m1", name, "src", "include"],
             cwd=REF, capture_output=True, text=True, timeout=30)
     except subprocess.TimeoutExpired:
         return None
