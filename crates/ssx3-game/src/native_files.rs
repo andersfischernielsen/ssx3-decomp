@@ -142,9 +142,11 @@ pub fn install() -> bool {
             Source::Dir(d)
         }
         None => {
-            let iso = std::env::var_os("SSX3_ISO")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| repo_root().join("SSX 3 (USA).iso"));
+            let iso = ssx3_core::platform_paths::data_file(
+                "SSX3_ISO",
+                "SSX 3 (USA).iso",
+                repo_root().join("SSX 3 (USA).iso"),
+            );
             match Disc::open(&iso) {
                 Ok(d) => Source::Iso(d),
                 Err(e) => {

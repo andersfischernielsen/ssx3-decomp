@@ -52,12 +52,12 @@ fn slot() -> &'static Mutex<Option<Slot>> {
 /// `none` = empty slot). A missing file is created erased (the game offers
 /// to format it).
 fn open_card() -> Option<Slot> {
-    let p = std::env::var("SSX3_MEMCARD").unwrap_or_else(|_| "saves/ssx3-mc0.ps2".into());
-    if p.is_empty() || p == "none" {
+    let path = ssx3_core::platform_paths::memory_card();
+    let p = path.display();
+    if path.as_os_str().is_empty() || path.as_os_str() == "none" {
         eprintln!("[mc] no memory card inserted (SSX3_MEMCARD=none)");
         return None;
     }
-    let path = PathBuf::from(&p);
     let open = || -> std::io::Result<(Card, File, bool)> {
         if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
             std::fs::create_dir_all(dir)?;

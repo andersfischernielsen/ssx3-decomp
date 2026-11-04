@@ -2473,6 +2473,7 @@ name = "ssx3-gfx"
 version = "0.1.0"
 dependencies = [
  "png",
+ "ssx3-core",
  "ssx3-ps2",
  "ssx3-render",
  "web-time",
@@ -2494,6 +2495,7 @@ name = "ssx3-iop"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "ssx3-core",
 ]
 
 [[package]]

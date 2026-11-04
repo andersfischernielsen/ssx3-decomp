@@ -25,7 +25,7 @@ pub fn init_standalone() -> bool {
             as Box<dyn ssx3_core::iso::Source>)
     }));
     STANDALONE.store(true, std::sync::atomic::Ordering::Relaxed);
-    let dir = data_dir();
+    let dir = ssx3_core::platform_paths::standalone_saves(data_dir());
     for (key, file) in [
         ("SSX3_MEMCARD", "ssx3-mc0.ps2"),
         ("SSX3_SETTINGS", "ssx3-settings.cfg"),
@@ -106,9 +106,11 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
             .core()
             .set_backend(ssx3_ps2::gs::Backend::Gpu);
     }
-    let iso = std::env::var("SSX3_ISO")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| repo_root().join("SSX 3 (USA).iso"));
+    let iso = ssx3_core::platform_paths::data_file_utf8(
+        "SSX3_ISO",
+        "SSX 3 (USA).iso",
+        repo_root().join("SSX 3 (USA).iso"),
+    );
     if let Err(e) = ssx3_ps2::m!(c).sif.open_disc(iso.clone()) {
         eprintln!("warning: cannot open disc image {}: {e}", iso.display());
     }
@@ -130,7 +132,10 @@ pub fn boot(skip_movies_default: bool) -> Box<Cpu> {
 
 /// The executable: `orig/SLUS_207.72`, else the one on the disc.
 fn read_elf(c: &mut Cpu) -> Vec<u8> {
-    let path = repo_root().join("orig/SLUS_207.72");
+    let path = ssx3_core::platform_paths::data_path(
+        "orig/SLUS_207.72",
+        repo_root().join("orig/SLUS_207.72"),
+    );
     if !STANDALONE.load(std::sync::atomic::Ordering::Relaxed) {
         if let Ok(v) = std::fs::read(&path) {
             return v;

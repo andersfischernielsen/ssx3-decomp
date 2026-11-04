@@ -7,9 +7,11 @@
 
 /// The icon as RGBA at `size` x `size`, from the disc (`None` without one).
 pub fn from_disc(size: u32) -> Option<Vec<u8>> {
-    let iso = std::env::var("SSX3_ISO")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| crate::game::repo_root().join("SSX 3 (USA).iso"));
+    let iso = ssx3_core::platform_paths::data_file_utf8(
+        "SSX3_ISO",
+        "SSX 3 (USA).iso",
+        crate::game::repo_root().join("SSX 3 (USA).iso"),
+    );
     let mut disc = ssx3_core::iso::Disc::open(&iso).ok()?;
     let e = disc.find("DATA/UI/FE_1.SSH")?;
     let mut sheet = disc.read_vec(e.sector, e.size.div_ceil(2048));

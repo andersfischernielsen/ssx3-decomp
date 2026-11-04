@@ -105,12 +105,13 @@ impl MemoryCard {
     /// The card configured by `SSX3_MEMCARD` (default `saves/ssx3-mc0.ps2`;
     /// `none` leaves the slot empty).
     pub fn from_env() -> Option<Self> {
-        let p = std::env::var("SSX3_MEMCARD").unwrap_or_else(|_| "saves/ssx3-mc0.ps2".into());
-        if p.is_empty() || p == "none" {
+        let path = ssx3_core::platform_paths::memory_card();
+        let p = path.display();
+        if path.as_os_str().is_empty() || path.as_os_str() == "none" {
             eprintln!("[mc] no memory card inserted (SSX3_MEMCARD=none)");
             return None;
         }
-        match Self::open(Path::new(&p)) {
+        match Self::open(&path) {
             Ok(c) => {
                 eprintln!(
                     "[mc] memory card in port 1: {p}{}",
