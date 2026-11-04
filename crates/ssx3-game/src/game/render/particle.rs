@@ -10458,9 +10458,7 @@ pub(crate) mod tests {
             },
         );
     }
-    use crate::difftest::events::{check_events, schedule};
-    use crate::difftest::fakes::{self, covered, fake_call, machine, FAKE, LOG_COUNT};
-    use crate::difftest::{check, fill, scramble, Rng, DATA, GAME_GP};
+    use crate::difftest::fakes::LOG_COUNT;
     pub(crate) use crate::game::main::ssxapp::tests::f as f_2;
     use ssx3_ee_rt::cpu::{reg::*, sx};
     use ssx3_ee_rt::Cpu;
