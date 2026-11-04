@@ -338,6 +338,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_spin_sub_handle_input,
         "RiderSpinSub_HandleInput",
     ),
+    (
+        0x0013_4dd0,
+        rider_spin_sub_apply_pose_rotation,
+        "RiderSpinSub_ApplyPoseRotation",
+    ),
 ];
 
 /// `gp`-relative globals used here.
@@ -8220,6 +8225,289 @@ pub fn rider_spin_sub_handle_input(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// RiderSpinSub_ApplyPoseRotation (0x134dd0, ai.cpp; assembly only).
+
+/// `void Math_SinCos(float* sin, float* cos, float angle)` (cross-shard).
+pub(crate) const MATH_SIN_COS: u32 = 0x0031_be50;
+
+/// `float RiderSpinSub_GetSpinFactor(RiderSpinSub*)` (same shard).
+pub(crate) const RIDER_SPIN_SUB_GET_SPIN_FACTOR: Callee = Callee {
+    addr: 0x0013_5180,
+    f: ee::s01::RiderSpinSub_GetSpinFactor,
+};
+
+/// `void RiderSpinSub_ApplyPoseRotation(RiderSpinSub* self, Pose* pose)`
+/// (0x134dd0): turns the rider's pose (`pose`: position at +0, rotation
+/// quaternion at +0x10) for the spin sub-state. It
+/// 1. scales the current path node's offset (path `+0x24`, node `+0x89c`,
+///    16 bytes each) by the path's scale (`+0x140..+0x14c`), takes it
+///    relative to the spin pivot (0x4ff130), rotates it by the pose
+///    quaternion and adds it to the position;
+/// 2. rotates the pose by the spin angle (`-(self+0x20 + self+0x28) / 2`
+///    about world up, `Math_SinCos`);
+/// 3. eases the lean factor `self+0x40` towards `GetSpinFactor()` by a step
+///    proportional to the distance (`gp-0x7384`);
+/// 4. rotates the pose by half of `self+0x24 + self+0x2c` about the axis
+///    blended from 0x4ff150 and 0x4ff140 by the lean factor (normalised),
+///    and moves the position back by the rotated pivot.
+/// All vector work is the original's VU0 macro code (quaternion products
+/// `opmula/opmsub`, rotations), issued in its order with its stack scratch.
+pub fn rider_spin_sub_apply_pose_rotation(c: &mut Cpu) {
+    guest(c, |c| {
+        let me = c.g[A0][0] as u32;
+        let pose = c.g[A1][0] as u32;
+        // 1-2: offset to the pivot, rotated into the pose; spin angle.
+        c.cycles += 116;
+        let frame = Frame::open(c, 0xe0);
+        c.g[AT][0] = 0x3f000000;
+        c.mtc1(1, 12);
+        c.sq(16, sp(c).wrapping_add(0xc0));
+        c.sq(17, sp(c).wrapping_add(0xb0));
+        c.g[S0][0] = 0x500000;
+        c.sq(18, sp(c).wrapping_add(0xa0));
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xea0));
+        c.sq(19, sp(c).wrapping_add(0x90));
+        c.g[S2][0] = c.g[A0][0];
+        c.swc1(20, sp(c).wrapping_add(0xd0));
+        c.g[S3][0] = c.g[A1][0];
+        c.sd(sp(c).wrapping_add(0x80), c.g[RA][0]);
+        c.g[A0][0] = sx(sp(c).wrapping_add(0x70));
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x74));
+        c.g[A2][0] = c.lw(me.wrapping_add(0x58));
+        c.lwc1(6, me.wrapping_add(0x28));
+        c.g[V1][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x780));
+        c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0x89c));
+        c.g[A2][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x24));
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+        c.lwc1(0, (c.g[V1][0] as u32).wrapping_add(0x14c));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A2][0] as u32));
+        c.lwc1(3, (c.g[V1][0] as u32).wrapping_add(0x140));
+        c.lwc1(4, (c.g[V0][0] as u32).wrapping_add(0xc));
+        c.lwc1(1, c.g[V0][0] as u32);
+        c.mul_s(4, 4, 0);
+        c.lwc1(2, (c.g[V0][0] as u32).wrapping_add(0x4));
+        c.mul_s(1, 1, 3);
+        c.lwc1(5, (c.g[V1][0] as u32).wrapping_add(0x144));
+        c.lwc1(3, (c.g[V1][0] as u32).wrapping_add(0x148));
+        c.lwc1(0, (c.g[V0][0] as u32).wrapping_add(0x8));
+        c.mul_s(2, 2, 5);
+        c.lwc1(7, me.wrapping_add(0x20));
+        c.g[V0][0] = 0x500000;
+        c.mul_s(0, 0, 3);
+        c.swc1(4, sp(c).wrapping_add(0x1c));
+        c.swc1(2, sp(c).wrapping_add(0x14));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xed0));
+        c.swc1(1, sp(c).wrapping_add(0x10));
+        c.add_s(7, 7, 6);
+        c.swc1(0, sp(c).wrapping_add(0x18));
+        c.lwc1(0, me.wrapping_add(0x2c));
+        c.lwc1(1, me.wrapping_add(0x24));
+        c.neg_s(7, 7);
+        c.lqc2(3, sp(c).wrapping_add(0x10));
+        c.lqc2(4, c.g[V0][0] as u32);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp(c).wrapping_add(0x20));
+        c.lq(2, sp(c).wrapping_add(0x20));
+        c.add_s(20, 1, 0);
+        c.mul_s(12, 7, 12);
+        c.sq(2, sp(c));
+        c.lqc2(4, pose.wrapping_add(0x10));
+        c.lqc2(5, sp(c));
+        c.vu0().sub(0b0001, 8, 8, Src::Vec(8));
+        c.vu0().opmula(4, 5);
+        c.vu0().opmsub(6, 5, 4);
+        c.vu0().opmula(4, 6);
+        c.vu0().opmsub(7, 6, 4);
+        c.vu0().mula(0b1110, 5, Src::Bc(0, W));
+        c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+        c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+        c.vu0().madda(0b1110, 7, Src::Bc(0, W));
+        c.vu0().madd(0b1110, 8, 7, Src::Bc(0, W));
+        c.sqc2(8, sp(c).wrapping_add(0x20));
+        c.lq(2, sp(c).wrapping_add(0x20));
+        c.sq(2, sp(c).wrapping_add(0x10));
+        c.lqc2(3, pose);
+        c.lqc2(4, sp(c).wrapping_add(0x10));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, pose);
+        call_ptr(c, MATH_SIN_COS, 0x0013_4ef8)?;
+        // Spin quaternion (axis = world up x sin, w = cos) times the pose.
+        c.lwc1(1, (c.g[S1][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.g[S2][0];
+        c.lwc1(0, sp(c).wrapping_add(0x70));
+        c.lwc1(2, (c.g[S0][0] as u32).wrapping_sub(0xea0));
+        c.lwc1(4, (c.g[S1][0] as u32).wrapping_add(0x4));
+        c.mul_s(1, 0, 1);
+        c.mul_s(2, 0, 2);
+        c.lwc1(3, sp(c).wrapping_add(0x74));
+        c.mul_s(0, 0, 4);
+        c.swc1(3, sp(c).wrapping_add(0x4c));
+        c.swc1(1, sp(c).wrapping_add(0x48));
+        c.swc1(2, sp(c).wrapping_add(0x40));
+        c.swc1(0, sp(c).wrapping_add(0x44));
+        c.lq(2, sp(c).wrapping_add(0x40));
+        c.sq(2, sp(c).wrapping_add(0x30));
+        c.lqc2(4, pose.wrapping_add(0x10));
+        c.lqc2(5, sp(c).wrapping_add(0x30));
+        c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+        c.vu0().opmula(4, 5);
+        c.vu0().opmsub(6, 5, 4);
+        c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+        c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+        c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+        c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+        c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+        c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+        c.sqc2(8, sp(c).wrapping_add(0x60));
+        c.lq(2, sp(c).wrapping_add(0x60));
+        c.sq(2, pose.wrapping_add(0x10));
+        c.sq(2, sp(c).wrapping_add(0x50));
+        RIDER_SPIN_SUB_GET_SPIN_FACTOR.call(c, 0x0013_4f74)?;
+        // 3: ease the lean factor (self+0x40, f4) towards the spin factor
+        // (f3) by step = |current - target| * k (f2).
+        c.lwc1(4, me.wrapping_add(0x40));
+        c.mov_s(3, 0);
+        c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x7384));
+        c.sub_s(0, 4, 3);
+        c.abs_s(0, 0);
+        c.mul_s(2, 0, 2);
+        c.add_s(1, 3, 2);
+        c.c_lt_s(1, 4);
+        if !c.fcc() {
+            // target + step >= current: step up if current < target - step,
+            // else snap to the target.
+            c.sub_s(0, 3, 2);
+            c.cycles += 4;
+            c.c_lt_s(4, 0);
+            let below = c.fcc();
+            c.mov_s(1, 3);
+            if below {
+                c.cycles += 1;
+                c.add_s(1, 4, 2);
+            }
+        } else {
+            // current > target + step: step down.
+            c.cycles += 2;
+            c.sub_s(1, 4, 2);
+        }
+        // 4: the lean axis and its half-angle rotation.
+        c.cycles += 112;
+        c.g[V1][0] = 0x500000;
+        c.swc1(1, me.wrapping_add(0x40));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(0xeb0));
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 0);
+        c.mfc1(2, 1);
+        c.lqc2(4, c.g[V1][0] as u32);
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sp(c).wrapping_add(0x40));
+        c.g[AT][0] = 0x3f000000;
+        c.mtc1(1, 12);
+        c.lq(2, sp(c).wrapping_add(0x40));
+        c.g[A0][0] = sx(sp(c).wrapping_add(0x78));
+        c.lwc1(1, me.wrapping_add(0x40));
+        c.mul_s(12, 20, 12);
+        c.sq(2, sp(c).wrapping_add(0x30));
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x7c));
+        c.g[V0][0] = 0x500000;
+        c.sub_s(0, 0, 1);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xec0));
+        c.mfc1(3, 0);
+        c.lqc2(4, c.g[V0][0] as u32);
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sp(c).wrapping_add(0x50));
+        c.lq(2, sp(c).wrapping_add(0x50));
+        c.sq(2, sp(c).wrapping_add(0x40));
+        c.lqc2(3, sp(c).wrapping_add(0x30));
+        c.lqc2(4, sp(c).wrapping_add(0x40));
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp(c).wrapping_add(0x50));
+        c.lq(2, sp(c).wrapping_add(0x50));
+        c.sq(2, sp(c).wrapping_add(0x20));
+        c.lqc2(3, sp(c).wrapping_add(0x20));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().rsqrt(0, 3, 4, 0);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 3, Src::Q);
+        c.sqc2(5, sp(c).wrapping_add(0x50));
+        c.lq(2, sp(c).wrapping_add(0x50));
+        c.sq(2, sp(c).wrapping_add(0x10));
+        call_ptr(c, MATH_SIN_COS, 0x0013_5078)?;
+        c.lwc1(0, sp(c).wrapping_add(0x78));
+        c.lwc1(1, sp(c).wrapping_add(0x10));
+        c.lwc1(2, sp(c).wrapping_add(0x14));
+        c.lwc1(4, sp(c).wrapping_add(0x18));
+        c.mul_s(1, 0, 1);
+        c.mul_s(2, 0, 2);
+        c.lwc1(3, sp(c).wrapping_add(0x7c));
+        c.mul_s(0, 0, 4);
+        c.g[AT][0] = 0xffffffffbf800000;
+        c.mtc1(1, 5);
+        c.swc1(3, sp(c).wrapping_add(0x3c));
+        c.swc1(1, sp(c).wrapping_add(0x30));
+        c.swc1(2, sp(c).wrapping_add(0x34));
+        c.swc1(0, sp(c).wrapping_add(0x38));
+        c.lq(16, sp(c).wrapping_add(0xc0));
+        c.lq(2, sp(c).wrapping_add(0x30));
+        c.lq(17, sp(c).wrapping_add(0xb0));
+        c.sq(2, sp(c).wrapping_add(0x20));
+        c.lqc2(4, pose.wrapping_add(0x10));
+        c.lqc2(5, sp(c).wrapping_add(0x20));
+        c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+        c.vu0().opmula(4, 5);
+        c.vu0().opmsub(6, 5, 4);
+        c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+        c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+        c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+        c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+        c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+        c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+        c.sqc2(8, sp(c).wrapping_add(0x50));
+        c.lq(18, sp(c).wrapping_add(0xa0));
+        c.lq(2, sp(c).wrapping_add(0x50));
+        c.g[RA][0] = c.ld(sp(c).wrapping_add(0x80));
+        c.sq(2, pose.wrapping_add(0x10));
+        c.sq(2, sp(c).wrapping_add(0x40));
+        c.mfc1(3, 5);
+        c.lqc2(4, sp(c));
+        c.qmtc2(3, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sp(c).wrapping_add(0x30));
+        c.lwc1(20, sp(c).wrapping_add(0xd0));
+        c.lq(2, sp(c).wrapping_add(0x30));
+        c.sq(2, sp(c).wrapping_add(0x20));
+        c.lqc2(4, pose.wrapping_add(0x10));
+        c.lqc2(5, sp(c).wrapping_add(0x20));
+        c.vu0().sub(0b0001, 8, 8, Src::Vec(8));
+        c.vu0().opmula(4, 5);
+        c.vu0().opmsub(6, 5, 4);
+        c.vu0().opmula(4, 6);
+        c.vu0().opmsub(7, 6, 4);
+        c.vu0().mula(0b1110, 5, Src::Bc(0, W));
+        c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+        c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+        c.vu0().madda(0b1110, 7, Src::Bc(0, W));
+        c.vu0().madd(0b1110, 8, 7, Src::Bc(0, W));
+        c.sqc2(8, sp(c).wrapping_add(0x40));
+        c.lq(2, sp(c).wrapping_add(0x40));
+        c.sq(2, sp(c).wrapping_add(0x30));
+        c.lqc2(3, pose);
+        c.lqc2(4, sp(c).wrapping_add(0x30));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, pose);
+        c.lq(19, sp(c).wrapping_add(0x90));
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10128,6 +10416,78 @@ pub(crate) mod tests {
                 c.bus
                     .write32(transition + 0x44, if seed % 2 == 0 { 0 } else { 1 });
                 let _ = r.next_u32();
+            },
+        );
+    }
+    use super::*;
+
+    // ------------------------------------------------------------------
+    // RiderSpinSub_ApplyPoseRotation (0x134dd0).
+
+    /// Random spin state, rider path node and pose (unit-ish quaternion);
+    /// the lean factor below, near and above the spin factor so all three
+    /// easing branches run. `Math_SinCos`, `GetSpinFactor` (and its
+    /// `Math_Atan`) are real, with the game's `.lit4` constants.
+    #[test]
+    fn rider_spin_sub_apply_pose_rotation_matches() {
+        use crate::difftest::fakes::machine;
+        const SELF: u32 = DATA + 0x100;
+        const RIDER: u32 = DATA + 0x1000;
+        const PATH: u32 = DATA + 0x2000;
+        const NODES: u32 = DATA + 0x3000;
+        const POSE: u32 = DATA + 0x4000;
+        crate::difftest::check(
+            ee::s01::f_00134dd0__generated,
+            rider_spin_sub_apply_pose_rotation,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x0013_4dd0, 0);
+                c.bus.write32(SELF + 0x58, RIDER);
+                for off in [0x20u32, 0x24, 0x28, 0x2c] {
+                    c.bus.write32(SELF + off, r.f32(3.2));
+                }
+                // Lean factor: anywhere in [-2, 2] (the spin factor is atan-based).
+                let lean = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(2.0)
+                };
+                c.bus.write32(SELF + 0x40, lean);
+                c.bus.write32(RIDER + 0x2dc, r.f32(20.0));
+                c.bus.write32(RIDER + 0x2e0, r.f32(20.0));
+                c.bus.write32(RIDER + 0x780, PATH);
+                let node = r.next_u32() % 4;
+                c.bus.write32(RIDER + 0x89c, node);
+                c.bus.write32(PATH + 0x24, NODES);
+                for off in [0x140u32, 0x144, 0x148, 0x14c] {
+                    c.bus.write32(PATH + off, r.f32(2.0));
+                }
+                for i in 0..4 {
+                    put_vec(
+                        c,
+                        NODES + 0x10 * i,
+                        [r.f32(10.0), r.f32(10.0), r.f32(10.0), r.f32(1.0)],
+                    );
+                }
+                // The spin pivot, the two lean axes and world up.
+                for a in [0x004f_f130u32, 0x004f_f140, 0x004f_f150] {
+                    put_vec(c, a, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                }
+                put_vec(c, 0x004f_f160, [0, 0, 1.0f32.to_bits(), 0]);
+                put_vec(
+                    c,
+                    POSE,
+                    [r.f32(100.0), r.f32(100.0), r.f32(100.0), 1.0f32.to_bits()],
+                );
+                put_vec(
+                    c,
+                    POSE + 0x10,
+                    [r.f32(0.7), r.f32(0.7), r.f32(0.7), r.f32(1.0)],
+                );
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(POSE);
+                c.pc = 0x0013_4dd0;
             },
         );
     }

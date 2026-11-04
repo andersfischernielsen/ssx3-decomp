@@ -95,8 +95,6 @@ pub mod oc216;
 pub mod oc217;
 #[cfg(feature = "oc218")]
 pub mod oc218;
-#[cfg(feature = "oc219")]
-pub mod oc219;
 #[cfg(feature = "oc220")]
 pub mod oc220;
 #[cfg(feature = "rider_logic")]

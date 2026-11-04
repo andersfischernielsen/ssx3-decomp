@@ -357,6 +357,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_graphics_man_set_ortho,
         "PS2GraphicsMan_SetOrtho",
     ),
+    (0x0038_9840, irradiance_rotate, "Irradiance_Rotate"),
 ];
 
 /// Same-shard direct callees used above.
@@ -8575,6 +8576,286 @@ pub fn ps2_graphics_man_set_ortho(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Irradiance_Rotate (0x389840, particle.cpp; assembly only in the reference).
+
+/// FPU registers the function saves (f20..f31) and their frame slots.
+pub(crate) const IRR_SAVED_FPRS: [(usize, u32); 12] = [
+    (31, 0x98),
+    (30, 0x90),
+    (29, 0x88),
+    (28, 0x80),
+    (27, 0x78),
+    (26, 0x70),
+    (25, 0x68),
+    (24, 0x60),
+    (23, 0x58),
+    (22, 0x50),
+    (21, 0x48),
+    (20, 0x40),
+];
+
+/// `void Irradiance_Rotate(Irradiance* irr, const float rot[3][3], int first,
+/// int last)` (0x389840): rotate the irradiance's spherical-harmonic
+/// coefficients by the 3x3 matrix `rot`, for the colour channels
+/// `first..=last` (one float column per channel; the coefficient rows are
+/// `irr + 0x10 .. irr + 0x90`, 16 bytes apart). The SH rotation is the
+/// original's fully scheduled FPU sequence (207 cycles per channel), kept
+/// instruction for instruction so every scratch FPR and the stack scratch
+/// (`sp+0x00..0x34`: the matrix row 0 copy and products) end as it leaves
+/// them.
+pub fn irradiance_rotate(c: &mut Cpu) {
+    c.cycles += 31;
+    let frame = Frame::open(c, 0xa0);
+    let s = sp(c);
+    // t4 = irr, t5 = channel, t7 = last channel.
+    c.g[T7][0] = c.g[A3][0];
+    c.g[T5][0] = c.g[A2][0];
+    c.g[T4][0] = c.g[A0][0];
+    c.g[V0][0] = ((c.g[T7][0] as i64) < (c.g[T5][0] as i64)) as u64;
+    for (f, off) in IRR_SAVED_FPRS {
+        frame.save_fpr(c, f, off);
+    }
+    // The packed 3x3 matrix: rot[0][0], rot[0][1], rot[1][0] and rot[2][0]
+    // to the stack, the other five in f27..f31.
+    let m = c.g[A1][0] as u32;
+    c.lwc1(0, m);
+    c.lwc1(30, m.wrapping_add(0x20));
+    c.swc1(0, s);
+    c.lwc1(1, m.wrapping_add(0x4));
+    c.swc1(1, s.wrapping_add(0x4));
+    c.lwc1(2, m.wrapping_add(0xc));
+    c.lwc1(29, m.wrapping_add(0x8));
+    c.swc1(2, s.wrapping_add(0x8));
+    c.lwc1(4, m.wrapping_add(0x18));
+    c.lwc1(27, m.wrapping_add(0x10));
+    c.lwc1(31, m.wrapping_add(0x14));
+    c.swc1(4, s.wrapping_add(0xc));
+    c.lwc1(28, m.wrapping_add(0x1c));
+    if c.g[V0][0] == 0 {
+        c.cycles += 1;
+        loop {
+            c.cycles += 207;
+            // The channel's column in each coefficient row.
+            let irr = c.g[T4][0] as u32;
+            let col = (c.g[T5][0] as u32) << 2;
+            c.g[V0][0] = sx(col);
+            let row = |off: u32| irr.wrapping_add(off).wrapping_add(col);
+            let (c10, c20, c30, c40) = (row(0x10), row(0x20), row(0x30), row(0x40));
+            let (c50, c60, c70, c80, c90) = (row(0x50), row(0x60), row(0x70), row(0x80), row(0x90));
+            c.g[A0][0] = sx(c10);
+            c.g[A3][0] = sx(c20);
+            c.g[A1][0] = sx(c30);
+            c.g[T2][0] = sx(c40);
+            c.g[T1][0] = sx(c50);
+            c.g[T3][0] = sx(c60);
+            c.g[V1][0] = sx(c70);
+            c.g[T0][0] = sx(c80);
+            c.g[A2][0] = sx(c90);
+            c.g[T5][0] = sx((c.g[T5][0] as u32).wrapping_add(1));
+            c.g[V0][0] = ((c.g[T7][0] as i64) < (c.g[T5][0] as i64)) as u64;
+            c.lwc1(12, c20);
+            c.lwc1(13, c10);
+            c.add_s(5, 12, 12);
+            c.lwc1(6, s.wrapping_add(0x8));
+            c.lwc1(8, s.wrapping_add(0xc));
+            c.swc1(5, s.wrapping_add(0x2c));
+            c.lwc1(16, c40);
+            c.lwc1(20, c60);
+            c.mul_s(6, 16, 6);
+            c.mul_s(8, 16, 8);
+            c.lwc1(7, s.wrapping_add(0x4));
+            c.mul_s(11, 20, 28);
+            c.lwc1(19, s);
+            c.swc1(6, s.wrapping_add(0x18));
+            c.mul_s(26, 5, 7);
+            c.mul_s(2, 6, 7);
+            c.lwc1(9, c30);
+            c.swc1(8, s.wrapping_add(0x20));
+            c.mul_s(16, 16, 19);
+            c.lwc1(10, c50);
+            c.add_s(22, 13, 13);
+            c.swc1(11, s.wrapping_add(0x24));
+            c.mul_s(4, 26, 27);
+            c.mul_s(25, 10, 19);
+            c.lwc1(15, s.wrapping_add(0x8));
+            c.lwc1(0, c80);
+            c.mul_s(1, 8, 7);
+            c.lwc1(19, s.wrapping_add(0x4));
+            c.mul_s(3, 22, 15);
+            c.swc1(0, s.wrapping_add(0x14));
+            c.add_s(2, 2, 4);
+            c.lwc1(5, s.wrapping_add(0x24));
+            c.mul_s(0, 12, 19);
+            c.lwc1(6, c70);
+            c.add_s(11, 9, 9);
+            c.lwc1(17, c90);
+            c.mul_s(8, 5, 29);
+            c.swc1(6, s.wrapping_add(0x10));
+            c.mul_s(4, 25, 31);
+            c.mul_s(6, 9, 29);
+            c.lwc1(7, s.wrapping_add(0xc));
+            c.add_s(1, 1, 8);
+            c.lwc1(15, s.wrapping_add(0x18));
+            c.mul_s(0, 0, 19);
+            c.lwc1(8, s.wrapping_add(0x8));
+            c.mul_s(6, 6, 29);
+            c.mul_s(24, 10, 7);
+            c.mul_s(3, 3, 7);
+            c.mul_s(23, 11, 29);
+            c.mul_s(7, 16, 28);
+            c.add_s(2, 2, 4);
+            c.mul_s(21, 20, 27);
+            c.lwc1(4, s);
+            c.mul_s(10, 10, 8);
+            c.add_s(0, 0, 6);
+            c.lwc1(6, s.wrapping_add(0x4));
+            c.mul_s(5, 15, 28);
+            c.mul_s(8, 23, 31);
+            c.mul_s(22, 22, 4);
+            c.add_s(1, 1, 7);
+            c.mul_s(20, 20, 6);
+            c.mul_s(14, 10, 31);
+            c.mul_s(18, 16, 6);
+            c.mul_s(4, 21, 31);
+            c.lwc1(6, s);
+            c.mul_s(7, 12, 27);
+            c.mul_s(15, 24, 31);
+            c.add_s(3, 3, 5);
+            c.mul_s(11, 11, 31);
+            c.mul_s(5, 9, 30);
+            c.add_s(2, 2, 8);
+            c.mul_s(19, 25, 30);
+            c.mul_s(8, 13, 6);
+            c.add_s(4, 4, 14);
+            c.mul_s(7, 7, 27);
+            c.mul_s(9, 9, 31);
+            c.mul_s(6, 21, 29);
+            c.add_s(3, 3, 15);
+            c.mul_s(11, 11, 30);
+            c.mul_s(15, 24, 30);
+            c.mul_s(5, 5, 30);
+            c.add_s(1, 1, 19);
+            c.add_s(4, 4, 7);
+            c.lwc1(19, s.wrapping_add(0xc));
+            c.mul_s(9, 9, 31);
+            c.lwc1(7, s.wrapping_add(0x8));
+            c.add_s(3, 3, 11);
+            c.add_s(2, 2, 6);
+            c.lwc1(11, s.wrapping_add(0x24));
+            c.lwc1(6, s);
+            c.add_s(5, 5, 15);
+            c.mul_s(14, 22, 19);
+            c.lwc1(15, s.wrapping_add(0x20));
+            c.add_s(4, 4, 9);
+            c.mul_s(19, 11, 31);
+            c.lwc1(9, s.wrapping_add(0x18));
+            c.mul_s(8, 8, 6);
+            c.add_s(0, 0, 18);
+            c.mul_s(11, 15, 28);
+            c.mul_s(15, 20, 31);
+            c.mul_s(6, 13, 7);
+            c.mul_s(9, 9, 27);
+            c.mul_s(7, 20, 29);
+            c.add_s(3, 3, 19);
+            c.add_s(0, 0, 8);
+            c.lwc1(19, s.wrapping_add(0xc));
+            c.lwc1(8, s.wrapping_add(0x8));
+            c.add_s(5, 5, 11);
+            c.swc1(9, s.wrapping_add(0x1c));
+            c.add_s(2, 2, 15);
+            c.mul_s(12, 12, 28);
+            c.lwc1(15, s.wrapping_add(0x24));
+            c.mul_s(11, 10, 30);
+            c.add_s(0, 0, 7);
+            c.mul_s(25, 25, 29);
+            c.mul_s(10, 10, 29);
+            c.mul_s(15, 15, 30);
+            c.mul_s(12, 12, 28);
+            c.mul_s(13, 13, 19);
+            c.add_s(0, 0, 25);
+            c.swc1(15, s.wrapping_add(0x28));
+            c.mul_s(6, 6, 8);
+            c.add_s(3, 3, 11);
+            c.add_s(2, 2, 10);
+            c.lwc1(11, s.wrapping_add(0x2c));
+            c.add_s(1, 1, 14);
+            c.lwc1(10, s.wrapping_add(0x20));
+            c.mul_s(26, 26, 28);
+            c.swc1(0, c10);
+            c.add_s(5, 5, 12);
+            c.lwc1(0, s.wrapping_add(0x4));
+            c.mul_s(13, 13, 19);
+            c.add_s(4, 4, 6);
+            c.lwc1(19, s.wrapping_add(0x14));
+            c.mul_s(22, 22, 8);
+            c.add_s(1, 1, 26);
+            c.lwc1(8, s.wrapping_add(0x1c));
+            c.mul_s(23, 23, 30);
+            c.mul_s(21, 21, 30);
+            c.mul_s(16, 16, 27);
+            c.add_s(5, 5, 13);
+            c.mul_s(7, 10, 27);
+            c.add_s(4, 4, 8);
+            c.lwc1(10, s.wrapping_add(0x10));
+            c.add_s(1, 1, 23);
+            c.mul_s(24, 24, 29);
+            c.add_s(3, 3, 21);
+            c.mul_s(12, 11, 27);
+            c.add_s(5, 5, 15);
+            c.lwc1(11, s.wrapping_add(0x8));
+            c.add_s(2, 2, 16);
+            c.swc1(4, c20);
+            c.add_s(3, 3, 7);
+            c.add_s(1, 1, 24);
+            c.swc1(5, c30);
+            c.mul_s(20, 20, 30);
+            c.mul_s(9, 19, 0);
+            c.lwc1(15, s);
+            c.mul_s(7, 19, 28);
+            c.add_s(2, 2, 22);
+            c.mul_s(19, 19, 27);
+            c.add_s(1, 1, 20);
+            c.swc1(2, c40);
+            c.mul_s(6, 17, 29);
+            c.swc1(19, s.wrapping_add(0x30));
+            c.mul_s(8, 17, 31);
+            c.swc1(1, c50);
+            c.mul_s(0, 10, 11);
+            c.lwc1(1, s.wrapping_add(0xc));
+            c.mul_s(12, 12, 28);
+            c.mul_s(17, 17, 30);
+            c.add_s(6, 6, 9);
+            c.mul_s(4, 10, 15);
+            c.mul_s(1, 10, 1);
+            c.add_s(0, 0, 8);
+            c.add_s(3, 3, 12);
+            c.add_s(17, 17, 7);
+            c.swc1(1, s.wrapping_add(0x34));
+            c.add_s(6, 6, 4);
+            c.add_s(0, 0, 19);
+            c.swc1(3, c60);
+            c.add_s(17, 17, 1);
+            c.swc1(6, c70);
+            c.swc1(0, c80);
+            // (In the original this last store sits after the loop test,
+            // in the branch delay slot.)
+            c.swc1(17, c90);
+            if c.g[V0][0] != 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0038_98c0);
+            }
+        }
+    }
+    c.cycles += 14;
+    for (f, off) in IRR_SAVED_FPRS {
+        frame.restore_fpr(c, f, off);
+    }
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11113,6 +11394,57 @@ pub(crate) mod tests {
                     c.f[12 + i] = a;
                 }
                 c.g[A0][0] = sx(gfx);
+            },
+        );
+    }
+    use super::*;
+
+    use crate::difftest::elf_image;
+
+    // ------------------------------------------------------------------
+    // Irradiance_Rotate (0x389840).
+
+    /// Random coefficients and matrix (edge-case floats too), channel ranges
+    /// empty, single and up to four channels.
+    #[test]
+    fn irradiance_rotate_matches() {
+        use crate::difftest::{scramble, Rng};
+        const IRR: u32 = DATA + 0x100;
+        const ROT: u32 = DATA + 0x400;
+        crate::difftest::check(
+            ee::s12::f_00389840__generated,
+            irradiance_rotate,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3898_40a1 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                for i in 0..0xa0 / 4 {
+                    let v = if seed % 9 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(4.0)
+                    };
+                    c.bus.write32(IRR + 4 * i, v);
+                }
+                for i in 0..9 {
+                    let v = if seed % 7 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(1.0)
+                    };
+                    c.bus.write32(ROT + 4 * i, v);
+                }
+                let first = r.next_u32() % 4;
+                let last = if seed % 5 == 0 {
+                    first as i64 - 1
+                } else {
+                    (first + r.next_u32() % (4 - first)) as i64
+                };
+                c.g[A0][0] = sx(IRR);
+                c.g[A1][0] = sx(ROT);
+                c.g[A2][0] = first as u64;
+                c.g[A3][0] = last as u64;
+                c.pc = 0x0038_9840;
             },
         );
     }

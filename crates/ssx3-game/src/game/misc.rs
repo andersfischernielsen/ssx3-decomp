@@ -33,6 +33,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "LensFX_UpdateSunPosition",
     ),
     (0x0021_d1a0, hud_draw_meter_bar, "HUD_DrawMeterBar"),
+    (0x0010_8a48, rider_find_rail, "Rider_FindRail"),
+    (0x0021_e750, hud_align_x, "HUD_AlignX"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -878,6 +880,315 @@ pub fn hud_draw_meter_bar(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod rail_rider {
+
+    /// Velocity (`vec4`).
+    pub const VELOCITY: u32 = 0x1e0;
+
+    /// The rider's path (`+0x2c`: nodes, 32 bytes each).
+    pub const PATH: u32 = 0x780;
+
+    /// The animation controller.
+    pub const ANIM: u32 = 0x784;
+
+    /// The overlap list of objects near the rider.
+    pub const OVERLAP: u32 = 0x860;
+
+    /// Current path node index.
+    pub const NODE: u32 = 0x8a0;
+
+    /// Offset from the path node to the rider's probe point (`vec4`).
+    pub const PROBE_OFFSET: u32 = 0x9d0;
+}
+
+// ---------------------------------------------------------------------------
+// Rider_FindRail (0x108a48, seg_1218.cpp).
+
+/// `Rider_GetMainState(rider)`.
+pub(crate) const RIDER_GET_MAIN_STATE: Callee = Callee {
+    addr: 0x0011_fe98,
+    f: ee::s00::Rider_GetMainState,
+};
+
+/// `Rider_ProbeRail(rider, pos, pos + 0x10)`.
+pub(crate) const RIDER_PROBE_RAIL: Callee = Callee {
+    addr: 0x0010_86b8,
+    f: ee::s00::Rider_ProbeRail,
+};
+
+/// `OverlapList_FindNearestRail(list, pos, out, mask, radius)` (cross-shard).
+pub(crate) const OVERLAP_LIST_FIND_NEAREST_RAIL: u32 = 0x0033_4680;
+
+/// `AnimController_GetLayerAnimEntry(ctrl, layer)` (cross-shard).
+pub(crate) const ANIM_GET_LAYER_ANIM_ENTRY: u32 = 0x0031_1ae8;
+
+/// `AnimController_GetLayerSequence(ctrl, layer)` (cross-shard).
+pub(crate) const ANIM_GET_LAYER_SEQUENCE: u32 = 0x0031_1b20;
+
+/// `Flags64_Test(flags, bit)` (cross-shard).
+pub(crate) const FLAGS64_TEST: u32 = 0x0014_46a0;
+
+/// `int Rider_FindRail(Rider* self, sVec4 out[2])` (0x108a48): in the main
+/// states 0/1, look for a rail near the rider's probe point (path node +
+/// offset, radius 300). Rejects a rail behind the rider (closer than -0.2 x
+/// speed along the velocity) and, when the animation on layer 2 is a grab
+/// (kind 0x12) or a trick (0x13/0x14), a rail the sequence's flags rule out;
+/// otherwise returns `Rider_ProbeRail(self, out, out + 1)`. Returns 0 when
+/// there is none.
+pub fn rider_find_rail(c: &mut Cpu) {
+    use rail_rider::*;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        let me = c.g[S0][0] as u32;
+        let lw = |c: &mut Cpu, a: u32| c.lw(a);
+        RIDER_GET_MAIN_STATE.call(c, 0x0010_8a64)?;
+        'out: {
+            if c.g[V0][0] != 0 {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                RIDER_GET_MAIN_STATE.call(c, 0x0010_8a74)?;
+                c.g[V1][0] = 1;
+                let other = c.g[V0][0] != 1;
+                c.g[V0][0] = 0;
+                if other {
+                    break 'out;
+                }
+                c.cycles += 1;
+            }
+            c.g[A0][0] = lw(c, me.wrapping_add(PATH));
+
+            // 0x108a84: probe point = path node + offset; nearest rail.
+            c.cycles += 19;
+            c.g[A1][0] = c.g[SP][0];
+            c.g[V0][0] = lw(c, me.wrapping_add(NODE));
+            c.g[A2][0] = c.g[S1][0];
+            c.g[V1][0] = lw(c, (c.g[A0][0] as u32).wrapping_add(0x2c));
+            c.g[A3][0] = 1;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 5);
+            c.g[AT][0] = 0x4396_0000; // 300.0
+            c.mtc1(1, 12);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.lqc2(3, c.g[V1][0] as u32);
+            c.lqc2(4, me.wrapping_add(PROBE_OFFSET));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, sp(c).wrapping_add(0x10));
+            c.lq(2, sp(c).wrapping_add(0x10));
+            c.g[A0][0] = lw(c, me.wrapping_add(OVERLAP));
+            c.sq(2, sp(c));
+            call_ptr(c, OVERLAP_LIST_FIND_NEAREST_RAIL, 0x0010_8ac8)?;
+            let none = c.g[V0][0] == 0;
+            c.g[V0][0] = 0;
+            if none {
+                break 'out;
+            }
+
+            // 0x108ad0: |velocity| (VU0 length).
+            c.cycles += 15;
+            c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(0x7e38));
+            c.lqc2(3, me.wrapping_add(VELOCITY));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().sqrt(4, 0);
+            c.vu0().waitq();
+            c.cfc2(2, 22);
+            c.mtc1(2, 2);
+            c.c_lt_s(0, 2);
+            if c.fcc() {
+                // 0x108b0c: moving: reject a rail behind the rider.
+                c.cycles += 21;
+                let out = c.g[S1][0] as u32;
+                c.lqc2(3, out);
+                c.lqc2(4, sp(c));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, sp(c).wrapping_add(0x20));
+                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(0x7e34));
+                c.lq(2, sp(c).wrapping_add(0x20));
+                c.mul_s(1, 2, 1);
+                c.sq(2, sp(c).wrapping_add(0x10));
+                c.lqc2(3, sp(c).wrapping_add(0x10));
+                c.lqc2(5, me.wrapping_add(VELOCITY));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.qmfc2(3, 4);
+                c.mtc1(3, 0);
+                c.c_lt_s(0, 1);
+                let behind = c.fcc();
+                c.g[V0][0] = 0;
+                if behind {
+                    break 'out;
+                }
+                c.cycles += 1;
+            }
+            c.g[A0][0] = lw(c, me.wrapping_add(ANIM));
+
+            // 0x108b64: the animation on layer 2 may forbid the rail.
+            c.cycles += 5;
+            c.g[A1][0] = 2;
+            call_ptr(c, ANIM_GET_LAYER_ANIM_ENTRY, 0x0010_8b6c)?;
+            c.g[V1][0] = 0x12;
+            let grab = c.g[V0][0] != 0x12;
+            c.g[A0][0] = lw(c, me.wrapping_add(ANIM));
+            let probe;
+            if !grab {
+                // Kind 0x12: allowed when flag 2 is set or flag 0 is clear.
+                c.cycles += 7;
+                c.g[A1][0] = 2;
+                call_ptr(c, ANIM_GET_LAYER_SEQUENCE, 0x0010_8b80)?;
+                c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xb0));
+                c.g[A1][0] = 2;
+                call_ptr(c, FLAGS64_TEST, 0x0010_8b8c)?;
+                let flag2 = c.g[V0][0] != 0;
+                c.g[A1][0] = c.g[S1][0];
+                if flag2 {
+                    probe = true;
+                } else {
+                    c.cycles += 8;
+                    c.g[A0][0] = lw(c, me.wrapping_add(ANIM));
+                    c.g[A1][0] = 2;
+                    call_ptr(c, ANIM_GET_LAYER_SEQUENCE, 0x0010_8ba0)?;
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xb0));
+                    c.g[A1][0] = 0;
+                    call_ptr(c, FLAGS64_TEST, 0x0010_8bac)?;
+                    probe = c.g[V0][0] == 0;
+                    c.g[A1][0] = c.g[S1][0];
+                }
+            } else {
+                // 0x108bbc: kinds 0x13/0x14 need flag 2.
+                c.cycles += 5;
+                c.g[A1][0] = 2;
+                call_ptr(c, ANIM_GET_LAYER_ANIM_ENTRY, 0x0010_8bc4)?;
+                c.g[V1][0] = 0x13;
+                let is_13 = c.g[V0][0] == 0x13;
+                c.g[A0][0] = lw(c, me.wrapping_add(ANIM));
+                let mut check = true;
+                if !is_13 {
+                    c.cycles += 5;
+                    c.g[A1][0] = 2;
+                    call_ptr(c, ANIM_GET_LAYER_ANIM_ENTRY, 0x0010_8bd8)?;
+                    c.g[V1][0] = 0x14;
+                    check = c.g[V0][0] == 0x14;
+                    c.g[A1][0] = c.g[S1][0];
+                    if check {
+                        c.cycles += 1;
+                        c.g[A0][0] = lw(c, me.wrapping_add(ANIM));
+                    }
+                }
+                if check {
+                    // 0x108be8
+                    c.cycles += 7;
+                    c.g[A1][0] = 2;
+                    call_ptr(c, ANIM_GET_LAYER_SEQUENCE, 0x0010_8bf0)?;
+                    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0xb0));
+                    c.g[A1][0] = 2;
+                    call_ptr(c, FLAGS64_TEST, 0x0010_8bfc)?;
+                    probe = c.g[V0][0] != 0;
+                    c.g[A1][0] = c.g[S1][0];
+                    // The branch back to 0x108bb4 is a back edge: an event
+                    // may be due there (and may unwind; re-entry at 0x108bb4
+                    // runs the generated code).
+                    if !probe && crate::events::back_edge_unwinds(c, 0x0010_8bb4) {
+                        return Err(crate::call::Unwound);
+                    }
+                } else {
+                    probe = true;
+                }
+            }
+            if probe {
+                // 0x108c04
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A2][0] = sx((c.g[A1][0] as u32).wrapping_add(0x10));
+                RIDER_PROBE_RAIL.call(c, 0x0010_8c10)?;
+            } else {
+                // 0x108bb4
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+            }
+        }
+        // 0x108c10
+        c.cycles += 5;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// HUD_AlignX (0x21e750, ovstatehud.cpp).
+
+/// The HUD's virtual screen width (640.0).
+pub(crate) const HUD_SCREEN_WIDTH: u32 = 0x4420_0000;
+
+/// 0.5.
+pub(crate) const HALF: u32 = 0x3f00_0000;
+
+/// `float HUD_AlignX(float x, int align, int flags, float width, float
+/// scale)` (0x21e750): the left edge of an element of `width * scale` at
+/// `x`. Flag 1 mirrors the layout (`x = 640 - x`, and the alignment flips
+/// unless flag 2 is set); alignment 0 centres the element on `x`, positive
+/// alignment right-aligns it, negative leaves `x` as the left edge.
+pub fn hud_align_x(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    c.cycles += 3;
+    let align = c.g[A1][0];
+    let flags = c.g[A2][0];
+    let mut x = FpuF32(c.f[12]);
+    c.g[V0][0] = flags & 1;
+    c.g[V1][0] = align;
+    if flags & 1 != 0 {
+        c.cycles += 6;
+        c.g[AT][0] = HUD_SCREEN_WIDTH as u64;
+        c.f[0] = HUD_SCREEN_WIDTH;
+        c.g[V0][0] = flags & 2;
+        c.g[V1][0] = sx(0u32.wrapping_sub(align as u32));
+        x = FpuF32(HUD_SCREEN_WIDTH) - x;
+        if flags & 2 != 0 {
+            c.g[V1][0] = align;
+        }
+    }
+    c.cycles += 2;
+    let v = c.g[V1][0];
+    let size = FpuF32(c.f[14]) * FpuF32(c.f[13]);
+    let shift = if v == 0 {
+        // Centred: half the size.
+        c.cycles += 5;
+        c.g[AT][0] = HALF as u64;
+        c.f[1] = HALF;
+        Some(size * FpuF32(HALF))
+    } else {
+        c.cycles += 2;
+        if (v as i64) > 0 {
+            c.cycles += 1;
+            Some(size)
+        } else {
+            None
+        }
+    };
+    if let Some(shift) = shift {
+        c.cycles += 1;
+        c.f[0] = shift.0;
+        x = x - shift;
+    }
+    c.cycles += 2;
+    c.f[12] = x.0;
+    c.f[0] = x.0;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -1104,6 +1415,337 @@ pub(crate) mod tests {
                 };
                 c.f[13] = unit(&mut r, 0.5, 7, 0.25);
                 c.f[14] = unit(&mut r, 0.5, 7, 0.25);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::LOG_UNWIND_AT;
+    use crate::difftest::{elf_image, put_vec};
+
+    // ------------------------------------------------------------------
+    // ChaseCameraAlgorithm_ApplyAirSwing (0x164878).
+
+    /// The chase-camera state, its swing info, the camera target ("rig",
+    /// first word its vtable), the vtable and the rider the target points at.
+    /// All above the fake results (`DATA..DATA+0x40000`), the heap arena
+    /// (`DATA+0x40000..+0x80000`) and the fake log / world (`DATA+0x10_0000`).
+    pub(crate) const AS_ME: u32 = DATA + 0x20_0000;
+
+    pub(crate) const AS_INFO: u32 = DATA + 0x20_1000;
+
+    pub(crate) const AS_RIG: u32 = DATA + 0x20_2000;
+
+    pub(crate) const AS_VT: u32 = DATA + 0x20_2800;
+
+    pub(crate) const AS_RIDER: u32 = DATA + 0x20_3000;
+
+    /// Fields of the state (`ChaseCameraAlgorithm`).
+    pub(crate) const AS_EYE_TARGET: u32 = 0x20;
+
+    pub(crate) const AS_EYE: u32 = 0x40;
+
+    pub(crate) const AS_TARGET: u32 = 0x30;
+
+    pub(crate) const AS_SWING_CLOCK: u32 = 0x22c;
+
+    pub(crate) const AS_DURATION: u32 = 0x230;
+
+    pub(crate) const AS_TIME: u32 = 0x234;
+
+    pub(crate) const AS_BLEND_OUT: u32 = 0x23c;
+
+    pub(crate) const AS_BLEND_A: u32 = 0x240;
+
+    pub(crate) const AS_BLEND_B: u32 = 0x244;
+
+    pub(crate) const AS_AIRBORNE: u32 = 0x2d0;
+
+    pub(crate) const AS_SWINGING: u32 = 0x2d8;
+
+    pub(crate) const AS_SPLINE: u32 = 0x334;
+
+    /// A real leaf that returns 0 (`v0 = 0; jr ra`), for the "no swing" answer
+    /// of vtable slot 0x98 (the fakes never return 0).
+    pub(crate) const RETURN_ZERO: u32 = 0x0014_06c0;
+
+    /// `cCSICubicSpline_InitWithStartSlope` / `cCSICubicSpline_AddPoint`.
+    pub(crate) const SPLINE_INIT: u32 = 0x0031_d738;
+
+    pub(crate) const SPLINE_ADD: u32 = 0x0031_d7e0;
+
+    /// Call a real guest function from the setup with `f12`/`f13` set.
+    pub(crate) fn setup_call(
+        c: &mut Cpu,
+        addr: u32,
+        f: GuestFn,
+        a0: u32,
+        a1: u64,
+        f12: f32,
+        f13: f32,
+    ) {
+        c.f[12] = f12.to_bits();
+        c.f[13] = f13.to_bits();
+        crate::game::camera::camera::tests::run(c, addr, f, &[sx(a0), a1]);
+    }
+
+    /// One air-swing frame: airborne or not, swing running or about to start
+    /// (rig says yes / no), the spline initialised in the call itself or
+    /// built beforehand (a live 9-point spline on the test heap), blend-out
+    /// and the final minimum-distance clamp; every rig query is a logging fake
+    /// (some unwind), `CheckDistanceReset` and the spline/maths are real.
+    #[test]
+    fn chase_camera_algorithm_apply_air_swing_matches() {
+        covered(
+            ee::s01::f_00164878__generated,
+            crate::game::camera::camera::chase_camera_apply_air_swing,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = crate::game::camera::camera::tests::alloc_base(c, seed, 0x0016_4878);
+                // Fake calls: 0x98 (n=0), 0x60 (1, 2), 0x80 (3), reset slot 8.
+                let unwind = if seed % 3 == 0 {
+                    r.next_u32() % 5
+                } else {
+                    u32::MAX
+                };
+                c.bus.write32(LOG_UNWIND_AT, unwind);
+                for i in 0..0x360 / 4 {
+                    c.bus.write32(AS_ME + 4 * i, 0);
+                }
+                // The rig: vtable, rider pointer (CheckDistanceReset's reset).
+                c.bus.write32(AS_RIG, AS_VT);
+                c.bus.write32(AS_RIG + 4, AS_RIDER);
+                for (i, slot) in [0x08u32, 0x60, 0x80, 0x98].into_iter().enumerate() {
+                    let delta = (r.next_u32() % 0x40) & !3;
+                    c.bus.write16(AS_VT + slot, delta as u16);
+                    c.bus.write32(AS_VT + slot + 4, FAKE + 0x10 * i as u32);
+                }
+                if seed % 5 == 0 {
+                    c.bus.write32(AS_VT + 0x98 + 4, RETURN_ZERO);
+                }
+                put_vec(c, AS_RIDER + 0x1b0, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                c.bus.write32(AS_ME + AS_TARGET, AS_RIG);
+                // World up (D_004FF160) and random vectors where the fake
+                // results point (below the pool allocator's tables at
+                // DATA+0x20000; above them the fakes read allocator words).
+                put_vec(c, 0x004f_f160, [0, 0, 1.0f32.to_bits(), 0]);
+                for i in 0..0x2_0000 / 4 {
+                    let v = if i % 4 == 3 { 0 } else { r.f32(1.0) };
+                    c.bus.write32(DATA + 4 * i, v);
+                }
+                let big = if seed % 7 == 0 { 30.0 } else { 600.0 };
+                put_vec(
+                    c,
+                    AS_ME + AS_EYE_TARGET,
+                    [r.f32(big), r.f32(big), r.f32(big), 0],
+                );
+                put_vec(c, AS_ME + AS_EYE, [r.f32(big), r.f32(big), r.f32(big), 0]);
+                for off in [0x110u32, 0x120, 0x130, 0x140, 0x150, 0x160, 0x170, 0x180] {
+                    put_vec(
+                        c,
+                        AS_ME + off,
+                        [r.f32(300.0), r.f32(300.0), r.f32(300.0), 0],
+                    );
+                }
+                put_vec(
+                    c,
+                    AS_INFO + 0x10,
+                    [r.f32(600.0), r.f32(600.0), r.f32(600.0), 0],
+                );
+                put_vec(c, AS_INFO + 0x20, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                let airborne = seed % 4 != 0;
+                let swinging = seed % 3 == 1;
+                c.bus.write32(AS_ME + AS_AIRBORNE, airborne as u32);
+                c.bus.write32(AS_ME + AS_SWINGING, swinging as u32);
+                c.bus.write32(AS_ME + AS_SWING_CLOCK, r.f32(1.0));
+                c.bus.write32(
+                    AS_ME + AS_DURATION,
+                    (2.3 + (r.next_u32() % 100) as f32 / 50.0).to_bits(),
+                );
+                let time = (r.next_u32() % 400) as f32 / 100.0;
+                c.bus.write32(AS_ME + AS_TIME, time.to_bits());
+                c.bus.write32(AS_ME + 0x238, r.f32(1.5));
+                let blend = |r: &mut Rng, zero: bool| {
+                    if zero {
+                        0
+                    } else {
+                        ((r.next_u32() % 100) as f32 / 100.0).to_bits()
+                    }
+                };
+                let z = seed % 6 == 2;
+                let v = blend(&mut r, z);
+                c.bus.write32(AS_ME + AS_BLEND_OUT, v);
+                let v = blend(&mut r, seed % 5 == 3);
+                c.bus.write32(AS_ME + AS_BLEND_A, v);
+                let v = blend(&mut r, seed % 7 == 4);
+                c.bus.write32(AS_ME + AS_BLEND_B, v);
+                if swinging {
+                    // A live spline, as the start of the swing leaves it.
+                    let spl = AS_ME + AS_SPLINE;
+                    setup_call(c, SPLINE_INIT, ee::s10::f_0031d738, spl, 9, 0.0, 0.0);
+                    let mut y = 0.0f32;
+                    for i in 0..9 {
+                        y += (r.next_u32() % 100) as f32 / 800.0;
+                        setup_call(
+                            c,
+                            SPLINE_ADD,
+                            ee::s10::f_0031d7e0,
+                            spl,
+                            0,
+                            i as f32 / 8.0,
+                            y,
+                        );
+                    }
+                }
+                // Arguments: (this, info, blend-out time).
+                c.g[A0][0] = sx(AS_ME);
+                c.g[A1][0] = sx(AS_INFO);
+                c.f[12] = ((r.next_u32() % 100) as f32 / 100.0 + 0.1).to_bits();
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.pc = 0x0016_4878;
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Rider_FindRail (0x108a48).
+
+    /// The rider, its state object, path, nodes, overlap list with one plain
+    /// rail object (bounds, matrix, flags), animation controller and
+    /// sequence list; the output pair of vectors.
+    pub(crate) const FR_ME: u32 = DATA + 0x1000;
+
+    pub(crate) const FR_STATE: u32 = DATA + 0x2000;
+
+    pub(crate) const FR_PATH: u32 = DATA + 0x3000;
+
+    pub(crate) const FR_NODES: u32 = DATA + 0x3100;
+
+    pub(crate) const FR_LIST: u32 = DATA + 0x4000;
+
+    pub(crate) const FR_RAIL: u32 = DATA + 0x5000;
+
+    pub(crate) const FR_RAIL_FLAGS: u32 = DATA + 0x5200;
+
+    pub(crate) const FR_ANIM: u32 = DATA + 0x6000;
+
+    pub(crate) const FR_SEQS: u32 = DATA + 0x6100;
+
+    pub(crate) const FR_SEQ: u32 = DATA + 0x6200;
+
+    pub(crate) const FR_OUT: u32 = DATA + 0x7000;
+
+    /// `AnimTable` (0x446990, 0x1c bytes per animation): the test writes the
+    /// kind of animation 7.
+    pub(crate) const ANIM_TABLE: u32 = 0x0044_6990;
+
+    /// Main state 0/1/other; one rail in reach or none (or masked out); the
+    /// rider still or moving (rail ahead / behind); layer-2 animation none,
+    /// grab (0x12), trick (0x13/0x14) or other, with every combination of
+    /// sequence flags 0 and 2. All callees are real (bounded on this data).
+    #[test]
+    fn rider_find_rail_matches() {
+        use crate::difftest::fakes::machine;
+        crate::difftest::check(
+            ee::s00::f_00108a48__generated,
+            rider_find_rail,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x0010_8a48, 0);
+                let me = FR_ME;
+                c.bus.write32(me + 0x77c, FR_STATE);
+                c.bus
+                    .write32(FR_STATE + 0xde0, [0, 1, 0, 1, 2][(seed % 5) as usize]);
+                // Path node + probe offset.
+                c.bus.write32(me + rail_rider::PATH, FR_PATH);
+                c.bus.write32(FR_PATH + 0x2c, FR_NODES);
+                let node = r.next_u32() % 4;
+                c.bus.write32(me + rail_rider::NODE, node);
+                for i in 0..4 {
+                    put_vec(
+                        c,
+                        FR_NODES + 0x20 * i,
+                        [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0],
+                    );
+                }
+                put_vec(
+                    c,
+                    me + rail_rider::PROBE_OFFSET,
+                    [r.f32(5.0), r.f32(5.0), r.f32(5.0), 0],
+                );
+                let vel = if seed % 5 == 3 {
+                    [0, 0, 0, 0]
+                } else {
+                    [r.f32(50.0), r.f32(50.0), r.f32(50.0), 0]
+                };
+                put_vec(c, me + rail_rider::VELOCITY, vel);
+                c.bus.write32(me + 0x25c, r.f32(10.0));
+                c.bus.write32(me + 0x330, r.next_u32() & 1);
+                // The overlap list: none, or one plain rail (type 1) whose flags
+                // pass the mask (1) or not.
+                c.bus.write32(me + rail_rider::OVERLAP, FR_LIST);
+                c.bus.write32(FR_LIST + 0x210, (seed % 7 != 0) as u32);
+                c.bus.write32(FR_LIST + 0x214, FR_RAIL);
+                c.bus.write32(FR_RAIL + 8, 1);
+                c.bus.write32(FR_RAIL + 0x68, FR_RAIL_FLAGS);
+                c.bus.write32(FR_RAIL_FLAGS + 0x1c, (seed % 11 != 5) as u32);
+                c.bus.write32(FR_RAIL_FLAGS + 0x28, r.next_u32());
+                for off in [0x6c, 0x70, 0x74] {
+                    c.bus.write32(FR_RAIL + off, (-1.0e4f32).to_bits());
+                }
+                for off in [0x78, 0x7c, 0x80] {
+                    c.bus.write32(FR_RAIL + off, 1.0e4f32.to_bits());
+                }
+                for i in 0..4 {
+                    let w = if i == 3 { 1.0f32.to_bits() } else { 0 };
+                    put_vec(
+                        c,
+                        FR_RAIL + 0x10 + 0x10 * i,
+                        [r.f32(100.0), r.f32(100.0), r.f32(100.0), w],
+                    );
+                }
+                // Layer-2 animation (0x1b6 = none) and its sequence flags.
+                c.bus.write32(me + rail_rider::ANIM, FR_ANIM);
+                c.bus
+                    .write32(FR_ANIM + 8, if seed % 6 == 0 { 0x1b6 } else { 7 });
+                let kind = [0x12u32, 0x13, 0x14, 0x12, 5][(r.next_u32() % 5) as usize];
+                c.bus.write32(ANIM_TABLE + 7 * 0x1c, kind);
+                c.bus.write32(FR_ANIM + 0x50, FR_SEQS);
+                c.bus.write32(FR_SEQS + 0x10 + 4, FR_SEQ);
+                c.bus.write64(FR_SEQ + 0xb0, (r.next_u32() & 0b101) as u64);
+                put_vec(c, FR_OUT, [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0]);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(FR_OUT);
+                c.pc = 0x0010_8a48;
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // HUD_AlignX (0x21e750).
+
+    /// Alignments -2..2, all four flag combinations, random and edge floats.
+    #[test]
+    fn hud_align_x_matches() {
+        use crate::difftest::{scramble, Rng};
+        crate::difftest::check(
+            ee::s05::f_0021e750__generated,
+            hud_align_x,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x21e7_50 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.g[A1][0] = sx((seed % 5) as i32 as u32).wrapping_sub(2);
+                c.g[A2][0] = ((seed / 5) % 4) as u64 | (r.next_u32() as u64 & !3) << 8;
+                for f in [12, 13, 14] {
+                    c.f[f] = if seed % 6 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(400.0)
+                    };
+                }
+                c.pc = 0x0021_e750;
             },
         );
     }

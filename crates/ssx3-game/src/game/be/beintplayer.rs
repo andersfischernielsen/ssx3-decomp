@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -312,6 +313,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_c678,
         be_char_int_destroy_instance,
         "BECharInt_DestroyInstance",
+    ),
+    (
+        0x0014_77e8,
+        be_new_player_int_is_sharing_char_record,
+        "BENewPlayerInt_IsSharingCharRecord",
     ),
 ];
 
@@ -3048,6 +3054,45 @@ pub fn be_new_player_int_get_peak_flag_b(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// BENewPlayerInt_IsSharingCharRecord (0x1477e8, beintnewrace.cpp).
+
+/// `BENewPlayerInt_GetSlot(player)` (same shard).
+pub(crate) const BE_NEW_PLAYER_INT_GET_SLOT: Callee = Callee {
+    addr: 0x0014_7798,
+    f: ee::s01::BENewPlayerInt_GetSlot,
+};
+
+/// Per-slot character records (0x1c bytes each); flags word at +0x10, bit 2
+/// "uses slot 0's character record".
+pub(crate) const CHAR_RECORDS: u32 = 0x0053_4fe0;
+
+pub(crate) const CHAR_RECORD_SIZE: u32 = 0x1c;
+
+pub(crate) const CHAR_RECORD_FLAGS: u32 = 0x10;
+
+/// `bool BENewPlayerInt_IsSharingCharRecord(int player)` (0x1477e8): whether
+/// the character record of the player's race slot is shared with slot 0
+/// (flags bit 2). 15 cycles plus the slot lookup; LO/HI keep the record
+/// offset (`mult`), v1 the table base.
+pub fn be_new_player_int_is_sharing_char_record(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        BE_NEW_PLAYER_INT_GET_SLOT.call(c, 0x0014_77f8)?;
+        c.g[A0][0] = CHAR_RECORD_SIZE as u64;
+        c.g[V1][0] = sx(CHAR_RECORDS);
+        c.mult(0, V0, V0, A0); // v0 = slot * 0x1c
+        frame.restore_ra(c, 0);
+        let record = (c.g[V0][0] as u32).wrapping_add(CHAR_RECORDS);
+        let flags = c.lw(record.wrapping_add(CHAR_RECORD_FLAGS)) as u32;
+        c.g[V0][0] = ((flags >> 2) & 1) as u64;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4211,6 +4256,39 @@ pub(crate) mod tests {
                         c.bus.write32(p + 4, r.next_u32());
                     }
                 }
+            },
+        );
+    }
+    use super::*;
+
+    use crate::difftest::elf_image;
+
+    // ------------------------------------------------------------------
+    // BENewPlayerInt_IsSharingCharRecord (0x1477e8).
+
+    /// Players 0-3 (slot table 0x5305b0), random slots 0-3 and record flags.
+    #[test]
+    fn be_new_player_int_is_sharing_char_record_matches() {
+        use crate::difftest::{scramble, Rng};
+        crate::difftest::check_lohi(
+            ee::s01::f_001477e8__generated,
+            be_new_player_int_is_sharing_char_record,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x1477_e8 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                let player = seed % 4;
+                for p in 0..4 {
+                    c.bus.write32(0x0053_05b0 + 4 * p, r.next_u32() % 4);
+                }
+                for slot in 0..4 {
+                    c.bus.write32(
+                        CHAR_RECORDS + CHAR_RECORD_SIZE * slot + CHAR_RECORD_FLAGS,
+                        r.next_u32(),
+                    );
+                }
+                c.g[A0][0] = player as u64;
+                c.pc = 0x0014_77e8;
             },
         );
     }
