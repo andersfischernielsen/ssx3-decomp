@@ -5374,6 +5374,41 @@
 0x001477e8    BENewPlayerInt_IsSharingCharRecord
 0x0021e750    HUD_AlignX
 0x00134dd0    RiderSpinSub_ApplyPoseRotation
+# Phase 2 wave: oc215, oc216, oc217, oc218
+0x003252f8    InputVM_ReadPadChannel
+0x003279d0    AIFwdDiffCache_Get
+0x00121aa0    Rider_UpdateOrientation
+0x002f5400    WorldLightMan_GetInstanceLighting
+0x002429b0    OcclusionMan_BuildOccluderPlanes
+0x001139a0    AirPredictor_Step
+0x001352a8    RiderSpinSub_UpdateTrick
+0x0013c948    RiderGroundState_ComputeBoostAccel
+0x002bd378    tWPIGD_Sun_Blend
+0x003ba888    SND_CentsToPitch
+0x003c6380    SND_UMul32x32
+0x00120f20    Rider_BeginFrame
+0x0012e9b8    RiderPrewindSub_HandleInput
+0x0010def0    ComputerActorRider_ComputeRubberBand
+0x002ac7f0    BankMonitorInstance_UpdateRange
+0x001291e0    AI_Render
+0x0020eda0    cOVStateHUD1P_DrawProgressMeter
+0x002d5048    cAngerFX_Render
+0x00334888    Collide_VolumeObject
+0x003ccf90    SND_EaxaDecode
+0x00114130    Rider_HandleBoostInput
+0x001210b0    Rider_UpdateImpacts
+0x002bd5a8    tWPIGD_Lighting_Blend
+0x0028aaf8    SndLoadQueue_Update
+0x00329590    Collide_SphereVsBoxEdges
+0x003b7c40    SNDSTRM_GetRequestStatus
+0x00131620    RiderCruiseSub_HandleInput
+0x00376c58    PS2GraphicsMan_SetPerspective
+0x0013ccf0    RiderGroundState_ComputeDrag
+0x00411cd8    _fpadd_parts_d
+0x002bd1b8    tWPIGD_ScreenTint_Blend
+0x001668b8    ChaseCameraAlgorithm_RotateByPitch
+0x002f3e28    cSplashManager_Render
+0x002f1510    RiderBase_RenderAttackFX
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
