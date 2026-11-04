@@ -83,6 +83,14 @@ pub mod audio_system;
 pub mod graphics;
 #[cfg(feature = "streaming")]
 pub mod native_files;
+#[cfg(feature = "oc201")]
+pub mod oc201;
+#[cfg(feature = "oc202")]
+pub mod oc202;
+#[cfg(feature = "oc203")]
+pub mod oc203;
+#[cfg(feature = "oc204")]
+pub mod oc204;
 #[cfg(feature = "rider_logic")]
 pub mod rider_logic;
 #[cfg(feature = "snd_lib")]

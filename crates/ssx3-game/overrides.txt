@@ -5342,6 +5342,20 @@
 0x00232cf8    StartScreen_TryExit
 0x00232d18    StartScreen_Update
 0x00316ef8    App_SetNextState
+# Phase 2 wave: oc201, oc202, oc203, oc204
+0x00133308    RiderSpinSub_HandleInput
+0x002e4f50    SnowBox_Update
+0x00332db8    OverlapList_GatherAll
+0x001ea930    cOVStateHUD1P_Update
+0x002edb20    WorldPainter_SampleSurfaceColours
+0x002df920    cDynamicSprayFX_Update
+0x002f6518    RiderBase_UpdateCheatCode
+0x00411c38    __unpack_d
+0x003cd878    SND_UtkDecodeFrame
+0x0021d1a0    HUD_DrawMeterBar
+0x002f1150    RiderBase_UpdateAttackFX
+0x002bd698    tWPIGD_Weather_Blend
+0x00101a28    FocusMan_CollectNodeObjects
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
