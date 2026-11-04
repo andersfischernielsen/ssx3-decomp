@@ -36,6 +36,7 @@ pub use shadow::{set_debug_knob, DEBUG_KNOBS};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use ssx3_ps2::frame_sink::Depth;
 use ssx3_render::chain::Mem;
 use ssx3_render::frame::{self, Built, Material, Owner};
 use ssx3_render::vif::Event;
@@ -173,6 +174,8 @@ pub struct Inner {
         Arc<std::sync::atomic::AtomicBool>,
         u64,
     )>,
+    /// This frame's number if it has no depth (handed over as none).
+    pending_none: Option<u64>,
     /// Frames received by `render_built` (the next frame's number).
     frames_in: u64,
     /// ZMAX + 1 of the frame's Z buffer (depth is stored as Z / it).
@@ -215,13 +218,43 @@ pub struct Shared {
     /// Frames sent and not yet rendered.
     pending: Mutex<usize>,
     idle: std::sync::Condvar,
-    /// The latest depth readback and the number of the frame it is from
-    /// (frames counted as `render_built` receives them).
-    depth: Mutex<Option<(u64, ssx3_ps2::frame_sink::Depth)>>,
+    /// Each frame's depth readback (none without) and its number (frames
+    /// counted as `render_built` receives them), oldest first, until taken.
+    depth: Mutex<std::collections::VecDeque<(u64, Option<Depth>)>>,
     depth_ready: std::sync::Condvar,
     /// The latest frame's images (in-between ones first) and when they
     /// were ready.
     present: Mutex<Option<(Vec<wgpu::Texture>, web_time::Instant)>>,
+}
+
+impl Shared {
+    /// Hand over frame `frame`'s depth (frames in order, each once).
+    fn post_depth(&self, frame: u64, d: Option<Depth>) {
+        let mut q = self.depth.lock().unwrap();
+        if q.len() == 4 {
+            let old = q.pop_front().unwrap().0;
+            eprintln!("[gfx] depth of frame {old} dropped: not taken");
+        }
+        q.push_back((frame, d));
+        self.depth_ready.notify_all();
+    }
+
+    /// Frame `frame`'s depth, waiting for it to be handed over; none after
+    /// `wait` (a hung render thread) or if it is gone.
+    fn take_depth(&self, frame: u64, wait: std::time::Duration) -> Option<Depth> {
+        let q = self.depth.lock().unwrap();
+        let (mut q, _) = (self.depth_ready)
+            .wait_timeout_while(q, wait, |q| {
+                q.retain(|d| d.0 >= frame);
+                q.is_empty()
+            })
+            .unwrap();
+        if q.front().is_some_and(|d| d.0 == frame) {
+            return q.pop_front().unwrap().1;
+        }
+        eprintln!("[gfx] no depth for frame {frame}: the light queries go without");
+        None
+    }
 }
 
 fn program(m: Material) -> Option<u64> {
@@ -330,6 +363,7 @@ impl Renderer {
                 want_depth: false,
                 depth_query,
                 pending_depth: None,
+                pending_none: None,
                 frames_in: 0,
                 zscale: 16777216.0,
                 timing: (0, [0.0; 4]),
@@ -503,36 +537,19 @@ impl ssx3_ps2::frame_sink::FrameSink for Renderer {
     }
 
     fn depth(&mut self) -> Option<ssx3_ps2::frame_sink::Depth> {
-        self.1.depth.lock().unwrap().take().map(|d| d.1)
+        let mut q = self.1.depth.lock().unwrap();
+        q.drain(..).filter_map(|d| d.1).last()
     }
 
     /// Frame `frame`'s depth, waiting for the render thread to read it back
     /// (it does while rendering the frame after it): the light queries then
     /// see the same depth whatever the threads' timing. Without a render
-    /// thread (the browser), or after 100 ms, the latest depth instead.
+    /// thread (the browser), the latest depth instead; after 10 s, none.
     fn depth_of(&mut self, frame: u64) -> Option<ssx3_ps2::frame_sink::Depth> {
         if self.1.tx.lock().unwrap().is_none() {
             return self.depth();
         }
-        let deadline = web_time::Instant::now() + std::time::Duration::from_millis(100);
-        let mut g = self.1.depth.lock().unwrap();
-        loop {
-            match &*g {
-                Some((f, _)) if *f == frame => return g.take().map(|d| d.1),
-                Some((f, _)) if *f > frame => return g.take().map(|d| d.1),
-                _ => {}
-            }
-            let now = web_time::Instant::now();
-            if now >= deadline {
-                return g.take().map(|d| d.1);
-            }
-            g = self
-                .1
-                .depth_ready
-                .wait_timeout(g, deadline - now)
-                .unwrap()
-                .0;
-        }
+        self.1.take_depth(frame, std::time::Duration::from_secs(10))
     }
 }
 
@@ -1002,6 +1019,8 @@ impl Inner {
         self.stats.dropped += self.gs.dropped - p0.1;
         self.stats.unknown_tex += self.gs.unknown_tex - p0.2;
         if self.gs.verts.is_empty() && self.gs.gpu.calls.is_empty() {
+            finish_depth(self);
+            self.pending_none = self.want_depth.then(|| self.frames_in - 1);
             return;
         }
         // Vertex buffer.
@@ -1738,6 +1757,8 @@ impl Inner {
             }
         }
         if items.is_empty() {
+            finish_depth(self);
+            self.pending_none = self.want_depth.then(|| self.frames_in - 1);
             return;
         }
         let t_prepared = web_time::Instant::now();
@@ -2443,25 +2464,27 @@ impl Inner {
         let sub_idx = self.queue.submit(std::iter::once(enc.finish()));
         let t_sub = web_time::Instant::now();
         self.timing.1[2] += (t_sub - t_prepared).as_secs_f64() * 1e3;
-        if let Some(buf) = depth_buf {
-            // The previous frame's depth (its readback has had a frame to
-            // complete): the light queries see depth one frame late, and
-            // the CPU does not wait for this frame's GPU work.
+        // Hand over the previous frame's depth (none if it had none; a
+        // frame without depth still does, and its own none next frame).
+        fn finish_depth(this: &mut Inner) {
+            if let Some(f) = this.pending_none.take() {
+                this.shared.post_depth(f, None);
+            }
             if let Some((prev, prev_idx, zs, lw, lh, mapped, prev_frame)) =
-                self.pending_depth.take()
+                this.pending_depth.take()
             {
                 let slice = prev.slice(..);
                 let t_wait = web_time::Instant::now();
                 if cfg!(target_arch = "wasm32") {
-                    let _ = self.dev.poll(wgpu::PollType::Poll);
+                    let _ = this.dev.poll(wgpu::PollType::Poll);
                 } else {
-                    let _ = self.dev.poll(wgpu::PollType::Wait {
+                    let _ = this.dev.poll(wgpu::PollType::Wait {
                         submission_index: Some(prev_idx),
                         timeout: None,
                     });
                 }
                 let t_copy = web_time::Instant::now();
-                self.depth_parts[0] += (t_copy - t_wait).as_secs_f64() * 1e3;
+                this.depth_parts[0] += (t_copy - t_wait).as_secs_f64() * 1e3;
                 // (Not mapped yet in the browser: the queries keep the
                 // depth before.)
                 if let Some(v) = mapped
@@ -2478,18 +2501,25 @@ impl Inner {
                         let d = f32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
                         (d as f64 * zs).round().min(zs - 1.0) as u32
                     };
-                    *self.shared.depth.lock().unwrap() = Some((
+                    this.shared.post_depth(
                         prev_frame,
-                        ssx3_ps2::frame_sink::Depth {
+                        Some(Depth {
                             w: lw,
                             h: lh,
                             z: Box::new(z),
-                        },
-                    ));
-                    self.shared.depth_ready.notify_all();
+                        }),
+                    );
+                } else {
+                    this.shared.post_depth(prev_frame, None);
                 }
-                self.depth_parts[1] += t_copy.elapsed().as_secs_f64() * 1e3;
+                this.depth_parts[1] += t_copy.elapsed().as_secs_f64() * 1e3;
             }
+        }
+        if let Some(buf) = depth_buf {
+            // The previous frame's depth (its readback has had a frame to
+            // complete): the light queries see depth one frame late, and
+            // the CPU does not wait for this frame's GPU work.
+            finish_depth(self);
             let mapped = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let m = mapped.clone();
             buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
@@ -3261,4 +3291,30 @@ fn grow_buffer(
     });
     *slot = Some(b.clone());
     b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn depth_by_frame() {
+        // The game preempted after publishing 7: 6 comes before it takes 5.
+        let (s, z) = (Shared::default(), Box::new(|_, _| 0));
+        s.post_depth(5, Some(Depth { w: 5, h: 1, z }));
+        s.post_depth(6, None);
+        assert_eq!(s.take_depth(5, Duration::ZERO).map(|d| d.w), Some(5));
+    }
+
+    #[test]
+    fn depth_none() {
+        // No depth: none at once; a hung renderer: none after the wait.
+        let s = Shared::default();
+        s.post_depth(5, None);
+        let t = web_time::Instant::now();
+        assert!(s.take_depth(5, Duration::from_secs(10)).is_none());
+        assert!(t.elapsed() < Duration::from_secs(1));
+        assert!(s.take_depth(6, Duration::from_millis(10)).is_none());
+    }
 }
