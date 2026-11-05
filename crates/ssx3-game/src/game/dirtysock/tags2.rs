@@ -613,6 +613,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_86f0, net_event_fc_dtor, "NetEventFC_dtor"),
     (0x0026_8720, net_event_fc_clone, "NetEventFC_Clone"),
     (0x0026_8790, net_event10d_dtor, "NetEvent10D_dtor"),
+    (0x0026_68e8, usb_keyboard_update, "cUsbKeyboard_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5722,6 +5723,7 @@ macro_rules! event_clone {
         }
     };
 }
+use crate::abi::ret;
 pub(crate) use event_clone;
 
 event_clone!(
@@ -11256,6 +11258,307 @@ pub(crate) fn post_node(c: &mut Cpu, ret: u32) -> crate::call::Flow {
     Ok(())
 }
 
+pub(crate) mod usbkb {
+
+    /// `UsbKb_Poll()`: advance the library's async state machine.
+    pub const POLL: u32 = 0x003f_63f0;
+
+    /// `UsbKb_IsConnected(port) -> bool`.
+    pub const IS_CONNECTED: u32 = 0x003f_6520;
+
+    /// `UsbKb_GetMaxPorts() -> int`.
+    pub const MAX_PORTS: u32 = 0x003f_6348;
+
+    /// `UsbKb_GetData(port) -> KbData*` (null when nothing new).
+    pub const GET_DATA: u32 = 0x003f_64e0;
+
+    /// `UsbKb_GetKey(data, 0, i) -> u8[2]` (character, raw code).
+    pub const GET_KEY: u32 = 0x003f_68f0;
+
+    /// `UsbKb_IsKeyDown(data, 0, 0, key) -> bool`.
+    pub const IS_KEY_DOWN: u32 = 0x003f_6838;
+}
+
+pub(crate) mod usbk {
+
+    pub const SLOT_SIZE: u32 = 0x8c;
+
+    pub const SLOT_COUNT: u32 = 0x0;
+
+    pub const SLOT_START: u32 = 0x4;
+
+    pub const SLOT_RING: u32 = 0x8;
+
+    /// Flags: bit 0 connected, bits 1..3 the data's "on" bit, bit 4 key
+    /// 0x10 held.
+    pub const SLOT_FLAGS: u32 = 0x88;
+
+    pub const ENABLED: u32 = 0x460;
+
+    /// `KbData`: the "on" word (+0) and the key count (+8).
+    pub const DATA_COUNT: u32 = 0x8;
+}
+
+/// `void cUsbKeyboard_Update(cUsbKeyboard *this)` (0x2668e8): when enabled,
+/// poll the USB keyboard library, refresh each port's connected bit (a
+/// disconnected port's flags are cleared), then for each connected port with
+/// new data append its non-empty keys to the port's 64-entry ring (dropping
+/// the oldest when full), and record the held state of key 0x10 and the
+/// data's "on" bit in the port flags.
+pub fn usb_keyboard_update(c: &mut Cpu) {
+    use usbk::*;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S0, 0xb0);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S2, 0x90);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S5, 0x60);
+        frame.save(c, S6, 0x50);
+        frame.save(c, S7, 0x40);
+        frame.save(c, FP, 0x30);
+        frame.save_ra(c, 0x20);
+        let this = r32(c, S3);
+        c.g[V0][0] = Addr(this.wrapping_add(ENABLED)).lw(c);
+        let enabled = c.g[V0][0] != 0;
+        frame.restore(c, S0, 0xb0);
+        if enabled {
+            usb_keyboard_poll(c, frame, this)?;
+            c.cycles += 1;
+            frame.restore(c, S0, 0xb0);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S6, 0x50);
+        frame.restore(c, S7, 0x40);
+        frame.restore(c, FP, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The enabled body of [`usb_keyboard_update`].
+pub(crate) fn usb_keyboard_poll(c: &mut Cpu, frame: Frame, this: u32) -> crate::call::Flow {
+    use usbk::*;
+    c.cycles += 5;
+    c.g[S1][0] = 0;
+    call_ptr(c, usbkb::POLL, 0x0026_692c)?;
+
+    // The connected bit of each of the 8 ports (s1 = port, s0 = slot).
+    c.g[S2][0] = 0xffff_ffff_ffff_fffe;
+    c.g[S0][0] = c.g[S3][0];
+    loop {
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, usbkb::IS_CONNECTED, 0x0026_6940)?;
+        let flags = Addr(r32(c, S0).wrapping_add(SLOT_FLAGS));
+        c.g[V1][0] = flags.lw(c);
+        c.g[V0][0] = ((c.g[V0][0] ^ 1) < 1) as u64;
+        c.g[V1][0] = (c.g[V1][0] & c.g[S2][0]) | c.g[V0][0];
+        c.g[V0][0] = c.g[V1][0] & 1;
+        flags.sw(c, c.g[V1][0]);
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+            flags.sw(c, 0);
+        }
+        c.cycles += 4;
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+        c.g[V0][0] = ((c.g[S1][0] as i64) < 8) as u64;
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(SLOT_SIZE));
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0026_6938);
+        }
+    }
+
+    // Each port's new data (s0 = port, s7 = slot size, n at sp+0).
+    c.cycles += 4;
+    c.g[S0][0] = 0;
+    call_ptr(c, usbkb::MAX_PORTS, 0x0026_697c)?;
+    let none = (c.g[V0][0] as i64) <= 0;
+    Addr(frame.at(c, 0)).sw(c, c.g[V0][0]);
+    if none {
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[S7][0] = SLOT_SIZE as u64;
+    c.mult(0, V0, S0, S7);
+    loop {
+        c.cycles += 7;
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(this));
+        c.g[V0][0] = sx(r32(c, S0).wrapping_add(1));
+        let next = Addr(frame.at(c, 4));
+        next.sw(c, c.g[V0][0]);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(SLOT_FLAGS)).lw(c) & 1;
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, usbkb::GET_DATA, 0x0026_69b4)?;
+            c.g[S1][0] = c.g[V0][0];
+            if c.g[S1][0] != 0 {
+                usb_keyboard_read_port(c, frame, this)?;
+            }
+        }
+        c.g[S0][0] = next.lw(c);
+        c.cycles += 4;
+        c.g[V1][0] = Addr(frame.at(c, 0)).lw(c);
+        let more = (c.g[S0][0] as i64) < (c.g[V1][0] as i64);
+        c.g[V0][0] = more as u64;
+        c.mult(0, V0, S0, S7);
+        if !more {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0026_6990);
+        }
+    }
+}
+
+/// One port with data (`s1`, port `s0`): append its keys to the ring and
+/// update the port flags.
+pub(crate) fn usb_keyboard_read_port(c: &mut Cpu, frame: Frame, this: u32) -> crate::call::Flow {
+    use usbk::*;
+    let data = r32(c, S1);
+    c.cycles += 3;
+    c.g[V0][0] = Addr(data.wrapping_add(DATA_COUNT)).lw(c);
+    let empty = (c.g[V0][0] as i64) <= 0;
+    c.g[S2][0] = 0;
+    if !empty {
+        c.cycles += 7;
+        c.g[T3][0] = SLOT_SIZE as u64;
+        c.g[FP][0] = u64::MAX;
+        c.g[S6][0] = sx(this.wrapping_add(SLOT_START));
+        c.g[S5][0] = sx(this.wrapping_add(SLOT_RING));
+        c.g[S4][0] = sx(this.wrapping_add(SLOT_RING + 1));
+        let spill = frame.at(c, 0x10);
+        c.sq(T3, spill);
+        loop {
+            c.cycles += 8;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = c.g[S2][0];
+            call_ptr(c, usbkb::GET_KEY, 0x0026_69f8)?;
+            c.g[T1][0] = c.g[V0][0];
+            let key = r32(c, T1);
+            c.g[V0][0] = Addr(key).lbu(c);
+            let mut store = c.g[V0][0] != 0;
+            let spill = frame.at(c, 0x10);
+            c.lq(T3, spill);
+            if !store {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(key.wrapping_add(1)).lbu(c);
+                store = c.g[V0][0] != 0;
+                if !store {
+                    c.g[V0][0] = Addr(data.wrapping_add(DATA_COUNT)).lw(c);
+                }
+            }
+            if store {
+                // idx = count % 64; a full ring advances start.
+                c.cycles += 14;
+                c.mult(0, T0, S0, T3);
+                let slot = r32(c, T0);
+                c.g[T2][0] = sx(this.wrapping_add(slot));
+                c.g[A3][0] = sx(r32(c, S6).wrapping_add(slot));
+                let count_at = Addr(r32(c, T2));
+                let start_at = Addr(r32(c, A3));
+                c.g[A0][0] = count_at.lw(c);
+                c.g[A2][0] = start_at.lw(c);
+                c.g[V1][0] = ((c.g[FP][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x3f));
+                if c.g[V1][0] != 0 {
+                    c.g[V0][0] = c.g[A0][0];
+                }
+                c.g[A1][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+                c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 6) as u32);
+                c.g[A1][0] = ((c.g[A1][0] as i64) < 64) as u64;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 6);
+                let room = c.g[A1][0] != 0;
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                if !room {
+                    c.cycles += 2;
+                    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                    start_at.sw(c, c.g[V0][0]);
+                }
+                c.cycles += 12;
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+                c.g[A1][0] = Addr(key).lbu(c);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(slot));
+                c.g[V0][0] = sx(r32(c, S5).wrapping_add(c.g[V1][0] as u32));
+                Addr(r32(c, V0)).sb(c, c.g[A1][0]);
+                c.g[V1][0] = sx(r32(c, S4).wrapping_add(c.g[V1][0] as u32));
+                c.g[A0][0] = Addr(key.wrapping_add(1)).lbu(c);
+                Addr(r32(c, V1)).sb(c, c.g[A0][0]);
+                c.g[V0][0] = sx((count_at.lw(c) as u32).wrapping_add(1));
+                count_at.sw(c, c.g[V0][0]);
+                c.g[V0][0] = Addr(data.wrapping_add(DATA_COUNT)).lw(c);
+            }
+            c.cycles += 4;
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+            c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            let spill = frame.at(c, 0x10);
+            c.sq(T3, spill);
+            if event_due(c) {
+                deliver_event_here(c, 0x0026_69e8);
+            }
+        }
+    }
+
+    // Bit 4: key 0x10 held.
+    c.cycles += 7;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 0;
+    c.g[A3][0] = 0x10;
+    call_ptr(c, usbkb::IS_KEY_DOWN, 0x0026_6aa8)?;
+    let held = c.g[V0][0] != 0;
+    c.mult(0, V0, S0, S7);
+    c.cycles += 5;
+    if held {
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(this));
+        let flags = Addr(r32(c, V1).wrapping_add(SLOT_FLAGS));
+        c.g[V0][0] = flags.lw(c) | 0x10;
+        flags.sw(c, c.g[V0][0]);
+    } else {
+        c.g[V1][0] = 0xffff_ffff_ffff_ffef;
+        c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(this));
+        let flags = Addr(r32(c, A0).wrapping_add(SLOT_FLAGS));
+        c.g[V0][0] = flags.lw(c) & c.g[V1][0];
+        flags.sw(c, c.g[V0][0]);
+    }
+
+    // Bits 2, 3 and 1: the data's "on" bit.
+    c.cycles += 25;
+    c.mult(0, V0, S0, S7);
+    c.g[A1][0] = 0xffff_ffff_ffff_fffb;
+    c.g[A2][0] = 0xffff_ffff_ffff_fff7;
+    c.g[A3][0] = 0xffff_ffff_ffff_fffd;
+    c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(this));
+    let flags = Addr(r32(c, A0).wrapping_add(SLOT_FLAGS));
+    for (mask, shift) in [(A1, 2u32), (A2, 3), (A3, 1)] {
+        c.g[V0][0] = Addr(data).lw(c);
+        if shift == 2 {
+            c.g[V1][0] = flags.lw(c);
+        }
+        c.g[V0][0] = sx(((c.g[V0][0] & 1) as u32) << shift);
+        c.g[V1][0] = (c.g[V1][0] & c.g[mask][0]) | c.g[V0][0];
+        flags.sw(c, c.g[V1][0]);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15214,6 +15517,67 @@ pub(crate) mod tests {
                 c.bus
                     .write32(msg + 0x4c, if seed % 4 == 0 { 0 } else { r.next_u32() | 1 });
                 c.bus.write32(msg + 0xc, r.next_u32() & 0xffff);
+            },
+        );
+    }
+    use super::*;
+
+    /// cUsbKeyboard_Update: disabled or enabled; ports connected or not;
+    /// 0..8 ports (and a non-positive count); data present or not; 0..5
+    /// keys each, empty or not; rings not full / full; ring counts negative
+    /// too (the signed `% 64`). The libusbkb callees run for real on the
+    /// game's tables (ELF image) with the library state at 0x525f80 (the
+    /// poll state machine idle).
+    #[test]
+    fn usb_keyboard_update_matches() {
+        check(
+            ee::s07::f_002668e8__generated,
+            usb_keyboard_update,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2668e8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0026_68e8;
+                let this = DATA;
+                let lib = 0x0052_5f80u32;
+                let conns = DATA + 0x2000;
+                c.g[A0][0] = sx(this);
+                fill(c, &mut r, this, 0x460 / 4);
+                for j in 0..8 {
+                    let slot = this + j * usbk::SLOT_SIZE;
+                    let count = (r.next_u32() % 300) as i32 - 80;
+                    let start = count - (r.next_u32() % 70) as i32;
+                    c.bus.write32(slot + usbk::SLOT_COUNT, count as u32);
+                    c.bus.write32(slot + usbk::SLOT_START, start as u32);
+                }
+                c.bus.write32(this + usbk::ENABLED, (seed % 8 != 0) as u32);
+                c.bus.write32(lib + 0x9c, 4);
+                for i in 0..8 {
+                    c.bus.write8(lib + 0x10 + i, (r.next_u32() % 3 != 0) as u8);
+                }
+                let ports = match seed % 7 {
+                    0 => 0,
+                    1 => (-(r.next_u32() as i32 % 3)) as u32,
+                    _ => 1 + r.next_u32() % 8,
+                };
+                c.bus.write32(0x0052_6010, ports);
+                c.bus.write32(lib + 0xa8, conns);
+                for j in 0..8 {
+                    let d = conns + j * 0x8c;
+                    fill(c, &mut r, d, 0x23);
+                    c.bus.write8(d + 0x88, (r.next_u32() % 4 != 0) as u8);
+                    c.bus.write32(d + usbk::DATA_COUNT, r.next_u32() % 6);
+                    for k in 0..6 {
+                        let code = match r.next_u32() % 4 {
+                            0 => 0,
+                            1 => 0x10,
+                            _ => r.next_u32() % 0x100,
+                        };
+                        c.bus.write16(d + 0xc + 2 * k, code as u16);
+                    }
+                }
             },
         );
     }

@@ -67,6 +67,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         twpigd_lighting_is_equal,
         "tWPIGD_Lighting_IsEqual",
     ),
+    (
+        0x002b_b100,
+        t_wpigd_lighting_pair_differs,
+        "tWPIGD_Lighting_PairDiffers",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -997,6 +1002,33 @@ pub fn twpigd_lighting_is_equal(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// World painter.
+
+/// `bool tWPIGD_Lighting_PairDiffers(const int a[2], const int b[2])`
+/// (0x2bb100): whether either of the two words differs.
+pub fn t_wpigd_lighting_pair_differs(c: &mut Cpu) {
+    let (a, b) = (Addr(abi::arg(c, 0)), Addr(abi::arg(c, 1)));
+    c.cycles += 4;
+    c.g[V1][0] = a.lw(c);
+    c.g[V0][0] = b.lw(c);
+    c.g[A2][0] = 0;
+    let mut differs = c.g[V1][0] != c.g[V0][0];
+    if !differs {
+        c.cycles += 4;
+        c.g[V1][0] = a.off(4).lw(c);
+        c.g[V0][0] = b.off(4).lw(c);
+        differs = c.g[V1][0] != c.g[V0][0];
+    }
+    if differs {
+        c.cycles += 1;
+        c.g[A2][0] = 1;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A2][0];
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1456,6 +1488,39 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = ((r.next_u32() as u64) << 32) | a as u64;
                 c.g[A1][0] = ((r.next_u32() as u64) << 32) | b as u64;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::events::driven;
+
+    /// `tWPIGD_Lighting_PairDiffers` with equal pairs and either word
+    /// differing.
+    #[test]
+    fn t_wpigd_lighting_pair_differs_matches() {
+        check(
+            ee::s08::f_002bb100__generated,
+            t_wpigd_lighting_pair_differs,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x2b_b100 ^ (seed as u64) << 16);
+                crate::difftest::scramble(c, &mut r);
+                let (x, y) = (r.next_u32(), r.next_u32());
+                c.bus.write32(DATA, x);
+                c.bus.write32(DATA + 4, y);
+                c.bus.write32(
+                    DATA + 0x10,
+                    if seed % 3 == 1 {
+                        x ^ 1 << (seed % 32)
+                    } else {
+                        x
+                    },
+                );
+                c.bus
+                    .write32(DATA + 0x14, if seed % 3 == 2 { !y } else { y });
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x10);
+                c.pc = 0x002b_b100;
             },
         );
     }

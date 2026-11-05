@@ -16,6 +16,7 @@ use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::misc::lit;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -24,6 +25,7 @@ use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
@@ -134,6 +136,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0040_f5a8, kernel_tanf, "__kernel_tanf"),
     (0x0041_23e8, fpcmp_parts_d, "__fpcmp_parts_d"),
     (0x0041_2550, floatsidf, "__floatsidf"),
+    (0x0040_e048, ieee754_expf, "__ieee754_expf"),
+    (0x0040_e550, ieee754_logf, "__ieee754_logf"),
+    (0x0041_26a0, fixunsdfsi, "__fixunsdfsi"),
+    (0x0041_3068, unpack_f, "__unpack_f"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2620,6 +2626,16 @@ pub(crate) mod fp_number {
     pub const CLASS_NUMBER: u64 = 3;
 
     pub const CLASS_INFINITY: u64 = 4;
+
+    /// `+0x0` class: 0/1 NaN, 2 zero, 3 normal, 4 infinity.
+    pub const CLASS_2: u32 = 0x0;
+
+    pub const SIGN_2: u32 = 0x4;
+
+    pub const EXP: u32 = 0x8;
+
+    /// Fraction bits below the binary point.
+    pub const FRACBITS: u64 = 0x3c;
 }
 
 /// `void __unpack_d(const FLO_union_type* src, fp_number_type* dst)`
@@ -3616,6 +3632,634 @@ pub fn floatsidf(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+pub(crate) mod expf {
+
+    /// Above this |x| bit pattern the result overflows or underflows.
+    pub const LIMIT: u64 = 0x42b1_7217;
+
+    pub const INF: u64 = 0x7f80_0000;
+
+    /// `o_threshold` 88.72168 and `u_threshold` -103.97208.
+    pub const O_THRESHOLD: u64 = 0x42b1_7180;
+
+    pub const U_THRESHOLD: u64 = 0xffff_ffff_c2cf_f1b5;
+
+    /// `0.5 ln2`, `1.5 ln2` (|x| bit patterns) and `2^-28`.
+    pub const HALF_LN2: u64 = 0x3eb1_7218;
+
+    pub const THREE_HALVES_LN2: u64 = 0x3f85_1591;
+
+    pub const TINY: u64 = 0x317f_ffff;
+
+    /// `huge`, `invln2`, `twom100`.
+    pub const HUGE: u64 = 0x7149_f2ca;
+
+    pub const INVLN2: u64 = 0x3fb8_aa3b;
+
+    pub const TWOM100: u64 = 0x0d80_0000;
+
+    pub const ONE: u64 = 0x3f80_0000;
+
+    pub const TWO: u64 = 0x4000_0000;
+
+    /// Polynomial coefficients P1..P5 (applied P5 first).
+    pub const P: [u64; 5] = [
+        0x3331_bb4c,
+        0xffff_ffff_b5dd_ea0e,
+        0x388a_b355,
+        0xffff_ffff_bb36_0b61,
+        0x3e2a_aaab,
+    ];
+
+    /// `.rodata` tables (by sign): `halF[2]`, `ln2HI[2]`, `ln2LO[2]`, and
+    /// the overflow result `huge * huge`.
+    pub const HALF_F: u32 = 0x0049_91a0;
+
+    pub const LN2_HI: u32 = 0x0049_91b8;
+
+    pub const LN2_LO: u32 = 0x0049_91c0;
+
+    pub const OVERFLOW: u32 = 0x0049_91e0;
+
+    /// `k` below which the result is scaled through `2^-100`.
+    pub const K_SUBNORMAL: i64 = -125;
+}
+
+pub(crate) mod fp_class {
+
+    pub const SNAN: u64 = 0;
+
+    pub const QNAN: u64 = 1;
+
+    pub const ZERO: u64 = 2;
+
+    pub const NUMBER: u64 = 3;
+
+    pub const INFINITY: u64 = 4;
+}
+
+// ---------------------------------------------------------------------------
+// __fixunsdfsi (0x4126a0)
+
+/// `__unpack_d(src, dst)` (0x411c38).
+pub(crate) const UNPACK_D_3: Callee = Callee {
+    addr: 0x0041_1c38,
+    f: ee::s15::__unpack_d,
+};
+
+/// `unsigned __fixunsdfsi(double x)` (0x4126a0, libgcc soft-float):
+/// truncate `x` (in a0) to an unsigned int: zero, NaN, negative numbers
+/// and |x| < 1 give 0, infinity and x >= 2^32 give 0xffffffff, otherwise
+/// the fraction shifted down to the integer part (sign-extended in v0).
+pub fn fixunsdfsi(c: &mut Cpu) {
+    use fp_number::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        let s = sp(c);
+        c.sd(s.wrapping_add(0x20), c.g[A0][0]);
+        c.g[A1][0] = c.g[SP][0];
+        frame.save_ra(c, 0x30);
+        c.g[A0][0] = sx(s.wrapping_add(0x20));
+        UNPACK_D_3.call(c, 0x0041_26b8)?;
+        let class = c.lw(s.wrapping_add(CLASS));
+        c.g[V1][0] = class;
+        let result: u64 = 'r: {
+            if class == CLASS_ZERO {
+                c.cycles += 2;
+                break 'r 0;
+            }
+            // NaN.
+            c.cycles += 2;
+            c.g[V0][0] = c.lw(s.wrapping_add(SIGN));
+            if class < 2 {
+                c.cycles += 2;
+                break 'r 0;
+            }
+            // Negative.
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                break 'r 0;
+            }
+            c.cycles += 3;
+            let exp = c.lw(s.wrapping_add(EXP));
+            c.g[A0][0] = exp;
+            if class == CLASS_INFINITY {
+                c.cycles += 3;
+                break 'r u64::MAX;
+            }
+            // |x| < 1: the original's backward branch to the `return 0`
+            // block checks for events.
+            c.cycles += 2;
+            if (exp as i64) < 0 {
+                if event_due(c) {
+                    deliver_event_here(c, 0x0041_26d0);
+                }
+                c.cycles += 2;
+                break 'r 0;
+            }
+            // Too large.
+            c.cycles += 2;
+            if (exp as i64) >= 32 {
+                c.cycles += 3;
+                break 'r u64::MAX;
+            }
+            c.cycles += 2;
+            c.g[V1][0] = FRACBITS;
+            let fraction = c.ld(s.wrapping_add(FRACTION));
+            let int = if (exp as i64) < 61 {
+                c.cycles += 3;
+                let shift = sx((FRACBITS as u32).wrapping_sub(exp as u32));
+                c.g[V1][0] = shift;
+                fraction >> (shift & 63)
+            } else {
+                c.cycles += 4;
+                let shift = sx((exp as u32).wrapping_sub(FRACBITS as u32));
+                c.g[V1][0] = shift;
+                fraction << (shift & 63)
+            };
+            c.cycles += 2;
+            sx(int as u32)
+        };
+        c.g[V0][0] = result;
+        c.cycles += 3;
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `at = k; fN = at` (a `lui/ori; mtc1` float constant).
+pub(crate) fn expf_const(c: &mut Cpu, f: usize, bits: u64) {
+    c.g[AT][0] = bits;
+    c.mtc1(AT, f);
+}
+
+/// `float __ieee754_expf(float x)` (0x40e048, fdlibm): `e^x`. Large |x|
+/// overflows to `huge*huge` or underflows to 0 (inf gives inf or 0, NaN
+/// gives NaN); otherwise `x = k ln2 + r` and `e^r` by the rational
+/// approximation, scaled by `2^k`.
+pub fn ieee754_expf(c: &mut Cpu) {
+    use expf::*;
+    c.cycles += 11;
+    c.mfc1(V0, 12);
+    let bits = c.g[V0][0];
+    c.g[A0][0] = bits;
+    let xsb = sx((bits as u32) >> 31);
+    c.g[A3][0] = xsb;
+    let hx = bits & 0x7fff_ffff;
+    c.g[A0][0] = hx;
+    c.g[V0][0] = (LIMIT < hx) as u64;
+    c.g[V1][0] = INF;
+    if LIMIT < hx {
+        c.cycles += 3;
+        c.g[V0][0] = (INF < hx) as u64;
+        if INF < hx {
+            // NaN.
+            c.cycles += 2;
+            c.add_s(0, 12, 12);
+            ret(c);
+            return;
+        }
+        c.cycles += 2;
+        if hx == INF {
+            // e^+inf = inf, e^-inf = 0.
+            c.cycles += 3;
+            c.mtc1(0, 0);
+            if xsb == 0 {
+                c.mov_s(0, 12);
+            }
+            c.cycles += 2;
+            ret(c);
+            return;
+        }
+        c.cycles += 7;
+        expf_const(c, 0, O_THRESHOLD);
+        c.c_lt_s(0, 12);
+        c.g[V0][0] = 0x4a_0000;
+        if c.fcc() {
+            // Overflow.
+            c.cycles += 2;
+            c.lwc1(0, OVERFLOW);
+            ret(c);
+            return;
+        }
+        c.cycles += 7;
+        expf_const(c, 0, U_THRESHOLD);
+        c.c_lt_s(12, 0);
+        c.g[V0][0] = 0x3eb1_0000;
+        if c.fcc() {
+            // Underflow.
+            c.cycles += 3;
+            c.mtc1(0, 0);
+            ret(c);
+            return;
+        }
+    } else {
+        c.cycles += 1;
+        c.g[V0][0] = 0x3eb1_0000;
+    }
+
+    // Argument reduction: x = hi - lo = x - k ln2 (k in a2); f5 = x*x.
+    c.cycles += 4;
+    c.g[V0][0] = (HALF_LN2 < hx) as u64;
+    c.g[V0][0] = 0x3f85_0000;
+    if HALF_LN2 < hx {
+        c.cycles += 4;
+        c.g[V0][0] = (THREE_HALVES_LN2 < hx) as u64;
+        c.g[V0][0] = 0x4a_0000;
+        if THREE_HALVES_LN2 < hx {
+            // k = (int)(invln2 * x + halF[xsb]).
+            c.cycles += 20;
+            expf_const(c, 0, INVLN2);
+            c.g[V0][0] = sx(HALF_F);
+            let half = HALF_F.wrapping_add((xsb as u32) << 2);
+            c.g[V1][0] = sx(half);
+            c.mul_s(0, 12, 0);
+            c.lwc1(2, half);
+            c.g[V0][0] = 0x4a_0000;
+            c.lwc1(1, LN2_HI);
+            c.g[V1][0] = 0x4a_0000;
+            c.add_s(0, 0, 2);
+            c.lwc1(3, LN2_LO);
+            c.cvt_w_s(2, 0);
+            c.mfc1(A2, 2);
+            c.mtc1(A2, 5);
+            c.cvt_s_w(5, 5);
+            c.mul_s(1, 5, 1);
+            c.mul_s(6, 5, 3);
+            c.sub_s(7, 12, 1);
+        } else {
+            // k = 1 - xsb - xsb.
+            c.cycles += 14;
+            let idx = sx((xsb as u32) << 2);
+            c.g[A1][0] = idx;
+            let hi_at = LN2_HI.wrapping_add(idx as u32);
+            c.g[V0][0] = sx(hi_at);
+            c.g[A0][0] = sx(LN2_LO);
+            c.lwc1(0, hi_at);
+            let lo_at = LN2_LO.wrapping_add(idx as u32);
+            c.g[A1][0] = sx(lo_at);
+            let one_minus = sx(1u32.wrapping_sub(xsb as u32));
+            c.g[V1][0] = one_minus;
+            c.sub_s(7, 12, 0);
+            c.g[A2][0] = sx((one_minus as u32).wrapping_sub(xsb as u32));
+            c.lwc1(6, lo_at);
+        }
+        c.cycles += 2;
+        c.sub_s(12, 7, 6);
+        c.cycles += 1;
+        c.mul_s(5, 12, 12);
+    } else {
+        c.cycles += 5;
+        c.g[V0][0] = (TINY < hx) as u64;
+        if TINY < hx {
+            c.g[A2][0] = 0;
+            c.cycles += 1;
+            c.mul_s(5, 12, 12);
+        } else {
+            // |x| < 2^-28: 1 + x (raising inexact).
+            c.cycles += 10;
+            expf_const(c, 0, HUGE);
+            expf_const(c, 1, ONE);
+            c.add_s(0, 12, 0);
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                c.cycles += 2;
+                c.add_s(0, 12, 1);
+                ret(c);
+                return;
+            }
+            c.mul_s(5, 12, 12);
+        }
+    }
+
+    // c = x - t*(P1 + t*(P2 + t*(P3 + t*(P4 + t*P5)))).
+    c.cycles += 26;
+    expf_const(c, 0, P[0]);
+    expf_const(c, 1, P[1]);
+    expf_const(c, 2, P[2]);
+    c.mul_s(0, 5, 0);
+    expf_const(c, 3, P[3]);
+    expf_const(c, 4, P[4]);
+    for f in 1..5 {
+        c.add_s(0, 0, f);
+        c.mul_s(0, 5, 0);
+    }
+    let k = c.g[A2][0];
+    c.sub_s(3, 12, 0);
+    if k != 0 {
+        // y = 1 - ((lo - x*c/(2-c)) - hi), scaled by 2^k.
+        c.cycles += 16;
+        expf_const(c, 1, TWO);
+        c.mul_s(0, 12, 3);
+        expf_const(c, 2, ONE);
+        let subnormal = (k as i64) < K_SUBNORMAL;
+        c.g[V0][0] = subnormal as u64;
+        c.sub_s(1, 1, 3);
+        c.div_s(0, 0, 1);
+        c.sub_s(0, 6, 0);
+        c.sub_s(0, 0, 7);
+        c.sub_s(2, 2, 0);
+        c.mfc1(V1, 2);
+        let y = c.g[V1][0];
+        c.g[V0][0] = y;
+        if subnormal {
+            c.cycles += 9;
+            let e = sx(((k as u32).wrapping_add(100)) << 23);
+            c.g[V1][0] = sx((y as u32).wrapping_add(e as u32));
+            expf_const(c, 0, TWOM100);
+            c.mtc1(V1, 1);
+            c.mul_s(0, 1, 0);
+        } else {
+            c.cycles += 5;
+            let e = sx((k as u32) << 23);
+            c.g[V0][0] = e;
+            c.g[V1][0] = sx((y as u32).wrapping_add(e as u32));
+            c.mtc1(V1, 0);
+        }
+    } else {
+        // y = 1 - ((x*c)/(c-2) - x).
+        c.cycles += 12;
+        expf_const(c, 1, TWO);
+        c.mul_s(0, 12, 3);
+        expf_const(c, 2, ONE);
+        c.sub_s(1, 3, 1);
+        c.div_s(0, 0, 1);
+        c.sub_s(0, 0, 12);
+        c.sub_s(0, 2, 0);
+    }
+    ret(c);
+}
+
+/// ln2_hi, ln2_lo (newlib's split of ln 2).
+pub(crate) const LN2_HI: u32 = 0x3f31_7180;
+
+pub(crate) const LN2_LO: u32 = 0x3717_f7d1;
+
+/// `float __ieee754_logf(float x)` (0x40e550): newlib's single-precision
+/// natural logarithm. x = 2^k (1 + f): subnormals are scaled by 2^25
+/// first; log(+-0) is the constant at 0x499224 (-huge), log(x < 0) =
+/// (x - x) / 0, log(inf/NaN) = x + x. For tiny f a short polynomial; else
+/// s = f / (2 + f) and the Remez series in s^2, combined with k ln 2
+/// (split hi/lo). A leaf; every scratch register (a0-a3, t0, v0, v1, at,
+/// f0-f10) left as the compiled code leaves it.
+pub fn ieee754_logf(c: &mut Cpu) {
+    c.cycles += 7;
+    c.mfc1(A0, 12);
+    c.g[A3][0] = c.g[A0][0];
+    c.g[V0][0] = 0x7f_ffff;
+    let normal = 0x7f_ffff < (c.g[A3][0] as i64);
+    c.g[V0][0] = normal as u64;
+    c.g[T0][0] = 0;
+    if !normal {
+        // 0x40e574: zero, negative or subnormal.
+        c.cycles += 5;
+        let nonzero = c.g[A3][0] & 0x7fff_ffff != 0;
+        c.g[V0][0] = 0x4a_0000;
+        if !nonzero {
+            c.cycles += 2;
+            c.lwc1(0, 0x004a_0000u32.wrapping_sub(0x6ddc));
+            return ret(c);
+        }
+        c.cycles += 2;
+        c.g[T0][0] = sx(-25i32 as u32);
+        if (c.g[A3][0] as i64) < 0 {
+            // (x - x) / 0.
+            c.cycles += 8;
+            c.mtc1(A0, 0);
+            c.sub_s(1, 0, 0);
+            c.mtc1(0, 0);
+            c.div_s(0, 1, 0);
+            return ret(c);
+        }
+        // Subnormal: x * 2^25.
+        c.cycles += 6;
+        lit(c, 0, 0x4c00_0000);
+        c.mtc1(A0, 1);
+        c.mul_s(1, 1, 0);
+        c.mfc1(A0, 1);
+        c.g[A3][0] = c.g[A0][0];
+    }
+    // 0x40e5c8
+    c.cycles += 5;
+    let finite = (c.g[A3][0] as i64) <= 0x7f7f_ffff;
+    c.g[V0][0] = (!finite) as u64;
+    c.g[A1][0] = 0x7f_0000;
+    if !finite {
+        c.cycles += 3;
+        c.mtc1(A0, 2);
+        c.add_s(0, 2, 2);
+        return ret(c);
+    }
+
+    // 0x40e5e0: k (t0), the mantissa normalised into [sqrt(2)/2, sqrt(2))
+    // (a0), f = x - 1 (f12).
+    c.cycles += 23;
+    let hx = r32(c, A3);
+    c.g[A2][0] = sx(((hx as i32) >> 23) as u32);
+    c.g[A1][0] = 0x7f_ffff;
+    let mant = hx & 0x7f_ffff;
+    c.g[A3][0] = mant as u64;
+    c.g[V0][0] = sx(r32(c, T0).wrapping_sub(0x7f));
+    let i = mant.wrapping_add(0x4a_fb20) & 0x80_0000;
+    c.g[A0][0] = 0x80_0000;
+    c.g[T0][0] = sx(r32(c, V0).wrapping_add(r32(c, A2)));
+    c.g[V0][0] = (i ^ 0x3f80_0000) as u64;
+    c.g[A0][0] = (mant | i ^ 0x3f80_0000) as u64;
+    c.g[V1][0] = sx(((i as i32) >> 23) as u32);
+    lit(c, 0, 0x3f80_0000);
+    let tiny = (mant.wrapping_add(0xf) & 0x7f_ffff) < 16;
+    c.mtc1(A0, 1);
+    c.g[T0][0] = sx(r32(c, T0).wrapping_add(r32(c, V1)));
+    c.g[V0][0] = tiny as u64;
+    c.sub_s(12, 1, 0);
+    let k_zero = c.g[T0][0] == 0;
+    'tail: {
+        if tiny {
+            // 0x40e7f4: |f| < 2^-20.
+            c.cycles += 5;
+            c.mtc1(0, 0);
+            c.c_eq_s(12, 0);
+            if c.fcc() {
+                // f == 0: k ln 2 (0 when k == 0).
+                c.cycles += 2;
+                if k_zero {
+                    break 'tail;
+                }
+                c.cycles += 12;
+                c.mtc1(T0, 9);
+                c.cvt_s_w(9, 9);
+                lit(c, 1, LN2_HI);
+                lit(c, 0, LN2_LO);
+                c.mul_s(1, 9, 1);
+                c.mul_s(0, 9, 0);
+                c.add_s(0, 1, 0);
+                return ret(c);
+            }
+            // R = f^2 (0.5 - f / 3).
+            c.mul_s(2, 12, 12);
+            c.cycles += 9;
+            lit(c, 0, 0x3eaa_aaab);
+            lit(c, 1, 0x3f00_0000);
+            c.mul_s(0, 12, 0);
+            c.sub_s(1, 1, 0);
+            c.mul_s(2, 2, 1);
+            if !k_zero {
+                c.cycles += 14;
+                c.mtc1(T0, 9);
+                c.cvt_s_w(9, 9);
+                lit(c, 0, LN2_LO);
+                lit(c, 1, LN2_HI);
+                c.mul_s(0, 9, 0);
+                c.mul_s(1, 9, 1);
+                c.sub_s(0, 2, 0);
+                c.sub_s(0, 0, 12);
+                c.sub_s(0, 1, 0);
+            } else {
+                c.cycles += 2;
+                c.sub_s(0, 12, 2);
+            }
+            return ret(c);
+        }
+
+        // 0x40e660: s = f / (2 + f), R = the series in s^2 (f2).
+        c.cycles += 52;
+        lit(c, 0, 0x4000_0000);
+        c.g[V1][0] = 0xffff_ffff_ffcf_0000;
+        lit(c, 1, 0x3e17_8897); // Lg7
+        c.g[V0][0] = 0x35_0000;
+        c.add_s(0, 12, 0);
+        lit(c, 8, 0x3e3a_3325); // Lg5
+        lit(c, 2, 0x3e1c_d04f); // Lg6
+        c.g[V1][0] |= 0x5c30;
+        lit(c, 4, 0x3e63_8e29); // Lg4
+        c.g[V0][0] |= 0xc288;
+        c.div_s(10, 12, 0);
+        lit(c, 5, 0x3e92_4925); // Lg3
+        lit(c, 6, 0x3ecc_cccd); // Lg2
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(mant));
+        lit(c, 7, 0x3f2a_aaab); // Lg1
+        c.g[V1][0] = sx(mant.wrapping_add(r32(c, V1)));
+        c.g[V1][0] |= c.g[V0][0];
+        c.mtc1(T0, 9);
+        c.cvt_s_w(9, 9);
+        c.mul_s(3, 10, 10);
+        c.mul_s(0, 3, 3);
+        c.mul_s(1, 0, 1);
+        c.mul_s(2, 0, 2);
+        c.add_s(1, 1, 8);
+        c.add_s(2, 2, 4);
+        c.mul_s(1, 0, 1);
+        c.mul_s(2, 0, 2);
+        c.add_s(1, 1, 5);
+        c.add_s(2, 2, 6);
+        c.mul_s(1, 0, 1);
+        c.mul_s(0, 0, 2);
+        c.add_s(1, 1, 7);
+        c.mul_s(3, 3, 1);
+        let small = (c.g[V1][0] as i64) <= 0;
+        c.add_s(2, 3, 0);
+        if small {
+            // f - s (f - R).
+            c.cycles += 2;
+            c.sub_s(0, 12, 2);
+            if k_zero {
+                c.cycles += 3;
+                c.mul_s(0, 10, 0);
+                c.sub_s(0, 12, 0);
+                return ret(c);
+            }
+            c.cycles += 12;
+            lit(c, 1, LN2_LO);
+            lit(c, 2, LN2_HI);
+            c.mul_s(1, 9, 1);
+            c.mul_s(0, 10, 0);
+            c.mul_s(2, 9, 2);
+            c.sub_s(0, 0, 1);
+            c.sub_s(0, 0, 12);
+            c.sub_s(0, 2, 0);
+            break 'tail;
+        }
+        // hfsq = f^2 / 2 (f4).
+        c.cycles += 5;
+        lit(c, 0, 0x3f00_0000);
+        c.mul_s(0, 12, 0);
+        c.mul_s(4, 0, 12);
+        if !k_zero {
+            c.cycles += 15;
+            c.add_s(0, 4, 2);
+            lit(c, 1, LN2_LO);
+            lit(c, 2, LN2_HI);
+            c.mul_s(1, 9, 1);
+            c.mul_s(0, 10, 0);
+            c.mul_s(2, 9, 2);
+            c.add_s(0, 0, 1);
+            c.sub_s(0, 4, 0);
+            c.sub_s(0, 0, 12);
+            c.sub_s(0, 2, 0);
+        } else {
+            c.cycles += 5;
+            c.add_s(0, 4, 2);
+            c.mul_s(0, 10, 0);
+            c.sub_s(0, 4, 0);
+            c.sub_s(0, 12, 0);
+        }
+        return ret(c);
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+/// `void __unpack_f(const float* src, fp_number_type* dst)` (0x413068):
+/// split a float into class (`+0`), sign (`+4`), unbiased exponent (`+8`)
+/// and fraction (`+0xc`, with the implicit bit at 1 << 30). This build has
+/// no denormals: a zero exponent is always ZERO. NaN fractions keep their
+/// raw 23 bits; bit 20 (this build's quiet bit) selects QNAN over SNAN.
+pub fn unpack_f(c: &mut Cpu) {
+    c.cycles += 9;
+    let dst = Addr(abi::arg(c, 1));
+    c.g[V0][0] = Addr(abi::arg(c, 0)).lw(c);
+    let bits = c.g[V0][0] as u32;
+    c.g[V1][0] = 0x7f_ffff;
+    c.g[A0][0] = sx(bits >> 31);
+    c.g[A2][0] = sx(bits >> 23) & 0xff;
+    let fraction = c.g[V0][0] & 0x7f_ffff;
+    c.g[V1][0] = fraction;
+    let exponent = c.g[A2][0];
+    dst.off(4).sw(c, c.g[A0][0]);
+    if exponent == 0 {
+        c.cycles += 3;
+        c.g[V0][0] = fp_class::ZERO;
+        dst.sw(c, fp_class::ZERO);
+    } else if exponent != 0xff {
+        c.cycles += 3 + 8;
+        c.g[V1][0] = sx((fraction as u32) << 7) | 0x4000_0000;
+        c.g[A0][0] = sx((exponent as u32).wrapping_sub(0x7f));
+        c.g[V0][0] = fp_class::NUMBER;
+        dst.off(0xc).sw(c, c.g[V1][0]);
+        dst.off(8).sw(c, c.g[A0][0]);
+        dst.sw(c, fp_class::NUMBER);
+    } else if fraction != 0 {
+        c.cycles += 3 + 2 + 3;
+        c.g[V0][0] = 1;
+        if fraction & 0x10_0000 != 0 {
+            c.cycles += 2;
+            dst.sw(c, fp_class::QNAN);
+        } else {
+            c.cycles += 1;
+            dst.sw(c, fp_class::SNAN);
+        }
+        c.cycles += 2;
+        dst.off(0xc).sw(c, fraction);
+    } else {
+        c.cycles += 3 + 2 + 3;
+        c.g[V0][0] = fp_class::INFINITY;
+        dst.sw(c, fp_class::INFINITY);
+    }
+    abi::ret(c);
 }
 
 #[cfg(test)]
@@ -4845,5 +5489,133 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(v as u32);
             },
         );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::events::driven;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::{fresh, require_paths};
+    use ssx3_ee_rt::Cpu;
+
+    /// __fixunsdfsi: zero, NaN, negative, infinity, |x| < 1, x >= 2^32 and
+    /// in-range values (with fractions) through the real `__unpack_d`.
+    #[test]
+    fn fixunsdfsi_matches() {
+        use crate::difftest::scramble;
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = Rng(0x4126_a0 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            c.pc = 0x0041_26a0;
+            let sign = (r.next_u32() as u64 & 1) << 63;
+            let frac = (r.next_u32() as u64) << 20 | r.next_u32() as u64 & 0xf_ffff;
+            let x: u64 = match seed % 8 {
+                0 => sign,
+                1 => 0x7ff0_0000_0000_0000 | frac | 1,
+                2 => 0x7ff0_0000_0000_0000 | sign,
+                3 => (1u64 << 63) | ((1023 + r.next_u32() % 40) as u64) << 52 | frac,
+                4 => ((1000 + r.next_u32() % 23) as u64) << 52 | frac,
+                5 => ((1023 + 32 + r.next_u32() % 100) as u64) << 52 | frac,
+                _ => ((1023 + r.next_u32() % 32) as u64) << 52 | frac,
+            };
+            c.g[A0][0] = x;
+        };
+        check(ee::s15::f_004126a0__generated, fixunsdfsi, 300, &setup);
+    }
+
+    /// __ieee754_expf: NaN/inf bit patterns, overflow, underflow, the
+    /// three reduction ranges (k from the table, k = ±1, k = 0), tiny x,
+    /// and results scaled through 2^-100 (k < -125).
+    #[test]
+    fn ieee754_expf_matches() {
+        use crate::difftest::scramble;
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = Rng(0x40e0_48 ^ (seed as u64) << 24);
+            scramble(c, &mut r);
+            elf_image(c);
+            c.pc = 0x0040_e048;
+            let sign = (r.next_u32() & 1) << 31;
+            let u = r.next_u32() as f32 / u32::MAX as f32;
+            let x: u32 = match seed % 12 {
+                0 => sign | 0x7f80_0000 | (1 + (r.next_u32() & 0x7f_fffe)),
+                1 => sign | 0x7f80_0000,
+                2 => (89.0 + u * 1e20).to_bits(),
+                3 => (-(104.0 + u * 1e20)).to_bits(),
+                4 => (-(87.0 + u * 16.9)).to_bits(),
+                5 => sign | (1.04 + u * 87.0).to_bits(),
+                6 => sign | (0.35 + u * 0.69).to_bits(),
+                7 => sign | (u * 0.346).to_bits(),
+                8 => sign | (u * 3.7e-9).to_bits(),
+                9 => sign | (r.next_u32() & 0x317f_ffff),
+                10 => (88.0 + u * 0.72).to_bits(),
+                _ => r.edge_f32(),
+            };
+            c.f[12] = x;
+        };
+        check(ee::s15::f_0040e048__generated, ieee754_expf, 300, &setup);
+    }
+
+    // ---------------------------------------------------------- __ieee754_logf
+
+    /// __ieee754_logf on every input class: +-0 (the -huge constant written
+    /// at 0x499224), negatives, subnormals, exponent 255, exactly 1 and
+    /// powers of two (f == 0, k == 0 or not), mantissas within 2^-20 of 1
+    /// (the tiny polynomial), mantissas just above/below the series' split
+    /// (k == 0 or not), and random positives.
+    #[test]
+    fn ieee754_logf_matches() {
+        check(
+            ee::s15::f_0040e550__generated,
+            ieee754_logf,
+            400,
+            &|c, seed| {
+                let mut r = Rng(0x40_e550 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.pc = 0x0040_e550;
+                c.bus.write32(0x0049_9224, 0xff7f_ffff);
+                let exp = |r: &mut Rng| (1 + r.next_u32() % 253) << 23;
+                let x = match seed % 12 {
+                    0 => (r.next_u32() & 1) << 31,
+                    1 => 0x8000_0000 | r.next_u32(),
+                    2 => r.next_u32() & 0x007f_ffff,
+                    3 => 0x7f80_0000 | (r.next_u32() & 0x807f_ffff),
+                    4 => 0x3f80_0000,
+                    5 => exp(&mut r),
+                    6 => 0x3f80_0000 + r.next_u32() % 16,
+                    7 => exp(&mut r) | (r.next_u32() % 16),
+                    8 => exp(&mut r) | (0x7f_fff0 + r.next_u32() % 16),
+                    9 => (0x7e_u32 << 23) | (0x7f_fff0 + r.next_u32() % 16),
+                    10 => 0x3f80_0000 + (r.next_u32() % 0x8_0000) | ((r.next_u32() & 1) << 22),
+                    _ => r.next_u32() & 0x7fff_ffff,
+                };
+                c.f[12] = x;
+            },
+        );
+    }
+
+    /// `__unpack_f` on zeros, normal numbers, infinities and both NaN kinds
+    /// of either sign.
+    #[test]
+    fn unpack_f_matches() {
+        check(ee::s15::f_00413068__generated, unpack_f, 300, &|c, seed| {
+            let mut r = Rng(0x41_3068 ^ (seed as u64) << 12);
+            crate::difftest::scramble(c, &mut r);
+            let sign = r.next_u32() & 0x8000_0000;
+            let frac = match seed % 3 {
+                0 => 0,
+                1 => r.next_u32() & 0x10_0000,
+                _ => r.next_u32() & 0x7f_ffff,
+            };
+            let exp = match seed % 5 {
+                0 => 0,
+                1 => 0xff,
+                _ => r.next_u32() & 0xff,
+            };
+            c.bus.write32(DATA, sign | exp << 23 | frac);
+            crate::difftest::fill(c, &mut r, DATA + 0x10, 4);
+            c.g[A0][0] = sx(DATA);
+            c.g[A1][0] = sx(DATA + 0x10);
+            c.pc = 0x0041_3068;
+        });
     }
 }

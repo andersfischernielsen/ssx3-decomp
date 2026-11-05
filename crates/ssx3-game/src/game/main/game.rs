@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -25,6 +26,8 @@ pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::spv;
 pub(crate) use crate::game::dirtysock::tags2::lw as lw_2;
 pub(crate) use crate::game::fe::ovstatepause::lw;
+pub(crate) use crate::game::misc::gp_lit;
+pub(crate) use crate::game::misc::lit;
 pub(crate) use crate::game::movie::movieplayer::add32 as add32_2;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::render::particle::add32;
@@ -100,6 +103,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0022_e360,
         section_man_dequeue_section,
         "SectionMan_DequeueSection",
+    ),
+    (
+        0x0022_c1b0,
+        game_module_begin_bezier_pass,
+        "GameModule_BeginBezierPass",
     ),
 ];
 
@@ -962,6 +970,193 @@ pub fn section_man_finish_event_switch(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod bezier_pass {
+
+    /// gp+0x1158: the camera; gp-0x854: the renderer (`+0x10d8` its
+    /// vtable, slot 0x118 the view matrix).
+    pub const GP_CAMERA: u32 = 0x1158;
+
+    pub const GP_RENDERER: u32 = 0x854;
+
+    pub const RENDERER_VT: u32 = 0x10d8;
+
+    pub const SLOT_VIEW_MATRIX: u32 = 0x118;
+
+    /// Context: camera, eye position (view space), depth fit (k, c),
+    /// near/far (1, 3).
+    pub const CAMERA: u32 = 0x0;
+
+    pub const EYE: u32 = 0x10;
+
+    pub const DEPTH_K: u32 = 0x20;
+
+    pub const DEPTH_C: u32 = 0x24;
+
+    pub const NEAR: u32 = 0x28;
+
+    pub const FAR: u32 = 0x2c;
+
+    /// Camera (vtable at +4): near plane, far plane, begin pass.
+    pub const SLOT_NEAR: u32 = 0x40;
+
+    pub const SLOT_FAR: u32 = 0x48;
+
+    pub const SLOT_BEGIN: u32 = 0x88;
+}
+
+// ---------------------------------------------------------------------------
+// GameModule_BeginBezierPass (0x22c1b0, src/main/game.cpp).
+
+/// `this(a1)->vtable(vt_reg)[slot]` called with `a0 = a1 + delta`, the
+/// method address in `fn_reg` (the compiled register choice).
+pub(crate) fn vcall_a1(
+    c: &mut Cpu,
+    vt_reg: usize,
+    fn_reg: usize,
+    slot: u32,
+    ret_to: u32,
+) -> crate::call::Flow {
+    let this = r32(c, A1);
+    c.g[A0][0] = c.lh(at(c, vt_reg, slot));
+    c.g[fn_reg][0] = c.lw(at(c, vt_reg, slot + 4));
+    let method = r32(c, fn_reg);
+    c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret_to)
+}
+
+/// `Ctx* GameModule_BeginBezierPass(Ctx* ctx)` (0x22c1b0): take the
+/// camera, compute the eye position (-translation of the view matrix,
+/// transformed by the view matrix, w = 1), set near/far = 1/3 and fit the
+/// depth mapping `k = (near - far) / (2 f^2 - 2 n^2)`, `c = far - k 2 n^2`
+/// from the camera's near (n) and far (f) planes, then begin the camera's
+/// pass. Returns ctx. One 130-cycle block; frame 0x60 (s0, f20).
+pub fn game_module_begin_bezier_pass(c: &mut Cpu) {
+    use bezier_pass::*;
+    guest(c, |c| {
+        c.cycles += 130;
+        let frame = Frame::open(c, 0x60);
+        c.g[V0][0] = c.lw(r32(c, GP).wrapping_add(GP_CAMERA));
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 20, 0x50);
+        let ctx = r32(c, S0);
+        c.g[A1][0] = c.lw(gp_lit(c, GP_RENDERER));
+        c.sw(ctx.wrapping_add(CAMERA), c.g[V0][0]);
+        c.g[V1][0] = c.lw(at(c, A1, RENDERER_VT));
+        vcall_a1(c, V1, V0, SLOT_VIEW_MATRIX, 0x0022_c1e4)?;
+        // -translation (VU0 scale by -1).
+        c.lq(3, at(c, V0, 0x30));
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(AT, 0);
+        let s = sp(c);
+        c.sq(3, s.wrapping_add(0x10));
+        c.mfc1(A0, 0);
+        c.lqc2(4, s.wrapping_add(0x10));
+        c.qmtc2(A0, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s.wrapping_add(0x20));
+        c.lq(2, s.wrapping_add(0x20));
+        c.g[A1][0] = c.lw(gp_lit(c, GP_RENDERER));
+        c.sq(2, ctx.wrapping_add(EYE));
+        c.sq(2, s);
+        c.g[V1][0] = c.lw(at(c, A1, RENDERER_VT));
+        vcall_a1(c, V1, V0, SLOT_VIEW_MATRIX, 0x0022_c22c)?;
+        // eye = M * eye (row-major dot products, the compiled order).
+        let m = r32(c, V0);
+        c.lwc1(1, ctx.wrapping_add(EYE));
+        c.lwc1(5, m);
+        c.lwc1(8, m.wrapping_add(0x4));
+        c.lwc1(4, m.wrapping_add(0x10));
+        c.mul_s(5, 1, 5);
+        c.lwc1(7, m.wrapping_add(0x14));
+        c.lwc1(3, m.wrapping_add(0x20));
+        c.mul_s(4, 1, 4);
+        c.lwc1(6, m.wrapping_add(0x34));
+        c.lwc1(0, ctx.wrapping_add(EYE + 4));
+        c.mul_s(3, 1, 3);
+        c.lwc1(12, m.wrapping_add(0x24));
+        c.lwc1(2, m.wrapping_add(0x30));
+        c.mul_s(6, 0, 6);
+        c.mul_s(8, 0, 8);
+        c.lwc1(10, m.wrapping_add(0x8));
+        c.mul_s(7, 0, 7);
+        c.lwc1(11, m.wrapping_add(0x18));
+        c.mul_s(0, 0, 12);
+        c.lwc1(9, m.wrapping_add(0x38));
+        c.mul_s(1, 1, 2);
+        c.lwc1(15, m.wrapping_add(0x28));
+        c.lwc1(2, ctx.wrapping_add(EYE + 8));
+        c.add_s(5, 5, 8);
+        c.add_s(4, 4, 7);
+        c.lwc1(12, m.wrapping_add(0x3c));
+        c.mul_s(9, 2, 9);
+        c.lwc1(8, m.wrapping_add(0xc));
+        c.mul_s(10, 2, 10);
+        c.lwc1(7, m.wrapping_add(0x1c));
+        c.mul_s(11, 2, 11);
+        c.lwc1(14, m.wrapping_add(0x2c));
+        c.add_s(3, 3, 0);
+        lit(c, 13, 0x3f80_0000);
+        c.lwc1(0, ctx.wrapping_add(EYE + 0xc));
+        c.mul_s(2, 2, 15);
+        c.add_s(1, 1, 6);
+        c.swc1(13, ctx.wrapping_add(NEAR));
+        c.mul_s(12, 0, 12);
+        lit(c, 6, 0x4040_0000);
+        c.mul_s(8, 0, 8);
+        c.g[A1][0] = c.lw(ctx.wrapping_add(CAMERA));
+        c.mul_s(7, 0, 7);
+        c.swc1(6, ctx.wrapping_add(FAR));
+        c.add_s(5, 5, 10);
+        c.add_s(4, 4, 11);
+        c.add_s(1, 1, 9);
+        c.mul_s(0, 0, 14);
+        c.add_s(3, 3, 2);
+        c.add_s(1, 1, 12);
+        c.add_s(5, 5, 8);
+        c.add_s(4, 4, 7);
+        c.add_s(3, 3, 0);
+        let s = sp(c);
+        c.swc1(1, s.wrapping_add(0xc));
+        c.swc1(5, s);
+        c.swc1(4, s.wrapping_add(0x4));
+        c.swc1(3, s.wrapping_add(0x8));
+        c.lq(2, s);
+        c.sq(2, ctx.wrapping_add(EYE));
+        c.swc1(13, ctx.wrapping_add(EYE + 0xc));
+        // The camera's near and far planes.
+        c.g[V0][0] = c.lw(at(c, A1, 4));
+        vcall_a1(c, V0, V1, SLOT_NEAR, 0x0022_c338)?;
+        c.g[A1][0] = c.lw(ctx.wrapping_add(CAMERA));
+        c.mov_s(20, 0);
+        c.g[V0][0] = c.lw(at(c, A1, 4));
+        vcall_a1(c, V0, V1, SLOT_FAR, 0x0022_c354)?;
+        c.mul_s(3, 20, 20);
+        c.lwc1(2, ctx.wrapping_add(FAR));
+        c.mul_s(0, 0, 0);
+        c.lwc1(1, ctx.wrapping_add(NEAR));
+        c.g[A1][0] = c.lw(ctx.wrapping_add(CAMERA));
+        c.add_s(20, 3, 3);
+        c.add_s(0, 0, 0);
+        c.sub_s(1, 1, 2);
+        c.sub_s(0, 0, 20);
+        c.div_s(1, 1, 0);
+        c.mul_s(0, 1, 20);
+        c.swc1(1, ctx.wrapping_add(DEPTH_K));
+        c.sub_s(2, 2, 0);
+        c.swc1(2, ctx.wrapping_add(DEPTH_C));
+        c.g[V0][0] = c.lw(at(c, A1, 4));
+        vcall_a1(c, V0, V1, SLOT_BEGIN, 0x0022_c3a0)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0x30);
+        frame.restore(c, S0, 0x40);
+        frame.restore_fpr(c, 20, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1265,6 +1460,47 @@ pub(crate) mod tests {
                 // entry so the dispatcher takes a real arm.
                 c.bus.write32(0x0043_d950, 0);
                 c.bus.write32(0x0047_b4e0, 0x0022_e1ac);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::put_vec;
+
+    // ------------------------------------------------ GameModule_BeginBezierPass
+
+    /// GameModule_BeginBezierPass: the renderer's view-matrix method and
+    /// the camera's near / far / begin methods are fakes (the matrix
+    /// pointers forced to random matrices; may unwind).
+    #[test]
+    fn game_module_begin_bezier_pass_matches() {
+        use crate::difftest::fakes::{covered, vtable};
+        use bezier_pass::*;
+        const CTX: u32 = 0x00a0_0000;
+        const REND: u32 = 0x00a0_1000;
+        const CAM: u32 = 0x00a0_3000;
+        const MAT: u32 = 0x00a0_4000;
+        covered(
+            ee::s05::f_0022c1b0__generated,
+            game_module_begin_bezier_pass,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x22_c1b0, 5);
+                c.pc = 0x0022_c1b0;
+                c.bus.write32(GAME_GP - GP_RENDERER, REND);
+                let vt = vtable(c, &mut r, &[SLOT_VIEW_MATRIX]);
+                c.bus.write32(REND + RENDERER_VT, vt);
+                c.bus.write32(GAME_GP + GP_CAMERA, CAM);
+                let cvt = vtable(c, &mut r, &[SLOT_NEAR, SLOT_FAR, SLOT_BEGIN]);
+                c.bus.write32(CAM + 4, cvt);
+                for k in 0..2u32 {
+                    let m = MAT + 0x100 * k;
+                    for i in 0..16 {
+                        c.bus.write32(m + 4 * i, r.edge_f32());
+                    }
+                    c.bus.write32(LOG_RESULTS + 4 * k, m);
+                }
+                fill(c, &mut r, CTX, 0x10);
+                c.g[A0][0] = CTX as u64;
             },
         );
     }

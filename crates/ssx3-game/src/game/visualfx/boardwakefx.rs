@@ -21,6 +21,7 @@ pub(crate) use crate::game::ai::ridermetrix::lw_3;
 pub(crate) use crate::game::ai::ridermetrix::lwc1;
 pub(crate) use crate::game::ai::ridermetrix::sw_2 as sw_3;
 pub(crate) use crate::game::ai::ridermetrix::swc1;
+pub(crate) use crate::game::camera::camera::gp_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_5;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lh_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at;
@@ -35,6 +36,7 @@ pub(crate) use crate::game::fe::festateselectmp::epilogue;
 pub(crate) use crate::game::fe::ovstates::at as at_6;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::intersect::riderspheretree::p_2;
+pub(crate) use crate::game::misc::gp_lit;
 pub(crate) use crate::game::object::debouncenode::lw32;
 pub(crate) use crate::game::object::debouncenode::BOARD_WAKE_WORLD;
 pub(crate) use crate::game::object::splinemodifier::ldf as ldf_3;
@@ -223,6 +225,25 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         dynamic_spray_fx_update_emitter7,
         "cDynamicSprayFX_UpdateEmitter7",
     ),
+    (
+        0x002d_dd30,
+        board_wake_fx_build_trail,
+        "cBoardWakeFX_BuildTrail",
+    ),
+    (
+        0x002e_1f70,
+        dynamic_spray_fx_update_emitter8,
+        "cDynamicSprayFX_UpdateEmitter8",
+    ),
+    (0x002e_2868, lens_fx_draw_flare_quad, "LensFX_DrawFlareQuad"),
+    (0x002e_2b00, lens_fx_project_source, "LensFX_ProjectSource"),
+    (
+        0x002e_3130,
+        lens_fx_update_source_visibility,
+        "LensFX_UpdateSourceVisibility",
+    ),
+    (0x002e_5da0, snowfall_update, "SnowFall_Update"),
+    (0x002e_6008, snow_fall_render, "SnowFall_Render"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -10885,6 +10906,1922 @@ pub fn dynamic_spray_fx_update_emitter7(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod rctx {
+
+    /// Top of the 0x14-byte render-state stack.
+    pub const STATE_TOP: u32 = 0xe84;
+
+    /// The current texture handle (copied into the pushed state +0x10).
+    pub const TEX: u32 = 0xf70;
+
+    /// The vptr; slot +0x118 returns the view matrix.
+    pub const VPTR: u32 = 0x10d8;
+
+    pub const GET_VIEW: u32 = 0x118;
+}
+
+pub(crate) mod spray8 {
+
+    /// The rider (its `+0x6c0` sub-object's virtual slot `+0x10` returns
+    /// the velocity vector).
+    pub const OBJ: u32 = 0x00;
+
+    /// Spray level (fades in and out).
+    pub const LEVEL: u32 = 0x10;
+
+    /// Base of the dynamic emitter array (0x210 bytes per slot).
+    pub const P28: u32 = 0x28;
+
+    /// Curve table (`+0x818/0x81c/0x820`: velocity, direction and
+    /// speed-scaled direction weights).
+    pub const P2C: u32 = 0x2c;
+
+    /// Throw direction.
+    pub const DIR: u32 = 0x30;
+
+    /// Spawn colour (its w becomes the alpha).
+    pub const COL: u32 = 0x90;
+
+    /// Spray position.
+    pub const POS: u32 = 0xa0;
+
+    /// Non-zero while the effect is driven.
+    pub const ACTIVE: u32 = 0xb0;
+
+    /// Speed (scales the direction term; below a limit the spray stops).
+    pub const SPEED: u32 = 0xbc;
+
+    /// Configuration (`+0x5c`: the level's target).
+    pub const CFG: u32 = 0xd0;
+
+    /// The emitter slot this update drives (8 * 0x210).
+    pub const SLOT: u32 = 0x1080;
+}
+
+pub(crate) mod snowfall {
+    use super::ee;
+    use super::Callee;
+
+    /// `gp-0x848`: the app (`+0x84` game module, `+0x84` its weather
+    /// object, whose `+0x10` is the number of splash managers / views).
+    pub const GP_APP: u32 = 0x848;
+
+    /// gp+0x164c: non-zero when the weather comes from the override block
+    /// (gp+0x1650..0x166c and the colours at 0x5059b8 / 0x5059c8) instead of
+    /// the world painter.
+    pub const GP_WEATHER_OVERRIDE: u32 = 0x164c;
+
+    pub const GP_OVERRIDE_F: [u32; 8] = [
+        0x1650, 0x1654, 0x1668, 0x166c, 0x1658, 0x165c, 0x1660, 0x1664,
+    ];
+
+    pub const OVERRIDE_C0: u32 = 0x0050_59b8;
+
+    pub const OVERRIDE_C1: u32 = 0x0050_59c8;
+
+    /// One weather record per view on the stack (0x40 bytes: f[8], c0, c1).
+    pub const REC_SIZE: u32 = 0x40;
+
+    /// `SnowFall`: twelve `SnowBox*` from +0x10 (a box's first word is its
+    /// view index).
+    pub const BOXES: u32 = 0x10;
+
+    /// `WorldPainter_GetWeatherNN(kind)`, in record order.
+    pub const GETTERS: [Callee; 16] = [
+        Callee {
+            addr: 0x002e_e448,
+            f: ee::s09::WorldPainter_GetWeather08,
+        },
+        Callee {
+            addr: 0x002e_e508,
+            f: ee::s09::WorldPainter_GetWeather18,
+        },
+        Callee {
+            addr: 0x002e_e600,
+            f: ee::s09::WorldPainter_GetWeather48,
+        },
+        Callee {
+            addr: 0x002e_e660,
+            f: ee::s09::WorldPainter_GetWeather50,
+        },
+        Callee {
+            addr: 0x002e_e4c0,
+            f: ee::s09::WorldPainter_GetWeather10,
+        },
+        Callee {
+            addr: 0x002e_e570,
+            f: ee::s09::WorldPainter_GetWeather20,
+        },
+        Callee {
+            addr: 0x002e_e5b8,
+            f: ee::s09::WorldPainter_GetWeather38,
+        },
+        Callee {
+            addr: 0x002e_e6a8,
+            f: ee::s09::WorldPainter_GetWeather40,
+        },
+        Callee {
+            addr: 0x002e_e780,
+            f: ee::s09::WorldPainter_GetWeather60,
+        },
+        Callee {
+            addr: 0x002e_e7c8,
+            f: ee::s09::WorldPainter_GetWeather68,
+        },
+        Callee {
+            addr: 0x002e_e810,
+            f: ee::s09::WorldPainter_GetWeather70,
+        },
+        Callee {
+            addr: 0x002e_e858,
+            f: ee::s09::WorldPainter_GetWeather78,
+        },
+        Callee {
+            addr: 0x002e_e8a0,
+            f: ee::s09::WorldPainter_GetWeather80,
+        },
+        Callee {
+            addr: 0x002e_e8e8,
+            f: ee::s09::WorldPainter_GetWeather88,
+        },
+        Callee {
+            addr: 0x002e_e930,
+            f: ee::s09::WorldPainter_GetWeather90,
+        },
+        Callee {
+            addr: 0x002e_e978,
+            f: ee::s09::WorldPainter_GetWeather98,
+        },
+    ];
+
+    /// `GameModule_GetSplashManager(gm, i)` (cross-shard).
+    pub const GET_SPLASH_MANAGER: u32 = 0x0023_06a8;
+
+    pub const SET_SNOW_AMOUNT: Callee = Callee {
+        addr: 0x002f_4330,
+        f: ee::s09::cSplashManager_SetSnowAmount,
+    };
+
+    pub const SNOW_BOX_UPDATE: Callee = Callee {
+        addr: 0x002e_4f50,
+        f: ee::s09::SnowBox_Update,
+    };
+}
+
+/// Copy a 0x14-byte render state (two unaligned doublewords through GPRs
+/// `ra`/`rb`, then a word through `rw`) from `src` to `dst`, as the
+/// original's `ldl/ldr/sdl/sdr` sequence does.
+pub(crate) fn copy_render_state_2(
+    c: &mut Cpu,
+    src: u32,
+    dst: u32,
+    ra: usize,
+    rb: usize,
+    rw: usize,
+) {
+    c.ldl(ra, src.wrapping_add(0x7));
+    c.ldr(ra, src);
+    c.ldl(rb, src.wrapping_add(0xf));
+    c.ldr(rb, src.wrapping_add(0x8));
+    c.g[rw][0] = Addr(src.wrapping_add(0x10)).lw(c);
+    c.sdl(ra, dst.wrapping_add(0x7));
+    c.sdr(ra, dst);
+    c.sdl(rb, dst.wrapping_add(0xf));
+    c.sdr(rb, dst.wrapping_add(0x8));
+    Addr(dst.wrapping_add(0x10)).sw(c, c.g[rw][0]);
+}
+
+/// `void SnowFall_Render(SnowFall *this)` (0x2e6008): unless rendering is
+/// off (`gp+0x1434`), take the current rider's movement since the last
+/// frame (position at rider+0x20 minus `this->last[k]` at +0x40 + 16k),
+/// push a render state (the template at 0x501420; alpha/blend bits, the
+/// fog bit from `gp+0x1670`, the current texture), fetch the view matrix
+/// (renderer vtable +0x118) with its translation replaced by 0x4ff130, and
+/// for each of the 12 snow boxes (+0x10) owned by that rider wrap it by the
+/// movement (`SnowBox_WrapOffset`) and draw it (`SnowBox_Render`) tinted by
+/// the rider's colour * 0.6 - 0.5. Pops the render state.
+pub fn snow_fall_render(c: &mut Cpu) {
+    const WRAP: Callee = Callee {
+        addr: 0x002e_5430,
+        f: ee::s09::f_002e5430,
+    };
+    const RENDER: Callee = Callee {
+        addr: 0x002e_55d8,
+        f: ee::s09::f_002e55d8,
+    };
+    /// The render-state template pushed for the snow.
+    const STATE_TEMPLATE: u32 = 0x0050_1420;
+    /// Translation row put into the view matrix copy.
+    const VIEW_ORIGIN: u32 = 0x004f_f130;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0xf0);
+        c.g[V0][0] = Addr(gp_at(c, 0x1434)).lw(c);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S1, 0xb0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0xa0);
+        frame.save(c, S3, 0x90);
+        frame.save(c, S4, 0x80);
+        frame.save_ra(c, 0x70);
+        frame.save_fpr(c, 22, 0xe0);
+        frame.save_fpr(c, 21, 0xd8);
+        frame.save_fpr(c, 20, 0xd0);
+        let disabled = c.g[V0][0] != 0;
+        if !disabled {
+            let this = r32(c, S0);
+            // The current rider k and its movement since the last frame.
+            c.cycles += 64;
+            c.g[V0][0] = Addr(gp_at(c, -0x848)).lw(c);
+            c.g[A3][0] = 0x50_0000;
+            c.g[A2][0] = 0xffff_ffff_ffbf_ffff;
+            c.g[T0][0] = 0x40_0000;
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x84)).lw(c);
+            c.g[T1][0] = 0xffff_ffff_ffff_fc1f;
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x84)).lw(c);
+            c.g[S3][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x14)).lw(c);
+            let k = r32(c, S3);
+            c.g[V1][0] = sx(k << 2);
+            c.g[A0][0] = sx(k << 4);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(k << 2));
+            let last = this.wrapping_add(k << 4);
+            c.g[A1][0] = sx(last);
+            c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(4)).lw(c);
+            c.g[A0][0] = c.g[A1][0];
+            let rider = r32(c, V1);
+            let (t0, t10, t20) = (frame.at(c, 0), frame.at(c, 0x10), frame.at(c, 0x20));
+            c.lq(2, rider.wrapping_add(0x20));
+            c.sq(2, t0);
+            c.lqc2(3, t0);
+            c.lqc2(4, last.wrapping_add(0x40));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, t20);
+            c.lq(2, t20);
+            c.lq(3, t0);
+            c.sq(2, t10);
+            c.g[S1][0] = Addr(gp_at(c, 0x2a90)).lw(c);
+            let rc = r32(c, S1);
+            c.sq(3, last.wrapping_add(0x40));
+
+            // Push the render state: duplicate the top, then load the template.
+            let top = Addr(rc.wrapping_add(rctx::STATE_TOP)).lw(c) as u32;
+            c.g[V0][0] = sx(top);
+            copy_render_state_2(c, top, top.wrapping_add(0x14), V1, A0, A1);
+            c.g[V1][0] = Addr(rc.wrapping_add(rctx::STATE_TOP)).lw(c);
+            let top = (c.g[V1][0] as u32).wrapping_add(0x14);
+            c.g[V0][0] = sx(top);
+            Addr(rc.wrapping_add(rctx::STATE_TOP)).sw(c, c.g[V0][0]);
+            c.g[T2][0] = sx(STATE_TEMPLATE);
+            let prev = r32(c, V1);
+            copy_render_state_2(c, STATE_TEMPLATE, prev.wrapping_add(0x14), V0, A0, A1);
+            // Word 1: bit 22 set; word 2: bits 5..9 = 7.
+            c.g[A0][0] = Addr(rc.wrapping_add(rctx::STATE_TOP)).lw(c);
+            let st = r32(c, A0);
+            c.g[V0][0] = (Addr(st.wrapping_add(4)).lw(c) & c.g[A2][0]) | c.g[T0][0];
+            Addr(st.wrapping_add(4)).sw(c, c.g[V0][0]);
+            c.g[A1][0] = Addr(rc.wrapping_add(rctx::STATE_TOP)).lw(c);
+            let st = r32(c, A1);
+            c.g[V0][0] = (Addr(st.wrapping_add(8)).lw(c) & c.g[T1][0]) | 0xe0;
+            Addr(st.wrapping_add(8)).sw(c, c.g[V0][0]);
+            // Word 1 bits 2..6: 7 with the fog flag, else 5.
+            let fog = Addr(gp_at(c, 0x1670)).lw(c) != 0;
+            c.g[V1][0] = 0xffff_ffff_ffff_ff83;
+            c.g[A0][0] = Addr(rc.wrapping_add(rctx::STATE_TOP)).lw(c);
+            let st = r32(c, A0);
+            c.g[V0][0] = Addr(st.wrapping_add(4)).lw(c) & c.g[V1][0];
+            if fog {
+                c.cycles += 5;
+                c.g[V0][0] |= 0x1c;
+            } else {
+                c.cycles += 4;
+                c.g[V0][0] |= 0x14;
+            }
+            // Word 1 bits 0..1 = 2; word 2 bits 10..28 cleared; texture.
+            c.cycles += 58;
+            Addr(st.wrapping_add(4)).sw(c, c.g[V0][0]);
+            c.g[A1][0] = Addr(rc.wrapping_add(rctx::STATE_TOP)).lw(c);
+            let st = r32(c, A1);
+            c.g[A0][0] = 0xffff_ffff_ffff_fffc;
+            c.g[V1][0] = 0xffff_ffff_e000_03ff;
+            c.g[V0][0] = (Addr(st.wrapping_add(4)).lw(c) & c.g[A0][0]) | 2;
+            Addr(st.wrapping_add(4)).sw(c, c.g[V0][0]);
+            c.g[A0][0] = Addr(rc.wrapping_add(rctx::STATE_TOP)).lw(c);
+            let st = r32(c, A0);
+            c.g[V0][0] = Addr(st.wrapping_add(8)).lw(c) & c.g[V1][0];
+            Addr(st.wrapping_add(8)).sw(c, c.g[V0][0]);
+            c.g[V0][0] = Addr(rc.wrapping_add(rctx::STATE_TOP)).lw(c);
+            c.g[A1][0] = Addr(rc.wrapping_add(rctx::TEX)).lw(c);
+            Addr((c.g[V0][0] as u32).wrapping_add(0x10)).sh(c, c.g[A1][0]);
+
+            // The view matrix (renderer vtable +0x118) into sp+0x30.
+            c.g[V1][0] = Addr(rc.wrapping_add(rctx::VPTR)).lw(c);
+            let vt = r32(c, V1);
+            c.g[A0][0] = Addr(vt.wrapping_add(rctx::GET_VIEW)).lh(c);
+            c.g[V0][0] = Addr(vt.wrapping_add(rctx::GET_VIEW + 4)).lw(c);
+            c.g[A0][0] = sx(rc.wrapping_add(c.g[A0][0] as u32));
+            let method = r32(c, V0);
+            call_ptr(c, method, 0x002e_61b4)?;
+            let m = frame.at(c, 0x30);
+            c.g[V1][0] = sx(m);
+            let src = r32(c, V0);
+            for i in 0..4u32 {
+                c.lqc2(1 + i as usize, src.wrapping_add(0x10 * i));
+            }
+            for i in 0..4u32 {
+                c.sqc2(1 + i as usize, m.wrapping_add(0x10 * i));
+            }
+            c.g[V0][0] = 0x50_0000;
+            c.g[S4][0] = c.g[V1][0];
+            c.g[V0][0] = sx(VIEW_ORIGIN);
+            c.g[A1][0] = Addr(gp_at(c, -0x848)).lw(c);
+            c.lq(3, VIEW_ORIGIN);
+            c.g[S0][0] = sx(this.wrapping_add(0x10));
+            c.lwc1(3, gp_at(c, -0x3a04));
+            c.g[S2][0] = 0xb;
+            let t60 = frame.at(c, 0x60);
+            c.sq(3, t60);
+            c.g[AT][0] = 0xffff_ffff_bf00_0000;
+            c.mtc1(1, 4);
+            // The tint: rider colour (+0x80) * 0.6 - 0.5 into f22/f21/f20.
+            c.g[A0][0] = Addr((c.g[A1][0] as u32).wrapping_add(0x84)).lw(c);
+            c.g[V1][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x84)).lw(c);
+            c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x14)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(4)).lw(c);
+            c.lq(2, (c.g[A0][0] as u32).wrapping_add(0x80));
+            c.sq(2, t20);
+            c.lwc1(0, t20);
+            c.lwc1(1, t20 + 4);
+            c.lwc1(2, t20 + 8);
+            c.mul_s(0, 0, 3);
+            c.mul_s(1, 1, 3);
+            c.mul_s(2, 2, 3);
+            c.add_s(22, 0, 4);
+            c.add_s(21, 1, 4);
+            c.add_s(20, 2, 4);
+
+            // The 12 snow boxes.
+            loop {
+                c.cycles += 3;
+                let slot = r32(c, S0);
+                c.g[A0][0] = Addr(slot).lw(c);
+                if c.g[A0][0] != 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(c.g[A0][0] as u32).lw(c);
+                    if c.g[V0][0] == c.g[S3][0] {
+                        c.cycles += 9;
+                        c.g[A1][0] = sx(frame.at(c, 0x10));
+                        WRAP.call(c, 0x002e_6268)?;
+                        c.g[A0][0] = Addr(slot).lw(c);
+                        c.g[A1][0] = c.g[S4][0];
+                        c.mov_s(12, 22);
+                        c.mov_s(13, 21);
+                        c.mov_s(14, 20);
+                        RENDER.call(c, 0x002e_6280)?;
+                    }
+                }
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+                c.cycles += 2;
+                let more = (c.g[S2][0] as i64) >= 0;
+                c.g[S0][0] = sx(slot.wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002e_6248);
+                }
+            }
+            // Pop the render state.
+            c.cycles += 3;
+            c.g[V0][0] =
+                sx((Addr(rc.wrapping_add(rctx::STATE_TOP)).lw(c) as u32).wrapping_sub(0x14));
+            Addr(rc.wrapping_add(rctx::STATE_TOP)).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore(c, S4, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.restore_fpr(c, 22, 0xe0);
+        frame.restore_fpr(c, 21, 0xd8);
+        frame.restore_fpr(c, 20, 0xd0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// LensFX_ProjectSource (0x2e2b00)
+// ---------------------------------------------------------------------------
+
+/// The camera / view object (`*(gp + 0x2a90)`).
+pub(crate) const LENS_CAMERA_GP: u32 = 0x2a90;
+
+/// The camera's embedded projector (vtable pointer at +0x10d8).
+pub(crate) const CAM_PROJECTOR_VT: u32 = 0x10d8;
+
+/// Projector slot: `IsOccluded(point)` (non-zero hides the flare).
+pub(crate) const VT_OCCLUDED: u32 = 0x2d8;
+
+/// Projector slot: `Project(out, point)` (screen x/y at +0/+4, depth +8).
+pub(crate) const VT_PROJECT: u32 = 0x2e0;
+
+/// Lens flare: the light source it follows.
+pub(crate) const LENS_SOURCE: u32 = 0x20;
+
+/// Lens flare: visible / on-screen flags (halfwords).
+pub(crate) const LENS_VISIBLE: u32 = 0x2c;
+
+pub(crate) const LENS_ON_SCREEN: u32 = 0x2e;
+
+/// Light source: world position (x, y, z) and its kind bits (`& 0x70`).
+pub(crate) const SRC_POS: u32 = 0x1c;
+
+pub(crate) const SRC_KIND: u32 = 0xc;
+
+/// `void LensFX_ProjectSource(LensFX* lens, View* view)` (0x2e2b00): project
+/// the flare's light source onto the screen. Hidden (occluded) sources clear
+/// both flags. Visible ones in front of the camera get a sample rectangle
+/// sized from their depth (clamped to 16x8 pixels, at least 1x1) centred on
+/// the projected point and clipped to the view, a projected flare radius
+/// (100/80/200 world units by source kind) and a horizontal screen offset
+/// normalised to -1..1.
+pub fn lens_fx_project_source(c: &mut Cpu) {
+    guest(c, |c| {
+        // Prologue; the source position as a homogeneous point at sp+0.
+        c.cycles += 27;
+        let frame = Frame::open(c, 0xc0);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 2);
+        frame.save(c, S0, 0xb0);
+        frame.save(c, S1, 0xa0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x90);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x80);
+        c.g[A1][0] = c.g[SP][0];
+        frame.save_ra(c, 0x70);
+        let lens = r32(c, S0);
+        let view = r32(c, S1);
+        let point = sp(c);
+        let gp = c.g[GP][0] as u32;
+        c.g[S2][0] = Addr(gp).off(LENS_CAMERA_GP).lw(c);
+        let cam = r32(c, S2);
+        c.g[V0][0] = Addr(lens).off(LENS_SOURCE).lw(c);
+        let src = r32(c, V0);
+        c.lwc1(0, src + SRC_POS);
+        c.swc1(0, point);
+        c.lwc1(1, src + SRC_POS + 4);
+        c.swc1(1, point + 4);
+        c.lwc1(0, src + SRC_POS + 8);
+        c.swc1(2, point + 0xc);
+        c.swc1(0, point + 8);
+
+        // Occluded?
+        c.g[V1][0] = Addr(cam).off(CAM_PROJECTOR_VT).lw(c);
+        let vt = c.g[V1][0];
+        let slot = VSlot::read(c, vt, VT_OCCLUDED);
+        c.g[A0][0] = slot.delta;
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = slot.this(c.g[S2][0]);
+        call_ptr(c, slot.func as u32, 0x002e_2b64)?;
+        c.g[S3][0] = 1;
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            Addr(lens).off(LENS_ON_SCREEN).sh(c, 0);
+            Addr(lens).off(LENS_VISIBLE).sh(c, 0);
+            c.cycles += 1;
+            return epilogue(c, frame);
+        }
+
+        // Project it (screen point at sp+0x10).
+        c.cycles += 16;
+        c.g[A0][0] = sx(point.wrapping_add(0x10));
+        Addr(lens).off(LENS_VISIBLE).sh(c, 1);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[V0][0] = Addr(cam).off(CAM_PROJECTOR_VT).lw(c);
+        let vt = c.g[V0][0];
+        let slot = VSlot::read(c, vt, VT_PROJECT);
+        c.g[A1][0] = slot.delta;
+        c.g[V1][0] = slot.func;
+        c.g[A1][0] = slot.this(c.g[S2][0]);
+        call_ptr(c, slot.func as u32, 0x002e_2b98)?;
+        let point = sp(c);
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(2, point + 0x18);
+        c.lwc1(0, gp.wrapping_sub(0x3a40));
+        c.lwc1(1, gp.wrapping_sub(0x3a3c));
+        c.mul_s(2, 2, 0);
+        c.c_le_s(2, 1);
+        if c.fcc() {
+            // Behind the near plane: visible but not on screen.
+            return epilogue(c, frame);
+        }
+
+        // Sample rectangle size from the depth: w = clamp(800 d, 1, 16),
+        // h = clamp(400 d, 1, 8).
+        c.cycles += 13;
+        c.g[AT][0] = 0x4448_0000;
+        c.mtc1(AT, 1);
+        c.g[V1][0] = 0x10;
+        c.g[AT][0] = 0x43c8_0000;
+        c.mtc1(AT, 0);
+        c.mul_s(1, 2, 1);
+        c.mul_s(0, 2, 0);
+        c.cvt_w_s(2, 1);
+        c.mfc1(V0, 2);
+        c.cvt_w_s(1, 0);
+        c.mfc1(A1, 1);
+        Addr(lens).off(LENS_ON_SCREEN).sh(c, 1);
+        if (c.g[V0][0] as i64) <= 0 {
+            c.cycles += 1;
+            c.g[A0][0] = 1;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            if c.g[V0][0] != 0 {
+                c.g[A0][0] = c.g[V1][0];
+            }
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 8;
+        if (c.g[A1][0] as i64) <= 0 {
+            c.cycles += 1;
+            c.g[V1][0] = 1;
+        } else {
+            c.cycles += 4;
+            c.g[V1][0] = c.g[V0][0];
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[V1][0] = c.g[A1][0];
+            }
+        }
+
+        // The rectangle around the projected point, clipped to the view.
+        c.cycles += 39;
+        c.g[A1][0] = c.g[V1][0];
+        c.g[V0][0] = sx(((c.g[A0][0] as u32) as i32 >> 1) as u32);
+        c.g[V1][0] = sx(((c.g[A1][0] as u32) as i32 >> 1) as u32);
+        c.lwc1(4, point + 0x14);
+        c.mtc1(V1, 1);
+        c.cvt_s_w(1, 1);
+        c.lwc1(3, point + 0x10);
+        c.mtc1(V0, 0);
+        c.cvt_s_w(0, 0);
+        c.g[AT][0] = 0x4080_0000;
+        c.mtc1(AT, 2);
+        c.g[AT][0] = 0x4100_0000;
+        c.mtc1(AT, 7);
+        c.mtc1(A0, 5);
+        c.cvt_s_w(5, 5);
+        c.sub_s(1, 4, 1);
+        c.g[AT][0] = 0x4180_0000;
+        c.mtc1(AT, 6);
+        c.sub_s(0, 3, 0);
+        c.swc1(7, lens + 0x1c);
+        c.sub_s(4, 4, 2);
+        c.swc1(5, lens + 0x8);
+        c.sub_s(3, 3, 7);
+        c.swc1(1, lens + 0x4);
+        c.mtc1(A1, 2);
+        c.cvt_s_w(2, 2);
+        c.swc1(0, lens);
+        c.swc1(4, lens + 0x14);
+        c.swc1(3, lens + 0x10);
+        c.swc1(2, lens + 0xc);
+        c.swc1(6, lens + 0x18);
+        c.mtc1(0, 2);
+        c.lwc1(0, view);
+        c.lwc1(1, view + 0x8);
+        c.c_le_s(2, 3);
+        c.mov_s(5, 2);
+        c.add_s(0, 0, 1);
+        c.sub_s(0, 0, 6);
+        if c.fcc() {
+            c.cycles += 1;
+            c.min_s(5, 3, 0);
+        }
+        c.cycles += 8;
+        c.swc1(5, lens + 0x10);
+        c.c_le_s(2, 4);
+        c.mov_s(3, 2);
+        c.lwc1(0, view + 0x4);
+        c.lwc1(1, view + 0xc);
+        c.add_s(0, 0, 1);
+        c.sub_s(0, 0, 7);
+        if c.fcc() {
+            c.cycles += 1;
+            c.min_s(3, 4, 0);
+        }
+
+        // Flare radius by source kind (f2; 0 for the other kinds).
+        c.cycles += 7;
+        c.swc1(3, lens + 0x14);
+        c.g[A0][0] = 0x20;
+        c.g[V0][0] = Addr(lens).off(LENS_SOURCE).lw(c);
+        let src = r32(c, V0);
+        c.g[V1][0] = Addr(src).off(SRC_KIND).lw(c);
+        c.g[V1][0] &= 0x70;
+        let kind = c.g[V1][0];
+        c.g[V0][0] = (kind < 0x21) as u64;
+        let radius_bits = if kind == 0x20 {
+            c.cycles += 4;
+            Some(0x42a0_0000)
+        } else if kind < 0x21 {
+            c.cycles += 2;
+            c.g[V0][0] = 0x10;
+            c.cycles += 2;
+            if kind == 0x10 {
+                c.cycles += 4;
+                Some(0x42c8_0000)
+            } else {
+                c.cycles += 2;
+                None
+            }
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0x10;
+            c.cycles += 3;
+            c.g[V0][0] = 0x40;
+            c.cycles += 2;
+            if kind == 0x40 {
+                Some(0x4348_0000)
+            } else {
+                None
+            }
+        };
+        if let Some(bits) = radius_bits {
+            c.g[AT][0] = bits;
+            c.mtc1(AT, 2);
+        }
+        c.lwc1(0, view + 0x18);
+        if radius_bits.is_some() || kind < 0x21 {
+            c.cycles += 1;
+        }
+        c.g[A0][0] = sx(point.wrapping_add(0x40));
+
+        // Project the point offset by the radius (out at sp+0x40).
+        c.cycles += 41;
+        c.lwc1(1, view + 0x28);
+        c.g[A2][0] = sx(point.wrapping_add(0x30));
+        c.lwc1(3, view + 0x38);
+        c.mul_s(4, 0, 2);
+        c.mul_s(5, 1, 2);
+        c.swc1(0, point + 0x20);
+        c.mul_s(2, 3, 2);
+        c.swc1(1, point + 0x24);
+        c.swc1(4, point + 0x40);
+        c.swc1(3, point + 0x28);
+        c.swc1(2, point + 0x48);
+        c.swc1(4, point + 0x50);
+        c.swc1(2, point + 0x58);
+        c.swc1(5, point + 0x44);
+        c.swc1(5, point + 0x54);
+        Addr(point).off(0x4c).sw(c, 0);
+        c.lqc2(3, point);
+        c.lqc2(4, point + 0x40);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, point + 0x60);
+        c.lq(2, point + 0x60);
+        c.sq(2, point + 0x30);
+        c.g[V1][0] = Addr(cam).off(CAM_PROJECTOR_VT).lw(c);
+        let vt = c.g[V1][0];
+        let slot = VSlot::read(c, vt, VT_PROJECT);
+        c.g[A1][0] = slot.delta;
+        c.g[V0][0] = slot.func;
+        c.g[A1][0] = slot.this(c.g[S2][0]);
+        call_ptr(c, slot.func as u32, 0x002e_2dc0)?;
+        let point = sp(c);
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(0, point + 0x48);
+        c.lwc1(3, point + 0x10);
+        c.swc1(0, lens + 0x24);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 4);
+        c.lwc1(0, view);
+        c.lwc1(2, view + 0x8);
+        c.sub_s(0, 3, 0);
+        c.lwc1(1, gp.wrapping_sub(0x3a38));
+        c.add_s(0, 0, 0);
+        c.div_s(0, 0, 2);
+        c.sub_s(0, 0, 4);
+        c.mul_s(1, 0, 1);
+        c.swc1(1, lens + 0x28);
+        c.cycles += 1;
+        epilogue(c, frame)
+    });
+
+    fn epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+        c.cycles += 6;
+        frame.restore(c, S0, 0xb0);
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.close(c);
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VU0 macro sequences shared by the ports below (the original's exact ops)
+// ---------------------------------------------------------------------------
+
+/// `mfc1 gpr, f; lqc2 vf4, src; qmtc2 gpr, vf3; vmul.xyzw vf5, vf4, vf3x;
+/// sqc2 vf5, dst`: `dst = src * f`.
+pub(crate) fn vscale_2(c: &mut Cpu, gpr: usize, f: usize, src: u32, dst: u32) {
+    c.mfc1(gpr, f);
+    c.lqc2(4, src);
+    c.qmtc2(gpr, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, dst);
+}
+
+/// The xyz length of the vector at `src` (`vf3`), left in `gpr` by
+/// `cfc2 gpr, Q` after `vsqrt`.
+pub(crate) fn vlen(c: &mut Cpu, gpr: usize, src: u32) {
+    c.lqc2(3, src);
+    vlen_vf3(c, gpr);
+}
+
+/// [`vlen`] of the vector already in vf3.
+pub(crate) fn vlen_vf3(c: &mut Cpu, gpr: usize) {
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(gpr, 22);
+}
+
+/// `lqc2 vf3, a; lqc2 vf4, b; v{add,sub}.xyzw vf5, vf3, vf4; sqc2 vf5, dst`.
+pub(crate) fn vadd_3(c: &mut Cpu, a: u32, b: u32, dst: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, dst);
+}
+
+pub(crate) fn vsub_2(c: &mut Cpu, a: u32, b: u32, dst: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, dst);
+}
+
+/// `lq gpr, src; sq gpr, dst` (the compiler's quadword copies through a GPR).
+pub(crate) fn qcopy(c: &mut Cpu, gpr: usize, src: u32, dst: u32) {
+    c.lq(gpr, src);
+    c.sq(gpr, dst);
+}
+
+// ---------------------------------------------------------------------------
+// cBoardWakeFX_BuildTrail (0x2ddd30)
+// ---------------------------------------------------------------------------
+
+/// Board wake: the rider, ring bookkeeping and the trail shape.
+pub(crate) const WAKE_RIDER: u32 = 0x0;
+
+pub(crate) const WAKE_HEAD: u32 = 0x8;
+
+pub(crate) const WAKE_ELEMS: u32 = 0xc;
+
+/// `rings[n]` (pointers to 0x30-byte segments, one per head slot).
+pub(crate) const WAKE_RINGS: u32 = 0x10;
+
+pub(crate) const WAKE_PHASE: u32 = 0x38;
+
+pub(crate) const WAKE_SPREAD: u32 = 0x60;
+
+pub(crate) const WAKE_CURVE: u32 = 0x70;
+
+pub(crate) const WAKE_BACK: u32 = 0x80;
+
+pub(crate) const WAKE_WIDTH: u32 = 0x90;
+
+pub(crate) const WAKE_ALPHA: u32 = 0x94;
+
+pub(crate) const WAKE_POINTS: u32 = 0xb4;
+
+/// The rider's velocity (+0x1e0) and up vector (+0x370).
+pub(crate) const RIDER_VEL: u32 = 0x1e0;
+
+pub(crate) const RIDER_UP: u32 = 0x370;
+
+/// A trail element (0x70 bytes): points from +0, the direction at +0x50,
+/// the width at +0x60.
+pub(crate) const ELEM_SIZE: u32 = 0x70;
+
+pub(crate) const ELEM_DIR: u32 = 0x50;
+
+pub(crate) const ELEM_WIDTH: u32 = 0x60;
+
+pub(crate) const ELEM_CLEAR: u32 = 0x64;
+
+/// Ring segment (0x30 bytes): position at +0x20, alpha at +0x1c.
+pub(crate) const SEG_SIZE: u32 = 0x30;
+
+pub(crate) const SEG_POS: u32 = 0x20;
+
+pub(crate) const SEG_ALPHA: u32 = 0x1c;
+
+/// `void cBoardWakeFX_BuildTrail(cBoardWakeFX* wake, const Vec4* pos, float
+/// width)` (0x2ddd30): fill the head trail element. The trail width is
+/// modulated by 1D fractal noise of the phase; the direction is the wake's
+/// back vector scaled by the rider's speed, minus the reversed velocity,
+/// times 0.85; the points follow `w * (0.75 t^2 curve + t spread)` with the
+/// last one pulled in by 0.9. The head slot of every ring gets the position
+/// `pos - 5 up` and the alpha `(int)(alpha * 128)`.
+pub fn board_wake_fx_build_trail(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 83;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0xb0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x80);
+        let wake = r32(c, S0);
+        c.mov_s(20, 12);
+        c.g[A0][0] = 3;
+        c.lwc1(12, wake + WAKE_PHASE);
+        Callee {
+            addr: 0x002d_1928,
+            f: ee::s09::f_002d1928,
+        }
+        .call(c, 0x002d_dd5c)?;
+        let sp0 = sp(c);
+        let gp = c.g[GP][0] as u32;
+
+        // The head element; clear it and its first point.
+        c.g[V0][0] = Addr(wake).off(WAKE_HEAD).lw(c);
+        c.g[V1][0] = ELEM_SIZE as u64;
+        c.g[A1][0] = Addr(wake).off(WAKE_ELEMS).lw(c);
+        c.g[A0][0] = 0x50_0000;
+        c.mult(0, V0, V0, V1);
+        c.lwc1(3, wake + WAKE_WIDTH);
+        c.g[AT][0] = 0x3e80_0000;
+        c.mtc1(AT, 1);
+        c.g[A0][0] = sx(0x004f_f120);
+        c.g[AT][0] = sx(0xbf80_0000);
+        c.mtc1(AT, 2);
+        c.g[A2][0] = 0;
+        c.mul_s(0, 0, 1);
+        c.lwc1(4, gp.wrapping_sub(0x3be4));
+        c.g[T1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        let elem = r32(c, T1);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 1);
+        Addr(elem).off(ELEM_CLEAR).sw(c, 0);
+        c.add_s(0, 0, 1);
+        qcopy(c, V0, 0x004f_f120, elem);
+        // w = width * (noise * 0.25 + 1).
+        c.mul_s(3, 3, 0);
+
+        // dir = (-back * |vel| - (-vel)) * k.
+        vscale_2(c, A0, 2, wake + WAKE_BACK, sp0 + 0x20);
+        c.lq(V1, sp0 + 0x20);
+        c.g[V0][0] = Addr(wake).off(WAKE_RIDER).lw(c);
+        let rider = r32(c, V0);
+        c.sq(V1, sp0 + 0x10);
+        vlen(c, A0, rider + RIDER_VEL);
+        c.mtc1(A0, 0);
+        vscale_2(c, V1, 0, sp0 + 0x10, sp0 + 0x20);
+        c.lq(V0, sp0 + 0x20);
+        c.g[V1][0] = Addr(wake).off(WAKE_RIDER).lw(c);
+        c.sq(V0, sp0);
+        vscale_2(c, A0, 2, rider + RIDER_VEL, sp0 + 0x20);
+        qcopy(c, V0, sp0 + 0x20, sp0 + 0x10);
+        vsub_2(c, sp0, sp0 + 0x10, sp0 + 0x40);
+        qcopy(c, V0, sp0 + 0x40, sp0 + 0x30);
+        vscale_2(c, V1, 4, sp0 + 0x30, sp0 + 0x40);
+        qcopy(c, V0, sp0 + 0x40, sp0 + 0x20);
+        c.sq(V0, elem + ELEM_DIR);
+
+        // The trail points.
+        c.g[V1][0] = Addr(wake).off(WAKE_POINTS).lw(c);
+        c.g[A0][0] = c.g[T1][0];
+        if (c.g[V1][0] as i64) > 0 {
+            c.cycles += 3;
+            c.lwc1(4, gp.wrapping_sub(0x3be0));
+            c.g[AT][0] = 0x3f40_0000;
+            c.mtc1(AT, 2);
+            loop {
+                // t = i / (n - 1); a = t^2; the last t *= 0.9.
+                c.cycles += 8;
+                c.g[V0][0] = sx(r32(c, V1).wrapping_sub(1));
+                c.mtc1(A2, 1);
+                c.cvt_s_w(1, 1);
+                c.mtc1(V0, 0);
+                c.cvt_s_w(0, 0);
+                c.div_s(1, 1, 0);
+                let last = c.g[A2][0] == c.g[V0][0];
+                c.mul_s(0, 1, 1);
+                if last {
+                    c.cycles += 1;
+                    c.mul_s(1, 1, 4);
+                }
+                // point = w * (curve * a * 0.75 + spread * t).
+                c.cycles += 40;
+                vscale_2(c, V0, 0, wake + WAKE_CURVE, sp0 + 0x60);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                qcopy(c, V0, sp0 + 0x60, sp0 + 0x50);
+                vscale_2(c, V1, 2, sp0 + 0x50, sp0 + 0x60);
+                qcopy(c, V0, sp0 + 0x60, sp0 + 0x40);
+                vscale_2(c, V1, 1, wake + WAKE_SPREAD, sp0 + 0x70);
+                qcopy(c, V0, sp0 + 0x70, sp0 + 0x60);
+                vadd_3(c, sp0 + 0x40, sp0 + 0x60, sp0 + 0x70);
+                qcopy(c, V0, sp0 + 0x70, sp0 + 0x30);
+                vscale_2(c, V1, 3, sp0 + 0x30, sp0 + 0x70);
+                qcopy(c, V0, sp0 + 0x70, sp0 + 0x20);
+                let point = r32(c, A0);
+                c.sq(V0, point);
+                c.g[V1][0] = Addr(wake).off(WAKE_POINTS).lw(c);
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                c.g[A0][0] = sx(point.wrapping_add(0x10));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002d_de88);
+                }
+            }
+        }
+
+        // Ring 0's head segment: position pos - 5 up, alpha * 128.
+        c.cycles += 37;
+        c.g[V1][0] = Addr(wake).off(WAKE_RINGS).lw(c);
+        c.g[A1][0] = SEG_SIZE as u64;
+        c.g[A0][0] = Addr(wake).off(WAKE_HEAD).lw(c);
+        c.g[A3][0] = 1;
+        c.g[V0][0] = Addr(wake).off(WAKE_RIDER).lw(c);
+        let rider = r32(c, V0);
+        c.g[AT][0] = 0x40a0_0000;
+        c.mtc1(AT, 0);
+        c.mult(0, A0, A0, A1);
+        vscale_2(c, A2, 0, rider + RIDER_UP, sp0 + 0x40);
+        c.g[AT][0] = 0x4300_0000;
+        c.mtc1(AT, 1);
+        qcopy(c, V0, sp0 + 0x40, sp0 + 0x30);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+        let pos = r32(c, S1);
+        vsub_2(c, pos, sp0 + 0x30, sp0 + 0x40);
+        qcopy(c, V0, sp0 + 0x40, sp0 + 0x20);
+        let seg0 = r32(c, A0);
+        c.sq(V0, seg0 + SEG_POS);
+        c.g[V1][0] = Addr(wake).off(WAKE_HEAD).lw(c);
+        c.lwc1(0, wake + WAKE_ALPHA);
+        c.mult(0, V1, V1, A1);
+        c.g[V0][0] = Addr(wake).off(WAKE_RINGS).lw(c);
+        c.mul_s(0, 0, 1);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        c.cvt_w_s(1, 0);
+        let seg0 = r32(c, V1);
+        c.swc1(1, seg0 + SEG_ALPHA);
+
+        // Copy it into the head slot of rings 1..n.
+        c.g[V0][0] = Addr(wake).off(WAKE_POINTS).lw(c);
+        c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            c.g[T0][0] = SEG_SIZE as u64;
+            c.g[A2][0] = sx(wake + WAKE_RINGS + 4);
+            loop {
+                c.cycles += 21;
+                c.g[V1][0] = Addr(wake).off(WAKE_HEAD).lw(c);
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                c.g[A0][0] = Addr(wake).off(WAKE_RINGS).lw(c);
+                c.mult(0, V1, V1, T0);
+                c.g[A1][0] = Addr(r32(c, A2)).lw(c);
+                c.g[A0][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+                let (from, to) = (r32(c, A0), r32(c, V1));
+                qcopy(c, V0, from + SEG_POS, to + SEG_POS);
+                c.g[A0][0] = Addr(wake).off(WAKE_HEAD).lw(c);
+                c.g[V0][0] = Addr(wake).off(WAKE_RINGS).lw(c);
+                c.mult(0, A0, A0, T0);
+                c.g[A1][0] = Addr(r32(c, A2)).lw(c);
+                c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+                c.g[V1][0] = Addr(r32(c, V0)).off(SEG_ALPHA).lw(c);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+                let alpha = c.g[V1][0];
+                Addr(r32(c, A0)).off(SEG_ALPHA).sw(c, alpha);
+                c.g[V0][0] = Addr(wake).off(WAKE_POINTS).lw(c);
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(4));
+                if c.g[V0][0] == 0 {
+                    c.cycles += 1;
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002d_dfe8);
+                }
+            }
+        }
+        c.swc1(20, elem + ELEM_WIDTH);
+
+        c.cycles += 6;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.restore_fpr(c, 20, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `cDynamicSprayFX_AddRandomVelocity(fx, vec)`.
+pub(crate) const SPRAY_ADD_RANDOM_VELOCITY: Callee = Callee {
+    addr: 0x002d_e398,
+    f: ee::s09::cDynamicSprayFX_AddRandomVelocity,
+};
+
+/// `DynamicEmitter_SpawnAt(em, pos, vel, col, spawn, dt)`.
+pub(crate) const DYNAMIC_EMITTER_SPAWN_AT: u32 = 0x0037_17c0;
+
+/// The rider sub-object's velocity getter (virtual slot `+0x10` of
+/// `rider+0x6c0`), registers as at 0x2e2004 / 0x2e20a4 / 0x2e20d4.
+pub(crate) fn spray8_velocity(c: &mut Cpu, fx: u32, ret: u32) -> crate::call::Flow {
+    c.g[A0][0] = c.lw(fx);
+    c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0x6c0));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x6c0));
+    c.g[A1][0] = c.lh(r32(c, V1).wrapping_add(0x10));
+    c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x14));
+    let target = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+    call_ptr(c, target, ret)
+}
+
+/// `void cDynamicSprayFX_UpdateEmitter8(cDynamicSprayFX* fx)` (0x2e1f70):
+/// a spray whose level fades in toward the configured target (`+0.01` per
+/// tick) while the effect is driven and the target is at least 0.01, and
+/// otherwise fades out (`-1/60` per tick, not below 0). The level drops to
+/// 0 at once when, undriven, the rider falls faster than 3333 (velocity z),
+/// or when the speed is below a limit. While fading out with a level left,
+/// one particle spawns in slot 8 at the position (plus a random jitter),
+/// alpha `min(1.25 level, 1)` (scaled down while falling), thrown along
+/// the rider's velocity and the direction (weighted by the curve table and
+/// the speed). Otherwise slot 8 is only kept alive at the position.
+pub fn dynamic_spray_fx_update_emitter8(c: &mut Cpu) {
+    use spray8::*;
+    use ssx3_ee_rt::vu0::{Src, X};
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0xf0);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S1, 0xb0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0xa0);
+        c.g[S1][0] = 0;
+        frame.save_ra(c, 0x90);
+        frame.save_fpr(c, 22, 0xe0);
+        frame.save_fpr(c, 21, 0xd8);
+        frame.save_fpr(c, 20, 0xd0);
+        let fx = r32(c, S0);
+        let gp = r32(c, GP);
+        c.g[V0][0] = c.lw(fx + P28);
+        c.g[V1][0] = c.lw(fx + ACTIVE);
+        c.g[S2][0] = sx(r32(c, V0).wrapping_add(SLOT));
+        let mut fade_in = false;
+        if c.g[V1][0] != 0 {
+            c.cycles += 7;
+            c.g[V0][0] = c.lw(fx + CFG);
+            c.lwc1(0, gp.wrapping_sub(0x3a6c)); // 0.01
+            c.lwc1(2, r32(c, V0).wrapping_add(0x5c));
+            c.c_lt_s(2, 0);
+            fade_in = !c.fcc();
+        }
+        if fade_in {
+            // level = min(level + 0.01, target); s1 = 1 (no spawn).
+            c.lwc1(0, fx + LEVEL);
+            c.cycles += 4;
+            c.g[S1][0] = 1;
+            c.lwc1(1, gp.wrapping_sub(0x3a64)); // 0.01
+            c.add_s(0, 0, 1);
+            c.min_s(0, 0, 2);
+        } else {
+            // level = max(level - 1/60, 0).
+            c.cycles += 6;
+            c.lwc1(0, fx + LEVEL);
+            c.lwc1(2, gp.wrapping_sub(0x3a68)); // 1/60
+            c.mtc1(0, 1);
+            c.sub_s(0, 0, 2);
+            c.max_s(0, 0, 1);
+        }
+
+        // Cut the level when falling fast (undriven) or too slow.
+        c.cycles += 4;
+        c.swc1(0, fx + LEVEL);
+        c.g[V0][0] = c.lw(fx + ACTIVE);
+        let mut cut = false;
+        if c.g[V0][0] == 0 {
+            c.cycles += 13;
+            spray8_velocity(c, fx, 0x002e_2018)?;
+            c.lwc1(1, r32(c, V0).wrapping_add(0x8));
+            c.lwc1(0, gp.wrapping_sub(0x3a60)); // -3333.33
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                c.sw(fx + LEVEL, 0);
+                cut = true;
+            }
+        }
+        if !cut {
+            c.cycles += 6;
+            c.lwc1(1, gp.wrapping_sub(0x3a5c)); // speed limit
+            c.lwc1(0, fx + SPEED);
+            c.c_lt_s(0, 1);
+            if c.fcc() {
+                c.cycles += 1;
+                c.sw(fx + LEVEL, 0);
+                cut = true;
+            }
+        }
+        if cut {
+            c.cycles += 1;
+        }
+        c.lq(2, fx + POS);
+
+        // pos -> sp+0.
+        c.cycles += 2;
+        c.sq(2, sp(c));
+        let mut spawn = false;
+        if c.g[S1][0] == 0 {
+            c.cycles += 5;
+            c.lwc1(1, fx + LEVEL);
+            c.mtc1(0, 21);
+            c.c_lt_s(21, 1);
+            spawn = c.fcc();
+        }
+        if spawn {
+            // alpha = clamp(1.25 level, 0, 1).
+            c.cycles += 9;
+            c.g[AT][0] = 0x3fa0_0000;
+            c.mtc1(AT, 0);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 22);
+            c.mul_s(0, 1, 0);
+            c.c_le_s(21, 0);
+            let pos = c.fcc();
+            c.mov_s(2, 21);
+            if pos {
+                c.cycles += 1;
+                c.min_s(2, 0, 22);
+            }
+            c.cycles += 13;
+            c.mov_s(20, 2);
+            spray8_velocity(c, fx, 0x002e_20b4)?;
+            c.lwc1(0, r32(c, V0).wrapping_add(0x8));
+            c.c_lt_s(0, 21);
+            if c.fcc() {
+                // Falling: alpha *= clamp((z + 3333.33) / 3333.33, 0, 1).
+                c.cycles += 15;
+                spray8_velocity(c, fx, 0x002e_20e4)?;
+                c.lwc1(1, gp.wrapping_sub(0x3a58)); // 3333.33
+                c.lwc1(0, r32(c, V0).wrapping_add(0x8));
+                c.add_s(0, 0, 1);
+                c.div_s(0, 0, 1);
+                c.c_le_s(21, 0);
+                let pos = c.fcc();
+                c.mov_s(2, 21);
+                if pos {
+                    c.cycles += 1;
+                    c.min_s(2, 0, 22);
+                }
+                c.cycles += 2;
+                c.mul_s(20, 20, 2);
+            }
+            c.lq(2, fx + COL);
+
+            // col (alpha in w) -> sp+0x10; velocity terms.
+            c.cycles += 68;
+            c.g[A0][0] = c.lw(fx);
+            let sp0 = sp(c);
+            c.sq(2, sp0 + 0x10);
+            c.swc1(20, sp0 + 0x1c);
+            c.g[A1][0] = sx(r32(c, A0).wrapping_add(0x6c0));
+            c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(0x6c0));
+            c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x10));
+            c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x14));
+            let target = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+            call_ptr(c, target, 0x002e_2134)?;
+            let sp0 = sp(c);
+            // velocity * curve[0x818] -> sp+0x40.
+            c.g[V1][0] = c.lw(fx + P2C);
+            c.g[A0][0] = sx(fx);
+            c.g[A1][0] = sx(sp0);
+            c.lwc1(0, r32(c, V1).wrapping_add(0x818));
+            c.mfc1(A2, 0);
+            c.lqc2(4, r32(c, V0));
+            c.qmtc2(A2, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp0 + 0x50);
+            c.lq(2, sp0 + 0x50);
+            c.g[V1][0] = c.lw(fx + P2C);
+            c.sq(2, sp0 + 0x40);
+            // dir * curve[0x81c] -> sp+0x50; sum -> sp+0x30.
+            c.lwc1(0, r32(c, V1).wrapping_add(0x81c));
+            c.mfc1(A2, 0);
+            c.lqc2(4, fx + DIR);
+            c.qmtc2(A2, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp0 + 0x60);
+            c.lq(2, sp0 + 0x60);
+            c.sq(2, sp0 + 0x50);
+            c.lqc2(3, sp0 + 0x40);
+            c.lqc2(4, sp0 + 0x50);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, sp0 + 0x60);
+            c.lq(2, sp0 + 0x60);
+            c.g[V1][0] = c.lw(fx + P2C);
+            c.sq(2, sp0 + 0x30);
+            // dir * curve[0x820] * speed -> sp+0x60; total -> sp+0x20.
+            c.lwc1(0, r32(c, V1).wrapping_add(0x820));
+            c.mfc1(A2, 0);
+            c.lqc2(4, fx + DIR);
+            c.qmtc2(A2, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp0 + 0x80);
+            c.lq(2, sp0 + 0x80);
+            c.lwc1(0, fx + SPEED);
+            c.sq(2, sp0 + 0x70);
+            c.mfc1(V1, 0);
+            c.lqc2(4, sp0 + 0x70);
+            c.qmtc2(V1, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp0 + 0x80);
+            c.lq(2, sp0 + 0x80);
+            c.sq(2, sp0 + 0x60);
+            c.lqc2(3, sp0 + 0x30);
+            c.lqc2(4, sp0 + 0x60);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, sp0 + 0x80);
+            c.lq(2, sp0 + 0x80);
+            c.sq(2, sp0 + 0x20);
+            SPRAY_ADD_RANDOM_VELOCITY.call(c, 0x002e_21fc)?;
+            // Spawn one particle.
+            let sp0 = sp(c);
+            c.lwc1(12, r32(c, GP).wrapping_sub(0x3a54)); // 1/60
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = sx(sp0);
+            c.g[A2][0] = sx(sp0 + 0x20);
+            c.g[A3][0] = sx(sp0 + 0x10);
+            c.g[T0][0] = 1;
+            call_ptr(c, DYNAMIC_EMITTER_SPAWN_AT, 0x002e_2218)?;
+        } else {
+            // Keep slot 8 alive at the position, no spawn.
+            c.cycles += 8;
+            c.lwc1(12, r32(c, GP).wrapping_sub(0x3a50)); // 1/60
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = sx(fx + POS);
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            c.g[T0][0] = 0;
+            call_ptr(c, DYNAMIC_EMITTER_SPAWN_AT, 0x002e_223c)?;
+        }
+        frame.restore(c, S0, 0xc0);
+        c.cycles += 8;
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore_ra(c, 0x90);
+        frame.restore_fpr(c, 22, 0xe0);
+        frame.restore_fpr(c, 21, 0xd8);
+        frame.restore_fpr(c, 20, 0xd0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ------------------------------------------- LensFX_UpdateSourceVisibility
+
+/// `void LensFX_UpdateSourceVisibility(LensFX* self)` (0x2e3130): refresh
+/// how visible each lens-flare source is. Nothing while `+0x6494` is set.
+/// When the occlusion test is on (`gp+0xa28`), each of the `+0x6490`
+/// sources (0x210-byte records from `+0x6070`) whose flag at `+0x2e` is set
+/// asks the occlusion query (virtual `+0x20` of `+0x649c`) and stores its
+/// result, or the source's fallback (`+0x6694`), at `+0x6274`. Then for
+/// each source the per-element visibility of its element list (count at
+/// `+0x60 + 4 i`, 0x30-byte elements at `+0x6088 + 0x3000 i`): queried
+/// elements (flag at +0xe) store the query result, or else copy the value
+/// from the source's own element (at `+0x6068 + 0x3000 i`), into their
+/// target's `+0x40`.
+pub fn lens_fx_update_source_visibility(c: &mut Cpu) {
+    /// LensFX fields.
+    const BUSY: u32 = 0x6494;
+    const SOURCE_COUNT: u32 = 0x6490;
+    const OCCLUSION: u32 = 0x649c;
+    const SOURCES: u32 = 0x6070;
+    const SOURCE_SIZE: u32 = 0x210;
+    const SOURCE_FALLBACK: u32 = 0x6694;
+    const SOURCE_QUERIED: u32 = 0x609e;
+    const SOURCE_VISIBILITY: u32 = 0x6274;
+    const ELEMENT_COUNTS: u32 = 0x60;
+    const ELEMENT_SIZE: u32 = 0x30;
+    /// `gp+0xa28`: occlusion queries enabled.
+    const OCCLUSION_ON_GP: u32 = 0xa28;
+    /// Loop heads, for event delivery.
+    const SOURCE_HEAD: u32 = 0x002e_3190;
+    const LIST_HEAD: u32 = 0x002e_3228;
+    const ELEMENT_HEAD: u32 = 0x002e_3280;
+
+    /// `occlusion->Query(self, at, &out)` (virtual +0x20) with `out` at
+    /// `sp+out_off` zeroed first; `a1` is already the query position.
+    fn query(c: &mut Cpu, this: u32, out_off: u32, ret: u32) -> crate::call::Flow {
+        c.g[V1][0] = c.lw(this.wrapping_add(OCCLUSION));
+        c.sw(sp(c) + out_off, 0);
+        c.g[A2][0] = if out_off == 0 {
+            c.g[SP][0]
+        } else {
+            sx(sp(c) + out_off)
+        };
+        c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x20));
+        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x24));
+        let target = r32(c, V0);
+        c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+        call_ptr(c, target, ret)
+    }
+
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S2, 0x90);
+        frame.save(c, S0, 0xb0);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S5, 0x60);
+        frame.save(c, S6, 0x50);
+        frame.save(c, S7, 0x40);
+        frame.save(c, FP, 0x30);
+        frame.save_ra(c, 0x20);
+        let this = r32(c, S2);
+        c.g[V0][0] = c.lw(this.wrapping_add(BUSY));
+        frame.restore(c, S0, 0xb0);
+        if c.g[V0][0] == 0 {
+            // The sources' own visibility.
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(r32(c, GP).wrapping_add(OCCLUSION_ON_GP));
+            c.g[S5][0] = 0;
+            c.g[V1][0] = c.lw(this.wrapping_add(SOURCE_COUNT));
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[S4][0] = 0;
+                if (c.g[V1][0] as i64) > 0 {
+                    c.cycles += 3;
+                    c.g[S3][0] = sx(this.wrapping_add(SOURCE_FALLBACK));
+                    c.g[S1][0] = sx(this.wrapping_add(SOURCES));
+                    c.g[S0][0] = c.g[S2][0];
+                    loop {
+                        c.cycles += 3;
+                        let src = r32(c, S0);
+                        c.g[V0][0] = c.lhu(src.wrapping_add(SOURCE_QUERIED));
+                        c.g[A1][0] = c.g[S1][0];
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 9;
+                            query(c, this, 0, 0x002e_31b8)?;
+                            c.lwc1(0, sp(c));
+                            if c.g[V0][0] == 0 {
+                                c.cycles += 1;
+                                c.lwc1(0, r32(c, S3));
+                            }
+                            c.cycles += 1;
+                            c.swc1(0, src.wrapping_add(SOURCE_VISIBILITY));
+                        }
+                        c.cycles += 8;
+                        c.g[V0][0] = c.lw(this.wrapping_add(SOURCE_COUNT));
+                        c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+                        c.g[S3][0] = sx(r32(c, S3).wrapping_add(SOURCE_SIZE));
+                        c.g[S1][0] = sx(r32(c, S1).wrapping_add(SOURCE_SIZE));
+                        c.g[V1][0] = c.g[V0][0];
+                        let more = (c.g[S4][0] as i64) < (c.g[V0][0] as i64);
+                        c.g[V0][0] = more as u64;
+                        c.g[S0][0] = sx(src.wrapping_add(SOURCE_SIZE));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, SOURCE_HEAD);
+                        }
+                    }
+                }
+            }
+
+            // The element lists.
+            c.cycles += 2;
+            c.g[A0][0] = 0;
+            if (c.g[V1][0] as i64) > 0 {
+                c.cycles += 14;
+                let sp0 = sp(c);
+                c.g[V0][0] = 0x6000;
+                c.g[V1][0] = sx(r32(c, S5) << 3);
+                c.g[A1][0] = c.g[V0][0] | 0x88;
+                c.sw(sp0 + 0x8, c.g[V1][0]);
+                c.mult(0, V0, S5, V0);
+                c.sw(sp0 + 0x10, c.g[A1][0]);
+                c.g[V1][0] = sx(this.wrapping_add(ELEMENT_COUNTS));
+                c.sw(sp0 + 0xc, c.g[V1][0]);
+                c.g[A1][0] = sx(r32(c, V0).wrapping_add(0x88));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x68));
+                c.sw(sp0 + 0x14, c.g[A1][0]);
+                c.g[V0][0] = sx(this.wrapping_add(r32(c, V0)));
+                c.sw(sp0 + 0x18, c.g[V0][0]);
+                c.g[V0][0] = sx(r32(c, A0) << 2);
+                loop {
+                    // List a0: its count, the element pointers.
+                    c.cycles += 9;
+                    let sp0 = sp(c);
+                    c.g[V1][0] = c.lw(sp0 + 0x8);
+                    c.g[S6][0] = c.g[V0][0];
+                    c.g[A1][0] = c.lw(sp0 + 0xc);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.g[S4][0] = 0;
+                    c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                    c.g[V0][0] = c.lw(r32(c, V1));
+                    c.g[FP][0] = sx(r32(c, A0).wrapping_add(1));
+                    if (c.g[V0][0] as i64) > 0 {
+                        c.cycles += 13;
+                        c.g[V0][0] = 0x3000;
+                        c.g[S7][0] = c.g[V1][0];
+                        c.mult(0, A0, A0, V0);
+                        c.g[V1][0] = c.lw(sp0 + 0x10);
+                        c.g[A1][0] = c.lw(sp0 + 0x14);
+                        c.g[S5][0] = c.g[S6][0];
+                        c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                        c.g[S3][0] = sx(r32(c, V0).wrapping_add(this));
+                        c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+                        c.g[V0][0] = c.lw(sp0 + 0x18);
+                        c.g[S0][0] = sx(r32(c, V1).wrapping_add(this));
+                        c.g[S1][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                        loop {
+                            c.cycles += 3;
+                            let el = r32(c, S0);
+                            c.g[V0][0] = c.lhu(el.wrapping_add(0xe));
+                            c.g[A1][0] = c.g[S1][0];
+                            if c.g[V0][0] != 0 {
+                                c.cycles += 9;
+                                query(c, this, 0x4, 0x002e_32a8)?;
+                                c.lwc1(0, sp(c) + 0x4);
+                                if c.g[V0][0] != 0 {
+                                    // The query result.
+                                    c.cycles += 4;
+                                    c.g[V0][0] = c.lw(el);
+                                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S6)));
+                                    c.swc1(0, r32(c, V0).wrapping_add(0x40));
+                                } else {
+                                    // The source element's value.
+                                    c.cycles += 6;
+                                    c.g[V0][0] = c.lw(r32(c, S3));
+                                    c.g[V1][0] = c.lw(el);
+                                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S5)));
+                                    c.lwc1(0, r32(c, V0).wrapping_add(0x40));
+                                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, S5)));
+                                    c.swc1(0, r32(c, V1).wrapping_add(0x40));
+                                }
+                            }
+                            c.cycles += 7;
+                            c.g[V0][0] = c.lw(r32(c, S7));
+                            c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+                            c.g[S3][0] = sx(r32(c, S3).wrapping_add(ELEMENT_SIZE));
+                            c.g[S0][0] = sx(el.wrapping_add(ELEMENT_SIZE));
+                            let more = (c.g[S4][0] as i64) < (c.g[V0][0] as i64);
+                            c.g[V0][0] = more as u64;
+                            c.g[S1][0] = sx(r32(c, S1).wrapping_add(ELEMENT_SIZE));
+                            if !more {
+                                break;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, ELEMENT_HEAD);
+                            }
+                        }
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(this.wrapping_add(SOURCE_COUNT));
+                    c.g[A0][0] = c.g[FP][0];
+                    let more = (c.g[A0][0] as i64) < (c.g[V0][0] as i64);
+                    c.g[V0][0] = sx(r32(c, A0) << 2);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, LIST_HEAD);
+                    }
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0xb0);
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S6, 0x50);
+        frame.restore(c, S7, 0x40);
+        frame.restore(c, FP, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void SnowFall_Update(SnowFall* self)` (0x2e5da0): for each view, build
+/// the weather record on the stack (from the override block when gp+0x164c
+/// is set, else from the world painter's weather of kind 6 for view 0 and
+/// 7 for the others) and pass its first value to that view's splash manager
+/// as the snow amount; then update each of the twelve snow boxes with the
+/// record of its view. Frame 0x120 (records at_2 +0, s0-s7, fp).
+pub fn snowfall_update(c: &mut Cpu) {
+    use snowfall::*;
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x120);
+        c.g[A1][0] = c.lw(gp_lit(c, GP_APP));
+        for (reg, off) in [
+            (S3, 0xe0),
+            (FP, 0x90),
+            (S0, 0x110),
+            (S1, 0x100),
+            (S2, 0xf0),
+            (S4, 0xd0),
+            (S5, 0xc0),
+            (S6, 0xb0),
+            (S7, 0xa0),
+        ] {
+            frame.save(c, reg, off);
+        }
+        c.g[FP][0] = c.g[A0][0];
+        frame.save_ra(c, 0x80);
+        c.g[V0][0] = c.lw(at_2(c, A1, 0x84));
+        c.g[V1][0] = c.lw(at_2(c, V0, 0x84));
+        c.g[A0][0] = c.lw(at_2(c, V1, 0x10));
+        c.g[S3][0] = 0;
+        if c.g[A0][0] != 0 {
+            // s3 = view, s2 = its record, s1 = record + 0x3c.
+            c.cycles += 8;
+            c.g[S7][0] = 0x50_0000;
+            c.g[S6][0] = 0x50_0000;
+            c.g[S5][0] = sx(OVERRIDE_C0);
+            c.g[S4][0] = sx(OVERRIDE_C1);
+            c.g[S2][0] = c.g[SP][0];
+            c.g[S1][0] = sx(sp(c).wrapping_add(0x3c));
+            c.g[V0][0] = c.lw(r32(c, GP).wrapping_add(GP_WEATHER_OVERRIDE));
+            loop {
+                // 0x2e5e08
+                c.cycles += 2;
+                let gp = r32(c, GP);
+                c.lwc1(0, gp.wrapping_add(GP_OVERRIDE_F[0]));
+                if c.g[V0][0] != 0 {
+                    c.cycles += 32;
+                    for (f, &off) in GP_OVERRIDE_F.iter().enumerate().skip(1) {
+                        c.lwc1(f, gp.wrapping_add(off));
+                    }
+                    for k in 0..4 {
+                        c.lwc1(8 + k, OVERRIDE_C0 + 4 * k as u32);
+                    }
+                    for k in 0..4 {
+                        c.lwc1(12 + k, OVERRIDE_C1 + 4 * k as u32);
+                    }
+                    let rec = r32(c, S2);
+                    for f in 0..16 {
+                        c.swc1(f, rec.wrapping_add(4 * f as u32));
+                    }
+                } else {
+                    c.cycles += 51;
+                    c.g[V0][0] = 6;
+                    c.g[S0][0] = if c.g[S3][0] == 0 { 6 } else { 7 };
+                    for (n, getter) in GETTERS.iter().enumerate() {
+                        c.g[A0][0] = c.g[S0][0];
+                        getter.call(c, 0x002e_5ea4 + 0xc * n as u32)?;
+                        let slot = r32(c, S2).wrapping_add(4 * n as u32);
+                        c.swc1(0, slot);
+                    }
+                }
+                // 0x2e5f5c: the view's splash manager gets f[0].
+                c.cycles += 17;
+                c.g[V0][0] = c.lw(gp_lit(c, GP_APP));
+                c.g[A1][0] = c.g[S3][0];
+                c.g[S3][0] = sx(at_2(c, S3, 1));
+                c.g[S1][0] = sx(at_2(c, S1, REC_SIZE));
+                c.g[A0][0] = c.lw(at_2(c, V0, 0x84));
+                call_ptr(c, GET_SPLASH_MANAGER, 0x002e_5f74)?;
+                c.lwc1(12, r32(c, S2));
+                c.g[A0][0] = c.g[V0][0];
+                c.g[S2][0] = sx(at_2(c, S2, REC_SIZE));
+                SET_SNOW_AMOUNT.call(c, 0x002e_5f84)?;
+                c.g[V0][0] = c.lw(gp_lit(c, GP_APP));
+                c.g[V1][0] = c.lw(at_2(c, V0, 0x84));
+                c.g[A0][0] = c.lw(at_2(c, V1, 0x84));
+                c.g[V0][0] = c.lw(at_2(c, A0, 0x10));
+                let more = c.g[S3][0] < c.g[V0][0];
+                c.g[V0][0] = c.lw(r32(c, GP).wrapping_add(GP_WEATHER_OVERRIDE));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002e_5e08);
+                }
+            }
+        }
+
+        // 0x2e5fa0: the twelve boxes (s1 counts 11..0).
+        c.cycles += 4;
+        c.g[S0][0] = sx(at_2(c, FP, BOXES));
+        c.g[S1][0] = 0xb;
+        c.g[A1][0] = c.lw(r32(c, S0));
+        loop {
+            c.cycles += 4;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+            c.g[S0][0] = sx(at_2(c, S0, 4));
+            c.g[A0][0] = c.g[A1][0];
+            if c.g[A1][0] != 0 {
+                c.cycles += 4;
+                c.g[A1][0] = c.lw(r32(c, A1));
+                c.g[A1][0] = sx(r32(c, A1) << 6);
+                c.g[A1][0] = sx(sp(c).wrapping_add(r32(c, A1)));
+                SNOW_BOX_UPDATE.call(c, 0x002e_5fd0)?;
+            }
+            c.cycles += 2;
+            if (c.g[S1][0] as i64) < 0 {
+                break;
+            }
+            c.g[A1][0] = c.lw(r32(c, S0));
+            if event_due(c) {
+                deliver_event_here(c, 0x002e_5fb0);
+            }
+        }
+        c.cycles += 12;
+        for (reg, off) in [
+            (S0, 0x110),
+            (S1, 0x100),
+            (S2, 0xf0),
+            (S3, 0xe0),
+            (S4, 0xd0),
+            (S5, 0xc0),
+            (S6, 0xb0),
+            (S7, 0xa0),
+            (FP, 0x90),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------- LensFX_DrawFlareQuad
+
+/// `void LensFX_DrawFlareQuad(LensFX* fx, int idx)` (0x2e2868): draw one
+/// lens-flare sprite. Skipped unless the flare is on (+0x2c). The colour's
+/// direction is the particle's (+0x20) velocity (+0x10) normalised (as is
+/// when zero); its alpha is the particle's per-sprite alpha `[idx]` (+0x40)
+/// when the flare uses alpha (+0x2e), else 1.0, and the render state's
+/// blend bits are set to match. With a positive alpha the texture (+0x1024
+/// glow, +0x1028 ring) and size (180 / 100 / 350, else 0) follow the
+/// particle's type bits (+0xc & 0x70), and the graphics manager's sprite
+/// draw method (vtable +0x10d8, slot +0x278) is called with the position
+/// (+0x1c, w 1), the size, uv (0,0)-(1,1), the colour, the rotation (+0x28)
+/// and mode 2.
+pub fn lens_fx_draw_flare_quad(c: &mut Cpu) {
+    const ON: u32 = 0x2c;
+    const USE_ALPHA: u32 = 0x2e;
+    const PARTICLE: u32 = 0x20;
+    const ROTATION: u32 = 0x28;
+    /// Particle fields.
+    const TYPE: u32 = 0xc;
+    const VELOCITY: u32 = 0x10;
+    const POSITION: u32 = 0x1c;
+    const ALPHA: u32 = 0x40;
+    /// Graphics manager fields.
+    const GFX_MAN: u32 = 0x2a90;
+    const STATE_TOP: u32 = 0xe84;
+    const TEX_GLOW: u32 = 0x1024;
+    const TEX_RING: u32 = 0x1028;
+    const VTABLE: u32 = 0x10d8;
+    const DRAW_SPRITE: u32 = 0x278;
+    /// The render state's flags word.
+    const FLAGS: u32 = 0x4;
+
+    /// `top->flags = (top->flags & mask) | set` with the top in `base` and
+    /// the word in v0 (the last store is left to the caller).
+    fn flags(c: &mut Cpu, gfx: u32, base: usize, mask: u64, set: u64, store: bool) {
+        c.g[base][0] = Addr(gfx.wrapping_add(STATE_TOP)).lw(c);
+        let at = (c.g[base][0] as u32).wrapping_add(FLAGS);
+        c.g[V0][0] = (Addr(at).lw(c) & mask) | set;
+        if store {
+            c.sw(at, c.g[V0][0]);
+        }
+    }
+
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x70);
+        let fx = c.g[A0][0];
+        c.g[T3][0] = fx;
+        frame.save_ra(c, 0x60);
+        let fx = Addr(fx as u32);
+        c.g[V0][0] = fx.off(ON).lhu(c);
+        frame.restore_ra(c, 0x60);
+        if c.g[V0][0] != 0 {
+            // Normalised velocity into sp+0..8.
+            c.cycles += 15;
+            let part = fx.off(PARTICLE).lw(c);
+            c.g[V0][0] = part;
+            let part = Addr(part as u32);
+            c.f[3] = 0;
+            let vx = part.off(VELOCITY).read_fpu(c);
+            let vy = part.off(VELOCITY + 4).read_fpu(c);
+            let vz = part.off(VELOCITY + 8).read_fpu(c);
+            c.f[5] = vx.0;
+            c.f[6] = vy.0;
+            c.f[4] = vz.0;
+            let sum = vx * vx + vy * vy;
+            let zz = vz * vz;
+            c.f[2] = zz.0;
+            let sum = sum + zz;
+            c.f[0] = sum.0;
+            let len = sum.sqrt();
+            c.f[1] = len.0;
+            let zero = len.eq_s(FpuF32::ZERO);
+            abi::set_fcc(c, zero);
+            let sp = crate::call::sp(c);
+            if zero {
+                c.swc1(5, sp);
+                c.cycles += 4;
+                let y = part.off(VELOCITY + 4).read_fpu(c);
+                c.f[0] = y.0;
+                c.swc1(0, sp.wrapping_add(0x4));
+                let z = part.off(VELOCITY + 8).read_fpu(c);
+                c.f[1] = z.0;
+                c.swc1(1, sp.wrapping_add(0x8));
+            } else {
+                c.cycles += 10;
+                c.g[AT][0] = FpuF32::ONE.0 as u64;
+                let inv = FpuF32::ONE.div(len);
+                c.f[1] = (vz * inv).0;
+                c.f[2] = (vx * inv).0;
+                c.f[0] = (vy * inv).0;
+                c.swc1(1, sp.wrapping_add(0x8));
+                c.swc1(2, sp);
+                c.swc1(0, sp.wrapping_add(0x4));
+            }
+
+            // The colour: direction at sp+0x14, alpha at sp+0x10.
+            c.cycles += 9;
+            c.lwc1(0, sp);
+            c.lwc1(1, sp.wrapping_add(0x4));
+            c.lwc1(2, sp.wrapping_add(0x8));
+            c.g[V0][0] = fx.off(USE_ALPHA).lhu(c);
+            c.swc1(0, sp.wrapping_add(0x14));
+            c.swc1(1, sp.wrapping_add(0x18));
+            c.swc1(2, sp.wrapping_add(0x1c));
+            let use_alpha = c.g[V0][0] != 0;
+            let gfx = Addr((c.g[GP][0] as u32).wrapping_add(GFX_MAN)).lw(c);
+            c.g[T2][0] = gfx;
+            let gfx = gfx as u32;
+            if use_alpha {
+                c.cycles += 28;
+                c.g[V0][0] = fx.off(PARTICLE).lw(c);
+                c.g[V1][0] = sx((c.g[A1][0] as u32) << 2);
+                c.g[A1][0] = 0xffff_ffff_fe7f_ffff;
+                c.g[T1][0] = 0x100_0000;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                c.lwc1(0, r32(c, V0).wrapping_add(ALPHA));
+                c.g[A2][0] = 0xffff_ffff_ffcf_ffff;
+                c.g[T0][0] = 0xffff_ffff_fff0_0fff;
+                c.swc1(0, sp.wrapping_add(0x10));
+                c.g[A3][0] = 0x1_4000;
+                let (a1, t1, a2, t0, a3) =
+                    (c.g[A1][0], c.g[T1][0], c.g[A2][0], c.g[T0][0], c.g[A3][0]);
+                flags(c, gfx, A0, a1, t1, true);
+                flags(c, gfx, V1, a2, 0, true);
+                flags(c, gfx, A0, t0, a3, false);
+            } else {
+                c.cycles += 25;
+                c.g[AT][0] = FpuF32::ONE.0 as u64;
+                c.f[0] = FpuF32::ONE.0;
+                c.g[V1][0] = 0xffff_ffff_fe7f_ffff;
+                c.g[T0][0] = 0x80_0000;
+                c.swc1(0, sp.wrapping_add(0x10));
+                c.g[A0][0] = 0xffff_ffff_ffcf_ffff;
+                c.g[A2][0] = 0xffff_ffff_fff0_0fff;
+                c.g[A1][0] = 0x1_4000;
+                let (v1, t0, a0, a2, a1) =
+                    (c.g[V1][0], c.g[T0][0], c.g[A0][0], c.g[A2][0], c.g[A1][0]);
+                flags(c, gfx, A3, v1, t0, true);
+                flags(c, gfx, V1, a0, 0, true);
+                flags(c, gfx, A0, a2, a1, false);
+            }
+            c.cycles += 7;
+            c.sw(r32(c, A0).wrapping_add(FLAGS), c.g[V0][0]);
+            c.lwc1(0, sp.wrapping_add(0x10));
+            c.f[1] = 0;
+            let alpha = FpuF32(c.f[0]);
+            let invisible = alpha.le(FpuF32::ZERO);
+            abi::set_fcc(c, invisible);
+            frame.restore_ra(c, 0x60);
+            if !invisible {
+                // Texture and size by the particle type.
+                c.cycles += 6;
+                c.g[V0][0] = fx.off(PARTICLE).lw(c);
+                c.g[A0][0] = 0x20;
+                c.g[V1][0] = Addr(r32(c, V0).wrapping_add(TYPE)).lw(c) & 0x70;
+                c.f[3] = c.f[1];
+                let kind = c.g[V1][0];
+                let tex = match kind {
+                    0x20 => {
+                        c.cycles += 5;
+                        c.g[V1][0] = Addr(gfx.wrapping_add(TEX_RING)).lw(c);
+                        Some(0x42c8_0000) // 100.0
+                    }
+                    _ => {
+                        c.cycles += 3;
+                        c.g[V0][0] = (kind < 0x21) as u64;
+                        if kind < 0x21 {
+                            c.g[V0][0] = 0x10;
+                            c.cycles += 2;
+                            if kind == 0x10 {
+                                c.g[V1][0] = Addr(gfx.wrapping_add(TEX_GLOW)).lw(c);
+                                c.cycles += 4;
+                                Some(0x4334_0000) // 180.0
+                            } else {
+                                c.cycles += 2;
+                                None
+                            }
+                        } else {
+                            c.g[V0][0] = 0x10;
+                            c.cycles += 3;
+                            c.g[V0][0] = 0x40;
+                            if kind == 0x40 {
+                                c.g[V1][0] = Addr(gfx.wrapping_add(TEX_GLOW)).lw(c);
+                                c.cycles += 3;
+                                Some(0x43af_0000) // 350.0
+                            } else {
+                                c.cycles += 2;
+                                None
+                            }
+                        }
+                    }
+                };
+                if let Some(size) = tex {
+                    c.g[AT][0] = size as u64;
+                    c.f[3] = size;
+                    c.g[V0][0] = Addr(gfx.wrapping_add(STATE_TOP)).lw(c);
+                    c.cycles += 2;
+                    c.sh(r32(c, V0).wrapping_add(0x10), c.g[V1][0]);
+                }
+                c.g[V0][0] = fx.off(PARTICLE).lw(c);
+
+                // Draw: (pos, size, uv0, uv1, colour, rot, 2).
+                c.cycles += 28;
+                let part = r32(c, V0);
+                c.g[A1][0] = sx(sp.wrapping_add(0x20));
+                let vt = Addr(gfx.wrapping_add(VTABLE)).lw(c);
+                c.g[V1][0] = vt;
+                c.g[A2][0] = sx(sp.wrapping_add(0x30));
+                c.lwc1(0, part.wrapping_add(POSITION));
+                c.g[A3][0] = sx(sp.wrapping_add(0x40));
+                c.g[A0][0] = Addr((vt as u32).wrapping_add(DRAW_SPRITE)).lh(c);
+                c.g[T0][0] = sx(sp.wrapping_add(0x50));
+                c.swc1(0, sp.wrapping_add(0x20));
+                c.g[T1][0] = sx(sp.wrapping_add(0x10));
+                c.g[AT][0] = FpuF32::ONE.0 as u64;
+                c.f[2] = FpuF32::ONE.0;
+                c.g[A0][0] = sx(gfx.wrapping_add(r32(c, A0)));
+                c.lwc1(1, part.wrapping_add(POSITION + 4));
+                c.f[12] = fx.off(ROTATION).read_fpu(c).0;
+                c.swc1(1, sp.wrapping_add(0x24));
+                c.lwc1(0, part.wrapping_add(POSITION + 8));
+                c.swc1(3, sp.wrapping_add(0x34));
+                c.swc1(0, sp.wrapping_add(0x28));
+                c.swc1(2, sp.wrapping_add(0x54));
+                c.swc1(2, sp.wrapping_add(0x2c));
+                c.swc1(3, sp.wrapping_add(0x30));
+                c.sw(sp.wrapping_add(0x40), 0);
+                c.sw(sp.wrapping_add(0x44), 0);
+                c.swc1(2, sp.wrapping_add(0x50));
+                let method = Addr((vt as u32).wrapping_add(DRAW_SPRITE + 4)).lw(c);
+                c.g[V0][0] = method;
+                c.g[T2][0] = 2;
+                call_ptr(c, method as u32, 0x002e_2af4)?;
+                frame.restore_ra(c, 0x60);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12654,7 +14591,7 @@ pub(crate) mod tests {
                 let mut r = Rng(0x2e4d88 ^ (seed as u64) << 6);
                 scramble(c, &mut r);
                 c.g[GP][0] = GAME_GP as u64;
-                c.g[SP][0] = crate::difftest::SP as u64;
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = crate::difftest::SP as u64;
                 c.g[RA][0] = crate::difftest::RA as u64;
                 let this = DATA + 0x1000;
                 let a = DATA + 0x2000;
@@ -12831,7 +14768,7 @@ pub(crate) mod tests {
         c.bus.write32(SELF + 0x94, f(0.5));
         for _ in 0..ticks {
             let sp = STACK_TOP - 0x170;
-            c.g[SP][0] = sx(sp);
+            c.g[ssx3_ee_rt::cpu::reg::SP][0] = sx(sp);
             put_vec(&mut c, sp, [f(10.0), f(20.0), f(30.0), f(1.0)]);
             put_vec(&mut c, sp + 0x10, [f(1.0), f(2.0), f(3.0), f(0.0)]);
             put_vec(&mut c, sp + 0x20, [f(0.0), f(1.0), f(0.0), f(0.0)]);
@@ -13830,6 +15767,500 @@ pub(crate) mod tests {
                     c.bus.write32(gp_at(off), f(v));
                 }
                 c.g[A0][0] = sx(fx);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::SP;
+
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::events::Events;
+
+    /// SnowFall_Render: rendering off (`gp+0x1434`) or on; fog flag on/off;
+    /// the 12 box slots empty, owned by another rider, or by the current
+    /// one (WrapOffset and an inactive SnowBox_Render run for real). The
+    /// view-matrix virtual is a fake that sometimes unwinds.
+    #[test]
+    fn snow_fall_render_matches() {
+        covered(
+            ee::s09::f_002e6008__generated,
+            snow_fall_render,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2e6008, 1);
+                c.pc = 0x002e_6008;
+                let gp = |off: i32| GAME_GP.wrapping_add(off as u32);
+                let this = DATA;
+                let (world, riders, list) = (DATA + 0x4000, DATA + 0x4100, DATA + 0x4200);
+                let (rc, vt, stack) = (DATA + 0x5000, DATA + 0x5f00, DATA + 0x6000);
+                c.g[A0][0] = sx(this);
+                c.bus
+                    .write32(gp(0x1434), if seed % 10 == 0 { 1 } else { 0 });
+                c.bus.write32(gp(0x1670), r.next_u32() & 1);
+                c.bus.write32(gp(-0x3a04), 0.6f32.to_bits());
+                c.bus.write32(gp(-0x848), world);
+                c.bus.write32(world + 0x84, riders);
+                c.bus.write32(riders + 0x84, list);
+                let k = r.next_u32() % 4;
+                c.bus.write32(list + 0x14, k);
+                for i in 0..4 {
+                    let rider = DATA + 0x4400 + 0x100 * i;
+                    c.bus.write32(list + 4 + 4 * i, rider);
+                    fill(c, &mut r, rider, 0x40);
+                }
+                fill(c, &mut r, this, 0x100);
+                c.bus.write32(gp(0x2a90), rc);
+                c.bus
+                    .write32(rc + rctx::STATE_TOP, stack + 0x14 * (r.next_u32() % 4));
+                fill(c, &mut r, stack, 0x40);
+                c.bus.write32(rc + rctx::TEX, r.next_u32());
+                c.bus.write32(rc + rctx::VPTR, vt);
+                c.bus
+                    .write16(vt + rctx::GET_VIEW, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt + rctx::GET_VIEW + 4, FAKE);
+                fill(c, &mut r, 0x0050_1420, 8);
+                fill(c, &mut r, 0x004f_f130, 4);
+                for i in 0..12 {
+                    let bx = DATA + 0x7000 + 0x100 * i;
+                    let slot = match r.next_u32() % 3 {
+                        0 => 0,
+                        1 => bx,
+                        _ => bx,
+                    };
+                    c.bus.write32(this + 0x10 + 4 * i, slot);
+                    fill(c, &mut r, bx, 0x30);
+                    let owner = if r.next_u32() % 3 == 0 {
+                        (k + 1) % 4
+                    } else {
+                        k
+                    };
+                    c.bus.write32(bx, owner);
+                    c.bus.write32(bx + 8, 0); // inactive: SnowBox_Render returns at once
+                    c.bus.write32(bx + 0xc, 1.0f32.to_bits());
+                }
+            },
+        );
+    }
+
+    /// A real leaf returning 0 (`RiderIface_HasVisited`: `v0 = 0; jr ra`),
+    /// for vtable slots whose zero answer the fakes never give.
+    pub(crate) const RETURN_ZERO_2: u32 = 0x0014_06c0;
+
+    /// Write vtable slot_2 `off` (`{delta, func}`) at `vt`.
+    pub(crate) fn slot_d(c: &mut Cpu, vt: u32, off: u32, delta: i16, func: u32) {
+        c.bus.write16(vt + off, delta as u16);
+        c.bus.write32(vt + off + 4, func);
+    }
+
+    /// Occluded and visible sources, behind and in front of the near plane,
+    /// depths that clamp the sample rectangle both ways, every source kind,
+    /// rectangles inside and outside the view; fake projector calls (some
+    /// unwind).
+    #[test]
+    fn lens_fx_project_source_matches() {
+        covered(
+            ee::s09::f_002e2b00__generated,
+            lens_fx_project_source,
+            300,
+            &|c, seed| {
+                c.pc = 0x002e_2b00;
+                let mut r = machine(c, seed, 0x2e2b00, 3);
+                let gp = c.g[GP][0] as u32;
+                let lens = DATA;
+                let src = DATA + 0x200;
+                let view = DATA + 0x400;
+                let cam = DATA + 0x1000;
+                let vt = DATA + 0x3000;
+                c.bus.write32(gp + LENS_CAMERA_GP, cam);
+                c.bus.write32(cam + CAM_PROJECTOR_VT, vt);
+                let occluded = if seed % 5 == 0 { FAKE } else { RETURN_ZERO_2 };
+                slot_d(c, vt, VT_OCCLUDED, (r.next_u32() as i16) & !3, occluded);
+                slot_d(c, vt, VT_PROJECT, (r.next_u32() as i16) & !3, FAKE + 0x10);
+                // Depth scale, near limit, x-offset scale.
+                put_words(
+                    c,
+                    gp.wrapping_sub(0x3a40),
+                    &[1.0f32.to_bits(), 0.001f32.to_bits(), r.f32(2.0)],
+                );
+                c.g[A0][0] = sx(lens);
+                c.g[A1][0] = sx(view);
+                c.bus.write32(lens + LENS_SOURCE, src);
+                for i in 0..3 {
+                    c.bus.write32(src + SRC_POS + 4 * i, r.f32(500.0));
+                }
+                let kind = [0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x70][(seed / 5 % 7) as usize];
+                c.bus.write32(src + SRC_KIND, (r.next_u32() & !0x70) | kind);
+                // The view rectangle (x, y, w, h), then +0x18/+0x28/+0x38.
+                put_words(
+                    c,
+                    view,
+                    &[r.f32(50.0), r.f32(50.0), r.f32(640.0), r.f32(480.0)],
+                );
+                for off in [0x18u32, 0x28, 0x38] {
+                    c.bus.write32(
+                        view + off,
+                        if seed % 7 == 0 {
+                            r.edge_f32()
+                        } else {
+                            r.f32(5.0)
+                        },
+                    );
+                }
+                // What the fake projector "returns" at sp+0x10: screen x, y, depth.
+                let frame = STACK_TOP - 0xc0;
+                let depth = match seed % 6 {
+                    0 => r.f32(0.001),
+                    1 => 0.0011f32.to_bits(),
+                    2 => 0.05f32.to_bits(),
+                    3 => 0.002f32.to_bits(),
+                    4 => r.edge_f32(),
+                    _ => r.f32(0.03),
+                };
+                put_words(c, frame + 0x10, &[r.f32(700.0), r.f32(500.0), depth]);
+                c.bus.write32(frame + 0x18, depth);
+                put_words(c, frame + 0x48, &[r.f32(300.0)]);
+            },
+        );
+    }
+
+    /// Trail lengths -1..5 (no points, one point whose t is 0/0, several),
+    /// head slots 0-3, random vectors; Noise_Fractal1D runs for real.
+    #[test]
+    fn board_wake_fx_build_trail_matches() {
+        crate::difftest::check(
+            ee::s09::f_002ddd30__generated,
+            board_wake_fx_build_trail,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2ddd_3000 ^ (seed as u64) << 16);
+                crate::difftest::scramble(c, &mut r);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                let gp = crate::difftest::GAME_GP;
+                let wake = DATA;
+                let rider = DATA + 0x1000;
+                let pos = DATA + 0x800;
+                let n = [-1i32, 0, 1, 2, 3, 5][(seed % 6) as usize];
+                let head = (seed / 6) % 4;
+                let v = |r: &mut Rng| [r.f32(10.0), r.f32(10.0), r.f32(10.0), r.f32(2.0)];
+                c.bus.write32(wake + WAKE_RIDER, rider);
+                c.bus.write32(wake + WAKE_HEAD, head);
+                c.bus.write32(wake + WAKE_ELEMS, DATA + 0x2000);
+                for j in 0..6 {
+                    c.bus
+                        .write32(wake + WAKE_RINGS + 4 * j, DATA + 0x3000 + 0x400 * j);
+                    let seg = DATA + 0x3000 + 0x400 * j + SEG_SIZE * head;
+                    crate::difftest::fill(c, &mut r, seg, 12);
+                }
+                c.bus.write32(wake + WAKE_PHASE, r.f32(50.0));
+                for off in [WAKE_SPREAD, WAKE_CURVE, WAKE_BACK] {
+                    let q = v(&mut r);
+                    crate::difftest::put_vec(c, wake + off, q);
+                }
+                c.bus.write32(wake + WAKE_WIDTH, r.f32(4.0));
+                c.bus.write32(
+                    wake + WAKE_ALPHA,
+                    if seed % 9 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(2.0)
+                    },
+                );
+                c.bus.write32(wake + WAKE_POINTS, n as u32);
+                let q = v(&mut r);
+                crate::difftest::put_vec(c, rider + RIDER_VEL, q);
+                let q = v(&mut r);
+                crate::difftest::put_vec(c, rider + RIDER_UP, q);
+                let q = v(&mut r);
+                crate::difftest::put_vec(c, pos, q);
+                let q = v(&mut r);
+                crate::difftest::put_vec(c, 0x004f_f120, q);
+                put_words(c, gp - 0x3be4, &[0.85f32.to_bits(), 0.9f32.to_bits()]);
+                // Noise_Sample1D's table.
+                for i in 0..0x180u32 {
+                    c.bus.write32(0x0044_5ab0 - 0x300 + 4 * i, r.f32(1.0));
+                }
+                c.g[A0][0] = sx(wake);
+                c.g[A1][0] = sx(pos);
+                c.f[12] = r.f32(3.0);
+            },
+        );
+    }
+
+    // ------------------------------------------- cDynamicSprayFX_UpdateEmitter8
+
+    /// Emitter 8: driven or not, the target above or below 0.01, the
+    /// fall-speed and speed cuts, the level's clamps and the falling alpha
+    /// scale; the velocity getter is a fake returning a chosen vector, the
+    /// random jitter and `DynamicEmitter_SpawnAt` on slot 8 are real.
+    #[test]
+    fn dynamic_spray_fx_update_emitter8_matches() {
+        use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{check, elf_image, DATA, GAME_GP};
+        use crate::game::visualfx::boardwakefx::tests::put_spray_slot;
+        use spray8::*;
+        let f = |x: f32| x.to_bits();
+        check(
+            ee::s09::f_002e1f70__generated,
+            dynamic_spray_fx_update_emitter8,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2e1f, 3);
+                elf_image(c);
+                c.pc = 0x002e_1f70;
+                let (fx, obj, cfg, em, vt, curve, vel) = (
+                    DATA,
+                    DATA + 0x5000,
+                    DATA + 0x5200,
+                    DATA + 0x3000,
+                    DATA + 0x5400,
+                    DATA + 0x5600,
+                    DATA + 0x5800,
+                );
+                let (world, g, players) = (DATA + 0x6000, DATA + 0x6200, DATA + 0x6400);
+                c.bus.write32(fx + OBJ, obj);
+                c.bus.write32(fx + P28, em);
+                c.bus.write32(fx + P2C, curve);
+                c.bus.write32(fx + CFG, cfg);
+                for k in 0..4u32 {
+                    c.bus.write32(fx + DIR + 4 * k, r.f32(1.0));
+                    c.bus.write32(fx + POS + 4 * k, r.f32(10.0));
+                    c.bus.write32(fx + COL + 4 * k, r.f32(10.0));
+                    c.bus.write32(fx + 0x40 + 4 * k, r.f32(1.0));
+                    c.bus.write32(fx + 0x50 + 4 * k, r.f32(1.0));
+                    c.bus.write32(vel + 4 * k, r.f32(100.0));
+                }
+                c.bus.write32(
+                    vel + 8,
+                    f([-5000.0f32, -1000.0, 50.0, -3333.0][(seed % 4) as usize]),
+                );
+                c.bus.write32(fx + ACTIVE, (seed % 3 != 0) as u32);
+                c.bus.write32(
+                    cfg + 0x5c,
+                    f([0.005f32, 0.5, 2.0][((seed / 3) % 3) as usize]),
+                );
+                c.bus.write32(
+                    fx + LEVEL,
+                    match (seed / 9) % 5 {
+                        0 => 0,
+                        1 => f(0.01),
+                        2 => f(0.5),
+                        3 => f(1.5),
+                        _ => r.edge_f32(),
+                    },
+                );
+                c.bus.write32(
+                    fx + SPEED,
+                    f([100.0f32, 300.0, 2000.0][((seed / 5) % 3) as usize]),
+                );
+                c.bus.write32(fx + 0x12c, r.f32(1.0));
+                for off in [0x818u32, 0x81c, 0x820] {
+                    c.bus.write32(curve + off, r.f32(3.0));
+                }
+                c.bus.write32(obj + 0x6c0, vt);
+                c.bus.write16(vt + 0x10, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt + 0x14, FAKE);
+                for n in 0..4 {
+                    c.bus.write32(LOG_RESULTS + 4 * n, vel);
+                }
+                put_spray_slot(c, &mut r, em + SLOT, DATA + 0x8000);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(world + 0x84, g);
+                c.bus.write32(g + 0x84, players);
+                c.bus.write32(players + 0x10, 0);
+                c.bus.write32(GAME_GP + 0xa0c, r.next_u32());
+                c.g[A0][0] = sx(fx);
+            },
+        );
+    }
+
+    // ------------------------------------------- LensFX_UpdateSourceVisibility
+
+    /// `LensFX_UpdateSourceVisibility`: busy or not, occlusion on or off,
+    /// 0..2 sources with queried / unqueried flags, element lists of -1..3
+    /// elements; the occlusion query is a fake (a pointer, maybe unwinding)
+    /// or a real `return 0` (the fallback paths).
+    #[test]
+    fn lens_fx_update_source_visibility_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        const RETURN_ZERO: u32 = 0x003a_5ab0;
+        check(
+            ee::s09::f_002e3130__generated,
+            lens_fx_update_source_visibility,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2e31, 8);
+                c.pc = 0x002e_3130;
+                let (this, vt, targets) = (DATA, DATA + 0x10000, DATA + 0x20000);
+                let target = |r: &mut crate::difftest::Rng| targets + (r.next_u32() & 0xff0);
+                fill(c, &mut r, targets, 0x420);
+                c.bus.write32(this + 0x6494, (seed % 7 == 0) as u32);
+                c.bus.write32(GAME_GP + 0xa28, (seed % 5 != 1) as u32);
+                let count = match seed % 4 {
+                    3 => (r.next_u32() % 3) as i32 - 1,
+                    k => k as i32,
+                };
+                c.bus.write32(this + 0x6490, count as u32);
+                c.bus.write32(this + 0x649c, vt);
+                c.bus.write16(vt + 0x20, (r.next_u32() & 0x3c) as u16);
+                c.bus
+                    .write32(vt + 0x24, if seed % 3 == 0 { RETURN_ZERO } else { FAKE });
+                for i in 0..3u32 {
+                    let src = this + 0x210 * i;
+                    c.bus.write16(src + 0x609e, (r.next_u32() % 3 != 0) as u16);
+                    c.bus.write32(src + 0x6694, r.f32(1.0));
+                    c.bus.write32(src + 0x6274, r.f32(1.0));
+                    let n = (r.next_u32() % 5) as i32 - 1;
+                    c.bus.write32(this + 0x60 + 4 * i, n as u32);
+                    for k in 0..4u32 {
+                        let el = this + 0x88 + 0x3000 * i + 0x30 * k;
+                        let t = target(&mut r);
+                        c.bus.write32(el, t);
+                        c.bus.write16(el + 0xe, (r.next_u32() % 3 != 0) as u16);
+                        let t = target(&mut r);
+                        c.bus.write32(el + 0x6000, t);
+                    }
+                }
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    // ---------------------------------------------------------- SnowFall_Update
+
+    /// SnowFall_Update: zero to three views; the weather from the override
+    /// block or from the world painter's getters (their quick path, or the
+    /// slow path through a fake method); each view's splash manager (amount
+    /// below or above the threshold); twelve box slots, some empty, the
+    /// others real snow boxes (modes 0, 1, other; drift timer not expiring)
+    /// of a view. Fakes may unwind; events are delivered at_2 both loop heads.
+    #[test]
+    fn snowfall_update_matches() {
+        use crate::game::visualfx::boardwakefx::snow_update as snow;
+        use snowfall::*;
+        const SELF: u32 = 0x00a0_0000;
+        const APP: u32 = 0x00a0_1000;
+        const GM: u32 = 0x00a0_2000;
+        const WX: u32 = 0x00a0_3000;
+        const RATE_OBJ: u32 = 0x00a0_3800;
+        const SPLASH: u32 = 0x00a1_0000;
+        const BOX0: u32 = 0x00a2_0000;
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = machine(c, seed, 0x2e_5da0, 8);
+            let gp = |o: u32| GAME_GP.wrapping_add(o);
+            let f = |x: f32| x.to_bits();
+            c.bus.write32(GAME_GP - GP_APP, APP);
+            c.bus.write32(APP + 0x84, GM);
+            c.bus.write32(GM + 0x84, WX);
+            let views = [0, 1, 2, 2, 3][(seed % 5) as usize];
+            c.bus.write32(WX + 0x10, views);
+            // Weather: override block or the painter (quick path or not).
+            c.bus
+                .write32(gp(GP_WEATHER_OVERRIDE), (seed % 3 == 0) as u32);
+            for off in GP_OVERRIDE_F {
+                c.bus.write32(gp(off), r.f32(2.0));
+            }
+            for k in 0..8 {
+                c.bus.write32(OVERRIDE_C0 + 4 * k, r.f32(200.0));
+            }
+            c.bus.write32(gp(0xa70), (r.next_u32() % 4 != 0) as u32);
+            // Splash managers: amount threshold and constants.
+            c.bus.write32(gp(0x1190), r.f32(1.0));
+            c.bus.write32(gp(0x1194), r.f32(2.0));
+            c.bus.write32(GAME_GP - 0x38f4, r.f32(2.0));
+            for i in 0..3 {
+                let sm = SPLASH + 0x2000 * i;
+                c.bus.write32(GM + 0x68 + 4 * i, sm);
+                c.bus.write32(sm + 0x1020, r.f32(5.0));
+                c.bus.write32(sm + 0x1024, r.f32(5.0));
+            }
+            // Snow boxes.
+            c.bus.write32(gp(snow::GP_RATE_OBJ as u32), RATE_OBJ);
+            c.bus.write32(RATE_OBJ + snow::RATE, 60);
+            for k in 0..4 {
+                c.bus.write32(snow::WIND + 4 * k, r.f32(1.0));
+            }
+            for i in 0..12 {
+                let b = BOX0 + 0x100 * i;
+                let used = r.next_u32() % 3 != 0;
+                c.bus
+                    .write32(SELF + BOXES + 4 * i, if used { b } else { 0 });
+                c.bus.write32(b, r.next_u32() % views.max(1));
+                c.bus.write32(b + snow::MODE, r.next_u32() % 3);
+                c.bus.write32(b + snow::SIZE, f(100.0));
+                c.bus.write32(b + snow::SPEED, r.f32(3.0));
+                c.bus.write32(b + snow::WIND_SCALE, r.f32(1.0));
+                c.bus.write32(b + snow::TIMER, f(1000.0));
+                c.bus.write32(b + snow::PERIOD, f(2000.0));
+                c.bus.write32(b + snow::SNAP, 0);
+                for k in 0..4 {
+                    c.bus.write32(b + snow::POS + 4 * k, r.f32(10.0));
+                    c.bus.write32(b + snow::VEL + 4 * k, r.f32(2.0));
+                    c.bus.write32(b + snow::PREV_VEL + 4 * k, r.f32(2.0));
+                }
+            }
+            c.g[A0][0] = SELF as u64;
+            schedule(c, &mut r, seed, 0x002e_5da0)
+        };
+        check_events(ee::s09::f_002e5da0__generated, snowfall_update, 200, &setup);
+    }
+
+    /// `LensFX_DrawFlareQuad`: off / on, zero or random velocity, with or
+    /// without per-sprite alpha (positive, zero, negative), type bits 0x10,
+    /// 0x20, 0x40 and others; the sprite draw method is a fake (sometimes
+    /// unwinding) that logs the registers and the stack arguments.
+    #[test]
+    fn lens_fx_draw_flare_quad_matches() {
+        use crate::difftest::GAME_GP;
+        check(
+            ee::s09::f_002e2868__generated,
+            lens_fx_draw_flare_quad,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x2e2868, 1);
+                c.pc = 0x002e_2868;
+                let fx = DATA;
+                let part = DATA + 0x100;
+                let gfx = DATA + 0x1000;
+                let top = DATA + 0x3000;
+                let vt = DATA + 0x4000;
+                c.bus.write16(
+                    fx + 0x2c,
+                    (seed % 9 != 0) as u16 * (1 + r.next_u32() as u16 % 3),
+                );
+                c.bus.write16(fx + 0x2e, (seed % 2) as u16);
+                c.bus.write32(fx + 0x20, part);
+                c.bus.write32(fx + 0x28, r.f32(6.3));
+                for k in 0..3 {
+                    let v = if seed % 7 == 3 { 0 } else { r.f32(50.0) };
+                    c.bus.write32(part + 0x10 + 4 * k, v);
+                    c.bus.write32(part + 0x1c + 4 * k, r.f32(1000.0));
+                }
+                let idx = r.next_u32() % 4;
+                c.g[A1][0] = idx as u64 | (r.next_u32() as u64) << 32;
+                for k in 0..4 {
+                    let a = match r.next_u32() % 4 {
+                        0 => 0,
+                        1 => r.f32(1.0) | 0x8000_0000,
+                        _ => r.f32(1.0) & !0x8000_0000,
+                    };
+                    c.bus.write32(part + 0x40 + 4 * k, a);
+                }
+                let kind =
+                    [0x10, 0x20, 0x40, 0x00, 0x30, 0x50, 0x60, 0x70][(seed / 2 % 8) as usize];
+                c.bus.write32(part + 0xc, (r.next_u32() & !0x70) | kind);
+                c.bus.write32(GAME_GP + 0x2a90, gfx);
+                c.bus.write32(gfx + 0xe84, top);
+                fill(c, &mut r, top, 8);
+                c.bus.write32(gfx + 0x1024, r.next_u32());
+                c.bus.write32(gfx + 0x1028, r.next_u32());
+                c.bus.write32(gfx + 0x10d8, vt);
+                c.bus.write16(vt + 0x278, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(vt + 0x27c, fakes::FAKE);
+                c.g[A0][0] = fx as u64;
             },
         );
     }

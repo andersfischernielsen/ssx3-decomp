@@ -377,6 +377,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         chase_camera_build_output_view,
         "ChaseCameraAlgorithm_BuildOutputView",
     ),
+    (
+        0x0016_2c78,
+        chase_camera_update_chase_heading,
+        "ChaseCameraAlgorithm_UpdateChaseHeading",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8136,6 +8141,364 @@ pub(crate) fn chase_heading_follow(c: &mut Cpu, me: u32, info: u32, sp0: u32, gp
     Ok(())
 }
 
+pub(crate) mod chase {
+
+    /// The rider/model object (first word the vtable; +4 the rider).
+    pub const RIG: u32 = 0x30;
+
+    /// `vec4` smoothed chase heading.
+    pub const HEADING: u32 = 0x80;
+
+    /// `vec4` last valid look direction from the rig.
+    pub const LAST_DIR: u32 = 0x1c0;
+
+    /// The heading-angle PID filter (`sHist`): `a[5]` measured angles,
+    /// `b[5]` filtered values (+0x14), `c[5]` errors (+0x28), `idx` (+0x3c),
+    /// gains `k0`, `k1`, `k2` (+0x40/+0x44/+0x48).
+    pub const HIST: u32 = 0x340;
+
+    pub const H_B: u32 = 0x14;
+
+    pub const H_C: u32 = 0x28;
+
+    pub const H_IDX: u32 = 0x3c;
+
+    pub const H_K0: u32 = 0x40;
+
+    pub const H_K1: u32 = 0x44;
+
+    pub const H_K2: u32 = 0x48;
+
+    /// Rider state word (in the rider at rig+4); states 0xb..0xd slow the
+    /// heading follow (double square root of the blend).
+    pub const RIDER_STATE: u32 = 0x434;
+}
+
+pub(crate) mod chase_info {
+
+    /// `vec4` travel direction (scaled by 1/speed).
+    pub const DIR: u32 = 0x20;
+
+    /// `vec4` output: the normalised heading.
+    pub const OUT: u32 = 0x30;
+
+    /// Speed (m/s).
+    pub const SPEED: u32 = 0x44;
+}
+
+pub(crate) mod chase_lit {
+
+    /// 27.78 m/s (100 km/h): below this the heading is left alone.
+    pub const MIN_SPEED: i32 = -0x6ae0;
+
+    /// 0.001: shorter vector products give an angle of 0.
+    pub const MIN_LEN: i32 = -0x6adc;
+
+    /// pi/2 (acos = pi/2 - asin).
+    pub const HALF_PI: i32 = -0x6ad8;
+
+    /// 0.1908 rad dead zone subtracted from the heading error.
+    pub const DEAD_ZONE: i32 = -0x6ad4;
+
+    /// 2.52: scale of the filtered angle before clamping to [0, 1].
+    pub const ANGLE_SCALE: i32 = -0x6ad0;
+
+    /// Blend `s = (1 - clamp) * 0.0395 + 0.9555`.
+    pub const BLEND_RANGE: i32 = -0x6acc;
+
+    pub const BLEND_BASE: i32 = -0x6ac8;
+}
+
+/// gp-relative address `gp + off`.
+#[inline(always)]
+pub(crate) fn gp_at(c: &Cpu, off: i32) -> u32 {
+    r32(c, GP).wrapping_add(off as u32)
+}
+
+/// `vf4.x = a . b` (four lanes) as the original's VU0 macro sequence
+/// leaves it: vf3 = a, vf5 = b, vf6.x = 1, ACC.x scratch.
+pub(crate) fn vu_dot4(c: &mut Cpu, a: u32, b: u32) {
+    c.lqc2(3, a);
+    c.lqc2(5, b);
+    vu_dot4_regs(c, 5);
+}
+
+/// The dot product of vf3 with vf`b` into vf4.x.
+pub(crate) fn vu_dot4_regs(c: &mut Cpu, b: u8) {
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(b));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+/// `vf5 = vf4 * s` with `s` from FPU register `f` (through v1/vf3), stored
+/// to `tmp` and copied (via v0) to `dst`, as the original's inlined
+/// vector-scale does.
+pub(crate) fn vu_scale_to(c: &mut Cpu, f: usize, src: u32, tmp: u32, dst: u32) {
+    c.mfc1(3, f);
+    c.lqc2(4, src);
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, tmp);
+    c.lq(2, tmp);
+    c.sq(2, dst);
+}
+
+/// `void ChaseCameraAlgorithm_UpdateChaseHeading(ChaseCameraAlgorithm *this,
+/// ChaseInfo *info)` (0x162c78): above 100 km/h, measure the angle between
+/// the smoothed heading and the rig's look direction (virtual call at
+/// vtable +0x18; a near-zero direction keeps the last one), run it through
+/// the heading PID filter (5-entry history at +0x340), and blend the heading
+/// toward the travel direction by the filtered blend factor (slower in rider
+/// states 0xb..0xd). Always writes the normalised heading to `info->out`.
+pub fn chase_camera_update_chase_heading(c: &mut Cpu) {
+    use chase::*;
+    use chase_info::*;
+    use chase_lit::*;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0xb0);
+        c.lwc1(1, gp_at(c, MIN_SPEED));
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        frame.save_ra(c, 0x80);
+        c.g[S1][0] = c.g[A1][0];
+        let info = r32(c, S1);
+        c.lwc1(0, info.wrapping_add(SPEED));
+        c.c_lt_s(1, 0);
+        let fast = c.fcc();
+        c.g[S0][0] = c.g[A0][0];
+        let this = r32(c, S0);
+        if !fast {
+            // Slow: keep the heading as it is.
+            c.cycles += 1;
+            c.lq(2, this.wrapping_add(HEADING));
+        } else {
+            update_heading(c, frame, this, info)?;
+        }
+
+        // Normalise the heading (v0) into info->out.
+        c.cycles += 25;
+        let tmp = frame.at(c, 0);
+        c.sq(2, tmp);
+        c.lqc2(3, tmp);
+        vu_dot4_regs(c, 3);
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(2, 22);
+        c.mtc1(2, 0);
+        frame.restore(c, S0, 0xa0);
+        c.mfc1(3, 0);
+        c.qmtc2(3, 3);
+        c.vu0().div(0, 3, 3, 0);
+        let tmp = frame.at(c, 0);
+        c.lqc2(4, tmp);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 4, Src::Q);
+        c.sqc2(5, tmp);
+        frame.restore_ra(c, 0x80);
+        c.lq(2, tmp);
+        c.sq(2, info.wrapping_add(OUT));
+        frame.restore(c, S1, 0x90);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The fast path of [`chase_camera_update_chase_heading`]: leaves the new
+/// heading in v0 (and at `this->heading`).
+pub(crate) fn update_heading(c: &mut Cpu, frame: Frame, this: u32, info: u32) -> crate::call::Flow {
+    use chase::*;
+    use chase_info::*;
+    use chase_lit::*;
+    // The rig's look direction (virtual, vtable slot +0x18) into sp+0x10.
+    c.cycles += 22;
+    let rig = Addr(this.wrapping_add(RIG)).lw(c);
+    c.g[A2][0] = rig;
+    c.g[A0][0] = sx(frame.at(c, 0x10));
+    c.g[V0][0] = Addr(rig as u32).lw(c);
+    let vt = c.g[V0][0] as u32;
+    c.g[A1][0] = Addr(vt.wrapping_add(0x18)).lh(c);
+    c.g[V1][0] = Addr(vt.wrapping_add(0x1c)).lw(c);
+    c.g[A1][0] = sx((rig as u32).wrapping_add(c.g[A1][0] as u32));
+    let method = c.g[V1][0] as u32;
+    call_ptr(c, method, 0x0016_2cc0)?;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 4);
+    let dir = frame.at(c, 0x10);
+    vu_dot4(c, dir, dir);
+    c.qmfc2(2, 4);
+    c.mtc1(2, 0);
+    c.c_lt_s(0, 4);
+    let short = c.fcc();
+    c.lq(2, dir);
+    if short {
+        // A near-zero direction: reuse the last one.
+        c.cycles += 3;
+        c.lq(2, this.wrapping_add(LAST_DIR));
+        c.sq(2, dir);
+        c.lq(2, dir);
+    }
+
+    // The angle between the heading and the direction (acos via pi/2 - asin).
+    c.cycles += 25;
+    c.lwc1(2, gp_at(c, MIN_LEN));
+    c.sq(2, this.wrapping_add(LAST_DIR));
+    vu_dot4(c, this.wrapping_add(HEADING), this.wrapping_add(HEADING));
+    c.qmfc2(3, 4);
+    c.mtc1(3, 0);
+    vu_dot4(c, this.wrapping_add(LAST_DIR), this.wrapping_add(LAST_DIR));
+    c.qmfc2(2, 4);
+    c.mtc1(2, 1);
+    c.mul_s(0, 0, 1);
+    c.sqrt_s(3, 0);
+    c.c_lt_s(3, 2);
+    if c.fcc() {
+        c.cycles += 3;
+        c.mtc1(0, 7);
+    } else {
+        c.cycles += 16;
+        vu_dot4(c, this.wrapping_add(HEADING), this.wrapping_add(LAST_DIR));
+        c.qmfc2(2, 4);
+        c.mtc1(2, 0);
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 1);
+        c.div_s(0, 0, 3);
+        c.c_le_s(1, 0);
+        let in_range = c.fcc();
+        c.mov_s(12, 1);
+        if in_range {
+            c.cycles += 1;
+            c.min_s(12, 0, 4);
+        }
+        c.cycles += 5;
+        call_ptr(c, 0x0031_c128, 0x0016_2dc4)?; // Math_Asin(clamped cos)
+        c.lwc1(1, gp_at(c, HALF_PI));
+        c.sub_s(7, 1, 0);
+    }
+    c.g[V0][0] = Addr(this.wrapping_add(HIST + H_IDX)).lw(c);
+
+    // ang = max(ang - dead zone, 0); prev = b[(idx + 4) % 5].
+    c.cycles += 4;
+    c.g[V1][0] = 5;
+    c.lwc1(1, gp_at(c, DEAD_ZONE));
+    c.cycles += 16;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(4));
+    c.mtc1(0, 0);
+    c.div(0, V0, V1);
+    c.sub_s(7, 7, 1);
+    c.g[V0][0] = 5;
+    let errs = this.wrapping_add(HIST + H_C);
+    c.g[T0][0] = sx(errs);
+    c.mov_s(2, 0);
+    c.max_s(7, 7, 0);
+    let hist = this.wrapping_add(HIST);
+    c.g[A3][0] = sx(hist);
+    c.g[V0][0] = c.g[T0][0];
+    c.g[V1][0] = 4;
+    c.g[A0][0] = sx(this.wrapping_add((c.hi[0] as u32) << 2));
+    c.lwc1(4, (c.g[A0][0] as u32).wrapping_add(HIST + H_B));
+    c.sub_s(3, 7, 4);
+
+    // sum = c[0] + ... + c[4] (f2).
+    loop {
+        c.cycles += 7;
+        c.lwc1(0, c.g[V0][0] as u32);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(4));
+        let more = (c.g[V1][0] as i64) >= 0;
+        c.add_s(2, 2, 0);
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0016_2e20);
+        }
+    }
+
+    // val = prev + d*k0 + sum*k1 + (a[p2] - ang)*k2; store a/b/c[idx];
+    // idx = (idx + 1) % 5; blend s from val.
+    c.cycles += 4;
+    c.g[A0][0] = Addr(hist.wrapping_add(H_IDX)).lw(c);
+    c.g[A1][0] = 5;
+    c.cycles += 52;
+    c.g[A2][0] = 5;
+    c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+    c.lwc1(0, hist.wrapping_add(H_K0));
+    c.div(0, V0, A1);
+    c.lwc1(1, hist.wrapping_add(H_K1));
+    c.mul_s(0, 3, 0);
+    c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+    c.mul_s(1, 2, 1);
+    c.lwc1(3, hist.wrapping_add(H_K2));
+    c.g[A0][0] = sx(hist.wrapping_add(c.g[A0][0] as u32));
+    c.lwc1(6, gp_at(c, ANGLE_SCALE));
+    c.add_s(0, 4, 0);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(1, 8);
+    c.mtc1(0, 2);
+    c.lwc1(4, gp_at(c, BLEND_RANGE));
+    c.add_s(0, 0, 1);
+    c.lwc1(5, gp_at(c, BLEND_BASE));
+    c.g[V1][0] = sx(hist.wrapping_add((c.hi[0] as u32) << 2));
+    c.lwc1(1, c.g[V1][0] as u32);
+    c.swc1(7, c.g[A0][0] as u32);
+    c.sub_s(1, 1, 7);
+    c.g[V0][0] = Addr(hist.wrapping_add(H_IDX)).lw(c);
+    c.mul_s(1, 1, 3);
+    c.g[V0][0] = sx(hist.wrapping_add((c.g[V0][0] as u32) << 2));
+    c.add_s(0, 0, 1);
+    c.swc1(0, (c.g[V0][0] as u32).wrapping_add(H_B));
+    c.sub_s(1, 7, 0);
+    c.mul_s(0, 0, 6);
+    c.g[V0][0] = Addr(hist.wrapping_add(H_IDX)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.min_s(0, 0, 8);
+    c.g[V0][0] = sx(errs.wrapping_add(c.g[V0][0] as u32));
+    c.max_s(0, 0, 2);
+    c.swc1(1, c.g[V0][0] as u32);
+    c.sub_s(0, 8, 0);
+    c.g[V0][0] = Addr(hist.wrapping_add(H_IDX)).lw(c);
+    c.mul_s(0, 0, 4);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    c.div(0, V0, A1);
+    c.g[A0][0] = c.hi[0];
+    Addr(hist.wrapping_add(H_IDX)).sw(c, c.g[A0][0]);
+    c.g[V1][0] = Addr(this.wrapping_add(RIG)).lw(c);
+    c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(4)).lw(c);
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(RIDER_STATE)).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xb));
+    c.g[V0][0] = (c.g[V0][0] < 3) as u64;
+    let slow_state = c.g[V0][0] != 0;
+    c.add_s(2, 0, 5);
+    if slow_state {
+        c.cycles += 2;
+        c.sqrt_s(0, 2);
+        c.sqrt_s(2, 0);
+    }
+
+    // heading = dir * (1/speed) * (1 - s) + heading * s.
+    c.cycles += 32;
+    c.lwc1(0, info.wrapping_add(SPEED));
+    c.sub_s(1, 8, 2);
+    c.div_s(0, 8, 0);
+    let (t20, t30) = (frame.at(c, 0x20), frame.at(c, 0x30));
+    vu_scale_to(c, 0, info.wrapping_add(DIR), t30, t20);
+    let (t50, t60, t70) = (frame.at(c, 0x50), frame.at(c, 0x60), frame.at(c, 0x70));
+    vu_scale_to(c, 2, this.wrapping_add(HEADING), t60, t50);
+    vu_scale_to(c, 1, t20, t70, t60);
+    c.lqc2(3, t50);
+    c.lqc2(4, t60);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, t70);
+    c.lq(2, t70);
+    c.sq(2, this.wrapping_add(HEADING));
+    let t40 = frame.at(c, 0x40);
+    c.sq(2, t40);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10541,6 +10904,75 @@ pub(crate) mod tests {
                 c.f[12] = 0.5f32.to_bits();
                 c.f[13] = 1.0f32.to_bits();
                 c.f[14] = r.f32(2.0);
+            },
+        );
+    }
+    use super::*;
+
+    /// ChaseCameraAlgorithm_UpdateChaseHeading: slow (speed below 100 km/h)
+    /// and fast paths; the rig direction short (falls back to the last one)
+    /// or not; a zero heading (angle 0) or the asin path with the cosine
+    /// clamped low/high; the history index in range; rider states in and
+    /// out of 0xb..0xd. The virtual call is a fake that sometimes unwinds;
+    /// Math_Asin runs for real on the game's constants (ELF image).
+    #[test]
+    fn chase_camera_update_chase_heading_matches() {
+        covered(
+            ssx3_ee::s01::f_00162c78__generated,
+            chase_camera_update_chase_heading,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x162c78, 1);
+                elf_image(c);
+                c.pc = 0x0016_2c78;
+                let this = DATA;
+                let info = DATA + 0x800;
+                let rig = DATA + 0x1000;
+                let vt = DATA + 0x1100;
+                let rider = DATA + 0x1200;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = info as u64;
+                fill(c, &mut r, this, 0x100);
+                fill(c, &mut r, info, 0x20);
+                let v = |r: &mut Rng, big: bool| {
+                    let k = if big { 3.0 } else { 0.3 };
+                    [r.f32(k), r.f32(k), r.f32(k), r.f32(k * 0.5)]
+                };
+                c.bus.write32(this + chase::RIG, rig);
+                c.bus.write32(rig, vt);
+                c.bus.write32(rig + 4, rider);
+                c.bus.write16(vt + 0x18, (r.next_u32() as u16) & 0x7c);
+                c.bus.write32(vt + 0x1c, FAKE);
+                let state = match seed % 4 {
+                    0 => 0xb + r.next_u32() % 3,
+                    _ => r.next_u32() % 0x20,
+                };
+                c.bus.write32(rider + chase::RIDER_STATE, state);
+                let speed = if seed % 7 == 0 {
+                    10.0f32
+                } else {
+                    30.0 + (r.next_u32() % 40) as f32
+                };
+                c.bus.write32(info + chase_info::SPEED, speed.to_bits());
+                let d = v(&mut r, true);
+                put_vec(c, info + chase_info::DIR, d);
+                let h = if seed % 9 == 1 {
+                    [0; 4]
+                } else {
+                    v(&mut r, true)
+                };
+                put_vec(c, this + chase::HEADING, h);
+                let l = v(&mut r, seed % 2 == 0);
+                put_vec(c, this + chase::LAST_DIR, l);
+                // The rig's direction (the fake leaves sp+0x10 as it is).
+                let g = v(&mut r, seed % 3 != 0);
+                put_vec(c, SP - 0xb0 + 0x10, g);
+                let hist = this + chase::HIST;
+                for i in 0..15 {
+                    c.bus.write32(hist + 4 * i, r.f32(0.5));
+                }
+                c.bus.write32(hist + chase::H_IDX, r.next_u32() % 5);
+                put_words(c, hist + chase::H_K0, &[r.f32(1.0), r.f32(1.0), r.f32(1.0)]);
             },
         );
     }

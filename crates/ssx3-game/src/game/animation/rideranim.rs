@@ -14,6 +14,7 @@ use crate::call::Target;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::misc::add32;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -82,6 +83,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_anim_seq_type02_update,
         "RiderAnim_UpdateSeqType02",
     ),
+    (
+        0x0010_3aa0,
+        rider_anim_fire_sound_events,
+        "RiderAnim_FireSoundEvents",
+    ),
+    (0x0010_3e28, rider_anim_blend_seq4, "RiderAnim_BlendSeq4"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -970,6 +977,364 @@ pub fn rider_anim_seq_type02_update(c: &mut Cpu) {
     });
 }
 
+// ------------------------------------------------------- RiderAnim_BlendSeq4
+
+/// `AnimSequence_SetTrackAnim(seq, track, anim)`.
+pub(crate) const ANIM_SEQ_SET_TRACK_ANIM: u32 = 0x0031_3c50;
+
+/// `AnimSequence_SetTrackTime(seq, track, time)`.
+pub(crate) const ANIM_SEQ_SET_TRACK_TIME: u32 = 0x0031_3cf0;
+
+/// `AnimSequence_SetTrackWeight(seq, track, weight)`.
+pub(crate) const ANIM_SEQ_SET_TRACK_WEIGHT: u32 = 0x0031_3d28;
+
+/// `AnimSequence_SetTrackLoop(seq, track, loop)`.
+pub(crate) const ANIM_SEQ_SET_TRACK_LOOP: u32 = 0x0031_3d40;
+
+/// `AnimSequence_AdvanceTrack(seq, track, step)`.
+pub(crate) const ANIM_SEQ_ADVANCE_TRACK: u32 = 0x0031_35b0;
+
+/// `AnimSequence_UpdateWeightFade(seq, step)`: nonzero when faded out.
+pub(crate) const ANIM_SEQ_UPDATE_WEIGHT_FADE: u32 = 0x0031_3800;
+
+/// `AnimSeqList_Remove(list, seq)`.
+pub(crate) const ANIM_SEQ_LIST_REMOVE: u32 = 0x0031_45f8;
+
+/// `int RiderAnim_BlendSeq4(RiderAnim* self, SeqList* list, AnimSequence*
+/// seq, int a0, int a1, int a2, int a3, int a4, float dt, float v)`
+/// (0x103e28): a five-key blend along `v` in [-1, 1] (e.g. lean or carve
+/// amount). `v` picks the two neighbouring keys (`from`, `to`) of
+/// `a0..a4` at -1, -0.5, 0, 0.5, 1 and the weight `w` of `from`. If track 0
+/// does not already play `from`'s animation, switch it, keeping its
+/// relative time. Track 1 plays `to` with weight `1 - w`, synchronised to
+/// track 0's phase. Then advance by `dt / 60` and, when the weight fade
+/// ends, remove the sequence from `list`. Returns whether it was removed.
+pub fn rider_anim_blend_seq4(c: &mut Cpu) {
+    /// `gp+0xd8c`: the rider animation bank (animation ids at +0x1030).
+    const ANIM_BANK_GP: u32 = 0xd8c;
+    const BANK_IDS: u32 = 0x1030;
+    /// `gp-0x7f68`: 1/60, ticks to seconds.
+    const TICK_GP: u32 = 0x7f68;
+    /// AnimSequence fields: track 0's animation id, time, length; track 1's
+    /// speed.
+    const SEQ_ANIM0: u32 = 0x4;
+    const SEQ_TIME0: u32 = 0x8;
+    const SEQ_LENGTH0: u32 = 0x10;
+    const SEQ_SPEED1: u32 = 0x2c;
+    guest(c, |c| {
+        c.cycles += 15;
+        let half = FpuF32(0x3f00_0000);
+        c.g[AT][0] = 0x3f00_0000;
+        c.f[0] = half.0;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x30);
+        let v = FpuF32(c.f[13]);
+        let above_half = abi::c_lt_s(c, half, v);
+        frame.save(c, S2, 0x10);
+        frame.save_fpr(c, 22, 0x50);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.f[22] = c.f[12];
+        frame.save_fpr(c, 21, 0x48);
+        frame.save_fpr(c, 20, 0x40);
+        // The key pair: `from` in t3, `to` in s1; the weight in f21.
+        let w;
+        if above_half {
+            // (0.5, 1]: a3 -> a4, w = (v - 0.5) * 2 (from is already t3).
+            c.cycles += 4;
+            let d = v - half;
+            c.f[0] = d.0;
+            c.g[S1][0] = c.g[T2][0];
+            w = d + d;
+        } else {
+            c.cycles += 5;
+            c.f[0] = 0;
+            let above_zero = abi::c_lt_s(c, FpuF32::ZERO, v);
+            c.g[T3][0] = c.g[T2][0];
+            if above_zero {
+                // (0, 0.5]: a2 -> a3, w = v * 2.
+                c.cycles += 3;
+                c.g[S1][0] = c.g[T1][0];
+                w = v + v;
+            } else {
+                c.cycles += 6;
+                c.g[AT][0] = 0xffff_ffff_bf00_0000;
+                let neg_half = FpuF32(0xbf00_0000);
+                c.f[0] = neg_half.0;
+                let above_neg_half = abi::c_lt_s(c, neg_half, v);
+                c.g[T3][0] = c.g[T1][0];
+                c.g[AT][0] = 0x3f80_0000;
+                c.f[0] = FpuF32::ONE.0;
+                if above_neg_half {
+                    // (-0.5, 0]: a1 -> a2, w = v * 2 + 1.
+                    c.cycles += 6;
+                    let twice = v + v;
+                    c.f[1] = twice.0;
+                    c.g[S1][0] = c.g[T0][0];
+                    w = twice + FpuF32::ONE;
+                } else {
+                    // [-1, -0.5]: a0 -> a1, w = (v + 1) * 2.
+                    c.cycles += 6;
+                    c.g[T3][0] = c.g[T0][0];
+                    c.g[S1][0] = c.g[A3][0];
+                    let d = v + FpuF32::ONE;
+                    c.f[0] = d.0;
+                    w = d + d;
+                }
+            }
+        }
+        c.f[21] = w.0;
+
+        // Track 0 plays `from`: switch it unless it already does.
+        c.cycles += 7;
+        let seq = r32(c, S0);
+        let bank = Addr(r32(c, GP).wrapping_add(ANIM_BANK_GP)).lw(c);
+        c.g[V0][0] = bank;
+        let entry = sx((r32(c, T3) << 2).wrapping_add(bank as u32));
+        c.g[V1][0] = entry;
+        c.g[A0][0] = Addr(seq + SEQ_ANIM0).lw(c);
+        c.g[A2][0] = Addr((entry as u32).wrapping_add(BANK_IDS)).lw(c);
+        let same = c.g[A2][0] == c.g[A0][0];
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_add(ANIM_BANK_GP)).lw(c);
+        if !same {
+            c.cycles += 12;
+            let phase = Addr(seq + SEQ_TIME0)
+                .read_fpu(c)
+                .div(Addr(seq + SEQ_LENGTH0).read_fpu(c));
+            c.f[0] = Addr(seq + SEQ_LENGTH0).read_fpu(c).0;
+            c.f[20] = phase.0;
+            c.g[A0][0] = sx(seq);
+            c.g[A1][0] = 0;
+            call_ptr(c, ANIM_SEQ_SET_TRACK_ANIM, 0x0010_3f0c)?;
+            let time = Addr(seq + SEQ_LENGTH0).read_fpu(c) * FpuF32(c.f[20]);
+            c.g[A0][0] = sx(seq);
+            c.g[A1][0] = 0;
+            c.f[12] = time.0;
+            call_ptr(c, ANIM_SEQ_SET_TRACK_TIME, 0x0010_3f20)?;
+            c.g[V1][0] = Addr(r32(c, GP).wrapping_add(ANIM_BANK_GP)).lw(c);
+        }
+
+        // Track 1 plays `to` with the complementary weight.
+        c.cycles += 39;
+        let to = sx((r32(c, S1) << 2).wrapping_add(r32(c, V1)));
+        c.g[V0][0] = to;
+        c.g[A0][0] = sx(seq);
+        c.g[A1][0] = 1;
+        c.g[A2][0] = Addr((to as u32).wrapping_add(BANK_IDS)).lw(c);
+        call_ptr(c, ANIM_SEQ_SET_TRACK_ANIM, 0x0010_3f3c)?;
+        c.f[12] = c.f[21];
+        c.g[A0][0] = sx(seq);
+        c.g[A1][0] = 0;
+        call_ptr(c, ANIM_SEQ_SET_TRACK_WEIGHT, 0x0010_3f4c)?;
+        c.g[AT][0] = 0x3f80_0000;
+        c.g[A0][0] = sx(seq);
+        c.g[A1][0] = 1;
+        c.f[12] = (FpuF32::ONE - FpuF32(c.f[21])).0;
+        call_ptr(c, ANIM_SEQ_SET_TRACK_WEIGHT, 0x0010_3f64)?;
+        c.g[A2][0] = 1;
+        c.g[A0][0] = sx(seq);
+        c.g[A1][0] = 0;
+        call_ptr(c, ANIM_SEQ_SET_TRACK_LOOP, 0x0010_3f74)?;
+
+        // Advance by dt seconds.
+        let tick = Addr(r32(c, GP).wrapping_sub(TICK_GP)).read_fpu(c);
+        let step = FpuF32(c.f[22]) * tick;
+        c.f[20] = step.0;
+        c.g[A0][0] = sx(seq);
+        c.g[A1][0] = 0;
+        c.f[12] = step.0;
+        call_ptr(c, ANIM_SEQ_ADVANCE_TRACK, 0x0010_3f8c)?;
+
+        // Track 1 follows track 0's phase at its own speed.
+        let time0 = Addr(seq + SEQ_TIME0).read_fpu(c);
+        let length0 = Addr(seq + SEQ_LENGTH0).read_fpu(c);
+        let speed1 = Addr(seq + SEQ_SPEED1).read_fpu(c);
+        c.f[1] = length0.0;
+        c.f[0] = speed1.0;
+        c.g[A0][0] = sx(seq);
+        c.g[A1][0] = 1;
+        c.f[12] = (time0.div(length0) * speed1).0;
+        call_ptr(c, ANIM_SEQ_SET_TRACK_TIME, 0x0010_3fac)?;
+        c.f[12] = c.f[20];
+        c.g[A0][0] = sx(seq);
+        call_ptr(c, ANIM_SEQ_UPDATE_WEIGHT_FADE, 0x0010_3fb8)?;
+        let faded = c.g[V0][0] != 0;
+        c.g[A0][0] = c.g[S2][0];
+        if faded {
+            c.cycles += 3;
+            c.g[A1][0] = sx(seq);
+            call_ptr(c, ANIM_SEQ_LIST_REMOVE, 0x0010_3fd0)?;
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 22, 0x50);
+        frame.restore_fpr(c, 21, 0x48);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Rider animation events.
+
+/// `AnimBankSet* g_animBanks` (`gp+0xd08`): bank pointers by `id & 0xff`. A
+/// bank: `+8` its sequences (0x14 bytes; `+0x10` first event, `+0x12` event
+/// count), `+0x10` its events (4 bytes; `+2` the event code, bit 15 = sound).
+pub(crate) const ANIM_BANKS: u32 = 0xd08;
+
+/// The animation object (`a1`): `+4` its sequence id (bank | seq << 8),
+/// `+0xb0` the per-event flags (two 64-bit masks: reached, and armed).
+pub(crate) const ANIM_SEQ_ID: u32 = 0x4;
+
+pub(crate) const ANIM_EVENT_FLAGS: u32 = 0xb0;
+
+pub(crate) const SEQ_SIZE: u64 = 0x14;
+
+pub(crate) const FLAGS64_CLEAR: u32 = 0x0014_4670;
+
+pub(crate) const FLAGS64_TEST: u32 = 0x0014_46a0;
+
+pub(crate) const FLAGS64_TEST_SECOND: u32 = 0x0014_46b8;
+
+pub(crate) const RIDER_ANIM_PLAY_EVENT_SOUND: Callee = Callee {
+    addr: 0x0010_4cc8,
+    f: ee::s00::f_00104cc8,
+};
+
+/// `void RiderAnim_FireSoundEvents(RiderAnim* self, Anim* anim)` (0x103aa0):
+/// for each event of the animation's current sequence that is set in both
+/// event masks and whose code has the sound bit, clear its flag and play the
+/// event sound (`code & 0x7fff`).
+pub fn rider_anim_fire_sound_events(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x90);
+        c.g[A2][0] = SEQ_SIZE;
+        frame.save(c, S1, 0x70);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S0, 0x80);
+        c.g[S5][0] = c.g[A0][0];
+        frame.save(c, S2, 0x60);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save_ra(c, 0);
+        let anim = r32(c, S4);
+        let gp = c.g[GP][0] as u32;
+        // The sequence's event count.
+        c.g[A1][0] = Addr(gp + ANIM_BANKS).lw(c);
+        c.g[V0][0] = Addr(anim + ANIM_SEQ_ID).lw(c);
+        c.g[V1][0] = sx(((c.g[V0][0] & 0xff) as u32) << 2);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) >> 8);
+        c.g[A1][0] = add32(c.g[A1][0], c.g[V1][0]);
+        c.mult(0, V0, V0, A2);
+        c.g[A0][0] = Addr(r32(c, A1)).lw(c);
+        c.g[V1][0] = Addr(r32(c, A0) + 8).lw(c);
+        c.g[V0][0] = add32(c.g[V0][0], c.g[V1][0]);
+        c.g[S3][0] = Addr(r32(c, V0) + 0x12).lhu(c);
+        c.g[S1][0] = 0;
+        if c.g[S3][0] != 0 {
+            c.cycles += 4;
+            c.g[S2][0] = sx(anim + ANIM_EVENT_FLAGS);
+            c.g[S7][0] = 1;
+            c.g[S6][0] = SEQ_SIZE;
+            c.g[S0][0] = 0;
+            loop {
+                // Head 0x103b18: s1 = event index, s0 = 0.
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S1][0];
+                call_ptr(c, FLAGS64_TEST, 0x0010_3b24)?;
+                let reached = c.g[V0][0] != 0;
+                c.g[A0][0] = c.g[S2][0];
+                if reached {
+                    c.cycles += 3;
+                    c.g[A1][0] = c.g[S1][0];
+                    call_ptr(c, FLAGS64_TEST_SECOND, 0x0010_3b34)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = c.g[S7][0];
+                    }
+                }
+                c.cycles += 2;
+                let fire = c.g[S0][0] != 0;
+                c.g[A1][0] = Addr(gp + ANIM_BANKS).lw(c);
+                let mut played = !fire;
+                if fire {
+                    // The event's code.
+                    c.cycles += 18;
+                    c.g[V1][0] = Addr(anim + ANIM_SEQ_ID).lw(c);
+                    c.g[V0][0] = sx(((c.g[V1][0] & 0xff) as u32) << 2);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) >> 8);
+                    c.g[A1][0] = add32(c.g[A1][0], c.g[V0][0]);
+                    c.mult(0, V1, V1, S6);
+                    c.g[A0][0] = Addr(r32(c, A1)).lw(c);
+                    c.g[A2][0] = Addr(r32(c, A0) + 8).lw(c);
+                    c.g[A1][0] = Addr(r32(c, A0) + 0x10).lw(c);
+                    c.g[V1][0] = add32(c.g[V1][0], c.g[A2][0]);
+                    c.g[V0][0] = Addr(r32(c, V1) + 0x10).lhu(c);
+                    c.g[V0][0] = add32(c.g[V0][0], c.g[S1][0]);
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = add32(c.g[V0][0], c.g[A1][0]);
+                    c.g[S0][0] = Addr(r32(c, V0) + 2).lhu(c);
+                    c.g[V1][0] = c.g[S0][0] & 0x8000;
+                    if c.g[V1][0] != 0 {
+                        c.cycles += 6;
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[A1][0] = c.g[S1][0];
+                        call_ptr(c, FLAGS64_CLEAR, 0x0010_3b94)?;
+                        c.g[A1][0] = c.g[S0][0] & 0x7fff;
+                        c.g[A0][0] = c.g[S5][0];
+                        RIDER_ANIM_PLAY_EVENT_SOUND.call(c, 0x0010_3ba0)?;
+                        played = true;
+                    }
+                }
+                if played {
+                    c.cycles += 1;
+                }
+                c.g[S1][0] = add32(c.g[S1][0], 1);
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[S3][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = 0;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_3b18);
+                }
+            }
+        }
+        c.cycles += 11;
+        for (reg, off) in [
+            (S0, 0x80),
+            (S1, 0x70),
+            (S2, 0x60),
+            (S3, 0x50),
+            (S4, 0x40),
+            (S5, 0x30),
+            (S6, 0x20),
+            (S7, 0x10),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1320,6 +1685,126 @@ pub(crate) mod tests {
                 } else {
                     r.f32(0.05)
                 };
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::events::driven;
+    use crate::difftest::fakes::FAKE;
+
+    // ------------------------------------------------------- RiderAnim_BlendSeq4
+
+    /// `RiderAnim_BlendSeq4`: a sequence whose track 0 sometimes already
+    /// plays the `from` key, `v` in each of the four key intervals (and on
+    /// their edges), and a weight fade that sometimes ends (list removal).
+    /// The real track setters, advance, fade and list removal run.
+    #[test]
+    fn rider_anim_blend_seq4_matches() {
+        use crate::difftest::fakes::{machine, ptr};
+        use crate::difftest::{check, elf_image, GAME_GP};
+        check(
+            ee::s00::f_00103e28__generated,
+            rider_anim_blend_seq4,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_3e28, 0);
+                elf_image(c);
+                c.pc = 0x0010_3e28;
+                // The animation bank: ids 0x100 + key at +0x1030.
+                let bank = ptr(&mut r);
+                c.bus.write32(GAME_GP + 0xd8c, bank);
+                for k in 0..8 {
+                    c.bus.write32(bank + 0x1030 + 4 * k, 0x100 + k * 0x101);
+                }
+                let keys: Vec<u32> = (0..5).map(|_| r.next_u32() % 8).collect();
+                for (reg, k) in [A3, T0, T1, T2, T3].into_iter().zip(&keys) {
+                    c.g[reg][0] = *k as u64;
+                }
+                let seq = ptr(&mut r);
+                let list = ptr(&mut r);
+                c.g[A0][0] = sx(ptr(&mut r));
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(seq);
+                for off in [0x8, 0xc, 0x10, 0x2c, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
+                    let v = match r.next_u32() % 4 {
+                        0 => 0,
+                        1 => r.edge_f32(),
+                        _ => r.f32(3.0),
+                    };
+                    c.bus.write32(seq + off, v);
+                }
+                // Track 0 already plays one of the keys (or something else).
+                let cur = if seed % 3 == 0 {
+                    r.next_u32()
+                } else {
+                    0x100 + keys[(r.next_u32() % 5) as usize] * 0x101
+                };
+                c.bus.write32(seq + 0x4, cur);
+                c.bus.write32(seq + 0x1c, r.next_u32() & 1);
+                c.bus.write32(seq + 0xa0, r.next_u32() & 1);
+                let mut at = list + 4;
+                for _ in 0..seed % 3 {
+                    let other = ptr(&mut r) + 0x8;
+                    c.bus.write32(at, other);
+                    at = other + 200;
+                }
+                let vs = [-1.0f32, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0];
+                c.f[13] = match seed % 11 {
+                    9 => r.edge_f32(),
+                    10 => r.f32(1.0),
+                    i => vs[i as usize].to_bits(),
+                };
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(3.0)
+                };
+            },
+        );
+    }
+
+    /// `RiderAnim_FireSoundEvents` over sequences of 0..8 events with random
+    /// reached/armed masks and codes with and without the sound bit. The
+    /// rider is null, so the event sound call takes its short path.
+    #[test]
+    fn rider_anim_fire_sound_events_matches() {
+        check(
+            ee::s00::f_00103aa0__generated,
+            rider_anim_fire_sound_events,
+            150,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x10_3aa0, 0);
+                let (this, anim, banks, bank, seqs, events) = (
+                    DATA,
+                    DATA + 0x100,
+                    DATA + 0x400,
+                    DATA + 0x500,
+                    DATA + 0x600,
+                    DATA + 0x800,
+                );
+                c.bus.write32(GAME_GP + ANIM_BANKS, banks);
+                let b = r.next_u32() % 4;
+                let seq = r.next_u32() % 6;
+                c.bus.write32(banks + 4 * b, bank);
+                c.bus.write32(bank + 8, seqs);
+                c.bus.write32(bank + 0x10, events);
+                let first = r.next_u32() % 8;
+                c.bus.write16(seqs + 0x14 * seq + 0x10, first as u16);
+                c.bus.write16(seqs + 0x14 * seq + 0x12, (seed % 9) as u16);
+                for k in 0..20 {
+                    let code = r.next_u32() as u16;
+                    c.bus.write16(events + 4 * k + 2, code);
+                }
+                c.bus.write32(anim + ANIM_SEQ_ID, b | seq << 8);
+                for k in 0..4 {
+                    c.bus
+                        .write32(anim + ANIM_EVENT_FLAGS + 4 * k, r.next_u32() | r.next_u32());
+                }
+                c.bus.write32(this + 0x60, 0);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(anim);
+                c.pc = 0x0010_3aa0;
             },
         );
     }

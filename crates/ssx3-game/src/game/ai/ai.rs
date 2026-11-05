@@ -19,6 +19,7 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::rider::rate_step_60;
 pub(crate) use crate::game::camera::camera::gp;
+pub(crate) use crate::game::camera::camera::gp_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw as lw_5;
 pub(crate) use crate::game::dirtysock::tags2::gp_8 as gp_2;
 pub(crate) use crate::game::fe::feasyncfile::a;
@@ -370,6 +371,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0012_ee30,
         rider_prewind_sub_play_directional_anim,
         "RiderPrewindSub_PlayDirectionalAnim",
+    ),
+    (
+        0x0013_5180,
+        rider_spin_sub_get_spin_factor,
+        "RiderSpinSub_GetSpinFactor",
     ),
 ];
 
@@ -12564,6 +12570,138 @@ pub(crate) fn ai_start_countdown(c: &mut Cpu, this: Addr, gp: u32) {
     }
 }
 
+pub(crate) mod spin_lit {
+
+    /// 1/7: stick magnitude scale.
+    pub const MAG_SCALE: i32 = -0x7380;
+
+    /// atan2(y, 0): the value for y < 0, then the one for y >= 0.
+    pub const ATAN_X0_NEG: i32 = -0x737c;
+
+    pub const ATAN_X0_POS: i32 = -0x7378;
+
+    /// atan2 quadrant fix-ups (+pi / -pi).
+    pub const PI_ADD: i32 = -0x7374;
+
+    pub const PI_SUB: i32 = -0x7370;
+
+    /// Dead zone 0.3 and range 0.7 of the magnitude.
+    pub const DEAD_ZONE: i32 = -0x736c;
+
+    pub const RANGE: i32 = -0x7368;
+
+    /// pi/4 (the diagonal) and 1/0.7.
+    pub const DIAGONAL: i32 = -0x7364;
+
+    pub const RANGE_INV: i32 = -0x7360;
+}
+
+/// `float RiderSpinSub_GetSpinFactor(RiderSpinSub *this)` (0x135180): how
+/// far the rider's stick (input at `this->input` +0x58, x at +0x2dc, y at
+/// +0x2e0) is pushed along the diagonal: `clamp(|stick|/7 - 0.3, 0, 0.7) /
+/// 0.7 * (1 - |atan2(|y|, |x|) - pi/4| / (pi/4))` (atan2 inlined around
+/// `Math_Atan`).
+pub fn rider_spin_sub_get_spin_factor(c: &mut Cpu) {
+    use spin_lit::*;
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x30);
+        c.lwc1(2, gp_at(c, MAG_SCALE));
+        frame.save_fpr(c, 23, 0x28);
+        frame.save_fpr(c, 22, 0x20);
+        frame.save_fpr(c, 21, 0x18);
+        frame.save_fpr(c, 20, 0x10);
+        frame.save_ra(c, 0);
+        c.mtc1(0, 22); // f22 = 0
+        c.g[V0][0] = Addr(abi::arg(c, 0).wrapping_add(0x58)).lw(c);
+        let input = r32(c, V0);
+        c.lwc1(1, input.wrapping_add(0x2e0));
+        c.lwc1(0, input.wrapping_add(0x2dc));
+        c.abs_s(21, 1); // |y|
+        c.abs_s(20, 0); // |x|
+        c.mul_s(1, 1, 1);
+        c.mul_s(0, 0, 0);
+        c.c_eq_s(20, 22);
+        c.add_s(0, 0, 1);
+        c.sqrt_s(0, 0);
+        let x_zero = c.fcc();
+        c.mul_s(23, 0, 2); // magnitude / 7
+
+        // f12 = atan2(|y|, |x|).
+        if x_zero {
+            c.cycles += 4;
+            c.c_eq_s(21, 22);
+            let y_zero = c.fcc();
+            c.mov_s(12, 21);
+            if !y_zero {
+                c.cycles += 4;
+                c.c_le_s(22, 21);
+                c.lwc1(12, gp_at(c, ATAN_X0_NEG));
+                if c.fcc() {
+                    c.cycles += 3;
+                    c.lwc1(12, gp_at(c, ATAN_X0_POS));
+                }
+            }
+        } else {
+            c.cycles += 7;
+            c.div_s(12, 21, 20);
+            call_ptr(c, 0x0031_c228, 0x0013_5208)?; // Math_Atan(|y|/|x|)
+            c.c_lt_s(20, 22);
+            let x_neg = c.fcc();
+            c.mov_s(1, 0);
+            if x_neg {
+                c.cycles += 3;
+                c.c_lt_s(22, 21);
+                if c.fcc() {
+                    c.cycles += 3;
+                    c.lwc1(0, gp_at(c, PI_ADD));
+                    c.add_s(1, 1, 0);
+                } else {
+                    c.cycles += 2;
+                    c.lwc1(0, gp_at(c, PI_SUB));
+                    c.sub_s(1, 1, 0);
+                }
+            }
+            c.cycles += 1;
+            c.mov_s(12, 1);
+        }
+
+        // f4 = clamp(mag - 0.3, 0, 0.7).
+        c.cycles += 8;
+        c.lwc1(0, gp_at(c, DEAD_ZONE));
+        c.mtc1(0, 1);
+        c.sub_s(0, 23, 0);
+        c.lwc1(2, gp_at(c, RANGE));
+        c.c_le_s(1, 0);
+        let above = c.fcc();
+        c.mov_s(4, 1);
+        if above {
+            c.cycles += 1;
+            c.min_s(4, 0, 2);
+        }
+
+        // f0 = f4 / 0.7 * (1 - |angle - pi/4| / (pi/4)).
+        c.cycles += 17;
+        c.lwc1(3, gp_at(c, DIAGONAL));
+        c.lwc1(2, gp_at(c, RANGE_INV));
+        c.sub_s(1, 12, 3);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.abs_s(1, 1);
+        c.mul_s(2, 4, 2);
+        c.div_s(1, 1, 3);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 23, 0x28);
+        frame.restore_fpr(c, 22, 0x20);
+        frame.restore_fpr(c, 21, 0x18);
+        frame.restore_fpr(c, 20, 0x10);
+        c.sub_s(0, 0, 1);
+        c.mul_s(0, 2, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13503,7 +13641,7 @@ pub(crate) mod tests {
     // ------------------------------------------ RiderWipeoutSub anim selectors
 
     pub(crate) fn anim_object(c: &mut Cpu, id: u32) {
-        c.g[SP][0] = (STACK - 0x100) as u64;
+        c.g[ssx3_ee_rt::cpu::reg::SP][0] = (STACK - 0x100) as u64;
         c.bus.write32(DATA + 0x80, DATA + 0x200);
         c.bus.write32(DATA + 0x984, DATA + 0x300);
         c.bus.write32(DATA + 0x308, id);
@@ -14695,6 +14833,41 @@ pub(crate) mod tests {
                     c.bus.write32(rider + RIDER_FINISH_TIME, t);
                     c.bus.write32(rider + RIDER_FORCED_FINISH, 0);
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::SP;
+
+    /// RiderSpinSub_GetSpinFactor: stick x zero (y zero / positive /
+    /// negative) or not (x negative with y positive / not, x positive);
+    /// magnitudes below, inside and above the dead-zone range. Math_Atan
+    /// runs for real on the game's constants (ELF image).
+    #[test]
+    fn rider_spin_sub_get_spin_factor_matches() {
+        check(
+            ee::s01::f_00135180__generated,
+            rider_spin_sub_get_spin_factor,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x135180 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0013_5180;
+                let (this, input) = (DATA, DATA + 0x100);
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0x58, input);
+                let pick = |r: &mut Rng, k: u32| match k {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    2 => r.edge_f32(),
+                    _ => r.f32(8.0),
+                };
+                let x = pick(&mut r, seed % 5);
+                let y = pick(&mut r, (seed / 5) % 5);
+                c.bus.write32(input + 0x2dc, x);
+                c.bus.write32(input + 0x2e0, y);
             },
         );
     }

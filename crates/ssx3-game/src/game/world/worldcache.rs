@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -33,6 +34,8 @@ pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
 pub(crate) use crate::game::sound::bankmonitor::add32;
 pub(crate) use crate::game::sound::bankmonitor::leave;
 pub(crate) use crate::game::sound::bankmonitor::p;
+pub(crate) use crate::game::visualfx::boardwakefx::CAM_PROJECTOR_VT;
+pub(crate) use crate::game::visualfx::boardwakefx::LENS_CAMERA_GP;
 pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
@@ -156,6 +159,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x003a_9770,
         c_world_cache_streamer_get_view_clearance_all,
         "cWorldCache_StreamerGetViewClearanceAll",
+    ),
+    (
+        0x003a_8668,
+        world_cache_update_hull_lru,
+        "cWorldCache_UpdateHullLRU",
+    ),
+    (
+        0x003a_9258,
+        c_world_cache_streamer_update,
+        "cWorldCache_StreamerUpdate",
     ),
 ];
 
@@ -2098,6 +2111,673 @@ pub fn c_world_cache_flush_hull_pages(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod streamer {
+
+    pub const CACHE: u32 = 0x0;
+
+    pub const INFO: u32 = 0x4;
+
+    pub const SECTIONS: u32 = 0x8;
+
+    pub const ENTRIES: u32 = 0x14;
+
+    pub const RESIDENT: u32 = 0x2e0;
+
+    pub const FADING: u32 = 0x2e4;
+
+    /// `info + 8`: number of sections.
+    pub const INFO_COUNT: u32 = 0x8;
+
+    pub const SECTION_SIZE: u64 = 0x58;
+
+    pub const SECTION_ID: u32 = 0x18;
+
+    pub const SECTION_TREE: u32 = 0x1c;
+
+    /// The sky section name prefixes `"ASKY"`..`"ESKY"` (`.rodata`, 8 apart).
+    pub const SKY_NAMES: u32 = 0x004a_47e8;
+
+    /// The state jump table (seven entries) in `.rodata`.
+    pub const STATE_TABLE: u32 = 0x0049_4ef0;
+}
+
+// ---------------------------------------------------------------------------
+// cWorldCache_UpdateHullLRU (0x3a8668)
+// ---------------------------------------------------------------------------
+
+/// World cache: the hull streamer (+0x10), the stream manager (+0x300) and
+/// its busy flag (+0x390), the hull page slots and the expiry time.
+pub(crate) const WC_STREAMER: u32 = 0x10;
+
+pub(crate) const WC_STREAM_MAN: u32 = 0x300;
+
+pub(crate) const WC_BUSY: u32 = 0x390;
+
+pub(crate) const WC_SLOT_COUNT: u32 = 0x3ec;
+
+pub(crate) const WC_SLOTS: u32 = 0x3f0;
+
+pub(crate) const WC_EXPIRY: u32 = 0x1bf0;
+
+/// A hull page slot (0x18 bytes, from +0x3f0).
+pub(crate) const SLOT_SIZE: u32 = 0x18;
+
+pub(crate) const SLOT_STATE: u32 = 0x0;
+
+pub(crate) const SLOT_LOCKED: u32 = 0x4;
+
+pub(crate) const SLOT_PAGE: u32 = 0x8;
+
+pub(crate) const SLOT_PRIORITY: u32 = 0xc;
+
+pub(crate) const SLOT_TIME: u32 = 0x10;
+
+pub(crate) const SLOT_STAMP: u32 = 0x14;
+
+/// Slot states: free, wanted, loaded, expiring, freeing.
+pub(crate) const HULL_WANTED: u64 = 1;
+
+pub(crate) const HULL_LOADED: u64 = 2;
+
+pub(crate) const HULL_EXPIRING: u64 = 3;
+
+pub(crate) const HULL_FREEING: u64 = 4;
+
+/// Camera vtable slot returning the render frame number.
+pub(crate) const VT_FRAME: u32 = 0x390;
+
+/// `void cWorldCache_UpdateHullLRU(cWorldCache* wc)` (0x3a8668): age the
+/// hull page slots. A slot that is unlocked and not touched for the expiry
+/// time expires: a wanted one is dropped, an expiring one starts freeing
+/// (stamped with the render frame), and a freeing one is released five
+/// frames later. Then, if the stream manager is idle, the wanted slot with
+/// the highest priority gets a page allocated and its read queued.
+pub fn world_cache_update_hull_lru(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0xb0);
+        let gp = c.g[GP][0] as u32;
+        c.g[V0][0] = Addr(gp).off(0x2a74).lw(c);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        c.g[S2][0] = 0;
+        frame.save(c, S6, 0x30);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0xa0);
+        c.g[S6][0] = u64::MAX;
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        c.g[AT][0] = sx(0xbf80_0000);
+        c.mtc1(AT, 20);
+        let wc = r32(c, S3);
+        c.g[V1][0] = Addr(wc).off(WC_SLOT_COUNT).lw(c);
+        // now = the game clock's frame counter.
+        c.g[FP][0] = Addr(r32(c, V0)).off(0x1c).lw(c);
+        if c.g[V1][0] != 0 {
+            c.cycles += 5;
+            c.g[S7][0] = 1;
+            c.g[S5][0] = HULL_FREEING;
+            c.g[S4][0] = sx(wc + WC_SLOTS + SLOT_STAMP);
+            c.g[V0][0] = SLOT_SIZE as u64;
+            loop {
+                age_slot(c, wc)?;
+                // Next slot.
+                c.cycles += 4;
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                let more = c.g[S2][0] < c.g[V0][0];
+                c.g[V0][0] = SLOT_SIZE as u64;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003a_86d0);
+                }
+            }
+        }
+
+        // Load the best wanted slot.
+        c.cycles += 2;
+        let best = c.g[S6][0];
+        frame.restore(c, S0, 0x90);
+        if (best as i64) >= 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(wc).off(WC_BUSY).lw(c);
+            c.g[S4][0] = sx(wc + WC_STREAM_MAN);
+            if c.g[V0][0] == 0 {
+                c.cycles += 27;
+                c.g[A1][0] = best;
+                c.g[A0][0] = sx(wc + WC_STREAMER);
+                Callee {
+                    addr: 0x003a_9a98,
+                    f: ee::s13::f_003a9a98,
+                }
+                .call(c, 0x003a_8818)?;
+                c.g[S0][0] = SLOT_SIZE as u64;
+                c.g[S1][0] = sx(wc + WC_SLOTS + SLOT_PAGE);
+                c.mult(0, S0, S6, S0);
+                c.g[S2][0] = c.g[V0][0];
+                // new (0x494e88, 0x20000000, 0) cHullPage(hull)
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0;
+                c.g[A1][0] = sx(0x0049_4e88);
+                c.g[A0][0] = 0x10;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, S0)));
+                call_ptr(c, 0x0031_7d70, 0x003a_8844)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                Callee {
+                    addr: 0x003a_7bd8,
+                    f: ee::s13::f_003a7bd8,
+                }
+                .call(c, 0x003a_8850)?;
+                let page = c.g[V0][0];
+                Addr(r32(c, S1)).sw(c, page);
+                // Stream manager: queue the hull's read (offset, size).
+                let hull = r32(c, S2);
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = c.g[S6][0];
+                c.g[A3][0] = Addr(hull).off(4).lw(c);
+                c.g[A2][0] = Addr(hull).lhu(c);
+                Callee {
+                    addr: 0x003a_6f88,
+                    f: ee::s13::f_003a6f88,
+                }
+                .call(c, 0x003a_8868)?;
+                c.g[S0][0] = sx(wc.wrapping_add(r32(c, S0)));
+                c.g[V0][0] = HULL_LOADED;
+                Addr(r32(c, S0))
+                    .off(WC_SLOTS + SLOT_STATE)
+                    .sw(c, HULL_LOADED);
+                frame.restore(c, S0, 0x90);
+            }
+        }
+
+        c.cycles += 12;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0xa0);
+        frame.close(c);
+        Ok(())
+    });
+
+    /// One slot (`s2` = index): ends with `v0` = the slot count.
+    fn age_slot(c: &mut Cpu, wc: u32) -> crate::call::Flow {
+        c.cycles += 6;
+        c.g[V1][0] = sx(wc + WC_SLOTS);
+        c.mult(0, S0, S2, V0);
+        let off = r32(c, S0);
+        c.g[S1][0] = sx(r32(c, V1).wrapping_add(off));
+        let state_at = r32(c, S1);
+        c.g[A1][0] = Addr(state_at).lw(c);
+        c.g[V1][0] = sx(wc.wrapping_add(off));
+        let slot = r32(c, V1) + WC_SLOTS;
+        let state = c.g[A1][0];
+        if state == 0 {
+            return count_and_next(c, wc, 1);
+        }
+        // Expired: unlocked and untouched for the expiry time.
+        c.cycles += 3;
+        c.g[V0][0] = Addr(slot).off(SLOT_LOCKED).lw(c);
+        c.g[A2][0] = 0;
+        if c.g[V0][0] == 0 {
+            c.cycles += 7;
+            c.g[V0][0] = c.g[V1][0];
+            c.g[A0][0] = Addr(wc).off(WC_EXPIRY).lw(c);
+            c.g[V1][0] = Addr(slot).off(SLOT_TIME).lw(c);
+            c.g[A2][0] = c.g[S7][0];
+            c.g[V1][0] = sx(r32(c, FP).wrapping_sub(r32(c, V1)));
+            c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            if c.g[V1][0] != 0 {
+                c.g[A2][0] = 0;
+            }
+        }
+        let expired = c.g[A2][0] != 0;
+        c.cycles += 3;
+        c.g[V0][0] = ((state as i64) < 3) as u64;
+        if state == HULL_LOADED {
+            return count_and_next(c, wc, 1);
+        }
+        c.cycles += 2;
+        let below3 = c.g[V0][0] != 0;
+        c.g[V0][0] = 3;
+        if below3 {
+            c.cycles += 2;
+            if state != HULL_WANTED {
+                return count_and_next(c, wc, 2);
+            }
+            // Wanted: dropped when expired, else a candidate.
+            c.cycles += 2;
+            if expired {
+                Addr(state_at).sw(c, 0);
+                return count_and_next(c, wc, 1);
+            }
+            c.cycles += 6;
+            c.g[V0][0] = sx(wc.wrapping_add(off));
+            c.lwc1(0, slot + SLOT_PRIORITY);
+            c.c_lt_s(20, 0);
+            if !c.fcc() {
+                return count_and_next(c, wc, 0);
+            }
+            c.cycles += 3;
+            c.mov_s(20, 0);
+            c.g[S6][0] = c.g[S2][0];
+            return count_and_next(c, wc, 1);
+        }
+        c.cycles += 2;
+        if state == HULL_EXPIRING {
+            c.cycles += 2;
+            if !expired {
+                return count_and_next(c, wc, 0);
+            }
+            // Start freeing: stamp with the render frame.
+            c.cycles += 10;
+            Addr(state_at).sw(c, HULL_FREEING);
+            let gp = c.g[GP][0] as u32;
+            c.g[A1][0] = Addr(gp).off(LENS_CAMERA_GP).lw(c);
+            frame_number(c, 0x003a_879c)?;
+            c.g[V1][0] = sx(r32(c, S4).wrapping_add(off));
+            let now = c.g[V0][0];
+            Addr(r32(c, V1)).sw(c, now);
+            return count_and_next(c, wc, 1);
+        }
+        c.cycles += 2;
+        let freeing = state == HULL_FREEING;
+        let gp = c.g[GP][0] as u32;
+        c.g[A1][0] = Addr(gp).off(LENS_CAMERA_GP).lw(c);
+        if !freeing {
+            c.cycles += 2;
+            return count_and_next(c, wc, 0);
+        }
+        // Freeing: release the page five frames after the stamp.
+        c.cycles += 11;
+        frame_number(c, 0x003a_87bc)?;
+        c.g[V1][0] = sx(r32(c, S4).wrapping_add(off));
+        c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, A0)));
+        c.g[V0][0] = ((c.g[V0][0] as i64) < 5) as u64;
+        if c.g[V0][0] != 0 {
+            return count_and_next(c, wc, 0);
+        }
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[S2][0];
+        Callee {
+            addr: 0x003a_8528,
+            f: ee::s13::f_003a8528,
+        }
+        .call(c, 0x003a_87e0)?;
+        Addr(r32(c, S1)).sw(c, 0);
+        count_and_next(c, wc, 1)
+    }
+
+    /// `camera->GetFrame()` (`a1` = the camera).
+    fn frame_number(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+        let cam = c.g[A1][0];
+        c.g[V1][0] = Addr(cam as u32).off(CAM_PROJECTOR_VT).lw(c);
+        let vt = c.g[V1][0];
+        let slot = VSlot::read(c, vt, VT_FRAME);
+        c.g[A0][0] = slot.delta;
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = slot.this(cam);
+        call_ptr(c, slot.func as u32, ret)
+    }
+
+    /// The loop's join (`extra` cycles first): `v0` = the slot count.
+    fn count_and_next(c: &mut Cpu, wc: u32, extra: u64) -> crate::call::Flow {
+        c.cycles += extra;
+        c.g[V0][0] = Addr(wc).off(WC_SLOT_COUNT).lw(c);
+        Ok(())
+    }
+}
+
+pub(crate) const STRNCMP: u32 = 0x0041_6b18;
+
+pub(crate) const CREATE_SECTION_TABLE: Callee = Callee {
+    addr: 0x003a_81a8,
+    f: ee::s13::f_003a81a8,
+};
+
+pub(crate) const REQUEST_HULL: Callee = Callee {
+    addr: 0x003a_8448,
+    f: ee::s13::f_003a8448,
+};
+
+pub(crate) const SET_HULL_PINNED: Callee = Callee {
+    addr: 0x003a_84f8,
+    f: ee::s13::f_003a84f8,
+};
+
+pub(crate) const IS_HULL_RESIDENT: Callee = Callee {
+    addr: 0x003a_8618,
+    f: ee::s13::f_003a8618,
+};
+
+pub(crate) const IS_HULL_FREE: Callee = Callee {
+    addr: 0x003a_8638,
+    f: ee::s13::f_003a8638,
+};
+
+pub(crate) const ARE_NODE_HULLS_FREE: Callee = Callee {
+    addr: 0x003a_95c0,
+    f: ee::s13::f_003a95c0,
+};
+
+pub(crate) const FREE_SECTION_TABLE: Callee = Callee {
+    addr: 0x003a_8230,
+    f: ee::s13::f_003a8230,
+};
+
+pub(crate) const WORLD_RESET_LIGHTS: Callee = Callee {
+    addr: 0x003a_d1a8,
+    f: ee::s13::f_003ad1a8,
+};
+
+pub(crate) const EXPIRE_HULL: Callee = Callee {
+    addr: 0x003a_84c8,
+    f: ee::s13::f_003a84c8,
+};
+
+pub(crate) const RELEASE_NODE_HULLS: Callee = Callee {
+    addr: 0x003a_9558,
+    f: ee::s13::f_003a9558,
+};
+
+pub(crate) const STREAMER_UPDATE_VIEW: Callee = Callee {
+    addr: 0x003a_9d60,
+    f: ee::s13::f_003a9d60,
+};
+
+/// `void cWorldCache_StreamerUpdate(Streamer* self)` (0x3a9258): step every
+/// section's streaming state machine once per frame, then update both views.
+///
+/// States: 0 idle; 1 load requested (create the section table, sky sections
+/// with kind 0, others 2; request and pin its hull) -> 2; 2 loading (hull
+/// resident: tell the app, vtable `+0x330`) -> 5; 3 unload requested (expire
+/// the hull and the node tree's hulls) -> 4; 4 unloading (hull and all node
+/// hulls free: free the table, reset lights) -> 0; 5 resident and 6 fading
+/// are counted.
+pub fn c_world_cache_streamer_update(c: &mut Cpu) {
+    use streamer::*;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S0, 0x60);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        frame.save_ra(c, 0x10);
+        let this = r32(c, S1);
+        c.g[V0][0] = Addr(this + INFO).lw(c);
+        frame.restore(c, S0, 0x60);
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            Addr(this + RESIDENT).sw(c, 0);
+            Addr(this + FADING).sw(c, 0);
+            c.g[V0][0] = Addr(r32(c, V0) + INFO_COUNT).lw(c);
+            c.g[S2][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[V1][0] = sx(this + ENTRIES);
+                loop {
+                    // Head 0x3a92a0: s3 = i * 8, s4 = entries, v1 = state.
+                    c.cycles += 8;
+                    c.g[V0][0] = sx(r32(c, S2) << 3);
+                    c.g[S4][0] = c.g[V1][0];
+                    c.g[S3][0] = c.g[V0][0];
+                    c.g[V1][0] = add32(c.g[V1][0], c.g[V0][0]);
+                    c.g[V1][0] = Addr(r32(c, V1)).lw(c);
+                    let in_table = c.g[V1][0] < 7;
+                    c.g[V0][0] = 0x49_0000;
+                    let entry = add32(c.g[S4][0], c.g[S3][0]) as u32;
+                    // v1 at the tail: the info pointer, or set by the case.
+                    let mut tail_loads_info = true;
+                    if in_table {
+                        c.cycles += 6;
+                        c.g[V1][0] = sx(r32(c, V1) << 2);
+                        c.g[V0][0] = sx(STATE_TABLE);
+                        c.g[V1][0] = add32(c.g[V1][0], c.g[V0][0]);
+                        c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+                        match r32(c, A0) {
+                            0x003a_92d8 => {
+                                // 1: load requested.
+                                c.cycles += 10;
+                                c.g[V0][0] = 0x58;
+                                c.g[A0][0] = Addr(this + SECTIONS).lw(c);
+                                c.mult(0, S0, S2, V0);
+                                let mut sky = false;
+                                for k in 0..5u32 {
+                                    if k == 0 {
+                                        c.g[A1][0] = sx(SKY_NAMES);
+                                    } else {
+                                        c.cycles += 7;
+                                        c.g[A0][0] = Addr(this + SECTIONS).lw(c);
+                                        c.g[A1][0] = sx(SKY_NAMES + 8 * k);
+                                    }
+                                    c.g[A2][0] = 4;
+                                    c.g[A0][0] = add32(c.g[A0][0], c.g[S0][0]);
+                                    let ret = [
+                                        0x003a_92f8,
+                                        0x003a_9314,
+                                        0x003a_9330,
+                                        0x003a_934c,
+                                        0x003a_9368,
+                                    ][k as usize];
+                                    call_ptr(c, STRNCMP, ret)?;
+                                    if k < 4 {
+                                        c.g[A1][0] = 0x4a_0000;
+                                    }
+                                    if c.g[V0][0] == 0 {
+                                        sky = true;
+                                        break;
+                                    }
+                                }
+                                if sky {
+                                    c.cycles += 6;
+                                    c.g[A0][0] = Addr(this + CACHE).lw(c);
+                                    c.g[A1][0] = c.g[S2][0];
+                                    c.g[A2][0] = 0;
+                                    CREATE_SECTION_TABLE.call(c, 0x003a_9380)?;
+                                } else {
+                                    c.g[A0][0] = Addr(this + CACHE).lw(c);
+                                    c.cycles += 4;
+                                    c.g[A1][0] = c.g[S2][0];
+                                    c.g[A2][0] = 2;
+                                    CREATE_SECTION_TABLE.call(c, 0x003a_9394)?;
+                                }
+                                c.g[S0][0] = SECTION_SIZE;
+                                c.cycles += 17;
+                                c.g[V1][0] = Addr(this + SECTIONS).lw(c);
+                                c.mult(0, S0, S2, S0);
+                                c.g[V0][0] = add32(c.g[S1][0], c.g[S3][0]);
+                                c.lwc1(12, (c.g[V0][0] as u32).wrapping_add(0x18));
+                                c.g[A0][0] = Addr(this + CACHE).lw(c);
+                                c.g[V1][0] = add32(c.g[S0][0], c.g[V1][0]);
+                                c.g[A1][0] = Addr(r32(c, V1) + SECTION_ID).lw(c);
+                                REQUEST_HULL.call(c, 0x003a_93b8)?;
+                                c.g[V0][0] = Addr(this + SECTIONS).lw(c);
+                                c.g[A2][0] = 1;
+                                c.g[A0][0] = Addr(this + CACHE).lw(c);
+                                c.g[S0][0] = add32(c.g[S0][0], c.g[V0][0]);
+                                c.g[A1][0] = Addr(r32(c, S0) + SECTION_ID).lw(c);
+                                SET_HULL_PINNED.call(c, 0x003a_93d0)?;
+                                c.g[V1][0] = sx(entry);
+                                c.g[V0][0] = 2;
+                                c.cycles += 1;
+                                Addr(entry).sw(c, 2);
+                            }
+                            0x003a_93dc => {
+                                // 2: loading.
+                                c.cycles += 9;
+                                c.g[V0][0] = 0x58;
+                                c.g[V1][0] = Addr(this + SECTIONS).lw(c);
+                                c.mult(0, V0, S2, V0);
+                                c.g[A0][0] = Addr(this + CACHE).lw(c);
+                                c.g[V0][0] = add32(c.g[V0][0], c.g[V1][0]);
+                                c.g[A1][0] = Addr(r32(c, V0) + SECTION_ID).lw(c);
+                                IS_HULL_RESIDENT.call(c, 0x003a_93f8)?;
+                                let resident = c.g[V0][0] != 0;
+                                c.g[V1][0] = sx(entry);
+                                if resident {
+                                    c.cycles += 11;
+                                    c.g[V0][0] = 5;
+                                    Addr(entry).sw(c, 5);
+                                    c.g[A1][0] = c.g[S2][0];
+                                    c.g[A2][0] =
+                                        Addr((c.g[GP][0] as u32).wrapping_add(0x2a90)).lw(c);
+                                    c.g[V0][0] = Addr(r32(c, A2) + 0x10d8).lw(c);
+                                    c.g[A0][0] = Addr(r32(c, V0) + 0x330).lh(c);
+                                    c.g[V1][0] = Addr(r32(c, V0) + 0x334).lw(c);
+                                    let target = r32(c, V1);
+                                    c.g[A0][0] = add32(c.g[A2][0], c.g[A0][0]);
+                                    call_ptr(c, target, 0x003a_9424)?;
+                                    c.g[V1][0] = Addr(this + INFO).lw(c);
+                                    tail_loads_info = false;
+                                }
+                            }
+                            0x003a_942c => {
+                                // 4: unloading.
+                                c.cycles += 9;
+                                c.g[V1][0] = 0x58;
+                                c.g[V0][0] = Addr(this + SECTIONS).lw(c);
+                                c.mult(0, S0, S2, V1);
+                                c.g[A0][0] = Addr(this + CACHE).lw(c);
+                                c.g[V0][0] = add32(c.g[S0][0], c.g[V0][0]);
+                                c.g[A1][0] = Addr(r32(c, V0) + SECTION_ID).lw(c);
+                                IS_HULL_FREE.call(c, 0x003a_9448)?;
+                                let free = c.g[V0][0] != 0;
+                                c.g[V1][0] = 1;
+                                if free {
+                                    c.cycles += 10;
+                                    c.g[V0][0] = Addr(this + SECTIONS).lw(c);
+                                    let ok = sp(c);
+                                    Addr(ok).sw(c, 1);
+                                    c.g[A0][0] = c.g[S1][0];
+                                    c.g[V0][0] = add32(c.g[S0][0], c.g[V0][0]);
+                                    c.g[A2][0] = c.g[SP][0];
+                                    c.g[A1][0] = Addr(r32(c, V0) + SECTION_TREE).lw(c);
+                                    ARE_NODE_HULLS_FREE.call(c, 0x003a_946c)?;
+                                    c.g[V0][0] = Addr(sp(c)).lw(c);
+                                    let all_free = c.g[V0][0] != 0;
+                                    c.g[V0][0] = sx(entry);
+                                    if all_free {
+                                        c.cycles += 8;
+                                        c.g[A1][0] = c.g[S2][0];
+                                        Addr(entry).sw(c, 0);
+                                        c.g[A0][0] = Addr(this + CACHE).lw(c);
+                                        FREE_SECTION_TABLE.call(c, 0x003a_9488)?;
+                                        WORLD_RESET_LIGHTS.call(c, 0x003a_9490)?;
+                                        c.g[V1][0] = Addr(this + INFO).lw(c);
+                                        tail_loads_info = false;
+                                    }
+                                }
+                            }
+                            0x003a_9498 => {
+                                // 5: resident.
+                                c.cycles += 4;
+                                c.g[V0][0] = add32(Addr(this + RESIDENT).lw(c), 1);
+                                Addr(this + RESIDENT).sw(c, c.g[V0][0]);
+                            }
+                            0x003a_94a8 => {
+                                // 6: fading (also counted as resident).
+                                c.cycles += 7;
+                                c.g[V0][0] = add32(Addr(this + RESIDENT).lw(c), 1);
+                                c.g[V1][0] = add32(Addr(this + FADING).lw(c), 1);
+                                Addr(this + RESIDENT).sw(c, c.g[V0][0]);
+                                Addr(this + FADING).sw(c, c.g[V1][0]);
+                            }
+                            0x003a_94c4 => {
+                                // 3: unload requested.
+                                c.cycles += 14;
+                                c.g[S0][0] = SECTION_SIZE;
+                                c.g[V0][0] = Addr(this + SECTIONS).lw(c);
+                                c.mult(0, S0, S2, S0);
+                                c.g[A0][0] = Addr(this + CACHE).lw(c);
+                                c.g[V0][0] = add32(c.g[S0][0], c.g[V0][0]);
+                                c.g[A1][0] = Addr(r32(c, V0) + SECTION_ID).lw(c);
+                                EXPIRE_HULL.call(c, 0x003a_94e0)?;
+                                c.g[V0][0] = Addr(this + SECTIONS).lw(c);
+                                c.g[A0][0] = c.g[S1][0];
+                                c.g[S0][0] = add32(c.g[S0][0], c.g[V0][0]);
+                                c.g[A1][0] = Addr(r32(c, S0) + SECTION_TREE).lw(c);
+                                RELEASE_NODE_HULLS.call(c, 0x003a_94f4)?;
+                                c.g[V1][0] = sx(entry);
+                                c.g[V0][0] = 4;
+                                c.cycles += 1;
+                                Addr(entry).sw(c, 4);
+                            }
+                            0x003a_9500 => {
+                                // 0: idle.
+                            }
+                            t => {
+                                c.jump_out(t, 0x003a_9258, 0x003a_9558);
+                                return Err(crate::call::Unwound);
+                            }
+                        }
+                    }
+                    if tail_loads_info {
+                        c.cycles += 1;
+                        c.g[V1][0] = Addr(this + INFO).lw(c);
+                    }
+                    // Tail 0x3a9504.
+                    c.cycles += 5;
+                    c.g[S2][0] = add32(c.g[S2][0], 1);
+                    c.g[V0][0] = Addr(r32(c, V1) + INFO_COUNT).lw(c);
+                    c.g[V0][0] = (c.g[S2][0] < c.g[V0][0]) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[V1][0] = sx(this + ENTRIES);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003a_92a0);
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[S0][0] = 0;
+            c.g[A1][0] = 0;
+            loop {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S1][0];
+                STREAMER_UPDATE_VIEW.call(c, 0x003a_9528)?;
+                c.g[S0][0] = add32(c.g[S0][0], 1);
+                c.g[V0][0] = ((c.g[S0][0] as i64) < 2) as u64;
+                c.g[A1][0] = c.g[S0][0];
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003a_9520);
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x60);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2951,6 +3631,252 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = (seed % 4) as u64; // block count
                 c.g[A2][0] = 3; // block size (the array is a2 * 0x18)
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::events::driven;
+    use crate::difftest::SP as STACK_TOP;
+    pub(crate) use crate::game::replay::playbackman::playback_man_read_input_frame;
+    pub(crate) use crate::game::replay::playbackman::tests::read_input_frame_setup;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::slot_2 as slot;
+
+    /// Slots in every state (and an unknown one), locked or not, fresh or
+    /// expired, freeing ones before and after their five frames (real pages
+    /// allocated in the setup and freed by the real FreeHullPage), the best
+    /// wanted slot loaded through the real allocator, page constructor and
+    /// stream manager (idle, no file: the read is refused) or skipped when
+    /// busy. The camera's frame counter is a fake (some calls unwind).
+    #[test]
+    fn world_cache_update_hull_lru_matches() {
+        use crate::difftest::fakes::{LOG_COUNT, LOG_RESULTS};
+        use crate::game::fe::feasyncfile::tests::{alloc_base_3, run_7};
+        const NOW: u32 = 1000;
+        const EXPIRY: u32 = 30;
+        const FRAME: u32 = 0x500;
+        covered(
+            ee::s13::f_003a8668__generated,
+            world_cache_update_hull_lru,
+            200,
+            &|c, seed| {
+                c.pc = 0x003a_8668;
+                let mut r = alloc_base_3(c, seed, 0x3a8668, 4);
+                let gp = c.g[GP][0] as u32;
+                let clock = DATA + 0x100;
+                let cam = DATA + 0x200;
+                let vt = DATA + 0x300;
+                let wc = DATA + 0x1000;
+                let hulls = DATA + 0x8000;
+                c.bus.write32(gp + 0x2a74, clock);
+                c.bus.write32(clock + 0x1c, NOW);
+                c.bus.write32(gp + LENS_CAMERA_GP, cam);
+                c.bus.write32(cam + CAM_PROJECTOR_VT, vt);
+                crate::game::main::gamemode::tests::slot(
+                    c,
+                    vt,
+                    VT_FRAME,
+                    (r.next_u32() as i16) & !3,
+                    FAKE,
+                );
+                let n = seed % 7;
+                c.bus.write32(wc + WC_SLOT_COUNT, n);
+                c.bus.write32(wc + WC_EXPIRY, EXPIRY);
+                let busy = (seed % 5 == 0) as u32;
+                c.bus.write32(wc + WC_BUSY, busy);
+                // The stream manager's file handle: none (the read is refused).
+                c.bus.write32(wc + WC_STREAM_MAN + 0x88, 0);
+                c.bus.write32(wc + WC_STREAMER + 0x10, hulls);
+                for i in 0..8 {
+                    let hull = hulls + 0x44 * i;
+                    c.bus.write16(hull, 1 + r.next_u32() as u16 % 4);
+                    c.bus.write32(hull + 4, r.next_u32());
+                }
+                for i in 0..n {
+                    let slot_at = wc + WC_SLOTS + SLOT_SIZE * i;
+                    let state =
+                        [0u32, 1, 1, 1, 2, 3, 3, 4, 4, 5, u32::MAX][(r.next_u32() % 11) as usize];
+                    c.bus.write32(slot_at + SLOT_STATE, state);
+                    c.bus
+                        .write32(slot_at + SLOT_LOCKED, (r.next_u32() % 3 == 0) as u32);
+                    let age = [0, EXPIRY - 1, EXPIRY, EXPIRY + 50][(r.next_u32() % 4) as usize];
+                    c.bus.write32(slot_at + SLOT_TIME, NOW - age);
+                    c.bus.write32(
+                        slot_at + SLOT_PRIORITY,
+                        if r.next_u32() % 5 == 0 {
+                            r.edge_f32()
+                        } else {
+                            r.f32(10.0)
+                        },
+                    );
+                    c.bus.write32(
+                        slot_at + SLOT_STAMP,
+                        FRAME - [0, 4, 5, 9][(r.next_u32() % 4) as usize],
+                    );
+                    let page = if state == 4 {
+                        // A real page (freed by FreeHullPage).
+                        let page = run_7(
+                            c,
+                            0x0031_7d70,
+                            ee::s10::f_00317d70,
+                            &[0x10, 0x0049_4e88, 0x2000_0000, 0],
+                        );
+                        run_7(
+                            c,
+                            0x003a_7bd8,
+                            ee::s13::f_003a7bd8,
+                            &[page, sx(hulls + 0x44 * i)],
+                        );
+                        page as u32
+                    } else {
+                        r.next_u32()
+                    };
+                    c.bus.write32(slot_at + SLOT_PAGE, page);
+                }
+                // The frame counter's answers (after any fakes the setup used).
+                let n0 = c.bus.read32(LOG_COUNT);
+                for k in n0..8 {
+                    c.bus.write32(LOG_RESULTS + 4 * k, FRAME);
+                }
+                c.g[A0][0] = sx(wc);
+                c.g[SP][0] = sx(STACK_TOP);
+                c.g[RA][0] = sx(crate::difftest::RA);
+            },
+        );
+    }
+
+    /// Write a NUL-terminated string.
+    pub(crate) fn put_str(c: &mut Cpu, at: u32, s: &[u8]) {
+        for (i, &b) in s.iter().enumerate() {
+            c.bus.write8(at + i as u32, b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    /// A streamer with up to six sections in random states (every state and
+    /// out-of-table values), sky and non-sky names, hull ref counts that make
+    /// the resident/free tests go both ways, node trees with or without a
+    /// section hull, both views disabled (the view update takes its short
+    /// path). The section-table creation runs for real on a dlmalloc arena.
+    #[test]
+    fn c_world_cache_streamer_update_matches() {
+        check(
+            ee::s13::f_003a9258__generated,
+            c_world_cache_streamer_update,
+            120,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x3a_9258, 2);
+                crate::game::fe::feasyncfile::tests::be_library_7(c);
+                crate::game::fe::feasyncfile::tests::world_4(c);
+                crate::game::bx::bxstring::tests::heap_init_3(c);
+                c.pc = 0x003a_9258;
+                // `.rodata` the body reads: the state jump table and the sky
+                // name prefixes.
+                put_words(
+                    c,
+                    streamer::STATE_TABLE,
+                    &[
+                        0x3a9500, 0x3a92d8, 0x3a93dc, 0x3a94c4, 0x3a942c, 0x3a9498, 0x3a94a8,
+                    ],
+                );
+                for (k, n) in [b"ASKY", b"BSKY", b"CSKY", b"DSKY", b"ESKY"]
+                    .iter()
+                    .enumerate()
+                {
+                    put_str(c, streamer::SKY_NAMES + 8 * k as u32, &n[..]);
+                }
+                let this = DATA + 0x1_0000;
+                let info = DATA + 0x1_0400;
+                let sections = DATA + 0x1_0800;
+                let cache = DATA + 0x1_2000;
+                let desc = DATA + 0x1_4000;
+                let frames = DATA + 0x1_5000;
+                let app = DATA + 0x1_6000;
+                let vt = DATA + 0x1_8000;
+                let lights = DATA + 0x1_a000;
+                // World_ResetLights: the lights object of the game (world_4's
+                // `+0x84`) is empty, no race manager.
+                c.bus.write32(DATA + 0x1200 + 0x90, lights);
+                c.bus.write32(GAME_GP + 0x2a74, frames);
+                c.bus.write32(frames + 0x1c, r.next_u32() % 1000);
+                c.bus.write32(cache + 0x1bf0, r.next_u32() % 1000);
+                c.bus.write32(GAME_GP + 0x2a90, app);
+                c.bus.write32(app + 0x10d8, vt);
+                c.bus.write16(vt + 0x330, (r.next_u32() % 0x40) as u16 * 4);
+                c.bus.write32(vt + 0x334, FAKE);
+                // The cache: descriptors, table array, memory manager.
+                c.bus.write32(cache, desc);
+                c.bus.write32(desc + 0x14, desc + 0x100);
+                c.bus.write32(cache + 8, desc + 0x800);
+                c.bus.write32(cache + 0xc, desc + 0xc00);
+                for id in 0..5u32 {
+                    c.bus.write32(
+                        cache + 0x3f0 + 0x18 * id,
+                        [0, 3, 1, 4, 0, 3][(r.next_u32() % 6) as usize],
+                    );
+                }
+                c.bus.write32(this + streamer::CACHE, cache);
+                c.bus
+                    .write32(this + streamer::INFO, if seed % 10 == 0 { 0 } else { info });
+                c.bus.write32(this + streamer::SECTIONS, sections);
+                let count = if seed % 10 == 1 { 0 } else { 1 + seed % 6 };
+                c.bus.write32(info + streamer::INFO_COUNT, count);
+                c.bus.write32(this + streamer::RESIDENT, r.next_u32());
+                c.bus.write32(this + streamer::FADING, r.next_u32());
+                const NAMES: [&[u8]; 8] = [
+                    b"ASKY01", b"BSKY", b"CSKYx", b"DSKY", b"ESKY_a", b"TERR", b"AS", b"ESKX",
+                ];
+                for i in 0..count {
+                    let e = this + streamer::ENTRIES + 8 * i;
+                    c.bus.write32(e, r.next_u32() % 9);
+                    c.bus.write32(e + 4, r.f32(100.0));
+                    let s = sections + 0x58 * i;
+                    put_str(c, s, NAMES[(r.next_u32() % 8) as usize]);
+                    c.bus.write32(s + streamer::SECTION_ID, r.next_u32() % 5);
+                    let node = DATA + 0x1_9000 + 0x100 * i;
+                    c.bus.write32(s + streamer::SECTION_TREE, node);
+                    let hull = node + 0x80;
+                    c.bus
+                        .write32(node + 0x58, if r.next_u32() % 2 == 0 { 0 } else { hull });
+                    c.bus.write16(hull + 2, (r.next_u32() % 5) as u16);
+                }
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+
+    driven!(gen_read_input_frame, ee::s07::f_0026ce50__generated);
+
+    driven!(hand_read_input_frame, playback_man_read_input_frame);
+
+    /// The same with events (delivered, or unwinding and re-entering at the
+    /// loop heads) at the back edges.
+    #[test]
+    fn playback_man_read_input_frame_events_match() {
+        use crate::difftest::events::{check_events, schedule};
+        check_events(
+            gen_read_input_frame,
+            hand_read_input_frame,
+            96,
+            &|c, seed| {
+                let mut r = Rng(0x26_ce50 ^ (seed as u64) << 20);
+                crate::difftest::scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                // Play and record only (the loops).
+                read_input_frame_setup(c, &mut r, (seed / 3) % 4);
+                // The output pad already holds every button, so InputPad_Update
+                // skips its memset (whose own event checks would take the
+                // scheduled event outside this function's resume heads).
+                c.bus.write32(DATA + 0x1000, 0x10);
+                let mode = schedule(
+                    c,
+                    &mut r,
+                    seed,
+                    crate::game::replay::playbackman::playback::ENTRY,
+                );
+                c.g[GP][0] = GAME_GP as u64;
+                c.next_event = c.cycles + 4 + (r.next_u32() % 40) as u64;
+                mode
             },
         );
     }

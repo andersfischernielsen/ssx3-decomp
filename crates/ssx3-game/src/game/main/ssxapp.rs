@@ -90,6 +90,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0022_9f30, vu0_upload_matrix_pair, "Vu0_UploadMatrixPair"),
     (0x0022_a698, nash_collect_patches, "Nash_CollectPatches"),
     (0x0022_add8, nash_gather_visible, "Nash_GatherVisible"),
+    (
+        0x0022_9ba8,
+        crowd_man_2d_render_sprites,
+        "CrowdMan2d_RenderSprites",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -2398,6 +2403,203 @@ pub fn vu0_upload_matrix_pair(c: &mut Cpu) {
     ret(c);
 }
 
+// ------------------------------------------------- CrowdMan2d_RenderSprites
+
+/// `void CrowdMan2d_RenderSprites(CrowdMan2d* self)` (0x229ba8): draw the
+/// 40 2D crowd sprites. Each sprite is a 0x20-byte record from `self+0x2220`
+/// (position first, its visible count at +0x10); for each visible one call
+/// the drawer's sprite method (virtual `+0x270` of `ctx+0x10d8`) with the
+/// position, a 100x100 size, zero UVs, unit UV size and white. Before the
+/// first one a GS state packet is appended at the render context's packet
+/// cursor (`ctx+0xe84`, as in `HaloModifier_DrawQuad`: previous 0x14 bytes
+/// repeated, the 0x501420 template, header patched, texture word
+/// `ctx+0x1054` at +0x10); after the last one the cursor steps back.
+pub fn crowd_man_2d_render_sprites(c: &mut Cpu) {
+    /// `gp+0x2a90`: the render context.
+    const CTX_GP: u32 = 0x2a90;
+    const CTX_PACKET: u32 = 0xe84;
+    const CTX_DRAWER: u32 = 0x10d8;
+    const CTX_CROWD_TEXTURE: u32 = 0x1054;
+    const STATE_TEMPLATE: u32 = 0x0050_1420;
+    /// The sprite records.
+    const SPRITES: u32 = 0x2220;
+    const SPRITE_VISIBLE: u32 = 0x10;
+    const SPRITE_SIZE: u32 = 0x20;
+    /// Loop head (0x229c48), for event delivery.
+    const HEAD: u32 = 0x0022_9c48;
+    guest(c, |c| {
+        c.cycles += 40;
+        let frame = Frame::open(c, 0xf0);
+        let one = 0x3f80_0000u32;
+        let hundred = 0x42c8_0000u32;
+        c.f[0] = one;
+        c.g[AT][0] = sx(hundred);
+        c.f[1] = hundred;
+        c.g[T2][0] = 0;
+        frame.save(c, S0, 0xe0);
+        frame.save(c, S3, 0xb0);
+        frame.save(c, S4, 0xa0);
+        frame.save(c, S5, 0x90);
+        frame.save(c, S6, 0x80);
+        frame.save(c, S7, 0x70);
+        frame.save(c, S1, 0xd0);
+        frame.save(c, S2, 0xc0);
+        frame.save(c, FP, 0x60);
+        frame.save_ra(c, 0x50);
+        // The header patch masks.
+        c.g[S3][0] = 0xffff_ffff_e000_03ff;
+        c.g[S4][0] = 0xffff_ffff_fff0_0fff;
+        c.g[S5][0] = 0xffff_ffff_ffcf_ffff;
+        c.g[S6][0] = 0xffff_ffff_fe7f_ffff;
+        c.g[S7][0] = 0xffff_ffff_ffbf_ffff;
+        let this = r32(c, A0);
+        c.g[S2][0] = sx(this.wrapping_add(SPRITES + SPRITE_VISIBLE));
+        c.g[S1][0] = sx(this.wrapping_add(SPRITES));
+        let ctx = c.lw(r32(c, GP).wrapping_add(CTX_GP));
+        c.g[S0][0] = ctx;
+        let ctx = ctx as u32;
+        // The sprite arguments: UV (0, 0) at sp+0, UV size (1, 1) at
+        // sp+0x10, colour (1, 1, 1, 1) at sp+0x20, size (100, 100) at sp+0x30.
+        let sp0 = sp(c);
+        c.sw(sp0, 0);
+        c.sw(sp0 + 0x4, 0);
+        c.g[FP][0] = 0x27;
+        for off in [0x10, 0x14, 0x20, 0x24, 0x28, 0x2c] {
+            c.sw(sp0 + off, one as u64);
+        }
+        c.sw(sp0 + 0x30, hundred as u64);
+        c.sw(sp0 + 0x34, hundred as u64);
+
+        loop {
+            c.cycles += 3;
+            let visible = c.lw(r32(c, S2));
+            c.g[V0][0] = visible;
+            if (visible as i64) > 0 {
+                c.cycles += 2;
+                if c.g[T2][0] == 0 {
+                    c.cycles += 80;
+                    c.g[T2][0] = 1;
+                    append_state_packet(c, ctx);
+                }
+                c.g[V0][0] = c.lw(ctx.wrapping_add(CTX_DRAWER));
+                // drawer->Sprite(pos, &size, &uv, &uv_size, &colour).
+                c.cycles += 12;
+                let sp0 = sp(c);
+                let vt = r32(c, V0);
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = sx(sp0 + 0x30);
+                c.g[A3][0] = c.g[SP][0];
+                c.g[A0][0] = c.lh(vt.wrapping_add(0x270));
+                c.g[T0][0] = sx(sp0 + 0x10);
+                c.g[V1][0] = c.lw(vt.wrapping_add(0x274));
+                c.g[T1][0] = sx(sp0 + 0x20);
+                c.sq(T2, sp0 + 0x40);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx(ctx.wrapping_add(r32(c, A0)));
+                call_ptr(c, target, 0x0022_9dc4)?;
+                c.lq(T2, sp(c) + 0x40);
+            }
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(SPRITE_SIZE));
+            c.cycles += 3;
+            c.g[FP][0] = sx(r32(c, FP).wrapping_sub(1));
+            let more = (c.g[FP][0] as i64) >= 0;
+            c.g[S2][0] = sx(r32(c, S2).wrapping_add(SPRITE_SIZE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, HEAD);
+            }
+        }
+        c.cycles += 2;
+        if c.g[T2][0] != 0 {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(ctx.wrapping_add(CTX_PACKET));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x14));
+            c.sw(ctx.wrapping_add(CTX_PACKET), c.g[V0][0]);
+        }
+        frame.restore(c, S0, 0xe0);
+        c.cycles += 11;
+        frame.restore(c, S1, 0xd0);
+        frame.restore(c, S2, 0xc0);
+        frame.restore(c, S3, 0xb0);
+        frame.restore(c, S4, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore(c, S6, 0x80);
+        frame.restore(c, S7, 0x70);
+        frame.restore(c, FP, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    });
+
+    /// The state packet before the first sprite (0x229c74..0x229d98).
+    fn append_state_packet(c: &mut Cpu, ctx: u32) {
+        // Repeat the previous 0x14 bytes after the cursor.
+        let cur = c.lw(ctx.wrapping_add(CTX_PACKET));
+        c.g[V0][0] = cur;
+        let cur = cur as u32;
+        c.g[A1][0] = 0x50_0000;
+        c.g[A2][0] = 0x1_0000;
+        c.ldl(V1, cur.wrapping_add(0x7));
+        c.ldr(V1, cur);
+        c.ldl(A0, cur.wrapping_add(0xf));
+        c.ldr(A0, cur.wrapping_add(0x8));
+        c.g[A3][0] = c.lw(cur.wrapping_add(0x10));
+        c.sdl(V1, cur.wrapping_add(0x1b));
+        c.sdr(V1, cur.wrapping_add(0x14));
+        c.sdl(A0, cur.wrapping_add(0x23));
+        c.sdr(A0, cur.wrapping_add(0x1c));
+        c.sw(cur.wrapping_add(0x24), c.g[A3][0]);
+        c.g[A2][0] = 0x1_4000;
+        // Advance the cursor; the state template after it.
+        let cur = c.lw(ctx.wrapping_add(CTX_PACKET));
+        c.g[V1][0] = cur;
+        let cur = cur as u32;
+        c.g[V0][0] = sx(cur.wrapping_add(0x14));
+        c.sw(ctx.wrapping_add(CTX_PACKET), c.g[V0][0]);
+        c.g[T0][0] = sx(STATE_TEMPLATE);
+        c.ldl(V0, STATE_TEMPLATE + 0x7);
+        c.ldr(V0, STATE_TEMPLATE);
+        c.ldl(A0, STATE_TEMPLATE + 0xf);
+        c.ldr(A0, STATE_TEMPLATE + 0x8);
+        c.g[A3][0] = c.lw(STATE_TEMPLATE + 0x10);
+        c.sdl(V0, cur.wrapping_add(0x1b));
+        c.sdr(V0, cur.wrapping_add(0x14));
+        c.sdl(A0, cur.wrapping_add(0x23));
+        c.sdr(A0, cur.wrapping_add(0x1c));
+        c.sw(cur.wrapping_add(0x24), c.g[A3][0]);
+        c.g[A3][0] = 0x40_0000;
+        c.g[T0][0] = 0xffff_ffff_ffff_fffc;
+        // The crowd texture word at +0x10.
+        c.g[A0][0] = c.lw(ctx.wrapping_add(CTX_CROWD_TEXTURE));
+        c.g[V0][0] = c.lw(ctx.wrapping_add(CTX_PACKET));
+        c.sh(r32(c, V0).wrapping_add(0x10), c.g[A0][0]);
+        // Patch the header words: (pointer register, offset, mask, or).
+        let patch = |c: &mut Cpu, p: usize, off: u32, mask: u64, or: u64| {
+            c.g[p][0] = c.lw(ctx.wrapping_add(CTX_PACKET));
+            let at = r32(c, p).wrapping_add(off);
+            c.g[V0][0] = c.lw(at);
+            c.g[V0][0] &= mask;
+            c.g[V0][0] |= or;
+            c.sw(at, c.g[V0][0]);
+        };
+        c.g[A0][0] = 0xffff_ffff_ffff_fff3;
+        patch(c, V1, 0x0, 0xffff_ffff_ffff_fff3, 0xc);
+        let (s7, s6, s5, s4, s3) = (c.g[S7][0], c.g[S6][0], c.g[S5][0], c.g[S4][0], c.g[S3][0]);
+        patch(c, A0, 0x4, s7, 0x40_0000);
+        patch(c, V1, 0x4, s6, 0);
+        patch(c, A0, 0x4, s5, 0);
+        patch(c, V1, 0x4, s4, 0x1_4000);
+        patch(c, A0, 0x4, 0xffff_ffff_ffff_fffc, 0x1);
+        patch(c, V1, 0x8, s3, 0);
+        c.g[V1][0] = 0xffff_ffff_ffff_fc1f;
+        patch(c, A0, 0x8, 0xffff_ffff_ffff_fc1f, 0x80);
+        patch(c, V1, 0x4, 0xffff_ffff_ffff_ff83, 0x1c);
+        c.g[A0][0] = 0xffff_ffff_ffff_ff83;
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3392,6 +3594,50 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = machine(c, seed, 0x6761_7468, 1);
                 gather_setup(c, &mut r);
+            },
+        );
+    }
+    use super::*;
+
+    // ------------------------------------------------- CrowdMan2d_RenderSprites
+
+    /// `CrowdMan2d_RenderSprites`: 40 sprite records with random visible
+    /// counts (none visible for some seeds: no packet), the drawer's sprite
+    /// method a fake (one of the calls may unwind), the packet cursor at
+    /// various alignments.
+    #[test]
+    fn crowd_man_2d_render_sprites_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        check(
+            ee::s05::f_00229ba8__generated,
+            crowd_man_2d_render_sprites,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x229b, 40);
+                c.pc = 0x0022_9ba8;
+                let (this, ctx, vt) = (DATA, DATA + 0x10000, DATA + 0x14000);
+                let cur = DATA + 0x8000 + 4 * (seed % 4);
+                for i in 0..40u32 {
+                    let rec = this + 0x2220 + 0x20 * i;
+                    fill(c, &mut r, rec, 4);
+                    let visible = match (seed % 4, r.next_u32() % 3) {
+                        (0, _) => 0,
+                        (_, 0) => 0,
+                        (_, 1) => r.next_u32(),
+                        _ => 1,
+                    };
+                    c.bus.write32(rec + 0x10, visible);
+                }
+                c.bus.write32(GAME_GP + 0x2a90, ctx);
+                c.bus.write32(ctx + 0xe84, cur);
+                c.bus.write32(ctx + 0x1054, r.next_u32());
+                c.bus.write32(ctx + 0x10d8, vt);
+                c.bus.write16(vt + 0x270, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt + 0x274, FAKE);
+                fill(c, &mut r, cur - 0x20, 0x20);
+                fill(c, &mut r, 0x0050_1420, 6);
+                c.g[A0][0] = sx(this);
             },
         );
     }

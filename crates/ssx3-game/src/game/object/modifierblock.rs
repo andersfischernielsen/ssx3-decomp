@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -19,9 +20,11 @@ pub(crate) use crate::game::fe::feasyncfile::lh_r;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_8 as lw;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
+pub(crate) use crate::game::main::gameload::vcall;
 pub(crate) use crate::game::main::gamemode::gpo;
 pub(crate) use crate::game::main::gamemode::sp_2;
 pub(crate) use crate::game::main::gamemode::sw_r;
+pub(crate) use crate::game::misc::lit;
 pub(crate) use crate::game::movie::movieplayer::add32;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::render::particle::at;
@@ -115,6 +118,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         flex_bridge_springs_load,
         "FlexBridge_SpringsLoad",
     ),
+    (0x0035_3448, modifier_block_save, "ModifierBlock_Save"),
+    (0x0035_3b10, skybox_render, "SkyBox_Render"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
@@ -1016,6 +1021,487 @@ pub fn modifier_block_handle_event(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod skybox {
+
+    /// gp+0x143c: sky drawing disabled; gp+0x2a90: the renderer.
+    pub const GP_SKY_OFF: u32 = 0x143c;
+
+    pub const GP_RENDERER: u32 = 0x2a90;
+
+    /// Renderer: render-state stack top (0x14-byte records), vtable.
+    pub const RS_TOP: u32 = 0xe84;
+
+    pub const RENDERER_VT: u32 = 0x10d8;
+
+    /// `DrawModel(renderer, model, 1.0, textures, matrix, 0, 0, 0x5420)`.
+    pub const SLOT_DRAW_MODEL: u32 = 0x2f8;
+
+    pub const RS_SIZE: u32 = 0x14;
+
+    /// Record word 2: layer bits 5..9.
+    pub const RS_LAYER_WORD: u32 = 0x8;
+
+    pub const LAYER_KEEP: u64 = 0xffff_ffff_ffff_fc1f;
+
+    /// The view matrix the sky is drawn with (eye replaced by the camera's).
+    pub const VIEW_MATRIX: u32 = 0x004f_f1a0;
+
+    /// `SkyBox`: the model (`+8` flags, `+0x80` its texture set at +0xc).
+    pub const MODEL: u32 = 0x14;
+
+    /// `World_GetCurrentViewIndex()`, `World_GetCameraEye(view)`.
+    pub const GET_VIEW_INDEX: u32 = 0x002d_1c58;
+
+    pub const GET_CAMERA_EYE: u32 = 0x002d_1c20;
+}
+
+/// Modifier block: the modifiers it holds.
+pub(crate) const MB_PRIMARY: u32 = 0x0;
+
+pub(crate) const MB_UV_SCROLL: u32 = 0x4;
+
+pub(crate) const MB_RAIL: u32 = 0x8;
+
+pub(crate) const MB_SECONDARY: u32 = 0xc;
+
+/// Intrusive lists (`next` at +0, the object's vtable at +8).
+pub(crate) const MB_ID_LIST: u32 = 0x10;
+
+pub(crate) const MB_EXTRA_LIST: u32 = 0x1c;
+
+/// The 0x34-byte header at sp+0: flags, two ids, two counts, 32 id bytes.
+pub(crate) const HDR_FLAGS: u32 = 0x0;
+
+pub(crate) const HDR_PRIMARY_ID: u32 = 0x4;
+
+pub(crate) const HDR_SECONDARY_ID: u32 = 0x8;
+
+pub(crate) const HDR_ID_COUNT: u32 = 0xc;
+
+pub(crate) const HDR_EXTRA_COUNT: u32 = 0x10;
+
+pub(crate) const HDR_IDS: u32 = 0x14;
+
+/// `void ModifierBlock_Save(ModifierBlock* block, Stream* stream)`
+/// (0x353448): write a header (which modifiers are present, the ids of the
+/// primary and secondary ones, the id byte of each node in the id list, the
+/// length of the extra list) with `stream->Write(&hdr, 0x34)`, then let every
+/// present modifier and list node save itself to the stream.
+pub fn modifier_block_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x90);
+        let hdr = sp(c);
+        c.g[V1][0] = 0x1f;
+        frame.save(c, S1, 0x70);
+        c.g[V0][0] = sx(hdr + HDR_IDS + 0x1f);
+        frame.save(c, S2, 0x60);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x80);
+        c.g[S3][0] = sx(hdr + HDR_IDS);
+        frame.save_ra(c, 0x40);
+        Addr(hdr).off(HDR_FLAGS).sw(c, 0);
+        Addr(hdr).off(HDR_SECONDARY_ID).sw(c, 0);
+        Addr(hdr).off(HDR_PRIMARY_ID).sw(c, 0);
+        Addr(hdr).off(HDR_ID_COUNT).sw(c, 0);
+        Addr(hdr).off(HDR_EXTRA_COUNT).sw(c, 0);
+        let block = r32(c, S1);
+        let stream = c.g[S2][0];
+
+        // Clear the 32 id bytes, last to first.
+        loop {
+            c.cycles += 7;
+            Addr(r32(c, V0)).sb(c, 0);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            if (c.g[V1][0] as i64) < 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0035_3488);
+            }
+        }
+
+        // Flags and ids.
+        c.cycles += 3;
+        c.g[A1][0] = Addr(block).off(MB_PRIMARY).lw(c);
+        c.g[V0][0] = Addr(hdr).off(HDR_FLAGS).lw(c);
+        if c.g[A1][0] != 0 {
+            c.cycles += 8;
+            or_flag(c, hdr, 0x1);
+            let obj = c.g[A1][0];
+            c.g[V1][0] = Addr(obj as u32).lw(c);
+            let vt = c.g[V1][0];
+            vcall(c, obj, vt, 0xd0, V0, 0x0035_34cc)?;
+            let id = c.g[V0][0];
+            Addr(sp(c)).off(HDR_PRIMARY_ID).sw(c, id);
+        }
+        for (field, bit) in [(MB_UV_SCROLL, 0x2), (MB_RAIL, 0x4)] {
+            c.cycles += 3;
+            let present = Addr(block).off(field).lw(c) != 0;
+            c.g[V0][0] = Addr(hdr).off(HDR_FLAGS).lw(c);
+            if present {
+                c.cycles += 2;
+                or_flag(c, hdr, bit);
+            }
+        }
+        c.cycles += 3;
+        c.g[A1][0] = Addr(block).off(MB_SECONDARY).lw(c);
+        c.g[V0][0] = Addr(hdr).off(HDR_FLAGS).lw(c);
+        if c.g[A1][0] != 0 {
+            c.cycles += 8;
+            or_flag(c, hdr, 0x8);
+            let obj = c.g[A1][0];
+            c.g[V1][0] = Addr(obj as u32).off(4).lw(c);
+            let vt = c.g[V1][0];
+            vcall(c, obj, vt, 0x28, V0, 0x0035_3520)?;
+            let id = c.g[V0][0];
+            Addr(sp(c)).off(HDR_SECONDARY_ID).sw(c, id);
+        }
+
+        // One id byte per node of the id list.
+        c.cycles += 3;
+        c.g[S0][0] = Addr(block).off(MB_ID_LIST).lw(c);
+        c.g[V0][0] = Addr(hdr).off(HDR_ID_COUNT).lw(c);
+        if c.g[S0][0] != 0 {
+            c.cycles += 2;
+            c.g[V1][0] = Addr(r32(c, S0)).off(8).lw(c);
+            loop {
+                c.cycles += 12;
+                let (node, vt) = (c.g[S0][0], c.g[V1][0]);
+                vcall(c, node, vt, 0x10, V0, 0x0035_3548)?;
+                let hdr = sp(c);
+                c.g[A0][0] = Addr(hdr).off(HDR_ID_COUNT).lw(c);
+                c.g[V1][0] = sx(r32(c, S3).wrapping_add(r32(c, A0)));
+                let id = c.g[V0][0];
+                Addr(r32(c, V1)).sb(c, id);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                let n = c.g[A0][0];
+                Addr(hdr).off(HDR_ID_COUNT).sw(c, n);
+                c.g[S0][0] = Addr(r32(c, S0)).lw(c);
+                if c.g[S0][0] == 0 {
+                    c.cycles += 1;
+                    c.g[V0][0] = Addr(hdr).off(HDR_ID_COUNT).lw(c);
+                    break;
+                }
+                c.g[V1][0] = Addr(r32(c, S0)).off(8).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_3538);
+                }
+            }
+        }
+        let hdr = sp(c);
+        c.cycles += 2;
+        let has_ids = (c.g[V0][0] as i64) > 0;
+        c.g[V0][0] = Addr(hdr).off(HDR_FLAGS).lw(c);
+        if has_ids {
+            c.cycles += 2;
+            or_flag(c, hdr, 0x10);
+        }
+
+        // Count the extra list.
+        c.cycles += 3;
+        c.g[V1][0] = Addr(block).off(MB_EXTRA_LIST).lw(c);
+        c.g[V0][0] = Addr(hdr).off(HDR_EXTRA_COUNT).lw(c);
+        if c.g[V1][0] != 0 {
+            loop {
+                c.cycles += 7;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                let n = c.g[V0][0];
+                Addr(hdr).off(HDR_EXTRA_COUNT).sw(c, n);
+                c.g[V1][0] = Addr(r32(c, V1)).lw(c);
+                c.g[V0][0] = Addr(hdr).off(HDR_EXTRA_COUNT).lw(c);
+                if c.g[V1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_3588);
+                }
+            }
+        }
+        c.cycles += 2;
+        let has_extra = (c.g[V0][0] as i64) > 0;
+        c.g[V0][0] = Addr(hdr).off(HDR_FLAGS).lw(c);
+        if has_extra {
+            c.cycles += 2;
+            or_flag(c, hdr, 0x20);
+        }
+
+        // stream->Write(&hdr, 0x34).
+        c.cycles += 10;
+        c.g[V0][0] = Addr(stream as u32).lw(c);
+        c.g[A2][0] = 0x34;
+        c.g[A1][0] = sx(hdr);
+        let vt = c.g[V0][0];
+        vcall(c, stream, vt, 0x8, V1, 0x0035_35d0)?;
+        c.g[A2][0] = Addr(block).off(MB_PRIMARY).lw(c);
+        c.g[A1][0] = stream;
+        if c.g[A2][0] != 0 {
+            c.cycles += 5;
+            let obj = c.g[A2][0];
+            c.g[V0][0] = Addr(obj as u32).lw(c);
+            let vt = c.g[V0][0];
+            vcall(c, obj, vt, 0xd8, V1, 0x0035_35f0)?;
+        }
+
+        // The UV-scroll and rail modifiers save themselves.
+        c.cycles += 3;
+        c.g[A0][0] = Addr(block).off(MB_UV_SCROLL).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = stream;
+            Callee {
+                addr: 0x0035_fd98,
+                f: ee::s12::f_0035fd98,
+            }
+            .call(c, 0x0035_3604)?;
+        }
+        c.g[A0][0] = Addr(block).off(MB_RAIL).lw(c);
+        c.cycles += 2;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = stream;
+            Callee {
+                addr: 0x0035_f688,
+                f: ee::s12::f_0035f688,
+            }
+            .call(c, 0x0035_3618)?;
+        }
+        c.g[A2][0] = Addr(block).off(MB_SECONDARY).lw(c);
+        c.cycles += 2;
+        c.g[A1][0] = stream;
+        if c.g[A2][0] != 0 {
+            c.cycles += 5;
+            let obj = c.g[A2][0];
+            c.g[V0][0] = Addr(obj as u32).off(4).lw(c);
+            let vt = c.g[V0][0];
+            vcall(c, obj, vt, 0x30, V1, 0x0035_3638)?;
+        }
+
+        // The id-list nodes, if any had ids.
+        let hdr = sp(c);
+        c.cycles += 3;
+        let id_count = Addr(hdr).off(HDR_ID_COUNT).lw(c);
+        c.g[V0][0] = Addr(hdr).off(HDR_EXTRA_COUNT).lw(c);
+        if (id_count as i64) > 0 {
+            c.cycles += 3;
+            c.g[S0][0] = Addr(block).off(MB_ID_LIST).lw(c);
+            if c.g[S0][0] != 0 {
+                c.cycles += 2;
+                c.g[V0][0] = Addr(r32(c, S0)).off(8).lw(c);
+                loop {
+                    c.cycles += 8;
+                    c.g[A1][0] = stream;
+                    let (node, vt) = (c.g[S0][0], c.g[V0][0]);
+                    vcall(c, node, vt, 0x20, V1, 0x0035_366c)?;
+                    c.g[S0][0] = Addr(r32(c, S0)).lw(c);
+                    if c.g[S0][0] == 0 {
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(sp(c)).off(HDR_EXTRA_COUNT).lw(c);
+                        break;
+                    }
+                    c.g[V0][0] = Addr(r32(c, S0)).off(8).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0035_3658);
+                    }
+                }
+            }
+        }
+
+        // The extra-list nodes, if any.
+        c.cycles += 2;
+        let has_extra = (c.g[V0][0] as i64) > 0;
+        frame.restore(c, S0, 0x80);
+        if has_extra {
+            c.cycles += 3;
+            c.g[S0][0] = Addr(block).off(MB_EXTRA_LIST).lw(c);
+            if c.g[S0][0] != 0 {
+                c.cycles += 2;
+                c.g[V0][0] = Addr(r32(c, S0)).off(8).lw(c);
+                loop {
+                    c.cycles += 8;
+                    c.g[A1][0] = stream;
+                    let (node, vt) = (c.g[S0][0], c.g[V0][0]);
+                    vcall(c, node, vt, 0x10, V1, 0x0035_36ac)?;
+                    c.g[S0][0] = Addr(r32(c, S0)).lw(c);
+                    if c.g[S0][0] == 0 {
+                        c.cycles += 1;
+                        break;
+                    }
+                    c.g[V0][0] = Addr(r32(c, S0)).off(8).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0035_3698);
+                    }
+                }
+            }
+            frame.restore(c, S0, 0x80);
+        }
+
+        c.cycles += 6;
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    });
+
+    /// `v0 |= bit; hdr.flags = v0` (v0 holds the flags just loaded).
+    fn or_flag(c: &mut Cpu, hdr: u32, bit: u64) {
+        c.g[V0][0] |= bit;
+        let v = c.g[V0][0];
+        Addr(hdr).off(HDR_FLAGS).sw(c, v);
+    }
+}
+
+/// `void SkyBox_Render(SkyBox* sky)` (0x353b10): unless disabled or
+/// without a model, draw the sky model with the view matrix moved to the
+/// camera eye, under a pushed render state (layer 0, z test on, blend 2,
+/// z write off, alpha ref 0x14 in the state's mode word) restored with
+/// the old layer afterwards; the model's flag bit 1 is cleared and bit 2
+/// set. Frame 0xa0 (matrix at +0, s0-s3).
+pub fn skybox_render(c: &mut Cpu) {
+    use skybox::*;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = c.lw(r32(c, GP).wrapping_add(GP_SKY_OFF));
+        frame.save(c, S1, 0x80);
+        frame.save(c, S0, 0x90);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save_ra(c, 0x50);
+        let sky = r32(c, S1);
+        'out: {
+            if c.g[V0][0] != 0 {
+                break 'out;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(sky.wrapping_add(MODEL));
+            c.g[S0][0] = c.lw(r32(c, GP).wrapping_add(GP_RENDERER));
+            if c.g[V0][0] == 0 {
+                break 'out;
+            }
+            let rend = r32(c, S0);
+            c.cycles += 74;
+            // The view matrix, eye replaced by the camera's.
+            c.g[V0][0] = sx(VIEW_MATRIX);
+            let s = sp(c);
+            for k in 0..4u8 {
+                c.lqc2(1 + k as usize, VIEW_MATRIX + 0x10 * k as u32);
+            }
+            for k in 0..4u8 {
+                c.sqc2(1 + k as usize, s + 0x10 * k as u32);
+            }
+            c.g[S3][0] = LAYER_KEEP;
+            call_ptr(c, GET_VIEW_INDEX, 0x0035_3b70)?;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, GET_CAMERA_EYE, 0x0035_3b78)?;
+            let s = sp(c);
+            c.lq(3, r32(c, V0));
+            c.g[A1][0] = 0xffff_ffff_ffbf_ffff;
+            c.g[T2][0] = 0x40_0000;
+            c.sq(3, s.wrapping_add(0x30));
+            c.g[A2][0] = 0xffff_ffff_fe7f_ffff;
+            c.sq(3, s.wrapping_add(0x40));
+            c.g[T3][0] = 0x100_0000;
+            c.g[A3][0] = 0xffff_ffff_ffcf_ffff;
+            // Push: copy the top record over the next one.
+            let top = c.lw(rend.wrapping_add(RS_TOP));
+            c.g[V0][0] = top;
+            let top = top as u32;
+            c.g[T0][0] = 0xffff_ffff_fff0_0000;
+            c.g[T1][0] = 0x1_0000;
+            c.ldl(V1, top.wrapping_add(0x7));
+            c.ldr(V1, top);
+            c.ldl(A0, top.wrapping_add(0xf));
+            c.ldr(A0, top.wrapping_add(0x8));
+            c.g[T4][0] = c.lw(top.wrapping_add(0x10));
+            c.sdl(V1, top.wrapping_add(0x1b));
+            c.sdr(V1, top.wrapping_add(0x14));
+            c.sdl(A0, top.wrapping_add(0x23));
+            c.sdr(A0, top.wrapping_add(0x1c));
+            c.sw(top.wrapping_add(0x24), c.g[T4][0]);
+            c.g[T0][0] |= 0xfff;
+            c.g[T1][0] |= 0x4000;
+            c.g[A0][0] = c.lw(rend.wrapping_add(RS_TOP));
+            c.g[V1][0] = sx(at(c, A0, RS_SIZE));
+            c.sw(rend.wrapping_add(RS_TOP), c.g[V1][0]);
+            // Layer 0, remembering the old one (s2).
+            c.g[V0][0] = c.lw(at(c, A0, RS_SIZE + RS_LAYER_WORD));
+            c.g[V1][0] = c.g[V0][0] & c.g[S3][0];
+            c.sw(at(c, A0, RS_SIZE + RS_LAYER_WORD), c.g[V1][0]);
+            c.g[V0][0] &= 0x3e0;
+            c.g[S2][0] = sx(r32(c, V0) >> 5);
+            // Word 0 |= 0xc; word 1: z test on, blend 2, z write off,
+            // alpha ref 0x14.
+            c.g[V1][0] = c.lw(rend.wrapping_add(RS_TOP));
+            c.g[V0][0] = c.lw(r32(c, V1));
+            c.g[V0][0] |= 0xc;
+            c.sw(r32(c, V1), c.g[V0][0]);
+            for (base, keep, set) in [
+                (A0, A1, Some(T2)),
+                (A1, A2, Some(T3)),
+                (V1, A3, None),
+                (A0, T0, Some(T1)),
+            ] {
+                c.g[base][0] = c.lw(rend.wrapping_add(RS_TOP));
+                c.g[V0][0] = c.lw(at(c, base, 4));
+                c.g[V0][0] &= c.g[keep][0];
+                if let Some(set) = set {
+                    c.g[V0][0] |= c.g[set][0];
+                }
+                c.sw(at(c, base, 4), c.g[V0][0]);
+            }
+            c.g[A0][0] = c.lw(sky.wrapping_add(MODEL));
+            c.g[A3][0] = c.g[SP][0];
+            if c.g[A0][0] != 0 {
+                c.cycles += 19;
+                c.g[V1][0] = c.lw(at(c, A0, 8));
+                c.g[V0][0] = 0xffff_ffff_ffff_fffd;
+                lit(c, 12, 0x3f80_0000);
+                c.g[V1][0] &= c.g[V0][0];
+                c.g[V1][0] |= 0x4;
+                c.g[T0][0] = 0;
+                c.sw(at(c, A0, 8), c.g[V1][0]);
+                c.g[T1][0] = 0;
+                c.g[T2][0] = 0x5420;
+                c.g[A1][0] = c.lw(sky.wrapping_add(MODEL));
+                c.g[V0][0] = c.lw(rend.wrapping_add(RENDERER_VT));
+                c.g[T3][0] = c.lw(at(c, A1, 0x80));
+                c.g[A0][0] = c.lh(at(c, V0, SLOT_DRAW_MODEL));
+                c.g[V1][0] = c.lw(at(c, V0, SLOT_DRAW_MODEL + 4));
+                c.g[A2][0] = c.lw(at(c, T3, 0xc));
+                let method = r32(c, V1);
+                c.g[A0][0] = sx(rend.wrapping_add(r32(c, A0)));
+                call_ptr(c, method, 0x0035_3cb4)?;
+            }
+            // Pop, restoring the old layer.
+            c.cycles += 8;
+            c.g[A0][0] = c.lw(rend.wrapping_add(RS_TOP));
+            c.g[A1][0] = sx(r32(c, S2) << 5);
+            c.g[V1][0] = sx(r32(c, A0).wrapping_sub(RS_SIZE));
+            c.sw(rend.wrapping_add(RS_TOP), c.g[V1][0]);
+            let word = r32(c, A0).wrapping_sub(RS_SIZE - RS_LAYER_WORD);
+            c.g[V0][0] = c.lw(word);
+            c.g[V0][0] &= c.g[S3][0];
+            c.g[V0][0] |= c.g[A1][0];
+            c.sw(word, c.g[V0][0]);
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1463,6 +1949,134 @@ pub(crate) mod tests {
                 w(c, DATA + 8, if seed % 3 == 0 { DATA + 0x1200 } else { 0 });
                 w(c, DATA + 0xc, if seed % 5 == 0 { DATA + 0x1300 } else { 0 });
                 w(c, DATA + 0x1100, r.next_u32());
+            },
+        );
+    }
+    use super::*;
+
+    use super::*;
+    use crate::difftest::events::Events;
+    use crate::difftest::put_vec;
+
+    /// Every modifier present or absent, id and extra lists of 0-4 nodes;
+    /// all virtual calls go to fakes (some unwind), the two direct callees
+    /// (UV-scroll and rail save) run for real into the fake stream.
+    #[test]
+    fn modifier_block_save_matches() {
+        covered(
+            ee::s11::f_00353448__generated,
+            modifier_block_save,
+            300,
+            &|c, seed| {
+                c.pc = 0x0035_3448;
+                let mut r = machine(c, seed, 0x353448, 14);
+                let block = DATA;
+                let stream = DATA + 0x800;
+                let vt = |i: u32| DATA + 0x2000 + 0x400 * i;
+                let mut fake = 0;
+                let mut fslot = |c: &mut Cpu, r: &mut Rng, vt: u32, off: u32| {
+                    crate::game::main::gamemode::tests::slot(
+                        c,
+                        vt,
+                        off,
+                        (r.next_u32() as i16) & !3,
+                        FAKE + 0x10 * fake,
+                    );
+                    fake += 1;
+                };
+                // Stream: Write (0x8) and the rail modifier's 0x28.
+                c.bus.write32(stream, vt(0));
+                fslot(c, &mut r, vt(0), 0x8);
+                fslot(c, &mut r, vt(0), 0x28);
+                let bits = r.next_u32();
+                let present = |i: u32| seed % 11 == 0 || (bits >> i) & 1 != 0;
+                // Primary (vtable at +0: id 0xd0, save 0xd8).
+                let primary = if present(0) { DATA + 0x100 } else { 0 };
+                c.bus.write32(DATA + 0x100, vt(1));
+                fslot(c, &mut r, vt(1), 0xd0);
+                fslot(c, &mut r, vt(1), 0xd8);
+                // UV scroll / rail (direct callees; the rail one reads +0x18).
+                let uv = if present(1) { DATA + 0x300 } else { 0 };
+                let rail = if present(2) { DATA + 0x380 } else { 0 };
+                c.bus.write32(DATA + 0x380 + 0x18, r.next_u32());
+                // Secondary (vtable at +4: id 0x28, save 0x30).
+                let secondary = if present(3) { DATA + 0x200 } else { 0 };
+                c.bus.write32(DATA + 0x204, vt(2));
+                fslot(c, &mut r, vt(2), 0x28);
+                fslot(c, &mut r, vt(2), 0x30);
+                // Lists: next at +0, vtable at +8.
+                fslot(c, &mut r, vt(3), 0x10);
+                fslot(c, &mut r, vt(3), 0x20);
+                fslot(c, &mut r, vt(4), 0x10);
+                let mut list = |c: &mut Cpu, base: u32, n: u32, vtab: u32| -> u32 {
+                    for i in 0..n {
+                        let node = base + 0x20 * i;
+                        c.bus.write32(node, if i + 1 < n { node + 0x20 } else { 0 });
+                        c.bus.write32(node + 8, vtab);
+                    }
+                    if n == 0 {
+                        0
+                    } else {
+                        base
+                    }
+                };
+                let ids = list(c, DATA + 0x400, (seed / 3) % 5, vt(3));
+                let extra = list(c, DATA + 0x600, (seed / 7) % 5, vt(4));
+                put_words(c, block, &[primary, uv, rail, secondary, ids]);
+                c.bus.write32(block + MB_EXTRA_LIST, extra);
+                c.g[A0][0] = sx(block);
+                c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+
+    // ------------------------------------------------------------ SkyBox_Render
+
+    /// SkyBox_Render: sky drawing disabled, no model, or drawn (the draw
+    /// method a fake that may unwind); random render-state records and
+    /// layers, view index 0..3 with its camera eye, a random view matrix.
+    #[test]
+    fn skybox_render_matches() {
+        use crate::difftest::fakes::{covered, vtable};
+        use skybox::*;
+        const SKY: u32 = 0x00a0_0000;
+        const REND: u32 = 0x00a0_1000;
+        const RS: u32 = 0x00a0_3000;
+        const MODEL_AT: u32 = 0x00a0_4000;
+        const APP: u32 = 0x00a0_5000;
+        const GM: u32 = 0x00a0_5100;
+        const WX: u32 = 0x00a0_5200;
+        const CAMS: u32 = 0x00a0_6000;
+        covered(
+            ee::s11::f_00353b10__generated,
+            skybox_render,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_3b10, 1);
+                c.pc = 0x0035_3b10;
+                c.bus.write32(GAME_GP + GP_SKY_OFF, (seed % 9 == 4) as u32);
+                c.bus.write32(GAME_GP + GP_RENDERER, REND);
+                let top = RS + RS_SIZE * (r.next_u32() % 4);
+                c.bus.write32(REND + RS_TOP, top);
+                fill(c, &mut r, RS, 0x40);
+                let vt = vtable(c, &mut r, &[SLOT_DRAW_MODEL]);
+                c.bus.write32(REND + RENDERER_VT, vt);
+                c.bus
+                    .write32(SKY + MODEL, if seed % 9 == 7 { 0 } else { MODEL_AT });
+                fill(c, &mut r, MODEL_AT, 0x40);
+                c.bus.write32(MODEL_AT + 0x80, MODEL_AT + 0x40);
+                for i in 0..16 {
+                    c.bus.write32(VIEW_MATRIX + 4 * i, r.f32(100.0));
+                }
+                c.bus.write32(GAME_GP - 0x848, APP);
+                c.bus.write32(APP + 0x84, GM);
+                c.bus.write32(GM + 0x84, WX);
+                c.bus.write32(WX + 0x14, r.next_u32() % 4);
+                for v in 0..4 {
+                    c.bus.write32(WX + 4 + 4 * v, CAMS + 0x100 * v);
+                    fill(c, &mut r, CAMS + 0x100 * v + 0x20, 4);
+                }
+                c.g[A0][0] = SKY as u64;
             },
         );
     }

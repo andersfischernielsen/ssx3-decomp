@@ -28,6 +28,8 @@ pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::fe::splashmanager::oc230_gp;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_at;
 pub(crate) use crate::game::movie::movieplayer::at as at_3;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::render::particle::p;
@@ -92,6 +94,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_16c0, font_dtor, "Font_dtor"),
     (0x0039_1708, font_load, "Font_Load"),
     (0x0038_ee78, vfx_plants_update, "VfxPlants_Update"),
+    (0x0039_0f20, vfx_screen_tint_render, "VfxScreenTint_Render"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1988,6 +1991,304 @@ pub fn vfx_plants_update(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod oc230_renderer {
+
+    /// Top of the draw-state stack (20-byte records).
+    pub const STATE: u32 = 0xe84;
+
+    /// Output mode (1: 640 wide; else 320, doubled when `INTERLACE`).
+    pub const MODE: u32 = 0x270;
+
+    pub const INTERLACE: u32 = 0x274;
+
+    /// The vtable (gcc 2.9x `{delta, fn}` slots).
+    pub const VTABLE: u32 = 0x10d8;
+}
+
+/// Renderer virtual call through `s0`'s vtable slot `slot` (`this` = s0 +
+/// delta, the rest of the arguments already set), returning to `ret`.
+pub(crate) fn oc230_render_vcall(c: &mut Cpu, slot: u32, ret: u32) -> crate::call::Flow {
+    c.g[V0][0] = c.lw(oc230_at(c, S0, oc230_renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc230_at(c, V0, slot));
+    c.g[V1][0] = c.lw(oc230_at(c, V0, slot + 4));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+    call_ptr(c, t, ret)
+}
+
+/// Copy the 20-byte record at `src` to `dst` with the original's
+/// unaligned `ldl/ldr`/`sdl/sdr` pairs through `lo`/`hi` and `t` (`lw`).
+pub(crate) fn oc230_copy_state(c: &mut Cpu, src: u32, dst: u32, lo: usize, hi: usize, t: usize) {
+    c.ldl(lo, src.wrapping_add(7));
+    c.ldr(lo, src);
+    c.ldl(hi, src.wrapping_add(0xf));
+    c.ldr(hi, src.wrapping_add(8));
+    c.g[t][0] = c.lw(src.wrapping_add(0x10));
+    c.sdl(lo, dst.wrapping_add(7));
+    c.sdr(lo, dst);
+    c.sdl(hi, dst.wrapping_add(0xf));
+    c.sdr(hi, dst.wrapping_add(8));
+    let v = c.g[t][0];
+    c.sw(dst.wrapping_add(0x10), v);
+}
+
+/// `void VfxScreenTint_Render(void)` (0x390f20): when the screen tint is
+/// enabled (`gp+0x151c`) and its alpha (`gp+0x15ac`) is not zero, pushes a
+/// copy of the renderer's draw state, begins the scene, sets the full-screen
+/// viewport (640x480, or 320x480 offset by 320 when interlaced), resets the
+/// state to the default record (0x501420) with alpha blending, draws a
+/// screen-sized quad (four vertices, colour = tint rgb * alpha * 255, alpha
+/// * 255) and pops the state.
+pub fn vfx_screen_tint_render(c: &mut Cpu) {
+    use oc230_renderer as rd;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x110);
+        c.g[V0][0] = c.lw(oc230_gp(c, 0x151c));
+        frame.save(c, S1, 0xe0);
+        frame.save(c, S0, 0xf0);
+        c.g[S1][0] = 0;
+        frame.save_ra(c, 0xd0);
+        frame.save_fpr(c, 21, 0x108);
+        frame.save_fpr(c, 20, 0x100);
+        if c.g[V0][0] != 0 {
+            // visible = alpha != 0
+            c.cycles += 6;
+            c.lwc1(1, oc230_gp(c, 0x15ac));
+            c.mtc1(0, 0);
+            c.c_eq_s(1, 0);
+            if !c.fcc() {
+                c.g[S1][0] = 1;
+            }
+        }
+        c.cycles += 2;
+        c.g[S0][0] = c.lw(oc230_gp(c, 0x2a90));
+        if c.g[S1][0] != 0 {
+            // Push the draw state (copy the top record one up).
+            c.cycles += 33;
+            c.g[V0][0] = c.lw(oc230_at(c, S0, rd::STATE));
+            let top = r32(c, V0);
+            oc230_copy_state(c, top, top.wrapping_add(0x14), V1, A0, A1);
+            c.g[V1][0] = c.lw(oc230_at(c, S0, rd::STATE));
+            c.g[V0][0] = c.lw(oc230_at(c, S0, rd::VTABLE));
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x14));
+            let v = c.g[V1][0];
+            c.sw(oc230_at(c, S0, rd::STATE), v);
+            // BeginScene (0xa8), Begin2D (0xf8), slot 0x128.
+            c.g[A0][0] = c.lh(oc230_at(c, V0, 0xa8));
+            c.g[V1][0] = c.lw(oc230_at(c, V0, 0xac));
+            let t = r32(c, V1);
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+            call_ptr(c, t, 0x0039_0fb0)?;
+            oc230_render_vcall(c, 0xf8, 0x0039_0fc4)?;
+            oc230_render_vcall(c, 0x128, 0x0039_0fd8)?;
+            // Viewport width f20 and x offset f21.
+            c.g[A0][0] = c.lw(oc230_at(c, S0, rd::MODE));
+            c.g[V0][0] = 1;
+            if c.g[A0][0] != c.g[V0][0] {
+                c.g[V0][0] = c.lw(oc230_at(c, S0, rd::INTERLACE));
+                c.cycles += 5;
+                c.g[AT][0] = 0x43a0_0000; // 320
+                c.mtc1(AT, 20);
+                c.mtc1(0, 21);
+                if c.g[V0][0] != 0 {
+                    c.mov_s(21, 20);
+                }
+                c.cycles += 1;
+            } else {
+                c.cycles += 5;
+                c.g[AT][0] = 0x4420_0000; // 640
+                c.mtc1(AT, 20);
+                c.mtc1(0, 21);
+            }
+            c.g[V0][0] = c.lw(oc230_at(c, S0, rd::VTABLE));
+
+            // SetViewport(this, 0, 0, x, 0, w, 480, 0, 1) (0xd0).
+            c.cycles += 104;
+            c.g[A1][0] = 0;
+            c.mtc1(0, 13);
+            c.mov_s(14, 20);
+            c.g[A0][0] = c.lh(oc230_at(c, V0, 0xd0));
+            c.g[A2][0] = 0;
+            c.g[V1][0] = c.lw(oc230_at(c, V0, 0xd4));
+            c.mov_s(12, 21);
+            c.g[AT][0] = 0x43f0_0000; // 480
+            c.mtc1(AT, 15);
+            c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 17);
+            let t = r32(c, V1);
+            c.mov_s(16, 13);
+            call_ptr(c, t, 0x0039_104c)?;
+
+            // Reset the top state to the default record, then its bits.
+            c.g[V1][0] = c.lw(oc230_at(c, S0, rd::STATE));
+            c.g[V0][0] = 0x50_0000;
+            c.g[A2][0] = 0xffff_ffff_ffff_fc1f;
+            c.g[A0][0] = 0xffff_ffff_ffbf_0000;
+            c.g[A1][0] = sx(0x0050_1420);
+            let top = r32(c, V1);
+            oc230_copy_state(c, 0x0050_1420, top, A3, T0, T1);
+            c.g[A0][0] |= 0xffff;
+            c.g[T2][0] = 0x40_0000;
+            c.g[A1][0] = 0xffff_ffff_fe7f_0000;
+            c.g[V1][0] = c.lw(oc230_at(c, S0, rd::STATE));
+            c.g[A1][0] |= 0xffff;
+            c.g[T3][0] = 0x100_0000;
+            c.g[A3][0] = 0xffff_ffff_ffcf_0000;
+            c.g[V0][0] = c.lw(oc230_at(c, V1, 8));
+            c.g[A3][0] |= 0xffff;
+            c.g[T0][0] = 0xffff_ffff_fff0_0000;
+            c.g[T1][0] = 0x1_0000;
+            c.g[V0][0] &= c.g[A2][0];
+            c.g[T0][0] |= 0xfff;
+            c.g[V0][0] |= 0xa0;
+            c.g[A2][0] = c.lw(oc230_gp(c, 0x15bc));
+            let v = c.g[V0][0];
+            c.sw(oc230_at(c, V1, 8), v);
+            c.g[T1][0] |= 0x4000;
+            c.g[T4][0] = 0xffff_ffff_ffff_ff83;
+            c.g[A2][0] = sx(r32(c, A2) << 2);
+            c.g[V1][0] = c.lw(oc230_at(c, S0, rd::STATE));
+            c.g[A2][0] &= 0x7c;
+            c.g[T5][0] = u64::MAX;
+            c.add_s(14, 21, 20);
+            c.g[V0][0] = c.lw(oc230_at(c, V1, 4));
+            c.g[T7][0] = u64::MAX;
+            c.g[T6][0] = 3;
+            // word 4 of the top state: (w & mask) | bits, five times.
+            c.g[V0][0] &= c.g[A0][0];
+            c.g[V0][0] |= c.g[T2][0];
+            let v = c.g[V0][0];
+            c.sw(oc230_at(c, V1, 4), v);
+            for (base, mask, bits) in [
+                (A0, A1, Some(T3)),
+                (V1, A3, None),
+                (A0, T0, Some(T1)),
+                (A1, T4, Some(A2)),
+            ] {
+                c.g[base][0] = c.lw(oc230_at(c, S0, rd::STATE));
+                c.g[V0][0] = c.lw(oc230_at(c, base, 4));
+                c.g[V0][0] &= c.g[mask][0];
+                if let Some(b) = bits {
+                    c.g[V0][0] |= c.g[b][0];
+                }
+                let v = c.g[V0][0];
+                c.sw(oc230_at(c, base, 4), v);
+            }
+            c.g[V1][0] = c.lw(oc230_at(c, S0, rd::STATE));
+            let v = c.g[T5][0];
+            c.sh(oc230_at(c, V1, 0x10), v);
+
+            // Quad corner positions (x, y, 0, 1) built in the scratch
+            // quadword at sp+0xc0 and copied to the vertices' +0x20.
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 1);
+            let sp = sp(c);
+            c.swc1(21, sp.wrapping_add(0xc0));
+            c.sw(sp.wrapping_add(0xc8), 0);
+            c.sw(sp.wrapping_add(0xc4), 0);
+            c.swc1(1, sp.wrapping_add(0xcc));
+            c.g[AT][0] = 0x43f0_0000;
+            c.mtc1(AT, 0);
+            c.lq(V0, sp.wrapping_add(0xc0));
+            c.swc1(14, sp.wrapping_add(0xc0));
+            c.sw(sp.wrapping_add(0xc8), 0);
+            c.sw(sp.wrapping_add(0xc4), 0);
+            c.sq(V0, sp.wrapping_add(0x20));
+            c.lq(V1, sp.wrapping_add(0xc0));
+            c.swc1(21, sp.wrapping_add(0xc0));
+            c.sw(sp.wrapping_add(0xc8), 0);
+            c.swc1(0, sp.wrapping_add(0xc4));
+            c.sq(V1, sp.wrapping_add(0x50));
+            c.lq(A0, sp.wrapping_add(0xc0));
+            c.swc1(14, sp.wrapping_add(0xc0));
+            c.sw(sp.wrapping_add(0xc8), 0);
+            c.sq(A0, sp.wrapping_add(0x80));
+            c.lq(V0, sp.wrapping_add(0xc0));
+            c.sq(V0, sp.wrapping_add(0xb0));
+            if c.g[S1][0] != 0 {
+                // Colour = tint (r, g, b) * alpha * 255, alpha * 255.
+                c.cycles += 25;
+                c.lwc1(4, oc230_gp(c, 0x15ac));
+                c.mov_s(5, 1);
+                c.lwc1(3, oc230_gp(c, 0x15b0));
+                c.g[V1][0] = c.g[SP][0];
+                c.lwc1(2, oc230_gp(c, 0x15b4));
+                c.g[T0][0] = sx(sp.wrapping_add(0xc0));
+                c.lwc1(1, oc230_gp(c, 0x15b8));
+                c.mul_s(3, 4, 3);
+                c.g[AT][0] = 0x437f_0000; // 255
+                c.mtc1(AT, 0);
+                c.mul_s(2, 4, 2);
+                c.mul_s(1, 4, 1);
+                c.mul_s(3, 3, 0);
+                c.mul_s(4, 4, 0);
+                c.mul_s(2, 2, 0);
+                c.mul_s(1, 1, 0);
+                c.cvt_w_s(0, 3);
+                c.mfc1(A3, 0);
+                c.cvt_w_s(0, 2);
+                c.mfc1(A2, 0);
+                c.cvt_w_s(0, 1);
+                c.mfc1(A1, 0);
+                c.cvt_w_s(0, 4);
+                c.mfc1(A0, 0);
+                let v = c.g[A3][0];
+                c.sw(oc230_at(c, V1, 0x10), v);
+                // Per vertex (0x30 apart): q = 1 at +8, colour at +0x10.
+                loop {
+                    c.cycles += 8;
+                    let vert = r32(c, V1);
+                    let (a2, a1, a0) = (c.g[A2][0], c.g[A1][0], c.g[A0][0]);
+                    c.sw(vert.wrapping_add(0x14), a2);
+                    c.sw(vert.wrapping_add(0x18), a1);
+                    c.sw(vert.wrapping_add(0x1c), a0);
+                    c.swc1(5, vert.wrapping_add(8));
+                    c.g[V1][0] = sx(vert.wrapping_add(0x30));
+                    c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    let v = c.g[A3][0];
+                    c.sw(oc230_at(c, V1, 0x10), v);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0039_1218);
+                    }
+                }
+                // DrawPrimitive(this, 4, vertices, 0) (0x238).
+                c.cycles += 8;
+                c.g[V0][0] = c.lw(oc230_at(c, S0, rd::VTABLE));
+                c.g[A1][0] = 4;
+                c.g[A2][0] = c.g[SP][0];
+                c.g[A3][0] = 0;
+                c.g[A0][0] = c.lh(oc230_at(c, V0, 0x238));
+                c.g[V1][0] = c.lw(oc230_at(c, V0, 0x23c));
+                let t = r32(c, V1);
+                c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+                call_ptr(c, t, 0x0039_1258)?;
+            }
+
+            // End2D (0x100), EndScene (0xb0), pop the draw state.
+            c.cycles += 13;
+            oc230_render_vcall(c, 0x100, 0x0039_126c)?;
+            oc230_render_vcall(c, 0xb0, 0x0039_1280)?;
+            c.g[V0][0] = c.lw(oc230_at(c, S0, rd::STATE));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x14));
+            let v = c.g[V0][0];
+            c.sw(oc230_at(c, S0, rd::STATE), v);
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0xf0);
+        frame.restore(c, S1, 0xe0);
+        frame.restore_ra(c, 0xd0);
+        frame.restore_fpr(c, 21, 0x108);
+        frame.restore_fpr(c, 20, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2652,6 +2953,57 @@ pub(crate) mod tests {
                 for k in 0..16 {
                     let v = r.f32(10.0);
                     c.bus.write32(BASE + 4 * k, v);
+                }
+            },
+        );
+    }
+    use super::*;
+
+    /// VfxScreenTint_Render: tint off / alpha zero (no draw), and the draw
+    /// with both viewport modes (640, 320 with and without the interlace
+    /// offset); the renderer's methods are fakes that may unwind.
+    #[test]
+    fn vfx_screen_tint_render_matches() {
+        covered(
+            ee::s12::f_00390f20__generated,
+            vfx_screen_tint_render,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0039_0f20, 7);
+                c.pc = 0x0039_0f20;
+                let gp = GAME_GP;
+                c.bus
+                    .write32(gp + 0x151c, if seed % 5 == 0 { 0 } else { 1 });
+                let alpha = match seed % 7 {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    _ => r.f32(1.0),
+                };
+                c.bus.write32(gp + 0x15ac, alpha);
+                for off in [0x15b0, 0x15b4, 0x15b8] {
+                    let v = r.f32(1.0);
+                    c.bus.write32(gp + off, v);
+                }
+                let bits = r.next_u32();
+                c.bus.write32(gp + 0x15bc, bits);
+                let rend = DATA;
+                c.bus.write32(gp + 0x2a90, rend);
+                let stack = DATA + 0x2000 + (r.next_u32() % 16) * 4;
+                c.bus.write32(rend + oc230_renderer::STATE, stack);
+                fill(c, &mut r, stack, 16);
+                fill(c, &mut r, 0x0050_1420, 5);
+                let mode = if seed % 3 == 0 { 1 } else { r.next_u32() % 3 };
+                c.bus.write32(rend + oc230_renderer::MODE, mode);
+                c.bus
+                    .write32(rend + oc230_renderer::INTERLACE, seed / 2 % 2);
+                let vt = DATA + 0x3000;
+                c.bus.write32(rend + oc230_renderer::VTABLE, vt);
+                for (i, slot) in [0xa8u32, 0xf8, 0x128, 0xd0, 0x238, 0x100, 0xb0]
+                    .iter()
+                    .enumerate()
+                {
+                    c.bus.write16(vt + slot, (i as u16) * 4);
+                    c.bus.write32(vt + slot + 4, FAKE + 0x10 * i as u32);
                 }
             },
         );

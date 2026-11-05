@@ -19,6 +19,7 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -57,6 +58,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_45f0, sync_dcache, "_SyncDCache"),
     (0x0042_4730, invalid_dcache, "_InvalidDCache"),
     (0x0042_47d8, invalid_dcache_2, "InvalidDCache"),
+    (0x0042_4698, sync_dcache_2, "SyncDCache"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -421,6 +423,63 @@ pub fn invalid_dcache_2(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// SyncDCache (0x424698)
+
+/// `void SyncDCache(void* start, void* end)` (0x424698, libkernel): write
+/// back the data cache lines covering [start, end] (both rounded down to 64
+/// bytes, `_SyncDCache` at 0x4245f0) with interrupts disabled; re-enables
+/// them (tail call to `EIntr`) if they were enabled on entry (Status.EIE,
+/// COP0 r12 bit 16). Same shape as `InvalidDCache`.
+pub fn sync_dcache_2(c: &mut Cpu) {
+    use crate::game::lib::kernel::{DINTR, EINTR};
+    const SYNC_DCACHE_LINES: Callee = Callee {
+        addr: 0x0042_45f0,
+        f: ee::s15::f_004245f0,
+    };
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        let at = frame.at(c, 0x20);
+        c.sd(at, c.g[S2][0]);
+        let at = frame.at(c, 0x10);
+        c.sd(at, c.g[S1][0]);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        let at = frame.at(c, 0);
+        c.sd(at, c.g[S0][0]);
+        c.mfc0(S0, 12);
+        c.g[V0][0] = 0x10000;
+        c.g[S0][0] &= 0x10000;
+        let enabled = c.g[S0][0] != 0;
+        if enabled {
+            c.cycles += 2;
+            DINTR.call(c, 0x0042_46d0)?;
+        }
+        c.cycles += 7;
+        const LINE_MASK: u64 = 0xffff_ffff_ffff_ffc0;
+        c.g[A0][0] = LINE_MASK;
+        c.g[A1][0] = c.g[S1][0] & LINE_MASK;
+        c.g[A0][0] = c.g[S2][0] & LINE_MASK;
+        SYNC_DCACHE_LINES.call(c, 0x0042_46e4)?;
+        frame.restore_ra(c, 0x30);
+        c.cycles += 5;
+        c.g[S2][0] = c.ld(frame.at(c, 0x20));
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        if enabled {
+            // Tail call: EIntr returns to our caller.
+            c.g[SP][0] = sx(sp(c).wrapping_add(0x40));
+            c.pc = EINTR;
+            ee::s15::f_0042c0c0(c);
+        } else {
+            frame.close(c);
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -653,6 +712,36 @@ pub(crate) mod tests {
                 let mut r = Rng(0x47d8 ^ (seed as u64) << 8);
                 scramble(c, &mut r);
                 c.pc = 0x0042_47d8;
+                let status = r.next_u32() & !0x1_0000;
+                c.cop0[12] = if seed % 2 == 0 {
+                    status | 0x1_0000
+                } else {
+                    status
+                };
+                c.cop0[28] = r.next_u32();
+                let start = r.next_u32() % 0x0200_0000;
+                let end = start.wrapping_add(r.next_u32() % 0x2000);
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | start as u64;
+                c.g[A1][0] = sx(end);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::SP;
+
+    /// SyncDCache: interrupts enabled or not on entry (Status bit 16, other
+    /// Status bits random), random ranges; the real DIntr/_SyncDCache/EIntr.
+    #[test]
+    fn sync_dcache_matches_2() {
+        check(
+            ee::s15::f_00424698__generated,
+            sync_dcache_2,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x4698 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0042_4698;
                 let status = r.next_u32() & !0x1_0000;
                 c.cop0[12] = if seed % 2 == 0 {
                     status | 0x1_0000

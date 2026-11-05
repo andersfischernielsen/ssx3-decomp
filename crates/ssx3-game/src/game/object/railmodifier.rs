@@ -38,6 +38,9 @@ pub(crate) use crate::game::fe::fepopup::ld;
 pub(crate) use crate::game::fe::fepopup::lw_9 as lw_4;
 pub(crate) use crate::game::fe::fepopup::sh;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw;
+pub(crate) use crate::game::fe::splashmanager::oc230_gp;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::intersect::worldsphtree::forward_to_arg_vtable;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 pub(crate) use crate::game::render::lightman::addu as addu_2;
@@ -296,6 +299,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         uv_scroll_modifier_get_matrix,
         "UVScrollModifier_GetMatrix",
     ),
+    (0x0036_4050, defer_man_sort_buckets, "DeferMan_SortBuckets"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -5187,6 +5191,225 @@ pub fn uv_scroll_modifier_get_matrix(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod oc230_defer {
+    use crate::call::Callee;
+
+    pub const SPR_STREAM_BEGIN_BLOCK: Callee = Callee {
+        addr: 0x0038_f460,
+        f: ssx3_ee::s12::SprStream_BeginBlock,
+    };
+
+    pub const SPR_STREAM_NEXT_INDEX: Callee = Callee {
+        addr: 0x0038_f6a8,
+        f: ssx3_ee::s12::SprStream_NextIndex,
+    };
+
+    /// `memset` (another shard: through the function table).
+    pub const MEMSET: u32 = 0x003e_6448;
+
+    /// The item count and the items (key, value: 8 bytes each).
+    pub const COUNT: u32 = 0x6_7ca4;
+
+    pub const ITEMS: u32 = 0x6_7ca8;
+
+    /// The second item buffer (global).
+    pub const SCRATCH: u32 = 0x0050_5b70;
+}
+
+/// `void DeferMan_SortBuckets(DeferMan* m)` (0x364050): LSD radix sort of
+/// the deferred draw items (8 bytes, sorted by the 32-bit key) by bytes:
+/// four 257-entry histograms (one per key byte) in a scratchpad stream
+/// block (gp+0x1384), counted in one pass and prefix-summed, then four
+/// scatter passes ping-ponging between the items and the global buffer
+/// (an even number, so the result ends in the items); then the stream
+/// moves to its next block.
+pub fn defer_man_sort_buckets(c: &mut Cpu) {
+    use oc230_defer as d;
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x60);
+        c.g[V1][0] = d::ITEMS as u64;
+        frame.save(c, S4, 0x10);
+        frame.save(c, S0, 0x50);
+        c.g[A1][0] = 0x50_0000;
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        c.g[V0][0] = sx(r32(c, A0).wrapping_add(0x6_0000));
+        frame.save_ra(c, 0);
+        c.g[S1][0] = oc230_add(c, A0, V1); // src = the items
+        c.g[S4][0] = c.lw(oc230_gp(c, 0x1384)); // the scratchpad stream
+        c.g[S3][0] = sx(d::SCRATCH); // dst
+        frame.save(c, S2, 0x30);
+        c.g[A1][0] = 0;
+        c.g[S2][0] = c.lw(r32(c, V0).wrapping_add(d::COUNT - 0x6_0000)); // n
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A2][0] = u64::MAX;
+        c.g[A3][0] = 0;
+        d::SPR_STREAM_BEGIN_BLOCK.call(c, 0x0036_40a4)?;
+        c.g[S0][0] = c.g[V0][0]; // the histograms
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = 0x1010;
+        call_ptr(c, d::MEMSET, 0x0036_40b8)?;
+        let hist = r32(c, S0);
+
+        // Count the four key bytes (histogram k at +0x404 * k, entry b + 1).
+        let empty = (c.g[S2][0] as i64) <= 0;
+        c.g[T0][0] = c.g[S1][0];
+        if !empty {
+            c.cycles += 2;
+            c.g[A3][0] = c.g[S2][0];
+            loop {
+                c.cycles += 28;
+                let item = r32(c, T0);
+                c.g[A0][0] = c.lw(item);
+                c.g[A3][0] = sx(r32(c, A3).wrapping_sub(1));
+                c.g[T0][0] = sx(item.wrapping_add(8));
+                c.g[V1][0] = c.g[A0][0] & 0xff;
+                c.g[A2][0] = sx(r32(c, A0) >> 6) & 0x3fc;
+                c.g[V1][0] = oc230_sll(c, V1, 2);
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(hist));
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(hist));
+                c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(4));
+                c.g[A1][0] = sx(r32(c, A0) >> 14) & 0x3fc;
+                c.g[A0][0] = sx(r32(c, A0) >> 24);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(hist));
+                let v = c.g[V0][0];
+                c.sw(r32(c, V1).wrapping_add(4), v);
+                c.g[A0][0] = oc230_sll(c, A0, 2);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(hist));
+                for (base, off, reg) in [(A2, 0x408u32, V0), (A1, 0x80c, V1), (A0, 0xc10, V0)] {
+                    let at = r32(c, base).wrapping_add(off);
+                    c.g[reg][0] = c.lw(at);
+                    c.g[reg][0] = sx(r32(c, reg).wrapping_add(1));
+                    let v = c.g[reg][0];
+                    c.sw(at, v);
+                }
+                if c.g[A3][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0036_40c8);
+                }
+            }
+        }
+
+        // Prefix sums: hist[k][i] += hist[k][i - 1] for i = 1..255.
+        c.cycles += 2;
+        c.g[T2][0] = sx(hist.wrapping_add(4));
+        c.g[T3][0] = 0xfe;
+        loop {
+            c.cycles += 19;
+            let at = r32(c, T2);
+            c.g[V1][0] = c.lw(at);
+            c.g[T3][0] = sx(r32(c, T3).wrapping_sub(1));
+            c.g[A0][0] = c.lw(at.wrapping_add(0x404));
+            c.g[A1][0] = c.lw(at.wrapping_add(0x808));
+            c.g[A2][0] = c.lw(at.wrapping_add(0xc0c));
+            c.g[V0][0] = c.lw(at.wrapping_sub(4));
+            c.g[A3][0] = c.lw(at.wrapping_add(0x400));
+            c.g[T0][0] = c.lw(at.wrapping_add(0x804));
+            c.g[V1][0] = oc230_add(c, V1, V0);
+            c.g[T1][0] = c.lw(at.wrapping_add(0xc08));
+            c.g[A0][0] = oc230_add(c, A0, A3);
+            c.g[A1][0] = oc230_add(c, A1, T0);
+            let v = c.g[V1][0];
+            c.sw(at, v);
+            c.g[A2][0] = oc230_add(c, A2, T1);
+            let v = c.g[A0][0];
+            c.sw(at.wrapping_add(0x404), v);
+            let v = c.g[A1][0];
+            c.sw(at.wrapping_add(0x808), v);
+            let v = c.g[A2][0];
+            c.sw(at.wrapping_add(0xc0c), v);
+            let more = (c.g[T3][0] as i64) >= 0;
+            c.g[T2][0] = sx(at.wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0036_4140);
+            }
+        }
+
+        // Scatter by byte shift = 0, 8, 16, 24 (histogram shift / 8).
+        c.cycles += 1;
+        c.g[A3][0] = 0;
+        loop {
+            c.cycles += 7;
+            c.g[V1][0] = oc230_sll(c, A3, 5);
+            c.g[V0][0] = sx(((r32(c, A3) as i32) >> 3) as u32);
+            c.g[V1][0] = oc230_add(c, V1, V0);
+            c.g[T1][0] = sx(r32(c, A3).wrapping_add(8));
+            c.g[V1][0] = oc230_sll(c, V1, 2);
+            let empty = (c.g[S2][0] as i64) <= 0;
+            c.g[T0][0] = sx(hist.wrapping_add(r32(c, V1)));
+            if !empty {
+                c.cycles += 3;
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = c.g[S2][0];
+                loop {
+                    // dst[h[(key >> shift) & 0xff]++] = *src++
+                    c.cycles += 18;
+                    let item = r32(c, A1);
+                    c.g[V0][0] = c.lw(item);
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+                    c.g[V0][0] = sx(r32(c, V0) >> (r32(c, A3) & 31)) & 0xff;
+                    c.g[V0][0] = oc230_sll(c, V0, 2);
+                    c.g[V0][0] = oc230_add(c, V0, T0);
+                    let slot = r32(c, V0);
+                    c.g[A0][0] = c.lw(slot);
+                    c.g[V1][0] = c.g[A0][0];
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                    c.g[V1][0] = oc230_sll(c, V1, 3);
+                    let v = c.g[A0][0];
+                    c.sw(slot, v);
+                    c.g[V1][0] = oc230_add(c, V1, S3);
+                    let out = r32(c, V1);
+                    c.ldl(V0, item.wrapping_add(7));
+                    c.ldr(V0, item);
+                    c.sdl(V0, out.wrapping_add(7));
+                    c.sdr(V0, out);
+                    let more = c.g[A2][0] != 0;
+                    c.g[A1][0] = sx(item.wrapping_add(8));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0036_41b8);
+                    }
+                }
+            }
+            // Swap src and dst.
+            c.cycles += 6;
+            c.g[V1][0] = c.g[S3][0];
+            c.g[A3][0] = c.g[T1][0];
+            c.g[S3][0] = c.g[S1][0];
+            c.g[V0][0] = ((c.g[A3][0] as i64) < 32) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[S1][0] = c.g[V1][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0036_4190);
+            }
+        }
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S4][0];
+        d::SPR_STREAM_NEXT_INDEX.call(c, 0x0036_4220)?;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7107,6 +7330,54 @@ pub(crate) mod tests {
                 // Some seeds: m overlaps self's axis (aliasing order).
                 c.g[A1][0] = sx(if seed % 7 == 5 { DATA + 0x10 } else { MATRIX });
                 c.pc = 0x0035_fc20;
+            },
+        );
+    }
+    use super::*;
+
+    /// DeferMan_SortBuckets: 0..64 items with random keys (sometimes few
+    /// distinct bytes), the scratchpad stream at gp+0x1384 with two slots
+    /// whose blocks are in RAM; the real stream callees and memset run.
+    #[test]
+    fn defer_man_sort_buckets_matches() {
+        check(
+            ee::s12::f_00364050__generated,
+            defer_man_sort_buckets,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0036_4050 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0036_4050;
+                let (man, stream) = (DATA, DATA + 0x7_0000);
+                c.bus.write32(GAME_GP + 0x1384, stream);
+                let slot = r.next_u32() % 2;
+                c.bus.write32(stream + 4, 2);
+                c.bus.write32(stream + 8, slot);
+                c.bus.write32(stream + 0xc, slot);
+                c.bus.write32(stream + 0x10, 0x101);
+                c.bus.write32(stream + 0x14, DATA + 0x7_1000);
+                c.bus.write32(stream + 0x18, DATA + 0x7_3000);
+                fill(c, &mut r, DATA + 0x7_1000, 0x404);
+                fill(c, &mut r, DATA + 0x7_3000, 0x404);
+                let n = match seed % 5 {
+                    0 => 0,
+                    1 => 1,
+                    _ => r.next_u32() % 65,
+                };
+                c.bus.write32(man + oc230_defer::COUNT, n);
+                for i in 0..n {
+                    let key = match seed % 3 {
+                        0 => r.next_u32(),
+                        1 => r.next_u32() & 0x0103_0107,
+                        _ => r.next_u32() % 300,
+                    };
+                    c.bus.write32(man + oc230_defer::ITEMS + 8 * i, key);
+                    let v = r.next_u32();
+                    c.bus.write32(man + oc230_defer::ITEMS + 8 * i + 4, v);
+                }
+                fill(c, &mut r, oc230_defer::SCRATCH, 2 * 64);
+                c.g[A0][0] = sx(man);
             },
         );
     }

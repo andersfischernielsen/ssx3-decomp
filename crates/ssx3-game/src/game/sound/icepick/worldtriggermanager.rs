@@ -41,6 +41,10 @@ pub(crate) use crate::game::object::flexrailnode::at_3;
 pub(crate) use crate::game::object::flexrailnode::r32v;
 pub(crate) use crate::game::object::flexrailnode::spa;
 pub(crate) use crate::game::replay::replay2::destroy_if_flag;
+pub(crate) use crate::game::visualfx::boardwakefx::qcopy;
+pub(crate) use crate::game::visualfx::boardwakefx::vlen;
+pub(crate) use crate::game::visualfx::boardwakefx::vlen_vf3;
+pub(crate) use crate::game::visualfx::boardwakefx::vsub_2 as vsub;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -195,6 +199,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002b_7908,
         c_world_sound_process_emitter,
         "cWorldSound_ProcessEmitter",
+    ),
+    (
+        0x002b_75d0,
+        world_sound_refresh_nearby_emitters,
+        "cWorldSound_RefreshNearbyEmitters",
     ),
 ];
 
@@ -2935,6 +2944,130 @@ pub fn c_world_sound_process_emitter(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// cWorldSound_RefreshNearbyEmitters (0x2b75d0)
+// ---------------------------------------------------------------------------
+
+/// Nearby-emitter list: count at +0 (entries follow), the position it was
+/// built for (+0x110) and its refresh distance flag (+0x11c, 0 = always).
+pub(crate) const NEAR_COUNT: u32 = 0x0;
+
+pub(crate) const NEAR_POS: u32 = 0x110;
+
+pub(crate) const NEAR_REFRESH: u32 = 0x11c;
+
+/// The sound module's emitter octree: eight 0x14-byte root cells, each
+/// with its subtree at +0x10.
+pub(crate) const SOUND_TREE: u32 = 0x20;
+
+pub(crate) const CELL_SIZE: u32 = 0x14;
+
+pub(crate) const CELL_SUBTREE: u32 = 0x10;
+
+/// `void cWorldSound_RefreshNearbyEmitters(NearList* list, const Vec4* pos)`
+/// (0x2b75d0): rebuild the list of emitters near `pos` when the list wants
+/// a refresh every time or the listener moved more than 10 units since the
+/// last build: clear it and query each of the eight root cells of the
+/// emitter tree that has a subtree, then remember `pos`.
+pub fn world_sound_refresh_nearby_emitters(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x90);
+        c.mtc1(0, 1);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        frame.save(c, S2, 0x60);
+        frame.save_ra(c, 0x30);
+        let list = r32(c, S3);
+        c.lwc1(0, list + NEAR_REFRESH);
+        c.c_eq_s(0, 1);
+        let always = c.fcc();
+        c.g[S4][0] = c.g[A1][0];
+        let pos = r32(c, S4);
+        let sp0 = sp(c);
+        if !always {
+            // Moved more than 10 units?
+            c.cycles += 22;
+            vsub(c, pos, list + NEAR_POS, sp0 + 0x10);
+            c.g[AT][0] = 0x4120_0000;
+            c.mtc1(AT, 1);
+            qcopy(c, V0, sp0 + 0x10, sp0);
+            vlen(c, V1, sp0);
+            c.mtc1(V1, 0);
+            c.c_lt_s(1, 0);
+            let moved = c.fcc();
+            frame.restore(c, S0, 0x80);
+            if !moved {
+                return epilogue(c, frame);
+            }
+        }
+
+        // Clear the list and query the tree around pos.
+        c.cycles += 9;
+        Addr(list).off(NEAR_COUNT).sw(c, 0);
+        call_ptr(c, 0x0028_b1c8, 0x002b_7668)?;
+        let module = r32(c, V0);
+        c.g[S0][0] = Addr(module).off(SOUND_TREE).lw(c);
+        let tree = r32(c, S0);
+        let sp0 = sp(c);
+        // Query context at sp+0x20: {list, pos}.
+        c.g[S1][0] = sx(sp0 + 0x20);
+        Addr(sp0).off(0x20).sw(c, sx(list));
+        Addr(sp0).off(0x24).sw(c, sx(pos));
+        c.g[T0][0] = Addr(tree).off(CELL_SUBTREE).lw(c);
+        c.g[S2][0] = sx(sp0 + 0x24);
+        for k in 0..8u32 {
+            let cell = tree + CELL_SIZE * k;
+            if k > 0 {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(cell).off(CELL_SUBTREE).lw(c);
+                c.g[T1][0] = sx(cell);
+                if c.g[V0][0] == 0 {
+                    continue;
+                }
+                c.cycles += 6;
+                c.g[T0][0] = Addr(cell).off(CELL_SUBTREE).lw(c);
+            } else {
+                if c.g[T0][0] == 0 {
+                    continue;
+                }
+                c.cycles += 6;
+                c.g[T1][0] = c.g[S0][0];
+            }
+            // cWorldSound_QueryTreeNode(&visited[k], &ctx, &ctx, &ctx.pos,
+            // subtree, cell)
+            let sp0 = sp(c);
+            c.g[A0][0] = sx(sp0 + 0x28 + k);
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[S1][0];
+            c.g[A3][0] = c.g[S2][0];
+            Callee {
+                addr: 0x002b_83f8,
+                f: ee::s08::f_002b83f8,
+            }
+            .call(c, 0x002b_769c + 0x24 * k)?;
+        }
+        c.cycles += 3;
+        qcopy(c, V0, pos, list + NEAR_POS);
+        frame.restore(c, S0, 0x80);
+        epilogue(c, frame)
+    });
+
+    fn epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+        c.cycles += 7;
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3985,6 +4118,75 @@ pub(crate) mod tests {
                 c.g[A2][0] = (r.next_u32() & 0xffff) as u64;
                 c.g[A3][0] = sx(SOURCE);
                 c.pc = 0x002b_7908;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::SP as STACK_TOP;
+
+    /// Refresh always (flag 0) or by distance (moved less / more than 10),
+    /// root cells with and without subtrees; the real tree query runs on
+    /// empty subtrees with random cell bounds.
+    #[test]
+    fn world_sound_refresh_nearby_emitters_matches() {
+        crate::difftest::check(
+            ee::s08::f_002b75d0__generated,
+            world_sound_refresh_nearby_emitters,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2b75_d000 ^ (seed as u64) << 16);
+                crate::difftest::scramble(c, &mut r);
+                let gp = crate::difftest::GAME_GP;
+                c.g[GP][0] = gp as u64;
+                let list = DATA;
+                let pos = DATA + 0x200;
+                let world = DATA + 0x300;
+                let module = DATA + 0x400;
+                let tree = DATA + 0x500;
+                c.bus.write32(gp.wrapping_sub(0x848), world);
+                c.bus.write32(world + 0x84, module);
+                c.bus.write32(module + SOUND_TREE, tree);
+                c.bus.write32(gp.wrapping_sub(0x452c), r.f32(2.0));
+                let bits = r.next_u32();
+                for k in 0..8 {
+                    let cell = tree + CELL_SIZE * k;
+                    put_words(
+                        c,
+                        cell,
+                        &[
+                            r.next_u32() % 5,
+                            (r.next_u32() % 9).wrapping_sub(4),
+                            (r.next_u32() % 9).wrapping_sub(4),
+                            (r.next_u32() % 9).wrapping_sub(4),
+                        ],
+                    );
+                    let sub = if seed % 7 == 0 || (bits >> k) & 1 != 0 {
+                        DATA + 0x1000 + 0x100 * k
+                    } else {
+                        0
+                    };
+                    c.bus.write32(cell + CELL_SUBTREE, sub);
+                }
+                let p = [r.f32(20.0), r.f32(20.0), r.f32(20.0), r.f32(1.0)];
+                crate::difftest::put_vec(c, pos, p);
+                let d = if seed % 2 == 0 { 3.0 } else { 12.0 };
+                crate::difftest::put_vec(
+                    c,
+                    list + NEAR_POS,
+                    [
+                        (f32::from_bits(p[0]) + d).to_bits(),
+                        p[1],
+                        p[2],
+                        r.next_u32(),
+                    ],
+                );
+                c.bus.write32(
+                    list + NEAR_REFRESH,
+                    if seed % 3 == 0 { 0 } else { r.f32(5.0) | 1 },
+                );
+                c.bus.write32(list + NEAR_COUNT, r.next_u32() % 8);
+                c.g[A0][0] = sx(list);
+                c.g[A1][0] = sx(pos);
             },
         );
     }

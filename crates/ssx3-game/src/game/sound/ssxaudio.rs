@@ -239,6 +239,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_set_mix_preset,
         "SSXAudioSystem_SetMixPreset",
     ),
+    (
+        0x0028_7c48,
+        ssx_audio_system_update_fade_2,
+        "SSXAudioSystem_UpdateFade",
+    ),
+    (
+        0x0028_9688,
+        ssx_audio_system_update_speech_ducking,
+        "SSXAudioSystem_UpdateSpeechDucking",
+    ),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -3178,6 +3188,359 @@ pub fn ssx_audio_system_set_mix_preset(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod audio_fade {
+
+    /// `+0x63c0` a fade runs.
+    pub const FADING: u32 = 0x63c0;
+
+    /// `+0x63c4` which mixer channels follow the fade (bit mask).
+    pub const MASK: u32 = 0x63c4;
+
+    /// `+0x63c8` fade step per tick.
+    pub const RATE: u32 = 0x63c8;
+
+    /// `+0x63cc` fade target level.
+    pub const TARGET: u32 = 0x63cc;
+
+    /// `+0x63d0` current fade level.
+    pub const CUR: u32 = 0x63d0;
+
+    /// A mixer channel: `+0` volume, `+4` volume * fade, `+8` that * gain.
+    pub struct Chan {
+        pub bit: u64,
+        pub base: u32,
+        pub gain: u32,
+        /// Where the channel's copy of the fade level lives.
+        pub level: u32,
+    }
+
+    pub(crate) const fn ch(bit: u64, base: u32, gain: u32, level: u32) -> Chan {
+        Chan {
+            bit,
+            base,
+            gain,
+            level,
+        }
+    }
+
+    /// Channels 1, 5 (before the reverb-mix channel 4).
+    pub const FIRST: [Chan; 2] = [
+        ch(0x1, 0x62d0, 0x63e8, 0x6398),
+        ch(0x2, 0x6310, 0x63f8, 0x63a8),
+    ];
+
+    /// Channel 4: also scales the ten send levels at `+0x636c` by the
+    /// constants at `gp+0x43c..`.
+    pub const MIX: Chan = ch(0x4, 0x6300, 0x63f4, 0x63a4);
+
+    pub const MIX_SENDS: u32 = 0x636c;
+
+    pub const GP_MIX_LEVELS: u32 = 0x43c;
+
+    /// FPU registers the ten send levels go through.
+    pub const MIX_REGS: [usize; 10] = [1, 2, 4, 5, 7, 9, 10, 8, 6, 3];
+
+    /// Channel 2 (its mask is reloaded first).
+    pub const AFTER_MIX: Chan = ch(0x8, 0x62e0, 0x63ec, 0x639c);
+
+    /// Channels 3, 6, 7, 8, 9.
+    pub const REST: [Chan; 5] = [
+        ch(0x80, 0x62f0, 0x63f0, 0x63a0),
+        ch(0x20, 0x6320, 0x63fc, 0x63ac),
+        ch(0x40, 0x6330, 0x6400, 0x63b0),
+        ch(0x10, 0x6340, 0x6404, 0x63b4),
+        ch(0x100, 0x6350, 0x6408, 0x63b8),
+    ];
+
+    /// Channel 10 (last: no mask reload).
+    pub const LAST: Chan = ch(0x200, 0x6360, 0x640c, 0x63bc);
+}
+
+/// One mixer channel follows the fade level: `level = cur`,
+/// `vol' = vol * cur`, `out = vol' * gain`.
+pub(crate) fn fade_channel(c: &mut Cpu, s: u32, ch: &audio_fade::Chan) {
+    c.lwc1(0, s.wrapping_add(audio_fade::CUR));
+    c.lwc1(1, s.wrapping_add(ch.base));
+    c.lwc1(2, s.wrapping_add(ch.gain));
+    c.mul_s(1, 1, 0);
+    c.swc1(0, s.wrapping_add(ch.level));
+    c.mul_s(2, 1, 2);
+    c.swc1(1, s.wrapping_add(ch.base + 4));
+    c.swc1(2, s.wrapping_add(ch.base + 8));
+}
+
+/// `void SSXAudioSystem::UpdateFade()` (0x287c48): while a fade runs, step
+/// the fade level by the rate and stop at the target (from either side);
+/// then every channel selected by the mask takes the level (channel 4 also
+/// rescales its ten send levels).
+pub fn ssx_audio_system_update_fade_2(c: &mut Cpu) {
+    use audio_fade::*;
+    let s = c.g[A0][0] as u32;
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(s.wrapping_add(FADING));
+    if c.g[V0][0] != 0 {
+        // cur += rate; past the target: clamp and stop.
+        c.cycles += 8;
+        c.lwc1(0, s.wrapping_add(CUR));
+        c.lwc1(1, s.wrapping_add(RATE));
+        c.mtc1(0, 2);
+        c.add_s(0, 0, 1);
+        c.c_lt_s(1, 2);
+        let falling = c.fcc();
+        c.swc1(0, s.wrapping_add(CUR));
+        if falling {
+            c.cycles += 4;
+            c.lwc1(1, s.wrapping_add(TARGET));
+            c.c_lt_s(0, 1);
+        } else {
+            c.cycles += 3;
+            c.lwc1(1, s.wrapping_add(TARGET));
+            c.c_lt_s(1, 0);
+        }
+        c.cycles += 2;
+        if c.fcc() {
+            c.cycles += 3;
+            c.swc1(1, s.wrapping_add(CUR));
+            c.sw(s.wrapping_add(FADING), 0);
+        }
+        c.g[V0][0] = c.lw(s.wrapping_add(MASK));
+
+        for ch in FIRST.iter() {
+            c.cycles += 3;
+            c.g[V0][0] &= ch.bit;
+            if c.g[V0][0] != 0 {
+                c.cycles += 9;
+                fade_channel(c, s, ch);
+            }
+            c.g[V0][0] = c.lw(s.wrapping_add(MASK));
+        }
+
+        c.cycles += 3;
+        c.g[V0][0] &= MIX.bit;
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(MIX_REGS[0], gp.wrapping_add(GP_MIX_LEVELS));
+        if c.g[V0][0] != 0 {
+            c.cycles += 37;
+            c.lwc1(12, s.wrapping_add(CUR));
+            c.lwc1(11, s.wrapping_add(MIX.base));
+            c.lwc1(0, s.wrapping_add(MIX.gain));
+            c.mul_s(11, 11, 12);
+            c.mul_s(0, 11, 0);
+            for (i, &f) in MIX_REGS.iter().enumerate() {
+                let k = gp.wrapping_add(GP_MIX_LEVELS + 4 * i as u32);
+                c.lwc1(f, k);
+                c.mul_s(f, 0, f);
+                c.swc1(f, s.wrapping_add(MIX_SENDS + 4 * i as u32));
+            }
+            c.swc1(12, s.wrapping_add(MIX.level));
+            c.swc1(11, s.wrapping_add(MIX.base + 4));
+            c.swc1(0, s.wrapping_add(MIX.base + 8));
+        }
+
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(s.wrapping_add(MASK));
+        for ch in core::iter::once(&AFTER_MIX).chain(REST.iter()) {
+            c.cycles += 3;
+            c.g[V0][0] &= ch.bit;
+            if c.g[V0][0] != 0 {
+                c.cycles += 9;
+                fade_channel(c, s, ch);
+            }
+            c.g[V0][0] = c.lw(s.wrapping_add(MASK));
+        }
+
+        c.cycles += 3;
+        c.g[V0][0] &= LAST.bit;
+        if c.g[V0][0] != 0 {
+            c.cycles += 8;
+            fade_channel(c, s, &LAST);
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------- SSXAudioSystem_UpdateSpeechDucking
+
+/// `SSXAudioSystem_GetSpeechMode(self, 0)` (0x29f088).
+pub(crate) const AUDIO_GET_SPEECH_MODE: u32 = 0x0029_f088;
+
+/// `SSXAudioSystem_SetDuckGain(self, float gain)`.
+pub(crate) const AUDIO_SET_DUCK_GAIN: Callee = Callee {
+    addr: 0x0028_9830,
+    f: ee::s07::SSXAudioSystem_SetDuckGain,
+};
+
+/// `void SSXAudioSystem_UpdateSpeechDucking(SSXAudioSystem* self)`
+/// (0x289688): duck the music under speech. While a speech envelope plays
+/// (`+0x6c58`), every other tick its next level is looked up (index
+/// `tick * rate / stream rate`; past the end the envelope stops) and turned
+/// into a target gain (1 below the first threshold, else 1 or 0 by mode);
+/// the gain then ramps there (`+0x6c64` per tick) over the following tick.
+/// The gain is applied by `SetDuckGain` on the tick the target is set and
+/// while ramping (`+0x6c60 <= 0`).
+pub fn ssx_audio_system_update_speech_ducking(c: &mut Cpu) {
+    /// SSXAudioSystem fields.
+    const TICK: u32 = 0x6864;
+    const LEVELS: u32 = 0x6868;
+    const LEVEL_COUNT: u32 = 0x6c50;
+    const LEVEL_RATE: u32 = 0x6c54;
+    const PLAYING: u32 = 0x6c58;
+    const STEP_STATE: u32 = 0x6c60;
+    const GAIN_STEP: u32 = 0x6c64;
+    const GAIN: u32 = 0x6c68;
+    const TARGET: u32 = 0x6c6c;
+    /// `gp+0x2a74`: the speech stream (its rate at +0x2c).
+    const STREAM_GP: u32 = 0x2a74;
+    const ONE: u32 = 0x3f80_0000;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let this = r32(c, S0);
+        let at = |o: u32| this.wrapping_add(o);
+        c.g[V0][0] = c.lw(at(PLAYING));
+        if c.g[V0][0] != 0 {
+            c.cycles += 7;
+            let tick = c.lw(at(TICK));
+            c.g[A0][0] = tick;
+            let t = tick as u32;
+            let even = sx((((t.wrapping_add(t >> 31) as i32) >> 1) as u32) << 1);
+            c.g[V0][0] = even;
+            if tick == even {
+                c.cycles += 16;
+                c.g[V1][0] = c.lw(at(LEVEL_RATE));
+                c.lwc1(0, at(TARGET));
+                c.mult(0, V1, A0, V1);
+                c.sw(at(STEP_STATE), 0);
+                c.swc1(0, at(GAIN));
+                c.g[A0][0] = c.lw(r32(c, GP).wrapping_add(STREAM_GP));
+                c.g[V0][0] = c.lw(at(LEVEL_COUNT));
+                c.mtc1(V1, 0);
+                c.cvt_s_w(0, 0);
+                c.lwc1(1, r32(c, A0).wrapping_add(0x2c));
+                c.div_s(0, 0, 1);
+                c.cvt_w_s(1, 0);
+                c.mfc1(V1, 1);
+                let in_range = (c.g[V1][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V0][0] = in_range as u64;
+                c.g[V0][0] = sx(this.wrapping_add(r32(c, V1)));
+                if !in_range {
+                    // Past the end: stop, back to full gain.
+                    c.cycles += 4;
+                    c.g[AT][0] = ONE as u64;
+                    c.f[0] = ONE;
+                    c.sw(at(PLAYING), 0);
+                    c.swc1(0, at(TARGET));
+                } else {
+                    c.cycles += 3;
+                    c.g[S1][0] = c.lb(r32(c, V0).wrapping_add(LEVELS));
+                    c.g[A0][0] = c.g[S0][0];
+                    if (c.g[S1][0] as i64) <= 0 {
+                        c.cycles += 4;
+                        c.g[AT][0] = ONE as u64;
+                        c.f[0] = ONE;
+                        c.swc1(0, at(TARGET));
+                    } else {
+                        c.cycles += 6;
+                        c.g[A1][0] = 0;
+                        call_ptr(c, AUDIO_GET_SPEECH_MODE, 0x0028_9718)?;
+                        c.g[V1][0] = c.g[V0][0];
+                        // Thresholds (v0, a0, v1) and gains (f1 above the
+                        // first, f0 above the last).
+                        if c.g[V1][0] == 2 {
+                            c.cycles += 7;
+                            c.g[V0][0] = 0;
+                            c.g[A0][0] = 0;
+                            c.g[AT][0] = ONE as u64;
+                            c.f[1] = ONE;
+                            c.f[0] = 0;
+                            c.g[V1][0] = 0x1e;
+                        } else {
+                            c.cycles += 6;
+                            c.g[AT][0] = ONE as u64;
+                            c.f[0] = ONE;
+                            c.g[V0][0] = 0x1e;
+                            c.g[A0][0] = 0x28;
+                            c.g[V1][0] = 0x32;
+                            c.f[1] = c.f[0];
+                        }
+                        c.cycles += 3;
+                        let level = c.g[S1][0] as i64;
+                        let below0 = level < c.g[V0][0] as i64;
+                        c.g[V0][0] = (level < c.g[A0][0] as i64) as u64;
+                        if below0 {
+                            c.cycles += 4;
+                            c.g[AT][0] = ONE as u64;
+                            c.f[0] = ONE;
+                            c.swc1(0, at(TARGET));
+                        } else {
+                            c.cycles += 2;
+                            if c.g[V0][0] != 0 {
+                                c.swc1(1, at(TARGET));
+                            } else {
+                                c.cycles += 3;
+                                let below2 = level < c.g[V1][0] as i64;
+                                c.g[V0][0] = below2 as u64;
+                                if !below2 {
+                                    c.swc1(0, at(TARGET));
+                                } else {
+                                    c.cycles += 2;
+                                    c.swc1(1, at(TARGET));
+                                }
+                            }
+                        }
+                    }
+                }
+                // The ramp step toward the new target.
+                c.cycles += 5;
+                c.lwc1(0, at(TARGET));
+                c.lwc1(1, at(GAIN));
+                c.sub_s(0, 0, 1);
+                c.swc1(0, at(GAIN_STEP));
+            }
+            c.g[V0][0] = c.lw(at(TICK));
+            c.cycles += 3;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+            c.sw(at(TICK), c.g[V0][0]);
+        }
+        c.g[V0][0] = c.lw(at(STEP_STATE));
+
+        c.cycles += 2;
+        if (c.g[V0][0] as i64) <= 0 {
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                // Ramping: gain += step.
+                c.lwc1(0, at(GAIN));
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                c.lwc1(1, at(GAIN_STEP));
+                c.add_s(0, 0, 1);
+                c.mov_s(12, 0);
+                c.swc1(0, at(GAIN));
+            } else {
+                c.cycles += 3;
+                c.lwc1(12, at(TARGET));
+                c.g[A0][0] = c.g[S0][0];
+            }
+            c.cycles += 6;
+            AUDIO_SET_DUCK_GAIN.call(c, 0x0028_980c)?;
+            c.g[V0][0] = c.lw(at(STEP_STATE));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+            c.sw(at(STEP_STATE), c.g[V0][0]);
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4164,6 +4527,110 @@ pub(crate) mod tests {
                     };
                     c.bus.write32(e + 0x24, fade);
                 }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::{fresh, require_paths};
+    use ssx3_ee_rt::Cpu;
+
+    /// SSXAudioSystem_UpdateFade: no fade; rising and falling fades that
+    /// do or do not reach the target; random channel masks (all bits).
+    #[test]
+    fn ssx_audio_system_update_fade_matches() {
+        use super::audio_fade::*;
+        use crate::difftest::scramble;
+        check(
+            ee::s07::f_00287c48__generated,
+            ssx_audio_system_update_fade_2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x287c_48 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.pc = 0x0028_7c48;
+                c.g[GP][0] = GAME_GP as u64;
+                for i in 0..10 {
+                    c.bus.write32(GAME_GP + GP_MIX_LEVELS + 4 * i, r.f32(2.0));
+                }
+                let s = DATA;
+                c.g[A0][0] = s as u64;
+                for off in (0x62d0..0x6410).step_by(4) {
+                    c.bus.write32(s + off, r.f32(2.0));
+                }
+                c.bus
+                    .write32(s + FADING, if seed % 6 == 0 { 0 } else { 1 + seed % 3 });
+                c.bus.write32(
+                    s + MASK,
+                    if seed % 5 == 0 {
+                        0x3ff
+                    } else {
+                        r.next_u32() & 0x3ff
+                    },
+                );
+                c.bus.write32(s + RATE, r.f32(0.5));
+                c.bus.write32(s + TARGET, r.f32(1.0));
+                c.bus.write32(s + CUR, r.f32(1.0));
+            },
+        );
+    }
+
+    // ---------------------------------------- SSXAudioSystem_UpdateSpeechDucking
+
+    /// `SSXAudioSystem_UpdateSpeechDucking`: playing or not, even and odd
+    /// ticks, envelope indices in and past the range, levels <= 0 and across
+    /// the thresholds of speech modes 2, 3 and others, ramp states -1/0/1;
+    /// the real speech-mode getter, `SetDuckGain` and `SetFadeGain` run.
+    #[test]
+    fn ssx_audio_system_update_speech_ducking_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA, GAME_GP};
+        check(
+            ee::s07::f_00289688__generated,
+            ssx_audio_system_update_speech_ducking,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0028_9688, 0);
+                c.pc = 0x0028_9688;
+                let (this, stream) = (DATA + 0x100, DATA + 0x9000);
+                let f = |x: f32| x.to_bits();
+                c.bus.write32(GAME_GP.wrapping_sub(0x4620), 0x3c88_8893);
+                c.bus.write32(GAME_GP + 0x2a74, stream);
+                c.bus.write32(
+                    stream + 0x2c,
+                    if seed % 9 == 0 {
+                        r.edge_f32()
+                    } else {
+                        f(1.0 + (r.next_u32() % 4) as f32)
+                    },
+                );
+                c.bus.write32(this + 0x6c58, (seed % 4 != 0) as u32);
+                c.bus.write32(this + 0x6864, r.next_u32() % 20);
+                c.bus.write32(this + 0x6c54, 1 + r.next_u32() % 4);
+                c.bus.write32(this + 0x6c50, r.next_u32() % 100);
+                for i in 0..0x60u32 {
+                    let v = (r.next_u32() % 90) as i32 - 10;
+                    c.bus.write8(this + 0x6868 + i, v as u8);
+                }
+                c.bus
+                    .write32(this + 0x5738, [2u32, 3, 7][(seed % 3) as usize]);
+                c.bus.write32(
+                    this + 0x6c60,
+                    [0xffff_ffffu32, 0, 1, 0xffff_fffe][((seed / 3) % 4) as usize],
+                );
+                for off in [0x6c64u32, 0x6c68, 0x6c6c] {
+                    c.bus.write32(this + off, r.f32(1.0));
+                }
+                let cur = if seed % 2 == 0 {
+                    c.bus.read32(this + 0x6c6c)
+                } else {
+                    r.f32(1.0)
+                };
+                c.bus.write32(this + 0x6c5c, cur);
+                for off in [0x63c4u32, 0x63c8, 0x63cc, 0x63d0] {
+                    c.bus.write32(this + off, r.f32(1.0));
+                }
+                c.g[A0][0] = sx(this);
             },
         );
     }

@@ -100,6 +100,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         group_compute_verts,
         "cFlagManager_GroupComputeVerts",
     ),
+    (0x0034_c668, cflag_manager_update, "cFlagManager_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2811,6 +2812,181 @@ pub(crate) fn grid_vertex(c: &mut Cpu) {
     c.g[T2][0] = sx(ad(c, T2, 1));
 }
 
+// ---------------------------------------------------- cFlagManager_Update
+
+/// `World_GetPeakNumber()` (0x2d1ba0): the current peak, 1-based.
+pub(crate) const WORLD_GET_PEAK_NUMBER: u32 = 0x002d_1ba0;
+
+/// `BXrand()`: the next random word.
+pub(crate) const BX_RAND: u32 = 0x0031_77f0;
+
+/// `cFlagManager_GroupUpdate(group)`.
+pub(crate) const FLAG_MANAGER_GROUP_UPDATE: Callee = Callee {
+    addr: 0x0034_b818,
+    f: ee::s11::cFlagManager_GroupUpdate,
+};
+
+/// `void cFlagManager_Update(cFlagManager* self)` (0x34c668): the wind
+/// shared by all flags, then each active flag group. The gust amplitude
+/// grows with the peak (0.15, 0.3 on peak 2, 0.45 on peak 3). The gust
+/// phase `t` (`+0x1c`) advances by one over a second (`1 / rate`, the
+/// rate at `gp+0x2a74 + 0x10`); when it wraps, the base (`+0x14`) takes
+/// the old target offset and a new offset (`+0x18`) is drawn in
+/// `[-amp, amp]`, clamped so `base + offset` stays in [0, 1]. The wind
+/// (`+0x10`) is `base + offset * t`. Then the 15 groups (0x188 bytes from
+/// `+0x20`) whose `+0x5c` is set are updated.
+pub fn cflag_manager_update(c: &mut Cpu) {
+    /// cFlagManager fields.
+    const WIND: u32 = 0x10;
+    const BASE: u32 = 0x14;
+    const OFFSET: u32 = 0x18;
+    const PHASE: u32 = 0x1c;
+    const GROUPS: u32 = 0x20;
+    const GROUP_SIZE: u32 = 0x188;
+    const GROUP_ACTIVE: u32 = 0x5c;
+    /// `gp+0x2a74`: the timing object (ticks per second at +0x10).
+    const TIMING_GP: u32 = 0x2a74;
+    /// Loop head (0x34c7b0), for event delivery.
+    const HEAD: u32 = 0x0034_c7b0;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x20);
+        frame.save_fpr(c, 22, 0x50);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x48);
+        frame.save_fpr(c, 20, 0x40);
+        call_ptr(c, WORLD_GET_PEAK_NUMBER, 0x0034_c690)?;
+        let this = r32(c, S1);
+        let gp = r32(c, GP);
+        // The gust amplitude by peak (f22).
+        c.lwc1(22, gp.wrapping_sub(0x2ae4)); // 0.15
+        let peak = c.g[V0][0];
+        c.g[V1][0] = peak;
+        c.g[V0][0] = ((peak as i64) < 3) as u64;
+        if peak == 2 {
+            c.cycles += 3;
+            c.lwc1(22, gp.wrapping_sub(0x2ae0)); // 0.3
+        } else {
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[V0][0] = 3;
+                if peak == 3 {
+                    c.cycles += 1;
+                    c.lwc1(22, gp.wrapping_sub(0x2adc)); // 0.45
+                } else {
+                    c.cycles += 2;
+                }
+            }
+        }
+        c.g[V0][0] = c.lw(gp.wrapping_add(TIMING_GP));
+
+        // t += 1 / rate.
+        c.cycles += 11;
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[21] = 0x3f80_0000;
+        c.lwc1(0, r32(c, V0).wrapping_add(0x10));
+        c.cvt_s_w(0, 0);
+        c.lwc1(1, this.wrapping_add(PHASE));
+        c.div_s(0, 21, 0);
+        c.add_s(1, 1, 0);
+        c.c_le_s(21, 1);
+        let wrapped = c.fcc();
+        c.swc1(1, this.wrapping_add(PHASE));
+        let mut clamped_high = false;
+        if wrapped {
+            // t -= 1; base += offset; offset = -amp + 2 amp * rand01.
+            c.cycles += 25;
+            c.sub_s(2, 1, 21);
+            c.lwc1(0, this.wrapping_add(BASE));
+            c.lwc1(1, this.wrapping_add(OFFSET));
+            c.neg_s(20, 22);
+            c.add_s(0, 0, 1);
+            c.swc1(2, this.wrapping_add(PHASE));
+            c.swc1(0, this.wrapping_add(BASE));
+            call_ptr(c, BX_RAND, 0x0034_c71c)?;
+            c.g[V1][0] = 0x7f_ffff;
+            c.g[A0][0] = 0x3f80_0000;
+            c.sub_s(1, 22, 20);
+            c.g[V0][0] = (c.g[V0][0] & c.g[V1][0]) | c.g[A0][0];
+            c.lwc1(3, this.wrapping_add(BASE));
+            c.f[2] = 0;
+            c.mtc1(V0, 4);
+            c.sub_s(0, 4, 21);
+            c.mul_s(1, 1, 0);
+            c.add_s(20, 20, 1);
+            c.add_s(0, 3, 20);
+            c.c_lt_s(0, 2);
+            let below = c.fcc();
+            c.swc1(20, this.wrapping_add(OFFSET));
+            if below {
+                c.cycles += 2;
+                c.neg_s(0, 3);
+                c.swc1(0, this.wrapping_add(OFFSET));
+            }
+            c.cycles += 7;
+            c.lwc1(1, this.wrapping_add(BASE));
+            c.lwc1(0, this.wrapping_add(OFFSET));
+            c.add_s(0, 1, 0);
+            c.c_lt_s(21, 0);
+            if c.fcc() {
+                c.cycles += 2;
+                c.sub_s(0, 21, 1);
+                c.swc1(0, this.wrapping_add(OFFSET));
+                clamped_high = true;
+            }
+        }
+        if !wrapped || clamped_high {
+            c.cycles += 1;
+        }
+        c.lwc1(0, this.wrapping_add(OFFSET));
+
+        // wind = base + offset * t.
+        c.cycles += 8;
+        c.g[S0][0] = sx(this.wrapping_add(GROUPS));
+        c.lwc1(2, this.wrapping_add(PHASE));
+        c.g[S2][0] = 0xe;
+        c.lwc1(1, this.wrapping_add(BASE));
+        c.mul_s(0, 0, 2);
+        c.add_s(1, 1, 0);
+        c.swc1(1, this.wrapping_add(WIND));
+        loop {
+            c.cycles += 3;
+            let group = r32(c, S0);
+            c.g[V0][0] = c.lw(group.wrapping_add(GROUP_ACTIVE));
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                FLAG_MANAGER_GROUP_UPDATE.call(c, 0x0034_c7c4)?;
+            }
+            c.g[S2][0] = sx(r32(c, S2).wrapping_sub(1));
+            c.cycles += 2;
+            let more = (c.g[S2][0] as i64) >= 0;
+            c.g[S0][0] = sx(group.wrapping_add(GROUP_SIZE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, HEAD);
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 22, 0x50);
+        frame.restore_fpr(c, 21, 0x48);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3688,6 +3864,97 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(g);
                 c.g[A1][0] = sx(DATA + 0x1000);
                 c.pc = 0x0034_bca0;
+            },
+        );
+    }
+    use super::*;
+
+    // ---------------------------------------------------- cFlagManager_Update
+
+    /// `cFlagManager_Update`: peaks 1..4 (the real `World_GetPeakNumber`
+    /// through a BE library dummy whose interface is a fake), the gust phase
+    /// wrapping or not, new offsets clamped low and high (real `BXrand`),
+    /// and no or one active group (the real `cFlagManager_GroupUpdate` on
+    /// its own test's fixture, a fake mesh method).
+    #[test]
+    fn cflag_manager_update_matches() {
+        use crate::difftest::fakes::{machine, vtable, FAKE};
+        use crate::difftest::{check, DATA, GAME_GP};
+        const BE_LIBRARY: u32 = DATA + 0x8_6000;
+        const BE_IFACE: u32 = DATA + 0x8_7000;
+        const BE_VTABLE: u32 = DATA + 0x8_7100;
+        check(
+            ee::s11::f_0034c668__generated,
+            cflag_manager_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_c668, 3);
+                c.pc = 0x0034_c668;
+                let f = |x: f32| x.to_bits();
+                let this = DATA + 0x1_0000;
+                // The peak: BE library dummy, interface 0 a fake, the track
+                // table's peak word (0-based) for track 0.
+                c.bus.write32(GAME_GP - 0x1f04, BE_LIBRARY);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, BE_IFACE);
+                c.bus.write32(BE_IFACE + 4, BE_VTABLE);
+                c.bus.write16(BE_VTABLE + 8, 0);
+                c.bus.write32(BE_VTABLE + 0xc, FAKE + 0x80);
+                c.bus.write32(0x0053_5c08, 0);
+                c.bus.write32(0x0043_d950 + 0x54, seed % 4);
+                for (off, v) in [(0x2ae4u32, 0.15f32), (0x2ae0, 0.3), (0x2adc, 0.45)] {
+                    c.bus.write32(GAME_GP - off, f(v));
+                }
+                let timing = DATA + 0x9000;
+                c.bus.write32(GAME_GP + 0x2a74, timing);
+                c.bus
+                    .write32(timing + 0x10, [60u32, 30, 1, 2][((seed / 4) % 4) as usize]);
+                c.bus.write32(GAME_GP + 0x0a0c, r.next_u32());
+                c.bus.write32(
+                    this + 0x1c,
+                    f([0.5f32, 0.99, 0.0, 0.7][((seed / 16) % 4) as usize]),
+                );
+                c.bus.write32(
+                    this + 0x14,
+                    f([0.0f32, 0.5, 1.0, 0.95][((seed / 2) % 4) as usize]),
+                );
+                c.bus.write32(this + 0x18, r.f32(0.5));
+                c.bus.write32(this + 0x10, r.f32(1.0));
+                for i in 0..15u32 {
+                    c.bus.write32(this + 0x20 + 0x188 * i + 0x5c, 0);
+                }
+                if seed % 3 != 0 {
+                    // One active group (cFlagManager_GroupUpdate's fixture).
+                    let g = this + 0x20 + 0x188 * (r.next_u32() % 15);
+                    let (world, w84, mesh) = (DATA + 0x4000, DATA + 0x4100, DATA + 0x2000);
+                    c.bus.write32(GAME_GP.wrapping_add(0x1150), 1);
+                    c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                    c.bus.write32(world + 0x84, w84);
+                    c.bus.write32(w84 + 0x70, DATA + 0x4200);
+                    c.bus.write32(w84 + 0xc, DATA + 0x4300);
+                    let frame = r.next_u32() % 8;
+                    c.bus.write32(DATA + 0x4308, frame);
+                    c.bus.write32(g + 0x5c, 1);
+                    c.bus
+                        .write32(g + 0x60, if seed % 5 == 0 { 0 } else { mesh });
+                    c.bus.write32(g + 0x90, (frame + seed) & 1);
+                    c.bus.write32(g + 0x4c, r.edge_f32());
+                    c.bus.write32(DATA + 0x4200 + 0x10, r.edge_f32());
+                    for i in 0..4 {
+                        c.bus.write32(g + 4 + 4 * i, r.edge_f32());
+                        c.bus.write32(g + 0x78 + 4 * i, r.edge_f32());
+                    }
+                    c.bus
+                        .write32(g + 0x50, if seed % 4 == 0 { 0 } else { r.f32(1.0) });
+                    c.bus
+                        .write32(g + 0x54, if seed % 4 == 1 { 0 } else { r.f32(1.0) });
+                    c.bus.write32(g + 0x88, r.f32(1.0));
+                    c.bus.write32(g + 0x8c, r.f32(1.0));
+                    c.bus.write32(GAME_GP.wrapping_sub(0x2b00), 0x3a83_126f); // 0.001
+                    let vt = vtable(c, &mut r, &[0x18]);
+                    c.bus.write32(mesh + 4, vt);
+                }
+                c.g[A0][0] = sx(this);
             },
         );
     }

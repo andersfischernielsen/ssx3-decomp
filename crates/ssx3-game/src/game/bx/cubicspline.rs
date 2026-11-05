@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -10,6 +11,8 @@ use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
 pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
@@ -34,6 +37,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_04d0, mem_pool128_free, "MEM_Pool128Free"),
     (0x0032_04e8, mem_pool256_free, "MEM_Pool256Free"),
     (0x0032_0500, mem_pool512_free, "MEM_Pool512Free"),
+    (
+        0x0031_dee0,
+        c_csi_cubic_spline_evaluate,
+        "cCSICubicSpline_Evaluate",
+    ),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -301,6 +309,224 @@ pub fn dl_heap_init_arena(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod oc230_spline {
+
+    pub const END_TIME: u32 = 0x4;
+
+    pub const SEGMENTS: u32 = 0x8;
+
+    pub const SEG_SIZE: u32 = 0x14;
+
+    pub const SEG_START: u32 = 0x10;
+
+    /// Word 0 with the current-segment field cleared.
+    pub const CUR_CLEAR: u64 = 0xffff_ffff_f807_ffff;
+
+    pub const EVAL_SEGMENT: crate::call::Callee = crate::call::Callee {
+        addr: 0x0031_d5a8,
+        f: ssx3_ee::s10::cCSICubicSpline_EvalSegment,
+    };
+}
+
+/// `float cCSICubicSpline_Evaluate(cCSICubicSpline* s, float t)`
+/// (0x31dee0): evaluates the segment holding t (`EvalSegment`, result in
+/// f0). The current segment is tried first (start <= t <= next start, or
+/// the end time for the last); else t before it: segment 0 when t is before
+/// segment 1; t after it: the last segment when the current is the one
+/// before it, the next one when t is before the one after; otherwise a
+/// binary search over the start times. The found segment becomes current.
+pub fn c_csi_cubic_spline_evaluate(c: &mut Cpu) {
+    use oc230_spline as sp_;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let spline = r32(c, A2);
+        c.g[V0][0] = c.lw(spline);
+        c.g[V1][0] = sx(r32(c, V0) >> 11) & 0xff; // count
+        c.g[V0][0] = sx(r32(c, V0) >> 19);
+        c.g[A0][0] = c.g[V0][0] & 0xff; // current
+        c.g[A3][0] = sx(r32(c, V1).wrapping_sub(1)); // last
+        let is_last = c.g[A3][0] == c.g[A0][0];
+        c.g[V0][0] = sp_::SEG_SIZE as u64;
+        // a1 = the current segment's upper bound (the next start or the
+        // end time), t2 = the segments.
+        if !is_last {
+            c.cycles += 5;
+            c.g[V1][0] = c.lw(spline.wrapping_add(sp_::SEGMENTS));
+            c.mult(0, V0, A0, V0);
+            c.g[T2][0] = c.g[V1][0];
+            c.g[V0][0] = oc230_add(c, V0, V1);
+            c.g[A1][0] = sx(r32(c, V0).wrapping_add(sp_::SEG_SIZE + sp_::SEG_START));
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = sx(spline.wrapping_add(sp_::END_TIME));
+            c.g[T2][0] = c.lw(spline.wrapping_add(sp_::SEGMENTS));
+        }
+        let segs = r32(c, T2);
+
+        // The current segment?
+        c.cycles += 11;
+        c.g[V0][0] = c.lw(spline);
+        c.g[V1][0] = sp_::SEG_SIZE as u64;
+        c.g[T1][0] = c.g[V0][0];
+        c.g[V0][0] = sx(r32(c, V0) >> 19) & 0xff;
+        c.mult(0, T0, V0, V1);
+        c.g[A0][0] = oc230_add(c, T0, T2);
+        let cur = r32(c, A0);
+        c.lwc1(0, cur.wrapping_add(sp_::SEG_START));
+        c.c_le_s(0, 12);
+        if c.fcc() {
+            c.cycles += 5;
+            c.lwc1(0, r32(c, A1));
+            c.c_le_s(12, 0);
+            if c.fcc() {
+                c.cycles += 4;
+                sp_::EVAL_SEGMENT.call(c, 0x0031_df74)?;
+                return oc230_spline_exit(c, frame);
+            }
+            c.lwc1(0, cur.wrapping_add(sp_::SEG_START));
+        }
+
+        c.cycles += 4;
+        c.c_lt_s(12, 0);
+        let before = c.fcc();
+        c.g[V0][0] = sx(r32(c, T1) >> 19);
+        let mut search = false;
+        if before {
+            // Before the current one: segment 0 when t < segment 1's start.
+            c.cycles += 5;
+            c.lwc1(0, segs.wrapping_add(sp_::SEG_SIZE + sp_::SEG_START));
+            c.c_lt_s(12, 0);
+            c.g[A0][0] = c.g[T2][0];
+            if c.fcc() {
+                c.cycles += 7;
+                c.g[V0][0] = c.g[T1][0] & sp_::CUR_CLEAR;
+                let v = c.g[V0][0];
+                c.sw(spline, v);
+                sp_::EVAL_SEGMENT.call(c, 0x0031_dfb4)?;
+                return oc230_spline_exit(c, frame);
+            }
+            search = true;
+        }
+        if !search {
+            // After it: the last segment when the current is the one before.
+            c.cycles += 4;
+            c.g[V1][0] = sx(r32(c, A3).wrapping_sub(1));
+            c.g[A0][0] = c.g[V0][0] & 0xff;
+            let next_is_last = c.g[A0][0] == c.g[V1][0];
+            c.g[A1][0] = sp_::SEG_SIZE as u64;
+            if next_is_last {
+                c.cycles += 14;
+                c.g[A0][0] = sp_::SEG_SIZE as u64;
+                c.g[V0][0] = 0xffff_ffff_f807_0000;
+                c.mult(0, A0, A3, A0);
+                c.g[V1][0] = c.g[A3][0] & 0xff;
+                c.g[V0][0] |= 0xffff;
+                c.g[V1][0] = oc230_sll(c, V1, 19);
+                c.g[V0][0] &= c.g[T1][0];
+                c.g[A1][0] = c.lw(spline.wrapping_add(sp_::SEGMENTS));
+                c.g[V0][0] |= c.g[V1][0];
+                c.g[A0][0] = oc230_add(c, A1, A0);
+                let v = c.g[V0][0];
+                c.sw(spline, v);
+                sp_::EVAL_SEGMENT.call(c, 0x0031_dffc)?;
+                return oc230_spline_exit(c, frame);
+            }
+            // The next one when t is before the start of the one after it.
+            c.cycles += 7;
+            c.mult(0, V1, A0, A1);
+            c.g[V0][0] = oc230_add(c, V1, T2);
+            c.lwc1(
+                0,
+                r32(c, V0).wrapping_add(2 * sp_::SEG_SIZE + sp_::SEG_START),
+            );
+            c.c_lt_s(12, 0);
+            let in_next = c.fcc();
+            c.g[V0][0] = sx(r32(c, A0).wrapping_add(1));
+            if in_next {
+                c.cycles += 14;
+                c.g[V1][0] = 0xffff_ffff_f807_0000;
+                c.g[V0][0] &= 0xff;
+                c.g[V1][0] |= 0xffff;
+                c.g[V0][0] = oc230_sll(c, V0, 19);
+                c.g[V1][0] &= c.g[T1][0];
+                c.g[V1][0] |= c.g[V0][0];
+                c.g[A0][0] = sx(r32(c, V1) >> 19);
+                let v = c.g[V1][0];
+                c.sw(spline, v);
+                c.g[A0][0] &= 0xff;
+                c.mult(0, V0, A0, A1);
+                c.g[A0][0] = oc230_add(c, V0, T2);
+                sp_::EVAL_SEGMENT.call(c, 0x0031_e050)?;
+                return oc230_spline_exit(c, frame);
+            }
+        }
+
+        // Binary search: lo (t0) .. hi (a1) over the segment starts.
+        c.cycles += 2;
+        c.g[A1][0] = c.g[A3][0];
+        c.g[T0][0] = 0;
+        loop {
+            c.cycles += 10;
+            c.g[V1][0] = oc230_add(c, A1, T0);
+            c.g[A0][0] = sp_::SEG_SIZE as u64;
+            c.g[V0][0] = sx(r32(c, V1) >> 31);
+            c.g[V1][0] = oc230_add(c, V1, V0);
+            c.g[V1][0] = sx(((r32(c, V1) as i32) >> 1) as u32); // mid
+            c.mult(0, V0, V1, A0);
+            c.g[A0][0] = oc230_add(c, V0, T2);
+            let seg = r32(c, A0);
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A3][0] as i64)) as u64;
+            c.lwc1(1, seg.wrapping_add(sp_::SEG_START));
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.lwc1(0, seg.wrapping_add(sp_::SEG_SIZE + sp_::SEG_START));
+            } else {
+                c.cycles += 1;
+                c.lwc1(0, spline.wrapping_add(sp_::END_TIME));
+            }
+            c.cycles += 4;
+            c.c_le_s(1, 12);
+            if !c.fcc() {
+                // t before mid: hi = mid.
+                c.g[A1][0] = c.g[V1][0];
+            } else {
+                c.cycles += 4;
+                c.c_le_s(12, 0);
+                let inside = c.fcc();
+                c.g[T0][0] = sx(r32(c, V1).wrapping_add(1));
+                if inside {
+                    c.cycles += 9;
+                    c.g[V0][0] = 0xffff_ffff_f807_0000;
+                    c.g[V1][0] &= 0xff;
+                    c.g[V0][0] |= 0xffff;
+                    c.g[V1][0] = oc230_sll(c, V1, 19);
+                    c.g[V0][0] &= c.g[T1][0];
+                    c.g[V0][0] |= c.g[V1][0];
+                    let v = c.g[V0][0];
+                    c.sw(spline, v);
+                    sp_::EVAL_SEGMENT.call(c, 0x0031_e0d4)?;
+                    return oc230_spline_exit(c, frame);
+                }
+                // t after mid's end: lo = mid + 1.
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_e060);
+            }
+        }
+    })
+}
+
+/// `cCSICubicSpline_Evaluate`'s exit after the segment call.
+pub(crate) fn oc230_spline_exit(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    frame.restore_ra(c, 0);
+    c.cycles += 2;
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -485,6 +711,58 @@ pub(crate) mod tests {
                 c.g[A1][0] = (DATA + 0x3000 + 0x1000 * (seed % 4) + seed % 8) as u64;
                 c.g[A2][0] = (0x4000 + 0x1000 * (seed % 3)) as u64;
                 c.pc = 0x0031_ff60;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::{fill, put_words};
+
+    /// cCSICubicSpline_Evaluate: 1..8 segments with increasing start
+    /// times, a random current segment, t at a segment start, before the
+    /// first, at the end, inside the current one or anywhere in range
+    /// (the real EvalSegment runs).
+    #[test]
+    fn c_csi_cubic_spline_evaluate_matches() {
+        check(
+            ee::s10::f_0031dee0__generated,
+            c_csi_cubic_spline_evaluate,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0031_dee0 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.pc = 0x0031_dee0;
+                let f = |x: f32| x.to_bits();
+                let (spline, segs) = (DATA, DATA + 0x100);
+                let n = 1 + r.next_u32() % 8;
+                let cur = r.next_u32() % n;
+                let junk = r.next_u32() & 0xf800_07ff;
+                c.bus.write32(spline, junk | n << 11 | cur << 19);
+                let mut starts = Vec::new();
+                for i in 0..n {
+                    let t0 = i as f32 + (r.next_u32() % 50) as f32 * 0.01;
+                    starts.push(t0);
+                    let seg = segs + 0x14 * i;
+                    for k in 0..4 {
+                        let v = r.f32(4.0);
+                        c.bus.write32(seg + 4 * k, v);
+                    }
+                    c.bus.write32(seg + 0x10, f(t0));
+                }
+                let end = n as f32 + 0.25;
+                c.bus.write32(spline + 4, f(end));
+                c.bus.write32(segs + 0x14 * n + 0x10, f(end + 5.0));
+                c.bus.write32(segs + 0x14 * (n + 1) + 0x10, f(end + 6.0));
+                c.bus.write32(spline + 8, segs);
+                let t = match seed % 6 {
+                    0 => starts[(r.next_u32() % n) as usize],
+                    1 => starts[0] - 0.5,
+                    2 => end,
+                    3 => starts[cur as usize] + 0.3,
+                    _ => starts[0] + (end - starts[0]) * (r.next_u32() % 1000) as f32 / 1000.0,
+                };
+                c.f[12] = f(t);
+                c.g[A0][0] = sx(spline);
             },
         );
     }

@@ -82,6 +82,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         collide_sphere_vs_box_edges,
         "Collide_SphereVsBoxEdges",
     ),
+    (0x0032_8808, spatial_hash_move, "SpatialHash_Move"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1978,6 +1979,535 @@ pub fn collide_sphere_vs_box_edges(c: &mut Cpu) {
     return;
 }
 
+pub(crate) mod oc230_shm_callee {
+    use crate::call::Callee;
+    use ssx3_ee as ee;
+
+    pub const REMOVE: Callee = Callee {
+        addr: 0x0032_84b8,
+        f: ee::s10::SpatialHash_Remove,
+    };
+
+    pub const INSERT_AT_KEY: Callee = Callee {
+        addr: 0x0032_8660,
+        f: ee::s10::SpatialHash_InsertAtKey,
+    };
+
+    pub const MOVE: Callee = Callee {
+        addr: 0x0032_8808,
+        f: ee::s10::SpatialHash_Move,
+    };
+
+    pub const DELETE: Callee = Callee {
+        addr: 0x0031_7e50,
+        f: ee::s10::__builtin_delete,
+    };
+
+    pub const ALLOC_NAMED: Callee = Callee {
+        addr: 0x0031_7d70,
+        f: ee::s10::EA_MemAllocNamed,
+    };
+
+    /// `memset` (another shard: through the function table).
+    pub const MEMSET: u32 = 0x003e_6448;
+}
+
+/// `reg + off` (the low word of a GPR as a base address).
+#[inline(always)]
+pub(crate) fn oc230_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// `SpatialHash_Move`'s entry, its end, and the loop heads it is re-entered
+/// at after an unwind (the bucket scan's "not empty" and tail loop, the
+/// new bucket's clear loop).
+pub(crate) const SHM_ENTRY: u32 = 0x0032_8808;
+
+pub(crate) const SHM_END: u32 = 0x0032_8c20;
+
+pub(crate) const SHM_NONEMPTY: u32 = 0x0032_8ac0;
+
+pub(crate) const SHM_TAIL: u32 = 0x0032_8af0;
+
+pub(crate) const SHM_CLEAR: u32 = 0x0032_8ba8;
+
+/// Where the emptiness scan of the old child's bucket array starts (or
+/// resumes).
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Oc230Scan {
+    /// The eight unrolled words (right after `SpatialHash_Remove`).
+    Words,
+    /// A non-zero word was found in the tail loop.
+    NonEmpty,
+    /// The loop over the last three words (a0 counter, v1 pointer).
+    Tail,
+}
+
+/// `sx(a + b)` of two GPR low words.
+#[inline(always)]
+pub(crate) fn oc230_add(c: &Cpu, a: usize, b: usize) -> u64 {
+    sx(r32(c, a).wrapping_add(r32(c, b)))
+}
+
+/// `sx(reg << n)`.
+#[inline(always)]
+pub(crate) fn oc230_sll(c: &Cpu, reg: usize, n: u32) -> u64 {
+    sx(r32(c, reg) << n)
+}
+
+/// `sx(reg >> n)` (arithmetic, `srav`).
+#[inline(always)]
+pub(crate) fn oc230_sra(c: &Cpu, reg: usize, n: usize) -> u64 {
+    sx(((r32(c, reg) as i32) >> (r32(c, n) & 31)) as u32)
+}
+
+/// `SpatialHash_Move` epilogue (s0 restored before).
+pub(crate) fn oc230_shm_exit(c: &mut Cpu, frame: Frame) {
+    c.cycles += 11;
+    frame.restore(c, S1, 0xb0);
+    frame.restore(c, S2, 0xa0);
+    frame.restore(c, S3, 0x90);
+    frame.restore(c, S4, 0x80);
+    frame.restore(c, S5, 0x70);
+    frame.restore(c, S6, 0x60);
+    frame.restore(c, S7, 0x50);
+    frame.restore(c, FP, 0x40);
+    frame.restore_ra(c, 0x30);
+    frame.close(c);
+}
+
+/// `void SpatialHash_Move(SpatialHash* h /*a0*/, int key /*a1*/, Link* e
+/// /*a2*/, const Key* old /*a3*/, const Key* new /*t0*/, const Key* cell
+/// /*t1*/)` (0x328808): moves entry e of an octree cell (level, x, y, z)
+/// from the old key to the new one. New key at the cell's level: remove
+/// and push e on the bucket list `h->buckets[key]` (+0x20). Old key at the
+/// cell's level: unlink e from its bucket and insert it at the new key.
+/// Otherwise both keys are in child cells: the same child recurses with
+/// the child key (level - 1, coordinates 2 * cell + octant); different
+/// children: remove from the old child (freeing its hash when all eleven
+/// bucket words are empty), then insert into the new child, allocating
+/// and clearing its hash (0x2c bytes) when absent. Dispatcher-shaped in the
+/// original: re-entered at the scan and clear loop heads after an unwind.
+pub fn spatial_hash_move(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0xd0 };
+        match c.pc {
+            SHM_ENTRY => oc230_shm_entry(c, frame),
+            SHM_NONEMPTY => oc230_shm_after_remove(c, frame, Oc230Scan::NonEmpty),
+            SHM_TAIL => oc230_shm_after_remove(c, frame, Oc230Scan::Tail),
+            SHM_CLEAR => oc230_shm_clear_insert(c, frame),
+            pc => {
+                c.jump_out(pc, SHM_ENTRY, SHM_END);
+                Ok(())
+            }
+        }
+    })
+}
+
+pub(crate) fn oc230_shm_entry(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    use oc230_shm_callee as callee;
+    c.cycles += 20;
+    Frame::open(c, 0xd0);
+    c.g[T3][0] = c.g[A3][0];
+    frame.save(c, S0, 0xc0);
+    frame.save(c, S2, 0xa0);
+    c.g[S0][0] = c.g[T1][0];
+    frame.save(c, S3, 0x90);
+    c.g[S2][0] = c.g[A2][0];
+    frame.save(c, S7, 0x50);
+    c.g[S3][0] = c.g[A0][0];
+    frame.save(c, FP, 0x40);
+    frame.save(c, S1, 0xb0);
+    c.g[FP][0] = c.g[T0][0];
+    frame.save(c, S4, 0x80);
+    frame.save(c, S5, 0x70);
+    frame.save(c, S6, 0x60);
+    frame.save_ra(c, 0x30);
+    c.g[V1][0] = c.lw(r32(c, FP));
+    c.g[T4][0] = c.lw(r32(c, S0));
+    c.g[S7][0] = c.g[A1][0];
+    let entry = r32(c, S2);
+
+    if c.g[V1][0] == c.g[T4][0] {
+        // The new key is at the cell's level: remove, push on the bucket.
+        c.cycles += 8;
+        c.g[T0][0] = c.g[S0][0];
+        callee::REMOVE.call(c, 0x0032_8860)?;
+        c.g[V0][0] = oc230_sll(c, S7, 2);
+        c.g[A0][0] = oc230_add(c, V0, S3);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x20));
+        let head = r32(c, A0);
+        c.g[V0][0] = c.lw(head);
+        if c.g[V0][0] != 0 {
+            let v = c.g[S2][0];
+            c.sw(oc230_at(c, V0, 4), v);
+        }
+        c.cycles += 5;
+        c.g[V0][0] = c.lw(head);
+        c.sw(entry.wrapping_add(4), 0);
+        let v = c.g[V0][0];
+        c.sw(entry, v);
+        let v = c.g[S2][0];
+        c.sw(head, v);
+        c.cycles += 1;
+        frame.restore(c, S0, 0xc0);
+        oc230_shm_exit(c, frame);
+        return Ok(());
+    }
+
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(r32(c, T3));
+    let old_at_cell = c.g[V0][0] == c.g[T4][0];
+    c.g[A2][0] = sx(r32(c, T4).wrapping_sub(r32(c, V0)));
+    if old_at_cell {
+        // The old key is at the cell's level: unlink from its bucket,
+        // insert at the new key.
+        c.cycles += 5;
+        c.g[V0][0] = oc230_sll(c, S7, 2);
+        c.g[A0][0] = c.lw(entry);
+        c.g[V1][0] = oc230_add(c, V0, S3);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x20));
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = c.lw(entry.wrapping_add(4));
+            let v = c.g[V0][0];
+            c.sw(oc230_at(c, A0, 4), v);
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.lw(entry.wrapping_add(4));
+        c.g[V0][0] = c.lw(entry);
+        let v = c.g[V0][0];
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            c.sw(r32(c, A0), v);
+        } else {
+            c.cycles += 1;
+            c.sw(r32(c, V1), v);
+        }
+        c.cycles += 8;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[S7][0];
+        c.g[A2][0] = c.g[S2][0];
+        c.g[A3][0] = c.g[FP][0];
+        c.g[T0][0] = c.g[S0][0];
+        callee::INSERT_AT_KEY.call(c, 0x0032_88e4)?;
+        frame.restore(c, S0, 0xc0);
+        oc230_shm_exit(c, frame);
+        return Ok(());
+    }
+
+    // Both keys below the cell: their child octants. Old: (t6, v0, t7) =
+    // (old >> (level diff - 1)) - 2 * cell; new: (s4, s5, s6) likewise.
+    c.cycles += 28;
+    let (cell, old, new) = (r32(c, S0), r32(c, T3), r32(c, FP));
+    c.g[A3][0] = sx(r32(c, T4).wrapping_sub(r32(c, V1)));
+    c.g[V0][0] = c.lw(cell.wrapping_add(4));
+    c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+    c.g[V1][0] = c.lw(old.wrapping_add(4));
+    c.g[A3][0] = sx(r32(c, A3).wrapping_sub(1));
+    c.g[T5][0] = oc230_sll(c, V0, 1);
+    c.g[A0][0] = c.lw(cell.wrapping_add(8));
+    c.g[V1][0] = oc230_sra(c, V1, A2);
+    c.g[V0][0] = c.lw(old.wrapping_add(0xc));
+    c.g[T6][0] = sx(r32(c, V1).wrapping_sub(r32(c, T5)));
+    c.g[T2][0] = oc230_sll(c, A0, 1);
+    c.g[V1][0] = c.lw(cell.wrapping_add(0xc));
+    c.g[V0][0] = oc230_sra(c, V0, A2);
+    c.g[T0][0] = c.lw(old.wrapping_add(8));
+    c.g[T1][0] = oc230_sll(c, V1, 1);
+    c.g[A1][0] = c.lw(new.wrapping_add(4));
+    c.g[A0][0] = c.lw(new.wrapping_add(8));
+    c.g[T7][0] = sx(r32(c, V0).wrapping_sub(r32(c, T1)));
+    c.g[V1][0] = c.lw(new.wrapping_add(0xc));
+    c.g[T0][0] = oc230_sra(c, T0, A2);
+    c.g[A1][0] = oc230_sra(c, A1, A3);
+    c.g[A0][0] = oc230_sra(c, A0, A3);
+    c.g[V1][0] = oc230_sra(c, V1, A3);
+    c.g[V0][0] = sx(r32(c, T0).wrapping_sub(r32(c, T2)));
+    c.g[S4][0] = sx(r32(c, A1).wrapping_sub(r32(c, T5)));
+    c.g[S5][0] = sx(r32(c, A0).wrapping_sub(r32(c, T2)));
+    c.g[S6][0] = sx(r32(c, V1).wrapping_sub(r32(c, T1)));
+    let same_child = if c.g[T6][0] != c.g[S4][0] {
+        c.cycles += 1;
+        false
+    } else {
+        c.cycles += 2;
+        if c.g[V0][0] != c.g[S5][0] {
+            false
+        } else {
+            c.cycles += 2;
+            c.g[T7][0] == c.g[S6][0]
+        }
+    };
+    if same_child {
+        // Recurse into the child with the child key (sp+0).
+        c.cycles += 23;
+        let sp = sp(c);
+        c.g[V0][0] = oc230_sll(c, S4, 4);
+        c.g[V1][0] = oc230_sll(c, S5, 3);
+        c.g[V0][0] = oc230_add(c, S3, V0);
+        c.g[A3][0] = oc230_add(c, T1, S6);
+        c.g[A0][0] = sx(r32(c, T4).wrapping_sub(1));
+        c.g[A1][0] = oc230_add(c, T5, S4);
+        c.g[A2][0] = oc230_add(c, T2, S5);
+        c.g[V0][0] = oc230_add(c, V0, V1);
+        let v = c.g[A1][0];
+        c.sw(sp.wrapping_add(4), v);
+        c.g[V1][0] = oc230_sll(c, S6, 2);
+        let v = c.g[A2][0];
+        c.sw(sp.wrapping_add(8), v);
+        c.g[V0][0] = oc230_add(c, V0, V1);
+        let v = c.g[A3][0];
+        c.sw(sp.wrapping_add(0xc), v);
+        c.g[A1][0] = c.g[S7][0];
+        let v = c.g[A0][0];
+        c.sw(sp, v);
+        c.g[A2][0] = c.g[S2][0];
+        c.g[A3][0] = c.g[T3][0];
+        c.g[T0][0] = c.g[FP][0];
+        c.g[A0][0] = c.lw(r32(c, V0));
+        c.g[T1][0] = c.g[SP][0];
+        callee::MOVE.call(c, 0x0032_89c0)?;
+        frame.restore(c, S0, 0xc0);
+        oc230_shm_exit(c, frame);
+        return Ok(());
+    }
+
+    // Different children: remove from the old child (key at sp+0, its
+    // hash slot in s1).
+    c.g[A3][0] = c.lw(cell.wrapping_add(8));
+    c.cycles += 30;
+    let sp = sp(c);
+    c.g[A2][0] = oc230_sll(c, T6, 4);
+    c.g[A0][0] = c.lw(cell.wrapping_add(4));
+    c.g[A2][0] = oc230_add(c, S3, A2);
+    c.g[A1][0] = c.lw(cell.wrapping_add(0xc));
+    c.g[A3][0] = oc230_sll(c, A3, 1);
+    c.g[V1][0] = c.lw(cell);
+    c.g[A3][0] = oc230_add(c, A3, V0);
+    c.g[V0][0] = oc230_sll(c, V0, 3);
+    c.g[A0][0] = oc230_sll(c, A0, 1);
+    c.g[A1][0] = oc230_sll(c, A1, 1);
+    c.g[A2][0] = oc230_add(c, A2, V0);
+    c.g[A0][0] = oc230_add(c, A0, T6);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+    c.g[A1][0] = oc230_add(c, A1, T7);
+    let v = c.g[V1][0];
+    c.sw(sp, v);
+    c.g[V0][0] = oc230_sll(c, T7, 2);
+    let v = c.g[A3][0];
+    c.sw(sp.wrapping_add(8), v);
+    let v = c.g[A1][0];
+    c.sw(sp.wrapping_add(0xc), v);
+    c.g[S1][0] = oc230_add(c, A2, V0);
+    let v = c.g[A0][0];
+    c.sw(sp.wrapping_add(4), v);
+    c.g[A3][0] = c.g[T3][0];
+    c.g[A1][0] = c.g[S7][0];
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A0][0] = c.lw(r32(c, S1));
+    c.g[T0][0] = c.g[SP][0];
+    callee::REMOVE.call(c, 0x0032_8a34)?;
+    oc230_shm_after_remove(c, frame, Oc230Scan::Words)
+}
+
+/// After the remove from the old child: is its hash (`*s1`, eleven words)
+/// empty? (Also stores the new child's offsets at sp+0x20/0x24/0x28 and the
+/// key pointer sp+0x10 at sp+0x2c.) Then free it if so and insert into the
+/// new child.
+pub(crate) fn oc230_shm_after_remove(
+    c: &mut Cpu,
+    frame: Frame,
+    mut probe: Oc230Scan,
+) -> crate::call::Flow {
+    use oc230_shm_callee as callee;
+    let sp = sp(c);
+    // The new child's offsets (x * 16, y * 8, z * 4) and the key pointer.
+    let offsets = |c: &mut Cpu, reg: usize| {
+        c.g[A3][0] = oc230_sll(c, S5, 3);
+        let v = c.g[reg][0];
+        c.sw(sp.wrapping_add(0x20), v);
+        let v = c.g[A3][0];
+        c.sw(sp.wrapping_add(0x24), v);
+        c.g[reg][0] = oc230_sll(c, S6, 2);
+        c.g[A3][0] = sx(sp.wrapping_add(0x10));
+        let v = c.g[reg][0];
+        c.sw(sp.wrapping_add(0x28), v);
+        let v = c.g[A3][0];
+        c.sw(sp.wrapping_add(0x2c), v);
+    };
+    loop {
+        match probe {
+            Oc230Scan::Words => {
+                c.g[V1][0] = c.lw(r32(c, S1));
+                let words = r32(c, V1);
+                let mut set = false;
+                for k in 0..7u32 {
+                    if k > 0 {
+                        c.cycles += 3;
+                    }
+                    c.g[V0][0] = c.lw(words.wrapping_add(4 * k));
+                    if c.g[V0][0] != 0 {
+                        set = true;
+                        break;
+                    }
+                }
+                if !set {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(words.wrapping_add(0x1c));
+                    let clear = c.g[V0][0] == 0;
+                    c.g[V0][0] = oc230_sll(c, S4, 4);
+                    if clear {
+                        // The last three words in a loop.
+                        c.cycles += 10;
+                        offsets(c, V0);
+                        c.g[V1][0] = sx(words.wrapping_add(0x20));
+                        c.g[A0][0] = 0;
+                        probe = Oc230Scan::Tail;
+                        continue;
+                    }
+                    c.cycles += 1;
+                }
+                c.g[V1][0] = oc230_sll(c, S4, 4);
+                c.cycles += 9;
+                c.g[V0][0] = 0;
+                offsets(c, V1);
+                break;
+            }
+            Oc230Scan::NonEmpty => {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break;
+            }
+            Oc230Scan::Tail => {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(r32(c, V1));
+                let set = c.g[V0][0] != 0;
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                if set {
+                    if crate::events::back_edge_unwinds(c, SHM_NONEMPTY) {
+                        return Ok(());
+                    }
+                    probe = Oc230Scan::NonEmpty;
+                    continue;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < 3) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                if more {
+                    if crate::events::back_edge_unwinds(c, SHM_TAIL) {
+                        return Ok(());
+                    }
+                    continue;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 1;
+                break;
+            }
+        }
+    }
+
+    // Free the old child's hash when empty.
+    c.cycles += 2;
+    let empty = c.g[V0][0] != 0;
+    c.g[V0][0] = c.lw(sp.wrapping_add(0x20));
+    if empty {
+        c.cycles += 4;
+        c.g[A0][0] = c.lw(r32(c, S1));
+        callee::DELETE.call(c, 0x0032_8b1c)?;
+        c.sw(r32(c, S1), 0);
+        c.g[V0][0] = c.lw(sp.wrapping_add(0x20));
+    }
+
+    // The new child's key (sp+0x10) and hash slot (s1).
+    c.cycles += 23;
+    let cell = r32(c, S0);
+    c.g[V1][0] = c.lw(sp.wrapping_add(0x24));
+    c.g[A2][0] = oc230_add(c, S3, V0);
+    c.g[A1][0] = c.lw(cell.wrapping_add(0xc));
+    c.g[A0][0] = c.lw(cell.wrapping_add(4));
+    c.g[A2][0] = oc230_add(c, A2, V1);
+    c.g[V0][0] = c.lw(cell.wrapping_add(8));
+    c.g[A1][0] = oc230_sll(c, A1, 1);
+    c.g[V1][0] = c.lw(cell);
+    c.g[A0][0] = oc230_sll(c, A0, 1);
+    c.g[V0][0] = oc230_sll(c, V0, 1);
+    c.g[A0][0] = oc230_add(c, A0, S4);
+    c.g[V0][0] = oc230_add(c, V0, S5);
+    c.g[A1][0] = oc230_add(c, A1, S6);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+    c.g[A3][0] = c.lw(sp.wrapping_add(0x28));
+    let v = c.g[V1][0];
+    c.sw(sp.wrapping_add(0x10), v);
+    let v = c.g[A0][0];
+    c.sw(sp.wrapping_add(0x14), v);
+    c.g[S1][0] = oc230_add(c, A2, A3);
+    let v = c.g[V0][0];
+    c.sw(sp.wrapping_add(0x18), v);
+    let v = c.g[A1][0];
+    c.sw(sp.wrapping_add(0x1c), v);
+    c.g[V0][0] = c.lw(r32(c, S1));
+    if c.g[V0][0] != 0 {
+        c.g[A0][0] = c.lw(r32(c, S1));
+        return oc230_shm_insert(c, frame);
+    }
+    // No hash there yet: allocate one (0x2c bytes), clear it.
+    c.cycles += 10;
+    c.g[A1][0] = sx(0x004a_3fc0);
+    c.g[A0][0] = 0x2c;
+    c.g[A2][0] = 0x2000_0000;
+    c.g[A3][0] = 0;
+    callee::ALLOC_NAMED.call(c, 0x0032_8b98)?;
+    c.g[S0][0] = c.g[V0][0];
+    c.g[A0][0] = u64::MAX;
+    c.g[V0][0] = sx(r32(c, S0).wrapping_add(0x20));
+    c.g[V1][0] = 2;
+    oc230_shm_clear_insert(c, frame)
+}
+
+/// The new hash (s0): words 8..10 zeroed in a loop (v0 pointer, v1 count
+/// down to a0 = -1), `memset(h, 0, 0x20)`, stored in the slot (s1); then
+/// the insert.
+pub(crate) fn oc230_shm_clear_insert(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    loop {
+        c.cycles += 7;
+        c.sw(r32(c, V0), 0);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+        let more = c.g[V1][0] != c.g[A0][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+        if !more {
+            break;
+        }
+        if crate::events::back_edge_unwinds(c, SHM_CLEAR) {
+            return Ok(());
+        }
+    }
+    c.cycles += 6;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 0x20;
+    call_ptr(c, oc230_shm_callee::MEMSET, 0x0032_8bd4)?;
+    let v = c.g[S0][0];
+    c.sw(r32(c, S1), v);
+    c.g[A0][0] = c.lw(r32(c, S1));
+    oc230_shm_insert(c, frame)
+}
+
+/// `SpatialHash_InsertAtKey(*slot, key, e, new, child key)`, epilogue.
+pub(crate) fn oc230_shm_insert(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 5;
+    c.g[A1][0] = c.g[S7][0];
+    c.g[T0][0] = c.lw(sp(c).wrapping_add(0x2c));
+    c.g[A2][0] = c.g[S2][0];
+    c.g[A3][0] = c.g[FP][0];
+    oc230_shm_callee::INSERT_AT_KEY.call(c, 0x0032_8bf0)?;
+    c.cycles += 1;
+    frame.restore(c, S0, 0xc0);
+    oc230_shm_exit(c, frame);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2501,6 +3031,135 @@ pub(crate) mod tests {
             collide_sphere_vs_box_edges,
             300,
             &collide_sphere_vs_box_edges_setup,
+        );
+    }
+    use super::*;
+
+    /// SpatialHash_Move on a small octree: a cell at level 2 or 3, the
+    /// entry linked (with or without neighbours) under the old key, the new
+    /// key at the cell's level, below it in the same child (recursion) or in
+    /// another child (old child freed when it empties, new child allocated
+    /// when absent). Child hashes come from the real heap (`alloc_ready`);
+    /// the real Remove/InsertAtKey run.
+    #[test]
+    fn spatial_hash_move_matches() {
+        use crate::game::be::belibrary::tests::{alloc_ready, load};
+        check(
+            ee::s10::f_00328808__generated,
+            spatial_hash_move,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0032_8808 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                alloc_ready(c);
+                let alloc = |c: &mut Cpu| -> u32 {
+                    let p = load(
+                        c,
+                        0x0031_7d70,
+                        ee::s10::EA_MemAllocNamed,
+                        &[0x2c, 0x004a_3fc0, 0x2000_0000, 0],
+                    ) as u32;
+                    for i in 0..11 {
+                        c.bus.write32(p + 4 * i, 0);
+                    }
+                    p
+                };
+                let level = 2 + (seed / 4 % 2) as i32;
+                let cell: [i32; 3] = [0, 1, 2].map(|_| (r.next_u32() % 5) as i32 - 2);
+                // A key at level l under the cell (octant bits random).
+                let key_at = |r: &mut Rng, l: i32| -> [i32; 3] {
+                    let n = level - l;
+                    cell.map(|v| (v << n) | (r.next_u32() & ((1 << n) - 1)) as i32)
+                };
+                let chain = |c: &mut Cpu, h: u32, l: i32, k: &[i32; 3]| -> u32 {
+                    let mut node = h;
+                    for j in (l..level).rev() {
+                        let o = k.map(|v| ((v >> (j - l)) & 1) as u32);
+                        let slot = node + o[0] * 16 + o[1] * 8 + o[2] * 4;
+                        let mut child = c.bus.read32(slot);
+                        if child == 0 {
+                            child = alloc(c);
+                            c.bus.write32(slot, child);
+                        }
+                        node = child;
+                    }
+                    node
+                };
+                let h = DATA + 0x2000;
+                for i in 0..11 {
+                    c.bus.write32(h + 4 * i, 0);
+                }
+                let key = r.next_u32() % 3;
+                let (cell_k, old_k, new_k) = (DATA + 0x100, DATA + 0x110, DATA + 0x120);
+                let deeper = |r: &mut Rng| level - 1 - (r.next_u32() % level as u32) as i32;
+                let (old_l, new_l) = match seed % 4 {
+                    0 => (
+                        if r.next_u32() % 2 == 0 {
+                            level
+                        } else {
+                            deeper(&mut r)
+                        },
+                        level,
+                    ),
+                    1 => (level, deeper(&mut r)),
+                    _ => (deeper(&mut r), deeper(&mut r)),
+                };
+                let old = key_at(&mut r, old_l);
+                let mut new = key_at(&mut r, new_l);
+                if seed % 4 == 2 {
+                    // Same top octant as the old key.
+                    let (no, oo) = (level - 1 - new_l, level - 1 - old_l);
+                    for a in 0..3 {
+                        let bit = (old[a] >> oo) & 1;
+                        new[a] = (new[a] & !(1 << no)) | (bit << no);
+                    }
+                }
+                for (at, l, k) in [
+                    (cell_k, level, cell),
+                    (old_k, old_l, old),
+                    (new_k, new_l, new),
+                ] {
+                    c.bus.write32(at, l as u32);
+                    for a in 0..3 {
+                        c.bus.write32(at + 4 + 4 * a as u32, k[a] as u32);
+                    }
+                }
+                // The entry (and maybe neighbours) in the old key's bucket.
+                let bottom = chain(c, h, old_l, &old);
+                let bucket = bottom + 0x20 + 4 * key;
+                let (e, prev, next) = (DATA + 0x200, DATA + 0x210, DATA + 0x220);
+                let with_prev = r.next_u32() % 3 == 0;
+                let with_next = r.next_u32() % 3 == 0;
+                put_words(
+                    c,
+                    e,
+                    &[
+                        if with_next { next } else { 0 },
+                        if with_prev { prev } else { 0 },
+                    ],
+                );
+                put_words(c, prev, &[e, 0]);
+                put_words(c, next, &[0, e]);
+                c.bus.write32(bucket, if with_prev { prev } else { e });
+                // Other live words in the old bottom hash, sometimes.
+                if r.next_u32() % 3 == 0 {
+                    let w = r.next_u32() % 11;
+                    if bottom + 4 * w != bucket && c.bus.read32(bottom + 4 * w) == 0 {
+                        c.bus.write32(bottom + 4 * w, DATA + 0x7000);
+                    }
+                }
+                // The new key's chain already there, sometimes.
+                if r.next_u32() % 2 == 0 && new_l < level {
+                    chain(c, h, new_l, &new);
+                }
+                c.g[A0][0] = sx(h);
+                c.g[A1][0] = key as u64;
+                c.g[A2][0] = sx(e);
+                c.g[A3][0] = sx(old_k);
+                c.g[T0][0] = sx(new_k);
+                c.g[T1][0] = sx(cell_k);
+                c.pc = SHM_ENTRY;
+            },
         );
     }
 }

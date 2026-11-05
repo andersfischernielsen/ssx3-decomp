@@ -3,12 +3,14 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -31,7 +33,10 @@ use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0031_b310, mat4_adjoint, "Mat4_Adjoint")];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (0x0031_b310, mat4_adjoint, "Mat4_Adjoint"),
+    (0x0031_b178, mat4_determinant, "Mat4_Determinant"),
+];
 
 // ---------------------------------------------------------------------------
 // Callees.
@@ -537,6 +542,129 @@ pub fn quat_slerp(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Mat4_Determinant (0x31b178)
+// ---------------------------------------------------------------------------
+
+/// `float Mat4_Determinant(const Mat4* m)` (0x31b178): Laplace expansion
+/// along the first row, `m00 D0 - m01 D1 + m02 D2 - m03 D3`, with the four
+/// 3x3 minors of rows 1-3 from `Math_Det3x3(f12..f19, [sp])`.
+pub fn mat4_determinant(c: &mut Cpu) {
+    const DET3: Callee = Callee {
+        addr: 0x0031_b098,
+        f: ee::s10::f_0031b098,
+    };
+    guest(c, |c| {
+        c.cycles += 101;
+        let frame = Frame::open(c, 0xa0);
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 20, 0x40);
+        for (i, f) in (21..=31).rev().enumerate() {
+            frame.save_fpr(c, f, 0x98 - 8 * i as u32);
+        }
+        let m = r32(c, A0);
+        let sp0 = sp(c);
+        // Row 0 in f20, f28, f29, f30; rows 1-3 in f24/f25/f22/f23/f21/f26/
+        // f27/f31 and spilled columns at sp+0x10..0x1c.
+        c.lwc1(20, m);
+        c.lwc1(0, m + 0x14);
+        c.lwc1(27, m + 0x3c);
+        c.swc1(0, sp0 + 0x10);
+        c.mov_s(12, 0);
+        c.lwc1(1, m + 0x18);
+        c.swc1(1, sp0 + 0x18);
+        c.mov_s(15, 1);
+        c.lwc1(0, m + 0x24);
+        c.lwc1(25, m + 0x1c);
+        c.swc1(0, sp0 + 0x14);
+        c.mov_s(13, 0);
+        c.mov_s(18, 25);
+        c.lwc1(1, m + 0x28);
+        c.swc1(1, sp0 + 0x1c);
+        c.mov_s(16, 1);
+        c.lwc1(21, m + 0x2c);
+        c.lwc1(31, m + 0x34);
+        c.lwc1(26, m + 0x38);
+        c.mov_s(19, 21);
+        c.lwc1(24, m + 0x10);
+        c.mov_s(14, 31);
+        c.lwc1(23, m + 0x20);
+        c.mov_s(17, 26);
+        c.lwc1(22, m + 0x30);
+        c.swc1(27, sp0);
+        c.lwc1(28, m + 0x4);
+        c.lwc1(29, m + 0x8);
+        c.lwc1(30, m + 0xc);
+        // D0: columns 1, 2, 3.
+        DET3.call(c, 0x0031_b228)?;
+        // D1: columns 0, 2, 3.
+        let sp0 = sp(c);
+        c.lwc1(15, sp0 + 0x18);
+        c.mov_s(12, 24);
+        c.lwc1(16, sp0 + 0x1c);
+        c.mov_s(13, 23);
+        c.swc1(0, sp0 + 0x20);
+        c.mov_s(14, 22);
+        c.swc1(27, sp0);
+        c.mov_s(17, 26);
+        c.mov_s(18, 25);
+        c.mov_s(19, 21);
+        DET3.call(c, 0x0031_b254)?;
+        // D2: columns 0, 1, 3.
+        let sp0 = sp(c);
+        c.lwc1(15, sp0 + 0x10);
+        c.mov_s(18, 25);
+        c.lwc1(16, sp0 + 0x14);
+        c.mov_s(19, 21);
+        c.swc1(0, sp0 + 0x24);
+        c.mov_s(12, 24);
+        c.swc1(27, sp0);
+        c.mov_s(13, 23);
+        c.mov_s(14, 22);
+        c.mov_s(17, 31);
+        DET3.call(c, 0x0031_b280)?;
+        // D3: columns 0, 1, 2.
+        let sp0 = sp(c);
+        c.lwc1(15, sp0 + 0x10);
+        c.mov_s(21, 0);
+        c.lwc1(16, sp0 + 0x14);
+        c.mov_s(12, 24);
+        c.lwc1(18, sp0 + 0x18);
+        c.mov_s(13, 23);
+        c.lwc1(19, sp0 + 0x1c);
+        c.mov_s(14, 22);
+        c.swc1(26, sp0);
+        c.mov_s(17, 31);
+        DET3.call(c, 0x0031_b2ac)?;
+        // m00 D0 - m01 D1 + m02 D2 - m03 D3 (restoring f20-f31 on the way).
+        let sp0 = sp(c);
+        c.lwc1(1, sp0 + 0x20);
+        c.mul_s(29, 29, 21);
+        c.mul_s(30, 30, 0);
+        frame.restore_ra(c, 0x30);
+        c.mul_s(20, 20, 1);
+        c.lwc1(31, sp0 + 0x98);
+        c.lwc1(1, sp0 + 0x24);
+        c.lwc1(27, sp0 + 0x78);
+        c.mul_s(28, 28, 1);
+        c.lwc1(26, sp0 + 0x70);
+        c.lwc1(25, sp0 + 0x68);
+        c.lwc1(24, sp0 + 0x60);
+        c.sub_s(20, 20, 28);
+        c.lwc1(23, sp0 + 0x58);
+        c.lwc1(28, sp0 + 0x80);
+        c.lwc1(22, sp0 + 0x50);
+        c.add_s(20, 20, 29);
+        c.lwc1(21, sp0 + 0x48);
+        c.lwc1(29, sp0 + 0x88);
+        c.sub_s(0, 20, 30);
+        c.lwc1(30, sp0 + 0x90);
+        c.lwc1(20, sp0 + 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -561,6 +689,33 @@ pub(crate) mod tests {
                     let v = [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.edge_f32()];
                     put_vec(c, DATA + i * 0x10, v);
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::{covered, machine, FAKE};
+    use crate::difftest::{put_words, SP as STACK_TOP};
+
+    /// Random and edge-case matrices; the real Math_Det3x3 computes the
+    /// minors.
+    #[test]
+    fn mat4_determinant_matches() {
+        crate::difftest::check(
+            ee::s10::f_0031b178__generated,
+            mat4_determinant,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x31b1_7800 ^ (seed as u64) << 16);
+                crate::difftest::scramble(c, &mut r);
+                for i in 0..16 {
+                    let v = if seed % 5 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(4.0)
+                    };
+                    c.bus.write32(DATA + 4 * i, v);
+                }
+                c.g[A0][0] = sx(DATA);
             },
         );
     }

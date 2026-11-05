@@ -385,6 +385,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PS2GraphicsMan_v91",
     ),
     (0x0037_dd20, ps2_graphics_man_v92, "PS2GraphicsMan_v92"),
+    (
+        0x0037_cbc8,
+        ps2_graphics_man_set_tex_function,
+        "PS2GraphicsMan_SetTexFunction",
+    ),
+    (0x0041_1340, fixunssfdi, "__fixunssfdi"),
 ];
 
 /// Same-shard direct callees used above.
@@ -9991,6 +9997,154 @@ pub fn ps2_graphics_man_clip_code(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------------------------------ __fixunssfdi
+
+/// libgcc soft-float helpers called by `__fixunssfdi`.
+pub(crate) const GCC_EXTENDSFDF2: Callee = Callee {
+    addr: 0x0041_3af8,
+    f: ee::s15::__extendsfdf2,
+};
+
+pub(crate) const GCC_CMPDF2: Callee = Callee {
+    addr: 0x0041_2500,
+    f: ee::s15::__cmpdf2,
+};
+
+pub(crate) const GCC_MULDF3: Callee = Callee {
+    addr: 0x0041_1fd8,
+    f: ee::s15::__muldf3,
+};
+
+pub(crate) const GCC_FIXUNSDFSI: Callee = Callee {
+    addr: 0x0041_26a0,
+    f: ee::s15::__fixunsdfsi,
+};
+
+pub(crate) const GCC_FLOATDIDF: Callee = Callee {
+    addr: 0x0041_1438,
+    f: ee::s15::__floatdidf,
+};
+
+pub(crate) const GCC_ADDDF3: Callee = Callee {
+    addr: 0x0041_1f18,
+    f: ee::s15::__adddf3,
+};
+
+pub(crate) const GCC_SUBDF3: Callee = Callee {
+    addr: 0x0041_1f70,
+    f: ee::s15::__subdf3,
+};
+
+/// `unsigned long long __fixunssfdi(float x)` (0x411340, libgcc): the float
+/// widened to a soft double `d`; negative gives 0. Otherwise the high word
+/// `hi = (unsigned)(d * 2^-32)`, `d -= (double)(hi << 32)` (converted via
+/// `__floatdidf`, halving with the low bit kept when the value is >= 2^63),
+/// and the low word added (or, for a negative remainder, subtracted).
+pub fn fixunssfdi(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        let sp0 = sp(c);
+        c.sd(sp0 + 0x10, c.g[S1][0]);
+        c.sd(sp0 + 0x30, c.g[RA][0]);
+        c.sd(sp0 + 0x20, c.g[S2][0]);
+        c.sd(sp0, c.g[S0][0]);
+        GCC_EXTENDSFDF2.call(c, 0x0041_1358)?;
+        let d = c.g[V0][0];
+        c.g[S1][0] = d;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = d;
+        GCC_CMPDF2.call(c, 0x0041_1368)?;
+        let negative = (c.g[V0][0] as i64) < 0;
+        c.g[V0][0] = 0;
+        if !negative {
+            // hi = (unsigned)(d * 2^-32), as the high word of s0.
+            c.cycles += 9;
+            c.g[A1][0] = 0xf7c0u64 << 46; // 2^-32
+            c.g[A0][0] = d;
+            GCC_MULDF3.call(c, 0x0041_1380)?;
+            c.g[A0][0] = c.g[V0][0];
+            GCC_FIXUNSDFSI.call(c, 0x0041_1388)?;
+            let hi = c.g[V0][0] << 32;
+            c.g[S0][0] = hi;
+            c.g[V0][0] = hi & 1;
+            if (hi as i64) >= 0 {
+                c.cycles += 4;
+                c.g[A0][0] = hi;
+                GCC_FLOATDIDF.call(c, 0x0041_139c)?;
+            } else {
+                // Above 2^63: convert half (keeping the low bit), double it.
+                c.cycles += 7;
+                c.g[A0][0] = (hi >> 1) | c.g[V0][0];
+                GCC_FLOATDIDF.call(c, 0x0041_13b0)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[A0][0];
+                GCC_ADDDF3.call(c, 0x0041_13bc)?;
+            }
+            // rest = d - (double)hi.
+            c.g[A0][0] = c.g[S1][0];
+            c.cycles += 9;
+            c.g[A1][0] = c.g[V0][0];
+            GCC_SUBDF3.call(c, 0x0041_13c8)?;
+            c.g[S2][0] = 0;
+            let rest = c.g[V0][0];
+            c.g[S1][0] = rest;
+            c.g[A1][0] = 0;
+            c.g[A0][0] = rest;
+            GCC_CMPDF2.call(c, 0x0041_13dc)?;
+            let nonneg = (c.g[V0][0] as i64) >= 0;
+            c.g[A0][0] = c.g[S2][0];
+            if nonneg {
+                c.cycles += 5;
+                c.g[A0][0] = rest;
+                GCC_FIXUNSDFSI.call(c, 0x0041_140c)?;
+                let lo = (c.g[V0][0] << 32) >> 32;
+                c.g[V0][0] = lo;
+                c.g[S0][0] = c.g[S0][0].wrapping_add(lo);
+            } else {
+                c.cycles += 8;
+                c.g[A1][0] = rest;
+                GCC_SUBDF3.call(c, 0x0041_13ec)?;
+                c.g[A0][0] = c.g[V0][0];
+                GCC_FIXUNSDFSI.call(c, 0x0041_13f4)?;
+                let lo = (c.g[V0][0] << 32) >> 32;
+                c.g[V0][0] = lo;
+                c.g[S0][0] = c.g[S0][0].wrapping_sub(lo);
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 6;
+        let sp0 = sp(c);
+        c.g[RA][0] = c.ld(sp0 + 0x30);
+        c.g[S2][0] = c.ld(sp0 + 0x20);
+        c.g[S1][0] = c.ld(sp0 + 0x10);
+        c.g[S0][0] = c.ld(sp0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ------------------------------------------ PS2GraphicsMan_SetTexFunction
+
+/// `void PS2GraphicsMan_SetTexFunction(PS2GraphicsMan* g, int tex, int fn)`
+/// (0x37cbc8): forwards to `TexMan_SetTexFunction(g->texMan, tex, fn)`
+/// (the texture manager at +0x18f4).
+pub fn ps2_graphics_man_set_tex_function(c: &mut Cpu) {
+    /// `TexMan* texMan`.
+    const TEX_MAN: u32 = 0x18f4;
+    const TEX_MAN_SET_TEX_FUNCTION: Callee = Callee {
+        addr: 0x0036_91b0,
+        f: ee::s12::TexMan_SetTexFunction,
+    };
+    crate::call::tail_wrapper(
+        c,
+        Some(TEX_MAN),
+        crate::call::Target::Direct(TEX_MAN_SET_TEX_FUNCTION),
+        0x0037_cbd8,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12898,6 +13052,73 @@ pub(crate) mod tests {
                     let v = uf_2(&mut r, 0.0, 1.5);
                     c.bus.write32(gfx + off, v);
                 }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    // ------------------------------------------------------------ __fixunssfdi
+
+    /// `__fixunssfdi` through the real soft-float helpers: negative, zero,
+    /// small, fractional, above 2^32 and above 2^63 inputs, and edge bit
+    /// patterns (denormals, exponent 255).
+    #[test]
+    fn fixunssfdi_matches() {
+        use crate::difftest::{check, scramble, Rng};
+        check(
+            ee::s15::f_00411340__generated,
+            fixunssfdi,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0041_1340 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                c.pc = 0x0041_1340;
+                let x: u32 = match seed % 8 {
+                    0 => r.edge_f32(),
+                    1 => r.f32(1000.0),
+                    2 => ((r.next_u32() % 1_000_000) as f32 + 0.75).to_bits(),
+                    3 => (4.3e9f32 * (1.0 + (r.next_u32() % 1000) as f32)).to_bits(),
+                    4 => (9.3e18f32 + (r.next_u32() % 1000) as f32 * 1e16).to_bits(),
+                    5 => (1.7e19f32).to_bits(),
+                    6 => ((r.next_u32() % 64) as f32).to_bits(),
+                    _ => r.next_u32(),
+                };
+                c.f[12] = x;
+            },
+        );
+    }
+
+    /// `PS2GraphicsMan_SetTexFunction` with the real `TexMan_SetTexFunction`:
+    /// texture index -1 (ignored) or 0..7 (the texture's GS TEX0 word at
+    /// +0x38 gets the function bits).
+    #[test]
+    fn ps2_graphics_man_set_tex_function_matches() {
+        check(
+            ee::s12::f_0037cbc8__generated,
+            ps2_graphics_man_set_tex_function,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x0037_cbc8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0037_cbc8;
+                let g = DATA;
+                let tex_man = DATA + 0x2000;
+                c.bus.write32(g + 0x18f4, tex_man);
+                for i in 0..8 {
+                    let tex = DATA + 0x3000 + 0x40 * i;
+                    c.bus.write32(tex_man + 8 + 4 * i, tex);
+                    c.bus.write32(tex + 0x38, r.next_u32());
+                    c.bus.write32(tex + 0x3c, r.next_u32());
+                }
+                c.g[A0][0] = g as u64;
+                c.g[A1][0] = if seed % 4 == 0 {
+                    u64::MAX
+                } else {
+                    (seed % 8) as u64
+                };
+                c.g[A2][0] = r.next_u32() as u64 | (r.next_u32() as u64) << 32;
             },
         );
     }

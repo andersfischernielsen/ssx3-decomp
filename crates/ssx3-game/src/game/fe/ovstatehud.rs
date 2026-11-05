@@ -88,6 +88,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x001e_a930, c_ov_state_hud1p_update, "cOVStateHUD1P_Update"),
     (0x001f_31e0, load_indicator_draw, "LoadIndicator_Draw"),
+    (0x001f_1840, hud_draw_time, "HUD_DrawTime"),
+    (0x001f_1b30, hud_draw_text_elem, "HUD_DrawTextElem"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14550,6 +14552,630 @@ pub(crate) fn load_indicator_draw_busy(c: &mut Cpu, this: u32) -> crate::call::F
     Ok(())
 }
 
+pub(crate) mod hud_text {
+
+    /// Size of one element definition.
+    pub const DEF_SIZE: u64 = 0x24;
+
+    /// `+0x20` default horizontal alignment (signed byte).
+    pub const DEF_ALIGN: u32 = 0x20;
+
+    /// `+0x21` default vertical alignment (signed byte).
+    pub const DEF_FLAGS: u32 = 0x21;
+
+    /// `+0x22` render-state layer (5 bits at bit 5 of the render state).
+    pub const DEF_LAYER: u32 = 0x22;
+
+    /// "Use the definition's value" for the alignment arguments.
+    pub const FROM_DEF: u64 = 0x7f;
+
+    /// Font `+0x30/+0x34` base scale.
+    pub const FONT_BASE_SCALE: u32 = 0x30;
+
+    /// Font `+0x38/+0x3c` current scale.
+    pub const FONT_SCALE: u32 = 0x38;
+
+    /// Font `+0x40` colour (16 bytes).
+    pub const FONT_COLOR: u32 = 0x40;
+
+    /// Font `+0x50` tint (16 bytes).
+    pub const FONT_TINT: u32 = 0x50;
+
+    /// `gp-0x854`: the renderer (`D_004A289C`); its `+0xe84` render state
+    /// has the layer bits at `+0x8`.
+    pub const GP_RENDERER: u32 = 0x854;
+
+    pub const RENDER_STATE: u32 = 0xe84;
+
+    /// Layer bits of the render-state word: kept mask.
+    pub const LAYER_KEEP: u64 = 0xffff_ffff_ffff_fc1f;
+}
+
+pub(crate) mod hud_time {
+    use super::ee;
+    use super::Callee;
+
+    /// `HUD`: separator width, digit width, '1' narrowing, sign advance,
+    /// the font, the separator string (":").
+    pub const SEP_W: u32 = 0x16c;
+
+    pub const DIGIT_W: u32 = 0x170;
+
+    pub const SIGN_ADVANCE: u32 = 0x174;
+
+    pub const ONE_W: u32 = 0x178;
+
+    pub const FONT: u32 = 0x42c;
+
+    pub const SEPARATOR: u32 = 0x430;
+
+    /// `Font`: line count (int), base size x/y, scaled size x/y, colour.
+    pub const FONT_LINES: u32 = 0x14;
+
+    pub const FONT_BASE_W: u32 = 0x30;
+
+    pub const FONT_BASE_H: u32 = 0x34;
+
+    pub const FONT_SIZE_W: u32 = 0x38;
+
+    pub const FONT_SIZE_H: u32 = 0x3c;
+
+    pub const FONT_COLOUR: u32 = 0x40;
+
+    /// Strings: "+", "-", "%02d", ".%02d".
+    pub const STR_PLUS: u32 = 0x004a_2100;
+
+    pub const STR_MINUS: u32 = 0x004a_2108;
+
+    pub const FMT_TWO_DIGITS: u32 = 0x004a_22f0;
+
+    pub const FMT_FRACTION: u32 = 0x004a_22f8;
+
+    /// Flags (t1): bit 0 draws the ".xx" fraction, bits 1/2 a sign ('-' if
+    /// bit 1).
+    pub const FLAG_FRACTION: u64 = 1;
+
+    pub const FLAG_MINUS: u64 = 2;
+
+    pub const FLAG_SIGN: u64 = 6;
+
+    pub const HUD_ALIGN_ELEM_POS: Callee = Callee {
+        addr: 0x001f_10f8,
+        f: ee::s04::HUD_AlignElemPos,
+    };
+
+    pub const FONT_DRAW_TEXT_VARARGS: Callee = Callee {
+        addr: 0x001d_c990,
+        f: ee::s04::Font_DrawTextVarargs,
+    };
+
+    /// `Font_DrawText(font, text, x, y)`, `sprintf` (cross-shard).
+    pub const FONT_DRAW_TEXT: u32 = 0x0039_1cb0;
+
+    pub const SPRINTF: u32 = 0x0041_7828;
+}
+
+pub(crate) const HUD_GET_ELEM_POS: Callee = Callee {
+    addr: 0x001e_91f8,
+    f: ee::s04::HUD_GetElemPos,
+};
+
+pub(crate) const HUD_GET_ELEM_SCALE: Callee = Callee {
+    addr: 0x001e_9290,
+    f: ee::s04::HUD_GetElemScale,
+};
+
+pub(crate) const HUD_GET_ELEM_COLOR: Callee = Callee {
+    addr: 0x001e_91a8,
+    f: ee::s04::HUD_GetElemColor,
+};
+
+pub(crate) const HUD_ALIGN_ELEM_POS: Callee = Callee {
+    addr: 0x001f_10f8,
+    f: ee::s04::HUD_AlignElemPos,
+};
+
+/// `Font_TextExtent(font, str, rect, 0, sx, sy)` (0x391fb0, other shard).
+pub(crate) const FONT_TEXT_EXTENT: u32 = 0x0039_1fb0;
+
+/// `Font_DrawText(font, x, y, str)` (0x391cb0, other shard).
+pub(crate) const FONT_DRAW_TEXT: u32 = 0x0039_1cb0;
+
+/// Copy 16 unaligned bytes from `src` to `dst` through GPRs `lo`/`hi` (the
+/// `ldl/ldr/sdl/sdr` pairs of a struct copy).
+pub(crate) fn copy16_unaligned(c: &mut Cpu, lo: usize, hi: usize, src: u32, dst: u32) {
+    c.ldl(lo, src.wrapping_add(0x7));
+    c.ldr(lo, src);
+    c.ldl(hi, src.wrapping_add(0xf));
+    c.ldr(hi, src.wrapping_add(0x8));
+    c.sdl(lo, dst.wrapping_add(0x7));
+    c.sdr(lo, dst);
+    c.sdl(hi, dst.wrapping_add(0xf));
+    c.sdr(hi, dst.wrapping_add(0x8));
+}
+
+/// `void HUD_DrawTextElem(ctx, Font* font, HudElemDef* defs, int idx,
+/// const char* str, a5, float* scaleMul, float* posOff, Color* color,
+/// float* rect, int align, int flags)` (0x1f1b30): draw `str` at HUD
+/// element `defs[idx]`: the element's scale (times `scaleMul`) sizes the
+/// font, the text extent and the alignment (`0x7f` = the element's own)
+/// place it, `posOff` shifts it; the drawn rectangle goes to `rect`. The
+/// colour is `color` or the element's; the element's layer goes into the
+/// render state. Afterwards the font's tint and scale are reset.
+pub fn hud_draw_text_elem(c: &mut Cpu) {
+    use hud_text::*;
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0x140);
+        c.g[V0][0] = DEF_SIZE;
+        frame.save(c, S5, 0xe0);
+        c.g[S5][0] = c.g[A3][0];
+        frame.save(c, S4, 0xf0);
+        c.mult(0, V1, S5, V0);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.g[S4][0] = c.g[A2][0];
+        frame.save(c, S1, 0x120);
+        frame.save(c, S2, 0x110);
+        let font = c.g[A1][0];
+        c.g[S1][0] = font;
+        let s = sp(c);
+        c.sw(s.wrapping_add(0x90), c.g[A0][0]);
+        c.g[A1][0] = sx(s.wrapping_add(0x10));
+        // The element definition: defs + idx * 0x24.
+        let def = sx((c.g[V1][0] as u32).wrapping_add(c.g[S4][0] as u32));
+        c.g[S2][0] = def;
+        frame.save(c, S0, 0x130);
+        frame.save(c, S3, 0x100);
+        c.g[A0][0] = def;
+        frame.save(c, S6, 0xd0);
+        let scale_mul = c.g[T2][0];
+        c.g[S0][0] = scale_mul;
+        frame.save(c, S7, 0xc0);
+        frame.save(c, FP, 0xb0);
+        c.sw(s.wrapping_add(0x94), c.g[T0][0]);
+        c.sw(s.wrapping_add(0x98), c.g[T1][0]);
+        // Default scale (1, 1) at sp+0.
+        c.swc1(0, s.wrapping_add(0x4));
+        let rect = c.lw(s.wrapping_add(0x148));
+        c.g[S6][0] = rect;
+        let align = c.lw(s.wrapping_add(0x150));
+        c.g[S7][0] = align;
+        let flags = c.lw(s.wrapping_add(0x158));
+        c.g[FP][0] = flags;
+        c.swc1(0, s);
+        frame.save_ra(c, 0xa0);
+        let pos_off = c.g[T3][0];
+        c.g[S3][0] = pos_off;
+        HUD_GET_ELEM_POS.call(c, 0x001f_1bb0)?;
+        c.g[A0][0] = def;
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x20));
+        HUD_GET_ELEM_SCALE.call(c, 0x001f_1bbc)?;
+        let s = sp(c);
+        c.lwc1(1, s.wrapping_add(0x20));
+        if scale_mul != 0 {
+            // escale *= scaleMul.
+            c.cycles += 7;
+            let m = scale_mul as u32;
+            c.lwc1(3, m.wrapping_add(0x4));
+            c.lwc1(2, m);
+            c.lwc1(0, s.wrapping_add(0x24));
+            c.mul_s(1, 1, 2);
+            c.mul_s(0, 0, 3);
+            c.swc1(1, s.wrapping_add(0x20));
+            c.swc1(0, s.wrapping_add(0x24));
+        }
+
+        // font->scale = font->baseScale * escale; measure the text.
+        c.cycles += 18;
+        let f = font as u32;
+        c.lwc1(3, s.wrapping_add(0x20));
+        c.g[A0][0] = font;
+        c.lwc1(2, s.wrapping_add(0x24));
+        c.g[A2][0] = sx(s.wrapping_add(0x30));
+        c.lwc1(1, f.wrapping_add(FONT_BASE_SCALE));
+        c.g[A3][0] = 0;
+        c.lwc1(0, f.wrapping_add(FONT_BASE_SCALE + 4));
+        c.mul_s(1, 1, 3);
+        c.g[A1][0] = c.lw(s.wrapping_add(0x94));
+        c.mul_s(0, 0, 2);
+        c.mov_s(12, 1);
+        c.swc1(1, f.wrapping_add(FONT_SCALE));
+        c.mov_s(13, 0);
+        c.swc1(0, f.wrapping_add(FONT_SCALE + 4));
+        call_ptr(c, FONT_TEXT_EXTENT, 0x001f_1c1c)?;
+
+        // Alignment: 0x7f takes the element's own.
+        c.g[V0][0] = FROM_DEF;
+        c.g[T1][0] = align;
+        if align == FROM_DEF {
+            c.cycles += 1;
+            c.g[T1][0] = c.lb((def as u32).wrapping_add(DEF_ALIGN));
+        }
+        c.cycles += 2;
+        c.g[T2][0] = flags;
+        if flags == FROM_DEF {
+            c.cycles += 4;
+            c.g[V0][0] = DEF_SIZE;
+            c.mult(0, V1, S5, V0);
+            let d = (c.g[V1][0] as u32).wrapping_add(c.g[S4][0] as u32);
+            c.g[V0][0] = sx(d);
+            c.g[T2][0] = c.lb(d.wrapping_add(DEF_FLAGS));
+        }
+
+        // HUD_AlignElemPos(ctx, out, pos, size, scale, ax, ay, a5).
+        c.cycles += 13;
+        let s = sp(c);
+        c.lwc1(0, s.wrapping_add(0x38));
+        c.g[A2][0] = sx(s.wrapping_add(0x10));
+        c.lwc1(1, s.wrapping_add(0x3c));
+        c.g[A1][0] = sx(s.wrapping_add(0x40));
+        c.g[A0][0] = c.lw(s.wrapping_add(0x90));
+        c.g[A3][0] = sx(s.wrapping_add(0x50));
+        c.g[T3][0] = c.lw(s.wrapping_add(0x98));
+        c.g[T0][0] = c.g[SP][0];
+        c.swc1(0, s.wrapping_add(0x50));
+        c.swc1(1, s.wrapping_add(0x54));
+        HUD_ALIGN_ELEM_POS.call(c, 0x001f_1c70)?;
+        let s = sp(c);
+        c.lwc1(1, s.wrapping_add(0x40));
+        if pos_off != 0 {
+            // out += posOff.
+            c.cycles += 7;
+            let o = pos_off as u32;
+            c.lwc1(3, o.wrapping_add(0x4));
+            c.lwc1(2, o);
+            c.lwc1(0, s.wrapping_add(0x44));
+            c.add_s(1, 1, 2);
+            c.add_s(0, 0, 3);
+            c.swc1(1, s.wrapping_add(0x40));
+            c.swc1(0, s.wrapping_add(0x44));
+        }
+        c.cycles += 2;
+        c.lwc1(1, s.wrapping_add(0x40));
+        if rect != 0 {
+            // rect = (out.x, out.y, extent.w, extent.h).
+            c.cycles += 7;
+            let r = rect as u32;
+            c.lwc1(2, s.wrapping_add(0x44));
+            c.lwc1(3, s.wrapping_add(0x38));
+            c.lwc1(0, s.wrapping_add(0x3c));
+            c.swc1(1, r);
+            c.swc1(0, r.wrapping_add(0xc));
+            c.swc1(2, r.wrapping_add(0x4));
+            c.swc1(3, r.wrapping_add(0x8));
+        }
+
+        // The colour (sp+0x60): the caller's or the element's.
+        c.cycles += 3;
+        let color = c.lw(s.wrapping_add(0x140));
+        c.g[A0][0] = color;
+        c.g[V1][0] = color;
+        if color == 0 {
+            c.cycles += 7;
+            c.g[A0][0] = DEF_SIZE;
+            c.g[A1][0] = sx(s.wrapping_add(0x60));
+            c.mult(0, V0, S5, A0);
+            c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32));
+            HUD_GET_ELEM_COLOR.call(c, 0x001f_1cd8)?;
+        } else {
+            c.cycles += 9;
+            copy16_unaligned(c, A0, A1, color as u32, s.wrapping_add(0x60));
+        }
+        c.g[A2][0] = DEF_SIZE;
+
+        // Tint (col.r, 0, 0, 0) at sp+0x70; the element's layer into the
+        // render state; colour and tint into the font; draw.
+        c.cycles += 72;
+        let s = sp(c);
+        c.lwc1(0, s.wrapping_add(0x60));
+        c.mult(0, V0, S5, A2);
+        c.sw(s.wrapping_add(0x74), 0);
+        c.swc1(0, s.wrapping_add(0x70));
+        c.g[T0][0] = LAYER_KEEP;
+        c.sw(s.wrapping_add(0x78), 0);
+        c.sw(s.wrapping_add(0x7c), 0);
+        let d = (c.g[V0][0] as u32).wrapping_add(c.g[S4][0] as u32);
+        c.g[A2][0] = sx(d);
+        c.g[A1][0] = c.lw(s.wrapping_add(0x94));
+        let gp = c.g[GP][0] as u32;
+        let renderer = c.lw(gp.wrapping_sub(GP_RENDERER));
+        let layer = c.lb(d.wrapping_add(DEF_LAYER));
+        let state = c.lw((renderer as u32).wrapping_add(RENDER_STATE));
+        c.g[A3][0] = state;
+        let layer = sx((layer as u32) << 5) & 0x3e0;
+        c.g[V1][0] = layer;
+        let word = c.lw((state as u32).wrapping_add(0x8));
+        let word = (word & LAYER_KEEP) | layer;
+        c.g[V0][0] = word;
+        c.sw((state as u32).wrapping_add(0x8), word);
+        copy16_unaligned(c, V1, A2, s.wrapping_add(0x60), f.wrapping_add(FONT_COLOR));
+        c.lwc1(12, s.wrapping_add(0x40));
+        c.lwc1(13, s.wrapping_add(0x44));
+        copy16_unaligned(c, V1, A2, s.wrapping_add(0x70), f.wrapping_add(FONT_TINT));
+        c.g[A0][0] = font;
+        call_ptr(c, FONT_DRAW_TEXT, 0x001f_1d9c)?;
+
+        // Reset the tint to (1, 0, 0, 0) and the scale to baseScale * (1, 1).
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        let s = sp(c);
+        c.sw(s.wrapping_add(0x84), 0);
+        c.swc1(0, s.wrapping_add(0x80));
+        c.sw(s.wrapping_add(0x88), 0);
+        c.sw(s.wrapping_add(0x8c), 0);
+        c.lwc1(3, s);
+        copy16_unaligned(c, V1, A0, s.wrapping_add(0x80), f.wrapping_add(FONT_TINT));
+        frame.restore(c, S0, 0x130);
+        c.lwc1(2, s.wrapping_add(0x4));
+        c.lwc1(0, f.wrapping_add(FONT_BASE_SCALE));
+        c.lwc1(1, f.wrapping_add(FONT_BASE_SCALE + 4));
+        c.mul_s(0, 0, 3);
+        frame.restore(c, S2, 0x110);
+        c.mul_s(1, 1, 2);
+        frame.restore(c, S3, 0x100);
+        frame.restore(c, S4, 0xf0);
+        c.swc1(0, f.wrapping_add(FONT_SCALE));
+        c.swc1(1, f.wrapping_add(FONT_SCALE + 4));
+        frame.restore(c, S1, 0x120);
+        frame.restore(c, S5, 0xe0);
+        frame.restore(c, S6, 0xd0);
+        frame.restore(c, S7, 0xc0);
+        frame.restore(c, FP, 0xb0);
+        frame.restore_ra(c, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void HUD_DrawTime(HUD* hud, int a, int b, int c, int frac (t0), int
+/// flags (t1), const float pos[2] (t2), const float scale[2] (t3), const
+/// sColor* colour, int hAlign, int vAlign, int screen)` (0x1f1840): draws a
+/// race time "aa:bb:cc" (each "%02d") with an optional sign in front and
+/// ".frac" behind. Lays the box out (`HUD_AlignElemPos`, width from three
+/// or four digit groups), scales and colours the font, then draws group by
+/// group; a group starting with '1' is shifted right by the narrow-'1'
+/// width per leading '1'. Frame 0xe0 (s0-s7, f20-f22; the size at +0, the
+/// pen position at +0x10, the three strings at +0x20/+0x24/+0x28).
+pub fn hud_draw_time(c: &mut Cpu) {
+    use hud_time::*;
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0xe0);
+        c.g[AT][0] = 0x4040_0000; // 3.0: digit groups
+        c.mtc1(AT, 5);
+        for (reg, off) in [
+            (S3, 0x80),
+            (S5, 0x60),
+            (S0, 0xb0),
+            (S1, 0xa0),
+            (S4, 0x70),
+            (S6, 0x50),
+            (S7, 0x40),
+            (S2, 0x90),
+        ] {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, 0x30);
+        c.g[S3][0] = c.g[T1][0];
+        c.g[S5][0] = c.g[A2][0];
+        c.g[A2][0] = c.g[T2][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S4][0] = c.g[A1][0];
+        c.g[S6][0] = c.g[A3][0];
+        c.g[S7][0] = c.g[T0][0];
+        c.g[S0][0] = c.g[T3][0];
+        for (f, off) in [(22, 0xd0), (21, 0xc8), (20, 0xc0)] {
+            frame.save_fpr(c, f, off);
+        }
+        c.g[V0][0] = c.g[S3][0] & FLAG_FRACTION;
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            c.g[AT][0] = 0x4080_0000; // 4.0
+            c.mtc1(AT, 5);
+        }
+        let hud = r32(c, S1);
+        let stk = |c: &Cpu, off: u32| sp(c).wrapping_add(off);
+
+        // 0x1f18ac: the box size {groups * sep + (digit + 4) * (groups - 1),
+        // lines * base height}, aligned into the pen position.
+        c.cycles += 57;
+        c.g[AT][0] = 0x4000_0000; // 2.0
+        c.mtc1(AT, 20);
+        c.g[A0][0] = c.g[S1][0];
+        c.lwc1(0, hud.wrapping_add(SEP_W));
+        c.g[A1][0] = sx(stk(c, 0x10));
+        c.g[AT][0] = 0x3f80_0000; // 1.0
+        c.mtc1(AT, 3);
+        c.g[A3][0] = c.g[SP][0];
+        c.add_s(0, 0, 20);
+        c.g[V0][0] = c.lw(hud.wrapping_add(FONT));
+        c.sub_s(3, 5, 3);
+        c.lwc1(1, hud.wrapping_add(DIGIT_W));
+        c.lwc1(2, at(c, V0, FONT_LINES));
+        c.cvt_s_w(2, 2);
+        c.lwc1(4, at(c, V0, FONT_BASE_H));
+        c.add_s(0, 0, 20);
+        c.g[T1][0] = c.lw(stk(c, 0xe8));
+        c.mul_s(1, 1, 5);
+        c.g[T2][0] = c.lw(stk(c, 0xf0));
+        c.mul_s(2, 2, 4);
+        c.g[T3][0] = c.lw(stk(c, 0xf8));
+        c.mul_s(0, 0, 3);
+        c.g[T0][0] = c.g[S0][0];
+        c.swc1(2, stk(c, 0x4));
+        c.add_s(1, 1, 0);
+        c.swc1(1, stk(c, 0));
+        HUD_ALIGN_ELEM_POS.call(c, 0x001f_1918)?;
+        // Font size = base * scale; colour; f21/f20/f22 = scaled digit
+        // advance, '1' narrowing, separator advance.
+        c.g[V0][0] = c.lw(hud.wrapping_add(FONT));
+        c.g[A0][0] = c.g[S3][0] & FLAG_SIGN;
+        c.lwc1(1, r32(c, S0));
+        c.lwc1(0, at(c, V0, FONT_BASE_W));
+        c.lwc1(2, at(c, V0, FONT_BASE_H));
+        c.mul_s(0, 0, 1);
+        c.swc1(0, at(c, V0, FONT_SIZE_W));
+        c.lwc1(1, at(c, S0, 4));
+        c.mul_s(2, 2, 1);
+        c.swc1(2, at(c, V0, FONT_SIZE_H));
+        c.g[V0][0] = c.lw(stk(c, 0xe0));
+        c.g[V1][0] = c.lw(hud.wrapping_add(FONT));
+        c.ldl(A1, at(c, V0, 0x7));
+        c.ldr(A1, at(c, V0, 0));
+        c.ldl(A2, at(c, V0, 0xf));
+        c.ldr(A2, at(c, V0, 0x8));
+        c.sdl(A1, at(c, V1, FONT_COLOUR + 7));
+        c.sdr(A1, at(c, V1, FONT_COLOUR));
+        c.sdl(A2, at(c, V1, FONT_COLOUR + 0xf));
+        c.sdr(A2, at(c, V1, FONT_COLOUR + 8));
+        c.lwc1(3, hud.wrapping_add(DIGIT_W));
+        c.lwc1(2, hud.wrapping_add(SEP_W));
+        c.add_s(3, 3, 20);
+        c.lwc1(1, r32(c, S0));
+        c.add_s(2, 2, 20);
+        c.lwc1(0, hud.wrapping_add(ONE_W));
+        c.mul_s(21, 3, 1);
+        c.mul_s(20, 0, 1);
+        c.mul_s(22, 2, 1);
+        if c.g[A0][0] != 0 {
+            // 0x1f1994: the sign.
+            c.cycles += 3;
+            c.g[V0][0] = c.g[S3][0] & FLAG_MINUS;
+            c.lwc1(12, stk(c, 0x10));
+            let (text, ret_to) = if c.g[V0][0] != 0 {
+                c.cycles += 7;
+                (STR_MINUS, 0x001f_19b0)
+            } else {
+                c.cycles += 6;
+                (STR_PLUS, 0x001f_19cc)
+            };
+            c.g[A1][0] = sx(text);
+            c.g[A0][0] = c.lw(hud.wrapping_add(FONT));
+            c.lwc1(13, stk(c, 0x14));
+            call_ptr(c, FONT_DRAW_TEXT, ret_to)?;
+            c.lwc1(0, stk(c, 0x10));
+            c.cycles += 3;
+            c.lwc1(1, hud.wrapping_add(SIGN_ADVANCE));
+            c.add_s(0, 0, 1);
+            c.swc1(0, stk(c, 0x10));
+        }
+
+        // 0x1f19dc: the three groups as text.
+        c.cycles += 20;
+        c.g[S0][0] = sx(FMT_TWO_DIGITS);
+        c.g[S2][0] = sx(stk(c, 0x20));
+        c.g[A2][0] = c.g[S4][0];
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S0][0];
+        call_ptr(c, SPRINTF, 0x001f_19f8)?;
+        c.g[A0][0] = sx(stk(c, 0x24));
+        c.g[A2][0] = c.g[S5][0];
+        c.g[A1][0] = c.g[S0][0];
+        call_ptr(c, SPRINTF, 0x001f_1a08)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S6][0];
+        c.g[A0][0] = sx(stk(c, 0x28));
+        call_ptr(c, SPRINTF, 0x001f_1a18)?;
+        // f0 = '1' narrowing per leading '1' of the group (two digits).
+        c.g[V0][0] = c.lb(stk(c, 0x20));
+        c.g[V1][0] = b'1' as u64;
+        c.mtc1(0, 0);
+        if c.g[V0][0] == c.g[V1][0] {
+            c.mov_s(0, 20);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = c.lb(stk(c, 0x21));
+        if c.g[V0][0] == c.g[V1][0] {
+            c.add_s(0, 0, 20);
+        }
+        c.cycles += 14;
+        c.lwc1(12, stk(c, 0x10));
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.lw(hud.wrapping_add(FONT));
+        c.g[S4][0] = c.g[S3][0] & FLAG_FRACTION;
+        c.add_s(12, 12, 0);
+        c.lwc1(13, stk(c, 0x14));
+        c.g[S3][0] = b'1' as u64;
+        c.g[S2][0] = 1;
+        call_ptr(c, FONT_DRAW_TEXT, 0x001f_1a5c)?;
+        c.lwc1(0, stk(c, 0x10));
+        c.g[S0][0] = sx(stk(c, 0x24));
+        c.add_s(0, 0, 21);
+        c.swc1(0, stk(c, 0x10));
+        // 0x1f1a70: separator, then the next group (s2 counts down 1, 0).
+        loop {
+            c.cycles += 12;
+            c.g[A0][0] = c.lw(hud.wrapping_add(FONT));
+            c.lwc1(12, stk(c, 0x10));
+            c.lwc1(13, stk(c, 0x14));
+            c.g[A1][0] = c.lw(hud.wrapping_add(SEPARATOR));
+            call_ptr(c, FONT_DRAW_TEXT, 0x001f_1a84)?;
+            c.lwc1(0, stk(c, 0x10));
+            c.mtc1(0, 1);
+            c.add_s(0, 0, 22);
+            c.swc1(0, stk(c, 0x10));
+            c.g[V0][0] = c.lb(r32(c, S0));
+            if c.g[V0][0] == c.g[S3][0] {
+                c.mov_s(1, 20);
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lb(at(c, S0, 1));
+            if c.g[V0][0] == c.g[S3][0] {
+                c.add_s(1, 1, 20);
+            }
+            c.cycles += 11;
+            c.add_s(12, 0, 1);
+            c.g[A0][0] = c.lw(hud.wrapping_add(FONT));
+            c.lwc1(13, stk(c, 0x14));
+            c.g[A1][0] = c.g[S0][0];
+            c.g[S0][0] = sx(at(c, S0, 4));
+            c.g[S2][0] = sx(r32(c, S2).wrapping_sub(1));
+            call_ptr(c, FONT_DRAW_TEXT, 0x001f_1ac8)?;
+            c.lwc1(0, stk(c, 0x10));
+            c.add_s(12, 0, 21);
+            let more = (c.g[S2][0] as i64) >= 0;
+            c.swc1(12, stk(c, 0x10));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x001f_1a70);
+            }
+        }
+        c.cycles += 2;
+        c.g[A1][0] = 0x4a_0000;
+        if c.g[S4][0] != 0 {
+            // ".%02d" with the fraction.
+            c.cycles += 5;
+            c.g[A0][0] = c.lw(hud.wrapping_add(FONT));
+            c.lwc1(13, stk(c, 0x14));
+            c.g[A1][0] = sx(FMT_FRACTION);
+            c.g[A2][0] = c.g[S7][0];
+            FONT_DRAW_TEXT_VARARGS.call(c, 0x001f_1af4)?;
+        }
+        c.cycles += 14;
+        for (reg, off) in [
+            (S0, 0xb0),
+            (S1, 0xa0),
+            (S2, 0x90),
+            (S3, 0x80),
+            (S4, 0x70),
+            (S5, 0x60),
+            (S6, 0x50),
+            (S7, 0x40),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x30);
+        for (f, off) in [(22, 0xd0), (21, 0xc8), (20, 0xc0)] {
+            frame.restore_fpr(c, f, off);
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15443,6 +16069,213 @@ pub(crate) mod tests {
             load_indicator_draw,
             200,
             &load_indicator_setup,
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::events::{check_events, schedule, Events};
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::put_vec;
+    use crate::difftest::require_paths;
+    use ssx3_ee_rt::Cpu;
+
+    /// A 16-byte aligned object in the lower half of the test data area
+    /// (clear of the fake-call log at 0x90_0000).
+    pub(crate) fn obj(r: &mut Rng) -> u32 {
+        DATA + (r.next_u32() & 0x7_fff0)
+    }
+
+    /// HUD_DrawTextElem: with and without a scale multiplier, position
+    /// offset, output rectangle and caller colour; alignment from the
+    /// arguments or the element (0x7f); the font's draw callback is a fake
+    /// (some seeds unwind there).
+    #[test]
+    fn hud_draw_text_elem_matches() {
+        use super::hud_text::*;
+        use crate::difftest::fakes::FAKE;
+        use crate::difftest::{fill, SP};
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x1b30, 1);
+            c.pc = 0x001f_1b30;
+            // Renderer: render state and the font draw callback (a fake).
+            let renderer = obj(&mut r);
+            let state = obj(&mut r);
+            let vt = obj(&mut r);
+            c.bus.write32(GAME_GP - GP_RENDERER, renderer);
+            c.bus.write32(GAME_GP + 0x2a90, renderer);
+            c.bus.write32(renderer + RENDER_STATE, state);
+            c.bus.write32(state + 0x8, r.next_u32());
+            c.bus.write32(renderer + 0x10d8, vt);
+            c.bus.write16(vt + 0x280, (r.next_u32() & 0x3f0) as u16);
+            c.bus.write32(vt + 0x284, FAKE);
+            // Font, element definitions, empty string.
+            let font = obj(&mut r);
+            for off in (0..0x70).step_by(4) {
+                c.bus.write32(font + off, r.f32(4.0));
+            }
+            if seed % 5 == 0 {
+                c.bus.write32(font + 0x28, 0);
+                c.bus.write32(font + 0x2c, 0);
+            }
+            let defs = obj(&mut r);
+            fill(c, &mut r, defs, 0x24);
+            for i in 0..4 {
+                for off in (0..0x20).step_by(4) {
+                    c.bus.write32(defs + 0x24 * i + off, r.f32(100.0));
+                }
+            }
+            let text = obj(&mut r);
+            c.bus.write8(text, 0);
+            let opt = |c: &mut Cpu, r: &mut Rng, on: bool| -> u32 {
+                if on {
+                    let p = obj(r);
+                    for i in 0..4 {
+                        c.bus.write32(p + 4 * i, r.f32(2.0));
+                    }
+                    p
+                } else {
+                    0
+                }
+            };
+            c.g[A0][0] = obj(&mut r) as u64;
+            c.g[A1][0] = font as u64;
+            c.g[A2][0] = defs as u64;
+            c.g[A3][0] = (r.next_u32() % 4) as u64;
+            c.g[T0][0] = text as u64;
+            c.g[T1][0] = (r.next_u32() % 3) as u64;
+            c.g[T2][0] = opt(c, &mut r, seed % 2 == 0) as u64;
+            c.g[T3][0] = opt(c, &mut r, seed % 3 == 0) as u64;
+            let color = opt(c, &mut r, seed % 4 < 2);
+            let rect = opt(c, &mut r, seed % 5 < 3);
+            c.bus.write32(SP, color);
+            c.bus.write32(SP + 0x8, rect);
+            let align = if seed % 2 == 1 {
+                0x7f
+            } else {
+                r.next_u32() % 3
+            };
+            let flags = if seed % 7 < 4 { 0x7f } else { r.next_u32() % 3 };
+            c.bus.write32(SP + 0x10, align);
+            c.bus.write32(SP + 0x18, flags);
+        };
+        check(
+            ee::s04::f_001f1b30__generated,
+            hud_draw_text_elem,
+            300,
+            &setup,
+        );
+    }
+
+    pub(crate) fn put_cstr(c: &mut Cpu, at: u32, s: &[u8]) {
+        for (i, b) in s.iter().enumerate() {
+            c.bus.write8(at + i as u32, *b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    /// HUD_DrawTime: the font renderer (gp+0x2a90) whose DrawText is a
+    /// fake (may unwind), a font with random sizes and shadow offsets
+    /// (often zero), glyph tables, the HUD's widths and separator ":";
+    /// times whose groups start with '1' (one or two) or not; flags 0..7
+    /// (fraction, '+' / '-' sign); real HUD_AlignElemPos, Font_DrawText,
+    /// sprintf and the varargs draw.
+    #[test]
+    fn hud_draw_time_matches() {
+        use crate::difftest::fakes::covered;
+        use hud_time::*;
+        const HUD: u32 = DATA + 0x1_0000;
+        const FONT_AT: u32 = DATA + 0x1_1000;
+        const VT: u32 = DATA + 0x1_2000;
+        const ARGS: u32 = DATA + 0x1_3000;
+        covered(
+            ee::s04::f_001f1840__generated,
+            hud_draw_time,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1f_1840, 6);
+                c.pc = 0x001f_1840;
+                for off in (0..0x100).step_by(8) {
+                    c.bus.write16(VT + off, ((r.next_u32() % 16) * 4) as u16);
+                    c.bus.write32(VT + off + 4, FAKE + 2 * off);
+                }
+                let rend = DATA + 0x1_8000;
+                c.bus.write32(GAME_GP + 0x2a90, rend);
+                c.bus
+                    .write32(rend + 0x10d8, VT - 0x280 + 8 * (r.next_u32() % 8));
+                let state = DATA + 0x1_c000 + 4 * (r.next_u32() % 16);
+                c.bus.write32(rend + 0xe84, state);
+                fill(c, &mut r, state & !0xf, 0x20);
+                // The font.
+                fill(c, &mut r, FONT_AT, 0x20);
+                for i in 0..8 {
+                    c.bus
+                        .write32(FONT_AT + 0x18 + 4 * i, uf(&mut r, 0.5, 30.0).to_bits());
+                }
+                for i in 0..2 {
+                    let v = if r.next_u32() % 2 == 0 { 0 } else { r.f32(3.0) };
+                    c.bus.write32(FONT_AT + 0x28 + 4 * i, v);
+                }
+                c.bus.write32(FONT_AT + FONT_LINES, 1 + r.next_u32() % 3);
+                let codes = DATA + 0x3000;
+                let n = 1 + r.next_u32() % 40;
+                let mut code = 0;
+                for i in 0..n {
+                    code += 1 + r.next_u32() % 6;
+                    c.bus.write16(codes + 2 * i, code as u16);
+                }
+                fill(c, &mut r, DATA + 0x4000, 0x400);
+                c.bus.write32(FONT_AT, n);
+                c.bus.write32(FONT_AT + 4, codes);
+                c.bus
+                    .write32(FONT_AT + 8, DATA + 0x4000 + 12 * (r.next_u32() % 8));
+                c.bus.write32(FONT_AT + 0xc, r.next_u32() % 64);
+                c.bus.write32(FONT_AT + 0x10, 64 + r.next_u32() % 128);
+                // The HUD.
+                fill(c, &mut r, HUD + 0x160, 0x8);
+                for off in [SEP_W, DIGIT_W, SIGN_ADVANCE, ONE_W] {
+                    c.bus.write32(HUD + off, uf(&mut r, 1.0, 24.0).to_bits());
+                }
+                c.bus.write32(HUD + FONT, FONT_AT);
+                c.bus.write32(HUD + SEPARATOR, ARGS + 0x100);
+                put_cstr(c, ARGS + 0x100, b":");
+                put_cstr(c, STR_PLUS, b"+");
+                put_cstr(c, STR_MINUS, b"-");
+                put_cstr(c, FMT_TWO_DIGITS, b"%02d");
+                put_cstr(c, FMT_FRACTION, b".%02d");
+                // pos, scale, colour; the stack arguments.
+                for k in 0..2 {
+                    c.bus
+                        .write32(ARGS + 4 * k, uf(&mut r, 0.0, 600.0).to_bits());
+                    c.bus
+                        .write32(ARGS + 0x10 + 4 * k, uf(&mut r, 0.25, 3.0).to_bits());
+                }
+                let colour = ARGS + 0x20 + r.next_u32() % 8;
+                for k in 0..16 {
+                    c.bus.write8(colour + k, r.next_u32() as u8);
+                }
+                c.bus.write32(crate::difftest::SP, colour);
+                for k in 1..4 {
+                    c.bus.write32(crate::difftest::SP + 8 * k, r.next_u32() % 4);
+                }
+                let group = |r: &mut Rng| -> u64 {
+                    let v = match r.next_u32() % 5 {
+                        0 => 11,
+                        1 => 10 + r.next_u32() % 10,
+                        2 => 1 + 10 * (r.next_u32() % 10),
+                        3 => r.next_u32() % 100,
+                        _ => r.next_u32() % 10,
+                    };
+                    v as u64
+                };
+                c.g[A0][0] = HUD as u64;
+                c.g[A1][0] = group(&mut r);
+                c.g[A2][0] = group(&mut r);
+                c.g[A3][0] = group(&mut r);
+                c.g[T0][0] = group(&mut r);
+                c.g[T1][0] = (r.next_u32() % 8) as u64;
+                c.g[T2][0] = ARGS as u64;
+                c.g[T3][0] = (ARGS + 0x10) as u64;
+            },
         );
     }
 }

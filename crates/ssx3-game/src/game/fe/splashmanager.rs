@@ -13,6 +13,7 @@ use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::game::ai::rider::per_tick_60;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -57,6 +58,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_3e28,
         c_splash_manager_render,
         "cSplashManager_Render",
+    ),
+    (
+        0x002f_3810,
+        c_splash_manager_emit_pending,
+        "cSplashManager_EmitPending",
     ),
 ];
 
@@ -1591,6 +1597,193 @@ pub fn c_splash_manager_render(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod oc230_splash {
+    use crate::call::Callee;
+
+    pub const SPAWN_CRYSTALS: Callee = Callee {
+        addr: 0x002f_3640,
+        f: ssx3_ee::s09::cSplashManager_SpawnCrystals,
+    };
+
+    pub const ADD_DROP: Callee = Callee {
+        addr: 0x002f_37a8,
+        f: ssx3_ee::s09::cSplashManager_AddDrop,
+    };
+
+    /// `BXrand` (another shard: through the function table).
+    pub const BX_RAND: u32 = 0x0031_77f0;
+
+    /// The pending-emission accumulator (float) in the manager.
+    pub const PENDING: u32 = 0x1024;
+
+    /// gp offsets: the float-LCG seed, the crystal chance, the crystal
+    /// count range [min, max), the drop size.
+    pub const SEED: u32 = 0xa0c;
+
+    pub const CRYSTAL_CHANCE: u32 = 0x116c;
+
+    pub const CRYSTALS_MIN: u32 = 0x1174;
+
+    pub const CRYSTALS_MAX: u32 = 0x1178;
+
+    pub const DROP_SIZE: u32 = 0x11a8;
+}
+
+/// `gp + off`.
+#[inline(always)]
+pub(crate) fn oc230_gp(c: &Cpu, off: u32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_add(off)
+}
+
+/// One step of the float LCG at gp+0xa0c: `seed = ((seed_reg * 0x18fcd +
+/// 0xe9507c) & 0x7fffff) | 1.0` into `dst`, the product of the next step
+/// into `next` (the original interleaves the multiplies).
+pub(crate) fn oc230_splash_lcg(c: &mut Cpu, prod: usize, dst: usize) {
+    c.g[dst][0] = oc230_add(c, prod, S2);
+    c.g[dst][0] &= c.g[S1][0];
+    c.g[dst][0] |= c.g[S5][0];
+}
+
+/// `void cSplashManager_EmitPending(cSplashManager* m)` (0x2f3810): takes
+/// the whole part n of the pending-emission accumulator (+0x1024, keeping
+/// the fraction) and emits until n is used up: a random screen position
+/// (640 x 480, from the float LCG at gp+0xa0c), then with the crystal
+/// chance a burst of `min + BXrand() % (max - min)` crystals (at least 1,
+/// `SpawnCrystals`), else one drop of the configured size (`AddDrop`).
+pub fn c_splash_manager_emit_pending(c: &mut Cpu) {
+    use oc230_splash as sp_;
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S1, 0x90);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 22, 0xc0);
+        frame.save_fpr(c, 21, 0xb8);
+        frame.save_fpr(c, 20, 0xb0);
+        // n = (int)pending; pending -= n.
+        let pending = r32(c, S4).wrapping_add(sp_::PENDING);
+        c.lwc1(0, pending);
+        c.cvt_w_s(1, 0);
+        c.mfc1(S0, 1);
+        c.mtc1(S0, 1);
+        c.cvt_s_w(1, 1);
+        c.sub_s(0, 0, 1);
+        let none = (c.g[S0][0] as i64) <= 0;
+        c.swc1(0, pending);
+        if !none {
+            c.cycles += 16;
+            c.g[S3][0] = 0x1_8fcd; // LCG multiplier
+            c.g[S2][0] = 0xe9_507c; // LCG increment
+            c.g[S1][0] = 0x7f_ffff; // mantissa mask
+            c.g[AT][0] = 0x4420_0000;
+            c.mtc1(AT, 22); // 640
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 20); // 1
+            c.g[AT][0] = 0x43f0_0000;
+            c.mtc1(AT, 21); // 480
+            c.g[S5][0] = 0x3f80_0000;
+            c.g[S6][0] = 0;
+            c.g[S7][0] = 1;
+            c.g[V0][0] = c.lw(oc230_gp(c, sp_::SEED));
+            loop {
+                // pos = ((r1 - 1) * 640, (r2 - 1) * 480); roll r3 - 1.
+                c.cycles += 29;
+                let seed = oc230_gp(c, sp_::SEED);
+                let s = sp(c);
+                c.lwc1(2, oc230_gp(c, sp_::CRYSTAL_CHANCE));
+                c.mult(0, V1, V0, S3);
+                oc230_splash_lcg(c, V1, V0);
+                c.mult(0, A0, V0, S3);
+                let v = c.g[V0][0];
+                c.sw(seed, v);
+                c.lwc1(0, seed);
+                oc230_splash_lcg(c, A0, V1);
+                c.sub_s(0, 0, 20);
+                c.mult(0, A0, V1, S3);
+                let v = c.g[V1][0];
+                c.sw(seed, v);
+                c.mul_s(0, 0, 22);
+                c.lwc1(1, seed);
+                oc230_splash_lcg(c, A0, V0);
+                c.swc1(0, s);
+                c.sub_s(1, 1, 20);
+                let v = c.g[V0][0];
+                c.sw(seed, v);
+                c.mul_s(1, 1, 21);
+                c.lwc1(0, seed);
+                c.sub_s(0, 0, 20);
+                c.c_lt_s(0, 2);
+                let crystals = c.fcc();
+                c.swc1(1, s.wrapping_add(4));
+                if crystals {
+                    // k = max(min + BXrand() % (max - min), 1) crystals.
+                    c.cycles += 10;
+                    call_ptr(c, sp_::BX_RAND, 0x002f_3924)?;
+                    c.g[A3][0] = c.lw(oc230_gp(c, sp_::CRYSTALS_MIN));
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[V1][0] = c.lw(oc230_gp(c, sp_::CRYSTALS_MAX));
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(r32(c, A3)));
+                    c.divu(0, V0, V1);
+                    c.cycles += 9;
+                    c.g[A2][0] = c.hi[0];
+                    c.g[A3][0] = oc230_add(c, A3, A2);
+                    c.g[V0][0] = ((c.g[S6][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[A3][0] = c.g[S7][0];
+                    }
+                    c.g[A2][0] = c.g[A3][0];
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_sub(r32(c, A3)));
+                    sp_::SPAWN_CRYSTALS.call(c, 0x002f_3960)?;
+                } else {
+                    // One drop of the configured size.
+                    c.cycles += 8;
+                    c.lwc1(0, oc230_gp(c, sp_::DROP_SIZE));
+                    c.g[A0][0] = c.g[S4][0];
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[A2][0] = sx(s.wrapping_add(0x10));
+                    c.swc1(0, s.wrapping_add(0x14));
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_sub(1));
+                    c.swc1(0, s.wrapping_add(0x10));
+                    sp_::ADD_DROP.call(c, 0x002f_3988)?;
+                }
+                c.cycles += 2;
+                let more = (c.g[S0][0] as i64) > 0;
+                c.g[V0][0] = c.lw(oc230_gp(c, sp_::SEED));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_38a8);
+                }
+            }
+        }
+        c.cycles += 14;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 22, 0xc0);
+        frame.restore_fpr(c, 21, 0xb8);
+        frame.restore_fpr(c, 20, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2414,6 +2607,66 @@ pub(crate) mod tests {
                     w(c, THIS + 0x724 + 4 * i, r.f32(100.0));
                 }
                 c.g[A0][0] = sx(THIS);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::{covered, FAKE};
+    use crate::difftest::{fill, put_words};
+
+    /// cSplashManager_EmitPending: pending amounts below 1 (nothing), up
+    /// to ~10 emissions, a crystal chance of 0, 1 or in between, crystal
+    /// ranges including an empty one (k forced to 1) and small drop/crystal
+    /// capacities so the real AddDrop/SpawnCrystals (and their init calls,
+    /// over the ELF image's data) sometimes store and sometimes skip.
+    #[test]
+    fn c_splash_manager_emit_pending_matches() {
+        check(
+            ee::s09::f_002f3810__generated,
+            c_splash_manager_emit_pending,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x002f_3810 ^ (seed as u64) << 12);
+                crate::difftest::elf_image(c);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x002f_3810;
+                let gp = GAME_GP;
+                c.bus.write32(gp - 0x1f04, DATA + 0x3_0000);
+                c.bus.write32(gp - 0x848, DATA + 0x3_1000);
+                let m = DATA;
+                for i in 0..0x500 {
+                    c.bus.write32(m + 4 * i, 0);
+                }
+                let pending = match seed % 5 {
+                    0 => 0.75f32,
+                    1 => -1.5,
+                    _ => (r.next_u32() % 1000) as f32 * 0.011,
+                };
+                c.bus.write32(m + oc230_splash::PENDING, pending.to_bits());
+                c.bus.write32(m + 0x14, r.next_u32() % 3);
+                c.bus.write32(m + 0x18, r.next_u32() % 3);
+                c.bus.write32(gp + 0x1164, r.next_u32() % 7);
+                c.bus.write32(gp + 0x1168, r.next_u32() % 7);
+                let seed_bits = 0x3f80_0000 | (r.next_u32() & 0x7f_ffff);
+                c.bus.write32(gp + oc230_splash::SEED, seed_bits);
+                let chance = match seed % 3 {
+                    0 => 0.0f32,
+                    1 => 1.0,
+                    _ => 0.4,
+                };
+                c.bus
+                    .write32(gp + oc230_splash::CRYSTAL_CHANCE, chance.to_bits());
+                let lo = r.next_u32() % 3;
+                let hi = if seed % 4 == 0 {
+                    lo
+                } else {
+                    lo + 1 + r.next_u32() % 3
+                };
+                c.bus.write32(gp + oc230_splash::CRYSTALS_MIN, lo);
+                c.bus.write32(gp + oc230_splash::CRYSTALS_MAX, hi);
+                c.bus.write32(gp + oc230_splash::DROP_SIZE, r.f32(4.0));
+                c.g[A0][0] = sx(m);
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -89,6 +90,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_7e70,
         avalanche_destroy_all_thunk,
         "Avalanche_DestroyAllThunk",
+    ),
+    (0x002d_9130, vfx_avalanche_render, "VfxAvalanche_Render"),
+    (
+        0x002d_a028,
+        avalanche_apply_history_data,
+        "Avalanche_ApplyHistoryData",
     ),
 ];
 
@@ -1780,6 +1787,436 @@ pub fn avalanche_clamp_vector(c: &mut Cpu) {
     return;
 }
 
+pub(crate) mod avalanche {
+
+    /// `gp+0x9c0` the first group, `gp+0x9c4` the loaded history data,
+    /// `gp+0x9cc` the data was applied.
+    pub const GP_GROUPS: u32 = 0x9c0;
+
+    pub const GP_DATA: u32 = 0x9c4;
+
+    pub const GP_APPLIED: u32 = 0x9cc;
+
+    /// Group: `+0x4` first node, `+0x8` next group, `+0xc` pair count
+    /// (`u16`, zeroed after), `+0xe` index count, `+0x10` pairs (`{f32
+    /// v, u32 0}`), `+0x110` index pairs (`{u16 b, u16 a}`).
+    pub const GROUP_NODES: u32 = 0x4;
+
+    pub const GROUP_NEXT: u32 = 0x8;
+
+    pub const GROUP_PAIRS: u32 = 0xc;
+
+    pub const GROUP_INDICES: u32 = 0xe;
+
+    pub const GROUP_PAIR_ARRAY: u32 = 0x10;
+
+    pub const GROUP_INDEX_ARRAY: u32 = 0x110;
+
+    /// Node: `+0xe0` position, `+0xf3` owns its data, `+0xf4` next node,
+    /// `+0xfc` data, `+0x100` data count (float; 10 bytes per entry).
+    pub const NODE_POS: u32 = 0xe0;
+
+    pub const NODE_OWNED: u32 = 0xf3;
+
+    pub const NODE_NEXT: u32 = 0xf4;
+
+    pub const NODE_DATA: u32 = 0xfc;
+
+    pub const NODE_COUNT: u32 = 0x100;
+
+    pub const ENTRY_SIZE: u64 = 0xa;
+
+    /// Loop heads (event checks at their back edges).
+    pub const HEAD_GROUPS: u32 = 0x002d_a070;
+
+    pub const HEAD_NODES: u32 = 0x002d_a088;
+
+    pub const HEAD_PAIRS: u32 = 0x002d_a120;
+
+    pub const HEAD_INDICES: u32 = 0x002d_a158;
+}
+
+/// `cMemMan_free(p)` (0x317e98, other shard).
+pub(crate) const CMEMMAN_FREE: u32 = 0x0031_7e98;
+
+/// `addiu reg, reg, n`.
+pub(crate) fn bump(c: &mut Cpu, reg: usize, n: u32) -> u32 {
+    let v = (c.g[reg][0] as u32).wrapping_add(n);
+    c.g[reg][0] = sx(v);
+    v
+}
+
+/// `void cAvalanche::resolveDataPointers()` (0x2da028, proposed
+/// `Avalanche_ApplyHistoryData`): once, when there are groups and loaded
+/// history data, walk the data alongside the groups: each node takes its
+/// position (w = 1) and points at its slice of the data (freeing data it
+/// owned), each group reads its pairs (value, 0) and index pairs; then the
+/// data counts as applied.
+pub fn avalanche_apply_history_data(c: &mut Cpu) {
+    use avalanche::*;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x70);
+        let gp = c.g[GP][0] as u32;
+        let groups = c.lw(gp.wrapping_add(GP_GROUPS));
+        c.g[A0][0] = groups;
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0x10);
+        frame.save_fpr(c, 20, 0x60);
+        'body: {
+            if groups == 0 {
+                break 'body;
+            }
+            c.cycles += 3;
+            let data = c.lw(gp.wrapping_add(GP_DATA));
+            c.g[V1][0] = data;
+            let applied = c.lw(gp.wrapping_add(GP_APPLIED));
+            c.g[V0][0] = applied;
+            if data == 0 {
+                break 'body;
+            }
+            c.cycles += 2;
+            frame.restore(c, S0, 0x50);
+            if applied != 0 {
+                return epilogue(c, frame);
+            }
+            c.cycles += 4;
+            c.g[S0][0] = sx((data as u32).wrapping_add(8));
+            c.g[S2][0] = groups;
+            c.g[S1][0] = c.lw((groups as u32).wrapping_add(GROUP_NODES));
+            loop {
+                // Group loop head: the nodes.
+                c.cycles += 2;
+                if c.g[S1][0] != 0 {
+                    c.cycles += 4;
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(AT, 20);
+                    c.g[S3][0] = ENTRY_SIZE;
+                    loop {
+                        // Node loop head: the position (x, y, z, 1).
+                        c.cycles += 13;
+                        let p = bump(c, S0, 4);
+                        c.lwc1(0, p);
+                        c.lwc1(1, p.wrapping_add(4));
+                        c.lwc1(2, p.wrapping_add(8));
+                        let s = sp(c);
+                        c.swc1(0, s);
+                        bump(c, S0, 0xc);
+                        c.swc1(1, s.wrapping_add(4));
+                        c.swc1(2, s.wrapping_add(8));
+                        c.swc1(20, s.wrapping_add(0xc));
+                        c.lq(V0, s);
+                        let node = c.g[S1][0] as u32;
+                        let owned = c.lbu(node.wrapping_add(NODE_OWNED));
+                        c.g[V1][0] = owned;
+                        c.sq(V0, node.wrapping_add(NODE_POS));
+                        if owned == 0 {
+                            c.cycles += 1;
+                        } else {
+                            c.cycles += 3;
+                            let old = c.lw(node.wrapping_add(NODE_DATA));
+                            c.g[A0][0] = old;
+                            if old != 0 {
+                                c.cycles += 2;
+                                call_ptr(c, CMEMMAN_FREE, 0x002d_a0d0)?;
+                                c.cycles += 1;
+                            }
+                        }
+                        c.lwc1(0, node.wrapping_add(NODE_COUNT));
+                        // The node's data slice; the next node.
+                        c.cycles += 8;
+                        c.sw(node.wrapping_add(NODE_DATA), c.g[S0][0]);
+                        c.cvt_w_s(1, 0);
+                        c.mfc1(V0, 1);
+                        c.sb(node.wrapping_add(NODE_OWNED), 0);
+                        c.g[S1][0] = c.lw(node.wrapping_add(NODE_NEXT));
+                        c.mult(0, V1, V0, S3);
+                        c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                        if c.g[S1][0] == 0 {
+                            c.cycles += 1;
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD_NODES);
+                        }
+                    }
+                }
+                c.g[V0][0] = c.lhu(c.g[S0][0] as u32);
+
+                // The group's counts and pairs.
+                let group = c.g[S2][0] as u32;
+                c.cycles += 8;
+                c.g[A0][0] = 0;
+                bump(c, S0, 2);
+                c.sh(group.wrapping_add(GROUP_PAIRS), c.g[V0][0]);
+                c.g[V1][0] = c.lhu(c.g[S0][0] as u32);
+                c.g[V0][0] &= 0xffff;
+                bump(c, S0, 2);
+                c.sh(group.wrapping_add(GROUP_INDICES), c.g[V1][0]);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[V1][0] = sx(group.wrapping_add(GROUP_PAIR_ARRAY + 4));
+                    loop {
+                        c.cycles += 9;
+                        c.lwc1(0, c.g[S0][0] as u32);
+                        bump(c, A0, 1);
+                        let pair = c.g[V1][0] as u32;
+                        c.sw(pair, 0);
+                        bump(c, S0, 8);
+                        c.swc1(0, pair.wrapping_sub(4));
+                        let n = c.lhu(group.wrapping_add(GROUP_PAIRS));
+                        let more = ((c.g[A0][0] as i64) < (n as i64)) as u64;
+                        c.g[V0][0] = more;
+                        bump(c, V1, 8);
+                        if more == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD_PAIRS);
+                        }
+                    }
+                }
+
+                // The index pairs (stored swapped).
+                c.cycles += 3;
+                c.g[V0][0] = c.lhu(group.wrapping_add(GROUP_INDICES));
+                c.g[A1][0] = 0;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[A0][0] = sx(group.wrapping_add(GROUP_INDEX_ARRAY));
+                    loop {
+                        c.cycles += 11;
+                        let at = c.g[A0][0] as u32;
+                        c.g[V1][0] = c.lhu(c.g[S0][0] as u32);
+                        bump(c, A1, 1);
+                        bump(c, S0, 2);
+                        c.sh(at.wrapping_add(2), c.g[V1][0]);
+                        c.g[V0][0] = c.lhu(c.g[S0][0] as u32);
+                        bump(c, S0, 2);
+                        c.sh(at, c.g[V0][0]);
+                        let n = c.lhu(group.wrapping_add(GROUP_INDICES));
+                        let more = ((c.g[A1][0] as i64) < (n as i64)) as u64;
+                        c.g[V0][0] = more;
+                        bump(c, A0, 4);
+                        if more == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD_INDICES);
+                        }
+                    }
+                }
+
+                // Next group.
+                c.cycles += 4;
+                c.sh(group.wrapping_add(GROUP_PAIRS), 0);
+                let next = c.lw(group.wrapping_add(GROUP_NEXT));
+                c.g[S2][0] = next;
+                if next == 0 {
+                    c.cycles += 2;
+                    c.g[V0][0] = 1;
+                    c.sw(gp.wrapping_add(GP_APPLIED), 1);
+                    break 'body;
+                }
+                c.g[S1][0] = c.lw((next as u32).wrapping_add(GROUP_NODES));
+                if event_due(c) {
+                    deliver_event_here(c, HEAD_GROUPS);
+                }
+            }
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x50);
+        epilogue(c, frame)
+    });
+
+    fn epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    }
+}
+
+// --------------------------------------------------- VfxAvalanche_Render
+
+/// `void VfxAvalanche_Render(void)` (0x2d9130): draw the avalanche effect.
+/// Runs when the avalanche is on (gp+0x940) and visible (gp+0x9cc), or when
+/// forced (gp+0x10fc). Pushes the graphics manager's render state (a copy
+/// of the top, then the avalanche template at 0x501420, blend bits 7, no
+/// texture), sets the current camera's (world +0x84 -> +0x84, index +0x14)
+/// matrix, position and rotation through the manager's vtable (+0x10d8:
+/// slots +0xc0, +0xc8, +0x110), renders the 16 avalanche slots (0x538938,
+/// 0x1c bytes each) while the avalanche is on, and pops the state.
+pub fn vfx_avalanche_render(c: &mut Cpu) {
+    const ON: u32 = 0x940;
+    const VISIBLE: u32 = 0x9cc;
+    const FORCED: u32 = 0x10fc;
+    /// gp-0x848: the world (app) pointer.
+    const WORLD: u32 = 0x848;
+    const GFX_MAN: u32 = 0x2a90;
+    const STATE_TOP: u32 = 0xe84;
+    const VTABLE: u32 = 0x10d8;
+    const STATE_SIZE: u32 = 0x14;
+    /// The avalanche's render-state template.
+    const TEMPLATE: u32 = 0x0050_1420;
+    const SLOTS: u32 = 0x0053_8938;
+    const SLOT_SIZE: u32 = 0x1c;
+    const SLOT_COUNT: u32 = 16;
+    const RENDER_ACTIVE: Callee = Callee {
+        addr: 0x002d_8ea8,
+        f: ee::s09::Avalanche_RenderActive,
+    };
+
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x40);
+        let gp = c.g[GP][0] as u32;
+        c.g[V0][0] = Addr(gp.wrapping_add(ON)).lw(c);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        let mut draw = false;
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            draw = Addr(gp.wrapping_add(VISIBLE)).lw(c) != 0;
+            c.g[V0][0] = Addr(gp.wrapping_sub(WORLD)).lw(c);
+        }
+        if !draw {
+            c.cycles += 3;
+            draw = Addr(gp.wrapping_add(FORCED)).lw(c) != 0;
+            c.g[V0][0] = Addr(gp.wrapping_sub(WORLD)).lw(c);
+        }
+        if draw {
+            c.cycles += 72;
+            c.g[A3][0] = 0x50_0000;
+            let gfx = Addr(gp.wrapping_add(GFX_MAN)).lw(c);
+            c.g[S1][0] = gfx;
+            let gfx = gfx as u32;
+            c.g[T0][0] = !0x3e0;
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x84)).lw(c);
+            c.g[T1][0] = u64::MAX;
+            let top = Addr(gfx.wrapping_add(STATE_TOP)).lw(c);
+            c.g[A1][0] = top;
+            let top = top as u32;
+            c.g[A2][0] = 1;
+            // The current camera: views[cur] (s0).
+            c.g[V1][0] = Addr(r32(c, A0).wrapping_add(0x84)).lw(c);
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x14)).lw(c);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            c.g[S0][0] = Addr(r32(c, V1).wrapping_add(0x4)).lw(c);
+            // Push a copy of the top.
+            c.ldl(V0, top.wrapping_add(0x7));
+            c.ldr(V0, top);
+            c.ldl(V1, top.wrapping_add(0xf));
+            c.ldr(V1, top.wrapping_add(0x8));
+            c.g[A0][0] = Addr(top.wrapping_add(0x10)).lw(c);
+            c.sdl(V0, top.wrapping_add(0x1b));
+            c.sdr(V0, top.wrapping_add(0x14));
+            c.sdl(V1, top.wrapping_add(0x23));
+            c.sdr(V1, top.wrapping_add(0x1c));
+            c.sw(top.wrapping_add(0x24), c.g[A0][0]);
+            c.g[V1][0] = Addr(gfx.wrapping_add(STATE_TOP)).lw(c);
+            c.g[V0][0] = sx(r32(c, V1).wrapping_add(STATE_SIZE));
+            c.sw(gfx.wrapping_add(STATE_TOP), c.g[V0][0]);
+            // ... and overwrite the new top with the template.
+            c.g[T2][0] = sx(TEMPLATE);
+            let old = r32(c, V1);
+            c.ldl(V0, TEMPLATE + 0x7);
+            c.ldr(V0, TEMPLATE);
+            c.ldl(A0, TEMPLATE + 0xf);
+            c.ldr(A0, TEMPLATE + 0x8);
+            c.g[A1][0] = Addr(TEMPLATE + 0x10).lw(c);
+            c.sdl(V0, old.wrapping_add(0x1b));
+            c.sdr(V0, old.wrapping_add(0x14));
+            c.sdl(A0, old.wrapping_add(0x23));
+            c.sdr(A0, old.wrapping_add(0x1c));
+            c.sw(old.wrapping_add(0x24), c.g[A1][0]);
+            // Blend bits 7, texture -1.
+            c.g[A0][0] = Addr(gfx.wrapping_add(STATE_TOP)).lw(c);
+            let flags = r32(c, A0).wrapping_add(0x8);
+            c.g[V0][0] = (Addr(flags).lw(c) & c.g[T0][0]) | 0xe0;
+            c.sw(flags, c.g[V0][0]);
+            c.g[V1][0] = Addr(gfx.wrapping_add(STATE_TOP)).lw(c);
+            c.sh(r32(c, V1).wrapping_add(0x10), c.g[T1][0]);
+
+            // setMatrix(&cam->mats[cur], 1).
+            c.g[V0][0] = Addr(gp.wrapping_sub(WORLD)).lw(c);
+            c.g[A1][0] = Addr(gfx.wrapping_add(VTABLE)).lw(c);
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x84)).lw(c);
+            c.g[A3][0] = Addr(r32(c, A1).wrapping_add(0xc4)).lw(c);
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x84)).lw(c);
+            c.g[A0][0] = Addr(r32(c, A1).wrapping_add(0xc0)).lh(c);
+            c.g[A1][0] = Addr(r32(c, V0).wrapping_add(0x14)).lw(c);
+            c.g[A0][0] = sx(gfx.wrapping_add(r32(c, A0)));
+            c.g[A1][0] = sx(r32(c, A1) << 4);
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x18));
+            c.g[A1][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+            call_ptr(c, r32(c, A3), 0x002d_9240)?;
+
+            // setPos(view[0..3]).
+            let view = Addr(r32(c, S0));
+            c.g[V0][0] = Addr(gfx.wrapping_add(VTABLE)).lw(c);
+            c.f[12] = view.read_fpu(c).0;
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0xc8)).lh(c);
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0xcc)).lw(c);
+            c.f[13] = view.off(0x4).read_fpu(c).0;
+            c.g[A0][0] = sx(gfx.wrapping_add(r32(c, A0)));
+            c.f[14] = view.off(0x8).read_fpu(c).0;
+            call_ptr(c, r32(c, V1), 0x002d_9260)?;
+
+            // setRot(view + 0x10 floats).
+            c.g[V0][0] = Addr(gfx.wrapping_add(VTABLE)).lw(c);
+            c.g[A1][0] = sx(view.0.wrapping_add(0x40));
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x110)).lh(c);
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x114)).lw(c);
+            c.g[A0][0] = sx(gfx.wrapping_add(r32(c, A0)));
+            call_ptr(c, r32(c, V1), 0x002d_9278)?;
+
+            let on = Addr(gp.wrapping_add(ON)).lw(c) != 0;
+            c.g[V0][0] = 0x54_0000;
+            if on {
+                c.cycles += 3;
+                c.g[S0][0] = sx(SLOTS);
+                c.g[S2][0] = sx(SLOTS + SLOT_SIZE * SLOT_COUNT);
+                loop {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.g[S0][0];
+                    RENDER_ACTIVE.call(c, 0x002d_9298)?;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(SLOT_SIZE));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x002d_9290);
+                    }
+                }
+            }
+            // Pop.
+            c.cycles += 3;
+            c.g[V0][0] = Addr(gfx.wrapping_add(STATE_TOP)).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(STATE_SIZE));
+            c.sw(gfx.wrapping_add(STATE_TOP), c.g[V0][0]);
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2325,5 +2762,147 @@ pub(crate) mod tests {
             let t = after(hz);
             assert!((t - base).abs() < 1e-6, "{hz} Hz: time {t} vs {base} at 60");
         }
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::fakes;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::{fresh, require_paths};
+    use ssx3_ee_rt::Cpu;
+
+    /// Avalanche_ApplyHistoryData: no groups, no data, already applied;
+    /// otherwise 1-3 groups of 0-3 nodes (owning heap data that is freed,
+    /// owning none, or not owning) with 0-4 pairs and index pairs each,
+    /// read from a history buffer laid out as the function walks it.
+    #[test]
+    fn avalanche_apply_history_data_matches() {
+        use super::avalanche::*;
+        use crate::game::scripter::ssxscriptengine::tests::{alloc, heap_init};
+        check(
+            ee::s09::f_002da028__generated,
+            avalanche_apply_history_data,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2da028, 0);
+                let groups_at = DATA + 0x1_0000;
+                let nodes_at = DATA + 0x2_0000;
+                let data = DATA + 0x3_0000;
+                let mut heap = false;
+                // The history buffer, written as it is read.
+                let mut p = data + 8;
+                let n_groups = 1 + r.next_u32() % 3;
+                for g in 0..n_groups {
+                    let group = groups_at + 0x400 * g;
+                    for off in (0..0x200).step_by(4) {
+                        c.bus.write32(group + off, r.next_u32());
+                    }
+                    let next = if g + 1 < n_groups { group + 0x400 } else { 0 };
+                    c.bus.write32(group + GROUP_NEXT, next);
+                    let n_nodes = r.next_u32() % 4;
+                    let mut prev_link = group + GROUP_NODES;
+                    for k in 0..n_nodes {
+                        let node = nodes_at + 0x1000 * g + 0x200 * k;
+                        for off in (0xe0..0x110).step_by(4) {
+                            c.bus.write32(node + off, r.next_u32());
+                        }
+                        c.bus.write32(prev_link, node);
+                        prev_link = node + NODE_NEXT;
+                        let count = 2 * (r.next_u32() % 3);
+                        c.bus.write32(node + NODE_COUNT, (count as f32).to_bits());
+                        let owned = r.next_u32() % 3;
+                        c.bus.write8(node + NODE_OWNED, (owned != 0) as u8);
+                        let old = if owned == 1 {
+                            if !heap {
+                                heap_init(c);
+                                heap = true;
+                            }
+                            alloc(c, 0x40)
+                        } else if owned == 2 {
+                            0
+                        } else {
+                            r.next_u32()
+                        };
+                        c.bus.write32(node + NODE_DATA, old);
+                        c.bus.write32(p, r.next_u32());
+                        for i in 0..3 {
+                            c.bus.write32(p + 4 + 4 * i, r.f32(1000.0));
+                        }
+                        p += 16;
+                        for i in 0..count * 10 / 4 {
+                            c.bus.write32(p + 4 * i, r.next_u32());
+                        }
+                        p += count * 10;
+                    }
+                    c.bus.write32(prev_link, 0);
+                    let pairs = r.next_u32() % 5;
+                    let indices = r.next_u32() % 5;
+                    c.bus.write16(p, pairs as u16);
+                    c.bus.write16(p + 2, indices as u16);
+                    p += 4;
+                    for i in 0..pairs {
+                        c.bus.write32(p + 8 * i, r.f32(10.0));
+                        c.bus.write32(p + 8 * i + 4, r.next_u32());
+                    }
+                    p += 8 * pairs;
+                    for i in 0..indices {
+                        c.bus.write32(p + 4 * i, r.next_u32());
+                    }
+                    p += 4 * indices;
+                }
+                let groups = if seed % 9 == 0 { 0 } else { groups_at };
+                let buffer = if seed % 9 == 1 { 0 } else { data };
+                let applied = if seed % 9 == 2 { 1 } else { 0 };
+                c.bus.write32(GAME_GP + GP_GROUPS, groups);
+                c.bus.write32(GAME_GP + GP_DATA, buffer);
+                c.bus.write32(GAME_GP + GP_APPLIED, applied);
+                c.pc = 0x002d_a028;
+            },
+        );
+    }
+
+    /// `VfxAvalanche_Render`: on/visible/forced combinations (both skip and
+    /// draw paths); the manager's three vtable methods are fakes (each may
+    /// unwind); the 16 avalanche slots are inactive, so the real
+    /// `Avalanche_RenderActive` returns at once.
+    #[test]
+    fn vfx_avalanche_render_matches() {
+        use crate::difftest::GAME_GP;
+        check(
+            ee::s09::f_002d9130__generated,
+            vfx_avalanche_render,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x2d9130, 3);
+                c.pc = 0x002d_9130;
+                let world = DATA;
+                let cams = DATA + 0x100;
+                let cam = DATA + 0x200;
+                let gfx = DATA + 0x1000;
+                let top = DATA + 0x3000 + 4 * (seed % 4);
+                let vt = DATA + 0x4000;
+                let view = DATA + 0x5000;
+                let bits = seed % 8;
+                c.bus
+                    .write32(GAME_GP + 0x940, (bits & 1) * (1 + r.next_u32() % 5));
+                c.bus.write32(GAME_GP + 0x9cc, (bits >> 1) & 1);
+                c.bus.write32(GAME_GP + 0x10fc, (bits >> 2) & 1);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, cams);
+                c.bus.write32(cams + 0x84, cam);
+                let cur = r.next_u32() % 3;
+                c.bus.write32(cam + 0x14, cur);
+                c.bus.write32(cam + 4 + 4 * cur, view);
+                fill(c, &mut r, view, 0x20);
+                c.bus.write32(GAME_GP + 0x2a90, gfx);
+                c.bus.write32(gfx + 0xe84, top);
+                fill(c, &mut r, top, 10);
+                fill(c, &mut r, 0x0050_1420, 5);
+                c.bus.write32(gfx + 0x10d8, vt);
+                for (i, slot) in [0xc0u32, 0xc8, 0x110].into_iter().enumerate() {
+                    c.bus.write16(vt + slot, (r.next_u32() as i16 & !3) as u16);
+                    c.bus.write32(vt + slot + 4, fakes::FAKE + 0x10 * i as u32);
+                }
+            },
+        );
     }
 }

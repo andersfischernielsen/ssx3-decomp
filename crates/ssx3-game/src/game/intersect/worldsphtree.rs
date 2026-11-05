@@ -29,6 +29,9 @@ pub(crate) use crate::game::fe::fepopup::sq;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw as lw_2;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_at;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::intersect::riderspheretree::coll_sphere_tree_common;
 pub(crate) use crate::game::intersect::riderspheretree::collision_direction;
 pub(crate) use crate::game::intersect::riderspheretree::frame_restore_s0;
@@ -191,6 +194,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0033_4888, collide_volume_object, "Collide_VolumeObject"),
     (0x0033_5d78, nash_collide_volume, "Nash_CollideVolume"),
+    (
+        0x0033_6850,
+        nash_find_closest_contact,
+        "Nash_FindClosestContact",
+    ),
+    (0x0034_2358, anim_teeter_v15, "AnimTeeter_v15"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14518,6 +14527,407 @@ pub fn nash_collide_volume(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod oc230_nash {
+
+    pub const COLLIDE_VOLUME: crate::call::Callee = crate::call::Callee {
+        addr: 0x0033_5d78,
+        f: ssx3_ee::s11::Nash_CollideVolume,
+    };
+
+    pub const HIT_SIZE: u32 = 0x80;
+
+    pub const DIST: u32 = 0x40;
+
+    pub const OBJECT: u32 = 0x50;
+
+    pub const INSTANCE: u32 = 0x54;
+
+    pub const OBJECT_ID: u32 = 0x78;
+
+    pub const INSTANCE_ID: u32 = 0x150;
+
+    /// The query's vtable and its reference-distance method.
+    pub const QUERY_VTABLE: u32 = 0x50;
+
+    pub const REF_DIST_SLOT: u32 = 0x18;
+}
+
+pub(crate) mod teeter {
+
+    /// `+0x0` force applied this frame (cleared after).
+    pub const FORCE: u32 = 0x0;
+
+    /// `+0x4` position step of this frame.
+    pub const STEP: u32 = 0x4;
+
+    /// `+0x8` force gain (negative: the force pushes the other way).
+    pub const GAIN: u32 = 0x8;
+
+    /// `+0xc` velocity kept when bouncing off an end stop.
+    pub const BOUNCE: u32 = 0xc;
+
+    /// `+0x10`, `+0x14` end stops.
+    pub const MIN: u32 = 0x10;
+
+    pub const MAX: u32 = 0x14;
+
+    /// `+0x18` largest step per frame.
+    pub const MAX_STEP: u32 = 0x18;
+
+    pub const DAMPING: u32 = 0x1c;
+
+    pub const STIFFNESS: u32 = 0x20;
+
+    /// `+0x24` rest position.
+    pub const REST: u32 = 0x24;
+
+    pub const VEL: u32 = 0x28;
+
+    /// `+0x30` position (also the animation object's value), `+0x34`,
+    /// `+0x3c` copies of it, `+0x38` the previous one.
+    pub const POS: u32 = 0x30;
+
+    pub const POS_OUT: u32 = 0x34;
+
+    pub const PREV: u32 = 0x38;
+
+    pub const POS_COPY: u32 = 0x3c;
+
+    /// `+0x56` flags (bit 0: the end script fired).
+    pub const FLAGS: u32 = 0x56;
+
+    /// `gp-0x2b5c/-0x2b58`: the speed below which an end stop stops it.
+    pub const GP_STOP_SPEED_MIN: u32 = 0x2b5c;
+
+    pub const GP_STOP_SPEED_MAX: u32 = 0x2b58;
+}
+
+/// `float Nash_FindClosestContact(Nash* grid, Query* q, Contact* out, int
+/// arg)` (0x336850): collects up to 64 contacts (`Nash_CollideVolume`
+/// into a frame array, after the original's empty 64-step constructor
+/// loop); none gives -1. Otherwise picks the contact whose distance is
+/// closest to the query's reference distance (virtual 0x18); on a tie an
+/// object contact beats an instance one, then the lower object id, or for
+/// two instance contacts the lower instance id. Copies it to `out` and
+/// returns its distance.
+pub fn nash_find_closest_contact(c: &mut Cpu) {
+    use oc230_nash as n;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x2050);
+        c.g[V0][0] = 0x3f;
+        frame.save(c, S0, 0x2040);
+        c.g[V1][0] = u64::MAX;
+        frame.save(c, S3, 0x2010);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x2030);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S2, 0x2020);
+        frame.save_ra(c, 0x2000);
+        // The contacts' (empty) constructor loop.
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            let more = c.g[V0][0] != c.g[V1][0];
+            c.g[T0][0] = c.g[A3][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0033_6878);
+            }
+        }
+        c.cycles += 7;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A3][0] = 0x40;
+        n::COLLIDE_VOLUME.call(c, 0x0033_68a4)?;
+        c.g[S2][0] = c.g[V0][0];
+        if c.g[S2][0] == 0 {
+            c.cycles += 4;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0
+            c.mtc1(AT, 0);
+            frame.restore(c, S0, 0x2040);
+            return oc230_nash_exit(c, frame);
+        }
+        // The reference distance (f2).
+        c.g[V0][0] = c.lw(oc230_at(c, S0, n::QUERY_VTABLE));
+        c.cycles += 13;
+        c.g[S1][0] = 0; // best
+        c.g[A0][0] = c.lh(oc230_at(c, V0, n::REF_DIST_SLOT));
+        c.g[V1][0] = c.lw(oc230_at(c, V0, n::REF_DIST_SLOT + 4));
+        let t = r32(c, V1);
+        c.g[A0][0] = oc230_add(c, S0, A0);
+        call_ptr(c, t, 0x0033_68d4)?;
+        let s = sp(c);
+        c.mov_s(2, 0);
+        c.g[A3][0] = 1;
+        c.lwc1(0, s.wrapping_add(n::DIST));
+        c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[S2][0] as i64)) as u64;
+        c.sub_s(0, 0, 2);
+        c.abs_s(1, 0); // best |dist - ref|
+        let more = c.g[V0][0] != 0;
+        c.g[A2][0] = sx(s.wrapping_add(n::HIT_SIZE));
+        if more {
+            c.cycles += 1;
+            loop {
+                let hit = r32(c, A2);
+                c.cycles += 6;
+                c.lwc1(0, hit.wrapping_add(n::DIST));
+                c.sub_s(0, 0, 2);
+                c.abs_s(0, 0);
+                c.c_lt_s(0, 1);
+                if c.fcc() {
+                    c.cycles += 3;
+                    c.mov_s(1, 0);
+                    c.g[S1][0] = c.g[A3][0];
+                } else {
+                    c.cycles += 4;
+                    c.c_eq_s(0, 1);
+                    let tie = c.fcc();
+                    c.g[V0][0] = oc230_sll(c, S1, 7);
+                    if tie {
+                        // The tie break: is this contact better than the best?
+                        c.cycles += 3;
+                        c.g[A0][0] = c.lw(hit.wrapping_add(n::OBJECT));
+                        c.g[V1][0] = oc230_add(c, V0, SP); // the best contact
+                        let best = r32(c, V1);
+                        if c.g[A0][0] != 0 {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw(best.wrapping_add(n::OBJECT));
+                            if c.g[V0][0] != 0 {
+                                c.g[V1][0] = c.lw(oc230_at(c, A0, n::OBJECT_ID));
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw(oc230_at(c, V0, n::OBJECT_ID));
+                                c.g[V0][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                            } else {
+                                c.cycles += 2;
+                                c.g[V0][0] = 1;
+                            }
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw(best.wrapping_add(n::OBJECT));
+                            let best_is_object = c.g[V0][0] != 0;
+                            c.g[V0][0] = 0;
+                            if !best_is_object {
+                                c.cycles += 5;
+                                c.g[V1][0] = c.lw(best.wrapping_add(n::INSTANCE));
+                                c.g[A0][0] = c.lw(hit.wrapping_add(n::INSTANCE));
+                                c.g[A1][0] = c.lw(oc230_at(c, V1, n::INSTANCE_ID));
+                                c.g[V0][0] = c.lw(oc230_at(c, A0, n::INSTANCE_ID));
+                                c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+                            }
+                        }
+                        c.cycles += 1;
+                        if c.g[V0][0] != 0 {
+                            c.g[S1][0] = c.g[A3][0];
+                        }
+                    }
+                }
+                c.cycles += 4;
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[S2][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A2][0] = sx(hit.wrapping_add(n::HIT_SIZE));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0033_68f8);
+                }
+            }
+        }
+        // *out = contacts[best] (four quadwords), return its distance.
+        c.cycles += 4;
+        c.g[V0][0] = oc230_sll(c, S1, 7);
+        c.g[V1][0] = c.g[S3][0];
+        c.g[V0][0] = oc230_add(c, V0, SP);
+        c.g[A0][0] = sx(r32(c, V0).wrapping_add(n::HIT_SIZE));
+        loop {
+            c.cycles += 7;
+            let (from, to) = (r32(c, V0), r32(c, V1));
+            c.lq(A1, from);
+            c.lq(A2, from.wrapping_add(0x10));
+            c.sq(A1, to);
+            c.sq(A2, to.wrapping_add(0x10));
+            c.g[V0][0] = sx(from.wrapping_add(0x20));
+            let more = c.g[V0][0] != c.g[A0][0];
+            c.g[V1][0] = sx(to.wrapping_add(0x20));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0033_699c);
+            }
+        }
+        c.cycles += 2;
+        c.lwc1(0, oc230_at(c, S3, n::DIST));
+        frame.restore(c, S0, 0x2040);
+        oc230_nash_exit(c, frame)
+    })
+}
+
+pub(crate) fn oc230_nash_exit(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 6;
+    frame.restore(c, S1, 0x2030);
+    frame.restore(c, S2, 0x2020);
+    frame.restore(c, S3, 0x2010);
+    frame.restore_ra(c, 0x2000);
+    frame.close(c);
+    Ok(())
+}
+
+pub(crate) const ANIM_OBJECT_FIRE_END_SCRIPT: Callee = Callee {
+    addr: 0x0034_eba0,
+    f: ee::s11::AnimObject_FireEndScript,
+};
+
+/// `World_GetFrameTime()` (0x2d1c70, other shard).
+pub(crate) const WORLD_GET_FRAME_TIME: u32 = 0x002d_1c70;
+
+/// Hitting an end stop: the position is the stop; fast enough it bounces
+/// (`vel *= bounce`), else it stops (`step = vel = 0`). f3 holds the new
+/// velocity, f4 the stop. `stop_cycles`: the stopping branch's first block
+/// (2 at the lower stop, 1 at the upper).
+pub(crate) fn teeter_end_stop(c: &mut Cpu, s: u32, stop_speed: u32, stop_cycles: u64) {
+    use teeter::*;
+    c.cycles += 6;
+    let gp = c.g[GP][0] as u32;
+    c.lwc1(1, gp.wrapping_sub(stop_speed));
+    c.abs_s(0, 3);
+    c.c_lt_s(1, 0);
+    let bounce = c.fcc();
+    c.swc1(4, s.wrapping_add(POS));
+    if bounce {
+        c.cycles += 4;
+        c.lwc1(0, s.wrapping_add(BOUNCE));
+        c.mul_s(0, 3, 0);
+        c.swc1(0, s.wrapping_add(VEL));
+    } else {
+        c.cycles += stop_cycles;
+        c.sw(s.wrapping_add(STEP), 0);
+        c.cycles += 1;
+        c.sw(s.wrapping_add(VEL), 0);
+    }
+    c.cycles += 1;
+    c.lwc1(0, s.wrapping_add(POS));
+}
+
+/// `int AnimTeeter::Update()` (0x342358, v-table slot 15): one step of the
+/// teeter spring: `acc = ±gain*force - stiffness*(pos - rest) - damping*vel`,
+/// the position moves by `vel*dt` (at most `maxStep`), the velocity by
+/// `acc*dt`; at an end stop it bounces or stops. Then the force is cleared
+/// and the animation object's end script fires; returns 1 (and sets flag
+/// bit 0) when it did.
+pub fn anim_teeter_v15(c: &mut Cpu) {
+    use teeter::*;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let s = c.g[A0][0];
+        c.g[S0][0] = s;
+        let s = s as u32;
+        c.lwc1(0, s.wrapping_add(POS));
+        c.swc1(0, s.wrapping_add(PREV));
+        call_ptr(c, WORLD_GET_FRAME_TIME, 0x0034_2374)?;
+        // f8 = dt, f9 = 0, f7 = gain * force (negated for a negative gain).
+        c.mov_s(8, 0);
+        c.mtc1(0, 9);
+        c.lwc1(0, s.wrapping_add(GAIN));
+        c.lwc1(1, s.wrapping_add(FORCE));
+        c.c_lt_s(0, 9);
+        let negative = c.fcc();
+        c.mul_s(7, 0, 1);
+        if negative {
+            c.cycles += 1;
+            c.neg_s(7, 7);
+        }
+
+        // f3 = acceleration; step = vel*dt clamped to ±maxStep.
+        c.cycles += 18;
+        c.lwc1(1, s.wrapping_add(REST));
+        c.lwc1(3, s.wrapping_add(STIFFNESS));
+        c.lwc1(2, s.wrapping_add(POS));
+        c.neg_s(3, 3);
+        c.lwc1(0, s.wrapping_add(DAMPING));
+        c.sub_s(2, 2, 1);
+        c.lwc1(4, s.wrapping_add(VEL));
+        c.neg_s(0, 0);
+        c.lwc1(6, s.wrapping_add(MAX_STEP));
+        c.mul_s(5, 4, 8);
+        c.mul_s(3, 3, 2);
+        c.abs_s(1, 5);
+        c.mul_s(0, 0, 4);
+        c.c_lt_s(6, 1);
+        c.swc1(5, s.wrapping_add(STEP));
+        c.add_s(3, 3, 7);
+        let too_far = c.fcc();
+        c.add_s(3, 3, 0);
+        if too_far {
+            c.cycles += 4;
+            c.c_lt_s(5, 9);
+            if c.fcc() {
+                c.cycles += 2;
+                c.neg_s(0, 6);
+                c.swc1(0, s.wrapping_add(STEP));
+            } else {
+                c.swc1(6, s.wrapping_add(STEP));
+            }
+        }
+
+        // pos += step, vel += acc*dt; the end stops.
+        c.cycles += 12;
+        c.lwc1(2, s.wrapping_add(POS));
+        c.mul_s(3, 3, 8);
+        c.lwc1(0, s.wrapping_add(STEP));
+        c.lwc1(1, s.wrapping_add(VEL));
+        c.add_s(2, 2, 0);
+        c.lwc1(4, s.wrapping_add(MIN));
+        c.add_s(3, 1, 3);
+        c.c_lt_s(2, 4);
+        c.swc1(2, s.wrapping_add(POS));
+        c.swc1(2, s.wrapping_add(POS_COPY));
+        let below = c.fcc();
+        c.swc1(3, s.wrapping_add(VEL));
+        if below {
+            teeter_end_stop(c, s, GP_STOP_SPEED_MIN, 2);
+        } else {
+            c.cycles += 5;
+            c.lwc1(4, s.wrapping_add(MAX));
+            c.c_lt_s(4, 2);
+            if c.fcc() {
+                teeter_end_stop(c, s, GP_STOP_SPEED_MAX, 1);
+            } else {
+                c.lwc1(0, s.wrapping_add(POS));
+            }
+        }
+
+        c.cycles += 6;
+        c.g[A0][0] = sx(s.wrapping_add(POS));
+        c.sw(s.wrapping_add(FORCE), 0);
+        c.swc1(0, s.wrapping_add(POS_OUT));
+        ANIM_OBJECT_FIRE_END_SCRIPT.call(c, 0x0034_24a0)?;
+        let fired = c.g[V0][0] != 0;
+        c.g[V0][0] = 1;
+        if fired {
+            c.cycles += 4;
+            let flags = c.lhu(s.wrapping_add(FLAGS)) | 1;
+            c.g[V1][0] = flags;
+            c.sh(s.wrapping_add(FLAGS), flags);
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16337,6 +16747,150 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(DATA + 0x5000);
                 c.g[A3][0] = r.next_u32() as u64 % 8;
                 c.g[T0][0] = r.next_u32() as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::{elf_image, require_paths};
+    pub(crate) use crate::game::fe::ovstatehud::tests::obj;
+    use ssx3_ee_rt::Cpu;
+
+    /// Nash_FindClosestContact over the real `Nash_CollideVolume`: eight
+    /// level-0 cells at random places around a query volume (box around
+    /// the origin), each tree holding a chain of up to four instances
+    /// whose forward-difference entry makes the volume's (fake) triangle
+    /// test run, so 0..n contacts with fake distances come back; the
+    /// query's reference distance (virtual 0x18) is a fake too. Also
+    /// checks that some seeds found contacts.
+    #[test]
+    fn nash_find_closest_contact_matches() {
+        use crate::game::intersect::worldsphtree::tests::{
+            put_cache, put_instance, put_volume, setup_machine, VT_VOL,
+        };
+        let f = |x: f32| x.to_bits();
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = setup_machine(c, seed, 0x0033_6850, 6);
+            c.pc = 0x0033_6850;
+            let (belib, world) = (DATA + 0x3_8000, DATA + 0x3_9000);
+            c.bus.write32(GAME_GP - 0x1f04, belib);
+            c.bus.write32(GAME_GP - 0x848, world);
+            c.bus.write32(world + 0x84, world + 0x100);
+            c.bus.write32(world + 0x100 + 0x7c, 0);
+            c.bus.write32(GAME_GP - 0x2dfc, 0);
+            for k in 0..16 {
+                c.bus.write32(GAME_GP - 0x2d10 + 4 * k, f(0.2));
+            }
+            let (grid, q, cache, out) = (DATA, DATA + 0x400, DATA + 0xc00, DATA + 0x6000);
+            put_volume(c, &mut r, q);
+            c.bus.write16(VT_VOL + 0x18, 0);
+            c.bus.write32(VT_VOL + 0x1c, FAKE + 0x70);
+            put_cache(c, cache);
+            c.bus.write32(grid + 0xa4, cache);
+            // Instance chains (inst+0 = next).
+            let mut chains = Vec::new();
+            for k in 0..4u32 {
+                let count = (seed + k) % 5;
+                let mut next = 0;
+                for i in 0..count {
+                    let inst = DATA + 0x8000 + 0x800 * k + 0x200 * i;
+                    put_instance(c, &mut r, inst, seed + i + k);
+                    c.bus.write32(inst, next);
+                    next = inst;
+                }
+                chains.push(next);
+            }
+            for k in 0..8u32 {
+                let cell = grid + 0x14 * k;
+                let xyz = [0u32, 1, 5, u32::MAX][(r.next_u32() % 4) as usize];
+                c.bus.write32(cell, 0);
+                for a in 1..4 {
+                    c.bus.write32(cell + 4 * a, xyz);
+                }
+                let tree = DATA + 0x1000 + 0x100 * k;
+                for i in 0..10 {
+                    c.bus.write32(tree + 4 * i, 0);
+                }
+                c.bus
+                    .write32(tree + 0x24, chains[(r.next_u32() % 4) as usize]);
+                c.bus
+                    .write32(cell + 0x10, if (seed + k) % 6 != 0 { tree } else { 0 });
+            }
+            c.g[A0][0] = sx(grid);
+            c.g[A1][0] = sx(q);
+            c.g[A2][0] = sx(out);
+            c.g[A3][0] = r.next_u32() as u64 % 8;
+        };
+        check(
+            ee::s11::f_00336850__generated,
+            nash_find_closest_contact,
+            200,
+            &setup,
+        );
+        let found = (0..60)
+            .filter(|&seed| {
+                let mut c = crate::difftest::fresh();
+                setup(&mut *c, seed);
+                crate::difftest::run_generated(&mut *c, ee::s11::f_00336850__generated);
+                c.f[0] != 0xbf80_0000
+            })
+            .count();
+        assert!(found >= 6, "contacts found in only {found} of 60 seeds");
+    }
+
+    /// AnimTeeter_v15: positive and negative gain, steps over and under
+    /// the limit (both signs), both end stops with bounce or stop, and the
+    /// end script firing or not (the script manager has no script table,
+    /// as the AnimObject_FireEndScript test builds it).
+    #[test]
+    fn anim_teeter_v15_matches() {
+        use super::teeter::*;
+        check(
+            ee::s11::f_00342358__generated,
+            anim_teeter_v15,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x342358, 0);
+                c.pc = 0x0034_2358;
+                let s = DATA + 0x100;
+                let obj = s + POS;
+                let list = DATA + 0x1000;
+                let man = DATA + 0x2000;
+                let world = DATA + 0x3000;
+                for off in (0..0x60).step_by(4) {
+                    c.bus.write32(s + off, r.f32(2.0));
+                }
+                c.bus.write32(s + MIN, (-1.0f32).to_bits());
+                c.bus.write32(s + MAX, 1.0f32.to_bits());
+                c.bus.write32(s + MAX_STEP, r.f32(0.5) & 0x7fff_ffff);
+                c.bus.write32(s + BOUNCE, r.f32(1.0));
+                c.bus.write32(s + POS, r.f32(1.5));
+                c.bus
+                    .write32(s + VEL, r.f32(if seed % 2 == 0 { 0.2 } else { 30.0 }));
+                c.bus.write16(s + FLAGS, r.next_u32() as u16);
+                // World frame time.
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(
+                    world + 0x14,
+                    if seed % 3 == 0 {
+                        r.f32(1.0)
+                    } else {
+                        (1.0f32 / 60.0).to_bits()
+                    },
+                );
+                c.bus.write32(GAME_GP - GP_STOP_SPEED_MIN, 0.1f32.to_bits());
+                c.bus.write32(GAME_GP - GP_STOP_SPEED_MAX, 0.1f32.to_bits());
+                // AnimObject_FireEndScript: `list->head == obj + 0x14` decides.
+                c.bus.write32(GAME_GP + 0xce8, man);
+                c.bus.write32(man + 0x28c, 0);
+                c.bus.write32(list + 0x78, 0);
+                c.bus.write32(list + 0x88, 0);
+                c.bus.write32(obj + 0x2c, list);
+                c.bus.write32(
+                    list + 0xc,
+                    if seed % 4 < 2 { obj + 0x14 } else { obj + 0x40 },
+                );
+                c.g[A0][0] = sx(s);
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -29,6 +30,7 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -82,6 +84,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_acd8, ps2_exec_man_v09, "PS2ExecMan_v09"),
     (0x0031_ad00, ps2_exec_man_v10, "PS2ExecMan_v10"),
     (0x0031_ad18, ssx_clear_tray_opened, "ssx_ClearTrayOpened"),
+    (
+        0x0031_a490,
+        ps2_exec_man_vblank_end_intc,
+        "PS2ExecMan_VBlankEndIntc",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1256,6 +1263,36 @@ pub fn ps2_exec_man_v03(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// PS2ExecMan_VBlankEndIntc (0x31a490)
+
+/// `int PS2ExecMan_VBlankEndIntc(void *arg, int (*handler)(void *))`
+/// (0x31a490): the VBlank-end interrupt trampoline. Saves all 32 FPU
+/// registers on the stack (through v0), calls `handler(arg)`, restores
+/// them, re-enables interrupts (`ei`) and returns 1.
+pub fn ps2_exec_man_vblank_end_intc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 138;
+        let frame = Frame::open(c, 0x90);
+        frame.save_ra(c, 0x80);
+        for f in 0..32usize {
+            c.mfc1(V0, f);
+            Addr(frame.at(c, 4 * f as u32)).sw(c, c.g[V0][0]);
+        }
+        let handler = abi::arg(c, 1);
+        call_ptr(c, handler, 0x0031_a5a0)?;
+        for f in 0..32usize {
+            c.g[V0][0] = Addr(frame.at(c, 4 * f as u32)).lw(c);
+            c.mtc1(V0, f);
+        }
+        c.ei();
+        frame.restore_ra(c, 0x80);
+        c.g[V0][0] = 1;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1729,6 +1766,25 @@ pub(crate) mod tests {
                     r.next_u32() as u64
                 };
                 c.g[A1][0] = sx(DATA + 0x4000);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::SP;
+
+    /// PS2ExecMan_VBlankEndIntc: random FPU registers and status; the
+    /// handler is a fake that clobbers f0 and sometimes unwinds.
+    #[test]
+    fn ps2_exec_man_vblank_end_intc_matches() {
+        covered(
+            ee::s10::f_0031a490__generated,
+            ps2_exec_man_vblank_end_intc,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31a490, 1);
+                c.pc = 0x0031_a490;
+                c.cop0[12] = r.next_u32();
+                c.g[A1][0] = FAKE as u64;
             },
         );
     }

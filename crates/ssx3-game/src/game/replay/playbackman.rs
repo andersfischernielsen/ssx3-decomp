@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -26,6 +27,7 @@ pub(crate) use crate::game::fe::fereal::open;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::misc::add32;
 pub(crate) use crate::game::movie::movieplayer::at;
 pub(crate) use crate::game::movie::movieplayer::lw_at;
 pub(crate) use crate::game::movie::movieplayer::word;
@@ -88,6 +90,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Replay_SnapshotSetHighlightValue",
     ),
     (0x0026_d7d0, world_state_save, "WorldState_Save"),
+    (
+        0x0026_ce50,
+        playback_man_read_input_frame,
+        "PlaybackMan_ReadInputFrame",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -964,6 +971,267 @@ pub fn playbackman_start_playback(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod playback {
+
+    pub const STREAM: u32 = 0x4;
+
+    pub const LIVE_PAD: u32 = 0x64;
+
+    pub const OUT_PAD: u32 = 0x68;
+
+    pub const MODE: u32 = 0x70;
+
+    pub const MODE_PLAY: u64 = 1;
+
+    pub const MODE_RECORD: u64 = 3;
+
+    pub const STREAM_CAP: u32 = 0x4;
+
+    pub const STREAM_POS: u32 = 0x8;
+
+    pub const STREAM_LEN: u32 = 0xc;
+
+    pub const STREAM_BYTES: u64 = 0x10;
+
+    /// `1/255` (byte to button value, `gp-0x4920` and `gp-0x491c`).
+    pub const PLAY_SCALE: u32 = 0x4920;
+
+    pub const RECORD_SCALE: u32 = 0x491c;
+
+    pub const BUTTON_SIZE: u64 = 0x1c;
+
+    /// Resume entries (the original's loop heads that can unwind).
+    pub const ENTRY: u32 = 0x0026_ce50;
+
+    pub const PLAY_LOOP: u32 = 0x0026_cea0;
+
+    pub const RECORD_LOOP: u32 = 0x0026_cf48;
+
+    pub const FEED: u32 = 0x0026_cee0;
+}
+
+pub(crate) const INPUT_PAD_UPDATE: u32 = 0x0032_1298;
+
+/// Stages of [`playback_man_read_input_frame`] (the original's blocks).
+#[derive(Clone, Copy)]
+pub(crate) enum ReadFrame {
+    PlayLoop,
+    PlayDone,
+    Feed,
+    RecordLoop,
+    RecordDone,
+    Failed,
+    Exit,
+}
+
+/// `bool PlaybackMan_ReadInputFrame(PlaybackMan* self)` (0x26ce50): one
+/// replay frame of input. Playing back: read `n` and `n` button bytes from
+/// the stream, scale them to floats and feed them to the pad. Recording:
+/// write the live pad's `n` button values as bytes (`value * 255`), feed
+/// the quantised values back the same way and grow the stream. Returns 1
+/// when the stream is exhausted/full, else 0 (any other mode: 0).
+///
+/// The three loop back edges can unwind; the function is re-entered at
+/// the loop head (or the feed call) with its state in the registers.
+pub fn playback_man_read_input_frame(c: &mut Cpu) {
+    use crate::events::back_edge_unwinds;
+    use crate::ps2f::FpuF32;
+    use playback::*;
+    guest(c, |c| {
+        let mut stage = match c.pc {
+            ENTRY => {
+                c.cycles += 7;
+                let frame = Frame::open(c, 0x70);
+                c.g[T1][0] = c.g[A0][0];
+                frame.save_ra(c, 0x60);
+                let this = r32(c, T1);
+                c.g[V0][0] = 1;
+                c.g[V1][0] = Addr(this + MODE).lw(c);
+                let mode = c.g[V1][0];
+                c.g[V0][0] = MODE_RECORD;
+                if mode == MODE_PLAY {
+                    c.cycles += 6;
+                    c.g[V1][0] = Addr(this + STREAM).lw(c);
+                    let stream = r32(c, V1);
+                    c.g[A0][0] = Addr(stream + STREAM_POS).lw(c);
+                    c.g[V0][0] = Addr(stream + STREAM_LEN).lw(c);
+                    let more = (c.g[A0][0] as i64) < (c.g[V0][0] as i64);
+                    c.g[V0][0] = add32(c.g[A0][0], STREAM_BYTES);
+                    if !more {
+                        ReadFrame::Failed
+                    } else {
+                        c.cycles += 4;
+                        c.g[V1][0] = add32(c.g[V1][0], c.g[V0][0]);
+                        c.g[A3][0] = Addr(r32(c, V1)).lbu(c);
+                        c.g[V1][0] = add32(c.g[V1][0], 1);
+                        if c.g[A3][0] == 0 {
+                            ReadFrame::PlayDone
+                        } else {
+                            c.cycles += 3;
+                            c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(PLAY_SCALE));
+                            c.g[A1][0] = c.g[SP][0];
+                            c.g[A0][0] = c.g[A3][0];
+                            ReadFrame::PlayLoop
+                        }
+                    }
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    if mode != MODE_RECORD {
+                        ReadFrame::Exit
+                    } else {
+                        c.cycles += 7;
+                        c.g[A0][0] = Addr(this + STREAM).lw(c);
+                        let stream = r32(c, A0);
+                        c.g[V0][0] = Addr(stream + STREAM_CAP).lw(c);
+                        c.g[A2][0] = Addr(stream + STREAM_POS).lw(c);
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x18));
+                        let room = (c.g[A2][0] as i64) < (c.g[V0][0] as i64);
+                        c.g[V0][0] = add32(c.g[A2][0], STREAM_BYTES);
+                        if !room {
+                            ReadFrame::Failed
+                        } else {
+                            c.cycles += 7;
+                            c.g[V1][0] = Addr(this + LIVE_PAD).lw(c);
+                            c.g[A2][0] = add32(c.g[A0][0], c.g[V0][0]);
+                            c.g[A3][0] = 0;
+                            c.g[T0][0] = Addr(r32(c, V1)).lw(c);
+                            Addr(r32(c, A2)).sb(c, c.g[T0][0]);
+                            c.g[A2][0] = add32(c.g[A2][0], 1);
+                            if (c.g[T0][0] as i64) <= 0 {
+                                ReadFrame::RecordDone
+                            } else {
+                                c.cycles += 6;
+                                c.g[AT][0] = 0x437f_0000;
+                                c.f[2] = 0x437f_0000; // 255.0
+                                c.g[A1][0] = c.g[SP][0];
+                                c.lwc1(1, (c.g[GP][0] as u32).wrapping_sub(RECORD_SCALE));
+                                c.g[T2][0] = 0;
+                                ReadFrame::RecordLoop
+                            }
+                        }
+                    }
+                }
+            }
+            PLAY_LOOP => ReadFrame::PlayLoop,
+            RECORD_LOOP => ReadFrame::RecordLoop,
+            FEED => ReadFrame::Feed,
+            pc => {
+                c.jump_out(pc, ENTRY, 0x0026_cfe8);
+                return Ok(());
+            }
+        };
+        loop {
+            stage = match stage {
+                ReadFrame::PlayLoop => loop {
+                    // Byte -> float: `value = byte * scale`.
+                    c.cycles += 9;
+                    c.g[V0][0] = Addr(r32(c, V1)).lbu(c);
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+                    c.g[V1][0] = add32(c.g[V1][0], 1);
+                    let v = FpuF32::from_i32(c.g[V0][0] as i32) * FpuF32(c.f[1]);
+                    c.f[0] = v.0;
+                    c.swc1(0, r32(c, A1));
+                    let more = c.g[A0][0] != 0;
+                    c.g[A1][0] = add32(c.g[A1][0], 4);
+                    if !more {
+                        break ReadFrame::PlayDone;
+                    }
+                    if back_edge_unwinds(c, PLAY_LOOP) {
+                        return Ok(());
+                    }
+                },
+                ReadFrame::PlayDone => {
+                    c.cycles += 7;
+                    c.g[V1][0] = Addr(r32(c, T1) + STREAM).lw(c);
+                    c.g[A1][0] = c.g[A3][0];
+                    c.g[A2][0] = c.g[SP][0];
+                    let pos = Addr(r32(c, V1) + STREAM_POS);
+                    c.g[V0][0] = pos.lw(c);
+                    c.g[V0][0] = add32(add32(c.g[V0][0], 1), c.g[A3][0]);
+                    pos.sw(c, c.g[V0][0]);
+                    ReadFrame::Feed
+                }
+                ReadFrame::Feed => {
+                    // InputPad_Update(out_pad, n, values)
+                    c.cycles += 4;
+                    c.g[A0][0] = Addr(r32(c, T1) + OUT_PAD).lw(c);
+                    call_ptr(c, INPUT_PAD_UPDATE, 0x0026_cee8)?;
+                    c.g[V0][0] = 0;
+                    ReadFrame::Exit
+                }
+                ReadFrame::RecordLoop => loop {
+                    // Button value -> byte (`value * 255`, truncated) and back.
+                    c.cycles += 5;
+                    c.g[V1][0] = Addr(r32(c, T1) + LIVE_PAD).lw(c);
+                    c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                    let present = (c.g[A3][0] as i64) < (c.g[V0][0] as i64);
+                    c.g[V0][0] = add32(c.g[V1][0], c.g[T2][0]);
+                    if present {
+                        c.cycles += 2;
+                        c.lwc1(0, r32(c, V0) + 4);
+                    } else {
+                        c.cycles += 1;
+                        c.f[0] = 0;
+                    }
+                    c.cycles += 15;
+                    let scaled = FpuF32(c.f[0]) * FpuF32(c.f[2]);
+                    c.f[0] = scaled.0;
+                    c.g[A3][0] = add32(c.g[A3][0], 1);
+                    c.g[T2][0] = add32(c.g[T2][0], BUTTON_SIZE);
+                    c.g[A0][0] = ((c.g[A3][0] as i64) < (c.g[T0][0] as i64)) as u64;
+                    c.f[3] = scaled.to_i32() as u32;
+                    c.g[V0][0] = sx(c.f[3]);
+                    Addr(r32(c, A2)).sb(c, c.g[V0][0]);
+                    c.g[V1][0] = c.g[V0][0] & 0xff;
+                    c.g[A2][0] = add32(c.g[A2][0], 1);
+                    let v = FpuF32::from_i32(c.g[V1][0] as i32) * FpuF32(c.f[1]);
+                    c.f[0] = v.0;
+                    c.swc1(0, r32(c, A1));
+                    let more = c.g[A0][0] != 0;
+                    c.g[A1][0] = add32(c.g[A1][0], 4);
+                    if !more {
+                        break ReadFrame::RecordDone;
+                    }
+                    if back_edge_unwinds(c, RECORD_LOOP) {
+                        return Ok(());
+                    }
+                },
+                ReadFrame::RecordDone => {
+                    // pos += n + 1; len += n + 1.
+                    c.cycles += 13;
+                    c.g[A0][0] = Addr(r32(c, T1) + STREAM).lw(c);
+                    c.g[A1][0] = c.g[T0][0];
+                    c.g[A2][0] = c.g[SP][0];
+                    let pos = Addr(r32(c, A0) + STREAM_POS);
+                    c.g[V0][0] = add32(add32(pos.lw(c), 1), c.g[T0][0]);
+                    pos.sw(c, c.g[V0][0]);
+                    c.g[V1][0] = Addr(r32(c, T1) + STREAM).lw(c);
+                    let len = Addr(r32(c, V1) + STREAM_LEN);
+                    c.g[V0][0] = add32(add32(len.lw(c), 1), c.g[T0][0]);
+                    len.sw(c, c.g[V0][0]);
+                    if back_edge_unwinds(c, FEED) {
+                        return Ok(());
+                    }
+                    ReadFrame::Feed
+                }
+                ReadFrame::Failed => {
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                    ReadFrame::Exit
+                }
+                ReadFrame::Exit => {
+                    c.cycles += 3;
+                    let frame = Frame { size: 0x70 };
+                    frame.restore_ra(c, 0x60);
+                    frame.close(c);
+                    return Ok(());
+                }
+            };
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1348,6 +1616,69 @@ pub(crate) mod tests {
                         w_5(c, DATA + 0x200 + 0xc, 0);
                     }
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::events::driven;
+    use crate::difftest::put_words;
+
+    /// A playback manager in play, record or another mode (`sel % 6`), its
+    /// stream (exhausted/full or not, 0..12 buttons) and an output pad.
+    pub(crate) fn read_input_frame_setup(c: &mut Cpu, r: &mut Rng, sel: u32) {
+        use playback::*;
+        let (this, stream, live, out) = (DATA, DATA + 0x100, DATA + 0x800, DATA + 0x1000);
+        let mode = [MODE_PLAY, MODE_RECORD, MODE_PLAY, MODE_RECORD, 0, 2][(sel % 6) as usize];
+        c.bus.write32(this + MODE, mode as u32);
+        c.bus.write32(this + STREAM, stream);
+        c.bus.write32(this + LIVE_PAD, live);
+        c.bus.write32(this + OUT_PAD, out);
+        c.bus.write32(GAME_GP - PLAY_SCALE, 0x3b80_8081); // 1/255
+        c.bus.write32(GAME_GP - RECORD_SCALE, 0x3b80_8081);
+        let n = r.next_u32() % 13;
+        let pos = r.next_u32() % 0x40;
+        c.bus.write32(stream + STREAM_POS, pos);
+        let full = r.next_u32() % 6 == 0;
+        c.bus.write32(
+            stream + STREAM_LEN,
+            if full {
+                pos
+            } else {
+                pos + 1 + n + r.next_u32() % 8
+            },
+        );
+        c.bus.write32(
+            stream + STREAM_CAP,
+            if full { pos + 0x18 } else { pos + 0x40 },
+        );
+        let bytes = stream + 0x10 + pos;
+        c.bus.write8(bytes, n as u8);
+        for k in 0..n {
+            c.bus.write8(bytes + 1 + k, r.next_u32() as u8);
+        }
+        c.bus.write32(live, n);
+        for k in 0..n {
+            let v = match r.next_u32() % 4 {
+                0 => 0,
+                1 => 0x3f80_0000,
+                _ => r.f32(1.0) & 0x7fff_ffff,
+            };
+            c.bus.write32(live + 4 + 0x1c * k, v);
+        }
+        c.bus.write32(out, r.next_u32() % (n + 1));
+        c.g[A0][0] = sx(this);
+        c.pc = ENTRY;
+    }
+
+    #[test]
+    fn playback_man_read_input_frame_matches() {
+        check(
+            ee::s07::f_0026ce50__generated,
+            playback_man_read_input_frame,
+            150,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x26_ce50, 0);
+                read_input_frame_setup(c, &mut r, seed);
             },
         );
     }

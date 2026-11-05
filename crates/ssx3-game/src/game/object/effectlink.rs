@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -93,6 +94,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_61c0, halo_modifier_ctor_2, "HaloModifier_ctor_2"),
     (0x0034_6228, halo_modifier_dtor, "HaloModifier_dtor"),
     (0x0034_6258, halo_modifier_update, "HaloModifier_Update"),
+    (
+        0x0034_5f90,
+        dynamic_particle_modifier_update,
+        "DynamicParticleModifier_Update",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -843,6 +849,125 @@ pub fn particle_modifier_ctor_2(c: &mut Cpu) {
     return;
 }
 
+pub(crate) mod particle_mod {
+
+    /// `+0x14` emit count (> 0: a continuous emitter).
+    pub const EMIT_COUNT: u32 = 0x14;
+
+    /// `+0x18` finished.
+    pub const DONE: u32 = 0x18;
+
+    /// `+0x30`, `+0x40` the transformed emitter points.
+    pub const POINT_A: u32 = 0x30;
+
+    pub const POINT_B: u32 = 0x40;
+
+    /// `+0x60` the particle system (its first float: remaining life).
+    pub const SYSTEM: u32 = 0x60;
+
+    /// `+0x240` the system's live particle count.
+    pub const LIVE: u32 = 0x240;
+
+    /// `gp-0x2b48/-0x2b44/-0x2b40`: the frame step (1/60) of the three
+    /// update calls.
+    pub const GP_STEP_LIVE: u32 = 0x2b48;
+
+    pub const GP_STEP_EXPIRED: u32 = 0x2b44;
+
+    pub const GP_STEP_DYING: u32 = 0x2b40;
+}
+
+pub(crate) const DYNAMIC_PARTICLE_MODIFIER_TRANSFORM_POINTS: Callee = Callee {
+    addr: 0x0034_5ef8,
+    f: ee::s11::DynamicParticleModifier_TransformPoints,
+};
+
+/// `ParticleSystem_Update(system, a, b, emit, dt)` (0x3710d0, other shard).
+pub(crate) const PARTICLE_SYSTEM_UPDATE: u32 = 0x0037_10d0;
+
+/// `ParticleSystem_Update(self + 0x60, self + 0x30, self + 0x40, emit,
+/// *(gp - step))` returning to `ret`.
+pub(crate) fn particle_update(
+    c: &mut Cpu,
+    s: u32,
+    emit: u64,
+    step: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    use particle_mod::*;
+    let gp = c.g[GP][0] as u32;
+    c.lwc1(12, gp.wrapping_sub(step));
+    c.g[A2][0] = sx(s.wrapping_add(POINT_B));
+    c.g[A1][0] = sx(s.wrapping_add(POINT_A));
+    c.g[A3][0] = emit;
+    call_ptr(c, PARTICLE_SYSTEM_UPDATE, ret)
+}
+
+/// `void DynamicParticleModifier::Update()` (0x345f90): unless finished,
+/// move the emitter points with the instance and update the particle
+/// system: a continuous emitter (count > 0) updates while particles live
+/// and finishes when none are left; a one-shot one updates with emission
+/// on and finishes once its life (`system[0]`) runs out.
+pub fn dynamic_particle_modifier_update(c: &mut Cpu) {
+    use particle_mod::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let s = c.g[A0][0];
+        c.g[S0][0] = s;
+        frame.save_fpr(c, 20, 0x20);
+        let s = s as u32;
+        c.g[V0][0] = c.lw(s.wrapping_add(DONE));
+        let finish = 'f: {
+            if c.g[V0][0] != 0 {
+                break 'f false;
+            }
+            c.cycles += 5;
+            DYNAMIC_PARTICLE_MODIFIER_TRANSFORM_POINTS.call(c, 0x0034_5fb8)?;
+            c.g[V0][0] = c.lw(s.wrapping_add(EMIT_COUNT));
+            if (c.g[V0][0] as i64) > 0 {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(s.wrapping_add(LIVE));
+                c.g[A0][0] = sx(s.wrapping_add(SYSTEM));
+                if (c.g[V0][0] as i64) <= 0 {
+                    break 'f true;
+                }
+                c.cycles += 7;
+                particle_update(c, s, 0, GP_STEP_LIVE, 0x0034_5fe4)?;
+                break 'f false;
+            }
+            c.lwc1(0, s.wrapping_add(SYSTEM));
+            c.cycles += 5;
+            c.mtc1(0, 20);
+            c.c_lt_s(0, 20);
+            c.g[A0][0] = sx(s.wrapping_add(SYSTEM));
+            if c.fcc() {
+                c.cycles += 7;
+                particle_update(c, s, 1, GP_STEP_EXPIRED, 0x0034_6014)?;
+                break 'f false;
+            }
+            c.cycles += 10;
+            particle_update(c, s, 1, GP_STEP_DYING, 0x0034_6030)?;
+            c.lwc1(0, s.wrapping_add(SYSTEM));
+            c.c_le_s(0, 20);
+            c.fcc()
+        };
+        if finish {
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            c.sw(s.wrapping_add(DONE), 1);
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 4;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1201,6 +1326,61 @@ pub(crate) mod tests {
                 let vt = vtable(c, &mut r, &[0x10, 0x14]);
                 c.bus.write32(EFFECT_STREAM, vt);
                 c.bus.write32(EFFECT + 0x1e4, (seed % 2) as u32);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::{elf_image, fresh, require_paths};
+    use ssx3_ee_rt::Cpu;
+
+    /// DynamicParticleModifier_Update: finished; continuous emitter with
+    /// and without live particles; one-shot emitter with life left, run
+    /// out, or running out now. The instance has no owner and node -1 (the
+    /// node matrix is the instance's own), the particle system has no
+    /// particle array (its update takes the short path).
+    #[test]
+    fn dynamic_particle_modifier_update_matches() {
+        use super::particle_mod::*;
+        check(
+            ee::s11::f_00345f90__generated,
+            dynamic_particle_modifier_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x5f90, 0);
+                c.pc = 0x0034_5f90;
+                let s = DATA + 0x1000;
+                let inst = DATA + 0x2000;
+                let skel = DATA + 0x2400;
+                for off in (0..0x260).step_by(4) {
+                    c.bus.write32(s + off, r.f32(10.0));
+                }
+                for off in (0..0x90).step_by(4) {
+                    c.bus.write32(inst + off, r.f32(4.0));
+                }
+                c.bus.write32(inst + 0xc, 0);
+                c.bus.write32(inst + 0x80, skel);
+                c.bus.write32(skel + 8, DATA + 0x2800);
+                c.bus.write32(s + 0xc, inst);
+                c.bus.write32(s + 0x10, u32::MAX);
+                c.bus.write32(s + DONE, if seed % 7 == 0 { 1 } else { 0 });
+                c.bus.write32(
+                    s + EMIT_COUNT,
+                    [0, 1, 5, 0xffff_ffff][(seed / 7 % 4) as usize],
+                );
+                c.bus
+                    .write32(s + LIVE, [0, 3, 0xffff_fffe][(r.next_u32() % 3) as usize]);
+                // Remaining life: positive, zero or negative.
+                let life = match r.next_u32() % 3 {
+                    0 => 0,
+                    1 => r.f32(1.0) & 0x7fff_ffff,
+                    _ => r.f32(1.0) | 0x8000_0000,
+                };
+                c.bus.write32(s + SYSTEM, life);
+                c.bus.write32(s + SYSTEM + 0x174, 0);
+                for k in [GP_STEP_LIVE, GP_STEP_EXPIRED, GP_STEP_DYING] {
+                    c.bus.write32(GAME_GP - k, r.f32(1.0));
+                }
+                c.g[A0][0] = s as u64;
             },
         );
     }

@@ -66,6 +66,7 @@ use ssx3_ee_rt::Cpu;
 use crate::abi::ret;
 /// Replacements in this unit: (address, function, name).
 pub(crate) use crate::game::fe::ovstatemission2::ov_screen_set_widget_visibility;
+pub(crate) use crate::game::fe::splashmanager::oc230_gp;
 
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_9970, rider_sphere_tree_dtor, "RiderSphereTree_dtor"),
@@ -193,6 +194,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0032_a1c0,
         rider_sphere_tree_collide_triangle,
         "RiderSphereTree_CollideTriangle",
+    ),
+    (
+        0x0032_aa28,
+        rider_sphere_tree_collide_triangle2,
+        "RiderSphereTree_CollideTriangle2",
     ),
 ];
 
@@ -4248,6 +4254,483 @@ pub(crate) fn sphere_tri_epilogue(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
+pub(crate) mod oc230_tree {
+
+    /// Root sphere centre (Vec4) and radius.
+    pub const CENTER: u32 = 0x10;
+
+    pub const RADIUS: u32 = 0x20;
+
+    /// Bit i: kid i takes part.
+    pub const MASK: u32 = 0x28;
+
+    pub const COUNT: u32 = 0x2c;
+
+    /// Kids: centre (Vec4) and radius at +0x10, 0x20 apart.
+    pub const KIDS: u32 = 0x30;
+}
+
+/// The tail of a sphere-vs-segment test (f0 = dot(centre - start, edge)) in
+/// the FPU registers given: `t = f0 / len`; v0 = 1 when `t >= 0`, the centre
+/// is within the radius of the line (`d2 - t^2 <= r2`) and the entry point
+/// `t - sqrt(r2 - (d2 - t^2))` is not past the end.
+pub(crate) fn oc230_seg_tail(c: &mut Cpu, t: usize, len: usize, d2: usize, r2: usize, zero: usize) {
+    c.div_s(t, 0, len);
+    c.c_lt_s(t, zero);
+    let behind = c.fcc();
+    c.g[V0][0] = 0;
+    if behind {
+        return;
+    }
+    c.cycles += 5;
+    c.mul_s(0, t, t);
+    c.sub_s(0, d2, 0);
+    c.c_lt_s(r2, 0);
+    if c.fcc() {
+        return;
+    }
+    c.cycles += 8;
+    c.sub_s(0, r2, 0);
+    c.g[V0][0] = 1;
+    c.sqrt_s(0, 0);
+    c.sub_s(0, t, 0);
+    c.c_lt_s(len, 0);
+    if c.fcc() {
+        c.g[V0][0] = 0;
+    }
+}
+
+/// The hit of `RiderSphereTree_CollideTriangle2`: push = n * (r - dist)
+/// to `*out_push` (sp+0x80), the contact point (sp+0x10) to `*out_point`
+/// (sp+0x84), push kept at sp+0x20. `kid` selects the kid loop's
+/// registers (and its `best = dist`).
+pub(crate) fn oc230_ct2_hit(c: &mut Cpu, kid: bool) {
+    use ssx3_ee_rt::vu0::{Src, X};
+    let s = sp(c);
+    let (scale, push, point, ptr0) = if kid {
+        (V0, V1, V0, A0)
+    } else {
+        (V1, A0, V1, A1)
+    };
+    c.sub_s(0, 21, 20);
+    if kid {
+        c.mov_s(23, 20);
+    } else {
+        c.g[V0][0] = 1;
+    }
+    c.mfc1(scale, 0);
+    c.lqc2(4, s);
+    c.qmtc2(scale, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s.wrapping_add(0x30));
+    c.lq(push, s.wrapping_add(0x30));
+    c.g[ptr0][0] = c.lw(s.wrapping_add(0x80));
+    c.lq(point, s.wrapping_add(0x10));
+    c.sq(push, r32(c, ptr0));
+    c.g[A1][0] = c.lw(s.wrapping_add(0x84));
+    c.sq(point, r32(c, A1));
+    c.sq(push, s.wrapping_add(0x20));
+}
+
+/// Does the root sphere touch the triangle (p, a, b)? v0 = 1/0. Its plane
+/// distance is in f20, radius in f21, n at sp+0. Leaves s0 = the centre.
+pub(crate) fn oc230_ct2_root_touch(c: &mut Cpu) -> crate::call::Flow {
+    use crate::game::intersect::riderspheretree as rst;
+    use ssx3_ee_rt::vu0::{Src, X};
+    let s = sp(c);
+    let center = r32(c, S3).wrapping_add(oc230_tree::CENTER);
+    // Projected centre d = centre - n * dist (sp+0x10) inside?
+    c.cycles += 22;
+    c.mfc1(V0, 20);
+    c.lqc2(4, s);
+    c.qmtc2(V0, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s.wrapping_add(0x30));
+    c.g[S0][0] = c.g[A0][0];
+    c.lq(V0, s.wrapping_add(0x30));
+    c.g[A0][0] = c.g[S1][0];
+    c.lwc1(12, oc230_gp(c, 0u32.wrapping_sub(0x2dd0)));
+    c.g[A1][0] = c.g[S4][0];
+    c.sq(V0, s.wrapping_add(0x20));
+    c.g[A2][0] = c.g[S6][0];
+    rst::vsub_spill(
+        c,
+        center,
+        s.wrapping_add(0x20),
+        s.wrapping_add(0x30),
+        s.wrapping_add(0x10),
+    );
+    c.g[A3][0] = sx(s.wrapping_add(0x10));
+    rst::TRI_INTERSECT.call(c, 0x0032_ab68)?;
+    let inside = c.g[V0][0] != 0;
+    c.g[V0][0] = 1;
+    if inside {
+        return Ok(());
+    }
+    // Near p? (v = centre - p at sp+0x40, d2 = |v|^2 in f5, r^2 in f3)
+    c.cycles += 20;
+    let p = r32(c, S1);
+    rst::vsub_spill(c, center, p, s.wrapping_add(0x50), s.wrapping_add(0x40));
+    c.mul_s(3, 21, 21);
+    rst::vdot(c, s.wrapping_add(0x40), s.wrapping_add(0x40), V1);
+    c.mtc1(V1, 5);
+    c.c_lt_s(5, 3);
+    c.g[V0][0] = 1;
+    if c.fcc() {
+        return Ok(());
+    }
+    // Near edge p-a?
+    c.cycles += 30;
+    let a = r32(c, S4);
+    rst::vsub_spill(c, a, p, s.wrapping_add(0x60), s.wrapping_add(0x50));
+    rst::vlen(c, s.wrapping_add(0x50));
+    c.mtc1(V1, 2);
+    rst::vdot(c, s.wrapping_add(0x40), s.wrapping_add(0x50), V0);
+    c.mtc1(V0, 0);
+    oc230_seg_tail(c, 1, 2, 5, 3, 22);
+    c.cycles += 2;
+    let hit = c.g[V0][0] != 0;
+    c.g[V0][0] = 1;
+    if hit {
+        return Ok(());
+    }
+    // Near edge p-b?
+    c.cycles += 31;
+    let b = r32(c, S6);
+    rst::vsub_spill(c, b, p, s.wrapping_add(0x60), s.wrapping_add(0x50));
+    c.mtc1(0, 1);
+    rst::vlen(c, s.wrapping_add(0x50));
+    c.mtc1(V1, 4);
+    rst::vdot(c, s.wrapping_add(0x40), s.wrapping_add(0x50), V0);
+    c.mtc1(V0, 0);
+    oc230_seg_tail(c, 2, 4, 5, 3, 1);
+    c.cycles += 2;
+    let hit = c.g[V0][0] != 0;
+    c.g[V0][0] = 1;
+    if hit {
+        return Ok(());
+    }
+    // Near edge a-b? (v2 = centre - a, d2 = |v2|^2)
+    c.cycles += 46;
+    let center = r32(c, S0);
+    rst::vsub_spill(c, center, a, s.wrapping_add(0x60), s.wrapping_add(0x50));
+    c.mtc1(0, 1);
+    rst::vdot(c, s.wrapping_add(0x50), s.wrapping_add(0x50), V1);
+    c.mtc1(V1, 5);
+    rst::vsub_spill(c, b, a, s.wrapping_add(0x70), s.wrapping_add(0x60));
+    rst::vlen(c, s.wrapping_add(0x60));
+    c.mtc1(V1, 4);
+    rst::vdot(c, s.wrapping_add(0x50), s.wrapping_add(0x60), V0);
+    c.mtc1(V0, 0);
+    oc230_seg_tail(c, 2, 4, 5, 3, 1);
+    Ok(())
+}
+
+/// One kid of the tree (s0 = its centre, s7 = tree + 0x20 * index, s2 =
+/// index, fp = 1): when it is in the mask, its plane distance is below its
+/// radius and below the best so far (f23), and it touches the triangle, it
+/// becomes the hit. Ends with v0 = the kid count.
+pub(crate) fn oc230_ct2_kid(c: &mut Cpu) -> crate::call::Flow {
+    use crate::game::intersect::riderspheretree as rst;
+    use oc230_tree as tr;
+    use ssx3_ee_rt::vu0::{Src, X};
+    let s = sp(c);
+    let tree = r32(c, S3);
+    c.cycles += 5;
+    c.g[V0][0] = c.lw(tree.wrapping_add(tr::MASK));
+    c.g[V1][0] = sx(r32(c, FP) << (r32(c, S2) & 31));
+    c.g[V0][0] &= c.g[V1][0];
+    if c.g[V0][0] == 0 {
+        c.g[V0][0] = c.lw(tree.wrapping_add(tr::COUNT));
+        return Ok(());
+    }
+    c.cycles += 20;
+    let kid = r32(c, S0);
+    let p = r32(c, S1);
+    rst::vsub_spill(c, kid, p, s.wrapping_add(0x30), s.wrapping_add(0x20));
+    c.lwc1(21, kid.wrapping_add(0x10));
+    rst::vdot(c, s, s.wrapping_add(0x20), V1);
+    c.mtc1(V1, 20);
+    c.c_lt_s(20, 21);
+    if !c.fcc() {
+        c.g[V0][0] = c.lw(tree.wrapping_add(tr::COUNT));
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.c_lt_s(20, 23);
+    if !c.fcc() {
+        c.g[V0][0] = c.lw(tree.wrapping_add(tr::COUNT));
+        return Ok(());
+    }
+    'touch: {
+        // Projected centre inside?
+        c.cycles += 23;
+        c.mfc1(V0, 20);
+        c.lqc2(4, s);
+        c.qmtc2(V0, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s.wrapping_add(0x40));
+        c.lwc1(12, oc230_gp(c, 0u32.wrapping_sub(0x2dc8)));
+        c.lq(V0, s.wrapping_add(0x40));
+        c.g[S5][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S4][0];
+        c.sq(V0, s.wrapping_add(0x30));
+        c.g[A2][0] = c.g[S6][0];
+        rst::vsub_spill(
+            c,
+            kid,
+            s.wrapping_add(0x30),
+            s.wrapping_add(0x40),
+            s.wrapping_add(0x10),
+        );
+        c.g[A3][0] = sx(s.wrapping_add(0x10));
+        c.sq(V0, s.wrapping_add(0x20));
+        rst::TRI_INTERSECT.call(c, 0x0032_af50)?;
+        let inside = c.g[V0][0] != 0;
+        c.g[V1][0] = 1;
+        if inside {
+            break 'touch;
+        }
+        // Near p?
+        c.cycles += 20;
+        let kid_at = r32(c, S7).wrapping_add(tr::KIDS);
+        rst::vsub_spill(c, kid_at, p, s.wrapping_add(0x30), s.wrapping_add(0x20));
+        c.mul_s(2, 21, 21);
+        rst::vdot(c, s.wrapping_add(0x20), s.wrapping_add(0x20), V1);
+        c.mtc1(V1, 4);
+        c.c_lt_s(4, 2);
+        c.g[V1][0] = 1;
+        if c.fcc() {
+            break 'touch;
+        }
+        // Near edge p-a, p-b?
+        for end in [S4, S6] {
+            c.cycles += 30;
+            let e = r32(c, end);
+            rst::vsub_spill(c, e, p, s.wrapping_add(0x40), s.wrapping_add(0x30));
+            rst::vlen(c, s.wrapping_add(0x30));
+            c.mtc1(V1, 3);
+            rst::vdot(c, s.wrapping_add(0x20), s.wrapping_add(0x30), V0);
+            c.mtc1(V0, 0);
+            oc230_seg_tail(c, 1, 3, 4, 2, 22);
+            c.cycles += 2;
+            let hit = c.g[V0][0] != 0;
+            c.g[V1][0] = 1;
+            if hit {
+                break 'touch;
+            }
+        }
+        // Near edge a-b?
+        c.cycles += 45;
+        let (a, b) = (r32(c, S4), r32(c, S6));
+        rst::vsub_spill(c, r32(c, S5), a, s.wrapping_add(0x40), s.wrapping_add(0x30));
+        rst::vdot(c, s.wrapping_add(0x30), s.wrapping_add(0x30), V1);
+        c.mtc1(V1, 4);
+        rst::vsub_spill(c, b, a, s.wrapping_add(0x50), s.wrapping_add(0x40));
+        rst::vlen(c, s.wrapping_add(0x40));
+        c.mtc1(V1, 3);
+        rst::vdot(c, s.wrapping_add(0x30), s.wrapping_add(0x40), V0);
+        c.mtc1(V0, 0);
+        c.div_s(1, 0, 3);
+        c.c_lt_s(1, 22);
+        let behind = c.fcc();
+        c.g[V0][0] = 0;
+        if !behind {
+            c.cycles += 6;
+            c.mul_s(0, 1, 1);
+            c.sub_s(0, 4, 0);
+            c.c_lt_s(2, 0);
+            let off_line = c.fcc();
+            c.g[V1][0] = c.g[FP][0];
+            if off_line {
+                c.cycles += 1;
+                if c.g[V0][0] == 0 {
+                    c.g[V1][0] = 0;
+                }
+                break 'touch;
+            }
+            c.cycles += 8;
+            c.sub_s(0, 2, 0);
+            c.g[V0][0] = 1;
+            c.sqrt_s(0, 0);
+            c.sub_s(0, 1, 0);
+            c.c_lt_s(3, 0);
+            if !c.fcc() {
+                break 'touch;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 1;
+        c.g[V1][0] = c.g[FP][0];
+        c.cycles += 1;
+        if c.g[V0][0] == 0 {
+            c.g[V1][0] = 0;
+        }
+    }
+    c.cycles += 2;
+    if c.g[V1][0] != 0 {
+        c.cycles += 15;
+        oc230_ct2_hit(c, true);
+    }
+    c.g[V0][0] = c.lw(tree.wrapping_add(tr::COUNT));
+    Ok(())
+}
+
+/// `bool RiderSphereTree_CollideTriangle2(SphereTree* tree, Vec4* p, Vec4*
+/// a, Vec4* b, Vec4* n, Vec4* out_push, Vec4* out_point)` (0x32aa28): the
+/// rider's sphere tree against the triangle (p, a, b) with normal n (the
+/// second triangle test, n flipped toward the sphere). The root sphere must
+/// be within its radius of the plane and touch the triangle (projected
+/// centre inside, near p, or near an edge). With no kids in the mask the
+/// root is the hit; otherwise every kid in the mask is tried and the
+/// nearest touching one is the hit. On a hit the push-out `n * (r - dist)`
+/// and the contact point are written.
+pub fn rider_sphere_tree_collide_triangle2(c: &mut Cpu) {
+    use crate::game::intersect::riderspheretree as rst;
+    use oc230_tree as tr;
+    use ssx3_ee_rt::vu0::{Src, X};
+    guest(c, |c| {
+        c.cycles += 45;
+        let frame = Frame::open(c, 0x150);
+        let s = sp(c);
+        c.lq(V0, r32(c, T0));
+        frame.save(c, S1, 0x110);
+        frame.save(c, S3, 0xf0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S4, 0xe0);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S6, 0xc0);
+        c.g[A0][0] = sx(r32(c, S3).wrapping_add(tr::CENTER));
+        c.sq(V0, s); // n
+        c.g[S4][0] = c.g[A2][0];
+        frame.save(c, S0, 0x120);
+        c.g[S6][0] = c.g[A3][0];
+        frame.save(c, S2, 0x100);
+        frame.save(c, S5, 0xd0);
+        frame.save(c, S7, 0xb0);
+        frame.save(c, FP, 0xa0);
+        frame.save_ra(c, 0x90);
+        frame.save_fpr(c, 23, 0x148);
+        frame.save_fpr(c, 22, 0x140);
+        frame.save_fpr(c, 21, 0x138);
+        frame.save_fpr(c, 20, 0x130);
+        // dist = n . (centre - p) in f20, radius in f21.
+        let tree = r32(c, S3);
+        rst::vsub_spill(
+            c,
+            tree.wrapping_add(tr::CENTER),
+            r32(c, S1),
+            s.wrapping_add(0x20),
+            s.wrapping_add(0x10),
+        );
+        let (push, point) = (c.g[T1][0], c.g[T2][0]);
+        c.sw(s.wrapping_add(0x80), push);
+        c.lwc1(21, tree.wrapping_add(tr::RADIUS));
+        c.sw(s.wrapping_add(0x84), point);
+        rst::vdot(c, s, s.wrapping_add(0x10), V1);
+        c.mtc1(V1, 20);
+        c.abs_s(0, 20);
+        c.c_lt_s(21, 0);
+        let far = c.fcc();
+        c.g[V0][0] = 0;
+        'done: {
+            if far {
+                break 'done;
+            }
+            // Below the plane: dist = -dist, n = -n.
+            c.cycles += 4;
+            c.mtc1(0, 22);
+            c.c_lt_s(20, 22);
+            if c.fcc() {
+                c.cycles += 11;
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.mtc1(AT, 0);
+                c.neg_s(20, 20);
+                c.mfc1(V1, 0);
+                c.lqc2(4, s);
+                c.qmtc2(V1, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, s.wrapping_add(0x20));
+                c.lq(V0, s.wrapping_add(0x20));
+                c.sq(V0, s);
+                c.sq(V0, s.wrapping_add(0x10));
+            }
+            oc230_ct2_root_touch(c)?;
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break 'done;
+            }
+            c.g[V0][0] = c.lw(tree.wrapping_add(tr::MASK));
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                // No kids: the root is the hit.
+                c.cycles += 15;
+                oc230_ct2_hit(c, false);
+                break 'done;
+            }
+            c.g[V0][0] = c.lw(tree.wrapping_add(tr::COUNT));
+            // The nearest touching kid (best in f23).
+            c.cycles += 3;
+            c.lwc1(23, oc230_gp(c, 0u32.wrapping_sub(0x2dcc)));
+            let none = (c.g[V0][0] as i64) <= 0;
+            c.g[S2][0] = 0;
+            if !none {
+                c.cycles += 4;
+                c.mtc1(0, 22);
+                c.g[FP][0] = 1;
+                c.g[S7][0] = c.g[S3][0];
+                c.g[S0][0] = sx(tree.wrapping_add(tr::KIDS));
+                loop {
+                    oc230_ct2_kid(c)?;
+                    c.cycles += 5;
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                    c.g[S7][0] = sx(r32(c, S7).wrapping_add(0x20));
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x20));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0032_ae88);
+                    }
+                }
+            }
+            // Hit when best moved off its start value.
+            c.cycles += 5;
+            c.lwc1(0, oc230_gp(c, 0u32.wrapping_sub(0x2dc4)));
+            c.c_eq_s(23, 0);
+            let untouched = c.fcc();
+            c.g[V0][0] = 1;
+            if untouched {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        c.cycles += 16;
+        frame.restore(c, S0, 0x120);
+        frame.restore(c, S1, 0x110);
+        frame.restore(c, S2, 0x100);
+        frame.restore(c, S3, 0xf0);
+        frame.restore(c, S4, 0xe0);
+        frame.restore(c, S5, 0xd0);
+        frame.restore(c, S6, 0xc0);
+        frame.restore(c, S7, 0xb0);
+        frame.restore(c, FP, 0xa0);
+        frame.restore_ra(c, 0x90);
+        frame.restore_fpr(c, 23, 0x148);
+        frame.restore_fpr(c, 22, 0x140);
+        frame.restore_fpr(c, 21, 0x138);
+        frame.restore_fpr(c, 20, 0x130);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5455,6 +5938,80 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(a);
                 c.g[A2][0] = sx(b);
                 c.g[A3][0] = sx(cc);
+                c.g[T0][0] = sx(n);
+                c.g[T1][0] = sx(DATA + 0x500);
+                c.g[T2][0] = sx(DATA + 0x510);
+            },
+        );
+    }
+    use super::*;
+
+    /// RiderSphereTree_CollideTriangle2: the triangle p (0,0,0), a (4,0,0),
+    /// b (0,4,0) with normal +z or -z; the root sphere and up to four kids
+    /// at random places around it (above/below the plane, near the vertices
+    /// and edges, or far), random masks. `VU0_TriangleIntersect` runs a stub
+    /// microprogram at 0x6e0 (`vi2 = vi14`), so its answer is chosen per
+    /// seed through vi14.
+    #[test]
+    fn rider_sphere_tree_collide_triangle2_matches() {
+        use crate::difftest::put_vec;
+        let f = |x: f32| x.to_bits();
+        check(
+            ee::s10::f_0032aa28__generated,
+            rider_sphere_tree_collide_triangle2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x32_aa28 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.pc = 0x0032_aa28;
+                c.g[GP][0] = GAME_GP as u64;
+                ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+                    .hw
+                    .vu0
+                    .fallback = Some(ssx3_ps2::vu::reference::run_program);
+                c.bus.write32(0x1100_0000 + 0x6e0, 0x8000_70b0); // IADD vi2, vi14, vi0
+                c.bus.write32(0x1100_0000 + 0x6e4, 0x4000_02ff); // NOP, E
+                c.g[14][0] = if seed % 4 == 0 { 1 } else { 0 };
+                c.ctc2(14, 14);
+                c.bus.write32(GAME_GP - 0x2dd0, f(0.0001));
+                c.bus.write32(GAME_GP - 0x2dc8, f(0.0001));
+                c.bus.write32(GAME_GP - 0x2dcc, f(1.0e10));
+                c.bus.write32(GAME_GP - 0x2dc4, f(1.0e10));
+                let tree = DATA;
+                let (p, a, b, n) = (DATA + 0x400, DATA + 0x410, DATA + 0x420, DATA + 0x430);
+                put_vec(c, p, [f(0.0), f(0.0), f(0.0), 0]);
+                put_vec(c, a, [f(4.0), f(0.0), f(0.0), 0]);
+                put_vec(c, b, [f(0.0), f(4.0), f(0.0), 0]);
+                let nz = if seed % 5 == 1 { -1.0 } else { 1.0 };
+                put_vec(c, n, [f(0.0), f(0.0), f(nz), 0]);
+                let place = |c: &mut Cpu, r: &mut Rng, at: u32| {
+                    let q = match r.next_u32() % 7 {
+                        0 => [-0.5, -0.5],
+                        1 => [2.0, -0.6],
+                        2 => [-0.6, 2.0],
+                        3 => [2.3, 2.3],
+                        4 => [1.0, 1.0],
+                        5 => [4.4, 0.2],
+                        _ => [9.0, 9.0],
+                    };
+                    let jitter = |r: &mut Rng| (r.next_u32() % 100) as f32 * 0.004 - 0.2;
+                    let z = (r.next_u32() % 100) as f32 * 0.03 - 1.5;
+                    put_vec(c, at, [f(q[0] + jitter(r)), f(q[1] + jitter(r)), f(z), 0]);
+                    c.bus
+                        .write32(at + 0x10, f(0.3 + (r.next_u32() % 100) as f32 * 0.012));
+                };
+                place(c, &mut r, tree + 0x10);
+                let count = r.next_u32() % 5;
+                for k in 0..count {
+                    place(c, &mut r, tree + 0x30 + 0x20 * k);
+                }
+                let mask = if seed % 3 == 0 { 0 } else { r.next_u32() & 0xf };
+                c.bus.write32(tree + 0x28, mask);
+                c.bus.write32(tree + 0x2c, count);
+                c.g[A0][0] = sx(tree);
+                c.g[A1][0] = sx(p);
+                c.g[A2][0] = sx(a);
+                c.g[A3][0] = sx(b);
                 c.g[T0][0] = sx(n);
                 c.g[T1][0] = sx(DATA + 0x500);
                 c.g[T2][0] = sx(DATA + 0x510);

@@ -41,6 +41,7 @@ pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::fepopup::at as at_6;
 pub(crate) use crate::game::fe::fepopup::lb;
 pub(crate) use crate::game::fe::fepopup::ld;
+pub(crate) use crate::game::misc::gp_lit;
 pub(crate) use crate::game::movie::movieplayer::at as at_4;
 pub(crate) use crate::game::movie::movieplayer::word;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2;
@@ -237,6 +238,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0010_da10,
         computer_actor_rider_should_attack_back,
         "ComputerActorRider_ShouldAttackBack",
+    ),
+    (
+        0x0010_f560,
+        ai_update_rider_relations,
+        "AI_UpdateRiderRelations",
     ),
 ];
 
@@ -6488,6 +6494,385 @@ pub fn computer_actor_rider_find_jump_marker(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod rider_relations {
+    use super::ee;
+    use super::Callee;
+
+    /// `AI`: frame counter.
+    pub const FRAME: u32 = 0x8;
+
+    /// `AI`: `Rider*[]`.
+    pub const RIDERS: u32 = 0x28;
+
+    /// `AI`: riders in the race, and riders not taking part (subtracted).
+    pub const COUNT: u32 = 0x78;
+
+    pub const SKIP: u32 = 0x84;
+
+    /// `Rider`: per-other-rider info, 0x24 bytes each, at offset 0.
+    pub const INFO_SIZE: u32 = 0x24;
+
+    /// Info entry: tracked (non-zero), distance, angle, aggressive flag.
+    pub const INFO_ACTIVE: u32 = 0x0;
+
+    pub const INFO_DIST: u32 = 0x8;
+
+    pub const INFO_ANGLE: u32 = 0xc;
+
+    pub const INFO_AGGRESSIVE: u32 = 0x1c;
+
+    /// `Rider`: the distance window reset each pass (-50000 / 50000).
+    pub const MIN_DIST: u32 = 0xdc;
+
+    pub const MAX_DIST: u32 = 0xe0;
+
+    /// `Rider`: the embedded object whose virtual slot 0x28 returns the
+    /// position (`sVec4*`).
+    pub const POS_OBJ: u32 = 0x6c0;
+
+    pub const GET_POS_SLOT: u32 = 0x28;
+
+    /// gp-relative constants: -50000, 50000, pi, -pi/2, pi/2, 1/(2 pi), 2 pi.
+    pub const LIT_MIN_DIST: u32 = 0x7cac;
+
+    pub const LIT_MAX_DIST: u32 = 0x7ca8;
+
+    pub const LIT_PI: u32 = 0x7ca4;
+
+    pub const LIT_NEG_HALF_PI: u32 = 0x7ca0;
+
+    pub const LIT_HALF_PI: u32 = 0x7c9c;
+
+    pub const LIT_INV_TWO_PI: u32 = 0x7c98;
+
+    pub const LIT_TWO_PI: u32 = 0x7c94;
+
+    pub const UPDATE_RACE_POSITIONS: Callee = Callee {
+        addr: 0x0010_f998,
+        f: ee::s00::AI_UpdateRacePositions,
+    };
+
+    pub const UPDATE_RIVALS: Callee = Callee {
+        addr: 0x0010_f878,
+        f: ee::s00::AI_UpdateRivals,
+    };
+
+    /// `Math_Atan(x)` (cross-shard).
+    pub const ATAN: u32 = 0x0031_c228;
+
+    /// `BEAggressionInt_GetInstance()`, `BEAggressionInt_GetRivalLevel(this, a, b)`.
+    pub const AGGRESSION_GET_INSTANCE: u32 = 0x0015_5a50;
+
+    pub const AGGRESSION_GET_RIVAL_LEVEL: u32 = 0x0015_5b50;
+}
+
+/// `void AI_UpdateRiderRelations(AI* ai)` (0x10f560): every sixth frame,
+/// update the race positions, then for every pair of riders (i < j) that
+/// rider i tracks: the distance between them in the ground plane
+/// (`sqrt(dx^2 + dy^2)`, stored both ways), the angle from j to i
+/// (`atan2(dy, dx)`, stored at j) and its opposite wrapped into
+/// [-pi, pi) (stored at i), and whether i's rivalry level towards j is at
+/// least 2. Also resets each rider's distance window, then updates rivals.
+pub fn ai_update_rider_relations(c: &mut Cpu) {
+    use rider_relations::*;
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x100);
+        c.g[V0][0] = 6;
+        for (reg, off) in [
+            (S0, 0xc0),
+            (S1, 0xb0),
+            (S2, 0xa0),
+            (S3, 0x90),
+            (S4, 0x80),
+            (S5, 0x70),
+            (S6, 0x60),
+            (S7, 0x50),
+            (FP, 0x40),
+        ] {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, 0x30);
+        for (f, off) in [(24, 0xf0), (23, 0xe8), (22, 0xe0), (21, 0xd8), (20, 0xd0)] {
+            frame.save_fpr(c, f, off);
+        }
+        // Stack slots: 0x20 the AI, 0x24/0x28 its rider array.
+        let slot = |c: &Cpu, off: u32| sp(c).wrapping_add(off);
+        c.sw(slot(c, 0x20), c.g[A0][0]);
+        'out: {
+            // 0x10f5b0: only every sixth frame.
+            c.cycles += 5;
+            c.g[A0][0] = c.lw(at(c, A0, FRAME));
+            c.div(0, A0, V0);
+            c.g[V1][0] = c.hi[0];
+            frame.restore(c, S0, 0xc0);
+            if c.g[V1][0] != 0 {
+                break 'out;
+            }
+            c.cycles += 9;
+            c.g[A0][0] = c.lw(slot(c, 0x20));
+            UPDATE_RACE_POSITIONS.call(c, 0x0010_f5cc)?;
+            c.g[V1][0] = c.lw(slot(c, 0x20));
+            c.g[V0][0] = c.lw(at(c, V1, COUNT));
+            c.g[V1][0] = c.lw(at(c, V1, SKIP));
+            c.g[S6][0] = sx(r32(c, V0).wrapping_sub(r32(c, V1)));
+            let few = (c.g[S6][0] as i64) < 2;
+            c.g[A0][0] = few as u64;
+            frame.restore(c, S0, 0xc0);
+            if few {
+                break 'out;
+            }
+            c.cycles += 2;
+            c.g[S4][0] = 0;
+            if (c.g[S6][0] as i64) > 0 {
+                c.cycles += 4;
+                c.g[A0][0] = c.lw(slot(c, 0x20));
+                c.g[A0][0] = sx(at(c, A0, RIDERS));
+                c.sw(slot(c, 0x24), c.g[A0][0]);
+                c.g[V0][0] = c.lw(slot(c, 0x24));
+                // 0x10f600: rider i = s4 (fp = 4 i); v0 = the rider array.
+                loop {
+                    c.cycles += 13;
+                    c.g[V1][0] = sx(r32(c, S4) << 2);
+                    c.g[FP][0] = c.g[V1][0];
+                    c.lwc1(1, gp_lit(c, LIT_MIN_DIST));
+                    c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.lwc1(0, gp_lit(c, LIT_MAX_DIST));
+                    c.g[V0][0] = c.lw(r32(c, V1));
+                    c.g[S2][0] = sx(r32(c, S4).wrapping_add(1));
+                    c.g[S7][0] = c.g[S2][0];
+                    let pairs = (c.g[S2][0] as i64) < (c.g[S6][0] as i64);
+                    c.g[A0][0] = pairs as u64;
+                    c.swc1(1, at(c, V0, MIN_DIST));
+                    c.g[V0][0] = c.lw(r32(c, V1));
+                    c.swc1(0, at(c, V0, MAX_DIST));
+                    if pairs {
+                        // s2 = j, s1 = j * 0x24 (i's info on j), s3/s5 =
+                        // &riders[j].
+                        c.cycles += 9;
+                        c.g[V1][0] = c.lw(slot(c, 0x24));
+                        c.g[A0][0] = INFO_SIZE as u64;
+                        c.mult(0, S1, S7, A0);
+                        c.g[V0][0] = sx(r32(c, S7) << 2);
+                        c.sw(slot(c, 0x28), c.g[V1][0]);
+                        c.lwc1(24, gp_lit(c, LIT_PI));
+                        c.g[S3][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                        c.g[S5][0] = c.g[S3][0];
+                        loop {
+                            let (riders_a, riders_b) = (slot(c, 0x24), slot(c, 0x28));
+                            relate_pair(c, riders_a, riders_b)?;
+                            c.cycles += 5;
+                            c.g[S3][0] = sx(at(c, S3, 4));
+                            c.g[S1][0] = sx(at(c, S1, INFO_SIZE));
+                            let more = (c.g[S2][0] as i64) < (c.g[S6][0] as i64);
+                            c.g[V0][0] = more as u64;
+                            c.g[S5][0] = sx(at(c, S5, 4));
+                            if !more {
+                                break;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0010_f658);
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[S4][0] = c.g[S7][0];
+                    let more = (c.g[S4][0] as i64) < (c.g[S6][0] as i64);
+                    c.g[V0][0] = c.lw(slot(c, 0x24));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0010_f600);
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.lw(slot(c, 0x20));
+            UPDATE_RIVALS.call(c, 0x0010_f834)?;
+            frame.restore(c, S0, 0xc0);
+        }
+        c.cycles += 16;
+        for (reg, off) in [
+            (S1, 0xb0),
+            (S2, 0xa0),
+            (S3, 0x90),
+            (S4, 0x80),
+            (S5, 0x70),
+            (S6, 0x60),
+            (S7, 0x50),
+            (FP, 0x40),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x30);
+        for (f, off) in [(24, 0xf0), (23, 0xe8), (22, 0xe0), (21, 0xd8), (20, 0xd0)] {
+            frame.restore_fpr(c, f, off);
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One (i, j) pair of [`ai_update_rider_relations`] (0x10f658): rider i
+/// is `riders[fp / 4]`, rider j `*s3`/`*s5`, s1 = j * 0x24, s4 = i, s2 = j
+/// (advanced here). `riders_a`/`riders_b` are the stack slots holding the
+/// rider array (0x24, 0x28).
+pub(crate) fn relate_pair(c: &mut Cpu, riders_a: u32, riders_b: u32) -> crate::call::Flow {
+    use rider_relations::*;
+    c.cycles += 7;
+    c.g[V1][0] = c.lw(riders_a);
+    c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, FP)));
+    c.g[A1][0] = c.lw(r32(c, V0));
+    c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, S1)));
+    c.g[V0][0] = c.lw(at(c, V1, INFO_ACTIVE));
+    if c.g[V0][0] == 0 {
+        c.g[S2][0] = sx(at(c, S2, 1));
+        return Ok(());
+    }
+
+    // 0x10f670: both positions (virtual getPos), their difference.
+    c.cycles += 30;
+    c.g[V1][0] = c.lw(at(c, A1, POS_OBJ));
+    c.g[A1][0] = sx(at(c, A1, POS_OBJ));
+    c.mtc1(0, 22);
+    c.g[A0][0] = c.lh(at(c, V1, GET_POS_SLOT));
+    c.g[V0][0] = c.lw(at(c, V1, GET_POS_SLOT + 4));
+    let method = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+    call_ptr(c, method, 0x0010_f690)?;
+    c.g[A0][0] = c.lw(r32(c, S5));
+    c.g[S0][0] = c.g[V0][0];
+    c.g[V1][0] = c.lw(at(c, A0, POS_OBJ));
+    c.g[A0][0] = sx(at(c, A0, POS_OBJ));
+    c.g[A1][0] = c.lh(at(c, V1, GET_POS_SLOT));
+    c.g[V0][0] = c.lw(at(c, V1, GET_POS_SLOT + 4));
+    let method = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+    call_ptr(c, method, 0x0010_f6b0)?;
+    c.lqc2(3, r32(c, S0));
+    c.lqc2(4, r32(c, V0));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, sp(c).wrapping_add(0x10));
+    c.lq(2, sp(c).wrapping_add(0x10));
+    c.sq(2, sp(c));
+    // f20 = dx, f21 = dy, f23 = distance.
+    c.lwc1(20, sp(c));
+    c.lwc1(21, sp(c).wrapping_add(4));
+    c.mul_s(0, 20, 20);
+    c.mul_s(1, 21, 21);
+    c.c_eq_s(20, 22);
+    c.add_s(0, 0, 1);
+    c.sqrt_s(23, 0);
+    let dx_zero = c.fcc();
+
+    // The angle atan2(dy, dx) into f12, f2 = angle + pi, a0 = the riders.
+    'angle: {
+        if !dx_zero {
+            // 0x10f718: atan(dy / dx), corrected by pi for dx < 0.
+            c.cycles += 7;
+            c.div_s(12, 21, 20);
+            call_ptr(c, ATAN, 0x0010_f724)?;
+            c.c_lt_s(20, 22);
+            let left = c.fcc();
+            c.mov_s(12, 0);
+            if left {
+                c.cycles += 4;
+                c.c_lt_s(22, 21);
+                if !c.fcc() {
+                    c.sub_s(0, 0, 24);
+                } else {
+                    c.cycles += 1;
+                    c.add_s(0, 0, 24);
+                }
+                c.cycles += 1;
+                c.mov_s(12, 0);
+            }
+        } else {
+            // dx == 0: 0 (dy == 0), pi/2 (dy > 0), -pi/2 (dy < 0).
+            c.cycles += 4;
+            c.c_eq_s(21, 22);
+            let dy_zero = c.fcc();
+            c.mov_s(12, 21);
+            if !dy_zero {
+                c.cycles += 4;
+                c.c_le_s(22, 21);
+                c.lwc1(12, gp_lit(c, LIT_NEG_HALF_PI));
+                let up = c.fcc();
+                c.g[A0][0] = c.lw(riders_b);
+                if up {
+                    c.cycles += 3;
+                    c.lwc1(12, gp_lit(c, LIT_HALF_PI));
+                    c.add_s(2, 12, 24);
+                    break 'angle;
+                }
+            }
+        }
+        c.cycles += 2;
+        c.g[A0][0] = c.lw(riders_b);
+        c.add_s(2, 12, 24);
+    }
+
+    // 0x10f754: distance both ways; f1 = floor((angle + pi) / 2 pi).
+    c.cycles += 18;
+    c.lwc1(0, gp_lit(c, LIT_INV_TWO_PI));
+    c.g[V1][0] = INFO_SIZE as u64;
+    c.g[S0][0] = sx(r32(c, A0).wrapping_add(r32(c, FP)));
+    c.g[AT][0] = 0x3f00_0000;
+    c.mtc1(AT, 1);
+    c.g[V0][0] = c.lw(r32(c, S0));
+    c.mul_s(0, 2, 0);
+    c.mult(0, A0, S4, V1);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+    c.swc1(23, at(c, V0, INFO_DIST));
+    c.add_s(0, 0, 1);
+    c.cvt_w_s(1, 0);
+    c.cvt_s_w(1, 1);
+    c.g[V0][0] = c.lw(r32(c, S3));
+    c.c_lt_s(0, 1);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+    let rounded_up = c.fcc();
+    c.swc1(23, at(c, V0, INFO_DIST));
+    if rounded_up {
+        c.cycles += 3;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.sub_s(1, 1, 0);
+    }
+
+    // 0x10f7a8: the angles (i's wrapped, j's raw), then the rivalry level.
+    c.cycles += 17;
+    c.lwc1(0, gp_lit(c, LIT_TWO_PI));
+    c.g[V1][0] = c.lw(r32(c, S0));
+    c.mul_s(0, 1, 0);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, S1)));
+    c.sub_s(0, 2, 0);
+    c.swc1(0, at(c, V1, INFO_ANGLE));
+    c.g[V0][0] = c.lw(r32(c, S3));
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+    c.swc1(12, at(c, V0, INFO_ANGLE));
+    call_ptr(c, AGGRESSION_GET_INSTANCE, 0x0010_f7d0)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = c.g[S4][0];
+    c.g[A2][0] = c.g[S2][0];
+    call_ptr(c, AGGRESSION_GET_RIVAL_LEVEL, 0x0010_f7e0)?;
+    let mild = (c.g[V0][0] as i64) < 2;
+    c.g[V0][0] = c.lw(r32(c, S0));
+    if mild {
+        c.cycles += 2;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+        c.sw(at(c, V0, INFO_AGGRESSIVE), 0);
+    } else {
+        c.cycles += 4;
+        c.g[V1][0] = 1;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+        c.sw(at(c, V0, INFO_AGGRESSIVE), 1);
+    }
+    c.cycles += 1;
+    c.g[S2][0] = sx(at(c, S2, 1));
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8647,6 +9032,145 @@ pub(crate) mod tests {
                         .write32(m + 0xc, (100.0 + (r.next_u32() % 400) as f32).to_bits());
                 }
             },
+        );
+    }
+    use super::*;
+
+    // ------------------------------------------------------ AI_UpdateRiderRelations
+
+    /// The back end's tables the rivalry lookup reads (a copy of the `ai`
+    /// tests' fixture): player slots, the player table, rider records
+    /// (characters mostly 0..9, some profiles -1), the rivalry table, the
+    /// track, and the BE singletons.
+    pub(crate) fn be_tables(c: &mut Cpu, r: &mut Rng) {
+        use crate::ai::{player_table, RIVALRY};
+        for p in 0..8 {
+            c.bus.write32(0x0053_05b0 + 4 * p, r.next_u32() % 8);
+        }
+        fill(c, r, player_table::BASE, 8 * 0x1c / 4);
+        let all_cpu = r.next_u32() % 5 == 0;
+        for s in 0..8 {
+            let v = if all_cpu || r.next_u32() % 2 == 0 {
+                r.next_u32() | 0x8000_0000
+            } else {
+                r.next_u32() % 4
+            };
+            c.bus.write32(player_table::BASE + s * 0x1c + 0xc, v);
+        }
+        fill(c, r, 0x0053_5b20, 16 * 0x1c / 4);
+        for s in 0..16 {
+            let rec = 0x0053_5b20 + s * 0x1c;
+            if r.next_u32() % 2 == 0 {
+                c.bus.write32(rec + 0xc, u32::MAX);
+            }
+            let ch = if r.next_u32() % 8 == 0 {
+                r.next_u32() as u8
+            } else {
+                (r.next_u32() % 10) as u8
+            };
+            c.bus.write8(rec + 0x11, ch);
+        }
+        for p in 0..3u32 {
+            for b in 0..10u32 {
+                for a in 0..10u32 {
+                    c.bus.write8(
+                        RIVALRY + p * 0x9b50 + b * 0xf88 + a * 3,
+                        (r.next_u32() % 5) as u8,
+                    );
+                }
+            }
+        }
+        c.bus.write32(0x0053_5c08, r.next_u32() % 40);
+        fill(c, r, 0x0043_d950, 40 * 0x64 / 4);
+        for t in 0..40 {
+            c.bus
+                .write32(0x0043_d950 + t * 0x64 + 0x54, r.next_u32() % 4);
+        }
+        // NewRace, NewPlayer, Aggression, Char singletons.
+        for g in [0x1f3c, 0x1f30, 0x1ea4, 0x1f2c] {
+            c.bus.write32(GAME_GP - g, DATA + 0xe_0000 + g * 0x10);
+        }
+    }
+
+    /// The relation pass over up to six riders: the frame counter is a
+    /// multiple of 6 for most seeds; rider count minus skipped is 0..6;
+    /// riders track some others; getPos is a fake whose first eight
+    /// results are positions with equal x / zero y often enough to reach
+    /// every atan2 case (dx = 0 with dy = 0, > 0, < 0; dx < 0 with dy
+    /// either sign); the rivalry levels come from the real lookup; the
+    /// rivals pass runs for some seeds. Fakes may unwind; events are
+    /// delivered at the loop heads.
+    #[test]
+    fn ai_update_rider_relations_matches() {
+        use rider_relations::*;
+        const AI: u32 = 0x00a0_0000;
+        const VT: u32 = 0x00a0_1000;
+        const POS: u32 = 0x00a0_2000;
+        const RIDER0: u32 = 0x00a1_0000;
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = machine(c, seed, 0x2341, 8);
+            be_tables(c, &mut r);
+            for (off, v) in [
+                (LIT_MIN_DIST, -50000.0f32),
+                (LIT_MAX_DIST, 50000.0),
+                (LIT_PI, std::f32::consts::PI),
+                (LIT_NEG_HALF_PI, -std::f32::consts::FRAC_PI_2),
+                (LIT_HALF_PI, std::f32::consts::FRAC_PI_2),
+                (LIT_INV_TWO_PI, 0.159_154_94),
+                (LIT_TWO_PI, std::f32::consts::TAU),
+            ] {
+                c.bus.write32(GAME_GP - off, v.to_bits());
+            }
+            // Positions the unforced fakes return (DATA + 0..0x3fff0).
+            for k in 0..0x4000u32 {
+                let a = DATA + 0x10 * k;
+                c.bus.write32(a, r.f32(500.0));
+                c.bus.write32(a + 4, r.f32(500.0));
+            }
+            // The first eight getPos results.
+            for n in 0..8u32 {
+                let x = [0.0f32, 1.0, -2.0][(r.next_u32() % 3) as usize];
+                let y = [0.0f32, 3.0, -1.5][(r.next_u32() % 3) as usize];
+                put_vec(c, POS + 0x10 * n, [x.to_bits(), y.to_bits(), r.f32(9.0), 0]);
+                c.bus.write32(LOG_RESULTS + 4 * n, POS + 0x10 * n);
+            }
+            c.bus
+                .write16(VT + GET_POS_SLOT, (r.next_u32() % 8 * 4) as u16);
+            c.bus.write32(VT + GET_POS_SLOT + 4, FAKE);
+            let frame = 6 * (r.next_u32() % 100)
+                + if seed % 7 == 3 {
+                    1 + r.next_u32() % 5
+                } else {
+                    0
+                };
+            c.bus.write32(AI + FRAME, frame);
+            c.bus.write32(AI + 0x74, 0); // race positions: nothing to do
+            c.bus.write32(AI + COUNT, r.next_u32() % 7);
+            c.bus
+                .write32(AI + SKIP, if r.next_u32() % 4 == 0 { 1 } else { 0 });
+            c.bus.write32(AI + 0x80, (r.next_u32() % 3 == 0) as u32);
+            for i in 0..6 {
+                let rider = RIDER0 + 0x1000 * i;
+                c.bus.write32(AI + RIDERS + 4 * i, rider);
+                fill(c, &mut r, rider, 0x100 / 4);
+                for j in 0..6 {
+                    let tracked = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 3
+                    };
+                    c.bus.write32(rider + j * INFO_SIZE + INFO_ACTIVE, tracked);
+                }
+                c.bus.write32(rider + POS_OBJ, VT);
+            }
+            c.g[A0][0] = AI as u64;
+            schedule(c, &mut r, seed, 0x0010_f560)
+        };
+        check_events(
+            ee::s00::f_0010f560__generated,
+            ai_update_rider_relations,
+            300,
+            &setup,
         );
     }
 }

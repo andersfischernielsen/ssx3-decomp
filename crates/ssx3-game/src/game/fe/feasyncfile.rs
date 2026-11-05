@@ -1264,6 +1264,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         async_file_assign_serial,
         "AsyncFile_AssignSerial",
     ),
+    (
+        0x001a_39f0,
+        fe_async_manager_update,
+        "FEAsyncManager_Update",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7201,6 +7206,8 @@ macro_rules! child_event_switch {
         }
     };
 }
+use crate::abi::ret;
+pub(crate) use crate::game::misc::add32 as add32_2;
 pub(crate) use child_event_switch;
 
 child_event_switch!(
@@ -19581,6 +19588,253 @@ pub fn cfepopupconfirm_cfg_reset(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod fe_async {
+
+    pub const SLOTS: u32 = 0x100;
+
+    pub const SLOT_SIZE: u32 = 0x11c;
+
+    pub const SLOT_COUNT: i64 = 5;
+
+    pub const SLOT_DATA: u32 = 0x0;
+
+    pub const HANDLE: u32 = 0x4;
+
+    pub const ID: u32 = 0x10;
+
+    pub const KEEP_UNTIL: u32 = 0x18;
+
+    /// The front-end interface (`gp-0x854`) and its vtable (`+0x10d8`).
+    pub const IFACE: u32 = 0x854;
+
+    pub const IFACE_VT: u32 = 0x10d8;
+
+    /// Interface methods: current frame, unregister resource, register.
+    pub const VT_FRAME: u32 = 0x390;
+
+    pub const VT_UNREGISTER: u32 = 0x190;
+
+    pub const VT_REGISTER: u32 = 0x170;
+
+    /// The name passed when registering a loaded file (`.rodata`).
+    pub const REGISTER_NAME: u32 = 0x004a_1a18;
+}
+
+pub(crate) const FE_ASYNC_GET_STATE: Callee = Callee {
+    addr: 0x001a_39c0,
+    f: ee::s03::f_001a39c0,
+};
+
+pub(crate) const FE_ASYNC_SET_STATE: Callee = Callee {
+    addr: 0x001a_39d8,
+    f: ee::s03::f_001a39d8,
+};
+
+pub(crate) const FE_ASYNC_LOAD_SLOT: Callee = Callee {
+    addr: 0x001a_3cd8,
+    f: ee::s03::f_001a3cd8,
+};
+
+pub(crate) const MEM_FREE: u32 = 0x0031_7e98;
+
+pub(crate) const ASYNC_FILE_STATUS: u32 = 0x003d_f980;
+
+pub(crate) const ASYNC_FILE_RELEASE: u32 = 0x003d_f9d8;
+
+/// Call interface method `slot` (`{delta, fn}` at `vt + slot`) on the
+/// interface in `obj_reg`, as `lw vt; lh delta; lw fn; addu a0` with the
+/// registers the original uses (`vt_reg`, `fn_reg`).
+pub(crate) fn iface_call(
+    c: &mut Cpu,
+    obj_reg: usize,
+    vt_reg: usize,
+    fn_reg: usize,
+    slot: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    c.g[vt_reg][0] = Addr(r32(c, obj_reg) + fe_async::IFACE_VT).lw(c);
+    c.g[A0][0] = Addr(r32(c, vt_reg) + slot).lh(c);
+    c.g[fn_reg][0] = Addr(r32(c, vt_reg) + slot + 4).lw(c);
+    let target = r32(c, fn_reg);
+    c.g[A0][0] = add32_2(c.g[obj_reg][0], c.g[A0][0]);
+    call_ptr(c, target, ret)
+}
+
+/// `void FEAsyncManager_Update(FEAsyncManager* self)` (0x1a39f0): per slot,
+/// (a) a free or wanted slot that is past its keep-until frame and still
+/// holds data is released (unregister, free, id -1); (b) a wanted slot still
+/// within its frame starts loading; (c) a loading slot whose file finished
+/// becomes loaded: release the file and register its data.
+pub fn fe_async_manager_update(c: &mut Cpu) {
+    use fe_async::*;
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S2, 0x70);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x80);
+        frame.save(c, S3, 0x60);
+        // s1 = &slot.id, s4 = &slot.keep_until, s5 = &slot.data, s6 = i * 0x11c.
+        c.g[S1][0] = add32_2(c.g[S2][0], (SLOTS + ID) as u64);
+        frame.save(c, S4, 0x50);
+        c.g[S3][0] = 0;
+        frame.save(c, S5, 0x40);
+        c.g[S4][0] = add32_2(c.g[S2][0], (SLOTS + KEEP_UNTIL) as u64);
+        frame.save(c, S6, 0x30);
+        c.g[S5][0] = add32_2(c.g[S2][0], (SLOTS + SLOT_DATA) as u64);
+        frame.save(c, S7, 0x20);
+        c.g[S6][0] = 0;
+        frame.save(c, FP, 0x10);
+        c.g[S7][0] = 1;
+        frame.save(c, S0, 0x90);
+        c.g[FP][0] = 0x4a_0000;
+        frame.save_ra(c, 0);
+        let gp = c.g[GP][0] as u32;
+        loop {
+            // Head 0x1a3a40.
+            let id = r32(c, S1);
+            // (a) Free or wanted: release when past the keep-until frame.
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = c.g[S3][0];
+            FE_ASYNC_GET_STATE.call(c, 0x001a_3a4c)?;
+            let free = c.g[V0][0] == 0;
+            c.g[A1][0] = Addr(gp.wrapping_sub(IFACE)).lw(c);
+            let mut check = free;
+            if !free {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S3][0];
+                FE_ASYNC_GET_STATE.call(c, 0x001a_3a60)?;
+                if c.g[V0][0] == c.g[S7][0] {
+                    c.cycles += 1;
+                    c.g[A1][0] = Addr(gp.wrapping_sub(IFACE)).lw(c);
+                    check = true;
+                }
+            }
+            if check {
+                c.cycles += 9;
+                iface_call(c, A1, V1, V0, VT_FRAME, 0x001a_3a80)?;
+                c.g[V1][0] = Addr(id + 8).lw(c);
+                c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V1][0] != 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(id - 0x10).lw(c);
+                    c.g[A2][0] = Addr(gp.wrapping_sub(IFACE)).lw(c);
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 9;
+                        c.g[A1][0] = Addr(id).lw(c);
+                        iface_call(c, A2, V0, V1, VT_UNREGISTER, 0x001a_3ab4)?;
+                        c.g[A0][0] = Addr(id - 0x10).lw(c);
+                        if c.g[A0][0] != 0 {
+                            c.cycles += 3;
+                            call_ptr(c, MEM_FREE, 0x001a_3ac8)?;
+                        }
+                        Addr(r32(c, S5)).sw(c, 0);
+                        c.cycles += 3;
+                        c.g[V0][0] = u64::MAX;
+                        Addr(r32(c, S4)).sw(c, 0);
+                        Addr(id).sw(c, u64::MAX);
+                    }
+                    c.cycles += 1;
+                }
+            }
+            c.g[A0][0] = c.g[S2][0];
+            // (b) Wanted and still needed: load it.
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S3][0];
+            FE_ASYNC_GET_STATE.call(c, 0x001a_3ae4)?;
+            if c.g[V0][0] == c.g[S7][0] {
+                c.cycles += 10;
+                c.g[A1][0] = Addr(gp.wrapping_sub(IFACE)).lw(c);
+                iface_call(c, A1, V1, V0, VT_FRAME, 0x001a_3b04)?;
+                c.g[V1][0] = Addr(id + 8).lw(c);
+                c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let needed = c.g[V1][0] != 0;
+                c.g[A0][0] = c.g[S2][0];
+                if needed {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[S3][0];
+                    FE_ASYNC_LOAD_SLOT.call(c, 0x001a_3b1c)?;
+                }
+                c.cycles += 1;
+            }
+            c.g[A0][0] = c.g[S2][0];
+            // (c) Loading: finished files become loaded.
+            c.cycles += 5;
+            c.g[A1][0] = c.g[S3][0];
+            FE_ASYNC_GET_STATE.call(c, 0x001a_3b28)?;
+            c.g[V1][0] = 2;
+            if c.g[V0][0] == c.g[V1][0] {
+                c.cycles += 6;
+                c.g[V0][0] = add32_2(c.g[S2][0], (SLOTS + HANDLE) as u64);
+                c.g[S0][0] = add32_2(c.g[V0][0], c.g[S6][0]);
+                c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+                call_ptr(c, ASYNC_FILE_STATUS, 0x001a_3b44)?;
+                if c.g[V0][0] == c.g[S7][0] {
+                    c.cycles += 23;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[S3][0];
+                    c.g[A2][0] = 3;
+                    FE_ASYNC_SET_STATE.call(c, 0x001a_3b5c)?;
+                    c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 0;
+                    call_ptr(c, ASYNC_FILE_RELEASE, 0x001a_3b6c)?;
+                    // register(iface, data + data->header, name, 0, 0, -1)
+                    c.g[T3][0] = Addr(gp.wrapping_sub(IFACE)).lw(c);
+                    c.g[A2][0] = add32_2(c.g[FP][0], 0x1a18);
+                    c.g[T2][0] = Addr(id - 0x10).lw(c);
+                    c.g[A3][0] = 0;
+                    c.g[V1][0] = Addr(r32(c, T3) + IFACE_VT).lw(c);
+                    c.g[T0][0] = 0;
+                    c.g[A1][0] = Addr(r32(c, T2) + 0x14).lw(c);
+                    c.g[T1][0] = u64::MAX;
+                    c.g[A0][0] = Addr(r32(c, V1) + VT_REGISTER).lh(c);
+                    c.g[V0][0] = Addr(r32(c, V1) + VT_REGISTER + 4).lw(c);
+                    c.g[A1][0] = add32_2(c.g[T2][0], c.g[A1][0]);
+                    let target = r32(c, V0);
+                    c.g[A0][0] = add32_2(c.g[T3][0], c.g[A0][0]);
+                    call_ptr(c, target, 0x001a_3ba0)?;
+                    Addr(id).sw(c, c.g[V0][0]);
+                }
+            }
+            c.g[S3][0] = add32_2(c.g[S3][0], 1);
+            // Next slot (0x1a3ba8).
+            c.cycles += 6;
+            for reg in [S6, S1, S5] {
+                c.g[reg][0] = add32_2(c.g[reg][0], SLOT_SIZE as u64);
+            }
+            c.g[V0][0] = ((c.g[S3][0] as i64) < SLOT_COUNT) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[S4][0] = add32_2(c.g[S4][0], SLOT_SIZE as u64);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x001a_3a40);
+            }
+        }
+        c.cycles += 12;
+        for (reg, off) in [
+            (S0, 0x90),
+            (S1, 0x80),
+            (S2, 0x70),
+            (S3, 0x60),
+            (S4, 0x50),
+            (S5, 0x40),
+            (S6, 0x30),
+            (S7, 0x20),
+            (FP, 0x10),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -26961,5 +27215,74 @@ pub(crate) mod tests {
             assert_eq!(c.bus.read32(this + 0x708), 5);
             assert_eq!(c.bus.read32(this + 0x6e0), 15 * hz / 60, "{hz} Hz");
         }
+    }
+    use super::*;
+    use crate::difftest::events::driven;
+
+    /// `FEAsyncManager_Update` over five slots in random states: free/wanted
+    /// slots past or within their keep-until frame with and without data (a
+    /// real heap block, so the free is valid), loading slots whose async file
+    /// is done, busy or an invalid handle. Interface methods are fakes.
+    /// Wanted slots are always within their frame here (the load call is not
+    /// reached: it would start a real file read).
+    #[test]
+    fn fe_async_manager_update_matches() {
+        use fe_async::*;
+        check(
+            ee::s03::f_001a39f0__generated,
+            fe_async_manager_update,
+            120,
+            &|c, seed| {
+                let mut r = crate::game::fe::feasyncfile::tests::base_13(c, seed, 0x1a_39f0, 6);
+                let iface = crate::game::fe::feasyncfile::tests::IFACE;
+                let mgr = DATA + 0x8000;
+                let vt = DATA + 0x9000;
+                let files = DATA + 0xa000;
+                c.bus.write32(iface + IFACE_VT, vt);
+                for (k, slot) in [VT_FRAME, VT_UNREGISTER, VT_REGISTER]
+                    .into_iter()
+                    .enumerate()
+                {
+                    c.bus.write16(vt + slot, (r.next_u32() % 0x10) as u16 * 4);
+                    c.bus.write32(vt + slot + 4, FAKE + 0x10 * k as u32);
+                }
+                // The async file table: count, then 0x30-byte files.
+                c.bus.write32(0x0051_9bf0, 8);
+                c.bus.write32(0x0045_0c34, files);
+                for i in 0..5u32 {
+                    let slot = mgr + SLOTS + SLOT_SIZE * i;
+                    let state = r.next_u32() % 5;
+                    c.bus.write32(slot + 0x14, state);
+                    c.bus.write32(slot + ID, r.next_u32());
+                    let past = r.next_u32() % 2 == 0 && state != 1;
+                    c.bus.write32(
+                        slot + KEEP_UNTIL,
+                        if past {
+                            r.next_u32() % 0x100
+                        } else {
+                            0x7fff_ffff
+                        },
+                    );
+                    let data = if state == 2 {
+                        let d = DATA + 0xb000 + 0x100 * i;
+                        c.bus.write32(d + 0x14, r.next_u32() % 0x40);
+                        d
+                    } else if r.next_u32() % 2 == 0 {
+                        crate::game::ui::uiengine::tests::alloc(c, 0x40)
+                    } else {
+                        0
+                    };
+                    c.bus.write32(slot + SLOT_DATA, data);
+                    let handle = if r.next_u32() % 5 == 0 { i } else { 0x100 + i };
+                    c.bus.write32(slot + HANDLE, handle);
+                    let file = files + 0x30 * i;
+                    c.bus.write32(file, 0x100 + i);
+                    c.bus.write32(file + 0x10, 1);
+                    c.bus.write32(file + 0x1c, r.next_u32() % 2);
+                }
+                c.g[A0][0] = sx(mgr);
+                c.pc = 0x001a_39f0;
+            },
+        );
     }
 }

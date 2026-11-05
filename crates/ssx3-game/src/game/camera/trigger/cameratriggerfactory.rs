@@ -321,6 +321,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         chase_camera_algorithm_gather_rider_state,
         "ChaseCameraAlgorithm_GatherRiderState",
     ),
+    (
+        0x0017_6e10,
+        default_3_chase_camera_algorithm_update,
+        "Default_3ChaseCameraAlgorithm_Update",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5319,6 +5324,199 @@ pub(crate) fn abi_le(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
     le
 }
 
+// ---------------------------------------------------------------------------
+// Default_3ChaseCameraAlgorithm_Update (0x176e10)
+
+/// One stage of a chase camera update: `fn(algo, &info, f12..)` at `addr`
+/// (other shard), returning to `ret`; `gp` lists the `.lit4` tuning floats
+/// loaded (`fN = *(gp - off)`) before the call.
+pub(crate) struct ChaseStage {
+    addr: u32,
+    ret: u32,
+    gp: &'static [(usize, u32)],
+}
+
+/// The stages of [`default_3_chase_camera_algorithm_update`] after the
+/// first (GatherRiderState), up to the constant-argument ones.
+pub(crate) const DEFAULT_3_CHASE_STAGES: [ChaseStage; 6] = [
+    // ChaseCamera_*(algo, &info): the derived state.
+    ChaseStage {
+        addr: 0x0016_2998,
+        ret: 0x0017_6e60,
+        gp: &[],
+    },
+    ChaseStage {
+        addr: 0x0016_2a20,
+        ret: 0x0017_6e70,
+        gp: &[(21, 0x6100)],
+    },
+    ChaseStage {
+        addr: 0x0016_2b80,
+        ret: 0x0017_6e7c,
+        gp: &[],
+    },
+    ChaseStage {
+        addr: 0x0016_2c78,
+        ret: 0x0017_6e88,
+        gp: &[],
+    },
+    ChaseStage {
+        addr: 0x0016_3010,
+        ret: 0x0017_6eb0,
+        gp: &[
+            (17, 0x60fc),
+            (18, 0x60f8),
+            (12, 0x60f4),
+            (13, 0x60f0),
+            (14, 0x60ec),
+            (15, 0x60e8),
+            (16, 0x60e4),
+        ],
+    },
+    ChaseStage {
+        addr: 0x0016_3270,
+        ret: 0x0017_6ed0,
+        gp: &[
+            (16, 0x60e0),
+            (12, 0x60dc),
+            (13, 0x60d8),
+            (14, 0x60d4),
+            (15, 0x60d0),
+        ],
+    },
+];
+
+/// Load a stage's tuning floats and call it with `(algo, sp)`.
+pub(crate) fn chase_stage(c: &mut Cpu, algo: u64, st: &ChaseStage) -> crate::call::Flow {
+    let gp = c.g[GP][0] as u32;
+    for &(f, off) in st.gp {
+        c.lwc1(f, gp.wrapping_sub(off));
+    }
+    chase_call(c, algo, st.addr, st.ret)
+}
+
+/// `addr(algo, &info)` (info at `sp`) returning to `ret`.
+pub(crate) fn chase_call(c: &mut Cpu, algo: u64, addr: u32, ret: u32) -> crate::call::Flow {
+    c.g[A1][0] = c.g[SP][0];
+    c.g[A0][0] = algo;
+    call_ptr(c, addr, ret)
+}
+
+/// `void Default_3ChaseCameraAlgorithm::Update()` (0x176e10): the default
+/// chase camera (tuning set 3): gather the rider's state into a local info
+/// block, then run the shared chase-camera stages over it with this
+/// camera's tuning (distances, heights, damping, look-ahead, FOV, the
+/// collision push and the final smoothing), all from `.lit4` constants and
+/// a few literal ones (0, 1, 15, 1.5, 100, 300, 600).
+pub fn default_3_chase_camera_algorithm_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 115;
+        let frame = Frame::open(c, 0xa0);
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(19, gp.wrapping_sub(0x6120));
+        frame.save(c, S0, 0x80);
+        c.g[A1][0] = c.g[SP][0];
+        let algo = c.g[A0][0];
+        c.g[S0][0] = algo;
+        for (f, off) in [
+            (12, 0x611cu32),
+            (13, 0x6118),
+            (14, 0x6114),
+            (15, 0x6110),
+            (16, 0x610c),
+            (17, 0x6108),
+            (18, 0x6104),
+        ] {
+            c.lwc1(f, gp.wrapping_sub(off));
+        }
+        frame.save_ra(c, 0x70);
+        frame.save_fpr(c, 21, 0x98);
+        frame.save_fpr(c, 20, 0x90);
+        // GatherRiderState(algo, &info, tuning f12..f19).
+        call_ptr(c, 0x0016_2568, 0x0017_6e50)?;
+        // f20 = 0 and f21 (a .lit4 tuning value) are reused below.
+        c.mtc1(0, 20);
+        for st in DEFAULT_3_CHASE_STAGES.iter() {
+            chase_stage(c, algo, st)?;
+        }
+
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(13, gp.wrapping_sub(0x60cc));
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 14);
+        c.lwc1(15, gp.wrapping_sub(0x60c8));
+        c.mov_s(12, 20);
+        chase_call(c, algo, 0x0016_33b0, 0x0017_6ef0)?;
+
+        let gp = c.g[GP][0] as u32;
+        c.lwc1(18, gp.wrapping_sub(0x60c4));
+        c.lwc1(19, gp.wrapping_sub(0x60c0));
+        c.mov_s(17, 21);
+        c.lwc1(12, gp.wrapping_sub(0x60bc));
+        c.mov_s(16, 20);
+        for (f, off) in [(13, 0x60b8u32), (14, 0x60b4), (15, 0x60b0)] {
+            c.lwc1(f, gp.wrapping_sub(off));
+        }
+        chase_call(c, algo, 0x0016_3450, 0x0017_6f1c)?;
+
+        for st in [
+            ChaseStage {
+                addr: 0x0016_2b90,
+                ret: 0x0017_6f3c,
+                gp: &[
+                    (16, 0x60ac),
+                    (12, 0x60a8),
+                    (13, 0x60a4),
+                    (14, 0x60a0),
+                    (15, 0x609c),
+                ],
+            },
+            ChaseStage {
+                addr: 0x0016_35f8,
+                ret: 0x0017_6f58,
+                gp: &[(14, 0x6098), (15, 0x6094), (13, 0x6090), (12, 0x608c)],
+            },
+            ChaseStage {
+                addr: 0x0016_4878,
+                ret: 0x0017_6f68,
+                gp: &[(12, 0x6088)],
+            },
+            ChaseStage {
+                addr: 0x0016_46a0,
+                ret: 0x0017_6f7c,
+                gp: &[(12, 0x6084), (13, 0x6080)],
+            },
+        ] {
+            chase_stage(c, algo, &st)?;
+        }
+
+        // (algo, &info, 600, 300, 100, f21).
+        c.g[AT][0] = 0x4416_0000;
+        c.mtc1(AT, 12);
+        c.mov_s(15, 21);
+        c.g[AT][0] = 0x4396_0000;
+        c.mtc1(AT, 13);
+        c.g[AT][0] = 0x42c8_0000;
+        c.mtc1(AT, 14);
+        chase_call(c, algo, 0x0016_41c0, 0x0017_6fa4)?;
+
+        // (algo, &info, 15, 1.5, 1.5).
+        c.g[AT][0] = 0x3fc0_0000;
+        c.mtc1(AT, 13);
+        c.g[AT][0] = 0x4170_0000;
+        c.mtc1(AT, 12);
+        c.mov_s(14, 13);
+        chase_call(c, algo, 0x0016_43a8, 0x0017_6fc4)?;
+
+        frame.restore(c, S0, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.restore_fpr(c, 21, 0x98);
+        frame.restore_fpr(c, 20, 0x90);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6973,6 +7171,74 @@ pub(crate) mod tests {
             chase_camera_algorithm_gather_rider_state,
             300,
             &|c, seed| gather_fixture(c, seed),
+        );
+    }
+    use super::*;
+    use crate::difftest::{fresh, require_paths};
+    use ssx3_ee_rt::Cpu;
+
+    /// Default_3ChaseCameraAlgorithm_Update: a chase camera at `DATA` with
+    /// random tuning state, its target (`+0x30`) whose v-table slots are
+    /// fakes, the rider behind it and the world's player count (as the
+    /// post-race chase camera's test builds them); the game's `.lit4`
+    /// constants from the ELF image. The real stages run on it.
+    #[test]
+    fn default_3_chase_camera_algorithm_update_matches() {
+        use crate::difftest::fakes::vtable;
+        use crate::difftest::put_vec;
+        check(
+            ee::s02::f_00176e10__generated,
+            default_3_chase_camera_algorithm_update,
+            200,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x176e10, 8);
+                c.pc = 0x0017_6e10;
+                let (algo, t, rider, ms) = (DATA, DATA + 0x1000, DATA + 0x2000, DATA + 0x3000);
+                c.g[A0][0] = sx(algo);
+                for i in 0..0x100 {
+                    c.bus.write32(algo + 4 * i, r.f32(400.0));
+                }
+                put_vec(c, algo + 0x390, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                // The five tuning splines (`cCSICubicSpline` at +0x304..+0x334,
+                // 12 bytes: word 0 count << 11 | current << 19, +4 end
+                // time, +8 segments of 0x14 bytes with the start time at
+                // +0x10): one segment spanning every float, so
+                // cCSICubicSpline_Evaluate always finds it as the current
+                // one (random headers sent its binary search into a loop).
+                for (k, off) in [0x304u32, 0x310, 0x31c, 0x328, 0x334]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let segs = DATA + 0x5000 + 0x40 * k as u32;
+                    for i in 0..4 {
+                        c.bus.write32(segs + 4 * i, r.f32(4.0));
+                    }
+                    c.bus.write32(segs + 0x10, 0xff7f_ffff);
+                    c.bus.write32(segs + 0x14 + 0x10, 0x7f7f_ffff);
+                    c.bus.write32(algo + off, 1 << 11);
+                    c.bus.write32(algo + off + 4, 0x7f7f_ffff);
+                    c.bus.write32(algo + off + 8, segs);
+                }
+                // +0x2d0 set: stage 0x1635f8 skips rebuilding the +0x31c
+                // spline from state-dependent key times (unsorted on
+                // random state).
+                c.bus.write32(algo + 0x2d0, 1);
+                c.bus.write32(algo + 0x2c4, 0);
+                c.bus.write32(algo + 0x30, t);
+                let slots: Vec<u32> = (1..0x20).map(|k| 8 * k).collect();
+                let vt = vtable(c, &mut r, &slots);
+                c.bus.write32(t, vt);
+                c.bus.write32(t + 4, rider);
+                c.bus.write32(rider + 0x77c, ms);
+                c.bus.write32(ms + 0xde0, r.next_u32() % 8);
+                let (w, w84, w0c) = (DATA + 0x4000, DATA + 0x4100, DATA + 0x4200);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), w);
+                c.bus.write32(w + 0x84, w84);
+                c.bus.write32(w84 + 0xc, w0c);
+                c.bus.write32(w0c + 0x78, r.next_u32() % 4);
+                c.bus.write32(crate::tick::APPMAN_PTR, 0);
+            },
         );
     }
 }

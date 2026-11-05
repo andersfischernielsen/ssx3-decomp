@@ -15,6 +15,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::gp;
@@ -22,7 +23,14 @@ pub(crate) use crate::game::fe::ovstatehud::oc224_gp;
 pub(crate) use crate::game::fe::ovstatehud::oc224_ld_u;
 pub(crate) use crate::game::fe::ovstatehud::oc224_sd_u;
 pub(crate) use crate::game::fe::splashmanager::gpo;
+pub(crate) use crate::game::fe::splashmanager::oc230_gp;
 pub(crate) use crate::game::fe::splashmanager::stk;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_at;
+pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
+pub(crate) use crate::game::main::gameload::vcall;
+pub(crate) use crate::game::main::gameload::R2D_CTX_GP;
+pub(crate) use crate::game::main::gameload::R2D_STATE_TOP;
 pub(crate) use crate::game::ui::uistate::oc224_at;
 use crate::game::visualfx::boardwakefx as bw;
 pub(crate) use crate::game::visualfx::lensfx::at;
@@ -75,6 +83,51 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003d_4f10, path_update_tracks, "PATH_UpdateTracks"),
     (0x003e_12e0, stream_file_get_chunk, "StreamFile_GetChunk"),
     (0x0042_c078, d_intr, "DIntr"),
+    (
+        0x0010_aa70,
+        computer_actor_rider_think_prewind,
+        "ComputerActorRider_ThinkPrewind",
+    ),
+    (
+        0x0010_b0e8,
+        computer_actor_rider_update_spin_plan,
+        "ComputerActorRider_UpdateSpinPlan",
+    ),
+    (
+        0x0010_bb18,
+        computer_actor_rider_find_speed_marker,
+        "ComputerActorRider_FindSpeedMarker",
+    ),
+    (
+        0x0011_4cc0,
+        rider_turn_around_if_backward,
+        "Rider_TurnAroundIfBackward",
+    ),
+    (
+        0x0011_61d0,
+        rider_try_enter_board_press,
+        "Rider_TryEnterBoardPress",
+    ),
+    (
+        0x002d_bf98,
+        ps2_fog_particle_man_render,
+        "cPS2FogParticleMan_Render",
+    ),
+    (
+        0x002f_0a98,
+        ps2_visual_effects_man_update,
+        "PS2VisualEffectsMan_Update",
+    ),
+    (
+        0x002f_0cd0,
+        ps2_visual_effects_man_render,
+        "PS2VisualEffectsMan_Render",
+    ),
+    (0x003b_96b8, sndmidi_service, "SNDMIDI_Service"),
+    (0x003d_5128, path_update, "PATH_Update"),
+    (0x003f_f9a8, libpad_get_dma_buffer, "libpad_GetDmaBuffer"),
+    (0x003f_fa58, sce_pad_read, "scePadRead"),
+    (0x0040_d588, tanf, "tanf"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3885,6 +3938,1713 @@ pub fn stream_file_get_chunk(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod oc230_tanf {
+    use crate::call::Callee;
+
+    pub const REM_PIO2F: Callee = Callee {
+        addr: 0x0040_e878,
+        f: ssx3_ee::s15::__ieee754_rem_pio2f,
+    };
+
+    pub const KERNEL_TANF: Callee = Callee {
+        addr: 0x0040_f5a8,
+        f: ssx3_ee::s15::__kernel_tanf,
+    };
+}
+
+pub(crate) mod oc230_cpu_rider {
+
+    /// The actor's rider.
+    pub const RIDER: u32 = 0x18;
+
+    /// The rider's track query object (vtable at +0x34, query slot 8).
+    pub const TRACK_QUERY: u32 = 0xab8;
+
+    pub const QUERY_VTABLE: u32 = 0x34;
+
+    pub const QUERY_SLOT: u32 = 0x8;
+
+    /// The rider's track position and distance.
+    pub const TRACK_POS: u32 = 0x4c0;
+
+    pub const TRACK_DIST: u32 = 0x4c4;
+
+    /// Marker records (0x10 bytes: type, value, distance).
+    pub const SPEED_MARKER: u64 = 0x11;
+}
+
+pub(crate) mod turn_around {
+
+    /// `+0x120` orientation quaternion.
+    pub const ROT: u32 = 0x120;
+
+    /// `+0x1c0` world matrix row z (the up axis).
+    pub const WORLD_UP: u32 = 0x1c0;
+
+    /// `+0x1e0` velocity.
+    pub const VEL: u32 = 0x1e0;
+
+    /// `+0x214` current brake slew value.
+    pub const BRAKE: u32 = 0x214;
+
+    /// `+0x3a0` ground forward direction.
+    pub const GROUND_FORWARD: u32 = 0x3a0;
+
+    /// `gp-0x7b98`: how far backward (velocity along the ground forward
+    /// axis) the rider must move before turning.
+    pub const GP_BACKWARD_LIMIT: u32 = 0x7b98;
+}
+
+pub(crate) mod prewind {
+    use super::ee;
+    use super::Callee;
+
+    /// `ComputerActorRider`: its rider; the control block (+0xdf0: speed
+    /// threshold, +0x48/+0x4c analog values); the scripted-start flag and
+    /// its two points.
+    pub const RIDER: u32 = 0x18;
+
+    pub const CONTROL: u32 = 0xdf0;
+
+    pub const SCRIPTED: u32 = 0xe1c;
+
+    pub const SCRIPT_FROM: u32 = 0xe50;
+
+    pub const SCRIPT_TO: u32 = 0xe60;
+
+    /// `Rider`: position, look-ahead point, velocity, track distance and
+    /// lateral offset, the track.
+    pub const POS: u32 = 0x110;
+
+    pub const VELOCITY: u32 = 0x1e0;
+
+    pub const AHEAD: u32 = 0x490;
+
+    pub const TRACK_DIST: u32 = 0x4c0;
+
+    pub const TRACK_SIDE: u32 = 0x4c4;
+
+    pub const TRACK: u32 = 0xab8;
+
+    /// Track: vtable at +0x34, `Query(out, max, from, to)` at slot 8.
+    pub const TRACK_VT: u32 = 0x34;
+
+    pub const SLOT_QUERY: u32 = 0x8;
+
+    /// A track event of this type ends the prewind.
+    pub const EVENT_PREWIND_END: u64 = 0x10;
+
+    /// gp-0x7e30: subtracted from the speed threshold.
+    pub const GP_SPEED_MARGIN: u32 = 0x7e30;
+
+    /// `Path_GetPointAtDistance(out, track, in_range, t)` (cross-shard).
+    pub const PATH_GET_POINT: u32 = 0x0026_ab20;
+
+    pub const COMPUTE_STEER: Callee = Callee {
+        addr: 0x0010_0348,
+        f: ee::s00::ComputerActorRider_ComputeSteer,
+    };
+}
+
+/// `float tanf(float x)` (0x40d588, fdlibm): |x| <= pi/4 goes straight to
+/// `__kernel_tanf(x, 0, 1)`; inf/NaN give `x - x`; otherwise x is reduced
+/// by `__ieee754_rem_pio2f` (y[0], y[1] at sp+0) and the kernel gets
+/// `(y0, y1, 1 - 2 * (n & 1))`.
+pub fn tanf(c: &mut Cpu) {
+    use oc230_tanf as callee;
+    guest(c, |c| {
+        c.cycles += 11;
+        c.mfc1(V0, 12);
+        let frame = Frame::open(c, 0x20);
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V1][0] = 0x7fff_ffff;
+        c.g[A0][0] &= c.g[V1][0]; // |x| bits
+        c.g[V0][0] = (0x3f49_0fda_i64 < c.g[A0][0] as i64) as u64; // > pi/4
+        frame.save_ra(c, 0x10);
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            c.mtc1(0, 13);
+            c.g[A0][0] = 1;
+        } else {
+            c.cycles += 5;
+            c.g[V0][0] = (0x7f7f_ffff_i64 < c.g[A0][0] as i64) as u64; // inf/NaN
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.sub_s(0, 12, 12);
+                return oc230_tanf_exit(c, frame);
+            }
+            c.cycles += 8;
+            c.g[A0][0] = c.g[SP][0];
+            callee::REM_PIO2F.call(c, 0x0040_d5e4)?;
+            let s = sp(c);
+            c.g[V0][0] &= 1;
+            c.g[A0][0] = 1;
+            c.g[V0][0] = oc230_sll(c, V0, 1);
+            c.lwc1(12, s);
+            c.lwc1(13, s.wrapping_add(4));
+            c.g[A0][0] = sx(r32(c, A0).wrapping_sub(r32(c, V0)));
+        }
+        c.cycles += 2;
+        callee::KERNEL_TANF.call(c, 0x0040_d604)?;
+        oc230_tanf_exit(c, frame)
+    })
+}
+
+pub(crate) fn oc230_tanf_exit(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 3;
+    frame.restore_ra(c, 0x10);
+    frame.close(c);
+    Ok(())
+}
+
+/// `bool ComputerActorRider_FindSpeedMarker(ComputerActorRider* a, float*
+/// speed, int* reached)` (0x10bb18): asks the rider's track query for up
+/// to 12 markers between its position and 600 units ahead (into a frame
+/// buffer); at the first speed marker (type 0x11) writes its speed (value
+/// * gp-0x7e04, km/h to units) and whether its distance has been reached,
+/// and returns true; false when there is none.
+pub fn computer_actor_rider_find_speed_marker(c: &mut Cpu) {
+    use oc230_cpu_rider as cr;
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0x100);
+        c.g[AT][0] = 0x4416_0000; // 600
+        c.mtc1(AT, 0);
+        frame.save(c, S0, 0xf0);
+        frame.save(c, S1, 0xe0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0xd0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0xc0);
+        c.g[S2][0] = c.g[A2][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0xc;
+        c.g[V0][0] = c.lw(oc230_at(c, S0, cr::RIDER));
+        let rider = r32(c, V0);
+        c.g[A3][0] = c.lw(rider.wrapping_add(cr::TRACK_QUERY));
+        c.lwc1(13, rider.wrapping_add(cr::TRACK_DIST));
+        c.g[V1][0] = c.lw(oc230_at(c, A3, cr::QUERY_VTABLE));
+        c.lwc1(12, rider.wrapping_add(cr::TRACK_POS));
+        c.add_s(13, 13, 0);
+        c.g[A0][0] = c.lh(oc230_at(c, V1, cr::QUERY_SLOT));
+        c.g[V0][0] = c.lw(oc230_at(c, V1, cr::QUERY_SLOT + 4));
+        let t = r32(c, V0);
+        c.g[A0][0] = oc230_add(c, A3, A0);
+        call_ptr(c, t, 0x0010_bb70)?;
+        c.g[A1][0] = c.g[V0][0]; // count
+        let none = (c.g[A1][0] as i64) <= 0;
+        c.g[A0][0] = 0;
+        let mut found = false;
+        if !none {
+            c.cycles += 3;
+            c.lwc1(2, oc230_gp(c, 0u32.wrapping_sub(0x7e04)));
+            c.g[A2][0] = cr::SPEED_MARKER;
+            c.g[V1][0] = c.g[SP][0];
+            loop {
+                c.cycles += 3;
+                let rec = r32(c, V1);
+                c.g[V0][0] = c.lw(rec);
+                if c.g[V0][0] == c.g[A2][0] {
+                    // speed = value * scale; reached = distance <= rider's.
+                    c.cycles += 11;
+                    c.lwc1(0, rec.wrapping_add(4));
+                    c.cvt_s_w(0, 0);
+                    c.lwc1(1, rec.wrapping_add(8));
+                    c.mul_s(0, 0, 2);
+                    c.swc1(0, r32(c, S1));
+                    c.g[V0][0] = c.lw(oc230_at(c, S0, cr::RIDER));
+                    c.lwc1(0, r32(c, V0).wrapping_add(cr::TRACK_DIST));
+                    c.c_le_s(1, 0);
+                    let reached = c.fcc();
+                    c.g[V1][0] = 1;
+                    if !reached {
+                        c.cycles += 1;
+                        c.g[V1][0] = 0;
+                    }
+                    c.cycles += 3;
+                    let v = c.g[V1][0];
+                    c.sw(r32(c, S2), v);
+                    c.g[V0][0] = 1;
+                    found = true;
+                    break;
+                }
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = sx(rec.wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_bb88);
+                }
+            }
+        }
+        if !found {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0xf0);
+        frame.restore(c, S1, 0xe0);
+        frame.restore(c, S2, 0xd0);
+        frame.restore_ra(c, 0xc0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Render-state stack helpers (2D render context, `*(gp - 0x854)`)
+// ---------------------------------------------------------------------------
+
+/// The render context (`lw gp-0x854`).
+pub(crate) fn r2d_ctx(c: &mut Cpu) -> u64 {
+    let gp = c.g[GP][0] as u32;
+    Addr(gp.wrapping_sub(R2D_CTX_GP)).lw(c)
+}
+
+/// `top[1] = top[0]` (0x14 bytes: two unaligned doublewords through `d0`,
+/// `d1`, then a word through `w`); `top` is the current state.
+pub(crate) fn r2d_copy_up(c: &mut Cpu, top: u32, d0: usize, d1: usize, w: usize) {
+    c.ldl(d0, top + 0x7);
+    c.ldr(d0, top);
+    c.ldl(d1, top + 0xf);
+    c.ldr(d1, top + 0x8);
+    c.g[w][0] = Addr(top).off(0x10).lw(c);
+    c.sdl(d0, top + 0x1b);
+    c.sdr(d0, top + 0x14);
+    c.sdl(d1, top + 0x23);
+    c.sdr(d1, top + 0x1c);
+    let v = c.g[w][0];
+    Addr(top).off(0x24).sw(c, v);
+}
+
+/// `reg = ctx->top; v0 = reg->word[off]; v0 = (v0 & and) | or; store`.
+pub(crate) fn r2d_bits(c: &mut Cpu, ctx: u32, reg: usize, off: u32, and: u64, or: Option<u64>) {
+    c.g[reg][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+    let top = r32(c, reg);
+    c.g[V0][0] = Addr(top).off(off).lw(c);
+    c.g[V0][0] &= and;
+    if let Some(or) = or {
+        c.g[V0][0] |= or;
+    }
+    let v = c.g[V0][0];
+    Addr(top).off(off).sw(c, v);
+}
+
+// ---------------------------------------------------------------------------
+// cPS2FogParticleMan_Render (0x2dbf98)
+// ---------------------------------------------------------------------------
+
+/// The fog particle manager: queued particle count (+0), vtable (+4; slot
+/// 0x18 draws them).
+pub(crate) const FOG_COUNT: u32 = 0x0;
+
+pub(crate) const FOG_VT: u32 = 0x4;
+
+pub(crate) const VT_FOG_DRAW: u32 = 0x18;
+
+/// The sort buffer (8-byte {particle, depth} pairs) and its comparator
+/// (`cPS2FogParticleMan_CompareDesc`).
+pub(crate) const FOG_SORT_BUF: u32 = 0x0053_7ac0;
+
+pub(crate) const FOG_COMPARE: u32 = 0x002d_c168;
+
+/// `void cPS2FogParticleMan_Render(cPS2FogParticleMan* m)` (0x2dbf98): if
+/// particles were queued, sort them back to front (`qsort`), push the 2D
+/// render state and set it up for fog sprites (alpha blending, depth test
+/// and write settings, the context's fog colour index, full mask), let the
+/// manager draw them, pop the state and empty the queue.
+pub fn ps2_fog_particle_man_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S3, 0x10);
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        let man = r32(c, S3);
+        c.g[A1][0] = Addr(man).off(FOG_COUNT).lw(c);
+        c.g[A3][0] = 0x2e_0000;
+        if c.g[A1][0] != 0 {
+            c.cycles += 98;
+            // qsort(buf, count, 8, CompareDesc)
+            c.g[A0][0] = sx(FOG_SORT_BUF);
+            c.g[A3][0] = sx(FOG_COMPARE);
+            c.g[A2][0] = 8;
+            call_ptr(c, 0x0041_8ef8, 0x002d_bfd4)?;
+
+            // Push the render state.
+            c.g[V1][0] = r2d_ctx(c);
+            let ctx = r32(c, V1);
+            c.g[T5][0] = 0xffff_ffff_ffff_fc1f;
+            c.g[T6][0] = 0xffff_ffff_ffff_fffc;
+            c.g[V0][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+            c.g[A3][0] = 0xffff_ffff_e000_03ff;
+            c.g[T7][0] = u64::MAX;
+            let top = r32(c, V0);
+            r2d_copy_up(c, top, A0, A1, T0);
+            c.g[A2][0] = 0xf_fc00;
+            c.g[S0][0] = 0xffff_ffff_ffff_ff83;
+            c.g[T1][0] = 0xffff_ffff_ffbf_ffff;
+            c.g[V0][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+            c.g[A1][0] = r2d_ctx(c);
+            c.g[S1][0] = 0x40_0000;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x14));
+            c.g[T0][0] = 0xffff_ffff_fe7f_ffff;
+            let v = c.g[V0][0];
+            Addr(ctx).off(R2D_STATE_TOP).sw(c, v);
+            c.g[T2][0] = 0xffff_ffff_ffcf_ffff;
+            c.g[S2][0] = 0x30_0000;
+
+            // Fog sprite state.
+            let ctx = r32(c, A1);
+            c.g[A0][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+            c.g[T4][0] = Addr(ctx).off(0xf60).lw(c);
+            c.g[T3][0] = 0xffff_ffff_fff0_0fff;
+            let top = r32(c, A0);
+            c.g[V0][0] = Addr(top).off(0x8).lw(c);
+            c.g[V0][0] &= c.g[T5][0];
+            c.g[V0][0] |= 0xe0;
+            let v = c.g[V0][0];
+            Addr(top).off(0x8).sw(c, v);
+            let (t6, a3, a2) = (c.g[T6][0], c.g[A3][0], c.g[A2][0]);
+            r2d_bits(c, ctx, V1, 0x4, t6, Some(0x2));
+            r2d_bits(c, ctx, A0, 0x8, a3, Some(a2));
+            c.g[V1][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+            let fog = c.g[T4][0];
+            Addr(r32(c, V1)).off(0x10).sh(c, fog);
+            c.g[A1][0] = r2d_ctx(c);
+            let ctx = r32(c, A1);
+            c.g[A0][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+            let top = r32(c, A0);
+            c.g[V0][0] = Addr(top).lw(c);
+            c.g[V0][0] |= 0xc;
+            let v = c.g[V0][0];
+            Addr(top).sw(c, v);
+            c.g[V1][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+            let mask = c.g[T7][0];
+            Addr(r32(c, V1)).off(0x12).sh(c, mask);
+            c.g[A2][0] = r2d_ctx(c);
+            let ctx = r32(c, A2);
+            let (s0, t1, s1, t0, t2, s2, t3) = (
+                c.g[S0][0], c.g[T1][0], c.g[S1][0], c.g[T0][0], c.g[T2][0], c.g[S2][0], c.g[T3][0],
+            );
+            r2d_bits(c, ctx, V1, 0x4, s0, Some(0x14));
+            r2d_bits(c, ctx, A0, 0x4, t1, Some(s1));
+            r2d_bits(c, ctx, V1, 0x4, t0, None);
+            r2d_bits(c, ctx, A1, 0x4, t2, Some(s2));
+            r2d_bits(c, ctx, A0, 0x4, t3, None);
+
+            // m->Draw()
+            c.g[V1][0] = Addr(man).off(FOG_VT).lw(c);
+            let (obj, vt) = (c.g[S3][0], c.g[V1][0]);
+            vcall(c, obj, vt, VT_FOG_DRAW, V0, 0x002d_c134)?;
+
+            // Pop the state; empty the queue.
+            c.g[V1][0] = r2d_ctx(c);
+            let ctx = r32(c, V1);
+            c.g[V0][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x14));
+            let v = c.g[V0][0];
+            Addr(ctx).off(R2D_STATE_TOP).sw(c, v);
+            Addr(man).off(FOG_COUNT).sw(c, 0);
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PS2VisualEffectsMan_Render (0x2f0cd0)
+// ---------------------------------------------------------------------------
+
+/// The visual effects manager's effect systems (17 pointers from +0).
+pub(crate) const VFX_SYSTEMS: u32 = 17;
+
+/// Effect system vtable slot: render.
+pub(crate) const VT_VFX_RENDER: u32 = 0x18;
+
+/// `void PS2VisualEffectsMan_Render(PS2VisualEffectsMan* m)` (0x2f0cd0):
+/// render each of the 17 effect systems in order (`sys->Render()`).
+pub fn ps2_visual_effects_man_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 110;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let man = r32(c, S0);
+        for k in 0..VFX_SYSTEMS {
+            c.g[A1][0] = Addr(man).off(4 * k).lw(c);
+            let sys = c.g[A1][0];
+            c.g[V0][0] = Addr(sys as u32).lw(c);
+            let vt = c.g[V0][0];
+            vcall(c, sys, vt, VT_VFX_RENDER, V1, 0x002f_0cf8 + 0x18 * k)?;
+        }
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const RIDER_BUILD_WORLD_MATRIX: Callee = Callee {
+    addr: 0x0011_e098,
+    f: ee::s00::Rider_BuildWorldMatrix,
+};
+
+pub(crate) const RIDER_TOGGLE_STANCE: Callee = Callee {
+    addr: 0x0011_5168,
+    f: ee::s00::Rider_ToggleStance,
+};
+
+/// `bool Rider_TurnAroundIfBackward(Rider* rider)` (0x114cc0): when the
+/// rider is not braking and moves backward along the ground
+/// (`vel · groundForward < -limit`), turn half way round the up axis (the
+/// orientation becomes `(up, 0) ⊗ rot`, a 180° rotation), rebuild the world
+/// matrix and switch stance. Returns whether it turned.
+pub fn rider_turn_around_if_backward(c: &mut Cpu) {
+    use turn_around::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x70);
+        c.mtc1(0, 2);
+        frame.save(c, S0, 0x60);
+        frame.save_ra(c, 0x50);
+        let rider = c.g[A0][0];
+        c.g[S0][0] = rider;
+        let r = rider as u32;
+        c.lwc1(0, r.wrapping_add(BRAKE));
+        c.c_eq_s(0, 2);
+        let not_braking = c.fcc();
+        c.g[V0][0] = 0;
+        if not_braking {
+            c.cycles += 15;
+            // f1 = vel · groundForward (VU0 dot product, w lane).
+            let gp = c.g[GP][0] as u32;
+            c.lwc1(0, gp.wrapping_sub(GP_BACKWARD_LIMIT));
+            c.lqc2(3, r.wrapping_add(VEL));
+            c.lqc2(5, r.wrapping_add(GROUND_FORWARD));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(V0, 4);
+            c.mtc1(V0, 1);
+            c.neg_s(0, 0);
+            c.c_lt_s(0, 1);
+            if c.fcc() {
+                // Not backward enough.
+                c.g[V0][0] = 0;
+            } else {
+                c.cycles += 32;
+                // The up axis as a pure quaternion (w = 0 from f2), built
+                // through the stack as the original does.
+                c.lq(V0, r.wrapping_add(WORLD_UP));
+                c.g[A0][0] = rider;
+                let s = sp(c);
+                c.swc1(2, s.wrapping_add(0x1c));
+                c.sq(V0, s.wrapping_add(0x30));
+                c.lwc1(0, s.wrapping_add(0x30));
+                c.lwc1(1, s.wrapping_add(0x34));
+                c.lwc1(2, s.wrapping_add(0x38));
+                for base in [0x10u32, 0x20] {
+                    c.swc1(0, s.wrapping_add(base));
+                    c.swc1(1, s.wrapping_add(base + 4));
+                    c.swc1(2, s.wrapping_add(base + 8));
+                }
+                // rot = up ⊗ rot (VU0 quaternion product).
+                c.lqc2(4, s.wrapping_add(0x10));
+                c.lqc2(5, r.wrapping_add(ROT));
+                c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+                c.vu0().opmula(4, 5);
+                c.vu0().opmsub(6, 5, 4);
+                c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+                c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+                c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+                c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+                c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+                c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+                c.sqc2(8, s.wrapping_add(0x40));
+                c.lq(V0, s.wrapping_add(0x40));
+                c.sq(V0, r.wrapping_add(ROT));
+                c.sq(V0, s);
+                RIDER_BUILD_WORLD_MATRIX.call(c, 0x0011_4d98)?;
+                c.g[A0][0] = rider;
+                RIDER_TOGGLE_STANCE.call(c, 0x0011_4da0)?;
+                c.g[V0][0] = 1;
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------- PS2VisualEffectsMan_Update
+
+/// `PS2VisualEffectsMan_ApplyWorldPainter(self, index)`.
+pub(crate) const VFX_APPLY_WORLD_PAINTER: Callee = Callee {
+    addr: 0x002f_00a0,
+    f: ee::s09::PS2VisualEffectsMan_ApplyWorldPainter,
+};
+
+/// `void PS2VisualEffectsMan_Update(PS2VisualEffectsMan* self)` (0x2f0a98):
+/// reset the 17 effect objects (`self->objs[0..17]`, virtual slot `+0x10`
+/// each), then for every player view `i` (the count at
+/// `world->app(+0x84)->game(+0x84)->players(+0x10)`) apply the world
+/// painter's parameters for the view's painter index (`gp+0xab8[i]`) and
+/// reset the drawer's view slot `i` (virtual `+0x398` of `ctx+0x10d8`,
+/// `ctx` at `gp-0x854`).
+pub fn ps2_visual_effects_man_update(c: &mut Cpu) {
+    /// `gp-0x848`: the world; `gp-0x854`: the render context.
+    const WORLD_GP: u32 = 0x848;
+    const CTX_GP: u32 = 0x854;
+    /// `gp+0xab8`: the painter index of each view.
+    const VIEW_PAINTER_GP: u32 = 0xab8;
+    /// Loop head (0x2f0c70), for event delivery.
+    const HEAD: u32 = 0x002f_0c70;
+    /// The number of player views.
+    fn view_count(c: &mut Cpu) -> u64 {
+        c.g[V0][0] = c.lw(r32(c, GP).wrapping_sub(WORLD_GP));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x84));
+        c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x84));
+        c.lw(r32(c, A0).wrapping_add(0x10))
+    }
+    guest(c, |c| {
+        c.cycles += 115;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        c.g[S2][0] = 0;
+        frame.save_ra(c, 0);
+        let this = r32(c, S0);
+        for k in 0..17u32 {
+            // objs[k]->Reset() (virtual +0x10).
+            let obj = c.lw(this.wrapping_add(4 * k));
+            c.g[A1][0] = obj;
+            c.g[V0][0] = c.lw(obj as u32);
+            c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x10));
+            c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x14));
+            let target = r32(c, V1);
+            c.g[A0][0] = sx((obj as u32).wrapping_add(r32(c, A0)));
+            call_ptr(c, target, 0x002f_0acc + 0x18 * k)?;
+        }
+        let count = view_count(c);
+        c.g[V0][0] = count;
+        if (count as i64) > 0 {
+            c.cycles += 3;
+            c.g[S1][0] = sx(r32(c, GP).wrapping_add(VIEW_PAINTER_GP));
+            c.g[A1][0] = c.lw(r32(c, S1));
+            loop {
+                c.cycles += 18;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                VFX_APPLY_WORLD_PAINTER.call(c, 0x002f_0c7c)?;
+                // ctx->drawer->ResetView(i) (virtual +0x398).
+                let ctx = c.lw(r32(c, GP).wrapping_sub(CTX_GP));
+                c.g[A2][0] = ctx;
+                c.g[A1][0] = c.g[S2][0];
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                c.g[V0][0] = c.lw((ctx as u32).wrapping_add(0x10d8));
+                c.g[A0][0] = c.lh(r32(c, V0).wrapping_add(0x398));
+                c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x39c));
+                let target = r32(c, V1);
+                c.g[A0][0] = sx((ctx as u32).wrapping_add(r32(c, A0)));
+                call_ptr(c, target, 0x002f_0c9c)?;
+                let count = view_count(c);
+                let more = (c.g[S2][0] as i64) < (count as i64);
+                c.g[V0][0] = more as u64;
+                if !more {
+                    c.cycles += 1;
+                    break;
+                }
+                c.g[A1][0] = c.lw(r32(c, S1));
+                if event_due(c) {
+                    deliver_event_here(c, HEAD);
+                }
+            }
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// --------------------------------------- ComputerActorRider_UpdateSpinPlan
+
+/// `RiderSpinSub_GetFlipProgress(spin, &a, &b)` and
+/// `RiderSpinSub_GetSpinProgress(spin, &c, &d)`: the heights still needed
+/// to finish the current flip / spin (and with a margin).
+pub(crate) const RIDER_SPIN_GET_FLIP_PROGRESS: u32 = 0x0013_5cb0;
+
+pub(crate) const RIDER_SPIN_GET_SPIN_PROGRESS: u32 = 0x0013_5db0;
+
+/// `void ComputerActorRider_UpdateSpinPlan(ComputerActorRider* ai, float
+/// height)` (0x10b0e8): drop the AI's planned flip (`+0xe38`) and spin
+/// (`+0xe3c`) when there is no longer height for them. Both go when the AI
+/// must land (`+0xe20`) and is lower than 1. Otherwise, while planning
+/// (`+0xe10`): the flip goes when `height + k0` is below the flip's need,
+/// or below its margin while the need is under `k1`; the spin likewise
+/// (with `k2`, `k3`), and dropping the spin drops the flip too.
+pub fn computer_actor_rider_update_spin_plan(c: &mut Cpu) {
+    /// AI fields.
+    const RIDER: u32 = 0x18;
+    const PLANNING: u32 = 0xe10;
+    const MUST_LAND: u32 = 0xe20;
+    const FLIP: u32 = 0xe38;
+    const SPIN: u32 = 0xe3c;
+    /// `rider+0x77c`: the rider state; its spin sub-state at +0x230.
+    const RIDER_STATE: u32 = 0x77c;
+    const SPIN_SUB: u32 = 0x230;
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        c.g[A1][0] = c.g[SP][0];
+        frame.save_fpr(c, 20, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[A2][0] = c.g[SP][0] | 0x4;
+        c.f[20] = c.f[12];
+        let ai = r32(c, S0);
+        c.g[V0][0] = c.lw(ai.wrapping_add(RIDER));
+        c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(RIDER_STATE));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(SPIN_SUB));
+        call_ptr(c, RIDER_SPIN_GET_FLIP_PROGRESS, 0x0010_b118)?;
+        c.g[V0][0] = c.lw(ai.wrapping_add(RIDER));
+        c.g[A1][0] = c.g[SP][0] | 0x8;
+        c.g[A2][0] = c.g[SP][0] | 0xc;
+        c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(RIDER_STATE));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(SPIN_SUB));
+        call_ptr(c, RIDER_SPIN_GET_SPIN_PROGRESS, 0x0010_b130)?;
+        let sp0 = sp(c);
+        c.g[V0][0] = c.lw(ai.wrapping_add(MUST_LAND));
+        c.g[V1][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 0);
+            c.c_lt_s(20, 0);
+            if c.fcc() {
+                c.g[V1][0] = 1;
+            }
+        }
+        c.cycles += 2;
+        if c.g[V1][0] != 0 {
+            // Too low to finish anything: drop both.
+            c.cycles += 3;
+            c.sw(ai.wrapping_add(FLIP), 0);
+            c.sw(ai.wrapping_add(SPIN), 0);
+            c.cycles += 1;
+        } else {
+            c.g[V0][0] = c.lw(ai.wrapping_add(PLANNING));
+            c.cycles += 2;
+            if c.g[V0][0] != 0 && plan_checks(c, ai, sp0) {
+                c.cycles += 1;
+            }
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore_ra(c, 0x10);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    });
+
+    /// The flip and spin checks (0x10b170..0x10b23c); true when they end
+    /// through the shared exit (0x10b23c, one more cycle).
+    fn plan_checks(c: &mut Cpu, ai: u32, sp0: u32) -> bool {
+        let gp = r32(c, GP);
+        // The flip: needs a (sp+0), b (sp+4).
+        c.cycles += 6;
+        c.lwc1(0, ai.wrapping_add(FLIP));
+        c.mtc1(0, 3);
+        c.c_eq_s(0, 3);
+        if !c.fcc() {
+            c.cycles += 7;
+            c.lwc1(0, gp.wrapping_sub(0x7e20));
+            c.lwc1(2, sp0);
+            c.add_s(1, 20, 0);
+            c.c_lt_s(1, 2);
+            if c.fcc() {
+                c.swc1(3, ai.wrapping_add(FLIP));
+                c.cycles += 1;
+            } else {
+                c.cycles += 5;
+                c.lwc1(0, sp0 + 0x4);
+                c.c_lt_s(1, 0);
+                if c.fcc() {
+                    c.cycles += 6;
+                    c.lwc1(0, gp.wrapping_sub(0x7e1c));
+                    c.sub_s(0, 2, 0);
+                    c.c_lt_s(0, 3);
+                    if c.fcc() {
+                        c.cycles += 1;
+                        c.swc1(3, ai.wrapping_add(FLIP));
+                        c.cycles += 1;
+                    }
+                }
+            }
+        }
+        c.lwc1(0, ai.wrapping_add(SPIN));
+
+        // The spin: needs c (sp+8), d (sp+0xc).
+        c.cycles += 5;
+        c.mtc1(0, 1);
+        c.c_eq_s(0, 1);
+        if c.fcc() {
+            return false;
+        }
+        c.cycles += 7;
+        c.lwc1(0, gp.wrapping_sub(0x7e18));
+        c.lwc1(2, sp0 + 0x8);
+        c.add_s(12, 20, 0);
+        c.c_lt_s(12, 2);
+        if !c.fcc() {
+            c.cycles += 5;
+            c.lwc1(0, sp0 + 0xc);
+            c.c_lt_s(12, 0);
+            if !c.fcc() {
+                return false;
+            }
+            c.cycles += 6;
+            c.lwc1(0, gp.wrapping_sub(0x7e14));
+            c.sub_s(0, 2, 0);
+            c.c_lt_s(0, 1);
+            if !c.fcc() {
+                return false;
+            }
+            c.cycles += 1;
+        }
+        c.swc1(1, ai.wrapping_add(FLIP));
+        c.cycles += 1;
+        c.swc1(1, ai.wrapping_add(SPIN));
+        true
+    }
+}
+
+/// `gp - off` (the small-data constants).
+#[inline(always)]
+pub(crate) fn gp_lit(c: &Cpu, off: u32) -> u32 {
+    r32(c, GP).wrapping_sub(off)
+}
+
+// ---------------------------------------------------------------------------
+// __ieee754_logf (0x40e550, newlib e_logf.c).
+
+/// `at = bits; mtc1 at, f` (a float literal through `at`).
+#[inline(always)]
+pub(crate) fn lit(c: &mut Cpu, f: usize, bits: u32) {
+    c.g[AT][0] = sx(bits);
+    c.mtc1(AT, f);
+}
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider_ThinkPrewind (0x10aa70, src/seg/seg_1218.cpp).
+
+/// `VF4.x = |VF3|` (the compiled VU0 length: dot product, sqrt into Q).
+pub(crate) fn vu0_length_vf3(c: &mut Cpu) {
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+}
+
+/// `void ComputerActorRider_ThinkPrewind(ComputerActorRider* self, Pad*
+/// pad)` (0x10aa70): the CPU rider's input before the start. Queries the
+/// track events in [dist, dist + 50]; presses bit 14 while slower than the
+/// threshold; on a scripted start presses bit 13 once the rider is within
+/// 50 of the goal distance and stops there. Otherwise a prewind-end event
+/// (type 0x10) presses bit 13 and steers (pad word 1, 6 bits, from
+/// `ComputeSteer` towards the event's point relative to half the
+/// look-ahead), and the two analog values go to pad bits 15..20 and 21..26
+/// (times 31). Frame 0x160 (the event buffer at +0, s0-s3, f20).
+pub fn computer_actor_rider_think_prewind(c: &mut Cpu) {
+    use prewind::*;
+    guest(c, |c| {
+        c.cycles += 43;
+        let frame = Frame::open(c, 0x160);
+        c.g[A2][0] = 0xc;
+        frame.save(c, S1, 0x130);
+        frame.save(c, S2, 0x120);
+        frame.save(c, S0, 0x140);
+        frame.save(c, S3, 0x110);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0x150);
+        c.g[A1][0] = c.g[SP][0];
+        frame.save_ra(c, 0x100);
+        let me = r32(c, S2);
+        let pad = r32(c, S1);
+        lit(c, 20, 0x4248_0000); // 50.0
+        c.g[V0][0] = c.lw(me.wrapping_add(RIDER));
+        c.g[S0][0] = c.lw(at(c, V0, TRACK));
+        c.lwc1(13, at(c, V0, TRACK_SIDE));
+        c.g[V1][0] = c.lw(at(c, S0, TRACK_VT));
+        c.lwc1(12, at(c, V0, TRACK_DIST));
+        c.add_s(13, 13, 20);
+        vcall_a0_s0(c, SLOT_QUERY, 0x0010_aacc)?;
+        // Slower than the threshold: bit 14.
+        c.lwc1(1, me.wrapping_add(CONTROL));
+        c.g[A3][0] = c.g[V0][0];
+        c.lwc1(2, gp_lit(c, GP_SPEED_MARGIN));
+        c.g[T0][0] = u64::MAX;
+        c.g[V0][0] = c.lw(me.wrapping_add(RIDER));
+        c.sub_s(1, 1, 2);
+        c.lqc2(3, at(c, V0, VELOCITY));
+        vu0_length_vf3(c);
+        c.cfc2(V1, 22);
+        c.mtc1(V1, 0);
+        c.c_lt_s(0, 1);
+        if c.fcc() {
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(pad) | 0x4000;
+            c.sw(pad, c.g[V0][0]);
+        }
+        c.g[V0][0] = c.lw(me.wrapping_add(SCRIPTED));
+        c.cycles += 2;
+        c.g[A2][0] = 0;
+        if c.g[V0][0] != 0 {
+            // 0x10ab34: |pos - from| < |to - from| - 50: bit 13.
+            c.cycles += 38;
+            let s = sp(c);
+            c.lqc2(3, me.wrapping_add(SCRIPT_TO));
+            c.lqc2(4, me.wrapping_add(SCRIPT_FROM));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s.wrapping_add(0xd0));
+            c.lq(2, s.wrapping_add(0xd0));
+            c.g[V1][0] = c.lw(me.wrapping_add(RIDER));
+            c.sq(2, s.wrapping_add(0xc0));
+            c.lqc2(3, at(c, V1, POS));
+            c.lqc2(4, me.wrapping_add(SCRIPT_FROM));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s.wrapping_add(0xe0));
+            c.lq(2, s.wrapping_add(0xe0));
+            c.sq(2, s.wrapping_add(0xd0));
+            c.lqc2(3, s.wrapping_add(0xc0));
+            vu0_length_vf3(c);
+            c.cfc2(V1, 22);
+            c.mtc1(V1, 0);
+            c.lqc2(3, s.wrapping_add(0xd0));
+            vu0_length_vf3(c);
+            c.cfc2(V0, 22);
+            c.mtc1(V0, 1);
+            c.sub_s(0, 0, 20);
+            c.c_lt_s(1, 0);
+            let close = c.fcc();
+            frame.restore(c, S0, 0x140);
+            if close {
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(pad) | 0x2000;
+                c.sw(pad, c.g[V0][0]);
+            }
+        } else {
+            // 0x10abdc: look for a prewind-end event (t0 = its index).
+            c.cycles += 2;
+            c.g[S3][0] = sx(me.wrapping_add(CONTROL));
+            if (c.g[A3][0] as i64) > 0 {
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(sp(c));
+                c.g[V0][0] = EVENT_PREWIND_END;
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                let mut found = c.g[V1][0] == EVENT_PREWIND_END;
+                if found {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(pad);
+                    c.g[T0][0] = 0;
+                } else {
+                    // 0x10ac00
+                    loop {
+                        c.cycles += 3;
+                        let more = (c.g[A2][0] as i64) < (c.g[A3][0] as i64);
+                        c.g[V0][0] = more as u64;
+                        c.g[A0][0] = sx(r32(c, A2) << 4);
+                        if !more {
+                            break;
+                        }
+                        c.cycles += 5;
+                        c.g[A1][0] = EVENT_PREWIND_END;
+                        c.g[V0][0] = sx(sp(c).wrapping_add(r32(c, A0)));
+                        c.g[V1][0] = c.lw(r32(c, V0));
+                        if c.g[V1][0] == c.g[A1][0] {
+                            c.cycles += 2;
+                            c.g[V0][0] = c.lw(pad);
+                            c.g[T0][0] = c.g[A2][0];
+                            found = true;
+                            break;
+                        }
+                        c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0010_ac00);
+                        }
+                    }
+                }
+                if found {
+                    c.cycles += 2;
+                    c.g[V0][0] |= 0x2000;
+                    c.sw(pad, c.g[V0][0]);
+                }
+            }
+            // 0x10ac30
+            c.cycles += 3;
+            c.g[V0][0] = u64::MAX;
+            c.g[A0][0] = sx(r32(c, T0) << 4);
+            if c.g[T0][0] != u64::MAX {
+                // Steer towards the event point (relative to half the
+                // look-ahead).
+                c.cycles += 45;
+                let s = sp(c);
+                c.g[V0][0] = c.lw(me.wrapping_add(RIDER));
+                c.lqc2(3, at(c, V0, AHEAD));
+                c.lqc2(4, at(c, V0, POS));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, s.wrapping_add(0xd0));
+                lit(c, 0, 0x3f00_0000);
+                c.lq(2, s.wrapping_add(0xd0));
+                c.g[V1][0] = sx(s.wrapping_add(0xc).wrapping_add(r32(c, A0)));
+                c.g[A1][0] = c.g[S0][0];
+                c.sq(2, s.wrapping_add(0xc0));
+                c.g[S0][0] = sx(s.wrapping_add(0xe0));
+                c.mfc1(V0, 0);
+                c.lqc2(4, s.wrapping_add(0xc0));
+                c.qmtc2(V0, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, s.wrapping_add(0xe0));
+                c.g[A0][0] = sx(s.wrapping_add(0xd0));
+                c.lq(2, s.wrapping_add(0xe0));
+                c.g[A2][0] = 0;
+                c.sq(2, s.wrapping_add(0xc0));
+                c.sq(2, s.wrapping_add(0xd0));
+                c.lwc1(12, r32(c, V1));
+                call_ptr(c, PATH_GET_POINT, 0x0010_aca0)?;
+                let s = sp(c);
+                c.lqc2(3, s.wrapping_add(0xd0));
+                c.lqc2(4, s.wrapping_add(0xc0));
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, s.wrapping_add(0xf0));
+                c.g[A0][0] = c.g[S2][0];
+                c.lq(2, s.wrapping_add(0xf0));
+                c.g[A1][0] = c.g[S0][0];
+                c.sq(2, s.wrapping_add(0xe0));
+                COMPUTE_STEER.call(c, 0x0010_acc4)?;
+                lit(c, 1, 0x41f8_0000); // 31.0
+                c.g[A0][0] = 0xffff_ffff_ffff_ffc0;
+                c.g[V1][0] = c.lw(pad.wrapping_add(4));
+                c.mul_s(0, 0, 1);
+                c.g[V1][0] &= c.g[A0][0];
+                c.cvt_w_s(1, 0);
+                c.mfc1(V0, 1);
+                c.g[V0][0] &= 0x3f;
+                c.g[V1][0] |= c.g[V0][0];
+                c.sw(pad.wrapping_add(4), c.g[V1][0]);
+            }
+            // 0x10acf0: the analog values (6 bits each, times 31).
+            c.cycles += 26;
+            let ctl = r32(c, S3);
+            c.lwc1(0, ctl.wrapping_add(0x48));
+            c.g[A0][0] = 0xffff_ffff_ffe0_7fff;
+            lit(c, 1, 0x41f8_0000);
+            c.g[V1][0] = c.lw(pad);
+            c.g[A1][0] = 0xffff_ffff_f81f_ffff;
+            c.mul_s(0, 0, 1);
+            c.g[V1][0] &= c.g[A0][0];
+            c.cvt_w_s(2, 0);
+            c.mfc1(V0, 2);
+            c.g[V0][0] &= 0x3f;
+            c.g[V0][0] = sx(r32(c, V0) << 15);
+            c.g[V1][0] |= c.g[V0][0];
+            c.sw(pad, c.g[V1][0]);
+            c.g[V1][0] &= c.g[A1][0];
+            c.lwc1(0, ctl.wrapping_add(0x4c));
+            c.mul_s(0, 0, 1);
+            c.cvt_w_s(1, 0);
+            c.mfc1(V0, 1);
+            c.g[V0][0] &= 0x3f;
+            c.g[V0][0] = sx(r32(c, V0) << 21);
+            c.g[V1][0] |= c.g[V0][0];
+            c.sw(pad, c.g[V1][0]);
+            frame.restore(c, S0, 0x140);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x130);
+        frame.restore(c, S2, 0x120);
+        frame.restore(c, S3, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.restore_fpr(c, 20, 0x150);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `s0->vtable(v1)[slot]` with `a0 = s0 + delta`, the method in v0.
+pub(crate) fn vcall_a0_s0(c: &mut Cpu, slot: u32, ret_to: u32) -> crate::call::Flow {
+    c.g[A0][0] = c.lh(at(c, V1, slot));
+    c.g[V0][0] = c.lw(at(c, V1, slot + 4));
+    let method = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, S0).wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret_to)
+}
+
+// ------------------------------------------------------------ PATH_Update
+
+/// `void PATH_Update(char mode)` (0x3d5128): the PATH music player's tick.
+/// Runs only when PATH is not locked (byte 0x44f42d), is initialised (byte
+/// 0x44f42c) and no player is current (0x44f430 == 0). It then stores the
+/// mode byte, marks "busy" (current = -1), samples the time in ms, refreshes
+/// the platform streams, and for each of the four players (0x517610, 0x928
+/// bytes each) that is active (+0x34) makes it current (state pointer
+/// 0x44f420, current = its handle at +0x30) and, with a handle, selects its
+/// master track and updates its tracks. Finally it refreshes the platform
+/// streams with reset and clears current and state.
+pub fn path_update(c: &mut Cpu) {
+    use crate::game::misc::path::{MODE, STATE, TIME};
+    /// Non-zero: PATH is locked, skip the tick.
+    const LOCKED: u32 = 0x0044_f42d;
+    /// Zero: PATH is not initialised.
+    const READY: u32 = 0x0044_f42c;
+    /// The current player's handle (-1 while updating, 0 when idle).
+    const CURRENT: u32 = 0x0044_f430;
+    /// The four players.
+    const PLAYERS: u32 = 0x0051_7610;
+    const PLAYER_SIZE: u32 = 0x928;
+    const PLAYER_COUNT: u64 = 4;
+    /// Player fields: its handle and its "active" word.
+    const HANDLE: u32 = 0x30;
+    const ACTIVE: u32 = 0x34;
+    const PATH_SELECT_MASTER_TRACK: Callee = Callee {
+        addr: 0x003d_4b00,
+        f: ee::s14::PATH_SelectMasterTrack,
+    };
+    const PATH_UPDATE_TRACKS: Callee = Callee {
+        addr: 0x003d_4f10,
+        f: ee::s14::PATH_UpdateTracks,
+    };
+    const PATH_PLAT_GET_TIME_MS: u32 = 0x002a_f370;
+    const PATH_PLAT_REFRESH_STATUS: u32 = 0x002a_efa8;
+    /// The player loop head.
+    const LOOP: u32 = 0x003d_51d8;
+
+    guest(c, |c| {
+        c.cycles += 15;
+        c.g[V1][0] = 0x45_0000;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = Addr(LOCKED).lbu(c);
+        c.g[A0][0] &= 0xff;
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+
+        let mut run = c.g[V0][0] == 0;
+        if run {
+            c.cycles += 4;
+            c.g[V0][0] = 0x45_0000;
+            c.g[V1][0] = Addr(READY).lbu(c);
+            run = c.g[V1][0] != 0;
+            c.g[V1][0] = 0x45_0000;
+        }
+        if run {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(CURRENT).lw(c);
+            c.g[S1][0] = c.g[V1][0];
+            run = c.g[V0][0] == 0;
+        }
+        if run {
+            // Busy: current = -1; sample the time.
+            c.cycles += 22;
+            c.g[V0][0] = u64::MAX;
+            c.g[V1][0] = 0x45_0000;
+            c.sb(MODE, c.g[A0][0]);
+            c.g[S2][0] = 0xffff_ffff_ffff_0000;
+            c.sw(CURRENT, c.g[V0][0]);
+            call_ptr(c, PATH_PLAT_GET_TIME_MS, 0x003d_519c)?;
+            c.g[S0][0] = 0;
+            c.g[V1][0] = 0x45_0000;
+            c.g[A0][0] = 0;
+            c.sw(TIME, c.g[V0][0]);
+            c.g[S4][0] = 0x45_0000;
+            call_ptr(c, PATH_PLAT_REFRESH_STATUS, 0x003d_51b4)?;
+
+            // s0 = player index, a0 = its offset (s0 * 0x928, via mult).
+            c.g[FP][0] = PLAYER_SIZE as u64;
+            c.g[V0][0] = 0x51_0000;
+            c.g[S2][0] |= 0xffff;
+            c.g[S3][0] = sx(PLAYERS);
+            c.g[S7][0] = u64::MAX;
+            c.g[S6][0] = sx(PLAYERS + ACTIVE);
+            c.g[S5][0] = sx(PLAYERS + HANDLE);
+            c.mult(0, A0, S0, FP);
+            loop {
+                c.cycles += 4;
+                let off = c.g[A0][0] as u32;
+                c.g[V0][0] = sx(off.wrapping_add(r32(c, S6)));
+                c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+                let active = c.g[V1][0] != 0;
+                c.g[V0][0] = Addr(CURRENT).lw(c);
+                if active {
+                    c.cycles += 2;
+                    if c.g[V0][0] == 0 {
+                        c.sw(CURRENT, c.g[S2][0]);
+                    }
+                    c.cycles += 3;
+                    let in_range = c.g[S0][0] < PLAYER_COUNT;
+                    c.g[V0][0] = sx(off.wrapping_add(r32(c, S5)));
+                    if in_range {
+                        // Make it current: state = the player, current = handle.
+                        c.cycles += 6;
+                        c.g[V1][0] = sx(off.wrapping_add(r32(c, S3)));
+                        c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                        c.sw(STATE, c.g[V1][0]);
+                        c.g[V0][0] = c.g[A0][0];
+                        c.sw(CURRENT, c.g[A0][0]);
+                    } else {
+                        c.cycles += 2;
+                        if c.g[S0][0] != c.g[S7][0] {
+                            c.sw(CURRENT, 0);
+                        }
+                        c.cycles += 1;
+                        c.g[V0][0] = Addr(CURRENT).lw(c);
+                    }
+                    c.cycles += 2;
+                    let handle = c.g[V0][0] != 0;
+                    c.g[V0][0] = sx(r32(c, S0).wrapping_add(1));
+                    if handle {
+                        c.cycles += 4;
+                        PATH_SELECT_MASTER_TRACK.call(c, 0x003d_5230)?;
+                        PATH_UPDATE_TRACKS.call(c, 0x003d_5238)?;
+                        c.cycles += 1;
+                        c.g[V0][0] = sx(r32(c, S0).wrapping_add(1));
+                    }
+                } else {
+                    c.cycles += 1;
+                    c.g[V0][0] = sx(r32(c, S0).wrapping_add(1));
+                }
+                c.cycles += 4;
+                c.g[S0][0] = c.g[V0][0] & 0xff;
+                c.g[V1][0] = (c.g[S0][0] < PLAYER_COUNT) as u64;
+                c.mult(0, A0, S0, FP);
+                if c.g[V1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LOOP);
+                }
+            }
+            // Refresh with reset; idle again.
+            c.cycles += 4;
+            c.g[A0][0] = 1;
+            call_ptr(c, PATH_PLAT_REFRESH_STATUS, 0x003d_5254)?;
+            c.sw(CURRENT, 0);
+            c.sw(STATE, 0);
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------ Rider_TryEnterBoardPress
+
+/// `bool Rider_TryEnterBoardPress(Rider* r, float dir)` (0x1161d0): start a
+/// board press (nose press for `dir > 0`, tail press for `dir < 0`). Fails
+/// (returns 0) for `dir == 0`, while the press sub-state (+0x328) is 3 or 4,
+/// or, outside the main state 0, when the board's forward axis (+0x1e0) and
+/// the velocity (+0x3a0) point apart (VU0 dot product < 0). Otherwise plays
+/// animation 0x18 / 0x20 on the rider's anim controller (+0x784) with blend
+/// -1, stores the press side (1 nose, 2 tail) at +0x330, enters sub-state
+/// BOARD_PRESS and returns 1.
+pub fn rider_try_enter_board_press(c: &mut Cpu) {
+    /// Press sub-state (3 and 4 block a new press).
+    const PRESS_STATE: u32 = 0x328;
+    /// Press side: 1 nose, 2 tail.
+    const PRESS_SIDE: u32 = 0x330;
+    const FORWARD: u32 = 0x1e0;
+    const VELOCITY: u32 = 0x3a0;
+    const ANIM_CTL: u32 = 0x784;
+    const ANIM_NOSE_PRESS: u64 = 0x18;
+    const ANIM_TAIL_PRESS: u64 = 0x20;
+    const BOARD_PRESS: u64 = 1;
+    const ANIM_CONTROLLER_PLAY_ANIM: u32 = 0x0031_28e8;
+    const RIDER_GET_MAIN_STATE: Callee = Callee {
+        addr: 0x0011_fe98,
+        f: ee::s00::Rider_GetMainState,
+    };
+    const RIDER_SET_SUB_STATE: Callee = Callee {
+        addr: 0x0011_fec8,
+        f: ee::s00::Rider_SetSubState,
+    };
+    /// -1.0f: the anim blend argument.
+    const MINUS_ONE: u32 = 0xbf80_0000;
+
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        frame.save_fpr(c, 21, 0x28);
+        frame.save_fpr(c, 20, 0x20);
+        c.f[21] = 0;
+        let dir = FpuF32(c.f[12]);
+        c.f[20] = dir.0;
+        frame.save(c, S0, 0x10);
+        let no_dir = dir.eq_s(FpuF32::ZERO);
+        abi::set_fcc(c, no_dir);
+        frame.save_ra(c, 0);
+        let rider = c.g[A0][0];
+        c.g[S0][0] = rider;
+        c.g[V0][0] = 0;
+        let r = Addr(rider as u32);
+        'out: {
+            if no_dir {
+                break 'out;
+            }
+            c.cycles += 5;
+            let state = r.off(PRESS_STATE).lw(c);
+            let blocked = (state as u32).wrapping_sub(3) < 2;
+            c.g[V0][0] = 0;
+            if blocked {
+                break 'out;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = rider;
+            RIDER_GET_MAIN_STATE.call(c, 0x0011_6218)?;
+            if c.g[V0][0] == 0 {
+                // forward . velocity (xyz) via VU0, in f0.
+                c.cycles += 13;
+                c.lqc2(3, r.off(FORWARD).0);
+                c.lqc2(5, r.off(VELOCITY).0);
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.qmfc2(V0, 4);
+                c.f[0] = c.g[V0][0] as u32;
+                let apart = abi::c_lt_s(c, FpuF32(c.f[0]), FpuF32(c.f[21]));
+                c.g[V0][0] = 0;
+                if apart {
+                    break 'out;
+                }
+            }
+            c.cycles += 5;
+            c.f[0] = 0;
+            let nose = abi::c_lt_s(c, FpuF32::ZERO, dir);
+            c.g[A0][0] = r.off(ANIM_CTL).lw(c);
+            let (anim, side, ret) = if nose {
+                c.cycles += 7;
+                (ANIM_NOSE_PRESS, 1, 0x0011_627c)
+            } else {
+                c.cycles += 6;
+                (ANIM_TAIL_PRESS, 2, 0x0011_6298)
+            };
+            c.g[A1][0] = anim;
+            c.g[AT][0] = sx(MINUS_ONE);
+            c.f[12] = MINUS_ONE;
+            c.g[A2][0] = 0;
+            call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, ret)?;
+            c.g[V1][0] = side;
+            c.cycles += 5;
+            r.off(PRESS_SIDE).sw(c, side);
+            c.g[A0][0] = rider;
+            c.g[A1][0] = BOARD_PRESS;
+            RIDER_SET_SUB_STATE.call(c, 0x0011_62ac)?;
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x28);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// --------------------------------------------------------- SNDMIDI_Service
+
+/// `void SNDMIDI_Service(void)` (0x3b96b8): the MIDI sequencer tick. For each
+/// of the 16 MIDI slots (0x50a120, 0x70 bytes each) that is playing (state
+/// byte +0x28 == 3) and whose volume fade (+0x18, `SNDMIDI_UpdateFade`) did
+/// not stop it: advance the tick counter (+0x0) and, while the scaled time
+/// `ticks * tempo% (+0x24) / 100` has reached the next event's time (+0x4)
+/// and the slot is still playing, process one event and count it.
+pub fn sndmidi_service(c: &mut Cpu) {
+    const SLOTS: u32 = 0x0050_a120;
+    const SLOT_SIZE: u64 = 0x70;
+    const SLOT_COUNT: i64 = 16;
+    /// Slot fields.
+    const TICKS: u32 = 0x0;
+    const NEXT_EVENT: u32 = 0x4;
+    const FADE: u32 = 0x18;
+    const TEMPO: u32 = 0x24;
+    const STATE: u32 = 0x28;
+    const PLAYING: u64 = 3;
+    const UPDATE_FADE: Callee = Callee {
+        addr: 0x003b_8de8,
+        f: ee::s13::SNDMIDI_UpdateFade,
+    };
+    const PROCESS_EVENT: Callee = Callee {
+        addr: 0x003b_94b0,
+        f: ee::s13::SNDMIDI_ProcessEvent,
+    };
+
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0x51_0000;
+        frame.save(c, S2, 0x70);
+        frame.save(c, S5, 0x40);
+        c.g[S2][0] = 0; // slot index
+        frame.save(c, S6, 0x30);
+        c.g[S5][0] = 100; // percent divisor
+        frame.save(c, S7, 0x20);
+        c.g[S6][0] = PLAYING;
+        frame.save(c, FP, 0x10);
+        c.g[S7][0] = SLOT_SIZE;
+        frame.save(c, S0, 0x90);
+        c.g[FP][0] = sx(SLOTS);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save_ra(c, 0);
+        c.mult(0, V0, S2, S7);
+        loop {
+            c.cycles += 4;
+            let slot = (c.g[V0][0] as u32).wrapping_add(r32(c, FP));
+            c.g[S0][0] = sx(slot);
+            let e = Addr(slot);
+            c.g[S3][0] = e.off(STATE).lb(c);
+            c.g[S4][0] = sx(r32(c, S2).wrapping_add(1));
+            // false: the path that reaches the slot loop's end directly.
+            let mut via_tail = true;
+            'slot: {
+                if c.g[S3][0] != c.g[S6][0] {
+                    break 'slot;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = e.off(FADE).lw(c);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S2][0];
+                    UPDATE_FADE.call(c, 0x003b_9724)?;
+                    if c.g[V0][0] != 0 {
+                        // Stopped by its fade.
+                        via_tail = false;
+                        break 'slot;
+                    }
+                    c.cycles += 1;
+                }
+                c.g[V0][0] = e.off(TICKS).lw(c);
+                // (divide-by-zero check of the divisor)
+                c.cycles += 2;
+                c.cycles += 10;
+                c.g[A1][0] = e.off(TEMPO).lhu(c);
+                c.g[S4][0] = sx(r32(c, S2).wrapping_add(1));
+                c.g[A0][0] = sx(r32(c, V0).wrapping_add(1));
+                c.g[V1][0] = e.off(NEXT_EVENT).lw(c);
+                c.mult(0, V0, V0, A1);
+                c.divu(0, V0, S5);
+                c.g[S1][0] = c.lo[0]; // scaled time
+                c.g[V1][0] = (c.g[S1][0] < c.g[V1][0]) as u64;
+                let early = c.g[V1][0] != 0;
+                e.off(TICKS).sw(c, c.g[A0][0]);
+                if early {
+                    break 'slot;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = e.off(STATE).lb(c);
+                if c.g[V0][0] != c.g[S3][0] {
+                    via_tail = false;
+                    break 'slot;
+                }
+                c.cycles += 1;
+                c.g[S3][0] = PLAYING;
+                loop {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S2][0];
+                    PROCESS_EVENT.call(c, 0x003b_9778)?;
+                    c.g[V0][0] = e.off(NEXT_EVENT).lw(c);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                    c.g[V1][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                    let done = c.g[V1][0] != 0;
+                    e.off(NEXT_EVENT).sw(c, c.g[V0][0]);
+                    if done {
+                        break;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = e.off(STATE).lb(c);
+                    if c.g[V0][0] != c.g[S3][0] {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003b_9770);
+                    }
+                }
+            }
+            if via_tail {
+                c.cycles += 1;
+            }
+            c.g[S2][0] = c.g[S4][0];
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S2][0] as i64) < SLOT_COUNT) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            c.mult(0, V0, S2, S7);
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_9700);
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `sx(a + b)` on the low words (`addu`).
+#[inline(always)]
+pub(crate) fn add32(a: u64, b: u64) -> u64 {
+    sx((a as u32).wrapping_add(b as u32))
+}
+
+// ---------------------------------------------------------------------------
+// libpad.
+
+/// libpad's port table: 0x70 bytes per port, 0x1c per slot; `+0` the DMA
+/// buffer (two 0x80-byte halves), `+0x10` non-zero while the port is open.
+pub(crate) const PAD_PORTS: u32 = 0x0052_6250;
+
+pub(crate) const PAD_PORT_SIZE: u64 = 0x70;
+
+pub(crate) const PAD_SLOT_SIZE: u64 = 0x1c;
+
+pub(crate) const PAD_OPEN: u32 = 0x10;
+
+/// Offset of the data length word in a pad DMA buffer half.
+pub(crate) const PAD_DATA_LEN: u32 = 0x60;
+
+pub(crate) const D_INTR: Callee = Callee {
+    addr: 0x0042_c078,
+    f: ee::s15::f_0042c078,
+};
+
+pub(crate) const E_INTR: Callee = Callee {
+    addr: 0x0042_c0c0,
+    f: ee::s15::f_0042c0c0,
+};
+
+pub(crate) const MEMCPY: Callee = Callee {
+    addr: 0x0041_605c,
+    f: ee::s15::f_0041605c,
+};
+
+pub(crate) const SYNC_DCACHE: Callee = Callee {
+    addr: 0x0042_4698,
+    f: ee::s15::f_00424698,
+};
+
+pub(crate) const LIBPAD_GET_DMA_BUFFER: Callee = Callee {
+    addr: 0x003f_f9a8,
+    f: ee::s15::f_003ff9a8,
+};
+
+/// `int scePadRead(int port, int slot, u8* data)` (0x3ffa58): 0 when the port
+/// is closed; otherwise, with interrupts off, copy the current 0x80-byte DMA
+/// half to the stack, copy its first `len` (`+0x60`) bytes to `data`, turn
+/// interrupts back on if they were, and return `len`.
+pub fn sce_pad_read(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xe0);
+        c.g[V1][0] = PAD_PORT_SIZE;
+        c.sd(frame.at(c, 0x90), c.g[S1][0]);
+        c.g[V0][0] = 0x52_0000;
+        c.sd(frame.at(c, 0xa0), c.g[S2][0]);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A1][0];
+        c.g[A0][0] = PAD_SLOT_SIZE;
+        c.mult(1, V1, S1, V1);
+        c.mult(0, A0, S2, A0);
+        c.sd(frame.at(c, 0xc0), c.g[S4][0]);
+        c.g[V0][0] = sx(PAD_PORTS);
+        frame.save_ra(c, 0xd0);
+        c.sd(frame.at(c, 0xb0), c.g[S3][0]);
+        c.g[A0][0] = add32(c.g[A0][0], c.g[V1][0]);
+        c.sd(frame.at(c, 0x80), c.g[S0][0]);
+        c.g[V0][0] = add32(c.g[V0][0], c.g[A0][0]);
+        c.g[V1][0] = Addr(r32(c, V0) + PAD_OPEN).lw(c);
+        c.g[S4][0] = c.g[A2][0];
+        if c.g[V1][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 11;
+            D_INTR.call(c, 0x003f_fab8)?;
+            c.g[S3][0] = c.g[V0][0];
+            c.g[S0][0] = c.g[SP][0];
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S2][0];
+            LIBPAD_GET_DMA_BUFFER.call(c, 0x003f_facc)?;
+            // Copy the 0x80-byte half to the stack, 32 bytes at a time.
+            c.g[V1][0] = c.g[V0][0];
+            c.g[V0][0] = c.g[V1][0] & 7;
+            let aligned = c.g[V0][0] == 0;
+            c.g[A0][0] = c.g[SP][0];
+            c.cycles += 1;
+            c.g[V0][0] = add32(c.g[V1][0], 0x80);
+            if aligned {
+                loop {
+                    c.cycles += 13;
+                    let (src, dst) = (r32(c, V1), r32(c, A0));
+                    for (k, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        c.g[reg][0] = c.ld(src + 8 * k as u32);
+                    }
+                    for (k, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        c.sd(dst + 8 * k as u32, c.g[reg][0]);
+                    }
+                    c.g[V1][0] = add32(c.g[V1][0], 0x20);
+                    c.g[A0][0] = add32(c.g[A0][0], 0x20);
+                    if c.g[V1][0] == c.g[V0][0] {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003f_fb40);
+                    }
+                }
+                c.cycles += 1;
+            } else {
+                loop {
+                    c.cycles += 21;
+                    let (src, dst) = (r32(c, V1), r32(c, A0));
+                    for (k, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        let at = src + 8 * k as u32;
+                        c.ldl(reg, at + 7);
+                        c.ldr(reg, at);
+                    }
+                    for (k, reg) in [A1, A2, A3, T0].into_iter().enumerate() {
+                        let at = dst + 8 * k as u32;
+                        c.sdl(reg, at + 7);
+                        c.sdr(reg, at);
+                    }
+                    c.g[V1][0] = add32(c.g[V1][0], 0x20);
+                    c.g[A0][0] = add32(c.g[A0][0], 0x20);
+                    if c.g[V1][0] == c.g[V0][0] {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003f_fae0);
+                    }
+                }
+                c.cycles += 2;
+            }
+            let buf = r32(c, S0);
+            c.g[A2][0] = Addr(buf + PAD_DATA_LEN).lw(c);
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S0][0];
+            MEMCPY.call(c, 0x003f_fb84)?;
+            c.g[V1][0] = 1;
+            if c.g[S3][0] == c.g[V1][0] {
+                c.cycles += 3;
+                E_INTR.call(c, 0x003f_fb98)?;
+            }
+            c.g[V0][0] = Addr(buf + PAD_DATA_LEN).lw(c);
+        }
+        c.cycles += 8;
+        frame.restore_ra(c, 0xd0);
+        c.g[S4][0] = c.ld(frame.at(c, 0xc0));
+        c.g[S3][0] = c.ld(frame.at(c, 0xb0));
+        c.g[S2][0] = c.ld(frame.at(c, 0xa0));
+        c.g[S1][0] = c.ld(frame.at(c, 0x90));
+        c.g[S0][0] = c.ld(frame.at(c, 0x80));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u8* libpad_GetDmaBuffer(int port, int slot)` (0x3ff9a8): the port's
+/// 0x100-byte DMA buffer (written back from the data cache first), and of
+/// its two 0x80-byte halves the one with the larger frame counter (`+0x58`
+/// against `+0xd8`).
+pub fn libpad_get_dma_buffer(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        c.g[V0][0] = PAD_SLOT_SIZE;
+        c.g[V1][0] = PAD_PORT_SIZE;
+        c.mult(0, A1, A1, V0);
+        c.mult(1, A0, A0, V1);
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x52_0000;
+        frame.save_ra(c, 0x10);
+        c.g[V0][0] = sx(PAD_PORTS);
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[A1][0] = add32(c.g[A1][0], c.g[A0][0]);
+        c.g[A1][0] = add32(c.g[A1][0], c.g[V0][0]);
+        c.g[S0][0] = Addr(r32(c, A1)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = add32(c.g[S0][0], 0xff);
+        SYNC_DCACHE.call(c, 0x003f_f9e4)?;
+        let buf = r32(c, S0);
+        c.g[V0][0] = Addr(buf + 0x58).lw(c);
+        c.g[V1][0] = Addr(buf + 0xd8).lw(c);
+        frame.restore_ra(c, 0x10);
+        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        c.g[V0][0] = sx(r32(c, V0) << 7);
+        c.g[V0][0] = add32(c.g[S0][0], c.g[V0][0]);
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -5426,6 +7186,686 @@ pub(crate) mod tests {
                     _ => r.next_u32() % 0x100,
                 };
                 c.bus.write32(h + H_QUEUED, queued);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::events::driven;
+    use crate::difftest::events::Events;
+    use crate::difftest::require_paths;
+    use crate::difftest::SP as STACK_TOP;
+    pub(crate) use crate::game::fe::ovstatehud::tests::obj;
+
+    /// tanf: small (|x| <= pi/4), medium and huge arguments (reduced by
+    /// the real `__ieee754_rem_pio2f`, which reads its tables from the ELF
+    /// image), and inf/NaN bit patterns; the real `__kernel_tanf` runs.
+    #[test]
+    fn tanf_matches() {
+        check(ee::s15::f_0040d588__generated, tanf, 200, &|c, seed| {
+            let mut r = Rng(0x0040_d588 ^ (seed as u64) << 12);
+            crate::difftest::elf_image(c);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x0040_d588;
+            let sign = (r.next_u32() & 1) << 31;
+            c.f[12] = sign
+                | match seed % 6 {
+                    0 => r.f32(0.78) & 0x7fff_ffff,
+                    1 => 0x3f49_0fda + r.next_u32() % 3,
+                    2 => (1.0f32 + (r.next_u32() % 1000) as f32 * 0.1).to_bits(),
+                    3 => (1.0e4f32 + (r.next_u32() % 100000) as f32 * 1.0e3).to_bits(),
+                    4 => 0x7f80_0000 | r.next_u32() % 4 * (r.next_u32() & 0x7f_ffff),
+                    _ => r.edge_f32() & 0x7fff_ffff,
+                };
+        });
+    }
+
+    /// ComputerActorRider_FindSpeedMarker: the track query is a fake that
+    /// may unwind and returns a forced count (1..12); the marker
+    /// records it "wrote" (the frame buffer at sp) are set up in the stack
+    /// area beforehand, with a speed marker at a random index or none.
+    #[test]
+    fn computer_actor_rider_find_speed_marker_matches() {
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::difftest::SP as STACK;
+        covered(
+            ee::s00::f_0010bb18__generated,
+            computer_actor_rider_find_speed_marker,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_bb18, 1);
+                c.pc = 0x0010_bb18;
+                let (actor, rider, query, vt) = (DATA, DATA + 0x100, DATA + 0x1000, DATA + 0x1100);
+                c.bus.write32(actor + oc230_cpu_rider::RIDER, rider);
+                c.bus.write32(rider + oc230_cpu_rider::TRACK_QUERY, query);
+                let (pos, dist) = (r.f32(1000.0), r.f32(1000.0));
+                c.bus.write32(rider + oc230_cpu_rider::TRACK_POS, pos);
+                c.bus.write32(rider + oc230_cpu_rider::TRACK_DIST, dist);
+                c.bus.write32(query + oc230_cpu_rider::QUERY_VTABLE, vt);
+                c.bus.write16(vt + 8, (r.next_u32() % 8 * 4) as u16);
+                c.bus.write32(vt + 0xc, FAKE);
+                c.bus.write32(GAME_GP - 0x7e04, 27.777_78f32.to_bits());
+                // (A non-positive count cannot be forced: the fake returns the
+                // forced word zero-extended, and 0 means "not forced".)
+                let n = if seed % 6 == 0 {
+                    1
+                } else {
+                    1 + r.next_u32() % 12
+                };
+                c.bus.write32(LOG_RESULTS, n);
+                let buf = STACK - 0x100;
+                let marker = if seed % 4 == 0 { 99 } else { r.next_u32() % 12 };
+                for i in 0..12u32 {
+                    let rec = buf + 0x10 * i;
+                    let ty = if i == marker {
+                        0x11
+                    } else {
+                        r.next_u32() % 0x20 & !0x11 | 1
+                    };
+                    c.bus.write32(rec, ty);
+                    c.bus.write32(rec + 4, r.next_u32() % 200);
+                    let lim = if r.next_u32() % 2 == 0 {
+                        dist
+                    } else {
+                        r.f32(1000.0)
+                    };
+                    c.bus.write32(rec + 8, lim);
+                }
+                c.g[A0][0] = sx(actor);
+                c.g[A1][0] = sx(DATA + 0x2000);
+                c.g[A2][0] = sx(DATA + 0x2010);
+            },
+        );
+    }
+
+    /// Empty queue (nothing happens) and 1-6 queued particles sorted by the
+    /// real qsort and comparator; random render-state stack contents; the
+    /// manager's draw call is a fake (some unwind).
+    #[test]
+    fn ps2_fog_particle_man_render_matches() {
+        covered(
+            ee::s09::f_002dbf98__generated,
+            ps2_fog_particle_man_render,
+            300,
+            &|c, seed| {
+                c.pc = 0x002d_bf98;
+                let mut r = machine(c, seed, 0x2dbf98, 1);
+                let gp = c.g[GP][0] as u32;
+                let man = DATA;
+                let ctx = DATA + 0x1000;
+                let stack = DATA + 0x2004;
+                let n = seed % 7;
+                c.bus.write32(man + FOG_COUNT, n);
+                c.bus.write32(man + FOG_VT, DATA + 0x5000);
+                crate::game::main::gamemode::tests::slot(
+                    c,
+                    DATA + 0x5000,
+                    VT_FOG_DRAW,
+                    (r.next_u32() as i16) & !3,
+                    FAKE,
+                );
+                crate::difftest::fill(c, &mut r, FOG_SORT_BUF, 2 * n);
+                c.bus.write32(gp.wrapping_sub(R2D_CTX_GP), ctx);
+                c.bus
+                    .write32(ctx + R2D_STATE_TOP, stack + 0x14 * (seed % 3));
+                c.bus.write32(ctx + 0xf60, r.next_u32());
+                crate::difftest::fill(c, &mut r, stack, 0x14);
+                c.g[A0][0] = sx(man);
+            },
+        );
+    }
+
+    /// 17 effect systems with fake render methods (some unwind).
+    #[test]
+    fn ps2_visual_effects_man_render_matches() {
+        covered(
+            ee::s09::f_002f0cd0__generated,
+            ps2_visual_effects_man_render,
+            300,
+            &|c, seed| {
+                c.pc = 0x002f_0cd0;
+                let mut r = machine(c, seed, 0x2f0cd0, VFX_SYSTEMS);
+                let man = DATA;
+                for k in 0..VFX_SYSTEMS {
+                    let sys = DATA + 0x100 + 0x40 * k;
+                    let vt = DATA + 0x1000 + 0x40 * k;
+                    c.bus.write32(man + 4 * k, sys);
+                    c.bus.write32(sys, vt);
+                    crate::game::main::gamemode::tests::slot(
+                        c,
+                        vt,
+                        VT_VFX_RENDER,
+                        (r.next_u32() as i16) & !3,
+                        FAKE + 0x10 * k,
+                    );
+                }
+                c.g[A0][0] = sx(man);
+            },
+        );
+    }
+
+    /// Rider_TurnAroundIfBackward: braking (no turn), moving forward (no
+    /// turn) and moving backward (turn: rebuild the world matrix and toggle
+    /// the stance through the real callees).
+    #[test]
+    fn rider_turn_around_if_backward_matches() {
+        use super::turn_around::*;
+        let setup = |c: &mut Cpu, seed: u32| {
+            let mut r = machine(c, seed, 0x4cc0, 0);
+            elf_image(c);
+            c.pc = 0x0011_4cc0;
+            let rider = obj(&mut r);
+            c.g[A0][0] = rider as u64;
+            // Whole rider area the callees touch: random floats.
+            for off in (0..0x800).step_by(4) {
+                c.bus.write32(rider + off, r.f32(1.5));
+            }
+            let brake = match seed % 4 {
+                0 => r.f32(1.0),
+                1 => 0x8000_0000,
+                _ => 0,
+            };
+            c.bus.write32(rider + BRAKE, brake);
+            let vel_scale = if seed % 3 == 0 { 1.0 } else { -1.0 };
+            for i in 0..4 {
+                let v = r.f32(1.0);
+                let fwd = r.f32(1.0);
+                c.bus.write32(rider + GROUND_FORWARD + 4 * i, fwd);
+                // Velocity roughly along (or against) the ground forward.
+                let vf = f32::from_bits(fwd) * 3000.0 * vel_scale + f32::from_bits(v);
+                c.bus.write32(rider + VEL + 4 * i, vf.to_bits());
+                c.bus.write32(rider + 0x110 + 4 * i, r.f32(1e5));
+            }
+            let owner = obj(&mut r);
+            c.bus.write32(rider + 0x77c, owner);
+            c.bus.write32(rider + 0x784, owner);
+        };
+        check(
+            ee::s00::f_00114cc0__generated,
+            rider_turn_around_if_backward,
+            300,
+            &setup,
+        );
+        // Braking (10+4), not backward (10+15+4), turned (and more).
+        require_paths(ee::s00::f_00114cc0__generated, 300, &[14, 29], &setup);
+        let mut turned = 0;
+        for seed in 0..300 {
+            let mut c = fresh();
+            setup(&mut c, seed);
+            ee::s00::f_00114cc0__generated(&mut c);
+            turned += (c.g[V0][0] == 1) as u32;
+        }
+        assert!(turned > 20, "turned {turned}");
+    }
+
+    // ---------------------------------------------- PS2VisualEffectsMan_Update
+
+    /// `PS2VisualEffectsMan_Update`: the 17 resets and the drawer's view
+    /// resets are fakes (one may unwind); 0..3 views, each through the real
+    /// `PS2VisualEffectsMan_ApplyWorldPainter` (its fixture from
+    /// `renderstateman`'s test: painter descriptors whose methods are
+    /// `MenuSys_IsActive`).
+    #[test]
+    fn ps2_visual_effects_man_update_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, DATA, GAME_GP};
+        check(
+            ee::s09::f_002f0a98__generated,
+            ps2_visual_effects_man_update,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f0a, 20);
+                c.pc = 0x002f_0a98;
+                let g = GAME_GP;
+                let (vt, ctx, players) = (DATA + 0x6000, DATA + 0x7000, DATA + 0x2300);
+                // The 17 effect objects share one vtable whose Reset is a fake.
+                for k in 0..17u32 {
+                    let obj = DATA + 0x5000 + 0x40 * k;
+                    c.bus.write32(DATA + 4 * k, obj);
+                    c.bus.write32(obj, vt);
+                }
+                c.bus.write16(vt + 0x10, (r.next_u32() & 0x3c) as u16);
+                c.bus.write32(vt + 0x14, FAKE);
+                c.bus.write32(g - 0x854, ctx);
+                c.bus.write32(ctx + 0x10d8, vt);
+                c.bus.write16(vt + 0x398, (r.next_u32() & 0x3c) as u16);
+                c.bus.write32(vt + 0x39c, FAKE + 0x10);
+                // world -> app (+0x84) -> players (+0x84; the view count at
+                // +0x10) and game module (+0x28) -> handle.
+                c.bus.write32(g - 0x848, DATA + 0x2000);
+                c.bus.write32(DATA + 0x2000 + 0x84, DATA + 0x2100);
+                c.bus.write32(DATA + 0x2100 + 0x84, players);
+                c.bus.write32(
+                    players + 0x10,
+                    match seed % 5 {
+                        4 => (-(r.next_u32() as i32 % 3).abs()) as u32,
+                        k => k,
+                    },
+                );
+                for i in 0..4u32 {
+                    c.bus.write32(g + 0xab8 + 4 * i, r.next_u32() % 4);
+                }
+                c.bus.write32(DATA + 0x2100 + 0x28, DATA + 0x2200);
+                c.bus.write32(DATA + 0x2200, r.next_u32() & 1);
+                c.bus.write32(g + 0x2a90, DATA + 0x4000);
+                c.bus.write32(g + 0xa70, 0);
+                for off in (0..0x40u32).step_by(4) {
+                    c.bus.write32(0x004f_a370 + off, DATA + 0x1000);
+                }
+                c.bus.write32(0x004f_a370 + 0x24, r.edge_f32());
+                c.bus.write32(DATA + 0x1000, DATA + 0x1100);
+                c.bus.write32(DATA + 0x1104, DATA + 0x1200);
+                c.bus.write32(DATA + 0x1100, 0);
+                for slot in (0x30..0x1b8u32).step_by(8) {
+                    c.bus.write16(DATA + 0x1200 + slot, 0);
+                    c.bus.write32(DATA + 0x1200 + slot + 4, 0x002c_c098);
+                }
+                c.bus.write32(g + 0x1238, (seed % 3 == 0) as u32);
+                c.bus.write32(g + 0x14ec, (seed % 7 == 0) as u32);
+                c.bus.write32(g + 0x12dc, (seed % 4 == 1) as u32);
+                c.bus.write32(g + 0xa6c, r.next_u32());
+                for off in [
+                    0x1244u32, 0x1248, 0x123c, 0x1240, 0x151c, 0x1524, 0x12e4, 0x12e8, 0x12ec,
+                    0x12f0, 0x12f4, 0x1300, 0x1304, 0x14f4, 0x14f8, 0x14fc, 0x1500, 0x1504, 0x1508,
+                ] {
+                    c.bus.write32(g + off, r.next_u32());
+                }
+                for off in (0..0x260u32).step_by(4) {
+                    c.bus.write32(DATA + 0x4000 + off, r.next_u32());
+                }
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    // --------------------------------------- ComputerActorRider_UpdateSpinPlan
+
+    /// `ComputerActorRider_UpdateSpinPlan`: the real flip/spin progress
+    /// queries (their attribute factor through a fake BE interface, which
+    /// may unwind), must-land on/off, planning on/off, planned flip/spin
+    /// zero or not, heights and `.lit4` margins chosen to reach each drop.
+    #[test]
+    fn computer_actor_rider_update_spin_plan_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, DATA, GAME_GP};
+        const AI: u32 = DATA + 0x9_0000;
+        const RIDER: u32 = DATA + 0x9_1000;
+        const STATE: u32 = DATA + 0x9_3000;
+        const MODEL: u32 = DATA + 0x9_4000;
+        const BE_LIBRARY: u32 = DATA + 0x8_6000;
+        const BE_IFACE: u32 = DATA + 0x8_7000;
+        const BE_VTABLE: u32 = DATA + 0x8_7100;
+        check(
+            ee::s00::f_0010b0e8__generated,
+            computer_actor_rider_update_spin_plan,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_b0e8, 2);
+                c.pc = 0x0010_b0e8;
+                let pick =
+                    |r: &mut crate::difftest::Rng, v: &[u32]| v[(r.next_u32() as usize) % v.len()];
+                let f = |x: f32| x.to_bits();
+                c.bus.write32(GAME_GP - 0x1f04, BE_LIBRARY);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, BE_IFACE);
+                c.bus.write32(BE_IFACE + 4, BE_VTABLE);
+                c.bus.write16(BE_VTABLE + 8, 0);
+                c.bus.write32(BE_VTABLE + 0xc, FAKE + 0x80);
+                // The progress queries' own `.lit4` constants.
+                for off in [0x7330u32, 0x732c, 0x7328, 0x7324, 0x7320, 0x731c] {
+                    c.bus.write32(GAME_GP - off, f(0.5));
+                }
+                // The plan's margins.
+                for off in [0x7e14u32, 0x7e18, 0x7e1c, 0x7e20] {
+                    c.bus.write32(
+                        GAME_GP - off,
+                        pick(&mut r, &[f(0.0), f(0.5), f(2.0), f(-1.0)]),
+                    );
+                }
+                c.bus.write32(AI + 0x18, RIDER);
+                c.bus.write32(RIDER + 0x77c, STATE);
+                let x = STATE + 0x230;
+                for off in [0x10u32, 0x14, 0x18, 0x1c, 0x38, 0x3c] {
+                    c.bus.write32(x + off, r.f32(4.0));
+                }
+                c.bus.write32(x + 0x58, MODEL);
+                c.bus.write32(MODEL + 0x2ec, r.f32(2.0));
+                c.bus.write32(MODEL + 0x86c, r.next_u32() % 4);
+                c.bus.write32(MODEL + 0xb34, 1 + r.next_u32() % 3);
+                c.bus.write32(AI + 0xe20, pick(&mut r, &[0, 0, 1]));
+                c.bus.write32(AI + 0xe10, pick(&mut r, &[0, 1, 1, 1]));
+                c.bus
+                    .write32(AI + 0xe38, pick(&mut r, &[0, f(1.0), f(1.0)]));
+                c.bus
+                    .write32(AI + 0xe3c, pick(&mut r, &[0, f(1.0), f(1.0)]));
+                c.f[12] = pick(&mut r, &[f(0.5), f(2.0), f(-3.0), f(10.0)]);
+                c.g[A0][0] = sx(AI);
+            },
+        );
+    }
+
+    // ------------------------------------------------------------ HUD_DrawTime
+
+    /// A positive float in [lo, hi) as bits.
+    pub(crate) fn uf_2(r: &mut Rng, lo: f32, hi: f32) -> u32 {
+        (lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo)).to_bits()
+    }
+
+    // ------------------------------------------- ComputerActorRider_ThinkPrewind
+
+    /// ComputerActorRider_ThinkPrewind: the track query a fake returning
+    /// 1..12 events (written on the stack where the buffer lies), with a
+    /// prewind-end event first, later or not at all; slower or faster than
+    /// the threshold; the scripted start (inside / outside the 50 margin);
+    /// a real Path_GetPointAtDistance on a small track and a real
+    /// ComputeSteer whose two virtual methods are fakes (may unwind).
+    #[test]
+    fn computer_actor_rider_think_prewind_matches() {
+        use crate::difftest::fakes::{covered, vtable};
+        use crate::difftest::{elf_image, SP};
+        use prewind::*;
+        const CAR: u32 = 0x00a0_0000;
+        const PAD: u32 = 0x00a0_8000;
+        const RIDER_AT: u32 = 0x00a1_0000;
+        const TRK: u32 = 0x00a2_0000;
+        const SEGS: u32 = 0x00a2_1000;
+        const VECS: u32 = 0x00a3_0000;
+        covered(
+            ee::s00::f_0010aa70__generated,
+            computer_actor_rider_think_prewind,
+            200,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x10_aa70, 3);
+                c.pc = 0x0010_aa70;
+                let f = |x: f32| x.to_bits();
+                fill(c, &mut r, CAR + CONTROL, 0x20);
+                c.bus.write32(CAR + CONTROL, f((r.next_u32() % 60) as f32));
+                c.bus.write32(CAR + CONTROL + 0x48, uf_2(&mut r, 0.0, 1.0));
+                c.bus.write32(CAR + CONTROL + 0x4c, uf_2(&mut r, 0.0, 1.0));
+                c.bus.write32(CAR + RIDER, RIDER_AT);
+                c.bus.write32(CAR + SCRIPTED, (seed % 4 == 0) as u32);
+                for off in [SCRIPT_FROM, SCRIPT_TO] {
+                    put_vec(c, CAR + off, [r.f32(200.0), r.f32(200.0), r.f32(200.0), 0]);
+                }
+                fill(c, &mut r, PAD, 2);
+                // The rider.
+                for off in [POS, VELOCITY, AHEAD] {
+                    put_vec(
+                        c,
+                        RIDER_AT + off,
+                        [r.f32(60.0), r.f32(60.0), r.f32(60.0), 0],
+                    );
+                }
+                c.bus
+                    .write32(RIDER_AT + TRACK_DIST, uf_2(&mut r, 0.0, 200.0));
+                c.bus.write32(RIDER_AT + TRACK_SIDE, r.f32(20.0));
+                c.bus.write32(RIDER_AT + TRACK, TRK);
+                let mvt = vtable(c, &mut r, &[0x10, 0x28]);
+                c.bus.write32(RIDER_AT + 0x6c0, mvt);
+                // The track: Query (fake) and the path segments.
+                let tvt = vtable(c, &mut r, &[SLOT_QUERY]);
+                c.bus.write32(TRK + TRACK_VT, tvt);
+                c.bus.write32(TRK + 8, r.next_u32() % 4);
+                for k in 0..3 {
+                    c.bus.write32(TRK + 0xc + 4 * k, r.f32(100.0));
+                }
+                c.bus.write32(TRK + 0x18, SEGS);
+                for i in 0..4 {
+                    put_vec(
+                        c,
+                        SEGS + 16 * i,
+                        [r.f32(2.0), r.f32(2.0), r.f32(2.0), uf_2(&mut r, 10.0, 60.0)],
+                    );
+                }
+                // Query's result and the events it "wrote".
+                let n = 1 + r.next_u32() % 12;
+                c.bus.write32(LOG_RESULTS, n);
+                let sel = match seed % 3 {
+                    0 => 0,
+                    1 => r.next_u32() % n,
+                    _ => u32::MAX,
+                };
+                let buf = SP - 0x160;
+                for i in 0..12 {
+                    let e = buf + 16 * i;
+                    fill(c, &mut r, e, 4);
+                    let ty = if i == sel { 0x10 } else { r.next_u32() % 0x10 };
+                    c.bus.write32(e, ty);
+                    c.bus.write32(e + 0xc, uf_2(&mut r, 0.0, 250.0));
+                }
+                // ComputeSteer's axis and motion vectors.
+                put_vec(c, VECS, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                put_vec(c, VECS + 0x10, [0, 0, 0, 0]);
+                c.bus.write32(LOG_RESULTS + 4, VECS);
+                c.bus.write32(LOG_RESULTS + 8, VECS + 0x10);
+                c.g[A0][0] = CAR as u64;
+                c.g[A1][0] = PAD as u64;
+            },
+        );
+    }
+
+    /// `PATH_Update` with its real callees: locked / uninitialised / busy
+    /// early outs, and the full tick over four players that are inactive,
+    /// active without a handle, or active with a handle (an empty track
+    /// list, so `PATH_SelectMasterTrack` and `PATH_UpdateTracks` take their
+    /// short paths; no platform streams).
+    #[test]
+    fn path_update_matches() {
+        check(
+            ee::s14::f_003d5128__generated,
+            path_update,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x003d_5128 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                c.pc = 0x003d_5128;
+                let gate = seed % 6;
+                c.bus.write8(
+                    0x0044_f42d,
+                    (gate == 0) as u8 * (1 + r.next_u32() as u8 % 3),
+                );
+                c.bus.write8(0x0044_f42c, (gate != 1) as u8);
+                c.bus
+                    .write32(0x0044_f430, if gate == 2 { r.next_u32() | 1 } else { 0 });
+                c.bus.write32(0x0045_0dcc, r.next_u32()); // timer count
+                c.bus.write32(0x0045_0dc8, 1 + r.next_u32() % 0x1000); // timer period
+                for i in 0..4u32 {
+                    let p = 0x0051_7610 + 0x928 * i;
+                    let kind = r.next_u32() % 3;
+                    c.bus
+                        .write32(p + 0x34, (kind != 0) as u32 * (1 + r.next_u32() % 5));
+                    c.bus
+                        .write32(p + 0x30, if kind == 2 { DATA + 0x100 * i } else { 0 });
+                }
+                c.g[A0][0] = r.next_u32() as u64 | (r.next_u32() as u64) << 32;
+                if seed % 2 == 0 {
+                    c.g[A0][0] = (c.g[A0][0] & !0xff) | b'B' as u64;
+                }
+            },
+        );
+    }
+
+    /// `Rider_TryEnterBoardPress` with its real callees: dir 0 / positive /
+    /// negative / edge floats, press states 3, 4 and others, main state 0
+    /// (the VU0 alignment test, both signs) or not. `AnimController_PlayAnim`
+    /// reaches its virtual call through a test vtable at a fake forced to
+    /// return 0x207 (its early exit; sometimes it unwinds); `SetSubState`'s
+    /// owner has a state id past the state tables.
+    #[test]
+    fn rider_try_enter_board_press_matches() {
+        check(
+            ee::s00::f_001161d0__generated,
+            rider_try_enter_board_press,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x1161d0, 1);
+                c.pc = 0x0011_61d0;
+                let rider = DATA;
+                let owner = DATA + 0x1000;
+                let ctl = DATA + 0x2000;
+                let vt = DATA + 0x3000;
+                c.g[A0][0] = rider as u64;
+                c.f[12] = match seed % 5 {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    2 => r.f32(4.0) & !0x8000_0000,
+                    3 => r.f32(4.0) | 0x8000_0000,
+                    _ => r.edge_f32(),
+                };
+                let press = match (seed / 5) % 4 {
+                    0 => 3,
+                    1 => 4,
+                    2 => r.next_u32(),
+                    _ => 0,
+                };
+                c.bus.write32(rider + 0x328, press);
+                c.bus.write32(rider + 0x77c, owner);
+                let main = if (seed / 20) % 2 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 9
+                };
+                c.bus.write32(owner + 0xde0, main);
+                c.bus.write32(owner + 0xde4, 0xe + r.next_u32() % 8);
+                for k in 0..4 {
+                    c.bus.write32(rider + 0x1e0 + 4 * k, r.f32(3.0));
+                    c.bus.write32(rider + 0x3a0 + 4 * k, r.f32(30.0));
+                }
+                c.bus.write32(rider + 0x784, ctl);
+                c.bus.write32(ctl + 0x58, vt);
+                c.bus.write16(vt + 0x20, 0x10);
+                c.bus.write32(vt + 0x24, fakes::FAKE);
+                c.bus.write32(fakes::LOG_RESULTS, 0x207);
+            },
+        );
+    }
+
+    /// `SNDMIDI_Service` with its real callees over 16 slots: playing or
+    /// not; no fade, a fade that keeps playing (no voices of the slot, so
+    /// no volume calls) or one that ends (stop with an invalid handle,
+    /// returns at once); scaled time before, at or 1..3 events past the next
+    /// event. Events are program changes behind a non-zero delta counter
+    /// (+0x27), so `SNDMIDI_ProcessEvent` only counts down.
+    #[test]
+    fn sndmidi_service_matches() {
+        check(
+            ee::s13::f_003b96b8__generated,
+            sndmidi_service,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x003b_96b8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                c.pc = 0x003b_96b8;
+                // Voice table: no voice belongs to any slot.
+                for v in 0..24 {
+                    c.bus.write8(0x0050_a820 + 8 * v + 4, 0xff);
+                }
+                let events = DATA;
+                put_words(c, events, &[0x0005_c000]);
+                for i in 0..16u32 {
+                    let e = 0x0050_a120 + 0x70 * i;
+                    let k = r.next_u32();
+                    let playing = k % 5 != 0;
+                    c.bus
+                        .write8(e + 0x28, if playing { 3 } else { (k % 3) as u8 });
+                    match (k >> 4) % 3 {
+                        0 => c.bus.write32(e + 0x18, 0),
+                        1 => {
+                            // Fading up, still below the target.
+                            c.bus.write32(e + 0x18, 5);
+                            c.bus.write32(e + 0x14, 10);
+                            c.bus.write32(e + 0x1c, 100);
+                        }
+                        _ => {
+                            // Fading out to -1: stop.
+                            c.bus.write32(e + 0x18, (-5i32) as u32);
+                            c.bus.write32(e + 0x14, 2);
+                            c.bus.write32(e + 0x1c, u32::MAX);
+                            c.bus.write32(e + 0x10, u32::MAX);
+                        }
+                    }
+                    let ticks = r.next_u32() % 1000;
+                    let tempo = r.next_u32() % 200;
+                    c.bus.write32(e, ticks);
+                    c.bus.write16(e + 0x24, tempo as u16);
+                    let scaled = ticks * tempo / 100;
+                    let next = match (k >> 8) % 5 {
+                        0 => scaled + 1 + r.next_u32() % 10,
+                        n => scaled.wrapping_sub(n - 1),
+                    };
+                    c.bus.write32(e + 0x4, next);
+                    c.bus.write32(e + 0x8, events);
+                    c.bus.write8(e + 0x27, 0xff);
+                }
+            },
+        );
+    }
+
+    /// `scePadRead` on closed and open ports, with an 8-byte aligned and a
+    /// 4-byte aligned DMA buffer (the two copy loops), either half current,
+    /// interrupts on or off, data lengths 0..0x20.
+    #[test]
+    fn sce_pad_read_matches() {
+        check(
+            ee::s15::f_003ffa58__generated,
+            sce_pad_read,
+            120,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x3f_fa58, 0);
+                c.cop0[12] = if seed % 2 == 0 { 0 } else { 0x1_0000 };
+                let port = (seed / 2) % 2;
+                let slot = (seed / 4) % 4;
+                let at = PAD_PORTS + 0x70 * port + 0x1c * slot;
+                let buf = DATA + 0x1000 + if seed % 3 == 0 { 4 } else { 0 };
+                c.bus.write32(at, buf);
+                c.bus
+                    .write32(at + PAD_OPEN, if seed % 7 == 0 { 0 } else { 1 });
+                for k in 0..0x40 {
+                    c.bus.write32(buf + 4 * k, r.next_u32());
+                }
+                // The current half: the one with the larger frame counter.
+                c.bus.write32(buf + 0x58, r.next_u32() % 4);
+                c.bus.write32(buf + 0xd8, r.next_u32() % 4);
+                c.bus.write32(buf + PAD_DATA_LEN, r.next_u32() % 0x21);
+                c.bus
+                    .write32(buf + 0x80 + PAD_DATA_LEN, r.next_u32() % 0x21);
+                c.g[A0][0] = port as u64;
+                c.g[A1][0] = slot as u64;
+                c.g[A2][0] = sx(DATA + 0x3000);
+                c.pc = 0x003f_fa58;
+            },
+        );
+    }
+
+    /// `libpad_GetDmaBuffer` for every port/slot, either half newer,
+    /// interrupts on or off (the cache sync's two paths).
+    #[test]
+    fn libpad_get_dma_buffer_matches() {
+        check(
+            ee::s15::f_003ff9a8__generated,
+            libpad_get_dma_buffer,
+            120,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x3f_f9a8, 0);
+                c.cop0[12] = if seed % 2 == 0 { 0 } else { 0x1_0000 };
+                let port = (seed / 2) % 2;
+                let slot = (seed / 4) % 4;
+                let buf = DATA + 0x1000 + 0x100 * (r.next_u32() % 8);
+                c.bus.write32(PAD_PORTS + 0x70 * port + 0x1c * slot, buf);
+                c.bus.write32(buf + 0x58, r.next_u32() % 4);
+                c.bus.write32(buf + 0xd8, r.next_u32() % 4);
+                c.g[A0][0] = port as u64;
+                c.g[A1][0] = slot as u64;
+                c.pc = 0x003f_f9a8;
             },
         );
     }

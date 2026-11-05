@@ -3,13 +3,16 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -33,6 +36,8 @@ pub(crate) use crate::game::fe::festaterewards2::Ops;
 pub(crate) use crate::game::render::lightman::at;
 pub(crate) use crate::game::render::lightman::gp_2 as gp;
 pub(crate) use crate::game::scripter::ssxscriptengine::p as p_2;
+pub(crate) use crate::game::visualfx::boardwakefx::CAM_PROJECTOR_VT;
+pub(crate) use crate::game::visualfx::boardwakefx::LENS_CAMERA_GP;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -106,6 +111,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_mode_man_reset_mode,
         "GameModeMan_ResetMode",
     ),
+    (0x0023_1d60, app_module_render_fade, "AppModule_RenderFade"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1226,6 +1232,236 @@ pub fn game_module_on_section_unload(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// ModifierBlock_Save (0x353448)
+// ---------------------------------------------------------------------------
+
+/// `this = obj + vt[off].delta; v[func_reg] = vt[off].func; call` (the
+/// game's virtual-call sequence: `lh a0`, `lw func`, `addu a0`, `jalr`).
+pub(crate) fn vcall(
+    c: &mut Cpu,
+    obj: u64,
+    vt: u64,
+    off: u32,
+    func_reg: usize,
+    ret: u32,
+) -> crate::call::Flow {
+    let slot = VSlot::read(c, vt, off);
+    c.g[func_reg][0] = slot.func;
+    c.g[A0][0] = slot.this(obj);
+    call_ptr(c, slot.func as u32, ret)
+}
+
+// ---------------------------------------------------------------------------
+// AppModule_RenderFade (0x231d60)
+// ---------------------------------------------------------------------------
+
+/// The 2D render context (`*(gp - 0x854)`): its render-state stack pointer
+/// (0x14-byte entries) and its vtable (+0x10d8).
+pub(crate) const R2D_CTX_GP: u32 = 0x854;
+
+pub(crate) const R2D_STATE_TOP: u32 = 0xe84;
+
+pub(crate) const R2D_VT: u32 = 0x10d8;
+
+/// Context slots: `SetViewport(0, -1, -1, 1, 1, 0, 1, 0)` and
+/// `SetTexture(tex)`.
+pub(crate) const VT_SET_VIEWPORT: u32 = 0xd0;
+
+pub(crate) const VT_SET_TEXTURE: u32 = 0x110;
+
+/// The default render state and the "no texture" object.
+pub(crate) const DEFAULT_STATE: u32 = 0x0050_1420;
+
+pub(crate) const NO_TEXTURE: u32 = 0x004f_f1a0;
+
+/// The fade timer (seconds left).
+pub(crate) const FADE_TIME: u32 = 0x4;
+
+/// `bool AppModule_RenderFade(AppModule* m)` (0x231d60): while the module's
+/// fade timer runs, push a copy of the 2D render state, reset it to the
+/// default with a full-screen viewport, no texture and alpha blending, draw
+/// a full-screen black rectangle with alpha `min(5 t, 1)` and pop the
+/// state. Returns whether the rectangle was fully opaque.
+pub fn app_module_render_fade(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x40);
+        frame.save_fpr(c, 21, 0x58);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 23, 0x68);
+        frame.save_fpr(c, 22, 0x60);
+        frame.save_fpr(c, 20, 0x50);
+        let module = r32(c, S0);
+        let gp = c.g[GP][0] as u32;
+        c.mtc1(0, 21);
+        c.lwc1(0, module + FADE_TIME);
+        c.c_lt_s(21, 0);
+        let fading = c.fcc();
+        c.g[A0][0] = Addr(gp.wrapping_sub(R2D_CTX_GP)).lw(c);
+        if !fading {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+            return epilogue(c, frame);
+        }
+
+        // Push the render state (copy the top 0x14-byte entry up).
+        c.cycles += 88;
+        c.g[T0][0] = 0x50_0000;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 20);
+        c.g[A1][0] = 0;
+        let ctx = r32(c, A0);
+        c.g[V0][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+        let top = r32(c, V0);
+        c.mov_s(16, 21);
+        c.g[AT][0] = sx(0xbf80_0000);
+        c.mtc1(AT, 22);
+        c.mov_s(14, 20);
+        c.ldl(V1, top + 0x7);
+        c.ldr(V1, top);
+        c.ldl(A2, top + 0xf);
+        c.ldr(A2, top + 0x8);
+        c.g[A3][0] = Addr(top).off(0x10).lw(c);
+        c.sdl(V1, top + 0x1b);
+        c.sdr(V1, top + 0x14);
+        c.sdl(A2, top + 0x23);
+        c.sdr(A2, top + 0x1c);
+        let w = c.g[A3][0];
+        Addr(top).off(0x24).sw(c, w);
+        c.mov_s(15, 20);
+        c.g[A2][0] = 0;
+        c.mov_s(13, 22);
+        c.g[V1][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+        c.mov_s(17, 20);
+        c.g[A3][0] = Addr(gp.wrapping_sub(R2D_CTX_GP)).lw(c);
+        c.mov_s(12, 22);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x14));
+        c.mov_s(23, 21);
+        let new_top = c.g[V1][0];
+        Addr(ctx).off(R2D_STATE_TOP).sw(c, new_top);
+
+        // *top = the default state.
+        let ctx = r32(c, A3);
+        c.g[V0][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+        let top = r32(c, V0);
+        c.g[T1][0] = sx(DEFAULT_STATE);
+        c.ldl(V1, DEFAULT_STATE + 0x7);
+        c.ldr(V1, DEFAULT_STATE);
+        c.ldl(A0, DEFAULT_STATE + 0xf);
+        c.ldr(A0, DEFAULT_STATE + 0x8);
+        c.g[A3][0] = Addr(DEFAULT_STATE).off(0x10).lw(c);
+        c.sdl(V1, top + 0x7);
+        c.sdr(V1, top);
+        c.sdl(A0, top + 0xf);
+        c.sdr(A0, top + 0x8);
+        let w = c.g[A3][0];
+        Addr(top).off(0x10).sw(c, w);
+
+        // ctx->SetViewport(0, -1, -1, 1, 1, 0, 1, 0); ctx->SetTexture(none).
+        c.g[A3][0] = Addr(gp.wrapping_sub(R2D_CTX_GP)).lw(c);
+        let obj = c.g[A3][0];
+        c.g[V0][0] = Addr(obj as u32).off(R2D_VT).lw(c);
+        let vt = c.g[V0][0];
+        vcall(c, obj, vt, VT_SET_VIEWPORT, V1, 0x0023_1e54)?;
+        let gp = c.g[GP][0] as u32;
+        c.g[A2][0] = Addr(gp.wrapping_sub(R2D_CTX_GP)).lw(c);
+        c.g[A1][0] = sx(NO_TEXTURE);
+        let obj = c.g[A2][0];
+        c.g[V0][0] = Addr(obj as u32).off(R2D_VT).lw(c);
+        let vt = c.g[V0][0];
+        vcall(c, obj, vt, VT_SET_TEXTURE, V1, 0x0023_1e74)?;
+
+        // Blend bits of the new state: alpha blend on, test/depth bits off.
+        let gp = c.g[GP][0] as u32;
+        c.g[A3][0] = Addr(gp.wrapping_sub(R2D_CTX_GP)).lw(c);
+        let ctx = r32(c, A3);
+        c.g[V1][0] = 0xffff_ffff_fe7f_ffff;
+        c.g[T1][0] = 0x100_0000;
+        c.g[T0][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+        c.g[A1][0] = 0xffff_ffff_ffcf_ffff;
+        c.g[A2][0] = 0xffff_ffff_fff0_0fff;
+        let top = r32(c, T0);
+        c.g[V0][0] = Addr(top).off(0x8).lw(c);
+        c.g[AT][0] = 0x40a0_0000;
+        c.mtc1(AT, 1);
+        c.g[V0][0] |= 0x3e0;
+        let v = c.g[V0][0];
+        Addr(top).off(0x8).sw(c, v);
+        for (reg, mask, or) in [(A0, V1, true), (V1, A1, false), (A0, A2, false)] {
+            c.g[reg][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+            let top = r32(c, reg);
+            c.g[V0][0] = Addr(top).off(0x4).lw(c);
+            c.g[V0][0] &= c.g[mask][0];
+            if or {
+                c.g[V0][0] |= c.g[T1][0];
+            }
+            let v = c.g[V0][0];
+            Addr(top).off(0x4).sw(c, v);
+        }
+
+        // alpha = min(5 t, 1) (0 when negative).
+        c.lwc1(0, module + FADE_TIME);
+        c.mul_s(0, 0, 1);
+        c.c_le_s(21, 0);
+        if c.fcc() {
+            c.min_s(23, 0, 20);
+        }
+
+        // Render2D_DrawFilledRect(r2d, {-1,-1}, {1,1}, {alpha,0,0,0}, 0).
+        c.cycles += 21;
+        let gp = c.g[GP][0] as u32;
+        let sp0 = sp(c);
+        c.g[A0][0] = Addr(gp.wrapping_sub(0x844)).lw(c);
+        c.mov_s(12, 21);
+        c.swc1(22, sp0 + 0x4);
+        c.g[A1][0] = sx(sp0);
+        c.swc1(22, sp0);
+        c.g[A2][0] = sx(sp0 + 0x10);
+        c.swc1(20, sp0 + 0x10);
+        c.g[A3][0] = sx(sp0 + 0x20);
+        c.swc1(20, sp0 + 0x14);
+        c.swc1(23, sp0 + 0x20);
+        c.swc1(21, sp0 + 0x24);
+        c.swc1(21, sp0 + 0x28);
+        c.swc1(21, sp0 + 0x2c);
+        call_ptr(c, 0x0038_ec40, 0x0023_1f30)?;
+
+        // Pop the state.
+        let gp = c.g[GP][0] as u32;
+        c.g[V1][0] = Addr(gp.wrapping_sub(R2D_CTX_GP)).lw(c);
+        let ctx = r32(c, V1);
+        c.c_le_s(20, 23);
+        c.g[A0][0] = 1;
+        c.g[V0][0] = Addr(ctx).off(R2D_STATE_TOP).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x14));
+        let opaque = c.fcc();
+        let top = c.g[V0][0];
+        Addr(ctx).off(R2D_STATE_TOP).sw(c, top);
+        if !opaque {
+            c.cycles += 1;
+            c.g[A0][0] = 0;
+        }
+        c.cycles += 2;
+        c.g[V0][0] = c.g[A0][0];
+        epilogue(c, frame)
+    });
+
+    fn epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+        c.cycles += 8;
+        frame.restore(c, S0, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.restore_fpr(c, 23, 0x68);
+        frame.restore_fpr(c, 22, 0x60);
+        frame.restore_fpr(c, 21, 0x58);
+        frame.restore_fpr(c, 20, 0x50);
+        frame.close(c);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1673,6 +1909,70 @@ pub(crate) mod tests {
                 c.bus.write32(gp_at(0xf38), DATA + 0x1200);
                 c.bus.write32(DATA + 0xc, 0);
                 c.bus.write32(DATA + 0x30, 0);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::{put_words, SP as STACK_TOP};
+
+    /// Fade timer negative, zero, partial and saturating (alpha 1), random
+    /// render-state stack contents; the context's virtual calls and the
+    /// camera call inside the real Render2D_DrawFilledRect are fakes.
+    #[test]
+    fn app_module_render_fade_matches() {
+        covered(
+            ee::s06::f_00231d60__generated,
+            app_module_render_fade,
+            300,
+            &|c, seed| {
+                c.pc = 0x0023_1d60;
+                let mut r = machine(c, seed, 0x231d60, 4);
+                let gp = c.g[GP][0] as u32;
+                let module = DATA;
+                let ctx = DATA + 0x1000;
+                let stack = DATA + 0x2004;
+                let r2d = DATA + 0x3000;
+                let cam = DATA + 0x4000;
+                let t = match seed % 6 {
+                    0 => r.f32(1.0) | 0x8000_0000,
+                    1 => 0,
+                    2 => 0.1f32.to_bits(),
+                    3 => 0.3f32.to_bits(),
+                    4 => r.edge_f32(),
+                    _ => r.f32(0.4),
+                };
+                c.bus.write32(module + FADE_TIME, t);
+                c.bus.write32(gp.wrapping_sub(R2D_CTX_GP), ctx);
+                let top = stack + 0x14 * (seed % 3);
+                c.bus.write32(ctx + R2D_STATE_TOP, top);
+                crate::difftest::fill(c, &mut r, stack, 0x14);
+                crate::difftest::fill(c, &mut r, DEFAULT_STATE, 5);
+                c.bus.write32(ctx + R2D_VT, DATA + 0x5000);
+                slot(
+                    c,
+                    DATA + 0x5000,
+                    VT_SET_VIEWPORT,
+                    (r.next_u32() as i16) & !3,
+                    FAKE,
+                );
+                slot(
+                    c,
+                    DATA + 0x5000,
+                    VT_SET_TEXTURE,
+                    (r.next_u32() as i16) & !3,
+                    FAKE + 0x10,
+                );
+                c.bus.write32(gp.wrapping_sub(0x844), r2d);
+                c.bus.write32(gp + LENS_CAMERA_GP, cam);
+                c.bus.write32(cam + CAM_PROJECTOR_VT, DATA + 0x6000);
+                slot(
+                    c,
+                    DATA + 0x6000,
+                    0x238,
+                    (r.next_u32() as i16) & !3,
+                    FAKE + 0x20,
+                );
+                c.g[A0][0] = sx(module);
             },
         );
     }

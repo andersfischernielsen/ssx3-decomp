@@ -48,6 +48,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "StatsProcess_RenderStub",
     ),
     (0x002d_21c0, ssx_stats_man_ctor, "SSXStatsMan_ctor"),
+    (
+        0x002d_1d10,
+        halo_modifier_draw_quad_2,
+        "HaloModifier_DrawQuad",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -480,6 +485,270 @@ pub(crate) fn halo_push_and_draw(c: &mut Cpu, frame: Frame, gp: u32, stretch: Fp
     Ok(())
 }
 
+// ---------------------------------------------------- HaloModifier_DrawQuad
+
+/// `void HaloModifier_DrawQuad(const Vec4* pos, void* tex, int mode, float
+/// size, float spin)` (0x2d1d10): draw a camera-facing halo sprite. Unless
+/// the world's visibility test (virtual `+0x2d8` of `world+0x10d8`) rejects
+/// `pos`, append a 0x14-byte GS packet to the render context's packet
+/// (`ctx+0xe84`): the 0x14 bytes before the cursor are copied after it,
+/// the GS state template at 0x501420 after that, the header's fields
+/// patched (additive alpha blend, primitive 0x1c, ...) and the texture word
+/// `ctx[0xf50 + 4 (mode + 0x25)]` stored at +0x10. Then the quad: with no
+/// spin (`spin == 0`) one call to the drawer's sprite method (`+0x270`),
+/// else its rotated-quad method (`+0x278`) with angle `spin * k`, and for
+/// modes 1 and 4 a second, mirrored one (`-spin * k`). The cursor then
+/// steps back by 0x14.
+pub fn halo_modifier_draw_quad_2(c: &mut Cpu) {
+    /// `gp-0x854`: the world; `gp+0x2a90`: the render context.
+    const WORLD_GP: u32 = 0x854;
+    const CTX_GP: u32 = 0x2a90;
+    /// The render context's packet cursor, drawer and texture words.
+    const CTX_PACKET: u32 = 0xe84;
+    const CTX_DRAWER: u32 = 0x10d8;
+    const CTX_TEXTURES: u32 = 0xf50;
+    /// The GS state template copied into each halo packet.
+    const STATE_TEMPLATE: u32 = 0x0050_1420;
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x120);
+        c.g[A3][0] = c.lw(r32(c, GP).wrapping_sub(WORLD_GP));
+        frame.save(c, S0, 0xe0);
+        frame.save(c, S2, 0xc0);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S3, 0xb0);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_fpr(c, 23, 0x108);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_fpr(c, 22, 0x100);
+        c.f[23] = c.f[13];
+        frame.save(c, S1, 0xd0);
+        c.f[22] = c.f[12];
+        frame.save(c, S4, 0xa0);
+        c.g[A1][0] = c.g[S2][0];
+        frame.save(c, S5, 0x90);
+        frame.save(c, S6, 0x80);
+        frame.save_ra(c, 0x70);
+        frame.save_fpr(c, 24, 0x110);
+        frame.save_fpr(c, 21, 0xf8);
+        frame.save_fpr(c, 20, 0xf0);
+        // world->drawer->IsCulled(pos) (virtual +0x2d8).
+        c.g[V1][0] = c.lw(r32(c, A3).wrapping_add(CTX_DRAWER));
+        c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x2d8));
+        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x2dc));
+        let target = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, A3).wrapping_add(r32(c, A0)));
+        call_ptr(c, target, 0x002d_1d78)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0xe0);
+        } else {
+            draw_halo_packet(c)?;
+            frame.restore(c, S0, 0xe0);
+        }
+        c.cycles += 14;
+        frame.restore(c, S1, 0xd0);
+        frame.restore(c, S2, 0xc0);
+        frame.restore(c, S3, 0xb0);
+        frame.restore(c, S4, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore(c, S6, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.restore_fpr(c, 24, 0x110);
+        frame.restore_fpr(c, 23, 0x108);
+        frame.restore_fpr(c, 22, 0x100);
+        frame.restore_fpr(c, 21, 0xf8);
+        frame.restore_fpr(c, 20, 0xf0);
+        frame.close(c);
+        Ok(())
+    });
+
+    /// The visible case (0x2d1d80..0x2d2020): build the packet, draw.
+    fn draw_halo_packet(c: &mut Cpu) -> crate::call::Flow {
+        c.cycles += 98;
+        // The quad's colour (tex[0..4] rotated: w, x, y, z) -> sp+0.
+        let tex = r32(c, S0);
+        let sp0 = sp(c);
+        c.lwc1(3, tex.wrapping_add(0x8));
+        c.g[A0][0] = 0x50_0000;
+        c.lwc1(0, tex.wrapping_add(0xc));
+        c.g[A1][0] = 0xffff_ffff_ffbf_ffff;
+        c.lwc1(1, tex);
+        c.lwc1(2, tex.wrapping_add(0x4));
+        c.g[T4][0] = 0x40_0000;
+        c.swc1(0, sp0);
+        c.g[T5][0] = 0xffff_ffff_ffff_fffc;
+        c.swc1(1, sp0 + 0x4);
+        c.g[A3][0] = 0xffff_ffff_e000_03ff;
+        c.swc1(2, sp0 + 0x8);
+        c.swc1(3, sp0 + 0xc);
+        c.g[T6][0] = 0xffff_ffff_ffff_ff83;
+        let ctx = c.lw(r32(c, GP).wrapping_add(CTX_GP));
+        c.g[S1][0] = ctx;
+        let ctx = ctx as u32;
+        c.g[T7][0] = 0xffff_ffff_ffff_fc1f;
+        c.g[S0][0] = 0x80_0000;
+        // Repeat the previous 0x14-byte packet after the cursor.
+        let cur = c.lw(ctx.wrapping_add(CTX_PACKET));
+        c.g[V0][0] = cur;
+        let cur = cur as u32;
+        c.g[T0][0] = 0xffff_ffff_fe7f_ffff;
+        c.g[T1][0] = 0xffff_ffff_ffcf_0000;
+        c.g[T3][0] = 0xffff_ffff_fff0_0000;
+        c.ldl(V1, cur.wrapping_add(0x7));
+        c.ldr(V1, cur);
+        c.ldl(A2, cur.wrapping_add(0xf));
+        c.ldr(A2, cur.wrapping_add(0x8));
+        c.g[T2][0] = c.lw(cur.wrapping_add(0x10));
+        c.sdl(V1, cur.wrapping_add(0x1b));
+        c.sdr(V1, cur.wrapping_add(0x14));
+        c.sdl(A2, cur.wrapping_add(0x23));
+        c.sdr(A2, cur.wrapping_add(0x1c));
+        c.sw(cur.wrapping_add(0x24), c.g[T2][0]);
+        c.g[T1][0] |= 0xffff;
+        c.g[T3][0] |= 0xfff;
+        c.g[T2][0] = 0x1_4000;
+        // Advance the cursor; copy the state template into the new packet.
+        let cur = c.lw(ctx.wrapping_add(CTX_PACKET));
+        c.g[V1][0] = cur;
+        let cur = cur as u32;
+        c.g[A2][0] = sx(r32(c, S3).wrapping_add(0x25));
+        c.f[21] = 0;
+        c.g[V0][0] = sx(cur.wrapping_add(0x14));
+        c.g[A2][0] = sx(r32(c, A2) << 2);
+        c.sw(ctx.wrapping_add(CTX_PACKET), c.g[V0][0]);
+        c.g[A2][0] = sx(ctx.wrapping_add(r32(c, A2)));
+        c.g[S4][0] = sx(STATE_TEMPLATE);
+        c.ldl(S5, STATE_TEMPLATE + 0x7);
+        c.ldr(S5, STATE_TEMPLATE);
+        c.ldl(S6, STATE_TEMPLATE + 0xf);
+        c.ldr(S6, STATE_TEMPLATE + 0x8);
+        c.g[V0][0] = c.lw(STATE_TEMPLATE + 0x10);
+        c.sdl(S5, cur.wrapping_add(0x1b));
+        c.sdr(S5, cur.wrapping_add(0x14));
+        c.sdl(S6, cur.wrapping_add(0x23));
+        c.sdr(S6, cur.wrapping_add(0x1c));
+        c.sw(cur.wrapping_add(0x24), c.g[V0][0]);
+        // spin == 0 ?
+        c.c_eq_s(23, 21);
+        // Patch the header words of the packet.
+        let patch = |c: &mut Cpu, p: usize, off: u32, and: usize, or: Option<u64>| {
+            c.g[p][0] = c.lw(ctx.wrapping_add(CTX_PACKET));
+            let at = r32(c, p).wrapping_add(off);
+            c.g[V0][0] = c.lw(at);
+            c.g[V0][0] &= c.g[and][0];
+            if let Some(v) = or {
+                c.g[V0][0] |= v;
+            }
+            c.sw(at, c.g[V0][0]);
+        };
+        let (t4, s0, t2) = (c.g[T4][0], c.g[S0][0], c.g[T2][0]);
+        patch(c, A0, 0x4, A1, Some(t4));
+        patch(c, V1, 0x4, T5, None);
+        patch(c, A0, 0x8, A3, None);
+        patch(c, V1, 0x4, T6, Some(0x1c));
+        patch(c, A0, 0x8, T7, Some(0x100));
+        patch(c, A1, 0x4, T0, Some(s0));
+        patch(c, V1, 0x4, T1, None);
+        patch(c, A0, 0x4, T3, Some(t2));
+        // The texture word at +0x10.
+        c.g[V1][0] = c.lw(r32(c, A2).wrapping_add(CTX_TEXTURES));
+        c.g[V0][0] = c.lw(ctx.wrapping_add(CTX_PACKET));
+        let no_spin = c.fcc();
+        c.sh(r32(c, V0).wrapping_add(0x10), c.g[V1][0]);
+
+        if no_spin {
+            // drawer->Sprite(pos, &{size, size}, &{0, 0}, &{1, 1}, &colour).
+            c.cycles += 19;
+            let sp0 = sp(c);
+            c.g[V1][0] = c.lw(ctx.wrapping_add(CTX_DRAWER));
+            c.g[A1][0] = c.g[S2][0];
+            c.g[AT][0] = 0x3f80_0000;
+            c.f[0] = 0x3f80_0000;
+            c.g[A2][0] = sx(sp0 + 0x10);
+            c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x270));
+            c.g[A3][0] = sx(sp0 + 0x20);
+            c.swc1(22, sp0 + 0x14);
+            c.g[T0][0] = sx(sp0 + 0x60);
+            c.swc1(21, sp0 + 0x24);
+            c.g[A0][0] = sx(ctx.wrapping_add(r32(c, A0)));
+            c.swc1(0, sp0 + 0x64);
+            c.swc1(22, sp0 + 0x10);
+            c.swc1(21, sp0 + 0x20);
+            c.swc1(0, sp0 + 0x60);
+            c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x274));
+            let target = r32(c, V0);
+            c.g[T1][0] = c.g[SP][0];
+            call_ptr(c, target, 0x002d_2010)?;
+        } else {
+            // drawer->RotatedSprite(pos, &{size, size}, &{0, 0}, &{1, 1},
+            // &colour, 1, spin * k).
+            c.cycles += 25;
+            let sp0 = sp(c);
+            c.g[V1][0] = c.lw(ctx.wrapping_add(CTX_DRAWER));
+            c.g[S0][0] = sx(sp0 + 0x10);
+            c.g[AT][0] = 0x3f80_0000;
+            c.f[20] = 0x3f80_0000;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x278));
+            c.g[A2][0] = c.g[S0][0];
+            c.lwc1(24, r32(c, GP).wrapping_sub(0x3f98));
+            c.g[A3][0] = sx(sp0 + 0x20);
+            c.swc1(22, sp0 + 0x10);
+            c.g[A0][0] = sx(ctx.wrapping_add(r32(c, A0)));
+            c.swc1(22, sp0 + 0x14);
+            c.mul_s(12, 23, 24);
+            c.swc1(21, sp0 + 0x20);
+            c.g[T0][0] = sx(sp0 + 0x30);
+            c.swc1(21, sp0 + 0x24);
+            c.g[T1][0] = c.g[SP][0];
+            c.swc1(20, sp0 + 0x30);
+            c.swc1(20, sp0 + 0x34);
+            c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x27c));
+            let target = r32(c, V0);
+            c.g[T2][0] = 1;
+            call_ptr(c, target, 0x002d_1f60)?;
+            c.g[V1][0] = 1;
+            c.g[V0][0] = 4;
+            let mut mirrored = c.g[S3][0] == 1;
+            if !mirrored {
+                c.cycles += 2;
+                mirrored = c.g[S3][0] == 4;
+            }
+            if mirrored {
+                // The mirrored quad (angle -spin * k).
+                c.cycles += 21;
+                let sp0 = sp(c);
+                c.g[V1][0] = c.lw(ctx.wrapping_add(CTX_DRAWER));
+                c.f[12] = c.f[23] ^ 0x8000_0000;
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A2][0] = c.g[S0][0];
+                c.g[A0][0] = c.lh(r32(c, V1).wrapping_add(0x278));
+                c.g[A3][0] = sx(sp0 + 0x40);
+                c.swc1(22, sp0 + 0x14);
+                c.mul_s(12, 12, 24);
+                c.swc1(21, sp0 + 0x44);
+                c.g[A0][0] = sx(ctx.wrapping_add(r32(c, A0)));
+                c.swc1(20, sp0 + 0x54);
+                c.g[T0][0] = sx(sp0 + 0x50);
+                c.swc1(22, sp0 + 0x10);
+                c.g[T1][0] = c.g[SP][0];
+                c.swc1(21, sp0 + 0x40);
+                c.swc1(20, sp0 + 0x50);
+                c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x27c));
+                let target = r32(c, V0);
+                c.g[T2][0] = 1;
+                call_ptr(c, target, 0x002d_1fc0)?;
+            }
+        }
+        // Step the cursor back over the drawn packet.
+        c.g[V0][0] = c.lw(ctx.wrapping_add(CTX_PACKET));
+        c.cycles += 3;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x14));
+        c.sw(ctx.wrapping_add(CTX_PACKET), c.g[V0][0]);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -638,6 +907,61 @@ pub(crate) mod tests {
             ssx3_ee::s09::f_002d21b0__generated,
             stats_process_update_stub,
             8,
+        );
+    }
+    use super::*;
+
+    // ---------------------------------------------------- HaloModifier_DrawQuad
+
+    /// `HaloModifier_DrawQuad`: culled or visible (a real `return 0` method
+    /// or a fake), no spin / spin, modes 0..5 (1 and 4 draw the mirrored
+    /// quad), a packet cursor at various alignments (the unaligned copies).
+    /// The drawer's methods are fakes that log their arguments.
+    #[test]
+    fn halo_modifier_draw_quad_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        const RETURN_ZERO: u32 = 0x003a_5ab0;
+        check(
+            ee::s09::f_002d1d10__generated,
+            halo_modifier_draw_quad_2,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d1d, 3);
+                c.pc = 0x002d_1d10;
+                let (world, wvt, ctx, cvt, tex, pos) = (
+                    DATA + 0x10000,
+                    DATA + 0x14000,
+                    DATA + 0x18000,
+                    DATA + 0x1c000,
+                    DATA + 0x100,
+                    DATA + 0x200,
+                );
+                let cur = DATA + 0x2000 + 4 * (seed % 4);
+                c.bus.write32(GAME_GP.wrapping_sub(0x854), world);
+                c.bus.write32(world + 0x10d8, wvt);
+                c.bus.write16(wvt + 0x2d8, (r.next_u32() & 0x7c) as u16);
+                c.bus
+                    .write32(wvt + 0x2dc, if seed % 5 == 0 { FAKE } else { RETURN_ZERO });
+                c.bus.write32(GAME_GP + 0x2a90, ctx);
+                fill(c, &mut r, ctx + 0xf50, 0x30);
+                c.bus.write32(ctx + 0xe84, cur);
+                c.bus.write32(ctx + 0x10d8, cvt);
+                for (k, off) in [0x270u32, 0x278].into_iter().enumerate() {
+                    c.bus.write16(cvt + off, (r.next_u32() & 0x7c) as u16);
+                    c.bus.write32(cvt + off + 4, FAKE + 0x10 * (k as u32 + 1));
+                }
+                fill(c, &mut r, cur - 0x20, 0x20);
+                fill(c, &mut r, 0x0050_1420, 6);
+                fill(c, &mut r, tex, 4);
+                fill(c, &mut r, pos, 4);
+                c.bus.write32(GAME_GP.wrapping_sub(0x3f98), r.f32(1.0));
+                c.g[A0][0] = sx(pos);
+                c.g[A1][0] = sx(tex);
+                c.g[A2][0] = sx((seed / 2) % 6);
+                c.f[12] = r.f32(50.0);
+                c.f[13] = if seed % 3 == 0 { 0 } else { r.f32(6.0) };
+            },
         );
     }
 }
