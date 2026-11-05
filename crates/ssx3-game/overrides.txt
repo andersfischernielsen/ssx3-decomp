@@ -6204,7 +6204,8 @@
 0x00245f50    cFEStateProgressiveVerifyPS2_Init
 0x001b4cd8    cFEStateNetConfig_LoadConfigList
 0x00101b60    FocusMan_Update
-# tick rate: UI animation values between 60 Hz frames
+# tick rate: UI animation values between 60 Hz frames (and the screen whose timeline clocks them)
 0x003975e0    UIAnim_Apply
+0x0039d778    UIScreen_Update
 # The boot logos (EA, THX) can be skipped with X/Start, like the intro
 0x001a27a0    ssx_BootMoviesUpdate

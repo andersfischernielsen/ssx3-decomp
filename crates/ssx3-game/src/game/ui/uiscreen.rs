@@ -8,6 +8,7 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -97,6 +98,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         uiscreen_cmd_end_transition_out,
         "UIScreen_CmdEndTransitionOut",
     ),
+    (0x0039_d778, ui_screen_update, "UIScreen_Update"),
     (0x0039_d860, ui_screen_find_object, "UIScreen_FindObject"),
     (0x0039_d8c0, c_ui_scroll_dtor, "cUIScroll_dtor"),
     (0x0039_d968, cui_scroll_render, "cUIScroll_Render"),
@@ -130,23 +132,41 @@ pub(crate) mod callee {
 
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_ANIM_SET_CREATE_ANIM;
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_CTOR_2;
+    pub(crate) use crate::game::fe::feasyncfile::callee::UI_LIST_FIRST_4 as UI_LIST_FIRST_2;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_DTOR;
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_OBJECT_SET_ANIM;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::UI_SCREEN_FIND_OBJECT_2 as UI_SCREEN_FIND_OBJECT;
 
+    pub(crate) use crate::game::main::gamemode::callee::UI_LIST_NODE_IS_SENTINEL as UI_LIST_NODE_IS_SENTINEL_2;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_CTOR_2 as UI_LIST_CTOR;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_DELETE_ALL;
     pub(crate) use crate::game::scripter::ssxscriptengine::callee::UI_LIST_NODE_DTOR_BODY;
 
     pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_NODE_UNLINK;
     pub(crate) use crate::game::sound::icepick::worldtriggermanager::callee::UI_LIST_PUSH_BACK;
+    pub(crate) use crate::game::ui::uistate::ui_callee::NODE_UNLINK as UI_LIST_NODE_UNLINK_2;
 
     // UI (shard 13).
     pub const C_UI_GROUP_SET_FOCUS: Callee = Callee {
         addr: 0x0039_8638,
         f: ee::s13::f_00398638,
+    };
+
+    pub const UI_SCREEN_GET_PRIMARY_THREAD: Callee = Callee {
+        addr: 0x0039_c7c0,
+        f: ee::s13::f_0039c7c0,
+    };
+
+    pub const UI_SCREEN_RUN_THREAD_FRAME: Callee = Callee {
+        addr: 0x0039_c978,
+        f: ee::s13::f_0039c978,
+    };
+
+    pub const C_UI_GROUP_UPDATE_ANIM: Callee = Callee {
+        addr: 0x0039_8910,
+        f: ee::s13::f_00398910,
     };
 }
 
@@ -400,6 +420,162 @@ pub fn ui_screen_run_thread_frame(c: &mut Cpu) {
     ee::s13::f_0039c978__generated(c);
     let frame = c.bus.read16(thread.wrapping_add(0xc)) as u32;
     crate::tick::frame60_ran(c, thread, frame);
+}
+
+/// Resumed in the thread walk (the `UIScreen_RunThreadFrame` back edge).
+pub(crate) const UI_SCREEN_UPDATE_WALK: u32 = 0x0039_d7b0;
+
+/// `void UIScreen_Update(UIScreen* s)` (0x39d778): run the screen's threads
+/// (`UIScreen_RunThreadFrame`), then its widgets' animations
+/// (`cUIGroup_UpdateAnim`) at the frame of its timeline thread.
+pub fn ui_screen_update(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x0039_d778 => {
+                    c.cycles += 11;
+                    let frame = Frame::open(c, 0x40);
+                    frame.save(c, S2, 0x10);
+                    c.g[S2][0] = c.g[A0][0];
+                    frame.save(c, S0, 0x30);
+                    frame.save(c, S1, 0x20);
+                    frame.save_ra(c, 0);
+                    c.g[RA][0] = sx(0x0039_d798);
+                    c.g[A0][0] = sx(p(r32(c, S2), 0x18));
+                    callee::UI_LIST_FIRST_2.call(c, 0x0039_d798)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    let empty = c.g[S0][0] == 0;
+                    c.g[A0][0] = c.g[S2][0];
+                    pc = if empty { 0x0039_d814 } else { 0x0039_d7a4 };
+                    continue;
+                }
+                0x0039_d7a4 => {
+                    c.cycles += 2;
+                    pc = 0x0039_d804;
+                    continue;
+                }
+                UI_SCREEN_UPDATE_WALK => {
+                    c.cycles += 4;
+                    c.g[V1][0] = c.lhu(p(r32(c, S0), 0xe));
+                    c.g[V0][0] = c.lhu(p(r32(c, S0), 0xc));
+                    let finished = c.g[V1][0] == c.g[V0][0];
+                    c.g[S1][0] = c.lw(p(r32(c, S0), 0x4));
+                    if finished {
+                        pc = 0x0039_d800;
+                    } else {
+                        pc = 0x0039_d7c0;
+                    }
+                    continue;
+                }
+                0x0039_d7c0 => {
+                    c.cycles += 7;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[S0][0];
+                    callee::UI_SCREEN_RUN_THREAD_FRAME.call(c, 0x0039_d7cc)?;
+                    c.g[V0][0] = c.lb(p(r32(c, S0), 0x13)) & 0x1;
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = c.g[S1][0];
+                        pc = 0x0039_d804;
+                    } else {
+                        pc = 0x0039_d7dc;
+                    }
+                    continue;
+                }
+                0x0039_d7dc => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::UI_LIST_NODE_UNLINK_2.call(c, 0x0039_d7e4)?;
+                    let gone = c.g[S0][0] == 0;
+                    c.g[A1][0] = 0x3;
+                    pc = if gone { 0x0039_d800 } else { 0x0039_d7ec };
+                    continue;
+                }
+                0x0039_d7ec => {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(p(r32(c, S0), 0x8));
+                    c.g[A0][0] = c.lh(p(c.g[V0][0] as u32, 0x8));
+                    c.g[V1][0] = c.lw(p(c.g[V0][0] as u32, 0xc));
+                    let target = c.g[V1][0] as u32;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, target, 0x0039_d800)?;
+                    pc = 0x0039_d800;
+                    continue;
+                }
+                0x0039_d800 => {
+                    c.cycles += 1;
+                    c.g[S0][0] = c.g[S1][0];
+                    pc = 0x0039_d804;
+                    continue;
+                }
+                0x0039_d804 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    callee::UI_LIST_NODE_IS_SENTINEL_2.call(c, 0x0039_d80c)?;
+                    let more = c.g[V0][0] == 0;
+                    c.g[A0][0] = c.g[S2][0];
+                    if more {
+                        if back_edge_unwinds(c, UI_SCREEN_UPDATE_WALK) {
+                            return Err(Unwound);
+                        }
+                        pc = UI_SCREEN_UPDATE_WALK;
+                    } else {
+                        pc = 0x0039_d814;
+                    }
+                    continue;
+                }
+                0x0039_d814 => {
+                    c.cycles += 4;
+                    c.g[S0][0] = 0xffff;
+                    callee::UI_SCREEN_GET_PRIMARY_THREAD.call(c, 0x0039_d81c)?;
+                    if c.g[V0][0] != 0 {
+                        c.g[S0][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0xc));
+                        pc = 0x0039_d838;
+                    } else {
+                        pc = 0x0039_d824;
+                    }
+                    continue;
+                }
+                0x0039_d824 => {
+                    c.cycles += 4;
+                    c.g[A0][0] = sx(p(r32(c, S2), 0x18));
+                    callee::UI_LIST_FIRST_2.call(c, 0x0039_d82c)?;
+                    let empty = c.g[V0][0] == 0;
+                    c.g[A0][0] = sx(p(r32(c, S2), 0x40));
+                    pc = if empty { 0x0039_d83c } else { 0x0039_d834 };
+                    continue;
+                }
+                0x0039_d834 => {
+                    c.cycles += 1;
+                    c.g[S0][0] = c.lhu((c.g[V0][0] as u32).wrapping_add(0xc));
+                    pc = 0x0039_d838;
+                    continue;
+                }
+                0x0039_d838 => {
+                    c.cycles += 1;
+                    c.g[A0][0] = sx(p(r32(c, S2), 0x40));
+                    pc = 0x0039_d83c;
+                    continue;
+                }
+                0x0039_d83c => {
+                    c.cycles += 8;
+                    c.g[A1][0] = c.g[S0][0];
+                    callee::C_UI_GROUP_UPDATE_ANIM.call(c, 0x0039_d844)?;
+                    let frame = Frame { size: 0x40 };
+                    frame.restore(c, S0, 0x30);
+                    frame.restore(c, S1, 0x20);
+                    frame.restore(c, S2, 0x10);
+                    frame.restore_ra(c, 0);
+                    frame.close(c);
+                    return Ok(());
+                }
+                _ => {
+                    c.jump_out(pc, 0x0039_d778, 0x0039_d85c);
+                    return Ok(());
+                }
+            }
+        }
+    })
 }
 
 /// `UIKeyframe* UIScreen_FindKeyframe(UIScreen* s, unsigned short frame)`
@@ -1918,6 +2094,107 @@ pub(crate) mod tests {
             }
             assert_eq!(c.bus.read16(thread + 0xc), 60, "{hz} Hz");
         }
+    }
+
+    #[test]
+    fn ui_screen_update_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        check_events(
+            ee::s13::f_0039d778__generated,
+            ui_screen_update,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x39d7_7800 ^ seed as u64);
+                scramble(c, &mut r);
+                let mode: Events = schedule(c, &mut r, seed, 0x0039_d778);
+                // Each choice below is drawn on its own, so every path meets
+                // every event mode.
+                let frame = (r.next_u32() % 7) as u16;
+                let speed = [1i8, 2, -1, 0][(r.next_u32() % 4) as usize];
+                let end = [0xffffu16, 3, 0][(r.next_u32() % 3) as usize];
+                let n = (r.next_u32() % 3) as u16;
+                let (screen, thread) = thread_fixture(c, &mut r, frame, speed, end, n);
+                let sentinel = DATA + 0x900;
+                c.bus.write32(sentinel + 4, sentinel);
+                // A second thread on half the seeds: the walk reaches it over
+                // the back edge, where an event may unwind and resume.
+                let thread2 = DATA + 0x180;
+                let two = r.next_u32() % 2 == 0;
+                if two {
+                    let f2 = (r.next_u32() % 7) as u16;
+                    let ran = if r.next_u32() % 3 == 0 {
+                        f2
+                    } else {
+                        (r.next_u32() % 7) as u16
+                    };
+                    c.bus.write16(thread2 + 0xc, f2);
+                    c.bus.write16(thread2 + 0xe, ran);
+                    c.bus
+                        .write16(thread2 + 0x10, [0xffffu16, 3][(r.next_u32() % 2) as usize]);
+                    c.bus
+                        .write8(thread2 + 0x12, [1i8, -1][(r.next_u32() % 2) as usize] as u8);
+                    c.bus.write8(thread2 + 0x13, (r.next_u32() % 2) as u8);
+                    c.bus.write32(thread2, 0);
+                    c.bus.write32(thread2 + 4, sentinel);
+                }
+                // The first thread: finished (`+0xe` is its frame), held
+                // (bit 0 of `+0x13`), or run and removed through the unlink
+                // path.
+                let kind = r.next_u32() % 3;
+                if kind == 0 {
+                    c.bus.write16(thread + 0xe, frame);
+                }
+                c.bus.write8(thread + 0x13, (kind == 1) as u8);
+                c.bus.write32(thread, 0);
+                c.bus
+                    .write32(thread + 4, if two { thread2 } else { sentinel });
+                // A null next link on some seeds: the walk steps onto node 0
+                // (a runnable thread linking back to the last one), runs and
+                // unlinks it, and skips the cleanup call of a null node.
+                if r.next_u32() % 4 == 0 {
+                    let last = if two { thread2 } else { thread };
+                    c.bus.write32(last + 4, 0);
+                    let f0 = (r.next_u32() % 5) as u16;
+                    c.bus.write32(0, last);
+                    c.bus.write32(4, sentinel);
+                    c.bus.write16(0xc, f0);
+                    c.bus.write16(0xe, f0.wrapping_add(1));
+                    c.bus.write16(0x10, 0xffff);
+                    c.bus.write8(0x12, 1);
+                    c.bus.write8(0x13, 0);
+                }
+                // A primary thread (bit 25 of the word at `+0x10`: bit 1 of
+                // `+0x13`) on some seeds, either thread.
+                let primary = match r.next_u32() % 3 {
+                    0 => thread,
+                    1 if two => thread2,
+                    _ => 0,
+                };
+                if primary != 0 {
+                    let flags = c.bus.read8(primary + 0x13);
+                    c.bus.write8(primary + 0x13, flags | 2);
+                }
+                // The removal path calls a cleanup through a fabricated
+                // vtable: a safe read of the thread's next link.
+                let cleanup = DATA + 0xa00;
+                c.bus.write32(thread + 8, cleanup);
+                c.bus.write32(thread2 + 8, cleanup);
+                c.bus.write16(cleanup + 8, 0);
+                c.bus.write32(cleanup + 0xc, 0x0039_7718);
+                // An empty node list and a null animation for the group.
+                c.bus.write32(screen + 0x40 + 0x74 + 4, 0);
+                c.bus.write32(screen + 0x40 + 0xc, 0);
+                // The thread list: no first node, empty, or the threads.
+                let first = match r.next_u32() % 8 {
+                    0 => 0,
+                    1 => sentinel,
+                    _ => thread,
+                };
+                c.bus.write32(screen + 0x18 + 4, first);
+                c.g[A0][0] = sx(screen);
+                mode
+            },
+        );
     }
 
     #[test]
