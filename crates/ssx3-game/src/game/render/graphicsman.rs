@@ -133,6 +133,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Emitter_UpdateDescriptor",
     ),
     (0x0036_a1e8, deferred_delete_advance_frame, "DeferredDelete_AdvanceFrame"),
+    (0x0036_c740, ps2_graphics_man_reset_bloom_params, "PS2GraphicsMan_ResetBloomParams"),
 ];
 
 /// The game's render-context singleton (`gp+0x2a90`, `D_004A5B80`): its
@@ -5848,6 +5849,46 @@ pub fn deferred_delete_advance_frame(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_ResetBloomParams (0x36c740)
+
+/// PS2GraphicsMan: the bloom parameter sets (0x1c bytes each, 7 floats).
+pub(crate) const BLOOM_PARAMS: u32 = 0x6cd4;
+
+
+pub(crate) const BLOOM_PARAMS_SIZE: u64 = 0x1c;
+
+
+/// The defaults (`D_004A43D4..E4`, `D_004A43F0/F4`) as `gp` offsets, in the
+/// order of the 7 fields.
+pub(crate) const BLOOM_DEFAULTS_GP: [u32; 7] = [0x12e4, 0x12e8, 0x12ec, 0x12f0, 0x12f4, 0x1300, 0x1304];
+
+
+
+/// `void PS2GraphicsMan_ResetBloomParams(PS2GraphicsMan* self, int idx)`
+/// (0x36c740): copy the default bloom parameters into set `idx`. Leaves
+/// LO/HI = `idx * 0x1c`, a1 = the set's offset in the object, a0 = the
+/// set, f0/f1 the last two defaults copied.
+pub fn ps2_graphics_man_reset_bloom_params(c: &mut Cpu) {
+    c.cycles += 19;
+    c.g[V0][0] = BLOOM_PARAMS_SIZE;
+    c.mult(0, A1, A1, V0); // a1 = idx * 0x1c
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(BLOOM_PARAMS));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+    let set = r32(c, A0);
+    let gp = r32(c, GP);
+    for (i, off) in BLOOM_DEFAULTS_GP.into_iter().enumerate() {
+        // Alternates f1, f0 as the original does.
+        let f = if i % 2 == 0 { 1 } else { 0 };
+        c.lwc1(f, gp.wrapping_add(off));
+        c.swc1(f, set.wrapping_add(4 * i as u32));
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6553,5 +6594,30 @@ pub(crate) mod tests {
             }
             c.bus.write32(bucket.wrapping_add((next * 4) as u32), head);
         });
+    }
+    use super::*;
+    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
+
+
+    /// Random defaults in `.sdata`, set index 0..7 on a random object.
+    #[test]
+    fn ps2_graphics_man_reset_bloom_params_matches() {
+        use crate::difftest::{check_lohi, scramble, Rng, GAME_GP};
+        check_lohi(
+            ee::s12::f_0036c740__generated,
+            ps2_graphics_man_reset_bloom_params,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x36_c740 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                for off in BLOOM_DEFAULTS_GP {
+                    c.bus.write32(GAME_GP + off, r.edge_f32());
+                }
+                c.g[A0][0] = sx(DATA + (r.next_u32() & 0xfff0));
+                c.g[A1][0] = (seed % 8) as u64;
+                c.pc = 0x0036_c740;
+            },
+        );
     }
 }

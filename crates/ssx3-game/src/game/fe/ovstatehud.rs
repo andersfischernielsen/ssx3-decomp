@@ -93,6 +93,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001f_1b30, hud_draw_text_elem, "HUD_DrawTextElem"),
     (0x001f_16c0, hud_draw_time_elem, "HUD_DrawTimeElem"),
     (0x0021_ea00, hud_draw_panel_segment, "HUD_DrawPanelSegment"),
+    (0x001f_3188, load_indicator_update, "LoadIndicator_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15593,6 +15594,61 @@ pub fn hud_draw_panel_segment(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// 0x1f3188 LoadIndicator_Update
+
+/// `gp`-relative `.lit4` entry with the per-tick step (1/60 s).
+pub(crate) const LOAD_INDICATOR_LIT_STEP: u32 = 0x555c;
+
+
+
+/// `void LoadIndicator_Update(LoadIndicator* self)` (0x1f3188): while the
+/// indicator is active (+4), advance its animation clock (+8) by one tick
+/// and wrap it into (0, 2] by subtracting 2 while it exceeds 2.
+pub fn load_indicator_update(c: &mut Cpu) {
+    const ACTIVE: u32 = 0x4;
+    const CLOCK: u32 = 0x8;
+    c.cycles += 3;
+    let this = r32(c, A0);
+    c.g[V0][0] = c.lw(this.wrapping_add(ACTIVE));
+    let active = c.g[V0][0] != 0;
+    c.g[V0][0] = sx(this.wrapping_add(CLOCK));
+    if active {
+        c.cycles += 9;
+        c.lwc1(1, this.wrapping_add(CLOCK));
+        c.lwc1(0, r32(c, GP).wrapping_sub(LOAD_INDICATOR_LIT_STEP));
+        c.g[AT][0] = 0x4000_0000; // 2.0
+        c.mtc1(AT, 2);
+        c.add_s(1, 1, 0);
+        c.c_lt_s(2, 1);
+        let over = c.fcc();
+        c.swc1(1, this.wrapping_add(CLOCK));
+        if over {
+            c.cycles += 2;
+            c.sub_s(1, 1, 2);
+            loop {
+                // 0x1f31c0
+                c.cycles += 4;
+                c.c_lt_s(2, 1);
+                if !c.fcc() {
+                    break;
+                }
+                c.sub_s(1, 1, 2);
+                if event_due(c) {
+                    deliver_event_here(c, 0x001f_31c0);
+                }
+            }
+            c.cycles += 1;
+            c.swc1(1, r32(c, V0));
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16878,5 +16934,35 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+    use super::*;
+
+
+    /// LoadIndicator_Update: inactive on one seed in four; the clock
+    /// anywhere in [-3, 57) (no wrap, one or many subtractions), the step
+    /// literal 1/60 or a random small value. Events are delivered in the
+    /// wrap loop.
+    #[test]
+    fn load_indicator_update_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{DATA, GAME_GP};
+        const SELF: u32 = DATA + 0x2_0000;
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = machine(c, seed, 0x1f31_8800, 0);
+            let active = if seed % 4 == 0 { 0 } else { 1 + r.next_u32() % 7 };
+            c.bus.write32(SELF + 4, active);
+            let clock = -3.0 + (r.next_u32() % 60_000) as f32 / 1000.0;
+            c.bus.write32(SELF + 8, clock.to_bits());
+            let step = if seed % 3 == 0 {
+                r.f32(1.0)
+            } else {
+                (1.0f32 / 60.0).to_bits()
+            };
+            c.bus.write32(GAME_GP - LOAD_INDICATOR_LIT_STEP, step);
+            c.g[A0][0] = SELF as u64;
+            schedule(c, &mut r, seed, 0x001f_3188)
+        };
+        check_events(ee::s04::f_001f3188__generated, load_indicator_update, 300, &setup);
     }
 }

@@ -59,6 +59,7 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::call;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -146,6 +147,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ccut_scene_transition_man_update,
         "cCutSceneTransitionMan_Update",
     ),
+    (0x002e_b8f0, transition_effect_update_screen_rect, "TransitionEffect_UpdateScreenRect"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5085,6 +5087,68 @@ pub fn ccut_scene_transition_man_update(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod transition_rect {
+
+    /// The world object (gp+0x2a90); its vtable pointer at +0x10d8, the
+    /// screen-rect getter at vtable +0x150.
+    pub const GP_WORLD: u32 = 0x2a90;
+
+    pub const WORLD_VTABLE: u32 = 0x10d8;
+
+    pub const VT_SCREEN_RECT: u32 = 0x150;
+
+    /// The rect fields read: left (+4) and width (+8).
+    pub const RECT_LEFT: u32 = 0x4;
+
+    pub const RECT_WIDTH: u32 = 0x8;
+
+    /// Cached left, right (left + width) and width (right - left).
+    pub const GP_LEFT: u32 = 0xa4c;
+
+    pub const GP_RIGHT: u32 = 0xa50;
+
+    pub const GP_WIDTH: u32 = 0xa54;
+}
+
+
+
+/// `void TransitionEffect_UpdateScreenRect(void)` (0x2eb8f0): caches the
+/// world's screen rect for the transition effect: left, right = left + width
+/// and the width recomputed as right - left.
+pub fn transition_effect_update_screen_rect(c: &mut Cpu) {
+    use transition_rect::*;
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x10);
+        let gp = c.g[GP][0] as u32;
+        c.g[A1][0] = Addr(gp.wrapping_add(GP_WORLD)).lw(c);
+        frame.save_ra(c, 0);
+        let world = r32(c, A1);
+        c.g[V1][0] = Addr(world.wrapping_add(WORLD_VTABLE)).lw(c);
+        let vt = r32(c, V1);
+        let delta = Addr(vt.wrapping_add(VT_SCREEN_RECT)).lh(c);
+        c.g[V0][0] = Addr(vt.wrapping_add(VT_SCREEN_RECT + 4)).lw(c);
+        let getter = r32(c, V0);
+        c.g[A0][0] = sx(world.wrapping_add(delta as u32));
+        call_ptr(c, getter, 0x002e_b910)?;
+        let rect = r32(c, V0);
+        let left = Addr(rect.wrapping_add(RECT_LEFT)).read_fpu(c);
+        let width = Addr(rect.wrapping_add(RECT_WIDTH)).read_fpu(c);
+        let gp = c.g[GP][0] as u32;
+        Addr(gp.wrapping_add(GP_LEFT)).write_fpu(c, left);
+        let right = width + left;
+        c.f[1] = right.0;
+        frame.restore_ra(c, 0);
+        let span = right - left;
+        c.f[0] = span.0;
+        Addr(gp.wrapping_add(GP_RIGHT)).write_fpu(c, right);
+        Addr(gp.wrapping_add(GP_WIDTH)).write_fpu(c, span);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5968,6 +6032,36 @@ pub(crate) mod tests {
                 let vt = vtable(c, &mut r, &[RC_VT_SET_FADE]);
                 c.bus.write32(ctx + PT_VTABLE, vt);
                 c.g[A0][0] = this as u64;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::{check_paths};
+
+
+    /// The world (gp+0x2a90) at DATA with its vtable's screen-rect getter a
+    /// fake returning a pointer to a random rect (sometimes unwinding).
+    #[test]
+    fn transition_effect_update_screen_rect_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use transition_rect::*;
+        covered(
+            ee::s09::f_002eb8f0__generated,
+            transition_effect_update_screen_rect,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2eb8f0, 1);
+                c.pc = 0x002e_b8f0;
+                let world = DATA;
+                let vt = DATA + 0x2000;
+                let rect = DATA + 0x3000;
+                c.bus.write32(GAME_GP + GP_WORLD, world);
+                c.bus.write32(world + WORLD_VTABLE, vt);
+                c.bus.write16(vt + VT_SCREEN_RECT, ((r.next_u32() as i16) & !3) as u16);
+                c.bus.write32(vt + VT_SCREEN_RECT + 4, FAKE);
+                c.bus.write32(rect + RECT_LEFT, if seed % 4 == 0 { r.edge_f32() } else { r.f32(640.0) });
+                c.bus.write32(rect + RECT_WIDTH, if seed % 4 == 1 { r.edge_f32() } else { r.f32(640.0) });
+                c.bus.write32(LOG_RESULTS, rect);
             },
         );
     }

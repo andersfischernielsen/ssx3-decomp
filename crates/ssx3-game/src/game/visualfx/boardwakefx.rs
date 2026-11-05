@@ -264,6 +264,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002e_3478, lens_fx_draw_flares, "LensFX_DrawFlares"),
     (0x002f_4690, lens_fx_draw_flare_set, "LensFX_DrawFlareSet"),
     (0x002e_23e0, dynamic_spray_queue_burst, "cDynamicSprayFX_QueueBurst"),
+    (0x002e_30d0, lens_fx_render, "LensFX_Render"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14144,6 +14145,52 @@ pub fn dynamic_spray_queue_burst(c: &mut Cpu) {
     ret(c);
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// WorldPainter_GetWeather48 (0x2ee600)
+
+/// The lens-effect slot array `D_004FA370` (0xf0 bytes per slot).
+pub(crate) const LENS_FX_SLOTS: u32 = 0x004f_a370;
+
+
+
+// ---------------------------------------------------------------------------
+// LensFX_Render (0x2e30d0)
+
+/// `LensFX_PrepareView(fx, view)` (0x2e3338).
+pub(crate) const LENS_FX_PREPARE_VIEW: Callee = Callee { addr: 0x002e_3338, f: ee::s09::f_002e3338 };
+
+
+/// `LensFX_DrawFlares(fx, view)` (0x2e3478).
+pub(crate) const LENS_FX_DRAW_FLARES: Callee = Callee { addr: 0x002e_3478, f: ee::s09::f_002e3478 };
+
+
+
+/// `void LensFX_Render(LensFX* fx, int view)` (0x2e30d0): prepare the view
+/// (camera rect/matrix/FOV, sun, flare projection), then draw its flares.
+pub fn lens_fx_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        LENS_FX_PREPARE_VIEW.call(c, 0x002e_30ec)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        LENS_FX_DRAW_FLARES.call(c, 0x002e_30f8)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -18082,5 +18129,114 @@ pub(crate) mod tests {
                 c.bus.write32(rider + RIDER_CARVE_C, cc);
             },
         );
+    }
+    use super::*;
+    pub(crate) use crate::game::ai::ai::tests::oc258_w32;
+
+
+    /// LensFX_Render: the `LensFX_PrepareView` fixture (camera interface
+    /// slots and the projector's occlusion slot are fakes, the matrix call
+    /// returns a random matrix, the painter's sun texture is -1) combined
+    /// with the `LensFX_DrawFlares` one (sun on or off, push/pop render-state
+    /// fakes, the camera doubling as the flare-quad renderer); views 0 and 1,
+    /// zero, negative and 1-4 flares; some fake calls unwind.
+    #[test]
+    fn lens_fx_render_matches() {
+        use crate::difftest::fakes::{FAKE, LOG_RESULTS};
+        use crate::difftest::fill;
+        // Camera / renderer (`*(gp + 0x2a90)`) and its interface vtable.
+        const CAMERA_GP: u32 = 0x2a90;
+        const CAM_VT: u32 = 0x10d8;
+        // LensFX layout.
+        const COUNTS: u32 = 0x60;
+        const FLARES: u32 = 0x68;
+        const FLARE_VIEW: u32 = 0x3000;
+        const FLARE: u32 = 0x30;
+        const FX_VT: u32 = 0x649c;
+        check(ee::s09::f_002e30d0__generated, lens_fx_render, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x002e_30d0, 8);
+            c.pc = 0x002e_30d0;
+            let fx = DATA + 0x4_0000;
+            let cam = DATA + 0x5_0000;
+            let cvt = DATA + 0x5_1000;
+            let painter_vt = DATA + 0x5_3000;
+            let holder = DATA + 0x5_2000;
+            let no_sun = DATA + 0x5_4000;
+            let src = DATA + 0x5_5000;
+            let matrix = DATA + 0x5_6000;
+            let top = DATA + 0x5_7000;
+            let view = seed % 2;
+            c.g[A0][0] = sx(fx);
+            c.g[A1][0] = view as u64;
+            // Camera interface: view rect, matrix, FOV, occlusion, sprite draw.
+            oc258_w32(c, GAME_GP + CAMERA_GP, cam);
+            oc258_w32(c, cam + CAM_VT, cvt);
+            for (i, off) in [0xe0u32, 0x118, 0xf0, 0x2d8, 0x278].into_iter().enumerate() {
+                let delta = (r.next_u32() as i16 as i32 % 64) & !3;
+                c.bus.write16(cvt + off, delta as u16);
+                oc258_w32(c, cvt + off + 4, FAKE + 0x10 * i as u32);
+            }
+            oc258_w32(c, cam + 0xe84, top);
+            fill(c, &mut r, top, 8);
+            oc258_w32(c, cam + 0x1024, r.next_u32());
+            oc258_w32(c, cam + 0x1028, r.next_u32());
+            fill(c, &mut r, matrix, 16);
+            oc258_w32(c, LOG_RESULTS + 4, matrix);
+            // Painter views 6 and 7: sun texture -1 (fake call 3).
+            for v in [6u32, 7] {
+                let entry = LENS_FX_SLOTS + v * 0xf0;
+                let obj = holder + 0x40;
+                oc258_w32(c, entry + 0x14, holder);
+                oc258_w32(c, holder, obj);
+                oc258_w32(c, obj + 4, painter_vt);
+            }
+            let delta = (r.next_u32() as i16 as i32 % 64) & !3;
+            c.bus.write16(painter_vt + 0x108, delta as u16);
+            oc258_w32(c, painter_vt + 0x10c, FAKE);
+            oc258_w32(c, no_sun, u32::MAX);
+            oc258_w32(c, LOG_RESULTS + 12, no_sun);
+            // Sun drawing on or off; push/pop render-state fakes.
+            oc258_w32(c, GAME_GP + 0xa28, if seed % 3 == 0 { 0 } else { r.next_u32() | 1 });
+            let fvt = DATA + 0x5_8000;
+            for (i, off) in [0x10u32, 0x18].into_iter().enumerate() {
+                let delta = (r.next_u32() as i16 as i32 & !3) as u16;
+                c.bus.write16(fvt + off, delta);
+                oc258_w32(c, fvt + off + 4, FAKE + 0x40 + 0x10 * i as u32);
+            }
+            oc258_w32(c, fx + FX_VT, fvt);
+            // The lens FX header, flare count and flares sharing one source.
+            fill(c, &mut r, fx, 0x18);
+            fill(c, &mut r, src, 0x10);
+            for j in 0..3 {
+                let v = if r.next_u32() % 7 == 3 { 0 } else { r.f32(50.0) };
+                oc258_w32(c, src + 0x10 + 4 * j, v);
+                oc258_w32(c, src + 0x1c + 4 * j, r.f32(1000.0));
+            }
+            for j in 0..4 {
+                let a = match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => r.f32(1.0) | 0x8000_0000,
+                    _ => r.f32(1.0) & !0x8000_0000,
+                };
+                oc258_w32(c, src + 0x40 + 4 * j, a);
+            }
+            let kind = [0x10, 0x20, 0x40, 0x00, 0x30, 0x50, 0x60, 0x70][(r.next_u32() % 8) as usize];
+            oc258_w32(c, src + 0xc, (r.next_u32() & !0x70) | kind);
+            let count = match seed % 4 {
+                0 => 0,
+                1 => (r.next_u32() % 5 + 1).wrapping_neg(),
+                _ => 1 + r.next_u32() % 4,
+            };
+            oc258_w32(c, fx + COUNTS + 4 * view, count);
+            for k in 0..4 {
+                let flare = fx + FLARES + view * FLARE_VIEW + k * FLARE;
+                fill(c, &mut r, flare, 0xc);
+                oc258_w32(c, flare + 0x20, src);
+                oc258_w32(c, flare + 0x28, r.f32(6.3));
+                let on = if r.next_u32() % 2 == 0 { 0 } else { 1 + r.next_u32() as u16 % 3 };
+                c.bus.write16(flare + 0x2c, on);
+                c.bus.write16(flare + 0x2e, (r.next_u32() % 2) as u16);
+            }
+        });
     }
 }

@@ -34,6 +34,8 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
+use crate::ps2f::FpuF32;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -60,6 +62,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "LunoVMRegister_AsFloat",
     ),
     (0x0022_6768, c_luno_table_entry_dtor, "cLunoTableEntry_dtor"),
+    (0x0022_24b8, luno_vm_call, "LunoVM_Call"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -761,6 +764,232 @@ pub fn luno_vm_register_read(c: &mut Cpu) {
     return;
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// LunoVM_Call (0x2224b8)
+
+/// `operator new(size, name, flags, align)` (through the function table).
+pub(crate) const LUNO_CALL_NEW_NAMED: u32 = 0x0031_7e30;
+
+
+/// The allocation name (`D_00479780`).
+pub(crate) const LUNO_CALL_NEW_NAME: u32 = 0x0047_9780;
+
+
+/// The allocation flags.
+pub(crate) const LUNO_CALL_NEW_FLAGS: u64 = 0x2000_0000;
+
+
+/// The VM's default second register (`D_004C9098`, a `cLunoValue`).
+pub(crate) const LUNO_CALL_DEFAULT_VALUE: u32 = 0x004c_9098;
+
+
+/// `cLunoValue`: 12 bytes, `{value (8 bytes, a table pointer for type 4), type}`.
+pub(crate) const LUNO_VALUE_SIZE: u64 = 0xc;
+
+
+pub(crate) const LUNO_VALUE_TYPE: u32 = 0x8;
+
+
+/// Value types: a table reference (counted) and an 8-byte pair.
+pub(crate) const LUNO_TYPE_TABLE: u64 = 4;
+
+
+pub(crate) const LUNO_TYPE_PAIR: u64 = 5;
+
+
+
+pub(crate) const LUNO_CALL_TABLE_DTOR: Callee = Callee {
+    addr: 0x0022_4df0,
+    f: ee::s05::cLunoTable_dtor,
+};
+
+
+pub(crate) const LUNO_CALL_TABLE_ASSIGN: Callee = Callee {
+    addr: 0x0022_5068,
+    f: ee::s05::cLunoTable_Assign,
+};
+
+
+pub(crate) const LUNO_CALL_EXECUTE: Callee = Callee {
+    addr: 0x0022_27d0,
+    f: ee::s05::LunoVM_Execute,
+};
+
+
+
+/// `void LunoVM_Call(cLunoValue** out, LunoState* state, cLunoValue* table,
+/// void* ctx)` (0x2224b8): run a Luno script function. Allocates the
+/// register file (`n` values, `n` read from the script's function record at
+/// `*state + *(*state + 4) + 8`, a 16-byte count header in front, every
+/// value cleared), stores it in `*out`, sets register 0 to a reference to
+/// `table` and register 1 to a copy of the VM default value (`D_004C9098`:
+/// a table reference is counted, a type-5 pair copied as 8 bytes, anything
+/// else as one word), each first releasing an old table reference, then
+/// runs `LunoVM_Execute(out, state, ctx)`.
+pub fn luno_vm_call(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x90);
+        c.g[V1][0] = LUNO_VALUE_SIZE;
+        for (reg, off) in [
+            (S1, 0x70),
+            (S3, 0x50),
+            (S4, 0x40),
+            (S5, 0x30),
+            (S6, 0x20),
+            (S7, 0x10),
+            (S0, 0x80),
+            (S2, 0x60),
+        ] {
+            frame.save(c, reg, off);
+        }
+        c.g[S3][0] = c.g[A2][0]; // table
+        c.g[S4][0] = c.g[A0][0]; // out
+        c.g[S6][0] = c.g[A1][0]; // state
+        c.g[S7][0] = c.g[A3][0]; // ctx
+        c.g[A2][0] = LUNO_CALL_NEW_FLAGS;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(LUNO_CALL_NEW_NAME);
+        c.g[A3][0] = 0;
+        c.g[S5][0] = 0x4d_0000;
+        // n = the register count of the function record.
+        let script = Addr(r32(c, S6)).lw(c);
+        let code_off = Addr(script as u32).off(4).lw(c);
+        c.g[A0][0] = code_off;
+        let record = (script as u32).wrapping_add(code_off as u32);
+        c.g[V0][0] = sx(record);
+        c.g[S0][0] = Addr(record).off(8).lw(c);
+        c.mult(0, V1, S0, V1); // v1 = n * 12
+        c.g[A0][0] = sx(r32(c, V1).wrapping_add(0x10));
+        call_ptr(c, LUNO_CALL_NEW_NAMED, 0x0022_2524)?;
+
+        // The count header, then clear every value.
+        let block = r32(c, V0);
+        c.g[S1][0] = sx(block.wrapping_add(0x10));
+        let w_s0 = c.g[S0][0];
+        Addr(block).sw(c, w_s0);
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        c.g[V0][0] = c.g[S1][0];
+        if c.g[S0][0] != 0 {
+            c.cycles += 2;
+            c.g[A0][0] = u64::MAX;
+            loop {
+                c.cycles += 7;
+                let value = r32(c, V0);
+                Addr(value).off(LUNO_VALUE_TYPE).sw(c, 0);
+                c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+                Addr(value).sw(c, 0);
+                let more = c.g[V1][0] != c.g[A0][0];
+                c.g[V0][0] = sx(value.wrapping_add(LUNO_VALUE_SIZE as u32));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0022_2540);
+                }
+            }
+        }
+
+        // Register 0: release an old table reference, then reference `table`.
+        c.cycles += 4;
+        let regs = r32(c, S1);
+        c.g[V0][0] = Addr(regs).off(LUNO_VALUE_TYPE).lw(c);
+        c.g[S2][0] = LUNO_TYPE_TABLE;
+        let w_s1 = c.g[S1][0];
+        Addr(r32(c, S4)).sw(c, w_s1);
+        if c.g[V0][0] == LUNO_TYPE_TABLE {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 2;
+            LUNO_CALL_TABLE_DTOR.call(c, 0x0022_2578)?;
+        }
+        c.cycles += 11;
+        c.g[A1][0] = c.g[S3][0];
+        let regs = r32(c, S1);
+        Addr(regs).off(LUNO_VALUE_TYPE).sw(c, 0);
+        Addr(regs).sw(c, 0);
+        c.g[A0][0] = c.g[S1][0];
+        LUNO_CALL_TABLE_ASSIGN.call(c, 0x0022_258c)?;
+        c.g[S3][0] = sx(LUNO_CALL_DEFAULT_VALUE);
+        c.g[S0][0] = Addr(r32(c, S4)).lw(c);
+        let w_s2 = c.g[S2][0];
+        Addr(r32(c, S1)).off(LUNO_VALUE_TYPE).sw(c, w_s2);
+
+        // Register 1: release an old table reference.
+        let regs = r32(c, S0);
+        c.g[V0][0] = Addr(regs).off(LUNO_VALUE_SIZE as u32 + LUNO_VALUE_TYPE).lw(c);
+        c.g[S1][0] = sx(regs.wrapping_add(LUNO_VALUE_SIZE as u32));
+        if c.g[V0][0] == c.g[S2][0] {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 2;
+            LUNO_CALL_TABLE_DTOR.call(c, 0x0022_25b0)?;
+        }
+
+        // Register 1 = a copy of the default value.
+        c.cycles += 5;
+        let reg1 = r32(c, S1);
+        Addr(reg1).off(LUNO_VALUE_TYPE).sw(c, 0);
+        let regs = r32(c, S0);
+        Addr(regs).off(0xc).sw(c, 0);
+        let default = Addr(LUNO_CALL_DEFAULT_VALUE);
+        c.g[V1][0] = default.off(LUNO_VALUE_TYPE).lw(c);
+        c.g[V0][0] = LUNO_TYPE_PAIR;
+        if c.g[V1][0] == c.g[S2][0] {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S3][0];
+            LUNO_CALL_TABLE_ASSIGN.call(c, 0x0022_25d0)?;
+        } else {
+            c.cycles += 2;
+            let pair = c.g[V1][0] == c.g[V0][0];
+            c.g[V0][0] = default.lw(c);
+            let regs = r32(c, S0);
+            if pair {
+                // `ldl/ldr` + `sdl/sdr`: an unaligned 8-byte copy.
+                c.cycles += 7;
+                c.g[A1][0] = sx(LUNO_CALL_DEFAULT_VALUE);
+                c.g[V0][0] = default.ld(c);
+                let lo = default.lw(c);
+                let hi = default.off(4).lw(c);
+                Addr(regs).off(0xc).sw(c, lo);
+                Addr(regs).off(0x10).sw(c, hi);
+            } else {
+                c.cycles += 2;
+                let w_v0 = c.g[V0][0];
+                Addr(regs).off(0xc).sw(c, w_v0);
+            }
+        }
+        c.g[V0][0] = default.off(LUNO_VALUE_TYPE).lw(c);
+
+        c.cycles += 16;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = c.g[S6][0];
+        c.g[A2][0] = c.g[S7][0];
+        let w_v0 = c.g[V0][0];
+        Addr(r32(c, S1)).off(LUNO_VALUE_TYPE).sw(c, w_v0);
+        LUNO_CALL_EXECUTE.call(c, 0x0022_2618)?;
+        for (reg, off) in [
+            (S0, 0x80),
+            (S1, 0x70),
+            (S2, 0x60),
+            (S3, 0x50),
+            (S4, 0x40),
+            (S5, 0x30),
+            (S6, 0x20),
+            (S7, 0x10),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1034,5 +1263,83 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+    use super::*;
+    use crate::difftest::fakes;
+    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
+
+
+    /// The 16-pool-node classes of `pool_allocator` (block >= 16) filled so
+    /// a value read past the register file looks like a counted table
+    /// reference (type 4 at +4/+8, a table pointer at +0/+0xc of each 16
+    /// bytes), which makes the "release the old reference" branches reachable.
+    pub(crate) fn luno_call_fill_pools(c: &mut Cpu, table: u32) {
+        let mut nodes = DATA + 0x24_000;
+        for block in [8u32, 0x10, 0x20, 0x40, 0x80, 0x100, 0x200] {
+            if block >= 0x10 {
+                for n in 0..16 {
+                    let node = nodes + block * n;
+                    for off in (4..block).step_by(4) {
+                        let v = match off % 16 {
+                            4 | 8 => 4,
+                            _ => table,
+                        };
+                        c.bus.write32(node + off, v);
+                    }
+                }
+            }
+            nodes += block * 16;
+        }
+    }
+
+
+    /// A script whose function record has `n` registers and no code (the
+    /// interpreter returns at once and frees the register file), the
+    /// allocator fixtures, and the default value of each type.
+    #[test]
+    fn luno_vm_call_matches() {
+        use crate::difftest::check;
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        check(ee::s05::f_002224b8__generated, luno_vm_call, 120, &|c, seed| {
+            let mut r = alloc_machine(c, seed, 0x2224_b8);
+            let state = DATA + 0x1000;
+            let script = DATA + 0x1100;
+            let out = DATA + 0x1200;
+            let table = DATA + 0x1800; // refcount at +8
+            let table2 = DATA + 0x1900;
+            let gc_table = DATA + 0x1a00; // what the pool fill points at
+            c.bus.write32(table + 8, 100);
+            c.bus.write32(table2 + 8, 100);
+            c.bus.write32(gc_table + 8, 100);
+            if seed % 2 == 0 {
+                luno_call_fill_pools(c, gc_table);
+            }
+            // state = {script, function 0}; script+4 = code offset 0x10, the
+            // record at script+0x10: {_, start pc 0, n registers, 0 locals}.
+            c.bus.write32(state, script);
+            c.bus.write32(state + 4, 0);
+            c.bus.write32(script + 4, 0x10);
+            c.bus.write32(script + 0x14, 0);
+            c.bus.write32(script + 0x18, seed % 4); // n = 0..3
+            c.bus.write32(script + 0x1c, 0);
+            // the table argument: a cLunoValue whose word 0 is the table.
+            let arg = DATA + 0x1300;
+            c.bus.write32(arg, table);
+            // the default value: a table reference, a pair, or a plain word.
+            let d = LUNO_CALL_DEFAULT_VALUE;
+            let (word0, ty) = match seed / 4 % 3 {
+                0 => (table2, 4),
+                1 => (r.next_u32(), 5),
+                _ => (r.next_u32(), 2),
+            };
+            c.bus.write32(d, word0);
+            c.bus.write32(d + 4, r.next_u32());
+            c.bus.write32(d + 8, ty);
+            c.g[A0][0] = sx(out);
+            c.g[A1][0] = sx(state);
+            c.g[A2][0] = sx(arg);
+            c.g[A3][0] = sx(DATA + 0x1400);
+            c.pc = 0x0022_24b8;
+        });
     }
 }

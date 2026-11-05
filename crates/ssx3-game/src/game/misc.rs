@@ -154,6 +154,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0040_da10, logf, "logf"),
     (0x0042_c0c0, e_intr, "EIntr"),
     (0x0041_5fc8, memcmp, "memcmp"),
+    (0x0010_86b8, rider_probe_rail, "Rider_ProbeRail"),
+    (0x0011_3db0, race_state_race_update, "RaceStateRace_Update"),
+    (0x0021_e7e0, hud_draw_stretched_panel, "HUD_DrawStretchedPanel"),
+    (0x002f_5148, world_light_man_light_instance_cb, "WorldLightMan_LightInstanceCB"),
+    (0x003d_62c8, path_track_set_volume, "PATH_TrackSetVolume"),
+    (0x003d_fc48, stream_file_consume_bytes, "StreamFile_ConsumeBytes"),
+    (0x003e_13e8, stream_file_release_chunk, "StreamFile_ReleaseChunk"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7134,6 +7141,979 @@ pub fn memcmp(c: &mut Cpu) {
     ret(c);
 }
 
+
+pub(crate) mod sfile {
+
+    /// The header's mutex (an `EAMutex`).
+    pub const MUTEX: u32 = 0x4;
+
+    /// Start and end of the chunk buffer.
+    pub const BUFFER_START: u32 = 0x30;
+
+    pub const BUFFER_END: u32 = 0x34;
+
+    /// Read state: 2 = stalled waiting for space (set to 1 = reading again).
+    pub const READ_STATE: u32 = 0x38;
+
+    pub const STALLED: u64 = 2;
+
+    /// Read sizes for the next request: normal, and after a low-water hit.
+    pub const READ_SIZE: u32 = 0x3c;
+
+    pub const READ_SIZE_LOW: u32 = 0x40;
+
+    /// Set when the buffered bytes fell under the low-water mark.
+    pub const LOW_WATER_HIT: u32 = 0x48;
+
+    /// Chunk fields: status (-2 = released) and size in bytes.
+    pub const CHUNK_STATUS: u32 = 0x0;
+
+    pub const CHUNK_BYTES: u32 = 0x4;
+
+    pub const RELEASED: u64 = 0xffff_ffff_ffff_fffe;
+}
+
+pub(crate) mod sfile_callee {
+    use super::ee;
+    use super::Callee;
+
+    pub const VALIDATE: Callee = Callee { addr: 0x003d_fbd0, f: ee::s14::f_003dfbd0 };
+
+    pub const CONSUME_BYTES: Callee = Callee { addr: 0x003d_fc48, f: ee::s14::f_003dfc48 };
+
+    pub const MUTEX_LOCK: Callee = Callee { addr: 0x003e_5700, f: ee::s14::f_003e5700 };
+
+    pub const MUTEX_UNLOCK: Callee = Callee { addr: 0x003e_5760, f: ee::s14::f_003e5760 };
+
+    pub const ISSUE_READ: Callee = Callee { addr: 0x003e_03d0, f: ee::s14::f_003e03d0 };
+}
+
+pub(crate) mod hud_panel {
+
+    /// Texture id stored into the draw state before drawing.
+    pub const TEXTURE_ID: u32 = 0x474;
+
+    /// Panel texture coordinates: v0, u0, u1, v1.
+    pub const TEX_V0: u32 = 0x480;
+
+    pub const TEX_U0: u32 = 0x484;
+
+    pub const TEX_U1: u32 = 0x488;
+
+    pub const TEX_V1: u32 = 0x48c;
+
+    /// World (gp-0x854) -> draw state (+0xe84), whose texture slot is at +0x10.
+    pub const WORLD: i32 = -0x854;
+
+    pub const WORLD_DRAW_STATE: u32 = 0xe84;
+
+    pub const DRAW_STATE_TEXTURE: u32 = 0x10;
+
+    /// Width of each fixed end cap of a wide panel.
+    pub const CAP: u32 = 0x4210_0000;
+ // 36.0
+    pub const WIDE: u32 = 0x4290_0000;
+}
+
+pub(crate) mod path_track {
+
+    /// Track volume (signed byte, percent).
+    pub const VOLUME: u32 = 0x4;
+
+    /// Status byte: negative while the track is playing.
+    pub const STATUS: u32 = 0xe;
+
+    /// The track's own volume scale (signed byte, percent).
+    pub const SCALE: u32 = 0x34;
+
+    /// The platform voice index.
+    pub const PLAT: u32 = 0x54;
+
+    /// `PATH_PlatSetVolume(plat, volume)` (cross-shard).
+    pub const PLAT_SET_VOLUME: u32 = 0x002a_f6c0;
+}
+
+
+
+/// `void StreamFile_ReleaseChunk(StreamFile *file, Chunk *chunk)` (0x3e13e8):
+/// gives a consumed chunk's bytes back to the stream's ring buffer. Valid
+/// file, chunk inside the buffer and not released yet: mark it released,
+/// consume its bytes, and if the reader was stalled for space set it reading
+/// again (under the file's mutex) and issue the next read.
+pub fn stream_file_release_chunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        // Out parameters: header at 0(sp), handle at 4(sp).
+        c.g[A2][0] = c.g[SP][0] | 0x4;
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = c.g[SP][0];
+        sfile_callee::VALIDATE.call(c, 0x003e_1408)?;
+        release_chunk_validated(c, frame)?;
+        frame.restore(c, S0, 0x30);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// The body of `StreamFile_ReleaseChunk` after `StreamFile_Validate` (s0 =
+/// chunk), up to the reload of s0.
+pub(crate) fn release_chunk_validated(c: &mut Cpu, frame: Frame) -> Flow {
+    use sfile::*;
+    if c.g[V0][0] != 0 {
+        return Ok(());
+    }
+    // The chunk must lie inside [start, end - 8].
+    c.cycles += 5;
+    let header = Addr(frame.at(c, 0)).lw(c);
+    c.g[A0][0] = header;
+    let start = Addr((header as u32).wrapping_add(BUFFER_START)).lw(c);
+    c.g[V0][0] = (c.g[S0][0] < start) as u64;
+    if c.g[V0][0] != 0 {
+        return Ok(());
+    }
+    c.cycles += 5;
+    let end = Addr((header as u32).wrapping_add(BUFFER_END)).lw(c);
+    c.g[V0][0] = (sx((end as u32).wrapping_sub(8)) < c.g[S0][0]) as u64;
+    if c.g[V0][0] != 0 {
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(CHUNK_STATUS)).lw(c);
+    c.g[V1][0] = RELEASED;
+    c.g[S1][0] = STALLED;
+    if c.g[V0][0] == RELEASED {
+        c.cycles += 1;
+        return Ok(());
+    }
+    c.cycles += 10;
+    c.g[A1][0] = Addr(r32(c, S0).wrapping_add(CHUNK_BYTES)).lw(c);
+    Addr(r32(c, S0).wrapping_add(CHUNK_STATUS)).sw(c, RELEASED);
+    sfile_callee::CONSUME_BYTES.call(c, 0x003e_1454)?;
+    let header = Addr(frame.at(c, 0)).lw(c);
+    c.g[A0][0] = sx((header as u32).wrapping_add(MUTEX));
+    sfile_callee::MUTEX_LOCK.call(c, 0x003e_1460)?;
+    // s0 = the read state before the change (stalled -> reading).
+    let header = Addr(frame.at(c, 0)).lw(c);
+    c.g[V1][0] = header;
+    c.g[S0][0] = Addr((header as u32).wrapping_add(READ_STATE)).lw(c);
+    if c.g[S0][0] == c.g[S1][0] {
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        Addr((header as u32).wrapping_add(READ_STATE)).sw(c, 1);
+    }
+    let header = Addr(frame.at(c, 0)).lw(c);
+    c.cycles += 4;
+    c.g[A0][0] = sx((header as u32).wrapping_add(MUTEX));
+    sfile_callee::MUTEX_UNLOCK.call(c, 0x003e_1484)?;
+    let was_stalled = c.g[S0][0] == c.g[S1][0];
+    // The caller's s0 comes back before the read is issued (IssueRead's
+    // prologue saves that value); the caller's own reload repeats it.
+    frame.restore(c, S0, 0x30);
+    if !was_stalled {
+        return Ok(());
+    }
+    // Was stalled: issue the next read.
+    c.cycles += 4;
+    let header = Addr(frame.at(c, 0)).lw(c);
+    c.g[A0][0] = header;
+    c.g[V0][0] = Addr((header as u32).wrapping_add(LOW_WATER_HIT)).lw(c);
+    if c.g[V0][0] == 0 {
+        c.cycles += 2;
+        c.g[A1][0] = Addr((header as u32).wrapping_add(READ_SIZE)).lw(c);
+        sfile_callee::ISSUE_READ.call(c, 0x003e_14b4)?;
+        c.cycles += 1;
+    } else {
+        c.cycles += 4;
+        c.g[A1][0] = Addr((header as u32).wrapping_add(READ_SIZE_LOW)).lw(c);
+        sfile_callee::ISSUE_READ.call(c, 0x003e_14a4)?;
+    }
+    Ok(())
+}
+
+
+
+pub(crate) const HUD_DRAW_PANEL_SEGMENT: Callee = Callee { addr: 0x0021_ea00, f: ee::s05::f_0021ea00 };
+
+
+
+/// FPU register `n` as a float.
+#[inline]
+pub(crate) fn hud_panel_fpr(c: &Cpu, n: usize) -> FpuF32 {
+    FpuF32(c.f[n])
+}
+
+
+
+/// `lwc1` from `base + off`.
+#[inline]
+pub(crate) fn hud_panel_lwc1(c: &mut Cpu, base: u64, off: u32) -> FpuF32 {
+    Addr((base as u32).wrapping_add(off)).read_fpu(c)
+}
+
+
+
+/// `void HUD_DrawStretchedPanel(HUD *self, const Color *colour, float pos[2],
+/// float size[2], float t, float scale_x, float scale_y, float alpha_min,
+/// float alpha_max)` (0x21e7e0): draws a HUD panel scaled about its centre
+/// (pos and size are updated in place), with its colour's first component
+/// scaled by a triangle wave of `t` between `alpha_min` and `alpha_max`.
+/// Panels wider than 72 are drawn as two 36-wide end caps and a stretched
+/// middle (`HUD_DrawPanelSegment` three times), others as one segment.
+pub fn hud_draw_stretched_panel(c: &mut Cpu) {
+    use hud_panel::*;
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x80);
+        let one = FpuF32(0x3f80_0000);
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[0] = one.0;
+        frame.save(c, S0, 0x50);
+        let range = hud_panel_fpr(c, 16) - hud_panel_fpr(c, 15);
+        c.f[16] = range.0;
+        frame.save(c, S1, 0x40);
+        let t = hud_panel_fpr(c, 12);
+        let past_peak = abi::c_lt_s(c, one, t);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A3][0];
+        frame.save_fpr(c, 22, 0x70);
+        c.g[S3][0] = c.g[SP][0];
+        frame.save_fpr(c, 21, 0x68);
+        frame.save_fpr(c, 20, 0x60);
+        // A local copy of the colour (16 bytes, possibly unaligned source).
+        let colour = r32(c, A1);
+        c.g[V0][0] = Addr(colour).read_u64_unaligned(c);
+        c.g[V1][0] = Addr(colour.wrapping_add(8)).read_u64_unaligned(c);
+        let (lo, hi) = (c.g[V0][0], c.g[V1][0]);
+        Addr(frame.at(c, 0)).write_u64_unaligned(c, lo);
+        Addr(frame.at(c, 8)).write_u64_unaligned(c, hi);
+        let red = Addr(frame.at(c, 0)).read_fpu(c);
+        c.f[1] = red.0;
+        // Triangle wave: t for t <= 1, else 2 - t.
+        let wave = if past_peak {
+            c.cycles += 5;
+            c.g[AT][0] = 0x4000_0000;
+            let fall = FpuF32(0x4000_0000) - t;
+            range * fall
+        } else {
+            c.cycles += 1;
+            range * t
+        };
+        c.cycles += 38;
+        let alpha = hud_panel_fpr(c, 15) + wave;
+        let red = red * alpha;
+        c.f[12] = red.0;
+        c.f[0] = one.0;
+        let s0 = c.g[S0][0];
+        let s2 = c.g[S2][0];
+        let width = hud_panel_lwc1(c, s0, 0);
+        let height = hud_panel_lwc1(c, s0, 4);
+        let half = FpuF32(0x3f00_0000);
+        c.f[6] = half.0;
+        let x = hud_panel_lwc1(c, s2, 0);
+        let y = hud_panel_lwc1(c, s2, 4);
+        let grow_h = height * (hud_panel_fpr(c, 14) - one);
+        let grow_w = width * (hud_panel_fpr(c, 13) - one);
+        c.f[4] = grow_h.0;
+        c.f[5] = grow_w.0;
+        Addr(frame.at(c, 0)).write_fpu(c, red);
+        c.g[AT][0] = sx(WIDE);
+        c.f[22] = WIDE;
+        let half_h = grow_h * half;
+        let half_w = grow_w * half;
+        c.f[2] = half_w.0;
+        let y = y - half_h;
+        let x = x - half_w;
+        c.f[3] = x.0;
+        Addr((s2 as u32).wrapping_add(4)).write_fpu(c, y);
+        Addr(s2 as u32).write_fpu(c, x);
+        let width = hud_panel_lwc1(c, s0, 0) + grow_w;
+        let height = hud_panel_lwc1(c, s0, 4) + grow_h;
+        c.f[0] = width.0;
+        c.f[1] = height.0;
+        Addr(s0 as u32).write_fpu(c, width);
+        Addr((s0 as u32).wrapping_add(4)).write_fpu(c, height);
+        // The draw state's texture.
+        let world = Addr((c.g[GP][0] as u32).wrapping_add(WORLD as u32)).lw(c);
+        c.g[V1][0] = world;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(TEXTURE_ID)).lw(c);
+        c.g[V0][0] = Addr((world as u32).wrapping_add(WORLD_DRAW_STATE)).lw(c);
+        let texture = c.g[A0][0];
+        Addr(r32(c, V0).wrapping_add(DRAW_STATE_TEXTURE)).sh(c, texture);
+        let width = hud_panel_lwc1(c, s0, 0);
+        c.f[12] = width.0;
+        let wide = abi::c_lt_s(c, FpuF32(WIDE), width);
+        c.g[A0][0] = c.g[S1][0];
+        if wide {
+            draw_wide_panel(c)?;
+        } else {
+            c.cycles += 9;
+            let this = c.g[A0][0];
+            c.f[13] = hud_panel_lwc1(c, s0, 4).0;
+            c.f[14] = hud_panel_lwc1(c, this, TEX_U0).0;
+            c.g[A1][0] = c.g[S3][0];
+            c.f[15] = hud_panel_lwc1(c, this, TEX_V0).0;
+            c.g[A2][0] = c.g[S2][0];
+            c.f[16] = hud_panel_lwc1(c, this, TEX_U1).0;
+            c.f[17] = hud_panel_lwc1(c, this, TEX_V1).0;
+            HUD_DRAW_PANEL_SEGMENT.call(c, 0x0021_e9d4)?;
+        }
+        frame.restore(c, S0, 0x50);
+        c.cycles += 9;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.restore_fpr(c, 22, 0x70);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// The wide case of `HUD_DrawStretchedPanel`: left cap (u0..mid), middle
+/// (mid..mid), right cap (mid..u1), with `pos[0]` advanced after each.
+pub(crate) fn draw_wide_panel(c: &mut Cpu) -> Flow {
+    use hud_panel::*;
+    c.cycles += 46;
+    let this = c.g[S1][0];
+    let u0 = hud_panel_lwc1(c, this, TEX_U0);
+    let u1 = hud_panel_lwc1(c, this, TEX_U1);
+    c.f[0] = u1.0;
+    c.g[A1][0] = c.g[S3][0];
+    c.f[14] = u0.0;
+    c.g[AT][0] = sx(CAP);
+    c.f[21] = CAP;
+    let size = c.g[S0][0];
+    c.f[13] = hud_panel_lwc1(c, size, 4).0;
+    c.f[15] = hud_panel_lwc1(c, this, TEX_V0).0;
+    c.f[12] = CAP;
+    c.f[17] = hud_panel_lwc1(c, this, TEX_V1).0;
+    c.g[A2][0] = c.g[S2][0];
+    let mid = (u0 + u1) * hud_panel_fpr(c, 6);
+    c.f[20] = mid.0;
+    c.f[16] = mid.0;
+    HUD_DRAW_PANEL_SEGMENT.call(c, 0x0021_e938)?;
+
+    // Middle: pos[0] += 36, width - 72.
+    let (s0, s1, s2) = (c.g[S0][0], c.g[S1][0], c.g[S2][0]);
+    c.g[A0][0] = s1;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = s2;
+    let x = hud_panel_lwc1(c, s2, 0) + hud_panel_fpr(c, 21);
+    c.f[0] = x.0;
+    c.f[14] = c.f[20];
+    c.f[16] = c.f[20];
+    Addr(s2 as u32).write_fpu(c, x);
+    let width = hud_panel_lwc1(c, s0, 0);
+    c.f[13] = hud_panel_lwc1(c, s0, 4).0;
+    c.f[12] = (width - hud_panel_fpr(c, 22)).0;
+    c.f[15] = hud_panel_lwc1(c, s1, TEX_V0).0;
+    c.f[17] = hud_panel_lwc1(c, s1, TEX_V1).0;
+    HUD_DRAW_PANEL_SEGMENT.call(c, 0x0021_e970)?;
+
+    // Right cap: pos[0] += width - 72.
+    let (s0, s1, s2) = (c.g[S0][0], c.g[S1][0], c.g[S2][0]);
+    let middle = hud_panel_lwc1(c, s0, 0) - hud_panel_fpr(c, 22);
+    c.f[1] = middle.0;
+    c.g[A0][0] = s1;
+    let x = hud_panel_lwc1(c, s2, 0) + middle;
+    c.f[0] = x.0;
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A2][0] = s2;
+    c.f[12] = c.f[21];
+    c.f[14] = c.f[20];
+    Addr(s2 as u32).write_fpu(c, x);
+    c.f[13] = hud_panel_lwc1(c, s0, 4).0;
+    c.f[15] = hud_panel_lwc1(c, s1, TEX_V0).0;
+    c.f[16] = hud_panel_lwc1(c, s1, TEX_U1).0;
+    c.f[17] = hud_panel_lwc1(c, s1, TEX_V1).0;
+    HUD_DRAW_PANEL_SEGMENT.call(c, 0x0021_e9ac)?;
+    Ok(())
+}
+
+
+
+// ---------------------------------------------------------------------------
+// Rider_ProbeRail (0x1086b8)
+
+/// Rider: the path (`+0x2c`: nodes of 0x20 bytes, position then rotation).
+pub(crate) const PROBE_RAIL_PATH: u32 = 0x780;
+
+
+/// Rider: the current path node index.
+pub(crate) const PROBE_RAIL_NODE: u32 = 0x8a0;
+
+
+/// Rider: the probe offset added to the node position (`vec4`).
+pub(crate) const PROBE_RAIL_OFFSET: u32 = 0x9d0;
+
+
+/// Rider: the blend between the near and far probe radii (0..1).
+pub(crate) const PROBE_RAIL_BLEND: u32 = 0x25c;
+
+
+/// Rider: nonzero picks the short far radius (50 instead of 100).
+pub(crate) const PROBE_RAIL_SHORT: u32 = 0x330;
+
+
+/// Rider: the overlap list of objects near the rider.
+pub(crate) const PROBE_RAIL_OVERLAP: u32 = 0x860;
+
+
+/// `gp-0x7e3c`: 0.001f, the "lines are parallel" threshold.
+pub(crate) const PROBE_RAIL_PARALLEL_GP: u32 = 0x7e3c;
+
+
+/// `OverlapList_FindNearestRail(list, pos, out, mask, radius)`.
+pub(crate) const PROBE_RAIL_FIND_NEAREST: u32 = 0x0033_4680;
+
+
+
+/// The VU0 dot-product idiom of this function: `vf4 = vf[a] * vf[b]`, then
+/// the w lane accumulates y, z and w through `vf6.w = 2` (vf0.w + vf0.w).
+pub(crate) fn probe_rail_dot(c: &mut Cpu, a: u8, b: u8) {
+    let v = c.vu0();
+    v.add(0b1000, 6, 0, Src::Bc(0, W));
+    v.mul(0b1111, 4, a, Src::Vec(b));
+    v.adda(0b1000, 4, Src::Bc(4, Y));
+    v.madda(0b1000, 6, Src::Bc(4, Z));
+    v.madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+
+
+/// `vf5 = vf3 (+|-) vf4` with vf3/vf4 loaded from `a`/`b`, through the
+/// stack temporary `tmp` (`sqc2`, then `lq`/`sq` via r2) into `dst`.
+pub(crate) fn probe_rail_vop(c: &mut Cpu, a: u32, b: u32, sub: bool, tmp: u32, dst: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    if sub {
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    } else {
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    }
+    c.sqc2(5, tmp);
+    c.lq(2, tmp);
+    c.sq(2, dst);
+}
+
+
+
+/// `vf5 = vf4 * vf3.x` (vf4 loaded from `v`, vf3.x = the float in f[fs]
+/// moved through GPR `rt`), stored to `tmp` and copied to `dst`.
+pub(crate) fn probe_rail_scale(c: &mut Cpu, fs: usize, rt: usize, v: u32, tmp: u32, dst: u32) {
+    c.mfc1(rt, fs);
+    c.lqc2(4, v);
+    c.qmtc2(rt, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, tmp);
+    c.lq(2, tmp);
+    c.sq(2, dst);
+}
+
+
+
+/// `|vec at addr| <= near radius (f20)`: the dot idiom on itself, `sqrt`
+/// into Q, Q read back through v1 into f0, then `c.le.s f0, f20`.
+pub(crate) fn probe_rail_within_near(c: &mut Cpu, addr: u32) -> bool {
+    c.lqc2(3, addr);
+    probe_rail_dot(c, 3, 3);
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(3, 22);
+    c.mtc1(3, 0);
+    c.c_le_s(0, 20);
+    c.fcc()
+}
+
+
+
+/// `int Rider_ProbeRail(Rider* self, const sVec4* target, const sVec4* dir)`
+/// (0x1086b8): whether a rail runs close to the rider's probe point. The
+/// probe is the current path node's position plus the probe offset, looking
+/// along the node rotation's forward axis; the near radius is
+/// `lerp(30, 50, blend)` and the far one `lerp(100 or 50, 170, blend)`.
+/// The point on the probe segment (clamped to `±(far - near)`) closest to
+/// `target` within the near radius is a hit; otherwise, unless `dir` is
+/// (nearly) parallel to the probe, the point closest to the line through
+/// `target` along `dir` is asked for the nearest rail in the overlap list
+/// (`OverlapList_FindNearestRail`, radius 300), and that rail must lie within
+/// the near radius. Returns 1 or 0.
+pub fn rider_probe_rail(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 50;
+        let frame = Frame::open(c, 0x110);
+        c.g[T0][0] = c.g[A0][0];
+        let me = r32(c, T0);
+        frame.save_fpr(c, 20, 0x100);
+        frame.save_ra(c, 0xf0);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 9); // 1.0
+        // node = &path->nodes[index]
+        c.g[A0][0] = Addr(me).off(PROBE_RAIL_PATH).lw(c);
+        c.g[V0][0] = Addr(me).off(PROBE_RAIL_NODE).lw(c);
+        c.g[V1][0] = Addr(r32(c, A0)).off(0x2c).lw(c);
+        c.g[V0][0] = sx(r32(c, V0) << 5);
+        c.g[AT][0] = 0x4248_0000;
+        c.mtc1(AT, 10); // 50.0
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        let node = r32(c, V1);
+        c.g[AT][0] = 0x41f0_0000;
+        c.mtc1(AT, 8); // 30.0
+        // The forward axis of the node rotation (quaternion x,y,z,w at
+        // +0x10): (1 - 2(y^2 + z^2), 2(xy + wz), 2(xz - wy)), w = 0.
+        c.lwc1(4, node + 0x14);
+        c.g[A0][0] = c.g[SP][0];
+        let fwd = sp(c);
+        c.lwc1(5, node + 0x18);
+        c.lwc1(0, node + 0x10);
+        c.mul_s(1, 4, 4);
+        c.lwc1(3, node + 0x1c);
+        c.mul_s(7, 5, 5);
+        c.mul_s(2, 0, 5);
+        Addr(fwd).off(0xc).sw(c, 0);
+        c.mul_s(6, 3, 4);
+        c.add_s(1, 1, 7);
+        c.mul_s(0, 0, 4);
+        c.mul_s(3, 3, 5);
+        c.sub_s(2, 2, 6);
+        c.add_s(1, 1, 1);
+        c.add_s(0, 0, 3);
+        c.add_s(2, 2, 2);
+        c.sub_s(1, 9, 1);
+        c.add_s(0, 0, 0);
+        c.swc1(2, fwd + 8);
+        c.swc1(1, fwd);
+        c.swc1(0, fwd + 4);
+        // pos (sp+0x10) = node position + probe offset (through sp+0x20).
+        probe_rail_vop(c, node, me + PROBE_RAIL_OFFSET, false, fwd + 0x20, fwd + 0x10);
+        let pos = fwd + 0x10;
+        // Radii: f20 = near = 50 t + 30 (1 - t); f0 = far.
+        c.lwc1(2, me + PROBE_RAIL_BLEND);
+        c.sub_s(9, 9, 2);
+        c.g[V1][0] = Addr(me).off(PROBE_RAIL_SHORT).lw(c);
+        c.mul_s(0, 2, 10);
+        c.mul_s(8, 9, 8);
+        c.add_s(20, 0, 8);
+        if c.g[V1][0] == 0 {
+            c.cycles += 8;
+            c.g[AT][0] = 0x432a_0000;
+            c.mtc1(AT, 1); // 170.0
+            c.g[AT][0] = 0x42c8_0000;
+            c.mtc1(AT, 0); // 100.0
+            c.mul_s(1, 2, 1);
+            c.mul_s(0, 9, 0);
+            c.add_s(0, 1, 0);
+        } else {
+            c.cycles += 5;
+            c.g[AT][0] = 0x432a_0000;
+            c.mtc1(AT, 0); // 170.0
+            c.mul_s(1, 9, 10); // (1 - t) * 50
+            c.mul_s(0, 2, 0);
+            c.add_s(0, 0, 1);
+        }
+
+        // Clamp the target's projection on the probe to [near - far, far - near].
+        c.cycles += 22;
+        let target = r32(c, A1);
+        probe_rail_vop(c, target, pos, true, fwd + 0x30, fwd + 0x20);
+        c.sub_s(4, 20, 0); // lo
+        c.sub_s(8, 0, 20); // hi
+        c.mov_s(1, 4);
+        c.lqc2(3, fwd);
+        c.lqc2(5, fwd + 0x20);
+        probe_rail_dot(c, 3, 5);
+        c.qmfc2(2, 4);
+        c.mtc1(2, 0);
+        c.c_le_s(4, 0);
+        if c.fcc() {
+            c.min_s(1, 0, 8);
+        }
+
+        // The closest point on the probe: within the near radius is a hit.
+        c.cycles += 33;
+        probe_rail_scale(c, 1, 3, fwd, fwd + 0x50, fwd + 0x40);
+        probe_rail_vop(c, pos, fwd + 0x40, false, fwd + 0x50, fwd + 0x30);
+        probe_rail_vop(c, fwd + 0x30, target, true, fwd + 0x50, fwd + 0x20);
+        let near = probe_rail_within_near(c, fwd + 0x20);
+        c.g[V0][0] = 1;
+        if !near {
+            // den = 1 - (dir . fwd)^2; parallel lines miss.
+            c.cycles += 18;
+            let dir = r32(c, A2);
+            c.lqc2(3, dir);
+            c.lqc2(5, fwd);
+            probe_rail_dot(c, 3, 5);
+            c.qmfc2(2, 4);
+            c.mtc1(2, 3); // dd
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 2);
+            c.mul_s(0, 3, 3);
+            c.lwc1(1, r32(c, GP).wrapping_sub(PROBE_RAIL_PARALLEL_GP));
+            c.sub_s(2, 2, 0);
+            c.c_lt_s(2, 1);
+            let parallel = c.fcc();
+            c.g[V0][0] = 0;
+            if !parallel {
+                // u = ((pos - target) / den) . (dir * dd - fwd), clamped.
+                c.cycles += 42;
+                probe_rail_vop(c, pos, target, true, fwd + 0x50, fwd + 0x40);
+                c.mov_s(1, 4);
+                c.mfc1(3, 2);
+                c.qmtc2(3, 3);
+                c.vu0().div(0, 3, 3, 0);
+                c.lqc2(4, fwd + 0x40);
+                c.vu0().waitq();
+                c.vu0().mul(0b1111, 4, 4, Src::Q);
+                c.sqc2(4, fwd + 0x50);
+                c.lq(2, fwd + 0x50);
+                c.sq(2, fwd + 0x30);
+                probe_rail_scale(c, 3, 3, dir, fwd + 0x60, fwd + 0x50);
+                probe_rail_vop(c, fwd + 0x50, fwd, true, fwd + 0x60, fwd + 0x40);
+                c.lqc2(3, fwd + 0x30);
+                c.lqc2(5, fwd + 0x40);
+                probe_rail_dot(c, 3, 5);
+                c.qmfc2(3, 4);
+                c.mtc1(3, 0);
+                c.c_le_s(4, 0);
+                if c.fcc() {
+                    c.min_s(1, 0, 8);
+                }
+
+                // p (sp+0x40) = pos + fwd * u; ask the overlap list.
+                c.cycles += 22;
+                c.mfc1(2, 1);
+                c.lqc2(4, fwd);
+                c.qmtc2(2, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, fwd + 0x60);
+                c.g[AT][0] = 0x4396_0000;
+                c.mtc1(AT, 12); // radius 300.0
+                c.lq(2, fwd + 0x60);
+                c.g[A1][0] = sx(fwd + 0x40);
+                c.g[A2][0] = sx(fwd + 0x70);
+                c.g[A3][0] = 1;
+                c.sq(2, fwd + 0x50);
+                probe_rail_vop(c, pos, fwd + 0x50, false, fwd + 0x60, fwd + 0x40);
+                c.g[A0][0] = Addr(me).off(PROBE_RAIL_OVERLAP).lw(c);
+                call_ptr(c, PROBE_RAIL_FIND_NEAREST, 0x0010_89d0)?;
+                let found = c.g[V0][0] != 0;
+                c.g[V0][0] = 0;
+                if found {
+                    // The rail point must lie within the near radius of p.
+                    c.cycles += 22;
+                    let sp_now = sp(c);
+                    c.lqc2(3, sp_now + 0x40);
+                    c.lqc2(4, sp_now + 0x70);
+                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, sp_now + 0x60);
+                    c.g[A0][0] = 1;
+                    c.lq(2, sp_now + 0x60);
+                    c.sq(2, sp_now + 0x20);
+                    c.sq(2, sp_now + 0x50);
+                    if !probe_rail_within_near(c, sp_now + 0x20) {
+                        c.g[A0][0] = 0;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[A0][0];
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore_ra(c, 0xf0);
+        frame.restore_fpr(c, 20, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// RaceStateRace_Update (0x113db0)
+
+/// AI race-state object: the frame counter of the current state (+0xc).
+pub(crate) const RACE_STATE_FRAMES: u32 = 0xc;
+
+
+/// The world (gp-0x848) and its game module (+0x84).
+pub(crate) const RACE_WORLD_GP: u32 = 0x848;
+
+
+pub(crate) const RACE_WORLD_GAME_MODULE: u32 = 0x84;
+
+
+/// The AI state "race finished" and the game module state it requests.
+pub(crate) const RACE_AI_STATE_FINISHED: u64 = 0x6;
+
+
+pub(crate) const RACE_MODULE_STATE_END_RACE: u64 = 0x5;
+
+
+
+/// `AI_AllPlayersFinished` (0x12a250).
+pub(crate) const AI_ALL_PLAYERS_FINISHED: Callee = Callee {
+    addr: 0x0012_a250,
+    f: ee::s00::AI_AllPlayersFinished,
+};
+
+
+/// `AI_SetRaceState` (0x113b10).
+pub(crate) const AI_SET_RACE_STATE: Callee = Callee {
+    addr: 0x0011_3b10,
+    f: ee::s00::f_00113b10,
+};
+
+
+/// `GameModule_RequestState` (0x231250, through the function table).
+pub(crate) const GAME_MODULE_REQUEST_STATE: u32 = 0x0023_1250;
+
+
+
+/// `void RaceStateRace_Update(void *state, AI *ai /*a1*/)` (0x113db0): the
+/// per-frame update of the AI's "race" state. Counts the frame
+/// (`ai->frames++`); once every player has finished, switches the AI to the
+/// finished state (6) and asks the game module for the end-of-race state
+/// (`GameModule_RequestState(world->module, 5, 0, 0)`). Frame 0x20 (ra at
+/// 0, s0 at 0x10).
+pub fn race_state_race_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[A0][0] = c.g[S0][0];
+        let ai = Addr(r32(c, S0));
+        let frames = sx((ai.off(RACE_STATE_FRAMES).lw(c) as u32).wrapping_add(1));
+        c.g[V0][0] = frames;
+        ai.off(RACE_STATE_FRAMES).sw(c, frames);
+        AI_ALL_PLAYERS_FINISHED.call(c, 0x0011_3dd4)?;
+        c.g[V1][0] = 1;
+        if c.g[V0][0] == c.g[V1][0] {
+            c.cycles += 10;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = RACE_AI_STATE_FINISHED;
+            AI_SET_RACE_STATE.call(c, 0x0011_3dec)?;
+            let world = Addr(r32(c, GP).wrapping_sub(RACE_WORLD_GP)).lw(c);
+            c.g[V0][0] = world;
+            c.g[A1][0] = RACE_MODULE_STATE_END_RACE;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            c.g[A0][0] = Addr(world as u32).off(RACE_WORLD_GAME_MODULE).lw(c);
+            call_ptr(c, GAME_MODULE_REQUEST_STATE, 0x0011_3e04)?;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// StreamFile_ConsumeBytes (0x3dfc48)
+
+/// Stream file fields: its mutex (+4), the read mode (+0x38), the refill
+/// priority (+0x40), the low-water mark (+0x44), the "needs refill" flag
+/// (+0x48), the buffered byte count (+0x4c) and the file handle (+0x174).
+pub(crate) const STREAM_FILE_MUTEX: u32 = 0x4;
+
+
+pub(crate) const STREAM_FILE_MODE: u32 = 0x38;
+
+
+pub(crate) const STREAM_FILE_PRIORITY: u32 = 0x40;
+
+
+pub(crate) const STREAM_FILE_LOW_WATER: u32 = 0x44;
+
+
+pub(crate) const STREAM_FILE_NEEDS_REFILL: u32 = 0x48;
+
+
+pub(crate) const STREAM_FILE_BUFFERED: u32 = 0x4c;
+
+
+pub(crate) const STREAM_FILE_HANDLE: u32 = 0x174;
+
+
+/// The read mode whose refills are reprioritised.
+pub(crate) const STREAM_FILE_MODE_STREAMING: u64 = 1;
+
+
+pub(crate) const STREAM_FILE_MUTEX_LOCK: Callee = Callee {
+    addr: 0x003e_5700,
+    f: ee::s14::EAMutex_Lock,
+};
+
+
+pub(crate) const STREAM_FILE_MUTEX_UNLOCK: Callee = Callee {
+    addr: 0x003e_5760,
+    f: ee::s14::EAMutex_Unlock,
+};
+
+
+pub(crate) const STREAM_FILE_SET_REQUEST_PRIORITY: Callee = Callee {
+    addr: 0x003d_cfc0,
+    f: ee::s14::EAFile_SetRequestPriority,
+};
+
+
+
+/// `void StreamFile_ConsumeBytes(StreamFile *st, int n)` (0x3dfc48): takes
+/// `n` bytes off the buffered count (under the stream's mutex). When that
+/// crosses the low-water mark, flags the stream for a refill and, for a
+/// streaming read, raises its file request to the refill priority. Frame
+/// 0x50 (ra at 0, s3 / s2 / s1 / s0 at 0x10 .. 0x40).
+pub fn stream_file_consume_bytes(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S3, 0x10);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = sx(r32(c, S3).wrapping_add(STREAM_FILE_MUTEX));
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S1][0];
+        STREAM_FILE_MUTEX_LOCK.call(c, 0x003d_fc74)?;
+        let st = Addr(r32(c, S3));
+        let old = st.off(STREAM_FILE_BUFFERED).lw(c);
+        c.g[S0][0] = old;
+        c.g[A0][0] = c.g[S1][0];
+        let new = sx((old as u32).wrapping_sub(r32(c, S2)));
+        c.g[S1][0] = new;
+        st.off(STREAM_FILE_BUFFERED).sw(c, new);
+        STREAM_FILE_MUTEX_UNLOCK.call(c, 0x003d_fc88)?;
+        let st = Addr(r32(c, S3));
+        let low = st.off(STREAM_FILE_LOW_WATER).lw(c);
+        c.g[V0][0] = low;
+        c.g[S0][0] = ((old as i64) < (low as i64)) as u64;
+        if c.g[S0][0] == 0 {
+            c.cycles += 3;
+            let crossed = (new as i64) < (low as i64);
+            c.g[V0][0] = 1;
+            if crossed {
+                c.cycles += 3;
+                let mode = st.off(STREAM_FILE_MODE).lw(c);
+                c.g[V1][0] = mode;
+                st.off(STREAM_FILE_NEEDS_REFILL).sw(c, 1);
+                if mode == STREAM_FILE_MODE_STREAMING {
+                    c.cycles += 3;
+                    c.g[A1][0] = st.off(STREAM_FILE_PRIORITY).lw(c);
+                    c.g[A0][0] = st.off(STREAM_FILE_HANDLE).lw(c);
+                    STREAM_FILE_SET_REQUEST_PRIORITY.call(c, 0x003d_fcbc)?;
+                }
+            }
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x40);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// 0x2f5148 WorldLightMan_LightInstanceCB
+
+/// `WorldLightMan_GetInstanceLighting(self, inst, force)` (0x2f5400).
+pub(crate) const LIGHT_INSTANCE_GET_LIGHTING: Callee = Callee {
+    addr: 0x002f_5400,
+    f: ee::s09::WorldLightMan_GetInstanceLighting,
+};
+
+
+
+/// `void WorldLightMan_LightInstanceCB(Instance* inst)` (0x2f5148): the
+/// world's per-instance lighting callback: looks up the instance's lighting
+/// in the game module's light manager (`world->game_module->light_man`,
+/// +0x84 then +0x90), forcing a re-light check when bit 12 of the
+/// instance's flags (+8) is set.
+pub fn world_light_man_light_instance_cb(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        let world_slot = r32(c, GP).wrapping_sub(0x848);
+        c.g[V1][0] = c.lw(world_slot);
+        frame.save_ra(c, 0);
+        let inst = r32(c, A0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[A2][0] = c.lw(inst.wrapping_add(0x8));
+        c.g[V0][0] = c.lw(r32(c, V1).wrapping_add(0x84));
+        c.g[A2][0] = sx((r32(c, A2) as i32 >> 12) as u32);
+        c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(0x90));
+        c.g[A2][0] &= 1;
+        LIGHT_INSTANCE_GET_LIGHTING.call(c, 0x002f_5170)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `void PATH_TrackSetVolume(PathTrack* track, int volume)` (0x3d62c8):
+/// store the volume (as a signed byte) and, while the track is playing
+/// (status byte negative), apply `scale * volume / 100` to its platform
+/// voice.
+pub fn path_track_set_volume(c: &mut Cpu) {
+    use path_track::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx(r32(c, A1) << 24);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx((r32(c, A1) as i32 >> 24) as u32);
+        let track = r32(c, A0);
+        c.sb(track.wrapping_add(VOLUME), c.g[V1][0]);
+        c.g[V0][0] = c.lb(track.wrapping_add(STATUS));
+        frame.restore_ra(c, 0);
+        if (c.g[V0][0] as i64) < 0 {
+            c.cycles += 4;
+            c.g[A1][0] = c.lb(track.wrapping_add(SCALE));
+            c.g[V0][0] = 100;
+            c.cycles += 6;
+            c.mult(0, A1, A1, V1);
+            c.div(0, A1, V0);
+            c.g[A1][0] = c.lo[0];
+            c.g[A0][0] = c.lw(track.wrapping_add(PLAT));
+            call_ptr(c, PLAT_SET_VOLUME, 0x003d_630c)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -9823,6 +10803,372 @@ pub(crate) mod tests {
             c.g[A0][0] = sx(A + oa);
             c.g[A1][0] = sx(B + ob);
             c.g[A2][0] = n as u64;
+        });
+    }
+    use super::*;
+    use super::*;
+    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
+    use super::*;
+    use super::*;
+
+
+    /// Stream file fixture: handle at DATA -> header at DATA+0x1000 (starting
+    /// with the magic 'MRTS'), buffer DATA+0x2000..DATA+0x3000, chunk inside or outside it.
+    /// The mutex syscalls go to the fakes (some unwind). The real
+    /// `StreamFile_IssueRead` takes its short path: no pending request, the
+    /// ring full enough that it only marks the reader stalled again.
+    #[test]
+    fn stream_file_release_chunk_matches() {
+        use crate::difftest::fakes::{covered, machine};
+        covered(ee::s14::f_003e13e8__generated, stream_file_release_chunk, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x3e13e8, 10);
+            c.pc = 0x003e_13e8;
+            let handle = DATA;
+            let header = DATA + 0x1000;
+            let start = DATA + 0x2000;
+            let end = DATA + 0x3000;
+            let case = seed % 9;
+            c.g[A0][0] = if case == 0 { 0 } else { handle as u64 };
+            c.bus.write32(handle, header);
+            let magic = 0x4d52_5453;
+            c.bus.write32(header, if case == 1 { magic ^ (1 + r.next_u32() % 0xff) } else { magic });
+            c.bus.write32(header + sfile::BUFFER_START, start);
+            c.bus.write32(header + sfile::BUFFER_END, end);
+            let chunk = match case {
+                2 => start - 4 * (1 + r.next_u32() % 4),
+                3 => end - 8 + 4 * (1 + r.next_u32() % 4),
+                4 => end - 8,
+                _ => start + 0x100,
+            };
+            c.g[A1][0] = chunk as u64;
+            let status = if case == 5 { 0xffff_fffe } else { r.next_u32() & 0xff };
+            c.bus.write32(chunk + sfile::CHUNK_STATUS, status);
+            c.bus.write32(chunk + sfile::CHUNK_BYTES, r.next_u32() & 0xfff);
+            // Read state: mostly stalled (2), sometimes reading (1) or idle.
+            let state = match r.next_u32() % 4 {
+                0 => r.next_u32() % 2,
+                _ => 2,
+            };
+            c.bus.write32(header + sfile::READ_STATE, state);
+            c.bus.write32(header + sfile::READ_SIZE, r.next_u32() & 0xffff);
+            c.bus.write32(header + sfile::READ_SIZE_LOW, r.next_u32() & 0xffff);
+            c.bus.write32(header + sfile::LOW_WATER_HIT, r.next_u32() & 1);
+            // StreamFile_ConsumeBytes: buffered count and low-water mark (kept
+            // above the count in state 1, so it never reprioritises a request).
+            c.bus.write32(header + 0x4c, r.next_u32() & 0xfffff);
+            let low = if state == 1 { 0x7fff_ffff } else { r.next_u32() & 0xfffff };
+            c.bus.write32(header + 0x44, low);
+            // Mutex: owner, depth, semaphore (owner never the fake thread id).
+            c.bus.write32(header + 0x8, 0x7700_0000 | r.next_u32() & 0xffff);
+            c.bus.write32(header + 0xc, r.next_u32() & 3);
+            c.bus.write32(header + 0x10, r.next_u32() & 0xff);
+            // StreamFile_IssueRead short path.
+            c.bus.write32(header + 0x50, DATA + 0x2200);
+            c.bus.write32(header + 0x54, DATA + 0x2200);
+            c.bus.write32(header + 0x58, DATA + 0x2100);
+            c.bus.write32(header + 0x5c, DATA + 0x4000);
+            c.bus.write32(DATA + 0x4000 + 0xc, 0);
+            c.bus.write32(header + 0x17c, 0x1000);
+        });
+    }
+
+
+    /// A HUD at DATA with random texture coordinates, a (sometimes
+    /// unaligned) colour, pos/size in DATA; widths below and above 72 (the
+    /// three-segment path), t on both sides of the triangle-wave peak. The
+    /// world's draw callback (`HUD_DrawPanelSegment`'s vtable call) is a fake
+    /// that sometimes unwinds.
+    #[test]
+    fn hud_draw_stretched_panel_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        covered(ee::s05::f_0021e7e0__generated, hud_draw_stretched_panel, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x21e7e0, 3);
+            c.pc = 0x0021_e7e0;
+            let hud = DATA;
+            let colour = DATA + 0x100 + (seed % 4) * 4 + (seed % 3);
+            let pos = DATA + 0x200;
+            let size = DATA + 0x210;
+            let world = DATA + 0x1000;
+            let draw_state = DATA + 0x3000;
+            let vtable = DATA + 0x5000;
+            c.g[A0][0] = hud as u64;
+            c.g[A1][0] = colour as u64;
+            c.g[A2][0] = pos as u64;
+            c.g[A3][0] = size as u64;
+            c.bus.write32(hud + hud_panel::TEXTURE_ID, r.next_u32());
+            for off in [hud_panel::TEX_V0, hud_panel::TEX_U0, hud_panel::TEX_U1, hud_panel::TEX_V1] {
+                c.bus.write32(hud + off, ((r.next_u32() % 1000) as f32 / 1000.0).to_bits());
+            }
+            // Byte by byte: the colour may be unaligned.
+            for i in 0..4 {
+                let bits = ((r.next_u32() % 256) as f32).to_bits();
+                for (k, b) in bits.to_le_bytes().into_iter().enumerate() {
+                    c.bus.write8(colour + 4 * i + k as u32, b);
+                }
+            }
+            c.bus.write32(pos, r.f32(400.0));
+            c.bus.write32(pos + 4, r.f32(300.0));
+            let width = if seed % 2 == 0 { 20 + r.next_u32() % 50 } else { 75 + r.next_u32() % 300 };
+            c.bus.write32(size, (width as f32).to_bits());
+            c.bus.write32(size + 4, ((10 + r.next_u32() % 120) as f32).to_bits());
+            // t in [0, 2), scales around 1 (rarely exactly 1), alpha range.
+            c.f[12] = ((r.next_u32() % 2000) as f32 / 1000.0).to_bits();
+            c.f[13] = (0.8 + (r.next_u32() % 400) as f32 / 1000.0).to_bits();
+            c.f[14] = (0.8 + (r.next_u32() % 400) as f32 / 1000.0).to_bits();
+            if seed % 7 == 0 {
+                c.f[13] = 1.0f32.to_bits();
+            }
+            c.f[15] = ((r.next_u32() % 500) as f32 / 1000.0).to_bits();
+            c.f[16] = (0.5 + (r.next_u32() % 500) as f32 / 1000.0).to_bits();
+            c.bus.write32(GAME_GP - 0x854, world);
+            c.bus.write32(world + hud_panel::WORLD_DRAW_STATE, draw_state);
+            c.bus.write32(world + 0x10d8, vtable);
+            c.bus.write16(vtable + 0x238, (r.next_u32() & 0x3c) as u16);
+            c.bus.write32(vtable + 0x23c, FAKE);
+        });
+    }
+
+
+    /// The rider on a path node (identity or random rotation), the probe
+    /// offset, blend and short-radius flag; a target near the probe (a hit),
+    /// at mid range or far; a direction parallel to the probe (identity
+    /// rotation, dir = +x) or random; the overlap list with one plain rail
+    /// whose mask passes or not, or empty. The overlap query is real (the
+    /// same bounded data as `rider_find_rail_matches`).
+    #[test]
+    fn rider_probe_rail_matches() {
+        use crate::difftest::{check, elf_image, put_vec};
+        check(ee::s00::f_001086b8__generated, rider_probe_rail, 300, &|c, seed| {
+            elf_image(c);
+            let mut r = fakes::machine(c, seed, 0x1086_b8, 0);
+            let me = DATA + 0x1000;
+            let path = DATA + 0x3000;
+            let nodes = DATA + 0x3100;
+            let list = DATA + 0x4000;
+            let rail = DATA + 0x5000;
+            let rail_flags = DATA + 0x5200;
+            let target = DATA + 0x7000;
+            let dir = DATA + 0x7100;
+            c.bus.write32(me + PROBE_RAIL_PATH, path);
+            c.bus.write32(path + 0x2c, nodes);
+            let node = r.next_u32() % 4;
+            c.bus.write32(me + PROBE_RAIL_NODE, node);
+            let identity = seed % 5 == 0;
+            let mut node_pos = [0f32; 3];
+            for i in 0..4 {
+                let p = [r.f32(100.0), r.f32(100.0), r.f32(100.0)];
+                if i == node {
+                    node_pos = p.map(f32::from_bits);
+                }
+                put_vec(c, nodes + 0x20 * i, [p[0], p[1], p[2], 0]);
+                let q = if identity {
+                    [0, 0, 0, 1.0f32.to_bits()]
+                } else {
+                    [r.f32(0.7), r.f32(0.7), r.f32(0.7), r.f32(1.0)]
+                };
+                put_vec(c, nodes + 0x20 * i + 0x10, q);
+            }
+            let off = [r.f32(5.0), r.f32(5.0), r.f32(5.0)];
+            put_vec(c, me + PROBE_RAIL_OFFSET, [off[0], off[1], off[2], 0]);
+            c.bus.write32(me + PROBE_RAIL_BLEND, (f32::from_bits(r.f32(0.5)) + 0.5).to_bits());
+            c.bus.write32(me + PROBE_RAIL_SHORT, r.next_u32() & 1);
+            // The target: near the probe point, mid range, or far.
+            let spread = [8.0f32, 60.0, 400.0][(seed / 5 % 3) as usize];
+            let t: Vec<u32> = (0..3)
+                .map(|i| {
+                    let d = f32::from_bits(r.f32(spread));
+                    (node_pos[i] + f32::from_bits(off[i]) + d).to_bits()
+                })
+                .collect();
+            put_vec(c, target, [t[0], t[1], t[2], 0]);
+            let d = if identity && seed % 2 == 0 {
+                [1.0f32.to_bits(), 0, 0, 0]
+            } else {
+                [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]
+            };
+            put_vec(c, dir, d);
+            // The overlap list: one plain rail (type 1) or none.
+            c.bus.write32(me + PROBE_RAIL_OVERLAP, list);
+            c.bus.write32(list + 0x210, (seed % 7 != 0) as u32);
+            c.bus.write32(list + 0x214, rail);
+            c.bus.write32(rail + 8, 1);
+            c.bus.write32(rail + 0x68, rail_flags);
+            c.bus.write32(rail_flags + 0x1c, (seed % 11 != 5) as u32);
+            c.bus.write32(rail_flags + 0x28, r.next_u32());
+            for off in [0x6c, 0x70, 0x74] {
+                c.bus.write32(rail + off, (-1.0e4f32).to_bits());
+            }
+            for off in [0x78, 0x7c, 0x80] {
+                c.bus.write32(rail + off, 1.0e4f32.to_bits());
+            }
+            for i in 0..4 {
+                let w = if i == 3 { 1.0f32.to_bits() } else { 0 };
+                let base = if i == 3 { node_pos } else { [0.0; 3] };
+                let v: Vec<u32> = (0..3)
+                    .map(|k| (base[k] + f32::from_bits(r.f32(50.0))).to_bits())
+                    .collect();
+                put_vec(c, rail + 0x10 + 0x10 * i, [v[0], v[1], v[2], w]);
+            }
+            c.g[A0][0] = sx(me);
+            c.g[A1][0] = sx(target);
+            c.g[A2][0] = sx(dir);
+            c.pc = 0x0010_86b8;
+        });
+    }
+
+
+    /// RaceStateRace_Update: no riders (all finished), riders all finished
+    /// or some still racing (`rider->physics->+0x470` progress below 0);
+    /// the AI already in the finished state or not (the real
+    /// AI_SelectRaceState runs through its jump table); the real
+    /// GameModule_RequestState stores the request.
+    #[test]
+    fn race_state_race_update_matches() {
+        check(ee::s00::f_00113db0__generated, race_state_race_update, 300, &|c, seed| {
+            let mut r = Rng(0x0011_3db0 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x0011_3db0;
+            // AI_SelectRaceState's jump table (states 1..7).
+            put_words(
+                c,
+                0x0045_6ca0,
+                &[0x0011_3b74, 0x0011_3b94, 0x0011_3ba8, 0x0011_3bbc, 0x0011_3bd0, 0x0011_3be4, 0x0011_3bf8],
+            );
+            let ai = DATA;
+            let state = if seed % 3 == 0 { 6 } else { r.next_u32() % 9 };
+            c.bus.write32(ai, state);
+            c.bus.write32(ai + RACE_STATE_FRAMES, r.next_u32());
+            c.bus.write32(ai + 0x98, r.next_u32());
+            let riders = if seed % 4 == 0 { 0 } else { 1 + r.next_u32() % 4 };
+            c.bus.write32(ai + 0x7c, riders);
+            let all_done = seed % 2 == 0;
+            for i in 0..riders {
+                let rider = DATA + 0x1000 + 0x100 * i;
+                let phys = DATA + 0x2000 + 0x1000 * i;
+                c.bus.write32(ai + 0x40 + 4 * i, rider);
+                c.bus.write32(rider + 0x18, phys);
+                let racing = !all_done && r.next_u32() % 2 == 0;
+                let v = (r.next_u32() % 100) as f32 + 0.5;
+                let v = if racing { -v } else if r.next_u32() % 4 == 0 { 0.0 } else { v };
+                c.bus.write32(phys + 0x470, v.to_bits());
+            }
+            let world = DATA + 0x8000;
+            c.bus.write32(GAME_GP - RACE_WORLD_GP, world);
+            c.bus.write32(world + RACE_WORLD_GAME_MODULE, DATA + 0x9000);
+            c.g[A1][0] = sx(ai);
+        });
+    }
+
+
+    /// StreamFile_ConsumeBytes: the count already below the low-water mark,
+    /// staying above it, or crossing it (streaming mode or not: the real
+    /// EAFile_SetRequestPriority with a null or unknown handle); the real
+    /// EAMutex lock / unlock (syscalls faked), owned by the caller or not.
+    #[test]
+    fn stream_file_consume_bytes_matches() {
+        check(ee::s14::f_003dfc48__generated, stream_file_consume_bytes, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x003d_fc48, 0);
+            c.pc = 0x003d_fc48;
+            let st = DATA;
+            let low = r.next_u32() % 0x10000;
+            let old = match seed % 3 {
+                0 => low.wrapping_sub(1 + r.next_u32() % 0x100),
+                _ => low + r.next_u32() % 0x1000,
+            };
+            let n = match seed % 4 {
+                0 => r.next_u32() % 0x10,
+                1 => r.next_u32() % 0x2000,
+                2 => old.wrapping_sub(low) + 1 + r.next_u32() % 4,
+                _ => r.next_u32(),
+            };
+            c.bus.write32(st + STREAM_FILE_BUFFERED, old);
+            c.bus.write32(st + STREAM_FILE_LOW_WATER, low);
+            c.bus.write32(st + STREAM_FILE_NEEDS_REFILL, r.next_u32());
+            c.bus.write32(st + STREAM_FILE_MODE, if seed % 2 == 0 { 1 } else { r.next_u32() % 3 });
+            c.bus.write32(st + STREAM_FILE_PRIORITY, r.next_u32() % 8);
+            c.bus.write32(st + STREAM_FILE_HANDLE, if seed % 5 == 0 { 0 } else { r.next_u32() });
+            // The mutex: owner thread id (+4), lock count (+8), semaphore (+0xc).
+            let m = st + STREAM_FILE_MUTEX;
+            put_words(c, m + 4, &[r.next_u32() % 4, r.next_u32() % 3, r.next_u32() % 16]);
+            c.g[A0][0] = sx(st);
+            c.g[A1][0] = sx(n);
+        });
+    }
+
+
+    /// WorldLightMan_LightInstanceCB: the world, its game module and light
+    /// manager; an instance whose lighting node is cached at the head of
+    /// its hash chain, with no model and the node's own position (so the
+    /// real GetInstanceLighting takes its short path whether or not the
+    /// force bit (flags bit 12) is set). Flags are random otherwise.
+    #[test]
+    fn world_light_man_light_instance_cb_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{put_vec, GAME_GP};
+        const WORLD: u32 = 0x00a0_0000;
+        const GAME_MODULE: u32 = 0x00a0_1000;
+        const LIGHT_MAN: u32 = 0x00a1_0000;
+        const NODE: u32 = 0x00a2_0000;
+        const FRAME_STATE: u32 = 0x00a3_0000;
+        const INST: u32 = 0x00a4_0000;
+        crate::difftest::check(
+            ee::s09::f_002f5148__generated,
+            world_light_man_light_instance_cb,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f51_4800, 0);
+                c.pc = 0x002f_5148;
+                c.bus.write32(GAME_GP - 0x848, WORLD);
+                c.bus.write32(WORLD + 0x84, GAME_MODULE);
+                c.bus.write32(GAME_MODULE + 0x90, LIGHT_MAN);
+                c.bus.write32(GAME_GP + 0x2a74, FRAME_STATE);
+                c.bus.write32(FRAME_STATE + 0x18, 100 + seed % 50);
+                let key = r.next_u32();
+                let slot = (key >> 8) & 0x1f;
+                c.bus.write32(LIGHT_MAN + 0x3210 + 4 * slot, NODE);
+                c.bus.write32(NODE, key);
+                let pos = [r.f32(500.0), r.f32(500.0), r.f32(500.0), r.f32(1.0)];
+                put_vec(c, NODE + 0xb0, pos);
+                let flags = r.next_u32();
+                let flags = if seed % 2 == 0 { flags | 0x1000 } else { flags & !0x1000 };
+                c.bus.write32(INST + 0x8, flags);
+                c.bus.write32(INST + 0xc, 0);
+                put_vec(c, INST + 0x40, pos);
+                c.bus.write32(INST + 0x78, key);
+                c.g[A0][0] = INST as u64;
+            },
+        );
+    }
+
+
+    /// PATH_TrackSetVolume: random volume and scale bytes (both signs),
+    /// the track playing (status byte negative) on half the seeds; the
+    /// real PATH_PlatSetVolume takes its early out (no audio streams:
+    /// the audio system's +0x6280 is 0). LO/HI compared too.
+    #[test]
+    fn path_track_set_volume_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{DATA, GAME_GP};
+        use path_track::*;
+        const TRACK: u32 = DATA + 0x4_0000;
+        const PLAT0: u32 = DATA + 0x4_1000;
+        const AUDIO: u32 = DATA + 0x5_0000;
+        crate::difftest::check_lohi(ee::s14::f_003d62c8__generated, path_track_set_volume, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x003d_62c8, 0);
+            c.pc = 0x003d_62c8;
+            let status = r.next_u32() as u8;
+            let status = if seed % 2 == 0 { status | 0x80 } else { status & 0x7f };
+            c.bus.write8(TRACK + STATUS, status);
+            c.bus.write8(TRACK + VOLUME, r.next_u32() as u8);
+            c.bus.write8(TRACK + SCALE, r.next_u32() as u8);
+            let plat = r.next_u32() % 8;
+            c.bus.write32(TRACK + PLAT, plat);
+            c.bus.write32(0x004d_3e98 + 4 * plat, PLAT0 + 0x100 * plat);
+            c.bus.write32(GAME_GP + 0x410, AUDIO);
+            c.bus.write32(AUDIO + 0x6280, 0);
+            c.g[A0][0] = TRACK as u64;
+            c.g[A1][0] = if seed % 5 == 0 { r.next_u32() as u64 } else { (r.next_u32() % 101) as u64 };
         });
     }
 }

@@ -23,13 +23,19 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::r32;
+use crate::abi::ret;
+use crate::ps2f::FpuF32;
+use crate::call::sp;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
     0x0015_2460,
     be_record_char_profile_event_score,
     "BE_RecordCharProfileEventScore",
-)];
+),
+    (0x0015_23e8, be_test_char_profile_flag, "BE_TestCharProfileFlag"),
+];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
 pub(crate) mod callee {
@@ -358,6 +364,41 @@ pub fn be_record_char_profile_event_place(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// BE_TestCharProfileFlag (bedbprofile.cpp).
+
+/// The three profile flag masks (`D_0045A7C0`), indexed by kind.
+pub(crate) const CHAR_PROFILE_MASKS_207: u32 = 0x0045_a7c0;
+
+
+
+/// `int BE_TestCharProfileFlag(CharProfile* self, int kind)` (0x1523e8):
+/// whether the profile's flag word (`+0xacc`) has any bit of mask `kind`.
+/// The masks are copied to the stack first (`ldl/ldr` + `lw`, then
+/// `sdl/sdr` + `sw`), as the original's struct copy does.
+pub fn be_test_char_profile_flag(c: &mut Cpu) {
+    const FLAGS: u32 = 0xacc;
+    c.cycles += 17;
+    let frame = Frame::open(c, 0x10);
+    c.g[V0][0] = 0x46_0000;
+    c.g[T0][0] = sx(CHAR_PROFILE_MASKS_207);
+    let first_two = Addr(CHAR_PROFILE_MASKS_207).read_u64_unaligned(c);
+    c.g[V1][0] = first_two;
+    c.g[A2][0] = Addr(CHAR_PROFILE_MASKS_207).off(8).lw(c);
+    let copy = frame.at(c, 0);
+    Addr(copy).write_u64_unaligned(c, first_two);
+    c.sw(copy.wrapping_add(8), c.g[A2][0]);
+    c.g[A1][0] = sx(r32(c, A1) << 2);
+    c.g[A2][0] = sx(copy.wrapping_add(r32(c, A1)));
+    c.g[V0][0] = Addr(r32(c, A0)).off(FLAGS).lw(c);
+    c.g[V1][0] = Addr(r32(c, A2)).lw(c);
+    c.g[V0][0] = ((c.g[V0][0] & c.g[V1][0]) != 0) as u64;
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -418,5 +459,36 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+    use super::*;
+    use crate::difftest::fakes::{self, covered};
+    use crate::difftest::{check_lohi, fill, scramble};
+
+
+    // --------------------------------------------------- profile flags
+
+    /// BE_TestCharProfileFlag: kinds 0..2, random masks and flag words
+    /// (sometimes zero, sometimes exactly the mask).
+    #[test]
+    fn be_test_char_profile_flag_matches() {
+        check(ee::s01::f_001523e8__generated, be_test_char_profile_flag, 200, &|c, seed| {
+            let mut r = Rng(0x0015_23e8 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.pc = 0x0015_23e8;
+            let kind = seed % 3;
+            c.g[A0][0] = sx(DATA);
+            c.g[A1][0] = kind as u64;
+            let masks = [1 << (r.next_u32() % 32), r.next_u32(), r.next_u32() & 0xff];
+            for (i, m) in masks.iter().enumerate() {
+                c.bus.write32(CHAR_PROFILE_MASKS_207 + 4 * i as u32, *m);
+            }
+            let flags = match seed % 4 {
+                0 => 0,
+                1 => masks[kind as usize],
+                2 => !masks[kind as usize],
+                _ => r.next_u32(),
+            };
+            c.bus.write32(DATA + 0xacc, flags);
+        });
     }
 }

@@ -397,6 +397,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderSpinSub_GetSpinProgress",
     ),
     (0x0012_cb68, rider_wipeout_sub_handle_input, "RiderWipeoutSub_HandleInput"),
+    (0x0012_cd20, rider_wipeout_sub_update_phase0, "RiderWipeoutSub_UpdatePhase0"),
+    (0x0012_d848, rider_wipeout_sub_update_recover, "RiderWipeoutSub_UpdateRecover"),
+    (0x0012_e528, rider_wipeout_sub_update_anim_speed, "RiderWipeoutSub_UpdateAnimSpeed"),
+    (0x0012_e778, rider_bump_sub_handle_input, "RiderBumpSub_HandleInput"),
 ];
 
 /// `gp`-relative globals used here.
@@ -13382,6 +13386,1089 @@ pub fn rider_wipeout_sub_handle_input(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// RiderBumpSub_HandleInput (0x12e778)
+
+/// Bump sub-state: the rider (`*this`).
+pub(crate) const BUMP_RIDER: u32 = 0x0;
+
+
+/// Pad: button / axis word (bit 12 reset path, 13/14 boost input, bits
+/// 21..26 and 15..20 the 6-bit stick axes).
+pub(crate) const BUMP_PAD_BUTTONS: u32 = 0x0;
+
+
+/// Rider: velocity and facing vectors (their dot product picks the lean
+/// sign).
+pub(crate) const BUMP_RIDER_VELOCITY: u32 = 0x1e0;
+
+
+pub(crate) const BUMP_RIDER_FACING: u32 = 0x3a0;
+
+
+/// Rider floats: slew-1 target and rate.
+pub(crate) const BUMP_RIDER_SLEW1_TARGET: u32 = 0x204;
+
+
+pub(crate) const BUMP_RIDER_SLEW1_RATE: u32 = 0x200;
+
+
+/// Rider: the owner (`RiderBase`) and the animation controller.
+pub(crate) const BUMP_RIDER_OWNER: u32 = 0x77c;
+
+
+pub(crate) const BUMP_RIDER_ANIM_CTRL: u32 = 0x784;
+
+
+/// `gp`-relative `.lit4`: 1/31 (axis scale), again for the lean, 1/30.
+pub(crate) const BUMP_AXIS_SCALE_GP: u32 = 0x77a0;
+
+
+pub(crate) const BUMP_LEAN_SCALE_GP: u32 = 0x779c;
+
+
+pub(crate) const BUMP_SLEW1_RATE_GP: u32 = 0x7798;
+
+
+
+pub(crate) const BUMP_TRY_ENTER_FINISH_LINE: Callee =
+    Callee { addr: 0x0011_6378, f: ee::s00::Rider_TryEnterFinishLine };
+
+
+pub(crate) const BUMP_CHECK_RESET_PATH: Callee =
+    Callee { addr: 0x0011_6120, f: ee::s00::Rider_CheckResetPath };
+
+
+pub(crate) const BUMP_TRY_START_RAILSLIDE: Callee =
+    Callee { addr: 0x0010_6848, f: ee::s00::Rider_TryStartRailslide };
+
+
+pub(crate) const BUMP_GET_MAIN_STATE: Callee = Callee { addr: 0x0011_fe98, f: ee::s00::Rider_GetMainState };
+
+
+pub(crate) const BUMP_HANDLE_BOOST_INPUT: Callee =
+    Callee { addr: 0x0011_4130, f: ee::s00::Rider_HandleBoostInput };
+
+
+pub(crate) const BUMP_SET_SLEW0_TARGET: Callee =
+    Callee { addr: 0x0011_3e80, f: ee::s00::Rider_SetSlew0Target };
+
+
+pub(crate) const BUMP_SET_SLEW5_TARGET: Callee =
+    Callee { addr: 0x0011_3f38, f: ee::s00::Rider_SetSlew5Target };
+
+
+pub(crate) const BUMP_SET_SLEW3_AND4_TARGETS: Callee =
+    Callee { addr: 0x0011_3f88, f: ee::s00::Rider_SetSlew3And4Targets };
+
+
+pub(crate) const BUMP_RESET_GRIND_ORIENTATION: Callee =
+    Callee { addr: 0x0011_5640, f: ee::s00::Rider_ResetGrindOrientation };
+
+
+pub(crate) const BUMP_SET_SUB_STATE: Callee = Callee { addr: 0x0011_fec8, f: ee::s00::Rider_SetSubState };
+
+
+/// `AnimController_IsLayerFinished(ctrl, layer)` (cross-shard).
+pub(crate) const BUMP_ANIM_LAYER_DONE: u32 = 0x0031_2ae8;
+
+
+/// The owner's land-animation helper (`owner + 0x2b0`, cross-shard).
+pub(crate) const BUMP_PLAY_LAND_ANIM: u32 = 0x0013_26c8;
+
+
+
+/// `void RiderBumpSub_HandleInput(RiderBumpSub* this, Pad* pad)` (0x12e778):
+/// the input of a rider recovering from a bump, once per tick.
+///
+/// - Crossing the finish line, a path reset (pad bit 12) or a rail start
+///   end the function.
+/// - Airborne (main state 1): no boost, slew 0 to 0. Otherwise boost input
+///   (bits 14/13); in main state 4 slew 5 follows the axis in bits 21..26
+///   (/31), else slew 0 follows the axis in bits 15..20 (/31), negated when
+///   the rider moves backwards (velocity . facing < 0).
+/// - Slews 3/4 to 0, slew 1 to 0 at rate 1/30.
+/// - When the layer-2 animation has finished: main state 4 plays the land
+///   animation and enters sub-state 7; otherwise the grind orientation is
+///   reset and sub-state 4 (airborne) or 0 follows.
+pub fn rider_bump_sub_handle_input(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        let this = Addr(r32(c, S0));
+        let pad = Addr(r32(c, S1));
+        c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+        BUMP_TRY_ENTER_FINISH_LINE.call(c, 0x0012_e79c)?;
+        if c.g[V0][0] != 0 {
+            return bump_exit(c, frame);
+        }
+        c.cycles += 8;
+        let buttons = pad.off(BUMP_PAD_BUTTONS).lw(c) as u32;
+        c.g[A2][0] = 0;
+        c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+        c.g[A1][0] = sx(((buttons as i32) >> 12) as u32) & 0x1;
+        BUMP_CHECK_RESET_PATH.call(c, 0x0012_e7bc)?;
+        if c.g[V0][0] != 0 {
+            return bump_exit(c, frame);
+        }
+        c.cycles += 4;
+        c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+        BUMP_TRY_START_RAILSLIDE.call(c, 0x0012_e7cc)?;
+        if c.g[V0][0] != 0 {
+            return bump_exit(c, frame);
+        }
+
+        c.cycles += 5;
+        c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+        BUMP_GET_MAIN_STATE.call(c, 0x0012_e7dc)?;
+        c.g[V1][0] = 0x1;
+        if c.g[V0][0] == 1 {
+            // Airborne: no boost, no lean.
+            c.cycles += 9;
+            c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            BUMP_HANDLE_BOOST_INPUT.call(c, 0x0012_e7f8)?;
+            c.f[12] = 0;
+            c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+            BUMP_SET_SLEW0_TARGET.call(c, 0x0012_e804)?;
+        } else {
+            let buttons = pad.off(BUMP_PAD_BUTTONS).lw(c) as u32;
+            c.cycles += 11;
+            c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+            c.g[A2][0] = sx(((buttons as i32) >> 13) as u32) & 0x1;
+            c.g[A1][0] = sx(((buttons as i32) >> 14) as u32) & 0x1;
+            BUMP_HANDLE_BOOST_INPUT.call(c, 0x0012_e824)?;
+            c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+            BUMP_GET_MAIN_STATE.call(c, 0x0012_e82c)?;
+            c.g[V1][0] = 0x4;
+            let state4 = c.g[V0][0] == 4;
+            let buttons = pad.off(BUMP_PAD_BUTTONS).lw(c) as u32;
+            if state4 {
+                // Slew 5 follows the axis in bits 21..26.
+                c.cycles += 10;
+                let gp = r32(c, GP);
+                let scale = Addr(gp.wrapping_sub(BUMP_AXIS_SCALE_GP)).read_fpu(c);
+                c.f[0] = scale.0;
+                c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+                let axis = (((buttons << 5) as i32) >> 26) as u32;
+                c.g[V0][0] = sx(axis);
+                c.f[12] = axis;
+                c.cvt_s_w(12, 12);
+                c.mul_s(12, 12, 0);
+                BUMP_SET_SLEW5_TARGET.call(c, 0x0012_e858)?;
+            } else {
+                // Slew 0 follows the axis in bits 15..20, signed by the
+                // direction of travel.
+                c.cycles += 20;
+                let rider = this.off(BUMP_RIDER).lw(c);
+                c.g[A0][0] = rider;
+                let axis = (((buttons << 11) as i32) >> 26) as u32;
+                c.f[3] = 0;
+                c.g[V0][0] = sx(axis);
+                let rider = rider as u32;
+                c.lqc2(3, rider.wrapping_add(BUMP_RIDER_VELOCITY));
+                c.lqc2(5, rider.wrapping_add(BUMP_RIDER_FACING));
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.qmfc2(3, 4);
+                c.f[1] = c.g[V1][0] as u32;
+                c.f[2] = axis;
+                c.cvt_s_w(2, 2);
+                let gp = r32(c, GP);
+                let scale = Addr(gp.wrapping_sub(BUMP_LEAN_SCALE_GP)).read_fpu(c);
+                c.f[0] = scale.0;
+                c.c_lt_s(1, 3);
+                c.mul_s(12, 2, 0);
+                if c.fcc() {
+                    c.cycles += 1;
+                    c.neg_s(12, 12);
+                }
+                c.cycles += 2;
+                BUMP_SET_SLEW0_TARGET.call(c, 0x0012_e8bc)?;
+            }
+        }
+
+        // Slews 3/4 and 1 to zero.
+        c.cycles += 15;
+        c.f[20] = 0;
+        c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+        c.f[13] = c.f[20];
+        c.f[12] = c.f[20];
+        BUMP_SET_SLEW3_AND4_TARGETS.call(c, 0x0012_e8d0)?;
+        let rider_word = this.off(BUMP_RIDER).lw(c);
+        c.g[V1][0] = rider_word;
+        let rider = Addr(rider_word as u32);
+        c.g[A1][0] = 0x2;
+        let gp = r32(c, GP);
+        let rate = Addr(gp.wrapping_sub(BUMP_SLEW1_RATE_GP)).read_fpu(c);
+        c.f[0] = rate.0;
+        let zero = FpuF32(c.f[20]);
+        rider.off(BUMP_RIDER_SLEW1_TARGET).write_fpu(c, zero);
+        rider.off(BUMP_RIDER_SLEW1_RATE).write_fpu(c, rate);
+        let rider = this.off(BUMP_RIDER).lw(c);
+        c.g[V0][0] = rider;
+        c.g[A0][0] = Addr((rider as u32).wrapping_add(BUMP_RIDER_ANIM_CTRL)).lw(c);
+        call_ptr(c, BUMP_ANIM_LAYER_DONE, 0x0012_e8f0)?;
+        if c.g[V0][0] == 0 {
+            return bump_exit(c, frame);
+        }
+
+        // The bump animation has finished: leave the sub-state.
+        c.cycles += 5;
+        c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+        BUMP_GET_MAIN_STATE.call(c, 0x0012_e900)?;
+        c.g[V1][0] = 0x4;
+        c.g[A1][0] = 0;
+        if c.g[V0][0] == 4 {
+            c.cycles += 9;
+            let rider = this.off(BUMP_RIDER).lw(c);
+            c.g[V0][0] = rider;
+            let owner = Addr((rider as u32).wrapping_add(BUMP_RIDER_OWNER)).lw(c) as u32;
+            c.g[A0][0] = sx(owner.wrapping_add(0x2b0));
+            call_ptr(c, BUMP_PLAY_LAND_ANIM, 0x0012_e91c)?;
+            c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+            c.g[A1][0] = 0x7;
+            BUMP_SET_SUB_STATE.call(c, 0x0012_e928)?;
+            return bump_exit(c, frame);
+        }
+        c.cycles += 7;
+        c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+        BUMP_RESET_GRIND_ORIENTATION.call(c, 0x0012_e938)?;
+        c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+        BUMP_GET_MAIN_STATE.call(c, 0x0012_e940)?;
+        c.g[V1][0] = 0x1;
+        let airborne = c.g[V0][0] == 1;
+        c.g[A0][0] = this.off(BUMP_RIDER).lw(c);
+        if airborne {
+            c.cycles += 4;
+            c.g[A1][0] = 0x4;
+            BUMP_SET_SUB_STATE.call(c, 0x0012_e954)?;
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = 0;
+            BUMP_SET_SUB_STATE.call(c, 0x0012_e964)?;
+        }
+        bump_exit(c, frame)
+    });
+}
+
+
+
+/// `RiderBumpSub_HandleInput`'s exit (`lq s0` in each branch, then the
+/// shared 5-cycle tail).
+pub(crate) fn bump_exit(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    frame.restore(c, S0, 0x20);
+    c.cycles += 5;
+    frame.restore(c, S1, 0x10);
+    frame.restore_ra(c, 0);
+    frame.restore_fpr(c, 20, 0x30);
+    frame.close(c);
+    Ok(())
+}
+
+
+
+
+// ---------------------------------------------------------------------------
+// RiderWipeoutSub_UpdateRecover (ai.cpp).
+
+/// `SSXAudioSystem_GetInstance` (0x28b180; through the table).
+pub(crate) const SSX_AUDIO_GET_INSTANCE_207: u32 = 0x0028_b180;
+
+
+/// `SSXAudioSystem_PlayLandingSound` (0x2948d0; through the table).
+pub(crate) const SSX_AUDIO_PLAY_LANDING_SOUND_207: u32 = 0x0029_48d0;
+
+
+/// `AnimController_GetLayerProgress` (0x312ab0; through the table).
+pub(crate) const ANIM_CONTROLLER_GET_LAYER_PROGRESS_207: u32 = 0x0031_2ab0;
+
+
+/// `AnimController_IsLayerAnimFinished` (0x312ae8; through the table).
+pub(crate) const ANIM_CONTROLLER_IS_LAYER_ANIM_FINISHED_207: u32 = 0x0031_2ae8;
+
+
+/// `AnimController_PlayAnim` (0x3128e8; through the table).
+pub(crate) const ANIM_CONTROLLER_PLAY_ANIM_207: u32 = 0x0031_28e8;
+
+
+pub(crate) const RIDER_SET_SUB_STATE_207: Callee = Callee {
+    addr: 0x0011_fec8,
+    f: ee::s00::Rider_SetSubState,
+};
+
+
+pub(crate) const RIDER_SET_MAIN_STATE_207: Callee = Callee {
+    addr: 0x0011_fe78,
+    f: ee::s00::Rider_SetMainState,
+};
+
+
+pub(crate) const RIDER_METRIX_INTERRUPT_TRICK_207: Callee = Callee {
+    addr: 0x0011_9e38,
+    f: ee::s00::RiderMetrix_InterruptTrick,
+};
+
+
+
+/// `void RiderWipeoutSub_UpdateRecover(RiderWipeoutSub* self)` (0x12d848):
+/// the wipeout's recovery phase.
+///
+/// - On the first update (`self+0x54` set): clear the flag, pass the length
+///   of the impact vector (`self+0x60`, VU0 `sqrt` of the xyz dot product)
+///   to the rider's vtable slot 0x88, then play the landing sound
+///   (`SSXAudioSystem_PlayLandingSound(instance, rider, 0.0)`).
+/// - A human rider (owner `+0x77c` → `+0x30` zero) feeds
+///   `2 * (1 - progress of anim layer 2)` to vtable slot 0x90.
+/// - When layer 2's animation has finished: a human rider plays anim 5 and
+///   goes to sub-state 0 / main state 0; otherwise the trick is interrupted
+///   (`RiderMetrix_InterruptTrick(metrix, +0x320 != +0x324, 0)`), anim 0x11f
+///   plays and the rider goes to sub-state 5 / main state 1.
+pub fn rider_wipeout_sub_update_recover(c: &mut Cpu) {
+    /// The "recovery just started" flag.
+    const STARTED: u32 = 0x54;
+    /// The impact vector (xyz).
+    const IMPACT: u32 = 0x60;
+    const RIDER: u32 = 0x80;
+    // Rider fields.
+    const VTABLE: u32 = 0x6c0;
+    const OWNER: u32 = 0x77c;
+    const ANIM_CTL: u32 = 0x784;
+    const METRIX: u32 = 0x790;
+    /// Owner: non-zero for a computer rider.
+    const OWNER_AI: u32 = 0x30;
+    /// -1.0f (anim blend).
+    const MINUS_ONE: u64 = 0xffff_ffff_bf80_0000;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S2, 0x10);
+        frame.save(c, S0, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S2)).off(STARTED).lw(c);
+        if c.g[V0][0] != 0 {
+            c.cycles += 24;
+            let me = r32(c, S2);
+            c.sw(me.wrapping_add(STARTED), 0);
+            c.g[A1][0] = Addr(me).off(RIDER).lw(c);
+            c.lqc2(3, me.wrapping_add(IMPACT));
+            // |impact| (xyz) into f12.
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().sqrt(4, 0);
+            c.vu0().waitq();
+            c.cfc2(V0, 22);
+            c.mtc1(V0, 12);
+            c.g[V0][0] = Addr(r32(c, A1)).off(VTABLE).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0)).off(0x88).lh(c);
+            c.g[V1][0] = Addr(r32(c, V0)).off(0x8c).lw(c);
+            let target = r32(c, V1);
+            c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+            call_ptr(c, target, 0x0012_d8b0)?;
+            call_ptr(c, SSX_AUDIO_GET_INSTANCE_207, 0x0012_d8b8)?;
+            c.g[A1][0] = Addr(r32(c, S2)).off(RIDER).lw(c);
+            c.mtc1(0, 12); // f12 = 0.0
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, SSX_AUDIO_PLAY_LANDING_SOUND_207, 0x0012_d8c8)?;
+        }
+        c.g[A2][0] = Addr(r32(c, S2)).off(RIDER).lw(c);
+
+        // A human rider: feed the recovery progress to slot 0x90.
+        c.cycles += 4;
+        c.g[V0][0] = Addr(r32(c, A2)).off(OWNER).lw(c);
+        c.g[V1][0] = Addr(r32(c, V0)).off(OWNER_AI).lw(c);
+        if c.g[V1][0] == 0 {
+            c.cycles += 14;
+            let rider = r32(c, A2);
+            c.g[S1][0] = Addr(rider).off(VTABLE).lw(c);
+            c.g[A1][0] = 0x2;
+            c.g[A0][0] = Addr(rider).off(ANIM_CTL).lw(c);
+            c.g[S0][0] = Addr(r32(c, S1)).off(0x90).lh(c);
+            c.g[S0][0] = sx(rider.wrapping_add(r32(c, S0)));
+            call_ptr(c, ANIM_CONTROLLER_GET_LAYER_PROGRESS_207, 0x0012_d8f4)?;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 12); // f12 = 1.0
+            c.g[A0][0] = c.g[S0][0];
+            c.g[V0][0] = Addr(r32(c, S1)).off(0x94).lw(c);
+            c.f[12] = (FpuF32(c.f[12]) - FpuF32(c.f[0])).0;
+            let target = r32(c, V0);
+            c.f[12] = (FpuF32(c.f[12]) + FpuF32(c.f[12])).0;
+            call_ptr(c, target, 0x0012_d910)?;
+        }
+        c.g[V0][0] = Addr(r32(c, S2)).off(RIDER).lw(c);
+
+        // Layer 2 finished: leave the wipeout.
+        c.cycles += 5;
+        c.g[A1][0] = 0x2;
+        c.g[A0][0] = Addr(r32(c, V0)).off(ANIM_CTL).lw(c);
+        call_ptr(c, ANIM_CONTROLLER_IS_LAYER_ANIM_FINISHED_207, 0x0012_d920)?;
+        let finished = c.g[V0][0] != 0;
+        frame.restore(c, S0, 0x30);
+        if finished {
+            c.cycles += 5;
+            c.g[A0][0] = Addr(r32(c, S2)).off(RIDER).lw(c);
+            c.g[V0][0] = Addr(r32(c, A0)).off(OWNER).lw(c);
+            c.g[V1][0] = Addr(r32(c, V0)).off(OWNER_AI).lw(c);
+            if c.g[V1][0] == 0 {
+                c.cycles += 14;
+                c.g[A0][0] = Addr(r32(c, A0)).off(ANIM_CTL).lw(c);
+                c.g[A1][0] = 0x5;
+                c.g[AT][0] = MINUS_ONE;
+                c.mtc1(AT, 12);
+                c.g[A2][0] = 0;
+                call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM_207, 0x0012_d954)?;
+                c.g[A0][0] = Addr(r32(c, S2)).off(RIDER).lw(c);
+                c.g[A1][0] = 0;
+                RIDER_SET_SUB_STATE_207.call(c, 0x0012_d960)?;
+                c.g[A0][0] = Addr(r32(c, S2)).off(RIDER).lw(c);
+                c.g[A1][0] = 0;
+                RIDER_SET_MAIN_STATE_207.call(c, 0x0012_d96c)?;
+            } else {
+                let rider = r32(c, A0);
+                c.g[V0][0] = Addr(rider).off(0x324).lw(c);
+                c.cycles += 20;
+                c.g[A2][0] = 0;
+                c.g[A1][0] = Addr(rider).off(0x320).lw(c);
+                c.g[A0][0] = Addr(rider).off(METRIX).lw(c);
+                c.g[A1][0] ^= c.g[V0][0];
+                c.g[A1][0] = (c.g[A1][0] != 0) as u64;
+                RIDER_METRIX_INTERRUPT_TRICK_207.call(c, 0x0012_d98c)?;
+                c.g[V0][0] = Addr(r32(c, S2)).off(RIDER).lw(c);
+                c.g[A1][0] = 0x11f;
+                c.g[AT][0] = MINUS_ONE;
+                c.mtc1(AT, 12);
+                c.g[A2][0] = 0;
+                c.g[A0][0] = Addr(r32(c, V0)).off(ANIM_CTL).lw(c);
+                call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM_207, 0x0012_d9a8)?;
+                c.g[A0][0] = Addr(r32(c, S2)).off(RIDER).lw(c);
+                c.g[A1][0] = 0x5;
+                RIDER_SET_SUB_STATE_207.call(c, 0x0012_d9b4)?;
+                c.g[A0][0] = Addr(r32(c, S2)).off(RIDER).lw(c);
+                c.g[A1][0] = 0x1;
+                RIDER_SET_MAIN_STATE_207.call(c, 0x0012_d9c0)?;
+            }
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// RiderWipeoutSub_UpdatePhase0 (0x12cd20)
+
+/// `RiderWipeoutSub + 0x80`: the rider.
+pub(crate) const WP0_RIDER: u32 = 0x80;
+
+
+/// Rider fields: model (+0x780, its `+0x2c` the root-node pose array, 0x20
+/// bytes per node: position, rotation quaternion), anim controller (+0x784),
+/// wipeout state (+0x77c), the two tracked node indices.
+pub(crate) const WP0_RIDER_STATE: u32 = 0x77c;
+
+
+pub(crate) const WP0_RIDER_MODEL: u32 = 0x780;
+
+
+pub(crate) const WP0_RIDER_ANIM: u32 = 0x784;
+
+
+pub(crate) const WP0_RIDER_NODE1: u32 = 0x89c;
+
+
+pub(crate) const WP0_RIDER_NODE2: u32 = 0x8a4;
+
+
+/// Anim queries on track 2: `AnimController_GetTrackPhase` (f0),
+/// `..._IsTrackDone`, `..._GetTrackSeq`, `..._GetTrackAnimType`.
+pub(crate) const WP0_TRACK_PHASE: u32 = 0x0031_2ab0;
+
+
+pub(crate) const WP0_TRACK_DONE: u32 = 0x0031_2ae8;
+
+
+pub(crate) const WP0_TRACK_SEQ: u32 = 0x0031_1b20;
+
+
+pub(crate) const WP0_TRACK_TYPE: u32 = 0x0031_1ae8;
+
+
+/// `RiderWipeoutState_SetVelocity(state + 0x30, rider + 0x1e0, &angvel)`.
+pub(crate) const WP0_SET_VELOCITY: u32 = 0x0013_6de0;
+
+
+/// `RiderWipeoutState_EnableRootPoseOverride(state + 0x30, &vel, &angvel, node2)`.
+pub(crate) const WP0_ROOT_OVERRIDE: u32 = 0x0013_6d40;
+
+
+/// `RiderWipeoutSub_SelectTumbleAnim(self)`.
+pub(crate) const WP0_SELECT_TUMBLE: Callee = Callee { addr: 0x0012_da88, f: ee::s00::f_0012da88 };
+
+
+/// `SSXAudioSystem_GetInstance()`, `..._StartWipeoutLoop(audio, self)`,
+/// `..._StartWipeoutLoop2(audio, self)`.
+pub(crate) const WP0_AUDIO_INSTANCE: u32 = 0x0028_b180;
+
+
+pub(crate) const WP0_AUDIO_LOOP: u32 = 0x0029_6868;
+
+
+pub(crate) const WP0_AUDIO_LOOP2: u32 = 0x0029_6e80;
+
+
+/// `gp - 0x77c4`: 0.95, the phase up to which the start poses are recorded.
+pub(crate) const WP0_RECORD_LIMIT_GP: u32 = 0x77c4;
+
+
+/// Anim types that end the tumble phase specially.
+pub(crate) const WP0_TYPE_ROOT_OVERRIDE: u64 = 0x17;
+
+
+pub(crate) const WP0_TYPE_LOOP_A: u64 = 0x1d;
+
+
+pub(crate) const WP0_TYPE_LOOP_B: u64 = 0x19;
+
+
+
+/// `v = vf[src] * f[f].x` through the stack: `mfc1 v1, f; lqc2 vf4, src(sp);
+/// qmtc2 v1, vf3; vmulx vf5, vf4, vf3; sqc2 vf5, dst(sp); lq v0, dst(sp)`.
+pub(crate) fn wp0_scale(c: &mut Cpu, f: usize, src: u32, dst: u32) {
+    let s = sp(c);
+    c.mfc1(V1, f);
+    c.lqc2(4, s.wrapping_add(src));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s.wrapping_add(dst));
+    c.lq(V0, s.wrapping_add(dst));
+}
+
+
+
+/// `vf5 = [a] - [b]` stored at `dst(sp)`.
+pub(crate) fn wp0_sub(c: &mut Cpu, a: u32, b: u32, dst: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    let s = sp(c);
+    c.sqc2(5, s.wrapping_add(dst));
+}
+
+
+
+/// The quaternion product `vf4 * vf5` (xyz cross/dot form) into vf8.
+pub(crate) fn wp0_quat_mul(c: &mut Cpu) {
+    c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+    c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+    c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+    c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+    c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+    c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+}
+
+
+
+/// The conjugate of the node quaternion at `node + 0x10` written to
+/// `conj(sp)..+0xc` (`(-x, -y, -z, w)`, stored in the original's order).
+pub(crate) fn wp0_store_conj(c: &mut Cpu, node: u32, conj: u32) {
+    let s = sp(c).wrapping_add(conj);
+    let w = Addr(node.wrapping_add(0x1c)).read_fpu(c);
+    abi::set_fpr(c, 0, w);
+    Addr(s.wrapping_add(0xc)).write_fpu(c, w);
+    let x = Addr(node.wrapping_add(0x10)).read_fpu(c);
+    abi::set_fpr(c, 2, x);
+    Addr(s).write_fpu(c, x);
+    let y = Addr(node.wrapping_add(0x14)).read_fpu(c);
+    abi::set_fpr(c, 1, y);
+    abi::set_fpr(c, 2, -x);
+    Addr(s.wrapping_add(0x4)).write_fpu(c, y);
+    abi::set_fpr(c, 1, -y);
+    let z = Addr(node.wrapping_add(0x18)).read_fpu(c);
+    abi::set_fpr(c, 0, z);
+    Addr(s).write_fpu(c, -x);
+    abi::set_fpr(c, 0, -z);
+    Addr(s.wrapping_add(0x4)).write_fpu(c, -y);
+    Addr(s.wrapping_add(0x8)).write_fpu(c, -z);
+}
+
+
+
+/// Copy the xyz of the quadword at `src(sp)` to `dst(sp)` through f0..f2.
+pub(crate) fn wp0_copy_xyz(c: &mut Cpu, src: u32, dst: u32) {
+    let s = sp(c);
+    c.lwc1(0, s.wrapping_add(src));
+    c.lwc1(1, s.wrapping_add(src + 4));
+    c.lwc1(2, s.wrapping_add(src + 8));
+    c.swc1(0, s.wrapping_add(dst));
+    c.swc1(1, s.wrapping_add(dst + 4));
+    c.swc1(2, s.wrapping_add(dst + 8));
+}
+
+
+
+/// `void RiderWipeoutSub_UpdatePhase0(RiderWipeoutSub* self)` (0x12cd20):
+/// the tumble start. While the track-2 animation plays, record its phase and
+/// the two tracked root-node poses (until phase 0.95). When it is done, turn
+/// the pose change since the record into a linear and angular velocity for
+/// the wipeout state (and, for anim type 0x17, a root-pose override from the
+/// second node), then select the tumble animation: phase 1 if the state is in
+/// mode 1, else phase 2 and start the wipeout audio loop (type 0x1d/0x19 or
+/// the other one).
+pub fn rider_wipeout_sub_update_phase0(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0xe0);
+        c.g[A1][0] = 2;
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S1, 0xb0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0xa0);
+        frame.save_fpr(c, 20, 0xd0);
+        frame.save(c, S3, 0x90);
+        frame.save_ra(c, 0x80);
+        frame.save_fpr(c, 21, 0xd8);
+        let rider = Addr(r32(c, S0).wrapping_add(WP0_RIDER)).lw(c);
+        c.g[V1][0] = rider;
+        let rider = rider as u32;
+        c.g[A0][0] = Addr(rider.wrapping_add(WP0_RIDER_MODEL)).lw(c);
+        c.g[A2][0] = Addr(rider.wrapping_add(WP0_RIDER_NODE1)).lw(c);
+        c.g[V0][0] = Addr(rider.wrapping_add(WP0_RIDER_NODE2)).lw(c);
+        c.g[A3][0] = Addr(r32(c, A0).wrapping_add(0x2c)).lw(c); // nodes
+        c.g[A2][0] = sx(r32(c, A2) << 5);
+        c.g[V0][0] = sx(r32(c, V0) << 5);
+        c.g[A0][0] = Addr(rider.wrapping_add(WP0_RIDER_ANIM)).lw(c);
+        c.g[S2][0] = sx(r32(c, A3).wrapping_add(r32(c, V0))); // node 2
+        c.g[S1][0] = sx(r32(c, A3).wrapping_add(r32(c, A2))); // node 1
+        call_ptr(c, WP0_TRACK_PHASE, 0x0012_cd74)?;
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(WP0_RIDER)).lw(c);
+        c.f[20] = c.f[0]; // phase
+        c.g[A1][0] = 2;
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(WP0_RIDER_ANIM)).lw(c);
+        call_ptr(c, WP0_TRACK_DONE, 0x0012_cd88)?;
+        let done = c.g[V0][0] != 0;
+        c.g[A1][0] = 2;
+
+        if !done {
+            // Still playing: record the phase and both node poses up to 0.95.
+            c.cycles += 5;
+            let limit = Addr(r32(c, GP).wrapping_sub(WP0_RECORD_LIMIT_GP)).read_fpu(c);
+            abi::set_fpr(c, 0, limit);
+            let record = FpuF32(c.f[20]).lt(limit);
+            abi::set_fcc(c, record);
+            if record {
+                c.cycles += 10;
+                let (this, n1, n2) = (r32(c, S0), r32(c, S1), r32(c, S2));
+                c.swc1(20, this.wrapping_add(0x50));
+                c.lq(V0, n1);
+                c.sq(V0, this.wrapping_add(0x10));
+                c.lq(V1, n1.wrapping_add(0x10));
+                c.sq(V1, this.wrapping_add(0x20));
+                c.lq(V0, n2);
+                c.sq(V0, this.wrapping_add(0x30));
+                c.lq(V1, n2.wrapping_add(0x10));
+                c.sq(V1, this.wrapping_add(0x40));
+            }
+        } else {
+            c.cycles += 96;
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(WP0_RIDER)).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(WP0_RIDER_ANIM)).lw(c);
+            call_ptr(c, WP0_TRACK_SEQ, 0x0012_cd9c)?;
+            let seq = r32(c, V0);
+            let (this, n1) = (r32(c, S0), r32(c, S1));
+            let length = Addr(seq.wrapping_add(0x10)).read_fpu(c);
+            abi::set_fpr(c, 0, length);
+            c.g[S3][0] = sx(sp(c).wrapping_add(0x30));
+            let rate = Addr(seq.wrapping_add(0x90)).read_fpu(c);
+            abi::set_fpr(c, 2, rate);
+            c.g[A2][0] = c.g[S3][0];
+            let start = Addr(this.wrapping_add(0x50)).read_fpu(c);
+            abi::set_fpr(c, 1, start);
+            // Linear: (node1.pos - start pos) * anim scale * s.
+            wp0_sub(c, n1, this.wrapping_add(0x10), 0x30);
+            let s0 = sp(c);
+            c.lq(V0, s0.wrapping_add(0x30));
+            let elapsed = FpuF32(c.f[20]) - start;
+            c.g[V1][0] = Addr(this.wrapping_add(WP0_RIDER)).lw(c);
+            c.sq(V0, s0.wrapping_add(0x20));
+            let denom = elapsed * length;
+            abi::set_fpr(c, 1, denom);
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(WP0_RIDER_ANIM)).lw(c);
+            let scale = Addr(r32(c, V0).wrapping_add(0x1c)).read_fpu(c);
+            abi::set_fpr(c, 0, scale);
+            let speed = rate.div(denom); // s
+            abi::set_fpr(c, 20, speed);
+            wp0_scale(c, 0, 0x20, 0x30);
+            c.sq(V0, s0.wrapping_add(0x10));
+            wp0_scale(c, 20, 0x10, 0x30);
+            abi::set_fpr(c, 21, speed + speed);
+            c.sq(V0, s0);
+            // Angular: (node1.rot - start rot) * conj(node1.rot), xyz, * 2s.
+            wp0_sub(c, n1.wrapping_add(0x10), this.wrapping_add(0x20), 0x20);
+            c.lq(V0, s0.wrapping_add(0x20));
+            c.sq(V0, s0.wrapping_add(0x10));
+            wp0_store_conj(c, n1, 0x40);
+            c.lq(V0, s0.wrapping_add(0x40));
+            c.sq(V0, s0.wrapping_add(0x30));
+            c.lqc2(4, s0.wrapping_add(0x10));
+            c.lqc2(5, s0.wrapping_add(0x30));
+            wp0_quat_mul(c);
+            c.sqc2(8, s0.wrapping_add(0x40));
+            c.lq(V0, s0.wrapping_add(0x40));
+            Addr(s0.wrapping_add(0x4c)).sw(c, 0);
+            c.sq(V0, s0.wrapping_add(0x20));
+            wp0_copy_xyz(c, 0x20, 0x40);
+            wp0_scale(c, 21, 0x40, 0x50);
+            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(WP0_RIDER)).lw(c);
+            c.sq(V0, s0.wrapping_add(0x30));
+            c.g[A1][0] = sx(r32(c, V1).wrapping_add(0x1e0));
+            c.g[A0][0] = Addr(r32(c, V1).wrapping_add(WP0_RIDER_STATE)).lw(c);
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x30));
+            call_ptr(c, WP0_SET_VELOCITY, 0x0012_cef4)?;
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(WP0_RIDER)).lw(c);
+            c.g[A1][0] = 2;
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(WP0_RIDER_ANIM)).lw(c);
+            call_ptr(c, WP0_TRACK_TYPE, 0x0012_cf04)?;
+            c.g[V1][0] = WP0_TYPE_ROOT_OVERRIDE;
+            if c.g[V0][0] == c.g[V1][0] {
+                // The same from node 2, handed to the root-pose override.
+                c.cycles += 84;
+                let (this, n2) = (r32(c, S0), r32(c, S2));
+                let s0 = sp(c);
+                wp0_sub(c, n2, this.wrapping_add(0x30), 0x70);
+                c.g[A2][0] = c.g[S3][0];
+                c.lq(V1, s0.wrapping_add(0x70));
+                c.g[A3][0] = c.g[S2][0];
+                c.g[A0][0] = Addr(this.wrapping_add(WP0_RIDER)).lw(c);
+                c.g[A1][0] = c.g[SP][0];
+                c.sq(V1, s0.wrapping_add(0x60));
+                c.g[V0][0] = Addr(r32(c, A0).wrapping_add(WP0_RIDER_ANIM)).lw(c);
+                let scale = Addr(r32(c, V0).wrapping_add(0x1c)).read_fpu(c);
+                abi::set_fpr(c, 0, scale);
+                wp0_scale(c, 0, 0x60, 0x70);
+                c.sq(V0, s0.wrapping_add(0x50));
+                wp0_scale(c, 20, 0x50, 0x70);
+                c.sq(V0, s0.wrapping_add(0x40));
+                c.sq(V0, s0);
+                wp0_sub(c, n2.wrapping_add(0x10), this.wrapping_add(0x40), 0x50);
+                c.lq(V0, s0.wrapping_add(0x50));
+                c.sq(V0, s0.wrapping_add(0x10));
+                c.sq(V0, s0.wrapping_add(0x40));
+                wp0_store_conj(c, n2, 0x60);
+                c.lq(V0, s0.wrapping_add(0x60));
+                c.sq(V0, s0.wrapping_add(0x50));
+                c.lqc2(4, s0.wrapping_add(0x10));
+                c.lqc2(5, s0.wrapping_add(0x50));
+                wp0_quat_mul(c);
+                c.sqc2(8, s0.wrapping_add(0x60));
+                c.lq(V0, s0.wrapping_add(0x60));
+                Addr(s0.wrapping_add(0x5c)).sw(c, 0);
+                c.sq(V0, s0.wrapping_add(0x20));
+                c.sq(V0, s0.wrapping_add(0x40));
+                wp0_copy_xyz(c, 0x20, 0x50);
+                wp0_scale(c, 21, 0x50, 0x60);
+                c.g[V1][0] = Addr(r32(c, S0).wrapping_add(WP0_RIDER)).lw(c);
+                c.sq(V0, s0.wrapping_add(0x30));
+                c.sq(V0, s0.wrapping_add(0x40));
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(WP0_RIDER_STATE)).lw(c);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x30));
+                call_ptr(c, WP0_ROOT_OVERRIDE, 0x0012_d05c)?;
+            }
+            c.g[V0][0] = Addr(r32(c, S0).wrapping_add(WP0_RIDER)).lw(c);
+
+            // Next phase: 1 when the wipeout state is in mode 1, else 2.
+            c.cycles += 5;
+            c.g[A0][0] = 1;
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(WP0_RIDER_STATE)).lw(c);
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x30)).lw(c);
+            if c.g[V0][0] == c.g[A0][0] {
+                c.cycles += 5;
+                let phase = c.g[V0][0];
+                Addr(r32(c, S0)).sw(c, phase);
+                c.g[A0][0] = c.g[S0][0];
+                WP0_SELECT_TUMBLE.call(c, 0x0012_d080)?;
+            } else {
+                c.g[V0][0] = 2;
+                c.cycles += 10;
+                c.g[A0][0] = c.g[S0][0];
+                Addr(r32(c, S0)).sw(c, 2);
+                WP0_SELECT_TUMBLE.call(c, 0x0012_d094)?;
+                c.g[V0][0] = Addr(r32(c, S0).wrapping_add(WP0_RIDER)).lw(c);
+                c.g[A1][0] = 2;
+                c.g[A0][0] = Addr(r32(c, V0).wrapping_add(WP0_RIDER_ANIM)).lw(c);
+                call_ptr(c, WP0_TRACK_TYPE, 0x0012_d0a4)?;
+                c.g[V1][0] = WP0_TYPE_LOOP_A;
+                let mut loop_a = c.g[V0][0] == c.g[V1][0];
+                c.g[A1][0] = 2;
+                if !loop_a {
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(WP0_RIDER)).lw(c);
+                    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(WP0_RIDER_ANIM)).lw(c);
+                    call_ptr(c, WP0_TRACK_TYPE, 0x0012_d0bc)?;
+                    c.g[V1][0] = WP0_TYPE_LOOP_B;
+                    loop_a = c.g[V0][0] == c.g[V1][0];
+                }
+                c.cycles += 7;
+                let (ret1, start, ret2) = if loop_a {
+                    (0x0012_d0d0, WP0_AUDIO_LOOP, 0x0012_d0dc)
+                } else {
+                    (0x0012_d0ec, WP0_AUDIO_LOOP2, 0x0012_d0f8)
+                };
+                call_ptr(c, WP0_AUDIO_INSTANCE, ret1)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, start, ret2)?;
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.restore_fpr(c, 21, 0xd8);
+        frame.restore_fpr(c, 20, 0xd0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// RiderWipeoutSub_UpdateAnimSpeed (0x12e528)
+
+/// Wipeout sub-state fields: the tumble timer (+0x70) and the rider (+0x80).
+pub(crate) const WIPEOUT_TIMER: u32 = 0x70;
+
+
+pub(crate) const WIPEOUT_RIDER: u32 = 0x80;
+
+
+/// Rider fields: progress along the course (+0x470), the motion state
+/// (+0x77c, its velocity at +0x60) and the animation controller (+0x784).
+pub(crate) const WIPEOUT_RIDER_PROGRESS: u32 = 0x470;
+
+
+pub(crate) const WIPEOUT_RIDER_MOTION: u32 = 0x77c;
+
+
+pub(crate) const WIPEOUT_MOTION_VELOCITY: u32 = 0x60;
+
+
+pub(crate) const WIPEOUT_RIDER_ANIM: u32 = 0x784;
+
+
+/// Animation sequence: playback speed (+0x10) and speed scale (+0x90).
+pub(crate) const WIPEOUT_SEQ_SPEED: u32 = 0x10;
+
+
+pub(crate) const WIPEOUT_SEQ_SCALE: u32 = 0x90;
+
+
+/// The animation layer the wipeout plays on, and the two animation ids
+/// that always play at normal speed.
+pub(crate) const WIPEOUT_LAYER: u64 = 2;
+
+
+pub(crate) const WIPEOUT_ANIM_FIXED_A: u64 = 0x1d;
+
+
+pub(crate) const WIPEOUT_ANIM_FIXED_B: u64 = 0x19;
+
+
+/// `1 / (2 pi)` (gp-0x77a4).
+pub(crate) const WIPEOUT_INV_TWO_PI_GP: u32 = 0x77a4;
+
+
+pub(crate) const WIPEOUT_HALF: u32 = 0x3f00_0000;
+
+
+pub(crate) const WIPEOUT_ONE: u32 = 0x3f80_0000;
+
+
+pub(crate) const WIPEOUT_TWO: u32 = 0x4000_0000;
+
+
+/// `AnimController_GetLayerSequence` (0x311b20) and
+/// `AnimController_GetLayerAnimEntry` (0x311ae8), through the table.
+pub(crate) const WIPEOUT_GET_LAYER_SEQUENCE: u32 = 0x0031_1b20;
+
+
+pub(crate) const WIPEOUT_GET_LAYER_ANIM_ENTRY: u32 = 0x0031_1ae8;
+
+
+
+/// `float RiderWipeoutSub_UpdateAnimSpeed(RiderWipeoutSub *self)`
+/// (0x12e528): scales the tumble animation (layer 2) with the rider's
+/// speed: `|velocity| * sequence speed / (2 pi)` clamped to [0.5, 2] (a
+/// NaN gives 0.5). Animations 0x1d and 0x19 play at 1; after the tumble
+/// timer reaches 1 or while the rider is not behind the start (progress
+/// >= 0) the scale is at least 2; otherwise the clamped value. Returns the
+/// clamped value. Frame 0x40 (ra at 0, s1 at 0x10, s0 at 0x20, f20 at
+/// 0x30).
+pub fn rider_wipeout_sub_update_anim_speed(c: &mut Cpu) {
+    guest(c, |c| {
+        let gp = r32(c, GP);
+        c.cycles += 33;
+        let frame = Frame::open(c, 0x40);
+        c.g[A1][0] = WIPEOUT_LAYER;
+        frame.save(c, S1, 0x10);
+        frame.save_fpr(c, 20, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        let rider = Addr(r32(c, S1)).off(WIPEOUT_RIDER).lw(c);
+        c.g[V0][0] = rider;
+        let rider = Addr(rider as u32);
+        c.g[A0][0] = rider.off(WIPEOUT_RIDER_ANIM).lw(c);
+        c.g[S0][0] = rider.off(WIPEOUT_RIDER_MOTION).lw(c);
+        call_ptr(c, WIPEOUT_GET_LAYER_SEQUENCE, 0x0012_e554)?;
+
+        // speed = |velocity| (VU0 macro mode, as the original).
+        let seq_speed = Addr(r32(c, V0)).off(WIPEOUT_SEQ_SPEED).read_fpu(c);
+        c.f[1] = seq_speed.0;
+        let vel = r32(c, S0).wrapping_add(WIPEOUT_MOTION_VELOCITY);
+        c.lqc2(3, vel);
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(V1, 22);
+        let speed = FpuF32(c.g[V1][0] as u32);
+        let inv_two_pi = Addr(gp.wrapping_sub(WIPEOUT_INV_TWO_PI_GP)).read_fpu(c);
+        c.f[3] = inv_two_pi.0;
+        let half = FpuF32(WIPEOUT_HALF);
+        let two = FpuF32(WIPEOUT_TWO);
+        c.f[2] = half.0;
+        c.f[4] = two.0;
+        c.g[AT][0] = WIPEOUT_TWO as u64;
+        let rate = speed * seq_speed * inv_two_pi;
+        c.f[0] = rate.0;
+        let above = half.le(rate);
+        abi::set_fcc(c, above);
+        let clamped = if above {
+            c.cycles += 1;
+            rate.min(two)
+        } else {
+            half
+        };
+        c.f[20] = clamped.0;
+
+        // The animation playing on the layer decides the scale.
+        c.cycles += 7;
+        let anim = |c: &mut Cpu| {
+            let rider = Addr(r32(c, S1)).off(WIPEOUT_RIDER).lw(c);
+            c.g[V0][0] = rider;
+            c.g[A0][0] = Addr(rider as u32).off(WIPEOUT_RIDER_ANIM).lw(c);
+        };
+        c.g[A1][0] = WIPEOUT_LAYER;
+        anim(c);
+        call_ptr(c, WIPEOUT_GET_LAYER_ANIM_ENTRY, 0x0012_e5c0)?;
+        c.g[V1][0] = WIPEOUT_ANIM_FIXED_A;
+        c.g[A1][0] = WIPEOUT_LAYER;
+        let mut fixed = c.g[V0][0] == c.g[V1][0];
+        if !fixed {
+            c.cycles += 6;
+            anim(c);
+            call_ptr(c, WIPEOUT_GET_LAYER_ANIM_ENTRY, 0x0012_e5d8)?;
+            c.g[V1][0] = WIPEOUT_ANIM_FIXED_B;
+            fixed = c.g[V0][0] == c.g[V1][0];
+        }
+        let one = FpuF32(WIPEOUT_ONE);
+        if fixed {
+            c.cycles += 8;
+            c.g[A1][0] = WIPEOUT_LAYER;
+            anim(c);
+            call_ptr(c, WIPEOUT_GET_LAYER_SEQUENCE, 0x0012_e5f4)?;
+            c.g[AT][0] = WIPEOUT_ONE as u64;
+            c.f[0] = one.0;
+            Addr(r32(c, V0)).off(WIPEOUT_SEQ_SCALE).write_fpu(c, one);
+        } else {
+            let timer = Addr(r32(c, S1)).off(WIPEOUT_TIMER).read_fpu(c);
+            c.f[1] = timer.0;
+            c.cycles += 6;
+            c.g[AT][0] = WIPEOUT_ONE as u64;
+            c.f[0] = one.0;
+            let timer_done = one.le(timer);
+            abi::set_fcc(c, timer_done);
+            let rider = Addr(r32(c, S1)).off(WIPEOUT_RIDER).lw(c);
+            c.g[A0][0] = rider;
+            let mut at_least_two = timer_done;
+            if !timer_done {
+                c.cycles += 7;
+                c.g[V0][0] = rider;
+                c.f[1] = 0;
+                let progress = Addr(rider as u32).off(WIPEOUT_RIDER_PROGRESS).read_fpu(c);
+                c.f[0] = progress.0;
+                let ahead = FpuF32(0).le(progress);
+                abi::set_fcc(c, ahead);
+                c.g[V1][0] = 1;
+                if !ahead {
+                    c.cycles += 1;
+                    c.g[V1][0] = 0;
+                }
+                c.cycles += 2;
+                at_least_two = ahead;
+            }
+            if at_least_two {
+                c.cycles += 8;
+                c.g[A0][0] = Addr(r32(c, A0)).off(WIPEOUT_RIDER_ANIM).lw(c);
+                c.g[A1][0] = WIPEOUT_LAYER;
+                call_ptr(c, WIPEOUT_GET_LAYER_SEQUENCE, 0x0012_e650)?;
+                c.g[AT][0] = WIPEOUT_TWO as u64;
+                let scale = FpuF32(c.f[20]).max(two);
+                c.f[0] = scale.0;
+                Addr(r32(c, V0)).off(WIPEOUT_SEQ_SCALE).write_fpu(c, scale);
+            } else {
+                c.g[A0][0] = Addr(r32(c, V0)).off(WIPEOUT_RIDER_ANIM).lw(c);
+                c.cycles += 3;
+                c.g[A1][0] = WIPEOUT_LAYER;
+                call_ptr(c, WIPEOUT_GET_LAYER_SEQUENCE, 0x0012_e66c)?;
+                let scale = FpuF32(c.f[20]);
+                Addr(r32(c, V0)).off(WIPEOUT_SEQ_SCALE).write_fpu(c, scale);
+            }
+        }
+        c.cycles += 7;
+        c.f[0] = c.f[20];
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15852,5 +16939,351 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(PAD);
             },
         );
+    }
+    use super::*;
+    use super::*;
+    // (fakes imported above)
+    use super::*;
+    use super::*;
+
+
+    /// The `RiderBumpSub_HandleInput` fixture: the prewind input fixture's
+    /// rider (snd.rs `prewind_input_fixture`) with a bump pad, every main
+    /// state the function branches on and a finished / running layer-2
+    /// animation.
+    pub(crate) mod bump_input_fixture {
+        use super::super::*;
+        use crate::difftest::fakes::{fake_call, machine, FAKE};
+        use crate::difftest::{elf_image, put_vec, Rng, DATA, GAME_GP};
+
+        const THIS: u32 = DATA + 0x7_0000;
+        const PAD: u32 = DATA + 0x7_0100;
+        const RIDER: u32 = DATA + 0x7_1000;
+        const OWNER: u32 = DATA + 0x7_2000;
+        const CTRL: u32 = DATA + 0x7_3000;
+        const CTRL_VT: u32 = DATA + 0x7_3100;
+        const SEQ_LISTS: u32 = DATA + 0x7_3200;
+        const SEQ: u32 = DATA + 0x7_3300;
+        const MODEL: u32 = DATA + 0x7_4000;
+        const BONES: u32 = DATA + 0x7_4100;
+        const LIST: u32 = DATA + 0x7_5000;
+        const LIST_TREE: u32 = DATA + 0x7_5400;
+        const METRIX: u32 = DATA + 0x7_6000;
+        const AUDIO: u32 = DATA + 0x7_7000;
+        const BE_LIBRARY: u32 = DATA + 0x7_8000;
+        const BE_OBJ: u32 = DATA + 0x7_8100;
+        const BE_VT: u32 = DATA + 0x7_8200;
+        const ANIM_TABLE: u32 = 0x0044_6990;
+        const BE_INTERFACES: u32 = 0x0053_08a8;
+        /// `RiderBase_EnterSubState`'s jump table (zeroed: the enter
+        /// handlers become fakes, which unwind the call chain).
+        const ENTER_SUB_STATE_TABLE: u32 = 0x0045_6bd0;
+        /// The controller's "current animation kind" method: answers 0x207
+        /// (`PlayAnim` stops there).
+        const FAKE_ANIM_KIND: u32 = FAKE + 0x10;
+
+        fn bump_miss(c: &mut Cpu, target: u32) {
+            fake_call(c, target);
+            if target == FAKE_ANIM_KIND {
+                c.g[V0][0] = 0x207;
+            }
+        }
+
+        /// A 6-bit signed axis: centred, small, negative or random.
+        fn bump_axis(r: &mut Rng) -> u32 {
+            match r.next_u32() % 4 {
+                0 => 0,
+                1 => 3,
+                2 => 0x3d,
+                _ => r.next_u32() & 0x3f,
+            }
+        }
+
+        pub(super) fn setup(c: &mut Cpu, seed: u32) {
+            let mut r = machine(c, seed, 0x0012_e778, 12);
+            let r = &mut r;
+            c.hooks.miss = bump_miss;
+            elf_image(c);
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            for i in 0..14 {
+                w(c, ENTER_SUB_STATE_TABLE + 4 * i, 0);
+            }
+            // The .lit4 scales (the game's or edge cases).
+            if seed % 7 == 0 {
+                for off in [BUMP_AXIS_SCALE_GP, BUMP_LEAN_SCALE_GP, BUMP_SLEW1_RATE_GP] {
+                    let v = r.edge_f32();
+                    w(c, GAME_GP - off, v);
+                }
+            }
+
+            // The back end: the library exists, interface getters are fakes.
+            w(c, GAME_GP - 0x1f04, BE_LIBRARY);
+            w(c, GAME_GP - 0x1efc, 0);
+            w(c, BE_INTERFACES, BE_OBJ);
+            w(c, BE_OBJ + 4, BE_VT);
+            w(c, BE_VT + 0xc, FAKE);
+            c.bus.write8(0x0053_08e2, 10);
+            c.bus.write8(0x0053_08e4, 10);
+            w(c, GAME_GP + 0x410, AUDIO);
+
+            // The pad: never the reset bit; random boost bits; both axes.
+            let mut buttons = r.next_u32() & !0x0000_1000;
+            buttons &= !(0x3f << 15 | 0x3f << 21);
+            buttons |= bump_axis(r) << 15 | bump_axis(r) << 21;
+            w(c, PAD, buttons);
+            w(c, PAD + 4, r.next_u32());
+
+            w(c, THIS, RIDER);
+            // The rider: racing (finished on every 16th seed); main state
+            // 1 (airborne), 4, 2 or 0; no sub-state to exit.
+            w(c, RIDER + 0x470, if seed % 16 == 15 { 1.0f32.to_bits() } else { (-1.0f32).to_bits() });
+            w(c, RIDER + 0x77c, OWNER);
+            w(c, OWNER + 0xde0, [1, 4, 2, 0][((seed / 2) % 4) as usize]);
+            w(c, OWNER + 0xde4, 0x20);
+            w(c, OWNER + 0x2b8, RIDER);
+            w(c, RIDER + 0x328, 0);
+            w(c, RIDER + 0x304, 3);
+            w(c, RIDER + 0x780, MODEL);
+            w(c, MODEL + 0x2c, BONES);
+            w(c, RIDER + 0x860, LIST);
+            w(c, LIST, LIST_TREE);
+            w(c, RIDER + 0x790, METRIX);
+            w(c, METRIX + 0x1ac, RIDER);
+            for off in [0x220, 0x2a4, 0x2b0] {
+                w(c, RIDER + off, r.f32(2.0));
+            }
+            w(c, RIDER + 0x2dc, if r.next_u32() % 2 == 0 { 0 } else { r.f32(1.0) });
+            put_vec(c, RIDER + BUMP_RIDER_VELOCITY, [r.f32(5.0), r.f32(5.0), r.f32(5.0), 0]);
+            put_vec(c, RIDER + BUMP_RIDER_FACING, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+            for off in [0x100, 0x110, 0x120, 0x130] {
+                put_vec(c, RIDER + off, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 1.0f32.to_bits()]);
+            }
+
+            // The animation controller: layer 2's sequence finished on
+            // every other seed.
+            w(c, RIDER + BUMP_RIDER_ANIM_CTRL, CTRL);
+            w(c, CTRL + 0x50, SEQ_LISTS);
+            w(c, CTRL + 0x58, CTRL_VT);
+            w(c, CTRL_VT + 0x24, FAKE_ANIM_KIND);
+            for k in 0..4 {
+                w(c, SEQ_LISTS + 8 * k + 4, SEQ);
+            }
+            w(c, SEQ + 0xc0, if seed % 2 == 0 { 0 } else { 1 });
+            for id in [0x12, 0x13, 0x14, 0x44, 0x45, 0x46] {
+                w(c, ANIM_TABLE + id * 0x1c, 0);
+            }
+            w(c, CTRL + 8, 0x31);
+
+            c.g[A0][0] = sx(THIS);
+            c.g[A1][0] = sx(PAD);
+            c.pc = 0x0012_e778;
+        }
+    }
+
+
+    /// `RiderBumpSub_HandleInput`: finished or not, main states 1 / 4 /
+    /// other, forwards and backwards travel, the layer-2 animation finished
+    /// (land animation + sub-state 7, or grind reset + sub-state 4/0) or
+    /// running; real callees, fakes that unwind.
+    #[test]
+    fn rider_bump_sub_handle_input_matches() {
+        check(ee::s00::f_0012e778__generated, rider_bump_sub_handle_input, 300, &bump_input_fixture::setup);
+    }
+
+
+    // ------------------------------------------------------ rider wipeout
+
+    /// RiderWipeoutSub_UpdateRecover: first update or not (random impact
+    /// vector), human or computer rider, layer 2 finished or not, equal or
+    /// different +0x320/+0x324. The rider's vtable slots (0x88, 0x90, and
+    /// 0x48/0x28 used by the landing sound) and the anim controller's slot
+    /// are fakes (forced result 0x207: `AnimController_PlayAnim`'s early
+    /// out). `PlayLandingSound` takes its replay path: the world's game
+    /// module says replay (`*(module+0x28) == 1`), the race man has no
+    /// riders (`FindRider` → 0) and no views (`FindViewInRange` → -1). The
+    /// trick metrix is idle (`+0x70` set: `InterruptTrick` makes no calls).
+    /// Owner states as in the board-press test (main >= 6, sub 0xe..0x15).
+    #[test]
+    fn rider_wipeout_sub_update_recover_matches() {
+        const SELF: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const OWNER: u32 = DATA + 0x2000;
+        const VT: u32 = DATA + 0x3000;
+        const CTL: u32 = DATA + 0x4000;
+        const CTL_VT: u32 = DATA + 0x5000;
+        const SEQS: u32 = DATA + 0x6000;
+        const SEQ: u32 = DATA + 0x6100;
+        const METRIX: u32 = DATA + 0x7000;
+        const WORLD: u32 = DATA + 0x8000;
+        const MODULE: u32 = DATA + 0x8100;
+        const REPLAY: u32 = DATA + 0x8200;
+        const RACE_MAN: u32 = DATA + 0x8300;
+        check(ee::s00::f_0012d848__generated, rider_wipeout_sub_update_recover, 240, &|c, seed| {
+            let mut r = fakes::machine(c, seed, 0x0012_d848, 6);
+            c.pc = 0x0012_d848;
+            c.g[A0][0] = sx(SELF);
+            let started = if seed % 3 == 0 { 0 } else { r.next_u32() | 1 };
+            c.bus.write32(SELF + 0x54, started);
+            for k in 0..4 {
+                let v = r.f32(10.0);
+                c.bus.write32(SELF + 0x60 + 4 * k, v);
+            }
+            c.bus.write32(SELF + 0x80, RIDER);
+            c.bus.write32(RIDER + 0x6c0, VT);
+            for (i, off) in [0x88u32, 0x90, 0x48, 0x28].into_iter().enumerate() {
+                let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+                c.bus.write16(VT + off, delta as u16);
+                c.bus.write32(VT + off + 4, FAKE + 0x10 * i as u32);
+            }
+            c.bus.write32(RIDER + 0x77c, OWNER);
+            let ai = if (seed / 3) % 2 == 0 { 0 } else { r.next_u32() | 1 };
+            c.bus.write32(OWNER + 0x30, ai);
+            c.bus.write32(OWNER + 0xde0, 6 + r.next_u32() % 4);
+            c.bus.write32(OWNER + 0xde4, 0xe + r.next_u32() % 8);
+            c.bus.write32(RIDER + 0x784, CTL);
+            c.bus.write32(CTL + 0x50, SEQS);
+            c.bus.write32(SEQS + 0x14, SEQ);
+            let (t, len) = (r.f32(4.0), r.f32(8.0) | 0x3f80_0000);
+            c.bus.write32(SEQ + 0x8, t);
+            c.bus.write32(SEQ + 0x10, len & 0x7fff_ffff);
+            let finished = if (seed / 6) % 2 == 0 { 0 } else { r.next_u32() | 1 };
+            c.bus.write32(SEQ + 0xc0, finished);
+            c.bus.write32(CTL + 0x58, CTL_VT);
+            c.bus.write16(CTL_VT + 0x20, 0x10);
+            c.bus.write32(CTL_VT + 0x24, FAKE + 0x40);
+            for n in 0..8 {
+                c.bus.write32(fakes::LOG_RESULTS + 4 * n, 0x207);
+            }
+            let a = r.next_u32();
+            let b = if (seed / 12) % 2 == 0 { a } else { r.next_u32() };
+            c.bus.write32(RIDER + 0x320, a);
+            c.bus.write32(RIDER + 0x324, b);
+            c.bus.write32(RIDER + 0x790, METRIX);
+            c.bus.write32(METRIX + 0x70, 1);
+            c.bus.write32(GAME_GP.wrapping_sub(0x848), WORLD);
+            c.bus.write32(WORLD + 0x84, MODULE);
+            c.bus.write32(MODULE + 0x28, REPLAY);
+            c.bus.write32(REPLAY, 1);
+            c.bus.write32(MODULE + 0xc, RACE_MAN);
+        });
+    }
+
+
+    pub(crate) fn oc258_w32(c: &mut Cpu, a: u32, v: u32) {
+        c.bus.write32(a, v);
+    }
+
+
+    /// RiderWipeoutSub_UpdatePhase0: the track-2 anim still playing (phase
+    /// below or above 0.95) or done; done with anim types 0x17 (root-pose
+    /// override), 0x1d, 0x19 or another; the wipeout state in mode 1 or not.
+    /// The real anim queries, velocity setter (and its air-predictor prime),
+    /// root-pose override, tumble selection (an anim id outside its table:
+    /// straight to its epilogue) and audio loops (the rider's loop handles
+    /// are non-negative: their early exit) run.
+    #[test]
+    fn rider_wipeout_sub_update_phase0_matches() {
+        check(ee::s00::f_0012cd20__generated, rider_wipeout_sub_update_phase0, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x0012_cd20, 0);
+            c.pc = 0x0012_cd20;
+            let this = DATA + 0x100;
+            let rider = DATA + 0x1000;
+            let model = DATA + 0x3000;
+            let nodes = DATA + 0x3100;
+            let anim = DATA + 0x4000;
+            let lists = DATA + 0x4100;
+            let seq = DATA + 0x4200;
+            let state = DATA + 0x5000;
+            let predictor = DATA + 0x6000;
+            c.g[A0][0] = sx(this);
+            // The recorded start: phase at +0x50, node poses at +0x10..+0x50.
+            for k in 0..0x10u32 {
+                oc258_w32(c, this + 0x10 + 4 * k, r.f32(2.0));
+            }
+            oc258_w32(c, this + 0x50, r.f32(0.5));
+            oc258_w32(c, this, r.next_u32() % 4);
+            oc258_w32(c, this + WP0_RIDER, rider);
+            // Rider: model nodes, anim controller, wipeout state.
+            oc258_w32(c, rider + WP0_RIDER_MODEL, model);
+            oc258_w32(c, model + 0x2c, nodes);
+            for k in 0..0x20u32 {
+                oc258_w32(c, nodes + 4 * k, r.f32(2.0));
+            }
+            oc258_w32(c, rider + WP0_RIDER_NODE1, r.next_u32() % 4);
+            oc258_w32(c, rider + WP0_RIDER_NODE2, r.next_u32() % 4);
+            oc258_w32(c, rider + WP0_RIDER_ANIM, anim);
+            oc258_w32(c, rider + WP0_RIDER_STATE, state);
+            oc258_w32(c, rider + 0x774, 0);
+            oc258_w32(c, rider + 0x778, 0);
+            oc258_w32(c, rider + 0x788, predictor);
+            for k in 0..4u32 {
+                oc258_w32(c, rider + 0x370 + 4 * k, r.f32(1.0));
+                oc258_w32(c, rider + 0x1e0 + 4 * k, r.f32(10.0));
+            }
+            // Anim controller: track-2 sequence list -> the playing sequence.
+            oc258_w32(c, anim + 0x50, lists);
+            oc258_w32(c, lists + 0x10 + 4, seq);
+            oc258_w32(c, anim + 0x1c, r.f32(2.0));
+            let length = 0.5 + (r.next_u32() % 100) as f32 / 50.0;
+            let phase = match seed % 3 {
+                0 => 0.97,
+                _ => (r.next_u32() % 100) as f32 / 100.0,
+            };
+            oc258_w32(c, seq + 0x10, length.to_bits());
+            oc258_w32(c, seq + 0x8, (length * phase).to_bits());
+            oc258_w32(c, seq + 0x90, r.f32(3.0));
+            oc258_w32(c, seq + 0xc0, if seed % 4 == 0 { 0 } else { 1 });
+            // Track-2 anim id and its type in the anim table (0x446990, 0x1c each).
+            let id = 1 + seed % 7;
+            oc258_w32(c, anim + 0x8, id);
+            let kind = [0x17u32, 0x1d, 0x19, 0x5][(seed / 4 % 4) as usize];
+            oc258_w32(c, 0x0044_6990 + 0x1c * id, kind);
+            // Wipeout state: mode at +0x30 (1 or not), its rider at +0x70.
+            oc258_w32(c, state + 0x30, if seed / 16 % 2 == 0 { 1 } else { 0 });
+            oc258_w32(c, state + 0x70, rider);
+            oc258_w32(c, GAME_GP.wrapping_sub(WP0_RECORD_LIMIT_GP), 0.95f32.to_bits());
+        });
+    }
+
+
+    /// RiderWipeoutSub_UpdateAnimSpeed: random rider velocities and
+    /// sequence speeds (rates below 0.5, inside, above 2, edge floats);
+    /// the layer playing animation 0x1d, 0x19, another id or the "none"
+    /// id 0x1b6 (the real AnimController getters and the anim table); the
+    /// tumble timer below or at least 1; progress negative or not.
+    #[test]
+    fn rider_wipeout_sub_update_anim_speed_matches() {
+        check(ee::s00::f_0012e528__generated, rider_wipeout_sub_update_anim_speed, 300, &|c, seed| {
+            let mut r = Rng(0x0012_e528 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x0012_e528;
+            let (this, rider, ctrl, motion) = (DATA, DATA + 0x1000, DATA + 0x2000, DATA + 0x3000);
+            let (lists, seq) = (DATA + 0x4000, DATA + 0x5000);
+            c.bus.write32(GAME_GP - WIPEOUT_INV_TWO_PI_GP, 0.159_154_94f32.to_bits());
+            c.bus.write32(this + WIPEOUT_RIDER, rider);
+            let timer = if seed % 3 == 0 { 1.0 + (r.next_u32() % 4) as f32 } else { (r.next_u32() % 100) as f32 / 100.0 };
+            c.bus.write32(this + WIPEOUT_TIMER, timer.to_bits());
+            c.bus.write32(rider + WIPEOUT_RIDER_ANIM, ctrl);
+            c.bus.write32(rider + WIPEOUT_RIDER_MOTION, motion);
+            let progress = r.f32(500.0);
+            c.bus.write32(rider + WIPEOUT_RIDER_PROGRESS, progress);
+            for i in 0..4 {
+                let v = if seed % 11 == 5 { r.edge_f32() } else { r.f32(40.0) };
+                c.bus.write32(motion + WIPEOUT_MOTION_VELOCITY + 4 * i, v);
+            }
+            // Layer 2's sequence list (+0x50 + 2 * 8) and its first sequence.
+            c.bus.write32(ctrl + 0x50, lists);
+            c.bus.write32(lists + 0x10 + 4, seq);
+            let speed = if seed % 7 == 3 { r.edge_f32() } else { r.f32(1.0) };
+            c.bus.write32(seq + WIPEOUT_SEQ_SPEED, speed);
+            c.bus.write32(seq + WIPEOUT_SEQ_SCALE, r.next_u32());
+            // Layer 2's animation index and its anim table entry.
+            let index = if seed % 9 == 8 { 0x1b6 } else { 1 + r.next_u32() % 0x100 };
+            c.bus.write32(ctrl + 8, index);
+            let id = [0x1d, 0x19, 0x1c, r.next_u32() % 0x40][(seed % 4) as usize];
+            c.bus.write32(0x0044_6990 + index * 0x1c, id);
+            c.g[A0][0] = sx(this);
+        });
     }
 }

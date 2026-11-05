@@ -607,6 +607,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0029_47b0, ssx_audio_system_update_airborne_riders, "SSXAudioSystem_UpdateAirborneRiders"),
     (0x0029_b738, ssx_audio_update_uber_speech, "SSXAudioSystem_UpdateUberSpeech"),
     (0x0029_d610, ssx_audio_system_update_loop_sfx, "SSXAudioSystem_UpdateLoopSfx"),
+    (0x0029_3b50, ssx_audio_system_calc_surface_loop_remote_group0, "SSXAudioSystem_CalcSurfaceLoopRemoteGroup0"),
+    (0x0029_6088, ssx_audio_system_play_wall_hit_sound, "SSXAudioSystem_PlayWallHitSound"),
+    (0x002a_6d18, crowd_audio_update, "CrowdAudio_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12003,6 +12006,287 @@ pub fn ssx_audio_system_update_loop_sfx(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// CrowdAudio_Update (0x2a6d18)
+
+/// CrowdAudio fields: number of crowd instances, their array (0x190 bytes each).
+pub(crate) const CROWD_AUDIO_COUNT: u32 = 0x14;
+
+
+pub(crate) const CROWD_AUDIO_INSTANCES: u32 = 0x18;
+
+
+pub(crate) const CROWD_AUDIO_INSTANCE_SIZE: u32 = 0x190;
+
+
+
+pub(crate) const CROWD_AUDIO_UPDATE_INSTANCE: Callee =
+    Callee { addr: 0x002a_4e88, f: ee::s08::f_002a4e88 };
+
+
+
+/// `void CrowdAudio_Update(CrowdAudio *self)` (0x2a6d18): updates every crowd
+/// sound instance (`CrowdAudio_UpdateInstance`), re-reading the count after
+/// each one.
+pub fn crowd_audio_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(CROWD_AUDIO_COUNT)).lw(c);
+        c.g[S0][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 1;
+            // s0: index, s2: byte offset of the instance.
+            c.g[S2][0] = 0;
+            loop {
+                c.cycles += 8;
+                let array = Addr(r32(c, S1).wrapping_add(CROWD_AUDIO_INSTANCES)).lw(c);
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[A0][0] = sx((array as u32).wrapping_add(r32(c, S2)));
+                CROWD_AUDIO_UPDATE_INSTANCE.call(c, 0x002a_6d50)?;
+                let count = Addr(r32(c, S1).wrapping_add(CROWD_AUDIO_COUNT)).lw(c);
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (count as i64)) as u64;
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(CROWD_AUDIO_INSTANCE_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002a_6d40);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_CalcSurfaceLoopRemoteGroup0 (0x293b50)
+
+pub(crate) const SSX_AUDIO_CALC_SURFACE_LOOP_GROUP0: Callee =
+    Callee { addr: 0x0029_3538, f: ee::s07::f_00293538 };
+
+
+
+/// `void SSXAudioSystem_CalcSurfaceLoopRemoteGroup0(...)` (0x293b50): the
+/// remote (other riders') variant of the surface loop group 0 calculation;
+/// forwards its arguments to `SSXAudioSystem_CalcSurfaceLoopGroup0`.
+pub fn ssx_audio_system_calc_surface_loop_remote_group0(c: &mut Cpu) {
+    call::tail_wrapper(
+        c,
+        None,
+        call::Target::Direct(SSX_AUDIO_CALC_SURFACE_LOOP_GROUP0),
+        0x0029_3b60,
+    );
+}
+
+
+
+// -------------------------------------------- SSXAudioSystem_PlayWallHitSound
+
+/// `SSXAudioSystem_FindViewInRange` (0x288b40, cross-shard).
+pub(crate) const WALLHIT_FIND_VIEW_IN_RANGE: u32 = 0x0028_8b40;
+
+
+/// `Audio_EvalCurveTable` (0x290c10, cross-shard).
+pub(crate) const WALLHIT_EVAL_CURVE_TABLE: u32 = 0x0029_0c10;
+
+
+/// `SSXAudioSystem_IsTrackedSoundPlaying` (0x295028).
+pub(crate) const WALLHIT_IS_TRACKED_SOUND_PLAYING: Callee = Callee {
+    addr: 0x0029_5028,
+    f: ee::s08::f_00295028,
+};
+
+
+/// `WorldTriggerManager_PlayTriggerSound` (0x2b5f60).
+pub(crate) const WALLHIT_PLAY_TRIGGER_SOUND: Callee = Callee {
+    addr: 0x002b_5f60,
+    f: ee::s08::f_002b5f60,
+};
+
+
+/// `SSXAudioSystem_TrackSound` (0x295628).
+pub(crate) const WALLHIT_TRACK_SOUND: Callee = Callee {
+    addr: 0x0029_5628,
+    f: ee::s08::f_00295628,
+};
+
+
+/// The event's sound table (`{count, _, ids[]}` at +0x10 of it).
+pub(crate) const WALLHIT_EVENT_SOUNDS: u32 = 0x8c;
+
+
+/// The rider's physics object (v-table at +0: position at +0x28,
+/// velocity at +0x10).
+pub(crate) const WALLHIT_RIDER_BODY: u32 = 0x6c0;
+
+
+/// `WorldTriggerManager*` at gp+0x21e4.
+pub(crate) const WALLHIT_TRIGGER_MANAGER_GP: u32 = 0x21e4;
+
+
+/// The audio system's player (+0x118, `**` -> clock at +0x260).
+pub(crate) const WALLHIT_PLAYER: u32 = 0x118;
+
+
+
+/// `void SSXAudioSystem_PlayWallHitSound(SSXAudioSystem* self, Rider* rider,
+/// SoundEvent* evt, int idx)` (0x296088): when a view is within 100 m of
+/// the rider and sound `idx` of the event is not already tracked, plays it
+/// (volume from the rider's speed through curve table 0, clamped 0..127)
+/// and tracks it for the next second.
+pub fn ssx_audio_system_play_wall_hit_sound(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, 16, 0x50);
+        frame.save(c, 17, 0x40);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, 18, 0x30);
+        c.g[S1][0] = c.g[A3][0];
+        frame.save(c, 19, 0x20);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, 20, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(WALLHIT_EVENT_SOUNDS)).lw(c);
+        c.g[S3][0] = c.g[A0][0];
+        // Ends early (`true`) at the shared exit with its extra cycle, or
+        // (`false`) straight at the epilogue.
+        let extra_cycle = 'play: {
+            if c.g[V0][0] == 0 {
+                break 'play true;
+            }
+            // Any view near the rider's position?
+            c.cycles += 13;
+            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(WALLHIT_RIDER_BODY)).lw(c);
+            c.g[S4][0] = sx(r32(c, S0).wrapping_add(WALLHIT_RIDER_BODY));
+            let vt = r32(c, V1);
+            let delta = Addr(vt.wrapping_add(0x28)).lh(c);
+            c.g[V0][0] = Addr(vt.wrapping_add(0x2c)).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, S4).wrapping_add(delta as u32));
+            call_ptr(c, target, 0x0029_60d4)?;
+            c.g[AT][0] = 0x42c8_0000;
+            c.f[12] = 0x42c8_0000;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S3][0];
+            call_ptr(c, WALLHIT_FIND_VIEW_IN_RANGE, 0x0029_60e8)?;
+            let none = (c.g[V0][0] as i64) < 0;
+            c.g[A0][0] = c.g[S3][0];
+            if none {
+                break 'play true;
+            }
+            // Already playing this one?
+            c.cycles += 5;
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[S1][0];
+            WALLHIT_IS_TRACKED_SOUND_PLAYING.call(c, 0x0029_60fc)?;
+            if c.g[V0][0] != 0 {
+                break 'play false;
+            }
+            // Volume from the length of the rider's velocity.
+            c.cycles += 42;
+            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(WALLHIT_RIDER_BODY)).lw(c);
+            let vt = r32(c, V1);
+            let delta = Addr(vt.wrapping_add(0x10)).lh(c);
+            c.g[V0][0] = Addr(vt.wrapping_add(0x14)).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, S4).wrapping_add(delta as u32));
+            call_ptr(c, target, 0x0029_6118)?;
+            c.lqc2(3, r32(c, V0));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().sqrt(4, 0);
+            c.vu0().waitq();
+            c.cfc2(3, 22);
+            c.mtc1(3, 12);
+            c.g[A0][0] = 0;
+            call_ptr(c, WALLHIT_EVAL_CURVE_TABLE, 0x0029_6148)?;
+            // Clamp the volume to 0..127 and pick the sound: ids[idx], or
+            // ids[0] when idx is out of range or its id is 0.
+            let sounds = Addr(r32(c, S2).wrapping_add(WALLHIT_EVENT_SOUNDS)).lw(c);
+            c.g[V0][0] = sounds;
+            c.cvt_w_s(1, 0);
+            c.mfc1(T0, 1);
+            c.g[A2][0] = 0x7f;
+            c.g[V1][0] = u64::MAX;
+            c.g[T1][0] = Addr((sounds as u32).wrapping_add(0x10)).lw(c);
+            c.g[A3][0] = c.g[S0][0];
+            c.g[A1][0] = ((c.g[T0][0] as i64) < 128) as u64;
+            c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(WALLHIT_TRIGGER_MANAGER_GP)).lw(c);
+            c.g[V0][0] = Addr(r32(c, T1)).lw(c);
+            if c.g[A1][0] == 0 {
+                c.g[T0][0] = c.g[A2][0];
+            }
+            c.g[T1][0] = sx(r32(c, T1).wrapping_add(8));
+            c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[T0][0] as i64)) as u64;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            if c.g[V1][0] == 0 {
+                c.g[T0][0] = 0;
+            }
+            if c.g[V0][0] == 0 {
+                c.g[S1][0] = 0;
+            }
+            c.g[A1][0] = c.g[S2][0];
+            c.g[V0][0] = sx((r32(c, S1) << 2).wrapping_add(r32(c, T1)));
+            c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+            if c.g[V1][0] != 0 {
+                c.g[T1][0] = c.g[V0][0];
+            }
+            c.g[A2][0] = Addr(r32(c, T1)).lw(c);
+            WALLHIT_PLAY_TRIGGER_SOUND.call(c, 0x0029_61a4)?;
+            let failed = (c.g[V0][0] as i64) < 0;
+            c.g[A2][0] = c.g[V0][0];
+            if failed {
+                break 'play true;
+            }
+            // Track it until the player's clock + 1000.
+            c.cycles += 9;
+            c.g[V1][0] = Addr(r32(c, S3).wrapping_add(WALLHIT_PLAYER)).lw(c);
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = c.g[S2][0];
+            c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+            c.g[T1][0] = c.g[S1][0];
+            c.g[T0][0] = 0;
+            c.g[A3][0] = Addr(r32(c, V0).wrapping_add(0x260)).lw(c);
+            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1000));
+            WALLHIT_TRACK_SOUND.call(c, 0x0029_61d0)?;
+            true
+        };
+        if extra_cycle {
+            c.cycles += 1;
+        }
+        frame.restore(c, 16, 0x50);
+        c.cycles += 7;
+        frame.restore(c, 17, 0x40);
+        frame.restore(c, 18, 0x30);
+        frame.restore(c, 19, 0x20);
+        frame.restore(c, 20, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15390,5 +15674,174 @@ pub(crate) mod tests {
             c.bus.write32(sys + 0x6c74, 0);
             c.g[A0][0] = sys as u64;
         });
+    }
+    use super::*;
+    use crate::difftest::{check_paths};
+    use super::*;
+
+
+    /// 0..3 instances (sometimes a negative count); the instances are
+    /// inactive (+0xd4 = 0), so the real `CrowdAudio_UpdateInstance` takes
+    /// its short path.
+    #[test]
+    fn crowd_audio_update_matches() {
+        check(ee::s08::f_002a6d18__generated, crowd_audio_update, 200, &|c, seed| {
+            let mut r = Rng(0x2a6d_1800 ^ seed as u64);
+            scramble(c, &mut r);
+            c.pc = 0x002a_6d18;
+            c.g[GP][0] = GAME_GP as u64;
+            let count: i32 = match seed % 5 {
+                0 => 0,
+                1 => -(r.next_u32() as i32 & 0xff) - 1,
+                n => n as i32 - 1,
+            };
+            c.g[A0][0] = DATA as u64;
+            c.bus.write32(DATA + CROWD_AUDIO_COUNT, count as u32);
+            let array = DATA + 0x1000;
+            c.bus.write32(DATA + CROWD_AUDIO_INSTANCES, array);
+            for i in 0..4 {
+                c.bus.write32(array + i * CROWD_AUDIO_INSTANCE_SIZE + 0xd4, 0);
+            }
+        });
+    }
+
+
+    /// The audio system at DATA, the rider at DATA+0x10000 with its view
+    /// object's vtable call faked (forced to a small surface index, sometimes
+    /// unwinding); the curve tables and constants come from the ELF image.
+    #[test]
+    fn ssx_audio_system_calc_surface_loop_remote_group0_matches() {
+        use crate::difftest::elf_image;
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        covered(
+            ee::s07::f_00293b50__generated,
+            ssx_audio_system_calc_surface_loop_remote_group0,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x293b50, 1);
+                elf_image(c);
+                c.pc = 0x0029_3b50;
+                let system = DATA;
+                let rider = DATA + 0x10000;
+                let vt = DATA + 0x20000;
+                let out = DATA + 0x30000;
+                c.g[A0][0] = system as u64;
+                c.g[A1][0] = rider as u64;
+                c.g[A2][0] = out as u64;
+                c.g[A3][0] = (out + 4) as u64;
+                c.bus.write32(rider + 0x6c0, vt);
+                c.bus.write16(vt + 0x38, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt + 0x3c, FAKE);
+                for off in [0x750, 0x754, 0x758, 0x75c] {
+                    c.bus.write32(rider + off, ((r.next_u32() % 2000) as f32 / 1000.0).to_bits());
+                }
+                c.bus.write32(LOG_RESULTS, 1 + seed % 4);
+                for i in 0..8 {
+                    c.bus.write32(system + 0x59b8 + 4 * i, ((r.next_u32() % 2000) as f32 / 1000.0).to_bits());
+                }
+            },
+        );
+    }
+
+
+    /// `SSXAudioSystem_PlayWallHitSound`: no sound table; no view in range
+    /// (no views, or views far away; the real `FindViewInRange`); the sound
+    /// already tracked (a ring record `{evt, idx, 0}`; the real
+    /// `IsTrackedSoundPlaying`); otherwise the real curve table on the
+    /// rider's speed, the id pick (idx in / out of range, zero ids) and the
+    /// real `PlayTriggerSound`, which fails (trigger type 3). The rider's
+    /// position / velocity methods are fakes (which may unwind).
+    /// Not reached: a successful `PlayTriggerSound` and `TrackSound`.
+    #[test]
+    fn ssx_audio_system_play_wall_hit_sound_matches() {
+        use crate::difftest::fakes::{vtable, LOG_RESULTS};
+        crate::difftest::check_lohi(
+            ssx3_ee::s08::f_00296088__generated,
+            ssx_audio_system_play_wall_hit_sound,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0029_6088, 2);
+                elf_image(c);
+                c.pc = 0x0029_6088;
+                let base = DATA + 0x20_0000;
+                let (app, module, viewman) = (base, base + 0x100, base + 0x200);
+                let (rider, pos, vel) = (base + 0x1000, base + 0x300, base + 0x340);
+                let (evt, sounds, table) = (base + 0x2000, base + 0x2100, base + 0x2200);
+                let (wtm, wtable) = (base + 0x3000, base + 0x3400);
+                let (sys, ring) = (base + 0x1_0000, base + 0x2_0000);
+                // Views.
+                c.bus.write32(GAME_GP - 0x848, app);
+                c.bus.write32(app + 0x84, module);
+                c.bus.write32(module + 0x84, viewman);
+                let views = if seed % 7 == 3 {
+                    0
+                } else {
+                    1 + r.next_u32() % 2
+                };
+                c.bus.write32(viewman + 0x10, views);
+                let far = seed % 7 == 5;
+                for i in 0..2 {
+                    let view = base + 0x400 + 0x40 * i;
+                    c.bus.write32(viewman + 4 + 4 * i, view);
+                    for k in 0..4 {
+                        let v = if far {
+                            2.0e5f32.to_bits()
+                        } else {
+                            r.f32(3000.0)
+                        };
+                        c.bus.write32(view + 0x20 + 4 * k, v);
+                    }
+                }
+                // The rider's position and velocity methods (fakes).
+                let vt = vtable(c, &mut r, &[0x28, 0x10]);
+                c.bus.write32(rider + WALLHIT_RIDER_BODY, vt);
+                for k in 0..4 {
+                    c.bus.write32(pos + 4 * k, r.f32(3000.0));
+                    c.bus.write32(vel + 4 * k, r.f32(60.0));
+                }
+                c.bus.write32(LOG_RESULTS, pos);
+                c.bus.write32(LOG_RESULTS + 4, vel);
+                // The event's sound table: count 1..4, ids 0..7 (some 0).
+                c.bus.write32(
+                    evt + WALLHIT_EVENT_SOUNDS,
+                    if seed % 9 == 0 { 0 } else { sounds },
+                );
+                c.bus.write32(sounds + 0x10, table);
+                c.bus.write32(table, 1 + r.next_u32() % 4);
+                for k in 0..5 {
+                    let id = if r.next_u32() % 4 == 0 {
+                        0
+                    } else {
+                        r.next_u32() % 8
+                    };
+                    c.bus.write32(table + 8 + 4 * k, id);
+                }
+                let idx = (r.next_u32() % 7).wrapping_sub(1);
+                // Trigger types: all 3 (PlayTriggerSound fails at once).
+                c.bus.write32(GAME_GP + WALLHIT_TRIGGER_MANAGER_GP, wtm);
+                c.bus.write32(wtm + 0x33c, wtable);
+                for id in 0..8 {
+                    c.bus.write32(wtable + 8 * id, 3);
+                }
+                // The tracked-sound ring: empty, or one record for this
+                // event and index.
+                let cap = 40u32;
+                let tail = r.next_u32() % cap;
+                c.bus.write32(sys + 0x597c, cap);
+                c.bus.write32(sys + 0x5980, ring);
+                c.bus.write32(sys + 0x5988, tail);
+                let tracked = seed % 5 == 2;
+                c.bus
+                    .write32(sys + 0x5984, if tracked { (tail + 5) % cap } else { tail });
+                let record = [evt, idx, 0, r.next_u32(), r.next_u32()];
+                for (k, v) in record.into_iter().enumerate() {
+                    c.bus.write32(ring + 4 * ((tail + k as u32) % cap), v);
+                }
+                c.g[A0][0] = sx(sys);
+                c.g[A1][0] = sx(rider);
+                c.g[A2][0] = sx(evt);
+                c.g[A3][0] = sx(idx);
+            },
+        );
     }
 }

@@ -160,6 +160,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_ground_state_collide_walls,
         "RiderGroundState_CollideWalls",
     ),
+    (0x0013_f8f8, obj_ptr_array_merge_sort, "ObjPtrArray_MergeSort"),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -7948,6 +7949,215 @@ pub fn rider_ground_state_compute_drag(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// 0x13f8f8 ObjPtrArray_MergeSort
+
+/// The sort key of an object in [`obj_ptr_array_merge_sort`] (unsigned).
+pub(crate) const MERGE_SORT_KEY: u32 = 0x78;
+
+
+
+/// `ObjPtrArray_MergeSort` itself (the recursion).
+pub(crate) const MERGE_SORT_SELF: Callee = Callee {
+    addr: 0x0013_f8f8,
+    f: ee::s01::ObjPtrArray_MergeSort,
+};
+
+
+
+/// `void ObjPtrArray_MergeSort(Obj** first, Obj** last, Obj** buf, cmp)`
+/// (0x13f8f8): stable merge sort of an object-pointer array by the
+/// unsigned key at +0x78, ascending, into `buf` (which must hold `n`
+/// pointers). Two elements are ordered directly; otherwise the first half
+/// (`(n + 1) / 2`) is sorted into the upper half of `buf`, the second half
+/// into the start of the source, and both are merged into `buf`. `cmp` is
+/// only passed along.
+pub fn obj_ptr_array_merge_sort(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 2;
+        frame.save(c, S1, 0x80);
+        frame.save(c, S7, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S7][0] = c.g[A1][0];
+        frame.save(c, S0, 0x90);
+        frame.save(c, S3, 0x60);
+        c.g[V1][0] = sx(r32(c, S7).wrapping_sub(r32(c, S1)));
+        frame.save(c, S6, 0x30);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S2, 0x70);
+        c.g[S0][0] = sx((r32(c, V1) as i32 >> 2) as u32);
+        frame.save(c, S4, 0x50);
+        c.g[S6][0] = c.g[A3][0];
+        frame.save(c, S5, 0x40);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        let first = r32(c, S1);
+        let buf = r32(c, S3);
+        if c.g[S0][0] == c.g[V0][0] {
+            // Two elements: order them directly into buf.
+            c.cycles += 7;
+            c.g[A1][0] = c.lw(first);
+            c.g[A0][0] = c.lw(first.wrapping_add(4));
+            c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(MERGE_SORT_KEY));
+            c.g[V1][0] = c.lw(r32(c, A0).wrapping_add(MERGE_SORT_KEY));
+            c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+            if c.g[V0][0] == 0 {
+                c.sw(buf, c.g[A0][0]);
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(first);
+                c.sw(buf.wrapping_add(4), c.g[V0][0]);
+            } else {
+                c.cycles += 4;
+                c.sw(buf, c.g[A1][0]);
+                c.g[V0][0] = c.lw(first.wrapping_add(4));
+                c.sw(buf.wrapping_add(4), c.g[V0][0]);
+            }
+        } else {
+            // s2 = mid = first + (n + 1) / 2, s4 = buf + n / 2, s5 = buf + n.
+            c.cycles += 16;
+            let n = r32(c, S0);
+            c.g[V0][0] = sx(n.wrapping_add(1));
+            c.g[V1][0] = sx(r32(c, V1) >> 31);
+            c.g[FP][0] = c.g[V0][0];
+            c.g[A0][0] = sx(r32(c, V0) >> 31);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.g[V1][0] = sx(n.wrapping_add(r32(c, V1)));
+            c.g[V0][0] = sx((r32(c, V0) as i32 >> 1) as u32);
+            c.g[V1][0] = sx((r32(c, V1) as i32 >> 1) as u32);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[V1][0] = sx(r32(c, V1) << 2);
+            c.g[S2][0] = sx(first.wrapping_add(r32(c, V0)));
+            c.g[S4][0] = sx(buf.wrapping_add(r32(c, V1)));
+            c.g[V0][0] = sx(n << 2);
+            let small = (c.g[S0][0] as i64) < 3;
+            c.g[V1][0] = small as u64;
+            c.g[S5][0] = sx(buf.wrapping_add(r32(c, V0)));
+            if small {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(first);
+                c.sw(r32(c, S4), c.g[V0][0]);
+            } else {
+                // First half into buf's upper half.
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[A2][0] = c.g[S4][0];
+                c.g[A3][0] = c.g[S6][0];
+                MERGE_SORT_SELF.call(c, 0x0013_f9dc)?;
+            }
+            c.cycles += 3;
+            let small = (c.g[S0][0] as i64) < 4;
+            c.g[V0][0] = small as u64;
+            c.g[A0][0] = c.g[S2][0];
+            if small {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(r32(c, S2));
+                c.sw(first, c.g[V0][0]);
+            } else {
+                // Second half into the start of the source.
+                c.cycles += 4;
+                c.g[A1][0] = c.g[S7][0];
+                c.g[A3][0] = c.g[S6][0];
+                c.g[A2][0] = c.g[S1][0];
+                MERGE_SORT_SELF.call(c, 0x0013_fa04)?;
+            }
+            // Merge: a0..t1 (the source's n / 2), a3..t2 (buf's
+            // (n + 1) / 2), out a2..s5.
+            c.cycles += 15;
+            c.g[V0][0] = sx(r32(c, FP) >> 31);
+            c.g[V1][0] = sx(r32(c, S0) >> 31);
+            c.g[V0][0] = sx(r32(c, FP).wrapping_add(r32(c, V0)));
+            c.g[V1][0] = sx(r32(c, S0).wrapping_add(r32(c, V1)));
+            c.g[V0][0] = sx((r32(c, V0) as i32 >> 1) as u32);
+            c.g[V1][0] = sx((r32(c, V1) as i32 >> 1) as u32);
+            c.g[V0][0] = sx(r32(c, V0) << 2);
+            c.g[A3][0] = c.g[S4][0];
+            c.g[A0][0] = c.g[S1][0];
+            c.g[V1][0] = sx(r32(c, V1) << 2);
+            c.g[A2][0] = c.g[S3][0];
+            c.g[T2][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+            let any = c.g[A2][0] < c.g[S5][0];
+            c.g[V0][0] = any as u64;
+            c.g[T1][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+            if any {
+                c.cycles += 2;
+                c.g[V0][0] = (c.g[A0][0] < c.g[T1][0]) as u64;
+                loop {
+                    // 0x13fa48
+                    c.cycles += 2;
+                    let a_left = c.g[V0][0] != 0;
+                    c.g[V0][0] = (c.g[A3][0] < c.g[T2][0]) as u64;
+                    if a_left {
+                        c.cycles += 2;
+                        let b_left = c.g[V0][0] != 0;
+                        c.g[T0][0] = c.lw(r32(c, A0));
+                        let mut took_b = false;
+                        if b_left {
+                            c.cycles += 6;
+                            c.g[A1][0] = c.lw(r32(c, A3));
+                            c.g[V1][0] = c.lw(r32(c, T0).wrapping_add(MERGE_SORT_KEY));
+                            c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(MERGE_SORT_KEY));
+                            c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+                            if c.g[V0][0] == 0 {
+                                c.sw(r32(c, A2), c.g[T0][0]);
+                            } else {
+                                c.cycles += 3;
+                                c.sw(r32(c, A2), c.g[A1][0]);
+                                c.g[A3][0] = sx(r32(c, A3).wrapping_add(4));
+                                took_b = true;
+                            }
+                        } else {
+                            c.cycles += 1;
+                            c.sw(r32(c, A2), c.g[T0][0]);
+                        }
+                        if !took_b {
+                            c.cycles += 2;
+                            c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+                        }
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(r32(c, A3));
+                        c.g[A3][0] = sx(r32(c, A3).wrapping_add(4));
+                        c.sw(r32(c, A2), c.g[V0][0]);
+                    }
+                    c.cycles += 4;
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(4));
+                    let more = c.g[A2][0] < c.g[S5][0];
+                    c.g[V0][0] = (c.g[A0][0] < c.g[T1][0]) as u64;
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0013_fa48);
+                    }
+                }
+            }
+        }
+        c.cycles += 12;
+        for (reg, off) in [
+            (S0, 0x90),
+            (S1, 0x80),
+            (S2, 0x70),
+            (S3, 0x60),
+            (S4, 0x50),
+            (S5, 0x40),
+            (S6, 0x30),
+            (S7, 0x20),
+            (FP, 0x10),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9669,5 +9879,45 @@ pub(crate) mod tests {
                 };
             },
         );
+    }
+    use super::*;
+
+
+    /// ObjPtrArray_MergeSort on -3..=24 pointers (two elements, the small
+    /// halves, deep recursion, empty/negative counts), objects with keys
+    /// from a small range (ties keep their order) or full 32-bit values
+    /// (unsigned compare); the buffer after the array. Events are delivered
+    /// in the merge loops (at any recursion depth).
+    #[test]
+    fn obj_ptr_array_merge_sort_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        use crate::difftest::fakes::machine;
+        use crate::difftest::DATA;
+        const ARRAY: u32 = DATA + 0x1_0000;
+        const BUF: u32 = DATA + 0x1_1000;
+        const OBJS: u32 = DATA + 0x2_0000;
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = machine(c, seed, 0x13f8_f800, 0);
+            let n: i32 = match seed % 10 {
+                0 => 2,
+                1 => (r.next_u32() % 4) as i32 - 3,
+                _ => (r.next_u32() % 25) as i32,
+            };
+            let small_keys = seed % 3 != 0;
+            for i in 0..32u32 {
+                let obj = OBJS + 0x100 * i;
+                c.bus.write32(ARRAY - 0x40 + 4 * i, OBJS + 0x100 * (r.next_u32() % 32));
+                c.bus.write32(ARRAY + 4 * i, obj);
+                c.bus.write32(BUF - 0x40 + 4 * i, r.next_u32());
+                c.bus.write32(BUF + 4 * i, OBJS + 0x100 * (r.next_u32() % 32));
+                let key = if small_keys { r.next_u32() % 6 } else { r.next_u32() };
+                c.bus.write32(obj + MERGE_SORT_KEY, key);
+            }
+            c.g[A0][0] = ARRAY as u64;
+            c.g[A1][0] = sx(ARRAY.wrapping_add((4 * n) as u32));
+            c.g[A2][0] = BUF as u64;
+            schedule(c, &mut r, seed, 0x0013_f8f8)
+        };
+        check_events(ee::s01::f_0013f8f8__generated, obj_ptr_array_merge_sort, 300, &setup);
     }
 }

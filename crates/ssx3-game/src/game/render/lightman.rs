@@ -95,6 +95,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_1708, font_load, "Font_Load"),
     (0x0038_ee78, vfx_plants_update, "VfxPlants_Update"),
     (0x0039_0f20, vfx_screen_tint_render, "VfxScreenTint_Render"),
+    (0x0039_0c20, vfx_render_toggles_update, "VfxRenderToggles_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2289,6 +2290,64 @@ pub fn vfx_screen_tint_render(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// VfxRenderToggles_Update (0x390c20)
+
+/// `gp+0x2a90`: the graphics manager (`D_004A5B80`).
+pub(crate) const TOGGLES_GFX_GP: u32 = 0x2a90;
+
+
+/// Graphics manager: the vtable pointer of the render-state interface.
+pub(crate) const TOGGLES_GFX_VTABLE: u32 = 0x10d8;
+
+
+/// Vtable slot 16 (`{delta: i16, fn}` at +0x80): set the render toggles.
+pub(crate) const TOGGLES_SLOT: u32 = 0x80;
+
+
+/// `gp+0x13d0`: the toggle flags (`D_004A44C0`).
+pub(crate) const TOGGLES_FLAGS_GP: u32 = 0x13d0;
+
+
+/// `gp+0x13d8`: a one-shot "changed" latch (`D_004A44C8`), cleared here.
+pub(crate) const TOGGLES_LATCH_GP: u32 = 0x13d8;
+
+
+
+/// `void VfxRenderToggles_Update(void)` (0x390c20): pass the render toggle
+/// flags to the graphics manager (vtable slot 16), then clear the one-shot
+/// latch if it is set.
+pub fn vfx_render_toggles_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        let gp = r32(c, GP);
+        c.g[A2][0] = Addr(gp.wrapping_add(TOGGLES_GFX_GP)).lw(c);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(gp.wrapping_add(TOGGLES_FLAGS_GP)).lw(c);
+        let gfx = r32(c, A2);
+        c.g[V0][0] = Addr(gfx).off(TOGGLES_GFX_VTABLE).lw(c);
+        let vt = r32(c, V0);
+        c.g[A0][0] = Addr(vt).off(TOGGLES_SLOT).lh(c);
+        c.g[V1][0] = Addr(vt).off(TOGGLES_SLOT + 4).lw(c);
+        let method = r32(c, V1);
+        c.g[A0][0] = sx(gfx.wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0039_0c44)?;
+        let gp = r32(c, GP);
+        c.g[V0][0] = Addr(gp.wrapping_add(TOGGLES_LATCH_GP)).lw(c);
+        if c.g[V0][0] != 0 {
+            Addr(gp.wrapping_add(TOGGLES_LATCH_GP)).sw(c, 0);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3007,5 +3066,26 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+    use super::*;
+    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
+
+
+    /// The graphics manager with a fake slot-16 method, random flags, the
+    /// latch set or clear.
+    #[test]
+    fn vfx_render_toggles_update_matches() {
+        use crate::difftest::GAME_GP;
+        fakes::covered(ee::s12::f_00390c20__generated, vfx_render_toggles_update, 200, &|c, seed| {
+            let mut r = fakes::machine(c, seed, 0x39_0c20, 1);
+            let gfx = fakes::ptr(&mut r);
+            let vt = fakes::vtable(c, &mut r, &[TOGGLES_SLOT]);
+            c.bus.write32(GAME_GP + TOGGLES_GFX_GP, gfx);
+            c.bus.write32(gfx + TOGGLES_GFX_VTABLE, vt);
+            c.bus.write32(GAME_GP + TOGGLES_FLAGS_GP, r.next_u32());
+            let latch = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
+            c.bus.write32(GAME_GP + TOGGLES_LATCH_GP, latch);
+            c.pc = 0x0039_0c20;
+        });
     }
 }

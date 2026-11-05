@@ -504,6 +504,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ov_screen_multiplayer_standings_on_widget_action,
         "OVScreenMultiplayerStandings_OnWidgetAction",
     ),
+    (0x001e_1458, message_center_update, "MessageCenter_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2154,6 +2155,7 @@ macro_rules! reward_gallery_dtor {
     };
 }
 pub(crate) use reward_gallery_dtor;
+use crate::abi::ret;
 
 reward_gallery_dtor!(
     cfe_state_reward_gallery_dtor,
@@ -5786,6 +5788,92 @@ pub fn ov_screen_message_center_ctor(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// MessageCenter_Update (0x1e1458)
+
+/// `MessageCenter_InitGroupTable` (0x1e12f0).
+pub(crate) const MESSAGE_CENTER_INIT_GROUP_TABLE: Callee = Callee { addr: 0x001e_12f0, f: ee::s04::f_001e12f0 };
+
+
+/// `MessageCenter_TriggerGroups(type)` (0x1e14c0).
+pub(crate) const MESSAGE_CENTER_TRIGGER_GROUPS: Callee = Callee { addr: 0x001e_14c0, f: ee::s04::f_001e14c0 };
+
+
+
+/// gp-relative message-center globals.
+pub(crate) const MC_SUSPENDED: u32 = 0x1030;
+
+ // gp - 0x1030: non-zero = updates off
+pub(crate) const MC_TABLE_READY: u32 = 0x1028;
+
+ // gp - 0x1028: group table initialised
+pub(crate) const MC_LAST_TRIGGER: u32 = 0x1034;
+
+ // gp - 0x1034: clock at the last trigger
+pub(crate) const MC_CLOCK_OWNER: u32 = 0x2a74;
+
+ // gp + 0x2a74: object whose +0x1c is the clock
+pub(crate) const MC_CLOCK: u32 = 0x1c;
+
+
+/// Ticks between two periodic trigger passes (600 = 10 s at 60 Hz).
+pub(crate) const MC_TRIGGER_PERIOD: i64 = 600;
+
+
+
+/// `void MessageCenter_Update(void)` (0x1e1458): unless the message center
+/// is suspended, build the group table once, then every 600 clock ticks
+/// fire the periodic (type 1) triggers and remember the clock.
+pub fn message_center_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        let gp = r32(c, GP);
+        c.g[V0][0] = Addr(gp.wrapping_sub(MC_SUSPENDED)).lw(c);
+        frame.save(c, S0, 0x10);
+        let suspended = c.g[V0][0] != 0;
+        frame.save_ra(c, 0);
+        if suspended {
+            c.cycles += 1;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(gp.wrapping_sub(MC_TABLE_READY)).lw(c);
+            c.g[V1][0] = Addr(gp.wrapping_add(MC_CLOCK_OWNER)).lw(c);
+            if c.g[V0][0] == 0 {
+                c.cycles += 4;
+                c.g[V0][0] = 1;
+                Addr(gp.wrapping_sub(MC_TABLE_READY)).sw(c, 1);
+                MESSAGE_CENTER_INIT_GROUP_TABLE.call(c, 0x001e_1484)?;
+                let gp = r32(c, GP);
+                c.g[V1][0] = Addr(gp.wrapping_add(MC_CLOCK_OWNER)).lw(c);
+            }
+            c.cycles += 6;
+            let gp = r32(c, GP);
+            c.g[V0][0] = Addr(gp.wrapping_sub(MC_LAST_TRIGGER)).lw(c);
+            c.g[S0][0] = Addr(r32(c, V1).wrapping_add(MC_CLOCK)).lw(c);
+            c.g[V0][0] = sx(r32(c, S0).wrapping_sub(r32(c, V0)));
+            c.g[V0][0] = ((c.g[V0][0] as i64) < MC_TRIGGER_PERIOD + 1) as u64;
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[A0][0] = 1;
+                MESSAGE_CENTER_TRIGGER_GROUPS.call(c, 0x001e_14a8)?;
+                let gp = r32(c, GP);
+                let now = c.g[S0][0];
+                Addr(gp.wrapping_sub(MC_LAST_TRIGGER)).sw(c, now);
+                c.cycles += 1;
+            }
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7715,5 +7803,39 @@ pub(crate) mod tests {
                 c.bus.write32(0x004a_2088, r.next_u32());
             },
         );
+    }
+    use super::*;
+    pub(crate) use crate::game::ai::ai::tests::oc258_w32;
+    pub(crate) use crate::game::animation::animsequencer::tests::oc258_env;
+
+
+    #[test]
+    fn message_center_update_matches() {
+        check(ee::s04::f_001e1458__generated, message_center_update, 40, &|c, seed| {
+            let mut r = machine(c, seed, 0x1e1458, 0);
+            oc258_env(c);
+            c.pc = 0x001e_1458;
+            let gp = GAME_GP;
+            // Suspended in 1 of 5 seeds.
+            oc258_w32(c, gp - MC_SUSPENDED, if seed % 5 == 0 { r.next_u32() | 1 } else { 0 });
+            oc258_w32(c, gp - MC_TABLE_READY, (seed / 2 % 2) as u32);
+            let owner = DATA + 0x2000;
+            oc258_w32(c, gp + MC_CLOCK_OWNER, owner);
+            let clock = r.next_u32() >> 2;
+            oc258_w32(c, owner + MC_CLOCK, clock);
+            // Elapsed time: below, at and past the 600-tick period.
+            let elapsed = match seed % 4 {
+                0 => 600,
+                1 => 601,
+                2 => r.next_u32() % 600,
+                _ => 601 + r.next_u32() % 5000,
+            };
+            oc258_w32(c, gp - MC_LAST_TRIGGER, clock.wrapping_sub(elapsed));
+            // Trigger table types (0x441630, 0x14 per group).
+            for i in 0..0x40u32 {
+                let kind = r.next_u32() % 7;
+                oc258_w32(c, 0x0044_1630 + 0x14 * i, kind);
+            }
+        });
     }
 }

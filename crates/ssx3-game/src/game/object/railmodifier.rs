@@ -321,6 +321,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_c4e0, rail_modifier_v03, "RailModifier_v03"),
     (0x0036_1098, mod_obj_get_matrices, "ModObj_GetMatrices"),
+    (0x0036_5f68, vram_heap_nodes_to_scratchpad, "VramHeap_NodesToScratchpad"),
+    (0x0036_5fa8, vram_heap_nodes_from_scratchpad, "VramHeap_NodesFromScratchpad"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -5787,6 +5789,99 @@ pub fn mod_obj_get_matrices(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// VramHeap_NodesFromScratchpad (railmodifier.cpp).
+
+/// `InvalidDCache` (libkernel; called through the table).
+pub(crate) const INVALID_DCACHE_207: u32 = 0x0042_47d8;
+
+
+/// `SprStream_Download` (0x38f738).
+pub(crate) const SPR_STREAM_DOWNLOAD_207: Callee = Callee {
+    addr: 0x0038_f738,
+    f: ee::s12::SprStream_Download,
+};
+
+
+
+/// `void VramHeap_NodesFromScratchpad(VramHeap* self)` (0x365fa8): bring the
+/// heap's node block back from the scratchpad: invalidate the data cache
+/// over `self..self+0x1fef`, DMA 0x1ff0 bytes from the scratchpad stream to
+/// `self` (flags 2: wait), then store `self` in the block's trailing link
+/// word (`+0x1ff0`).
+pub fn vram_heap_nodes_from_scratchpad(c: &mut Cpu) {
+    const BLOCK: u32 = 0x1ff0;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(r32(c, S0).wrapping_add(BLOCK - 1));
+        call_ptr(c, INVALID_DCACHE_207, 0x0036_5fc0)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = BLOCK as u64;
+        c.g[A2][0] = 0x2;
+        SPR_STREAM_DOWNLOAD_207.call(c, 0x0036_5fd0)?;
+        let heap = r32(c, S0);
+        c.sw(heap.wrapping_add(BLOCK), c.g[S0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ------------------------------------------------ VramHeap_NodesToScratchpad
+
+/// `SprStream_Upload` (0x38f708).
+pub(crate) const VRAM_SPR_STREAM_UPLOAD: Callee = Callee {
+    addr: 0x0038_f708,
+    f: ee::s12::f_0038f708,
+};
+
+
+/// `SyncDCache` (0x424698, cross-shard).
+pub(crate) const VRAM_SYNC_DCACHE: u32 = 0x0042_4698;
+
+
+/// The heap's node table: 0x1ff0 bytes from +0, and the word after it
+/// (+0x1ff0) where the table's current address is kept.
+pub(crate) const VRAM_NODES_SIZE: u32 = 0x1ff0;
+
+
+
+/// `void VramHeap_NodesToScratchpad(VramHeap* self)` (0x365f68): writes the
+/// node table back from the data cache and DMAs it to the scratchpad
+/// stream buffer (waiting for the transfer); `self->nodes` = the
+/// scratchpad copy.
+pub fn vram_heap_nodes_to_scratchpad(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(r32(c, S0).wrapping_add(VRAM_NODES_SIZE - 1));
+        call_ptr(c, VRAM_SYNC_DCACHE, 0x0036_5f80)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = VRAM_NODES_SIZE as u64;
+        c.g[A2][0] = 2;
+        VRAM_SPR_STREAM_UPLOAD.call(c, 0x0036_5f90)?;
+        let nodes = c.g[V0][0];
+        Addr(r32(c, S0).wrapping_add(VRAM_NODES_SIZE)).sw(c, nodes);
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7956,6 +8051,68 @@ pub(crate) mod tests {
                 c.bus.write32(DATA + MODOBJ_MATRICES, DATA + 0x3000);
                 let vt = vtable(c, &mut r, &[MODIFIER_UPDATE_SLOT]);
                 c.bus.write32(DATA + MODOBJ_MODIFIER_VT, vt);
+            },
+        );
+    }
+    use super::*;
+    // (fakes imported above)
+    use super::*;
+
+
+    // ------------------------------------------------------- vram heap
+
+    /// VramHeap_NodesFromScratchpad: the heap at a random 16-byte aligned
+    /// spot, the scratchpad stream's pointer (`gp+0x2a94`) at a random
+    /// quadword that leaves room for the 0x1ff0-byte block, random RAM and
+    /// scratchpad. The real InvalidDCache and SprStream_Download run.
+    #[test]
+    fn vram_heap_nodes_from_scratchpad_matches() {
+        check(ee::s12::f_00365fa8__generated, vram_heap_nodes_from_scratchpad, 100, &|c, seed| {
+            let mut r = Rng(0x0036_5fa8 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x0036_5fa8;
+            fill(c, &mut r, DATA, 0x1000);
+            for i in 0..0x1000 {
+                c.bus.spr[i * 4..i * 4 + 4].copy_from_slice(&r.next_u32().to_le_bytes());
+            }
+            let spr = 0x7000_0000 + (r.next_u32() % 0x200) * 0x10;
+            c.bus.write32(GAME_GP + 0x2a94, spr);
+            c.g[A0][0] = sx(DATA + (r.next_u32() % 0x100) * 0x10);
+        });
+    }
+
+
+    /// `VramHeap_NodesToScratchpad`: the real `SyncDCache` (interrupts
+    /// enabled or not) and `SprStream_Upload` / `Dma_ToScratchpad`
+    /// (waiting for the transfer) on a random node table, to scratchpad
+    /// stream offsets 0..0x200.
+    #[test]
+    fn vram_heap_nodes_to_scratchpad_matches() {
+        check(
+            ssx3_ee::s12::f_00365f68__generated,
+            vram_heap_nodes_to_scratchpad,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0036_5f68 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0036_5f68;
+                let status = r.next_u32() & !0x1_0000;
+                c.cop0[12] = if seed % 2 == 0 {
+                    status | 0x1_0000
+                } else {
+                    status
+                };
+                c.cop0[28] = r.next_u32();
+                let heap = DATA + 0x10 * (r.next_u32() % 0x40);
+                fill(c, &mut r, heap, VRAM_NODES_SIZE / 4 + 4);
+                for i in 0..0x1000 {
+                    c.bus.spr[i * 4..i * 4 + 4].copy_from_slice(&r.next_u32().to_le_bytes());
+                }
+                c.bus
+                    .write32(GAME_GP + 0x2a94, 0x10 * (r.next_u32() % 0x20));
+                c.g[A0][0] = sx(heap);
             },
         );
     }

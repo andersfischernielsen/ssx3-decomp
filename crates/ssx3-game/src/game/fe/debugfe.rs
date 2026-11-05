@@ -56,6 +56,8 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
+use crate::ps2f::FpuF32;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -191,6 +193,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         keyboard_screen_get_cursor_object_name,
         "KeyboardScreen_GetCursorObjectName",
     ),
+    (0x0018_04b8, feui_input_poll_usb_keyboard, "FEUIInput_PollUsbKeyboard"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2526,6 +2529,62 @@ pub fn debug_menu_module_update_cursor_trail(c: &mut Cpu) {
     }
 }
 
+
+
+
+// --------------------------------------------------- FEUIInput_PollUsbKeyboard
+
+/// `cUsbKeyboard*` at gp+0x300 (0 when no USB keyboard is set up).
+pub(crate) const FEUI_USB_KEYBOARD_GP: u32 = 0x300;
+
+
+/// FEUIInput: key found (+0xc), key code (+0x10), modifier (+0x14).
+pub(crate) const FEUI_KEY_FOUND: u32 = 0xc;
+
+
+pub(crate) const FEUI_KEY_CODE: u32 = 0x10;
+
+
+pub(crate) const FEUI_KEY_MOD: u32 = 0x14;
+
+
+
+/// `void FEUIInput_PollUsbKeyboard(FEUIInput* self)` (0x1804b8): pops the
+/// next key of USB keyboard channel 0 (`cUsbKeyboard_GetKey`) into the
+/// input's key / modifier, `found` = whether there was one.
+pub fn feui_input_poll_usb_keyboard(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let input = Addr(r32(c, S0));
+        c.g[A0][0] = Addr((c.g[GP][0] as u32).wrapping_add(FEUI_USB_KEYBOARD_GP)).lw(c);
+        input.off(FEUI_KEY_FOUND).sw(c, 0);
+        if c.g[A0][0] != 0 {
+            c.cycles += 8;
+            input.off(FEUI_KEY_MOD).sw(c, 0);
+            c.g[A1][0] = 0;
+            input.off(FEUI_KEY_CODE).sw(c, 0);
+            c.g[A2][0] = sx(input.0.wrapping_add(FEUI_KEY_CODE));
+            c.g[A3][0] = sx(input.0.wrapping_add(FEUI_KEY_MOD));
+            call_ptr(c, 0x0026_6ba8, 0x0018_04ec)?;
+            let found = c.g[V0][0] != 0;
+            c.g[V0][0] = 1;
+            if found {
+                c.cycles += 1;
+                Addr(r32(c, S0).wrapping_add(FEUI_KEY_FOUND)).sw(c, 1);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, 16, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3449,6 +3508,56 @@ pub(crate) mod tests {
                 c.bus.write32(FLY + 0x8, r.edge_f32()); // pos.x
                 c.bus.write32(FLY + 0xc, r.edge_f32()); // pos.y
                 c.bus.write32(FLY + 0x10, (seed % 64) as u32); // head
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::{elf_image};
+
+
+    /// `FEUIInput_PollUsbKeyboard`: no keyboard; a keyboard that is closed,
+    /// has an empty channel 0, or has a queued key (zero or non-zero key /
+    /// modifier bytes), through the real `cUsbKeyboard_GetKey`.
+    #[test]
+    fn feui_input_poll_usb_keyboard_matches() {
+        crate::difftest::check_lohi(
+            ssx3_ee::s02::f_001804b8__generated,
+            feui_input_poll_usb_keyboard,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0018_04b8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0018_04b8;
+                let (input, kb) = (DATA + 0x100, DATA + 0x1000);
+                fill(c, &mut r, input, 8);
+                c.bus.write32(
+                    GAME_GP + FEUI_USB_KEYBOARD_GP,
+                    if seed % 5 == 0 { 0 } else { kb },
+                );
+                // cUsbKeyboard: open flag (+0x460), channel 0 count / read
+                // index / key ring; the keyboard limit `UsbKb_GetMaxKeyboards`
+                // returns.
+                c.bus.write32(0x0052_6010, 1 + r.next_u32() % 4);
+                c.bus
+                    .write32(kb + 0x460, if seed % 7 == 1 { 0 } else { r.next_u32() | 1 });
+                let read = r.next_u32() % 64;
+                let count = if seed % 3 == 0 {
+                    read
+                } else {
+                    read + 1 + r.next_u32() % 4
+                };
+                c.bus.write32(kb, count);
+                c.bus.write32(kb + 4, read);
+                for b in 0..0x80u32 {
+                    let v = if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32() as u8
+                    };
+                    c.bus.write8(kb + 8 + b, v);
+                }
+                c.g[A0][0] = sx(input);
             },
         );
     }

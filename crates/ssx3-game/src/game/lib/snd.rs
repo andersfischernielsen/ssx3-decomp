@@ -36,6 +36,7 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::call;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -156,6 +157,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003c_6c28, sndstrm_get_free_blocks, "SNDSTRM_GetFreeBlocks"),
     (0x003c_72f8, snd_read_big_endian, "SND_ReadBigEndian"),
     (0x003c_7ab0, snd_ee_voice_mix_ramp, "SND_EeVoiceMixRamp"),
+    (0x003b_c4c0, snd_get_pan_gains, "SND_GetPanGains"),
+    (0x003c_3ee0, snd_channel_start_voices, "SND_ChannelStartVoices"),
+    (0x003c_6c98, sndstrm_get_buffered_bytes, "SNDSTRM_GetBufferedBytes"),
 ];
 
 /// Fields of the driver state block.
@@ -9618,6 +9622,614 @@ pub fn snd_get_volume(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// SND_ChannelStartVoices (0x3c3ee0)
+
+/// The sound driver state block (`0x510000 - 0x5718`).
+pub(crate) const SV_STATE: u32 = 0x0050_a8e8;
+
+
+/// The second global block (`0x510000 - 0x5300`): voice start tables.
+pub(crate) const SV_SYNC: u32 = 0x0050_ad00;
+
+
+/// State: `SndChannel*` channel array.
+pub(crate) const SV_STATE_CHANNELS: u32 = 0x1f0;
+
+
+/// State `u8`: first EE voice number (after `SV_STATE_VOICE_BASE`).
+pub(crate) const SV_STATE_EE_VOICE_BASE: u32 = 0x2f;
+
+
+/// State `u8`: first voice number of the IOP DSP block.
+pub(crate) const SV_STATE_VOICE_BASE: u32 = 0x30;
+
+
+/// State `u8`: SPU output mode; 2 also drives the second voice block (+0x18).
+pub(crate) const SV_STATE_OUTPUT_MODE: u32 = 0x49;
+
+
+/// Sync: key-on sequence counter (`+= 0x800000` per started voice).
+pub(crate) const SV_SYNC_KEY_SEQ: u32 = 0x1ab8;
+
+
+/// Sync: `u8*` voice parameter blocks (SPU 8 bytes, IOP 16 bytes per voice).
+pub(crate) const SV_SYNC_VOICE_PARAMS: u32 = 0xcb0;
+
+
+/// Sync: per-voice start addresses (32 bytes per voice).
+pub(crate) const SV_SYNC_START_ADDRS: u32 = 0xeb0;
+
+
+/// Sync: SPU start-address shadow (8 bytes per voice).
+pub(crate) const SV_SYNC_SPU_SHADOW: u32 = 0x840;
+
+
+/// Sync: IOP DSP voice shadow (8 bytes per voice).
+pub(crate) const SV_SYNC_IOP_SHADOW: u32 = 0x9c0;
+
+
+/// `SndChannel` size.
+pub(crate) const SV_CHAN_SIZE: u32 = 0x8c;
+
+
+/// Channel `s16[]`: voice numbers.
+pub(crate) const SV_CHAN_VOICES: u32 = 0x04;
+
+
+/// Channel word passed to `SND_EeVoiceStart` (8th argument).
+pub(crate) const SV_CHAN_EE_PARAM: u32 = 0x14;
+
+
+/// Channel `u8`: voice count.
+pub(crate) const SV_CHAN_VOICE_COUNT: u32 = 0x23;
+
+
+/// Channel `u16`: flags (8: SPU voices, 0x100: IOP DSP voices, else EE).
+pub(crate) const SV_CHAN_FLAGS: u32 = 0x24;
+
+
+/// Start descriptor `s8` passed to `SND_EeVoiceStart` (13th argument).
+pub(crate) const SV_DESC_PRIORITY: u32 = 0x02;
+
+
+/// Start descriptor `u8`: codec.
+pub(crate) const SV_DESC_CODEC: u32 = 0x13;
+
+
+/// Start descriptor words passed to `SND_EeVoiceStart` (9th/10th args).
+pub(crate) const SV_DESC_ARG5C: u32 = 0x5c;
+
+
+pub(crate) const SV_DESC_ARG60: u32 = 0x60;
+
+
+/// Start descriptor: pointer to the sample base address.
+pub(crate) const SV_DESC_BASE_PTR: u32 = 0x64;
+
+
+/// Start descriptor `int[]`: per-voice sample offsets.
+pub(crate) const SV_DESC_OFFSETS: u32 = 0x68;
+
+
+/// Start descriptor `int[]`: per-voice loop offsets.
+pub(crate) const SV_DESC_LOOPS: u32 = 0x80;
+
+
+/// Start descriptor `int[]`: per-voice stretch parameters.
+pub(crate) const SV_DESC_STRETCH: u32 = 0x98;
+
+
+
+pub(crate) const SV_APPLY_PITCH: Callee = Callee { addr: 0x003c_25e0, f: ee::s13::SND_ChannelApplyPitch };
+
+
+pub(crate) const SV_APPLY_PAN: Callee = Callee { addr: 0x003c_38e0, f: ee::s13::SND_ChannelApplyPan };
+
+
+pub(crate) const SV_APPLY_FX_ENABLE: Callee =
+    Callee { addr: 0x003c_2ec8, f: ee::s13::SND_ChannelApplyFxEnable };
+
+
+pub(crate) const SV_APPLY_SEND: Callee = Callee { addr: 0x003c_27e0, f: ee::s13::SND_ChannelApplySend };
+
+
+pub(crate) const SV_APPLY_TIME_STRETCH: Callee =
+    Callee { addr: 0x003c_3010, f: ee::s13::SND_ChannelApplyTimeStretch };
+
+
+pub(crate) const SV_APPLY_DISTORTION: Callee =
+    Callee { addr: 0x003c_30c8, f: ee::s13::SND_ChannelApplyDistortion };
+
+
+pub(crate) const SV_APPLY_LOWPASS: Callee = Callee { addr: 0x003c_3178, f: ee::s13::SND_ChannelApplyLowpass };
+
+
+pub(crate) const SV_APPLY_HIGHPASS: Callee =
+    Callee { addr: 0x003c_3250, f: ee::s13::SND_ChannelApplyHighpass };
+
+
+/// `SND_EeVoiceStart` (cross-shard: through the function table).
+pub(crate) const SV_EE_VOICE_START: u32 = 0x003c_8158;
+
+
+/// `SND_EeVoiceActivate` (cross-shard: through the function table).
+pub(crate) const SV_EE_VOICE_ACTIVATE: u32 = 0x003c_83a0;
+
+
+
+/// `int SND_ChannelStartVoices(StartDesc* d, u8* base, int ch, int stretch,
+/// int distortion, int lowpass, int highpass)` (0x3c3ee0): start the voices
+/// of sound channel `ch` (`state.channels + ch * 0x8c`).
+///
+/// - SPU channels (flag 8): apply pitch, pan, effect enable and send, then
+///   per voice write the start address (`*d->base_ptr + d->offsets[i] -
+///   d->offsets[0]`), bump the key-on sequence and store the tagged address
+///   into the voice parameters and the SPU shadow (and the second block in
+///   output mode 2).
+/// - IOP DSP channels (flag 0x100): pitch, pan, send, then the same start
+///   address into the IOP parameter block (+0x1a0) and a cleared shadow.
+/// - EE channels: `SND_EeVoiceStart` per voice, then pitch, pan, send,
+///   time stretch, distortion, low/high pass on the first voice, then
+///   `SND_EeVoiceActivate` per voice.
+///
+/// Returns 0.
+pub fn snd_channel_start_voices(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0xe0);
+        c.g[V1][0] = SV_CHAN_SIZE as u64;
+        frame.save(c, S0, 0xd0);
+        c.g[V0][0] = 0x51_0000;
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0xb0);
+        frame.save(c, S3, 0xa0);
+        let ch_id = r32(c, S0);
+        let ch_off = abi::mult(c, ch_id, SV_CHAN_SIZE);
+        c.g[V1][0] = sx(ch_off);
+        frame.save(c, S4, 0x90);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S5, 0x80);
+        c.g[S4][0] = sx(SV_STATE);
+        frame.save(c, S7, 0x60);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, FP, 0x50);
+        c.g[S7][0] = c.g[A3][0];
+        frame.save(c, S1, 0xc0);
+        c.g[FP][0] = c.g[T0][0];
+        frame.save(c, S6, 0x70);
+        frame.save_ra(c, 0x40);
+        let chans = Addr(SV_STATE + SV_STATE_CHANNELS).lw(c);
+        c.g[V0][0] = chans;
+        let lowpass = c.g[T1][0];
+        Addr(sp(c) + 0x30).sw(c, lowpass);
+        let ch = (chans as u32).wrapping_add(ch_off);
+        c.g[S2][0] = sx(ch);
+        let flags = Addr(ch + SV_CHAN_FLAGS).lhu(c);
+        c.g[V1][0] = flags;
+        c.g[V0][0] = flags & 0x8;
+        let highpass = c.g[T2][0];
+        Addr(sp(c) + 0x34).sw(c, highpass);
+
+        if flags & 0x8 != 0 {
+            // SPU voices.
+            c.cycles += 13;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S1][0] = 0;
+            SV_APPLY_PITCH.call(c, 0x003c_3f58)?;
+            c.g[A0][0] = c.g[S0][0];
+            SV_APPLY_PAN.call(c, 0x003c_3f60)?;
+            c.g[A0][0] = c.g[S0][0];
+            SV_APPLY_FX_ENABLE.call(c, 0x003c_3f68)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            SV_APPLY_SEND.call(c, 0x003c_3f74)?;
+            let n = Addr(r32(c, S2) + SV_CHAN_VOICE_COUNT).lbu(c);
+            c.g[V1][0] = n;
+            c.g[V0][0] = 0x51_0000;
+            if n == 0 {
+                sv_epilogue(c, frame, 1);
+                return Ok(());
+            }
+            c.cycles += 8;
+            c.g[T6][0] = c.g[S4][0];
+            c.g[T0][0] = sx(SV_SYNC);
+            c.g[T5][0] = 0x80_0000;
+            c.g[T1][0] = sx(SV_SYNC + SV_SYNC_START_ADDRS);
+            c.g[T3][0] = sx(SV_SYNC + SV_SYNC_SPU_SHADOW);
+            c.g[T4][0] = 0x2;
+            c.g[T2][0] = sx(r32(c, S3).wrapping_add(SV_DESC_OFFSETS));
+            c.g[A3][0] = sx(r32(c, S2).wrapping_add(SV_CHAN_VOICES));
+            loop {
+                c.cycles += 31;
+                let desc = r32(c, S3);
+                let sync = r32(c, T0);
+                let starts = r32(c, T1);
+                let shadow = r32(c, T3);
+                let voice_at = Addr(r32(c, A3));
+                // Start address: *base_ptr + (offsets[i] - offsets[0]).
+                let base_ptr = Addr(desc + SV_DESC_BASE_PTR).lw(c);
+                let off0 = Addr(desc + SV_DESC_OFFSETS).lw(c);
+                let voice = voice_at.lh(c) as u32;
+                let off_i = Addr(r32(c, T2)).lw(c);
+                let base = Addr(base_ptr as u32).lw(c);
+                let start = (base as u32).wrapping_add((off_i as u32).wrapping_sub(off0 as u32));
+                Addr((voice << 5).wrapping_add(starts)).sw(c, sx(start));
+                // Next key-on sequence tag.
+                let seq = (Addr(sync + SV_SYNC_KEY_SEQ).lw(c) as u32).wrapping_add(r32(c, T5));
+                let params = Addr(sync + SV_SYNC_VOICE_PARAMS).lw(c) as u32;
+                Addr(sync + SV_SYNC_KEY_SEQ).sw(c, sx(seq));
+                let voice = voice_at.lh(c) as u32;
+                let addr = Addr((voice << 5).wrapping_add(starts)).lw(c) as u32;
+                let param_at = params.wrapping_add(voice << 3);
+                Addr(param_at + 0x20).sw(c, sx(addr | seq));
+                let voice = voice_at.lh(c) as u32;
+                let mode = Addr(r32(c, T6) + SV_STATE_OUTPUT_MODE).lbu(c);
+                let e_at = (voice << 5).wrapping_add(starts);
+                let addr = Addr(e_at).lw(c);
+                let shadow_at = (voice << 3).wrapping_add(shadow);
+                Addr(shadow_at).sw(c, addr);
+                if mode != c.g[T4][0] {
+                    c.g[A0][0] = sx(e_at);
+                    c.g[A1][0] = mode;
+                    c.g[A2][0] = sx(param_at);
+                    c.g[V1][0] = sx(shadow_at);
+                } else {
+                    // Output mode 2: the second voice block (+0x18) too.
+                    c.cycles += 19;
+                    let voice = voice_at.lh(c) as u32;
+                    let params = Addr(sync + SV_SYNC_VOICE_PARAMS).lw(c) as u32;
+                    let seq = Addr(sync + SV_SYNC_KEY_SEQ).lw(c);
+                    let addr = Addr((voice << 5).wrapping_add(starts)).lw(c);
+                    let param2_at = params.wrapping_add(voice.wrapping_add(0x18) << 3);
+                    Addr(param2_at + 0x20).sw(c, addr | seq);
+                    let voice = voice_at.lh(c) as u32;
+                    let e_at = (voice << 5).wrapping_add(starts);
+                    let addr = Addr(e_at).lw(c);
+                    let shadow2_at = (voice.wrapping_add(0x18) << 3).wrapping_add(shadow);
+                    Addr(shadow2_at).sw(c, addr);
+                    c.g[A0][0] = addr;
+                    c.g[A1][0] = sx(param2_at);
+                    c.g[A2][0] = seq;
+                    c.g[V1][0] = sx(e_at);
+                    c.g[V0][0] = sx(shadow2_at);
+                }
+                c.cycles += 6;
+                let n = Addr(r32(c, S2) + SV_CHAN_VOICE_COUNT).lbu(c);
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                c.g[T2][0] = sx(r32(c, T2).wrapping_add(4));
+                let more = (c.g[S1][0] as i64) < (n as i64);
+                c.g[V0][0] = more as u64;
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(2));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_3fa0);
+                }
+            }
+            sv_epilogue(c, frame, 2);
+            return Ok(());
+        }
+
+        c.cycles += 3;
+        c.g[V0][0] = c.g[V1][0] & 0x100;
+        c.g[A0][0] = c.g[S0][0];
+        if c.g[V0][0] != 0 {
+            // IOP DSP voices.
+            c.cycles += 10;
+            c.g[S1][0] = 0;
+            SV_APPLY_PITCH.call(c, 0x003c_409c)?;
+            c.g[A0][0] = c.g[S0][0];
+            SV_APPLY_PAN.call(c, 0x003c_40a4)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            SV_APPLY_SEND.call(c, 0x003c_40b0)?;
+            let n = Addr(r32(c, S2) + SV_CHAN_VOICE_COUNT).lbu(c);
+            c.g[V1][0] = n;
+            c.g[V0][0] = 0x51_0000;
+            if n == 0 {
+                sv_epilogue(c, frame, 1);
+                return Ok(());
+            }
+            c.cycles += 7;
+            c.g[T4][0] = c.g[S4][0];
+            c.g[T2][0] = sx(SV_SYNC);
+            c.g[T6][0] = 0x80_0000;
+            c.g[T3][0] = sx(SV_SYNC + SV_SYNC_START_ADDRS);
+            c.g[T5][0] = sx(SV_SYNC + SV_SYNC_IOP_SHADOW);
+            c.g[T1][0] = sx(r32(c, S3).wrapping_add(SV_DESC_OFFSETS));
+            c.g[T0][0] = sx(r32(c, S2).wrapping_add(SV_CHAN_VOICES));
+            loop {
+                c.cycles += 36;
+                let desc = r32(c, S3);
+                let sync = r32(c, T2);
+                let starts = r32(c, T3);
+                let state = r32(c, T4);
+                let voice_at = Addr(r32(c, T0));
+                let base_ptr = Addr(desc + SV_DESC_BASE_PTR).lw(c);
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                let voice = voice_at.lh(c) as u32;
+                let off_i = Addr(r32(c, T1)).lw(c);
+                let off0 = Addr(desc + SV_DESC_OFFSETS).lw(c);
+                let base = Addr(base_ptr as u32).lw(c);
+                let first = Addr(state + SV_STATE_VOICE_BASE).lbu(c);
+                let start = (base as u32).wrapping_add((off_i as u32).wrapping_sub(off0 as u32));
+                c.g[T1][0] = sx(r32(c, T1).wrapping_add(4));
+                Addr((voice << 5).wrapping_add(starts)).sw(c, sx(start));
+                let seq = (Addr(sync + SV_SYNC_KEY_SEQ).lw(c) as u32).wrapping_add(r32(c, T6));
+                let params = Addr(sync + SV_SYNC_VOICE_PARAMS).lw(c) as u32;
+                Addr(sync + SV_SYNC_KEY_SEQ).sw(c, sx(seq));
+                let voice = voice_at.lh(c) as u32;
+                let e_at = (voice << 5).wrapping_add(starts);
+                let addr = Addr(e_at).lw(c) as u32;
+                let param_at = params.wrapping_add(voice.wrapping_sub(first as u32) << 4);
+                Addr(param_at + 0x1a0).sw(c, sx(addr | seq));
+                let voice = voice_at.lh(c) as u32;
+                let first2 = Addr(state + SV_STATE_VOICE_BASE).lbu(c) as u32;
+                let shadow_at = (voice.wrapping_sub(first2) << 3).wrapping_add(r32(c, T5));
+                Addr(shadow_at).sw(c, 0);
+                let n = Addr(r32(c, S2) + SV_CHAN_VOICE_COUNT).lbu(c);
+                let more = (c.g[S1][0] as i64) < (n as i64);
+                c.g[A0][0] = sx(e_at);
+                c.g[A1][0] = sx(seq);
+                c.g[A2][0] = sx(param_at);
+                c.g[A3][0] = first;
+                c.g[V1][0] = sx(shadow_at);
+                c.g[V0][0] = more as u64;
+                c.g[T0][0] = sx(r32(c, T0).wrapping_add(2));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_40d8);
+                }
+            }
+            sv_epilogue(c, frame, 2);
+            return Ok(());
+        }
+
+        // EE voices: start each one.
+        c.cycles += 3;
+        let n = Addr(r32(c, S2) + SV_CHAN_VOICE_COUNT).lbu(c);
+        c.g[T2][0] = n;
+        c.g[S1][0] = 0;
+        if n != 0 {
+            c.cycles += 5;
+            c.g[S6][0] = c.g[S4][0];
+            c.g[S0][0] = sx(r32(c, S3).wrapping_add(SV_DESC_STRETCH));
+            c.g[S4][0] = sx(r32(c, S2).wrapping_add(SV_CHAN_VOICES));
+            c.g[A0][0] = Addr(r32(c, S3) + SV_DESC_ARG60).lw(c);
+            loop {
+                c.cycles += 31;
+                let desc = r32(c, S3);
+                let state = r32(c, S6);
+                let base = r32(c, S5);
+                let stretch_at = r32(c, S0);
+                let s = sp(c);
+                c.g[A2][0] = 0x1;
+                let priority = Addr(desc + SV_DESC_PRIORITY).lb(c);
+                let arg5c = Addr(desc + SV_DESC_ARG5C).lw(c);
+                let voice = Addr(r32(c, S4)).lh(c);
+                let index = c.g[S1][0];
+                Addr(s + 0x28).sw(c, index);
+                c.g[S4][0] = sx(r32(c, S4).wrapping_add(2));
+                Addr(s).sw(c, arg5c);
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                let arg60 = c.g[A0][0];
+                Addr(s + 0x8).sw(c, arg60);
+                Addr(s + 0x20).sw(c, priority);
+                let ee_first = Addr(state + SV_STATE_EE_VOICE_BASE).lbu(c) as u32;
+                let first = Addr(state + SV_STATE_VOICE_BASE).lbu(c) as u32;
+                let off0 = Addr(desc + SV_DESC_OFFSETS).lw(c) as u32;
+                Addr(s + 0x10).sw(c, 0);
+                Addr(s + 0x18).sw(c, 0);
+                // s0 walks the stretch words; the loop and sample offsets
+                // of the same voice sit 0x18 and 0x30 bytes before.
+                let loop_off =
+                    Addr(stretch_at.wrapping_sub(SV_DESC_STRETCH - SV_DESC_LOOPS)).lw(c) as u32;
+                let off_i =
+                    Addr(stretch_at.wrapping_sub(SV_DESC_STRETCH - SV_DESC_OFFSETS)).lw(c) as u32;
+                let stretch = Addr(stretch_at).lw(c);
+                let codec = Addr(desc + SV_DESC_CODEC).lbu(c);
+                let ee_param = Addr(r32(c, S2) + SV_CHAN_EE_PARAM).lw(c);
+                // Registers at the call.
+                c.g[V0][0] = sx(loop_off);
+                c.g[V1][0] = arg5c;
+                c.g[A0][0] = sx((voice as u32).wrapping_sub(first.wrapping_add(ee_first)));
+                c.g[A1][0] = codec;
+                c.g[A3][0] = sx(base.wrapping_add(off_i));
+                c.g[T0][0] = sx(base.wrapping_add(off0).wrapping_add(loop_off));
+                c.g[T1][0] = stretch;
+                c.g[T3][0] = ee_param;
+                c.g[S0][0] = sx(stretch_at.wrapping_add(4));
+                call_ptr(c, SV_EE_VOICE_START, 0x003c_41fc)?;
+                let n = Addr(r32(c, S2) + SV_CHAN_VOICE_COUNT).lbu(c);
+                c.g[T2][0] = n;
+                let more = (c.g[S1][0] as i64) < (n as i64);
+                c.g[V0][0] = more as u64;
+                if !more {
+                    break;
+                }
+                c.g[A0][0] = Addr(r32(c, S3) + SV_DESC_ARG60).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_4190);
+                }
+            }
+        }
+
+        // Channel parameters on the first voice.
+        c.cycles += 23;
+        let first_voice = Addr(r32(c, S2) + SV_CHAN_VOICES);
+        c.g[A0][0] = first_voice.lh(c);
+        c.g[S1][0] = 0;
+        SV_APPLY_PITCH.call(c, 0x003c_4218)?;
+        c.g[A0][0] = first_voice.lh(c);
+        SV_APPLY_PAN.call(c, 0x003c_4220)?;
+        c.g[A0][0] = first_voice.lh(c);
+        c.g[A1][0] = 0;
+        SV_APPLY_SEND.call(c, 0x003c_422c)?;
+        c.g[A0][0] = first_voice.lh(c);
+        c.g[A1][0] = c.g[S7][0];
+        SV_APPLY_TIME_STRETCH.call(c, 0x003c_4238)?;
+        c.g[A0][0] = first_voice.lh(c);
+        c.g[A1][0] = c.g[FP][0];
+        SV_APPLY_DISTORTION.call(c, 0x003c_4244)?;
+        c.g[A1][0] = Addr(sp(c) + 0x30).lw(c);
+        c.g[A0][0] = first_voice.lh(c);
+        SV_APPLY_LOWPASS.call(c, 0x003c_4250)?;
+        c.g[A0][0] = first_voice.lh(c);
+        c.g[A1][0] = Addr(sp(c) + 0x34).lw(c);
+        SV_APPLY_HIGHPASS.call(c, 0x003c_425c)?;
+        let n = Addr(r32(c, S2) + SV_CHAN_VOICE_COUNT).lbu(c);
+        c.g[V0][0] = 0x51_0000;
+        if n != 0 {
+            // Activate each voice.
+            c.cycles += 4;
+            c.g[S0][0] = sx(r32(c, S2).wrapping_add(SV_CHAN_VOICES));
+            c.g[S3][0] = sx(SV_STATE);
+            c.g[V0][0] = Addr(SV_STATE + SV_STATE_EE_VOICE_BASE).lbu(c);
+            loop {
+                c.cycles += 11;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                let state = r32(c, S3);
+                let first = Addr(state + SV_STATE_VOICE_BASE).lbu(c) as u32;
+                let voice = Addr(r32(c, S0)).lh(c);
+                c.g[V1][0] = voice;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(2));
+                let bases = first.wrapping_add(r32(c, V0));
+                c.g[A0][0] = sx((voice as u32).wrapping_sub(bases));
+                call_ptr(c, SV_EE_VOICE_ACTIVATE, 0x003c_4294)?;
+                let n = Addr(r32(c, S2) + SV_CHAN_VOICE_COUNT).lbu(c);
+                let more = (c.g[S1][0] as i64) < (n as i64);
+                c.g[V0][0] = more as u64;
+                if !more {
+                    break;
+                }
+                c.g[V0][0] = Addr(r32(c, S3) + SV_STATE_EE_VOICE_BASE).lbu(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_4278);
+                }
+            }
+        }
+        sv_epilogue(c, frame, 1);
+        Ok(())
+    });
+}
+
+
+
+/// `SND_ChannelStartVoices`' exit: the `lq s0` block (`pre` cycles), then
+/// v0 = 0 and the callee-saved registers back.
+pub(crate) fn sv_epilogue(c: &mut Cpu, frame: Frame, pre: u64) {
+    c.cycles += pre;
+    frame.restore(c, S0, 0xd0);
+    c.cycles += 12;
+    c.g[V0][0] = 0;
+    frame.restore(c, S1, 0xc0);
+    frame.restore(c, S2, 0xb0);
+    frame.restore(c, S3, 0xa0);
+    frame.restore(c, S4, 0x90);
+    frame.restore(c, S5, 0x80);
+    frame.restore(c, S6, 0x70);
+    frame.restore(c, S7, 0x60);
+    frame.restore(c, FP, 0x50);
+    frame.restore_ra(c, 0x40);
+    frame.close(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_GetBufferedBytes (0x3c6c98)
+
+/// The sound streamer's per-slot stream table (`D_005157B8 + 0x304`).
+pub(crate) const SNDSTRM_SLOT_TABLE: u32 = 0x0051_57b8 + 0x304;
+
+
+/// Stream fields: bytes buffered in the two halves of the ring.
+pub(crate) const SNDSTRM_BUFFERED_A: u32 = 0x48;
+
+
+pub(crate) const SNDSTRM_BUFFERED_B: u32 = 0x4c;
+
+
+
+/// `int SNDSTRM_GetBufferedBytes(int slot)` (0x3c6c98): how many bytes the
+/// stream in `slot` has buffered (the sum of its two buffer counts).
+pub fn sndstrm_get_buffered_bytes(c: &mut Cpu) {
+    c.cycles += 9;
+    let index = sx((c.g[A0][0] as u32) << 2);
+    c.g[A0][0] = index;
+    let stream = Addr(SNDSTRM_SLOT_TABLE.wrapping_add(index as u32)).lw(c);
+    c.g[V1][0] = stream;
+    let a = Addr((stream as u32).wrapping_add(SNDSTRM_BUFFERED_A)).lw(c);
+    let b = Addr((stream as u32).wrapping_add(SNDSTRM_BUFFERED_B)).lw(c);
+    c.g[A0][0] = a;
+    c.g[V0][0] = sx((a as u32).wrapping_add(b as u32));
+    ret(c);
+}
+
+
+
+// ------------------------------------------------------------ SND_GetPanGains
+
+/// The sound library's pan state: `u8 channels` at +0x47.
+pub(crate) const SND_PAN_STATE: u32 = 0x0050_a8e8;
+
+
+pub(crate) const SND_PAN_CHANNELS: u32 = 0x47;
+
+
+/// Per output channel a 256-entry `u8` gain table, indexed by `pan >> 8`.
+pub(crate) const SND_PAN_TABLES: u32 = 0x0050_ac38;
+
+
+
+/// `void SND_GetPanGains(u16 pan, float* gains)` (0x3bc4c0): one gain per
+/// output channel, `table[ch][pan >> 8] / 255.0`.
+pub fn snd_get_pan_gains(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[A0][0] = sx(((c.g[A0][0] & 0xffff) as u32) >> 8);
+    c.g[V1][0] = sx(SND_PAN_STATE);
+    c.g[V0][0] = Addr(SND_PAN_STATE + SND_PAN_CHANNELS).lbu(c);
+    c.g[A2][0] = 0;
+    if c.g[V0][0] != 0 {
+        c.cycles += 5;
+        c.g[V0][0] = 0x51_0000;
+        c.g[AT][0] = 0x437f_0000;
+        let k255 = FpuF32(0x437f_0000);
+        c.f[1] = k255.0;
+        c.g[T0][0] = c.g[V1][0];
+        c.g[A3][0] = sx(SND_PAN_TABLES);
+        loop {
+            c.cycles += 13;
+            let table = Addr(r32(c, A3)).lw(c);
+            c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+            c.g[A3][0] = sx(r32(c, A3).wrapping_add(4));
+            c.g[V1][0] = sx((table as u32).wrapping_add(r32(c, A0)));
+            let level = Addr(r32(c, V1)).lbu(c);
+            let gain = FpuF32::from_i32(level as i32).div(k255);
+            c.f[0] = gain.0;
+            Addr(r32(c, A1)).write_fpu(c, gain);
+            let channels = Addr(r32(c, T0).wrapping_add(SND_PAN_CHANNELS)).lbu(c);
+            c.g[V0][0] = ((c.g[A2][0] as i64) < (channels as i64)) as u64;
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(4));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_c4f0);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -13063,5 +13675,96 @@ pub(crate) mod tests {
                 c.bus.write16(params + ch * 0x8c + 0x3a, r.next_u32() as u16);
             }
         });
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+
+
+    /// `SND_ChannelStartVoices`: SPU / IOP DSP / EE channels (snd's channel
+    /// fixture, `seed % 3`) with 0-4 voices, output mode 2 or not, a random
+    /// start descriptor; the real apply/start/activate callees run (the EE
+    /// codec table and stretch words are zero, so `SND_EeVoiceStart` takes
+    /// its short path).
+    #[test]
+    fn snd_channel_start_voices_matches() {
+        use crate::difftest::fill;
+        use crate::game::lib::snd::tests::{channel_flags, setup_channel};
+        /// `SND_GetPanGains`' per-speaker byte tables, the speaker layouts
+        /// and the pan sine table (as snd's pan fixture fills them).
+        const PAN_TABLES: u32 = 0x0050_ac38;
+        const PAN_LAYOUTS: u32 = 0x0050_ab20;
+        const PAN_SINES: u32 = 0x0044_dd78;
+        const DESC: u32 = DATA + 0x5_0000;
+        const SAMPLE_BASE: u32 = DATA + 0x5_1000;
+        check(ee::s13::f_003c3ee0__generated, snd_channel_start_voices, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x003c_3ee0, 0);
+            c.pc = 0x003c_3ee0;
+            let flags = channel_flags(&mut r, seed);
+            setup_channel(c, &mut r, seed, flags);
+            let ch_id = c.g[A0][0];
+            fill(c, &mut r, PAN_LAYOUTS, 0x30);
+            fill(c, &mut r, PAN_SINES, 0x102);
+            for i in 0..8 {
+                c.bus.write32(PAN_TABLES + 4 * i, DATA + 0x4_0000 + 0x100 * i);
+            }
+            fill(c, &mut r, DATA + 0x4_0000, 0x200);
+            // The start descriptor: random words, the sample base pointer,
+            // no stretch (SND_EeVoiceStart would allocate a stretcher).
+            fill(c, &mut r, DESC, 0x30);
+            c.bus.write32(DESC + SV_DESC_BASE_PTR, SAMPLE_BASE);
+            c.bus.write32(SAMPLE_BASE, r.next_u32());
+            for i in 0..6 {
+                c.bus.write32(DESC + SV_DESC_STRETCH + 4 * i, 0);
+            }
+            c.bus.write32(SV_SYNC + SV_SYNC_KEY_SEQ, r.next_u32());
+            c.g[A0][0] = sx(DESC);
+            c.g[A1][0] = sx(r.next_u32());
+            c.g[A2][0] = ch_id;
+        });
+    }
+
+
+    /// Slot table entries point at streams in DATA with random buffer counts.
+    #[test]
+    fn sndstrm_get_buffered_bytes_matches() {
+        check(ee::s13::f_003c6c98__generated, sndstrm_get_buffered_bytes, 300, &|c, seed| {
+            let mut r = Rng(0x3c6c_9800 ^ seed as u64);
+            scramble(c, &mut r);
+            c.pc = 0x003c_6c98;
+            let slot = r.next_u32() % 8;
+            // Upper bits of a0 are ignored by the `sll`.
+            c.g[A0][0] = (r.next_u32() as u64) << 32 | slot as u64;
+            let stream = DATA + 0x100 * (slot + 1);
+            c.bus.write32(SNDSTRM_SLOT_TABLE + 4 * slot, stream);
+            c.bus.write32(stream + SNDSTRM_BUFFERED_A, r.next_u32());
+            c.bus.write32(stream + SNDSTRM_BUFFERED_B, r.next_u32());
+        });
+    }
+
+
+    /// `SND_GetPanGains`: 0..6 output channels, random tables and pans
+    /// (the high pan bits are masked off).
+    #[test]
+    fn snd_get_pan_gains_matches() {
+        check(
+            ssx3_ee::s13::f_003bc4c0__generated,
+            snd_get_pan_gains,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3bc4_c000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003b_c4c0;
+                let channels = (seed % 7) as u8;
+                c.bus.write8(SND_PAN_STATE + SND_PAN_CHANNELS, channels);
+                for ch in 0..6u32 {
+                    let table = DATA + 0x1000 * (ch + 1);
+                    c.bus.write32(SND_PAN_TABLES + 4 * ch, table);
+                    fill(c, &mut r, table, 0x40);
+                }
+                c.g[A0][0] = r.next_u32() as u64 | (r.next_u32() as u64) << 32;
+                c.g[A1][0] = sx(DATA + 0x100);
+            },
+        );
     }
 }

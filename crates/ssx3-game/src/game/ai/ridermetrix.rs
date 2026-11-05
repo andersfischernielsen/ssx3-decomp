@@ -180,6 +180,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Rider_UpdateTargetSpeed",
     ),
     (0x0011_98d8, rider_metrix_set_flip_amount, "RiderMetrix_SetFlipAmount"),
+    (0x0011_7908, rider_metrix_get_trick_bonus, "RiderMetrix_GetTrickBonus"),
+    (0x0011_9898, rider_metrix_set_spin_amount, "RiderMetrix_SetSpinAmount"),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -4260,6 +4262,89 @@ pub fn rider_metrix_set_flip_amount(c: &mut Cpu) {
     ret(c);
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_SetSpinAmount (0x119898)
+
+/// RiderMetrix: the spin amount of the current trick (float).
+pub(crate) const SPIN_METRIX_SPIN_AMOUNT: u32 = 0x34;
+
+
+/// RiderMetrix: the running rotation total (spin and flip, weighted).
+pub(crate) const SPIN_METRIX_ROTATION_TOTAL: u32 = 0x14;
+
+
+/// `gp`-relative weight of a spin degree in the rotation total (.sdata).
+pub(crate) const SPIN_WEIGHT_GP: u32 = 0x7a14;
+
+
+
+/// `void RiderMetrix_SetSpinAmount(RiderMetrix* m, float spin)` (0x119898):
+/// replaces the stored spin amount and moves the rotation total by the
+/// weighted difference of the magnitudes, clamped at zero:
+/// `total = max(total - |old|*k + |spin|*k, 0)`. Leaves f0 = f2 = 0,
+/// f3 = the total minus the old share, f1 = the new total.
+pub fn rider_metrix_set_spin_amount(c: &mut Cpu) {
+    c.cycles += 15;
+    let m = Addr(abi::arg(c, 0));
+    let gp = r32(c, GP);
+    let k = Addr(gp.wrapping_sub(SPIN_WEIGHT_GP)).read_fpu(c);
+    let spin = FpuF32(c.f[12]);
+    let old = m.off(SPIN_METRIX_SPIN_AMOUNT).read_fpu(c);
+    let total = m.off(SPIN_METRIX_ROTATION_TOTAL).read_fpu(c);
+    let removed = old.abs() * k;
+    m.off(SPIN_METRIX_SPIN_AMOUNT).write_fpu(c, spin);
+    let added = spin.abs() * k;
+    let less = total - removed;
+    let new_total = (less + added).max(FpuF32::ZERO);
+    c.f[3] = less.0;
+    c.f[2] = 0;
+    c.f[0] = 0;
+    c.f[1] = new_total.0;
+    m.off(SPIN_METRIX_ROTATION_TOTAL).write_fpu(c, new_total);
+    ret(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_GetTrickBonus (0x117908)
+
+/// The metrix's trick bonus factor (float).
+pub(crate) const RIDER_METRIX_TRICK_BONUS: u32 = 0x1c;
+
+
+/// The scale applied to it (gp-0x7b0c, 10000.0 in the game).
+pub(crate) const RIDER_METRIX_BONUS_SCALE_GP: u32 = 0x7b0c;
+
+
+
+/// `int RiderMetrix_GetTrickBonus(RiderMetrix *self)` (0x117908): the trick
+/// bonus factor scaled to points, `(int)(factor * scale + 5)` rounded down
+/// to a multiple of 10 (toward zero).
+pub fn rider_metrix_get_trick_bonus(c: &mut Cpu) {
+    c.cycles += 7;
+    let factor = Addr(r32(c, A0).wrapping_add(RIDER_METRIX_TRICK_BONUS)).read_fpu(c);
+    let gp = c.g[GP][0] as u32;
+    let scale = Addr(gp.wrapping_sub(RIDER_METRIX_BONUS_SCALE_GP)).read_fpu(c);
+    c.f[2] = scale.0;
+    c.g[A0][0] = 0xa;
+    c.g[AT][0] = 0x40a0_0000;
+    let five = FpuF32(0x40a0_0000);
+    c.cycles += 8;
+    let rounded = factor * scale + five;
+    c.f[0] = rounded.0;
+    let points = rounded.to_i32();
+    c.f[1] = points as u32;
+    c.g[V0][0] = sx(points as u32);
+    let (_, rem) = abi::div(c, points as u32, 10);
+    c.g[V1][0] = sx(rem);
+    c.g[V0][0] = sx((points as u32).wrapping_sub(rem));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5302,5 +5387,52 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
             },
         );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::{check_paths};
+
+
+    /// `RiderMetrix_SetSpinAmount`: random and edge-case old/new spin
+    /// amounts and totals (including totals that would go negative), the
+    /// game's weight constant or an edge case.
+    #[test]
+    fn rider_metrix_set_spin_amount_matches() {
+        check(ee::s00::f_00119898__generated, rider_metrix_set_spin_amount, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0011_9898, 0);
+            c.pc = 0x0011_9898;
+            let k = if seed % 5 == 0 { r.edge_f32() } else { 0x3c8e_fa35 };
+            c.bus.write32(GAME_GP - SPIN_WEIGHT_GP, k);
+            let pick = |r: &mut Rng, i: u32| match i % 3 {
+                0 => r.edge_f32(),
+                _ => r.f32(400.0),
+            };
+            c.bus.write32(DATA + SPIN_METRIX_SPIN_AMOUNT, pick(&mut r, seed));
+            c.bus.write32(DATA + SPIN_METRIX_ROTATION_TOTAL, pick(&mut r, seed / 3));
+            c.f[12] = pick(&mut r, seed / 9);
+            c.g[A0][0] = sx(DATA);
+        });
+    }
+
+
+    /// Random and edge-case bonus factors (both signs, huge values that
+    /// saturate the conversion), the game's scale and random ones.
+    #[test]
+    fn rider_metrix_get_trick_bonus_matches() {
+        crate::difftest::check_lohi(ee::s00::f_00117908__generated, rider_metrix_get_trick_bonus, 300, &|c, seed| {
+            let mut r = Rng(0x0011_7908 ^ (seed as u64) << 12);
+            scramble(c, &mut r);
+            c.pc = 0x0011_7908;
+            c.g[GP][0] = GAME_GP as u64;
+            c.g[A0][0] = DATA as u64;
+            let factor = match seed % 4 {
+                0 => r.edge_f32(),
+                1 => r.f32(1.0),
+                _ => r.f32(10.0),
+            };
+            c.bus.write32(DATA + RIDER_METRIX_TRICK_BONUS, factor);
+            let scale = if seed % 5 == 0 { r.edge_f32() } else { 10000.0f32.to_bits() };
+            c.bus.write32(GAME_GP - RIDER_METRIX_BONUS_SCALE_GP, scale);
+        });
     }
 }

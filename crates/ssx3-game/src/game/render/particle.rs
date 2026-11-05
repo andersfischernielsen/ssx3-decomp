@@ -409,6 +409,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0037_25b0, vfx_tube_update_color_table, "VfxTube_UpdateColorTable"),
     (0x0037_4440, bezier_patch_cache_tess_uv2, "BezierPatchCache_TessUV2"),
+    (0x0037_4ae0, bezier_patch_cache_mark_used2, "BezierPatchCache_MarkUsed2"),
+    (0x0038_25f8, ps2_graphics_man_on_vblank_start, "PS2GraphicsMan_OnVBlankStart"),
+    (0x0038_6640, ps2_graphics_man_reset_view_effects, "PS2GraphicsMan_v115"),
 ];
 
 /// Same-shard direct callees used above.
@@ -11124,6 +11127,185 @@ pub fn vfx_tube_update_color_table(c: &mut Cpu) {
     ret(c);
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_OnVBlankStart (0x3825f8)
+
+/// PS2GraphicsMan: the swap state (4 = waiting for the vblank count, 5 = go).
+pub(crate) const VBLANK_SWAP_STATE: u32 = 0x5a8c;
+
+
+/// PS2GraphicsMan: the number of vblanks to wait before signalling.
+pub(crate) const VBLANK_WAIT_COUNT: u32 = 0x5ab8;
+
+
+/// PS2GraphicsMan: vblanks counted so far.
+pub(crate) const VBLANK_COUNTER: u32 = 0x5abc;
+
+
+/// PS2GraphicsMan: the semaphore the render thread waits on.
+pub(crate) const VBLANK_SEMA: u32 = 0x5ac8;
+
+
+/// `iSignalSema(sema)` (interrupt-context syscall wrapper).
+pub(crate) const VBLANK_I_SIGNAL_SEMA: u32 = 0x0042_3dd0;
+
+
+
+/// `void PS2GraphicsMan_OnVBlankStart(PS2GraphicsMan* self)` (0x3825f8): the
+/// vblank-start handler. Counts the vblank; when a swap is waiting (state 4)
+/// and the counter has reached the wait count, moves the state to 5, resets
+/// the counter and signals the render thread's semaphore.
+pub fn ps2_graphics_man_on_vblank_start(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = c.g[A0][0];
+        let gfx = Addr(r32(c, A1));
+        frame.save_ra(c, 0);
+        c.g[V0][0] = 4;
+        let count = gfx.off(VBLANK_COUNTER).lw(c);
+        c.g[A0][0] = gfx.off(VBLANK_SWAP_STATE).lw(c);
+        c.g[V1][0] = sx((count as u32).wrapping_add(1));
+        let w_v1 = c.g[V1][0];
+        gfx.off(VBLANK_COUNTER).sw(c, w_v1);
+        if c.g[A0][0] == c.g[V0][0] {
+            c.cycles += 4;
+            let wait = gfx.off(VBLANK_WAIT_COUNT).lw(c);
+            let early = (c.g[V1][0] as i64) < (wait as i64);
+            c.g[V0][0] = early as u64;
+            frame.restore_ra(c, 0);
+            if early {
+                c.cycles += 2;
+                frame.close(c);
+                return Ok(());
+            }
+            c.cycles += 5;
+            c.g[V0][0] = 5;
+            c.g[A0][0] = gfx.off(VBLANK_SEMA).lw(c);
+            gfx.off(VBLANK_SWAP_STATE).sw(c, 5);
+            gfx.off(VBLANK_COUNTER).sw(c, 0);
+            call_ptr(c, VBLANK_I_SIGNAL_SEMA, 0x0038_2640)?;
+        }
+        c.cycles += 1;
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// BezierPatchCache_MarkUsed2 (particle.cpp).
+
+/// `void BezierPatchCache_MarkUsed2(cache, int count, Item* items, int lod,
+/// int bit)` (0x374ae0): for each of the `count` items (stride 0x14) whose
+/// patch index (`short` at +0xc) is not negative, OR `(1 << bit) | 0xc` into
+/// the flags word (+4) of that patch's 12-byte record in the cache's list
+/// for `lod` (`cache+0x18 + lod*4`).
+pub fn bezier_patch_cache_mark_used2(c: &mut Cpu) {
+    const HEAD: u32 = 0x0037_4b00;
+    /// The per-LOD record lists.
+    const LISTS: u32 = 0x18;
+    /// An item's patch index (`short`, negative = none).
+    const ITEM_PATCH: u32 = 0xc;
+    const ITEM_SIZE: u32 = 0x14;
+    /// A record's flags word.
+    const REC_FLAGS: u32 = 4;
+    c.cycles += 4;
+    c.g[V0][0] = sx(1u32 << (r32(c, T0) & 31));
+    let none = (c.g[A1][0] as i64) <= 0;
+    c.g[T0][0] = c.g[V0][0] | 0xc;
+    if !none {
+        c.cycles += 4;
+        c.g[V1][0] = sx(r32(c, A3) << 2);
+        c.g[V0][0] = sx(r32(c, A0).wrapping_add(LISTS));
+        c.g[A3][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        c.g[T1][0] = 0xc;
+        loop {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(r32(c, A2)).off(ITEM_PATCH).lh(c);
+            let skip = (c.g[A0][0] as i64) < 0;
+            c.mult(0, A0, A0, T1); // a0 = patch * 12
+            if !skip {
+                c.cycles += 5;
+                c.g[V1][0] = Addr(r32(c, A3)).lw(c);
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+                c.g[V0][0] = Addr(r32(c, V1)).off(REC_FLAGS).lw(c);
+                c.g[V0][0] |= c.g[T0][0];
+                c.sw(r32(c, V1).wrapping_add(REC_FLAGS), c.g[V0][0]);
+            }
+            c.cycles += 3;
+            c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+            let more = c.g[A1][0] != 0;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_add(ITEM_SIZE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, HEAD);
+            }
+        }
+    }
+    c.cycles += 2;
+    abi::ret(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// 0x386640 PS2GraphicsMan_v115
+
+pub(crate) const GFX_RESET_DEPTH_FOG: Callee = Callee {
+    addr: 0x0036_aba0,
+    f: ee::s12::PS2GraphicsMan_ResetDepthFogParams,
+};
+
+
+pub(crate) const GFX_RESET_COLOR_FILTER: Callee = Callee {
+    addr: 0x0039_0458,
+    f: ee::s12::PS2GraphicsMan_ResetColorFilter,
+};
+
+
+pub(crate) const GFX_RESET_BLOOM: Callee = Callee {
+    addr: 0x0036_c740,
+    f: ee::s12::PS2GraphicsMan_ResetBloomParams,
+};
+
+
+
+/// `void PS2GraphicsMan::v115(int view)` (0x386640, a vtable slot): reset
+/// view `view`'s screen effects to their defaults: depth fog, colour
+/// filter, then bloom parameters.
+pub fn ps2_graphics_man_reset_view_effects(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        GFX_RESET_DEPTH_FOG.call(c, 0x0038_665c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        GFX_RESET_COLOR_FILTER.call(c, 0x0038_6668)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S1][0];
+        GFX_RESET_BLOOM.call(c, 0x0038_6674)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14373,5 +14555,102 @@ pub(crate) mod tests {
                 c.bus.write32(gp + TUBE_COLOR_LAST + 4 * i, last.to_bits());
             }
         });
+    }
+    use super::*;
+    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
+    use super::*;
+    // (fakes imported above)
+    use super::*;
+
+
+    /// Swap state 4 or not, the counter below/at/above the wait count; the
+    /// `iSignalSema` syscall goes to the fakes (and unwinds on some seeds).
+    #[test]
+    fn ps2_graphics_man_on_vblank_start_matches() {
+        fakes::covered(
+            ee::s12::f_003825f8__generated,
+            ps2_graphics_man_on_vblank_start,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x3825_f8, 1);
+                let gfx = DATA + 0x100;
+                let state = if seed % 4 == 3 { r.next_u32() % 8 } else { 4 };
+                let count = r.next_u32() % 6;
+                let wait = match seed / 4 % 3 {
+                    0 => count + 1, // reached exactly
+                    1 => r.next_u32() % 4,
+                    _ => count + 3, // still waiting
+                };
+                c.bus.write32(gfx + VBLANK_SWAP_STATE, state);
+                c.bus.write32(gfx + VBLANK_COUNTER, count);
+                c.bus.write32(gfx + VBLANK_WAIT_COUNT, wait);
+                c.bus.write32(gfx + VBLANK_SEMA, r.next_u32() % 64);
+                c.g[A0][0] = sx(gfx);
+                c.pc = 0x0038_25f8;
+            },
+        );
+    }
+
+
+    // ------------------------------------------------ bezier patch cache
+
+    /// BezierPatchCache_MarkUsed2: count 0, negative or 1..8; items whose
+    /// patch index is negative or 0..15; LOD 0..3; a random bit number
+    /// (only the low 5 bits count); random record flags.
+    #[test]
+    fn bezier_patch_cache_mark_used2_matches() {
+        const CACHE: u32 = DATA;
+        const ITEMS: u32 = DATA + 0x1000;
+        const LISTS: u32 = DATA + 0x2000;
+        check_lohi(ee::s12::f_00374ae0__generated, bezier_patch_cache_mark_used2, 300, &|c, seed| {
+            let mut r = Rng(0x0037_4ae0 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.pc = 0x0037_4ae0;
+            c.g[A0][0] = sx(CACHE);
+            c.g[A1][0] = match seed % 5 {
+                0 => 0,
+                1 => sx((-(1 + (r.next_u32() % 3) as i32)) as u32),
+                _ => (1 + r.next_u32() % 8) as u64,
+            };
+            c.g[A2][0] = sx(ITEMS);
+            c.g[A3][0] = (seed % 4) as u64;
+            c.g[T0][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+            for i in 0..4 {
+                c.bus.write32(CACHE + 0x18 + 4 * i, LISTS + 0x100 * i);
+            }
+            for i in 0..8 {
+                let patch = if r.next_u32() % 3 == 0 {
+                    0x8000 | r.next_u32() as u16
+                } else {
+                    (r.next_u32() % 16) as u16
+                };
+                c.bus.write16(ITEMS + 0x14 * i + 0xc, patch);
+            }
+            fill(c, &mut r, LISTS, 0x200);
+        });
+    }
+
+
+    /// PS2GraphicsMan_v115: the graphics manager at DATA, view 0..3, the
+    /// three default tables (gp-relative literals and the depth-fog colour
+    /// at 0x504720) random; the three real leaf resets run.
+    #[test]
+    fn ps2_graphics_man_reset_view_effects_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{fill, DATA, GAME_GP};
+        crate::difftest::check(
+            ee::s12::f_00386640__generated,
+            ps2_graphics_man_reset_view_effects,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0038_6640, 0);
+                c.pc = 0x0038_6640;
+                fill(c, &mut r, GAME_GP + 0x1230, 0x40);
+                fill(c, &mut r, GAME_GP + 0x14f0, 0x8);
+                fill(c, &mut r, 0x0050_4720, 4);
+                c.g[A0][0] = DATA as u64;
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+            },
+        );
     }
 }

@@ -79,6 +79,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         intersect_info_evaluate,
         "IntersectInfo_Evaluate",
     ),
+    (0x0035_2810, mesh_anim_render, "MeshAnim_Render"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -884,6 +885,312 @@ pub fn intersect_info_evaluate(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// MeshAnim_Render (0x352810)
+
+/// MeshAnim: the model.
+pub(crate) const MESH_ANIM_MODEL: u32 = 0x18;
+
+
+/// MeshAnim: the fade (nothing is drawn at or below 0).
+pub(crate) const MESH_ANIM_FADE: u32 = 0x1c;
+
+
+/// MeshAnim: the draw alpha limit (the alpha passed is `min(fade, this)`
+/// when this is >= 0 and >= fade, else 1.0).
+pub(crate) const MESH_ANIM_ALPHA: u32 = 0x24;
+
+
+/// MeshAnim: the bone rotations (quaternions, 16 bytes each).
+pub(crate) const MESH_ANIM_ROTATIONS: u32 = 0x30;
+
+
+/// MeshAnim: the bone translations (16 bytes each).
+pub(crate) const MESH_ANIM_TRANSLATIONS: u32 = 0x3b0;
+
+
+/// Model: the skeleton (`+4`: bone count, `+0xc`: the part count list).
+pub(crate) const MESH_ANIM_SKELETON: u32 = 0x80;
+
+
+/// Model: the part list (`+4`: part pointers; part `+0`: i16 object id).
+pub(crate) const MESH_ANIM_PARTS: u32 = 0x94;
+
+
+/// `gp+0x16c8`: the object visibility table holder.
+pub(crate) const MESH_ANIM_VIS_GP: u32 = 0x16c8;
+
+
+/// `gp+0x2a90`: the graphics manager.
+pub(crate) const MESH_ANIM_GFX_GP: u32 = 0x2a90;
+
+
+/// Graphics manager: render-state vtable; slot `+0x2f8`: draw skinned mesh.
+pub(crate) const MESH_ANIM_GFX_VTABLE: u32 = 0x10d8;
+
+
+pub(crate) const MESH_ANIM_DRAW_SLOT: u32 = 0x2f8;
+
+
+
+/// The visibility test of one part (registers as the original: a2 the
+/// packed id, a1 the id, t0 the visibility tables, t1 = !0xff, t8 = 0xff).
+/// Leaves v0 = 1 when the part's object is visible.
+pub(crate) fn mesh_anim_part_visible(c: &mut Cpu) {
+    c.cycles += 11;
+    let part = Addr(r32(c, A3)).lw(c);
+    c.g[V0][0] = part;
+    c.g[A2][0] &= c.g[T6][0];
+    c.g[A2][0] |= c.g[T7][0];
+    c.g[V1][0] = Addr(part as u32).lh(c);
+    c.g[A0][0] = c.g[A2][0] & 0xff;
+    c.g[V1][0] = sx(r32(c, V1) << 8);
+    c.g[A0][0] |= c.g[V1][0];
+    c.g[A2][0] = c.g[A0][0];
+    c.g[A0][0] = c.g[A2][0] & 0xff;
+    let other_table = c.g[A0][0] != c.g[T8][0];
+    c.g[A1][0] = sx(r32(c, A2) >> 8);
+    let t0 = r32(c, T0);
+    // The object record (v1), or invisible.
+    let have = if other_table {
+        // (A table index other than 0xff: never taken, the low byte is
+        // always 0xff here.)
+        c.cycles += 5;
+        c.g[V1][0] = Addr(t0).lw(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(8).lw(c);
+        let inside = c.g[A0][0] < c.g[V0][0];
+        c.g[V0][0] = sx(r32(c, A0) << 2);
+        if !inside {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+            false
+        } else {
+            c.cycles += 5;
+            c.g[V1][0] = Addr(t0).off(8).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+            let some = c.g[V1][0] != 0;
+            c.g[V0][0] = 0;
+            some
+        }
+    } else {
+        c.cycles += 2;
+        c.g[V1][0] = Addr(t0).off(4).lw(c);
+        true
+    };
+    if have {
+        c.cycles += 4;
+        let rec = r32(c, V1);
+        c.g[V0][0] = Addr(rec).off(0x50).lw(c);
+        if c.g[V0][0] < c.g[A1][0] {
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 7;
+            c.g[V0][0] = Addr(rec).off(0x4c).lw(c);
+            c.g[V1][0] = sx(r32(c, A1) << 2);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+            c.g[A0][0] &= c.g[T1][0];
+            c.g[V0][0] = (c.g[A0][0] != 0) as u64;
+        }
+    }
+}
+
+
+
+/// One bone of the matrix loop: the 3x3 rotation of the quaternion at
+/// `a0 - 0x380` (VU0 macro code, kept op for op) with the translation at
+/// `a0` as the fourth row, written to the stack at v1 (0x40 bytes).
+pub(crate) fn mesh_anim_bone_matrix(c: &mut Cpu) {
+    let a0 = r32(c, A0);
+    let out = r32(c, V1);
+    c.lqc2(4, a0.wrapping_sub(MESH_ANIM_TRANSLATIONS - MESH_ANIM_ROTATIONS));
+    let v = c.vu0();
+    v.add(0b1110, 1, 0, Src::Bc(0, W));
+    v.add(0b1110, 5, 4, Src::Vec(4));
+    v.sub(0b0001, 10, 10, Src::Vec(10));
+    v.sub(0b0001, 11, 11, Src::Vec(11));
+    v.sub(0b0001, 12, 12, Src::Vec(12));
+    v.mul(0b1110, 6, 5, Src::Vec(4));
+    v.mul(0b1110, 7, 5, Src::Bc(4, W));
+    v.opmula(5, 4);
+    v.madd(0b1110, 8, 0, Src::Vec(0));
+    v.suba(0b1000, 1, Src::Bc(6, Y));
+    v.msub(0b1000, 10, 1, Src::Bc(6, Z));
+    v.suba(0b0100, 1, Src::Bc(6, Z));
+    v.msub(0b0100, 11, 1, Src::Bc(6, X));
+    v.suba(0b0010, 1, Src::Bc(6, X));
+    v.msub(0b0010, 12, 1, Src::Bc(6, Y));
+    v.adda(0b0100, 0, Src::Bc(8, Z));
+    v.madd(0b0100, 10, 1, Src::Bc(7, Z));
+    v.adda(0b0010, 0, Src::Bc(8, X));
+    v.madd(0b0010, 11, 1, Src::Bc(7, X));
+    v.adda(0b0100, 0, Src::Bc(8, X));
+    v.msub(0b0100, 12, 1, Src::Bc(7, X));
+    v.adda(0b0010, 0, Src::Bc(8, Y));
+    v.msub(0b0010, 10, 1, Src::Bc(7, Y));
+    v.adda(0b1000, 0, Src::Bc(8, Z));
+    v.msub(0b1000, 11, 1, Src::Bc(7, Z));
+    v.adda(0b1000, 0, Src::Bc(8, Y));
+    v.madd(0b1000, 12, 1, Src::Bc(7, Y));
+    c.sqc2(0, out + 0x30);
+    c.sqc2(10, out);
+    c.sqc2(11, out + 0x10);
+    c.sqc2(12, out + 0x20);
+    c.lq(2, a0);
+    c.sq(2, out + 0x30);
+}
+
+
+
+/// `void MeshAnim_Render(MeshAnim* self)` (0x352810): draw an animated mesh
+/// instance. Nothing when its fade is <= 0 or when any of the model's parts
+/// belongs to an object that is not visible this frame. Otherwise builds
+/// one 4x4 matrix per bone on the stack (rotation from the bone quaternion,
+/// translation row) and calls the graphics manager's skinned-mesh draw
+/// (slot `+0x2f8`) with the model, its part list, the matrices, the alpha
+/// (f12) and the fixed draw parameters (a3 = 0x4ff1a0, t1 = 0, t2 = 0x420).
+pub fn mesh_anim_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x610);
+        c.g[T4][0] = c.g[A0][0];
+        let me = r32(c, T4);
+        frame.save_ra(c, 0x600);
+        c.mtc1(0, 1);
+        c.lwc1(0, me + MESH_ANIM_FADE);
+        c.c_le_s(0, 1);
+        let faded = c.fcc();
+        frame.restore_ra(c, 0x600);
+        if faded {
+            c.cycles += 2;
+            frame.close(c);
+            return Ok(());
+        }
+
+        // Every part's object must be visible.
+        c.cycles += 7;
+        c.g[V0][0] = Addr(me).off(MESH_ANIM_MODEL).lw(c);
+        c.g[T2][0] = 0;
+        let model = r32(c, V0);
+        c.g[V1][0] = Addr(model).off(MESH_ANIM_SKELETON).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1)).off(0xc).lw(c);
+        c.g[T3][0] = Addr(r32(c, A0)).lw(c);
+        c.g[T5][0] = c.g[V0][0];
+        if (c.g[T3][0] as i64) > 0 {
+            c.cycles += 10;
+            c.g[V0][0] = Addr(r32(c, GP).wrapping_add(MESH_ANIM_VIS_GP)).lw(c);
+            c.g[T1][0] = 0xffff_ffff_ffff_0000;
+            c.g[V1][0] = Addr(r32(c, T5)).off(MESH_ANIM_PARTS).lw(c);
+            c.g[T8][0] = 0xff;
+            c.g[T0][0] = Addr(r32(c, V0)).lw(c);
+            c.g[T7][0] = 0xff;
+            c.g[A3][0] = sx(r32(c, V1).wrapping_add(4));
+            c.g[T6][0] = 0xffff_ffff_ffff_ff00;
+            c.g[T1][0] |= 0xff00;
+            loop {
+                mesh_anim_part_visible(c);
+                c.cycles += 3;
+                c.g[V0][0] ^= 1;
+                let hidden = c.g[V0][0] != 0;
+                c.g[T2][0] = sx(r32(c, T2).wrapping_add(1));
+                if hidden {
+                    c.cycles += 1;
+                    frame.restore_ra(c, 0x600);
+                    c.cycles += 2;
+                    frame.close(c);
+                    return Ok(());
+                }
+                c.cycles += 3;
+                let more = (c.g[T2][0] as i64) < (c.g[T3][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.g[A3][0] = sx(r32(c, A3).wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_2878);
+                }
+            }
+        }
+
+        // The bone matrices.
+        c.cycles += 7;
+        c.g[V0][0] = 0x17;
+        c.g[V1][0] = u64::MAX;
+        c.g[A2][0] = Addr(r32(c, T5)).off(MESH_ANIM_SKELETON).lw(c);
+        c.g[V0][0] = Addr(r32(c, A2)).off(4).lw(c);
+        c.g[A1][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[A0][0] = sx(me.wrapping_add(MESH_ANIM_TRANSLATIONS));
+            c.g[V1][0] = c.g[SP][0];
+            loop {
+                c.cycles += 40;
+                mesh_anim_bone_matrix(c);
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+                c.g[V0][0] = Addr(r32(c, A2)).off(4).lw(c);
+                let more = (c.g[A1][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x40));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_2940);
+                }
+            }
+        }
+
+        // The alpha (f12): 1.0 unless 0 <= limit, then the fade if it is
+        // within the limit.
+        c.cycles += 8;
+        c.lwc1(1, me + MESH_ANIM_ALPHA);
+        c.mtc1(0, 0);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 12);
+        c.c_le_s(0, 1);
+        let limited = c.fcc();
+        c.g[T3][0] = Addr(r32(c, GP).wrapping_add(MESH_ANIM_GFX_GP)).lw(c);
+        if limited {
+            c.cycles += 5;
+            c.lwc1(0, me + MESH_ANIM_FADE);
+            c.c_le_s(0, 1);
+            if c.fcc() {
+                c.mov_s(12, 0);
+            } else {
+                c.cycles += 1;
+                c.g[T3][0] = Addr(r32(c, GP).wrapping_add(MESH_ANIM_GFX_GP)).lw(c);
+            }
+        }
+
+        c.cycles += 12;
+        c.g[A3][0] = sx(0x0050_0000u32.wrapping_sub(0xe60));
+        c.g[A1][0] = Addr(me).off(MESH_ANIM_MODEL).lw(c);
+        let gfx = r32(c, T3);
+        c.g[V1][0] = Addr(gfx).off(MESH_ANIM_GFX_VTABLE).lw(c);
+        c.g[T0][0] = c.g[SP][0];
+        c.g[A2][0] = Addr(r32(c, A1)).off(MESH_ANIM_PARTS).lw(c);
+        c.g[T1][0] = 0;
+        let vt = r32(c, V1);
+        c.g[A0][0] = Addr(vt).off(MESH_ANIM_DRAW_SLOT).lh(c);
+        c.g[T2][0] = 0x420;
+        c.g[V0][0] = Addr(vt).off(MESH_ANIM_DRAW_SLOT + 4).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(gfx.wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0035_2a48)?;
+        c.cycles += 1;
+        frame.restore_ra(c, 0x600);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1174,5 +1481,95 @@ pub(crate) mod tests {
                 c.f[12] = t.to_bits();
             },
         );
+    }
+    use super::*;
+    use crate::difftest::fakes;
+    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
+
+
+    /// A mesh instance with fade <= 0 (nothing drawn) or > 0; 0..4 parts
+    /// whose objects are visible (flag word with bits above the low byte),
+    /// hidden or out of the table's range; 0..4 bones with random
+    /// quaternions and translations; the alpha limit negative, below or
+    /// above the fade. The draw method is a fake (unwinding on some seeds).
+    #[test]
+    fn mesh_anim_render_matches() {
+        use crate::difftest::{put_vec, GAME_GP};
+        fakes::covered(ee::s11::f_00352810__generated, mesh_anim_render, 200, &|c, seed| {
+            let mut r = fakes::machine(c, seed, 0x35_2810, 1);
+            let me = DATA + 0x1000;
+            let model = DATA + 0x2000;
+            let skeleton = DATA + 0x2100;
+            let counts = DATA + 0x2200;
+            let parts = DATA + 0x2300;
+            let vis_holder = DATA + 0x2500;
+            let vis = DATA + 0x2600;
+            let rec = DATA + 0x2700;
+            let flags = DATA + 0x2800;
+            let fade = match seed % 9 {
+                0 => 0.0f32,
+                1 => -0.5,
+                _ => f32::from_bits(r.f32(1.0)).abs() + 0.01,
+            };
+            c.bus.write32(me + MESH_ANIM_FADE, fade.to_bits());
+            let alpha = match seed / 9 % 3 {
+                0 => -1.0f32,
+                1 => fade * 0.5,
+                _ => fade + 1.0,
+            };
+            c.bus.write32(me + MESH_ANIM_ALPHA, alpha.to_bits());
+            c.bus.write32(me + MESH_ANIM_MODEL, model);
+            c.bus.write32(model + MESH_ANIM_SKELETON, skeleton);
+            c.bus.write32(skeleton + 0xc, counts);
+            let n_parts = r.next_u32() % 5;
+            c.bus.write32(counts, n_parts);
+            c.bus.write32(model + MESH_ANIM_PARTS, parts);
+            // Visibility: object ids 0..7 against a table of 6.
+            c.bus.write32(GAME_GP + MESH_ANIM_VIS_GP, vis_holder);
+            c.bus.write32(vis_holder, vis);
+            c.bus.write32(vis + 4, rec);
+            c.bus.write32(rec + 0x50, 6);
+            c.bus.write32(rec + 0x4c, flags);
+            let all_visible = seed % 3 != 0;
+            for i in 0..8 {
+                let w = if all_visible || r.next_u32() % 4 != 0 {
+                    (r.next_u32() | 0x100) & !0xff | (r.next_u32() & 0xff)
+                } else {
+                    r.next_u32() & 0xff
+                };
+                c.bus.write32(flags + 4 * i, w);
+            }
+            for i in 0..n_parts {
+                let part = DATA + 0x2400 + 0x10 * i;
+                c.bus.write32(parts + 4 + 4 * i, part);
+                let id = if all_visible { r.next_u32() % 7 } else { r.next_u32() % 9 };
+                c.bus.write16(part, id as u16);
+            }
+            // Bones.
+            let n_bones = r.next_u32() % 5;
+            c.bus.write32(skeleton + 4, n_bones);
+            for i in 0..4 {
+                put_vec(
+                    c,
+                    me + MESH_ANIM_ROTATIONS + 0x10 * i,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)],
+                );
+                put_vec(
+                    c,
+                    me + MESH_ANIM_TRANSLATIONS + 0x10 * i,
+                    [r.f32(100.0), r.f32(100.0), r.f32(100.0), 1.0f32.to_bits()],
+                );
+            }
+            // The graphics manager with a fake draw method.
+            let gfx = DATA + 0x8000;
+            let vt = DATA + 0x9000;
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(vt + MESH_ANIM_DRAW_SLOT, delta as u16);
+            c.bus.write32(vt + MESH_ANIM_DRAW_SLOT + 4, fakes::FAKE);
+            c.bus.write32(GAME_GP + MESH_ANIM_GFX_GP, gfx);
+            c.bus.write32(gfx + MESH_ANIM_GFX_VTABLE, vt);
+            c.g[A0][0] = sx(me);
+            c.pc = 0x0035_2810;
+        });
     }
 }

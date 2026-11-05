@@ -117,6 +117,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "MultiSplineModifier_UpdateNodes",
     ),
     (0x0035_9830, spline_modifier_update_transform, "SplineModifier_UpdateTransform"),
+    (0x0032_84b8, spatial_hash_remove, "SpatialHash_Remove"),
+    (0x0035_9698, spline_modifier_update, "SplineModifier_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2195,6 +2197,479 @@ pub(crate) fn sm_spin_matrix(c: &mut Cpu, frame: Frame) {
     c.swc1(4, s(0x54));
 }
 
+
+pub(crate) mod spline_mod {
+
+    /// End behaviour: 0 stop, 2 bounce (ping-pong), 4 stop, else wrap.
+    pub const MODE: u32 = 0x30;
+
+    /// Distance along the spline.
+    pub const POS: u32 = 0x3c;
+
+    /// Acceleration while the acceleration time runs.
+    pub const ACCEL: u32 = 0x40;
+
+    /// Remaining acceleration time (seconds).
+    pub const ACCEL_TIME: u32 = 0x44;
+
+    /// Speed (distance per second).
+    pub const SPEED: u32 = 0x48;
+
+    /// Stopped flag.
+    pub const STOPPED: u32 = 0x50;
+
+    /// Active flag.
+    pub const ACTIVE: u32 = 0x54;
+
+    /// Transform needs an update.
+    pub const DIRTY: u32 = 0x58;
+
+    /// The spline's length.
+    pub const LENGTH: u32 = 0xe4;
+
+    /// `gp`-relative literals: the 0.1 margin below the end (modes 0, 2, 4).
+    pub const LIT_END_MARGIN_STOP: u32 = 0x2a5c;
+
+    pub const LIT_END_MARGIN_BOUNCE: u32 = 0x2a58;
+
+    pub const LIT_END_MARGIN_STOP4: u32 = 0x2a54;
+
+    /// `World_GetSecondsPerTick()` (f0, cross-shard).
+    pub const SECONDS_PER_TICK: u32 = 0x002d_1c70;
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SpatialHash_Remove (0x3284b8)
+
+/// Spatial hash (octree) node: eight child pointers (+0..+0x1c), then the
+/// heads of the item lists (+0x20 + 4 * slot, three slots).
+pub(crate) const SH_NODE_ITEMS: u32 = 0x20;
+
+
+pub(crate) const SH_ITEM_SLOTS: i64 = 3;
+
+
+/// Item link: next (+0), previous (+4).
+pub(crate) const SH_LINK_NEXT: u32 = 0x0;
+
+
+pub(crate) const SH_LINK_PREV: u32 = 0x4;
+
+
+/// Keys are `{level, x, y, z}` words.
+pub(crate) const SH_KEY_X: u32 = 0x4;
+
+
+pub(crate) const SH_KEY_Y: u32 = 0x8;
+
+
+pub(crate) const SH_KEY_Z: u32 = 0xc;
+
+
+/// Resume points of the emptiness scan (event checks at its back edges).
+pub(crate) const SH_REMOVE_ENTRY: u32 = 0x0032_84b8;
+
+
+pub(crate) const SH_REMOVE_NOT_EMPTY: u32 = 0x0032_8614;
+
+
+pub(crate) const SH_REMOVE_SCAN_ITEMS: u32 = 0x0032_8620;
+
+
+pub(crate) const SH_REMOVE_END: u32 = 0x0032_8660;
+
+
+/// `SpatialHash_Remove` itself (the recursion) and `__builtin_delete`.
+pub(crate) const SPATIAL_HASH_REMOVE: Callee = Callee {
+    addr: SH_REMOVE_ENTRY,
+    f: ee::s10::SpatialHash_Remove,
+};
+
+
+pub(crate) const SH_BUILTIN_DELETE: Callee = Callee {
+    addr: 0x0031_7e50,
+    f: ee::s10::f_00317e50,
+};
+
+
+
+/// `void SpatialHash_Remove(Node *node /*a0*/, int slot /*a1*/, Link *link
+/// /*a2*/, Key *item /*a3*/, Key *at /*t0*/)` (0x3284b8): removes an item's
+/// link from the octree. At the item's level the link is unlinked from its
+/// list (the node's list head for `slot` when it was first); above it the
+/// function recurses into the child containing the item (child key on the
+/// stack: one level down, coordinates doubled plus the item's bit), and
+/// deletes that child once it has no children and no items left. Frame 0x30
+/// (child key at 0, ra at 0x10, s0 at 0x20). Dispatcher-shaped: the scan's
+/// event checks may unwind, and it is re-entered at 0x328614 / 0x328620.
+pub fn spatial_hash_remove(c: &mut Cpu) {
+    let entry = c.pc;
+    guest(c, |c| match entry {
+        SH_REMOVE_ENTRY => spatial_hash_remove_body(c),
+        SH_REMOVE_NOT_EMPTY | SH_REMOVE_SCAN_ITEMS => spatial_hash_remove_tail(c, entry),
+        pc => {
+            c.jump_out(pc, SH_REMOVE_ENTRY, SH_REMOVE_END);
+            Ok(())
+        }
+    })
+}
+
+
+
+pub(crate) fn spatial_hash_remove_body(c: &mut Cpu) -> Flow {
+    let frame = Frame { size: 0x30 };
+    c.cycles += 11;
+    Frame::open(c, 0x30);
+    c.g[T3][0] = c.g[A3][0];
+    frame.save(c, S0, 0x20);
+    c.g[V1][0] = c.g[T0][0];
+    frame.save_ra(c, 0x10);
+    c.g[T4][0] = c.g[A0][0];
+    c.g[T5][0] = c.g[A1][0];
+    let item_level = Addr(r32(c, T3)).lw(c);
+    c.g[V0][0] = item_level;
+    let level = Addr(r32(c, V1)).lw(c);
+    c.g[T1][0] = level;
+    c.g[T2][0] = c.g[A2][0];
+    let link = Addr(r32(c, T2));
+
+    if item_level == level {
+        // At the item's level: unlink it.
+        c.cycles += 5;
+        c.g[V0][0] = sx(r32(c, T5) << 2);
+        let next = link.off(SH_LINK_NEXT).lw(c);
+        c.g[V1][0] = next;
+        let head = sx(r32(c, V0).wrapping_add(r32(c, T4)).wrapping_add(SH_NODE_ITEMS));
+        c.g[A0][0] = head;
+        if next != 0 {
+            c.cycles += 2;
+            let prev = link.off(SH_LINK_PREV).lw(c);
+            c.g[V0][0] = prev;
+            Addr(next as u32).off(SH_LINK_PREV).sw(c, prev);
+        }
+        c.cycles += 3;
+        let prev = link.off(SH_LINK_PREV).lw(c);
+        c.g[V1][0] = prev;
+        let next = link.off(SH_LINK_NEXT).lw(c);
+        c.g[V0][0] = next;
+        c.cycles += 2;
+        if prev != 0 {
+            Addr(prev as u32).off(SH_LINK_NEXT).sw(c, next);
+        } else {
+            Addr(head as u32).sw(c, next);
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x20);
+        spatial_hash_remove_epilogue(c, frame);
+        return Ok(());
+    }
+
+    // Above it: the child key (one level down) and the child slot.
+    c.cycles += 41;
+    let at = Addr(r32(c, V1));
+    let item = Addr(r32(c, T3));
+    let shift = (level as u32).wrapping_sub(item_level as u32).wrapping_sub(1);
+    c.g[A0][0] = sx(shift);
+    let sh = shift & 31;
+    let x2 = sx((at.off(SH_KEY_X).lw(c) as u32) << 1);
+    let z2 = sx((at.off(SH_KEY_Z).lw(c) as u32) << 1);
+    let y2 = sx((at.off(SH_KEY_Y).lw(c) as u32) << 1);
+    let ix = sx(((item.off(SH_KEY_X).lw(c) as u32) as i32 >> sh) as u32);
+    let iy = sx(((item.off(SH_KEY_Y).lw(c) as u32) as i32 >> sh) as u32);
+    let iz = sx(((item.off(SH_KEY_Z).lw(c) as u32) as i32 >> sh) as u32);
+    let bx = sx((ix as u32).wrapping_sub(x2 as u32));
+    let by = sx((iy as u32).wrapping_sub(y2 as u32));
+    let bz = sx((iz as u32).wrapping_sub(z2 as u32));
+    let cy = sx((y2 as u32).wrapping_add(by as u32));
+    let cx = sx((x2 as u32).wrapping_add(bx as u32));
+    let cz = sx((z2 as u32).wrapping_add(bz as u32));
+    let off_y = sx((by as u32) << 3);
+    let off_z = sx((bz as u32) << 2);
+    let slot = sx(r32(c, T4).wrapping_add((bx as u32) << 4).wrapping_add(off_y as u32));
+    let child_level = sx((level as u32).wrapping_sub(1));
+    c.g[T1][0] = child_level;
+    let key = Addr(sp(c));
+    key.off(SH_KEY_X).sw(c, cx);
+    key.off(SH_KEY_Y).sw(c, cy);
+    key.off(SH_KEY_Z).sw(c, cz);
+    let child_slot = sx((slot as u32).wrapping_add(off_z as u32));
+    c.g[S0][0] = child_slot;
+    key.sw(c, child_level);
+    c.g[V0][0] = off_y;
+    c.g[V1][0] = off_z;
+    c.g[A1][0] = c.g[T5][0];
+    c.g[A2][0] = c.g[T2][0];
+    c.g[A3][0] = c.g[T3][0];
+    c.g[A0][0] = Addr(child_slot as u32).lw(c);
+    c.g[T0][0] = c.g[SP][0];
+    SPATIAL_HASH_REMOVE.call(c, 0x0032_85b0)?;
+
+    // Is the child empty now? First its eight child pointers.
+    let child = Addr(r32(c, S0)).lw(c);
+    c.g[V1][0] = child;
+    for i in 0..8u32 {
+        if i > 0 {
+            c.cycles += 3;
+        }
+        let v = Addr(child as u32).off(4 * i).lw(c);
+        c.g[V0][0] = v;
+        if v != 0 {
+            if i == 7 {
+                return spatial_hash_remove_tail(c, SH_REMOVE_NOT_EMPTY);
+            }
+            c.g[V0][0] = 0;
+            return spatial_hash_remove_tail(c, 0x0032_863c);
+        }
+        if i < 7 {
+            c.g[V0][0] = 0;
+        }
+    }
+    c.g[V1][0] = sx((child as u32).wrapping_add(SH_NODE_ITEMS));
+    c.cycles += 1;
+    c.g[A0][0] = 0;
+    spatial_hash_remove_tail(c, SH_REMOVE_SCAN_ITEMS)
+}
+
+
+
+/// The end of the emptiness scan from `at`: the item slots (from
+/// 0x328620, v1 = the slot, a0 = slots seen), "not empty" (0x328614) or the
+/// decision (0x32863c, v0 = empty): delete the child and clear its pointer.
+pub(crate) fn spatial_hash_remove_tail(c: &mut Cpu, mut at: u32) -> Flow {
+    let frame = Frame { size: 0x30 };
+    loop {
+        match at {
+            SH_REMOVE_NOT_EMPTY => {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                at = 0x0032_863c;
+            }
+            SH_REMOVE_SCAN_ITEMS => {
+                c.cycles += 3;
+                let v = Addr(r32(c, V1)).lw(c);
+                c.g[V0][0] = v;
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                if v != 0 {
+                    if back_edge_unwinds(c, SH_REMOVE_NOT_EMPTY) {
+                        return Err(crate::call::Unwound);
+                    }
+                    at = SH_REMOVE_NOT_EMPTY;
+                    continue;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < SH_ITEM_SLOTS) as u64;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                if c.g[V0][0] != 0 {
+                    if back_edge_unwinds(c, SH_REMOVE_SCAN_ITEMS) {
+                        return Err(crate::call::Unwound);
+                    }
+                    continue;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 1;
+                at = 0x0032_863c;
+            }
+            _ => {
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 3;
+                    c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+                    SH_BUILTIN_DELETE.call(c, 0x0032_864c)?;
+                    Addr(r32(c, S0)).sw(c, 0);
+                    c.cycles += 1;
+                }
+                frame.restore(c, S0, 0x20);
+                spatial_hash_remove_epilogue(c, frame);
+                return Ok(());
+            }
+        }
+    }
+}
+
+
+
+pub(crate) fn spatial_hash_remove_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 3;
+    frame.restore_ra(c, 0x10);
+    frame.close(c);
+}
+
+
+
+/// `void SplineModifier_Update(SplineModifier* self)` (0x359698): spend
+/// one tick of the acceleration time (speeding up by `accel * dt`); then,
+/// if active and not stopped, advance the position by `speed * dt` and
+/// handle running off either end by the mode (stop and reverse, bounce,
+/// or wrap around), and mark the transform dirty.
+pub fn spline_modifier_update(c: &mut Cpu) {
+    use spline_mod::*;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x10);
+        frame.save_fpr(c, 20, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let this = r32(c, S0);
+        let gp = r32(c, GP);
+        c.mtc1(0, 20); // f20 = 0.0
+        c.lwc1(0, this + ACCEL_TIME);
+        c.c_lt_s(20, 0);
+        if c.fcc() {
+            // Accelerating: accel_time -= dt; speed += accel * dt.
+            c.cycles += 12;
+            call_ptr(c, SECONDS_PER_TICK, 0x0035_96cc)?;
+            c.lwc1(1, this + ACCEL_TIME);
+            c.sub_s(1, 1, 0);
+            c.swc1(1, this + ACCEL_TIME);
+            call_ptr(c, SECONDS_PER_TICK, 0x0035_96dc)?;
+            c.lwc1(1, this + ACCEL);
+            c.lwc1(2, this + SPEED);
+            c.mul_s(1, 1, 0);
+            c.add_s(2, 2, 1);
+            c.swc1(2, this + SPEED);
+        }
+        c.g[V0][0] = c.lw(this + ACTIVE);
+        'out: {
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                break 'out;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(this + STOPPED);
+            if c.g[V0][0] != 0 {
+                break 'out;
+            }
+            // pos += speed * dt (f3 speed, f2 the new position).
+            c.cycles += 10;
+            call_ptr(c, SECONDS_PER_TICK, 0x0035_9710)?;
+            c.lwc1(3, this + SPEED);
+            c.lwc1(1, this + POS);
+            c.mul_s(0, 3, 0);
+            c.add_s(2, 1, 0);
+            c.c_lt_s(2, 20);
+            let before_start = c.fcc();
+            c.swc1(2, this + POS);
+            // `stop`: stop at the start, reversed; `store_pos`: f0 holds the
+            // position to store.
+            let mut stop = false;
+            let mut store_pos = false;
+            if before_start {
+                c.cycles += 3;
+                c.g[V1][0] = c.lw(this + MODE);
+                c.g[V0][0] = 2;
+                if c.g[V1][0] == 0 {
+                    stop = true;
+                } else {
+                    c.cycles += 2;
+                    let bounce = c.g[V1][0] == c.g[V0][0];
+                    c.g[V0][0] = 4;
+                    if bounce {
+                        // Bounce: speed = -speed, pos = -pos.
+                        c.cycles += 5;
+                        c.neg_s(0, 3);
+                        c.neg_s(1, 2);
+                        c.swc1(0, this + SPEED);
+                        c.swc1(1, this + POS);
+                    } else {
+                        c.cycles += 2;
+                        if c.g[V1][0] != c.g[V0][0] {
+                            // Wrap: pos += length.
+                            c.lwc1(0, this + LENGTH);
+                            c.cycles += 2;
+                            c.add_s(0, 2, 0);
+                            store_pos = true;
+                        } else {
+                            stop = true;
+                        }
+                    }
+                }
+                if stop {
+                    // Stop at the start, reversed.
+                    c.cycles += 7;
+                    c.neg_s(0, 3);
+                    c.g[V0][0] = 1;
+                    c.swc1(20, this + POS);
+                    c.sw(this + STOPPED, c.g[V0][0]);
+                    c.swc1(0, this + SPEED);
+                    c.sw(this + ACTIVE, 0);
+                }
+            } else {
+                c.cycles += 5;
+                c.lwc1(4, this + LENGTH);
+                c.c_le_s(4, 2);
+                let past_end = c.fcc();
+                c.g[V0][0] = 1;
+                if past_end {
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw(this + MODE);
+                    c.g[V0][0] = 2;
+                    store_pos = true;
+                    if c.g[V1][0] == 0 {
+                        // Stop just before the end, reversed.
+                        c.cycles += 8;
+                        c.lwc1(0, gp.wrapping_sub(LIT_END_MARGIN_STOP));
+                        c.neg_s(1, 3);
+                        c.g[V0][0] = 1;
+                        c.sw(this + ACTIVE, 0);
+                        c.sub_s(0, 4, 0);
+                        c.sw(this + STOPPED, c.g[V0][0]);
+                        c.swc1(1, this + SPEED);
+                    } else {
+                        c.cycles += 2;
+                        let bounce = c.g[V1][0] == c.g[V0][0];
+                        c.g[V0][0] = 4;
+                        if bounce {
+                            // Bounce: speed = -speed, pos -= pos - (length - 0.1).
+                            c.cycles += 7;
+                            c.lwc1(0, gp.wrapping_sub(LIT_END_MARGIN_BOUNCE));
+                            c.neg_s(1, 3);
+                            c.sub_s(0, 4, 0);
+                            c.swc1(1, this + SPEED);
+                            c.sub_s(0, 2, 0);
+                            c.sub_s(0, 2, 0);
+                        } else {
+                            c.cycles += 2;
+                            if c.g[V1][0] != c.g[V0][0] {
+                                // Wrap: pos -= length.
+                                c.sub_s(0, 2, 4);
+                            } else {
+                                // Mode 4: stop just before the end, reversed.
+                                c.cycles += 7;
+                                c.lwc1(0, gp.wrapping_sub(LIT_END_MARGIN_STOP4));
+                                c.neg_s(1, 3);
+                                c.g[V0][0] = 1;
+                                c.sw(this + ACTIVE, 0);
+                                c.sub_s(0, 4, 0);
+                                c.sw(this + STOPPED, c.g[V0][0]);
+                                c.swc1(1, this + SPEED);
+                            }
+                        }
+                    }
+                }
+            }
+            if store_pos {
+                c.cycles += 1;
+                c.swc1(0, this + POS);
+            }
+            if store_pos || (before_start && !stop) {
+                c.cycles += 1;
+                c.g[V0][0] = 1;
+            }
+            c.cycles += 2;
+            c.sw(this + DIRTY, c.g[V0][0]);
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 4;
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2832,6 +3307,170 @@ pub(crate) mod tests {
             if seed % 3 == 0 {
                 put_vec(c, SM_UP_AXIS, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
             }
+        });
+    }
+    use super::*;
+    use super::*;
+
+
+    /// Runs a guest function to completion as a setup step (returns v0).
+    pub(crate) fn oc259_run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
+        const BACK: u32 = 0x0000_7770;
+        for (i, a) in args.iter().enumerate() {
+            c.g[[A0, A1, A2, A3][i]][0] = *a;
+        }
+        c.g[RA][0] = BACK as u64;
+        c.pc = addr;
+        f(c);
+        assert_eq!(c.pc, BACK, "setup call {addr:#x} did not return");
+        c.g[V0][0]
+    }
+
+
+    /// SpatialHash_Remove on a real octree path: the root key one to four
+    /// levels above the item (or at it), nodes from the real main heap so
+    /// the real `__builtin_delete` frees emptied ones; every node on the
+    /// path randomly kept alive by another child or item; the link first,
+    /// last, middle or alone in its list. Some seeds resume at the scan's
+    /// event-check heads (0x328614 / 0x328620) inside a frame.
+    #[test]
+    fn spatial_hash_remove_matches() {
+        const MAIN_HEAP: u32 = 0x004f_f250;
+        const ROOT_KEY: u32 = DATA + 0x100;
+        const ITEM_KEY: u32 = DATA + 0x110;
+        const LINK: u32 = DATA + 0x200;
+        const ROOT: u32 = DATA + 0x1000;
+        check(ee::s10::f_003284b8__generated, spatial_hash_remove, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0032_84b8, 0);
+            let ra = c.g[RA][0];
+            // __builtin_delete -> MEM_FreeInternal: no pools, the main heap.
+            c.bus.write32(GAME_GP + 0xdd8, 0);
+            for slot in [0x2a60u32, 0x2a68, 0x2a6c, 0x2a70, 0x2a78, 0x2a7c, 0x2a84] {
+                c.bus.write32(GAME_GP + slot, 0);
+            }
+            oc259_run(
+                c,
+                0x0031_ff60,
+                ee::s10::DLHeap_InitArena,
+                &[MAIN_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
+            );
+            let new_node = |c: &mut Cpu, r: &mut Rng| -> u32 {
+                let n = oc259_run(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[MAIN_HEAP as u64, 0x2c]) as u32;
+                for i in 0..11 {
+                    c.bus.write32(n + 4 * i, 0);
+                }
+                match r.next_u32() % 3 {
+                    0 => c.bus.write32(n + 4 * (r.next_u32() % 8), r.next_u32() | 1),
+                    1 => c.bus.write32(n + SH_NODE_ITEMS + 4 * (r.next_u32() % 3), r.next_u32() | 1),
+                    _ => {}
+                }
+                n
+            };
+            c.g[RA][0] = ra;
+
+            if seed % 10 == 9 {
+                // Resume inside a frame at a scan head.
+                let child = new_node(c, &mut r);
+                let frame_sp = crate::difftest::SP - 0x30;
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = sx(frame_sp);
+                c.bus.write64(frame_sp + 0x10, crate::difftest::RA as u64);
+                let parent_slot = ROOT + 4 * (r.next_u32() % 8);
+                c.bus.write32(parent_slot, child);
+                c.g[S0][0] = sx(parent_slot);
+                let j = r.next_u32() % 3;
+                c.g[A0][0] = j as u64;
+                c.g[V1][0] = sx(child + SH_NODE_ITEMS + 4 * j);
+                c.pc = if seed % 20 == 9 { SH_REMOVE_SCAN_ITEMS } else { SH_REMOVE_NOT_EMPTY };
+                return;
+            }
+
+            let top = 1 + r.next_u32() % 4;
+            let item_level = r.next_u32() % (top + 1);
+            let span = 1u32 << (top - item_level);
+            let xyz = [r.next_u32() % span, r.next_u32() % span, r.next_u32() % span];
+            put_words(c, ITEM_KEY, &[item_level, xyz[0], xyz[1], xyz[2]]);
+            put_words(c, ROOT_KEY, &[top, 0, 0, 0]);
+            for i in 0..11 {
+                c.bus.write32(ROOT + 4 * i, 0);
+            }
+            // The path from the root down to the item's level.
+            let mut node = ROOT;
+            let mut k = [0u32; 3];
+            for lev in (item_level + 1..=top).rev() {
+                let shift = lev - item_level - 1;
+                let b: Vec<u32> = (0..3).map(|i| (xyz[i] >> shift) - 2 * k[i]).collect();
+                let child = new_node(c, &mut r);
+                c.bus.write32(node + (b[0] << 4) + (b[1] << 3) + (b[2] << 2), child);
+                for i in 0..3 {
+                    k[i] = 2 * k[i] + b[i];
+                }
+                node = child;
+            }
+            let slot = r.next_u32() % 3;
+            let next = if r.next_u32() % 2 == 0 { DATA + 0x210 } else { 0 };
+            let prev = if r.next_u32() % 2 == 0 { DATA + 0x220 } else { 0 };
+            put_words(c, LINK, &[next, prev]);
+            put_words(c, DATA + 0x210, &[r.next_u32(), r.next_u32()]);
+            put_words(c, DATA + 0x220, &[r.next_u32(), r.next_u32()]);
+            if prev == 0 {
+                c.bus.write32(node + SH_NODE_ITEMS + 4 * slot, LINK);
+            }
+            c.pc = SH_REMOVE_ENTRY;
+            c.g[A0][0] = sx(ROOT);
+            c.g[A1][0] = slot as u64;
+            c.g[A2][0] = sx(LINK);
+            c.g[A3][0] = sx(ITEM_KEY);
+            c.g[T0][0] = sx(ROOT_KEY);
+        });
+    }
+
+
+    /// SplineModifier_Update: acceleration time positive or not, active /
+    /// stopped flags (one seed in five each), modes 0..4, a speed and
+    /// position that leave the spline at the start, at the end, or stay
+    /// inside; the world's seconds-per-tick (1/60 or random) and the 0.1
+    /// literals.
+    #[test]
+    fn spline_modifier_update_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{DATA, GAME_GP};
+        use spline_mod::*;
+        const SELF: u32 = DATA + 0x3_0000;
+        const WORLD: u32 = DATA + 0x3_1000;
+        crate::difftest::check(ee::s11::f_00359698__generated, spline_modifier_update, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0035_9698, 0);
+            c.pc = 0x0035_9698;
+            let fl = |x: f32| x.to_bits();
+            c.bus.write32(GAME_GP - 0x848, WORLD);
+            let dt = if seed % 4 == 0 { r.f32(0.5) } else { fl(1.0 / 60.0) };
+            c.bus.write32(WORLD + 0x14, dt);
+            for lit in [LIT_END_MARGIN_STOP, LIT_END_MARGIN_BOUNCE, LIT_END_MARGIN_STOP4] {
+                let v = if seed % 3 == 0 { r.f32(1.0) } else { fl(0.1) };
+                c.bus.write32(GAME_GP - lit, v);
+            }
+            let accel_time = match seed % 4 {
+                0 => 0,
+                1 => fl(-0.5),
+                _ => r.f32(2.0),
+            };
+            c.bus.write32(SELF + ACCEL_TIME, accel_time);
+            c.bus.write32(SELF + ACCEL, r.f32(100.0));
+            let length = 50.0 + (r.next_u32() % 100) as f32;
+            c.bus.write32(SELF + LENGTH, fl(length));
+            // Inside, just past the end, just before the start.
+            let (pos, speed) = match (seed / 2) % 3 {
+                0 => (length * 0.5, 30.0),
+                1 => (length - 0.2, 600.0),
+                _ => (0.2, -600.0),
+            };
+            let speed = if seed % 7 == 0 { -speed } else { speed };
+            c.bus.write32(SELF + POS, fl(pos));
+            c.bus.write32(SELF + SPEED, fl(speed));
+            c.bus.write32(SELF + MODE, r.next_u32() % 5);
+            c.bus.write32(SELF + ACTIVE, if seed % 5 == 1 { 0 } else { 1 + r.next_u32() % 3 });
+            c.bus.write32(SELF + STOPPED, if seed % 5 == 2 { 1 } else { 0 });
+            c.bus.write32(SELF + DIRTY, r.next_u32());
+            c.g[A0][0] = SELF as u64;
         });
     }
 }

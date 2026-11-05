@@ -101,6 +101,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cFlagManager_GroupComputeVerts",
     ),
     (0x0034_c668, cflag_manager_update, "cFlagManager_Update"),
+    (0x0034_c7f8, flag_manager_render, "cFlagManager_Render"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2987,6 +2988,66 @@ pub fn cflag_manager_update(c: &mut Cpu) {
     });
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// cFlagManager_Render (flagset.cpp).
+
+/// `cFlagManager_GroupRender` (0x34b9b0).
+pub(crate) const FLAG_MANAGER_GROUP_RENDER_207: Callee = Callee {
+    addr: 0x0034_b9b0,
+    f: ee::s11::cFlagManager_GroupRender,
+};
+
+
+
+/// `void cFlagManager_Render(cFlagManager* self)` (0x34c7f8): render each of
+/// the 15 flag groups (`self+0x20`, 0x188 bytes each) that has models
+/// (`group+0x5c` non-zero). s0 walks the groups, s1 counts 14 down to -1.
+pub fn flag_manager_render(c: &mut Cpu) {
+    const HEAD: u32 = 0x0034_c810;
+    const RET: u32 = 0x0034_c824;
+    const GROUPS: u32 = 0x20;
+    const GROUP_SIZE: u32 = 0x188;
+    /// A group's model count.
+    const GROUP_MODELS: u32 = 0x5c;
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = sx(r32(c, A0).wrapping_add(GROUPS));
+        frame.save_ra(c, 0);
+        c.g[S1][0] = 0xe;
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S0)).off(GROUP_MODELS).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                FLAG_MANAGER_GROUP_RENDER_207.call(c, RET)?;
+            }
+            c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+            c.cycles += 2;
+            let more = (c.g[S1][0] as i64) >= 0;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(GROUP_SIZE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, HEAD);
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3957,5 +4018,32 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
             },
         );
+    }
+    use super::*;
+    // (fakes imported above)
+
+
+    // ------------------------------------------------------ flag manager
+
+    /// cFlagManager_Render: each of the 15 groups with or without models;
+    /// the real GroupRender runs and returns at once (no flag manager at
+    /// `gp+0x1154` in empty RAM).
+    #[test]
+    fn flag_manager_render_matches() {
+        check(ee::s11::f_0034c7f8__generated, flag_manager_render, 200, &|c, seed| {
+            let mut r = Rng(0x0034_c7f8 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x0034_c7f8;
+            c.g[A0][0] = sx(DATA);
+            for i in 0..15u32 {
+                let models = if seed % 7 == 0 || r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() | 1
+                };
+                c.bus.write32(DATA + 0x20 + i * 0x188 + 0x5c, models);
+            }
+        });
     }
 }

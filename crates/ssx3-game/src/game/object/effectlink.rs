@@ -101,6 +101,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0034_5ef8, dynamic_particle_modifier_transform_points, "DynamicParticleModifier_TransformPoints"),
     (0x0034_6070, dynamic_particle_modifier_render, "DynamicParticleModifier_Render"),
+    (0x0034_62a0, halo_modifier_render, "HaloModifier_Render"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1099,6 +1100,77 @@ pub fn dynamic_particle_modifier_transform_points(c: &mut Cpu) {
     })
 }
 
+
+
+
+// -------------------------------------------------------- HaloModifier_Render
+
+/// `Instance_GetNodeMatrix` (0x34fed8).
+pub(crate) const HALO_INSTANCE_GET_NODE_MATRIX: Callee = Callee {
+    addr: 0x0034_fed8,
+    f: ee::s11::f_0034fed8,
+};
+
+
+/// `HaloModifier_DrawQuad` (0x2d1d10, cross-shard).
+pub(crate) const HALO_DRAW_QUAD: u32 = 0x002d_1d10;
+
+
+/// HaloModifier: instance (+0xc), texture quad (+0x10), size (+0x20),
+/// mode (+0x24), node (+0x28), spin (+0x30).
+pub(crate) const HALO_INSTANCE: u32 = 0xc;
+
+
+pub(crate) const HALO_TEXTURE: u32 = 0x10;
+
+
+pub(crate) const HALO_SIZE: u32 = 0x20;
+
+
+pub(crate) const HALO_MODE: u32 = 0x24;
+
+
+pub(crate) const HALO_NODE: u32 = 0x28;
+
+
+pub(crate) const HALO_SPIN: u32 = 0x30;
+
+
+
+/// `void HaloModifier_Render(HaloModifier* self)` (0x3462a0): draws the
+/// halo quad at the translation of its instance node's matrix.
+pub fn halo_modifier_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, 16, 0x70);
+        c.g[A2][0] = c.g[SP][0];
+        frame.save(c, 17, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x50);
+        let halo = r32(c, S0);
+        c.g[S1][0] = sx(halo.wrapping_add(HALO_TEXTURE));
+        c.g[A0][0] = Addr(halo.wrapping_add(HALO_INSTANCE)).lw(c);
+        c.g[A1][0] = Addr(halo.wrapping_add(HALO_NODE)).lw(c);
+        // The node matrix goes to sp+0; its translation row is at sp+0x30.
+        HALO_INSTANCE_GET_NODE_MATRIX.call(c, 0x0034_62c8)?;
+        let halo = r32(c, S0);
+        c.lq(V0, frame.at(c, 0x30));
+        c.g[A1][0] = c.g[S1][0];
+        c.lwc1(13, halo.wrapping_add(HALO_SPIN));
+        c.g[A0][0] = sx(frame.at(c, 0x40));
+        c.g[A2][0] = Addr(halo.wrapping_add(HALO_MODE)).lw(c);
+        c.lwc1(12, halo.wrapping_add(HALO_SIZE));
+        c.sq(V0, frame.at(c, 0x40));
+        call_ptr(c, HALO_DRAW_QUAD, 0x0034_62e8)?;
+        frame.restore(c, 16, 0x70);
+        frame.restore(c, 17, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1609,6 +1681,86 @@ pub(crate) mod tests {
                 c.bus.write32(MODIFIER + DPM_INSTANCE, INST);
                 c.bus.write32(MODIFIER + DPM_NODE, node);
                 c.g[A0][0] = sx(MODIFIER);
+            },
+        );
+    }
+    use super::*;
+
+
+    /// `HaloModifier_Render`: the real `Instance_GetNodeMatrix` (no owner;
+    /// node -1, the root or a node with one or two parents; the instance
+    /// node test's fixture) and the real `HaloModifier_DrawQuad`, culled
+    /// (a fake visibility method) or visible (a real `return 0`), modes
+    /// 0..5, spin or not (the draw-quad test's fixture; its drawer methods
+    /// are fakes, some of which unwind).
+    #[test]
+    fn halo_modifier_render_matches() {
+        use crate::difftest::fakes::FAKE;
+        const RETURN_ZERO: u32 = 0x003a_5ab0;
+        check(
+            ssx3_ee::s11::f_003462a0__generated,
+            halo_modifier_render,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3462_a0, 3);
+                c.pc = 0x0034_62a0;
+                // The instance, its skeleton nodes and matrices.
+                let inst = DATA;
+                let skel = DATA + 0x400;
+                let nodes = DATA + 0x500;
+                let mats = DATA + 0x1000;
+                for k in 0..0x10 {
+                    c.bus.write32(inst + 0x10 + 4 * k, r.f32(4.0));
+                }
+                c.bus.write32(inst + 0xc, 0);
+                c.bus.write32(inst + 0x84, r.f32(2.0));
+                c.bus.write32(inst + 0x80, skel);
+                c.bus.write32(skel + 8, nodes);
+                for (n, parent) in [(0u32, u32::MAX), (1, 0), (2, 1), (3, 0)] {
+                    c.bus.write32(nodes + 0x10 * n, parent);
+                    c.bus.write32(nodes + 0x10 * n + 0xc, mats + 0x40 * n);
+                }
+                for k in 0..0x40 {
+                    c.bus.write32(mats + 4 * k, r.f32(4.0));
+                }
+                let node = match r.next_u32() % 5 {
+                    0 => u32::MAX,
+                    k => k - 1,
+                };
+                // The world (visibility method) and the draw context.
+                let (world, wvt, ctx, cvt) = (
+                    DATA + 0x10000,
+                    DATA + 0x14000,
+                    DATA + 0x18000,
+                    DATA + 0x1c000,
+                );
+                let cur = DATA + 0x2000 + 4 * (seed % 4);
+                c.bus.write32(GAME_GP.wrapping_sub(0x854), world);
+                c.bus.write32(world + 0x10d8, wvt);
+                c.bus.write16(wvt + 0x2d8, (r.next_u32() & 0x7c) as u16);
+                c.bus
+                    .write32(wvt + 0x2dc, if seed % 5 == 0 { FAKE } else { RETURN_ZERO });
+                c.bus.write32(GAME_GP + 0x2a90, ctx);
+                fill(c, &mut r, ctx + 0xf50, 0x30);
+                c.bus.write32(ctx + 0xe84, cur);
+                c.bus.write32(ctx + 0x10d8, cvt);
+                for (k, off) in [0x270u32, 0x278].into_iter().enumerate() {
+                    c.bus.write16(cvt + off, (r.next_u32() & 0x7c) as u16);
+                    c.bus.write32(cvt + off + 4, FAKE + 0x10 * (k as u32 + 1));
+                }
+                fill(c, &mut r, cur - 0x20, 0x20);
+                fill(c, &mut r, 0x0050_1420, 6);
+                c.bus.write32(GAME_GP.wrapping_sub(0x3f98), r.f32(1.0));
+                // The halo.
+                let halo = DATA + 0x8000;
+                c.bus.write32(halo + HALO_INSTANCE, inst);
+                fill(c, &mut r, halo + HALO_TEXTURE, 4);
+                c.bus.write32(halo + HALO_SIZE, r.f32(50.0));
+                c.bus.write32(halo + HALO_MODE, (seed / 2) % 6);
+                c.bus.write32(halo + HALO_NODE, node);
+                c.bus
+                    .write32(halo + HALO_SPIN, if seed % 3 == 0 { 0 } else { r.f32(6.0) });
+                c.g[A0][0] = sx(halo);
             },
         );
     }

@@ -30,6 +30,7 @@ use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
+use crate::call::Flow;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -50,6 +51,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0031_9e48, mem_pool_alloc, "MEM_PoolAlloc"),
     (0x0031_f2c8, dlheap_memalign, "DLHeap_Memalign"),
+    (0x0031_ed60, dlheap_free, "DLHeap_Free"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -928,6 +930,248 @@ pub fn dlheap_memalign(c: &mut Cpu) {
     });
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// DLHeap_Free (0x31ed60)
+
+/// dlmalloc state (`*heap`): `max_fast` with the flag bits (bit 0: state
+/// initialised, bit 1: fast chunks present), the fast bins (from +0), the
+/// top chunk (+0x30), the unsorted bin header (+0x38, its `fd` at +0x40),
+/// the trim threshold (+0x344) and the top pad (+0x348).
+pub(crate) const DLF_TOP: u32 = 0x30;
+
+
+pub(crate) const DLF_UNSORTED: u32 = 0x38;
+
+
+pub(crate) const DLF_UNSORTED_FD: u32 = 0x40;
+
+
+pub(crate) const DLF_TRIM_THRESHOLD: u32 = 0x344;
+
+
+pub(crate) const DLF_TOP_PAD: u32 = 0x348;
+
+
+/// Chunk fields: previous size (+0), size with flags (+4), `fd` (+8), `bk`
+/// (+0xc); size flags: previous in use (bit 0), mmapped (bit 1).
+pub(crate) const DLF_CHUNK_SIZE: u32 = 0x4;
+
+
+pub(crate) const DLF_CHUNK_FD: u32 = 0x8;
+
+
+pub(crate) const DLF_CHUNK_BK: u32 = 0xc;
+
+
+/// `FASTBIN_CONSOLIDATION_THRESHOLD`.
+pub(crate) const DLF_CONSOLIDATE_THRESHOLD: u64 = 0x4000;
+
+
+
+/// `DLHeap_Consolidate` (0x31eee8).
+pub(crate) const DLHEAP_CONSOLIDATE: Callee = Callee {
+    addr: 0x0031_eee8,
+    f: ee::s10::f_0031eee8,
+};
+
+
+/// `DLHeap_SysTrim` (0x31e6d8).
+pub(crate) const DLHEAP_SYS_TRIM: Callee = Callee {
+    addr: 0x0031_e6d8,
+    f: ee::s10::f_0031e6d8,
+};
+
+
+
+/// `void DLHeap_Free(DLHeap *heap, void *mem)` (0x31ed60): dlmalloc's
+/// `free`. Null is ignored; a chunk no bigger than `max_fast` goes on the
+/// front of its fast bin (and marks the heap as having fast chunks); an
+/// mmapped chunk is left alone; any other chunk is merged with a free
+/// previous chunk, then with the top chunk (becoming the new top) or a free
+/// next chunk, and put on the unsorted bin. When the merged chunk reaches
+/// 16 KiB, pending fast chunks are consolidated and the top chunk is
+/// trimmed once it passes the trim threshold. Frame 0x30 (ra at 0, s1 at
+/// 0x10, s0 at 0x20).
+pub fn dlheap_free(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x20);
+        let mem = c.g[A1][0];
+        let state = Addr(r32(c, S1)).lw(c);
+        c.g[S0][0] = state;
+        let av = Addr(state as u32);
+        'out: {
+            if mem == 0 {
+                c.cycles += 1;
+                break 'out;
+            }
+            let mem = mem as u32;
+            c.cycles += 8;
+            let head = Addr(mem.wrapping_sub(4)).lw(c);
+            c.g[T0][0] = head;
+            let size_mask: u64 = 0xffff_ffff_ffff_fffc;
+            c.g[A0][0] = size_mask;
+            let max_fast = av.lw(c);
+            c.g[V1][0] = max_fast;
+            let mut size = head & size_mask;
+            c.g[A2][0] = size;
+            c.g[V0][0] = (max_fast < size) as u64;
+            let mut p = sx(mem.wrapping_sub(8));
+            c.g[A3][0] = p;
+            if max_fast >= size {
+                // Fast bin: push on the front of bin (size >> 3) - 1.
+                c.cycles += 10;
+                av.sw(c, max_fast | 0x3);
+                c.g[V1][0] = max_fast | 0x3;
+                let bin = sx(((size as u32) >> 3) << 2);
+                let bin = sx((bin as u32).wrapping_sub(4));
+                let bin = sx(av.0.wrapping_add(bin as u32));
+                c.g[V0][0] = bin;
+                let old = Addr(bin as u32).lw(c);
+                c.g[V1][0] = old;
+                Addr(mem).sw(c, old);
+                Addr(bin as u32).sw(c, p);
+                c.cycles += 1;
+                break 'out;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = head & 0x2;
+            if c.g[V0][0] != 0 {
+                // Mmapped chunk: not handled by this heap.
+                break 'out;
+            }
+            c.cycles += 9;
+            c.g[V0][0] = max_fast | 0x1;
+            let next = sx((p as u32).wrapping_add(size as u32));
+            c.g[T0][0] = next;
+            av.sw(c, max_fast | 0x1);
+            let prev_inuse = Addr(mem.wrapping_sub(4)).lw(c);
+            let next_head = Addr(next as u32).off(DLF_CHUNK_SIZE).lw(c);
+            c.g[V0][0] = next_head;
+            c.g[V1][0] = (prev_inuse ^ 0x1) & 0x1;
+            let next_size = next_head & size_mask;
+            c.g[T1][0] = next_size;
+            if c.g[V1][0] != 0 {
+                // Merge with the free previous chunk (unlink it).
+                c.cycles += 7;
+                let prev_size = Addr(mem.wrapping_sub(8)).lw(c);
+                c.g[V0][0] = prev_size;
+                p = sx((p as u32).wrapping_sub(prev_size as u32));
+                c.g[A3][0] = p;
+                size = sx((size as u32).wrapping_add(prev_size as u32));
+                c.g[A2][0] = size;
+                let fd = Addr(p as u32).off(DLF_CHUNK_FD).lw(c);
+                c.g[A0][0] = fd;
+                let bk = Addr(p as u32).off(DLF_CHUNK_BK).lw(c);
+                c.g[V0][0] = bk;
+                Addr(fd as u32).off(DLF_CHUNK_BK).sw(c, bk);
+                Addr(bk as u32).off(DLF_CHUNK_FD).sw(c, fd);
+            }
+            c.cycles += 3;
+            let top = av.off(DLF_TOP).lw(c);
+            c.g[V0][0] = top;
+            let after_next = sx((next as u32).wrapping_add(next_size as u32));
+            c.g[V1][0] = after_next;
+            if next == top {
+                // Merge into the top chunk.
+                c.cycles += 4;
+                size = sx((size as u32).wrapping_add(next_size as u32));
+                c.g[A2][0] = size;
+                c.g[V0][0] = size | 0x1;
+                Addr(p as u32).off(DLF_CHUNK_SIZE).sw(c, size | 0x1);
+                av.off(DLF_TOP).sw(c, p);
+            } else {
+                c.cycles += 4;
+                let next_inuse = Addr(after_next as u32).off(DLF_CHUNK_SIZE).lw(c) & 0x1;
+                c.g[V0][0] = next_inuse;
+                // Clear the next chunk's "previous in use".
+                Addr(next as u32).off(DLF_CHUNK_SIZE).sw(c, next_size);
+                if next_inuse == 0 {
+                    // Merge with the free next chunk (unlink it).
+                    c.cycles += 5;
+                    let bk = Addr(next as u32).off(DLF_CHUNK_BK).lw(c);
+                    c.g[V0][0] = bk;
+                    size = sx((size as u32).wrapping_add(next_size as u32));
+                    c.g[A2][0] = size;
+                    let fd = Addr(next as u32).off(DLF_CHUNK_FD).lw(c);
+                    c.g[A0][0] = fd;
+                    Addr(fd as u32).off(DLF_CHUNK_BK).sw(c, bk);
+                    Addr(bk as u32).off(DLF_CHUNK_FD).sw(c, fd);
+                }
+                // Put the chunk on the front of the unsorted bin.
+                c.cycles += 11;
+                let first = av.off(DLF_UNSORTED_FD).lw(c);
+                c.g[A0][0] = first;
+                let bin = sx(av.0.wrapping_add(DLF_UNSORTED));
+                Addr(p as u32).off(DLF_CHUNK_BK).sw(c, bin);
+                c.g[V1][0] = size | 0x1;
+                Addr(p as u32).off(DLF_CHUNK_FD).sw(c, first);
+                let foot = sx((p as u32).wrapping_add(size as u32));
+                c.g[V0][0] = foot;
+                av.off(DLF_UNSORTED_FD).sw(c, p);
+                Addr(first as u32).off(DLF_CHUNK_BK).sw(c, p);
+                Addr(p as u32).off(DLF_CHUNK_SIZE).sw(c, size | 0x1);
+                Addr(foot as u32).sw(c, size);
+            }
+            c.cycles += 3;
+            c.g[V0][0] = (size < DLF_CONSOLIDATE_THRESHOLD) as u64;
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x20);
+                c.cycles += 4;
+                frame.restore(c, S1, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+            c.cycles += 4;
+            let flags = Addr(r32(c, S0)).lw(c) & 0x2;
+            c.g[V0][0] = flags;
+            c.g[A0][0] = c.g[S1][0];
+            if flags != 0 {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S0][0];
+                DLHEAP_CONSOLIDATE.call(c, 0x0031_eea0)?;
+            }
+            c.cycles += 9;
+            let av = Addr(r32(c, S0));
+            let top = av.off(DLF_TOP).lw(c);
+            c.g[A1][0] = top;
+            c.g[V1][0] = size_mask;
+            let threshold = av.off(DLF_TRIM_THRESHOLD).lw(c);
+            c.g[A0][0] = threshold;
+            let top_size = Addr(top as u32).off(DLF_CHUNK_SIZE).lw(c) & size_mask;
+            c.g[V0][0] = (top_size < threshold) as u64;
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x20);
+                c.cycles += 4;
+                frame.restore(c, S1, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+            c.cycles += 4;
+            c.g[A1][0] = av.off(DLF_TOP_PAD).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[S0][0];
+            DLHEAP_SYS_TRIM.call(c, 0x0031_eed4)?;
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1300,6 +1544,62 @@ pub(crate) mod tests {
                 1 => 0x10_0000 + (r.next_u32() % 0x1000) as u64,
                 2 => sx(0xffff_ffe0 + r.next_u32() % 0x20),
                 _ => (r.next_u32() % 0x2000) as u64,
+            };
+        });
+    }
+    use super::*;
+    pub(crate) use crate::game::object::splinemodifier::tests::oc259_run;
+
+
+    /// DLHeap_Free on a real dlmalloc heap (`DLHeap_InitArena` on a 256 KiB
+    /// arena, 1..8 mallocs of fast, small and large sizes, some of them
+    /// freed again first so the freed chunk has free neighbours): null,
+    /// fast chunks, merges with the previous / next free chunk or the top
+    /// chunk, unsorted-bin insertion, 16 KiB merges (with fast chunks
+    /// pending: consolidation; a big top: the real SysTrim), and a fake
+    /// mmapped chunk (left alone).
+    #[test]
+    fn dlheap_free_matches() {
+        const HEAP: u32 = DATA + 0x2000;
+        const ARENA: u32 = DATA + 0x4_0000;
+        check(ee::s10::f_0031ed60__generated, dlheap_free, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0031_ed60, 0);
+            let ra = c.g[RA][0];
+            oc259_run(
+                c,
+                0x0031_ff60,
+                ee::s10::DLHeap_InitArena,
+                &[HEAP as u64, ARENA as u64, 0x4_0000],
+            );
+            let n = 1 + r.next_u32() % 8;
+            let mut ptrs = Vec::new();
+            for _ in 0..n {
+                let size = match r.next_u32() % 4 {
+                    0 => r.next_u32() % 0x40,
+                    1 => 0x40 + r.next_u32() % 0x800,
+                    2 => 0x1000 + r.next_u32() % 0x3000,
+                    _ => 0x3000 + r.next_u32() % 0x6000,
+                };
+                let p = oc259_run(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[HEAP as u64, size as u64]);
+                ptrs.push(p);
+            }
+            let target = (r.next_u32() % n) as usize;
+            for (i, &p) in ptrs.iter().enumerate() {
+                if i != target && p != 0 && r.next_u32() % 3 != 0 {
+                    oc259_run(c, 0x0031_ed60, ee::s10::f_0031ed60__generated, &[HEAP as u64, p]);
+                }
+            }
+            c.g[RA][0] = ra;
+            c.pc = 0x0031_ed60;
+            c.g[A0][0] = sx(HEAP);
+            c.g[A1][0] = match seed % 12 {
+                0 => 0,
+                1 => {
+                    // A fake mmapped chunk (size 0x100, mmapped bit).
+                    c.bus.write32(DATA + 0x1004, 0x102);
+                    sx(DATA + 0x1008)
+                }
+                _ => ptrs[target],
             };
         });
     }

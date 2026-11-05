@@ -25,6 +25,11 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
+use ssx3_ee_rt::vu0::X;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -55,6 +60,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "MdfFile_CreateModelByName",
     ),
     (0x0031_3dd0, anim_sequence_save, "AnimSequence_Save"),
+    (0x0031_3ba8, anim_sequence_remove_event_trigger, "AnimSequence_RemoveEventTrigger"),
+    (0x0031_47f0, anim_seq_list_save, "AnimSeqList_Save"),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -767,6 +774,165 @@ pub fn anim_sequence_save(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// AnimSeqList_Save (0x3147f0)
+
+/// AnimSeqList `int`: number of sequences.
+pub(crate) const SEQLIST_COUNT: u32 = 0x0;
+
+
+/// AnimSeqList: first sequence node.
+pub(crate) const SEQLIST_FIRST: u32 = 0x4;
+
+
+/// AnimSequence: next node in the list.
+pub(crate) const SEQLIST_NODE_NEXT: u32 = 0xc8;
+
+
+/// `AnimSequence_Save(seq, stream)`.
+pub(crate) const SEQLIST_SEQUENCE_SAVE: Callee =
+    Callee { addr: 0x0031_3dd0, f: ee::s10::AnimSequence_Save };
+
+
+
+/// `void AnimSeqList_Save(AnimSeqList* list, cAsStream* s)` (0x3147f0):
+/// write the list's count word (`s->Write(list, 4)`, vtable slot +0x8), then
+/// save each of its `count` sequences (linked through +0xc8).
+pub fn anim_seq_list_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x50);
+        c.g[A2][0] = 0x4;
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let stream = c.g[A1][0];
+        c.g[S3][0] = stream;
+        c.g[A1][0] = c.g[S2][0];
+        // s->Write(list, 4).
+        let vt = Addr(stream as u32).lw(c);
+        c.g[V1][0] = vt;
+        let slot = crate::call::VSlot::read(c, vt, 0x8);
+        c.g[A0][0] = slot.delta;
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = sx((stream as u32).wrapping_add(slot.delta as u32));
+        call_ptr(c, slot.func as u32, 0x0031_4830)?;
+        let list = r32(c, S2);
+        let count = Addr(list + SEQLIST_COUNT).lw(c);
+        c.g[V1][0] = count;
+        c.g[S0][0] = Addr(list + SEQLIST_FIRST).lw(c);
+        if (count as i64) > 0 {
+            c.cycles += 1;
+            loop {
+                c.cycles += 8;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S3][0];
+                SEQLIST_SEQUENCE_SAVE.call(c, 0x0031_484c)?;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                let count = Addr(r32(c, S2) + SEQLIST_COUNT).lw(c);
+                let more = (c.g[S1][0] as i64) < (count as i64);
+                c.g[V0][0] = more as u64;
+                c.g[S0][0] = Addr(r32(c, S0).wrapping_add(SEQLIST_NODE_NEXT)).lw(c);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_4840);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+
+
+// ---------------------------------------------------------------------------
+// AnimSequence_RemoveEventTrigger (0x313ba8)
+
+/// `operator delete` (`__builtin_delete`, 0x317e50).
+pub(crate) const ANIM_TRIGGER_DELETE: Callee = Callee { addr: 0x0031_7e50, f: ee::s10::f_00317e50 };
+
+
+/// `AnimSequence + 0xac`: head of the event-trigger list.
+pub(crate) const ANIM_SEQ_TRIGGERS: u32 = 0xac;
+
+
+/// Trigger node: `{ int key; int active; ...; Trigger* next (+0xc) }`.
+pub(crate) const ANIM_TRIGGER_ACTIVE: u32 = 0x4;
+
+
+pub(crate) const ANIM_TRIGGER_NEXT: u32 = 0xc;
+
+
+
+/// `void AnimSequence_RemoveEventTrigger(AnimSequence* seq, int key)`
+/// (0x313ba8): unlink and delete the first active trigger with `key`.
+pub fn anim_sequence_remove_event_trigger(c: &mut Cpu) {
+    const HEAD: u32 = 0x0031_3bc0;
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, A0).wrapping_add(ANIM_SEQ_TRIGGERS)).lw(c);
+        c.g[A2][0] = sx(r32(c, A0).wrapping_add(ANIM_SEQ_TRIGGERS)); // link
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            loop {
+                c.cycles += 4;
+                c.g[V1][0] = Addr(r32(c, A2)).lw(c); // node = *link
+                c.g[V0][0] = Addr(r32(c, V1)).lw(c); // node->key
+                c.g[A0][0] = c.g[V1][0];
+                if c.g[V0][0] == c.g[A1][0] {
+                    c.cycles += 3;
+                    let active = Addr(r32(c, A0).wrapping_add(ANIM_TRIGGER_ACTIVE)).lw(c);
+                    c.g[V0][0] = Addr(r32(c, A0).wrapping_add(ANIM_TRIGGER_NEXT)).lw(c);
+                    if active != 0 {
+                        c.cycles += 4;
+                        let next = c.g[V0][0];
+                        Addr(r32(c, A2)).sw(c, next); // *link = node->next
+                        ANIM_TRIGGER_DELETE.call(c, 0x0031_3be4)?;
+                        frame.restore_ra(c, 0);
+                        c.cycles += 2;
+                        frame.close(c);
+                        return Ok(());
+                    }
+                } else {
+                    c.cycles += 1;
+                    c.g[V0][0] = Addr(r32(c, A0).wrapping_add(ANIM_TRIGGER_NEXT)).lw(c);
+                }
+                c.cycles += 2;
+                c.g[A2][0] = sx(r32(c, A0).wrapping_add(ANIM_TRIGGER_NEXT));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, HEAD);
+                }
+            }
+        }
+        c.cycles += 1;
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1100,5 +1266,112 @@ pub(crate) mod tests {
                 c.g[A1][0] = stream as u64;
             },
         );
+    }
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::ai::ai::tests::oc258_w32;
+
+
+    /// `AnimSeqList_Save`: a stream whose Write is a fake (some seeds
+    /// unwind, at any call), lists of -1..3 sequences (each with 0-1 keys)
+    /// saved by the real `AnimSequence_Save`.
+    #[test]
+    fn anim_seq_list_save_matches() {
+        use crate::difftest::fakes::{covered, FAKE};
+        use crate::difftest::fill;
+        covered(ee::s10::f_003147f0__generated, anim_seq_list_save, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0031_47f0, 40);
+            c.pc = 0x0031_47f0;
+            let list = DATA + 0x1000;
+            let stream = DATA + 0x2000;
+            let vt = DATA + 0x3000;
+            c.bus.write32(stream, vt);
+            c.bus.write16(vt + 0x8, ((r.next_u32() & 0x3f) * 4) as u16);
+            c.bus.write32(vt + 0xc, FAKE);
+            let count = (seed % 5) as i32 - 1;
+            let mut next = 0;
+            for k in (0..count.max(0) as u32).rev() {
+                let seq = DATA + 0x4000 + 0x200 * k;
+                fill(c, &mut r, seq, 0x34);
+                let key = if r.next_u32() & 1 != 0 {
+                    let key = seq + 0x100;
+                    fill(c, &mut r, key, 4);
+                    c.bus.write32(key + 0xc, 0);
+                    key
+                } else {
+                    0
+                };
+                c.bus.write32(seq + 0xac, key);
+                c.bus.write32(seq + SEQLIST_NODE_NEXT, next);
+                next = seq;
+            }
+            c.bus.write32(list + SEQLIST_COUNT, count as u32);
+            c.bus.write32(list + SEQLIST_FIRST, next);
+            c.g[A0][0] = sx(list);
+            c.g[A1][0] = sx(stream);
+        });
+    }
+
+
+    /// The BE-library dummy at gp-0x1f04 and a dummy world at gp-0x848.
+    pub(crate) fn oc258_env(c: &mut Cpu) {
+        oc258_w32(c, GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
+        let wld = DATA + 0x1000;
+        oc258_w32(c, GAME_GP.wrapping_sub(0x848), wld);
+        oc258_w32(c, wld + 0x84, DATA + 0x1200);
+        oc258_w32(c, DATA + 0x1200 + 0x20, DATA + 0x3000);
+        oc258_w32(c, DATA + 0x1200 + 0x28, DATA + 0x1400);
+        oc258_w32(c, wld + 0x7c, DATA + 0x1500);
+    }
+
+
+    /// A setup call into a generated function (returns to a sentinel).
+    pub(crate) fn oc258_run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
+        const BACK: u32 = 0x0000_7770;
+        for (i, a) in args.iter().enumerate() {
+            c.g[[A0, A1, A2][i]][0] = *a;
+        }
+        c.g[RA][0] = BACK as u64;
+        c.pc = addr;
+        f(c);
+        assert_eq!(c.pc, BACK, "setup call {addr:#x} did not return");
+        c.g[V0][0]
+    }
+
+
+    /// AnimSequence_RemoveEventTrigger: an empty list, or 1..6 heap-allocated
+    /// triggers with keys from a small set and random active flags, so the
+    /// key is missing, found inactive, or found active (unlinked, deleted).
+    #[test]
+    fn anim_sequence_remove_event_trigger_matches() {
+        const MEM_HEAP: u32 = 0x004f_f250;
+        check(ee::s10::f_00313ba8__generated, anim_sequence_remove_event_trigger, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x0031_3ba8, 0);
+            oc258_env(c);
+            let ra = c.g[RA][0];
+            oc258_run(
+                c,
+                0x0031_ff60,
+                ee::s10::DLHeap_InitArena,
+                &[MEM_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
+            );
+            let seq = DATA + 0x100;
+            let n = if seed % 6 == 0 { 0 } else { 1 + r.next_u32() % 6 };
+            let mut link = seq + ANIM_SEQ_TRIGGERS;
+            for _ in 0..n {
+                let node =
+                    oc258_run(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[MEM_HEAP as u64, 0x10]) as u32;
+                oc258_w32(c, link, node);
+                oc258_w32(c, node, r.next_u32() % 4);
+                oc258_w32(c, node + ANIM_TRIGGER_ACTIVE, r.next_u32() % 2);
+                oc258_w32(c, node + 8, r.next_u32());
+                link = node + ANIM_TRIGGER_NEXT;
+            }
+            oc258_w32(c, link, 0);
+            c.g[RA][0] = ra;
+            c.g[A0][0] = sx(seq);
+            c.g[A1][0] = (r.next_u32() % 4) as u64;
+            c.pc = 0x0031_3ba8;
+        });
     }
 }

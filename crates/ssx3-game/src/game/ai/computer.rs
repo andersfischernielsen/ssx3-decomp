@@ -244,6 +244,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ai_update_rider_relations,
         "AI_UpdateRiderRelations",
     ),
+    (0x0010_f998, ai_update_race_positions, "AI_UpdateRacePositions"),
+    (0x0011_1ac0, rider_base_save_state, "RiderBase_SaveState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6873,6 +6875,585 @@ pub(crate) fn relate_pair(c: &mut Cpu, riders_a: u32, riders_b: u32) -> crate::c
     Ok(())
 }
 
+
+pub(crate) mod race_positions {
+    use super::*;
+
+    /// AI: the rider pointer array.
+    pub const AI_RIDERS: u32 = 0x28;
+
+    /// AI: how riders are ranked (0 off, 1 by distance to finish, 2 by score).
+    pub const AI_RANK_MODE: u32 = 0x74;
+
+    /// AI: number of riders.
+    pub const AI_COUNT: u32 = 0x78;
+
+    /// Rider: race position (0 = first).
+    pub const RIDER_POSITION: u32 = 0xec;
+
+    /// Rider: a float compared with 10.0 (the result is dead; only v0 keeps it).
+    pub const RIDER_RACE_TIME: u32 = 0x470;
+
+    /// Rider: the score object (its +0x198 is the score).
+    pub const RIDER_SCORE_OBJ: u32 = 0x790;
+
+    /// Rider: finished flag.
+    pub const RIDER_FINISHED: u32 = 0x878;
+
+    /// Score object: points.
+    pub const SCORE_POINTS: u32 = 0x198;
+
+
+    pub const ARE_ALL_RIDERS_LOADED: Callee = Callee {
+        addr: 0x0012_a180,
+        f: ee::s00::AI_AreAllRidersLoaded,
+    };
+
+    pub const GET_DIST_TO_FINISH: Callee = Callee {
+        addr: 0x0011_3128,
+        f: ee::s00::Rider_GetDistToFinish,
+    };
+
+    /// `EA_ShellSortPairs(n, keys, values)` (cross-shard).
+    pub const SHELL_SORT_PAIRS: u32 = 0x003e_6328;
+
+    /// `SSXAudioSystem_GetInstance()` (cross-shard).
+    pub const AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
+
+    /// `SSXAudioSystem_OnRacePositionChange(audio, rider, behind, ahead,
+    /// old_position, new_position)` (cross-shard).
+    pub const AUDIO_ON_POSITION_CHANGE: u32 = 0x0029_9e28;
+
+
+    /// `base + off` of a register value (32-bit address arithmetic).
+    #[inline(always)]
+    pub fn race_pos_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+        r32(c, reg).wrapping_add(off)
+    }
+}
+
+
+
+// ---------------------------------------------------------------------------
+// RiderBase_SaveState (0x111ac0)
+
+/// `RiderBase + 0x18`: the rider (physics/model side) whose parts are saved.
+pub(crate) const RB_RIDER: u32 = 0x18;
+
+
+/// Rider fields saved by pointer.
+pub(crate) const RB_RIDER_ANIM: u32 = 0x784;
+
+
+pub(crate) const RB_RIDER_MODEL: u32 = 0x780;
+
+
+pub(crate) const RB_RIDER_AIR_PREDICTOR: u32 = 0x788;
+
+
+pub(crate) const RB_RIDER_METRIX: u32 = 0x790;
+
+
+pub(crate) const RB_RIDER_TARGET0: u32 = 0x864;
+
+
+pub(crate) const RB_RIDER_TARGET1: u32 = 0x868;
+
+
+pub(crate) const RB_RIDER_BLOCK0: u32 = 0xabc;
+
+
+pub(crate) const RB_RIDER_BLOCK1: u32 = 0xac0;
+
+
+pub(crate) const RB_RIDER_TRACK_PATH: u32 = 0xab4;
+
+
+pub(crate) const RB_RIDER_AI_PATH: u32 = 0xab8;
+
+
+/// `target + 0x150`: the id saved for a non-null target object.
+pub(crate) const RB_TARGET_ID: u32 = 0x150;
+
+
+/// `D_004D33A0`: the course path data.
+pub(crate) const RB_PATH_DATA: u32 = 0x004d_33a0;
+
+
+
+/// `RiderAnim_SaveState(anim, stream)` (0x104d68).
+pub(crate) const RB_RIDER_ANIM_SAVE: Callee = Callee { addr: 0x0010_4d68, f: ee::s00::f_00104d68 };
+
+
+/// `AirPredictor_SaveState` (0x113aa0).
+pub(crate) const RB_AIR_PREDICTOR_SAVE: Callee = Callee { addr: 0x0011_3aa0, f: ee::s00::f_00113aa0 };
+
+
+/// `RiderMetrix_SaveState` (0x1174b0).
+pub(crate) const RB_RIDER_METRIX_SAVE: Callee = Callee { addr: 0x0011_74b0, f: ee::s00::f_001174b0 };
+
+
+/// `RiderModel_SaveState` (0x310ea8).
+pub(crate) const RB_RIDER_MODEL_SAVE: u32 = 0x0031_0ea8;
+
+
+/// `PathData_GetTrackPathIndex(paths, path)` (0x26b508).
+pub(crate) const RB_PATH_TRACK_INDEX: u32 = 0x0026_b508;
+
+
+/// `PathData_GetAIPathIndex(paths, path)` (0x26b550).
+pub(crate) const RB_PATH_AI_INDEX: u32 = 0x0026_b550;
+
+
+
+/// How a rider sub-state's `SaveState(self + off, stream)` is reached.
+#[derive(Clone, Copy)]
+pub(crate) enum RbSub {
+    /// `jal` through the generated function.
+    Direct(Callee),
+    /// The generator's cross-shard `call_indirect`.
+    Table(u32),
+}
+
+
+
+/// The sub-states embedded in `RiderBase`, saved in order:
+/// (offset, saver, return address).
+pub(crate) const RB_SUBSTATES: [(u32, RbSub, u32); 16] = [
+    (0x000, RbSub::Table(0x0013_f848), 0x0011_1c3c), // RiderGroundState
+    (0x020, RbSub::Table(0x0013_acb0), 0x0011_1c48),
+    (0x030, RbSub::Table(0x0013_8ad8), 0x0011_1c54),
+    (0x0b0, RbSub::Table(0x0013_c5e0), 0x0011_1c60),
+    (0x110, RbSub::Table(0x0013_9970), 0x0011_1c6c),
+    (0x1d0, RbSub::Direct(Callee { addr: 0x0013_1598, f: ee::s00::f_00131598 }), 0x0011_1c78), // BoardPress
+    (0x210, RbSub::Direct(Callee { addr: 0x0012_fbf0, f: ee::s00::f_0012fbf0 }), 0x0011_1c84), // NaturalAir
+    (0x230, RbSub::Table(0x0013_61f8), 0x0011_1c90),
+    (0x290, RbSub::Direct(Callee { addr: 0x0012_c558, f: ee::s00::f_0012c558 }), 0x0011_1c9c), // Gate
+    (0x2b0, RbSub::Table(0x0013_2840), 0x0011_1ca8),
+    (0x2c0, RbSub::Direct(Callee { addr: 0x0012_e708, f: ee::s00::f_0012e708 }), 0x0011_1cb4), // Wipeout
+    (0x350, RbSub::Direct(Callee { addr: 0x0012_f5b0, f: ee::s00::f_0012f5b0 }), 0x0011_1cc0), // Reset
+    (0x360, RbSub::Direct(Callee { addr: 0x0012_c9c0, f: ee::s00::f_0012c9c0 }), 0x0011_1ccc), // FinishLine
+    (0x370, RbSub::Table(0x0013_30b8), 0x0011_1cd8),
+    (0x390, RbSub::Table(0x0013_68e8), 0x0011_1ce4), // UberGrind
+    (0xd20, RbSub::Table(0x002f_6a58), 0x0011_1cf0), // cheat code
+];
+
+
+
+/// `stream->Write(a1, a2)` (vtable slot 0x8/0xc of the stream in s1): the
+/// vtable pointer is already in `vt_reg`, the method pointer goes to `fn_reg`.
+pub(crate) fn rb_stream_write(c: &mut Cpu, vt_reg: usize, fn_reg: usize, ret_addr: u32) -> crate::call::Flow {
+    let vt = r32(c, vt_reg);
+    c.g[A0][0] = Addr(vt.wrapping_add(0x8)).lh(c);
+    c.g[fn_reg][0] = Addr(vt.wrapping_add(0xc)).lw(c);
+    let target = r32(c, fn_reg);
+    c.g[A0][0] = sx(r32(c, S1).wrapping_add(r32(c, A0)));
+    call_ptr(c, target, ret_addr)
+}
+
+
+
+/// `rider = self->rider` (`lw s2+0x18`), into `reg`.
+pub(crate) fn rb_rider(c: &mut Cpu, reg: usize) -> u32 {
+    c.g[reg][0] = Addr(r32(c, S2).wrapping_add(RB_RIDER)).lw(c);
+    r32(c, reg)
+}
+
+
+
+/// `void RiderBase_SaveState(RiderBase* self, Stream* s)` (0x111ac0): write
+/// the rider's 0x6c0-byte block, the anim/model/air-predictor/metrix states,
+/// both target ids (-1 for none) with their 16-byte records, the two words at
+/// +0xde0/+0xde4, every embedded sub-state, the two 32-byte blocks and the
+/// track/AI path indices.
+pub fn rider_base_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 38;
+        let frame = Frame::open(c, 0x60);
+        c.g[A2][0] = 0x6c0;
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = 0xffff_ffff_ffff_0000;
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x20);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S0][0] |= 0xffff; // -1: "no target"
+        c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+        let rider = Addr(r32(c, S2).wrapping_add(RB_RIDER)).lw(c);
+        c.g[A1][0] = rider;
+        rb_stream_write(c, V1, V0, 0x0011_1b00)?;
+
+        let rider = rb_rider(c, V1);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = Addr(rider.wrapping_add(RB_RIDER_ANIM)).lw(c);
+        RB_RIDER_ANIM_SAVE.call(c, 0x0011_1b10)?;
+        let rider = rb_rider(c, V0);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = Addr(rider.wrapping_add(RB_RIDER_MODEL)).lw(c);
+        call_ptr(c, RB_RIDER_MODEL_SAVE, 0x0011_1b20)?;
+        let rider = rb_rider(c, V0);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = Addr(rider.wrapping_add(RB_RIDER_AIR_PREDICTOR)).lw(c);
+        RB_AIR_PREDICTOR_SAVE.call(c, 0x0011_1b30)?;
+        let rider = rb_rider(c, V0);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A0][0] = Addr(rider.wrapping_add(RB_RIDER_METRIX)).lw(c);
+        RB_RIDER_METRIX_SAVE.call(c, 0x0011_1b40)?;
+
+        // Target 0: its id (or -1) at sp+0x10, then the 16-byte record.
+        rb_target_id(c, RB_RIDER_TARGET0, 0x10);
+        c.cycles += 20;
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x10));
+        c.g[A2][0] = 4;
+        rb_stream_write(c, V1, V0, 0x0011_1b7c)?;
+        c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A2][0] = 0x10;
+        let rider = rb_rider(c, V0);
+        c.g[A1][0] = Addr(rider.wrapping_add(RB_RIDER_TARGET0)).lw(c);
+        rb_stream_write(c, V1, A3, 0x0011_1b9c)?;
+
+        // Target 1 at sp+0x14.
+        rb_target_id(c, RB_RIDER_TARGET1, 0x14);
+        c.cycles += 117;
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x14));
+        c.g[A2][0] = 4;
+        rb_stream_write(c, V1, V0, 0x0011_1bd8)?;
+        c.g[A3][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A2][0] = 0x10;
+        let rider = rb_rider(c, V0);
+        c.g[A1][0] = Addr(rider.wrapping_add(RB_RIDER_TARGET1)).lw(c);
+        rb_stream_write(c, A3, V1, 0x0011_1bf8)?;
+
+        c.g[A3][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A1][0] = sx(r32(c, S2).wrapping_add(0xde0));
+        c.g[A2][0] = 4;
+        rb_stream_write(c, A3, V0, 0x0011_1c14)?;
+        c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A2][0] = 4;
+        c.g[A1][0] = sx(r32(c, S2).wrapping_add(0xde4));
+        rb_stream_write(c, V1, V0, 0x0011_1c30)?;
+
+        for (off, saver, ret_addr) in RB_SUBSTATES {
+            c.g[A0][0] = if off == 0 {
+                c.g[S2][0]
+            } else {
+                sx(r32(c, S2).wrapping_add(off))
+            };
+            c.g[A1][0] = c.g[S1][0];
+            match saver {
+                RbSub::Direct(f) => f.call(c, ret_addr)?,
+                RbSub::Table(addr) => call_ptr(c, addr, ret_addr)?,
+            }
+        }
+
+        c.g[A3][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A2][0] = 0x20;
+        let rider = rb_rider(c, V0);
+        c.g[A1][0] = Addr(rider.wrapping_add(RB_RIDER_BLOCK0)).lw(c);
+        rb_stream_write(c, A3, V1, 0x0011_1d10)?;
+        c.g[A3][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A2][0] = 0x20;
+        let rider = rb_rider(c, V0);
+        c.g[A1][0] = Addr(rider.wrapping_add(RB_RIDER_BLOCK1)).lw(c);
+        rb_stream_write(c, A3, V1, 0x0011_1d30)?;
+
+        // The path indices go to sp+0 / sp+4.
+        let rider = rb_rider(c, V0);
+        c.g[S0][0] = sx(RB_PATH_DATA);
+        c.g[A1][0] = Addr(rider.wrapping_add(RB_RIDER_TRACK_PATH)).lw(c);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, RB_PATH_TRACK_INDEX, 0x0011_1d48)?;
+        let track = c.g[V0][0];
+        Addr(sp(c)).sw(c, track);
+        c.g[A0][0] = c.g[S0][0];
+        let rider = rb_rider(c, V0);
+        c.g[A1][0] = Addr(rider.wrapping_add(RB_RIDER_AI_PATH)).lw(c);
+        call_ptr(c, RB_PATH_AI_INDEX, 0x0011_1d5c)?;
+        c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A1][0] = c.g[SP][0];
+        let ai = c.g[V0][0];
+        Addr(sp(c).wrapping_add(4)).sw(c, ai);
+        c.g[A2][0] = 8;
+        rb_stream_write(c, V1, V0, 0x0011_1d7c)?;
+
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `sp[slot] = -1 (s0); if (*rider->field) sp[slot] = (*rider->field)->id;`
+/// then `v1 = stream->vtable`.
+pub(crate) fn rb_target_id(c: &mut Cpu, field: u32, slot: u32) {
+    let none = c.g[S0][0];
+    Addr(sp(c).wrapping_add(slot)).sw(c, none);
+    let rider = rb_rider(c, V0);
+    c.g[V1][0] = Addr(rider.wrapping_add(field)).lw(c);
+    c.g[V1][0] = Addr(r32(c, V1)).lw(c);
+    if c.g[V1][0] != 0 {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(RB_TARGET_ID)).lw(c);
+        let id = c.g[V0][0];
+        Addr(sp(c).wrapping_add(slot)).sw(c, id);
+    }
+    c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+}
+
+
+
+/// `void AI_UpdateRacePositions(AI* ai)` (0x10f998): once every rider is
+/// loaded, give each rider a sort key (rank mode 1: finished riders 0xffff,
+/// others `-(int)(dist_to_finish + 20 * position)`; mode 2: finished riders
+/// -65535, others their score; any other mode leaves the stack slot as it
+/// is), shell-sort the rider indices by key, then store each rider's new
+/// position, telling the audio system (with the riders just behind and
+/// ahead) about every rider whose position changed.
+pub fn ai_update_race_positions(c: &mut Cpu) {
+    use race_positions::*;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xe0);
+        frame.save(c, S3, 0xa0);
+        frame.save(c, S0, 0xd0);
+        c.g[S3][0] = c.g[A0][0];
+        for (reg, off) in [
+            (S1, 0xc0),
+            (S2, 0xb0),
+            (S4, 0x90),
+            (S5, 0x80),
+            (S6, 0x70),
+            (S7, 0x60),
+            (FP, 0x50),
+        ] {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, 0x40);
+        c.g[V0][0] = c.lw(race_pos_at(c, S3, AI_RANK_MODE));
+        frame.restore(c, S0, 0xd0);
+        'out: {
+            if c.g[V0][0] == 0 {
+                break 'out;
+            }
+            c.cycles += 4;
+            ARE_ALL_RIDERS_LOADED.call(c, 0x0010_f9dc)?;
+            c.g[S1][0] = 0;
+            'done: {
+                if c.g[V0][0] == 0 {
+                    break 'done;
+                }
+                // Pass 1: indices at sp+0 (s5), keys at sp+0x20 (s2/s7).
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(race_pos_at(c, S3, AI_COUNT));
+                c.g[S7][0] = sx(sp(c).wrapping_add(0x20));
+                c.g[A0][0] = c.g[V0][0];
+                if (c.g[V0][0] as i64) > 0 {
+                    c.cycles += 5;
+                    c.g[S6][0] = 0x14;
+                    c.g[S2][0] = c.g[S7][0];
+                    c.g[S5][0] = c.g[SP][0];
+                    c.g[FP][0] = 1;
+                    c.g[S4][0] = sx(race_pos_at(c, S3, AI_RIDERS));
+                    loop {
+                        // 0x10fa08
+                        c.cycles += 4;
+                        c.g[V1][0] = c.lw(race_pos_at(c, S3, AI_RANK_MODE));
+                        c.sw(r32(c, S5), c.g[S1][0]);
+                        c.g[S0][0] = c.lw(r32(c, S4));
+                        let mut keyed = true;
+                        if c.g[V1][0] == c.g[FP][0] {
+                            // Rank by distance to the finish.
+                            c.cycles += 3;
+                            let finished = c.lw(race_pos_at(c, S0, RIDER_FINISHED));
+                            c.g[V0][0] = 0xffff;
+                            if finished != 0 {
+                                c.cycles += 2;
+                                c.sw(r32(c, S2), c.g[V0][0]);
+                            } else {
+                                c.cycles += 7;
+                                c.lwc1(1, race_pos_at(c, S0, RIDER_RACE_TIME));
+                                c.g[AT][0] = 0x4120_0000; // 10.0
+                                c.mtc1(AT, 0);
+                                c.c_le_s(0, 1);
+                                c.g[V0][0] = 1;
+                                if !c.fcc() {
+                                    c.cycles += 1;
+                                    c.g[V0][0] = 0;
+                                }
+                                c.cycles += 12;
+                                c.g[A0][0] = c.g[S0][0];
+                                GET_DIST_TO_FINISH.call(c, 0x0010_fa68)?;
+                                // key = -(int)(dist + position * 20)
+                                c.g[V0][0] = c.lw(race_pos_at(c, S0, RIDER_POSITION));
+                                c.mult(0, V0, V0, S6);
+                                c.mtc1(V0, 1);
+                                c.cvt_s_w(1, 1);
+                                c.add_s(0, 0, 1);
+                                c.cvt_w_s(1, 0);
+                                c.mfc1(V0, 1);
+                                c.g[V0][0] = sx(0u32.wrapping_sub(r32(c, V0)));
+                                c.sw(r32(c, S2), c.g[V0][0]);
+                            }
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = 2;
+                            if c.g[V1][0] == c.g[V0][0] {
+                                // Rank by score.
+                                c.g[V0][0] = c.lw(race_pos_at(c, S0, RIDER_FINISHED));
+                                c.cycles += 2;
+                                if c.g[V0][0] == 0 {
+                                    c.g[V0][0] = c.lw(race_pos_at(c, S0, RIDER_SCORE_OBJ));
+                                    c.cycles += 2;
+                                    c.g[V1][0] = c.lw(race_pos_at(c, V0, SCORE_POINTS));
+                                    c.sw(r32(c, S2), c.g[V1][0]);
+                                } else {
+                                    c.cycles += 4;
+                                    c.g[V0][0] = 0xffff_ffff_ffff_0001;
+                                    c.sw(r32(c, S2), c.g[V0][0]);
+                                }
+                            } else {
+                                c.cycles += 2;
+                                c.g[V0][0] = c.lw(race_pos_at(c, S3, AI_COUNT));
+                                keyed = false;
+                            }
+                        }
+                        if keyed {
+                            c.cycles += 1;
+                            c.g[V0][0] = c.lw(race_pos_at(c, S3, AI_COUNT));
+                        }
+                        // 0x10fab4
+                        c.cycles += 7;
+                        c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                        c.g[S2][0] = sx(r32(c, S2).wrapping_add(4));
+                        c.g[S5][0] = sx(r32(c, S5).wrapping_add(4));
+                        c.g[A0][0] = c.g[V0][0];
+                        let more = (c.g[S1][0] as i64) < (c.g[V0][0] as i64);
+                        c.g[V0][0] = more as u64;
+                        c.g[S4][0] = sx(r32(c, S4).wrapping_add(4));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0010_fa08);
+                        }
+                    }
+                }
+                // 0x10fad0: sort the indices by key.
+                c.cycles += 6;
+                c.g[A1][0] = c.g[S7][0];
+                c.g[A2][0] = c.g[SP][0];
+                call_ptr(c, SHELL_SORT_PAIRS, 0x0010_fadc)?;
+                c.g[V0][0] = c.lw(race_pos_at(c, S3, AI_COUNT));
+                c.g[S0][0] = 0;
+                if (c.g[V0][0] as i64) <= 0 {
+                    break 'done;
+                }
+                // Pass 2: s0 = new position, s1 = the rider array.
+                c.cycles += 2;
+                c.g[S1][0] = sx(race_pos_at(c, S3, AI_RIDERS));
+                c.g[V1][0] = sx(r32(c, S0) << 2);
+                loop {
+                    // 0x10faf0
+                    c.cycles += 9;
+                    c.g[S2][0] = sx(sp(c).wrapping_add(r32(c, V1)));
+                    c.g[S7][0] = c.g[V1][0];
+                    c.g[V0][0] = c.lw(r32(c, S2));
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    c.g[A0][0] = c.lw(race_pos_at(c, V1, RIDER_POSITION));
+                    let unchanged = c.g[A0][0] == c.g[S0][0];
+                    c.g[S6][0] = sx(r32(c, S0).wrapping_add(1));
+                    if !unchanged {
+                        // s4 = the rider ahead, s5 = the rider behind.
+                        c.cycles += 3;
+                        c.g[S5][0] = 0;
+                        c.g[S4][0] = 0;
+                        if (c.g[S0][0] as i64) > 0 {
+                            c.cycles += 7;
+                            c.g[V0][0] = sx(r32(c, S0).wrapping_sub(1));
+                            c.g[V0][0] = sx(r32(c, V0) << 2);
+                            c.g[A0][0] = sx(sp(c).wrapping_add(r32(c, V0)));
+                            c.g[V1][0] = c.lw(r32(c, A0));
+                            c.g[V1][0] = sx(r32(c, V1) << 2);
+                            c.g[V1][0] = sx(r32(c, S1).wrapping_add(r32(c, V1)));
+                            c.g[S4][0] = c.lw(r32(c, V1));
+                        }
+                        c.cycles += 5;
+                        c.g[V0][0] = c.lw(race_pos_at(c, S3, AI_COUNT));
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                        let not_last = (c.g[S0][0] as i64) < (c.g[V0][0] as i64);
+                        c.g[V0][0] = sx(r32(c, S6) << 2);
+                        if not_last {
+                            c.cycles += 5;
+                            c.g[A0][0] = sx(sp(c).wrapping_add(r32(c, V0)));
+                            c.g[V1][0] = c.lw(r32(c, A0));
+                            c.g[V1][0] = sx(r32(c, V1) << 2);
+                            c.g[V1][0] = sx(r32(c, S1).wrapping_add(r32(c, V1)));
+                            c.g[S5][0] = c.lw(r32(c, V1));
+                        }
+                        c.cycles += 12;
+                        call_ptr(c, AUDIO_GET_INSTANCE, 0x0010_fb6c)?;
+                        c.g[V1][0] = c.lw(r32(c, S2));
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A2][0] = c.g[S5][0];
+                        c.g[A3][0] = c.g[S4][0];
+                        c.g[V1][0] = sx(r32(c, V1) << 2);
+                        c.g[T1][0] = c.g[S0][0];
+                        c.g[V1][0] = sx(r32(c, S1).wrapping_add(r32(c, V1)));
+                        c.g[A1][0] = c.lw(r32(c, V1));
+                        c.g[T0][0] = c.lw(race_pos_at(c, A1, RIDER_POSITION));
+                        call_ptr(c, AUDIO_ON_POSITION_CHANGE, 0x0010_fb94)?;
+                    }
+                    // 0x10fb94: riders[indices[s0]]->position = s0.
+                    c.cycles += 11;
+                    c.g[V1][0] = sx(sp(c).wrapping_add(r32(c, S7)));
+                    c.g[V0][0] = c.lw(r32(c, V1));
+                    c.g[V0][0] = sx(r32(c, V0) << 2);
+                    c.g[V0][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
+                    c.g[V1][0] = c.lw(r32(c, V0));
+                    c.sw(race_pos_at(c, V1, RIDER_POSITION), c.g[S0][0]);
+                    c.g[S0][0] = c.g[S6][0];
+                    c.g[V0][0] = c.lw(race_pos_at(c, S3, AI_COUNT));
+                    let more = (c.g[S0][0] as i64) < (c.g[V0][0] as i64);
+                    c.g[V0][0] = more as u64;
+                    c.g[V1][0] = sx(r32(c, S0) << 2);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0010_faf0);
+                    }
+                }
+            }
+            // 0x10fbc0
+            c.cycles += 1;
+            frame.restore(c, S0, 0xd0);
+        }
+        c.cycles += 11;
+        for (reg, off) in [
+            (S1, 0xc0),
+            (S2, 0xb0),
+            (S3, 0xa0),
+            (S4, 0x90),
+            (S5, 0x80),
+            (S6, 0x70),
+            (S7, 0x60),
+            (FP, 0x50),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9172,5 +9753,135 @@ pub(crate) mod tests {
             300,
             &setup,
         );
+    }
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::ai::ai::tests::oc258_w32;
+
+
+    /// RiderBase_SaveState: a stream whose methods are fakes; the real
+    /// sub-state savers run on zeroed objects (their writes go to the fake
+    /// stream); targets present or not; path indices found or not.
+    #[test]
+    fn rider_base_save_state_matches() {
+        check(ee::s00::f_00111ac0__generated, rider_base_save_state, 40, &|c, seed| {
+            let mut r = machine(c, seed, 0x0011_1ac0, 40);
+            c.pc = 0x0011_1ac0;
+            let stream = DATA + 0x10;
+            let vt = vtable(c, &mut r, &[0x8]);
+            oc258_w32(c, stream, vt);
+            let this = DATA + 0x20_0000;
+            crate::difftest::fill(c, &mut r, this, 0xe00 / 4);
+            let rider = DATA + 0x21_0000;
+            oc258_w32(c, this + RB_RIDER, rider);
+            c.g[A0][0] = sx(this);
+            c.g[A1][0] = sx(stream);
+            // Zeroed part objects (anim, model, air predictor, metrix).
+            for (k, f) in [RB_RIDER_ANIM, RB_RIDER_MODEL, RB_RIDER_AIR_PREDICTOR, RB_RIDER_METRIX]
+                .into_iter()
+                .enumerate()
+            {
+                oc258_w32(c, rider + f, DATA + 0x22_0000 + 0x1000 * k as u32);
+            }
+            // The anim's six sequence lists (8 bytes each, `count <= 0`).
+            oc258_w32(c, DATA + 0x22_0000 + 0x50, DATA + 0x22_8000);
+            // Targets: `*field` null or an object with an id.
+            for (k, f) in [RB_RIDER_TARGET0, RB_RIDER_TARGET1].into_iter().enumerate() {
+                let cell = DATA + 0x23_0000 + 0x400 * k as u32;
+                let obj = cell + 0x100;
+                oc258_w32(c, rider + f, cell);
+                let present = (seed >> k) & 1 != 0;
+                oc258_w32(c, cell, if present { obj } else { 0 });
+                oc258_w32(c, obj + RB_TARGET_ID, r.next_u32());
+            }
+            oc258_w32(c, rider + RB_RIDER_BLOCK0, r.next_u32());
+            oc258_w32(c, rider + RB_RIDER_BLOCK1, r.next_u32());
+            // Path data: n track paths of 0x3c bytes (count +0x10, array +0x14)
+            // and n AI paths of 0x40 bytes (count +0x8, array +0xc); the
+            // rider's paths are one of them, a stranger, or null.
+            let n = seed % 5;
+            let tracks = DATA + 0x24_0000;
+            let ais = DATA + 0x25_0000;
+            oc258_w32(c, RB_PATH_DATA + 0x10, n);
+            oc258_w32(c, RB_PATH_DATA + 0x14, tracks);
+            oc258_w32(c, RB_PATH_DATA + 0x8, n);
+            oc258_w32(c, RB_PATH_DATA + 0xc, ais);
+            for (f, base, stride) in [(RB_RIDER_TRACK_PATH, tracks, 0x3c), (RB_RIDER_AI_PATH, ais, 0x40)] {
+                let v = match r.next_u32() % 3 {
+                    0 => 0,
+                    1 => base + stride * (r.next_u32() % 5),
+                    _ => r.next_u32(),
+                };
+                oc258_w32(c, rider + f, v);
+            }
+        });
+    }
+
+
+    /// AI_UpdateRacePositions over 0..8 riders: rank mode 0 (early out),
+    /// 1 (distance), 2 (score) or another value (keys left as stack
+    /// junk); some riders not loaded (early out), finished or not; the
+    /// stored positions sometimes already equal the new rank. The audio
+    /// notification runs for real up to BELibrary_GetInterface, whose
+    /// interface call is a fake (which may unwind), and stops at the game
+    /// module's race-type check. Events are delivered at both loop heads.
+    #[test]
+    fn ai_update_race_positions_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{Rng, GAME_GP};
+        use race_positions::*;
+        const AI: u32 = 0x00a0_0000;
+        const RIDER0: u32 = 0x00a1_0000;
+        const SCORE0: u32 = 0x00a2_0000;
+        const IFACE: u32 = 0x00a3_0000;
+        const IFACE_VT: u32 = 0x00a3_0100;
+        const BELIB: u32 = 0x00a3_0200;
+        const WORLD: u32 = 0x00a3_0400;
+        const GAME_MODULE: u32 = 0x00a3_0800;
+        const AUDIO: u32 = 0x00a3_1000;
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r: Rng = machine(c, seed, 0x0f99_8000, 6);
+            let mode = if seed % 9 == 0 {
+                0
+            } else {
+                [1, 1, 2, 2, 3][(r.next_u32() % 5) as usize]
+            };
+            let count = r.next_u32() % 9;
+            c.bus.write32(AI + AI_RANK_MODE, mode);
+            c.bus.write32(AI + AI_COUNT, count);
+            let not_loaded = if seed % 11 == 5 { r.next_u32() % 8 } else { 99 };
+            for i in 0..8u32 {
+                let rider = RIDER0 + 0x1000 * i;
+                let score = SCORE0 + 0x400 * i;
+                c.bus.write32(AI + AI_RIDERS + 4 * i, rider);
+                c.bus.write32(rider + 0x880, if i == not_loaded { 3 } else { 7 });
+                c.bus.write32(
+                    rider + RIDER_FINISHED,
+                    if r.next_u32() % 3 == 0 { 1 + r.next_u32() % 5 } else { 0 },
+                );
+                c.bus.write32(rider + RIDER_RACE_TIME, r.f32(20.0));
+                c.bus.write32(rider + 0x4d0, r.f32(3000.0));
+                let pos = if r.next_u32() % 2 == 0 { i } else { r.next_u32() % 8 };
+                c.bus.write32(rider + RIDER_POSITION, pos);
+                c.bus.write32(rider + RIDER_SCORE_OBJ, score);
+                c.bus.write32(score + SCORE_POINTS, r.next_u32() % 1000);
+            }
+            // SSXAudioSystem_GetInstance and OnRacePositionChange's path.
+            c.bus.write32(GAME_GP + 0x410, AUDIO);
+            c.bus.write32(GAME_GP - 0x1f04, BELIB);
+            c.bus.write32(GAME_GP - 0x1efc, 0);
+            c.bus.write32(0x0053_08a8, IFACE);
+            c.bus.write32(IFACE + 4, IFACE_VT);
+            c.bus.write16(IFACE_VT + 8, 0);
+            c.bus.write32(IFACE_VT + 0xc, FAKE);
+            c.bus.write8(0x0053_5c10, 0);
+            c.bus.write32(GAME_GP - 0x848, WORLD);
+            c.bus.write32(WORLD + 0x84, GAME_MODULE);
+            c.bus.write32(GAME_MODULE + 0x214, 0);
+            c.g[A0][0] = AI as u64;
+            schedule(c, &mut r, seed, 0x0010_f998)
+        };
+        check_events(ee::s00::f_0010f998__generated, ai_update_race_positions, 300, &setup);
     }
 }

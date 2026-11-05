@@ -22,6 +22,13 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
+use crate::abi::r32;
+use crate::abi::ret;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
+use crate::ps2f::FpuF32;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -31,6 +38,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_view_man_reset_cameras,
         "GameViewMan_ResetCameras",
     ),
+    (0x0022_e8b8, game_view_man_prefetch_views, "GameViewMan_PrefetchViews"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -248,6 +256,63 @@ pub fn game_view_man_dtor(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ------------------------------------------------- GameViewMan_PrefetchViews
+
+/// `GameViewMan.views` (`GameCamera*[]`, from +0x4) and `.count` (+0x10).
+pub(crate) const GVM_VIEWS: u32 = 0x4;
+
+
+pub(crate) const GVM_COUNT: u32 = 0x10;
+
+
+
+/// `void GameViewMan_PrefetchViews(GameViewMan* self)` (0x22e8b8): tells the
+/// world streamer where every active view camera looks
+/// (`GameCamera_UpdateStreamView` for views 0..count).
+pub fn game_view_man_prefetch_views(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 17, 0x20);
+        frame.save(c, 18, 0x10);
+        frame.save(c, 16, 0x30);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(GVM_COUNT)).lw(c);
+        c.g[S1][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[S0][0] = sx(r32(c, S2).wrapping_add(GVM_VIEWS));
+            c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+            loop {
+                c.cycles += 7;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                call_ptr(c, 0x0015_ec98, 0x0022_e8f4)?;
+                c.g[V0][0] = Addr(r32(c, S2).wrapping_add(GVM_COUNT)).lw(c);
+                c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0022_e8e8);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -334,6 +399,61 @@ pub(crate) mod tests {
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = free_self as u64;
             }),
+        );
+    }
+    use super::*;
+    use crate::difftest::{elf_image, fill, put_words, scramble};
+
+
+    /// `GameViewMan_PrefetchViews`: 0..3 views, each running the real
+    /// `GameCamera_UpdateStreamView` on a world cache with no streamer
+    /// nodes (the camera test's fixture), race mode 1 or not.
+    #[test]
+    fn game_view_man_prefetch_views_matches() {
+        check(
+            ssx3_ee::s05::f_0022e8b8__generated,
+            game_view_man_prefetch_views,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0022_e8b8, 0);
+                elf_image(c);
+                c.pc = 0x0022_e8b8;
+                let app = DATA + 0x1000;
+                let module = DATA + 0x1100;
+                let race = DATA + 0x1200;
+                c.bus.write32(GAME_GP - 0x848, app);
+                c.bus.write32(app + 0x84, module);
+                c.bus.write32(module + 0x84, race);
+                c.bus.write32(
+                    race + 0x10,
+                    if seed % 4 == 0 { 1 } else { r.next_u32() % 3 },
+                );
+                let cache_ptr = DATA + 0x2000;
+                let cache = DATA + 0x3000;
+                let nodes = DATA + 0x2100;
+                let clock = DATA + 0x2200;
+                c.bus.write32(GAME_GP + 0x16c8, cache_ptr);
+                c.bus.write32(cache_ptr, cache);
+                c.bus.write32(cache + 0x10 + 4, nodes);
+                c.bus.write32(nodes + 8, 0);
+                c.bus.write32(GAME_GP + 0x2a74, clock);
+                c.bus.write32(clock + 0x18, r.next_u32());
+                let man = DATA + 0x400;
+                let count = seed % 4;
+                for i in 0..3 {
+                    let cam = DATA + 0x8000 + 0x100 * i;
+                    c.bus.write32(man + 4 + 4 * i, cam);
+                    c.bus
+                        .write32(cam + 0x8, ((r.next_u32() % 40000) as f32).to_bits());
+                    for k in 0..4 {
+                        c.bus.write32(cam + 0x20 + 4 * k, r.f32(5000.0));
+                    }
+                    c.bus.write32(cam + 0xb0, r.next_u32() % 4);
+                    c.bus.write32(cam + 0xb4, r.next_u32());
+                }
+                c.bus.write32(man + 0x10, count);
+                c.g[A0][0] = sx(man);
+            },
         );
     }
 }

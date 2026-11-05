@@ -216,6 +216,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_7e80, multi_particle_ctor_2, "MultiParticle_ctor_2"),
     (0x0035_7fa0, multi_particle_dtor, "MultiParticle_dtor"),
     (0x0035_6b30, mod_obj_save, "ModObj_Save"),
+    (0x0035_6128, mod_obj_v25, "ModObj_v25"),
+    (0x0035_7bf8, multi_particle_man_update, "MultiParticleMan_Update"),
+    (0x0035_7c50, multi_particle_man_emit_all, "MultiParticleMan_EmitAll"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3818,6 +3821,181 @@ pub fn mod_obj_save(c: &mut Cpu) {
     });
 }
 
+
+
+
+// --------------------------------------------------- MultiParticleMan_EmitAll
+
+/// `MultiParticle_EmitAtInstances` (0x358260).
+pub(crate) const MULTI_PARTICLE_EMIT_AT_INSTANCES: Callee = Callee {
+    addr: 0x0035_8260,
+    f: ee::s11::f_00358260,
+};
+
+
+
+/// `void MultiParticleMan_EmitAll(MultiParticle* slots[4])` (0x357c50):
+/// emits every one of the manager's four multi-particle effects that is set.
+pub fn multi_particle_man_emit_all(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = 3;
+        c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+        loop {
+            c.cycles += 4;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+            c.g[A0][0] = c.g[V0][0];
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                MULTI_PARTICLE_EMIT_AT_INSTANCES.call(c, 0x0035_7c88)?;
+            }
+            c.cycles += 2;
+            if (c.g[S1][0] as i64) < 0 {
+                break;
+            }
+            c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x0035_7c70);
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, 16, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------- ModObj_v25
+
+/// ModObj: the default transform (+0x18, its matrix at +0x10) and a handle
+/// to the attached object (+0x1c).
+pub(crate) const MODOBJ_DEFAULT: u32 = 0x18;
+
+
+pub(crate) const MODOBJ_HANDLE: u32 = 0x1c;
+
+
+
+/// The attached object's v-table at +0: `{delta: i16, fn}` slots.
+pub(crate) const MODOBJ_VT_PRIMARY: u32 = 0x98;
+
+
+pub(crate) const MODOBJ_VT_FALLBACK: u32 = 0x90;
+
+
+
+/// `void* ModObj_v25(ModObj* self)` (0x356128): the matrix the object
+/// moves with: the attached object's (virtual 19, else virtual 18), or the
+/// default transform's matrix (+0x10) when nothing is attached.
+pub fn mod_obj_v25(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, 16, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, A0);
+        c.g[V1][0] = Addr(this.wrapping_add(MODOBJ_HANDLE)).lw(c);
+        c.g[S0][0] = 0;
+        if c.g[V1][0] != 0 {
+            c.cycles += 1;
+            c.g[S0][0] = Addr(r32(c, V1)).lw(c);
+        }
+        c.cycles += 2;
+        if c.g[S0][0] == 0 {
+            c.g[V0][0] = Addr(this.wrapping_add(MODOBJ_DEFAULT)).lw(c);
+            c.cycles += 2;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x10));
+        } else {
+            for (vslot, ret_addr) in [
+                (MODOBJ_VT_PRIMARY, 0x0035_6160),
+                (MODOBJ_VT_FALLBACK, 0x0035_617c),
+            ] {
+                c.cycles += 7;
+                let obj = r32(c, S0);
+                c.g[V1][0] = Addr(obj).lw(c);
+                let vt = r32(c, V1);
+                let delta = Addr(vt.wrapping_add(vslot)).lh(c);
+                c.g[V0][0] = Addr(vt.wrapping_add(vslot + 4)).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx(obj.wrapping_add(delta as u32));
+                call_ptr(c, target, ret_addr)?;
+                if c.g[V0][0] != 0 {
+                    break;
+                }
+            }
+        }
+        frame.restore(c, 16, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// MultiParticleMan_Update (0x357bf8)
+
+/// `MultiParticle_Update(p)` (0x358120).
+pub(crate) const MULTI_PARTICLE_UPDATE: Callee = Callee { addr: 0x0035_8120, f: ee::s11::f_00358120 };
+
+
+/// Particle systems a `MultiParticleMan` holds.
+pub(crate) const MULTI_PARTICLE_MAN_SLOTS: u64 = 4;
+
+
+
+/// `void MultiParticleMan_Update(MultiParticle** slots)` (0x357bf8): update
+/// each of the four multi-particle systems that is present.
+pub fn multi_particle_man_update(c: &mut Cpu) {
+    const HEAD: u32 = 0x0035_7c18;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = MULTI_PARTICLE_MAN_SLOTS - 1; // slots left after this one
+        c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+        loop {
+            c.cycles += 4;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+            c.g[A0][0] = c.g[V0][0];
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                MULTI_PARTICLE_UPDATE.call(c, 0x0035_7c30)?;
+            }
+            c.cycles += 2;
+            if (c.g[S1][0] as i64) < 0 {
+                break;
+            }
+            c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, HEAD);
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5457,5 +5635,101 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(stream);
             },
         );
+    }
+    use super::*;
+    use crate::difftest::{elf_image};
+    use super::*;
+    pub(crate) use crate::game::ai::ai::tests::oc258_w32;
+    pub(crate) use crate::game::animation::animsequencer::tests::oc258_env;
+
+
+    /// `MultiParticleMan_EmitAll`: each of the four slots empty or set;
+    /// a set effect has no instances (count 0 or negative), so the real
+    /// `MultiParticle_EmitAtInstances` takes its short path.
+    #[test]
+    fn multi_particle_man_emit_all_matches() {
+        check(
+            ssx3_ee::s11::f_00357c50__generated,
+            multi_particle_man_emit_all,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x357c_5000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0035_7c50;
+                let man = DATA + 0x100;
+                for i in 0..4u32 {
+                    let set = (seed >> i) & 1 != 0;
+                    let effect = DATA + 0x1000 + 0x100 * i;
+                    c.bus.write32(man + 4 * i, if set { effect } else { 0 });
+                    let count = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 0x8000_0000
+                    };
+                    c.bus.write32(effect + 4, count);
+                }
+                c.g[A0][0] = sx(man);
+            },
+        );
+    }
+
+
+    /// `ModObj_v25`: no handle, a handle to no object, or an object whose
+    /// first method answers a matrix (a fake) or 0 (the real leaf
+    /// 0x1406c0), then the fallback method (a fake or the leaf); fakes
+    /// unwind at either call.
+    #[test]
+    fn mod_obj_v25_matches() {
+        const RETURN_ZERO_LEAF: u32 = 0x0014_06c0;
+        crate::difftest::fakes::covered(ssx3_ee::s11::f_00356128__generated, mod_obj_v25, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0035_6128, 2);
+            c.pc = 0x0035_6128;
+            let (this, handle, obj) = (DATA + 0x20_0000, DATA + 0x20_0100, DATA + 0x20_0200);
+            c.bus.write32(this + MODOBJ_DEFAULT, r.next_u32());
+            let vt =
+                crate::difftest::fakes::vtable(c, &mut r, &[MODOBJ_VT_PRIMARY, MODOBJ_VT_FALLBACK]);
+            match seed % 4 {
+                0 => c.bus.write32(this + MODOBJ_HANDLE, 0),
+                1 => {
+                    c.bus.write32(this + MODOBJ_HANDLE, handle);
+                    c.bus.write32(handle, 0);
+                }
+                _ => {
+                    c.bus.write32(this + MODOBJ_HANDLE, handle);
+                    c.bus.write32(handle, obj);
+                    c.bus.write32(obj, vt);
+                    if seed % 8 >= 4 {
+                        c.bus.write32(vt + MODOBJ_VT_PRIMARY + 4, RETURN_ZERO_LEAF);
+                    }
+                    if seed % 16 >= 8 {
+                        c.bus.write32(vt + MODOBJ_VT_FALLBACK + 4, RETURN_ZERO_LEAF);
+                    }
+                }
+            }
+            c.g[A0][0] = sx(this);
+        });
+    }
+
+
+    /// MultiParticleMan_Update: any mix of empty and present slots; present
+    /// systems have a null or zeroed particle system (Emitter_Update's short exit).
+    #[test]
+    fn multi_particle_man_update_matches() {
+        check(ee::s11::f_00357bf8__generated, multi_particle_man_update, 48, &|c, seed| {
+            let mut r = machine(c, seed, 0x357bf8, 0);
+            oc258_env(c);
+            c.pc = 0x0035_7bf8;
+            let man = DATA + 0x100;
+            c.g[A0][0] = sx(man);
+            c.bus.write32(GAME_GP.wrapping_sub(0x2a80), r.f32(1.0));
+            for k in 0..4u32 {
+                let present = (seed >> k) & 1 != 0 || seed % 7 == 3;
+                let p = DATA + 0x4000 + 0x400 * k;
+                oc258_w32(c, man + 4 * k, if present { p } else { 0 });
+                let sys = DATA + 0x8000 + 0x400 * k;
+                oc258_w32(c, p + 0x10, if (seed + k) % 2 == 0 { 0 } else { sys });
+                oc258_w32(c, sys, 0);
+            }
+        });
     }
 }

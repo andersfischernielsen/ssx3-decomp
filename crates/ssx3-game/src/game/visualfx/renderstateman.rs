@@ -66,6 +66,22 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
+pub(crate) use crate::game::visualfx::lensfx::WP_TABLE_207;
+pub(crate) use crate::game::visualfx::lensfx::WP_STRIDE_207;
+pub(crate) use crate::game::visualfx::lensfx::world_painter_float_getter_207;
+pub(crate) use crate::game::visualfx::lensfx::WP_SLOTS;
+pub(crate) use crate::game::visualfx::lensfx::WP_SLOT_SIZE;
+pub(crate) use crate::game::visualfx::lensfx::world_painter_slot_float;
+pub(crate) use crate::game::visualfx::boardwakefx::LENS_FX_SLOTS;
+pub(crate) use crate::game::visualfx::lensfx::LENS_FX_SLOT_SIZE;
+pub(crate) use crate::game::visualfx::lensfx::lens_slot_virtual_float;
+pub(crate) use crate::game::visualfx::lensfx::WP_GET_VIEWS;
+pub(crate) use crate::game::visualfx::lensfx::WP_GET_VIEWS_NEG;
+pub(crate) use crate::game::visualfx::lensfx::WP_GET_VIEW_SIZE;
+pub(crate) use crate::game::visualfx::lensfx::WP_OBJ_VTABLE;
+pub(crate) use crate::game::visualfx::lensfx::wp_view_get_float;
+pub(crate) use crate::game::visualfx::lensfx::world_painter_weather_float_getter;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -195,6 +211,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_visual_effects_man_create,
         "PS2VisualEffectsMan_Create",
     ),
+    (0x002e_e8a0, world_painter_get_weather80, "WorldPainter_GetWeather80"),
+    (0x002e_e8e8, world_painter_get_weather88, "WorldPainter_GetWeather88"),
+    (0x002e_e930, world_painter_get_weather90, "WorldPainter_GetWeather90"),
+    (0x002e_e978, world_painter_get_weather98, "WorldPainter_GetWeather98"),
+    (0x002e_edb0, world_painter_get_light_glow08, "WorldPainter_GetLightGlow08"),
+    (0x002e_edf8, world_painter_get_light_glow10, "WorldPainter_GetLightGlow10"),
+    (0x002e_ee40, world_painter_get_light_glow18, "WorldPainter_GetLightGlow18"),
+    (0x002e_ee88, world_painter_get_light_glow20, "WorldPainter_GetLightGlow20"),
+    (0x002e_ef18, world_painter_get_light_glow30, "WorldPainter_GetLightGlow30"),
+    (0x002e_ef60, world_painter_get_light_glow38, "WorldPainter_GetLightGlow38"),
+    (0x002e_f038, world_painter_get_surface08, "WorldPainter_GetSurface08"),
+    (0x002e_f0a0, world_painter_get_weather28, "WorldPainter_GetWeather28"),
 ];
 
 /// `cAirStreamerFX` fields.
@@ -1932,6 +1960,287 @@ pub fn ps2ai_visual_effects_man_dtor(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod painter_views {
+
+    pub const ENTRIES: u32 = 0x0050_0000 - 0x5c90;
+
+    pub const ENTRY_SIZE: u64 = 0xf0;
+
+    /// Handles of the light-glow and weather settings objects.
+    pub const LIGHT_GLOW: u32 = 0x08;
+
+    pub const WEATHER: u32 = 0x20;
+
+    /// Vtable slots of the float getters used here.
+    pub const VT_GLOW38: u32 = 0x98;
+
+    pub const VT_WEATHER88: u32 = 0x1d8;
+}
+
+
+
+// ---------------------------------------------------------------------------
+// WorldPainter_GetWeather28 (0x2ef0a0), GetWeather90 (0x2ee930),
+// GetWeather10 (0x2ee4c0)
+
+/// The world painters (`D_004FA370`, 0xf0 bytes each).
+pub(crate) const WEATHER_PAINTERS: u32 = 0x004f_a370;
+
+
+/// Painter: pointer to its weather object pointer.
+pub(crate) const WEATHER_HOLDER: u32 = 0x20;
+
+
+
+/// The painters' float weather getters: `obj = *painters[index].holder`,
+/// call the object's virtual method at v-table `vt_off` (`{delta: i16,
+/// fn}`, `this + delta`, through the function table) and return the float
+/// it points at (f0).
+pub(crate) fn weather_slot_float_getter(c: &mut Cpu, vt_off: u32, ret_addr: u32) {
+    guest(c, |c| {
+        c.cycles += 18;
+        c.g[V1][0] = 0xf0;
+        let frame = Frame::open(c, 0x10);
+        let index = r32(c, A0);
+        let off = abi::mult(c, index, 0xf0);
+        c.g[A0][0] = sx(off);
+        c.g[V0][0] = 0x50_0000;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(WEATHER_PAINTERS);
+        let painter = off.wrapping_add(WEATHER_PAINTERS);
+        c.g[A0][0] = sx(painter);
+        let holder = Addr(painter + WEATHER_HOLDER).lw(c);
+        c.g[V1][0] = holder;
+        let obj = Addr(holder as u32).lw(c);
+        c.g[A2][0] = obj;
+        let vt = Addr((obj as u32).wrapping_add(4)).lw(c);
+        c.g[A1][0] = vt;
+        let slot = crate::call::VSlot::read(c, vt, vt_off);
+        c.g[A0][0] = slot.delta;
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = sx((obj as u32).wrapping_add(slot.delta as u32));
+        call_ptr(c, slot.func as u32, ret_addr)?;
+        c.lwc1(0, r32(c, V0));
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `float WorldPainter_GetWeather28(int index)` (0x2ef0a0): weather method
+/// at v-table +0x178.
+pub fn world_painter_get_weather28(c: &mut Cpu) {
+    weather_slot_float_getter(c, 0x178, 0x002e_f0d8);
+}
+
+
+
+/// `float WorldPainter_GetWeather90(int index)` (0x2ee930): weather method
+/// at v-table +0x1e0.
+pub fn world_painter_get_weather90(c: &mut Cpu) {
+    weather_slot_float_getter(c, 0x1e0, 0x002e_e968);
+}
+
+
+
+/// The shared body of the world painter's float getters: `view`'s settings
+/// handle at `field`, its object's virtual getter at vtable offset `slot`
+/// (returning a `float *`), the float it points at in f0.
+pub(crate) fn world_painter_view_float(c: &mut Cpu, field: u32, slot: u32, ret_at: u32) {
+    use painter_views::*;
+    guest(c, |c| {
+        c.cycles += 18;
+        c.g[V1][0] = ENTRY_SIZE;
+        let frame = Frame::open(c, 0x10);
+        c.mult(0, A0, A0, V1);
+        c.g[V0][0] = 0x0050_0000;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(ENTRIES);
+        let entry = r32(c, A0).wrapping_add(ENTRIES);
+        c.g[A0][0] = sx(entry);
+        c.g[V1][0] = Addr(entry.wrapping_add(field)).lw(c);
+        c.g[A2][0] = Addr(r32(c, V1)).lw(c);
+        let obj = r32(c, A2);
+        c.g[A1][0] = Addr(obj.wrapping_add(4)).lw(c);
+        let vt = r32(c, A1);
+        let delta = Addr(vt.wrapping_add(slot)).lh(c);
+        c.g[V0][0] = Addr(vt.wrapping_add(slot + 4)).lw(c);
+        let getter = r32(c, V0);
+        c.g[A0][0] = sx(obj.wrapping_add(delta as u32));
+        call_ptr(c, getter, ret_at)?;
+        let value = Addr(r32(c, V0)).read_fpu(c);
+        abi::set_fret(c, value);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `float WorldPainter_GetLightGlow38(int view)` (0x2eef60): a light-glow
+/// setting of `view` (virtual getter at vtable +0x98).
+pub fn world_painter_get_light_glow38(c: &mut Cpu) {
+    use painter_views::*;
+    world_painter_view_float(c, LIGHT_GLOW, VT_GLOW38, 0x002e_ef98);
+}
+
+
+
+/// `float WorldPainter_GetWeather88(int view)` (0x2ee8e8): a weather setting
+/// of `view` (virtual getter at vtable +0x1d8).
+pub fn world_painter_get_weather88(c: &mut Cpu) {
+    use painter_views::*;
+    world_painter_view_float(c, WEATHER, VT_WEATHER88, 0x002e_e920);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// WorldPainter_GetSurface08 (0x2ef038)
+
+/// The world-painter view table (`D_004FA370`), 0xf0 bytes per entry.
+pub(crate) const SURFACE08_VIEWS: u32 = 0x004f_a370;
+
+
+/// `sRSMEntry`: the surface holder (`sRSMObj**`).
+pub(crate) const SURFACE08_HOLDER: u32 = 0x18;
+
+
+/// `sRSMEntry`: the surface blend (the returned value is scaled by `1 - it`).
+pub(crate) const SURFACE08_BLEND: u32 = 0x24;
+
+
+/// The vtable slot (36): `{delta: i16, fn}` at +0x120.
+pub(crate) const SURFACE08_SLOT: u32 = 0x120;
+
+
+
+/// `float WorldPainter_GetSurface08(int i)` (0x2ef038): the surface value of
+/// world-painter view `i`: call vtable slot 36 of the object behind
+/// `views[i].holder`, which returns a pointer to a float, and return that
+/// float times `1 - views[i].blend`. Keeps the entry pointer in s0 across
+/// the call (saved with `sq`).
+pub fn world_painter_get_surface08(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = 0xf0;
+        frame.save(c, S0, 0x10);
+        c.g[V0][0] = 0x50_0000;
+        c.mult(0, S0, A0, V1); // s0 = i * 0xf0
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(SURFACE08_VIEWS);
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(SURFACE08_VIEWS));
+        let entry = r32(c, S0);
+        let holder = Addr(entry).off(SURFACE08_HOLDER).lw(c);
+        c.g[V1][0] = holder;
+        let obj = Addr(holder as u32).lw(c);
+        c.g[A2][0] = obj;
+        let vt = Addr(obj as u32).off(4).lw(c);
+        c.g[A1][0] = vt;
+        let delta = Addr(vt as u32).off(SURFACE08_SLOT).lh(c);
+        c.g[A0][0] = delta;
+        let method = Addr(vt as u32).off(SURFACE08_SLOT + 4).lw(c);
+        c.g[V0][0] = method;
+        c.g[A0][0] = sx((obj as u32).wrapping_add(delta as u32));
+        call_ptr(c, method as u32, 0x002e_f074)?;
+        // value * (1 - blend), with the original's register use.
+        let entry = r32(c, S0);
+        let blend = Addr(entry).off(SURFACE08_BLEND).read_fpu(c);
+        c.f[2] = blend.0;
+        c.g[AT][0] = 0x3f80_0000;
+        let value = Addr(r32(c, V0)).read_fpu(c);
+        c.f[1] = value.0;
+        let keep = FpuF32::ONE - blend;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        abi::set_fret(c, value * keep);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// WorldPainter_GetLightGlow30 (0x2eef18), WorldPainter_GetWeather80 (0x2ee8a0)
+
+/// `float WorldPainter_GetLightGlow30(int i)` (0x2eef18): the light-glow
+/// value of world-painter view `i`: vtable slot 18 (`+0x90`) of the object
+/// behind `views[i] + 0x8`, returning the float it points at.
+pub fn world_painter_get_light_glow30(c: &mut Cpu) {
+    crate::game::visualfx::renderstateman::world_painter_virtual_getter(
+        c,
+        0x8,
+        0x90,
+        0x002e_ef50,
+    );
+}
+
+
+
+/// `float WorldPainter_GetWeather80(int i)` (0x2ee8a0): the weather value of
+/// world-painter view `i`: vtable slot 58 (`+0x1d0`) of the object behind
+/// `views[i] + 0x20`, returning the float it points at.
+pub fn world_painter_get_weather80(c: &mut Cpu) {
+    crate::game::visualfx::renderstateman::world_painter_virtual_getter(
+        c,
+        0x20,
+        0x1d0,
+        0x002e_e8d8,
+    );
+}
+
+
+
+/// `float WorldPainter_GetLightGlow20(int index)` (0x2eee88): the light
+/// glow holder (`entry+0x8`), vtable slot 0x80.
+pub fn world_painter_get_light_glow20(c: &mut Cpu) {
+    world_painter_float_getter_207(c, 0x8, 0x80, 0x002e_eec0);
+}
+
+
+
+/// `float WorldPainter_GetLightGlow18(int world)` (0x2eee40): the light
+/// glow value of the world's render-state object (slot +0x8, method at
+/// v-table +0x78).
+pub fn world_painter_get_light_glow18(c: &mut Cpu) {
+    world_painter_slot_float(c, 0x8, 0x78, 0x002e_ee78);
+}
+
+
+
+/// `float WorldPainter_GetLightGlow10(int i)` (0x2eedf8): the light-glow
+/// value of lens slot `i` (`*slot->p08`, vtable slot 0x70/0x74).
+pub fn world_painter_get_light_glow10(c: &mut Cpu) {
+    lens_slot_virtual_float(c, 0x8, 0x70, 0x002e_ee30);
+}
+
+
+/// View fields: the light-glow interface holder (+0x8), the weather one
+/// (+0x20).
+pub(crate) const WP_VIEW_LIGHT_GLOW: u32 = 0x8;
+
+
+
+/// `float WorldPainter_GetLightGlow08(int view)` (0x2eedb0): the light
+/// glow interface's float from virtual slot 0x68 of view `view`.
+pub fn world_painter_get_light_glow08(c: &mut Cpu) {
+    wp_view_get_float(c, WP_VIEW_LIGHT_GLOW, 0x68, 0x002e_ede8);
+}
+
+
+
+/// `float WorldPainter_GetWeather98(int index)` (0x2ee978): weather
+/// method at v-table +0x1e8.
+pub fn world_painter_get_weather98(c: &mut Cpu) {
+    world_painter_weather_float_getter(c, 0x1e8, 0x002e_e9b0);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2633,6 +2942,212 @@ pub(crate) mod tests {
                     fake_slot(c, obj, DATA + 0x800, 8);
                 }
             },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::{check_paths};
+    use super::*;
+    // table_getter_setup is defined in this module
+    use super::*;
+    // (fakes imported above)
+    use super::*;
+    use crate::difftest::{elf_image};
+    use super::*;
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::visualfx::lensfx::tests::wp_getter_setup_207;
+    pub(crate) use crate::game::visualfx::lensfx::tests::world_painter_slot_setup;
+    pub(crate) use crate::game::ai::ai::tests::oc258_w32;
+    pub(crate) use crate::game::visualfx::lensfx::tests::oc258_lens_slot;
+    pub(crate) use crate::game::visualfx::lensfx::tests::wp_view_fixture;
+    pub(crate) use crate::game::visualfx::lensfx::tests::world_painter_weather_setup;
+
+
+    /// The weather-getter fixture: painter index 0..3, its weather holder,
+    /// object and v-table at random pointers, the slot `{delta, FAKE}`;
+    /// the fake (which may unwind) returns a pointer to random data.
+    pub(crate) fn weather_getter_253_setup(c: &mut Cpu, seed: u32, entry_pc: u32, vt_off: u32) {
+        use crate::difftest::fakes::{ptr, FAKE};
+        let mut r = machine(c, seed, entry_pc as u64, 1);
+        c.pc = entry_pc;
+        let index = seed % 4;
+        c.g[A0][0] = index as u64;
+        let entry = WEATHER_PAINTERS + index * 0xf0;
+        let holder = ptr(&mut r);
+        let obj = ptr(&mut r);
+        let vt = ptr(&mut r);
+        c.bus.write32(entry + WEATHER_HOLDER, holder);
+        c.bus.write32(holder, obj);
+        c.bus.write32(obj + 4, vt);
+        let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+        c.bus.write16(vt + vt_off, delta as u16);
+        c.bus.write32(vt + vt_off + 4, FAKE);
+    }
+
+
+    /// `WorldPainter_GetWeather28`.
+    #[test]
+    fn world_painter_get_weather28_matches() {
+        crate::difftest::fakes::covered(ee::s09::f_002ef0a0__generated, world_painter_get_weather28, 200, &|c, seed| {
+            weather_getter_253_setup(c, seed, 0x002e_f0a0, 0x178)
+        });
+    }
+
+
+    /// `WorldPainter_GetWeather90`.
+    #[test]
+    fn world_painter_get_weather90_matches() {
+        crate::difftest::fakes::covered(ee::s09::f_002ee930__generated, world_painter_get_weather90, 200, &|c, seed| {
+            weather_getter_253_setup(c, seed, 0x002e_e930, 0x1e0)
+        });
+    }
+
+
+    /// Shared fixture of the world painter getters: entry `view` points at a
+    /// handle -> object -> vtable whose getter is a fake returning a pointer
+    /// to a float (sometimes unwinding).
+    pub(crate) fn world_painter_view_fixture(c: &mut Cpu, seed: u32, salt: u64, entry: u32, field: u32, slot: u32) {
+        use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
+        use painter_views::*;
+        let mut r = machine(c, seed, salt, 1);
+        c.pc = entry;
+        let view = r.next_u32() % 8;
+        let handle = DATA + 0x100;
+        let obj = DATA + 0x200;
+        let vt = DATA + 0x400;
+        let value = DATA + 0x800;
+        c.bus.write32(ENTRIES + view * ENTRY_SIZE as u32 + field, handle);
+        c.bus.write32(handle, obj);
+        c.bus.write32(obj + 4, vt);
+        c.bus.write16(vt + slot, ((r.next_u32() as i16) & !3) as u16);
+        c.bus.write32(vt + slot + 4, FAKE);
+        c.bus.write32(value, r.f32(100.0));
+        c.bus.write32(LOG_RESULTS, value);
+        c.g[A0][0] = (r.next_u32() as u64) << 32 | view as u64;
+    }
+
+
+    #[test]
+    fn world_painter_get_light_glow38_matches() {
+        use painter_views::*;
+        crate::difftest::fakes::covered(
+            ee::s09::f_002eef60__generated,
+            world_painter_get_light_glow38,
+            200,
+            &|c, seed| world_painter_view_fixture(c, seed, 0x2eef60, 0x002e_ef60, LIGHT_GLOW, VT_GLOW38),
+        );
+    }
+
+
+    #[test]
+    fn world_painter_get_weather88_matches() {
+        use painter_views::*;
+        crate::difftest::fakes::covered(
+            ee::s09::f_002ee8e8__generated,
+            world_painter_get_weather88,
+            200,
+            &|c, seed| world_painter_view_fixture(c, seed, 0x2ee8e8, 0x002e_e8e8, WEATHER, VT_WEATHER88),
+        );
+    }
+
+
+    /// Views 0..3 with a fake slot-36 method and a random blend.
+    #[test]
+    fn world_painter_get_surface08_matches() {
+        fakes::covered(
+            ee::s09::f_002ef038__generated,
+            world_painter_get_surface08,
+            200,
+            &|c, seed| {
+                table_getter_setup(c, seed, 0x2ef0_3800, SURFACE08_HOLDER, SURFACE08_SLOT);
+                let i = c.g[A0][0] as u32;
+                let entry = SURFACE08_VIEWS + i * 0xf0;
+                let blend = [0.0f32, 0.25, 1.0, -3.5][(seed / 4 % 4) as usize];
+                c.bus.write32(entry + SURFACE08_BLEND, blend.to_bits());
+                c.pc = 0x002e_f038;
+            },
+        );
+    }
+
+
+    /// Views 0..3, a fake slot-18 method behind `views[i] + 0x8`.
+    #[test]
+    fn world_painter_get_light_glow30_matches() {
+        fakes::covered(
+            ee::s09::f_002eef18__generated,
+            world_painter_get_light_glow30,
+            200,
+            &|c, seed| {
+                table_getter_setup(c, seed, 0x2eef_1800, 0x8, 0x90);
+                c.pc = 0x002e_ef18;
+            },
+        );
+    }
+
+
+    /// Views 0..3, a fake slot-58 method behind `views[i] + 0x20`.
+    #[test]
+    fn world_painter_get_weather80_matches() {
+        fakes::covered(
+            ee::s09::f_002ee8a0__generated,
+            world_painter_get_weather80,
+            200,
+            &|c, seed| {
+                table_getter_setup(c, seed, 0x2ee8_a000, 0x20, 0x1d0);
+                c.pc = 0x002e_e8a0;
+            },
+        );
+    }
+
+
+    #[test]
+    fn world_painter_get_light_glow20_matches() {
+        covered(ee::s09::f_002eee88__generated, world_painter_get_light_glow20, 200, &|c, seed| {
+            wp_getter_setup_207(c, seed, 0x002e_ee88, 0x8, 0x80);
+        });
+    }
+
+
+    /// `WorldPainter_GetLightGlow18`.
+    #[test]
+    fn world_painter_get_light_glow18_matches() {
+        crate::difftest::fakes::covered(
+            ssx3_ee::s09::f_002eee40__generated,
+            world_painter_get_light_glow18,
+            300,
+            &|c, seed| world_painter_slot_setup(c, seed, 0x002e_ee40, 0x8, 0x78),
+        );
+    }
+
+
+    #[test]
+    fn world_painter_get_light_glow10_matches() {
+        check(ee::s09::f_002eedf8__generated, world_painter_get_light_glow10, 32, &|c, seed| {
+            oc258_lens_slot(c, seed, 0x2eedf8, 0x8, 0x70);
+            c.pc = 0x002e_edf8;
+        });
+    }
+
+
+    /// WorldPainter_GetLightGlow08: views 0..2 through a fake method.
+    #[test]
+    fn world_painter_get_light_glow08_matches() {
+        crate::difftest::fakes::covered(ee::s09::f_002eedb0__generated, world_painter_get_light_glow08, 120, &|c, seed| {
+            wp_view_fixture(c, seed, 0x2e_edb0, WP_VIEW_LIGHT_GLOW, 0x68);
+            c.pc = 0x002e_edb0;
+        });
+    }
+
+
+    /// WorldPainter_GetWeather98.
+    #[test]
+    fn world_painter_get_weather98_matches() {
+        crate::difftest::fakes::covered(
+            ee::s09::f_002ee978__generated,
+            world_painter_get_weather98,
+            200,
+            &|c, seed| world_painter_weather_setup(c, seed, 0x002e_e978, 0x1e8),
         );
     }
 }

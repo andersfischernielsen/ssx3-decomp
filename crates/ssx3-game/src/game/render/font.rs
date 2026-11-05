@@ -44,6 +44,7 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -170,6 +171,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "VfxVisualEffectsTest_dtor",
     ),
     (0x0039_6d30, vfx_screen_tint_dtor, "VfxScreenTint_dtor"),
+    (0x0039_6128, tex_man_invalidate_bound, "TexMan_InvalidateBound"),
 ];
 
 /// `DeferMan` layout (offsets from the `DeferMan*`).
@@ -1541,6 +1543,43 @@ pub fn ps2_graphics_man_rotate_axis(c: &mut Cpu) {
     return;
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// 0x396128 TexMan_InvalidateBound
+
+/// `void TexMan_InvalidateBound(TexMan* self)` (0x396128): forget which
+/// textures are bound: both bound-texture slots (+0x1f4c, +0x1f50, cleared
+/// from the top down) and the bound palette (+0x1f54) become -1.
+pub fn tex_man_invalidate_bound(c: &mut Cpu) {
+    const BOUND_SLOTS: u32 = 0x1f4c;
+    const BOUND_PALETTE: u32 = 0x1f54;
+    let this = r32(c, A0);
+    c.cycles += 4;
+    c.g[A1][0] = u64::MAX;
+    c.g[V1][0] = 1;
+    c.g[V0][0] = sx(this.wrapping_add(BOUND_SLOTS + 4));
+    loop {
+        // 0x396138
+        c.cycles += 7;
+        c.sw(r32(c, V0), c.g[A1][0]);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+        let more = (c.g[V1][0] as i64) >= 0;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(4));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0039_6138);
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = u64::MAX;
+    c.sw(this.wrapping_add(BOUND_PALETTE), c.g[V0][0]);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2470,5 +2509,30 @@ pub(crate) mod tests {
                 c.f[12] = r.edge_f32();
             },
         );
+    }
+    use super::*;
+
+
+    /// TexMan_InvalidateBound: the texture manager at a random address with
+    /// random bound slots. Events are delivered in the two-slot loop.
+    #[test]
+    fn tex_man_invalidate_bound_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{fill, DATA};
+        let setup = |c: &mut Cpu, seed: u32| -> Events {
+            let mut r = machine(c, seed, 0x0039_6128, 0);
+            let this = DATA + (r.next_u32() & 0x7_fff0);
+            fill(c, &mut r, this + 0x1f40, 8);
+            c.g[A0][0] = sx(this);
+            let mode = schedule(c, &mut r, seed, 0x0039_6128);
+            // The loop's only back edge comes 11 cycles in: make the event
+            // seeds' event due by then.
+            if mode != Events::Off {
+                c.next_event = c.cycles + (r.next_u32() % 12) as u64;
+            }
+            mode
+        };
+        check_events(ee::s13::f_00396128__generated, tex_man_invalidate_bound, 200, &setup);
     }
 }

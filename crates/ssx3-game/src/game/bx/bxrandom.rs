@@ -24,9 +24,13 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
+use crate::call;
+use crate::call::Flow;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0031_77f0, rand_next_main, "Rand_NextMain")];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0031_77f0, rand_next_main, "Rand_NextMain"),
+    (0x0031_7810, rand_next_game, "Rand_NextGame"),
+];
 
 // ---------------------------------------------------------------------------
 // Rand_NextMain (0x3177f0)
@@ -49,6 +53,36 @@ pub fn rand_next_main(c: &mut Cpu) {
         frame.save_ra(c, 0);
         set_reg(c, A0, sx(RAND_MAIN));
         RAND_NEXT.call(c, 0x0031_7804)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+
+// ---------------------------------------------------------------------------
+// Rand_NextGame (0x317810)
+
+/// The game's random generator state (0x4ff030).
+pub(crate) const RAND_GAME_STATE: u32 = 0x0050_0000 - 0xfd0;
+
+
+pub(crate) const RAND_NEXT_2: Callee = Callee { addr: 0x0031_7a08, f: ee::s10::f_00317a08 };
+
+
+
+/// `u32 Rand_NextGame(void)` (0x317810): the next number of the game's
+/// random generator (`Rand_Next(&g_GameRand)`).
+pub fn rand_next_game(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = 0x0050_0000;
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(RAND_GAME_STATE);
+        RAND_NEXT_2.call(c, 0x0031_7824)?;
         frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
@@ -82,5 +116,20 @@ pub(crate) mod tests {
                 fill(c, &mut r, RAND_MAIN, 0x10);
             },
         );
+    }
+    use super::*;
+    use crate::difftest::{check, check_paths, scramble};
+
+
+    /// Random generator state (all six words random, so both carry paths
+    /// of `Rand_Next` are taken).
+    #[test]
+    fn rand_next_game_matches() {
+        check(ee::s10::f_00317810__generated, rand_next_game, 200, &|c, seed| {
+            let mut r = Rng(0x0031_7810 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.pc = 0x0031_7810;
+            fill(c, &mut r, RAND_GAME_STATE, 8);
+        });
     }
 }
