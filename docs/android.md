@@ -13,8 +13,7 @@ The Gradle build invokes cargo-ndk, and packages code only. Use
 `-PapplicationId=your.application.id` for a separate developer install.
 Keep the same debug signing key when upgrading; install with `adb install -r`.
 
-The pack is separate. Produce ssx3.pack with the existing standalone pack
-builder. Launch once to create app storage. Copy to the app-specific external
+The pack is separate. Produce it with `python3 tools/bundle.py --iso /path/to/your.iso pack /path/to/ssx3.pack`. Launch once to create app storage. Copy to the app-specific external
 files directory as ssx3.pack.partial, compare its SHA-256 (`sha256sum ssx3.pack` on the host and
 `adb shell sha256sum <external-files>/ssx3.pack.partial` on the device), then rename to
 ssx3.pack. Never create the external app directory with adb shell; the app
@@ -24,3 +23,11 @@ no game or audio work. Restart after provisioning.
 Saves and settings live in internal app files. There is no storage permission
 and no automatic fallback or save import. Uninstalling deletes app saves.
 Do not replace a card when provisioning game data.
+
+Backgrounding and surface replacement retain the current game. Destroying
+or explicitly recreating the Activity ends the dedicated game process;
+the launcher waits for that process to exit before starting a cold session
+from saved data. Unsaved progress does not survive that boundary. This
+avoids reusing process-global guest state or recreating a winit event loop.
+
+Host lifecycle tests run through Cargo: `tools/android/test-lifecycle.sh`.

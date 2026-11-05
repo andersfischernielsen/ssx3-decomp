@@ -29,6 +29,12 @@ pub fn run(event_loop: EventLoop<()>, message: &str) {
 }
 
 impl ApplicationHandler for NeedsData {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if super::lifecycle::destroyed() {
+            event_loop.exit();
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -38,7 +44,9 @@ impl ApplicationHandler for NeedsData {
                 .create_window(Window::default_attributes().with_title("SSX 3 - Game data needed"))
                 .expect("window"),
         );
-        self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), None)));
+        if window.inner_size().width > 0 && window.inner_size().height > 0 {
+            self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), None)));
+        }
         window.request_redraw();
         self.window = Some(window);
     }
@@ -46,18 +54,44 @@ impl ApplicationHandler for NeedsData {
         self.presenter = None;
         self.window = None;
     }
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                super::lifecycle::java(super::lifecycle::JavaAction::Finish)
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if event.state.is_pressed()
+                    && event.physical_key
+                        == winit::keyboard::PhysicalKey::Code(
+                            winit::keyboard::KeyCode::BrowserBack,
+                        ) =>
+            {
+                super::lifecycle::java(super::lifecycle::JavaAction::Finish);
+            }
             WindowEvent::Resized(size) => {
-                if let Some(p) = self.presenter.as_mut() {
+                if size.width == 0 || size.height == 0 {
+                    self.presenter = None;
+                } else if let Some(p) = self.presenter.as_mut() {
                     p.resize(size.width, size.height);
+                } else if let Some(window) = &self.window {
+                    self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), None)));
                 }
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
             }
             WindowEvent::RedrawRequested => {
+                if super::lifecycle::rebuild_needed() {
+                    self.presenter = None;
+                    if let Some(window) = &self.window {
+                        let size = window.inner_size();
+                        if size.width > 0 && size.height > 0 {
+                            self.presenter =
+                                Some(pollster::block_on(Presenter::new(window.clone(), None)));
+                            super::lifecycle::rebuilt();
+                        }
+                    }
+                }
                 if let Some(p) = self.presenter.as_mut() {
                     let _ = p.render(800, 448, &self.image);
                 }

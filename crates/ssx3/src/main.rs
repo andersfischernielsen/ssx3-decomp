@@ -36,6 +36,8 @@ use present::Presenter;
 use ssx3_ps2::Cpu;
 
 struct App {
+    #[cfg(target_os = "android")]
+    android: android::Lifecycle,
     cpu: Box<Cpu>,
     window: Option<Arc<Window>>,
     presenter: Option<Presenter>,
@@ -234,6 +236,11 @@ fn pad_bit(k: KeyCode) -> Option<u16> {
 }
 
 impl ApplicationHandler for App {
+    #[cfg(target_os = "android")]
+    fn suspended(&mut self, _: &ActiveEventLoop) {
+        android::Lifecycle::suspend(self);
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -261,12 +268,19 @@ impl ApplicationHandler for App {
         window.set_cursor_visible(false);
         let gs = ssx3_ps2::gpu::context();
         self.gpu_ctx = gs;
-        self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
+        #[cfg(not(target_os = "android"))]
+        {
+            self.presenter = Some(pollster::block_on(Presenter::new(window.clone(), gs)));
+        }
         let size = window.inner_size();
         self.display_hz = window
             .current_monitor()
             .and_then(|m| m.refresh_rate_millihertz())
             .map_or(60.0, |m| (m as f64 / 1000.0).clamp(24.0, 500.0));
+        #[cfg(target_os = "android")]
+        {
+            self.display_hz = android::refresh_rate().unwrap_or(self.display_hz);
+        }
         let game_hz = ssx3_ps2::machine::vsync_hz() as f64 / 1.001;
         let locked = self.pacer.lock_to_display(game_hz, self.display_hz);
         eprintln!(
@@ -284,6 +298,8 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        #[cfg(target_os = "android")]
+        android::Lifecycle::event(self, &event);
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
@@ -360,6 +376,10 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                #[cfg(target_os = "android")]
+                if !android::Lifecycle::ready(self) {
+                    return;
+                }
                 // The settings overlay pauses the game.
                 if self.menu.is_some() {
                     self.poll_menu_pad();
@@ -411,6 +431,10 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        #[cfg(target_os = "android")]
+        if !android::Lifecycle::poll(self, _event_loop) {
+            return;
+        }
         if let Some(w) = self.window.as_ref() {
             w.request_redraw();
         }
@@ -705,6 +729,8 @@ fn run(event_loop: Option<EventLoop<()>>) {
     let event_loop = event_loop.unwrap_or_else(|| EventLoop::new().expect("event loop"));
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {
+        #[cfg(target_os = "android")]
+        android: android::Lifecycle::default(),
         cpu,
         window: None,
         presenter: None,
@@ -747,3 +773,7 @@ fn run(event_loop: Option<EventLoop<()>>) {
         std::process::exit(1);
     }
 }
+
+#[cfg(all(test, not(target_os = "android")))]
+#[path = "android/policy.rs"]
+mod android_policy;

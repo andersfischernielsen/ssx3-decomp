@@ -593,6 +593,8 @@ impl Presenter {
                 return Err(PresentError::Reconfigured);
             }
             wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Validation => {
+                #[cfg(target_os = "android")]
+                super::android::surface_lost();
                 return Err(PresentError::Lost);
             }
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {

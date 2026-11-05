@@ -15,6 +15,12 @@ use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use std::sync::{Arc, Mutex};
 
+#[cfg(target_os = "android")]
+pub mod android_lifecycle;
+
+#[cfg(test)]
+mod lifecycle_tests;
+
 pub const RATE: u32 = 48_000;
 const RING_FRAMES: usize = RATE as usize / 5;
 
@@ -125,6 +131,10 @@ impl Sink {
         if let Some(w) = self.wav.as_mut() {
             w.push(s);
         }
+        #[cfg(target_os = "android")]
+        if !android_lifecycle::accepts() {
+            return;
+        }
         if let Some(r) = &self.ring {
             if let Ok(mut q) = r.lock() {
                 if q.len() + s.len() <= RING_FRAMES * 2 {
@@ -138,6 +148,12 @@ impl Sink {
     /// in the browser, where the page drains the ring every frame).
     pub fn queued_frames(&self) -> Option<usize> {
         if cfg!(target_arch = "wasm32") {
+            return None;
+        }
+        // A silenced Android stream drains nothing: report no device, or the
+        // real-time sound driver runs extra ticks to refill it and slows the game.
+        #[cfg(target_os = "android")]
+        if !android_lifecycle::accepts() {
             return None;
         }
         self.ring
@@ -207,7 +223,7 @@ pub fn take(out: &mut Vec<i16>) {
 
 /// Open the default output device on its own thread (cpal streams are not
 /// `Send` on every platform). Returns the ring it drains.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
 fn start_device() -> Option<Ring> {
     let ring: Ring = Arc::new(Mutex::new(VecDeque::with_capacity(RING_FRAMES * 2)));
     let (tx, rx) = std::sync::mpsc::channel::<bool>();
@@ -270,6 +286,15 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     let mut cur = [0i16; 2];
     let mut next = [0i16; 2];
     let mut fill = move |out: &mut dyn FnMut(usize, f32), frames: usize| {
+        #[cfg(target_os = "android")]
+        if !android_lifecycle::accepts() {
+            for i in 0..frames * channels {
+                out(i, 0.0);
+            }
+            return;
+        }
+        #[cfg(target_os = "android")]
+        android_lifecycle::callback();
         let mut q = ring.lock().unwrap();
         for i in 0..frames {
             frac += step;
@@ -290,7 +315,11 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
             }
         }
     };
-    let err = |e| eprintln!("[audio] stream error: {e}");
+    let err = |e| {
+        eprintln!("[audio] stream error: {e}");
+        #[cfg(target_os = "android")]
+        android_lifecycle::stream_error();
+    };
     let stream = match supported.sample_format() {
         cpal::SampleFormat::F32 => device.build_output_stream(
             config,
@@ -315,4 +344,9 @@ fn open_stream(ring: Ring) -> Result<cpal::Stream, String> {
     .map_err(|e| e.to_string())?;
     stream.play().map_err(|e| e.to_string())?;
     Ok(stream)
+}
+
+#[cfg(target_os = "android")]
+fn start_device() -> Option<Ring> {
+    android_lifecycle::start()
 }
