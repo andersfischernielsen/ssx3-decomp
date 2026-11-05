@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- wgpu selects Vulkan when available, with GLES as a fallback.
+         Neither backend is individually required; adapter selection checks support. -->
+    <uses-feature android:name="android.hardware.vulkan.level" android:version="0" android:required="false" />
+    <uses-feature android:glEsVersion="0x00030000" android:required="false" />
+    <application android:label="SSX 3" android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity android:name=".AndroidActivity" android:exported="true" android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode">
+            <meta-data android:name="android.app.lib_name" android:value="ssx3_android" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -1,0 +1,26 @@
+# Android developer build
+
+Android 13 or newer, arm64-v8a. This is a NativeActivity frontend using the
+upstream game and graphics defaults. Physical controllers are not supported
+by this change; use a keyboard with the desktop key bindings.
+
+Install JDK 17, Android SDK 34/build tools 34.0.0 and NDK 28.2.13676358,
+Rust with the aarch64-linux-android target, cargo-ndk 4.1.2 and Gradle 8.9.
+Set ANDROID_HOME and ANDROID_NDK_HOME to those SDK/NDK installations.
+Generate the game code using the repository's normal setup with your own
+SSX 3 USA disc. From apps/android, run `gradle assembleDebug`.
+The Gradle build invokes cargo-ndk, and packages code only. Use
+`-PapplicationId=your.application.id` for a separate developer install.
+Keep the same debug signing key when upgrading; install with `adb install -r`.
+
+The pack is separate. Produce ssx3.pack with the existing standalone pack
+builder. Launch once to create app storage. Copy to the app-specific external
+files directory as ssx3.pack.partial, compare its SHA-256 (`sha256sum ssx3.pack` on the host and
+`adb shell sha256sum <external-files>/ssx3.pack.partial` on the device), then rename to
+ssx3.pack. Never create the external app directory with adb shell; the app
+creates it. The NeedsData screen reports invalid or missing data and starts
+no game or audio work. Restart after provisioning.
+
+Saves and settings live in internal app files. There is no storage permission
+and no automatic fallback or save import. Uninstalling deletes app saves.
+Do not replace a card when provisioning game data.

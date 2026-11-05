@@ -15,6 +15,7 @@ members = [
     "crates/ssx3-mc",
     "crates/ssx3-mpeg",
     "crates/ssx3",
+    "crates/ssx3-android",
     "crates/ssx3-game",
     "crates/ssx3-web",
     "crates/ssx3-vuworker",

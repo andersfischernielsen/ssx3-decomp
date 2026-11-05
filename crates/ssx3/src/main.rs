@@ -23,6 +23,9 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
+#[cfg(target_os = "android")]
+mod android;
+
 mod game;
 mod icon;
 mod png;
@@ -44,6 +47,7 @@ struct App {
     fps_mark: Instant,
     /// Pad 1 buttons held on the keyboard / on a game controller (libpad bits).
     keys: u16,
+    #[cfg(not(target_os = "android"))]
     gilrs: Option<gilrs::Gilrs>,
     /// Ticket of the previous frame's display request (MTGS): the window
     /// shows frame N-1 (or newer) while the GS thread finishes frame N.
@@ -91,6 +95,7 @@ fn field() -> Duration {
 }
 
 /// libpad button bit for a controller button.
+#[cfg(not(target_os = "android"))]
 fn gamepad_bit(b: gilrs::Button) -> Option<u16> {
     use gilrs::Button::*;
     Some(match b {
@@ -120,7 +125,9 @@ impl App {
     /// (plugged in with `SSX3_PAD2=1`).
     fn update_pad(&mut self) {
         let mut state = [(self.keys, [0x80u8; 4]), (0u16, [0x80u8; 4])];
+        #[cfg_attr(target_os = "android", allow(unused_mut))]
         let mut open_menu = false;
+        #[cfg(not(target_os = "android"))]
         if let Some(g) = self.gilrs.as_mut() {
             while let Some(ev) = g.next_event() {
                 match ev.event {
@@ -624,7 +631,9 @@ impl App {
 
     /// Controller navigation while the overlay is open.
     fn poll_menu_pad(&mut self) {
+        #[cfg_attr(target_os = "android", allow(unused_mut))]
         let mut keys = Vec::new();
+        #[cfg(not(target_os = "android"))]
         if let Some(g) = self.gilrs.as_mut() {
             while let Some(ev) = g.next_event() {
                 if let gilrs::EventType::ButtonPressed(b, _) = ev.event {
@@ -680,7 +689,12 @@ fn display_aspect(cpu: &Cpu) -> f32 {
     })
 }
 
+#[cfg(not(target_os = "android"))]
 fn main() {
+    run(None);
+}
+
+fn run(event_loop: Option<EventLoop<()>>) {
     // A standalone build finds its data first (it chooses the settings file).
     game::init_standalone();
     // Then: the settings file fills in the environment.
@@ -688,7 +702,7 @@ fn main() {
     env_logger::init();
     let mut cpu = game::boot(false);
     let gfx = game::install_renderer(&mut cpu);
-    let event_loop = EventLoop::new().expect("event loop");
+    let event_loop = event_loop.unwrap_or_else(|| EventLoop::new().expect("event loop"));
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {
         cpu,
@@ -713,6 +727,7 @@ fn main() {
         menu: None,
         restart_pending: false,
         preview: 0,
+        #[cfg(not(target_os = "android"))]
         gilrs: gilrs::Gilrs::new()
             .map(|g| {
                 let pads: Vec<String> = g.gamepads().map(|(_, p)| p.name().to_string()).collect();

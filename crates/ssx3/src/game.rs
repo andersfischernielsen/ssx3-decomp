@@ -1,6 +1,7 @@
 //! Boot the recompiled game: machine setup shared by the windowed and
 //! headless front ends.
 
+use super::ssx3_ee;
 use std::path::PathBuf;
 
 use ssx3_ps2::{machine, Cpu};
@@ -462,7 +463,7 @@ pub fn render_size() -> Option<(u32, u32)> {
 /// `SSX3_FOV=<multiplier>`: field of view relative to the game's (1.2 =
 /// 20% wider, in the projection's tangent).
 pub fn fov() -> f32 {
-    crate::settings::get("SSX3_FOV")
+    super::settings::get("SSX3_FOV")
         .and_then(|v| v.parse::<f32>().ok())
         .filter(|v| *v > 0.1 && *v < 4.0)
         .unwrap_or(1.0)
@@ -478,7 +479,7 @@ pub fn follows_window() -> bool {
 /// `SSX3_ASPECT=4:3|16:9`: the image keeps that aspect inside the window
 /// (letterboxed or pillarboxed) instead of filling it.
 pub fn aspect_box() -> Option<f32> {
-    match crate::settings::get("SSX3_ASPECT").as_deref() {
+    match super::settings::get("SSX3_ASPECT").as_deref() {
         Some("4:3") => Some(4.0 / 3.0),
         Some("16:9") => Some(16.0 / 9.0),
         _ => None,
@@ -489,7 +490,7 @@ pub fn aspect_box() -> Option<f32> {
 /// `SSX3_AA`, `SSX3_LOD_BIAS`, `SSX3_AO`, `SSX3_SHADOWS`, `SSX3_BLOOM`,
 /// `SSX3_SNOW`. Unset: the original look.
 pub fn gfx_options() -> ssx3_gfx::Options {
-    let get = |k: &str| crate::settings::get(k);
+    let get = |k: &str| super::settings::get(k);
     let on = |k: &str| get(k).is_some_and(|v| v != "0");
     ssx3_gfx::Options {
         aa: match get("SSX3_AA").as_deref() {
@@ -514,7 +515,7 @@ pub fn gfx_options() -> ssx3_gfx::Options {
 /// sharpens textures with mipmaps, i.e. texture-pack replacements, seen at a
 /// glancing angle).
 pub fn anisotropy() -> u16 {
-    crate::settings::get("SSX3_ANISO")
+    super::settings::get("SSX3_ANISO")
         .and_then(|v| v.parse::<u16>().ok())
         .map_or(16, |n| n.clamp(1, 16))
 }
@@ -522,7 +523,7 @@ pub fn anisotropy() -> u16 {
 /// `SSX3_RESOLUTION=<percent>`: render at that fraction of the window's
 /// pixels (scaled up to fill it).
 pub fn resolution() -> f32 {
-    crate::settings::get("SSX3_RESOLUTION")
+    super::settings::get("SSX3_RESOLUTION")
         .and_then(|v| v.parse::<f32>().ok())
         .map_or(1.0, |p| (p / 100.0).clamp(0.25, 2.0))
 }
