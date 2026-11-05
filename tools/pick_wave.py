@@ -93,7 +93,7 @@ def main(argv):
         rows.append((cf * size[a], cf, size[a], a))
     rows.sort(reverse=True)
 
-    n = 50
+    n = int(os.environ.get('SSX3_WAVE_SIZE', 50))
     for k, m in enumerate(mods):
         chunk = rows[k * n:(k + 1) * n]
         with open(os.path.join(outdir, f'{wave}-{m}.txt'), 'w') as f:
