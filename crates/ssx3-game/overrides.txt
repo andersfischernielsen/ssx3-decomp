@@ -5602,6 +5602,34 @@
 0x0021ea00    HUD_DrawPanelSegment
 0x00136f30    RiderWipeoutState_UpdateRootPose
 0x0022a770    Nash_CollectEffects
+# Phase 2 wave: oc237, oc238, oc243
+0x003a7098    cStreamMan_Update
+0x00374b38    BezierPatchCache_ReleaseUnused
+0x002f6910    RiderBase_MatchCheatCode
+0x003d5508    PATH_SetVolumePercent
+0x002a43b8    SSXAudioSystem_FlushPendingSpeech
+0x00297fa0    SSXAudioSystem_UpdateObjectLoops
+0x0022a4a8    Nash_ClassifyEffects
+0x00326b88    PadQueue_Poll
+0x001f16c0    HUD_DrawTimeElem
+0x00148950    BECharInt_GetOverallRating
+0x00311710    AIAnimEventMap_PickAnim
+0x00319e48    MEM_PoolAlloc
+0x003b70f8    SNDSTRM_IsPrebuffering
+0x004139f8    __fixunssfsi
+0x003019c8    WScriptFn_GetObjectSlot32
+0x002f4690    LensFX_DrawFlareSet
+0x00313dd0    AnimSequence_Save
+0x003174a8    PS2ExecMan_InvokeCallback
+0x001048c0    RiderAnim_UpdateSeqType00
+0x00135cb0    RiderSpinSub_GetFlipProgress
+0x0015ec98    GameCamera_UpdateStreamView
+0x00358260    MultiParticle_EmitAtInstances
+0x0040da10    logf
+0x002e3478    LensFX_DrawFlares
+0x00280640    ScriptAudioObj_UpdateSounds
+0x0035c040    RailModifier_UpdateBounds
+0x00100f88    ComputerActorRider_CruiseChaseRider
 # debug slots (installed only by an env switch; see debug.rs)
 0x002ec478    LensFX_v04
 # tick rate: 60 Hz timelines (screen-script frames, the race countdown's lights), the air predictor's in-between ticks
