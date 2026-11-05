@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::r32;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -17,6 +18,7 @@ pub(crate) use crate::game::fe::feasyncfile::r;
 pub(crate) use crate::game::fe::feasyncfile::shl32;
 pub(crate) use crate::game::render::graphicsman::RegMem;
 use crate::guest::Addr;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
@@ -36,12 +38,15 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_7458, uianim_get_frame_count, "UIAnim_GetFrameCount"),
     (0x0039_7468, uianim_set_play_mode, "UIAnim_SetPlayMode"),
     (0x0039_74b0, ui_anim_advance, "UIAnim_Advance"),
+    (0x0039_75e0, ui_anim_apply, "UIAnim_Apply"),
 ];
 
 // ---------------------------------------------------------------------------
 // Callees and fixed addresses.
 
 pub(crate) mod callee {
+    use super::ee;
+    use super::Callee;
 
     pub(crate) use crate::game::camera::trigger::cameratriggerfactory::callee::EA_MEM_ALLOC_NAMED_2 as EA_MEM_ALLOC_NAMED;
 
@@ -50,6 +55,16 @@ pub(crate) mod callee {
     pub(crate) use crate::game::fe::feasyncfile::callee::BUILTIN_DELETE_6 as BUILTIN_DELETE;
 
     pub(crate) use crate::game::fe::feasyncfile::callee::EA_MEM_FREE_4 as EA_MEM_FREE;
+
+    pub const UI_ANIM_EVAL_CHANNEL: Callee = Callee {
+        addr: 0x0039_71c8,
+        f: ee::s13::f_003971c8,
+    };
+
+    pub const UI_ANIM_GET_FRAME_COUNT_SAFE: Callee = Callee {
+        addr: 0x0039_7278,
+        f: ee::s13::f_00397278,
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -551,10 +566,140 @@ fn ui_anim_step(c: &mut Cpu) {
     return;
 }
 
+/// `void UIAnim_Apply(UIAnim* self, UIObject* target, u8 mode, u16 clock)`
+/// (0x3975e0): when the animation's frame changed since it was last applied
+/// (`+0x8`), evaluate each channel there (`UIAnim_EvalChannel`: linear
+/// between integer keys) and pass it to the target's parameter setter
+/// (vtable `+0x64`, `UIObject_SetAnimParam`). With mode 0 and a start
+/// frame (`+0xc`), the frame is `clock - start`: the screen's timeline.
+pub fn ui_anim_apply(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x90);
+        c.g[A3][0] = c.g[A3][0] & 0xffff;
+        frame.save(c, S4, 0x30);
+        c.g[A2][0] = c.g[A2][0] & 0x7;
+        frame.save(c, S6, 0x10);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S0, 0x70);
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S5, 0x20);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x80);
+        c.g[S5][0] = c.lhu((c.g[S4][0] as u32).wrapping_add(0xa));
+        let own_clock = c.g[A2][0] != 0;
+        c.g[A1][0] = c.g[S5][0];
+        let mut apply = true;
+        // The middle tail runs on every path through the merge.
+        let mut middle = true;
+        if !own_clock {
+            // On the screen's timeline: the frame is `clock - start`.
+            c.cycles += 5;
+            c.g[V1][0] = c.lhu((c.g[S4][0] as u32).wrapping_add(0xc));
+            c.g[V0][0] = 0xffff;
+            c.g[A0][0] = c.g[V1][0] & 0xffff;
+            let no_start = c.g[A0][0] == c.g[V0][0];
+            c.g[V0][0] = (c.g[A3][0] < c.g[A0][0]) as u64;
+            if !no_start {
+                c.cycles += 2;
+                let before_start = c.g[V0][0] != 0;
+                if before_start {
+                    apply = false;
+                } else {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+                    c.g[V0][0] = sx((c.g[A1][0] as u32) << 16);
+                    c.g[S5][0] = c.g[V1][0] & 0xffff;
+                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 16) as u32);
+                    if c.g[V0][0] == c.g[S5][0] {
+                        apply = false;
+                        middle = false;
+                    } else {
+                        c.cycles += 1;
+                        c.sh((c.g[S4][0] as u32).wrapping_add(0xa), c.g[S5][0]);
+                    }
+                }
+            }
+        }
+        if apply {
+            c.cycles += 3;
+            c.g[V0][0] = c.lh((c.g[S4][0] as u32).wrapping_add(0x8));
+            if c.g[V0][0] != c.g[S5][0] {
+                c.cycles += 5;
+                c.g[V1][0] = c.lw(c.g[S4][0] as u32);
+                c.g[V0][0] = c.lhu((c.g[V1][0] as u32).wrapping_add(0x2));
+                c.g[V0][0] = (c.g[S5][0] < c.g[V0][0]) as u64;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                    c.g[S3][0] = 0;
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 2;
+                        c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4));
+                        loop {
+                            c.cycles += 22;
+                            c.g[S2][0] = sx((c.g[S3][0] as u32) << 2);
+                            c.g[A1][0] = c.g[S5][0];
+                            c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(0x1));
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                            callee::UI_ANIM_EVAL_CHANNEL.call(c, 0x0039_76a4)?;
+                            c.g[S1][0] = c.lw((c.g[S6][0] as u32).wrapping_add(0x8));
+                            c.mov_s(20, 0);
+                            c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4));
+                            c.g[S0][0] = c.lh((c.g[S1][0] as u32).wrapping_add(0x60));
+                            c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                            c.g[S0][0] = sx((c.g[S6][0] as u32).wrapping_add(c.g[S0][0] as u32));
+                            callee::UI_ANIM_GET_FRAME_COUNT_SAFE.call(c, 0x0039_76c0)?;
+                            c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(0x64));
+                            c.g[A1][0] = c.g[V0][0];
+                            c.g[A0][0] = c.g[S0][0];
+                            let setter = c.g[A2][0] as u32;
+                            c.mov_s(12, 20);
+                            call_ptr(c, setter, 0x0039_76d4)?;
+                            c.g[V1][0] = c.lw(c.g[S4][0] as u32);
+                            c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x4));
+                            c.g[V0][0] = (c.g[S3][0] < c.g[V0][0]) as u64;
+                            if c.g[V0][0] == 0 {
+                                break;
+                            }
+                            c.g[A0][0] = c.lw((c.g[S4][0] as u32).wrapping_add(0x4));
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0039_7690);
+                            }
+                        }
+                    }
+                    c.cycles += 1;
+                }
+                c.sh((c.g[S4][0] as u32).wrapping_add(0x8), c.g[S5][0]);
+                c.cycles += 1;
+            }
+        }
+        if middle {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_fpr(c, 20, 0x80);
+        frame.restore_ra(c, 0);
+        c.cycles += 9;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
+    use crate::difftest::check_paths;
 
     use crate::difftest::fakes::machine;
 
@@ -802,5 +947,100 @@ pub(crate) mod tests {
             }
             assert_eq!(c.bus.read16(anim + 0xa), 60, "{hz} Hz");
         }
+    }
+
+    /// A seeded `UIAnim_Apply` call (anim, channels, target); `looped`
+    /// always reaches the channel loop, over three channels. Mode, start
+    /// frame, clock and the last applied frame are drawn independently, so
+    /// every skip path is reached (`ui_anim_apply_matches`).
+    fn apply_state(c: &mut Cpu, r: &mut Rng, seed: u32, looped: bool) {
+        // `UIObject_SetAnimParam`'s jump table.
+        crate::difftest::elf_image(c);
+        let (anim, data, chans) = (DATA + 0x100, DATA + 0x200, DATA + 0x300);
+        let (target, vt) = (DATA + 0x500, DATA + 0x600);
+        let mode = if looped || r.next_u32() % 2 != 0 {
+            1 + r.next_u32() % 7
+        } else {
+            0
+        };
+        let n = if looped { 3 } else { r.next_u32() % 4 };
+        let null = !looped && r.next_u32() % 11 == 0;
+        c.bus.write32(anim, if null { 0 } else { data });
+        c.bus.write32(anim + 4, chans);
+        let frame = r.next_u32() % 12;
+        let start = if r.next_u32() % 3 == 0 {
+            0xffff
+        } else {
+            r.next_u32() % 8
+        };
+        let clock = r.next_u32() % 16;
+        // Already applied: the own frame, the timeline's frame, or neither.
+        let applied = match (looped, r.next_u32() % 3) {
+            (true, _) => frame + 1,
+            (false, 0) => frame,
+            (false, 1) => clock.wrapping_sub(start),
+            _ => r.next_u32(),
+        };
+        c.bus.write16(anim + 0x8, applied as u16);
+        c.bus.write16(anim + 0xa, frame as u16);
+        c.bus.write16(anim + 0xc, start as u16);
+        let count = (r.next_u32() % 16) as u16;
+        c.bus.write16(data + 2, if looped { 15 } else { count });
+        c.bus.write32(data + 4, n);
+        for i in 0..n {
+            let slot = chans + 4 * i;
+            let ch = DATA + 0x700 + 0x40 * i;
+            c.bus
+                .write32(slot, if seed % 7 == 0 && i == 0 { 0 } else { ch });
+            c.bus.write16(ch + 2, ((seed + i) % 17) as u16);
+            c.bus.write16(ch + 6, (r.next_u32() % 4) as u16);
+            c.bus.write16(ch + 0xa, (r.next_u32() % 100) as u16);
+            for k in 0..3u32 {
+                c.bus
+                    .write16(ch + 0xc + 4 * k, (1 + r.next_u32() % 4) as u16);
+                c.bus.write16(ch + 0xe + 4 * k, r.next_u32() as u16);
+            }
+        }
+        c.bus.write32(target + 8, vt);
+        c.bus.write16(vt + 0x60, 0x40);
+        c.bus.write32(vt + 0x64, 0x003a_0048);
+        c.pc = 0x0039_75e0;
+        c.g[A0][0] = anim as u64;
+        c.g[A1][0] = target as u64;
+        c.g[A2][0] = mode as u64;
+        c.g[A3][0] = clock as u64;
+    }
+
+    #[test]
+    fn ui_anim_apply_matches() {
+        use crate::difftest::events::{check_events, schedule, Events};
+        // Every path that ends before the channel loop, by its cost: own
+        // clock with the frame already applied 30, past the frame count 36,
+        // no channels 40; on the timeline with no start frame 35, 41 and 45,
+        // before the start 34, frame unchanged 39, frame moved 44, 50 and 54.
+        check_paths(
+            ee::s13::f_003975e0__generated,
+            ui_anim_apply,
+            400,
+            &[30, 34, 35, 36, 39, 40, 41, 44, 45, 50, 54],
+            &|c, seed| {
+                let mut r = Rng(0x3975_e000 ^ seed as u64);
+                scramble(c, &mut r);
+                apply_state(c, &mut r, seed, false);
+            },
+        );
+        // The channel loop's event check, delivered and unwinding.
+        check_events(
+            ee::s13::f_003975e0__generated,
+            ui_anim_apply,
+            60,
+            &|c, seed| {
+                let mut r = Rng(0x3975_e0e0 ^ seed as u64);
+                scramble(c, &mut r);
+                let mode: Events = schedule(c, &mut r, seed, 0x0039_75e0);
+                apply_state(c, &mut r, seed, true);
+                mode
+            },
+        );
     }
 }
