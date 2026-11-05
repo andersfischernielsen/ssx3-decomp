@@ -51,6 +51,10 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::reg;
+use crate::abi::set_reg;
+use crate::call::VSlot;
+use crate::game::lib::snd;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -102,6 +106,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0034_c668, cflag_manager_update, "cFlagManager_Update"),
     (0x0034_c7f8, flag_manager_render, "cFlagManager_Render"),
+    (0x0034_c2e0, cflag_manager_group_save, "cFlagManager_GroupSave"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3048,6 +3053,109 @@ pub fn flag_manager_render(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// cFlagManager_GroupSave (0x34c2e0).
+
+/// `cFlagGroup` field: `int` item count.
+pub(crate) const FLAG_GROUP_COUNT: u32 = 0x5c;
+
+
+
+/// `cFlagGroup` field: `cFlag*[]` items.
+pub(crate) const FLAG_GROUP_ITEMS: u32 = 0x94;
+
+
+
+/// Stream vtable slot: `Write(this, const void* data, int size)`.
+pub(crate) const FLAG_STREAM_WRITE: u32 = 0x8;
+
+
+
+/// Stream vtable slot: `WriteObject(this, void* object)`.
+pub(crate) const FLAG_STREAM_WRITE_OBJECT: u32 = 0x28;
+
+
+
+/// `void cFlagManager_GroupSave(cFlagGroup* group, Stream* stream)`
+/// (0x34c2e0): write the group's 0x60-byte header to the stream, then each
+/// of its items (`count` at +0x5c, pointers from +0x94) through the
+/// stream's object writer.
+///
+/// Frame 0x50 (s0 +0x40, s1 +0x30, s2 +0x20, s3 +0x10, ra +0).
+pub fn cflag_manager_group_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x50);
+        set_reg(c, A2, 0x60);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        set_reg(c, S1, 0);
+        frame.save(c, S3, 0x10);
+        let stream = reg(c, A1);
+        set_reg(c, S2, stream);
+        frame.save(c, S0, 0x40);
+        let group = reg(c, A0);
+        set_reg(c, S3, group);
+        frame.save_ra(c, 0);
+        set_reg(c, A1, group);
+        let vt = Addr(stream as u32).lw(c);
+        set_reg(c, V0, vt);
+        let write = VSlot::read(c, vt, FLAG_STREAM_WRITE);
+        set_reg(c, A0, write.delta);
+        set_reg(c, V1, write.func);
+        set_reg(c, A0, write.this(stream));
+        call_ptr(c, write.func as u32, 0x0034_c320)?;
+        let group = reg(c, S3);
+        let count = Addr(group as u32).off(FLAG_GROUP_COUNT).lw(c);
+        set_reg(c, V0, count);
+        set_reg(c, S0, addu(group, FLAG_GROUP_ITEMS as u64));
+        if (count as i64) > 0 {
+            c.cycles += 1;
+            let vt = Addr(r32(c, S2)).lw(c);
+            set_reg(c, V0, vt);
+            loop {
+                // Loop head 0x34c330 (s0 the item pointer, s1 the items done,
+                // v0 the stream's vtable).
+                c.cycles += 11;
+                let done = addu(reg(c, S1), 1);
+                set_reg(c, S1, done);
+                let item_at = reg(c, S0);
+                let item = Addr(item_at as u32).lw(c);
+                set_reg(c, A1, item);
+                let vt = reg(c, V0);
+                let write = VSlot::read(c, vt, FLAG_STREAM_WRITE_OBJECT);
+                set_reg(c, S0, addu(item_at, 4));
+                set_reg(c, V1, write.func);
+                let stream = reg(c, S2);
+                set_reg(c, A0, write.this(stream));
+                call_ptr(c, write.func as u32, 0x0034_c34c)?;
+                let count = Addr(r32(c, S3)).off(FLAG_GROUP_COUNT).lw(c);
+                let more = ((reg(c, S1) as i64) < (count as i64)) as u64;
+                set_reg(c, V0, more);
+                if more == 0 {
+                    break;
+                }
+                let vt = Addr(r32(c, S2)).lw(c);
+                set_reg(c, V0, vt);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_c330);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4044,6 +4152,34 @@ pub(crate) mod tests {
                 };
                 c.bus.write32(DATA + 0x20 + i * 0x188 + 0x5c, models);
             }
+        });
+    }
+    use super::*;
+    use crate::game::lib::snd::tests as snd_tests;
+
+
+    /// `cFlagManager_GroupSave` with a stream whose two writers are fakes
+    /// (some calls unwind), groups of a negative, zero or 1..5 items.
+    #[test]
+    fn cflag_manager_group_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::fill;
+        covered(ee::s11::f_0034c2e0__generated, cflag_manager_group_save, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x34_c2e0, 6);
+            c.pc = 0x0034_c2e0;
+            let group = DATA;
+            let stream = DATA + 0x400;
+            let vt = vtable(c, &mut r, &[FLAG_STREAM_WRITE, FLAG_STREAM_WRITE_OBJECT]);
+            c.bus.write32(stream, vt);
+            let count = match seed % 6 {
+                0 => 0,
+                1 => (-(1 + (r.next_u32() % 4) as i32)) as u32,
+                _ => 1 + r.next_u32() % 5,
+            };
+            c.bus.write32(group + FLAG_GROUP_COUNT, count);
+            fill(c, &mut r, group + FLAG_GROUP_ITEMS, 6);
+            c.g[A0][0] = sx(group);
+            c.g[A1][0] = sx(stream);
         });
     }
 }

@@ -265,6 +265,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002f_4690, lens_fx_draw_flare_set, "LensFX_DrawFlareSet"),
     (0x002e_23e0, dynamic_spray_queue_burst, "cDynamicSprayFX_QueueBurst"),
     (0x002e_30d0, lens_fx_render, "LensFX_Render"),
+    (0x002e_2ff8, lensfx_add_sources, "LensFX_AddSources"),
+    (0x002e_3110, lens_fx_update_callback, "LensFX_UpdateCallback"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14191,6 +14193,83 @@ pub fn lens_fx_render(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// LensFX_AddSources (0x2e2ff8, boardwakefx.cpp)
+
+pub(crate) const OC264_LENSFX_ADD_SOURCE: Callee = Callee {
+    addr: 0x002e_2fa8,
+    f: ee::s09::LensFX_AddSource,
+};
+
+
+
+/// `void LensFX_AddSources(LensFX* self, void** sources, int count, int,
+/// int list)` (0x2e2ff8): adds each of the `count` light sources to the
+/// lens-flare source list `list` (`LensFX_AddSource(self, sources[n], list)`).
+pub fn lensfx_add_sources(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[T0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        let none = (c.g[A2][0] as i64) <= 0;
+        frame.save_ra(c, 0);
+        if !none {
+            c.cycles += 3;
+            c.g[S1][0] = c.g[A1][0];
+            c.g[S0][0] = c.g[A2][0];
+            c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+            loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A2][0] = c.g[S2][0];
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                OC264_LENSFX_ADD_SOURCE.call(c, 0x002e_3038)?;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_sub(1));
+                if c.g[S0][0] == 0 {
+                    break;
+                }
+                c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x002e_3028);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// LensFX_UpdateCallback (0x2e3110)
+
+/// `void LensFX_UpdateCallback(LensFX* self)` (0x2e3110): the lens-flare
+/// manager's per-frame callback; forwards to
+/// `LensFX_UpdateSourceVisibility(self)` (gcc's 7-cycle wrapper shape).
+pub fn lens_fx_update_callback(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(Callee { addr: 0x002e_3130, f: ee::s09::f_002e3130 }),
+        0x002e_3120,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -18237,6 +18316,76 @@ pub(crate) mod tests {
                 c.bus.write16(flare + 0x2c, on);
                 c.bus.write16(flare + 0x2e, (r.next_u32() % 2) as u16);
             }
+        });
+    }
+    use super::*;
+    use super::*;
+
+
+    /// LensFX_AddSources: counts -1..5 (none, one, several) into lists 0..3;
+    /// the real LensFX_AddSource (a leaf) appends each source.
+    #[test]
+    fn lensfx_add_sources_matches() {
+        check(ee::s09::f_002e2ff8__generated, lensfx_add_sources, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x2e2f_f8, 0);
+            c.pc = 0x002e_2ff8;
+            let this = DATA + 0x2_0000;
+            let sources = DATA + 0x100;
+            let list = seed % 4;
+            let count = (seed % 7) as i32 - 1;
+            c.g[A0][0] = sx(this);
+            c.g[A1][0] = sx(sources);
+            c.g[A2][0] = sx(count as u32);
+            c.g[T0][0] = sx(list);
+            fill(c, &mut r, sources, 8);
+            // Per-list source counts at self + 0x60.
+            for i in 0..4u32 {
+                c.bus.write32(this + 0x60 + 4 * i, r.next_u32() % 4);
+            }
+        });
+    }
+
+
+    /// LensFX_UpdateCallback with the real LensFX_UpdateSourceVisibility on
+    /// the fixture of its own test (sources with 0..3 elements, occlusion
+    /// queries through a fake or a real return-0 method, disabled flags).
+    #[test]
+    fn lens_fx_update_callback_matches() {
+        use crate::difftest::fill;
+        const RETURN_ZERO: u32 = 0x003a_5ab0;
+        crate::difftest::check(ee::s09::f_002e3110__generated, lens_fx_update_callback, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x2e_3110, 8);
+            c.pc = 0x002e_3110;
+            let (this, vt, targets) = (DATA, DATA + 0x10000, DATA + 0x20000);
+            let target = |r: &mut crate::difftest::Rng| targets + (r.next_u32() & 0xff0);
+            fill(c, &mut r, targets, 0x420);
+            c.bus.write32(this + 0x6494, (seed % 7 == 0) as u32);
+            c.bus.write32(GAME_GP + 0xa28, (seed % 5 != 1) as u32);
+            let count = match seed % 4 {
+                3 => (r.next_u32() % 3) as i32 - 1,
+                k => k as i32,
+            };
+            c.bus.write32(this + 0x6490, count as u32);
+            c.bus.write32(this + 0x649c, vt);
+            c.bus.write16(vt + 0x20, (r.next_u32() & 0x3c) as u16);
+            c.bus.write32(vt + 0x24, if seed % 3 == 0 { RETURN_ZERO } else { FAKE });
+            for i in 0..3u32 {
+                let src = this + 0x210 * i;
+                c.bus.write16(src + 0x609e, (r.next_u32() % 3 != 0) as u16);
+                c.bus.write32(src + 0x6694, r.f32(1.0));
+                c.bus.write32(src + 0x6274, r.f32(1.0));
+                let n = (r.next_u32() % 5) as i32 - 1;
+                c.bus.write32(this + 0x60 + 4 * i, n as u32);
+                for k in 0..4u32 {
+                    let el = this + 0x88 + 0x3000 * i + 0x30 * k;
+                    let t = target(&mut r);
+                    c.bus.write32(el, t);
+                    c.bus.write16(el + 0xe, (r.next_u32() % 3 != 0) as u16);
+                    let t = target(&mut r);
+                    c.bus.write32(el + 0x6000, t);
+                }
+            }
+            c.g[A0][0] = sx(this);
         });
     }
 }

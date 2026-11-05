@@ -246,6 +246,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0010_f998, ai_update_race_positions, "AI_UpdateRacePositions"),
     (0x0011_1ac0, rider_base_save_state, "RiderBase_SaveState"),
+    (0x0011_27f0, rider_select_race_path, "Rider_SelectRacePath"),
+    (0x0011_2a50, rider_select_ai_path, "Rider_SelectAIPath"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7454,6 +7456,624 @@ pub fn ai_update_race_positions(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// Rider_SelectAIPath (0x112a50, computer.cpp)
+
+/// Rider fields: position, velocity, the AI controller (vtable at +0),
+/// the followed AI path and its search hint, the path follow state.
+pub(crate) const RSA_POS: u32 = 0x110;
+
+
+pub(crate) const RSA_VEL: u32 = 0x1e0;
+
+
+pub(crate) const RSA_CLOSEST: u32 = 0x490;
+
+
+pub(crate) const RSA_AHEAD_POINT: u32 = 0x4a0;
+
+
+pub(crate) const RSA_PATH_DIST_PREV: u32 = 0x4c0;
+
+
+pub(crate) const RSA_PATH_DIST: u32 = 0x4c4;
+
+
+pub(crate) const RSA_CLOSEST_DIST: u32 = 0x4c8;
+
+
+pub(crate) const RSA_AI: u32 = 0x6c0;
+
+
+pub(crate) const RSA_AI_PATH: u32 = 0xab8;
+
+
+pub(crate) const RSA_AI_PATH_HINT: u32 = 0xabc;
+
+
+/// Path hint field: the current segment (-1: search the whole path).
+pub(crate) const RSA_HINT_SEGMENT: u32 = 0x14;
+
+
+/// AI controller vtable slots: "uses path weights" (int) and the weight of
+/// a path (float).
+pub(crate) const RSA_VT_USES_WEIGHTS: u32 = 0x48;
+
+
+pub(crate) const RSA_VT_PATH_WEIGHT: u32 = 0xa0;
+
+
+/// `PathData` holding the AI paths.
+pub(crate) const RSA_PATH_DATA: u32 = 0x004d_33a0;
+
+
+/// `.lit4` gp-0x7c7c: the initial best distance (~1e37).
+pub(crate) const RSA_LIT_FAR: u32 = 0x7c7c;
+
+
+/// Callees (another shard, through the table).
+pub(crate) const RSA_FIND_NEAR_AI_PATHS: u32 = 0x0026_afb8;
+
+
+pub(crate) const RSA_PATH_GET_CLOSEST_POINT: u32 = 0x0026_a428;
+
+
+pub(crate) const RSA_PATH_GET_LENGTH: u32 = 0x0026_ac48;
+
+
+pub(crate) const RSA_PATH_GET_POINT_AT_DISTANCE: u32 = 0x0026_ab20;
+
+
+pub(crate) const RSA_PATH_GET_CLOSEST_POINT_FROM: u32 = 0x0026_a638;
+
+
+/// Look-ahead along a path (796.0f), the end margin (200.0f), -1.0f.
+pub(crate) const RSA_LOOK_AHEAD: u64 = 0x4447_0000;
+
+
+pub(crate) const RSA_END_MARGIN: u64 = 0x4348_0000;
+
+
+pub(crate) const RSA_MINUS_ONE: u64 = 0xffff_ffff_bf80_0000;
+
+
+
+/// `|v|²` of the quadword at `addr` (x²+y²+z²+w² through ACC) into `gpr`
+/// with `qmfc2`, as the original's inlined `vu0Dot`.
+pub(crate) fn rsa_vu0_dot_self(c: &mut Cpu, addr: u32, gpr: usize) {
+    c.lqc2(3, addr);
+    c.lqc2(5, addr);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(gpr, 4);
+}
+
+
+
+/// `vf5 = [a] - [b]`, stored through the frame's temporary at sp+0x60 and
+/// reloaded into r2 (the original's by-value vector return).
+pub(crate) fn rsa_vu0_sub_to_v0(c: &mut Cpu, a: u32, b: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, sp(c).wrapping_add(0x60));
+    c.lq(2, sp(c).wrapping_add(0x60));
+}
+
+
+
+/// `void Rider_SelectAIPath(Rider* self, bool keep_current)` (0x112a50):
+/// the AI's path choice. Looks 796 units ahead along the velocity, finds up
+/// to six AI paths near that point and scores each one that has at least
+/// 200 units left past the rider: by the controller's path weight when it
+/// uses weights (highest wins), else by the summed squared distances of the
+/// rider to the path and of the look-ahead point to the path point 796
+/// further on (lowest wins). With `keep_current`, the current path is not a
+/// candidate; a winner equal to the current path counts as none. A new path
+/// becomes current: its closest point and distance are recomputed from a
+/// fresh search and the point 796 ahead becomes the steering target.
+pub fn rider_select_ai_path(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x120);
+        c.mtc1(0, 0);
+        frame.save(c, S0, 0xf0);
+        frame.save(c, S2, 0xd0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S5, 0xa0);
+        c.g[S2][0] = 0;
+        frame.save_fpr(c, 22, 0x110);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save_fpr(c, 21, 0x108);
+        frame.save(c, S1, 0xe0);
+        frame.save(c, S3, 0xc0);
+        frame.save(c, S4, 0xb0);
+        frame.save(c, S6, 0x90);
+        frame.save_ra(c, 0x80);
+        frame.save_fpr(c, 20, 0x100);
+        // |vel| (VU0 length).
+        let this = r32(c, S0);
+        c.lqc2(3, this.wrapping_add(RSA_VEL));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(2, 22);
+        c.mtc1(2, 1);
+        c.lwc1(22, r32(c, GP).wrapping_sub(RSA_LIT_FAR)); // best distance
+        c.c_eq_s(1, 0);
+        c.g[AT][0] = RSA_MINUS_ONE;
+        c.mtc1(1, 21); // best weight
+        if c.fcc() {
+            // Standing still: look from the rider's position.
+            c.cycles += 3;
+            c.lq(2, this.wrapping_add(RSA_POS));
+            c.sq(2, sp(c).wrapping_add(0x30));
+        } else {
+            // look = pos + vel * (796 / |vel|)
+            c.cycles += 17;
+            c.g[AT][0] = RSA_LOOK_AHEAD;
+            c.mtc1(1, 0);
+            c.div_s(0, 0, 1);
+            c.mfc1(3, 0);
+            c.lqc2(4, this.wrapping_add(RSA_VEL));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp(c).wrapping_add(0x60));
+            c.lq(2, sp(c).wrapping_add(0x60));
+            c.sq(2, sp(c).wrapping_add(0x50));
+            c.lqc2(3, this.wrapping_add(RSA_POS));
+            c.lqc2(4, sp(c).wrapping_add(0x50));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, sp(c).wrapping_add(0x60));
+            c.lq(2, sp(c).wrapping_add(0x60));
+            c.sq(2, sp(c).wrapping_add(0x30));
+            c.sq(2, sp(c).wrapping_add(0x40));
+        }
+        // n = PathData_FindNearAIPaths(&ai_paths, &look, paths, 6, 0)
+        c.cycles += 10;
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x30));
+        c.g[S6][0] = c.g[A1][0];
+        c.g[A0][0] = sx(RSA_PATH_DATA);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A3][0] = 6;
+        c.g[T0][0] = 0;
+        call_ptr(c, RSA_FIND_NEAR_AI_PATHS, 0x0011_2b40)?;
+        c.g[S3][0] = c.g[V0][0];
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[S4][0] = sx(r32(c, S0).wrapping_add(RSA_AI));
+            c.g[S1][0] = c.g[SP][0];
+            loop {
+                // 0x112b50: candidate *s1.
+                'candidate: {
+                    c.cycles += 4;
+                    c.g[A0][0] = Addr(r32(c, S1)).lw(c);
+                    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(RSA_AI_PATH)).lw(c);
+                    let is_current = c.g[A0][0] == c.g[V0][0];
+                    c.g[A1][0] = c.g[S6][0];
+                    if is_current {
+                        c.cycles += 2;
+                        if c.g[S5][0] != 0 {
+                            c.g[S3][0] = sx(r32(c, S3).wrapping_sub(1));
+                            break 'candidate;
+                        }
+                        c.cycles += 1;
+                        c.g[A1][0] = c.g[S6][0];
+                    }
+                    // t = Path_GetClosestPoint(path, &look, &out, &t_out, 1)
+                    c.cycles += 14;
+                    c.g[A2][0] = sx(sp(c).wrapping_add(0x20));
+                    c.g[A3][0] = sx(sp(c).wrapping_add(0x70));
+                    c.g[T0][0] = 1;
+                    call_ptr(c, RSA_PATH_GET_CLOSEST_POINT, 0x0011_2b7c)?;
+                    c.g[A0][0] = Addr(r32(c, S1)).lw(c);
+                    c.mov_s(20, 0);
+                    call_ptr(c, RSA_PATH_GET_LENGTH, 0x0011_2b88)?;
+                    c.g[AT][0] = RSA_END_MARGIN;
+                    c.mtc1(1, 1);
+                    c.sub_s(0, 0, 1);
+                    c.c_lt_s(0, 20);
+                    if c.fcc() {
+                        // Too close to the end of this path.
+                        c.g[S3][0] = sx(r32(c, S3).wrapping_sub(1));
+                        break 'candidate;
+                    }
+                    // ahead = Path_GetPointAtDistance(path, 0, t + 796)
+                    c.cycles += 46;
+                    c.g[AT][0] = RSA_LOOK_AHEAD;
+                    c.mtc1(1, 12);
+                    c.g[A0][0] = sx(sp(c).wrapping_add(0x50));
+                    c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+                    c.g[A2][0] = 0;
+                    c.add_s(12, 20, 12);
+                    call_ptr(c, RSA_PATH_GET_POINT_AT_DISTANCE, 0x0011_2bc0)?;
+                    // d1 = look - ahead (sp+0x40), d0 = pos - out (sp+0x50)
+                    let base = sp(c);
+                    rsa_vu0_sub_to_v0(c, base.wrapping_add(0x30), base.wrapping_add(0x50));
+                    c.sq(2, base.wrapping_add(0x40));
+                    rsa_vu0_sub_to_v0(c, r32(c, S0).wrapping_add(RSA_POS), base.wrapping_add(0x20));
+                    c.g[A1][0] = Addr(r32(c, S0).wrapping_add(RSA_AI)).lw(c);
+                    c.sq(2, base.wrapping_add(0x50));
+                    rsa_vu0_dot_self(c, base.wrapping_add(0x40), 2);
+                    c.mtc1(2, 0);
+                    rsa_vu0_dot_self(c, base.wrapping_add(0x50), 3);
+                    c.mtc1(3, 1);
+                    // ai->UsesPathWeights()
+                    let vt = r32(c, A1);
+                    c.g[A0][0] = Addr(vt.wrapping_add(RSA_VT_USES_WEIGHTS)).lh(c);
+                    c.add_s(20, 1, 0); // dist = |d0|² + |d1|²
+                    c.g[V0][0] = Addr(vt.wrapping_add(RSA_VT_USES_WEIGHTS + 4)).lw(c);
+                    let method = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx(r32(c, S4).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, method, 0x0011_2c50)?;
+                    c.g[V1][0] = 1;
+                    if c.g[V0][0] == c.g[V1][0] {
+                        // weight = ai->PathWeight(path); highest wins.
+                        c.cycles += 11;
+                        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(RSA_AI)).lw(c);
+                        c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+                        let vt = r32(c, V0);
+                        c.g[A0][0] = Addr(vt.wrapping_add(RSA_VT_PATH_WEIGHT)).lh(c);
+                        c.g[V1][0] = Addr(vt.wrapping_add(RSA_VT_PATH_WEIGHT + 4)).lw(c);
+                        let method = c.g[V1][0] as u32;
+                        c.g[A0][0] = sx(r32(c, S0).wrapping_add(c.g[A0][0] as u32));
+                        call_ptr(c, method, 0x0011_2c74)?;
+                        c.mov_s(20, 0);
+                        c.c_lt_s(21, 20);
+                        if !c.fcc() {
+                            c.g[S3][0] = sx(r32(c, S3).wrapping_sub(1));
+                            break 'candidate;
+                        }
+                        c.cycles += 3;
+                        c.g[S2][0] = Addr(r32(c, S1)).lw(c);
+                        c.mov_s(21, 20);
+                    } else {
+                        // Lowest distance wins.
+                        c.cycles += 4;
+                        c.c_lt_s(20, 22);
+                        if !c.fcc() {
+                            c.g[S3][0] = sx(r32(c, S3).wrapping_sub(1));
+                            break 'candidate;
+                        }
+                        c.cycles += 2;
+                        c.g[S2][0] = Addr(r32(c, S1)).lw(c);
+                        c.mov_s(22, 20);
+                    }
+                    // 0x112cac: the current path is no new choice.
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(RSA_AI_PATH)).lw(c);
+                    c.g[V0][0] ^= c.g[S2][0];
+                    if c.g[V0][0] == 0 {
+                        c.g[S2][0] = 0;
+                    }
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_sub(1));
+                }
+                // 0x112cbc
+                c.cycles += 2;
+                let more = c.g[S3][0] != 0;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0011_2b50);
+                }
+            }
+        }
+        // 0x112cc4
+        c.cycles += 2;
+        c.g[V0][0] = u64::MAX;
+        if c.g[S2][0] != 0 {
+            // Follow the new path from a fresh closest-point search.
+            c.cycles += 22;
+            let this = r32(c, S0);
+            c.g[V1][0] = Addr(this.wrapping_add(RSA_AI_PATH_HINT)).lw(c);
+            Addr(this.wrapping_add(RSA_AI_PATH)).sw(c, c.g[S2][0]);
+            c.g[A1][0] = sx(this.wrapping_add(RSA_POS));
+            Addr(r32(c, V1).wrapping_add(RSA_HINT_SEGMENT)).sw(c, c.g[V0][0]);
+            c.g[A2][0] = sx(this.wrapping_add(RSA_CLOSEST));
+            c.g[A3][0] = sx(this.wrapping_add(RSA_CLOSEST_DIST));
+            c.g[T1][0] = 1;
+            c.g[A0][0] = Addr(this.wrapping_add(RSA_AI_PATH)).lw(c);
+            c.g[T0][0] = Addr(this.wrapping_add(RSA_AI_PATH_HINT)).lw(c);
+            call_ptr(c, RSA_PATH_GET_CLOSEST_POINT_FROM, 0x0011_2cf4)?;
+            let this = r32(c, S0);
+            c.g[AT][0] = RSA_LOOK_AHEAD;
+            c.mtc1(1, 12);
+            c.g[A0][0] = sx(sp(c).wrapping_add(0x40));
+            c.g[A1][0] = Addr(this.wrapping_add(RSA_AI_PATH)).lw(c);
+            c.g[A2][0] = 0;
+            c.add_s(12, 0, 12);
+            c.swc1(0, this.wrapping_add(RSA_PATH_DIST));
+            call_ptr(c, RSA_PATH_GET_POINT_AT_DISTANCE, 0x0011_2d14)?;
+            let this = r32(c, S0);
+            c.lq(2, sp(c).wrapping_add(0x40));
+            c.lwc1(0, this.wrapping_add(RSA_PATH_DIST));
+            c.sq(2, this.wrapping_add(RSA_AHEAD_POINT));
+            c.swc1(0, this.wrapping_add(RSA_PATH_DIST_PREV));
+        }
+        c.cycles += 13;
+        frame.restore(c, S0, 0xf0);
+        frame.restore(c, S1, 0xe0);
+        frame.restore(c, S2, 0xd0);
+        frame.restore(c, S3, 0xc0);
+        frame.restore(c, S4, 0xb0);
+        frame.restore(c, S5, 0xa0);
+        frame.restore(c, S6, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.restore_fpr(c, 22, 0x110);
+        frame.restore_fpr(c, 21, 0x108);
+        frame.restore_fpr(c, 20, 0x100);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// Rider_SelectRacePath (0x1127f0)
+
+/// Rider fields used by the race-path choice.
+pub(crate) const SELECT_PATH_POS: u32 = 0x110;
+
+
+pub(crate) const SELECT_PATH_VEL: u32 = 0x1e0;
+
+
+pub(crate) const SELECT_PATH_TRACK_DIST: u32 = 0x4d0;
+
+
+pub(crate) const SELECT_PATH_CURRENT: u32 = 0xab4;
+
+
+pub(crate) const SELECT_PATH_AI_STATE: u32 = 0xac0;
+
+
+/// The path data (`D_004D33A0`).
+pub(crate) const SELECT_PATH_DATA: u32 = 0x004d_33a0;
+
+
+pub(crate) const SELECT_PATH_LOOK_AHEAD: Callee = Callee { addr: 0x0011_2588, f: ee::s00::f_00112588 };
+
+
+pub(crate) const SELECT_PATH_FIND_NEAR: u32 = 0x0026_b178;
+
+
+pub(crate) const SELECT_PATH_CLOSEST_POINT: u32 = 0x0026_a428;
+
+
+pub(crate) const SELECT_PATH_POINT_AT: u32 = 0x0026_ab20;
+
+
+
+/// `void Rider_SelectRacePath(Rider* self, bool skipCurrent)` (0x1127f0):
+/// pick the race path for the AI. The probe point is the position, moved
+/// ahead along the velocity by the look-ahead distance
+/// (`Rider_GetAIPathLookAheadDist(self, 1)`); of up to three nearby track
+/// paths (`PathData_FindNearTrackPaths`), optionally skipping the current
+/// one, choose the one minimising |pos - closest point|^2 + |probe - point
+/// 796 further along|^2 (`Path_GetClosestPoint`, `Path_GetPointAtDistance`).
+/// If the current path's distance disagrees with the rider's by more than
+/// 1592, the AI state's `+0x14` is reset to -1. The choice goes to `+0xab4`.
+pub fn rider_select_race_path(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0x110);
+        c.mtc1(0, 0);
+        frame.save(c, S1, 0xd0);
+        frame.save(c, S4, 0xa0);
+        frame.save_fpr(c, 21, 0xf8);
+        frame.save(c, S0, 0xe0);
+        frame.save(c, S2, 0xc0);
+        frame.save(c, S3, 0xb0);
+        frame.save(c, S5, 0x90);
+        frame.save(c, S6, 0x80);
+        frame.save_ra(c, 0x70);
+        frame.save_fpr(c, 22, 0x100);
+        frame.save_fpr(c, 20, 0xf0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S4][0] = c.g[A1][0];
+        let me = r32(c, S1);
+        // f20 = |velocity.xyz|
+        c.lqc2(3, me.wrapping_add(SELECT_PATH_VEL));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(V0, 22);
+        c.mtc1(V0, 20);
+        c.lwc1(21, r32(c, GP).wrapping_sub(0x7c80)); // best = 1e37
+        c.c_eq_s(20, 0);
+        let still = c.fcc();
+        c.g[S3][0] = Addr(me.wrapping_add(SELECT_PATH_CURRENT)).lw(c); // best path
+        let s = sp(c);
+        if still {
+            c.cycles += 3;
+            c.lq(V0, me.wrapping_add(SELECT_PATH_POS));
+            c.sq(V0, s + 0x20);
+        } else {
+            // probe = pos + vel * (lookahead / |vel|)
+            c.cycles += 18;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x1;
+            SELECT_PATH_LOOK_AHEAD.call(c, 0x0011_2880)?;
+            let me = r32(c, S1);
+            c.div_s(0, 0, 20);
+            c.mfc1(V1, 0);
+            c.lqc2(4, me.wrapping_add(SELECT_PATH_VEL));
+            c.qmtc2(V1, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, s + 0x50);
+            c.lq(V0, s + 0x50);
+            c.sq(V0, s + 0x40);
+            c.lqc2(3, me.wrapping_add(SELECT_PATH_POS));
+            c.lqc2(4, s + 0x40);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s + 0x50);
+            c.lq(V0, s + 0x50);
+            c.sq(V0, s + 0x20);
+            c.sq(V0, s + 0x30);
+        }
+
+        // Up to three track paths near the probe (into sp+0).
+        c.cycles += 9;
+        c.g[A1][0] = sx(s + 0x20);
+        c.g[S6][0] = c.g[A1][0];
+        c.g[A0][0] = sx(SELECT_PATH_DATA);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A3][0] = 0x3;
+        call_ptr(c, SELECT_PATH_FIND_NEAR, 0x0011_28d8)?;
+        c.g[S2][0] = c.g[V0][0];
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 6;
+            c.g[AT][0] = 0x44c7_0000;
+            c.mtc1(AT, 22); // 1592.0
+            c.g[AT][0] = 0x4447_0000;
+            c.mtc1(AT, 20); // 796.0
+            c.g[S5][0] = u64::MAX;
+            c.g[S0][0] = c.g[SP][0];
+            loop {
+                let slot = r32(c, S0);
+                c.cycles += 2;
+                let mut skip = false;
+                if c.g[S4][0] != 0 {
+                    c.cycles += 4;
+                    c.g[V1][0] = Addr(slot).lw(c);
+                    c.g[V0][0] = Addr(r32(c, S1).wrapping_add(SELECT_PATH_CURRENT)).lw(c);
+                    if c.g[V1][0] == c.g[V0][0] {
+                        c.g[S2][0] = sx(r32(c, S2).wrapping_sub(1));
+                        skip = true;
+                    } else {
+                        c.cycles += 1;
+                    }
+                }
+                if !skip {
+                    c.g[A0][0] = Addr(slot).lw(c);
+                    // Closest point (sp+0x10) and its distance along the path.
+                    c.cycles += 9;
+                    c.g[A1][0] = c.g[S6][0];
+                    c.g[A2][0] = sx(s + 0x10);
+                    c.g[A3][0] = sx(s + 0x60);
+                    c.g[T0][0] = 0x1;
+                    call_ptr(c, SELECT_PATH_CLOSEST_POINT, 0x0011_2928)?;
+                    let me = r32(c, S1);
+                    c.g[V1][0] = Addr(slot).lw(c);
+                    c.g[V0][0] = Addr(me.wrapping_add(SELECT_PATH_CURRENT)).lw(c);
+                    let current = c.g[V1][0] == c.g[V0][0];
+                    c.mov_s(12, 0);
+                    let mut lost = true;
+                    if current {
+                        c.cycles += 9;
+                        c.lwc1(0, r32(c, V1).wrapping_add(0x38));
+                        c.lwc1(1, me.wrapping_add(SELECT_PATH_TRACK_DIST));
+                        c.sub_s(0, 0, 1);
+                        c.sub_s(0, 0, 12);
+                        c.abs_s(0, 0);
+                        c.c_lt_s(22, 0);
+                        if c.fcc() {
+                            c.cycles += 2;
+                            c.g[V0][0] = Addr(me.wrapping_add(SELECT_PATH_AI_STATE)).lw(c);
+                            Addr(r32(c, V0).wrapping_add(0x14)).sw(c, c.g[S5][0]);
+                        } else {
+                            lost = false;
+                        }
+                    }
+                    if lost {
+                        c.cycles += 1;
+                    }
+                    c.add_s(12, 12, 20); // t + 796
+
+                    // dist = |pos - closest|^2 + |probe - ahead|^2
+                    c.cycles += 39;
+                    c.g[A1][0] = Addr(slot).lw(c);
+                    c.g[A0][0] = sx(s + 0x40);
+                    c.g[A2][0] = 0;
+                    call_ptr(c, SELECT_PATH_POINT_AT, 0x0011_2978)?;
+                    let me = r32(c, S1);
+                    c.lqc2(3, s + 0x20);
+                    c.lqc2(4, s + 0x40);
+                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, s + 0x50);
+                    c.lq(V0, s + 0x50);
+                    c.sq(V0, s + 0x30);
+                    c.lqc2(3, me.wrapping_add(SELECT_PATH_POS));
+                    c.lqc2(4, s + 0x10);
+                    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, s + 0x50);
+                    c.lq(V0, s + 0x50);
+                    c.sq(V0, s + 0x40);
+                    c.lqc2(3, s + 0x40);
+                    c.lqc2(5, s + 0x40);
+                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                    c.qmfc2(V1, 4);
+                    c.mtc1(V1, 1);
+                    c.lqc2(3, s + 0x30);
+                    c.lqc2(5, s + 0x30);
+                    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+                    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                    c.qmfc2(V0, 4);
+                    c.mtc1(V0, 0);
+                    c.add_s(1, 1, 0);
+                    c.c_lt_s(1, 21);
+                    let better = c.fcc();
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_sub(1));
+                    if better {
+                        c.cycles += 2;
+                        c.g[S3][0] = Addr(slot).lw(c);
+                        c.mov_s(21, 1);
+                    }
+                }
+                c.cycles += 2;
+                let more = c.g[S2][0] != 0;
+                c.g[S0][0] = sx(slot.wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0011_28f8);
+                }
+            }
+        }
+
+        c.cycles += 14;
+        Addr(r32(c, S1).wrapping_add(SELECT_PATH_CURRENT)).sw(c, c.g[S3][0]);
+        frame.restore(c, S0, 0xe0);
+        frame.restore(c, S1, 0xd0);
+        frame.restore(c, S2, 0xc0);
+        frame.restore(c, S3, 0xb0);
+        frame.restore(c, S4, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore(c, S6, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.restore_fpr(c, 22, 0x100);
+        frame.restore_fpr(c, 21, 0xf8);
+        frame.restore_fpr(c, 20, 0xf0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9883,5 +10503,154 @@ pub(crate) mod tests {
             schedule(c, &mut r, seed, 0x0010_f998)
         };
         check_events(ee::s00::f_0010f998__generated, ai_update_race_positions, 300, &setup);
+    }
+    use super::*;
+    use super::*;
+
+
+    /// Rider_SelectAIPath: standing still or moving (look-ahead point), 0..4
+    /// AI paths of 1..4 segments around the rider (real
+    /// PathData_FindNearAIPaths / Path_GetClosestPoint / Path_GetLength /
+    /// Path_GetPointAtDistance / Path_GetClosestPointFrom on the game's
+    /// `.lit4` constants), the current path among them or not, keep flag on
+    /// and off, and the AI controller's two virtual methods as fakes ("uses
+    /// weights" forced to 1 or not, a random weight), some unwinding.
+    #[test]
+    fn rider_select_ai_path_matches() {
+        use crate::difftest::elf_image;
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::game::worldpainter::quadtree::tests::put_vtable;
+        const SELF: u32 = DATA + 0x20_0000;
+        const VT: u32 = DATA + 0x20_2000;
+        const HINT: u32 = DATA + 0x20_2100;
+        const PATHS: u32 = DATA + 0x20_4000;
+        const SEGS: u32 = DATA + 0x20_5000;
+        check(ee::s00::f_00112a50__generated, rider_select_ai_path, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x11_2a50, 4);
+            elf_image(c);
+            c.pc = 0x0011_2a50;
+            let f = |v: f32| v.to_bits();
+            let uf = |r: &mut Rng, lo: f32, hi: f32| lo + (r.next_u32() % 10_000) as f32 / 10_000.0 * (hi - lo);
+            // The rider.
+            let pos = [uf(&mut r, -100.0, 100.0), uf(&mut r, -100.0, 100.0), uf(&mut r, -10.0, 10.0)];
+            put_vec(c, SELF + RSA_POS, [f(pos[0]), f(pos[1]), f(pos[2]), f(1.0)]);
+            let vel = if seed % 4 == 0 {
+                [0; 4]
+            } else {
+                [f(uf(&mut r, -30.0, 30.0)), f(uf(&mut r, -30.0, 30.0)), f(uf(&mut r, -3.0, 3.0)), 0]
+            };
+            put_vec(c, SELF + RSA_VEL, vel);
+            c.bus.write32(SELF + RSA_AI, VT);
+            put_vtable(c, &mut r, VT, &[RSA_VT_USES_WEIGHTS, RSA_VT_PATH_WEIGHT]);
+            c.bus.write32(SELF + RSA_AI_PATH_HINT, HINT);
+            for n in 0..8 {
+                c.bus.write32(LOG_RESULTS + 4 * n, r.next_u32() % 2);
+            }
+            // The AI paths.
+            let count = seed % 5;
+            c.bus.write32(RSA_PATH_DATA + 8, count);
+            c.bus.write32(RSA_PATH_DATA + 0xc, PATHS);
+            for i in 0..4u32 {
+                let path = PATHS + 0x40 * i;
+                let segs = SEGS + 0x100 * i;
+                let n = 1 + r.next_u32() % 4;
+                c.bus.write32(path + 8, n);
+                let start = [pos[0] + uf(&mut r, -150.0, 150.0), pos[1] + uf(&mut r, -150.0, 150.0), pos[2]];
+                for k in 0..3 {
+                    c.bus.write32(path + 0xc + 4 * k, f(start[k as usize]));
+                }
+                c.bus.write32(path + 0x18, segs);
+                // Bounds (min, max): around the start, often holding the rider.
+                let reach = if r.next_u32() % 2 == 0 { 400.0 } else { 50.0 };
+                for k in 0..3 {
+                    c.bus.write32(path + 0x1c + 4 * k, f(start[k as usize] - reach));
+                    c.bus.write32(path + 0x28 + 4 * k, f(start[k as usize] + reach));
+                }
+                for k in 0..n {
+                    let a = uf(&mut r, 0.0, 6.28);
+                    put_vec(c, segs + 0x10 * k, [f(a.cos()), f(a.sin()), f(uf(&mut r, -0.2, 0.2)), f(uf(&mut r, 100.0, 700.0))]);
+                }
+            }
+            let current = match seed % 3 {
+                0 => 0,
+                1 => PATHS + 0x40 * (r.next_u32() % 4),
+                _ => PATHS,
+            };
+            c.bus.write32(SELF + RSA_AI_PATH, current);
+            c.g[A0][0] = sx(SELF);
+            c.g[A1][0] = ((seed / 3) % 2) as u64;
+        });
+    }
+
+
+    /// Rider_SelectRacePath with its real callees (look-ahead distance,
+    /// PathData_FindNearTrackPaths, Path_GetClosestPoint,
+    /// Path_GetPointAtDistance) on the game's literals: 0..4 track paths of
+    /// 1..4 segments whose bounding boxes contain the probe or not; the
+    /// rider standing still or moving, its current path one of them (with
+    /// a track distance near or far from the closest point's) or another;
+    /// skipping the current path or not.
+    #[test]
+    fn rider_select_race_path_matches() {
+        crate::difftest::check(ee::s00::f_001127f0__generated, rider_select_race_path, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x11_27f0, 0);
+            elf_image(c);
+            let me = DATA + 0x1000;
+            let ai_state = DATA + 0x3000;
+            let tracks = DATA + 0x1_0000;
+            let n = match seed % 6 {
+                0 => 0,
+                5 => 4,
+                k => k,
+            };
+            c.bus.write32(SELECT_PATH_DATA + 0x10, n);
+            c.bus.write32(SELECT_PATH_DATA + 0x14, tracks);
+            for i in 0..4u32 {
+                let t = tracks + 0x3c * i;
+                let segs = DATA + 0x2_0000 + 0x100 * i;
+                c.bus.write32(t + 8, 1 + r.next_u32() % 4);
+                for k in 0..3 {
+                    c.bus.write32(t + 0xc + 4 * k, r.f32(50.0));
+                }
+                c.bus.write32(t + 0x18, segs);
+                let inside = r.next_u32() % 4 != 0;
+                for k in 0..3 {
+                    let (lo, hi) = if inside { (-200.0f32, 200.0f32) } else { (300.0, 400.0) };
+                    c.bus.write32(t + 0x1c + 4 * k, lo.to_bits());
+                    c.bus.write32(t + 0x28 + 4 * k, hi.to_bits());
+                }
+                c.bus.write32(t + 0x38, ((r.next_u32() % 4000) as f32).to_bits());
+                for k in 0..4 {
+                    let a = (r.next_u32() % 628) as f32 / 100.0;
+                    let z = (r.next_u32() % 100) as f32 / 400.0;
+                    let seg = segs + 0x10 * k;
+                    c.bus.write32(seg, a.cos().to_bits());
+                    c.bus.write32(seg + 4, a.sin().to_bits());
+                    c.bus.write32(seg + 8, z.to_bits());
+                    c.bus.write32(seg + 0xc, (10.0 + (r.next_u32() % 5000) as f32 / 100.0).to_bits());
+                }
+            }
+            put_vec(c, me + SELECT_PATH_POS, [r.f32(60.0), r.f32(60.0), r.f32(60.0), 1.0f32.to_bits()]);
+            let vel = if seed % 4 == 0 {
+                [0, 0, 0, 0]
+            } else {
+                [r.f32(30.0), r.f32(30.0), r.f32(30.0), 0]
+            };
+            put_vec(c, me + SELECT_PATH_VEL, vel);
+            let current = match r.next_u32() % 3 {
+                0 => DATA + 0x5000,
+                _ => tracks + 0x3c * (r.next_u32() % 3),
+            };
+            c.bus.write32(me + SELECT_PATH_CURRENT, current);
+            c.bus.write32(me + SELECT_PATH_AI_STATE, ai_state);
+            c.bus.write32(ai_state + 0x14, r.next_u32());
+            // Near (within 1592 of the current path's base) or far.
+            let base = f32::from_bits(c.bus.read32(current + 0x38));
+            let near = if seed % 3 == 0 { base + 5000.0 } else { base - 20.0 };
+            c.bus.write32(me + SELECT_PATH_TRACK_DIST, near.to_bits());
+            c.g[A0][0] = sx(me);
+            c.g[A1][0] = if seed % 2 == 0 { 0 } else { 1 };
+            c.pc = 0x0011_27f0;
+        });
     }
 }

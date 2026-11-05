@@ -323,6 +323,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0036_1098, mod_obj_get_matrices, "ModObj_GetMatrices"),
     (0x0036_5f68, vram_heap_nodes_to_scratchpad, "VramHeap_NodesToScratchpad"),
     (0x0036_5fa8, vram_heap_nodes_from_scratchpad, "VramHeap_NodesFromScratchpad"),
+    (0x0035_fd98, uv_scroll_modifier_save, "UVScrollModifier_Save"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -5882,6 +5883,46 @@ pub fn vram_heap_nodes_to_scratchpad(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// UVScrollModifier_Save (0x35fd98)
+
+/// The stream's `write(data, size)` vtable slot (delta at +8, fn at +0xc).
+pub(crate) const UV_SCROLL_SAVE_WRITE_SLOT: u32 = 0x8;
+
+
+/// Bytes of UVScrollModifier state saved.
+pub(crate) const UV_SCROLL_SAVE_SIZE: u64 = 0x50;
+
+
+
+/// `void UVScrollModifier_Save(UVScrollModifier* self, Stream* out)`
+/// (0x35fd98): write the modifier's first 0x50 bytes with `out->write(self,
+/// 0x50)` (virtual slot 8).
+pub fn uv_scroll_modifier_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[A2][0] = UV_SCROLL_SAVE_SIZE;
+        let out = r32(c, A3);
+        c.g[V1][0] = Addr(out).lw(c);
+        let vt = r32(c, V1);
+        c.g[A0][0] = Addr(vt.wrapping_add(UV_SCROLL_SAVE_WRITE_SLOT)).lh(c);
+        c.g[V0][0] = Addr(vt.wrapping_add(UV_SCROLL_SAVE_WRITE_SLOT + 4)).lw(c);
+        let target = r32(c, V0);
+        c.g[A0][0] = sx(out.wrapping_add(r32(c, A0)));
+        call_ptr(c, target, 0x0035_fdc0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8115,5 +8156,24 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(heap);
             },
         );
+    }
+    use super::*;
+
+
+    /// UVScrollModifier_Save: the stream's write method is a fake (which may
+    /// unwind).
+    #[test]
+    fn uv_scroll_modifier_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::DATA;
+        covered(ee::s12::f_0035fd98__generated, uv_scroll_modifier_save, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x0035_fd98, 1);
+            c.pc = 0x0035_fd98;
+            let out = DATA + 0x300;
+            let vt = vtable(c, &mut r, &[UV_SCROLL_SAVE_WRITE_SLOT]);
+            c.bus.write32(out, vt);
+            c.g[A0][0] = sx(DATA + 0x100);
+            c.g[A1][0] = sx(out);
+        });
     }
 }

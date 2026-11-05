@@ -94,6 +94,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0031_aa58, ps2_exec_man_wait_frame, "PS2ExecMan_WaitFrame"),
     (0x0031_ad20, ssx_cd_tray_callback, "ssx_CdTrayCallback"),
+    (0x0031_abd0, ps2_exec_man_vblank_signal, "PS2ExecMan_VBlankSignal"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1478,6 +1479,48 @@ pub(crate) fn virtual_call(c: &mut Cpu, slot: u32, ret: u32) -> crate::call::Flo
     call_ptr(c, method, ret)
 }
 
+
+
+
+// -- 0x0031abd0 PS2ExecMan_VBlankSignal --------------------------------------
+
+/// Exec manager: "VSync thread busy" flag (+0x4038) and its VBlank
+/// semaphore id (+0x4034).
+pub(crate) const EXEC_VSYNC_BUSY: u32 = 0x4038;
+
+
+pub(crate) const EXEC_VSYNC_SEMA: u32 = 0x4034;
+
+
+
+/// `void PS2ExecMan_VBlankSignal(void)` (0x31abd0), the VBlank handler: when
+/// the exec manager's VSync thread is idle (+0x4038 == 0), wake it with
+/// `iSignalSema(sema)` (+0x4034). Frame 0x10 (ra).
+pub fn ps2_exec_man_vblank_signal(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        // App_GetExecMan()
+        Callee { addr: 0x0031_7520, f: ee::s10::f_00317520 }.call(c, 0x0031_abe0)?;
+        let exec = c.g[V0][0];
+        c.g[V1][0] = exec;
+        let busy = Addr((exec as u32).wrapping_add(EXEC_VSYNC_BUSY)).lw(c);
+        c.g[V0][0] = busy;
+        frame.restore_ra(c, 0);
+        if busy == 0 {
+            c.cycles += 3;
+            c.g[A0][0] = Addr((exec as u32).wrapping_add(EXEC_VSYNC_SEMA)).lw(c);
+            // iSignalSema(sema)
+            call_ptr(c, 0x0042_3dd0, 0x0031_abf8)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2036,5 +2079,29 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
             },
         );
+    }
+    use super::*;
+
+
+    // -- 0x0031abd0 PS2ExecMan_VBlankSignal ------------------------------------
+
+    /// `PS2ExecMan_VBlankSignal` against the generated body: the VSync thread
+    /// busy (no signal) or idle (the real `iSignalSema`, whose syscall is a
+    /// fake: some unwind).
+    #[test]
+    fn ps2_exec_man_vblank_signal_matches() {
+        use crate::difftest::fakes::{covered, machine};
+        use crate::difftest::{DATA, GAME_GP};
+        const APP: u32 = DATA + 0x1_0000;
+        const EXEC: u32 = DATA + 0x2_0000;
+        covered(ee::s10::f_0031abd0__generated, ps2_exec_man_vblank_signal, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0031_abd0, 1);
+            c.pc = 0x0031_abd0;
+            c.bus.write32(GAME_GP + 0x2a74, APP);
+            c.bus.write32(APP + 8, EXEC);
+            let busy = if r.next_u32() % 3 == 0 { r.next_u32() | 1 } else { 0 };
+            c.bus.write32(EXEC + EXEC_VSYNC_BUSY, busy);
+            c.bus.write32(EXEC + EXEC_VSYNC_SEMA, r.next_u32() % 64);
+        });
     }
 }

@@ -531,6 +531,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ScriptAudioObj_UpdateSounds",
     ),
     (0x0027_8918, script_engine_poll_async_loads, "ScriptEngine_PollAsyncLoads"),
+    (0x0027_89c0, script_engine_toggle_movie_pause, "ScriptEngine_ToggleMoviePause"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8139,6 +8140,30 @@ pub fn script_engine_poll_async_loads(c: &mut Cpu) {
     });
 }
 
+
+
+
+/// `void ScriptEngine_ToggleMoviePause(ScriptEngine* self)` (0x2789c0):
+/// pause or resume the script engine's movie (`ScriptMovie_TogglePause` on
+/// the movie embedded at `+0x500`).
+pub fn script_engine_toggle_movie_pause(c: &mut Cpu) {
+    const MOVIE: u32 = 0x500;
+    const SCRIPT_MOVIE_TOGGLE_PAUSE: Callee = Callee {
+        addr: 0x0028_3af8,
+        f: ee::s07::f_00283af8,
+    };
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(MOVIE));
+        SCRIPT_MOVIE_TOGGLE_PAUSE.call(c, 0x0027_89d0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11037,6 +11062,41 @@ pub(crate) mod tests {
                 // below ours): zero, so they take the short paths.
                 c.bus.write32(SP - 0x50 - 0x30 + 0x4, 0);
                 c.bus.write32(SP - 0x50 - 0xf0 + 0x84, 0);
+            },
+        );
+    }
+    use super::*;
+
+
+    /// ScriptEngine_ToggleMoviePause: the real ScriptMovie_TogglePause on
+    /// the movie at engine + 0x500 (no player, not playing, pause or resume
+    /// requested, player paused or not), as in its own test.
+    #[test]
+    fn script_engine_toggle_movie_pause_matches() {
+        check(
+            ee::s07::f_002789c0__generated,
+            script_engine_toggle_movie_pause,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x27_89c0, 0);
+                let engine = DATA;
+                let movie = engine + 0x500;
+                let player = DATA + 0x1000;
+                let flag = |r: &mut Rng, k: u32| {
+                    if (seed >> k) & 1 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    }
+                };
+                c.bus.write32(movie, if seed % 9 == 8 { 0 } else { player });
+                c.bus.write32(movie + 4, if seed % 7 == 6 { 0 } else { r.next_u32() | 1 });
+                c.bus.write32(movie + 8, flag(&mut r, 0));
+                c.bus.write32(player + 8, flag(&mut r, 1));
+                c.bus.write32(player + 0x38, flag(&mut r, 2) & (seed / 4 % 2).wrapping_neg());
+                c.bus.write32(player + 0x3c, 0);
+                c.g[A0][0] = sx(engine);
+                c.pc = 0x0027_89c0;
             },
         );
     }

@@ -32,6 +32,8 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
+use crate::call::sp;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -100,6 +102,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_bagt_int_destroy_instance,
         "BEBAGTInt_DestroyInstance",
     ),
+    (0x0014_fea8, bebagt_int_get_uber_trick_slot_value, "BEBAGTInt_GetUberTrickSlotValue"),
+    (0x0015_0198, bebagt_int_get_trick_anim, "BEBAGTInt_GetTrickAnim"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -602,6 +606,261 @@ pub fn be_bagt_int_clear_uber_trick_bit(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// BEBAGTInt_GetUberTrickSlotValue (0x14fea8, beintbagt.cpp)
+
+/// Uber trick table (`D_0045AEB8`, 0x14-byte entries; +0xc: slot enabled).
+pub(crate) const OC264_UBER_TRICKS: u32 = 0x0045_aeb8;
+
+
+pub(crate) const OC264_UBER_TRICK_SIZE: u64 = 0x14;
+
+
+pub(crate) const OC264_UBER_TRICK_ENABLED: u32 = 0xc;
+
+
+/// Per profile/character/trick slot bytes (`D_00530EC0`): 6 bytes per
+/// trick, 0x1fe per character, 0x13ec per profile.
+pub(crate) const OC264_UBER_SLOTS: u32 = 0x0053_0ec0;
+
+
+
+pub(crate) const OC264_BE_GET_RIDER_PROFILE: Callee = Callee {
+    addr: 0x0014_a0e0,
+    f: ee::s01::BE_GetRiderProfile,
+};
+
+
+pub(crate) const OC264_BE_GET_RIDER_CHARACTER: Callee = Callee {
+    addr: 0x0014_a080,
+    f: ee::s01::BE_GetRiderCharacter,
+};
+
+
+
+/// `int BEBAGTInt_GetUberTrickSlotValue(void* self, int rider, int trick,
+/// int second)` (0x14fea8): -1 when uber trick `trick` has no slot,
+/// else the first (or, with `second`, the second) slot byte of that trick
+/// for the rider's profile and character.
+pub fn bebagt_int_get_uber_trick_slot_value(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x50);
+        c.g[A0][0] = OC264_UBER_TRICK_SIZE;
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S1, 0x30);
+        c.mult(0, A0, S0, A0);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        c.g[V0][0] = sx(OC264_UBER_TRICKS);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        let entry = r32(c, A0).wrapping_add(OC264_UBER_TRICKS);
+        c.g[A0][0] = sx(entry);
+        c.g[V1][0] = Addr(entry.wrapping_add(OC264_UBER_TRICK_ENABLED)).lhu(c);
+        c.g[S2][0] = c.g[A3][0];
+        if c.g[V1][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = u64::MAX;
+        } else {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[S1][0];
+            OC264_BE_GET_RIDER_PROFILE.call(c, 0x0014_fef8)?;
+            c.g[S3][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S1][0];
+            OC264_BE_GET_RIDER_CHARACTER.call(c, 0x0014_ff04)?;
+            c.g[V1][0] = c.g[V0][0];
+            let second = c.g[S2][0] != 0;
+            c.cycles += if second { 13 } else { 12 };
+            // slots + trick * 6 + character * 0x1fe + profile * 0x13ec
+            c.g[A1][0] = 0x1fe;
+            c.g[V0][0] = 6;
+            c.mult(0, A1, V1, A1);
+            c.mult(0, V0, S0, V0);
+            c.g[V1][0] = 0x13ec;
+            c.mult(0, V1, S3, V1);
+            c.g[A0][0] = sx(OC264_UBER_SLOTS);
+            let at = r32(c, V0)
+                .wrapping_add(r32(c, A1))
+                .wrapping_add(r32(c, V1))
+                .wrapping_add(OC264_UBER_SLOTS);
+            c.g[V0][0] = Addr(at.wrapping_add(second as u32)).lbu(c);
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// BEBAGTInt_GetTrickAnim (0x150198)
+
+/// `BE_GetRiderAltCharacter(rider)`: the rider's alternate character id.
+pub(crate) const TRICK_ANIM_ALT_CHARACTER: Callee =
+    Callee { addr: 0x0014_a0b0, f: ee::s01::BE_GetRiderAltCharacter };
+
+
+/// `BEBAGTInt_GetUberTrickSlotValue(self, rider, trick, second)`: the slot
+/// of the rider's animation for trick `trick` (-1 when the trick has none).
+pub(crate) const TRICK_ANIM_SLOT_VALUE: Callee =
+    Callee { addr: 0x0014_fea8, f: ee::s01::BEBAGTInt_GetUberTrickSlotValue };
+
+
+/// The trick table (0x45aeb8): 0x14-byte entries, `anims` (8-byte entries,
+/// the animation id a `u16` at +0) at +0x10.
+pub(crate) const TRICK_ANIM_TABLE: u32 = 0x0045_aeb8;
+
+
+pub(crate) const TRICK_ANIM_ENTRY_SIZE: u32 = 0x14;
+
+
+pub(crate) const TRICK_ANIM_ANIMS: u32 = 0x10;
+
+
+/// The animation returned when the trick has no slot.
+pub(crate) const TRICK_ANIM_NONE: u64 = 0x1b6;
+
+
+
+/// The alternate characters with their own animation for one trick:
+/// 0x18 -> 0x9f, 0x14 -> 0xa0, 0x1c -> 0xa1 (trick 4), 0x19 -> 0xa2 (trick 9).
+///
+/// Sets the registers and cycles the original's compare chain leaves;
+/// returns the special animation (already in v0) or `None` when the
+/// generic lookup runs (a0 = self, a1 = rider set).
+pub(crate) fn trick_anim_special(c: &mut Cpu, ch: u64) -> Option<u64> {
+    c.g[V1][0] = ch;
+    c.g[V0][0] = 0x18;
+    // `trick == want ? special : generic` tail, with a0/a1 as the branch
+    // leaves them (`a0_first`: a0 is set in this block, else a1).
+    let pick = |c: &mut Cpu, want: u64, special: u64, a0_first: bool| -> Option<u64> {
+        c.cycles += 3;
+        c.g[V0][0] = want;
+        if a0_first {
+            c.g[A0][0] = c.g[S2][0];
+        } else {
+            c.g[A1][0] = c.g[S1][0];
+        }
+        if c.g[S0][0] != want {
+            if a0_first {
+                c.cycles += 1;
+                c.g[A1][0] = c.g[S1][0];
+            }
+            None
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = special;
+            Some(special)
+        }
+    };
+    if ch == 0 {
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[S1][0];
+        return None;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = ((ch as i64) < 25) as u64;
+    if ch == 0x18 {
+        return pick(c, 4, 0x9f, true);
+    }
+    c.cycles += 2;
+    let below_25 = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x14;
+    if below_25 {
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S2][0];
+        if ch == 0x14 {
+            return pick(c, 4, 0xa0, false);
+        }
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = 0x1c;
+        if ch == 0x19 {
+            return pick(c, 9, 0xa2, true);
+        }
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S2][0];
+        if ch == 0x1c {
+            return pick(c, 4, 0xa1, false);
+        }
+    }
+    c.cycles += 2;
+    c.g[A1][0] = c.g[S1][0];
+    None
+}
+
+
+
+/// `int BEBAGTInt_GetTrickAnim(BEBAGTInt* self, int rider, int trick, int
+/// second)` (0x150198): the animation a rider plays for a trick. Some
+/// alternate characters have a fixed animation for one trick (0x14, 0x18 and
+/// 0x1c for trick 4, 0x19 for trick 9); otherwise look up the rider's slot
+/// for the trick and return `trick_table[trick].anims[slot]`, or 0x1b6 when
+/// the trick has no slot.
+pub fn bebagt_int_get_trick_anim(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S3, 0x10);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A3][0];
+        c.g[A0][0] = c.g[S1][0];
+        TRICK_ANIM_ALT_CHARACTER.call(c, 0x0015_01c8)?;
+        let ch = c.g[V0][0];
+        if trick_anim_special(c, ch).is_none() {
+            c.cycles += 6;
+            c.g[A3][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S0][0];
+            TRICK_ANIM_SLOT_VALUE.call(c, 0x0015_0274)?;
+            let slot = c.g[V0][0];
+            c.g[V1][0] = slot;
+            c.g[A1][0] = TRICK_ANIM_ENTRY_SIZE as u64;
+            if (slot as i64) < 0 {
+                c.cycles += 1;
+                c.g[V0][0] = TRICK_ANIM_NONE;
+            } else {
+                c.cycles += 9;
+                let trick = r32(c, S0);
+                let entry_off = abi::mult(c, trick, TRICK_ANIM_ENTRY_SIZE);
+                c.g[A1][0] = sx(entry_off);
+                let entry = TRICK_ANIM_TABLE.wrapping_add(entry_off);
+                c.g[V0][0] = sx(entry);
+                let anims = Addr(entry.wrapping_add(TRICK_ANIM_ANIMS)).lw(c);
+                c.g[A0][0] = anims;
+                let at = (slot as u32).wrapping_shl(3).wrapping_add(anims as u32);
+                c.g[V1][0] = sx(at);
+                c.g[V0][0] = Addr(at).lhu(c);
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -855,5 +1114,105 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+    use super::*;
+    use crate::difftest::{put_words};
+    use super::*;
+
+
+    /// BEBAGTInt_GetUberTrickSlotValue: tricks with and without a slot,
+    /// first and second byte; the real BE_GetRiderProfile/Character read a
+    /// rider table whose profile entries are -1 (profile 2) or flag words.
+    #[test]
+    fn bebagt_int_get_uber_trick_slot_value_matches() {
+        const RIDER_SLOTS: u32 = 0x0053_05b0;
+        const RIDERS: u32 = 0x0053_5b20;
+        check(
+            ee::s01::f_0014fea8__generated,
+            bebagt_int_get_uber_trick_slot_value,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x14_fea8, 0);
+                c.pc = 0x0014_fea8;
+                let rider = seed % 4;
+                let trick = r.next_u32() % 24;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(rider);
+                c.g[A2][0] = sx(trick);
+                c.g[A3][0] = if seed % 3 == 0 { 0 } else { sx(r.next_u32() | 1) };
+                let enabled = if seed % 5 == 0 { 0 } else { 1 + r.next_u32() % 0xffff };
+                c.bus.write16(
+                    OC264_UBER_TRICKS + 0x14 * trick + OC264_UBER_TRICK_ENABLED,
+                    enabled as u16,
+                );
+                let slot = r.next_u32() % 4;
+                c.bus.write32(RIDER_SLOTS + 4 * rider, slot);
+                let rec = RIDERS + 0x1c * slot;
+                let profile = if seed % 2 == 0 { u32::MAX } else { r.next_u32() };
+                c.bus.write32(rec + 0xc, profile);
+                c.bus.write32(rec + 0x10, r.next_u32());
+                c.bus.write8(rec + 0x11, (r.next_u32() % 16) as u8);
+                // The slot bytes this trick/character/profile can reach.
+                for p in 0..3u32 {
+                    for ch in 0..16u32 {
+                        let at = OC264_UBER_SLOTS + 6 * trick + 0x1fe * ch + 0x13ec * p;
+                        let v = r.next_u32();
+                        c.bus.write8(at, v as u8);
+                        c.bus.write8(at + 1, (v >> 8) as u8);
+                    }
+                }
+            },
+        );
+    }
+
+
+    /// BEBAGTInt_GetTrickAnim: the real character/profile getters over a
+    /// test rider table (alternate character 0, each special one, and
+    /// others), the real slot lookup over a test trick table (tricks with
+    /// and without animations) and slot bytes.
+    #[test]
+    fn bebagt_int_get_trick_anim_matches() {
+        use crate::difftest::{check_lohi, elf_image, fill, scramble, Rng, DATA, GAME_GP};
+        const RIDER_PROFILES: u32 = 0x0053_05b0;
+        const PROFILES: u32 = 0x0053_5b20;
+        const SLOTS: u32 = 0x0053_0ec0;
+        check_lohi(ee::s01::f_00150198__generated, bebagt_int_get_trick_anim, 300, &|c, seed| {
+            let mut r = Rng(0x0015_0198 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            elf_image(c);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x0015_0198;
+            let rider = r.next_u32() % 4;
+            let profile = r.next_u32() % 3;
+            c.bus.write32(RIDER_PROFILES + 4 * rider, profile);
+            let entry = PROFILES + 0x1c * profile;
+            fill(c, &mut r, entry, 7);
+            c.bus.write32(entry + 0xc, if seed % 5 == 0 { u32::MAX } else { r.next_u32() });
+            c.bus.write8(entry + 0x11, (r.next_u32() % 8) as u8);
+            let chars = [0u8, 0x14, 0x18, 0x19, 0x1c, 5, 30, 0xf0];
+            c.bus.write8(entry + 0x12, chars[(seed % 8) as usize]);
+            for i in 0..0x4000u32 {
+                c.bus.write8(SLOTS + i, (mix_small(seed, i) % 8) as u8);
+            }
+            for t in 0..12u32 {
+                let e = TRICK_ANIM_TABLE + TRICK_ANIM_ENTRY_SIZE * t;
+                c.bus.write16(e + 0xc, if t % 3 == 0 { 0 } else { 8 });
+                let anims = DATA + 0x1000 + 0x100 * t;
+                c.bus.write32(e + TRICK_ANIM_ANIMS, anims);
+                fill(c, &mut r, anims, 0x40);
+            }
+            let trick = match seed % 4 {
+                0 => 4,
+                1 => 9,
+                _ => r.next_u32() % 12,
+            };
+            c.g[A0][0] = sx(DATA + 0x100);
+            c.g[A1][0] = rider as u64;
+            c.g[A2][0] = trick as u64;
+            c.g[A3][0] = (r.next_u32() % 2) as u64;
+        });
+        fn mix_small(seed: u32, i: u32) -> u32 {
+            (seed.wrapping_mul(0x9e37_79b9) ^ i.wrapping_mul(0x85eb_ca6b)).rotate_left(13)
+        }
     }
 }

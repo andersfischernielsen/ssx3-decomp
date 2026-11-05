@@ -16,13 +16,22 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
+use crate::abi::r32;
+use crate::abi::ret;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
     0x003d_d310,
     ea_file_release_request,
     "EAFile_ReleaseRequest",
-)];
+),
+    (0x003e_2490, eafile_str_icmp, "EAFile_StrICmp"),
+];
 
 // ---------------------------------------------------------------------------
 // Callees.
@@ -230,6 +239,71 @@ pub fn ea_file_release_request(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// EAFile_StrICmp (0x3e2490, seg_2DCAE8.c)
+
+/// The ctype table indexed with a signed byte (0x4a0000 - 0x637f); bit 0 is
+/// "uppercase".
+pub(crate) const EAF_CTYPE: u32 = 0x0049_9c81;
+
+
+
+/// `int EAFile_StrICmp(const char* a, const char* b)` (0x3e2490): compares
+/// two strings ignoring case (uppercase letters per the ctype table are
+/// lowered by +0x20); returns the first non-zero difference, else 0.
+pub fn eafile_str_icmp(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[T2][0] = c.g[A0][0];
+    c.g[T1][0] = c.g[A1][0];
+    c.g[T0][0] = Addr(c.g[T2][0] as u32).lb(c);
+    c.g[V0][0] = 0x4a_0000;
+    c.g[A3][0] = Addr(c.g[T1][0] as u32).lb(c);
+    c.g[T3][0] = sx(EAF_CTYPE);
+    loop {
+        // 0x3e24bc: lowered characters and their difference.
+        c.cycles += 13;
+        let ca = c.g[T0][0] as u32;
+        let cb = c.g[A3][0] as u32;
+        let table = c.g[T3][0] as u32;
+        c.g[A0][0] = sx(ca.wrapping_add(table));
+        c.g[A2][0] = sx(ca.wrapping_add(0x20));
+        c.g[A1][0] = sx(cb.wrapping_add(table));
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).lbu(c) & 1;
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).lbu(c) & 1;
+        c.g[A0][0] = sx(cb.wrapping_add(0x20));
+        if c.g[V0][0] == 0 {
+            c.g[A2][0] = c.g[T0][0];
+        }
+        if c.g[V1][0] == 0 {
+            c.g[A0][0] = c.g[A3][0];
+        }
+        c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+        if c.g[V0][0] != 0 {
+            break;
+        }
+        // 0x3e24f0: equal so far; stop at the end of `a`.
+        c.cycles += 2;
+        let more = c.g[T0][0] != 0;
+        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(1));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003e_24b0);
+        }
+        // 0x3e24b0: next pair.
+        c.cycles += 3;
+        c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(1));
+        c.g[T0][0] = Addr(c.g[T2][0] as u32).lb(c);
+        c.g[A3][0] = Addr(c.g[T1][0] as u32).lb(c);
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -270,5 +344,46 @@ pub(crate) mod tests {
                 // The state table (0x495d40) stays zero: default jump_out.
             },
         );
+    }
+    use super::*;
+    use crate::difftest::fakes::{FAKE};
+    use crate::difftest::{fill, put_vec};
+
+
+    /// EAFile_StrICmp: strings of 0..5 characters over a mixed-case
+    /// alphabet, often `b` a case-flipped copy of `a` (equal, end reached),
+    /// sometimes a prefix; uppercase bits set in the ctype table.
+    #[test]
+    fn eafile_str_icmp_matches() {
+        check(ee::s14::f_003e2490__generated, eafile_str_icmp, 300, &|c, seed| {
+            let mut r = Rng(0x003e_2490 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.pc = 0x003e_2490;
+            for ch in b'A'..=b'Z' {
+                c.bus.write8(EAF_CTYPE + ch as u32, 1);
+            }
+            const ALPHABET: [u8; 7] = [b'a', b'A', b'b', b'B', b'1', b'_', 0xc1];
+            let a = DATA + 0x1000;
+            let b = DATA + 0x2000;
+            let n = seed % 6;
+            for i in 0..n {
+                let ch = ALPHABET[(r.next_u32() % 7) as usize];
+                c.bus.write8(a + i, ch);
+            }
+            c.bus.write8(a + n, 0);
+            let m = if seed % 7 == 0 { n.saturating_sub(1) } else { n };
+            for i in 0..m {
+                let x = c.bus.read8(a + i);
+                let ch = if seed % 3 != 2 {
+                    if x.is_ascii_lowercase() && r.next_u32() % 2 == 0 { x - 32 } else { x }
+                } else {
+                    ALPHABET[(r.next_u32() % 7) as usize]
+                };
+                c.bus.write8(b + i, ch);
+            }
+            c.bus.write8(b + m, 0);
+            c.g[A0][0] = sx(a);
+            c.g[A1][0] = sx(b);
+        });
     }
 }

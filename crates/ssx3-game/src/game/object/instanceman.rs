@@ -80,6 +80,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "IntersectInfo_Evaluate",
     ),
     (0x0035_2810, mesh_anim_render, "MeshAnim_Render"),
+    (0x0035_2500, mesh_anim_update, "MeshAnim_Update"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -1191,6 +1192,255 @@ pub fn mesh_anim_render(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// MeshAnim_Update (0x352500)
+
+/// Debris/mesh-anim instance fields (`sDebris` in instanceman.cpp).
+pub(crate) const MESH_ANIM_UPD_VTABLE: u32 = 0xc;
+
+
+pub(crate) const MESH_ANIM_UPD_MODEL: u32 = 0x18;
+
+
+/// Remaining life in seconds; the instance kills itself when it runs out.
+pub(crate) const MESH_ANIM_UPD_TIMER: u32 = 0x1c;
+
+
+/// Per-part rotation quaternions (0x10 each).
+pub(crate) const MESH_ANIM_UPD_ROT: u32 = 0x30;
+
+
+/// Per-part spin angles (4 each).
+pub(crate) const MESH_ANIM_UPD_SPIN: u32 = 0x330;
+
+
+/// Per-part velocities (0x10 each); positions are 0x180 below.
+pub(crate) const MESH_ANIM_UPD_VEL: u32 = 0x530;
+
+
+pub(crate) const MESH_ANIM_UPD_GRAVITY: u32 = 0x6b4;
+
+
+/// Model -> skeleton (count of parts at +4).
+pub(crate) const MESH_ANIM_UPD_SKELETON: u32 = 0x80;
+
+
+/// gp-relative pointer to the game timer (frame time at +0x14).
+pub(crate) const MESH_ANIM_UPD_TIMER_GP: u32 = 0x2a74;
+
+
+/// Vtable slot of the kill method (`vt[34]`).
+pub(crate) const MESH_ANIM_UPD_KILL_SLOT: u32 = 0x110;
+
+
+pub(crate) const MESH_ANIM_UPD_SIN_COS: u32 = 0x0031_be50;
+
+
+
+/// `void MeshAnim_Update(sDebris* self)` (0x352500): count the debris life
+/// timer down by the frame time and kill the instance (`vt[34](self, 1)`)
+/// when it runs out; while alive, spin every part (rotation quaternion
+/// times the axis-angle quaternion of half its spin, renormalised) and move
+/// it (position += velocity, velocity.z -= gravity * 980 * dt).
+pub fn mesh_anim_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0xb0);
+        c.mtc1(0, 2);
+        frame.save(c, S2, 0x70);
+        frame.save(c, S0, 0x90);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x80);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save_ra(c, 0x40);
+        frame.save_fpr(c, 20, 0xa0);
+        let me = r32(c, S2);
+        c.lwc1(1, me + MESH_ANIM_UPD_TIMER);
+        c.c_lt_s(2, 1);
+        let alive = c.fcc();
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(MESH_ANIM_UPD_TIMER_GP)).lw(c);
+        if alive {
+            // timer -= dt
+            c.cycles += 6;
+            c.lwc1(0, r32(c, V0).wrapping_add(0x14));
+            c.sub_s(0, 1, 0);
+            c.c_le_s(0, 2);
+            let expired = c.fcc();
+            c.swc1(0, me + MESH_ANIM_UPD_TIMER);
+            if expired {
+                c.cycles += 8;
+                c.g[V0][0] = Addr(me + MESH_ANIM_UPD_VTABLE).lw(c);
+                c.g[A1][0] = 0x1;
+                let vt = r32(c, V0);
+                c.g[A0][0] = Addr(vt + MESH_ANIM_UPD_KILL_SLOT).lh(c);
+                c.g[V1][0] = Addr(vt + MESH_ANIM_UPD_KILL_SLOT + 4).lw(c);
+                let kill = r32(c, V1);
+                c.g[A0][0] = sx(me.wrapping_add(r32(c, A0)));
+                call_ptr(c, kill, 0x0035_256c)?;
+                frame.restore(c, S0, 0x90);
+                mesh_anim_update_epilogue(c, frame);
+                return Ok(());
+            }
+            c.cycles += 1;
+            c.lwc1(1, me + MESH_ANIM_UPD_TIMER);
+        }
+
+        c.cycles += 5;
+        c.mtc1(0, 0);
+        c.c_lt_s(0, 1);
+        let alive = c.fcc();
+        frame.restore(c, S0, 0x90);
+        if !alive {
+            mesh_anim_update_epilogue(c, frame);
+            return Ok(());
+        }
+
+        // Spin the parts.
+        c.cycles += 5;
+        c.g[V1][0] = Addr(me + MESH_ANIM_UPD_MODEL).lw(c);
+        c.g[S4][0] = Addr(r32(c, V1) + MESH_ANIM_UPD_SKELETON).lw(c);
+        c.g[V0][0] = Addr(r32(c, S4) + 4).lw(c);
+        c.g[S3][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 20); // f20 = 0.5
+            c.g[S0][0] = sx(me.wrapping_add(MESH_ANIM_UPD_ROT));
+            c.g[S1][0] = sx(me.wrapping_add(MESH_ANIM_UPD_SPIN));
+            loop {
+                c.cycles += 48;
+                c.lwc1(12, r32(c, S1));
+                c.g[A0][0] = sx(sp(c).wrapping_add(0x30)); // &sin
+                c.g[A1][0] = sx(sp(c).wrapping_add(0x34)); // &cos
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+                c.mul_s(12, 12, 20);
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                call_ptr(c, MESH_ANIM_UPD_SIN_COS, 0x0035_25cc)?;
+                // The axis-angle quaternion (s*axis, c) at sp+0x10.
+                let rot = r32(c, S0);
+                let s = sp(c);
+                c.lwc1(2, rot + 0x180);
+                c.lwc1(3, rot + 0x184);
+                c.lwc1(1, s + 0x30);
+                c.lwc1(4, rot + 0x188);
+                c.mul_s(2, 1, 2);
+                c.lwc1(0, s + 0x34);
+                c.mul_s(3, 1, 3);
+                c.mul_s(1, 1, 4);
+                c.swc1(0, s + 0x1c);
+                c.swc1(2, s + 0x10);
+                c.swc1(3, s + 0x14);
+                c.swc1(1, s + 0x18);
+                // rot = rot * q
+                c.lqc2(4, rot);
+                c.lqc2(5, s + 0x10);
+                c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+                c.vu0().opmula(4, 5);
+                c.vu0().opmsub(6, 5, 4);
+                c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+                c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+                c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+                c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+                c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+                c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+                c.sqc2(8, s + 0x20);
+                c.lq(2, s + 0x20);
+                c.sq(2, rot);
+                c.sq(2, s);
+                // Normalise.
+                c.lqc2(3, rot);
+                c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                c.vu0().rsqrt(0, 3, 4, 0);
+                c.vu0().waitq();
+                c.vu0().mul(0b1111, 5, 3, Src::Q);
+                c.sqc2(5, rot);
+                c.g[V0][0] = Addr(r32(c, S4) + 4).lw(c);
+                let more = (c.g[S3][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.g[S0][0] = sx(rot.wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_25b0);
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = Addr(r32(c, S4) + 4).lw(c);
+        }
+
+        // Move the parts.
+        c.cycles += 2;
+        c.g[A0][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[AT][0] = 0xffff_ffff_c475_0000;
+            c.mtc1(1, 2); // f2 = -980.0
+            c.g[V1][0] = sx(me.wrapping_add(MESH_ANIM_UPD_VEL));
+            loop {
+                c.cycles += 22;
+                let vel = r32(c, V1);
+                let pos = vel.wrapping_sub(0x180);
+                c.lqc2(3, pos);
+                c.lqc2(4, vel);
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, pos);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                c.lwc1(0, r32(c, S2) + MESH_ANIM_UPD_GRAVITY);
+                c.g[V0][0] = Addr(r32(c, GP).wrapping_add(MESH_ANIM_UPD_TIMER_GP)).lw(c);
+                c.mul_s(0, 0, 2);
+                c.lwc1(1, r32(c, V0).wrapping_add(0x14));
+                let s = sp(c);
+                Addr(s).sw(c, 0);
+                c.mul_s(0, 0, 1);
+                Addr(s + 4).sw(c, 0);
+                Addr(s + 0xc).sw(c, 0);
+                c.swc1(0, s + 8);
+                c.lqc2(3, vel);
+                c.lqc2(4, s);
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, vel);
+                c.g[V0][0] = Addr(r32(c, S4) + 4).lw(c);
+                let more = (c.g[A0][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.g[V1][0] = sx(vel.wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_2688);
+                }
+            }
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0x90);
+        mesh_anim_update_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+
+
+/// MeshAnim_Update's shared epilogue (0x3526e4).
+pub(crate) fn mesh_anim_update_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 8;
+    frame.restore(c, S1, 0x80);
+    frame.restore(c, S2, 0x70);
+    frame.restore(c, S3, 0x60);
+    frame.restore(c, S4, 0x50);
+    frame.restore_ra(c, 0x40);
+    frame.restore_fpr(c, 20, 0xa0);
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1570,6 +1820,61 @@ pub(crate) mod tests {
             c.bus.write32(gfx + MESH_ANIM_GFX_VTABLE, vt);
             c.g[A0][0] = sx(me);
             c.pc = 0x0035_2810;
+        });
+    }
+    use super::*;
+    use crate::difftest::{elf_image, put_vec};
+
+
+    /// MeshAnim_Update: a debris instance whose timer is <= 0 (idle), runs
+    /// out this frame (kill method, a fake that unwinds on some seeds) or
+    /// stays alive; 0..5 parts (or a negative count) spun through the real
+    /// Math_SinCos and moved under gravity.
+    #[test]
+    fn mesh_anim_update_matches() {
+        covered(ee::s11::f_00352500__generated, mesh_anim_update, 240, &|c, seed| {
+            let mut r = machine(c, seed, 0x35_2500, 1);
+            elf_image(c);
+            let me = DATA + 0x1000;
+            let model = DATA + 0x3000;
+            let skeleton = DATA + 0x3100;
+            let timer_obj = DATA + 0x3200;
+            let vt = DATA + 0x3400;
+            let dt = 1.0f32 / 60.0;
+            c.bus.write32(GAME_GP + MESH_ANIM_UPD_TIMER_GP, timer_obj);
+            c.bus.write32(timer_obj + 0x14, dt.to_bits());
+            let timer = match seed % 4 {
+                0 => -((r.next_u32() % 3) as f32) * 0.5,
+                1 => dt * 0.5,
+                _ => 1.0 + (r.next_u32() % 100) as f32 * 0.01,
+            };
+            c.bus.write32(me + MESH_ANIM_UPD_TIMER, timer.to_bits());
+            c.bus.write32(me + MESH_ANIM_UPD_VTABLE, vt);
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(vt + MESH_ANIM_UPD_KILL_SLOT, delta as u16);
+            c.bus.write32(vt + MESH_ANIM_UPD_KILL_SLOT + 4, FAKE);
+            c.bus.write32(me + MESH_ANIM_UPD_MODEL, model);
+            c.bus.write32(model + MESH_ANIM_UPD_SKELETON, skeleton);
+            let parts: i32 = match seed % 7 {
+                0 => 0,
+                1 => -1,
+                _ => (r.next_u32() % 5 + 1) as i32,
+            };
+            c.bus.write32(skeleton + 4, parts as u32);
+            c.bus.write32(me + MESH_ANIM_UPD_GRAVITY, r.f32(2.0));
+            for i in 0..6 {
+                put_vec(c, me + MESH_ANIM_UPD_ROT + 0x10 * i,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0.5f32.to_bits()]);
+                put_vec(c, me + MESH_ANIM_UPD_ROT + 0x180 + 0x10 * i,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.next_u32()]);
+                c.bus.write32(me + MESH_ANIM_UPD_SPIN + 4 * i, r.f32(6.0));
+                put_vec(c, me + MESH_ANIM_UPD_VEL - 0x180 + 0x10 * i,
+                    [r.f32(500.0), r.f32(500.0), r.f32(500.0), r.next_u32()]);
+                put_vec(c, me + MESH_ANIM_UPD_VEL + 0x10 * i,
+                    [r.f32(50.0), r.f32(50.0), r.f32(50.0), r.next_u32()]);
+            }
+            c.g[A0][0] = sx(me);
+            c.pc = 0x0035_2500;
         });
     }
 }

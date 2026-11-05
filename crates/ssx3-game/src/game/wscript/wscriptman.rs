@@ -54,6 +54,7 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -326,6 +327,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderModel_AllocModelRefs",
     ),
     (0x0035_06d8, dead_node_ctor, "DeadNode_ctor"),
+    (0x0030_9c88, wscript_man_call_func, "WScriptMan_CallFunc"),
+    (0x0030_a060, wscript_man_on_object_trigger, "WScriptMan_OnObjectTrigger"),
+    (0x0030_a460, wscript_man_focus_leave, "WScriptMan_FocusLeave"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3786,6 +3790,546 @@ pub fn w_script_man_collect_item(c: &mut Cpu) {
     });
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// WScriptMan_CallFunc (0x309c88, wscriptman.cpp)
+
+/// WScriptMan fields: the world (script cache owner), the per-section
+/// script tables (`cLunoValue*[]`, indexed by the handle's low byte).
+pub(crate) const WSM_WORLD: u32 = 0x28c;
+
+
+pub(crate) const WSM_SECTION_TABLES: u32 = 0x3cc;
+
+
+/// Callees (all through the function table).
+pub(crate) const WSM_WORLD_GET_SECTION_SCRIPT_FUNC: u32 = 0x003a_6d18;
+
+
+pub(crate) const WSM_LUNO_VM_REGISTER_SET_RAW: u32 = 0x0022_6600;
+
+
+pub(crate) const WSM_LUNO_VM_PASS_THROUGH: u32 = 0x0022_24a8;
+
+
+pub(crate) const WSM_LUNO_VM_CALL: u32 = 0x0022_24b8;
+
+
+pub(crate) const WSM_LUNO_VM_REGISTER_DTOR: u32 = 0x0022_5b90;
+
+
+
+/// `void WScriptMan_CallFunc(WScriptMan* self, ScriptHandle* handle)`
+/// (0x309c88): looks up the scripted function `handle` names in the world's
+/// script cache, wraps it in a Luno value and calls it on the section's
+/// script table with an empty result value, which is destroyed afterwards.
+pub fn wscript_man_call_func(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x30);
+        // func = World_GetSectionScriptFunc(self->world, handle)
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(WSM_WORLD)).lw(c);
+        call_ptr(c, WSM_WORLD_GET_SECTION_SCRIPT_FUNC, 0x0030_9cac)?;
+        // arg = {func, 0} at sp
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A2][0] = 0;
+        call_ptr(c, WSM_LUNO_VM_REGISTER_SET_RAW, 0x0030_9cbc)?;
+        let section = Addr(r32(c, S1)).lbu(c);
+        c.g[V0][0] = section;
+        c.g[S2][0] = sx(sp(c).wrapping_add(0x20));
+        Addr(sp(c).wrapping_add(0x18)).sw(c, 0);
+        c.g[A0][0] = c.g[S2][0];
+        Addr(sp(c).wrapping_add(0x10)).sw(c, 0);
+        c.g[V0][0] = sx((section as u32) << 2);
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(c.g[V0][0] as u32));
+        c.g[S1][0] = Addr(r32(c, S0).wrapping_add(WSM_SECTION_TABLES)).lw(c);
+        call_ptr(c, WSM_LUNO_VM_PASS_THROUGH, 0x0030_9ce0)?;
+        // LunoVM_Call(&call, &arg, table, &result)
+        c.g[S0][0] = sx(sp(c).wrapping_add(0x10));
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A3][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[SP][0];
+        call_ptr(c, WSM_LUNO_VM_CALL, 0x0030_9cf8)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, WSM_LUNO_VM_REGISTER_DTOR, 0x0030_9d04)?;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// WScriptMan_FocusLeave (0x30a460, wscriptman.cpp)
+
+/// World object: its script controller (or 0).
+pub(crate) const OC264_WOBJ_CTL: u32 = 0xc;
+
+
+/// Script controller: vtable, kind (6: no focus scripts), owner object.
+pub(crate) const OC264_WCTL_VTABLE: u32 = 0xc;
+
+
+pub(crate) const OC264_WCTL_KIND: u32 = 0x10;
+
+
+pub(crate) const OC264_WCTL_OWNER: u32 = 0x18;
+
+
+pub(crate) const OC264_WCTL_KIND_PASSIVE: u64 = 6;
+
+
+/// Controller vtable entries (this-adjust halfword, method): v20 "handles
+/// focus itself", v22 "focus leave", v35 "lost focus".
+pub(crate) const OC264_WCTL_V20: u32 = 0xa0;
+
+
+pub(crate) const OC264_WCTL_V22: u32 = 0xb0;
+
+
+pub(crate) const OC264_WCTL_V35: u32 = 0x118;
+
+
+
+pub(crate) const OC264_WSCRIPT_HAS_OBJ_SCRIPT3: Callee = Callee {
+    addr: 0x0030_a2e8,
+    f: ee::s10::WScriptMan_HasObjScript3,
+};
+
+
+pub(crate) const OC264_WSCRIPT_RUN_OBJ_SCRIPT3: Callee = Callee {
+    addr: 0x0030_a548,
+    f: ee::s10::WScriptMan_RunObjScript3,
+};
+
+
+
+/// Call virtual method `slot` (this-adjust halfword at `slot`, function
+/// at `slot + 4`) of the controller in `ctl_reg`, loading the vtable into
+/// `vt_reg` and the method into `fn_reg` as the original does.
+pub(crate) fn oc264_wctl_call(
+    c: &mut Cpu,
+    ctl_reg: usize,
+    vt_reg: usize,
+    fn_reg: usize,
+    slot: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    let ctl = r32(c, ctl_reg);
+    let vtable = Addr(ctl.wrapping_add(OC264_WCTL_VTABLE)).lw(c);
+    c.g[vt_reg][0] = vtable;
+    let adjust = Addr((vtable as u32).wrapping_add(slot)).lh(c);
+    let method = Addr((vtable as u32).wrapping_add(slot + 4)).lw(c);
+    c.g[fn_reg][0] = method;
+    c.g[A0][0] = sx(ctl.wrapping_add(adjust as u32));
+    call_ptr(c, method as u32, ret)
+}
+
+
+
+/// `void WScriptMan_FocusLeave(WScriptMan* self, WorldObj* obj)` (0x30a460):
+/// the camera/focus leaves `obj`. A scripted controller that handles focus
+/// itself (v20) gets v22; a passive one (kind 6) nothing; otherwise the
+/// controller's owner runs its "focus leave" object script (slot 3) if it
+/// has one, else the controller's v35. Without a controller the object's
+/// own slot-3 script runs if present.
+pub fn wscript_man_focus_leave(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(OC264_WOBJ_CTL)).lw(c);
+        c.g[S1][0] = c.g[A0][0];
+        if c.g[A1][0] != 0 {
+            c.cycles += 7;
+            oc264_wctl_call(c, A1, V1, V0, OC264_WCTL_V20, 0x0030_a494)?;
+            let handles = c.g[V0][0] != 0;
+            c.g[A1][0] = c.g[S0][0];
+            if handles {
+                c.cycles += 8;
+                c.g[A2][0] = Addr(r32(c, S0).wrapping_add(OC264_WOBJ_CTL)).lw(c);
+                oc264_wctl_call(c, A2, V1, V0, OC264_WCTL_V22, 0x0030_a4b4)?;
+                frame.restore(c, S0, 0x20);
+            } else {
+                c.cycles += 5;
+                let ctl = Addr(r32(c, S0).wrapping_add(OC264_WOBJ_CTL)).lw(c);
+                c.g[A1][0] = ctl;
+                c.g[V1][0] = OC264_WCTL_KIND_PASSIVE;
+                c.g[V0][0] = Addr((ctl as u32).wrapping_add(OC264_WCTL_KIND)).lh(c);
+                let passive = c.g[V0][0] == c.g[V1][0];
+                c.g[A0][0] = c.g[S1][0];
+                if passive {
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x20);
+                } else {
+                    c.cycles += 5;
+                    c.g[S0][0] = Addr((ctl as u32).wrapping_add(OC264_WCTL_OWNER)).lw(c);
+                    c.g[A1][0] = c.g[S0][0];
+                    OC264_WSCRIPT_HAS_OBJ_SCRIPT3.call(c, 0x0030_a4dc)?;
+                    let has = c.g[V0][0] != 0;
+                    c.g[A0][0] = c.g[S1][0];
+                    if has {
+                        c.cycles += 4;
+                        c.g[A1][0] = c.g[S0][0];
+                        OC264_WSCRIPT_RUN_OBJ_SCRIPT3.call(c, 0x0030_a4ec)?;
+                    } else {
+                        c.cycles += 8;
+                        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(OC264_WOBJ_CTL)).lw(c);
+                        oc264_wctl_call(c, A1, V0, V1, OC264_WCTL_V35, 0x0030_a50c)?;
+                    }
+                    frame.restore(c, S0, 0x20);
+                }
+            }
+        } else {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S0][0];
+            OC264_WSCRIPT_HAS_OBJ_SCRIPT3.call(c, 0x0030_a520)?;
+            let has = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[S1][0];
+            if has {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S0][0];
+                OC264_WSCRIPT_RUN_OBJ_SCRIPT3.call(c, 0x0030_a530)?;
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// WScriptMan_OnObjectTrigger (0x30a060)
+
+/// Script manager fields: the current object id (+0), the cache (+0x28c),
+/// the trigger being run (+0x290, from the trigger volume's +0x50), its
+/// source (+0x294) and volume (+0x298), and the script owner (+0x2a4) or
+/// owning instance (+0x2a8, whose owner is at +0x3c).
+pub(crate) const WSM_CURRENT_ID: u32 = 0x0;
+
+
+pub(crate) const WSM_CACHE: u32 = 0x28c;
+
+
+pub(crate) const WSM_TRIGGER: u32 = 0x290;
+
+
+pub(crate) const WSM_SOURCE: u32 = 0x294;
+
+
+pub(crate) const WSM_VOLUME: u32 = 0x298;
+
+
+pub(crate) const WSM_OWNER: u32 = 0x2a4;
+
+
+pub(crate) const WSM_INSTANCE: u32 = 0x2a8;
+
+
+pub(crate) const WSM_ARGS: u32 = 0x24;
+
+
+
+pub(crate) const WSM_POST_TRIGGER_EVENT: Callee = Callee {
+    addr: 0x0030_97e0,
+    f: ee::s10::WScriptMan_PostTriggerEvent,
+};
+
+
+pub(crate) const WSM_CALL_FUNC: Callee = Callee {
+    addr: 0x0030_9c88,
+    f: ee::s10::WScriptMan_CallFunc,
+};
+
+
+pub(crate) const WSM_FIND_FUNC: u32 = 0x003a_6b78;
+
+
+pub(crate) const WSM_FUNC_ENTRY: u32 = 0x003a_6d18;
+
+
+pub(crate) const WSM_VALUE_FROM_FUNC: u32 = 0x0022_6600;
+
+
+pub(crate) const WSM_CALL_INIT: u32 = 0x0022_24a8;
+
+
+pub(crate) const WSM_CALL_RUN: u32 = 0x0022_24b8;
+
+
+pub(crate) const WSM_ALLOC: u32 = 0x0031_7d70;
+
+
+pub(crate) const WSM_TABLE_CTOR: u32 = 0x0022_4da0;
+
+
+pub(crate) const WSM_TABLE_DTOR: u32 = 0x0022_4df0;
+
+
+pub(crate) const WSM_VALUE_RELEASE: u32 = 0x0022_5b90;
+
+
+/// The allocation name (`0x4898d8`).
+pub(crate) const WSM_TABLE_NAME: u32 = 0x0049_0000 - 0x6728;
+
+
+
+/// `obj->vtable[slot](obj)`: `lw vt; lh delta; lw method` with the
+/// registers `vt`/`m` the original uses, returning to `ret`.
+pub(crate) fn wsm_virtual(c: &mut Cpu, obj: usize, slot: u32, vt: usize, m: usize, ret: u32) -> crate::call::Flow {
+    let this = r32(c, obj);
+    c.g[vt][0] = Addr(this).lw(c);
+    let table = r32(c, vt);
+    c.g[A0][0] = Addr(table).off(slot).lh(c);
+    c.g[m][0] = Addr(table).off(slot + 4).lw(c);
+    let method = r32(c, m);
+    c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret)
+}
+
+
+
+/// `void WScriptMan_OnObjectTrigger(WScriptMan *self, void *source,
+/// TriggerVolume *volume, Object *obj)` (0x30a060): an object entered a
+/// trigger volume. Makes the object current (its id, vtable slot 0x38),
+/// records the trigger, and for an object that says so (slot 0x40) posts
+/// the trigger event, unless it is a rider who is already finished outside
+/// event mode 4. Then runs the trigger's script function (`id != -1`):
+/// directly without an owner, else through a Luno call with the owner's
+/// table (or a fresh one, freed after). Finally the trigger's effect, if
+/// any, is played at 0.5 (slot 0x148), and the current id and trigger
+/// state are restored / cleared.
+pub fn wscript_man_on_object_trigger(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        c.g[S0][0] = c.g[A1][0]; // source
+        frame.save(c, S2, 0x60);
+        c.g[S1][0] = c.g[A2][0]; // volume
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A0][0]; // self
+        frame.save(c, S4, 0x40);
+        c.g[S3][0] = c.g[A3][0]; // obj
+        frame.save_ra(c, 0x30);
+        // self->current = obj->GetId(); s4 = the previous one.
+        let obj = r32(c, S3);
+        c.g[V1][0] = Addr(obj).lw(c);
+        c.g[S4][0] = Addr(r32(c, S2)).off(WSM_CURRENT_ID).lw(c);
+        let vt = r32(c, V1);
+        c.g[A0][0] = Addr(vt).off(0x38).lh(c);
+        c.g[V0][0] = Addr(vt).off(0x3c).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(obj.wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0030_a0a4)?;
+        let wsm = Addr(r32(c, S2));
+        let id = c.g[V0][0];
+        wsm.off(WSM_CURRENT_ID).sw(c, id);
+        c.g[V0][0] = Addr(r32(c, S1)).off(0x50).lw(c);
+        let (source, trigger, volume) = (c.g[S0][0], c.g[V0][0], c.g[S1][0]);
+        wsm.off(WSM_SOURCE).sw(c, source);
+        wsm.off(WSM_TRIGGER).sw(c, trigger);
+        wsm.off(WSM_VOLUME).sw(c, volume);
+        wsm_virtual(c, S3, 0x40, V1, V0, 0x0030_a0cc)?;
+        let posts = c.g[V0][0] != 0;
+        c.g[A0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        let mut run = true;
+        if posts {
+            c.cycles += 5;
+            c.g[A1][0] = 4;
+            c.g[V0][0] = Addr(r32(c, A0)).off(0x84).lw(c);
+            c.g[V1][0] = Addr(r32(c, V0)).off(0x214).lw(c);
+            let event_mode = c.g[V1][0] == 4;
+            // The rider that owns obj (its interface at +0x6c0).
+            c.g[V0][0] = sx(r32(c, S3).wrapping_sub(0x6c0));
+            if !event_mode {
+                c.cycles += 4;
+                if c.g[S3][0] == 0 {
+                    c.g[V0][0] = 0;
+                }
+                c.g[V1][0] = Addr(r32(c, V0)).off(0x480).lw(c);
+                if c.g[V1][0] != 0 {
+                    let prev = c.g[S4][0];
+                    Addr(r32(c, S2)).sw(c, prev);
+                    run = false;
+                }
+            }
+            if run {
+                c.cycles += 4;
+                c.g[V0][0] = Addr(r32(c, S2)).off(WSM_TRIGGER).lw(c);
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = Addr(r32(c, V0)).off(0x78).lw(c);
+                WSM_POST_TRIGGER_EVENT.call(c, 0x0030_a108)?;
+            }
+        }
+        if run {
+            wsm_run_trigger_func(c)?;
+            // The trigger's effect (+0xc), played at 0.5.
+            c.cycles += 3;
+            c.g[A1][0] = Addr(r32(c, V0)).off(0xc).lw(c);
+            if c.g[A1][0] != 0 {
+                c.cycles += 8;
+                let fx = r32(c, A1);
+                c.g[V0][0] = Addr(fx).off(0xc).lw(c);
+                c.g[AT][0] = 0x3f00_0000;
+                c.f[12] = 0x3f00_0000;
+                let vt = r32(c, V0);
+                c.g[A0][0] = Addr(vt).off(0x148).lh(c);
+                c.g[V1][0] = Addr(vt).off(0x14c).lw(c);
+                let method = r32(c, V1);
+                c.g[A0][0] = sx(fx.wrapping_add(r32(c, A0)));
+                call_ptr(c, method, 0x0030_a240)?;
+            }
+            let prev = c.g[S4][0];
+            Addr(r32(c, S2)).sw(c, prev);
+        }
+
+        c.cycles += 11;
+        let wsm = Addr(r32(c, S2));
+        wsm.off(WSM_TRIGGER).sw(c, 0);
+        wsm.off(WSM_SOURCE).sw(c, 0);
+        wsm.off(WSM_VOLUME).sw(c, 0);
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// Find and run the trigger's script function; leaves `v0 = self->trigger`.
+/// Stack: the argument value at sp+0, the result at sp+0x10, the Luno call
+/// at sp+0x20, the function id at sp+0x24.
+pub(crate) fn wsm_run_trigger_func(c: &mut Cpu) -> crate::call::Flow {
+    let s = sp(c);
+    c.cycles += 8;
+    c.g[A1][0] = Addr(r32(c, S2)).off(WSM_TRIGGER).lw(c);
+    c.g[A2][0] = 2;
+    c.g[A0][0] = Addr(r32(c, S2)).off(WSM_CACHE).lw(c);
+    call_ptr(c, WSM_FIND_FUNC, 0x0030_a118)?;
+    c.g[A1][0] = sx(s + WSM_ARGS);
+    c.g[V1][0] = !c.g[V0][0];
+    let id = c.g[V0][0];
+    Addr(s + WSM_ARGS).sw(c, id);
+    if c.g[V1][0] == 0 {
+        // No function (-1).
+        c.cycles += 1;
+        c.g[V0][0] = Addr(r32(c, S2)).off(WSM_TRIGGER).lw(c);
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr(r32(c, S2)).off(WSM_OWNER).lw(c);
+    if c.g[V0][0] == 0 {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S2)).off(WSM_INSTANCE).lw(c);
+        if c.g[V0][0] == 0 {
+            // No owner: a plain call.
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S2][0];
+            WSM_CALL_FUNC.call(c, 0x0030_a148)?;
+            c.g[V0][0] = Addr(r32(c, S2)).off(WSM_TRIGGER).lw(c);
+            return Ok(());
+        }
+    }
+    // A Luno call with the owner's table as `self`.
+    c.cycles += 14;
+    c.g[A0][0] = Addr(r32(c, S2)).off(WSM_CACHE).lw(c);
+    call_ptr(c, WSM_FUNC_ENTRY, 0x0030_a158)?;
+    c.g[A0][0] = c.g[SP][0];
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A2][0] = 0;
+    call_ptr(c, WSM_VALUE_FROM_FUNC, 0x0030_a168)?;
+    c.g[A0][0] = sx(s + 0x20);
+    Addr(s + 0x18).sw(c, 0);
+    c.g[S3][0] = c.g[A0][0];
+    Addr(s + 0x10).sw(c, 0);
+    call_ptr(c, WSM_CALL_INIT, 0x0030_a17c)?;
+    c.g[V0][0] = Addr(r32(c, S2)).off(WSM_INSTANCE).lw(c);
+    if c.g[V0][0] == 0 {
+        c.g[V0][0] = Addr(r32(c, S2)).off(WSM_OWNER).lw(c);
+    } else {
+        c.cycles += 1;
+        c.g[V0][0] = Addr(r32(c, V0)).off(0x3c).lw(c);
+    }
+    c.cycles += 3;
+    c.g[S1][0] = Addr(r32(c, V0)).off(0x1c).lw(c);
+    c.g[V0][0] = sx(s + 0x10);
+    if c.g[S1][0] != 0 {
+        c.cycles += 8;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A3][0] = c.g[V0][0];
+        c.g[S0][0] = c.g[V0][0];
+        call_ptr(c, WSM_CALL_RUN, 0x0030_a1b0)?;
+        c.g[A0][0] = c.g[S0][0];
+    } else {
+        // No table yet: a temporary one, released after the call.
+        c.cycles += 18;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        c.g[A1][0] = sx(WSM_TABLE_NAME);
+        c.g[A0][0] = 4;
+        call_ptr(c, WSM_ALLOC, 0x0030_a1d0)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 8;
+        call_ptr(c, WSM_TABLE_CTOR, 0x0030_a1dc)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[S0][0] = sx(s + 0x10);
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A3][0] = c.g[S0][0];
+        call_ptr(c, WSM_CALL_RUN, 0x0030_a1f8)?;
+        c.g[A0][0] = c.g[S1][0];
+        if c.g[S1][0] != 0 {
+            c.cycles += 2;
+            c.g[A1][0] = 3;
+            call_ptr(c, WSM_TABLE_DTOR, 0x0030_a208)?;
+        }
+        c.cycles += 1;
+        c.g[A0][0] = c.g[S0][0];
+    }
+    // Release the result value.
+    c.cycles += 2;
+    c.g[A1][0] = 2;
+    call_ptr(c, WSM_VALUE_RELEASE, 0x0030_a214)?;
+    c.cycles += 1;
+    c.g[V0][0] = Addr(r32(c, S2)).off(WSM_TRIGGER).lw(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5284,6 +5828,288 @@ pub(crate) mod tests {
                 for i in 0..4 {
                     w(c, DATA + 0x2c0 + 0x10c * i, r.next_u32());
                 }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::fakes::{self};
+    pub(crate) use crate::game::animation::animsequencer::tests::ASL_CTRL;
+    pub(crate) use crate::game::animation::animsequencer::tests::ASL_MAGIC;
+    pub(crate) use crate::game::animation::animsequencer::tests::asl_gated;
+    pub(crate) use crate::game::animation::animsequencer::tests::asl_install_fakes;
+
+
+    /// WScriptMan_CallFunc: a handle naming section 0..3 and script id
+    /// 0..3 resolved through a world script cache (table entries of kind 3)
+    /// to a Luno script whose function returns at once; the real
+    /// LunoVM_PassThrough / LunoVM_Call / LunoVMRegister_dtor run on the pool
+    /// allocator and a dlmalloc arena (as `luno_vm_call_matches` sets them up).
+    #[test]
+    fn wscript_man_call_func_matches() {
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        const SELF: u32 = DATA + 0x20_0000;
+        const HANDLE: u32 = SELF + 0x1000;
+        const WORLD: u32 = SELF + 0x1100;
+        const CACHE: u32 = SELF + 0x1200;
+        const ENTRIES: u32 = SELF + 0x1300;
+        const FUNCS: u32 = SELF + 0x1400;
+        const SCRIPT: u32 = SELF + 0x2000;
+        const TABLES: u32 = SELF + 0x3000;
+        check(ee::s10::f_00309c88__generated, wscript_man_call_func, 120, &|c, seed| {
+            let mut r = alloc_machine(c, seed, 0x30_9c88);
+            c.pc = 0x0030_9c88;
+            let section = seed % 4;
+            let id = (seed / 4) % 4;
+            c.bus.write32(HANDLE, id << 8 | section);
+            c.g[A0][0] = sx(SELF);
+            c.g[A1][0] = sx(HANDLE);
+            // World_GetSectionScriptFunc -> tWScriptCache_GetTableEntry.
+            c.bus.write32(SELF + WSM_WORLD, WORLD);
+            c.bus.write32(WORLD + 4, CACHE);
+            c.bus.write32(CACHE + 4, ENTRIES);
+            let entry = ENTRIES + 0xc * section;
+            c.bus.write16(entry, 3);
+            c.bus.write32(entry + 8, FUNCS);
+            c.bus.write32(FUNCS + 0x3c, FUNCS + 0x40);
+            c.bus.write32(FUNCS + 0x40 + 4 * id, SCRIPT);
+            // The script: code offset 0x10, start pc 0, n registers, 0 locals.
+            c.bus.write32(SCRIPT + 4, 0x10);
+            c.bus.write32(SCRIPT + 0x14, 0);
+            c.bus.write32(SCRIPT + 0x18, (seed / 16) % 4);
+            c.bus.write32(SCRIPT + 0x1c, 0);
+            // Per-section tables: a cLunoValue whose word 0 is a table
+            // (refcount at +8).
+            for i in 0..4u32 {
+                let value = TABLES + 0x40 * i;
+                let table = TABLES + 0x400 + 0x40 * i;
+                c.bus.write32(SELF + WSM_SECTION_TABLES + 4 * i, value);
+                c.bus.write32(value, table);
+                c.bus.write32(table + 8, 100);
+            }
+            // LunoVM_Call's default value: a plain word.
+            let d = 0x004c_9098;
+            c.bus.write32(d, r.next_u32());
+            c.bus.write32(d + 4, r.next_u32());
+            c.bus.write32(d + 8, 2);
+        });
+    }
+
+
+    /// WScriptMan_FocusLeave: no controller / a controller whose v20 is a
+    /// fake (non-zero: v22) or the real zero leaf 0x1406c0, kinds 6 and
+    /// other; the real HasObjScript3/RunObjScript3 and script cache lookup
+    /// run. The "has script" path is reached by pointing the object's cache
+    /// entry id at `man + 0x290`: RunObjScript3 stores the object there
+    /// before its own lookup, which then finds -1 and skips the script call.
+    #[test]
+    fn wscript_man_focus_leave_matches() {
+        const MAN: u32 = DATA;
+        const TABLE: u32 = DATA + 0x400;
+        const CACHE: u32 = DATA + 0xc00;
+        const SECTION: u32 = DATA + 0x1200;
+        const NO_SCRIPT: u32 = DATA + 0x1400;
+        const OBJ: u32 = DATA + 0x800;
+        const OWNER: u32 = DATA + 0x900;
+        const CTL: u32 = DATA + 0xa00;
+        const OWNER_CTL: u32 = DATA + 0xb00;
+        const VTABLE: u32 = DATA + 0x1800;
+        const FUNCS: u32 = DATA + 0x1_0000;
+        const ZERO_LEAF: u32 = 0x0014_06c0;
+        // Function entry `id` of slot 3.
+        let func_at = |id: u32| FUNCS + (id >> 8) * 0x18 + 12;
+        check(ee::s10::f_0030a460__generated, wscript_man_focus_leave, 240, &|c, seed| {
+            let mut r = machine(c, seed, 0x30_a460, 2);
+            c.pc = 0x0030_a460;
+            c.g[A0][0] = sx(MAN);
+            c.g[A1][0] = sx(OBJ);
+            // Script cache: man -> table -> cache -> section -> functions.
+            c.bus.write32(MAN + 0x28c, TABLE);
+            c.bus.write32(TABLE + 4, DATA + 0x600);
+            c.bus.write32(DATA + 0x604, CACHE);
+            c.bus.write32(CACHE + 8, SECTION);
+            c.bus.write32(SECTION + 0x1c, FUNCS);
+            c.bus.write32(NO_SCRIPT + 8, u32::MAX);
+            c.bus.write32(MAN + 0x290, 0x100);
+            c.bus.write32(func_at(0x100), r.next_u32() & 0x7fff_ffff);
+            c.bus.write32(func_at(OBJ), u32::MAX);
+            c.bus.write32(func_at(OWNER), u32::MAX);
+            let has_script = seed % 2 == 0;
+            for o in [OBJ, OWNER] {
+                c.bus.write8(o + 0x78, 0);
+                let entry = if has_script { MAN + 0x290 - 8 } else { NO_SCRIPT };
+                c.bus.write32(o + 0x88, entry);
+            }
+            // Controllers.
+            let has_ctl = seed % 6 >= 2;
+            c.bus.write32(OBJ + OC264_WOBJ_CTL, if has_ctl { CTL } else { 0 });
+            c.bus.write32(OWNER + OC264_WOBJ_CTL, OWNER_CTL);
+            for ctl in [CTL, OWNER_CTL] {
+                c.bus.write32(ctl + OC264_WCTL_VTABLE, VTABLE);
+            }
+            let kind = if seed % 6 == 4 { 6 } else { r.next_u32() % 6 };
+            c.bus.write16(CTL + OC264_WCTL_KIND, kind as u16);
+            c.bus.write32(CTL + OC264_WCTL_OWNER, OWNER);
+            let v20 = if seed % 3 == 0 { FAKE } else { ZERO_LEAF };
+            for (slot, f) in [
+                (OC264_WCTL_V20, v20),
+                (OC264_WCTL_V22, FAKE + 0x10),
+                (OC264_WCTL_V35, FAKE + 0x20),
+            ] {
+                c.bus.write16(VTABLE + slot, (r.next_u32() % 0x20) as u16);
+                c.bus.write32(VTABLE + slot + 4, f);
+            }
+        });
+    }
+
+
+    // ------------------------------------------------ WScriptMan_OnObjectTrigger
+
+    pub(crate) const WSM_CTRL: u32 = DATA + 0x5_b000;
+
+    pub(crate) const WSM_MAGIC: u32 = 0x30a0_60a7;
+
+
+    /// The function lookup: a logged fake returning the id the fixture
+    /// picks at `WSM_CTRL + 4` (-1 = none).
+    pub(crate) fn wsm_fake_find_func(c: &mut Cpu) {
+        if c.bus.read32(WSM_CTRL) != WSM_MAGIC {
+            return ee::s13::f_003a6b78__generated(c);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, WSM_FIND_FUNC, ra);
+        if c.pc == ra {
+            c.g[V0][0] = sx(c.bus.read32(WSM_CTRL + 4));
+        }
+    }
+
+
+    macro_rules! wsm_gated {
+        ($name:ident, $addr:expr, $gen:path) => {
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(WSM_CTRL) != WSM_MAGIC {
+                    return $gen(c);
+                }
+                let ra = c.g[RA][0] as u32;
+                fakes::fake(c, $addr, ra);
+            }
+        };
+    }
+pub(crate) use wsm_gated;
+
+    wsm_gated!(wsm_fake_post, 0x0030_97e0, ee::s10::f_003097e0__generated);
+
+    wsm_gated!(wsm_fake_value, WSM_VALUE_FROM_FUNC, ee::s05::f_00226600__generated);
+
+    wsm_gated!(wsm_fake_call_init, WSM_CALL_INIT, ee::s05::f_002224a8__generated);
+
+    wsm_gated!(wsm_fake_call_run, WSM_CALL_RUN, ee::s05::f_002224b8__generated);
+
+    wsm_gated!(wsm_fake_table_ctor, WSM_TABLE_CTOR, ee::s05::f_00224da0__generated);
+
+    wsm_gated!(wsm_fake_release, WSM_VALUE_RELEASE, ee::s05::f_00225b90__generated);
+
+    wsm_gated!(wsm_fake_cache_entry, 0x003a_dc50, ee::s13::f_003adc50__generated);
+
+    wsm_gated!(wsm_fake_free, 0x0031_7e50, ee::s10::f_00317e50__generated);
+
+
+    pub(crate) fn wsm_install_fakes() {
+        // The allocator's slot is shared with the PushLoopingAnim fakes.
+        asl_install_fakes();
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| unsafe {
+            ee::s13::OVERRIDE_003A6B78 = wsm_fake_find_func;
+            ee::s10::OVERRIDE_003097E0 = wsm_fake_post;
+            ee::s05::OVERRIDE_00226600 = wsm_fake_value;
+            ee::s05::OVERRIDE_002224A8 = wsm_fake_call_init;
+            ee::s05::OVERRIDE_002224B8 = wsm_fake_call_run;
+            ee::s05::OVERRIDE_00224DA0 = wsm_fake_table_ctor;
+            ee::s05::OVERRIDE_00225B90 = wsm_fake_release;
+            ee::s13::OVERRIDE_003ADC50 = wsm_fake_cache_entry;
+            ee::s10::OVERRIDE_00317E50 = wsm_fake_free;
+        });
+    }
+
+
+    /// Objects that post the trigger event or not (a real leaf returning 0),
+    /// event mode 4 or not, finished riders, no rider; no function (-1), no
+    /// owner (the real `CallFunc`), an owner or an instance with a table or
+    /// without (a temporary one, the real table release); with and without a
+    /// trigger effect. Script-VM callees are logged fakes (one may unwind).
+    #[test]
+    fn wscript_man_on_object_trigger_matches() {
+        wsm_install_fakes();
+        covered(
+            ee::s10::f_0030a060__generated,
+            wscript_man_on_object_trigger,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_a060, 10);
+                c.pc = 0x0030_a060;
+                c.bus.write32(WSM_CTRL, WSM_MAGIC);
+                c.bus.write32(ASL_CTRL, ASL_MAGIC);
+                let wsm = DATA + 0x5_0000;
+                let volume = DATA + 0x5_1000;
+                let trigger = DATA + 0x5_1100;
+                let rider = DATA + 0x5_2000;
+                let obj = rider + 0x6c0;
+                let obj_vt = DATA + 0x5_3000;
+                let world = DATA + 0x5_4000;
+                let events = DATA + 0x5_4100;
+                let owner = DATA + 0x5_5000;
+                let instance = DATA + 0x5_5100;
+                let fx = DATA + 0x5_6000;
+                let fx_vt = DATA + 0x5_6100;
+                let cache = DATA + 0x5_7000;
+                fill(c, &mut r, wsm, 4);
+                c.bus.write32(wsm + WSM_CACHE, cache);
+                c.bus.write32(cache + 4, DATA + 0x5_7100);
+                for i in 0..0x40 {
+                    c.bus.write32(wsm + 0x3cc + 4 * i, r.next_u32());
+                }
+                c.bus.write32(volume + 0x50, trigger);
+                c.bus.write32(trigger + 0x78, r.next_u32());
+                c.bus
+                    .write32(trigger + 0xc, if r.next_u32() % 3 == 0 { 0 } else { fx });
+                c.bus.write32(fx + 0xc, fx_vt);
+                c.bus.write16(fx_vt + 0x148, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(fx_vt + 0x14c, FAKE + 0x20);
+                // obj: id (slot 0x38) and "posts the event" (slot 0x40).
+                c.bus.write32(obj, obj_vt);
+                c.bus.write16(obj_vt + 0x38, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(obj_vt + 0x3c, FAKE);
+                c.bus.write16(obj_vt + 0x40, 0);
+                c.bus.write32(
+                    obj_vt + 0x44,
+                    if seed % 3 == 0 { 0x0014_06c0 } else { FAKE + 0x10 },
+                );
+                c.bus.write32(rider + 0x480, (r.next_u32() % 3 == 0) as u32);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, events);
+                c.bus
+                    .write32(events + 0x214, if r.next_u32() % 3 == 0 { 4 } else { 1 });
+                // The function and its owner.
+                c.bus.write32(
+                    WSM_CTRL + 4,
+                    if r.next_u32() % 4 == 0 { u32::MAX } else { r.next_u32() % 0x400 },
+                );
+                let (o, i) = match (seed / 3) % 4 {
+                    0 => (0, 0),
+                    1 => (owner, 0),
+                    2 => (0, instance),
+                    _ => (owner, instance),
+                };
+                c.bus.write32(wsm + WSM_OWNER, o);
+                c.bus.write32(wsm + WSM_INSTANCE, i);
+                c.bus.write32(instance + 0x3c, owner);
+                c.bus
+                    .write32(owner + 0x1c, if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() });
+                c.g[A0][0] = sx(wsm);
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[A2][0] = sx(volume);
+                c.g[A3][0] = sx(if r.next_u32() % 8 == 0 { 0 } else { obj });
             },
         );
     }

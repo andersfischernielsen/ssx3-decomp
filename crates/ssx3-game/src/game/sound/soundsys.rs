@@ -610,6 +610,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0029_3b50, ssx_audio_system_calc_surface_loop_remote_group0, "SSXAudioSystem_CalcSurfaceLoopRemoteGroup0"),
     (0x0029_6088, ssx_audio_system_play_wall_hit_sound, "SSXAudioSystem_PlayWallHitSound"),
     (0x002a_6d18, crowd_audio_update, "CrowdAudio_Update"),
+    (0x0029_4678, ssx_audio_system_update_rider_air_state, "SSXAudioSystem_UpdateRiderAirState"),
+    (0x002a_77c8, crowd_audio_get_instance_reaction, "CrowdAudio_GetInstanceReaction"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12287,6 +12289,211 @@ pub fn ssx_audio_system_play_wall_hit_sound(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod rider_air_state {
+
+    /// Rider: the air-state object (+0x6c0, its vtable first; slot 0x38 =
+    /// the rider's audio slot index).
+    pub const RIDER_AIR_OBJ: u32 = 0x6c0;
+
+    /// Rider: the animation/physics state (+0x788).
+    pub const RIDER_ANIM: u32 = 0x788;
+
+    /// Rider: player id (+0x870), human flags (+0x874, +0x87c).
+    pub const RIDER_PLAYER_ID: u32 = 0x870;
+
+    pub const RIDER_HUMAN: u32 = 0x874;
+
+    pub const RIDER_HUMAN2: u32 = 0x87c;
+
+    /// Anim state: air time (+0x98, float), air mode (+0xac: 1 or 3 = airborne).
+    pub const ANIM_AIR_TIME: u32 = 0x98;
+
+    pub const ANIM_AIR_MODE: u32 = 0xac;
+
+    /// The air-state object's vtable slot giving the rider's audio slot.
+    pub const VT_SLOT: u32 = 0x38;
+}
+
+
+
+/// `void SSXAudioSystem_UpdateRiderAirState(SSXAudioSystem* self, Rider*
+/// rider)` (0x294678): when the rider is no longer airborne (air mode not 1
+/// or 3), clear its airborne flag (`SetRiderAirFlag(self, slot, 1)`, the
+/// slot from the rider's air-state virtual). Otherwise keep the flag set
+/// (`SetRiderAirFlag(self, slot, 0)`), let the rider say line 0x2083, and
+/// when the followed rider (`FindRider(self, idx)`, idx 0 in replays, the
+/// player id of a human rider, else -1) is this rider and its air time is
+/// over 2 s, start the crowd's anticipation for it
+/// (`CrowdAudio_StartAnticipate(self, idx)`). Frame 0x50 (s0-s2, f20).
+pub fn ssx_audio_system_update_rider_air_state(c: &mut Cpu) {
+    use rider_air_state::*;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 1;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x40);
+        let rider = r32(c, S0);
+        let anim = Addr(rider.wrapping_add(RIDER_ANIM)).lw(c);
+        let mode = Addr((anim as u32).wrapping_add(ANIM_AIR_MODE)).lw(c);
+        c.g[V1][0] = mode;
+        let airborne = if mode == 1 {
+            c.cycles += 1;
+            true
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 3;
+            if mode == 3 {
+                c.cycles += 1;
+            }
+            mode == 3
+        };
+        c.g[A0][0] = airborne as u64;
+
+        c.cycles += 2;
+        let vt = Addr(rider.wrapping_add(RIDER_AIR_OBJ)).lw(c);
+        c.g[V1][0] = vt;
+        if !airborne {
+            // Landed: clear the rider's airborne flag.
+            c.cycles += 11;
+            c.g[A1][0] = sx(rider.wrapping_add(RIDER_AIR_OBJ));
+            let delta = Addr((vt as u32).wrapping_add(VT_SLOT)).lh(c);
+            let method = Addr((vt as u32).wrapping_add(VT_SLOT + 4)).lw(c);
+            c.g[V0][0] = method;
+            c.g[A0][0] = abi::addu(c.g[A1][0], delta);
+            call_ptr(c, method as u32, 0x0029_46d8)?;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A2][0] = 1;
+            Callee { addr: 0x0029_4880, f: ee::s07::f_00294880 }.call(c, 0x0029_46e8)?;
+            frame.restore(c, S0, 0x30);
+        } else {
+            c.cycles += 19;
+            c.g[A1][0] = sx(rider.wrapping_add(RIDER_AIR_OBJ));
+            c.g[S2][0] = u64::MAX;
+            let delta = Addr((vt as u32).wrapping_add(VT_SLOT)).lh(c);
+            let method = Addr((vt as u32).wrapping_add(VT_SLOT + 4)).lw(c);
+            c.g[V0][0] = method;
+            c.g[A0][0] = abi::addu(c.g[A1][0], delta);
+            call_ptr(c, method as u32, 0x0029_4708)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = 0;
+            Callee { addr: 0x0029_4880, f: ee::s07::f_00294880 }.call(c, 0x0029_4718)?;
+            // f20 = the rider's air time.
+            let anim = Addr(r32(c, S0).wrapping_add(RIDER_ANIM)).lw(c);
+            c.g[V0][0] = anim;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S0][0];
+            let air_time = Addr((anim as u32).wrapping_add(ANIM_AIR_TIME)).read_fpu(c);
+            abi::set_fpr(c, 20, air_time);
+            // SSXAudioSystem_RiderSay2083(self, rider)
+            call_ptr(c, 0x0029_fcc8, 0x0029_472c)?;
+            c.g[A0][0] = c.g[S1][0];
+            Callee { addr: 0x0028_8ae0, f: ee::s07::f_00288ae0 }.call(c, 0x0029_4734)?;
+            if c.g[V0][0] != 0 {
+                // Replay: the followed rider is rider 0.
+                c.cycles += 2;
+                c.g[S2][0] = 0;
+            } else {
+                let rider = r32(c, S0);
+                let human = Addr(rider.wrapping_add(RIDER_HUMAN)).lw(c);
+                c.g[V0][0] = human;
+                c.cycles += 2;
+                c.g[V1][0] = 0;
+                if human != 0 {
+                    c.cycles += 2;
+                    let human2 = Addr(rider.wrapping_add(RIDER_HUMAN2)).lw(c);
+                    c.g[V0][0] = human2;
+                    c.g[V1][0] = (human2 != 0) as u64;
+                }
+                c.cycles += 2;
+                if c.g[V1][0] != 0 {
+                    c.g[S2][0] = Addr(rider.wrapping_add(RIDER_PLAYER_ID)).lw(c);
+                }
+            }
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = c.g[S2][0];
+            Callee { addr: 0x0028_5d98, f: ee::s07::f_00285d98 }.call(c, 0x0029_4768)?;
+            let followed = c.g[V0][0] == c.g[S0][0];
+            frame.restore(c, S0, 0x30);
+            if followed {
+                c.cycles += 6;
+                c.g[AT][0] = 0x4000_0000;
+                let two = FpuF32(0x4000_0000);
+                abi::set_fpr(c, 0, two);
+                let air_time = FpuF32(c.f[20]);
+                let long_air = abi::c_lt_s(c, two, air_time);
+                c.g[A0][0] = c.g[S1][0];
+                if long_air {
+                    c.cycles += 3;
+                    c.g[A1][0] = c.g[S2][0];
+                    // CrowdAudio_StartAnticipate(self, idx)
+                    call_ptr(c, 0x002a_7408, 0x0029_4790)?;
+                    frame.restore(c, S0, 0x30);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// -- 0x002a77c8 CrowdAudio_GetInstanceReaction -------------------------------
+
+/// Crowd audio: instance count (+0x14) and instance array (+0x18) of
+/// 0x190-byte instances whose reaction is at +0x18c.
+pub(crate) const CROWD_INSTANCE_COUNT: u32 = 0x14;
+
+
+pub(crate) const CROWD_INSTANCES: u32 = 0x18;
+
+
+pub(crate) const CROWD_INSTANCE_SIZE: u32 = 0x190;
+
+
+pub(crate) const CROWD_INSTANCE_REACTION: u32 = 0x18c;
+
+
+
+/// `int CrowdAudio_GetInstanceReaction(CrowdAudio* self, int i)` (0x2a77c8):
+/// the reaction of crowd instance `i` (signed `i < count`), else 0. Leaf.
+pub fn crowd_audio_get_instance_reaction(c: &mut Cpu) {
+    c.cycles += 4;
+    let crowd = abi::arg(c, 0);
+    let count = Addr(crowd.wrapping_add(CROWD_INSTANCE_COUNT)).lw(c);
+    let in_range = (c.g[A1][0] as i64) < (count as i64);
+    c.g[V0][0] = in_range as u64;
+    c.g[V1][0] = CROWD_INSTANCE_SIZE as u64;
+    if in_range {
+        c.cycles += 5;
+        let base = Addr(crowd.wrapping_add(CROWD_INSTANCES)).lw(c);
+        let i = abi::arg(c, 1);
+        let off = abi::mult(c, i, CROWD_INSTANCE_SIZE);
+        let inst = (base as u32).wrapping_add(off);
+        c.g[V1][0] = sx(inst);
+        c.g[V0][0] = Addr(inst.wrapping_add(CROWD_INSTANCE_REACTION)).lw(c);
+    } else {
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+    }
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15843,5 +16050,100 @@ pub(crate) mod tests {
                 c.g[A3][0] = sx(idx);
             },
         );
+    }
+    use super::*;
+
+
+    // -- 0x00294678 SSXAudioSystem_UpdateRiderAirState ------------------------
+
+    /// `SSXAudioSystem_UpdateRiderAirState` against the generated body: air
+    /// mode 1/3 (airborne) or other (landed); the rider's slot virtual is a
+    /// fake (some unwind, some forced to a slot index); the real
+    /// `RiderSay2083` stops at once (speech channel volume 0); the real
+    /// `IsReplayPlaying` (replay states none/0/3/12) and `FindRider` over up
+    /// to three race riders (which may or may not be this rider); human flags
+    /// and player ids; air time below or above 2.0; the real
+    /// `CrowdAudio_StartAnticipate` with or without a crowd array.
+    #[test]
+    fn ssx_audio_system_update_rider_air_state_matches() {
+        use super::rider_air_state::*;
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{DATA, GAME_GP};
+        const THIS: u32 = DATA + 0x1_0000;
+        const WORLD: u32 = DATA + 0x2_0000;
+        const MODULE: u32 = DATA + 0x2_0100;
+        const RACE_MAN: u32 = DATA + 0x2_0400;
+        const REPLAY: u32 = DATA + 0x2_0800;
+        const CROWD: u32 = DATA + 0x4_0000;
+        const RIDERS: u32 = DATA + 0x5_0000;
+        covered(ee::s07::f_00294678__generated, ssx_audio_system_update_rider_air_state, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0029_4678, 1);
+            c.pc = 0x0029_4678;
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            w(c, GAME_GP - 0x848, WORLD);
+            w(c, WORLD + 0x84, MODULE);
+            w(c, MODULE + 0xc, RACE_MAN);
+            w(c, MODULE + 0x28, if r.next_u32() % 3 == 0 { REPLAY } else { 0 });
+            w(c, REPLAY, [0, 0, 3, 12][(r.next_u32() % 4) as usize]);
+            w(c, RACE_MAN + 0x40, REPLAY);
+            w(c, RACE_MAN + 0x7c, r.next_u32() % 4);
+            w(c, RACE_MAN + 0x78, r.next_u32() % 4);
+            for i in 0..3u32 {
+                let rd = RIDERS + 0x1000 * i;
+                let anim = rd + 0x800;
+                w(c, RACE_MAN + 0x28 + 4 * i, rd);
+                w(c, rd + RIDER_ANIM, anim);
+                w(c, anim + ANIM_AIR_MODE, [1, 3, 1, 3, 0, 2][(r.next_u32() % 6) as usize]);
+                w(c, anim + ANIM_AIR_TIME, r.f32(4.0));
+                w(c, rd + RIDER_HUMAN, r.next_u32() % 2);
+                w(c, rd + RIDER_HUMAN2, r.next_u32() % 2);
+                w(c, rd + RIDER_PLAYER_ID, (r.next_u32() % 4).wrapping_sub(1));
+                w(c, rd + 0xec, (r.next_u32() % 8).wrapping_sub(1));
+                let vt = rd + 0xc00;
+                c.bus.write16(vt + VT_SLOT, (r.next_u32() as i16 & !3) as u16);
+                w(c, vt + VT_SLOT + 4, FAKE);
+                w(c, rd + RIDER_AIR_OBJ, vt);
+            }
+            let k = r.next_u32() % 3;
+            w(c, REPLAY + 0x18, RIDERS + 0x1000 * (r.next_u32() % 3));
+            // Speech channel (4) volume 0: RiderSay2083 returns at once.
+            w(c, THIS + 0x62bc + 0x40, 0);
+            w(c, THIS + 0x18, if r.next_u32() % 4 == 0 { 0 } else { CROWD });
+            // Fake slot results: a pointer (no flag) or a slot index 1..5.
+            let v = if r.next_u32() % 2 == 0 { 0 } else { 1 + r.next_u32() % 5 };
+            w(c, LOG_RESULTS, v);
+            c.g[A0][0] = sx(THIS);
+            c.g[A1][0] = sx(RIDERS + 0x1000 * k);
+        });
+    }
+
+
+    // -- 0x002a77c8 CrowdAudio_GetInstanceReaction -----------------------------
+
+    /// `CrowdAudio_GetInstanceReaction` against the generated body: indices
+    /// below, at and above the count, negative indices (and upper bits in
+    /// a1 that the 64-bit compare sees); LO/HI compared too.
+    #[test]
+    fn crowd_audio_get_instance_reaction_matches() {
+        use crate::difftest::{check_lohi, fill, scramble, Rng, DATA};
+        const CROWD: u32 = DATA;
+        const INSTANCES: u32 = DATA + 0x1000;
+        check_lohi(ee::s08::f_002a77c8__generated, crowd_audio_get_instance_reaction, 300, &|c, seed| {
+            let mut r = Rng(0x002a_77c8 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.pc = 0x002a_77c8;
+            let count = r.next_u32() % 8;
+            c.bus.write32(CROWD + CROWD_INSTANCE_COUNT, count);
+            c.bus.write32(CROWD + CROWD_INSTANCES, INSTANCES);
+            for i in 0..8 {
+                fill(c, &mut r, INSTANCES + CROWD_INSTANCE_SIZE * i + CROWD_INSTANCE_REACTION, 1);
+            }
+            c.g[A0][0] = sx(CROWD);
+            c.g[A1][0] = match seed % 4 {
+                0 | 1 => (r.next_u32() % 8) as u64,
+                2 => sx((r.next_u32() % 4).wrapping_neg()),
+                _ => (r.next_u32() % 8) as u64 | (r.next_u32() as u64) << 32,
+            };
+        });
     }
 }

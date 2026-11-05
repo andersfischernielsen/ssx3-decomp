@@ -172,6 +172,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0039_6d30, vfx_screen_tint_dtor, "VfxScreenTint_dtor"),
     (0x0039_6128, tex_man_invalidate_bound, "TexMan_InvalidateBound"),
+    (0x0039_5f60, ps2_graphics_man_try_acquire_frame, "PS2GraphicsMan_TryAcquireFrame"),
 ];
 
 /// `DeferMan` layout (offsets from the `DeferMan*`).
@@ -1580,6 +1581,29 @@ pub fn tex_man_invalidate_bound(c: &mut Cpu) {
     ret(c);
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_TryAcquireFrame (0x395f60, font.cpp)
+
+/// `PS2GraphicsMan_AcquireFrameBuffer` (reached through the function table).
+pub(crate) const OC264_GM_ACQUIRE_FRAME_BUFFER: u32 = 0x0038_26e0;
+
+
+
+/// `bool PS2GraphicsMan_TryAcquireFrame(PS2GraphicsMan* self)` (0x395f60):
+/// forwards to `PS2GraphicsMan_AcquireFrameBuffer(self)` (claims the
+/// current frame buffer if it is free) and returns its result.
+pub fn ps2_graphics_man_try_acquire_frame(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Table(OC264_GM_ACQUIRE_FRAME_BUFFER),
+        0x0039_5f70,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2534,5 +2558,27 @@ pub(crate) mod tests {
             mode
         };
         check_events(ee::s13::f_00396128__generated, tex_man_invalidate_bound, 200, &setup);
+    }
+    use super::*;
+
+
+    /// PS2GraphicsMan_TryAcquireFrame: the current frame buffer's state
+    /// free (0), claimed (1) or busy (2); the real AcquireFrameBuffer runs.
+    #[test]
+    fn ps2_graphics_man_try_acquire_frame_matches() {
+        check(
+            ee::s13::f_00395f60__generated,
+            ps2_graphics_man_try_acquire_frame,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x39_5f60, 0);
+                c.pc = 0x0039_5f60;
+                let this = DATA + 0x1_0000;
+                let cur = seed % 2;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + 0x5a10, cur);
+                c.bus.write32(this + 0x5a90 + 4 * cur, (seed / 2) % 3);
+            },
+        );
     }
 }

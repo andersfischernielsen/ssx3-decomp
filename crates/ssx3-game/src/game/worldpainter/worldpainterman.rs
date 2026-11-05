@@ -39,6 +39,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_painter_man_debug_draw_current,
         "cWorldPainterMan_DebugDrawCurrent",
     ),
+    (0x002b_b6b8, c_world_painter_man_debug_draw, "cWorldPainterMan_DebugDraw"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -299,6 +300,52 @@ pub(crate) fn sp_at(c: &Cpu, off: u32) -> u32 {
     sp(c).wrapping_add(off)
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// cWorldPainterMan_DebugDraw (0x2bb6b8)
+
+pub(crate) const WPM_DEBUG_DRAW_CURRENT: Callee = Callee {
+    addr: 0x002b_b6e0,
+    f: ee::s08::cWorldPainterMan_DebugDrawCurrent,
+};
+
+
+/// World (`gp-0x848`) -> world painter manager (+0x84) -> current painter
+/// (+0x10); the painter's +8 is the node set drawn.
+pub(crate) const WPM_WORLD: i32 = -0x848;
+
+
+pub(crate) const WORLD_PAINTER_MAN: u32 = 0x84;
+
+
+pub(crate) const WPM_CURRENT: u32 = 0x10;
+
+
+pub(crate) const PAINTER_NODES: u32 = 0x8;
+
+
+
+/// `void cWorldPainterMan_DebugDraw(void)` (0x2bb6b8): debug-draw the
+/// world's current world painter
+/// (`DebugDrawCurrent(painter->nodes, painter)`).
+pub fn c_world_painter_man_debug_draw(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(WPM_WORLD as u32)).lw(c);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr(r32(c, V0)).off(WORLD_PAINTER_MAN).lw(c);
+        c.g[A1][0] = Addr(r32(c, V1)).off(WPM_CURRENT).lw(c);
+        c.g[A0][0] = Addr(r32(c, A1)).off(PAINTER_NODES).lw(c);
+        WPM_DEBUG_DRAW_CURRENT.call(c, 0x002b_b6d4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -402,6 +449,35 @@ pub(crate) mod tests {
                 c.bus
                     .write16(rc + 0x1100 + 0x248, (r.next_u32() & 0x7c) as u16);
                 c.bus.write32(rc + 0x1100 + 0x24c, FAKE);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::{self};
+
+
+    // ------------------------------------------------ cWorldPainterMan_DebugDraw
+
+    /// The world's painter manager and current painter; the real
+    /// `DebugDrawCurrent` runs with the debug draw switched off
+    /// (`gp+0x13c4` = 0, as in the game).
+    #[test]
+    fn c_world_painter_man_debug_draw_matches() {
+        check(
+            ee::s08::f_002bb6b8__generated,
+            c_world_painter_man_debug_draw,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002b_b6b8, 0);
+                c.pc = 0x002b_b6b8;
+                let world = DATA + 0x1_0000;
+                let man = DATA + 0x1_1000;
+                let painter = DATA + 0x1_2000;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + WORLD_PAINTER_MAN, man);
+                c.bus.write32(man + WPM_CURRENT, painter);
+                c.bus.write32(painter + PAINTER_NODES, r.next_u32());
+                c.bus.write32(GAME_GP + 0x13c4, 0);
             },
         );
     }

@@ -401,6 +401,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0012_d848, rider_wipeout_sub_update_recover, "RiderWipeoutSub_UpdateRecover"),
     (0x0012_e528, rider_wipeout_sub_update_anim_speed, "RiderWipeoutSub_UpdateAnimSpeed"),
     (0x0012_e778, rider_bump_sub_handle_input, "RiderBumpSub_HandleInput"),
+    (0x0013_5be0, rider_spin_sub_try_reverse, "RiderSpinSub_TryReverse"),
 ];
 
 /// `gp`-relative globals used here.
@@ -14469,6 +14470,121 @@ pub fn rider_wipeout_sub_update_anim_speed(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// RiderSpinSub_TryReverse (0x135be0)
+
+/// `Rider_CanReverseSpin`-style query on the rider (0x114db8).
+pub(crate) const SPIN_CAN_REVERSE: u32 = 0x0011_4db8;
+
+
+/// `cRiderAnimBase::play(anim, id, flags, blend)` (0x3128e8).
+pub(crate) const SPIN_ANIM_PLAY: u32 = 0x0031_28e8;
+
+
+/// Spin sub-state fields.
+pub(crate) const SPIN_SUB_10: u32 = 0x10;
+
+
+pub(crate) const SPIN_SUB_18: u32 = 0x18;
+
+
+pub(crate) const SPIN_SUB_ANGLE: u32 = 0x20;
+
+
+pub(crate) const SPIN_SUB_RATE: u32 = 0x24;
+
+
+pub(crate) const SPIN_SUB_2C: u32 = 0x2c;
+
+
+pub(crate) const SPIN_SUB_RIDER: u32 = 0x58;
+
+
+pub(crate) const RIDER_ANIM: u32 = 0x784;
+
+
+/// The reverse-spin animation.
+pub(crate) const SPIN_REVERSE_ANIM: u64 = 0x120;
+
+
+
+/// `bool RiderSpinSub_TryReverse(RiderSpinSub *self)` (0x135be0): if the
+/// rider may reverse (0x114db8), turn the spin around: the angle plus pi
+/// wrapped back into one turn (`a - 2pi * floor(a / 2pi + 0.5)`), the rate
+/// and the three other signed fields negated, and the reverse animation
+/// (0x120) played with blend -1. Returns whether it reversed.
+pub fn rider_spin_sub_try_reverse(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A0][0] = Addr(r32(c, S0)).off(SPIN_SUB_RIDER).lw(c);
+        call_ptr(c, SPIN_CAN_REVERSE, 0x0013_5bf8)?;
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = 0;
+        } else {
+            let sub = Addr(r32(c, S0));
+            let gp = r32(c, GP);
+            c.cycles += 13;
+            let pi = Addr(gp.wrapping_sub(0x733c)).read_fpu(c);
+            let angle = sub.off(SPIN_SUB_ANGLE).read_fpu(c);
+            let inv_two_pi = Addr(gp.wrapping_sub(0x7338)).read_fpu(c);
+            let turned = angle + pi;
+            let half = FpuF32::from_f32(0.5);
+            c.g[AT][0] = 0x3f00_0000;
+            let turns = turned * inv_two_pi + half;
+            let mut whole = FpuF32::from_i32(turns.to_i32());
+            c.f[3] = angle.0;
+            c.f[5] = turned.0;
+            c.f[2] = half.0;
+            c.f[0] = turns.0;
+            if abi::c_lt_s(c, turns, whole) {
+                c.cycles += 3;
+                c.g[AT][0] = 0x3f80_0000;
+                c.f[0] = FpuF32::ONE.0;
+                whole = whole - FpuF32::ONE;
+            }
+            c.f[1] = whole.0;
+
+            c.cycles += 24;
+            let two_pi = Addr(gp.wrapping_sub(0x7334)).read_fpu(c);
+            c.g[A1][0] = SPIN_REVERSE_ANIM;
+            let rate = -sub.off(SPIN_SUB_RATE).read_fpu(c);
+            c.g[A2][0] = 0;
+            let f2c = -sub.off(SPIN_SUB_2C).read_fpu(c);
+            let f18 = -sub.off(SPIN_SUB_18).read_fpu(c);
+            let f10 = -sub.off(SPIN_SUB_10).read_fpu(c);
+            let wrapped = turned - whole * two_pi;
+            c.g[V0][0] = sub.off(SPIN_SUB_RIDER).lw(c);
+            sub.off(SPIN_SUB_RATE).write_fpu(c, rate);
+            sub.off(SPIN_SUB_2C).write_fpu(c, f2c);
+            sub.off(SPIN_SUB_ANGLE).write_fpu(c, wrapped);
+            sub.off(SPIN_SUB_18).write_fpu(c, f18);
+            sub.off(SPIN_SUB_10).write_fpu(c, f10);
+            c.f[3] = rate.0;
+            c.f[0] = f2c.0;
+            c.f[4] = f18.0;
+            c.f[1] = f10.0;
+            c.f[2] = wrapped.0;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.f[12] = 0xbf80_0000; // blend -1.0
+            c.g[A0][0] = Addr(r32(c, V0)).off(RIDER_ANIM).lw(c);
+            call_ptr(c, SPIN_ANIM_PLAY, 0x0013_5c9c)?;
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17285,5 +17401,93 @@ pub(crate) mod tests {
             c.bus.write32(0x0044_6990 + index * 0x1c, id);
             c.g[A0][0] = sx(this);
         });
+    }
+    use super::*;
+    // (fakes imported above)
+
+
+    // --------------------------------------------------- RiderSpinSub_TryReverse
+
+    pub(crate) const SPIN_CTRL: u32 = DATA + 0x5_a000;
+
+    pub(crate) const SPIN_MAGIC: u32 = 0x135b_e0a5;
+
+
+    /// The reverse query: a logged fake whose answer (0 or 1) the fixture
+    /// picks at `SPIN_CTRL + 4`.
+    pub(crate) fn spin_fake_can_reverse(c: &mut Cpu) {
+        if c.bus.read32(SPIN_CTRL) != SPIN_MAGIC {
+            return ee::s00::f_00114db8__generated(c);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, SPIN_CAN_REVERSE, ra);
+        if c.pc == ra {
+            c.g[V0][0] = c.bus.read32(SPIN_CTRL + 4) as u64;
+        }
+    }
+
+
+    pub(crate) fn spin_fake_play(c: &mut Cpu) {
+        if c.bus.read32(SPIN_CTRL) != SPIN_MAGIC {
+            return ee::s10::f_003128e8__generated(c);
+        }
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, SPIN_ANIM_PLAY, ra);
+    }
+
+
+    pub(crate) fn spin_install_fakes() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| unsafe {
+            ee::s00::OVERRIDE_00114DB8 = spin_fake_can_reverse;
+            ee::s10::OVERRIDE_003128E8 = spin_fake_play;
+        });
+    }
+
+
+    /// No reverse, or a reverse of angles around +-pi (the floor's
+    /// correction when the rounding goes up), with edge floats in the other
+    /// fields; the game's pi constants from the image.
+    #[test]
+    fn rider_spin_sub_try_reverse_matches() {
+        spin_install_fakes();
+        covered(
+            ee::s01::f_00135be0__generated,
+            rider_spin_sub_try_reverse,
+            240,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x0013_5be0, 2);
+                c.pc = 0x0013_5be0;
+                c.bus.write32(SPIN_CTRL, SPIN_MAGIC);
+                c.bus.write32(SPIN_CTRL + 4, (seed % 4 != 0) as u32);
+                let sub = DATA + 0x5_0000;
+                let rider = DATA + 0x5_1000;
+                c.g[A0][0] = sx(sub);
+                c.bus.write32(sub + SPIN_SUB_RIDER, rider);
+                c.bus.write32(rider + RIDER_ANIM, r.next_u32());
+                let angles = [
+                    0.0f32,
+                    3.1415927,
+                    -3.1415927,
+                    6.2831855,
+                    -6.2831855,
+                    9.424778,
+                    -9.424778,
+                    1.0,
+                    -2.5,
+                    100.0,
+                ];
+                let angle = if seed % 5 == 4 {
+                    r.edge_f32()
+                } else {
+                    angles[(seed as usize / 4) % angles.len()].to_bits()
+                };
+                c.bus.write32(sub + SPIN_SUB_ANGLE, angle);
+                for off in [SPIN_SUB_10, SPIN_SUB_18, SPIN_SUB_RATE, SPIN_SUB_2C] {
+                    c.bus.write32(sub + off, r.edge_f32());
+                }
+            },
+        );
     }
 }

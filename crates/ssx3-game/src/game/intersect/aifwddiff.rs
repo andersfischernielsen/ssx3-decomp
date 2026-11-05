@@ -83,6 +83,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Collide_SphereVsBoxEdges",
     ),
     (0x0032_8808, spatial_hash_move, "SpatialHash_Move"),
+    (0x0032_8660, spatial_hash_insert_at_key, "SpatialHash_InsertAtKey"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2508,6 +2509,194 @@ pub(crate) fn oc230_shm_insert(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
     Ok(())
 }
 
+
+pub(crate) mod spatial_insert {
+
+    pub const NODE_LISTS: u32 = 0x20;
+
+    pub const NODE_SIZE: u64 = 0x2c;
+
+    /// Item: next (+0), prev (+4).
+    pub const ITEM_PREV: u32 = 0x4;
+
+    /// `EA_MemAllocNamed` name (0x4a3fc0) and flags for a new node.
+    pub const NODE_NAME: u32 = 0x004a_3fc0;
+
+    pub const NODE_FLAGS: u64 = 0x2000_0000;
+
+    /// Loop heads (event checks).
+    pub const DESCEND: u32 = 0x0032_86c0;
+
+    pub const CLEAR: u32 = 0x0032_8778;
+}
+
+
+
+/// `void SpatialHash_InsertAtKey(Node* node, int list, Item* item, Cell*
+/// target, Cell* at)` (0x328660): walk down the octree from `node` (whose
+/// cell is `*at`) to the cell `target`, one level at a time, creating
+/// missing child nodes (`EA_MemAllocNamed(0x2c, name, 0x20000000, 0)`,
+/// lists cleared, children `memset` to 0), then push `item` onto the
+/// target node's list `list`. Frame 0x80 (s0-s5; the walked cell at sp+0).
+pub fn spatial_hash_insert_at_key(c: &mut Cpu) {
+    use spatial_insert::*;
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save(c, S4, 0x30);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S0, 0x70);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S1, 0x60);
+        frame.save(c, S5, 0x20);
+        frame.save_ra(c, 0x10);
+        // The walked cell: a copy of *at at sp+0.
+        let at = r32(c, T0);
+        let cell = sp(c);
+        c.ldl(V0, at.wrapping_add(7));
+        c.ldr(V0, at);
+        c.ldl(V1, at.wrapping_add(0xf));
+        c.ldr(V1, at.wrapping_add(8));
+        c.sdl(V0, cell.wrapping_add(7));
+        c.sdr(V0, cell);
+        c.sdl(V1, cell.wrapping_add(0xf));
+        c.sdr(V1, cell.wrapping_add(8));
+        let target = r32(c, S2);
+        c.g[V1][0] = Addr(target).lw(c);
+        c.g[V0][0] = Addr(cell).lw(c);
+        c.g[T2][0] = c.g[A0][0];
+        if c.g[V0][0] != c.g[V1][0] {
+            c.cycles += 1;
+            c.g[S5][0] = 0x004a_0000;
+            loop {
+                spatial_hash_insert_descend(c)?;
+                c.cycles += 3;
+                let target_level = Addr(r32(c, S2)).lw(c);
+                c.g[V0][0] = target_level;
+                c.g[T2][0] = Addr(r32(c, S1)).lw(c);
+                if c.g[V1][0] == target_level {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, DESCEND);
+                }
+            }
+        }
+        // Push the item onto the node's list.
+        c.cycles += 6;
+        let off = sx(r32(c, S4) << 2);
+        c.g[V0][0] = off;
+        let head_at = (off as u32).wrapping_add(r32(c, T2)).wrapping_add(NODE_LISTS);
+        c.g[V1][0] = sx(head_at);
+        let head = Addr(head_at).lw(c);
+        c.g[V0][0] = head;
+        let item = r32(c, S3);
+        if head != 0 {
+            Addr((head as u32).wrapping_add(ITEM_PREV)).sw(c, item as u64);
+        }
+        c.cycles += 13;
+        let head = Addr(head_at).lw(c);
+        c.g[V0][0] = head;
+        Addr(item.wrapping_add(ITEM_PREV)).sw(c, 0);
+        Addr(item).sw(c, head);
+        Addr(head_at).sw(c, item as u64);
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// One level down (block 0x3286c0 up to 0x3287ac): step the walked cell
+/// one level toward the target, select the child (s1 = its slot), create
+/// it if missing. Leaves v1 = the new level.
+pub(crate) fn spatial_hash_insert_descend(c: &mut Cpu) -> crate::call::Flow {
+    use spatial_insert::*;
+    c.cycles += 36;
+    let cell = sp(c);
+    let target = r32(c, S2);
+    let level = Addr(cell).lw(c) as u32;
+    let target_level = Addr(target).lw(c) as u32;
+    c.g[T1][0] = sx(level.wrapping_sub(1));
+    let sh = level.wrapping_sub(target_level).wrapping_sub(1);
+    c.g[V1][0] = sx(sh);
+    let tx = Addr(target.wrapping_add(4)).lw(c) as u32;
+    let ty = Addr(target.wrapping_add(8)).lw(c) as u32;
+    let tz = Addr(target.wrapping_add(0xc)).lw(c) as u32;
+    let cx2 = (Addr(cell.wrapping_add(4)).lw(c) as u32) << 1;
+    let cy2 = (Addr(cell.wrapping_add(8)).lw(c) as u32) << 1;
+    let cz2 = (Addr(cell.wrapping_add(0xc)).lw(c) as u32) << 1;
+    let shr = |v: u32| ((v as i32) >> (sh & 31)) as u32;
+    let dx = shr(tx).wrapping_sub(cx2);
+    let dy = shr(ty).wrapping_sub(cy2);
+    let dz = shr(tz).wrapping_sub(cz2);
+    let nx = cx2.wrapping_add(dx);
+    let ny = cy2.wrapping_add(dy);
+    let nz = cz2.wrapping_add(dz);
+    c.g[A1][0] = sx(dx);
+    c.g[T0][0] = sx(nx);
+    c.g[A2][0] = sx(ny);
+    c.g[A3][0] = sx(nz);
+    let row = (dx << 4).wrapping_add(r32(c, T2)).wrapping_add(dy << 3);
+    Addr(cell).sw(c, sx(level.wrapping_sub(1)));
+    Addr(cell.wrapping_add(4)).sw(c, sx(nx));
+    let dz4 = dz << 2;
+    c.g[A0][0] = sx(dz4);
+    Addr(cell.wrapping_add(8)).sw(c, sx(ny));
+    let slot = row.wrapping_add(dz4);
+    c.g[S1][0] = sx(slot);
+    Addr(cell.wrapping_add(0xc)).sw(c, sx(nz));
+    let child = Addr(slot).lw(c);
+    c.g[V0][0] = child;
+    c.g[V1][0] = Addr(cell).lw(c);
+    if child == 0 {
+        // A new node: lists cleared, children zeroed.
+        c.cycles += 10;
+        c.g[A0][0] = NODE_SIZE;
+        c.g[A1][0] = sx(r32(c, S5).wrapping_add(NODE_NAME & 0xffff));
+        c.g[A2][0] = NODE_FLAGS;
+        c.g[A3][0] = 0;
+        Callee { addr: 0x0031_7d70, f: ee::s10::f_00317d70 }.call(c, 0x0032_8764)?;
+        c.g[S0][0] = c.g[V0][0];
+        c.g[A0][0] = u64::MAX;
+        c.g[V0][0] = sx(r32(c, S0).wrapping_add(NODE_LISTS));
+        c.g[V1][0] = 2;
+        loop {
+            c.cycles += 7;
+            Addr(r32(c, V0)).sw(c, 0);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+            let more = c.g[V1][0] != c.g[A0][0];
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, CLEAR);
+            }
+        }
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0x20;
+        // memset(node, 0, 0x20)
+        call_ptr(c, 0x003e_6448, 0x0032_87a4)?;
+        let node = c.g[S0][0];
+        Addr(r32(c, S1)).sw(c, node);
+        c.g[V1][0] = Addr(sp(c)).lw(c);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3161,5 +3350,65 @@ pub(crate) mod tests {
                 c.pc = SHM_ENTRY;
             },
         );
+    }
+    use super::*;
+
+
+    // -- 0x00328660 SpatialHash_InsertAtKey ------------------------------------
+
+    /// `SpatialHash_InsertAtKey` against the generated body: the target cell
+    /// 0-3 levels below the start cell (start cell copy aligned or not),
+    /// child nodes present or created (the real `EA_MemAllocNamed` on a
+    /// test heap, its mutex syscalls fakes that sometimes unwind; the real
+    /// `memset`), lists empty or not.
+    #[test]
+    fn spatial_hash_insert_at_key_matches() {
+        use super::spatial_insert::*;
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA};
+        use crate::game::bx::bxstring::tests::alloc_ready;
+        const TARGET: u32 = DATA + 0x20_0000;
+        const ROOT: u32 = DATA + 0x20_1000;
+        const PRE: u32 = DATA + 0x20_2000;
+        const OLD: u32 = DATA + 0x20_3000;
+        const ITEM: u32 = DATA + 0x20_4000;
+        check(ee::s10::f_00328660__generated, spatial_hash_insert_at_key, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0032_8660, 3);
+            alloc_ready(c);
+            c.pc = 0x0032_8660;
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            let level = r.next_u32() % 3;
+            let depth = r.next_u32() % 4;
+            let at = TARGET + if r.next_u32() % 2 == 0 { 0x10 } else { 0x13 };
+            w(c, TARGET, level);
+            c.bus.write32(at - (at & 3), 0);
+            for k in 0..3u32 {
+                let v = r.next_u32() % 64;
+                w(c, TARGET + 4 + 4 * k, v);
+                for (b, byte) in (v >> depth).to_le_bytes().into_iter().enumerate() {
+                    c.bus.write8(at + 4 + 4 * k + b as u32, byte);
+                }
+            }
+            for (b, byte) in (level + depth).to_le_bytes().into_iter().enumerate() {
+                c.bus.write8(at + b as u32, byte);
+            }
+            // Root and pre-made nodes: some children present, lists empty or not.
+            for n in 0..9u32 {
+                let node = if n == 0 { ROOT } else { PRE + 0x40 * (n - 1) };
+                for k in 0..8u32 {
+                    let child = if n == 0 && r.next_u32() % 2 == 0 { PRE + 0x40 * k } else { 0 };
+                    w(c, node + 4 * k, child);
+                }
+                for l in 0..3u32 {
+                    let head = if r.next_u32() % 2 == 0 { 0 } else { OLD + 0x10 * (n * 3 + l) };
+                    w(c, node + NODE_LISTS + 4 * l, head);
+                }
+            }
+            c.g[A0][0] = sx(ROOT);
+            c.g[A1][0] = (r.next_u32() % 3) as u64;
+            c.g[A2][0] = sx(ITEM);
+            c.g[A3][0] = sx(TARGET);
+            c.g[T0][0] = sx(at);
+        });
     }
 }

@@ -52,6 +52,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_9e48, mem_pool_alloc, "MEM_PoolAlloc"),
     (0x0031_f2c8, dlheap_memalign, "DLHeap_Memalign"),
     (0x0031_ed60, dlheap_free, "DLHeap_Free"),
+    (0x0031_d7e0, c_csi_cubic_spline_add_point, "cCSICubicSpline_AddPoint"),
+    (0x0032_0368, mem_pool64_alloc, "MEM_Pool64Alloc"),
+    (0x0032_0408, mem_pool256_alloc, "MEM_Pool256Alloc"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -1172,6 +1175,192 @@ pub fn dlheap_free(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// MEM_Pool256Alloc (0x320408, cubicspline.cpp)
+
+/// The 256-byte pool's free-list head (offset in the pool object).
+pub(crate) const OC264_POOL256_FREE_HEAD: u32 = 0x2_0000;
+
+
+
+pub(crate) const OC264_MEM_POOL_ALLOC: Callee = Callee {
+    addr: 0x0031_9e48,
+    f: ee::s10::MEM_PoolAlloc,
+};
+
+
+
+/// `void* MEM_Pool256Alloc(Pool256* pool)` (0x320408): pops a block off the
+/// 256-byte pool's free list; when the list is empty falls back to
+/// `MEM_PoolAlloc(0x104, align)` (the caller's a1 is passed through).
+pub fn mem_pool256_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = 0x2_0000;
+        frame.save_ra(c, 0);
+        let head = r32(c, A0).wrapping_add(OC264_POOL256_FREE_HEAD);
+        c.g[A0][0] = sx(head);
+        let block = Addr(head).lw(c);
+        c.g[V0][0] = block;
+        if block != 0 {
+            c.cycles += 3;
+            let next = Addr(block as u32).lw(c);
+            c.g[V1][0] = next;
+            Addr(head).sw(c, next);
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = 0x104;
+            OC264_MEM_POOL_ALLOC.call(c, 0x0032_042c)?;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// cCSICubicSpline_AddPoint (0x31d7e0)
+
+/// `cCSICubicSpline_Solve(spline)`: compute the second derivatives.
+pub(crate) const SPLINE_ADD_SOLVE: Callee = Callee { addr: 0x0031_d8b0, f: ee::s10::cCSICubicSpline_Solve };
+
+
+/// cCSICubicSpline: flags word at +0 (bit 2 solved, bits 3..10 points
+/// added, bits 11..18 capacity), the keys at +8.
+pub(crate) const SPLINE_ADD_FLAGS: u32 = 0x0;
+
+
+pub(crate) const SPLINE_ADD_KEYS: u32 = 0x8;
+
+
+pub(crate) const SPLINE_ADD_SOLVED: u64 = 0x4;
+
+
+/// A key: 0x14 bytes, `{x, y, end_x, end_y, d2}`.
+pub(crate) const SPLINE_ADD_KEY_SIZE: u32 = 0x14;
+
+
+
+/// `void cCSICubicSpline_AddPoint(cCSICubicSpline* self, float x, float y)`
+/// (0x31d7e0): append the key `(x, y)`; when the spline is already full,
+/// store `(x, y)` as the last key's end tangent instead, solve the spline
+/// and mark it solved.
+pub fn c_csi_cubic_spline_add_point(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let me = r32(c, S0);
+        let flags = Addr(me.wrapping_add(SPLINE_ADD_FLAGS)).lw(c) as u32;
+        c.g[V1][0] = sx(flags >> 11) & 0xff;
+        c.g[V0][0] = sx(flags >> 3);
+        c.g[A2][0] = c.g[V0][0] & 0xff;
+        let added = r32(c, A2);
+        let x = FpuF32(c.f[12]);
+        let y = FpuF32(c.f[13]);
+        if c.g[A2][0] == c.g[V1][0] {
+            // Full: the last key's end point, then solve.
+            c.cycles += 17;
+            c.g[A1][0] = SPLINE_ADD_KEY_SIZE as u64;
+            c.g[V0][0] = Addr(me.wrapping_add(SPLINE_ADD_KEYS)).lw(c);
+            let end = abi::mult(c, added, SPLINE_ADD_KEY_SIZE).wrapping_add(r32(c, V0));
+            c.g[V1][0] = sx(end);
+            Addr(end.wrapping_sub(0xc)).write_fpu(c, x);
+            let flags = Addr(me.wrapping_add(SPLINE_ADD_FLAGS)).lw(c) as u32;
+            c.g[V1][0] = Addr(me.wrapping_add(SPLINE_ADD_KEYS)).lw(c);
+            let n = (flags >> 3) & 0xff;
+            let end = abi::mult(c, n, SPLINE_ADD_KEY_SIZE).wrapping_add(r32(c, V1));
+            c.g[V0][0] = sx(end);
+            Addr(end.wrapping_sub(0x8)).write_fpu(c, y);
+            SPLINE_ADD_SOLVE.call(c, 0x0031_d840)?;
+            let me = r32(c, S0);
+            c.g[V0][0] = Addr(me.wrapping_add(SPLINE_ADD_FLAGS)).lw(c) | SPLINE_ADD_SOLVED;
+            let v = c.g[V0][0];
+            Addr(me.wrapping_add(SPLINE_ADD_FLAGS)).sw(c, v);
+        } else {
+            // Append key `added`.
+            c.cycles += 20;
+            c.g[A0][0] = SPLINE_ADD_KEY_SIZE as u64;
+            c.g[V0][0] = Addr(me.wrapping_add(SPLINE_ADD_KEYS)).lw(c);
+            let key = abi::mult(c, added, SPLINE_ADD_KEY_SIZE).wrapping_add(r32(c, V0));
+            c.g[A1][0] = 0xffff_ffff_ffff_f807;
+            c.g[V1][0] = sx(key);
+            Addr(key).write_fpu(c, x);
+            let flags = Addr(me.wrapping_add(SPLINE_ADD_FLAGS)).lw(c) as u32;
+            c.g[V1][0] = Addr(me.wrapping_add(SPLINE_ADD_KEYS)).lw(c);
+            let n = (flags >> 3) & 0xff;
+            let key = abi::mult(c, n, SPLINE_ADD_KEY_SIZE).wrapping_add(r32(c, V1));
+            c.g[V0][0] = sx(key);
+            Addr(key.wrapping_add(4)).write_fpu(c, y);
+            // added += 1 (8 bits at bit 3).
+            c.g[V1][0] = Addr(me.wrapping_add(SPLINE_ADD_FLAGS)).lw(c);
+            let next = (sx(r32(c, V1) >> 3) as u32).wrapping_add(1) & 0xff;
+            c.g[V0][0] = sx(next << 3);
+            c.g[V1][0] = (c.g[V1][0] & c.g[A1][0]) | c.g[V0][0];
+            let v = c.g[V1][0];
+            Addr(me.wrapping_add(SPLINE_ADD_FLAGS)).sw(c, v);
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+
+
+// ---------------------------------------------------------------------------
+// MEM_Pool64Alloc (0x320368)
+
+/// Free-list head of the 64-byte pool.
+pub(crate) const MEM_POOL64_FREE: u32 = 0x3_2000;
+
+
+pub(crate) const MEM_POOL64_FALLBACK: Callee = Callee { addr: 0x0031_9e48, f: ee::s10::f_00319e48 };
+
+
+
+/// `void* MEM_Pool64Alloc(Pool64* pool)` (0x320368): pop a block off the
+/// 64-byte pool's free list (`pool + 0x32000`); when it is empty fall back
+/// to `MEM_PoolAlloc(0x44, a1)` (a1 is whatever the caller left there).
+pub fn mem_pool64_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let pool = r32(c, A0);
+        c.g[V0][0] = sx(pool.wrapping_add(0x3_0000));
+        let head = pool.wrapping_add(MEM_POOL64_FREE);
+        let free = Addr(head).lw(c);
+        c.g[V1][0] = 0x3_0000;
+        if free == 0 {
+            c.cycles += 4;
+            c.g[A0][0] = 0x44;
+            MEM_POOL64_FALLBACK.call(c, 0x0032_038c)?;
+        } else {
+            c.cycles += 6;
+            c.g[V1][0] = sx(head);
+            c.g[V0][0] = free;
+            c.g[A0][0] = Addr(free as u32).lw(c);
+            Addr(head).sw(c, c.g[A0][0]);
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1601,6 +1790,154 @@ pub(crate) mod tests {
                 }
                 _ => ptrs[target],
             };
+        });
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::{elf_image, put_vec};
+
+
+    /// MEM_Pool256Alloc: a non-empty free list (pop), or an empty one with
+    /// the real MEM_PoolAlloc behind it: pools ready (served by the 512-byte
+    /// pool) or not yet (dlmalloc on the arena the setup initialises).
+    #[test]
+    fn mem_pool256_alloc_matches() {
+        use crate::difftest::GAME_GP;
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        check(ee::s10::f_00320408__generated, mem_pool256_alloc, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x32_0408, 0);
+            let pool = DATA + 0x1000;
+            let blocks = DATA + 0x2_8000;
+            match seed % 3 {
+                0 => {
+                    // Free list of a few 0x100-byte blocks.
+                    let n = 1 + r.next_u32() % 4;
+                    for i in 0..n {
+                        let node = blocks + 0x100 * i;
+                        c.bus.write32(node, if i + 1 == n { 0 } else { node + 0x100 });
+                    }
+                    c.bus.write32(pool + OC264_POOL256_FREE_HEAD, blocks);
+                }
+                1 => {
+                    // Empty: MEM_PoolAlloc takes the ready 512-byte pool.
+                    c.bus.write32(pool + OC264_POOL256_FREE_HEAD, 0);
+                    c.bus.write32(GAME_GP + 0xdd8, 1);
+                    let p512 = DATA + 0x4_0000;
+                    let base = DATA + 0x5_0000;
+                    for n in 0..8u32 {
+                        let node = base + 0x200 * n;
+                        c.bus.write32(node, if n == 7 { 0 } else { node + 0x200 });
+                    }
+                    c.bus.write32(p512 + 0x2_0000, base);
+                    c.bus.write32(GAME_GP + 0x2a68, p512);
+                }
+                _ => {
+                    // Empty, pools not ready: the dlmalloc heap.
+                    oc238_run(
+                        c,
+                        0x0031_ff60,
+                        ee::s10::f_0031ff60,
+                        &[0x004f_f250, (DATA + 0x4_0000) as u64, 0x4_0000],
+                    );
+                    c.bus.write32(pool + OC264_POOL256_FREE_HEAD, 0);
+                    c.bus.write32(GAME_GP + 0xdd8, 0);
+                }
+            }
+            c.pc = 0x0032_0408;
+            c.g[A0][0] = sx(pool);
+            c.g[A1][0] = [0u64, 4, 8, 16, 64][(r.next_u32() % 5) as usize];
+        });
+    }
+
+
+    /// cCSICubicSpline_AddPoint: room left (append) or full (end point and
+    /// the real Solve over a small sorted spline); random flag bits around
+    /// the counts.
+    #[test]
+    fn c_csi_cubic_spline_add_point_matches() {
+        use crate::difftest::{check_lohi, scramble, Rng, DATA};
+        check_lohi(ee::s10::f_0031d7e0__generated, c_csi_cubic_spline_add_point, 300, &|c, seed| {
+            let mut r = Rng(0x0031_d7e0 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.pc = 0x0031_d7e0;
+            let spline = DATA + 0x100;
+            let keys = DATA + 0x400;
+            let cap = 2 + r.next_u32() % 6;
+            let added = if seed % 3 == 0 { cap } else { r.next_u32() % cap };
+            let other = r.next_u32() & !(0xffff << 3);
+            c.bus.write32(spline + SPLINE_ADD_FLAGS, other | added << 3 | cap << 11);
+            c.bus.write32(spline + SPLINE_ADD_KEYS, keys);
+            let mut x = 0.0f32;
+            for k in 0..cap {
+                x += 0.25 + (r.next_u32() % 100) as f32 / 50.0;
+                let at = keys + SPLINE_ADD_KEY_SIZE * k;
+                c.bus.write32(at, x.to_bits());
+                c.bus.write32(at + 4, r.f32(10.0));
+                c.bus.write32(at + 8, r.f32(10.0));
+                c.bus.write32(at + 0xc, r.f32(10.0));
+                c.bus.write32(at + 0x10, r.f32(10.0));
+            }
+            c.g[A0][0] = sx(spline);
+            c.f[12] = r.f32(10.0);
+            c.f[13] = if seed % 5 == 0 { r.edge_f32() } else { r.f32(10.0) };
+        });
+    }
+
+
+    /// MEM_Pool64Alloc: a pool with free blocks (pop) or none (the real
+    /// MEM_PoolAlloc(0x44, a1) on the fixture of its own test: size-class
+    /// pools ready or not, a real dlmalloc heap behind MEM_AllocInternal;
+    /// a1 an alignment 0..128).
+    #[test]
+    fn mem_pool64_alloc_matches() {
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        crate::difftest::check(ee::s10::f_00320368__generated, mem_pool64_alloc, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x32_0368, 0);
+            let pool64 = DATA + 0x20_0000;
+            let free = seed % 3 != 0;
+            if free {
+                let block = DATA + 0x30_0000 + 0x40 * (r.next_u32() % 16);
+                c.bus.write32(pool64 + MEM_POOL64_FREE, block);
+                c.bus.write32(block, if seed % 2 == 0 { 0 } else { block + 0x40 });
+            } else {
+                c.bus.write32(pool64 + MEM_POOL64_FREE, 0);
+                oc238_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::f_0031ff60,
+                    &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                );
+                if seed % 2 == 0 {
+                    c.bus.write32(GAME_GP + 0xdd8, 1);
+                    const POOLS: [(u32, u32, u32); 7] = [
+                        (0x2a70, 0x800, 0x40),
+                        (0x2a60, 0x2000, 0x40),
+                        (0x2a6c, 0x6000, 0x40),
+                        (0x2a7c, 0x32000, 0x40),
+                        (0x2a84, 0x25800, 0x80),
+                        (0x2a78, 0x20000, 0x100),
+                        (0x2a68, 0x20000, 0x200),
+                    ];
+                    let mut pool = DATA + 0xc_0000;
+                    let mut base = DATA + 0x8_0000;
+                    for (slot, head, stride) in POOLS {
+                        for n in 0..64u32 {
+                            let node = base + stride * n;
+                            c.bus.write32(node, if n == 63 { 0 } else { node + stride });
+                        }
+                        c.bus.write32(pool + head, base);
+                        c.bus.write32(GAME_GP + slot, pool);
+                        pool += 0x100;
+                        base += 0x8000;
+                    }
+                } else {
+                    c.bus.write32(GAME_GP + 0xdd8, 0);
+                }
+            }
+            c.g[A0][0] = sx(pool64);
+            c.g[A1][0] = [0u64, 4, 8, 16, 32, 64, 128][(r.next_u32() % 7) as usize];
+            c.pc = 0x0032_0368;
         });
     }
 }

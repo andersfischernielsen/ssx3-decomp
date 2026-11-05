@@ -37,6 +37,7 @@ use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 use crate::call;
+use crate::game::lib::snd;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -160,6 +161,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_c4c0, snd_get_pan_gains, "SND_GetPanGains"),
     (0x003c_3ee0, snd_channel_start_voices, "SND_ChannelStartVoices"),
     (0x003c_6c98, sndstrm_get_buffered_bytes, "SNDSTRM_GetBufferedBytes"),
+    (0x003b_5450, snd_timer_service_callback, "SND_TimerServiceCallback"),
+    (0x003b_7080, sndstrm_handle_chunk, "SNDSTRM_HandleChunk"),
+    (0x003c_2440, snd_channel_stop_voices, "SND_ChannelStopVoices"),
+    (0x003c_27e0, snd_channel_apply_send, "SND_ChannelApplySend"),
+    (0x003c_2ec8, snd_channel_apply_fx_enable, "SND_ChannelApplyFxEnable"),
+    (0x003c_8560, snd_ee_voice_set_volume, "SND_EeVoiceSetVolume"),
+    (0x003c_cf60, snd_eaxa_set_input, "SND_EaxaSetInput"),
+    (0x003d_85c8, spch_match_conditions, "SPCH_MatchConditions"),
 ];
 
 /// Fields of the driver state block.
@@ -10230,6 +10239,1098 @@ pub fn snd_get_pan_gains(c: &mut Cpu) {
     ret(c);
 }
 
+
+pub(crate) mod spch_match {
+
+    pub const COND_COUNT: u32 = 0x4;
+
+    pub const COND_KIND: u32 = 0x8;
+
+    pub const COND_OFFSET: u32 = 0x10;
+
+    pub const COND_MASKS: u32 = 0x14;
+
+    pub const KIND_ALWAYS: u64 = 0;
+
+    pub const KIND_ALWAYS2: u64 = 0xfe;
+
+    pub const KIND_DATA: u64 = 0xff;
+
+    /// Context (a0): two size bytes (+4, +6) placing its value table.
+    pub const CTX_SIZE_A: u32 = 0x4;
+
+    pub const CTX_SIZE_B: u32 = 0x6;
+
+    /// The loop head (event checks).
+    pub const LOOP: u32 = 0x003d_8630;
+}
+
+
+
+/// `bool SPCH_MatchConditions(Ctx* ctx, Cond* cond, u32* values, u8*
+/// actual)` (0x3d85c8): true when every condition `i < count` (count at
+/// most 4, else false) accepts its actual value `actual[i]` (< 32, else
+/// false): either the condition does not care (mask bit clear, kind 0 or
+/// 0xfe), or bit `actual[i]` is set in the condition's value word
+/// (`values[kind]`, or for kind 0xff a word of the context's table (offset
+/// bit 7) or the bank data byte at the offset, looked up with
+/// `SPCH_FindBankDataPtr(*values, &data)`, which must equal `actual[i]`).
+/// Frame 0xe0 (s0-s7, fp, ra as quadwords; a2/t0 kept around the call).
+pub fn spch_match_conditions(c: &mut Cpu) {
+    use spch_match::*;
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0xe0);
+        frame.save(c, FP, 0xc0);
+        frame.save(c, S7, 0xb0);
+        c.g[FP][0] = c.g[A1][0];
+        frame.save(c, S1, 0x50);
+        c.g[S7][0] = c.g[A0][0];
+        frame.save(c, RA, 0xd0);
+        c.g[S1][0] = 1;
+        frame.save(c, S6, 0xa0);
+        frame.save(c, S5, 0x90);
+        frame.save(c, S4, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S0, 0x40);
+        let count = Addr(r32(c, FP).wrapping_add(COND_COUNT)).lb(c);
+        c.g[T0][0] = count;
+        c.g[V0][0] = ((count as i64) < 5) as u64;
+        let actual_at = frame.at(c, 0x14);
+        let actual = c.g[A3][0];
+        Addr(actual_at).sw(c, actual);
+        if (count as i64) >= 5 {
+            c.cycles += 2;
+            c.g[S1][0] = 0;
+        } else {
+            c.cycles += 2;
+            c.g[S3][0] = 0;
+            if (count as i64) > 0 {
+                c.cycles += 4;
+                c.g[S6][0] = sx(0xffff_fffc);
+                c.g[S5][0] = sx(r32(c, FP).wrapping_add(COND_MASKS));
+                loop {
+                    if !spch_match_condition(c, frame)? {
+                        // Actual value out of range: fail at once.
+                        break;
+                    }
+                    c.cycles += 2;
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+                    if c.g[S1][0] == 0 {
+                        break;
+                    }
+                    c.cycles += 3;
+                    let more = (c.g[S3][0] as i64) < (c.g[T0][0] as i64);
+                    c.g[V0][0] = more as u64;
+                    c.g[S5][0] = sx(r32(c, S5).wrapping_add(4));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, LOOP);
+                    }
+                }
+            }
+        }
+        c.cycles += 13;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, RA, 0xd0);
+        frame.restore(c, FP, 0xc0);
+        frame.restore(c, S7, 0xb0);
+        frame.restore(c, S6, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore(c, S4, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S0, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// One condition of `SPCH_MatchConditions` (index s3, mask word at s5):
+/// leaves s1 = 1 if it accepts the actual value, else 0, up to the loop
+/// tail (block 0x3d8738). `false`: the actual value is out of range and the
+/// function returns at once (s1 = 0, no tail).
+pub(crate) fn spch_match_condition(c: &mut Cpu, frame: Frame) -> Result<bool, crate::call::Unwound> {
+    use spch_match::*;
+    c.cycles += 6;
+    let actual = Addr(frame.at(c, 0x14)).lw(c);
+    c.g[V0][0] = actual;
+    let at = sx((actual as u32).wrapping_add(r32(c, S3)));
+    c.g[V1][0] = at;
+    let value = Addr(at as u32).lbu(c);
+    c.g[S2][0] = value;
+    c.g[V0][0] = (value < 0x20) as u64;
+    c.g[S1][0] = 0;
+    if value >= 0x20 {
+        return Ok(false);
+    }
+    c.cycles += 7;
+    c.g[S4][0] = 1;
+    let mask = Addr(r32(c, S5)).lw(c);
+    let bit = sx(1u32 << (value as u32 & 31));
+    c.g[A1][0] = bit;
+    let cond = sx(r32(c, FP).wrapping_add(r32(c, S3)));
+    c.g[V0][0] = cond;
+    c.g[V1][0] = bit & mask;
+    let kind = Addr((cond as u32).wrapping_add(COND_KIND)).lbu(c);
+    c.g[A0][0] = kind;
+    if bit & mask == 0 {
+        return Ok(true);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = KIND_ALWAYS2;
+    let always = if kind == KIND_ALWAYS {
+        true
+    } else {
+        c.cycles += 2;
+        c.g[V0][0] = KIND_DATA;
+        kind == KIND_ALWAYS2
+    };
+    if always {
+        c.cycles += 2;
+        c.g[S1][0] = 1;
+        return Ok(true);
+    }
+    c.cycles += 2;
+    let index_off = sx((kind as u32) << 2);
+    c.g[V1][0] = index_off;
+    let word = if kind != KIND_DATA {
+        // values[kind]
+        c.cycles += 3;
+        c.g[S1][0] = c.g[S4][0];
+        let at = sx((index_off as u32).wrapping_add(r32(c, A2)));
+        c.g[V1][0] = at;
+        Addr(at as u32).lw(c)
+    } else {
+        c.cycles += 5;
+        let cond = sx(r32(c, FP).wrapping_add(r32(c, S3)));
+        c.g[V0][0] = cond;
+        let offset = Addr((cond as u32).wrapping_add(COND_OFFSET)).lbu(c);
+        c.g[S0][0] = offset;
+        c.g[V1][0] = offset & 0x80;
+        c.g[A0][0] = c.g[SP][0];
+        if offset & 0x80 == 0 {
+            // The bank data byte at `offset` must equal the actual value.
+            c.cycles += 11;
+            let values = r32(c, A2);
+            let sp_ = sp(c);
+            c.lwl(V1, values.wrapping_add(3));
+            c.lwr(V1, values);
+            c.swl(V1, sp_.wrapping_add(3));
+            c.swr(V1, sp_);
+            c.g[A1][0] = sx(sp_.wrapping_add(0x10));
+            frame.save(c, A2, 0x20);
+            frame.save(c, T0, 0x30);
+            // SPCH_FindBankDataPtr(&id, &data)
+            Callee { addr: 0x003d_83b8, f: ee::s14::f_003d83b8 }.call(c, 0x003d_86fc)?;
+            frame.restore(c, A2, 0x20);
+            frame.restore(c, T0, 0x30);
+            if c.g[V0][0] != 0 {
+                c.cycles += 7;
+                let data = Addr(frame.at(c, 0x10)).lw(c);
+                c.g[S1][0] = c.g[S4][0];
+                let at = sx((data as u32).wrapping_add(r32(c, S0)));
+                c.g[V1][0] = at;
+                let byte = Addr(at as u32).lbu(c);
+                let diff = c.g[S2][0] ^ byte;
+                c.g[V0][0] = diff;
+                if diff != 0 {
+                    c.g[S1][0] = 0;
+                }
+            }
+            return Ok(true);
+        }
+        // A word of the context's value table.
+        c.cycles += 17;
+        let ctx = r32(c, S7);
+        let size_a = Addr(ctx.wrapping_add(CTX_SIZE_A)).lbu(c);
+        let offset = offset & 0x7f;
+        c.g[S0][0] = offset;
+        let size_b = Addr(ctx.wrapping_add(CTX_SIZE_B)).lbu(c);
+        c.g[S1][0] = c.g[S4][0];
+        let s6 = c.g[S6][0];
+        let a = sx(((size_a as u32 >> 2).wrapping_add(3) as u64 & s6) as u32);
+        let b = sx(((size_b as u32) << 2).wrapping_add(3) as u64 as u32) & s6;
+        c.g[V0][0] = b;
+        let table = sx(ctx.wrapping_add((a as u32).wrapping_add(8)).wrapping_add(b as u32));
+        c.g[V1][0] = table;
+        let at = sx(((offset as u32) << 2).wrapping_add(table as u32));
+        c.g[A0][0] = at;
+        Addr(at as u32).lw(c)
+    };
+    c.g[V0][0] = word;
+    c.cycles += 2;
+    let hit = c.g[A1][0] & word;
+    c.g[V0][0] = hit;
+    if hit == 0 {
+        c.g[S1][0] = 0;
+    }
+    Ok(true)
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SND_ChannelApplySend (0x3c27e0).
+
+/// `SndChannel` field: `s16[]` send levels, one per aux send (index 0 is
+/// the SPU effect on/off switch).
+pub(crate) const SEND_LEVELS: u32 = 0x62;
+
+
+
+/// `1/32767 * 127` (the IOP DSP send byte scale).
+pub(crate) const SEND_SCALE_IOP: FpuF32 = FpuF32(0x3b7e_01fc);
+
+
+
+/// `32767.0` (the EE send divisor).
+pub(crate) const SEND_DIVISOR_EE: FpuF32 = FpuF32(0x46ff_fe00);
+
+
+
+/// `SND_EeVoiceSetAuxSend(int voice, int send, float level)`.
+pub(crate) const EE_VOICE_SET_AUX_SEND: u32 = 0x003c_8598;
+
+
+
+/// IOP DSP voice block: the send bytes (`+ (v - base) * 16 + send`).
+pub(crate) const IOP_SEND_BYTES: u32 = 0x1ac;
+
+
+
+/// `int SND_ChannelApplySend(int channel, int send)` (0x3c27e0): push the
+/// channel's aux send level to its voices. Returns 0.
+///
+/// ```text
+/// SPU voices:  effect mask (u64 at *params) bit v (and v + 0x18 in output
+///              mode 2) = send_levels[0] != 0
+/// IOP voices:  params[(v - base) * 16 + send + 0x1ac] =
+///                  (int)(volume * send_levels[send] * 127/32767)
+/// EE voices:   SND_EeVoiceSetAuxSend(v - base - ee_base, send,
+///                  volume * send_levels[send] / 32767)
+/// ```
+///
+/// Frame 0x70 (s0 +0x50, s1 +0x40, s2 +0x30, s3 +0x20, s4 +0x10, ra +0,
+/// f20 +0x60).
+pub fn snd_channel_apply_send(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x70);
+        set_reg(c, V0, snd::chan::SIZE as u64);
+        frame.save(c, S1, 0x40);
+        set_reg(c, V1, snd::STATE_HI);
+        frame.save(c, S4, 0x10);
+        let offset = snd::channel_at(c);
+        frame.save(c, S0, 0x50);
+        set_reg(c, A3, sx(snd::STATE));
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x60);
+        let channels = Addr(snd::STATE).off(snd::state::CHANNELS).lw(c);
+        let ch = addu(channels, sx(offset as u32));
+        set_reg(c, S1, ch);
+        let flags = snd::at(ch, snd::chan::FLAGS).lhu(c);
+        set_reg(c, V1, flags);
+        set_reg(c, V0, flags & snd::chan::SPU);
+        let send = reg(c, A1);
+        set_reg(c, S4, send);
+        if flags & snd::chan::SPU != 0 {
+            return snd_send_spu(c, frame, ch);
+        }
+        c.cycles += 3;
+        let level_off = snd::sll(send, 1);
+        set_reg(c, V0, level_off);
+        if flags & snd::chan::IOP != 0 {
+            snd_send_iop(c, frame, ch, level_off)
+        } else {
+            snd_send_ee(c, frame, ch, level_off)
+        }
+    })
+}
+
+
+
+/// `volume * (float)send_levels[send]` (f1; f0 the converted level, AT and
+/// f2 the scale constant, v1 the level, v0 the voice count, s2 = 0).
+/// Returns (product, voice count).
+pub(crate) fn snd_send_level(c: &mut Cpu, ch: u64, level_off: u64, scale: FpuF32) -> (FpuF32, u64) {
+    let volume = snd::at(ch, snd::chan::VOLUME).read_fpu(c);
+    let level = snd::at(addu(ch, level_off), SEND_LEVELS).lh(c);
+    set_reg(c, AT, scale.0 as u64);
+    abi::set_fpr(c, 2, scale);
+    set_reg(c, V1, level);
+    let count = snd::at(ch, snd::chan::VOICE_COUNT).lbu(c);
+    set_reg(c, V0, count);
+    let level_f = FpuF32::from_i32(level as u32 as i32);
+    abi::set_fpr(c, 0, level_f);
+    let product = volume * level_f;
+    abi::set_fpr(c, 1, product);
+    set_reg(c, S2, 0);
+    (product, count)
+}
+
+
+
+/// SPU voices: set or clear each voice's bit in the effect mask.
+pub(crate) fn snd_send_spu(c: &mut Cpu, frame: Frame, ch: u64) -> Flow {
+    c.cycles += 3;
+    let count = snd::at(ch, snd::chan::VOICE_COUNT).lbu(c);
+    set_reg(c, V0, count);
+    set_reg(c, S2, 0);
+    if count == 0 {
+        return snd_send_exit(c, frame, 1);
+    }
+    c.cycles += 9;
+    set_reg(c, V0, snd::STATE_HI);
+    let state_ptr = reg(c, A3);
+    set_reg(c, T4, state_ptr);
+    set_reg(c, T0, sx(snd::SYNC));
+    set_reg(c, A3, 1);
+    set_reg(c, T3, 2);
+    set_reg(c, T2, 0);
+    set_reg(c, T1, 0);
+    set_reg(c, A2, snd::addiu(ch, snd::chan::VOICES as i32));
+    loop {
+        // Loop head 0x3c2858 (a2 the voice slot, s2 the voices done, t1/t2
+        // the slot offset).
+        c.cycles += 3 + 6;
+        let on = snd::at(ch, SEND_LEVELS).lh(c);
+        let slots = snd::addiu(ch, snd::chan::VOICES as i32);
+        set_reg(c, A1, slots);
+        let mask_at = Addr(snd::SYNC).off(snd::sync::VOICE_PARAMS).lw(c);
+        set_reg(c, V0, mask_at);
+        let voice = snd::at(reg(c, A2), 0).lh(c);
+        let mask = snd::at(mask_at, 0).ld(c);
+        let bit = 1u64 << (voice & 63);
+        let (v1, new_mask) = if on != 0 { (bit, mask | bit) } else { (!bit, mask & !bit) };
+        set_reg(c, V1, v1);
+        set_reg(c, A0, new_mask);
+        c.cycles += 4;
+        snd::at(mask_at, 0).sd(c, new_mask);
+        let mode = snd::at(reg(c, T4), snd::state::OUTPUT_MODE).lbu(c);
+        set_reg(c, V0, mode);
+        if mode == 2 {
+            // The second voice block (bits + 0x18).
+            c.cycles += 3;
+            let on = snd::at(ch, SEND_LEVELS).lh(c);
+            set_reg(c, V0, on);
+            let slot_off = reg(c, T1);
+            set_reg(c, A0, addu(slots, slot_off));
+            let (mask_at, v0, v1);
+            if on != 0 {
+                c.cycles += 7;
+                mask_at = Addr(snd::SYNC).off(snd::sync::VOICE_PARAMS).lw(c);
+                let voice = snd::at(reg(c, A0), 0).lh(c);
+                let mask = snd::at(mask_at, 0).ld(c);
+                v0 = 1u64 << (snd::addiu(voice, 0x18) & 63);
+                v1 = mask | v0;
+            } else {
+                c.cycles += 8;
+                let slot_off = reg(c, T2);
+                set_reg(c, A0, addu(slots, slot_off));
+                let voice = snd::at(reg(c, A0), 0).lh(c);
+                mask_at = Addr(snd::SYNC).off(snd::sync::VOICE_PARAMS).lw(c);
+                let mask = snd::at(mask_at, 0).ld(c);
+                v0 = !(1u64 << (snd::addiu(voice, 0x18) & 63));
+                v1 = mask & v0;
+            }
+            set_reg(c, A1, mask_at);
+            set_reg(c, V0, v0);
+            set_reg(c, V1, v1);
+            c.cycles += 2;
+            snd::at(mask_at, 0).sd(c, v1);
+        }
+        let count = snd::at(ch, snd::chan::VOICE_COUNT).lbu(c);
+        c.cycles += 6;
+        let done = snd::addiu(reg(c, S2), 1);
+        set_reg(c, S2, done);
+        let t2 = reg(c, T2);
+        set_reg(c, T2, snd::addiu(t2, 2));
+        let t1 = reg(c, T1);
+        set_reg(c, T1, snd::addiu(t1, 2));
+        let more = snd::slt(done, count);
+        set_reg(c, V0, more);
+        let slot = reg(c, A2);
+        set_reg(c, A2, snd::addiu(slot, 2));
+        if more == 0 {
+            return snd_send_exit(c, frame, 2);
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_2858);
+        }
+    }
+}
+
+
+
+/// IOP DSP voices: one send byte per voice.
+pub(crate) fn snd_send_iop(c: &mut Cpu, frame: Frame, ch: u64, level_off: u64) -> Flow {
+    c.cycles += 15;
+    let (product, count) = snd_send_level(c, ch, level_off, SEND_SCALE_IOP);
+    let scaled = product * SEND_SCALE_IOP;
+    abi::set_fpr(c, 1, scaled);
+    let bits = snd::cvt_w(scaled);
+    c.f[0] = bits;
+    set_reg(c, A2, sx(bits));
+    if count == 0 {
+        return snd_send_exit(c, frame, 1);
+    }
+    c.cycles += 5;
+    set_reg(c, V0, snd::STATE_HI);
+    let state_ptr = reg(c, A3);
+    set_reg(c, T0, state_ptr);
+    set_reg(c, A3, sx(snd::SYNC));
+    set_reg(c, A1, snd::addiu(ch, snd::chan::VOICES as i32));
+    loop {
+        // Loop head 0x3c2970 (a1 the voice slot, s2 the voices done).
+        c.cycles += 13;
+        let slot = reg(c, A1);
+        let voice = snd::at(slot, 0).lh(c);
+        let done = snd::addiu(reg(c, S2), 1);
+        set_reg(c, S2, done);
+        let base = snd::at(reg(c, T0), snd::state::VOICE_BASE).lbu(c);
+        set_reg(c, A0, base);
+        let params = Addr(snd::SYNC).off(snd::sync::VOICE_PARAMS).lw(c);
+        let off = addu(reg(c, S4), snd::sll(snd::subu(voice, base), 4));
+        set_reg(c, V0, off);
+        let dst = addu(params, off);
+        set_reg(c, V1, dst);
+        let level = reg(c, A2);
+        snd::at(dst, IOP_SEND_BYTES).sb(c, level);
+        let count = snd::at(ch, snd::chan::VOICE_COUNT).lbu(c);
+        let more = snd::slt(done, count);
+        set_reg(c, V0, more);
+        set_reg(c, A1, snd::addiu(slot, 2));
+        if more == 0 {
+            return snd_send_exit(c, frame, 2);
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_2970);
+        }
+    }
+}
+
+
+
+/// EE software voices: `SND_EeVoiceSetAuxSend(voice, send, level)` per
+/// voice.
+pub(crate) fn snd_send_ee(c: &mut Cpu, frame: Frame, ch: u64, level_off: u64) -> Flow {
+    c.cycles += 13;
+    let (product, count) = snd_send_level(c, ch, level_off, SEND_DIVISOR_EE);
+    abi::set_fpr(c, 20, product.div(SEND_DIVISOR_EE));
+    if count == 0 {
+        return snd_send_exit(c, frame, 1);
+    }
+    c.cycles += 4;
+    let state_ptr = reg(c, A3);
+    set_reg(c, S3, state_ptr);
+    set_reg(c, S0, snd::addiu(ch, snd::chan::VOICES as i32));
+    let ee_base = snd::at(state_ptr, snd::state::EE_VOICE_BASE).lbu(c);
+    set_reg(c, V0, ee_base);
+    loop {
+        // Loop head 0x3c29f0 (s0 the voice slot, s2 the voices done, v0 the
+        // EE voice base).
+        c.cycles += 13;
+        let send = reg(c, S4);
+        set_reg(c, A1, send);
+        let base = snd::at(reg(c, S3), snd::state::VOICE_BASE).lbu(c);
+        c.f[12] = c.f[20];
+        let slot = reg(c, S0);
+        let voice = snd::at(slot, 0).lh(c);
+        set_reg(c, V1, voice);
+        let done = snd::addiu(reg(c, S2), 1);
+        set_reg(c, S2, done);
+        let first = addu(base, reg(c, V0));
+        set_reg(c, S0, snd::addiu(slot, 2));
+        set_reg(c, A0, snd::subu(voice, first));
+        call_ptr(c, EE_VOICE_SET_AUX_SEND, 0x003c_2a14)?;
+        let count = snd::at(reg(c, S1), snd::chan::VOICE_COUNT).lbu(c);
+        let more = snd::slt(reg(c, S2), count);
+        set_reg(c, V0, more);
+        if more == 0 {
+            return snd_send_exit(c, frame, 1);
+        }
+        let ee_base = snd::at(reg(c, S3), snd::state::EE_VOICE_BASE).lbu(c);
+        set_reg(c, V0, ee_base);
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_29f0);
+        }
+    }
+}
+
+
+
+/// `lq s0` (its block costs `cycles`), then the epilogue: return 0.
+pub(crate) fn snd_send_exit(c: &mut Cpu, frame: Frame, cycles: u64) -> Flow {
+    c.cycles += cycles;
+    frame.restore(c, S0, 0x50);
+    c.cycles += 9;
+    set_reg(c, V0, 0);
+    frame.restore(c, S1, 0x40);
+    frame.restore(c, S2, 0x30);
+    frame.restore(c, S3, 0x20);
+    frame.restore(c, S4, 0x10);
+    frame.restore_ra(c, 0);
+    frame.restore_fpr(c, 20, 0x60);
+    frame.close(c);
+    Ok(())
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_HandleChunk (0x3b7080).
+
+/// `SndStream*[]`: the open streams by slot.
+pub(crate) const SNDSTRM_STREAMS: u32 = 0x0050_a0a0;
+
+
+
+/// Chunk tag `SCDl` (sample data).
+pub(crate) const SNDSTRM_TAG_DATA: u64 = 0x6c44_4353;
+
+
+
+/// Chunk tag `SCHl` (stream header).
+pub(crate) const SNDSTRM_TAG_HEADER: u64 = 0x6c48_4353;
+
+
+
+/// `SNDSTRM_ParseData(stream, chunk)`.
+pub(crate) const SNDSTRM_PARSE_DATA: Callee = Callee { addr: 0x003b_6ea8, f: ee::s13::SNDSTRM_ParseData };
+
+
+
+/// `SNDSTRM_ParseHeader(slot, chunk)`.
+pub(crate) const SNDSTRM_PARSE_HEADER: Callee = Callee { addr: 0x003b_6bd0, f: ee::s13::SNDSTRM_ParseHeader };
+
+
+
+/// `StreamFile_ReleaseChunk(file)`.
+pub(crate) const SNDSTRM_RELEASE_CHUNK: u32 = 0x003e_13e8;
+
+
+
+/// `int SNDSTRM_HandleChunk(int slot, Chunk* chunk)` (0x3b7080): dispatch
+/// a chunk read for stream `slot` by its tag: `SCDl` data goes to
+/// `SNDSTRM_ParseData(stream, chunk)` (returns 1), an `SCHl` header to
+/// `SNDSTRM_ParseHeader(slot, chunk)` (returns 0), anything else is
+/// released back to the stream's file (returns 1). Frame 0x10 (ra +0).
+pub fn sndstrm_handle_chunk(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let slot = reg(c, A0);
+        set_reg(c, A3, slot);
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let entry = sx(((slot as u32) << 2).wrapping_add(SNDSTRM_STREAMS));
+        set_reg(c, V1, entry);
+        set_reg(c, V0, SNDSTRM_TAG_DATA);
+        let tag = Addr(r32(c, A1)).lw(c);
+        set_reg(c, A2, tag);
+        let stream = Addr(entry as u32).lw(c);
+        set_reg(c, A0, stream);
+        if tag == SNDSTRM_TAG_DATA {
+            c.cycles += 4;
+            SNDSTRM_PARSE_DATA.call(c, 0x003b_70b8)?;
+            set_reg(c, V0, 1);
+        } else {
+            c.cycles += 4;
+            set_reg(c, V0, SNDSTRM_TAG_HEADER);
+            if tag == SNDSTRM_TAG_HEADER {
+                c.cycles += 4;
+                let slot = reg(c, A3);
+                set_reg(c, A0, slot);
+                SNDSTRM_PARSE_HEADER.call(c, 0x003b_70d8)?;
+                set_reg(c, V0, 0);
+            } else {
+                c.cycles += 3;
+                let file = Addr(r32(c, A0)).lw(c);
+                set_reg(c, A0, file);
+                call_ptr(c, SNDSTRM_RELEASE_CHUNK, 0x003b_70e8)?;
+                set_reg(c, V0, 1);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SND_TimerServiceCallback (0x3b5450).
+
+/// `SND_RunServiceCallbacks()`.
+pub(crate) const SND_TIMER_RUN_SERVICE_CALLBACKS: Callee =
+    Callee { addr: 0x003c_60e0, f: ee::s13::SND_RunServiceCallbacks };
+
+
+
+/// `int SND_TimerServiceCallback()` (0x3b5450): the sound timer's service
+/// tick: run the registered service callbacks, return 0. Frame 0x10 (ra +0).
+pub fn snd_timer_service_callback(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        SND_TIMER_RUN_SERVICE_CALLBACKS.call(c, 0x003b_5460)?;
+        frame.restore_ra(c, 0);
+        set_reg(c, V0, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SND_ChannelApplyFxEnable (0x3c2ec8).
+
+/// `SndChannel` field: `s8` effect enable (the SPU path tests it, as `lb`).
+pub(crate) const FX_ENABLE: u32 = 0x5f;
+
+
+
+/// Offset of the SPU effect-enable mask (`u64`) in the voice parameter
+/// block.
+pub(crate) const FX_SPU_MASK: u32 = 0x8;
+
+
+
+/// `SND_ChannelApplyVolume(channel)`.
+pub(crate) const FX_APPLY_VOLUME: Callee = Callee { addr: 0x003c_2a50, f: ee::s13::SND_ChannelApplyVolume };
+
+
+
+/// `void SND_ChannelApplyFxEnable(int channel)` (0x3c2ec8): push the
+/// channel's effect-enable switch to its voices. SPU voices get their bit
+/// (and bit + 0x18 in output mode 2) set or cleared in the effect mask
+/// (`u64` at params + 8); IOP and EE voices take it through their levels:
+/// `SND_ChannelApplyVolume(channel)`.
+///
+/// Frame 0x10 (ra +0).
+pub fn snd_channel_apply_fx_enable(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let index = reg(c, A0);
+        set_reg(c, A1, index);
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        set_reg(c, V0, snd::STATE_HI);
+        let offset = abi::mult(c, index as u32, snd::chan::SIZE);
+        set_reg(c, A0, sx(offset));
+        set_reg(c, A3, sx(snd::STATE));
+        let channels = Addr(snd::STATE).off(snd::state::CHANNELS).lw(c);
+        let ch = addu(channels, sx(offset));
+        set_reg(c, A2, ch);
+        let flags = snd::at(ch, snd::chan::FLAGS).lhu(c);
+        set_reg(c, V1, flags);
+        set_reg(c, V0, flags & snd::chan::IOP);
+        if flags & snd::chan::SPU != 0 {
+            c.cycles += 3;
+            let count = snd::at(ch, snd::chan::VOICE_COUNT).lbu(c);
+            set_reg(c, V0, count);
+            set_reg(c, T2, 0);
+            if count == 0 {
+                c.cycles += 1;
+            } else {
+                fx_enable_spu(c, ch);
+                c.cycles += 2;
+            }
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 2;
+            let index = reg(c, A1);
+            set_reg(c, A0, index);
+            if flags & snd::chan::IOP != 0 {
+                c.cycles += 4;
+                FX_APPLY_VOLUME.call(c, 0x003c_2ff4)?;
+            } else {
+                c.cycles += 2;
+                FX_APPLY_VOLUME.call(c, 0x003c_3004)?;
+                c.cycles += 1;
+            }
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// The SPU voices' mask loop (0x3c2f28; a3 the voice slot, t2 the voices
+/// done, t3/t4 the slot offset).
+pub(crate) fn fx_enable_spu(c: &mut Cpu, ch: u64) {
+    c.cycles += 8;
+    set_reg(c, V0, snd::STATE_HI);
+    let state_ptr = reg(c, A3);
+    set_reg(c, T6, state_ptr);
+    set_reg(c, T1, sx(snd::SYNC));
+    set_reg(c, T0, 1);
+    set_reg(c, T5, 2);
+    set_reg(c, T4, 0);
+    set_reg(c, T3, 0);
+    set_reg(c, A3, snd::addiu(ch, snd::chan::VOICES as i32));
+    loop {
+        c.cycles += 3 + 6;
+        let on = snd::at(ch, FX_ENABLE).lb(c);
+        let slots = snd::addiu(ch, snd::chan::VOICES as i32);
+        set_reg(c, A1, slots);
+        let params = Addr(snd::SYNC).off(snd::sync::VOICE_PARAMS).lw(c);
+        set_reg(c, V0, params);
+        let voice = snd::at(reg(c, A3), 0).lh(c);
+        let mask = snd::at(params, FX_SPU_MASK).ld(c);
+        let bit = 1u64 << (voice & 63);
+        let (v1, new_mask) = if on != 0 { (bit, mask | bit) } else { (!bit, mask & !bit) };
+        set_reg(c, V1, v1);
+        set_reg(c, A0, new_mask);
+        c.cycles += 4;
+        snd::at(params, FX_SPU_MASK).sd(c, new_mask);
+        let mode = snd::at(reg(c, T6), snd::state::OUTPUT_MODE).lbu(c);
+        set_reg(c, V0, mode);
+        if mode == 2 {
+            // The second voice block (bits + 0x18).
+            c.cycles += 3;
+            let on = snd::at(ch, FX_ENABLE).lb(c);
+            set_reg(c, V0, on);
+            let slot_off = reg(c, T3);
+            set_reg(c, A0, addu(slots, slot_off));
+            let (params, v0, v1);
+            if on != 0 {
+                c.cycles += 7;
+                params = Addr(snd::SYNC).off(snd::sync::VOICE_PARAMS).lw(c);
+                let voice = snd::at(reg(c, A0), 0).lh(c);
+                let mask = snd::at(params, FX_SPU_MASK).ld(c);
+                v0 = 1u64 << (snd::addiu(voice, 0x18) & 63);
+                v1 = mask | v0;
+            } else {
+                c.cycles += 8;
+                let slot_off = reg(c, T4);
+                set_reg(c, A0, addu(slots, slot_off));
+                let voice = snd::at(reg(c, A0), 0).lh(c);
+                params = Addr(snd::SYNC).off(snd::sync::VOICE_PARAMS).lw(c);
+                let mask = snd::at(params, FX_SPU_MASK).ld(c);
+                v0 = !(1u64 << (snd::addiu(voice, 0x18) & 63));
+                v1 = mask & v0;
+            }
+            set_reg(c, A1, params);
+            set_reg(c, V0, v0);
+            set_reg(c, V1, v1);
+            c.cycles += 2;
+            snd::at(params, FX_SPU_MASK).sd(c, v1);
+        }
+        let count = snd::at(ch, snd::chan::VOICE_COUNT).lbu(c);
+        c.cycles += 6;
+        let done = snd::addiu(reg(c, T2), 1);
+        set_reg(c, T2, done);
+        let t4 = reg(c, T4);
+        set_reg(c, T4, snd::addiu(t4, 2));
+        let t3 = reg(c, T3);
+        set_reg(c, T3, snd::addiu(t3, 2));
+        let more = snd::slt(done, count);
+        set_reg(c, V0, more);
+        let slot = reg(c, A3);
+        set_reg(c, A3, snd::addiu(slot, 2));
+        if more == 0 {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_2f28);
+        }
+    }
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SND_EeVoiceSetVolume (0x3c8560)
+
+/// The sound driver state (0x515b40) and its voice table pointer (+0x1dc).
+pub(crate) const SND_SET_VOL_STATE: u32 = 0x0051_5b40;
+
+
+pub(crate) const SND_SET_VOL_VOICES: u32 = 0x1dc;
+
+
+/// A voice entry: 0x60 bytes; dirty flag byte at +1, volumes (floats) at +0x1c.
+pub(crate) const SND_SET_VOL_VOICE_SIZE: u32 = 0x60;
+
+
+pub(crate) const SND_SET_VOL_DIRTY: u32 = 0x1;
+
+
+pub(crate) const SND_SET_VOL_VOLUMES: u32 = 0x1c;
+
+
+
+/// `void SND_EeVoiceSetVolume(int voice, int channel, float volume)`
+/// (0x3c8560): store `volume` as the voice's channel volume and mark the
+/// voice dirty.
+pub fn snd_ee_voice_set_volume(c: &mut Cpu) {
+    c.cycles += 14;
+    c.g[V0][0] = SND_SET_VOL_VOICE_SIZE as u64;
+    let voice_index = r32(c, A0);
+    let off = abi::mult(c, voice_index, SND_SET_VOL_VOICE_SIZE);
+    c.g[A0][0] = sx(off);
+    c.g[A2][0] = sx(SND_SET_VOL_STATE);
+    let voices = Addr(SND_SET_VOL_STATE + SND_SET_VOL_VOICES).lw(c);
+    c.g[A1][0] = sx(r32(c, A1) << 2);
+    c.g[A3][0] = 1;
+    let slot = off.wrapping_add(voices as u32).wrapping_add(r32(c, A1));
+    c.g[V0][0] = sx(slot);
+    let volume = FpuF32(c.f[12]);
+    Addr(slot.wrapping_add(SND_SET_VOL_VOLUMES)).write_fpu(c, volume);
+    c.g[V1][0] = Addr(SND_SET_VOL_STATE + SND_SET_VOL_VOICES).lw(c);
+    let voice = off.wrapping_add(r32(c, V1));
+    c.g[A0][0] = sx(voice);
+    Addr(voice.wrapping_add(SND_SET_VOL_DIRTY)).sb(c, 1);
+    ret(c);
+}
+
+
+
+/// `int SND_EaxaSetInput(EaxaDecoder* dec, void* data, int size, int mode)`
+/// (0x3ccf60): give an idle EA-XA decoder its input (data at `+0xa0`, size
+/// at `+0xc`, mode at `+0x8`) and return 0; -1 when `data` is null or the
+/// decoder is still busy (mode non-zero).
+pub fn snd_eaxa_set_input(c: &mut Cpu) {
+    const MODE: u32 = 0x8;
+    const SIZE: u32 = 0xc;
+    const DATA_PTR: u32 = 0xa0;
+    c.cycles += 2;
+    let dec = Addr(c.g[A0][0] as u32);
+    if c.g[A1][0] == 0 {
+        c.cycles += 2;
+        c.g[V0][0] = u64::MAX;
+        return ret(c);
+    }
+    let busy = dec.off(MODE).lw(c) != 0;
+    c.cycles += 2;
+    if busy {
+        c.cycles += 2;
+        c.g[V0][0] = u64::MAX;
+    } else {
+        c.cycles += 4;
+        c.g[V0][0] = 0;
+        let (data, size, mode) = (c.g[A1][0], c.g[A2][0], c.g[A3][0]);
+        dec.off(DATA_PTR).sw(c, data);
+        dec.off(MODE).sw(c, mode);
+        dec.off(SIZE).sw(c, size);
+    }
+    ret(c);
+}
+
+
+
+/// `int SND_ChannelStopVoices(int channel)` (0x3c2440): silence and release
+/// every voice of a sound channel. SPU voices (flag 0x8) get their key word
+/// in the voice-parameter table cleared (in output mode 2 also the mirror
+/// voice `+0x18`); IOP DSP voices (flag 0x100) the word at `+0x1a0` of their
+/// 16-byte block (numbered from the IOP voice base); EE voices are stopped
+/// with `SND_EeVoiceStop` (numbered from the IOP + EE voice bases). Each
+/// voice is then given back with `SND_ChannelRelease`. Returns 0.
+pub fn snd_channel_stop_voices(c: &mut Cpu) {
+    const STATE: u32 = 0x0050_a8e8;
+    const SYNC: u32 = 0x0050_ad00;
+    const CHANNELS: u32 = 0x1f0; // STATE+: SndChannel[]
+    const CHANNEL_SIZE: u64 = 0x8c;
+    const EE_VOICE_BASE: u32 = 0x2f; // STATE+: u8
+    const VOICE_BASE: u32 = 0x30; // STATE+: u8
+    const OUTPUT_MODE: u32 = 0x49; // STATE+: u8
+    const VOICE_PARAMS: u32 = 0xcb0; // SYNC+
+    const CH_VOICES: u32 = 0x04; // s16[]
+    const CH_VOICE_COUNT: u32 = 0x23; // u8
+    const CH_FLAGS: u32 = 0x24; // u16
+    const MIRROR_VOICE: u32 = 0x18;
+    const SND_CHANNEL_RELEASE: Callee = Callee {
+        addr: 0x003b_a550,
+        f: ee::s13::SND_ChannelRelease,
+    };
+    const SND_EE_VOICE_STOP: Callee = Callee {
+        addr: 0x003c_8468,
+        f: ee::s14::f_003c8468,
+    };
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x70);
+        c.g[V0][0] = CHANNEL_SIZE;
+        frame.save(c, S2, 0x40);
+        c.mult(0, A0, A0, V0);
+        frame.save(c, S0, 0x60);
+        c.g[V1][0] = 0x0051_0000;
+        frame.save(c, S1, 0x50);
+        c.g[V1][0] = sx(STATE);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        let chans = Addr(STATE + CHANNELS).lw(c);
+        c.g[V0][0] = chans;
+        c.g[S2][0] = sx((chans as u32).wrapping_add(c.g[A0][0] as u32));
+        let ch = c.g[S2][0] as u32;
+        let flags = Addr(ch + CH_FLAGS).lhu(c);
+        c.g[A0][0] = flags;
+        c.g[V0][0] = flags & 0x100;
+        let voice_count = |c: &mut Cpu| Addr(c.g[S2][0] as u32).off(CH_VOICE_COUNT).lbu(c);
+        if flags & 0x8 != 0 {
+            // SPU voices.
+            c.cycles += 3;
+            c.g[V0][0] = voice_count(c);
+            c.g[S1][0] = 0;
+            if c.g[V0][0] == 0 {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x60);
+            } else {
+                c.cycles += 5;
+                c.g[V0][0] = 0x0051_0000;
+                c.g[S5][0] = c.g[V1][0];
+                c.g[S3][0] = sx(SYNC);
+                c.g[S4][0] = 2;
+                c.g[S0][0] = sx(ch.wrapping_add(CH_VOICES));
+                loop {
+                    c.cycles += 10;
+                    let slot = Addr(c.g[S0][0] as u32);
+                    let voice = slot.lh(c);
+                    let params = Addr((c.g[S3][0] as u32).wrapping_add(VOICE_PARAMS)).lw(c);
+                    c.g[V0][0] = sx((voice as u32) << 3);
+                    c.g[V1][0] = sx((params as u32).wrapping_add(c.g[V0][0] as u32));
+                    Addr(c.g[V1][0] as u32).off(0x20).sw(c, 0);
+                    c.g[A0][0] = slot.lh(c);
+                    SND_CHANNEL_RELEASE.call(c, 0x003c_24c4)?;
+                    c.g[V0][0] = Addr(c.g[S5][0] as u32).off(OUTPUT_MODE).lbu(c);
+                    if c.g[V0][0] == c.g[S4][0] {
+                        c.cycles += 7;
+                        let voice = Addr(c.g[S0][0] as u32).lh(c);
+                        let params = Addr((c.g[S3][0] as u32).wrapping_add(VOICE_PARAMS)).lw(c);
+                        let v = sx((voice as u32).wrapping_add(MIRROR_VOICE));
+                        c.g[V0][0] = sx((v as u32) << 3);
+                        c.g[V1][0] = sx((params as u32).wrapping_add(c.g[V0][0] as u32));
+                        Addr(c.g[V1][0] as u32).off(0x20).sw(c, 0);
+                    }
+                    c.g[V0][0] = voice_count(c);
+                    c.cycles += 4;
+                    c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                    let more = (c.g[S1][0] as i64) < (c.g[V0][0] as i64);
+                    c.g[V0][0] = more as u64;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(2));
+                    if !more {
+                        c.cycles += 2;
+                        frame.restore(c, S0, 0x60);
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_24a8);
+                    }
+                }
+            }
+        } else {
+            c.cycles += 2;
+            let iop = c.g[V0][0] != 0;
+            c.g[V0][0] = voice_count(c);
+            if iop {
+                // IOP DSP voices.
+                c.cycles += 2;
+                c.g[S1][0] = 0;
+                if c.g[V0][0] == 0 {
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x60);
+                } else {
+                    c.cycles += 5;
+                    c.g[V0][0] = 0x0051_0000;
+                    c.g[S4][0] = c.g[V1][0];
+                    c.g[S3][0] = sx(SYNC);
+                    c.g[S0][0] = sx(ch.wrapping_add(CH_VOICES));
+                    c.g[V0][0] = Addr(c.g[S0][0] as u32).lh(c);
+                    loop {
+                        c.cycles += 14;
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                        let base = Addr(c.g[S4][0] as u32).off(VOICE_BASE).lbu(c);
+                        c.g[A0][0] = base;
+                        let params = Addr((c.g[S3][0] as u32).wrapping_add(VOICE_PARAMS)).lw(c);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(base as u32));
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+                        c.g[V1][0] = sx((params as u32).wrapping_add(c.g[V0][0] as u32));
+                        Addr(c.g[V1][0] as u32).off(0x1a0).sw(c, 0);
+                        c.g[A0][0] = Addr(c.g[S0][0] as u32).lh(c);
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(2));
+                        SND_CHANNEL_RELEASE.call(c, 0x003c_2550)?;
+                        let count = Addr(c.g[S2][0] as u32).off(CH_VOICE_COUNT).lbu(c);
+                        let more = (c.g[S1][0] as i64) < (count as i64);
+                        c.g[V0][0] = more as u64;
+                        if !more {
+                            c.cycles += 2;
+                            frame.restore(c, S0, 0x60);
+                            break;
+                        }
+                        c.g[V0][0] = Addr(c.g[S0][0] as u32).lh(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c_2528);
+                        }
+                    }
+                }
+            } else {
+                // EE voices.
+                c.cycles += 2;
+                c.g[S1][0] = 0;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 4;
+                    c.g[S3][0] = c.g[V1][0];
+                    c.g[S0][0] = sx(ch.wrapping_add(CH_VOICES));
+                    c.g[V0][0] = Addr(c.g[S3][0] as u32).off(EE_VOICE_BASE).lbu(c);
+                    loop {
+                        c.cycles += 13;
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+                        let base = Addr(c.g[S3][0] as u32).off(VOICE_BASE).lbu(c);
+                        let voice = Addr(c.g[S0][0] as u32).lh(c);
+                        c.g[V1][0] = voice;
+                        let first = sx((base as u32).wrapping_add(c.g[V0][0] as u32));
+                        c.g[A0][0] = sx((voice as u32).wrapping_sub(first as u32));
+                        SND_EE_VOICE_STOP.call(c, 0x003c_2598)?;
+                        c.g[A0][0] = Addr(c.g[S0][0] as u32).lh(c);
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(2));
+                        SND_CHANNEL_RELEASE.call(c, 0x003c_25a4)?;
+                        let count = Addr(c.g[S2][0] as u32).off(CH_VOICE_COUNT).lbu(c);
+                        let more = (c.g[S1][0] as i64) < (count as i64);
+                        c.g[V0][0] = more as u64;
+                        if !more {
+                            break;
+                        }
+                        c.g[V0][0] = Addr(c.g[S3][0] as u32).off(EE_VOICE_BASE).lbu(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c_2580);
+                        }
+                    }
+                }
+                c.cycles += 1;
+                frame.restore(c, S0, 0x60);
+            }
+        }
+        c.cycles += 9;
+        c.g[V0][0] = 0;
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -13766,5 +14867,320 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(DATA + 0x100);
             },
         );
+    }
+    use super::*;
+    use super::*;
+    use crate::game::lib::snd::tests as snd_tests;
+    use super::*;
+    use super::*;
+
+
+    // -- 0x003d85c8 SPCH_MatchConditions ---------------------------------------
+
+    /// `SPCH_MatchConditions` against the generated body: condition counts
+    /// -1..5, actual values in and out of range, masks that accept or not,
+    /// kinds 0/0xfe (always), value-table indices, and 0xff (a context table
+    /// word, or a bank data byte via the real `SPCH_FindBankDataPtr` over
+    /// the eight bank slots at 0x44ffb8, found or not).
+    #[test]
+    fn spch_match_conditions_matches() {
+        use super::spch_match::*;
+        use crate::difftest::{check, scramble, Rng, DATA};
+        const CTX: u32 = DATA + 0x1000;
+        const COND: u32 = DATA + 0x2000;
+        const VALUES: u32 = DATA + 0x3000;
+        const ACTUAL: u32 = DATA + 0x4000;
+        const BANKS: u32 = DATA + 0x5000;
+        const BANK_SLOTS: u32 = 0x0045_0000 - 0x48;
+        check(ee::s14::f_003d85c8__generated, spch_match_conditions, 300, &|c, seed| {
+            let mut r = Rng(0x003d_85c8 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.pc = 0x003d_85c8;
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            // Context: two size bytes, then its value table.
+            c.bus.write8(CTX + CTX_SIZE_A, (r.next_u32() % 0x40) as u8);
+            c.bus.write8(CTX + CTX_SIZE_B, (r.next_u32() % 0x20) as u8);
+            for i in 0..0x80 {
+                let v = if r.next_u32() % 3 == 0 { r.next_u32() } else { 0xf };
+                w(c, CTX + 8 + 4 * i, v);
+            }
+            let count = [1, 2, 3, 4, 4, 4, 0, 5, 0xff][(r.next_u32() % 9) as usize];
+            c.bus.write8(COND + COND_COUNT, count);
+            for i in 0..4u32 {
+                let kind = [0, 0xfe, 0xff, 0xff, 0xff, r.next_u32() % 8][(r.next_u32() % 6) as usize];
+                c.bus.write8(COND + COND_KIND + i, kind as u8);
+                c.bus.write8(COND + COND_OFFSET + i, ((r.next_u32() % 2) << 7 | r.next_u32() % 8) as u8);
+                let mask = if r.next_u32() % 5 == 0 { r.next_u32() } else { u32::MAX };
+                w(c, COND + COND_MASKS + 4 * i, mask);
+                let actual = if r.next_u32() % 10 == 0 { 0x20 + r.next_u32() % 0xe0 } else { r.next_u32() % 4 };
+                c.bus.write8(ACTUAL + i, actual as u8);
+            }
+            // Values: the bank id (bytes 2, 3) overlapping values[0].
+            for i in 0..8 {
+                let v = if r.next_u32() % 3 == 0 { r.next_u32() } else { 0xf };
+                w(c, VALUES + 4 * i, v);
+            }
+            let id = c.bus.read32(VALUES);
+            for j in 0..8u32 {
+                let bank = BANKS + 0x100 * j;
+                w(c, BANK_SLOTS + 8 * j, if r.next_u32() % 3 == 0 { 0 } else { bank });
+                let hit = r.next_u32() % 4 == 0;
+                c.bus.write8(bank + 9, if hit { (id >> 16) as u8 } else { r.next_u32() as u8 });
+                c.bus.write8(bank + 8, if hit { (id >> 24) as u8 } else { r.next_u32() as u8 });
+                c.bus.write16(bank + 0x10, (r.next_u32() % 16) as u16);
+                for k in 0..0x40 {
+                    c.bus.write8(bank + 0x18 + k, (r.next_u32() % 4) as u8);
+                }
+            }
+            c.g[A0][0] = sx(CTX);
+            c.g[A1][0] = sx(COND);
+            c.g[A2][0] = sx(VALUES);
+            c.g[A3][0] = sx(ACTUAL);
+        });
+    }
+
+
+    /// `SND_ChannelApplySend` over SPU channels (output mode 2 or not, send
+    /// level 0 set or clear), IOP and EE channels, 0..4 voices.
+    #[test]
+    fn snd_channel_apply_send_matches() {
+        check(ee::s13::f_003c27e0__generated, snd_channel_apply_send, 240, &|c, seed| {
+            let mut r = Rng(0x5e4d_0001 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            let flags = snd_tests::channel_flags(&mut r, seed);
+            snd_tests::setup_channel(c, &mut r, seed, flags);
+            let ch = DATA + (c.g[A0][0] as u32) * snd::chan::SIZE;
+            for i in 0..4 {
+                let level = if (seed / 5 + i) % 3 == 0 { 0 } else { r.next_u32() as u16 };
+                c.bus.write16(ch + SEND_LEVELS + 2 * i, level);
+            }
+            c.g[A1][0] = (r.next_u32() % 4) as u64;
+            c.pc = 0x003c_27e0;
+        });
+    }
+
+
+    /// `SNDSTRM_HandleChunk` with `SCDl` chunks (the real
+    /// `SNDSTRM_ParseData`, fixture as in its own test: empty chunks
+    /// released through a null file handle, others pushed through the real
+    /// `SNDSTRM_PushBlock`) and other tags (the real
+    /// `StreamFile_ReleaseChunk`, null file handle). The `SCHl` branch (the
+    /// real `SNDSTRM_ParseHeader`, a large parser) is not reached.
+    #[test]
+    fn sndstrm_handle_chunk_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::fill;
+        use crate::game::lib::snd::{
+            SS_CHANNELS, SS_CHUNK_OFFSETS, SS_CHUNK_SAMPLES, SS_PUSHED, SS_STATE, SS_SWAP,
+        };
+        const STREAM: u32 = DATA;
+        const STATE: u32 = DATA + 0x200;
+        const CHUNK: u32 = DATA + 0x400;
+        const BLOCKS: u32 = DATA + 0x800;
+        check(ee::s13::f_003b7080__generated, sndstrm_handle_chunk, 240, &|c, seed| {
+            let mut r = machine(c, seed, 0x3b_7080, 0);
+            c.pc = 0x003b_7080;
+            let slot = r.next_u32() % 4;
+            for i in 0..4 {
+                c.bus.write32(SNDSTRM_STREAMS + 4 * i, if i == slot { STREAM } else { r.next_u32() });
+            }
+            let swap = seed % 2 == 1;
+            let bytes = |v: u32| if swap { v.swap_bytes() } else { v };
+            let count = match seed % 7 {
+                0 => 0,
+                1 => 0x8000_0000,
+                _ => 1 + r.next_u32() % 0x4000 | (r.next_u32() & 0x8000_0000),
+            };
+            let channels = if count & 0x7fff_ffff == 0 && seed % 3 == 0 {
+                0
+            } else {
+                1 + r.next_u32() % 4
+            };
+            let idx = r.next_u32() % 4;
+            fill(c, &mut r, STREAM, 0x10);
+            c.bus.write32(STREAM, 0);
+            c.bus.write32(STREAM + 0x8, idx);
+            c.bus.write8(STREAM + SS_CHANNELS, channels as u8);
+            c.bus.write32(STREAM + SS_STATE, STATE);
+            fill(c, &mut r, STATE, 0x10);
+            c.bus.write8(STATE + SS_SWAP, swap as u8);
+            c.bus.write8(STATE + SS_PUSHED, (r.next_u32() % 2) as u8);
+            fill(c, &mut r, CHUNK, 0x10);
+            let tag = match seed % 3 {
+                0 => r.next_u32() & !0x0400_0000,
+                _ => SNDSTRM_TAG_DATA as u32,
+            };
+            c.bus.write32(CHUNK, tag);
+            c.bus.write32(CHUNK + SS_CHUNK_SAMPLES, bytes(count));
+            for i in 0..channels {
+                let off = 4 + 0x40 * i + (r.next_u32() % 0x10) * 4;
+                c.bus.write32(CHUNK + SS_CHUNK_OFFSETS + 4 * i, bytes(off));
+            }
+            // SNDSTRM_PushBlock's stream table and stream (no queue).
+            for i in 0..4 {
+                let b = BLOCKS + 0x100 * i;
+                c.bus.write32(0x0051_57b8 + 0x304 + 4 * i, b);
+                fill(c, &mut r, b, 0x40);
+                c.bus.write8(b + 0x62, 0);
+                c.bus.write16(b + 0x46, (r.next_u32() % 4) as u16);
+                c.bus.write16(b + 0x40, 1 + (r.next_u32() % 4) as u16);
+            }
+            c.g[A0][0] = slot as u64;
+            c.g[A1][0] = sx(CHUNK);
+        });
+    }
+
+
+    /// `SND_TimerServiceCallback` through the real `SND_RunServiceCallbacks`:
+    /// service disabled, a zero or negative count, or 1..5 fake callbacks
+    /// (each may unwind).
+    #[test]
+    fn snd_timer_service_callback_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::game::lib::snd::{SND_GLOBALS_2, SND_SERVICE_COUNT, SND_SERVICE_FNS, SND_SERVICE_ON};
+        covered(ee::s13::f_003b5450__generated, snd_timer_service_callback, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x3b_5450, 5);
+            c.pc = 0x003b_5450;
+            let on = if seed % 5 == 0 { 0 } else { 1 + r.next_u32() % 0x7f };
+            c.bus.write8(SND_GLOBALS_2 + SND_SERVICE_ON, on as u8);
+            let count: i8 = match seed % 7 {
+                0 => 0,
+                1 => -3,
+                _ => (1 + r.next_u32() % 5) as i8,
+            };
+            c.bus.write8(SND_GLOBALS_2 + SND_SERVICE_COUNT, count as u8);
+            for i in 0..6 {
+                c.bus.write32(SND_GLOBALS_2 + SND_SERVICE_FNS + 4 * i, FAKE + 0x10 * i);
+            }
+        });
+    }
+
+
+    /// `SND_ChannelApplyFxEnable` over SPU channels (output mode 2 or not,
+    /// the switch on or off, 0..4 voices), and IOP and EE channels (the
+    /// real `SND_ChannelApplyVolume`, its EE voices through the real
+    /// `SND_EeVoiceSetVolume`).
+    #[test]
+    fn snd_channel_apply_fx_enable_matches() {
+        check(ee::s13::f_003c2ec8__generated, snd_channel_apply_fx_enable, 240, &|c, seed| {
+            let mut r = Rng(0x5e4d_0002 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            let flags = snd_tests::channel_flags(&mut r, seed);
+            snd_tests::setup_channel(c, &mut r, seed, flags);
+            let ch = DATA + (c.g[A0][0] as u32) * snd::chan::SIZE;
+            let on = if (seed / 5) % 2 == 0 { 0 } else { r.next_u32() as u8 | 1 };
+            c.bus.write8(ch + FX_ENABLE, on);
+            c.pc = 0x003c_2ec8;
+        });
+    }
+
+
+    /// SND_EeVoiceSetVolume: a voice table in test memory, random voice,
+    /// channel and volume.
+    #[test]
+    fn snd_ee_voice_set_volume_matches() {
+        use crate::difftest::{check_lohi, scramble, Rng, DATA};
+        check_lohi(ee::s14::f_003c8560__generated, snd_ee_voice_set_volume, 200, &|c, seed| {
+            let mut r = Rng(0x003c_8560 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.pc = 0x003c_8560;
+            c.bus.write32(SND_SET_VOL_STATE + SND_SET_VOL_VOICES, DATA);
+            c.g[A0][0] = (r.next_u32() % 48) as u64;
+            c.g[A1][0] = (r.next_u32() % 4) as u64;
+            c.f[12] = r.edge_f32();
+        });
+    }
+
+
+    /// SND_EaxaSetInput: null or non-null data, idle or busy decoder.
+    #[test]
+    fn snd_eaxa_set_input_matches() {
+        check(ee::s14::f_003ccf60__generated, snd_eaxa_set_input, 200, &|c, seed| {
+            let mut r = Rng(0x003c_cf60 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            let dec = DATA + 0x40;
+            fill(c, &mut r, dec, 0x30);
+            c.bus.write32(dec + 0x8, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+            c.g[A0][0] = sx(dec);
+            if seed % 5 == 0 {
+                c.g[A1][0] = 0;
+            }
+            c.pc = 0x003c_cf60;
+        });
+    }
+
+
+    /// SND_ChannelStopVoices: SPU (output mode 2 or not), IOP DSP and EE
+    /// channels with 0..4 voices; the real SND_ChannelRelease runs on a
+    /// table of 10 channels, the real SND_EeVoiceStop on EE voices whose
+    /// callback list holds one element (callback none or a fake that
+    /// unwinds on some seeds) and SND_MemFree takes its empty-heap exit.
+    #[test]
+    fn snd_channel_stop_voices_matches() {
+        const STATE: u32 = 0x0050_a8e8;
+        const SYNC: u32 = 0x0050_ad00;
+        const EE_VOICES: u32 = 0x0051_5b40;
+        const CHANNEL_SIZE: u32 = 0x8c;
+        check(ee::s13::f_003c2440__generated, snd_channel_stop_voices, 300, &|c, seed| {
+            let mut r = fakes::machine(c, seed, 0x3c_2440, 1);
+            let chans = DATA;
+            let count = 10u32;
+            c.bus.write32(STATE + 0x1f0, chans);
+            c.bus.write16(STATE + 0x17e, count as u16);
+            for i in 0..count {
+                let ch = chans + i * CHANNEL_SIZE;
+                fill(c, &mut r, ch, CHANNEL_SIZE / 4);
+                c.bus.write8(ch + 0x26, (r.next_u32() % 3) as u8);
+                c.bus.write8(ch + 0x69, (r.next_u32() % 3) as u8);
+            }
+            let voice_base = r.next_u32() % 4;
+            let ee_base = r.next_u32() % 3;
+            c.bus.write8(STATE + 0x30, voice_base as u8);
+            c.bus.write8(STATE + 0x2f, ee_base as u8);
+            let mode = if seed % 2 == 0 { 2 } else { r.next_u32() as u8 | 1 };
+            c.bus.write8(STATE + 0x49, mode);
+            c.bus.write32(SYNC + 0xcb0, DATA + 0x1_0000);
+            // SND_MemFree's heap: no blocks (it returns at once).
+            c.bus.write32(STATE + 0x234, DATA + 0x5000);
+            c.bus.write32(DATA + 0x5000 + 0x14, 0);
+            // EE voices (0x60 bytes): random gains, one callback element.
+            c.bus.write32(EE_VOICES + 0x1dc, DATA + 0x2_0000);
+            c.bus.write8(EE_VOICES + 5, (r.next_u32() % 3) as u8);
+            for i in 0..0x50 {
+                c.bus.write32(EE_VOICES + 0xe8 + 4 * i, r.f32(1.0));
+            }
+            for v in 0..4 {
+                let voice = DATA + 0x2_0000 + 0x60 * v;
+                for i in 0..0x18 {
+                    c.bus.write32(voice + 4 * i, r.f32(1.0));
+                }
+                let elem = DATA + 0x3_0000 + 0x20 * v;
+                c.bus.write32(voice + 0x40, elem);
+                c.bus.write32(elem + 4, if r.next_u32() % 2 == 0 { 0 } else { fakes::FAKE });
+                c.bus.write32(elem + 8, 0);
+            }
+            // The channel: SPU / IOP / EE by seed % 3, 0..4 voices.
+            let index = r.next_u32() % 3;
+            let ch = chans + index * CHANNEL_SIZE;
+            let other = r.next_u32() as u16 & !0x108;
+            let flags = match seed % 3 {
+                0 => other | 0x8 | (r.next_u32() as u16 & 0x100),
+                1 => other | 0x100,
+                _ => other,
+            };
+            c.bus.write16(ch + 0x24, flags);
+            c.bus.write8(ch + 0x23, (seed / 3 % 5) as u8);
+            for i in 0..4 {
+                let voice = if seed % 3 == 2 {
+                    // Distinct EE voices (a stopped voice's list is empty).
+                    voice_base + ee_base + (i + seed / 15) % 4
+                } else {
+                    r.next_u32() % count
+                };
+                c.bus.write16(ch + 4 + 2 * i, voice as u16);
+            }
+            c.g[A0][0] = index as u64;
+            c.pc = 0x003c_2440;
+        });
     }
 }

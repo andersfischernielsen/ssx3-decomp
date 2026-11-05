@@ -388,6 +388,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "GameCamera_UpdateStreamView",
     ),
     (0x003a_9658, world_cache_streamer_set_view, "cWorldCache_StreamerSetView"),
+    (0x0016_6530, chase_camera_check_distance_reset_wrapper, "ChaseCameraAlgorithm_CheckDistanceReset_Wrapper"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8749,6 +8750,23 @@ pub fn world_cache_streamer_set_view(c: &mut Cpu) {
     ret(c);
 }
 
+
+
+
+// -- 0x00166530 ChaseCameraAlgorithm_CheckDistanceReset_Wrapper --------------
+
+/// `void ChaseCameraAlgorithm_CheckDistanceReset_Wrapper(Chase* self)`
+/// (0x166530): forwards to `ChaseCameraAlgorithm_CheckDistanceReset(self)`
+/// (0x168150). Frame 0x10 (ra).
+pub fn chase_camera_check_distance_reset_wrapper(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(Callee { addr: 0x0016_8150, f: ee::s02::f_00168150 }),
+        0x0016_6540,
+    )
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11323,5 +11341,39 @@ pub(crate) mod tests {
                 );
             },
         );
+    }
+    use super::*;
+
+
+    // -- 0x00166530 ChaseCameraAlgorithm_CheckDistanceReset_Wrapper ------------
+
+    /// `ChaseCameraAlgorithm_CheckDistanceReset_Wrapper` against the
+    /// generated body, with the real `CheckDistanceReset`: camera-to-target
+    /// distances below 20, between 20 and the limit (gp-0x6778), and above
+    /// (the reset path, whose rider virtual is a fake that sometimes
+    /// unwinds).
+    #[test]
+    fn chase_camera_check_distance_reset_wrapper_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::{put_vec, DATA, GAME_GP};
+        const CAM: u32 = DATA + 0x20_0000;
+        const RIDER: u32 = DATA + 0x20_1000;
+        const BODY: u32 = DATA + 0x20_2000;
+        covered(ee::s02::f_00166530__generated, chase_camera_check_distance_reset_wrapper, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0016_6530, 1);
+            c.pc = 0x0016_6530;
+            c.bus.write32(GAME_GP - 0x6778, 100.0f32.to_bits());
+            let span = [5.0f32, 40.0, 400.0][(r.next_u32() % 3) as usize];
+            let p = [r.f32(span), r.f32(span), r.f32(span), r.f32(1.0)];
+            put_vec(c, CAM + 0x20, p);
+            put_vec(c, CAM + 0x40, [r.f32(span), r.f32(span), r.f32(span), r.f32(1.0)]);
+            c.bus.write32(CAM + 0x30, RIDER);
+            let vt = vtable(c, &mut r, &[0x8]);
+            c.bus.write32(RIDER, vt);
+            c.bus.write32(RIDER + 4, BODY);
+            put_vec(c, BODY + 0x1b0, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+            put_vec(c, 0x0050_0000 - 0xea0, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+            c.g[A0][0] = sx(CAM);
+        });
     }
 }

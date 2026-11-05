@@ -161,6 +161,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003d_62c8, path_track_set_volume, "PATH_TrackSetVolume"),
     (0x003d_fc48, stream_file_consume_bytes, "StreamFile_ConsumeBytes"),
     (0x003e_13e8, stream_file_release_chunk, "StreamFile_ReleaseChunk"),
+    (0x0010_09e0, computer_actor_rider_cruise_approach_jump, "ComputerActorRider_CruiseApproachJump"),
+    (0x0010_b590, computer_actor_rider_think_natural_air, "ComputerActorRider_ThinkNaturalAir"),
+    (0x0030_3ba0, wscript_fn_crowd2d_control, "WScriptFn_Crowd2dControl"),
+    (0x003d_fe88, stream_file_classify_chunk, "StreamFile_ClassifyChunk"),
+    (0x003e_6328, ea_shell_sort_pairs, "EA_ShellSortPairs"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8114,6 +8119,930 @@ pub fn path_track_set_volume(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// StreamFile_ClassifyChunk (0x3dfe88, seg_2DCAE8.c)
+
+/// StreamFile fields: the chunk classifier table and its entry count.
+pub(crate) const SFC_ENTRIES: u32 = 0x1c;
+
+
+pub(crate) const SFC_COUNT: u32 = 0x20;
+
+
+/// Classifier entry (12 bytes): `{mask, value, result}`.
+pub(crate) const SFC_ENTRY_SIZE: u32 = 0xc;
+
+
+pub(crate) const SFC_ENTRY_VALUE: u32 = 0x4;
+
+
+pub(crate) const SFC_ENTRY_RESULT: u32 = 0x8;
+
+
+
+/// `int StreamFile_ClassifyChunk(StreamFile* self, const int* chunk_id)`
+/// (0x3dfe88): the result of the first classifier entry whose
+/// `(id & mask) == value`, or -2 when none matches.
+pub fn stream_file_classify_chunk(c: &mut Cpu) {
+    c.cycles += 4;
+    let this = r32(c, A0);
+    c.g[V1][0] = Addr(this.wrapping_add(SFC_COUNT)).lw(c);
+    c.g[A2][0] = 0;
+    c.g[A1][0] = Addr(r32(c, A1)).lw(c);
+    if (c.g[V1][0] as i64) > 0 {
+        c.cycles += 2;
+        c.g[A0][0] = Addr(this.wrapping_add(SFC_ENTRIES)).lw(c);
+        c.g[A3][0] = c.g[V1][0];
+        loop {
+            // 0x3dfea0
+            c.cycles += 5;
+            let entry = r32(c, A0);
+            c.g[V0][0] = Addr(entry).lw(c);
+            c.g[V1][0] = Addr(entry.wrapping_add(SFC_ENTRY_VALUE)).lw(c);
+            c.g[V0][0] &= c.g[A1][0];
+            let matched = c.g[V0][0] == c.g[V1][0];
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+            if matched {
+                c.cycles += 2;
+                c.g[V0][0] = Addr(entry.wrapping_add(SFC_ENTRY_RESULT)).lw(c);
+                ret(c);
+                return;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[A3][0] as i64)) as u64;
+            c.g[A0][0] = sx(entry.wrapping_add(SFC_ENTRY_SIZE));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_fea0);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = sx(-2i32 as u32);
+    ret(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// EA_ShellSortPairs (0x3e6328, seg_2DCAE8.c)
+
+/// Shell sort gap sequence (1, 4, 13, 40, ...: 3h+1), `D_00451218`.
+pub(crate) const OC264_SHELL_GAPS: u32 = 0x0045_1218;
+
+
+
+/// `void EA_ShellSortPairs(int n, int* keys, int* vals)` (0x3e6328): sorts
+/// `n` key/value pairs by key, descending, with a 3h+1 Shell sort (gap
+/// table at 0x451218). A leaf; its loops keep their state in the original's
+/// registers (t5 n, t2 keys, a2 vals, t6 gap pointer, t0 gap, a1/t3 i,
+/// t1/t4 the pair being inserted, a3 j) so events see the same machine.
+pub fn ea_shell_sort_pairs(c: &mut Cpu) {
+    #[inline(always)]
+    fn reg(c: &Cpu, r: usize) -> u32 {
+        c.g[r][0] as u32
+    }
+    #[inline(always)]
+    fn set(c: &mut Cpu, r: usize, v: u32) {
+        c.g[r][0] = sx(v);
+    }
+    #[inline(always)]
+    fn less(c: &Cpu, a: usize, b: usize) -> u64 {
+        ((c.g[a][0] as i64) < (c.g[b][0] as i64)) as u64
+    }
+
+    // Find the first gap not below n: k = 1; while gaps[k] < n: k++.
+    c.cycles += 8;
+    c.g[T5][0] = c.g[A0][0];
+    set(c, A0, OC264_SHELL_GAPS);
+    c.g[T2][0] = c.g[A1][0];
+    c.g[V0][0] = Addr(OC264_SHELL_GAPS + 4).lw(c);
+    c.g[V0][0] = less(c, V0, T5);
+    c.g[V1][0] = 1;
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        set(c, A0, OC264_SHELL_GAPS + 4);
+        loop {
+            c.cycles += 7;
+            let v = reg(c, A0).wrapping_add(4);
+            set(c, A0, v);
+            c.g[V0][0] = Addr(reg(c, A0)).lw(c);
+            c.g[V0][0] = less(c, V0, T5);
+            let v = reg(c, V1).wrapping_add(1);
+            set(c, V1, v);
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003e_6350);
+            }
+        }
+    }
+
+    // t6 = &gaps[k - 1]; one insertion-sort pass per gap, down to gap 1.
+    c.cycles += 5;
+    let v = reg(c, V1) << 2;
+    set(c, V1, v);
+    set(c, V0, OC264_SHELL_GAPS);
+    let v = reg(c, V1).wrapping_add(OC264_SHELL_GAPS).wrapping_sub(4);
+    set(c, T6, v);
+    loop {
+        c.cycles += 4;
+        c.g[T0][0] = Addr(reg(c, T6)).lw(c);
+        c.g[V0][0] = less(c, T0, T5);
+        c.g[A1][0] = c.g[T0][0];
+        if c.g[V0][0] != 0 {
+            // for i = gap; i < n; i++: insert (keys[i], vals[i]).
+            loop {
+                c.cycles += 8;
+                let v = reg(c, A1) << 2;
+                set(c, V0, v);
+                let v = reg(c, A1).wrapping_add(1);
+                set(c, T3, v);
+                let v = reg(c, V0).wrapping_add(reg(c, A2));
+                set(c, V1, v);
+                let v = reg(c, A1).wrapping_sub(reg(c, T0));
+                set(c, A3, v);
+                let v = reg(c, V0).wrapping_add(reg(c, T2));
+                set(c, V0, v);
+                c.g[T4][0] = Addr(reg(c, V1)).lw(c);
+                c.g[T1][0] = Addr(reg(c, V0)).lw(c);
+                // j = i - gap; shift smaller keys up while j >= 0.
+                loop {
+                    c.cycles += 6;
+                    let v = reg(c, A3) << 2;
+                    set(c, A1, v);
+                    c.g[V0][0] = Addr(reg(c, A1).wrapping_add(reg(c, T2))).lw(c);
+                    let smaller = less(c, V0, T1) != 0;
+                    let v = reg(c, A3).wrapping_add(reg(c, T0));
+                    set(c, V1, v);
+                    if !smaller {
+                        break;
+                    }
+                    c.cycles += 9;
+                    let v = reg(c, A1).wrapping_add(reg(c, A2));
+                    set(c, A1, v);
+                    let v = reg(c, V1) << 2;
+                    set(c, V1, v);
+                    let v = reg(c, A3).wrapping_sub(reg(c, T0));
+                    set(c, A3, v);
+                    let v = reg(c, V1).wrapping_add(reg(c, T2));
+                    set(c, A0, v);
+                    let key = c.g[V0][0];
+                    Addr(reg(c, A0)).sw(c, key);
+                    let v = reg(c, V1).wrapping_add(reg(c, A2));
+                    set(c, V1, v);
+                    c.g[V0][0] = Addr(reg(c, A1)).lw(c);
+                    let more = (c.g[A3][0] as i64) >= 0;
+                    let val = c.g[V0][0];
+                    Addr(reg(c, V1)).sw(c, val);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003e_63b0);
+                    }
+                }
+                // keys[j + gap] = key; vals[j + gap] = val.
+                c.cycles += 9;
+                let v = reg(c, A3).wrapping_add(reg(c, T0));
+                set(c, V0, v);
+                c.g[A1][0] = c.g[T3][0];
+                let v = reg(c, V0) << 2;
+                set(c, V0, v);
+                c.g[A0][0] = less(c, A1, T5);
+                let v = reg(c, V0).wrapping_add(reg(c, T2));
+                set(c, V1, v);
+                let v = reg(c, V0).wrapping_add(reg(c, A2));
+                set(c, V0, v);
+                let (key, val) = (c.g[T1][0], c.g[T4][0]);
+                Addr(reg(c, V1)).sw(c, key);
+                Addr(reg(c, V0)).sw(c, val);
+                if c.g[A0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003e_6390);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[T0][0] as i64) < 2) as u64;
+        let v = reg(c, T6).wrapping_sub(4);
+        set(c, T6, v);
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            ret(c);
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003e_6380);
+        }
+    }
+}
+
+
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider_CruiseApproachJump (0x1009e0)
+
+/// `ComputerActorRider_FindJumpMarker(self, &speed, &below, &o3, &o4, &o5, &o6)`.
+pub(crate) const CAJ_FIND_JUMP_MARKER: Callee =
+    Callee { addr: 0x0010_b980, f: ee::s00::ComputerActorRider_FindJumpMarker };
+
+
+/// `ComputerActorRider_CruiseFollowPath(self, pad)`.
+pub(crate) const CAJ_CRUISE_FOLLOW_PATH: Callee =
+    Callee { addr: 0x0010_0680, f: ee::s00::ComputerActorRider_CruiseFollowPath };
+
+
+/// `ComputerActorRider_GetSteerTarget(&v, self)`.
+pub(crate) const CAJ_GET_STEER_TARGET: Callee =
+    Callee { addr: 0x0010_0610, f: ee::s00::ComputerActorRider_GetSteerTarget };
+
+
+/// `float ComputerActorRider_ComputeSteer(self, &v)`.
+pub(crate) const CAJ_COMPUTE_STEER: Callee =
+    Callee { addr: 0x0010_0348, f: ee::s00::ComputerActorRider_ComputeSteer };
+
+
+/// `ComputerActorRider_PlanAirTricks(self, o5, o6, o4, o3)`.
+pub(crate) const CAJ_PLAN_AIR_TRICKS: Callee =
+    Callee { addr: 0x0010_bfa8, f: ee::s00::ComputerActorRider_PlanAirTricks };
+
+
+/// `ComputerActorRider_CrouchAndBoost(self, pad)`.
+pub(crate) const CAJ_CROUCH_AND_BOOST: Callee =
+    Callee { addr: 0x0010_c140, f: ee::s00::ComputerActorRider_CrouchAndBoost };
+
+
+/// ComputerActorRider: rider (+0x18), cruise speed (+0xdf0), think state
+/// (+0xf38, `u16`) and think handler (+0xf44, an 8-byte member pointer).
+pub(crate) const CAJ_RIDER: u32 = 0x18;
+
+
+pub(crate) const CAJ_SPEED: u32 = 0xdf0;
+
+
+pub(crate) const CAJ_THINK_STATE: u32 = 0xf38;
+
+
+pub(crate) const CAJ_THINK_FN: u32 = 0xf44;
+
+
+/// The think-handler table (0x43cf20); entry 1 (cruise) at +8.
+pub(crate) const CAJ_THINK_TABLE: u32 = 0x0043_cf20;
+
+
+/// Rider: velocity (+0x1e0) and height above ground (+0x4c8).
+pub(crate) const CAJ_RIDER_VELOCITY: u32 = 0x1e0;
+
+
+pub(crate) const CAJ_RIDER_HEIGHT: u32 = 0x4c8;
+
+
+/// `gp-0x7fc4`: 10000.0 (height limit); `gp-0x7fc0`: 138.8889 (speed band).
+pub(crate) const CAJ_HEIGHT_LIMIT_GP: u32 = 0x7fc4;
+
+
+pub(crate) const CAJ_SPEED_BAND_GP: u32 = 0x7fc0;
+
+
+
+/// `void ComputerActorRider_CruiseApproachJump(ComputerActorRider* self,
+/// Pad* pad)` (0x1009e0): approaching a jump marker while cruising. No
+/// marker ahead: go back to the cruise think state and follow the path.
+/// Otherwise steer to the target (stick x, 6 bits at bit 20 of pad word 0),
+/// and if the marker is below, the rider is not too high and the steer is
+/// small, plan the air tricks and press both trick buttons (bits 14-15);
+/// else crouch and boost when slower than the marker speed by more than
+/// 138.9, or set the pad's slow-down bits (0x1f) when faster by more.
+pub fn computer_actor_rider_cruise_approach_jump(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        let base = sp(c);
+        c.g[A2][0] = sx(base.wrapping_add(0x10));
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x30);
+        let me = r32(c, S0);
+        c.g[A1][0] = sx(me.wrapping_add(CAJ_SPEED));
+        c.g[A3][0] = sx(base.wrapping_add(0x14));
+        c.g[T0][0] = sx(base.wrapping_add(0x18));
+        c.g[T1][0] = sx(base.wrapping_add(0x1c));
+        c.g[T2][0] = sx(base.wrapping_add(0x20));
+        CAJ_FIND_JUMP_MARKER.call(c, 0x0010_0a14)?;
+        let found = c.g[V0][0] != 0;
+        c.g[A0][0] = c.g[SP][0];
+        if !found {
+            // Back to cruising: think handler = table[1], state 1.
+            c.cycles += 13;
+            c.g[V1][0] = 1;
+            c.g[V0][0] = sx(CAJ_THINK_TABLE);
+            c.g[A0][0] = c.g[S0][0];
+            c.ldl(A1, CAJ_THINK_TABLE + 0xf);
+            c.ldr(A1, CAJ_THINK_TABLE + 0x8);
+            let me = r32(c, S0);
+            c.sdl(A1, me.wrapping_add(CAJ_THINK_FN + 7));
+            c.sdr(A1, me.wrapping_add(CAJ_THINK_FN));
+            c.g[A1][0] = c.g[S1][0];
+            Addr(me.wrapping_add(CAJ_THINK_STATE)).sh(c, 1);
+            CAJ_CRUISE_FOLLOW_PATH.call(c, 0x0010_0a48)?;
+            frame.restore(c, S0, 0x50);
+        } else {
+            c.cycles += 33;
+            c.g[A1][0] = c.g[S0][0];
+            CAJ_GET_STEER_TARGET.call(c, 0x0010_0a58)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[SP][0];
+            CAJ_COMPUTE_STEER.call(c, 0x0010_0a64)?;
+            // Stick x = (int)(steer * 31), 6 bits at bit 20 of pad word 0.
+            let steer = FpuF32(c.f[0]);
+            c.f[2] = steer.0;
+            let pad = r32(c, S1);
+            let word = Addr(pad).lw(c);
+            c.g[AT][0] = 0x41f8_0000;
+            c.g[V0][0] = 0xffff_ffff_fc0f_ffff;
+            c.g[A0][0] = Addr(sp(c).wrapping_add(0x10)).lw(c);
+            let scaled = steer * FpuF32(0x41f8_0000);
+            c.f[0] = scaled.0;
+            c.g[V1][0] = word & c.g[V0][0];
+            c.f[1] = scaled.to_i32() as u32;
+            c.g[V0][0] = sx(c.f[1]) & 0x3f;
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 20);
+            c.g[V1][0] |= c.g[V0][0];
+            let packed = c.g[V1][0];
+            Addr(pad).sw(c, packed);
+            // |rider velocity| (VU0 macro mode, as the original).
+            let me = r32(c, S0);
+            c.g[V1][0] = Addr(me.wrapping_add(CAJ_RIDER)).lw(c);
+            let rider = r32(c, V1);
+            c.lqc2(3, rider.wrapping_add(CAJ_RIDER_VELOCITY));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().sqrt(4, 0);
+            c.vu0().waitq();
+            c.cfc2(V0, 22);
+            let len = FpuF32(c.g[V0][0] as u32);
+            c.f[3] = len.0;
+            // Marker below, rider low enough and a small steer: air tricks.
+            let mut tricks = false;
+            if c.g[A0][0] != 0 {
+                c.cycles += 6;
+                let height = Addr(rider.wrapping_add(CAJ_RIDER_HEIGHT)).read_fpu(c);
+                c.f[1] = height.0;
+                let limit = Addr(r32(c, GP).wrapping_sub(CAJ_HEIGHT_LIMIT_GP)).read_fpu(c);
+                c.f[0] = limit.0;
+                if abi::c_lt_s(c, height, limit) {
+                    c.cycles += 7;
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.f[1] = 0x3f80_0000;
+                    let mag = steer.abs();
+                    c.f[0] = mag.0;
+                    let small = abi::c_lt_s(c, mag, FpuF32(0x3f80_0000));
+                    c.g[A1][0] = Addr(sp(c).wrapping_add(0x1c)).lw(c);
+                    if small {
+                        tricks = true;
+                    } else {
+                        c.cycles += 1;
+                    }
+                }
+            }
+            if tricks {
+                c.cycles += 9;
+                c.g[A0][0] = c.g[S0][0];
+                let base = sp(c);
+                c.g[A2][0] = Addr(base.wrapping_add(0x20)).lw(c);
+                c.g[A3][0] = Addr(base.wrapping_add(0x18)).lw(c);
+                c.g[T0][0] = Addr(base.wrapping_add(0x14)).lw(c);
+                CAJ_PLAN_AIR_TRICKS.call(c, 0x0010_0b1c)?;
+                let pad = r32(c, S1);
+                c.g[V0][0] = Addr(pad).lw(c) | 0xc000;
+                let v = c.g[V0][0];
+                Addr(pad).sw(c, v);
+                c.cycles += 1;
+                frame.restore(c, S0, 0x50);
+            } else {
+                let me = r32(c, S0);
+                let speed = Addr(me.wrapping_add(CAJ_SPEED)).read_fpu(c);
+                c.f[1] = speed.0;
+                c.cycles += 6;
+                let band = Addr(r32(c, GP).wrapping_sub(CAJ_SPEED_BAND_GP)).read_fpu(c);
+                c.f[2] = band.0;
+                let low = speed - band;
+                c.f[0] = low.0;
+                let slow = abi::c_lt_s(c, len, low);
+                c.g[A0][0] = c.g[S0][0];
+                if slow {
+                    c.cycles += 4;
+                    c.g[A1][0] = c.g[S1][0];
+                    CAJ_CROUCH_AND_BOOST.call(c, 0x0010_0b50)?;
+                    frame.restore(c, S0, 0x50);
+                } else {
+                    c.cycles += 5;
+                    let high = speed + band;
+                    c.f[0] = high.0;
+                    let fast = abi::c_lt_s(c, high, len);
+                    c.g[V1][0] = 0xffff_ffff_ffff_ffc0;
+                    if fast {
+                        c.cycles += 4;
+                        let pad = r32(c, S1);
+                        c.g[V0][0] = (Addr(pad.wrapping_add(4)).lw(c) & c.g[V1][0]) | 0x1f;
+                        let v = c.g[V0][0];
+                        Addr(pad.wrapping_add(4)).sw(c, v);
+                    }
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x50);
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider_ThinkNaturalAir (0x10b590)
+
+/// `Rand_NextGame` (the AI's random generator, called through the table).
+pub(crate) const NATURAL_AIR_RAND: u32 = 0x0031_7810;
+
+
+pub(crate) const NATURAL_AIR_GET_STEER_TARGET: Callee = Callee {
+    addr: 0x0010_0610,
+    f: ee::s00::ComputerActorRider_GetSteerTarget,
+};
+
+
+pub(crate) const NATURAL_AIR_COMPUTE_STEER: Callee = Callee {
+    addr: 0x0010_0348,
+    f: ee::s00::ComputerActorRider_ComputeSteer,
+};
+
+
+
+/// AI think state (the `ComputerActorRider`).
+pub(crate) const AI_RIDER: u32 = 0x18;
+
+
+pub(crate) const AI_TRICK: u32 = 0xe0c;
+
+
+pub(crate) const AI_IN_TRICK: u32 = 0xe10;
+
+
+pub(crate) const AI_E14: u32 = 0xe14;
+
+
+pub(crate) const AI_E18: u32 = 0xe18;
+
+
+pub(crate) const AI_E20: u32 = 0xe20;
+
+
+pub(crate) const AI_SPIN_DIR: u32 = 0xe38;
+
+
+pub(crate) const AI_FLIP_DIR: u32 = 0xe3c;
+
+
+/// Rider -> air predictor; its state and the height above the landing.
+pub(crate) const RIDER_AIR: u32 = 0x788;
+
+
+pub(crate) const AIR_HEIGHT: u32 = 0x98;
+
+
+pub(crate) const AIR_GROUND: u32 = 0xa0;
+
+
+pub(crate) const AIR_STATE: u32 = 0xac;
+
+
+
+/// `void ComputerActorRider_ThinkNaturalAir(ComputerActorRider *self, Pad *pad)`
+/// (0x10b590): the AI's "natural" air (no trick planned). With the air
+/// predictor in state 1 or 3 the height above the landing decides: above 1
+/// unit it spins (random direction), above 3 it also flips; below 0.5 with
+/// neither, it steers toward the path target (`ComputeSteer * -31` into the
+/// pad's stick bits 24..29). The trick slot (`self+0xe0c`, -1) goes to pad
+/// byte 2.
+pub fn computer_actor_rider_think_natural_air(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x30);
+        c.g[V1][0] = 1;
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x40);
+        let ai = r32(c, S0);
+        let rider = Addr(ai).off(AI_RIDER).lw(c);
+        c.g[V0][0] = rider;
+        let air = Addr(rider as u32).off(RIDER_AIR).lw(c);
+        c.g[A0][0] = air;
+        let state = Addr(air as u32).off(AIR_STATE).lw(c);
+        c.g[A1][0] = state;
+        // State 1 or 3: the predictor has a landing.
+        let landing = if state == 1 {
+            c.cycles += 1;
+            true
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 3;
+            if state == 3 {
+                c.cycles += 1;
+            }
+            state == 3
+        };
+        c.g[A2][0] = landing as u64;
+
+        c.cycles += 2;
+        let height = if landing {
+            c.cycles += 4;
+            let ground = Addr(air as u32).off(AIR_GROUND).read_fpu(c);
+            let h = Addr(air as u32).off(AIR_HEIGHT).read_fpu(c);
+            c.f[1] = ground.0;
+            c.f[0] = h.0;
+            h - ground
+        } else {
+            c.cycles += 1;
+            FpuF32::ZERO
+        };
+        c.f[20] = height.0;
+
+        // Defaults: no trick, no spin/flip.
+        c.cycles += 11;
+        let ai = Addr(ai);
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[0] = FpuF32::ONE.0;
+        c.g[V1][0] = 1;
+        c.g[V0][0] = u64::MAX;
+        ai.off(AI_IN_TRICK).sw(c, 0);
+        let spin = abi::c_lt_s(c, FpuF32::ONE, height);
+        ai.off(AI_TRICK).sw(c, u64::MAX);
+        ai.off(AI_E14).sw(c, 0);
+        ai.off(AI_E18).sw(c, 1);
+        ai.off(AI_E20).sw(c, 0);
+        if spin {
+            c.cycles += 6;
+            ai.off(AI_IN_TRICK).sw(c, 1);
+            ai.off(AI_SPIN_DIR).write_fpu(c, FpuF32::ONE);
+            call_ptr(c, NATURAL_AIR_RAND, 0x0010_b628)?;
+            natural_air_random_sign(c, AI_SPIN_DIR);
+        } else {
+            c.cycles += 1;
+            Addr(r32(c, S0)).off(AI_SPIN_DIR).sw(c, 0);
+        }
+
+        c.cycles += 6;
+        let three = FpuF32::from_f32(3.0);
+        c.g[AT][0] = 0x4040_0000;
+        c.f[0] = three.0;
+        let flip = abi::c_lt_s(c, three, height);
+        c.g[V0][0] = 1;
+        if flip {
+            c.cycles += 8;
+            c.g[AT][0] = 0x3f80_0000;
+            c.f[0] = FpuF32::ONE.0;
+            let ai = Addr(r32(c, S0));
+            ai.off(AI_IN_TRICK).sw(c, 1);
+            ai.off(AI_FLIP_DIR).write_fpu(c, FpuF32::ONE);
+            call_ptr(c, NATURAL_AIR_RAND, 0x0010_b674)?;
+            natural_air_random_sign(c, AI_FLIP_DIR);
+        } else {
+            c.cycles += 1;
+            Addr(r32(c, S0)).off(AI_FLIP_DIR).sw(c, 0);
+        }
+
+        // Low and not tricking: steer toward the path.
+        c.cycles += 6;
+        let half = FpuF32::from_f32(0.5);
+        c.g[AT][0] = 0x3f00_0000;
+        c.f[0] = half.0;
+        if abi::c_lt_s(c, height, half) {
+            c.cycles += 6;
+            let flip_dir = Addr(r32(c, S0)).off(AI_FLIP_DIR).read_fpu(c);
+            c.f[0] = flip_dir.0;
+            c.f[1] = 0;
+            let still = flip_dir.eq_s(FpuF32::ZERO);
+            abi::set_fcc(c, still);
+            if still {
+                c.cycles += 5;
+                let spin_dir = Addr(r32(c, S0)).off(AI_SPIN_DIR).read_fpu(c);
+                c.f[0] = spin_dir.0;
+                let still = spin_dir.eq_s(FpuF32::ZERO);
+                abi::set_fcc(c, still);
+                c.g[A0][0] = c.g[SP][0];
+                if still {
+                    c.cycles += 21;
+                    c.g[A1][0] = c.g[S0][0];
+                    NATURAL_AIR_GET_STEER_TARGET.call(c, 0x0010_b6e0)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[SP][0];
+                    NATURAL_AIR_COMPUTE_STEER.call(c, 0x0010_b6ec)?;
+                    let steer = -FpuF32(c.f[0]);
+                    let k = FpuF32::from_f32(31.0);
+                    c.g[AT][0] = 0x41f8_0000;
+                    c.f[1] = k.0;
+                    let pad = Addr(r32(c, S1));
+                    let word = pad.lw(c);
+                    c.g[V1][0] = 0xffff_ffff_c0ff_ffff;
+                    c.g[A1][0] = u64::MAX;
+                    let stick = steer * k;
+                    c.f[0] = stick.0;
+                    let bits = stick.to_i32() as u32;
+                    c.f[1] = bits;
+                    let field = sx((bits & 0x3f) << 24);
+                    c.g[V0][0] = field;
+                    let word = (word & 0xffff_ffff_c0ff_ffff) | field;
+                    c.g[A0][0] = word;
+                    pad.sw(c, word);
+                    Addr(r32(c, S0)).off(AI_TRICK).sw(c, u64::MAX);
+                }
+                c.cycles += 1;
+            }
+        }
+        c.g[V0][0] = Addr(r32(c, S0)).off(AI_TRICK).lbu(c);
+
+        c.cycles += 7;
+        frame.restore(c, S0, 0x30);
+        let trick = c.g[V0][0];
+        Addr(r32(c, S1)).off(2).sb(c, trick);
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// After `Rand_NextGame`: an odd result negates the direction at `field`.
+pub(crate) fn natural_air_random_sign(c: &mut Cpu, field: u32) {
+    c.g[V0][0] &= 1;
+    if c.g[V0][0] != 0 {
+        c.cycles += 4;
+        let dir = Addr(r32(c, S0)).off(field);
+        let v = -dir.read_fpu(c);
+        c.f[0] = v.0;
+        dir.write_fpu(c, v);
+    }
+}
+
+
+
+/// `WScriptResult WScriptFn_Crowd2dControl(int argc, WScriptArg* args)`
+/// (0x303ba0, hidden result pointer in a0): the world-script command that
+/// adds, removes or binds a 2D crowd instance. The arguments (16 bytes
+/// each: slot index, value, -, type) fill a 5-word buffer initialised from
+/// a static default (`{-1, -1, 0, 0, ..}`, set up on first use); an int
+/// given for a float slot (type table 0x4465d8) is converted. `buf[0]` is
+/// the object handle (-1: the default object), `buf[1]` the mode (0 bind
+/// frame, 1 nothing, 2 add, 3 remove) on the crowd manager (gp-0x6f0) with
+/// the object's instance handle (`+0x78`) and `buf[2]`/`buf[3]`. Returns the
+/// static "no value" result.
+pub fn wscript_fn_crowd2d_control(c: &mut Cpu) {
+    const INIT_GUARD: u32 = 0x26f0; // gp+
+    const DEFAULTS: u32 = 0x004f_bc80;
+    const ARG_TYPES: u32 = 0x0044_65d8;
+    const HANDLE_TABLES: u32 = 0x16c8; // gp+
+    const WORLD: u32 = 0xce8; // gp+
+    const DEFAULT_OBJECT: u32 = 0x290;
+    const INSTANCE: u32 = 0x78;
+    const CROWD_MAN: u32 = 0x6f0; // gp-
+    // The static "none" result is at 0x4c9098 (0x4d0000 - 0x6f68).
+    const FLOAT_ARG: u64 = 2;
+    const LOOP_HEAD: u32 = 0x0030_3c40;
+    const MEMCPY: Callee = Callee {
+        addr: 0x003e_6574,
+        f: ee::s14::f_003e6574,
+    };
+    const BIND_INSTANCE_FRAME: Callee = Callee {
+        addr: 0x0022_9820,
+        f: ee::s05::f_00229820,
+    };
+    const CROWD_ADD: Callee = Callee {
+        addr: 0x0022_9788,
+        f: ee::s05::f_00229788,
+    };
+    const CROWD_REMOVE: Callee = Callee {
+        addr: 0x0022_97d8,
+        f: ee::s05::f_002297d8,
+    };
+    guest(c, |c| {
+        let gp = c.g[GP][0] as u32;
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = Addr(gp.wrapping_add(INIT_GUARD)).lw(c);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S1, 0x60);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S3, 0x40);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x70);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        c.g[A2][0] = 0x0050_0000;
+        if c.g[V0][0] == 0 {
+            // Guarded static init of the default argument buffer.
+            c.cycles += 13;
+            c.g[V1][0] = sx(DEFAULTS);
+            c.g[V0][0] = u64::MAX;
+            let tag = Addr(DEFAULTS + 0x10).lbu(c);
+            c.g[A1][0] = tag;
+            Addr(DEFAULTS).sw(c, u64::MAX);
+            c.g[A0][0] = u64::MAX;
+            Addr(DEFAULTS + 0x10).sb(c, tag);
+            c.g[V0][0] = 1;
+            Addr(DEFAULTS + 4).sw(c, u64::MAX);
+            Addr(gp.wrapping_add(INIT_GUARD)).sw(c, 1);
+            Addr(DEFAULTS + 8).sw(c, 0);
+            Addr(DEFAULTS + 0xc).sw(c, 0);
+            Addr(sp(c)).sb(c, tag);
+        }
+        // buf = defaults (buf[0] = -1 first).
+        c.cycles += 10;
+        c.g[V0][0] = u64::MAX;
+        let buf = sp(c).wrapping_add(0x10);
+        c.g[S0][0] = sx(buf);
+        c.g[A1][0] = sx(DEFAULTS);
+        c.g[A2][0] = 0x14;
+        Addr(buf).sw(c, u64::MAX);
+        c.g[A0][0] = c.g[S0][0];
+        MEMCPY.call(c, 0x0030_3c24)?;
+        c.g[A2][0] = c.g[S2][0];
+        if (c.g[S1][0] as i64) > 0 {
+            c.cycles += 5;
+            c.g[V0][0] = 0x0044_0000;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[T0][0] = sx(ARG_TYPES);
+            c.g[A3][0] = FLOAT_ARG;
+            loop {
+                c.cycles += 8;
+                let arg = Addr(c.g[A2][0] as u32);
+                let slot = arg.lw(c);
+                c.g[V1][0] = arg.off(0xc).lw(c);
+                let off = sx((slot as u32) << 2);
+                c.g[A0][0] = sx((off as u32).wrapping_add(c.g[S0][0] as u32));
+                let ty_addr = (off as u32).wrapping_add(c.g[T0][0] as u32);
+                c.g[V0][0] = Addr(ty_addr).lw(c);
+                let dst = c.g[A0][0] as u32;
+                let convert = if c.g[V1][0] == c.g[V0][0] {
+                    false
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] == c.g[A3][0]
+                };
+                if convert {
+                    c.cycles += 4;
+                    c.lwc1(0, arg.off(4).0);
+                    c.cvt_s_w(0, 0);
+                    c.swc1(0, dst);
+                } else {
+                    let v = arg.off(4).lw(c);
+                    c.g[V0][0] = v;
+                    c.cycles += 1;
+                    Addr(dst).sw(c, v);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
+                if c.g[A1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LOOP_HEAD);
+                }
+            }
+        }
+        // Resolve the object handle.
+        c.cycles += 4;
+        let buf = Addr(c.g[S0][0] as u32);
+        let id = buf.lw(c);
+        c.g[A2][0] = id;
+        c.g[V0][0] = !id;
+        c.g[A1][0] = Addr(gp.wrapping_add(HANDLE_TABLES)).lw(c);
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            let world = Addr(gp.wrapping_add(WORLD)).lw(c);
+            c.g[V0][0] = Addr(world as u32).off(DEFAULT_OBJECT).lw(c);
+        } else {
+            c.cycles += 8;
+            let tables = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[V1][0] = tables;
+            let sets = Addr(tables as u32).off(8).lw(c);
+            c.g[A0][0] = sets;
+            let set_addr = (((id & 0xff) as u32) << 2).wrapping_add(sets as u32);
+            c.g[V0][0] = sx(set_addr);
+            let set = Addr(set_addr).lw(c);
+            c.g[V1][0] = set;
+            c.g[V0][0] = sx((id as u32) >> 8);
+            let mut found = false;
+            if set != 0 {
+                c.cycles += 7;
+                let entries = Addr(set as u32).off(0x1c).lw(c);
+                c.g[A0][0] = entries;
+                let entry_addr = ((c.g[V0][0] as u32) << 2).wrapping_add(entries as u32);
+                c.g[V0][0] = sx(entry_addr);
+                let entry = Addr(entry_addr).lw(c);
+                c.g[V1][0] = entry;
+                let index = (entry as u32) >> 8;
+                c.g[V0][0] = sx(index << 2);
+                found = index != 0;
+            }
+            if !found {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        c.cycles += 2;
+        let obj = c.g[V0][0];
+        c.g[V1][0] = 0x004d_0000;
+        if obj != 0 {
+            c.cycles += 5;
+            let mode = buf.off(4).lw(c);
+            c.g[A0][0] = mode;
+            c.g[A3][0] = buf.off(0xc).lw(c);
+            c.g[A1][0] = Addr(obj as u32).off(INSTANCE).lw(c);
+            c.g[A2][0] = buf.off(8).lw(c);
+            let crowd = gp.wrapping_sub(CROWD_MAN);
+            if mode == 0 {
+                c.cycles += 4;
+                c.g[A0][0] = Addr(crowd).lw(c);
+                BIND_INSTANCE_FRAME.call(c, 0x0030_3d08)?;
+                c.g[V1][0] = 0x004d_0000;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 2;
+                if mode == 1 {
+                    c.cycles += 1;
+                    c.g[V1][0] = 0x004d_0000;
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 3;
+                    if mode == 2 {
+                        c.cycles += 4;
+                        c.g[A0][0] = Addr(crowd).lw(c);
+                        CROWD_ADD.call(c, 0x0030_3d2c)?;
+                        c.g[V1][0] = 0x004d_0000;
+                    } else {
+                        c.cycles += 2;
+                        c.g[V1][0] = 0x004d_0000;
+                        if mode == 3 {
+                            c.cycles += 2;
+                            c.g[A0][0] = Addr(crowd).lw(c);
+                            CROWD_REMOVE.call(c, 0x0030_3d44)?;
+                            c.cycles += 1;
+                            c.g[V1][0] = 0x004d_0000;
+                        }
+                    }
+                }
+            }
+        }
+        // *result = the static "none" result (12 bytes, unaligned copy).
+        c.cycles += 15;
+        let result = c.g[S3][0] as u32;
+        c.g[V0][0] = c.g[S3][0];
+        c.g[A3][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x6f68));
+        let src = c.g[A3][0] as u32;
+        c.ldl(A0, src.wrapping_add(7));
+        c.ldr(A0, src);
+        let tail = Addr(src).off(8).lw(c);
+        c.g[A1][0] = tail;
+        c.sdl(A0, result.wrapping_add(7));
+        c.sdr(A0, result);
+        Addr(result).off(8).sw(c, tail);
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -11170,6 +12099,426 @@ pub(crate) mod tests {
             c.g[A0][0] = TRACK as u64;
             c.g[A1][0] = if seed % 5 == 0 { r.next_u32() as u64 } else { (r.next_u32() % 101) as u64 };
         });
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    // (fakes imported above)
+    use super::*;
+
+
+    /// StreamFile_ClassifyChunk: entry counts -1..5, chunk ids that match
+    /// the first, a later or no entry (masks of all, some or no bits).
+    #[test]
+    fn stream_file_classify_chunk_matches() {
+        const SELF: u32 = DATA + 0x1000;
+        const KEY: u32 = DATA + 0x1100;
+        const ENTRIES: u32 = DATA + 0x1200;
+        check(ee::s14::f_003dfe88__generated, stream_file_classify_chunk, 300, &|c, seed| {
+            let mut r = Rng(0x003d_fe88 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.pc = 0x003d_fe88;
+            let n = (seed % 7) as i32 - 1;
+            c.bus.write32(SELF + SFC_COUNT, n as u32);
+            c.bus.write32(SELF + SFC_ENTRIES, ENTRIES);
+            let key = r.next_u32();
+            c.bus.write32(KEY, key);
+            let hit = if n > 0 && seed % 3 != 0 { (r.next_u32() % n as u32) as i32 } else { -1 };
+            for i in 0..6u32 {
+                let e = ENTRIES + SFC_ENTRY_SIZE * i;
+                let mask = [u32::MAX, 0xffff_0000, 0xff, 0][(r.next_u32() % 4) as usize];
+                let value = if i as i32 == hit { key & mask } else { (key & mask) ^ (1 + r.next_u32() % 0xff) };
+                c.bus.write32(e, mask);
+                c.bus.write32(e + SFC_ENTRY_VALUE, value);
+                c.bus.write32(e + SFC_ENTRY_RESULT, r.next_u32());
+            }
+            c.g[A0][0] = sx(SELF);
+            c.g[A1][0] = sx(KEY);
+        });
+    }
+
+
+    /// EA_ShellSortPairs: 0..60 pairs (gaps 1, 4, 13, 40) with keys from a
+    /// small range (ties) or the full range (negatives).
+    #[test]
+    fn ea_shell_sort_pairs_matches() {
+        const GAPS: [u32; 14] = [
+            1, 4, 13, 40, 121, 364, 1093, 3280, 9841, 29524, 88573, 265720, 797161,
+            0x7fff_ffff,
+        ];
+        check(ee::s14::f_003e6328__generated, ea_shell_sort_pairs, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x3e63_28, 0);
+            c.pc = 0x003e_6328;
+            put_words(c, OC264_SHELL_GAPS, &GAPS);
+            let n = seed % 61;
+            let keys = DATA + 0x1000;
+            let vals = DATA + 0x2000;
+            c.g[A0][0] = sx(n);
+            c.g[A1][0] = sx(keys);
+            c.g[A2][0] = sx(vals);
+            for i in 0..n {
+                let k = if seed % 2 == 0 { r.next_u32() % 8 } else { r.next_u32() };
+                c.bus.write32(keys + 4 * i, k);
+                c.bus.write32(vals + 4 * i, r.next_u32());
+            }
+        });
+    }
+
+
+    // ----------------------------------------- CruiseApproachJump fixture
+
+    /// The test's ComputerActorRider, its rider and pad, the record of the
+    /// fake callees' arguments and the fakes' answers.
+    pub(crate) const CAJ_SELF: u32 = crate::difftest::DATA;
+
+    pub(crate) const CAJ_RIDER_AT: u32 = crate::difftest::DATA + 0x2000;
+
+    pub(crate) const CAJ_PAD: u32 = crate::difftest::DATA + 0x3000;
+
+    pub(crate) const CAJ_REC: u32 = crate::difftest::DATA + 0x4000;
+
+    pub(crate) const CAJ_CTRL: u32 = crate::difftest::DATA + 0x5000;
+
+
+    /// Log a fake call's argument registers, `ra`, `sp` and cycles at
+    /// `CAJ_REC + slot * 0x80` (the RAM comparison checks them).
+    pub(crate) fn caj_record(c: &mut Cpu, slot: u32) {
+        let at = CAJ_REC + slot * 0x80;
+        for (i, r) in [A0, A1, A2, A3, T0, T1, T2, RA, SP, S0, S1].into_iter().enumerate() {
+            c.bus.write64(at + 8 * i as u32, c.g[r][0]);
+        }
+        c.bus.write64(at + 0x60, c.cycles);
+        c.bus.write32(at + 0x68, c.f[12]);
+    }
+
+
+    /// `FindJumpMarker`: found = ctrl+0; writes below (ctrl+4) and four
+    /// marker words through a2, a3, t0, t1, t2.
+    pub(crate) fn caj_fake_find_jump_marker(c: &mut Cpu) {
+        caj_record(c, 0);
+        let found = c.bus.read32(CAJ_CTRL);
+        let below = c.bus.read32(CAJ_CTRL + 4);
+        let a2 = c.g[A2][0] as u32;
+        c.bus.write32(a2, below);
+        for (i, r) in [A3, T0, T1, T2].into_iter().enumerate() {
+            let p = c.g[r][0] as u32;
+            c.bus.write32(p, 0x100 + i as u32 * 3 + found);
+        }
+        c.g[V0][0] = found as u64;
+        c.cycles += 11;
+        abi::ret(c);
+    }
+
+
+    /// `CruiseFollowPath`: only logged.
+    pub(crate) fn caj_fake_cruise_follow_path(c: &mut Cpu) {
+        caj_record(c, 1);
+        c.cycles += 7;
+        abi::ret(c);
+    }
+
+
+    /// `GetSteerTarget(&v, self)`: writes a vector from ctrl+0x10.
+    pub(crate) fn caj_fake_get_steer_target(c: &mut Cpu) {
+        caj_record(c, 2);
+        let v = c.g[A0][0] as u32;
+        for i in 0..4 {
+            let w = c.bus.read32(CAJ_CTRL + 0x10 + 4 * i);
+            c.bus.write32(v + 4 * i, w);
+        }
+        c.cycles += 5;
+        abi::ret(c);
+    }
+
+
+    /// `ComputeSteer`: returns the steer at ctrl+8 in f0.
+    pub(crate) fn caj_fake_compute_steer(c: &mut Cpu) {
+        caj_record(c, 3);
+        c.f[0] = c.bus.read32(CAJ_CTRL + 8);
+        c.cycles += 9;
+        abi::ret(c);
+    }
+
+
+    /// Installs the fakes in the callees' override slots; restores them on
+    /// drop.
+    pub(crate) struct CajSlots([fn(&mut Cpu); 4]);
+
+
+    impl CajSlots {
+        fn install() -> CajSlots {
+            unsafe {
+                let saved = CajSlots([
+                    ssx3_ee::s00::OVERRIDE_0010B980,
+                    ssx3_ee::s00::OVERRIDE_00100680,
+                    ssx3_ee::s00::OVERRIDE_00100610,
+                    ssx3_ee::s00::OVERRIDE_00100348,
+                ]);
+                ssx3_ee::s00::OVERRIDE_0010B980 = caj_fake_find_jump_marker;
+                ssx3_ee::s00::OVERRIDE_00100680 = caj_fake_cruise_follow_path;
+                ssx3_ee::s00::OVERRIDE_00100610 = caj_fake_get_steer_target;
+                ssx3_ee::s00::OVERRIDE_00100348 = caj_fake_compute_steer;
+                saved
+            }
+        }
+    }
+
+
+    impl Drop for CajSlots {
+        fn drop(&mut self) {
+            unsafe {
+                ssx3_ee::s00::OVERRIDE_0010B980 = self.0[0];
+                ssx3_ee::s00::OVERRIDE_00100680 = self.0[1];
+                ssx3_ee::s00::OVERRIDE_00100610 = self.0[2];
+                ssx3_ee::s00::OVERRIDE_00100348 = self.0[3];
+            }
+        }
+    }
+
+
+    /// ComputerActorRider_CruiseApproachJump: no marker (back to cruising),
+    /// or a marker with the rider below/above it, high or low, a small or
+    /// large steer (the real PlanAirTricks), and slower (the real
+    /// CrouchAndBoost), within or faster than the speed band. The four
+    /// callees with override slots are fakes.
+    #[test]
+    fn computer_actor_rider_cruise_approach_jump_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, elf_image};
+        let _slots = CajSlots::install();
+        check(
+            ee::s00::f_001009e0__generated,
+            computer_actor_rider_cruise_approach_jump,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_09e0, 0);
+                elf_image(c);
+                c.pc = 0x0010_09e0;
+                c.g[A0][0] = sx(CAJ_SELF);
+                c.g[A1][0] = sx(CAJ_PAD);
+                c.bus.write32(CAJ_SELF + CAJ_RIDER, CAJ_RIDER_AT);
+                let speed = 50.0 + (r.next_u32() % 250) as f32;
+                c.bus.write32(CAJ_SELF + CAJ_SPEED, speed.to_bits());
+                c.bus.write32(CAJ_SELF + 0xdfc, r.f32(1.0));
+                c.bus.write32(CAJ_PAD, r.next_u32());
+                c.bus.write32(CAJ_PAD + 4, r.next_u32());
+                // Rider velocity: |v| around the cruise speed, +-300.
+                let delta = f32::from_bits(r.f32(300.0));
+                let target = (speed + delta).max(0.0);
+                let (x, y) = (r.f32(1.0), r.f32(1.0));
+                let (x, y) = (f32::from_bits(x), f32::from_bits(y));
+                let n = (x * x + y * y + 1.0).sqrt();
+                for (i, v) in [x / n, y / n, 1.0 / n, 0.0].into_iter().enumerate() {
+                    c.bus.write32(CAJ_RIDER_AT + CAJ_RIDER_VELOCITY + 4 * i as u32, (v * target).to_bits());
+                }
+                let height = if seed % 3 == 0 { 20000.0f32 } else { 5.0 };
+                c.bus.write32(CAJ_RIDER_AT + CAJ_RIDER_HEIGHT, height.to_bits());
+                // The fakes' answers.
+                c.bus.write32(CAJ_CTRL, (seed % 5 != 0) as u32);
+                c.bus.write32(CAJ_CTRL + 4, (seed % 2) as u32);
+                let steer = match seed % 7 {
+                    0 => r.edge_f32(),
+                    1 => 2.5f32.to_bits(),
+                    _ => r.f32(1.0),
+                };
+                c.bus.write32(CAJ_CTRL + 8, steer);
+                for i in 0..4 {
+                    let w = r.f32(100.0);
+                    c.bus.write32(CAJ_CTRL + 0x10 + 4 * i, w);
+                }
+            },
+        );
+    }
+
+
+    // ------------------------------------------- ComputerActorRider_ThinkNaturalAir
+
+    pub(crate) fn natural_air_f32s(c: &mut Cpu, a: u32, v: [f32; 4]) {
+        put_words(c, a, &v.map(f32::to_bits));
+    }
+
+
+    /// The AI in the air with the predictor in each state and heights around
+    /// the 0.5 / 1 / 3 thresholds (spin, flip, steer); the real
+    /// `Rand_NextGame` and `GetSteerTarget` run, `ComputeSteer`'s two virtual
+    /// calls are fakes (one may unwind).
+    #[test]
+    fn computer_actor_rider_think_natural_air_matches() {
+        covered(
+            ee::s00::f_0010b590__generated,
+            computer_actor_rider_think_natural_air,
+            240,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x0010_b590, 2);
+                c.pc = 0x0010_b590;
+                let ai = DATA + 0x8_0000;
+                let rider = DATA + 0x9_0000;
+                let air = DATA + 0xa_0000;
+                let vt = DATA + 0xb_0000;
+                let axis = DATA + 0xc_0000;
+                let motion = DATA + 0xc_1000;
+                let pad = DATA + 0xd_0000;
+                c.g[A0][0] = sx(ai);
+                c.g[A1][0] = sx(pad);
+                fill(c, &mut r, pad, 4);
+                // The game's random generator state (both parities).
+                fill(c, &mut r, 0x004f_f030, 6);
+                fill(c, &mut r, ai + 0xe00, 0x10);
+                c.bus.write32(ai + AI_RIDER, rider);
+                c.bus.write32(rider + RIDER_AIR, air);
+                c.bus
+                    .write32(air + AIR_STATE, [1u32, 3, 0, 2][(seed % 4) as usize]);
+                let heights = [-1.0f32, 0.0, 0.2, 0.5, 0.7, 1.0, 2.0, 3.0, 5.0];
+                let h = heights[((seed / 4) as usize) % heights.len()];
+                let ground = f32::from_bits(r.f32(10.0));
+                c.bus.write32(air + AIR_GROUND, ground.to_bits());
+                c.bus.write32(air + AIR_HEIGHT, (ground + h).to_bits());
+                // GetSteerTarget's inputs.
+                for off in [0x110u32, 0x490, 0x4b0] {
+                    natural_air_f32s(
+                        c,
+                        rider + off,
+                        [
+                            f32::from_bits(r.f32(2.0)),
+                            f32::from_bits(r.f32(2.0)),
+                            0.0,
+                            0.0,
+                        ],
+                    );
+                }
+                // ComputeSteer: model axis, two virtual calls (fakes).
+                c.bus.write32(rider + 0x6c0, vt);
+                c.bus
+                    .write16(vt + 0x10, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(vt + 0x14, FAKE);
+                c.bus
+                    .write16(vt + 0x28, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(vt + 0x2c, FAKE + 0x10);
+                c.bus.write32(fakes::LOG_RESULTS, axis);
+                c.bus.write32(fakes::LOG_RESULTS + 4, motion);
+                natural_air_f32s(c, motion, [0.0; 4]);
+                natural_air_f32s(
+                    c,
+                    rider + 0x1c0,
+                    [
+                        f32::from_bits(r.f32(2.0)),
+                        f32::from_bits(r.f32(2.0)),
+                        if seed % 3 == 0 { 1.0 } else { -f32::from_bits(r.f32(1.0)) },
+                        0.0,
+                    ],
+                );
+                natural_air_f32s(
+                    c,
+                    axis,
+                    [
+                        f32::from_bits(r.f32(2.0)),
+                        f32::from_bits(r.f32(2.0)),
+                        f32::from_bits(r.f32(2.0)),
+                        0.0,
+                    ],
+                );
+            },
+        );
+    }
+
+
+    /// WScriptFn_Crowd2dControl: the static defaults initialised or not;
+    /// 0..4 extra arguments over the handle and mode arguments (or none at
+    /// all), int arguments for float slots converted; the handle -1 (the
+    /// world's default object, present or not), an empty handle set, an
+    /// empty entry, or a found object; the modes bind (the real bind finds
+    /// no instance), none, add and remove (the real crowd manager has no
+    /// free or matching slot) and an unknown one.
+    #[test]
+    fn wscript_fn_crowd2d_control_matches() {
+        use crate::difftest::GAME_GP;
+        const DEFAULTS: u32 = 0x004f_bc80;
+        const ARG_TYPES: u32 = 0x0044_65d8;
+        const RESULT_NONE: u32 = 0x004c_9098;
+        check(
+            ee::s10::f_00303ba0__generated,
+            wscript_fn_crowd2d_control,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x30_3ba0, 0);
+                let gp = GAME_GP;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // Static defaults: fresh, or already set up (handle -1).
+                let inited = seed % 2;
+                w(c, gp + 0x26f0, inited);
+                fill(c, &mut r, DEFAULTS, 5);
+                w(c, DEFAULTS, u32::MAX);
+                w(c, DEFAULTS + 4, r.next_u32() % 5);
+                w(c, ARG_TYPES, 0);
+                w(c, ARG_TYPES + 4, 0);
+                for i in 2..5 {
+                    w(c, ARG_TYPES + 4 * i, r.next_u32() % 3);
+                }
+                fill(c, &mut r, RESULT_NONE, 3);
+                // Handle tables: gp+0x16c8 -> P -> Q; Q+8 -> sets.
+                let (p, q, sets) = (DATA + 0x2000, DATA + 0x2100, DATA + 0x2200);
+                let (set, entries, obj) = (DATA + 0x2800, DATA + 0x2900, DATA + 0x3000);
+                let world = DATA + 0x3800;
+                let crowd = DATA + 0x4000;
+                w(c, gp + 0x16c8, p);
+                w(c, p, q);
+                w(c, q + 8, sets);
+                w(c, sets + 4 * 3, set);
+                w(c, sets + 4 * 7, 0);
+                w(c, set + 0x1c, entries);
+                let found = (obj >> 2) << 8 | (r.next_u32() & 0xff);
+                w(c, entries + 4 * 5, if seed / 2 % 4 == 2 { r.next_u32() & 0xff } else { found });
+                w(c, gp + 0xce8, world);
+                w(c, world + 0x290, if seed % 9 == 4 { 0 } else { obj });
+                // The instance handle: its set is empty (bind finds nothing).
+                w(c, obj + 0x78, r.next_u32() & 0xffff_ff00 | 7);
+                // Crowd manager: 64 slots, none free (-1) and none matching.
+                w(c, gp.wrapping_sub(0x6f0), crowd);
+                for i in 0..64 {
+                    w(c, crowd + 8 + 4 * i, r.next_u32() & 0x7fff_fff0 | 0x10);
+                }
+                let id = match seed / 2 % 4 {
+                    0 => u32::MAX,
+                    1 => 5 << 8 | 7,
+                    _ => 5 << 8 | 3,
+                };
+                let mode = match seed / 8 % 5 {
+                    4 => r.next_u32() % 16,
+                    m => m,
+                };
+                // Arguments (16 bytes: slot, value, -, type).
+                let args = DATA + 0x100;
+                let extra = seed / 3 % 5;
+                let mut n = 0;
+                let mut put = |c: &mut Cpu, slot: u32, val: u32, ty: u32| {
+                    let a = args + 0x10 * n;
+                    c.bus.write32(a, slot);
+                    c.bus.write32(a + 4, val);
+                    c.bus.write32(a + 8, 0x5555);
+                    c.bus.write32(a + 0xc, ty);
+                    n += 1;
+                };
+                put(c, 0, id, 0);
+                put(c, 1, mode, 0);
+                for _ in 0..extra {
+                    let slot = 2 + r.next_u32() % 3;
+                    let val = r.next_u32();
+                    let ty = r.next_u32() % 3;
+                    put(c, slot, val, ty);
+                }
+                let argc = match seed % 11 {
+                    0 => 0,
+                    5 => sx(0xffff_fffe),
+                    _ => n as u64,
+                };
+                c.g[A0][0] = sx(DATA + 0x10);
+                c.g[A1][0] = argc;
+                c.g[A2][0] = sx(args);
+                c.pc = 0x0030_3ba0;
+            },
+        );
     }
 }
 

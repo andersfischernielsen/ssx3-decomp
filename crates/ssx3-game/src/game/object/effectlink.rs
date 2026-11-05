@@ -46,6 +46,11 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::addu;
+use crate::abi::reg;
+use crate::abi::set_reg;
+use crate::call::VSlot;
+use crate::game::lib::snd;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -102,6 +107,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_5ef8, dynamic_particle_modifier_transform_points, "DynamicParticleModifier_TransformPoints"),
     (0x0034_6070, dynamic_particle_modifier_render, "DynamicParticleModifier_Render"),
     (0x0034_62a0, halo_modifier_render, "HaloModifier_Render"),
+    (0x0034_5bf0, particle_modifier_save, "ParticleModifier_Save"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1171,6 +1177,117 @@ pub fn halo_modifier_render(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// ParticleModifier_Save (0x345bf0).
+
+/// `ParticleModifier_BaseSave(self, stream)`.
+pub(crate) const PMOD_BASE_SAVE: Callee = Callee { addr: 0x0034_5890, f: ee::s11::ParticleModifier_BaseSave };
+
+
+
+/// `Emitter_Save(emitter, stream)`.
+pub(crate) const PMOD_EMITTER_SAVE: u32 = 0x0037_0aa8;
+
+
+
+/// Stream vtable slot: `Write(this, const void* data, int size)`.
+pub(crate) const PMOD_STREAM_WRITE: u32 = 0x8;
+
+
+
+/// `ParticleModifier` field: the particle template (`void*`, 0xd8 bytes).
+pub(crate) const PMOD_TEMPLATE: u32 = 0x1e0;
+
+
+
+/// `ParticleModifier` field: `int` "uses a shared template" (nothing more
+/// is saved when set).
+pub(crate) const PMOD_SHARED: u32 = 0x1e4;
+
+
+
+/// `ParticleModifier` field: a 0x40-byte block (the transform).
+pub(crate) const PMOD_TRANSFORM: u32 = 0x10;
+
+
+
+/// `ParticleModifier` field: the emitter (inline).
+pub(crate) const PMOD_EMITTER: u32 = 0x50;
+
+
+
+/// `void ParticleModifier_Save(ParticleModifier* self, Stream* stream)`
+/// (0x345bf0): save the base part, then the "shared" flag (4 bytes); a
+/// modifier with its own template also writes the template (0xd8 bytes),
+/// its 0x40-byte transform and its emitter.
+///
+/// Frame 0x30 (s0 +0x20, s1 +0x10, ra +0).
+pub fn particle_modifier_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        let stream = reg(c, A1);
+        set_reg(c, S0, stream);
+        frame.save_ra(c, 0);
+        let this = reg(c, A0);
+        set_reg(c, S1, this);
+        PMOD_BASE_SAVE.call(c, 0x0034_5c0c)?;
+        pmod_stream_write(c, PMOD_SHARED, false, 4, 0x0034_5c28)?;
+        let shared = Addr(r32(c, S1)).off(PMOD_SHARED).lw(c);
+        set_reg(c, V0, shared);
+        if shared == 0 {
+            c.cycles += 18;
+            pmod_stream_write(c, PMOD_TEMPLATE, true, 0xd8, 0x0034_5c50)?;
+            pmod_stream_write(c, PMOD_TRANSFORM, false, 0x40, 0x0034_5c6c)?;
+            let emitter = addu(reg(c, S1), PMOD_EMITTER as u64);
+            set_reg(c, A0, emitter);
+            let stream = reg(c, S0);
+            set_reg(c, A1, stream);
+            call_ptr(c, PMOD_EMITTER_SAVE, 0x0034_5c78)?;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `stream->Write(self + field, size)` (or, with `deref`, the pointer
+/// stored at `self + field`), with the original's register use: the
+/// first write leaves the vtable in v0 and the function in v1, the later
+/// ones the other way round.
+pub(crate) fn pmod_stream_write(c: &mut Cpu, field: u32, deref: bool, size: u64, ret: u32) -> Flow {
+    let stream = reg(c, S0);
+    let this = reg(c, S1);
+    let vt = Addr(stream as u32).lw(c);
+    let data = if deref {
+        Addr(this as u32).off(field).lw(c)
+    } else {
+        addu(this, field as u64)
+    };
+    set_reg(c, A1, data);
+    set_reg(c, A2, size);
+    let write = VSlot::read(c, vt, PMOD_STREAM_WRITE);
+    if field == PMOD_SHARED {
+        set_reg(c, V0, vt);
+        set_reg(c, V1, write.func);
+    } else {
+        set_reg(c, V1, vt);
+        set_reg(c, V0, write.func);
+    }
+    set_reg(c, A0, write.this(stream));
+    call_ptr(c, write.func as u32, ret)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1763,5 +1880,29 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(halo);
             },
         );
+    }
+    use super::*;
+    use crate::game::lib::snd::tests as snd_tests;
+
+
+    /// `ParticleModifier_Save`: the real `ParticleModifier_BaseSave` and
+    /// `Emitter_Save`, the stream's writers fakes (some calls unwind);
+    /// shared-template flag set or clear.
+    #[test]
+    fn particle_modifier_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::fill;
+        covered(ee::s11::f_00345bf0__generated, particle_modifier_save, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x34_5bf0, 5);
+            c.pc = 0x0034_5bf0;
+            let this = DATA;
+            let stream = DATA + 0x400;
+            fill(c, &mut r, this, 0x80);
+            c.bus.write32(this + PMOD_SHARED, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+            let vt = vtable(c, &mut r, &[PMOD_STREAM_WRITE, 0x28]);
+            c.bus.write32(stream, vt);
+            c.g[A0][0] = sx(this);
+            c.g[A1][0] = sx(stream);
+        });
     }
 }

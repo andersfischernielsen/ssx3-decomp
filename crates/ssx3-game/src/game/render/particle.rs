@@ -412,6 +412,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0037_4ae0, bezier_patch_cache_mark_used2, "BezierPatchCache_MarkUsed2"),
     (0x0038_25f8, ps2_graphics_man_on_vblank_start, "PS2GraphicsMan_OnVBlankStart"),
     (0x0038_6640, ps2_graphics_man_reset_view_effects, "PS2GraphicsMan_v115"),
+    (0x0037_2500, vfx_tube_update, "VfxTube_Update"),
+    (0x0038_25c0, renderer_vblank_start_intc, "Renderer_VBlankStartIntc"),
 ];
 
 /// Same-shard direct callees used above.
@@ -11306,6 +11308,60 @@ pub fn ps2_graphics_man_reset_view_effects(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// VfxTube_Update (0x372500)
+
+/// `void VfxTube_Update(void)` (0x372500): per-frame tube effect update,
+/// which only refreshes the colour table (`VfxTube_UpdateColorTable`).
+pub fn vfx_tube_update(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(Callee {
+            addr: 0x0037_25b0,
+            f: ee::s12::VfxTube_UpdateColorTable,
+        }),
+        0x0037_2510,
+    );
+}
+
+
+
+/// `int Renderer_VBlankStartIntc(int cause, PS2GraphicsMan* man)` (0x3825c0):
+/// the VBlank-start interrupt handler: run the graphics manager's vblank
+/// hook (frame counter and buffer swap signal) and re-enable interrupts;
+/// any other cause is a fatal assertion (`break`) in the original.
+pub fn renderer_vblank_start_intc(c: &mut Cpu) {
+    const VBLANK_START: u64 = 2;
+    const ON_VBLANK_START: Callee = Callee {
+        addr: 0x0038_25f8,
+        f: ee::s12::f_003825f8,
+    };
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[V0][0] = VBLANK_START;
+        let is_vblank = c.g[A0][0] == c.g[V0][0];
+        frame.save_ra(c, 0);
+        if is_vblank {
+            c.cycles += 8;
+            c.g[A0][0] = c.g[A1][0];
+            ON_VBLANK_START.call(c, 0x0038_25dc)?;
+            c.ei();
+            frame.restore_ra(c, 0);
+            c.g[V0][0] = 1;
+            frame.close(c);
+        } else {
+            c.cycles += 1;
+            c.brk(0x0038_25d0, 0);
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14650,6 +14706,65 @@ pub(crate) mod tests {
                 fill(c, &mut r, 0x0050_4720, 4);
                 c.g[A0][0] = DATA as u64;
                 c.g[A1][0] = (r.next_u32() % 4) as u64;
+            },
+        );
+    }
+    use super::*;
+    // (fakes imported above)
+    use super::*;
+
+
+    // ------------------------------------------------------------- VfxTube_Update
+
+    /// The real `VfxTube_UpdateColorTable` runs: the tube colour unchanged
+    /// (nothing to do) or changed in one component (the table refill).
+    #[test]
+    fn vfx_tube_update_matches() {
+        check(ee::s12::f_00372500__generated, vfx_tube_update, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x0037_2500, 0);
+            c.pc = 0x0037_2500;
+            let rgb: [u32; 3] = [r.next_u32() % 256, r.next_u32() % 256, r.next_u32() % 256];
+            for (i, v) in rgb.iter().enumerate() {
+                c.bus.write32(GAME_GP + 0x10f0 + 4 * i as u32, *v);
+                // The last colour the table was built for.
+                let last = if seed % 4 == i as u32 { *v + 1 } else { *v };
+                c.bus.write32(GAME_GP + 0x1140 + 4 * i as u32, (last as f32).to_bits());
+            }
+        });
+    }
+
+
+    /// Renderer_VBlankStartIntc with cause 2 (any other cause is a fatal
+    /// `break`): the real vblank hook runs with swap state 4 or not and the
+    /// frame counter below/at/above the wait count, so the semaphore
+    /// signal (a fake syscall, unwinding on some seeds) is reached.
+    #[test]
+    fn renderer_vblank_start_intc_matches() {
+        const SWAP_STATE: u32 = 0x5a8c;
+        const WAIT_COUNT: u32 = 0x5ab8;
+        const COUNTER: u32 = 0x5abc;
+        const SEMA: u32 = 0x5ac8;
+        fakes::covered(
+            ee::s12::f_003825c0__generated,
+            renderer_vblank_start_intc,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x3825_c0, 1);
+                let gfx = DATA + 0x100;
+                let state = if seed % 4 == 3 { r.next_u32() % 8 } else { 4 };
+                let count = r.next_u32() % 6;
+                let wait = match seed / 4 % 3 {
+                    0 => count + 1,
+                    1 => r.next_u32() % 4,
+                    _ => count + 3,
+                };
+                c.bus.write32(gfx + SWAP_STATE, state);
+                c.bus.write32(gfx + COUNTER, count);
+                c.bus.write32(gfx + WAIT_COUNT, wait);
+                c.bus.write32(gfx + SEMA, r.next_u32() % 64);
+                c.g[A0][0] = 2;
+                c.g[A1][0] = sx(gfx);
+                c.pc = 0x0038_25c0;
             },
         );
     }

@@ -68,6 +68,11 @@ use crate::abi::ret;
 pub(crate) use crate::game::fe::ovstatemission2::ov_screen_set_widget_visibility;
 pub(crate) use crate::game::fe::splashmanager::oc230_gp;
 use crate::call;
+use crate::abi::addu;
+use crate::abi::reg;
+use crate::abi::set_reg;
+use crate::call::VSlot;
+use crate::game::lib::snd;
 
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_9970, rider_sphere_tree_dtor, "RiderSphereTree_dtor"),
@@ -205,6 +210,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_b2b8, rider_sphere_tree_collide_box, "RiderSphereTree_CollideBox"),
     (0x0032_c0f8, collide_mesh_leaf_triangles, "Collide_MeshLeafTriangles"),
     (0x0032_f8f0, coll_hull_collide_triangle, "CollHull_CollideTriangle"),
+    (0x0032_9a28, rider_sphere_tree_assign, "RiderSphereTree_Assign"),
+    (0x0032_f760, coll_hull_overlaps_aabb, "CollHull_OverlapsAABB"),
+    (0x0032_f840, coll_hull_transform, "CollHull_Transform"),
+    (0x0032_fac0, coll_hull_collide_aabb, "CollHull_CollideAABB"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5617,6 +5626,349 @@ pub fn coll_hull_collide_triangle(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// CollHull_Transform (0x32f840).
+
+/// `CollHull` field: the source sphere tree (`sSphereTreeNode*`).
+pub(crate) const HULL_SOURCE_TREE: u32 = 0x60;
+
+
+
+/// `CollHull` field: the transformed sphere tree (inline).
+pub(crate) const HULL_TREE: u32 = 0x70;
+
+
+
+/// `CollHull` field: "transformed" flag.
+pub(crate) const HULL_TRANSFORMED: u32 = 0x4;
+
+
+
+/// `RiderSphereTree_Assign(dst, src)`.
+pub(crate) const HULL_SPHERE_TREE_ASSIGN: u32 = 0x0032_9a28;
+
+
+
+/// `RiderSphereTree_Scale(tree, matrix, scale)`.
+pub(crate) const HULL_SPHERE_TREE_SCALE: u32 = 0x0032_9b90;
+
+
+
+/// `void CollHull_Transform(CollHull* hull, sSphereMtx* m, float scale)`
+/// (0x32f840): copy the hull's source sphere tree into its own tree,
+/// point the source at the copy, transform the copy by `m` and `scale`,
+/// and mark the hull transformed.
+///
+/// Frame 0x50 (s0 +0x30, s1 +0x20, s2 +0x10, ra +0, f20 +0x40).
+pub fn coll_hull_transform(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        let hull = reg(c, A0);
+        set_reg(c, S1, hull);
+        frame.save_ra(c, 0);
+        let matrix = reg(c, A1);
+        set_reg(c, S2, matrix);
+        frame.save_fpr(c, 20, 0x40);
+        let tree = addu(hull, HULL_TREE as u64);
+        set_reg(c, S0, tree);
+        c.f[20] = c.f[12];
+        set_reg(c, A0, tree);
+        let source = Addr(hull as u32).off(HULL_SOURCE_TREE).lw(c);
+        set_reg(c, A1, source);
+        call_ptr(c, HULL_SPHERE_TREE_ASSIGN, 0x0032_f874)?;
+        let hull = reg(c, S1);
+        let tree = reg(c, S0);
+        Addr(hull as u32).off(HULL_SOURCE_TREE).sw(c, tree);
+        set_reg(c, A0, tree);
+        let matrix = reg(c, S2);
+        set_reg(c, A1, matrix);
+        c.f[12] = c.f[20];
+        call_ptr(c, HULL_SPHERE_TREE_SCALE, 0x0032_f888)?;
+        set_reg(c, V0, 1);
+        frame.restore(c, S0, 0x30);
+        let hull = reg(c, S1);
+        Addr(hull as u32).off(HULL_TRANSFORMED).sw(c, 1);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// RiderSphereTree_Assign (0x329a28, riderspheretree.cpp)
+
+/// Sphere tree node fields: type, center (quad), radius, user word, parent,
+/// child count, child spheres (0x20 bytes each).
+pub(crate) const OC264_RST_TYPE: u32 = 0x0;
+
+
+pub(crate) const OC264_RST_CENTER: u32 = 0x10;
+
+
+pub(crate) const OC264_RST_RADIUS: u32 = 0x20;
+
+
+pub(crate) const OC264_RST_USER: u32 = 0x24;
+
+
+pub(crate) const OC264_RST_PARENT: u32 = 0x28;
+
+
+pub(crate) const OC264_RST_COUNT: u32 = 0x2c;
+
+
+pub(crate) const OC264_RST_CHILDREN: u32 = 0x30;
+
+
+
+/// `EA_MemCopy` (reached through the function table).
+pub(crate) const OC264_EA_MEM_COPY: u32 = 0x003e_6574;
+
+
+
+/// `RiderSphereTree* RiderSphereTree_Assign(RiderSphereTree* self, const
+/// RiderSphereTree* src)` (0x329a28): copy assignment: the header fields,
+/// then `count` child spheres (`EA_MemCopy(self->children, src->children,
+/// count * 0x20)`); returns `self`.
+pub fn rider_sphere_tree_assign(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x20);
+        c.g[A3][0] = c.g[A1][0];
+        let src = r32(c, A3);
+        frame.save(c, S0, 0x10);
+        c.g[A1][0] = sx(src.wrapping_add(OC264_RST_CHILDREN));
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = r32(c, S0);
+        c.g[A0][0] = sx(this.wrapping_add(OC264_RST_CHILDREN));
+        let kind = Addr(src.wrapping_add(OC264_RST_TYPE)).lw(c);
+        c.g[V0][0] = kind;
+        Addr(this.wrapping_add(OC264_RST_TYPE)).sw(c, kind);
+        c.lwc1(0, src.wrapping_add(OC264_RST_RADIUS));
+        c.swc1(0, this.wrapping_add(OC264_RST_RADIUS));
+        c.lq(V0, src.wrapping_add(OC264_RST_CENTER));
+        c.sq(V0, this.wrapping_add(OC264_RST_CENTER));
+        let user = Addr(src.wrapping_add(OC264_RST_USER)).lw(c);
+        c.g[V1][0] = user;
+        Addr(this.wrapping_add(OC264_RST_USER)).sw(c, user);
+        let count = Addr(src.wrapping_add(OC264_RST_COUNT)).lw(c);
+        Addr(this.wrapping_add(OC264_RST_COUNT)).sw(c, count);
+        c.g[A2][0] = sx((count as u32) << 5);
+        let parent = Addr(src.wrapping_add(OC264_RST_PARENT)).lw(c);
+        c.g[V0][0] = parent;
+        Addr(this.wrapping_add(OC264_RST_PARENT)).sw(c, parent);
+        call_ptr(c, OC264_EA_MEM_COPY, 0x0032_9a7c)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// CollHull_OverlapsAABB (0x32f760)
+
+/// Collision hull -> its bounding sphere (`{center: vec4 @0x10, radius @0x20}`).
+pub(crate) const HULL_SPHERE: u32 = 0x60;
+
+
+pub(crate) const HULL_SPHERE_CENTER: u32 = 0x10;
+
+
+pub(crate) const HULL_SPHERE_RADIUS: u32 = 0x20;
+
+
+
+/// `c.le.s a, b` with the condition bit latched.
+pub(crate) fn hull_le(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
+    let le = a.le(b);
+    abi::set_fcc(c, le);
+    le
+}
+
+
+
+/// `bool CollHull_OverlapsAABB(CollHull *hull, const vec4 *min, const vec4 *max)`
+/// (0x32f760): whether the box around the hull's bounding sphere
+/// (`center -+ radius` on x, y, z) overlaps the box `[min, max]`. The box
+/// corners are built on the stack with VU0 (`vsub`/`vadd`), then x, y and z
+/// are compared in turn, stopping at the first separated axis.
+pub fn coll_hull_overlaps_aabb(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::Src;
+    c.cycles += 26;
+    let hull = Addr(abi::arg(c, 0));
+    let min = Addr(abi::arg(c, 1));
+    let max = Addr(abi::arg(c, 2));
+    let sphere = hull.off(HULL_SPHERE).lw(c);
+    c.g[V1][0] = sphere;
+    let frame = Frame::open(c, 0x40);
+    c.g[A3][0] = 0;
+    let radius = Addr(sphere as u32).off(HULL_SPHERE_RADIUS).read_fpu(c);
+    c.f[0] = radius.0;
+    // (r, r, r, 0) at sp.
+    let extent = frame.at(c, 0);
+    Addr(extent).off(0xc).sw(c, 0);
+    Addr(extent).off(8).write_fpu(c, radius);
+    Addr(extent).write_fpu(c, radius);
+    Addr(extent).off(4).write_fpu(c, radius);
+    // Low corner: center - extent (to sp+0x20, copied to sp+0x10).
+    let lo = frame.at(c, 0x10);
+    let hi = frame.at(c, 0x20);
+    let tmp_hi = frame.at(c, 0x30);
+    c.lqc2(3, (sphere as u32).wrapping_add(HULL_SPHERE_CENTER));
+    c.lqc2(4, extent);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, hi);
+    c.lq(V0, hi);
+    let sphere = hull.off(HULL_SPHERE).lw(c);
+    c.g[V1][0] = sphere;
+    c.sq(V0, lo);
+    // High corner: center + extent (to sp+0x30, copied to sp+0x20).
+    c.lqc2(3, (sphere as u32).wrapping_add(HULL_SPHERE_CENTER));
+    c.lqc2(4, extent);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, tmp_hi);
+    let max_x = max.read_fpu(c);
+    c.f[1] = max_x.0;
+    let lo_x = Addr(lo).read_fpu(c);
+    c.f[0] = lo_x.0;
+    c.lq(V0, tmp_hi);
+    let mut overlap = hull_le(c, lo_x, max_x);
+    c.sq(V0, hi);
+
+    // Per axis: lo <= max, then min <= hi (the next value loads in the
+    // branch delay slot, also when the test fails).
+    if overlap {
+        for axis in 0..3u32 {
+            if axis > 0 {
+                c.cycles += 5;
+                let lo_a = FpuF32(c.f[0]);
+                let max_a = max.off(4 * axis).read_fpu(c);
+                c.f[1] = max_a.0;
+                overlap = hull_le(c, lo_a, max_a);
+                let hi_a = Addr(hi).off(4 * axis).read_fpu(c);
+                c.f[0] = hi_a.0;
+                if !overlap {
+                    break;
+                }
+            } else {
+                c.cycles += 1;
+            }
+            c.cycles += 5;
+            let min_a = min.off(4 * axis).read_fpu(c);
+            c.f[1] = min_a.0;
+            let hi_a = if axis == 0 {
+                let h = Addr(hi).read_fpu(c);
+                c.f[0] = h.0;
+                h
+            } else {
+                FpuF32(c.f[0])
+            };
+            overlap = hull_le(c, min_a, hi_a);
+            if axis < 2 {
+                let lo_next = Addr(lo).off(4 * (axis + 1)).read_fpu(c);
+                c.f[0] = lo_next.0;
+            }
+            if !overlap {
+                break;
+            }
+        }
+    }
+    if overlap {
+        c.g[A3][0] = 1;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.g[A3][0];
+    frame.close(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// CollHull_CollideAABB (0x32fac0)
+
+/// The hull's sphere tree.
+pub(crate) const COLL_HULL_SPHERE: u32 = 0x60;
+
+
+/// Hit record: normal at +0, push direction at +0x10, its length at +0x40.
+pub(crate) const COLL_HULL_HIT_DIR: u32 = 0x10;
+
+
+pub(crate) const COLL_HULL_HIT_LEN: u32 = 0x40;
+
+
+pub(crate) const COLL_HULL_COLLIDE_BOX: u32 = 0x0032_b2b8;
+
+
+
+/// `bool CollHull_CollideAABB(CollHull* self, Vec4* boxMin, Vec4* boxMax,
+/// Hit* hit)` (0x32fac0): collide the hull's sphere tree with the box
+/// (`RiderSphereTree_CollideBox(sphere, min, max, &hit->dir, hit)`); on a
+/// hit store the push direction's length at `+0x40` and normalise it (VU0
+/// `vsqrt`, then `vdiv` by the length). Returns whether it hit.
+pub fn coll_hull_collide_aabb(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A3][0];
+        c.g[A3][0] = sx(r32(c, S0).wrapping_add(COLL_HULL_HIT_DIR));
+        c.g[T0][0] = c.g[S0][0];
+        c.g[A0][0] = Addr(r32(c, A0).wrapping_add(COLL_HULL_SPHERE)).lw(c);
+        call_ptr(c, COLL_HULL_COLLIDE_BOX, 0x0032_fae0)?;
+        let hit = c.g[V0][0] != 0;
+        c.g[V0][0] = 0;
+        if hit {
+            c.cycles += 19;
+            let dir = r32(c, S0).wrapping_add(COLL_HULL_HIT_DIR);
+            // len = |dir.xyz|
+            c.lqc2(3, dir);
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().sqrt(4, 0);
+            c.vu0().waitq();
+            c.cfc2(V0, 22);
+            c.mtc1(V0, 0);
+            c.swc1(0, r32(c, S0).wrapping_add(COLL_HULL_HIT_LEN));
+            c.g[V0][0] = 0x1;
+            // dir /= len
+            c.mfc1(V1, 0);
+            c.qmtc2(V1, 3);
+            c.vu0().div(0, 3, 3, 0);
+            c.lqc2(4, dir);
+            c.vu0().waitq();
+            c.vu0().mul(0b1111, 5, 4, Src::Q);
+            c.sqc2(5, dir);
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7128,5 +7480,186 @@ pub(crate) mod tests {
                 c.g[T3][0] = sx(LEN);
             },
         );
+    }
+    use super::*;
+    use crate::game::lib::snd::tests as snd_tests;
+    use super::*;
+    use super::*;
+    // (fakes imported above)
+    use crate::difftest::{elf_image};
+    use super::*;
+
+
+    /// `CollHull_Transform` with the real `RiderSphereTree_Assign` (and its
+    /// memcpy) and `RiderSphereTree_Scale`: source trees of 0..5 child
+    /// spheres, random matrices and scales.
+    #[test]
+    fn coll_hull_transform_matches() {
+        use crate::difftest::fill;
+        check(ee::s11::f_0032f840__generated, coll_hull_transform, 200, &|c, seed| {
+            let mut r = Rng(0x0032_f840 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            let hull = DATA;
+            let matrix = DATA + 0x1000;
+            let source = DATA + 0x2000;
+            c.g[A0][0] = sx(hull);
+            c.g[A1][0] = sx(matrix);
+            c.f[12] = if seed % 7 == 0 { r.edge_f32() } else { r.f32(4.0) };
+            for i in 0..16 {
+                c.bus.write32(matrix + 4 * i, r.f32(100.0));
+            }
+            fill(c, &mut r, hull, 0x70 + 0x30 + 6 * 0x20);
+            c.bus.write32(hull + HULL_SOURCE_TREE, source);
+            fill(c, &mut r, source, 0x30);
+            // Centre, radius and children: floats; the child count small.
+            for i in 0..4 + 6 * 8 {
+                let a = source + 0x10 + 4 * i;
+                if a != source + 0x2c {
+                    c.bus.write32(a, r.f32(500.0));
+                }
+            }
+            c.bus.write32(source + 0x2c, seed % 6);
+            c.pc = 0x0032_f840;
+        });
+    }
+
+
+    /// RiderSphereTree_Assign: random headers with 0..5 children, copied
+    /// by the real EA_MemCopy.
+    #[test]
+    fn rider_sphere_tree_assign_matches() {
+        check(ee::s10::f_00329a28__generated, rider_sphere_tree_assign, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x329a_28, 0);
+            c.pc = 0x0032_9a28;
+            let this = DATA + 0x1000;
+            let src = DATA + 0x2000;
+            c.g[A0][0] = sx(this);
+            c.g[A1][0] = sx(src);
+            fill(c, &mut r, this, 0xd0 / 4);
+            fill(c, &mut r, src, 0xd0 / 4);
+            c.bus.write32(src + OC264_RST_COUNT, seed % 6);
+        });
+    }
+
+
+    // ------------------------------------------------------- CollHull_OverlapsAABB
+
+    /// A hull's bounding sphere against a box that overlaps it, with one of
+    /// the six axis tests made to fail (`seed % 7`; 6 = overlap), plus some
+    /// edge-case floats.
+    #[test]
+    fn coll_hull_overlaps_aabb_matches() {
+        check(
+            ee::s11::f_0032f760__generated,
+            coll_hull_overlaps_aabb,
+            280,
+            &|c, seed| {
+                let mut r = Rng(0x0032_f760 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.pc = 0x0032_f760;
+                let hull = DATA;
+                let sphere = DATA + 0x100;
+                let min = DATA + 0x200;
+                let max = DATA + 0x300;
+                fill(c, &mut r, hull, 0x20);
+                c.bus.write32(hull + HULL_SPHERE, sphere);
+                let center = [
+                    (r.next_u32() % 16) as f32 - 8.0,
+                    (r.next_u32() % 16) as f32 - 8.0,
+                    (r.next_u32() % 16) as f32 - 8.0,
+                    f32::from_bits(r.f32(4.0)),
+                ];
+                let rad = (r.next_u32() % 4) as f32 + 0.5;
+                put_words(c, sphere + HULL_SPHERE_CENTER, &center.map(f32::to_bits));
+                c.bus.write32(sphere + HULL_SPHERE_RADIUS, rad.to_bits());
+                let mut lo = [0f32; 3];
+                let mut hi = [0f32; 3];
+                let mut mn = [0f32; 3];
+                let mut mx = [0f32; 3];
+                for a in 0..3 {
+                    lo[a] = center[a] - rad;
+                    hi[a] = center[a] + rad;
+                    // Touching exactly on some seeds (the `<=`).
+                    mn[a] = if seed % 5 == 0 { hi[a] } else { center[a] - 0.25 };
+                    mx[a] = if seed % 5 == 1 { lo[a] } else { center[a] + 0.25 };
+                }
+                let fail = seed % 7;
+                if fail < 6 {
+                    let a = (fail / 2) as usize;
+                    if fail % 2 == 0 {
+                        mx[a] = lo[a] - 1.0;
+                    } else {
+                        mn[a] = hi[a] + 1.0;
+                    }
+                }
+                let mut put = |c: &mut Cpu, at: u32, v: [f32; 3]| {
+                    put_words(c, at, &v.map(f32::to_bits));
+                    c.bus.write32(at + 12, r.next_u32());
+                };
+                put(c, min, mn);
+                put(c, max, mx);
+                if seed % 11 == 10 {
+                    let mut r2 = Rng(seed as u64 * 77 + 1);
+                    for i in 0..3 {
+                        c.bus.write32(min + 4 * i, r2.edge_f32());
+                        c.bus.write32(max + 4 * i, r2.edge_f32());
+                    }
+                    c.bus.write32(sphere + HULL_SPHERE_RADIUS, r2.edge_f32());
+                }
+                c.g[A0][0] = sx(hull);
+                c.g[A1][0] = sx(min);
+                c.g[A2][0] = sx(max);
+            },
+        );
+    }
+
+
+    /// CollHull_CollideAABB with the real RiderSphereTree_CollideBox (the
+    /// fixture of its own test): boxes around the origin, the hull's sphere
+    /// inside (hit: length and normalised direction) or outside (miss),
+    /// with or without a sub-sphere mask.
+    #[test]
+    fn coll_hull_collide_aabb_matches() {
+        use crate::difftest::{fill, put_words, scramble, Rng};
+        const HULL: u32 = DATA + 0x1000;
+        const BOX: u32 = DATA + 0x2000;
+        const SPHERE: u32 = DATA + 0x3000;
+        const HIT: u32 = DATA + 0x4000;
+        crate::difftest::check(ee::s11::f_0032fac0__generated, coll_hull_collide_aabb, 300, &|c, seed| {
+            let mut r = Rng(0x32_fac0 ^ (seed as u64) << 24);
+            scramble(c, &mut r);
+            c.g[GP][0] = sx(GAME_GP);
+            c.pc = 0x0032_fac0;
+            put_words(c, GAME_GP - 0x2df0, &[0x7149_f2ca, 0x7149_f2ca]);
+            let one = 1.0f32.to_bits();
+            put_vec(c, 0x004f_f140, [one, 0, 0, 0]);
+            put_vec(c, 0x004f_f150, [0, one, 0, 0]);
+            put_vec(c, 0x004f_f160, [0, 0, one, 0]);
+            let coord = |r: &mut Rng, lo: f32, hi: f32| {
+                (lo + (r.next_u32() % 1000) as f32 * (hi - lo) / 1000.0).to_bits()
+            };
+            let outside = seed % 5 == 0;
+            for i in 0..3 {
+                c.bus.write32(BOX + 4 * i, coord(&mut r, -10.0, 0.0));
+                c.bus.write32(BOX + 0x10 + 4 * i, coord(&mut r, 0.0, 10.0));
+                let centre = if outside { coord(&mut r, 20.0, 30.0) } else { coord(&mut r, -9.0, 9.0) };
+                c.bus.write32(SPHERE + 0x10 + 4 * i, centre);
+            }
+            c.bus.write32(SPHERE + 0x1c, one);
+            c.bus.write32(SPHERE + 0x20, coord(&mut r, 0.0, 5.0));
+            let (mask, count) = if seed % 3 == 0 {
+                (0, r.next_u32())
+            } else {
+                ((r.next_u32() & 0x7f), (r.next_u32() % 8).wrapping_sub(1))
+            };
+            c.bus.write32(SPHERE + 0x28, mask);
+            c.bus.write32(SPHERE + 0x2c, count);
+            fill(c, &mut r, HIT, 0x14);
+            c.bus.write32(HULL + COLL_HULL_SPHERE, SPHERE);
+            c.g[A0][0] = sx(HULL);
+            c.g[A1][0] = sx(BOX);
+            c.g[A2][0] = sx(BOX + 0x10);
+            c.g[A3][0] = sx(HIT);
+        });
     }
 }

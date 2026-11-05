@@ -219,6 +219,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_6128, mod_obj_v25, "ModObj_v25"),
     (0x0035_7bf8, multi_particle_man_update, "MultiParticleMan_Update"),
     (0x0035_7c50, multi_particle_man_emit_all, "MultiParticleMan_EmitAll"),
+    (0x0035_6a28, mod_obj_v38, "ModObj_v38"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3996,6 +3997,56 @@ pub fn multi_particle_man_update(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// ModObj_v38 (0x356a28)
+
+/// ModObj: its move-node block (+0x1c), whose first word is the node.
+pub(crate) const MODOBJ_V38_BLOCK: u32 = 0x1c;
+
+
+/// The node's vtable slot called (delta at +0xa0, function at +0xa4).
+pub(crate) const MODOBJ_V38_SLOT: u32 = 0xa0;
+
+
+
+/// `int ModObj_v38(ModObj* self)` (0x356a28): forward to the move-node's
+/// virtual slot 0xa0 (its `delta`-adjusted `this`); 0 when there is no
+/// block or no node.
+pub fn mod_obj_v38(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, A0);
+        c.g[V1][0] = Addr(this.wrapping_add(MODOBJ_V38_BLOCK)).lw(c);
+        c.g[V0][0] = 0;
+        if c.g[V1][0] == 0 {
+            c.cycles += 1;
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = Addr(r32(c, V1)).lw(c);
+            if c.g[A1][0] != 0 {
+                c.cycles += 7;
+                let node = r32(c, A1);
+                c.g[V1][0] = Addr(node).lw(c);
+                let vt = r32(c, V1);
+                c.g[A0][0] = Addr(vt.wrapping_add(MODOBJ_V38_SLOT)).lh(c);
+                c.g[V0][0] = Addr(vt.wrapping_add(MODOBJ_V38_SLOT + 4)).lw(c);
+                let target = r32(c, V0);
+                c.g[A0][0] = sx(node.wrapping_add(r32(c, A0)));
+                call_ptr(c, target, 0x0035_6a5c)?;
+            }
+        }
+        c.cycles += 2;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5729,6 +5780,37 @@ pub(crate) mod tests {
                 let sys = DATA + 0x8000 + 0x400 * k;
                 oc258_w32(c, p + 0x10, if (seed + k) % 2 == 0 { 0 } else { sys });
                 oc258_w32(c, sys, 0);
+            }
+        });
+    }
+    use super::*;
+
+
+    /// ModObj_v38: no block, a block without a node, or a node whose slot
+    /// 0xa0 is a fake method (which may unwind).
+    #[test]
+    fn mod_obj_v38_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::DATA;
+        covered(ee::s11::f_00356a28__generated, mod_obj_v38, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x0035_6a28, 1);
+            c.pc = 0x0035_6a28;
+            let this = DATA + 0x100;
+            let block = DATA + 0x200;
+            let node = DATA + 0x300;
+            c.g[A0][0] = sx(this);
+            match seed % 4 {
+                0 => c.bus.write32(this + MODOBJ_V38_BLOCK, 0),
+                1 => {
+                    c.bus.write32(this + MODOBJ_V38_BLOCK, block);
+                    c.bus.write32(block, 0);
+                }
+                _ => {
+                    c.bus.write32(this + MODOBJ_V38_BLOCK, block);
+                    c.bus.write32(block, node);
+                    let vt = vtable(c, &mut r, &[MODOBJ_V38_SLOT]);
+                    c.bus.write32(node, vt);
+                }
             }
         });
     }

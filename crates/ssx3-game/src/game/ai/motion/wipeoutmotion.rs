@@ -56,6 +56,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderWipeoutState_UpdateRootPose",
     ),
     (0x0013_8960, rider_wipeout_state_cast_ground_ray, "RiderWipeoutState_CastGroundRay"),
+    (0x0013_7860, rider_wipeout_state_post_update_air, "RiderWipeoutState_PostUpdateAir"),
 ];
 
 /// `RiderWipeoutState_LoadState(self, iface)` (0x138b10): `0x40`.
@@ -486,6 +487,520 @@ pub fn rider_wipeout_state_cast_ground_ray(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// RiderWipeoutState_PostUpdateAir (0x137860)
+
+/// The wipeout state's rider.
+pub(crate) const PUA_STATE_RIDER: u32 = 0x40;
+
+
+/// Rider fields.
+pub(crate) const PUA_R_POS: u32 = 0x110;
+
+
+pub(crate) const PUA_R_VEL: u32 = 0x1e0;
+
+
+pub(crate) const PUA_R_GROUND_NORMAL: u32 = 0x370;
+
+
+pub(crate) const PUA_R_3D0: u32 = 0x3d0;
+
+
+pub(crate) const PUA_R_SURFACE: u32 = 0x438;
+
+
+pub(crate) const PUA_R_GROUND_HEIGHT: u32 = 0x454;
+
+
+pub(crate) const PUA_R_CONTACT_POINT: u32 = 0x460;
+
+
+pub(crate) const PUA_R_VTABLE: u32 = 0x6c0;
+
+
+pub(crate) const PUA_R_HANDLER: u32 = 0x77c;
+
+
+pub(crate) const PUA_R_AIR: u32 = 0x788;
+
+
+pub(crate) const PUA_R_OVERLAP: u32 = 0x860;
+
+
+pub(crate) const PUA_R_WALL_HINT: u32 = 0x868;
+
+
+pub(crate) const PUA_R_SPHERE_TREE: u32 = 0xaa0;
+
+
+/// Rider handler: "landed" flag and landing velocity.
+pub(crate) const PUA_H_LANDED: u32 = 0x314;
+
+
+pub(crate) const PUA_H_LAND_VEL: u32 = 0x320;
+
+
+/// Stack frame: hit A (the sphere's closest contact; its normal at +0x10),
+/// the collision hull, hit B (the ground ray: position, normal, +0x20,
+/// surface at +0x4c, object at +0x50) and three vector temporaries.
+pub(crate) const PUA_HIT_A_NORMAL: u32 = 0x10;
+
+
+pub(crate) const PUA_HULL: u32 = 0x80;
+
+
+pub(crate) const PUA_HIT_B: u32 = 0x3a0;
+
+
+pub(crate) const PUA_HIT_B_NORMAL: u32 = 0x3b0;
+
+
+pub(crate) const PUA_HIT_B_20: u32 = 0x3c0;
+
+
+pub(crate) const PUA_HIT_B_SURFACE: u32 = 0x3ec;
+
+
+pub(crate) const PUA_HIT_B_OBJECT: u32 = 0x3f0;
+
+
+pub(crate) const PUA_T420: u32 = 0x420;
+
+
+pub(crate) const PUA_T430: u32 = 0x430;
+
+
+pub(crate) const PUA_T440: u32 = 0x440;
+
+
+pub(crate) const PUA_T450: u32 = 0x450;
+
+
+
+pub(crate) const PUA_CAST_GROUND_RAY: Callee = Callee {
+    addr: 0x0013_8960,
+    f: ee::s01::RiderWipeoutState_CastGroundRay,
+};
+
+
+pub(crate) const PUA_COLL_HULL_CTOR: u32 = 0x0032_f650;
+
+
+pub(crate) const PUA_FIND_CLOSEST_CONTACT: u32 = 0x0033_42d0;
+
+
+pub(crate) const PUA_CLEAR_AIR_TIME: u32 = 0x0011_3998;
+
+
+pub(crate) const PUA_TRIGGER_SPRAY: u32 = 0x0011_1aa0;
+
+
+pub(crate) const PUA_TRANSLATE: u32 = 0x0010_6538;
+
+
+pub(crate) const PUA_AIR_PRIME: u32 = 0x0011_35b8;
+
+
+pub(crate) const PUA_UPDATE_BOUNDS: u32 = 0x0011_e150;
+
+
+pub(crate) const PUA_WALL_COLLISION: u32 = 0x0010_5398;
+
+
+pub(crate) const PUA_RIDER_COLLISIONS: u32 = 0x0010_7888;
+
+
+pub(crate) const PUA_COLL_HULL_DTOR: u32 = 0x0032_f708;
+
+
+
+/// The game's VU0 dot-product macro sequence: `vf3 = *a`, `vf5 = *b`,
+/// x*x + y*y + z*z into vf4.w, moved to GPR `gpr` (`qmfc2`).
+pub(crate) fn pua_dot(c: &mut Cpu, a: u32, b: u32, gpr: usize) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    c.lqc2(3, a);
+    c.lqc2(5, b);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(gpr, 4);
+}
+
+
+
+/// `*dst = *v * f[fs]` through VU0 (`mfc1 gpr; qmtc2 gpr, vf3; vmul.xyzw
+/// vf5, vf4, vf3x`).
+pub(crate) fn pua_scale(c: &mut Cpu, v: u32, fs: usize, gpr: usize, dst: u32) {
+    use ssx3_ee_rt::vu0::{Src, X};
+    c.mfc1(gpr, fs);
+    c.lqc2(4, v);
+    c.qmtc2(gpr, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, dst);
+}
+
+
+
+/// `*dst = *a - *b` (`vsub`) or `*a + *b` (`vadd`) through VU0.
+pub(crate) fn pua_add_sub(c: &mut Cpu, a: u32, b: u32, dst: u32, sub: bool) {
+    use ssx3_ee_rt::vu0::Src;
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    if sub {
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    } else {
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    }
+    c.sqc2(5, dst);
+}
+
+
+
+/// `self->rider` (read from s2 each time, as the original does).
+pub(crate) fn pua_rider(c: &mut Cpu) -> u64 {
+    Addr(r32(c, S2)).off(PUA_STATE_RIDER).lw(c)
+}
+
+
+
+/// `void RiderWipeoutState_PostUpdateAir(RiderWipeoutState *self)`
+/// (0x137860): after a wipeout tumble step in the air, test the rider's
+/// collision sphere against the world. On a contact, cast a ground ray
+/// along the contact normal: a ground hit (ray distance >= 0.4) the rider
+/// moves into (`vel . n <= 0`) within 10 units lands him (air time cleared,
+/// dynamic spray, the handler's landed flag and landing velocity, ground
+/// normal / surface / contact point / height, the normal velocity removed,
+/// the hit object pushed by the impulse scaled by the world's int at +0x10,
+/// pushed out of the ground, and `self->state = 0`). Otherwise the rider is
+/// pushed out of the contact, loses the velocity into it, and the air
+/// predictor is re-primed. Then always: bounds, wall and rider collisions,
+/// and the hull is destroyed.
+pub fn rider_wipeout_state_post_update_air(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 36;
+        let frame = Frame::open(c, 0x4d0);
+        let at = |c: &Cpu, o: u32| sp(c).wrapping_add(o);
+        frame.save(c, S1, 0x490);
+        frame.save(c, S2, 0x480);
+        c.g[S1][0] = sx(at(c, PUA_HULL));
+        frame.save(c, S3, 0x470);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_fpr(c, 23, 0x4c8);
+        c.g[S3][0] = c.g[S1][0];
+        frame.save_fpr(c, 21, 0x4b8);
+        frame.save_ra(c, 0x460);
+        frame.save_fpr(c, 22, 0x4c0);
+        frame.save_fpr(c, 20, 0x4b0);
+        frame.save(c, S0, 0x4a0);
+        c.g[S0][0] = pua_rider(c);
+        c.mtc1(0, 23);
+        // is_ai = rider->vtable->IsHuman() ^ 1 (slot 0x40).
+        let rider = r32(c, S0);
+        c.g[V1][0] = Addr(rider).off(PUA_R_VTABLE).lw(c);
+        c.g[A1][0] = sx(rider.wrapping_add(PUA_R_VTABLE));
+        c.g[A0][0] = Addr(r32(c, V1)).off(0x40).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(0x44).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0013_78b4)?;
+        // CollHull hull(rider->sphere_tree, !human)
+        c.g[A1][0] = Addr(r32(c, S0)).off(PUA_R_SPHERE_TREE).lw(c);
+        c.g[A2][0] = c.g[V0][0] ^ 1;
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, PUA_COLL_HULL_CTOR, 0x0013_78c4)?;
+        // d = FindClosestContact(rider->overlap, &hull, &hit_a, wall_hint)
+        c.g[V1][0] = pua_rider(c);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A3][0] = Addr(r32(c, V1)).off(PUA_R_WALL_HINT).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1)).off(PUA_R_OVERLAP).lw(c);
+        call_ptr(c, PUA_FIND_CLOSEST_CONTACT, 0x0013_78dc)?;
+        c.mov_s(21, 0);
+        c.c_le_s(23, 21);
+        let contact = c.fcc();
+        c.g[S0][0] = sx(at(c, PUA_HIT_B));
+        if contact {
+            pua_contact(c)?;
+        }
+
+        c.cycles += 22;
+        c.g[A0][0] = pua_rider(c);
+        c.g[A1][0] = 0;
+        call_ptr(c, PUA_UPDATE_BOUNDS, 0x0013_7cc8)?;
+        c.g[A0][0] = pua_rider(c);
+        c.g[A1][0] = 0;
+        call_ptr(c, PUA_WALL_COLLISION, 0x0013_7cd4)?;
+        c.g[A0][0] = pua_rider(c);
+        call_ptr(c, PUA_RIDER_COLLISIONS, 0x0013_7cdc)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, PUA_COLL_HULL_DTOR, 0x0013_7ce8)?;
+        frame.restore(c, S0, 0x4a0);
+        frame.restore(c, S1, 0x490);
+        frame.restore(c, S2, 0x480);
+        frame.restore(c, S3, 0x470);
+        frame.restore_ra(c, 0x460);
+        frame.restore_fpr(c, 23, 0x4c8);
+        frame.restore_fpr(c, 22, 0x4c0);
+        frame.restore_fpr(c, 21, 0x4b8);
+        frame.restore_fpr(c, 20, 0x4b0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// The sphere touched something (f21 = its distance): cast the ground ray
+/// and land, or push out of the contact and re-prime the air predictor.
+pub(crate) fn pua_contact(c: &mut Cpu) -> crate::call::Flow {
+    let s = sp(c);
+    // t = CastGroundRay(self, &hit_b, &hit_a.normal)
+    c.cycles += 11;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A2][0] = sx(s + PUA_HIT_A_NORMAL);
+    PUA_CAST_GROUND_RAY.call(c, 0x0013_7900)?;
+    c.mov_s(22, 23);
+    c.mov_s(20, 0);
+    c.lwc1(0, r32(c, GP).wrapping_sub(0x7268)); // 0.4
+    c.c_le_s(0, 20);
+    let ground = c.fcc();
+    c.mov_s(1, 22);
+    if ground {
+        // f22 = vel . n, f1 = (pos - hit) . n
+        c.cycles += 26;
+        c.g[V0][0] = pua_rider(c);
+        let rider = r32(c, V0);
+        pua_dot(c, rider.wrapping_add(PUA_R_VEL), s + PUA_HIT_B_NORMAL, V1);
+        c.mtc1(V1, 22);
+        pua_add_sub(c, rider.wrapping_add(PUA_R_POS), s + PUA_HIT_B, s + PUA_T430, true);
+        c.lq(V1, s + PUA_T430);
+        c.sq(V1, s + PUA_T420);
+        pua_dot(c, s + PUA_T420, s + PUA_HIT_B_NORMAL, V0);
+        c.mtc1(V0, 1);
+        c.c_le_s(0, 20);
+    }
+
+    c.cycles += 2;
+    let mut land = c.fcc();
+    if land {
+        c.cycles += 3;
+        c.c_le_s(22, 23);
+        land = c.fcc();
+    }
+    if land {
+        c.cycles += 5;
+        c.g[AT][0] = 0x4120_0000;
+        c.mtc1(AT, 0); // 10.0
+        c.c_le_s(1, 0);
+        land = c.fcc();
+    }
+    if land {
+        pua_land(c)?;
+        return Ok(());
+    }
+
+    // Push out along hit_a's normal by d * k.
+    c.cycles += 23;
+    c.lwc1(0, r32(c, GP).wrapping_sub(0x7264));
+    c.g[A1][0] = sx(s + PUA_T420);
+    pua_scale(c, s + PUA_HIT_A_NORMAL, 0, V1, s + PUA_T440);
+    c.lq(V0, s + PUA_T440);
+    c.sq(V0, s + PUA_T430);
+    pua_scale(c, s + PUA_T430, 21, V1, s + PUA_T440);
+    c.lq(V0, s + PUA_T440);
+    c.g[A0][0] = pua_rider(c);
+    c.sq(V0, s + PUA_T420);
+    call_ptr(c, PUA_TRANSLATE, 0x0013_7bf0)?;
+    c.mtc1(0, 2);
+    c.c_lt_s(20, 2);
+    // Kill the velocity into hit_a's normal unless the ray hit something
+    // facing it (n_b . n_a >= k).
+    let mut kill = c.fcc();
+    if !kill {
+        c.cycles += 14;
+        c.lwc1(0, r32(c, GP).wrapping_sub(0x7260));
+        pua_dot(c, s + PUA_HIT_B_NORMAL, s + PUA_HIT_A_NORMAL, V0);
+        c.mtc1(V0, 1);
+        c.c_lt_s(1, 0);
+        kill = c.fcc();
+        if kill {
+            c.cycles += 1;
+        }
+    }
+    if kill {
+        c.g[V0][0] = pua_rider(c);
+        c.cycles += 13;
+        let rider = r32(c, V0);
+        pua_dot(c, s + PUA_HIT_A_NORMAL, rider.wrapping_add(PUA_R_VEL), V1);
+        c.mtc1(V1, 0);
+        c.c_lt_s(0, 2);
+        if c.fcc() {
+            // vel -= n_a * (vel . n_a)
+            c.cycles += 13;
+            pua_scale(c, s + PUA_HIT_A_NORMAL, 0, V0, s + PUA_T440);
+            c.lq(V1, s + PUA_T440);
+            c.g[V0][0] = pua_rider(c);
+            c.sq(V1, s + PUA_T430);
+            let rider = r32(c, V0);
+            pua_add_sub(
+                c,
+                rider.wrapping_add(PUA_R_VEL),
+                s + PUA_T430,
+                rider.wrapping_add(PUA_R_VEL),
+                true,
+            );
+        }
+    }
+    c.g[A1][0] = pua_rider(c);
+
+    // AirPredictor_Prime(rider->air, &rider->pos, &rider->vel, k)
+    c.cycles += 5;
+    c.lwc1(12, r32(c, GP).wrapping_sub(0x725c));
+    let rider = r32(c, A1);
+    c.g[A0][0] = Addr(rider).off(PUA_R_AIR).lw(c);
+    c.g[A2][0] = sx(rider.wrapping_add(PUA_R_VEL));
+    c.g[A1][0] = sx(rider.wrapping_add(PUA_R_POS));
+    call_ptr(c, PUA_AIR_PRIME, 0x0013_7cbc)?;
+    Ok(())
+}
+
+
+
+/// Landing on hit_b (f22 = vel . n): see the parent's doc.
+pub(crate) fn pua_land(c: &mut Cpu) -> crate::call::Flow {
+    let s = sp(c);
+    c.cycles += 65;
+    // AirPredictor_ClearAirTime(rider->air, &rider->pos, &rider->vel)
+    c.g[A1][0] = pua_rider(c);
+    let rider = r32(c, A1);
+    c.g[A0][0] = Addr(rider).off(PUA_R_AIR).lw(c);
+    c.g[A2][0] = sx(rider.wrapping_add(PUA_R_VEL));
+    c.g[A1][0] = sx(rider.wrapping_add(PUA_R_POS));
+    call_ptr(c, PUA_CLEAR_AIR_TIME, 0x0013_79c0)?;
+    // RiderBase_TriggerDynamicSpray(handler, &hit_b, &hit_b.normal, surface, vn)
+    c.g[V0][0] = pua_rider(c);
+    c.g[A1][0] = c.g[S0][0];
+    c.g[A3][0] = Addr(s + PUA_HIT_B_SURFACE).lw(c);
+    c.g[A2][0] = sx(s + PUA_HIT_B_NORMAL);
+    c.g[A0][0] = Addr(r32(c, V0)).off(PUA_R_HANDLER).lw(c);
+    c.mov_s(12, 22);
+    call_ptr(c, PUA_TRIGGER_SPRAY, 0x0013_79dc)?;
+    // handler->landed = 1, handler->land_vel = rider->vel
+    c.g[A1][0] = pua_rider(c);
+    c.g[A0][0] = 1;
+    c.neg_s(1, 22);
+    let rider = r32(c, A1);
+    c.g[V1][0] = Addr(rider).off(PUA_R_HANDLER).lw(c);
+    Addr(r32(c, V1)).off(PUA_H_LANDED).sw(c, 1);
+    c.lq(V0, rider.wrapping_add(PUA_R_VEL));
+    c.sq(V0, r32(c, V1).wrapping_add(PUA_H_LAND_VEL));
+    // Ground state from hit_b.
+    c.g[A0][0] = pua_rider(c);
+    c.lq(V0, s + PUA_HIT_B_20);
+    c.sq(V0, r32(c, A0).wrapping_add(PUA_R_3D0));
+    c.g[V1][0] = pua_rider(c);
+    c.lq(V0, s + PUA_HIT_B_NORMAL);
+    c.sq(V0, r32(c, V1).wrapping_add(PUA_R_GROUND_NORMAL));
+    c.g[A0][0] = pua_rider(c);
+    c.g[V0][0] = Addr(s + PUA_HIT_B_SURFACE).lw(c);
+    let surface = c.g[V0][0];
+    Addr(r32(c, A0)).off(PUA_R_SURFACE).sw(c, surface);
+    c.g[A1][0] = pua_rider(c);
+    c.lq(V0, s + PUA_HIT_B);
+    c.sq(V0, r32(c, A1).wrapping_add(PUA_R_CONTACT_POINT));
+    // rider->ground_height = (pos - hit) . ground_normal
+    c.g[V1][0] = pua_rider(c);
+    let rider = r32(c, V1);
+    pua_add_sub(c, rider.wrapping_add(PUA_R_POS), s + PUA_HIT_B, s + PUA_T430, true);
+    c.lq(V0, s + PUA_T430);
+    c.g[V1][0] = pua_rider(c);
+    c.sq(V0, s + PUA_T420);
+    let rider = r32(c, V1);
+    pua_dot(c, s + PUA_T420, rider.wrapping_add(PUA_R_GROUND_NORMAL), A0);
+    c.mtc1(A0, 0);
+    c.swc1(0, r32(c, V1).wrapping_add(PUA_R_GROUND_HEIGHT));
+    // impulse = ground_normal * -vn; vel += impulse
+    c.g[V0][0] = pua_rider(c);
+    let rider = r32(c, V0);
+    pua_scale(c, rider.wrapping_add(PUA_R_GROUND_NORMAL), 1, A0, s + PUA_T430);
+    c.lq(V1, s + PUA_T430);
+    c.g[V0][0] = pua_rider(c);
+    c.sq(V1, s + PUA_T420);
+    let rider = r32(c, V0);
+    pua_add_sub(
+        c,
+        rider.wrapping_add(PUA_R_VEL),
+        s + PUA_T420,
+        rider.wrapping_add(PUA_R_VEL),
+        false,
+    );
+    // The hit object's owner feels -impulse * world int (vtable slot 0x158).
+    c.g[A0][0] = Addr(s + PUA_HIT_B_OBJECT).lw(c);
+    if c.g[A0][0] != 0 {
+        c.cycles += 3;
+        c.g[T0][0] = Addr(r32(c, A0)).off(0xc).lw(c);
+        c.g[A1][0] = c.g[S0][0];
+        if c.g[T0][0] != 0 {
+            c.cycles += 26;
+            let owner = r32(c, T0);
+            c.g[A3][0] = Addr(owner).off(0xc).lw(c);
+            let vt = r32(c, A3);
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(AT, 0); // -1.0
+            c.g[A2][0] = sx(s + PUA_T430);
+            c.g[A0][0] = Addr(vt).off(0x158).lh(c);
+            pua_scale(c, s + PUA_T420, 0, V1, s + PUA_T450);
+            c.lq(V0, s + PUA_T450);
+            c.g[A0][0] = sx(owner.wrapping_add(r32(c, A0)));
+            c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+            c.sq(V0, s + PUA_T440);
+            c.lwc1(0, r32(c, V1).wrapping_add(0x10));
+            c.cvt_s_w(0, 0);
+            pua_scale(c, s + PUA_T440, 0, T0, s + PUA_T450);
+            c.lq(V0, s + PUA_T450);
+            c.sq(V0, s + PUA_T430);
+            c.g[V1][0] = Addr(vt).off(0x15c).lw(c);
+            let method = r32(c, V1);
+            call_ptr(c, method, 0x0013_7b24)?;
+        }
+        c.cycles += 1;
+    }
+    c.g[V0][0] = pua_rider(c);
+
+    // Push out of the ground: pen = (pos - hit) . n; if < 0, translate by -pen * n.
+    c.cycles += 20;
+    let rider = r32(c, V0);
+    pua_add_sub(c, rider.wrapping_add(PUA_R_POS), s + PUA_HIT_B, s + PUA_T440, true);
+    c.mtc1(0, 0);
+    c.lq(V0, s + PUA_T440);
+    c.sq(V0, s + PUA_T430);
+    pua_dot(c, s + PUA_T430, s + PUA_HIT_B_NORMAL, V1);
+    c.mtc1(V1, 1);
+    c.c_lt_s(1, 0);
+    let below = c.fcc();
+    c.g[A1][0] = sx(s + PUA_T430);
+    if below {
+        c.cycles += 10;
+        c.neg_s(0, 1);
+        pua_scale(c, s + PUA_HIT_B_NORMAL, 0, V1, s + PUA_T440);
+        c.lq(V0, s + PUA_T440);
+        c.g[A0][0] = pua_rider(c);
+        c.sq(V0, s + PUA_T430);
+        call_ptr(c, PUA_TRANSLATE, 0x0013_7ba0)?;
+    }
+    c.cycles += 2;
+    Addr(r32(c, S2)).sw(c, 0);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -675,5 +1190,179 @@ pub(crate) mod tests {
                 c.bus.write32(h + HIT_SURFACE, surface);
             }
         });
+    }
+    use super::*;
+    use crate::difftest::fakes::{self, FAKE};
+
+
+    // ------------------------------------------- RiderWipeoutState_PostUpdateAir
+
+    /// Control block of the gated fakes below: magic word (without it they
+    /// run the generated body, so other tests are unaffected), the contact
+    /// distance `FindClosestContact` returns, the ray distance
+    /// `CastGroundRay` returns, and the hits they write.
+    pub(crate) const PUA_CTRL: u32 = DATA + 0x5_8000;
+
+    pub(crate) const PUA_MAGIC: u32 = 0x1378_60a1;
+
+    pub(crate) const PUA_HIT_A_TEMPLATE: u32 = PUA_CTRL + 0x100;
+
+    pub(crate) const PUA_HIT_B_TEMPLATE: u32 = PUA_CTRL + 0x200;
+
+
+    /// A logged fake (`fakes::fake`); the two collision queries also return
+    /// their chosen distance in f0 and write their hit.
+    pub(crate) fn pua_fake(c: &mut Cpu, target: u32) {
+        let (a1, a2) = (c.g[A1][0] as u32, c.g[A2][0] as u32);
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, target, ra);
+        if c.pc != ra {
+            return;
+        }
+        let (template, hit, dist) = match target {
+            PUA_FIND_CLOSEST_CONTACT => (PUA_HIT_A_TEMPLATE, a2, PUA_CTRL + 4),
+            0x0013_8960 => (PUA_HIT_B_TEMPLATE, a1, PUA_CTRL + 8),
+            _ => return,
+        };
+        for i in 0..0x18 {
+            let w = c.bus.read32(template + 4 * i);
+            c.bus.write32(hit + 4 * i, w);
+        }
+        c.f[0] = c.bus.read32(dist);
+    }
+
+
+    macro_rules! pua_gated {
+        ($name:ident, $addr:expr, $gen:path) => {
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(PUA_CTRL) != PUA_MAGIC {
+                    return $gen(c);
+                }
+                pua_fake(c, $addr);
+            }
+        };
+    }
+pub(crate) use pua_gated;
+
+    pua_gated!(pua_fake_hull_ctor, PUA_COLL_HULL_CTOR, ee::s11::f_0032f650__generated);
+
+    pua_gated!(pua_fake_closest, PUA_FIND_CLOSEST_CONTACT, ee::s11::f_003342d0__generated);
+
+    pua_gated!(pua_fake_hull_dtor, PUA_COLL_HULL_DTOR, ee::s11::f_0032f708__generated);
+
+    pua_gated!(pua_fake_clear_air, PUA_CLEAR_AIR_TIME, ee::s00::f_00113998__generated);
+
+    pua_gated!(pua_fake_translate, PUA_TRANSLATE, ee::s00::f_00106538__generated);
+
+    pua_gated!(pua_fake_bounds, PUA_UPDATE_BOUNDS, ee::s00::f_0011e150__generated);
+
+    pua_gated!(pua_fake_wall, PUA_WALL_COLLISION, ee::s00::f_00105398__generated);
+
+    pua_gated!(pua_fake_riders, PUA_RIDER_COLLISIONS, ee::s00::f_00107888__generated);
+
+    pua_gated!(pua_fake_prime, PUA_AIR_PRIME, ee::s00::f_001135b8__generated);
+
+    pua_gated!(pua_fake_spray, 0x002e_23e0, ee::s09::f_002e23e0__generated);
+
+    pua_gated!(pua_fake_ground_ray, 0x0013_8960, ee::s01::f_00138960__generated);
+
+
+    /// Install the gated fakes in their callees' slots once per test process.
+    pub(crate) fn pua_install_fakes() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| unsafe {
+            ee::s11::OVERRIDE_0032F650 = pua_fake_hull_ctor;
+            ee::s11::OVERRIDE_003342D0 = pua_fake_closest;
+            ee::s11::OVERRIDE_0032F708 = pua_fake_hull_dtor;
+            ee::s00::OVERRIDE_00113998 = pua_fake_clear_air;
+            ee::s00::OVERRIDE_00106538 = pua_fake_translate;
+            ee::s00::OVERRIDE_0011E150 = pua_fake_bounds;
+            ee::s00::OVERRIDE_00105398 = pua_fake_wall;
+            ee::s00::OVERRIDE_00107888 = pua_fake_riders;
+            ee::s00::OVERRIDE_001135B8 = pua_fake_prime;
+            ee::s09::OVERRIDE_002E23E0 = pua_fake_spray;
+            ee::s01::OVERRIDE_00138960 = pua_fake_ground_ray;
+        });
+    }
+
+
+    /// The sphere contact missed / hit; the ground ray short, behind, the
+    /// rider moving away from or far above the ground, or a landing (hit
+    /// object none / ownerless / with a push handler, pushed out of the
+    /// ground or not); the push-out path with and without the velocity
+    /// kill. The callees are logged fakes (one may unwind); the real
+    /// `RiderBase_TriggerDynamicSpray` wrapper runs.
+    #[test]
+    fn rider_wipeout_state_post_update_air_matches() {
+        pua_install_fakes();
+        covered(
+            ee::s01::f_00137860__generated,
+            rider_wipeout_state_post_update_air,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x0013_7860, 12);
+                c.pc = 0x0013_7860;
+                let state = DATA + 0x5_0000;
+                let rider = DATA + 0x5_1000;
+                let vt = DATA + 0x5_3000;
+                let handler = DATA + 0x5_4000;
+                let obj = DATA + 0x5_6000;
+                let owner = DATA + 0x5_6100;
+                let owner_vt = DATA + 0x5_6200;
+                let world = DATA + 0x5_7000;
+                let pick = |r: &mut Rng, v: &[f32]| v[r.next_u32() as usize % v.len()].to_bits();
+                let comps = [-12.0f32, -3.0, -1.0, -0.5, 0.0, 0.5, 1.0, 3.0, 12.0];
+                let vec = |c: &mut Cpu, r: &mut Rng, at: u32| {
+                    for i in 0..3 {
+                        c.bus.write32(at + 4 * i, pick(r, &comps));
+                    }
+                    c.bus.write32(at + 12, pick(r, &[0.0, 1.0]));
+                };
+                c.bus.write32(PUA_CTRL, PUA_MAGIC);
+                c.g[A0][0] = sx(state);
+                fill(c, &mut r, state, 4);
+                c.bus.write32(state + PUA_STATE_RIDER, rider);
+                // Rider.
+                c.bus.write32(rider + PUA_R_VTABLE, vt);
+                c.bus.write16(vt + 0x40, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(vt + 0x44, FAKE);
+                for off in [PUA_R_AIR, PUA_R_OVERLAP, PUA_R_WALL_HINT, PUA_R_SPHERE_TREE] {
+                    c.bus.write32(rider + off, r.next_u32());
+                }
+                c.bus.write32(rider + PUA_R_HANDLER, handler);
+                vec(c, &mut r, rider + PUA_R_POS);
+                vec(c, &mut r, rider + PUA_R_VEL);
+                vec(c, &mut r, rider + PUA_R_GROUND_NORMAL);
+                // The distances: the sphere contact, then the ground ray.
+                c.bus.write32(PUA_CTRL + 4, pick(&mut r, &[-1.0, 0.0, 0.25, 2.0, 2.0]));
+                c.bus
+                    .write32(PUA_CTRL + 8, pick(&mut r, &[-1.0, 0.2, 0.4, 0.5, 3.0, 3.0, 3.0]));
+                fill(c, &mut r, PUA_HIT_A_TEMPLATE, 0x18);
+                vec(c, &mut r, PUA_HIT_A_TEMPLATE + 0x10);
+                fill(c, &mut r, PUA_HIT_B_TEMPLATE, 0x18);
+                vec(c, &mut r, PUA_HIT_B_TEMPLATE);
+                vec(c, &mut r, PUA_HIT_B_TEMPLATE + 0x10);
+                // Hit object: none, ownerless, or an owner with a push handler.
+                let object = match r.next_u32() % 3 {
+                    0 => 0,
+                    1 => {
+                        c.bus.write32(obj + 0xc, 0);
+                        obj
+                    }
+                    _ => {
+                        c.bus.write32(obj + 0xc, owner);
+                        obj
+                    }
+                };
+                c.bus.write32(PUA_HIT_B_TEMPLATE + 0x50, object);
+                c.bus.write32(owner + 0xc, owner_vt);
+                c.bus
+                    .write16(owner_vt + 0x158, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(owner_vt + 0x15c, FAKE + 0x20);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x10, r.next_u32() % 5);
+            },
+        );
     }
 }

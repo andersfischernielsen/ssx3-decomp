@@ -118,6 +118,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002a_9f80, stream_buffer_update_volume, "StreamBuffer_UpdateVolume"),
     (0x002a_a020, stream_buffer_get_status, "StreamBuffer_GetStatus"),
     (0x002a_ac28, stream_array_update_all, "StreamArray_UpdateAll"),
+    (0x002a_a068, stream_buffer_get_request_status, "StreamBuffer_GetRequestStatus"),
+    (0x002a_ae08, stream_array_get_state, "StreamArray_GetState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1246,6 +1248,113 @@ pub fn stream_buffer_update_volume(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// StreamBuffer_GetRequestStatus (0x2aa068, streamsys.cpp)
+
+/// `SND_Lock` / `SND_Unlock` (sound library lock, through the table).
+pub(crate) const SBRS_SND_LOCK: u32 = 0x003b_58a0;
+
+
+pub(crate) const SBRS_SND_UNLOCK: u32 = 0x003b_58d8;
+
+
+/// `SNDSTRM_GetRequestStatus(int request, SndRequestStatus* out)` (another shard).
+pub(crate) const SBRS_SNDSTRM_GET_REQUEST_STATUS: u32 = 0x003b_7c40;
+
+
+/// `StreamBuffer_GetStatus(self, SndStreamStatus* out)`.
+pub(crate) const SBRS_STREAM_BUFFER_GET_STATUS: Callee = Callee {
+    addr: 0x002a_a020,
+    f: ee::s08::StreamBuffer_GetStatus,
+};
+
+
+/// SndStreamStatus field: the id of the stream's current request.
+pub(crate) const SBRS_STATUS_REQUEST: u32 = 0x4;
+
+
+
+/// `int StreamBuffer_GetRequestStatus(StreamBuffer* self, SndRequestStatus*
+/// out, SndStreamStatus* scratch)` (0x2aa068): reads the stream status into
+/// `scratch` (or a frame-local buffer when null), then, under the sound
+/// library lock, `SNDSTRM_GetRequestStatus(status.request, out)`; returns its
+/// result.
+pub fn stream_buffer_get_request_status(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        // movn: the caller's status buffer, else the frame's own.
+        c.g[S0][0] = if c.g[A2][0] != 0 { c.g[A2][0] } else { c.g[SP][0] };
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = c.g[S0][0];
+        SBRS_STREAM_BUFFER_GET_STATUS.call(c, 0x002a_a08c)?;
+        call_ptr(c, SBRS_SND_LOCK, 0x002a_a094)?;
+        let status = r32(c, S0);
+        c.g[A0][0] = Addr(status.wrapping_add(SBRS_STATUS_REQUEST)).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, SBRS_SNDSTRM_GET_REQUEST_STATUS, 0x002a_a0a0)?;
+        c.g[S0][0] = c.g[V0][0];
+        call_ptr(c, SBRS_SND_UNLOCK, 0x002a_a0a8)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S0, 0x30);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// StreamArray_GetState (0x2aae08, streamsys.cpp)
+
+/// StreamArray: pointer to its array of StreamBuffer pointers.
+pub(crate) const OC264_SA_BUFFERS: u32 = 0x8;
+
+
+
+pub(crate) const OC264_STREAM_BUFFER_GET_STATE: Callee = Callee {
+    addr: 0x002a_a428,
+    f: ee::s08::StreamBuffer_GetState,
+};
+
+
+
+/// `int StreamArray_GetState(StreamArray* self, int i)` (0x2aae08): the
+/// play state of stream buffer `i` (`StreamBuffer_GetState`), or 0 when
+/// that slot is empty.
+pub fn stream_array_get_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        let slot_off = r32(c, A1) << 2;
+        c.g[A1][0] = sx(slot_off);
+        frame.save_ra(c, 0);
+        let buffers = Addr(r32(c, A0).wrapping_add(OC264_SA_BUFFERS)).lw(c);
+        c.g[V0][0] = buffers;
+        let slot = slot_off.wrapping_add(buffers as u32);
+        c.g[A1][0] = sx(slot);
+        c.g[A0][0] = Addr(slot).lw(c);
+        let empty = c.g[A0][0] == 0;
+        c.g[V0][0] = 0;
+        if !empty {
+            c.cycles += 2;
+            OC264_STREAM_BUFFER_GET_STATE.call(c, 0x002a_ae30)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1822,6 +1931,64 @@ pub(crate) mod tests {
                 _ => r.f32(1.0),
             };
             c.bus.write32(scale, f);
+        });
+    }
+    use super::*;
+    use super::*;
+
+
+    /// StreamBuffer_GetRequestStatus: caller's status buffer or the frame's,
+    /// an unknown SND stream (status zeroed: request 0) or a known one with
+    /// a request id that is negative (-8 early out) or unknown; fake lock
+    /// hooks, real StreamBuffer_GetStatus / SNDSTRM_GetRequestStatus.
+    #[test]
+    fn stream_buffer_get_request_status_matches() {
+        const SELF: u32 = DATA + 0x20_0000;
+        const OUT: u32 = SELF + 0x100;
+        const SCRATCH: u32 = SELF + 0x200;
+        const STREAM: u32 = SELF + 0x1000;
+        const REQ: u32 = SELF + 0x2000;
+        check(ee::s08::f_002aa068__generated, stream_buffer_get_request_status, 240, &|c, seed| {
+            let mut r = machine(c, seed, 0x2a_a068, 4);
+            c.pc = 0x002a_a068;
+            c.g[A0][0] = sx(SELF);
+            c.g[A1][0] = sx(OUT);
+            c.g[A2][0] = if seed % 2 == 0 { 0 } else { sx(SCRATCH) };
+            // SND lock / unlock hooks.
+            c.bus.write32(0x0045_0000 - 0x3b94, FAKE);
+            c.bus.write32(0x0045_0000 - 0x3b90, FAKE + 0x10);
+            // One stream slot.
+            c.bus.write8(0x0051_0000 - 0x56d2, 1);
+            c.bus.write32(0x0051_0000 - 0x5f60, STREAM);
+            let id = if seed % 3 == 0 { 1 + r.next_u32() % 4 } else { 0 };
+            c.bus.write32(SELF + 0x8, id);
+            c.bus.write32(STREAM + 0x124, if seed % 5 == 1 { 0 } else { r.next_u32() | 1 });
+            c.bus.write32(STREAM + 0x11c, REQ);
+            c.bus.write32(REQ + 0xc, if seed % 4 < 2 { 0x8000_0000 | r.next_u32() } else { r.next_u32() & 0x7fff_ffff });
+            c.bus.write16(STREAM + 0x14, 0);
+            c.bus.write8(0x0051_0000 - 0x5718 + 0x176, r.next_u32() as u8);
+        });
+    }
+
+
+    /// StreamArray_GetState: empty and non-empty slots; the real
+    /// StreamBuffer_GetState runs on a buffer whose stream ids are small.
+    #[test]
+    fn stream_array_get_state_matches() {
+        check(ee::s08::f_002aae08__generated, stream_array_get_state, 120, &|c, seed| {
+            let mut r = machine(c, seed, 0x2aae_08, 0);
+            c.pc = 0x002a_ae08;
+            let arr = DATA + 0x100;
+            let list = DATA + 0x200;
+            let buffer = DATA + 0x1000;
+            c.g[A0][0] = sx(arr);
+            c.g[A1][0] = sx(seed % 16);
+            c.bus.write32(arr + OC264_SA_BUFFERS, list);
+            let entry = if seed % 3 == 0 { 0 } else { buffer };
+            c.bus.write32(list + 4 * (seed % 16), entry);
+            for i in 0..8u32 {
+                c.bus.write32(buffer + 4 * i, r.next_u32() % 4);
+            }
         });
     }
 }

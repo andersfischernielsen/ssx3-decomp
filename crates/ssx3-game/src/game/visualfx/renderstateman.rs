@@ -223,6 +223,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002e_ef60, world_painter_get_light_glow38, "WorldPainter_GetLightGlow38"),
     (0x002e_f038, world_painter_get_surface08, "WorldPainter_GetSurface08"),
     (0x002e_f0a0, world_painter_get_weather28, "WorldPainter_GetWeather28"),
+    (0x002f_04b0, ps2_ai_visual_effects_man_update, "PS2AIVisualEffectsMan_Update"),
+    (0x002f_04e0, ps2_ai_visual_effects_man_render, "PS2AIVisualEffectsMan_Render"),
 ];
 
 /// `cAirStreamerFX` fields.
@@ -2241,6 +2243,61 @@ pub fn world_painter_get_weather98(c: &mut Cpu) {
     world_painter_weather_float_getter(c, 0x1e8, 0x002e_e9b0);
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// PS2AIVisualEffectsMan_Render (0x2f04e0)
+
+/// `void PS2AIVisualEffectsMan_Render(Wrapper* self)` (0x2f04e0): forward to
+/// the wrapped effects manager's render method (`(*self)->vt[3]()`, vtable
+/// slot 0x18).
+pub fn ps2_ai_visual_effects_man_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(r32(c, A0)).lw(c);
+        let inner = r32(c, A1);
+        c.g[V0][0] = Addr(inner).lw(c);
+        let vt = r32(c, V0);
+        c.g[A0][0] = Addr(vt + 0x18).lh(c);
+        c.g[V1][0] = Addr(vt + 0x1c).lw(c);
+        let render = r32(c, V1);
+        c.g[A0][0] = sx(inner.wrapping_add(r32(c, A0)));
+        call_ptr(c, render, 0x002f_0500)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `void PS2AIVisualEffectsMan_Update(PS2AIVisualEffectsMan* self)`
+/// (0x2f04b0): forward the per-frame update to the platform implementation
+/// object held at `self[0]` (its virtual method in vtable slot 0x10).
+pub fn ps2_ai_visual_effects_man_update(c: &mut Cpu) {
+    const VT_UPDATE: u32 = 0x10;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let imp = Addr(c.g[A0][0] as u32).lw(c);
+        c.g[A1][0] = imp;
+        let vt = Addr(imp as u32).lw(c);
+        c.g[V0][0] = vt;
+        let m = VSlot::read(c, vt, VT_UPDATE);
+        c.g[A0][0] = m.delta;
+        c.g[V1][0] = m.func;
+        c.g[A0][0] = m.this(imp);
+        call_ptr(c, m.func as u32, 0x002f_04d0)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3148,6 +3205,50 @@ pub(crate) mod tests {
             world_painter_get_weather98,
             200,
             &|c, seed| world_painter_weather_setup(c, seed, 0x002e_e978, 0x1e8),
+        );
+    }
+    use super::*;
+    use super::*;
+
+
+    /// PS2AIVisualEffectsMan_Render: the wrapped manager's render method is
+    /// a fake (random this-delta; unwinding on some seeds).
+    #[test]
+    fn ps2_ai_visual_effects_man_render_matches() {
+        covered(ee::s09::f_002f04e0__generated, ps2_ai_visual_effects_man_render, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x2f_04e0, 1);
+            let wrapper = DATA + 0x100;
+            let inner = DATA + 0x200;
+            let vt = DATA + 0x400;
+            c.bus.write32(wrapper, inner);
+            c.bus.write32(inner, vt);
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(vt + 0x18, delta as u16);
+            c.bus.write32(vt + 0x1c, FAKE);
+            c.g[A0][0] = sx(wrapper);
+            c.pc = 0x002f_04e0;
+        });
+    }
+
+
+    /// PS2AIVisualEffectsMan_Update: the implementation object at a random
+    /// address, its vtable slot 0x10 a random delta and a fake method
+    /// (unwinding on some seeds).
+    #[test]
+    fn ps2_ai_visual_effects_man_update_matches() {
+        fakes::covered(
+            ee::s09::f_002f04b0__generated,
+            ps2_ai_visual_effects_man_update,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x2f04_b0, 1);
+                let imp = fakes::ptr(&mut r);
+                let vt = fakes::vtable(c, &mut r, &[0x10]);
+                c.bus.write32(imp, vt);
+                c.bus.write32(DATA, imp);
+                c.g[A0][0] = sx(DATA);
+                c.pc = 0x002f_04b0;
+            },
         );
     }
 }

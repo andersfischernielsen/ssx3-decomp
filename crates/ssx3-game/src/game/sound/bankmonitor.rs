@@ -447,6 +447,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002b_2160, song_instance_set_volume, "SongInstance_SetVolume"),
     (0x003d_1e80, path_service_queues, "PATH_ServiceQueues"),
     (0x003d_5290, path_find_track, "PATH_FindTrack"),
+    (0x002a_cfe0, bank_monitor_add_instance, "BankMonitor_AddInstance"),
+    (0x002a_eaa8, path_plat_get_queued_entry_value, "PATH_PlatGetQueuedEntryValue"),
+    (0x002b_23e8, song_instance_set_volume_percent, "SongInstance_SetVolumePercent"),
+    (0x002b_3c28, music_player_path_cmd_a, "MusicPlayer_PathCmdA"),
+    (0x002b_3d10, music_player_set_volume_percent, "MusicPlayer_SetVolumePercent"),
+    (0x003d_54e8, path_update_tick42, "PATH_UpdateTick42"),
 ];
 
 /// Same-shard direct callees used above.
@@ -6705,6 +6711,597 @@ pub fn path_service_queues(c: &mut Cpu) {
     })
 }
 
+
+
+
+// -- 0x003d54e8 PATH_UpdateTick42 --------------------------------------------
+
+/// `void PATH_UpdateTick42(void)` (0x3d54e8): the music-path timer tick,
+/// `PATH_Update('B')`. Frame 0x10 (ra).
+pub fn path_update_tick42(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x42;
+        Callee { addr: 0x003d_5128, f: ee::s14::f_003d5128 }.call(c, 0x003d_54f8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// MusicPlayer_PathCmdA (0x2b3c28, bankmonitor.cpp)
+
+/// MusicPlayer fields: the current song instance, the "playing" flag.
+pub(crate) const MP_SONG: u32 = 0x408;
+
+
+pub(crate) const MP_ACTIVE: u32 = 0x418;
+
+
+/// `SongInstance_PathCmdA(SongInstance*)`.
+pub(crate) const MP_SONG_INSTANCE_PATH_CMD_A: Callee = Callee {
+    addr: 0x002b_2120,
+    f: ee::s08::SongInstance_PathCmdA,
+};
+
+
+
+/// `void MusicPlayer_PathCmdA(MusicPlayer* self)` (0x2b3c28): when the
+/// player is active and has a song instance, forwards PATH command A to it.
+pub fn music_player_path_cmd_a(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, A0);
+        c.g[V0][0] = Addr(this.wrapping_add(MP_ACTIVE)).lw(c);
+        frame.restore_ra(c, 0);
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(this.wrapping_add(MP_SONG)).lw(c);
+            if c.g[A0][0] != 0 {
+                c.cycles += 3;
+                MP_SONG_INSTANCE_PATH_CMD_A.call(c, 0x002b_3c50)?;
+                frame.restore_ra(c, 0);
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// PATH_PlatGetQueuedEntryValue (0x2aeaa8, bankmonitor.cpp)
+
+/// The 24 sound-bank monitor slots (`BankMonitor*[24]`).
+pub(crate) const PQ_MON_TABLE: u32 = 0x004d_3e98;
+
+
+/// BankMonitor fields: whole-bank value, "status stale" flag, sub-entry
+/// count (`s8`), sub-entry array (12-byte `{?, handle, value}`).
+pub(crate) const PQ_MON_VALUE: u32 = 0x54;
+
+
+pub(crate) const PQ_MON_STALE: u32 = 0x65;
+
+
+pub(crate) const PQ_MON_SUB_COUNT: u32 = 0x66;
+
+
+pub(crate) const PQ_MON_SUBS: u32 = 0x6c;
+
+
+pub(crate) const PQ_SUB_SIZE: u32 = 0xc;
+
+
+pub(crate) const PQ_SUB_HANDLE: u32 = 0x4;
+
+
+pub(crate) const PQ_SUB_VALUE: u32 = 0x8;
+
+
+/// `PATH_PlatRefreshStatus(int reset)`.
+pub(crate) const PQ_PATH_PLAT_REFRESH_STATUS: Callee = Callee {
+    addr: 0x002a_efa8,
+    f: ee::s08::PATH_PlatRefreshStatus,
+};
+
+
+
+/// `int PATH_PlatGetQueuedEntryValue(int slot, int sub)` (0x2aeaa8): looks
+/// up monitor `slot` (refreshing every monitor first when its status is
+/// stale); `sub < 0` returns the monitor's own value, otherwise sub-entry
+/// `sub`'s value, or -8 when `sub` is out of range or the entry has no
+/// handle.
+pub fn path_plat_get_queued_entry_value(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        let index = (c.g[A0][0] as u32) << 2;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(PQ_MON_TABLE);
+        frame.save(c, S0, 0x20);
+        c.g[A0][0] = sx(index.wrapping_add(PQ_MON_TABLE));
+        c.g[S0][0] = Addr(index.wrapping_add(PQ_MON_TABLE)).lw(c);
+        c.g[S1][0] = c.g[A1][0];
+        if c.g[S0][0] != 0 {
+            c.cycles += 3;
+            let mon = r32(c, S0);
+            c.g[V0][0] = Addr(mon.wrapping_add(PQ_MON_STALE)).lb(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[A0][0] = 0;
+                PQ_PATH_PLAT_REFRESH_STATUS.call(c, 0x002a_eae8)?;
+            }
+        }
+        c.cycles += 2;
+        let mon = r32(c, S0);
+        let sub = c.g[S1][0];
+        if (sub as i64) >= 0 {
+            c.g[V0][0] = Addr(mon.wrapping_add(PQ_MON_SUB_COUNT)).lb(c);
+            c.cycles += 3;
+            let in_range = ((sub as i64) < (c.g[V0][0] as i64)) as u64;
+            c.g[V0][0] = PQ_SUB_SIZE as u64;
+            if in_range == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = sx(-8i32 as u32);
+            } else {
+                c.cycles += 6;
+                c.g[A0][0] = Addr(mon.wrapping_add(PQ_MON_SUBS)).lw(c);
+                let off = crate::abi::mult(c, sub as u32, PQ_SUB_SIZE);
+                let entry = off.wrapping_add(c.g[A0][0] as u32);
+                c.g[V0][0] = sx(entry);
+                c.g[V1][0] = Addr(entry.wrapping_add(PQ_SUB_HANDLE)).lw(c);
+                if (c.g[V1][0] as i64) < 0 {
+                    c.g[V0][0] = sx(-8i32 as u32);
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = Addr(entry.wrapping_add(PQ_SUB_VALUE)).lw(c);
+                }
+            }
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(mon.wrapping_add(PQ_MON_VALUE)).lw(c);
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// MusicPlayer_SetVolumePercent (0x2b3d10, bankmonitor.cpp)
+
+/// `SongInstance_SetVolumePercent(SongInstance*, s8 percent)`.
+pub(crate) const MP_SONG_INSTANCE_SET_VOLUME_PERCENT: Callee = Callee {
+    addr: 0x002b_23e8,
+    f: ee::s08::SongInstance_SetVolumePercent,
+};
+
+
+
+/// `void MusicPlayer_SetVolumePercent(MusicPlayer* self, s8 percent)`
+/// (0x2b3d10): when the player is active and has a song instance, sets the
+/// song's PATH volume percentage.
+pub fn music_player_set_volume_percent(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, A0);
+        c.g[V0][0] = Addr(this.wrapping_add(MP_ACTIVE)).lw(c);
+        c.g[A1][0] = sx(c.g[A1][0] as u8 as i8 as i32 as u32);
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = Addr(this.wrapping_add(MP_SONG)).lw(c);
+            frame.restore_ra(c, 0);
+            if c.g[A0][0] == 0 {
+                c.cycles += 2;
+                frame.close(c);
+                return Ok(());
+            }
+            c.cycles += 2;
+            MP_SONG_INSTANCE_SET_VOLUME_PERCENT.call(c, 0x002b_3d3c)?;
+        }
+        c.cycles += 1;
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// BankMonitor_AddInstance (0x2acfe0, bankmonitor.cpp)
+
+/// BankMonitor fields: current sound type, per-type tables (inline arrays
+/// at 0x24 and 0x40, pointers to per-type arrays elsewhere), the owner's
+/// vtable, the busy counter and the instance array (64 x 0xc0 bytes).
+pub(crate) const OC264_BM_KIND: u32 = 0x1c;
+
+
+pub(crate) const OC264_BM_SOURCES: u32 = 0x24;
+
+
+pub(crate) const OC264_BM_TABLE_FADE: u32 = 0x34;
+
+
+pub(crate) const OC264_BM_TABLE_SLOT: u32 = 0x3c;
+
+
+pub(crate) const OC264_BM_PARAMS: u32 = 0x40;
+
+
+pub(crate) const OC264_BM_TABLE_80: u32 = 0x60;
+
+
+pub(crate) const OC264_BM_TABLE_84: u32 = 0x64;
+
+
+pub(crate) const OC264_BM_TABLE_88: u32 = 0x68;
+
+
+pub(crate) const OC264_BM_TABLE_8C: u32 = 0x6c;
+
+
+pub(crate) const OC264_BM_TABLE_94: u32 = 0x74;
+
+
+pub(crate) const OC264_BM_TABLE_98: u32 = 0x78;
+
+
+pub(crate) const OC264_BM_TABLE_9C: u32 = 0x7c;
+
+
+pub(crate) const OC264_BM_TABLE_A0: u32 = 0x80;
+
+
+pub(crate) const OC264_BM_TABLE_A4: u32 = 0x84;
+
+
+pub(crate) const OC264_BM_ADD_COUNT: u32 = 0x8dc;
+
+
+pub(crate) const OC264_BM_INSTANCES: u32 = 0x8ec;
+
+
+pub(crate) const OC264_BM_INSTANCE_SIZE: u64 = 0xc0;
+
+
+
+/// BankMonitorInstance fields written here.
+pub(crate) const OC264_BMI_TYPE: u32 = 0x0;
+
+
+pub(crate) const OC264_BMI_ID: u32 = 0x4;
+
+
+pub(crate) const OC264_BMI_ACTIVE: u32 = 0x8;
+
+
+pub(crate) const OC264_BMI_FLAGS: u32 = 0x58;
+
+
+pub(crate) const OC264_BMI_SLOT: u32 = 0x60;
+
+
+pub(crate) const OC264_BMI_VOLUME: u32 = 0x64;
+
+
+pub(crate) const OC264_BMI_SOURCE: u32 = 0x68;
+
+
+pub(crate) const OC264_BMI_SOURCE_COPY: u32 = 0x70;
+
+
+pub(crate) const OC264_BMI_PARAMS: u32 = 0xa8;
+
+
+
+/// "no free instance" message (`Audio_DebugPrintf` format string).
+pub(crate) const OC264_BM_FULL_MSG: u32 = 0x0048_3250;
+
+
+pub(crate) const OC264_SND_STOP: u32 = 0x003b_89e0;
+
+
+pub(crate) const OC264_SNDMIDI_STOP: u32 = 0x003b_9920;
+
+
+
+pub(crate) const OC264_BM_FIND_FREE_INSTANCE: Callee = Callee {
+    addr: 0x002a_cf60,
+    f: ee::s08::BankMonitor_FindFreeInstance,
+};
+
+
+pub(crate) const OC264_BMI_RESET: Callee = Callee {
+    addr: 0x002a_bb38,
+    f: ee::s08::BankMonitorInstance_Reset,
+};
+
+
+pub(crate) const OC264_BMI_UPDATE_DISTANCE: Callee = Callee {
+    addr: 0x002a_bd48,
+    f: ee::s08::BankMonitorInstance_UpdateDistance,
+};
+
+
+pub(crate) const OC264_AUDIO_DEBUG_PRINTF: Callee = Callee {
+    addr: 0x002b_9100,
+    f: ee::s08::Audio_DebugPrintf,
+};
+
+
+
+/// `&table[self->kind]` for the per-type table pointer at `self + field`
+/// (the pointer is loaded into `base_reg`, the slot address into v0).
+pub(crate) fn oc264_bm_kind_slot(c: &mut Cpu, this: u32, base_reg: usize, field: u32) -> u32 {
+    let kind = Addr(this.wrapping_add(OC264_BM_KIND)).lw(c) as u32;
+    let base = Addr(this.wrapping_add(field)).lw(c);
+    c.g[base_reg][0] = base;
+    let slot = (kind << 2).wrapping_add(base as u32);
+    c.g[V0][0] = sx(slot);
+    slot
+}
+
+
+
+/// `table[self->kind]` for the per-type table pointer at `self + field`.
+pub(crate) fn oc264_bm_kind_word(c: &mut Cpu, this: u32, base_reg: usize, field: u32) -> u64 {
+    let slot = oc264_bm_kind_slot(c, this, base_reg, field);
+    Addr(slot).lw(c)
+}
+
+
+
+/// `&self->sources[self->kind]` (inline array at 0x24, base in a3).
+pub(crate) fn oc264_bm_source_slot(c: &mut Cpu, this: u32) -> u32 {
+    let kind = Addr(this.wrapping_add(OC264_BM_KIND)).lw(c) as u32;
+    let slot = r32(c, A3).wrapping_add(kind << 2);
+    c.g[V0][0] = sx(slot);
+    slot
+}
+
+
+
+/// `BankMonitorInstance* BankMonitor_AddInstance(BankMonitor* self, int id,
+/// int volume, int type)` (0x2acfe0): takes a free instance slot
+/// (`BankMonitor_FindFreeInstance`), resets it and fills it from the
+/// monitor's per-sound-type tables (slot, source position, params, fades,
+/// pitch/volume curves), then measures its distance when it has a source.
+/// With no free slot it prints a warning and stops the sound `id` that was
+/// to be tracked (`SND_Stop` for type 1, `SNDMIDI_Stop` for type 2).
+/// Returns the instance or 0.
+pub fn bank_monitor_add_instance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S1, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save(c, S4, 0x30);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_ra(c, 0x20);
+        c.g[S4][0] = c.g[A2][0];
+        c.g[S1][0] = 0;
+        let this = r32(c, S0);
+        let count = Addr(this.wrapping_add(OC264_BM_ADD_COUNT));
+        let n = sx((count.lw(c) as u32).wrapping_add(1));
+        c.g[V0][0] = n;
+        count.sw(c, n);
+        c.g[A1][0] = count.lw(c);
+        OC264_BM_FIND_FREE_INSTANCE.call(c, 0x002a_d028)?;
+        c.g[A1][0] = c.g[V0][0];
+        let none = (c.g[A1][0] as i64) < 0;
+        c.g[V0][0] = OC264_BM_INSTANCE_SIZE;
+        if !none {
+            c.cycles += 66;
+            c.g[V1][0] = Addr(this.wrapping_add(OC264_BM_INSTANCES)).lw(c);
+            c.mult(0, V0, A1, V0);
+            c.g[S1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            c.g[A0][0] = c.g[S1][0];
+            OC264_BMI_RESET.call(c, 0x002a_d048)?;
+            let inst = r32(c, S1);
+            let at = |off: u32| Addr(inst.wrapping_add(off));
+            let (kind, id, volume) = (c.g[S2][0], c.g[S3][0], c.g[S4][0]);
+            at(OC264_BMI_TYPE).sw(c, kind);
+            c.g[A1][0] = 0xffff_ffff_0000_0000;
+            at(OC264_BMI_ID).sw(c, id);
+            c.g[A0][0] &= c.g[A1][0];
+            c.g[A3][0] = sx(this.wrapping_add(OC264_BM_SOURCES));
+            c.g[A2][0] = 0x0000_0000_ffff_ffff;
+
+            // Bank slot and volume.
+            let slot = oc264_bm_kind_word(c, this, V1, OC264_BM_TABLE_SLOT);
+            c.g[A1][0] = slot;
+            at(OC264_BMI_VOLUME).sw(c, volume);
+            at(OC264_BMI_SLOT).sw(c, slot);
+            // Source position pointer.
+            let p = oc264_bm_source_slot(c, this);
+            let source = Addr(p).lw(c);
+            c.g[V1][0] = source;
+            at(OC264_BMI_SOURCE).sw(c, source);
+            // The type's 8-byte parameter pair, packed into a doubleword and
+            // stored unaligned through the stack.
+            let kind_ix = Addr(this.wrapping_add(OC264_BM_KIND)).lw(c) as u32;
+            let pair = this.wrapping_add(kind_ix << 3);
+            c.g[V0][0] = sx(pair);
+            c.g[A1][0] = Addr(pair.wrapping_add(OC264_BM_PARAMS)).lwu(c);
+            c.g[V1][0] = Addr(pair.wrapping_add(OC264_BM_PARAMS + 4)).lwu(c);
+            c.g[A0][0] |= c.g[A1][0];
+            c.g[V1][0] <<= 32;
+            c.g[A0][0] &= c.g[A2][0];
+            c.g[A0][0] |= c.g[V1][0];
+            c.g[V0][0] = (c.g[A0][0] << 32) >> 32;
+            c.g[A0][0] >>= 32;
+            let (lo, hi) = (c.g[V0][0], c.g[A0][0]);
+            Addr(frame.at(c, 0x10)).sw(c, lo);
+            Addr(frame.at(c, 0x14)).sw(c, hi);
+            let s = sp(c);
+            c.ldl(V0, s.wrapping_add(0x17));
+            c.ldr(V0, s.wrapping_add(0x10));
+            c.sdl(V0, s.wrapping_add(0x7));
+            c.sdr(V0, s);
+            c.ldl(V0, s.wrapping_add(0x7));
+            c.ldr(V0, s);
+            c.sdl(V0, inst.wrapping_add(OC264_BMI_PARAMS + 7));
+            c.sdr(V0, inst.wrapping_add(OC264_BMI_PARAMS));
+            let w = oc264_bm_kind_word(c, this, A0, OC264_BM_TABLE_80);
+            c.g[V1][0] = w;
+            at(0x80).sw(c, w);
+            let w = oc264_bm_kind_word(c, this, A0, OC264_BM_TABLE_84);
+            c.g[V1][0] = w;
+            at(0x84).sw(c, w);
+            // A fade table entry replaces the source with a private copy.
+            let fade = oc264_bm_kind_word(c, this, A0, OC264_BM_TABLE_FADE);
+            c.g[V1][0] = fade;
+            c.g[A0][0] = sx(inst.wrapping_add(OC264_BMI_SOURCE_COPY));
+            if fade != 0 {
+                c.cycles += 4;
+                c.g[V0][0] = at(OC264_BMI_SOURCE).lw(c);
+                let source = r32(c, V0);
+                c.lq(V1, source);
+                let copy = c.g[A0][0];
+                at(OC264_BMI_SOURCE).sw(c, copy);
+                c.sq(V1, inst.wrapping_add(OC264_BMI_SOURCE_COPY));
+            }
+
+            c.cycles += 31;
+            let p = oc264_bm_kind_slot(c, this, V1, OC264_BM_TABLE_88);
+            c.g[A1][0] = at(OC264_BMI_FLAGS).lw(c);
+            c.lwc1(0, p);
+            c.swc1(0, inst.wrapping_add(0x88));
+            let p = oc264_bm_kind_slot(c, this, V1, OC264_BM_TABLE_8C);
+            c.lwc1(0, p);
+            c.swc1(0, inst.wrapping_add(0x8c));
+            let w = oc264_bm_kind_word(c, this, A0, OC264_BM_TABLE_94);
+            c.g[V1][0] = w;
+            at(0x94).sw(c, w);
+            let w = oc264_bm_kind_word(c, this, A0, OC264_BM_TABLE_98);
+            c.g[V1][0] = w;
+            at(0x98).sw(c, w);
+            let p = oc264_bm_kind_slot(c, this, V1, OC264_BM_TABLE_9C);
+            let flagged = c.g[A1][0] != 0;
+            let w = Addr(p).lw(c);
+            c.g[V0][0] = w;
+            if !flagged {
+                c.cycles += 1;
+                at(0x9c).sw(c, w);
+            }
+
+            c.cycles += 21;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0f
+            c.mtc1(AT, 0);
+            c.swc1(0, inst.wrapping_add(0x90));
+            let w = oc264_bm_kind_word(c, this, A0, OC264_BM_TABLE_A0);
+            c.g[V1][0] = w;
+            at(0xa0).sw(c, w);
+            let w = oc264_bm_kind_word(c, this, A0, OC264_BM_TABLE_A4);
+            c.g[V1][0] = w;
+            at(0xa4).sw(c, w);
+            let p = oc264_bm_source_slot(c, this);
+            c.g[V1][0] = Addr(p).lw(c);
+            c.g[A0][0] = c.g[S1][0];
+            if c.g[V1][0] != 0 {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S0][0];
+                OC264_BMI_UPDATE_DISTANCE.call(c, 0x002a_d228)?;
+            }
+            c.cycles += 4;
+            // active = id >= 0.
+            let active = sx((!c.g[S3][0] as u32) >> 31);
+            c.g[V0][0] = active;
+            Addr(r32(c, S1).wrapping_add(OC264_BMI_ACTIVE)).sw(c, active);
+        } else {
+            c.cycles += 6;
+            c.g[A0][0] = sx(OC264_BM_FULL_MSG);
+            OC264_AUDIO_DEBUG_PRINTF.call(c, 0x002a_d244)?;
+            let kind = c.g[S2][0];
+            c.g[V0][0] = 2;
+            if kind == 1 {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S3][0];
+                call_ptr(c, OC264_SND_STOP, 0x002a_d268)?;
+            } else {
+                c.cycles += 2;
+                if kind == 2 {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[S3][0];
+                    call_ptr(c, OC264_SNDMIDI_STOP, 0x002a_d278)?;
+                } else {
+                    c.cycles += 2;
+                }
+            }
+        }
+        c.cycles += 12;
+        let count = Addr(r32(c, S0).wrapping_add(OC264_BM_ADD_COUNT));
+        c.g[V1][0] = count.lw(c);
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S1, 0x60);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+        frame.restore(c, S2, 0x50);
+        let left = c.g[V1][0];
+        count.sw(c, left);
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `void SongInstance_SetVolumePercent(SongInstance* self, s8 percent)`
+/// (0x2b23e8): when the song is playing (`+0x54` non-zero), set the music
+/// tracks' volume through `PATH_SetVolumePercent(0x11000002, percent)`.
+pub fn song_instance_set_volume_percent(c: &mut Cpu) {
+    const PLAYING: u32 = 0x54;
+    const MUSIC_TRACK_MASK: u64 = 0x1100_0002;
+    const PATH_SET_VOLUME_PERCENT: Callee = Callee {
+        addr: 0x003d_5508,
+        f: ee::s14::f_003d5508,
+    };
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 24);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(PLAYING).lw(c);
+        c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 24) as u32);
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = MUSIC_TRACK_MASK;
+            PATH_SET_VOLUME_PERCENT.call(c, 0x002b_240c)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9303,6 +9900,218 @@ pub(crate) mod tests {
                     c.next_event = c.cycles + 4 + (r.next_u32() % 40) as u64;
                 }
                 mode
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+
+    // -- 0x003d54e8 PATH_UpdateTick42 ------------------------------------------
+
+    /// `PATH_UpdateTick42` against the generated body, with the real
+    /// `PATH_Update` (fixture as in `path_update_matches`): locked /
+    /// uninitialised / busy early outs, and the full tick over four players
+    /// that are inactive, active without a handle, or active with a handle.
+    #[test]
+    fn path_update_tick42_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA, GAME_GP};
+        check(ee::s14::f_003d54e8__generated, path_update_tick42, 120, &|c, seed| {
+            let mut r = Rng(0x003d_54e8 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x003d_54e8;
+            let gate = seed % 6;
+            c.bus.write8(0x0044_f42d, (gate == 0) as u8 * (1 + r.next_u32() as u8 % 3));
+            c.bus.write8(0x0044_f42c, (gate != 1) as u8);
+            c.bus.write32(0x0044_f430, if gate == 2 { r.next_u32() | 1 } else { 0 });
+            c.bus.write32(0x0045_0dcc, r.next_u32()); // timer count
+            c.bus.write32(0x0045_0dc8, 1 + r.next_u32() % 0x1000); // timer period
+            for i in 0..4u32 {
+                let p = 0x0051_7610 + 0x928 * i;
+                let kind = r.next_u32() % 3;
+                c.bus.write32(p + 0x34, (kind != 0) as u32 * (1 + r.next_u32() % 5));
+                c.bus.write32(p + 0x30, if kind == 2 { DATA + 0x100 * i } else { 0 });
+            }
+        });
+    }
+
+
+    /// MusicPlayer_PathCmdA: inactive player, no song, or a song whose PATH
+    /// command runs the real SongInstance_PathCmdA / PATH_SetTrackControlValue
+    /// (PATH player not initialised: its early out).
+    #[test]
+    fn music_player_path_cmd_a_matches() {
+        const SELF: u32 = DATA + 0x20_0000;
+        check(ee::s08::f_002b3c28__generated, music_player_path_cmd_a, 240, &|c, seed| {
+            let mut r = Rng(0x002b_3c28 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.pc = 0x002b_3c28;
+            c.g[A0][0] = sx(SELF);
+            c.bus.write32(SELF + MP_ACTIVE, if seed % 3 == 0 { 0 } else { r.next_u32() | 1 });
+            c.bus.write32(SELF + MP_SONG, if seed % 3 == 1 { 0 } else { SELF + 0x1000 });
+            c.bus.write8(0x0044_f42c, 0); // PATH player not initialised
+        });
+    }
+
+
+    /// PATH_PlatGetQueuedEntryValue: empty and filled monitor slots, stale
+    /// status (the real PATH_PlatRefreshStatus over 24 slots whose monitors
+    /// have no stream; fake SND lock hooks), negative / out-of-range /
+    /// in-range sub indices with and without a handle.
+    #[test]
+    fn path_plat_get_queued_entry_value_matches() {
+        const BANKS: u32 = DATA + 0x20_0000;
+        const SUBS: u32 = DATA + 0x20_1000;
+        check(ee::s08::f_002aeaa8__generated, path_plat_get_queued_entry_value, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x2a_eaa8, 0);
+            c.pc = 0x002a_eaa8;
+            c.bus.write32(0x0045_0000 - 0x3b94, FAKE);
+            c.bus.write32(0x0045_0000 - 0x3b90, FAKE + 0x10);
+            for i in 0..4u32 {
+                let e = PQ_MON_TABLE + 4 * i;
+                if (seed / 4 + i) % 5 == 0 {
+                    c.bus.write32(e, 0);
+                    continue;
+                }
+                let bank = BANKS + 0x100 * i;
+                let subs = SUBS + 0x100 * i;
+                c.bus.write32(e, bank);
+                c.bus.write32(bank, u32::MAX); // no stream: refresh skips it
+                c.bus.write8(bank + PQ_MON_STALE, ((seed + i) % 4 == 0) as u8);
+                c.bus.write8(bank + PQ_MON_SUB_COUNT, (r.next_u32() % 6) as u8);
+                c.bus.write32(bank + PQ_MON_SUBS, subs);
+                c.bus.write32(bank + PQ_MON_VALUE, r.next_u32());
+                for j in 0..8u32 {
+                    let h = if r.next_u32() % 3 == 0 { 0x8000_0000 | r.next_u32() } else { r.next_u32() >> 1 };
+                    c.bus.write32(subs + 0xc * j + PQ_SUB_HANDLE, h);
+                    c.bus.write32(subs + 0xc * j + PQ_SUB_VALUE, r.next_u32());
+                }
+            }
+            c.g[A0][0] = (seed % 4) as u64;
+            c.g[A1][0] = match seed % 5 {
+                0 => sx(0x8000_0000 | r.next_u32()),
+                1 => sx(r.next_u32() >> 1),
+                _ => (r.next_u32() % 7) as u64,
+            };
+        });
+    }
+
+
+    /// MusicPlayer_SetVolumePercent: inactive player, no song, or a song
+    /// with and without a PATH track (+0x54) through the real
+    /// SongInstance_SetVolumePercent / PATH call (PATH player not
+    /// initialised: its early out); any percent byte (sign-extended).
+    #[test]
+    fn music_player_set_volume_percent_matches() {
+        const SELF: u32 = DATA + 0x20_0000;
+        const SONG: u32 = SELF + 0x1000;
+        check(ee::s08::f_002b3d10__generated, music_player_set_volume_percent, 240, &|c, seed| {
+            let mut r = Rng(0x002b_3d10 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.pc = 0x002b_3d10;
+            c.g[A0][0] = sx(SELF);
+            c.bus.write32(SELF + MP_ACTIVE, if seed % 3 == 0 { 0 } else { r.next_u32() | 1 });
+            c.bus.write32(SELF + MP_SONG, if seed % 3 == 1 { 0 } else { SONG });
+            c.bus.write32(SONG + 0x54, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+            c.bus.write8(0x0044_f42c, 0); // PATH player not initialised
+        });
+    }
+
+
+    /// BankMonitor_AddInstance: a monitor with 64 instances, some free (the
+    /// real FindFreeInstance/PollFree/Reset run), sound types 0..3 with
+    /// filled per-type tables, a fade entry or not, a source or not (the
+    /// owner's distance method is a fake); every fourth seed has no free
+    /// instance and stops the sound (types 0..3, invalid handles take the
+    /// SND library's short paths).
+    #[test]
+    fn bank_monitor_add_instance_matches() {
+        const THIS: u32 = DATA + 0x2_0000;
+        const TABLES: u32 = DATA + 0x1000;
+        const SOURCES: u32 = DATA + 0x3000;
+        const INSTANCES: u32 = DATA + 0x4000;
+        const VTABLE: u32 = DATA + 0x8000;
+        check(ee::s08::f_002acfe0__generated, bank_monitor_add_instance, 240, &|c, seed| {
+            let mut r = machine(c, seed, 0x2acf_e0, 1);
+            c.pc = 0x002a_cfe0;
+            c.g[A0][0] = sx(THIS);
+            let id = if seed % 5 == 0 { u32::MAX } else { r.next_u32() };
+            c.g[A1][0] = sx(id);
+            c.g[A2][0] = sx(r.next_u32());
+            c.g[A3][0] = sx(seed % 4);
+            let kind = r.next_u32() % 4;
+            c.bus.write32(THIS + OC264_BM_KIND, kind);
+            c.bus.write32(THIS + OC264_BM_ADD_COUNT, r.next_u32() % 3);
+            c.bus.write32(THIS + OC264_BM_INSTANCES, INSTANCES);
+            c.bus.write32(THIS + 0x8d8, VTABLE);
+            c.bus.write16(VTABLE + 0x30, (r.next_u32() % 0x40) as u16);
+            c.bus.write32(VTABLE + 0x34, FAKE);
+            // Inline per-type source pointers (0 = no source) and params.
+            for k in 0..4u32 {
+                let src = if r.next_u32() % 3 == 0 { 0 } else { SOURCES + 0x10 * k };
+                c.bus.write32(THIS + OC264_BM_SOURCES + 4 * k, src);
+            }
+            fill(c, &mut r, THIS + OC264_BM_PARAMS, 8);
+            fill(c, &mut r, SOURCES, 0x40 / 4);
+            // Per-type tables of 4 words each.
+            let fields = [
+                OC264_BM_TABLE_FADE,
+                OC264_BM_TABLE_SLOT,
+                OC264_BM_TABLE_80,
+                OC264_BM_TABLE_84,
+                OC264_BM_TABLE_88,
+                OC264_BM_TABLE_8C,
+                OC264_BM_TABLE_94,
+                OC264_BM_TABLE_98,
+                OC264_BM_TABLE_9C,
+                OC264_BM_TABLE_A0,
+                OC264_BM_TABLE_A4,
+            ];
+            for (i, &f) in fields.iter().enumerate() {
+                let table = TABLES + 0x10 * i as u32;
+                c.bus.write32(THIS + f, table);
+                fill(c, &mut r, table, 4);
+            }
+            if seed % 2 == 0 {
+                c.bus.write32(TABLES + 4 * kind, 0); // no fade for this type
+            }
+            // Instances: free (type 0) or busy (type != 0, not done).
+            let all_busy = seed % 4 == 0;
+            for i in 0..64u32 {
+                let inst = INSTANCES + 0xc0 * i;
+                let busy = all_busy || r.next_u32() % 3 == 0;
+                c.bus.write32(inst, if busy { 1 + r.next_u32() % 3 } else { 0 });
+                c.bus.write32(inst + 0x9c, 0);
+                c.bus.write32(inst + 0x54, r.next_u32() % 2);
+            }
+        });
+    }
+
+
+    /// SongInstance_SetVolumePercent: playing or not; the real
+    /// PATH_SetVolumePercent takes its short exits (not initialised, or a
+    /// map selected); the volume a random 64-bit value (sign-extended byte).
+    #[test]
+    fn song_instance_set_volume_percent_matches() {
+        const PATH_INITED: u32 = 0x0044_f42c;
+        const PATH_SELECTED: u32 = 0x0044_f430;
+        check(
+            ee::s08::f_002b23e8__generated,
+            song_instance_set_volume_percent,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x2b_23e8, 0);
+                let song = DATA + 0x200;
+                let playing = if seed % 3 == 0 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(song + 0x54, playing);
+                c.bus.write8(PATH_INITED, (seed % 2) as u8);
+                c.bus.write32(PATH_SELECTED, r.next_u32() | 1);
+                c.g[A0][0] = sx(song);
+                c.g[A1][0] = r.next_u32() as u64 | (r.next_u32() as u64) << 32;
+                c.pc = 0x002b_23e8;
             },
         );
     }

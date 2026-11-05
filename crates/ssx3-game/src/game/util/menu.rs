@@ -69,6 +69,11 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
+use crate::abi::addu;
+use crate::abi::reg;
+use crate::abi::set_reg;
+use crate::game::lib::snd;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -395,6 +400,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "World_GetAIFrameCount",
     ),
     (0x002d_1cb0, world_get_flag_manager, "World_GetFlagManager"),
+    (0x002d_1ba0, world_get_peak_number, "World_GetPeakNumber"),
 ];
 
 /// Same-shard direct callees used above.
@@ -4814,6 +4820,52 @@ pub fn menu_sys_update(c: &mut Cpu) {
     }
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// World_GetPeakNumber (0x2d1ba0).
+
+/// `BELibrary* BELibrary_GetInstance()`.
+pub(crate) const WORLD_BE_LIBRARY_GET_INSTANCE: u32 = 0x0014_dc80;
+
+
+
+/// `void* BELibrary_GetInterface(BELibrary*, int)`.
+pub(crate) const WORLD_BE_LIBRARY_GET_INTERFACE: u32 = 0x0014_dd58;
+
+
+
+/// `int BENewRaceInt_GetTrackPeak(BENewRaceInt*)`.
+pub(crate) const WORLD_BE_NEW_RACE_GET_TRACK_PEAK: u32 = 0x0014_4c98;
+
+
+
+/// `int World_GetPeakNumber()` (0x2d1ba0): the current track's peak,
+/// counted from 1:
+/// `BENewRaceInt_GetTrackPeak(BELibrary_GetInterface(BELibrary_GetInstance(), 0)) + 1`.
+/// Frame 0x10 (ra +0).
+pub fn world_get_peak_number(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        call_ptr(c, WORLD_BE_LIBRARY_GET_INSTANCE, 0x002d_1bb0)?;
+        set_reg(c, A1, 0);
+        let library = reg(c, V0);
+        set_reg(c, A0, library);
+        call_ptr(c, WORLD_BE_LIBRARY_GET_INTERFACE, 0x002d_1bbc)?;
+        let race = reg(c, V0);
+        set_reg(c, A0, race);
+        call_ptr(c, WORLD_BE_NEW_RACE_GET_TRACK_PEAK, 0x002d_1bc4)?;
+        frame.restore_ra(c, 0);
+        let peak = reg(c, V0);
+        set_reg(c, V0, addu(peak, 1));
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6878,5 +6930,29 @@ pub(crate) mod tests {
                 let _ = &mut r;
             },
         );
+    }
+    use super::*;
+    use crate::game::lib::snd::tests as snd_tests;
+
+
+    /// `World_GetPeakNumber` through the real BE library (a dummy singleton
+    /// at gp-0x1f04, interface 0 resolving to a fake) and the real
+    /// `BENewRaceInt_GetTrackPeak`; the fake call may unwind.
+    #[test]
+    fn world_get_peak_number_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::GAME_GP;
+        check(ee::s09::f_002d1ba0__generated, world_get_peak_number, 60, &|c, seed| {
+            let mut r = machine(c, seed, 0x2d_1ba0, 1);
+            // A created BE library singleton, interface index 0.
+            c.bus.write32(GAME_GP.wrapping_sub(0x1f04), DATA + 0x30_0000);
+            c.bus.write32(GAME_GP.wrapping_sub(0x1efc), 0);
+            c.bus.write32(0x0053_08a8, 0);
+            // The current track (BENewRaceInt) and its peak in the table.
+            let track = seed % 8;
+            c.bus.write32(0x0053_5c08, track);
+            c.bus.write32(0x0043_d950 + track * 0x64 + 0x54, r.next_u32() % 5);
+            c.pc = 0x002d_1ba0;
+        });
     }
 }

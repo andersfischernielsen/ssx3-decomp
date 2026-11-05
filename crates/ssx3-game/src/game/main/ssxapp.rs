@@ -100,6 +100,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0022_a770, nash_collect_effects, "Nash_CollectEffects"),
     (0x0022_a368, nash_classify_instances, "Nash_ClassifyInstances"),
     (0x0022_a408, nash_classify_patches, "Nash_ClassifyPatches"),
+    (0x0022_7f58, ssx_app_tick, "SSXApp_Tick"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -3070,6 +3071,39 @@ pub fn nash_classify_instances(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// SSXApp_Tick (0x227f58)
+
+/// gp-relative pointer to the pad queue.
+pub(crate) const SSX_APP_PAD_QUEUE_GP: u32 = 0x850;
+
+
+pub(crate) const SSX_APP_PAD_QUEUE_POLL: u32 = 0x0032_6b88;
+
+
+
+/// `void cSSXApp::timerCallback()` (0x227f58, `SSXApp_Tick`): the app's
+/// timer tick polls the pad queue (`PadQueue_Poll`) if there is one.
+pub fn ssx_app_tick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = Addr(r32(c, GP).wrapping_sub(SSX_APP_PAD_QUEUE_GP)).lw(c);
+        frame.save_ra(c, 0);
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            call_ptr(c, SSX_APP_PAD_QUEUE_POLL, 0x0022_7f70)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4378,5 +4412,32 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+    use super::*;
+
+
+    /// SSXApp_Tick: no pad queue, or one with the real PadQueue_Poll (the
+    /// fixture of its own test: 0..4 devices, or none, whose poll methods
+    /// are fakes unwinding on some seeds).
+    #[test]
+    fn ssx_app_tick_matches() {
+        crate::difftest::check(ee::s05::f_00227f58__generated, ssx_app_tick, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x22_7f58, 4);
+            c.pc = 0x0022_7f58;
+            let q = DATA;
+            let present = seed % 5 != 0;
+            c.bus.write32(GAME_GP - SSX_APP_PAD_QUEUE_GP, if present { q } else { 0 });
+            let n = if seed % 9 == 0 { u32::MAX } else { seed % 5 };
+            c.bus.write32(q + 0x2ee8, n);
+            c.bus.write32(q + 0x2ee4, if seed % 3 == 0 { 29 } else { r.next_u32() % 30 });
+            for i in 0..4u32 {
+                let dev = DATA + 0x4000 + 0x40 * i;
+                let vt = DATA + 0x5000 + 0x40 * i;
+                c.bus.write32(q + 0x2eec + 4 * i, dev);
+                c.bus.write32(dev, vt);
+                c.bus.write16(vt + 0x10, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(vt + 0x14, FAKE + 0x10 * i);
+            }
+        });
     }
 }

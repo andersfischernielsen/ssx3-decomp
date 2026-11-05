@@ -182,6 +182,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0011_98d8, rider_metrix_set_flip_amount, "RiderMetrix_SetFlipAmount"),
     (0x0011_7908, rider_metrix_get_trick_bonus, "RiderMetrix_GetTrickBonus"),
     (0x0011_9898, rider_metrix_set_spin_amount, "RiderMetrix_SetSpinAmount"),
+    (0x0011_a228, rider_metrix_finish_trick, "RiderMetrix_FinishTrick"),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -4345,6 +4346,538 @@ pub fn rider_metrix_get_trick_bonus(c: &mut Cpu) {
     ret(c);
 }
 
+
+pub(crate) mod finish_trick_callee {
+    use super::*;
+
+    pub const REMOVE_HUD_MESSAGE: Callee = Callee { addr: 0x0011_79e0, f: ee::s00::f_001179e0 };
+
+    pub const ALL_PLAYERS_FINISHED: Callee = Callee { addr: 0x0012_a250, f: ee::s00::f_0012a250 };
+
+    pub const BUILD_TRICK_DESC: Callee = Callee { addr: 0x0011_a8c8, f: ee::s00::f_0011a8c8 };
+
+    pub const GET_ROUNDED_TRICK_POINTS: Callee = Callee { addr: 0x0011_7948, f: ee::s00::f_00117948 };
+
+    pub const LOOKUP_BONUS_TRICK: Callee = Callee { addr: 0x0011_b1a8, f: ee::s00::f_0011b1a8 };
+
+    pub const SHOW_HUD_NUMBER: Callee = Callee { addr: 0x0011_7b88, f: ee::s00::f_00117b88 };
+
+    pub const COUNT_TRICK_REPEATS: Callee = Callee { addr: 0x0011_90f0, f: ee::s00::f_001190f0 };
+
+    pub const SHOW_TRICK_NAME: Callee = Callee { addr: 0x0011_8ff8, f: ee::s00::f_00118ff8 };
+
+    pub const GET_TRICK_SCORE: Callee = Callee { addr: 0x0011_7990, f: ee::s00::f_00117990 };
+
+    pub const GET_SCORE_TIER: Callee = Callee { addr: 0x0011_9310, f: ee::s00::f_00119310 };
+
+    pub const GET_TRICK_BONUS: Callee = Callee { addr: 0x0011_7908, f: ee::s00::f_00117908 };
+
+    pub const ADD_COMBO_POINTS: Callee = Callee { addr: 0x0011_7638, f: ee::s00::f_00117638 };
+
+    pub const GET_TRICK_POINTS: Callee = Callee { addr: 0x0011_7900, f: ee::s00::f_00117900 };
+
+    pub const AWARD_POINTS: Callee = Callee { addr: 0x0011_9ef8, f: ee::s00::f_00119ef8 };
+
+    pub const UPDATE_PEAK_A4: Callee = Callee { addr: 0x0011_7708, f: ee::s00::f_00117708 };
+
+    /// Cross-shard calls (through the function table).
+    pub const AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
+
+    pub const AUDIO_ON_BONUS_TRICK: u32 = 0x0029_b7e0;
+
+    pub const AUDIO_ON_TRICK_LANDED: u32 = 0x0029_b430;
+
+    pub const BE_GET_INSTANCE: u32 = 0x0014_dc80;
+
+    pub const BE_GET_INTERFACE: u32 = 0x0014_dd58;
+}
+
+
+
+/// The event settings (`D_00535BC8`): kind at +0x48, game type at +0x49.
+pub(crate) const FINISH_TRICK_EVENT_SETTINGS: u32 = 0x0053_5bc8;
+
+
+
+/// `float RiderMetrix_FinishTrick(RiderMetrix* m, int stance, int alternate,
+/// int style, int flag, int takeoff)` (0x11a228): clear the trick HUD
+/// messages; unless every player has finished, build the landed trick's id
+/// and, when it scored, bank it: a bonus-trick bonus (score `+0x14`, HUD
+/// and audio), repeats (dividing the points), combo points, the per-run
+/// statistics (points `+0x198`, bonus `+0x19c`, count `+0x110`, grade
+/// counts `+0x16c`, best trick `+0x18c/+0x190`, spin/flip degrees, air
+/// time, rails, peaks), the landing sound, then the HUD numbers (or, in a
+/// Conquer-the-Mountain free ride, career points). Finally peaks/`+0xa4`
+/// when the landing is clean. Returns the trick points over the repeats.
+pub fn rider_metrix_finish_trick(c: &mut Cpu) {
+    use finish_trick_callee as f;
+    guest(c, |c| {
+        c.cycles += 47;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S0, 0xb0);
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S2, 0x90);
+        frame.save(c, S7, 0x40);
+        frame.save(c, FP, 0x30);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S5, 0x60);
+        frame.save(c, S6, 0x50);
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 20, 0xc0);
+        c.g[S0][0] = c.g[A1][0]; // stance
+        c.g[S1][0] = c.g[A0][0]; // m
+        c.g[S2][0] = c.g[A2][0]; // alternate
+        c.g[S7][0] = c.g[A3][0]; // style
+        c.g[FP][0] = c.g[T0][0]; // flag
+        Addr(sp(c) + 0x10).sw(c, c.g[T1][0]); // takeoff
+        let m = r32(c, S1);
+
+        // Clear the trick HUD messages.
+        let codes: [(u64, u32); 8] = [
+            (0x1, 0x0011_a278),
+            (0x2, 0x0011_a284),
+            (0x4, 0x0011_a290),
+            (0x1c, 0x0011_a29c),
+            (0x1d, 0x0011_a2a8),
+            (0x1e, 0x0011_a2b4),
+            (0x1f, 0x0011_a2c0),
+            (0x20, 0x0011_a2cc),
+        ];
+        for (code, ret_addr) in codes {
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = code;
+            f::REMOVE_HUD_MESSAGE.call(c, ret_addr)?;
+        }
+
+        // Nothing is scored once everybody has finished.
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+        c.g[V1][0] = Addr(r32(c, V0) + 0x84).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1) + 0xc).lw(c);
+        f::ALL_PLAYERS_FINISHED.call(c, 0x0011_a2dc)?;
+        let finished = c.g[V0][0] != 0;
+        c.g[A2][0] = c.g[S0][0];
+        if finished {
+            c.cycles += 3;
+            c.mtc1(0, 0);
+            frame.restore(c, S0, 0xb0);
+            finish_trick_epilogue(c, frame);
+            return Ok(());
+        }
+
+        c.cycles += 12;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A3][0] = c.g[S2][0];
+        c.g[A1][0] = c.g[SP][0]; // &id
+        c.g[T0][0] = c.g[S7][0];
+        c.g[T1][0] = c.g[FP][0];
+        f::BUILD_TRICK_DESC.call(c, 0x0011_a308)?;
+        c.mtc1(0, 20); // delta = 0
+        c.g[S0][0] = c.g[V0][0]; // valid
+        c.g[A0][0] = c.g[S1][0];
+        f::GET_ROUNDED_TRICK_POINTS.call(c, 0x0011_a318)?;
+        let scored = (c.g[V0][0] as i64) > 0;
+        c.g[V0][0] = Addr(sp(c) + 0x10).lw(c);
+        if scored {
+            finish_trick_bank(c, m)?;
+        }
+
+        // The clean-landing check (v0 = takeoff).
+        c.cycles += 2;
+        let check_peaks;
+        if c.g[V0][0] != 0 {
+            c.g[V0][0] = Addr(m + 0x20).lw(c);
+            c.cycles += 2;
+            let busy = c.g[V0][0] != 0;
+            c.mov_s(0, 20);
+            if busy {
+                check_peaks = false;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(m + 0x28).lw(c);
+                let busy = c.g[V0][0] != 0;
+                frame.restore(c, S0, 0xb0);
+                if busy {
+                    finish_trick_epilogue(c, frame);
+                    return Ok(());
+                }
+                c.cycles += 1;
+                c.lwc1(0, m + 0x14);
+                check_peaks = true;
+            }
+        } else {
+            c.cycles += 2;
+            let styled = c.g[S7][0] != 0;
+            c.mov_s(0, 20);
+            if styled {
+                check_peaks = false;
+            } else {
+                c.cycles += 2;
+                if c.g[FP][0] == 0 {
+                    c.lwc1(0, m + 0x14);
+                    check_peaks = true;
+                } else {
+                    c.cycles += 2;
+                    frame.restore(c, S0, 0xb0);
+                    finish_trick_epilogue(c, frame);
+                    return Ok(());
+                }
+            }
+        }
+        if check_peaks {
+            c.cycles += 4;
+            c.mtc1(0, 1);
+            c.c_lt_s(1, 0);
+            let mut update = c.fcc(); // score > 0
+            if !update {
+                c.cycles += 5;
+                c.lwc1(0, m + 0xa4);
+                c.c_lt_s(0, 1);
+                update = c.fcc(); // +0xa4 < 0
+                c.mov_s(0, 20);
+            }
+            if update {
+                c.cycles += 5;
+                c.g[AT][0] = 0x3fc0_0000;
+                c.mtc1(1, 12); // 1.5
+                c.g[A0][0] = c.g[S1][0];
+                f::UPDATE_PEAK_A4.call(c, 0x0011_a76c)?;
+                c.mov_s(0, 20);
+            }
+        }
+        c.cycles += 1;
+        frame.restore(c, S0, 0xb0);
+        finish_trick_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+
+
+/// RiderMetrix_FinishTrick's scoring part (0x11a320..0x11a700): bank the
+/// trick; leaves v0 = takeoff (reloaded from the frame).
+pub(crate) fn finish_trick_bank(c: &mut Cpu, m: u32) -> crate::call::Flow {
+    use finish_trick_callee as f;
+    c.cycles += 2;
+    c.g[S6][0] = 0; // repeats
+    if c.g[S0][0] != 0 {
+        c.cycles += 5;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[SP][0];
+        f::LOOKUP_BONUS_TRICK.call(c, 0x0011_a334)?;
+        let bonus = (c.g[V0][0] as i64) > 0;
+        c.g[A1][0] = 0x32;
+        if bonus {
+            c.cycles += 18;
+            c.mtc1(2, 0);
+            c.cvt_s_w(0, 0);
+            c.lwc1(2, r32(c, GP).wrapping_sub(0x79f4));
+            c.lwc1(1, m + 0x14);
+            c.g[A0][0] = c.g[S1][0];
+            c.g[AT][0] = 0x3fc0_0000;
+            c.mtc1(1, 12); // 1.5
+            c.mul_s(0, 0, 2);
+            c.g[A2][0] = c.g[V0][0];
+            c.g[A3][0] = 0;
+            c.add_s(1, 1, 0);
+            c.swc1(1, m + 0x14);
+            f::SHOW_HUD_NUMBER.call(c, 0x0011_a370)?;
+            call_ptr(c, f::AUDIO_GET_INSTANCE, 0x0011_a378)?;
+            c.g[A1][0] = Addr(m + 0x1ac).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, f::AUDIO_ON_BONUS_TRICK, 0x0011_a384)?;
+        }
+        c.cycles += 8;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[SP][0];
+        f::COUNT_TRICK_REPEATS.call(c, 0x0011_a390)?;
+        c.g[S6][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = (0 < (c.g[S6][0] as i64)) as u64;
+        f::SHOW_TRICK_NAME.call(c, 0x0011_a3a4)?;
+    }
+
+    c.cycles += 18;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[S0][0] = sx(r32(c, S6).wrapping_add(1)); // divisor
+    f::GET_ROUNDED_TRICK_POINTS.call(c, 0x0011_a3b0)?;
+    c.g[S3][0] = c.g[V0][0]; // pending
+    c.g[A0][0] = c.g[S1][0];
+    f::GET_TRICK_SCORE.call(c, 0x0011_a3bc)?;
+    c.g[S2][0] = c.g[V0][0]; // points
+    c.g[A1][0] = c.g[S3][0];
+    c.g[A0][0] = c.g[S1][0];
+    f::GET_SCORE_TIER.call(c, 0x0011_a3cc)?;
+    c.g[S5][0] = c.g[V0][0]; // grade
+    c.g[A0][0] = c.g[S1][0];
+    f::GET_TRICK_BONUS.call(c, 0x0011_a3d8)?;
+    c.div(0, S3, S0);
+    c.g[S4][0] = c.g[V0][0]; // inverted
+    c.g[A0][0] = c.g[S1][0];
+
+    c.cycles += 10;
+    c.g[A1][0] = c.lo[0];
+    f::ADD_COMBO_POINTS.call(c, 0x0011_a3f8)?;
+    c.g[A0][0] = c.g[S1][0];
+    f::GET_TRICK_POINTS.call(c, 0x0011_a400)?;
+    c.div(0, S2, S0);
+    c.g[A2][0] = 0xa;
+    c.g[V0][0] = sx(r32(c, S5) << 2);
+
+    // Totals, grade counts, delta = points / divisor.
+    c.cycles += 27;
+    c.g[A1][0] = sx(m.wrapping_add(0x16c).wrapping_add(r32(c, V0)));
+    c.g[V1][0] = Addr(m + 0x19c).lw(c);
+    c.g[V0][0] = Addr(m + 0x110).lw(c);
+    c.mtc1(S0, 1);
+    c.cvt_s_w(1, 1);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, S4)));
+    c.g[A0][0] = Addr(m + 0x198).lw(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+    Addr(m + 0x19c).sw(c, c.g[V1][0]);
+    Addr(m + 0x110).sw(c, c.g[V0][0]);
+    c.div_s(20, 0, 1);
+    c.g[A3][0] = c.lo[0];
+    c.g[S2][0] = c.g[A3][0];
+    c.div(0, S2, A2);
+    c.g[V0][0] = c.hi[0];
+    c.g[S2][0] = sx(r32(c, S2).wrapping_sub(r32(c, V0)));
+    c.g[V1][0] = sx(r32(c, S2).wrapping_add(r32(c, S4)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+    Addr(m + 0x198).sw(c, c.g[A0][0]);
+    let grade_count = r32(c, A1);
+    c.g[V0][0] = Addr(grade_count).lw(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+    Addr(grade_count).sw(c, c.g[V0][0]);
+    c.g[V1][0] = Addr(m + 0x18c).lw(c);
+    c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[S3][0] as i64)) as u64;
+    if c.g[V1][0] != 0 {
+        // New best trick: points and id.
+        c.cycles += 5;
+        Addr(m + 0x18c).sw(c, c.g[S3][0]);
+        let s = sp(c);
+        c.ldl(2, s + 7);
+        c.ldr(2, s);
+        c.sdl(2, m + 0x197);
+        c.sdr(2, m + 0x190);
+    }
+
+    // Spin and flip in whole degrees, rounded to half turns.
+    c.cycles += 5;
+    c.lwc1(1, r32(c, GP).wrapping_sub(0x79f0));
+    c.g[V1][0] = 0xb4;
+    c.lwc1(0, m + 0x34);
+    c.cycles += 8;
+    c.mul_s(0, 0, 1);
+    c.cvt_w_s(1, 0);
+    c.mfc1(A0, 1);
+    c.div(0, A0, V1);
+    c.g[V1][0] = c.hi[0];
+    let low = (c.g[V1][0] as i64) < -90;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_sub(r32(c, V1)));
+    if low {
+        c.cycles += 2;
+        c.g[A1][0] = sx(r32(c, V0).wrapping_sub(0xb4));
+    } else {
+        c.cycles += 3;
+        let small = (c.g[V1][0] as i64) < 91;
+        c.g[V0][0] = small as u64;
+        c.g[A1][0] = sx(r32(c, A0).wrapping_sub(r32(c, V1)));
+        if !small {
+            c.cycles += 2;
+            c.g[V0][0] = sx(r32(c, A0).wrapping_sub(r32(c, V1)));
+            c.g[A1][0] = sx(r32(c, V0).wrapping_add(0xb4));
+        }
+    }
+    c.cycles += 5;
+    c.lwc1(1, r32(c, GP).wrapping_sub(0x79ec));
+    c.g[V1][0] = 0xb4;
+    c.lwc1(0, m + 0x38);
+    c.cycles += 8;
+    c.mul_s(0, 0, 1);
+    c.cvt_w_s(1, 0);
+    c.mfc1(A0, 1);
+    c.div(0, A0, V1);
+    c.g[A3][0] = c.hi[0];
+    let low = (c.g[A3][0] as i64) < -90;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_sub(r32(c, A3)));
+    if low {
+        c.cycles += 2;
+        c.g[A3][0] = sx(r32(c, V0).wrapping_sub(0xb4));
+    } else {
+        c.cycles += 3;
+        let small = (c.g[A3][0] as i64) < 91;
+        c.g[V0][0] = small as u64;
+        if small {
+            c.g[A3][0] = sx(r32(c, A0).wrapping_sub(r32(c, A3)));
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = sx(r32(c, A0).wrapping_sub(r32(c, A3)));
+            c.g[A3][0] = sx(r32(c, V0).wrapping_add(0xb4));
+        }
+    }
+    // abs(spin) in v0, abs(flip) in a3.
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A1][0];
+    if (c.g[A1][0] as i64) < 0 {
+        c.cycles += 1;
+        c.g[V0][0] = sx(0u32.wrapping_sub(r32(c, V0)));
+    }
+    c.cycles += 4;
+    c.g[V1][0] = Addr(m + 0x100).lw(c);
+    c.g[A1][0] = Addr(m + 0xfc).lw(c);
+    if (c.g[A3][0] as i64) < 0 {
+        c.g[A3][0] = sx(0u32.wrapping_sub(r32(c, A3)));
+    }
+
+    c.cycles += 18;
+    c.lwc1(1, m + 0x144);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A3)));
+    c.lwc1(0, m + 0x44);
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+    c.g[A2][0] = Addr(m + 0x104).lw(c);
+    c.g[A0][0] = Addr(m + 0x108).lw(c);
+    c.add_s(1, 1, 0);
+    c.g[V0][0] = Addr(m + 0x4c).lw(c);
+    c.g[A3][0] = Addr(m + 0x80).lw(c);
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(r32(c, V0)));
+    c.g[T0][0] = Addr(m + 0x54).lw(c);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A3)));
+    Addr(m + 0xfc).sw(c, c.g[A1][0]);
+    Addr(m + 0x100).sw(c, c.g[V1][0]);
+    c.swc1(1, m + 0x144);
+    Addr(m + 0x104).sw(c, c.g[A2][0]);
+    let rails = (c.g[T0][0] as i64) > 0;
+    Addr(m + 0x108).sw(c, c.g[A0][0]);
+    if rails {
+        c.cycles += 7;
+        call_ptr(c, f::AUDIO_GET_INSTANCE, 0x0011_a5a0)?;
+        c.g[A1][0] = Addr(m + 0x1ac).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A2][0] = Addr(m + 0x54).lw(c);
+        c.g[A3][0] = Addr(m + 0x114).lw(c);
+        call_ptr(c, f::AUDIO_ON_TRICK_LANDED, 0x0011_a5b4)?;
+    }
+
+    // Running sums and peaks.
+    c.cycles += 44;
+    c.lwc1(4, m + 0x14c);
+    c.lwc1(5, m + 0x150);
+    c.lwc1(6, m + 0x154);
+    c.lwc1(7, m + 0x158);
+    c.g[T1][0] = Addr(m + 0x84).lw(c);
+    c.g[V1][0] = Addr(m + 0x58).lw(c);
+    c.g[A1][0] = Addr(m + 0x114).lw(c);
+    c.g[T2][0] = sx(r32(c, S2).wrapping_add(r32(c, T1)));
+    c.g[A2][0] = Addr(m + 0x118).lw(c);
+    c.g[S0][0] = sx(r32(c, T2).wrapping_add(r32(c, S4))); // total
+    c.g[A3][0] = Addr(m + 0x11c).lw(c);
+    c.g[T0][0] = Addr(m + 0x198).lw(c);
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(r32(c, V1)));
+    c.g[A0][0] = Addr(m + 0x74).lw(c);
+    c.g[V0][0] = Addr(m + 0x54).lw(c);
+    c.g[T0][0] = sx(r32(c, T0).wrapping_add(r32(c, T1)));
+    c.lwc1(3, m + 0x30);
+    c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, A0)));
+    c.lwc1(2, m + 0x48);
+    c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+    c.lwc1(1, m + 0x24);
+    c.max_s(3, 3, 4);
+    c.lwc1(0, m + 0x78);
+    c.max_s(2, 2, 5);
+    c.max_s(1, 1, 6);
+    Addr(m + 0x114).sw(c, c.g[A1][0]);
+    c.max_s(0, 0, 7);
+    Addr(m + 0x118).sw(c, c.g[A2][0]);
+    Addr(m + 0x11c).sw(c, c.g[A3][0]);
+    c.swc1(3, m + 0x14c);
+    c.swc1(2, m + 0x150);
+    c.swc1(1, m + 0x154);
+    c.swc1(0, m + 0x158);
+    Addr(m + 0x198).sw(c, c.g[T0][0]);
+    call_ptr(c, f::BE_GET_INSTANCE, 0x0011_a640)?;
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, f::BE_GET_INTERFACE, 0x0011_a64c)?;
+    c.g[V1][0] = sx(FINISH_TRICK_EVENT_SETTINGS);
+    c.g[A0][0] = 0x4;
+    c.g[V0][0] = Addr(FINISH_TRICK_EVENT_SETTINGS + 0x48).lb(c);
+    let mountain = c.g[V0][0] == c.g[A0][0];
+    c.g[A1][0] = 0;
+    if mountain {
+        c.cycles += 2;
+        c.g[V0][0] = Addr(FINISH_TRICK_EVENT_SETTINGS + 0x49).lb(c);
+        c.g[A1][0] = (c.g[V0][0] < 1) as u64;
+    }
+
+    c.cycles += 2;
+    let career = c.g[A1][0] != 0;
+    c.g[V0][0] = 0x1f4;
+    if !career {
+        c.cycles += 2;
+        let repeated = (c.g[S6][0] as i64) > 0;
+        c.g[A3][0] = c.g[S5][0];
+        if repeated {
+            c.cycles += 8;
+            c.g[AT][0] = 0x4020_0000;
+            c.mtc1(1, 12); // 2.5
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x24;
+            c.g[A2][0] = c.g[S0][0];
+            f::SHOW_HUD_NUMBER.call(c, 0x0011_a694)?;
+        } else {
+            c.cycles += 6;
+            c.g[AT][0] = 0x4020_0000;
+            c.mtc1(1, 12); // 2.5
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A1][0] = 0x23;
+            c.g[A2][0] = c.g[S0][0];
+            f::SHOW_HUD_NUMBER.call(c, 0x0011_a6b4)?;
+        }
+        c.cycles += 8;
+        c.lwc1(12, r32(c, GP).wrapping_sub(0x79e8));
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0x18;
+        c.g[A3][0] = 0;
+        f::SHOW_HUD_NUMBER.call(c, 0x0011_a6cc)?;
+    } else {
+        c.cycles += 4;
+        c.g[V1][0] = 0x14;
+        c.div(0, S0, V0);
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = c.lo[0];
+        c.g[V0][0] = ((c.g[A2][0] as i64) < 21) as u64;
+        if c.g[V0][0] == 0 {
+            c.g[A2][0] = c.g[V1][0];
+        }
+        f::AWARD_POINTS.call(c, 0x0011_a6fc)?;
+    }
+    c.g[V0][0] = Addr(sp(c) + 0x10).lw(c);
+    Ok(())
+}
+
+
+
+/// RiderMetrix_FinishTrick's epilogue (0x11a774).
+pub(crate) fn finish_trick_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 12;
+    frame.restore(c, S1, 0xa0);
+    frame.restore(c, S2, 0x90);
+    frame.restore(c, S3, 0x80);
+    frame.restore(c, S4, 0x70);
+    frame.restore(c, S5, 0x60);
+    frame.restore(c, S6, 0x50);
+    frame.restore(c, S7, 0x40);
+    frame.restore(c, FP, 0x30);
+    frame.restore_ra(c, 0x20);
+    frame.restore_fpr(c, 20, 0xc0);
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5433,6 +5966,83 @@ pub(crate) mod tests {
             c.bus.write32(DATA + RIDER_METRIX_TRICK_BONUS, factor);
             let scale = if seed % 5 == 0 { r.edge_f32() } else { 10000.0f32.to_bits() };
             c.bus.write32(GAME_GP - RIDER_METRIX_BONUS_SCALE_GP, scale);
+        });
+    }
+    use super::*;
+
+
+    /// RiderMetrix_FinishTrick with its real callees: a world whose single
+    /// player has (not) finished, a zeroed BELibrary dummy and audio system,
+    /// a metrix record (cleared, then random score/points/spin/flip/peaks,
+    /// best trick, landing flags), the event settings (Conquer-the-Mountain
+    /// free ride or not) and every takeoff/style/flag combination.
+    #[test]
+    fn rider_metrix_finish_trick_matches() {
+        crate::difftest::check(ee::s00::f_0011a228__generated, rider_metrix_finish_trick, 160, &|c, seed| {
+            let mut r = machine(c, seed, 0x11_a228, 0);
+            elf_image(c);
+            let be = DATA + 0x20_0000;
+            let world = DATA + 0x21_0000;
+            let game = world + 0x1000;
+            let race = world + 0x2000;
+            let player = world + 0x3000;
+            let player_state = world + 0x4000;
+            let audio = DATA + 0x22_0000;
+            for a in [be, world, audio] {
+                for i in 0..0x1000 / 4 {
+                    c.bus.write32(a + 4 * i, 0);
+                }
+            }
+            c.bus.write32(GAME_GP.wrapping_sub(0x1f04), be);
+            c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+            c.bus.write32(GAME_GP + 0x410, audio);
+            c.bus.write32(world + 0x84, game);
+            c.bus.write32(game + 0xc, race);
+            // One player; finished when its +0x470 is >= 0.
+            c.bus.write32(race + 0x7c, 1);
+            c.bus.write32(race + 0x40, player);
+            c.bus.write32(player + 0x18, player_state);
+            let finished = seed % 10 == 0;
+            c.bus.write32(player_state + 0x470, (if finished { 1.0f32 } else { -1.0 }).to_bits());
+            // The event settings.
+            let kind = if seed % 3 == 0 { 4 } else { (r.next_u32() % 4) as u8 };
+            c.bus.write8(FINISH_TRICK_EVENT_SETTINGS + 0x48, kind);
+            c.bus.write8(FINISH_TRICK_EVENT_SETTINGS + 0x49, (seed / 3 % 2) as u8);
+
+            let m = DATA + 0x1000;
+            for i in 0..0x200 / 4 {
+                c.bus.write32(m + 4 * i, 0);
+            }
+            let score = match seed % 5 {
+                0 => 0.0f32,
+                1 => -((r.next_u32() % 50) as f32),
+                _ => (r.next_u32() % 500) as f32,
+            };
+            c.bus.write32(m + 0x14, score.to_bits());
+            // Trick points (0 on some seeds: nothing scored).
+            let points = if seed % 7 == 0 { 0.0f32 } else { (r.next_u32() % 4000) as f32 };
+            c.bus.write32(m + 0x1c4, points.to_bits());
+            c.bus.write32(m + 0x34, r.f32(20.0));
+            c.bus.write32(m + 0x38, r.f32(20.0));
+            for off in [0x44, 0x30, 0x48, 0x24, 0x78, 0x14c, 0x150, 0x154, 0x158, 0x144] {
+                c.bus.write32(m + off, r.f32(10.0));
+            }
+            for off in [0x4c, 0x80, 0x58, 0x74, 0x84, 0xfc, 0x100, 0x104, 0x108, 0x114, 0x118, 0x11c] {
+                c.bus.write32(m + off, r.next_u32() % 100);
+            }
+            for off in [0x198, 0x19c, 0x110, 0x18c] {
+                c.bus.write32(m + off, r.next_u32() % 3000);
+            }
+            c.bus.write32(m + 0xa4, r.f32(2.0));
+            c.bus.write32(m + 0x20, if seed % 4 == 1 { 1 } else { 0 });
+            c.bus.write32(m + 0x28, if seed % 6 == 2 { 1 } else { 0 });
+            c.g[A0][0] = sx(m);
+            c.g[A1][0] = (r.next_u32() % 2) as u64;
+            c.g[A2][0] = (r.next_u32() % 2) as u64;
+            c.g[A3][0] = if seed % 4 == 3 { 1 } else { 0 };
+            c.g[T0][0] = if seed % 8 == 5 { 1 } else { 0 };
+            c.g[T1][0] = if seed % 2 == 0 { 1 } else { 0 };
+            c.pc = 0x0011_a228;
         });
     }
 }

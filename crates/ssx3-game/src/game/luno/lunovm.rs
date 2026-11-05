@@ -63,6 +63,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0022_6768, c_luno_table_entry_dtor, "cLunoTableEntry_dtor"),
     (0x0022_24b8, luno_vm_call, "LunoVM_Call"),
+    (0x0022_5068, cluno_table_assign, "cLunoTable_Assign"),
+    (0x0022_57e0, c_luno_table_write, "cLunoTable_Write"),
+    (0x0022_5be8, luno_vm_register_write, "LunoVMRegister_Write"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -990,6 +993,408 @@ pub fn luno_vm_call(c: &mut Cpu) {
     })
 }
 
+
+
+pub(crate) const LUNO_TYPE_PTR: u64 = 5;
+
+
+pub(crate) const LUNO_STREAM_WRITE: u32 = 0x8;
+
+
+
+/// `void LunoVMRegister_Write(cLunoValue* self, Stream* stream, int base)`
+/// (0x225be8): save a Luno register: write its type tag (4 bytes), then a
+/// pointer relative to `base` (`LunoVMRegister_WritePtr`), a table
+/// (`cLunoTable_Write`) or the 4-byte payload. Frame 0x40 (s0-s2).
+pub fn luno_vm_register_write(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A2][0];
+        // stream->Write(&self->type, 4)
+        c.g[A1][0] = sx(r32(c, S0).wrapping_add(LUNO_VALUE_TYPE));
+        c.g[A2][0] = 4;
+        let vt = Addr(r32(c, S1)).lw(c);
+        c.g[V1][0] = vt;
+        let delta = Addr((vt as u32).wrapping_add(LUNO_STREAM_WRITE)).lh(c);
+        let write = Addr((vt as u32).wrapping_add(LUNO_STREAM_WRITE + 4)).lw(c);
+        c.g[V0][0] = write;
+        c.g[A0][0] = abi::addu(c.g[S1][0], delta);
+        call_ptr(c, write as u32, 0x0022_5c24)?;
+        let ty = Addr(r32(c, S0).wrapping_add(LUNO_VALUE_TYPE)).lw(c);
+        c.g[V1][0] = ty;
+        c.g[V0][0] = LUNO_TYPE_TABLE;
+        if ty == LUNO_TYPE_PTR {
+            c.cycles += 6;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[S2][0];
+            Callee { addr: 0x0022_4c00, f: ee::s05::f_00224c00 }.call(c, 0x0022_5c44)?;
+        } else {
+            c.cycles += 2;
+            if ty == LUNO_TYPE_TABLE {
+                c.cycles += 6;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = c.g[S2][0];
+                Callee { addr: 0x0022_57e0, f: ee::s05::f_002257e0 }.call(c, 0x0022_5c64)?;
+            } else {
+                // stream->Write(self, 4)
+                let vt = Addr(r32(c, S1)).lw(c);
+                c.g[V0][0] = vt;
+                c.cycles += 7;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = 4;
+                let delta = Addr((vt as u32).wrapping_add(LUNO_STREAM_WRITE)).lh(c);
+                let write = Addr((vt as u32).wrapping_add(LUNO_STREAM_WRITE + 4)).lw(c);
+                c.g[V1][0] = write;
+                c.g[A0][0] = abi::addu(c.g[S1][0], delta);
+                call_ptr(c, write as u32, 0x0022_5c84)?;
+            }
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// cLunoTable_Assign (0x225068, lunovm.cpp)
+
+/// cLunoTable field: the reference count.
+pub(crate) const LTA_REFCOUNT: u32 = 0x8;
+
+
+/// `cLunoTable_FreeData(cLunoTableRef*)`: destroys and frees the table.
+pub(crate) const LTA_FREE_DATA: Callee = Callee {
+    addr: 0x0022_4f30,
+    f: ee::s05::cLunoTable_FreeData,
+};
+
+
+
+/// `cLunoTableRef* cLunoTable_Assign(cLunoTableRef* self, cLunoTableRef*
+/// other)` (0x225068): reference assignment. When the tables differ, drops
+/// the old reference (freeing the table at refcount 0), takes `other`'s
+/// table and increments its refcount; returns `self`.
+pub fn cluno_table_assign(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V1][0] = Addr(r32(c, S0)).lw(c);
+        c.g[V0][0] = Addr(r32(c, S1)).lw(c);
+        let same = c.g[V1][0] == c.g[V0][0];
+        c.g[V0][0] = c.g[S0][0];
+        if !same {
+            c.cycles += 2;
+            if c.g[V1][0] != 0 {
+                // Drop the old reference.
+                c.cycles += 4;
+                let old = c.g[V1][0] as u32;
+                c.g[V0][0] = sx((Addr(old.wrapping_add(LTA_REFCOUNT)).lw(c) as u32).wrapping_sub(1));
+                let live = c.g[V0][0] != 0;
+                Addr(old.wrapping_add(LTA_REFCOUNT)).sw(c, c.g[V0][0]);
+                if !live {
+                    c.cycles += 2;
+                    LTA_FREE_DATA.call(c, 0x0022_50b0)?;
+                }
+                c.cycles += 1;
+            }
+            c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+            // Take the new one.
+            c.cycles += 5;
+            let new = c.g[V1][0] as u32;
+            Addr(r32(c, S0)).sw(c, c.g[V1][0]);
+            c.g[V0][0] = sx((Addr(new.wrapping_add(LTA_REFCOUNT)).lw(c) as u32).wrapping_add(1));
+            Addr(new.wrapping_add(LTA_REFCOUNT)).sw(c, c.g[V0][0]);
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// cLunoTable_Write (0x2257e0)
+
+pub(crate) const LUNO_REGISTER_WRITE: Callee = Callee {
+    addr: 0x0022_5be8,
+    f: ee::s05::LunoVMRegister_Write,
+};
+
+
+/// Table: highest bucket index (-1 without a hash part) and the node array.
+pub(crate) const LUNO_TABLE_MODULUS: u32 = 0xc;
+
+
+pub(crate) const LUNO_TABLE_NODES: u32 = 0x10;
+
+
+/// Hash node (0x20 bytes): key register (+0), value register (+0xc, its
+/// type tag at +0x14) and the chain link (+0x18).
+pub(crate) const LUNO_NODE_VALUE: u32 = 0xc;
+
+
+pub(crate) const LUNO_NODE_VALUE_TYPE: u32 = 0x14;
+
+
+pub(crate) const LUNO_NODE_NEXT: u32 = 0x18;
+
+
+pub(crate) const LUNO_NODE_SIZE: u32 = 0x20;
+
+
+
+/// `r += 1` on a 32-bit counter register (`addiu r, r, 1`).
+pub(crate) fn luno_table_inc(c: &mut Cpu, r: usize) {
+    c.g[r][0] = sx((c.g[r][0] as u32).wrapping_add(1));
+}
+
+
+
+/// `stream->Write(data, n)` (vtable slot 8) returning to `ret`; `vt`/`m`
+/// are the registers the original loads the vtable and method into.
+pub(crate) fn luno_table_stream_write(c: &mut Cpu, vt: usize, m: usize, ret: u32) -> crate::call::Flow {
+    let stream = r32(c, S2);
+    c.g[vt][0] = Addr(stream).lw(c);
+    let table = r32(c, vt);
+    c.g[A0][0] = Addr(table).off(8).lh(c);
+    c.g[m][0] = Addr(table).off(0xc).lw(c);
+    let method = r32(c, m);
+    c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret)
+}
+
+
+
+/// `void cLunoTable_Write(cLunoTableRef *self, Stream *stream, int base)`
+/// (0x2257e0): save a Luno table: the table pointer (8 bytes), the number
+/// of live entries (non-nil values over every bucket and its chain), then
+/// each live entry's key and value register (`LunoVMRegister_Write`).
+pub fn c_luno_table_write(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A1][0]; // stream
+        frame.save(c, S6, 0x20);
+        c.g[S3][0] = c.g[A2][0]; // base
+        frame.save(c, S0, 0x80);
+        c.g[S6][0] = c.g[A0][0]; // self
+        frame.save(c, S1, 0x70);
+        c.g[A2][0] = 8;
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        frame.save_ra(c, 0x10);
+        // stream->Write(self->table, 8) (the a1 load sits before the method's).
+        let stream = r32(c, S2);
+        c.g[V1][0] = Addr(stream).lw(c);
+        c.g[A1][0] = Addr(r32(c, S6)).lw(c);
+        let vt = r32(c, V1);
+        c.g[A0][0] = Addr(vt).off(8).lh(c);
+        c.g[V0][0] = Addr(vt).off(0xc).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0022_582c)?;
+
+        // Count the live entries into the local at sp+0 (a1; a3 = bucket,
+        // t0 = modulus, a0 = node, a2 = next bucket).
+        c.g[V1][0] = Addr(r32(c, S6)).lw(c);
+        c.g[A3][0] = 0;
+        let count_at = Addr(sp(c));
+        count_at.sw(c, 0);
+        let table = r32(c, V1);
+        c.g[V0][0] = Addr(table).off(LUNO_TABLE_MODULUS).lw(c);
+        c.g[A0][0] = Addr(table).off(LUNO_TABLE_NODES).lw(c);
+        if (c.g[V0][0] as i64) >= 0 {
+            c.cycles += 3;
+            c.g[T0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, A0)).off(LUNO_NODE_VALUE_TYPE).lw(c);
+                if c.g[V0][0] != 0 {
+                    luno_table_inc(c, A1);
+                }
+                c.cycles += 4;
+                let node = r32(c, A0);
+                c.g[V1][0] = Addr(node).off(LUNO_NODE_NEXT).lw(c);
+                luno_table_inc(c, A3);
+                c.g[A2][0] = sx(node.wrapping_add(LUNO_NODE_SIZE));
+                if c.g[V1][0] != 0 {
+                    // The chain (a0 counts, v1 walks).
+                    c.cycles += 3;
+                    c.g[A0][0] = c.g[A1][0];
+                    c.g[V0][0] = Addr(r32(c, V1)).off(LUNO_NODE_VALUE_TYPE).lw(c);
+                    loop {
+                        c.cycles += 2;
+                        if c.g[V0][0] != 0 {
+                            luno_table_inc(c, A0);
+                        }
+                        c.cycles += 3;
+                        c.g[V1][0] = Addr(r32(c, V1)).off(LUNO_NODE_NEXT).lw(c);
+                        if c.g[V1][0] != 0 {
+                            c.g[V0][0] = Addr(r32(c, V1)).off(LUNO_NODE_VALUE_TYPE).lw(c);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0022_5878);
+                            }
+                        } else {
+                            c.cycles += 1;
+                            c.g[A1][0] = c.g[A0][0];
+                            break;
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                c.g[A0][0] = c.g[A2][0];
+                if c.g[V0][0] == 0 {
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0022_5850);
+                    }
+                } else {
+                    c.cycles += 1;
+                    let count = c.g[A1][0];
+                    Addr(sp(c)).sw(c, count);
+                    break;
+                }
+            }
+        }
+
+        // stream->Write(&count, 4)
+        c.cycles += 10;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 4;
+        luno_table_stream_write(c, V0, V1, 0x0022_58bc)?;
+        c.g[V0][0] = Addr(sp(c)).lw(c);
+        c.g[S5][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(r32(c, S6)).lw(c);
+            let table = r32(c, V0);
+            c.g[V1][0] = Addr(table).off(LUNO_TABLE_MODULUS).lw(c);
+            c.g[S1][0] = Addr(table).off(LUNO_TABLE_NODES).lw(c);
+            if (c.g[V1][0] as i64) >= 0 {
+                // s1 = bucket node, s0 = chain node / value, s5 = bucket
+                // index, s4 = next bucket.
+                loop {
+                    c.cycles += 3;
+                    let node = r32(c, S1);
+                    c.g[V0][0] = Addr(node).off(LUNO_NODE_VALUE_TYPE).lw(c);
+                    c.g[S0][0] = sx(node.wrapping_add(LUNO_NODE_VALUE));
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 11;
+                        luno_table_write_entry(c, S1, S0, 0x0022_5900, 0x0022_5910)?;
+                    }
+                    c.cycles += 4;
+                    let node = r32(c, S1);
+                    c.g[S0][0] = Addr(node).off(LUNO_NODE_NEXT).lw(c);
+                    luno_table_inc(c, S5);
+                    c.g[S4][0] = sx(node.wrapping_add(LUNO_NODE_SIZE));
+                    if c.g[S0][0] != 0 {
+                        c.cycles += 2;
+                        c.g[V0][0] = Addr(r32(c, S0)).off(LUNO_NODE_VALUE_TYPE).lw(c);
+                        loop {
+                            c.cycles += 2;
+                            let link = r32(c, S0);
+                            c.g[S1][0] = sx(link.wrapping_add(LUNO_NODE_VALUE));
+                            if c.g[V0][0] != 0 {
+                                c.cycles += 11;
+                                luno_table_write_entry(c, S0, S1, 0x0022_594c, 0x0022_595c)?;
+                            }
+                            c.cycles += 3;
+                            c.g[S0][0] = Addr(r32(c, S0)).off(LUNO_NODE_NEXT).lw(c);
+                            if c.g[S0][0] != 0 {
+                                c.g[V0][0] = Addr(r32(c, S0)).off(LUNO_NODE_VALUE_TYPE).lw(c);
+                                if event_due(c) {
+                                    deliver_event_here(c, 0x0022_5928);
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    c.cycles += 5;
+                    c.g[V1][0] = Addr(r32(c, S6)).lw(c);
+                    c.g[V0][0] = Addr(r32(c, V1)).off(LUNO_TABLE_MODULUS).lw(c);
+                    c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S5][0] as i64)) as u64;
+                    c.g[S1][0] = c.g[S4][0];
+                    if c.g[V0][0] == 0 {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0022_58d8);
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        c.cycles += 10;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// One live entry: `--count`, then `LunoVMRegister_Write(key)` and
+/// `LunoVMRegister_Write(value)` (registers `key`/`value` hold them; `ret_*`
+/// are the two return addresses).
+pub(crate) fn luno_table_write_entry(
+    c: &mut Cpu,
+    key: usize,
+    value: usize,
+    ret_key: u32,
+    ret_value: u32,
+) -> crate::call::Flow {
+    let count_at = Addr(sp(c));
+    c.g[V0][0] = count_at.lw(c);
+    c.g[A0][0] = c.g[key][0];
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A2][0] = c.g[S3][0];
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+    let count = c.g[V0][0];
+    count_at.sw(c, count);
+    LUNO_REGISTER_WRITE.call(c, ret_key)?;
+    c.g[A0][0] = c.g[value][0];
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A2][0] = c.g[S3][0];
+    LUNO_REGISTER_WRITE.call(c, ret_value)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1341,5 +1746,135 @@ pub(crate) mod tests {
             c.g[A3][0] = sx(DATA + 0x1400);
             c.pc = 0x0022_24b8;
         });
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::{put_vec};
+    use super::*;
+    // (fakes imported above)
+
+
+    // -- 0x00225be8 LunoVMRegister_Write ---------------------------------------
+
+    /// `LunoVMRegister_Write` against the generated body: type tags 5
+    /// (the real `LunoVMRegister_WritePtr`), 4 (the real `cLunoTable_Write`
+    /// over a table with no hash part and no entries) and others (payload
+    /// written directly). The stream's Write virtual is a fake (some calls
+    /// unwind).
+    #[test]
+    fn luno_vm_register_write_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::DATA;
+        const VALUE: u32 = DATA + 0x20_0000;
+        const STREAM: u32 = DATA + 0x20_0100;
+        const TABLE: u32 = DATA + 0x20_0200;
+        covered(ee::s05::f_00225be8__generated, luno_vm_register_write, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0022_5be8, 3);
+            c.pc = 0x0022_5be8;
+            let vt = vtable(c, &mut r, &[LUNO_STREAM_WRITE]);
+            c.bus.write32(STREAM, vt);
+            let ty = [4, 5, 4, 5, 0, 1, 2, 3, 6][(r.next_u32() % 9) as usize];
+            c.bus.write32(VALUE + LUNO_VALUE_TYPE, ty);
+            c.bus.write32(VALUE, if ty == 4 { TABLE } else { r.next_u32() });
+            c.bus.write32(VALUE + 4, r.next_u32());
+            // Table: no hash part (+0xc = -1), so nothing to count or write.
+            c.bus.write32(TABLE + 0xc, u32::MAX);
+            c.bus.write32(TABLE + 0x10, TABLE + 0x40);
+            c.g[A0][0] = sx(VALUE);
+            c.g[A1][0] = sx(STREAM);
+            c.g[A2][0] = r.next_u32() as u64;
+        });
+    }
+
+
+    /// cLunoTable_Assign: the same table, a null old reference, an old
+    /// reference that stays alive (refcount > 1) and one whose last
+    /// reference is dropped (a real zeroed heap table freed by the real
+    /// cLunoTable_FreeData on the pool allocator / dlmalloc arena).
+    #[test]
+    fn cluno_table_assign_matches() {
+        use crate::game::dirtysock::tags2::tests::zero;
+        use crate::game::fe::festaterewards::tests::heap_block;
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        const SELF: u32 = DATA + 0x400;
+        const OTHER: u32 = DATA + 0x440;
+        const OLD: u32 = DATA + 0x800;
+        const NEW: u32 = DATA + 0x900;
+        check(ee::s05::f_00225068__generated, cluno_table_assign, 120, &|c, seed| {
+            let mut r = alloc_machine(c, seed, 0x22_5068);
+            c.pc = 0x0022_5068;
+            zero(c, SELF, 0x80);
+            c.g[A0][0] = sx(SELF);
+            c.g[A1][0] = sx(OTHER);
+            c.bus.write32(NEW + LTA_REFCOUNT, r.next_u32() % 50);
+            c.bus.write32(OTHER, NEW);
+            match seed % 4 {
+                0 => c.bus.write32(SELF, NEW),
+                1 => c.bus.write32(SELF, 0),
+                2 => {
+                    c.bus.write32(SELF, OLD);
+                    c.bus.write32(OLD + LTA_REFCOUNT, 2 + r.next_u32() % 50);
+                }
+                _ => {
+                    let table = heap_block(c, 0x300);
+                    zero(c, table, 0x300);
+                    c.bus.write32(table + LTA_REFCOUNT, 1);
+                    c.bus.write32(SELF, table);
+                }
+            }
+        });
+    }
+
+
+    // ------------------------------------------------------------ cLunoTable_Write
+
+    /// Tables without a hash part, or with 1..4 buckets whose nodes and
+    /// chains (0..3 links) hold nil and non-nil values; plain register
+    /// types only (the real `LunoVMRegister_Write` writes them directly).
+    /// The stream's Write is a fake (some calls unwind).
+    #[test]
+    fn c_luno_table_write_matches() {
+        covered(
+            ee::s05::f_002257e0__generated,
+            c_luno_table_write,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0022_57e0, 8);
+                c.pc = 0x0022_57e0;
+                let this = DATA + 0x5_0000;
+                let stream = DATA + 0x5_0100;
+                let table = DATA + 0x5_0200;
+                let nodes = DATA + 0x5_1000;
+                let links = DATA + 0x5_2000;
+                let vt = fakes::vtable(c, &mut r, &[8]);
+                c.bus.write32(stream, vt);
+                c.bus.write32(this, table);
+                let modulus = [-1i32, 0, 1, 3][(seed % 4) as usize];
+                c.bus.write32(table + LUNO_TABLE_MODULUS, modulus as u32);
+                c.bus.write32(table + LUNO_TABLE_NODES, nodes);
+                let types = [0u32, 0, 1, 2, 3, 6];
+                let node = |c: &mut Cpu, r: &mut Rng, at: u32, next: u32| {
+                    c.bus.write32(at, r.next_u32());
+                    c.bus.write32(at + 8, types[r.next_u32() as usize % types.len()]);
+                    c.bus.write32(at + LUNO_NODE_VALUE, r.next_u32());
+                    c.bus
+                        .write32(at + LUNO_NODE_VALUE_TYPE, types[r.next_u32() as usize % types.len()]);
+                    c.bus.write32(at + LUNO_NODE_NEXT, next);
+                };
+                let mut link = links;
+                for b in 0..4u32 {
+                    let mut next = 0;
+                    for _ in 0..r.next_u32() % 4 {
+                        node(c, &mut r, link, next);
+                        next = link;
+                        link += LUNO_NODE_SIZE;
+                    }
+                    node(c, &mut r, nodes + LUNO_NODE_SIZE * b, next);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
+                c.g[A2][0] = r.next_u32() as u64;
+            },
+        );
     }
 }

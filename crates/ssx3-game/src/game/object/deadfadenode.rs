@@ -31,6 +31,11 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
+use crate::abi::addu;
+use crate::abi::reg;
+use crate::abi::set_reg;
+use crate::game::lib::snd;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -41,6 +46,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_0e90, hide_ctor, "Hide_ctor"),
     (0x0035_0f08, hide_ctor_2, "Hide_ctor_2"),
     (0x0035_0fd8, restore_node_ctor_2, "RestoreNode_ctor_2"),
+    (0x0035_0f40, hide_save, "Hide_Save"),
 ];
 
 /// Cross-shard calls the generator emitted as `call_indirect(c, addr)`: they
@@ -454,6 +460,24 @@ pub fn hide_ctor(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// Hide_Save (0x350f40).
+
+/// `WorldObj_Save(self, stream)`.
+pub(crate) const HIDE_WORLD_OBJ_SAVE: Callee = Callee { addr: 0x0034_fe90, f: ee::s11::WorldObj_Save };
+
+
+
+/// `void Hide_Save(Hide* self, Stream* stream)` (0x350f40): a hide node
+/// saves only its world-object part: `WorldObj_Save(self, stream)`.
+/// Frame 0x10 (ra +0).
+pub fn hide_save(c: &mut Cpu) {
+    crate::call::tail_wrapper(c, None, crate::call::Target::Direct(HIDE_WORLD_OBJ_SAVE), 0x0035_0f50);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -634,5 +658,25 @@ pub(crate) mod tests {
                 w(c, this + 0x18, DATA + 0x600);
             },
         );
+    }
+    use super::*;
+    use crate::game::lib::snd::tests as snd_tests;
+
+
+    /// `Hide_Save` through the real `WorldObj_Save` (and
+    /// `SyncProcess_Save`), the stream's writers fakes (some unwind).
+    #[test]
+    fn hide_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        covered(ee::s11::f_00350f40__generated, hide_save, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x35_0f40, 3);
+            c.pc = 0x0035_0f40;
+            let this = DATA + 0x100;
+            let stream = DATA + 0x400;
+            c.g[A0][0] = this as u64;
+            c.g[A1][0] = stream as u64;
+            let vt = vtable(c, &mut r, &[8, 0x30]);
+            c.bus.write32(stream, vt);
+        });
     }
 }

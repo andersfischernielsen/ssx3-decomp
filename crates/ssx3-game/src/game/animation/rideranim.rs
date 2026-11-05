@@ -98,6 +98,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0010_4358, rider_anim_update_seq_type07, "RiderAnim_UpdateSeqType07"),
     (0x0010_4940, rider_anim_seq_type01_update, "RiderAnim_UpdateSeqType01"),
     (0x0010_4cf8, rider_anim_v04, "RiderAnim_v04"),
+    (0x0010_3ff8, rider_anim_play_seq_then_loop, "RiderAnim_PlaySeqThenLoop"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1801,6 +1802,162 @@ pub fn rider_anim_update_seq_type07(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// RiderAnim_PlaySeqThenLoop (0x103ff8)
+
+/// `gp+0xd8c`: the rider animation bank (animation ids at +0x1030).
+pub(crate) const PSTL_ANIM_BANK_GP: u32 = 0xd8c;
+
+
+/// Animation ids in the bank, indexed by key.
+pub(crate) const PSTL_BANK_IDS: u32 = 0x1030;
+
+
+/// `gp-0x7f64` / `gp-0x7f60` / `gp-0x7f5c`: 1/60 (`.lit4`), ticks to seconds
+/// for the intro advance, the plain advance and the weight fade.
+pub(crate) const PSTL_TICK_INTRO_GP: u32 = 0x7f64;
+
+
+pub(crate) const PSTL_TICK_PLAIN_GP: u32 = 0x7f60;
+
+
+pub(crate) const PSTL_TICK_FADE_GP: u32 = 0x7f5c;
+
+
+/// AnimSequence: track 0's animation id, time and length.
+pub(crate) const PSTL_SEQ_ANIM0: u32 = 0x4;
+
+
+pub(crate) const PSTL_SEQ_TIME0: u32 = 0x8;
+
+
+pub(crate) const PSTL_SEQ_LENGTH0: u32 = 0x10;
+
+
+/// AnimSequence methods (cross-shard direct calls, through the table).
+pub(crate) const PSTL_SET_TRACK_ANIM: u32 = 0x0031_3c50;
+
+
+pub(crate) const PSTL_SET_TRACK_TIME: u32 = 0x0031_3cf0;
+
+
+pub(crate) const PSTL_SET_TRACK_LOOP: u32 = 0x0031_3d40;
+
+
+pub(crate) const PSTL_ADVANCE_TRACK: u32 = 0x0031_35b0;
+
+
+pub(crate) const PSTL_UPDATE_WEIGHT_FADE: u32 = 0x0031_3800;
+
+
+pub(crate) const PSTL_LIST_REMOVE: u32 = 0x0031_45f8;
+
+
+
+/// `int RiderAnim_PlaySeqThenLoop(RiderAnim* anim, AnimSeqList* list,
+/// AnimSequence* seq, int intro_key, float dt, int loop_key)` (0x103ff8):
+/// while track 0 still plays the intro animation (`bank[intro_key]`), play
+/// it once (no loop) and advance it by `dt/60`; when it reaches its end,
+/// switch the track to `bank[loop_key]`, looping, from time 0. Otherwise
+/// just advance the track. Then run the weight fade; when it has finished,
+/// remove the sequence from `list` and return 1, else 0. (`a3` intro_key,
+/// `t0` loop_key, `f12` dt.)
+pub fn rider_anim_play_seq_then_loop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(PSTL_ANIM_BANK_GP)).lw(c);
+        frame.save(c, S0, 0x30);
+        c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x10);
+        c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+        frame.save_fpr(c, 20, 0x40);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.f[20] = c.f[12];
+        let seq = r32(c, S0);
+        c.g[V1][0] = Addr(seq.wrapping_add(PSTL_SEQ_ANIM0)).lw(c);
+        c.g[V0][0] = Addr(r32(c, A3).wrapping_add(PSTL_BANK_IDS)).lw(c);
+        let intro = c.g[V1][0] == c.g[V0][0];
+        c.g[S1][0] = c.g[T0][0];
+        if intro {
+            c.cycles += 15;
+            // Play the intro once.
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            call_ptr(c, PSTL_SET_TRACK_LOOP, 0x0010_4048)?;
+            let k = Addr(r32(c, GP).wrapping_sub(PSTL_TICK_INTRO_GP)).read_fpu(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            c.f[12] = (FpuF32(c.f[20]) * k).0;
+            call_ptr(c, PSTL_ADVANCE_TRACK, 0x0010_405c)?;
+            let seq = r32(c, S0);
+            let time = Addr(seq.wrapping_add(PSTL_SEQ_TIME0)).read_fpu(c);
+            c.f[1] = time.0;
+            let length = Addr(seq.wrapping_add(PSTL_SEQ_LENGTH0)).read_fpu(c);
+            c.f[0] = length.0;
+            let ended = length.le(time);
+            abi::set_fcc(c, ended);
+            c.g[V1][0] = Addr(r32(c, GP).wrapping_add(PSTL_ANIM_BANK_GP)).lw(c);
+            if ended {
+                // Switch to the looping animation from the start.
+                c.cycles += 16;
+                c.g[V0][0] = sx((c.g[S1][0] as u32) << 2);
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                c.g[A2][0] = Addr(r32(c, V0).wrapping_add(PSTL_BANK_IDS)).lw(c);
+                call_ptr(c, PSTL_SET_TRACK_ANIM, 0x0010_408c)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 1;
+                call_ptr(c, PSTL_SET_TRACK_LOOP, 0x0010_409c)?;
+                c.f[12] = 0;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 0;
+                call_ptr(c, PSTL_SET_TRACK_TIME, 0x0010_40ac)?;
+            }
+        } else {
+            c.cycles += 5;
+            let k = Addr(r32(c, GP).wrapping_sub(PSTL_TICK_PLAIN_GP)).read_fpu(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            c.f[12] = (FpuF32(c.f[20]) * k).0;
+            call_ptr(c, PSTL_ADVANCE_TRACK, 0x0010_40c8)?;
+        }
+        c.cycles += 6;
+        let k = Addr(r32(c, GP).wrapping_sub(PSTL_TICK_FADE_GP)).read_fpu(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.f[12] = (FpuF32(c.f[20]) * k).0;
+        call_ptr(c, PSTL_UPDATE_WEIGHT_FADE, 0x0010_40d8)?;
+        let faded = c.g[V0][0] != 0;
+        c.g[A0][0] = c.g[S2][0];
+        if faded {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, PSTL_LIST_REMOVE, 0x0010_40f0)?;
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2506,6 +2663,58 @@ pub(crate) mod tests {
                 at = other + 200;
             }
             c.f[12] = if seed % 4 == 0 { r.edge_f32() } else { r.f32(0.05) };
+        });
+    }
+    use super::*;
+
+
+    /// RiderAnim_PlaySeqThenLoop: track 0 plays the intro key (or not), the
+    /// intro reaches its end (or not) after the real AdvanceTrack, the real
+    /// weight fade finishes (or not) and the real list removal runs.
+    #[test]
+    fn rider_anim_play_seq_then_loop_matches() {
+        use crate::difftest::fakes::{machine, ptr};
+        use crate::difftest::{check, elf_image, GAME_GP};
+        check(ee::s00::f_00103ff8__generated, rider_anim_play_seq_then_loop, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0010_3ff8, 0);
+            elf_image(c);
+            c.pc = 0x0010_3ff8;
+            let bank = ptr(&mut r);
+            c.bus.write32(GAME_GP + PSTL_ANIM_BANK_GP, bank);
+            for k in 0..8 {
+                c.bus.write32(bank + PSTL_BANK_IDS + 4 * k, 0x100 + k * 0x101);
+            }
+            let intro = r.next_u32() % 8;
+            c.g[A3][0] = intro as u64;
+            c.g[T0][0] = (r.next_u32() % 8) as u64;
+            let seq = ptr(&mut r);
+            let list = ptr(&mut r);
+            c.g[A0][0] = sx(ptr(&mut r));
+            c.g[A1][0] = sx(list);
+            c.g[A2][0] = sx(seq);
+            for off in [0x8, 0xc, 0x10, 0x2c, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
+                let v = match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => r.edge_f32(),
+                    _ => r.f32(3.0),
+                };
+                c.bus.write32(seq + off, v);
+            }
+            let cur = if seed % 3 == 0 {
+                0x100 + (r.next_u32() % 8) * 0x101
+            } else {
+                0x100 + intro * 0x101
+            };
+            c.bus.write32(seq + PSTL_SEQ_ANIM0, cur);
+            c.bus.write32(seq + 0x1c, r.next_u32() & 1);
+            c.bus.write32(seq + 0xa0, r.next_u32() & 1);
+            let mut at = list + 4;
+            for _ in 0..seed % 3 {
+                let other = ptr(&mut r) + 0x8;
+                c.bus.write32(at, other);
+                at = other + 200;
+            }
+            c.f[12] = if seed % 4 == 0 { r.edge_f32() } else { r.f32(3.0) };
         });
     }
 }

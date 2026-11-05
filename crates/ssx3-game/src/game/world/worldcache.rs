@@ -171,6 +171,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cWorldCache_StreamerUpdate",
     ),
     (0x003a_96e0, world_cache_streamer_get_view_clearance, "cWorldCache_StreamerGetViewClearance"),
+    (0x003a_8a90, c_world_cache_alloc_resource, "cWorldCache_AllocResource"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2861,6 +2862,297 @@ pub fn world_cache_streamer_get_view_clearance(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod world_cache_alloc {
+
+    /// Cache: the global bank (+0x4), the bank table (+0x8), the bank
+    /// section allocators (+0xc, each bank's allocator at +0x3c), and the
+    /// per-slot load lists (slot * 0x18 + 0x3f8).
+    pub const CACHE_GLOBAL_BANK: u32 = 0x4;
+
+    pub const CACHE_BANKS: u32 = 0x8;
+
+    pub const CACHE_SECTIONS: u32 = 0xc;
+
+    pub const SECTION_ALLOCATOR: u32 = 0x3c;
+
+    pub const CACHE_SLOT_LISTS: u32 = 0x3f8;
+
+    pub const CACHE_SLOT_SIZE: u32 = 0x18;
+
+    /// Bank: per resource type (+4 + type * 8) the reference-count bytes
+    /// (one word per id).
+    pub const BANK_TYPES: u32 = 0x4;
+
+    /// Load list: count (+0x8) and items (+0xc) of `{u8 type, u8 bank, u16
+    /// id}`.
+    pub const LIST_COUNT: u32 = 0x8;
+
+    pub const LIST_ITEMS: u32 = 0xc;
+
+    /// The global bank's key (`key & 0xff`).
+    pub const GLOBAL_BANK: u64 = 0xff;
+
+    /// `switch (type - 1)` jump table (14 entries) and its targets.
+    pub const TYPE_TABLE: u32 = 0x0049_4eb0;
+
+    pub const CASE_STREAM: u32 = 0x003a_8bb8;
+
+    pub const CASE_SHARED: u32 = 0x003a_8bec;
+
+    pub const CASE_AIPATH: u32 = 0x003a_8c2c;
+
+    pub const CASE_DEFAULT: u32 = 0x003a_8c3c;
+
+    /// Allocation names: "BxStream SHAREDMEM", "BxStream AIPATH".
+    pub const NAME_SHAREDMEM: u32 = 0x0049_4d40;
+
+    pub const NAME_AIPATH: u32 = 0x0049_4e98;
+}
+
+
+
+/// How `cWorldCache_AllocResource` allocates a resource type.
+#[derive(Clone, Copy)]
+pub(crate) enum WorldCacheAllocKind {
+    /// Bank section allocator (or shared memory for the global bank) with
+    /// these flags; the case's extra cycles before the section call.
+    Flags(u64, u64),
+    /// `operator new(size, "BxStream AIPATH", 0, 0)`.
+    AiPath,
+    /// Bank section allocator with flags 0 (shared memory for the global
+    /// bank).
+    Default,
+}
+
+
+
+/// `void* cWorldCache_AllocResource(cWorldCache* cache, int slot, int type,
+/// int key, int size)` (0x3a8a90): reference resource `type`/`key` (bank
+/// `key & 0xff`, 0xff = global; id `key >> 8`). Already referenced: bump the
+/// count, append `{type, bank, id}` to slot `slot`'s load list and return
+/// 0. New: with `size` 0 return 0; else allocate `size` bytes (types 9/10
+/// with flags 0x45000000, 1-3/11/12 with 0x22000000, 14 named AIPATH, others
+/// 0) from the bank's section allocator, or for the global bank from shared
+/// memory (`operator new`); on failure drop the reference again and return
+/// -1. Frame 0x40 (s0-s2).
+pub fn c_world_cache_alloc_resource(c: &mut Cpu) {
+    use world_cache_alloc::*;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        c.g[T2][0] = c.g[A3][0];
+        c.g[T1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        let key = c.g[T2][0];
+        let bank = key & 0xff;
+        c.g[A3][0] = bank;
+        frame.save(c, S2, 0x10);
+        let id = sx(key as u32 >> 8);
+        c.g[A0][0] = id;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = 0xff;
+        c.g[T3][0] = c.g[A2][0];
+        let cache = r32(c, T1);
+        let bank_obj = if bank == GLOBAL_BANK {
+            c.cycles += 2;
+            Addr(cache.wrapping_add(CACHE_GLOBAL_BANK)).lw(c)
+        } else {
+            c.cycles += 4;
+            let banks = Addr(cache.wrapping_add(CACHE_BANKS)).lw(c);
+            c.g[V1][0] = banks;
+            Addr(((bank as u32) << 2).wrapping_add(banks as u32)).lw(c)
+        };
+
+        // The reference count byte of this resource.
+        c.cycles += 12;
+        let types = sx((bank_obj as u32).wrapping_add(BANK_TYPES));
+        let type_off = sx((c.g[T3][0] as u32) << 3);
+        c.g[S1][0] = types;
+        c.g[S2][0] = type_off;
+        let refs = Addr((types as u32).wrapping_add(type_off as u32)).lw(c);
+        let id_off = sx((id as u32) << 2);
+        c.g[S0][0] = id_off;
+        let ref_addr = (id_off as u32).wrapping_add(refs as u32);
+        c.g[A0][0] = sx(ref_addr);
+        let refcount = Addr(ref_addr).lbu(c);
+        let referenced = refcount != 0;
+        c.cycles += 2;
+        c.g[V0][0] = sx((refcount as u32).wrapping_add(1));
+        c.g[V1][0] = referenced as u64;
+        c.cycles += 2;
+        let bumped = c.g[V0][0];
+        Addr(ref_addr).sb(c, bumped);
+
+        let size = c.g[T0][0];
+        if referenced {
+            // Already loaded: record it in the slot's load list.
+            c.cycles += 25;
+            c.g[A0][0] = CACHE_SLOT_SIZE as u64;
+            let id = sx(key as u32 >> 8);
+            c.g[A3][0] = id;
+            let slot = abi::arg(c, 1);
+            let slot_off = abi::mult(c, slot, CACHE_SLOT_SIZE);
+            c.g[V0][0] = sx(slot_off);
+            let list = Addr(slot_off.wrapping_add(cache).wrapping_add(CACHE_SLOT_LISTS)).lw(c) as u32;
+            c.g[A2][0] = sx(list);
+            c.g[V0][0] = 0;
+            let item = |c: &mut Cpu| {
+                let n = Addr(list.wrapping_add(LIST_COUNT)).lw(c) as u32;
+                let items = Addr(list.wrapping_add(LIST_ITEMS)).lw(c) as u32;
+                (n, items, (n << 2).wrapping_add(items))
+            };
+            let (_, items, at) = item(c);
+            c.g[A0][0] = sx(items);
+            c.g[V1][0] = sx(at);
+            let ty = c.g[T3][0];
+            Addr(at).sb(c, ty);
+            let (_, items, at) = item(c);
+            c.g[V1][0] = sx(items);
+            c.g[A0][0] = sx(at);
+            Addr(at.wrapping_add(1)).sb(c, key);
+            let (_, items, at) = item(c);
+            c.g[V1][0] = sx(items);
+            c.g[A1][0] = sx(at);
+            Addr(at.wrapping_add(2)).sh(c, id);
+            let n = Addr(list.wrapping_add(LIST_COUNT)).lw(c);
+            let n = sx((n as u32).wrapping_add(1));
+            c.g[V1][0] = n;
+            Addr(list.wrapping_add(LIST_COUNT)).sw(c, n);
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        } else {
+            c.cycles += 2;
+            let case = sx((c.g[T3][0] as u32).wrapping_sub(1));
+            c.g[V1][0] = case;
+            if size == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                c.cycles += 1;
+                frame.restore(c, S0, 0x30);
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 0x0049_0000;
+                let kind = if case < 0xe {
+                    c.cycles += 6;
+                    c.g[V0][0] = sx(TYPE_TABLE);
+                    let entry = ((case as u32) << 2).wrapping_add(TYPE_TABLE);
+                    c.g[V1][0] = sx(entry);
+                    let target = Addr(entry).lw(c);
+                    c.g[A0][0] = target;
+                    match target as u32 {
+                        CASE_STREAM => WorldCacheAllocKind::Flags(5, 0x4500_0000),
+                        CASE_SHARED => WorldCacheAllocKind::Flags(4, 0x2200_0000),
+                        CASE_AIPATH => WorldCacheAllocKind::AiPath,
+                        CASE_DEFAULT => WorldCacheAllocKind::Default,
+                        t => {
+                            c.jump_out(t, 0x003a_8a90, 0x003a_8cd0);
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    WorldCacheAllocKind::Default
+                };
+                // (Some(flags, extra cycles, return address)) for the bank
+                // section allocator, None for operator new (a1/a2 set).
+                let section = match kind {
+                    WorldCacheAllocKind::Flags(extra, flags) => {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0xff;
+                        c.g[A0][0] = Addr(cache.wrapping_add(CACHE_SECTIONS)).lw(c);
+                        if bank != GLOBAL_BANK {
+                            Some((extra, flags, 0x003a_8c24, 4))
+                        } else {
+                            c.cycles += 5;
+                            c.g[A1][0] = sx(NAME_SHAREDMEM);
+                            c.g[A0][0] = size;
+                            c.g[A2][0] = flags;
+                            None
+                        }
+                    }
+                    WorldCacheAllocKind::AiPath => {
+                        c.cycles += 4;
+                        c.g[A1][0] = sx(NAME_AIPATH);
+                        c.g[A0][0] = size;
+                        c.cycles += 1;
+                        c.g[A2][0] = 0;
+                        None
+                    }
+                    WorldCacheAllocKind::Default => {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0xff;
+                        c.g[A0][0] = Addr(cache.wrapping_add(CACHE_SECTIONS)).lw(c);
+                        if bank != GLOBAL_BANK {
+                            Some((6, 0, 0x003a_8c80, 0))
+                        } else {
+                            c.cycles += 3;
+                            c.g[A1][0] = sx(NAME_SHAREDMEM);
+                            c.g[A0][0] = size;
+                            c.cycles += 1;
+                            c.g[A2][0] = 0;
+                            None
+                        }
+                    }
+                };
+                match section {
+                    Some((extra, flags, ret_addr, call_cycles)) => {
+                        // SectionAllocator_Alloc(sections[bank], size, flags)
+                        c.cycles += extra;
+                        let sections = c.g[A0][0];
+                        let at = sx(((bank as u32) << 2).wrapping_add(sections as u32));
+                        c.g[V0][0] = at;
+                        c.g[A1][0] = size;
+                        c.g[A2][0] = flags;
+                        c.cycles += call_cycles;
+                        c.g[A0][0] = Addr((at as u32).wrapping_add(SECTION_ALLOCATOR)).lw(c);
+                        Callee { addr: 0x003a_7878, f: ee::s13::f_003a7878 }.call(c, ret_addr)?;
+                    }
+                    None => {
+                        // operator new(size, name, flags, 0)
+                        c.cycles += 4;
+                        c.g[A3][0] = 0;
+                        call_ptr(c, 0x0031_7e30, 0x003a_8c60)?;
+                    }
+                }
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    frame.restore(c, S0, 0x30);
+                } else {
+                    // Out of memory: drop the reference again.
+                    c.cycles += 8;
+                    let at = abi::addu(c.g[S1][0], c.g[S2][0]);
+                    c.g[V0][0] = at;
+                    let refs = Addr(at as u32).lw(c);
+                    c.g[V1][0] = refs;
+                    let ref_addr = abi::addu(c.g[S0][0], refs) as u32;
+                    c.g[A0][0] = sx(ref_addr);
+                    let n = Addr(ref_addr).lbu(c);
+                    let n = sx((n as u32).wrapping_sub(1));
+                    c.g[V0][0] = n;
+                    c.g[V1][0] = n & 0xff;
+                    Addr(ref_addr).sb(c, n);
+                    if n & 0xff == 0 {
+                        c.cycles += 2;
+                        c.g[V0][0] = 0;
+                        Addr(ref_addr).sw(c, 0);
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = u64::MAX;
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x30);
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3998,5 +4290,94 @@ pub(crate) mod tests {
                 c.g[A3][0] = sx(DATA + 0x2100);
             },
         );
+    }
+    use super::*;
+
+
+    // -- 0x003a8a90 cWorldCache_AllocResource ----------------------------------
+
+    /// `cWorldCache_AllocResource` against the generated body: the global
+    /// bank or banks 0-3, every resource type 0-15 (all jump-table cases and
+    /// the out-of-table default), reference counts 0 (new), 1 or 0xff
+    /// (wrapping), size 0 or not; the real `SectionAllocator_Alloc` from a
+    /// block with room (base 0 and nothing used: returns 0, so the reference
+    /// is dropped again and -1 returned) and the real `operator new` on a
+    /// test heap (`DLHeap_InitArena`; its mutex syscalls are fakes, some
+    /// unwind). The jump table is the game's (0x494eb0).
+    #[test]
+    fn c_world_cache_alloc_resource_matches() {
+        use super::world_cache_alloc::*;
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, put_words, DATA};
+        use crate::game::bx::bxstring::tests::alloc_ready;
+        // (alloc_ready's arena: DATA+0x1_0000..DATA+0x5_0000.)
+        const CACHE: u32 = DATA + 0x6_0000;
+        const BANK_TABLE: u32 = DATA + 0x6_0800;
+        const SECTIONS: u32 = DATA + 0x6_0900;
+        const BANKS: u32 = DATA + 0x6_1000;
+        const ALLOCATORS: u32 = DATA + 0x6_2000;
+        const BLOCKS: u32 = DATA + 0x6_3000;
+        const LISTS: u32 = DATA + 0x6_4000;
+        const REFS: u32 = DATA + 0x6_8000;
+        const BLOCK_BASE: u32 = DATA + 0x8_0000;
+        check(ee::s13::f_003a8a90__generated, c_world_cache_alloc_resource, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x003a_8a90, 3);
+            alloc_ready(c);
+            c.pc = 0x003a_8a90;
+            put_words(
+                c,
+                TYPE_TABLE,
+                &[
+                    CASE_SHARED, CASE_SHARED, CASE_SHARED, CASE_DEFAULT, CASE_DEFAULT,
+                    CASE_DEFAULT, CASE_DEFAULT, CASE_DEFAULT, CASE_STREAM, CASE_STREAM,
+                    CASE_SHARED, CASE_SHARED, CASE_DEFAULT, CASE_AIPATH,
+                ],
+            );
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            // Banks 0-3 and the global bank (index 4): per type a refs array.
+            w(c, CACHE + CACHE_GLOBAL_BANK, BANKS + 0x400);
+            w(c, CACHE + CACHE_BANKS, BANK_TABLE);
+            w(c, CACHE + CACHE_SECTIONS, SECTIONS);
+            for k in 0..5u32 {
+                let bank = BANKS + 0x100 * k;
+                if k < 4 {
+                    w(c, BANK_TABLE + 4 * k, bank);
+                }
+                for ty in 0..16u32 {
+                    w(c, bank + BANK_TYPES + 8 * ty, REFS + (k * 16 + ty) * 0x40);
+                }
+            }
+            let bank = r.next_u32() % 5;
+            let ty = r.next_u32() % 16;
+            let id = r.next_u32() % 16;
+            let refs = REFS + (bank * 16 + ty) * 0x40;
+            let count = [0, 0, 1, 0xff][(r.next_u32() % 4) as usize];
+            w(c, refs + 4 * id, count | r.next_u32() & 0xffff_ff00);
+            // The bank's section allocator: one block with room.
+            let alloc = ALLOCATORS + 0x40 * bank;
+            let block = BLOCKS + 0x40 * bank;
+            if bank < 4 {
+                w(c, SECTIONS + 4 * bank + SECTION_ALLOCATOR, alloc);
+            }
+            w(c, alloc + 8, 1 + r.next_u32() % 3);
+            w(c, alloc + 0x10, block);
+            let empty = r.next_u32() % 3 == 0;
+            w(c, block, if empty { 0 } else { BLOCK_BASE });
+            w(c, block + 4, 0x1_0000);
+            w(c, block + 8, if empty { 0 } else { r.next_u32() % 0x400 });
+            w(c, block + 0xc, r.next_u32() % 0x400);
+            // The slot's load list.
+            let slot = r.next_u32() % 4;
+            let list = LISTS + 0x40 * slot;
+            w(c, CACHE + slot * CACHE_SLOT_SIZE + CACHE_SLOT_LISTS, list);
+            w(c, list + LIST_COUNT, r.next_u32() % 8);
+            w(c, list + LIST_ITEMS, list + 0x100);
+            let key = (id << 8) | if bank == 4 { 0xff } else { bank };
+            c.g[A0][0] = sx(CACHE);
+            c.g[A1][0] = slot as u64;
+            c.g[A2][0] = ty as u64;
+            c.g[A3][0] = key as u64;
+            c.g[T0][0] = if r.next_u32() % 5 == 0 { 0 } else { 1 + (r.next_u32() % 0x200) as u64 };
+        });
     }
 }

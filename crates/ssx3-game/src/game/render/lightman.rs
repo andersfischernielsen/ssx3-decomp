@@ -96,6 +96,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0038_ee78, vfx_plants_update, "VfxPlants_Update"),
     (0x0039_0f20, vfx_screen_tint_render, "VfxScreenTint_Render"),
     (0x0039_0c20, vfx_render_toggles_update, "VfxRenderToggles_Update"),
+    (0x0038_f800, vfx_visual_effects_test_render, "VfxVisualEffectsTest_Render"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2348,6 +2349,28 @@ pub fn vfx_render_toggles_update(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// VfxVisualEffectsTest_Render (0x38f800)
+
+/// `cWorldPainterMan_DebugDraw()` (0x2bb6b8, through the table).
+pub(crate) const VFX_TEST_RENDER_DEBUG_DRAW: u32 = 0x002b_b6b8;
+
+
+
+/// `void VfxVisualEffectsTest_Render(void)` (0x38f800): the visual-effects
+/// test's render hook: draw the world painter's debug view.
+pub fn vfx_visual_effects_test_render(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Table(VFX_TEST_RENDER_DEBUG_DRAW),
+        0x0038_f810,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3086,6 +3109,34 @@ pub(crate) mod tests {
             let latch = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
             c.bus.write32(GAME_GP + TOGGLES_LATCH_GP, latch);
             c.pc = 0x0039_0c20;
+        });
+    }
+    use super::*;
+
+
+
+    /// VfxVisualEffectsTest_Render: the real cWorldPainterMan_DebugDraw over
+    /// a test world, with the debug-draw flag (gp+0x13c4) off (its short
+    /// path) or on with no painter entry.
+    #[test]
+    fn vfx_visual_effects_test_render_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA, GAME_GP};
+        check(ee::s12::f_0038f800__generated, vfx_visual_effects_test_render, 60, &|c, seed| {
+            let _ = machine(c, seed, 0x0038_f800, 0);
+            c.pc = 0x0038_f800;
+            let world = DATA + 0x100;
+            let man = DATA + 0x200;
+            let painter = DATA + 0x300;
+            let current = DATA + 0x400;
+            c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+            c.bus.write32(world + 0x84, man);
+            c.bus.write32(man + 0x10, painter);
+            c.bus.write32(painter + 0x8, current);
+            c.bus.write32(GAME_GP + 0x13c4, seed % 2);
+            // Flag on: entry table at gp+0x770 empty (null entry), index 0.
+            c.bus.write32(GAME_GP + 0x770, 0);
+            c.bus.write32(current + 0x4, 0);
         });
     }
 }
