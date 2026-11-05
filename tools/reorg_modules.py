@@ -1068,6 +1068,11 @@ def merge_unit(text, U):
         if b.startswith('pub const OVERRIDES') and U['ovs']:
             close = text.rindex(']', start, end)
             ent = ''.join(f'    (0x{a >> 16:04x}_{a & 0xffff:04x}, {f}, "{n}"),\n' for a, f, n in sorted(U['ovs']))
+            # (A table rustfmt wrote on one line, `&[(...)]`, has no comma
+            # after its last entry.)
+            last = text[:close].rstrip()
+            if not last.endswith((',', '[')):
+                ent = ',\n' + ent
             edits.append((close, ent))
         m_ = re.match(r'(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{', b)
         if m_:
