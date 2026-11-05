@@ -17,6 +17,7 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::events::Resume;
+pub(crate) use crate::game::ai::ai::at as at_2;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -84,6 +85,25 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003c_e410, snd_utk_lpc_filter, "SND_UtkLpcFilter"),
     (0x003c_d878, snd_utk_decode_frame, "SND_UtkDecodeFrame"),
     (0x003c_de68, snd_utk_decode, "SND_UtkDecode"),
+    (
+        0x003b_7c40,
+        sndstrm_get_request_status,
+        "SNDSTRM_GetRequestStatus",
+    ),
+    (0x003b_a888, snd_cents_to_pitch, "SND_CentsToPitch"),
+    (0x003c_6380, snd_umul32x32, "SND_UMul32x32"),
+    (0x003c_85d0, snd_ee_mix_block, "SND_EeMixBlock"),
+    (
+        0x003c_9520,
+        snd_dec_utk_decode_loop,
+        "SND_DecUtk_DecodeLoop",
+    ),
+    (
+        0x003c_a460,
+        snd_dec_eaxa_decode_stream,
+        "SND_DecEaxa_DecodeStream",
+    ),
+    (0x003c_cf90, snd_eaxa_decode, "SND_EaxaDecode"),
 ];
 
 /// Fields of the driver state block.
@@ -207,6 +227,28 @@ pub(crate) mod eaxa {
 
     /// `float*`: the output.
     pub const OUTPUT: u32 = 0x10;
+
+    /// Decoded samples still waiting in the block buffer (stored negated
+    /// after a partial block).
+    pub const PENDING: u32 = 0x4;
+
+    /// Samples left in the stream.
+    pub const REMAINING: u32 = 0x8;
+
+    /// Read pointer into the block buffer (floats).
+    pub const READ: u32 = 0x10;
+
+    /// One decoded block (28 floats).
+    pub const BUF: u32 = 0x24;
+
+    /// The sample count that `SND_EaxaDecodeBlocks` takes (by address).
+    pub const COUNT: u32 = 0x94;
+
+    /// Output pointer (floats).
+    pub const OUT: u32 = 0xa4;
+
+    /// Samples per EAXA block.
+    pub const BLOCK: u64 = 28;
 }
 
 // ---------------------------------------------------------------------------
@@ -3551,6 +3593,1307 @@ pub(crate) fn utk_frame_header(c: &mut Cpu, u: u64) {
     c.sw(fld(u, BIT_BUF), byte);
 }
 
+pub(crate) mod mixer {
+
+    pub const BASE: u32 = 0x0051_5b40;
+
+    pub const VOICE_COUNT: u32 = 0x4;
+
+    pub const BUS_COUNT: u32 = 0x5;
+
+    /// The declick bus enable byte.
+    pub const DECLICK_ON: u32 = 0xf;
+
+    pub const POST_MIX: u32 = 0x10;
+
+    pub const SCRATCH: u32 = 0xb0;
+
+    pub const SAMPLES: u32 = 0xb4;
+
+    /// Bus buffers, then their declick gains at +0x18 from each.
+    pub const BUS_BUF: u32 = 0xd0;
+
+    pub const BUS_DECLICK: u32 = 0xe8;
+
+    /// Per bus: an effect and the output stage (relative to BUS_BUF).
+    pub const BUS_FX: u32 = 0x4c;
+
+    pub const BUS_OUT: u32 = 0x34;
+
+    pub const DECLICK_GAIN: u32 = 0x100;
+
+    pub const VOICES: u32 = 0x1dc;
+
+    pub const MIX_FN: u32 = 0x1e0;
+
+    /// The declick bus buffer.
+    pub const DECLICK_BUF: u32 = 0x0051_5d80;
+
+    /// Voices: 0x60 bytes; state byte (2 = playing), "gains changed" byte,
+    /// send gains at +0x1c (per bus) and +0x38 (declick), last sample at
+    /// +0x3c, the source object at +0x40.
+    pub const VOICE_SIZE: u64 = 0x60;
+}
+
+// ---------------------------------------------------------------------------
+// SND_DecEaxa_DecodeStream (0x3ca460, EA SND library)
+
+pub(crate) const SNDSTRM_RELEASE_BYTES: u32 = 0x003c_7010;
+
+pub(crate) const SNDSTRM_POP_BLOCK: u32 = 0x003c_6de0;
+
+pub(crate) const MEMSET: u32 = 0x0041_6210;
+
+pub(crate) const SND_EAXA_DECODE: Callee = Callee {
+    addr: 0x003c_cf90,
+    f: ee::s14::SND_EaxaDecode,
+};
+
+pub(crate) const SND_EAXA_SET_HISTORY: Callee = Callee {
+    addr: 0x003c_d190,
+    f: ee::s14::SND_EaxaSetHistory,
+};
+
+pub(crate) const SND_EAXA_SET_INPUT: Callee = Callee {
+    addr: 0x003c_cf60,
+    f: ee::s14::SND_EaxaSetInput,
+};
+
+/// The EA-XA stream decoder's fields: its ADPCM decoder, the current block
+/// (sample data), the block's sample count, samples decoded from it, the
+/// codec version (<= 2: blocks start with two history samples), the
+/// stream and channel, and the samples not yet released to the stream.
+pub(crate) const DX_DECODER: u32 = 0x1c;
+
+pub(crate) const DX_BLOCK: u32 = 0x20;
+
+pub(crate) const DX_BLOCK_SAMPLES: u32 = 0x24;
+
+pub(crate) const DX_BLOCK_POS: u32 = 0x28;
+
+pub(crate) const DX_VERSION: u32 = 0x2c;
+
+pub(crate) const DX_STREAM: u32 = 0x30;
+
+pub(crate) const DX_UNRELEASED: u32 = 0x34;
+
+pub(crate) const DX_CHANNEL: u32 = 0x38;
+
+/// `int SND_DecEaxa_DecodeStream(DecEaxa* d, int n, int, short** out)`
+/// (0x3ca460, the output cursor is passed through the frame): releases the
+/// samples consumed by the last call to the stream, then decodes `n`
+/// samples: whatever the ADPCM decoder still holds, then block after block
+/// popped from the stream (`SNDSTRM_PopBlock`; old-version blocks seed the
+/// decoder history from their first two samples). When the stream runs dry
+/// the rest of the output is cleared (only if something was decoded since
+/// the last release). Returns the number of samples decoded.
+pub fn snd_dec_eaxa_decode_stream(c: &mut Cpu) {
+    use crate::guest::Addr;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0]; // d
+        c.g[S1][0] = c.g[A1][0]; // n
+        c.g[S2][0] = 0; // seed the history
+        c.g[S3][0] = 0; // decoded
+        let d = r32(c, S0);
+        let at = |o: u32| Addr(d.wrapping_add(o));
+        let out = frame.at(c, 0x10);
+        c.g[A2][0] = at(DX_UNRELEASED).lw(c);
+        let a3 = c.g[A3][0];
+        Addr(out).sw(c, a3);
+        if c.g[A2][0] != 0 {
+            // SNDSTRM_ReleaseBytes(stream, channel, unreleased)
+            c.cycles += 4;
+            c.g[A0][0] = at(DX_STREAM).lw(c);
+            c.g[A1][0] = at(DX_CHANNEL).lbu(c);
+            call_ptr(c, SNDSTRM_RELEASE_BYTES, 0x003c_a4a4)?;
+            at(DX_UNRELEASED).sw(c, 0);
+        }
+
+        c.cycles += 2;
+        c.g[S4][0] = 1;
+        if (c.g[S1][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[A0][0] = at(DX_DECODER).lw(c);
+            loop {
+                // k = SND_EaxaDecode(decoder, &out, n)
+                c.cycles += 17;
+                c.g[A1][0] = sx(out);
+                c.g[A2][0] = c.g[S1][0];
+                SND_EAXA_DECODE.call(c, 0x003c_a4c4)?;
+                let k = r32(c, V0);
+                c.g[A2][0] = c.g[V0][0];
+                c.g[A0][0] = Addr(out).lw(c);
+                c.g[V0][0] = at(DX_BLOCK_POS).lw(c);
+                c.g[A1][0] = sx(k << 2);
+                c.g[V1][0] = at(DX_UNRELEASED).lw(c);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(k << 2));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(k));
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(k));
+                let v = c.g[V0][0];
+                at(DX_BLOCK_POS).sw(c, v);
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(k));
+                let a0 = c.g[A0][0];
+                Addr(out).sw(c, a0);
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                let v1 = c.g[V1][0];
+                at(DX_UNRELEASED).sw(c, v1);
+                if c.g[V0][0] == 0 {
+                    // Satisfied by the decoder alone.
+                    c.cycles += 1;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_sub(k));
+                } else {
+                    // The decoder ran dry: the next block.
+                    c.cycles += 9;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_sub(k));
+                    c.g[A0][0] = at(DX_STREAM).lw(c);
+                    c.g[A1][0] = at(DX_CHANNEL).lbu(c);
+                    c.g[A2][0] = sx(d.wrapping_add(DX_BLOCK_SAMPLES));
+                    c.g[A3][0] = sx(frame.at(c, 0x14));
+                    call_ptr(c, SNDSTRM_POP_BLOCK, 0x003c_a514)?;
+                    c.g[A2][0] = c.g[V0][0];
+                    let block = c.g[A2][0];
+                    at(DX_BLOCK).sw(c, block);
+                    if block != 0 {
+                        c.cycles += 6;
+                        c.g[V1][0] = at(DX_VERSION).lw(c);
+                        c.g[V0][0] = 2;
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                        if c.g[V0][0] == 0 {
+                            c.g[S2][0] = c.g[S4][0];
+                        }
+                        c.g[A1][0] = c.g[SP][0];
+                        if c.g[S2][0] != 0 {
+                            // SND_EaxaSetHistory(decoder, {p[0], p[1]}); p += 2
+                            c.cycles += 13;
+                            let p = Addr(block as u32);
+                            c.g[V0][0] = p.lh(c);
+                            c.g[A0][0] = at(DX_DECODER).lw(c);
+                            c.mtc1(V0, 0);
+                            c.cvt_s_w(0, 0);
+                            let a = frame.at(c, 0);
+                            c.swc1(0, a);
+                            c.g[V0][0] = p.off(2).lh(c);
+                            c.mtc1(V0, 0);
+                            c.cvt_s_w(0, 0);
+                            let a = frame.at(c, 4);
+                            c.swc1(0, a);
+                            SND_EAXA_SET_HISTORY.call(c, 0x003c_a560)?;
+                            c.g[V0][0] = at(DX_BLOCK).lw(c);
+                            c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+                            let v = c.g[V0][0];
+                            at(DX_BLOCK).sw(c, v);
+                        }
+                        // SND_EaxaSetInput(decoder, p, samples * 4, samples)
+                        c.cycles += 9;
+                        c.g[A2][0] = at(DX_BLOCK_SAMPLES).lw(c);
+                        at(DX_BLOCK_POS).sw(c, 0);
+                        c.g[A3][0] = c.g[A2][0];
+                        c.g[A0][0] = at(DX_DECODER).lw(c);
+                        c.g[A1][0] = at(DX_BLOCK).lw(c);
+                        c.g[A2][0] = sx(r32(c, A2) << 2);
+                        SND_EAXA_SET_INPUT.call(c, 0x003c_a588)?;
+                    } else {
+                        // The stream ran dry: clear the rest, stop.
+                        c.cycles += 2;
+                        if (c.g[S1][0] as i64) > 0 {
+                            c.cycles += 3;
+                            c.g[V0][0] = at(DX_UNRELEASED).lw(c);
+                            c.g[A0][0] = Addr(out).lw(c);
+                            if c.g[V0][0] != 0 {
+                                // memset(out, 0, n * 4)
+                                c.cycles += 3;
+                                c.g[A2][0] = sx(r32(c, S1) << 2);
+                                c.g[A1][0] = 0;
+                                call_ptr(c, MEMSET, 0x003c_a5b0)?;
+                            }
+                            c.cycles += 2;
+                        }
+                        c.g[S1][0] = 0;
+                    }
+                }
+                c.cycles += 2;
+                if (c.g[S1][0] as i64) <= 0 {
+                    break;
+                }
+                c.g[A0][0] = at(DX_DECODER).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_a4b8);
+                }
+            }
+        }
+
+        c.cycles += 9;
+        c.g[V0][0] = c.g[S3][0];
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_DecUtk_DecodeLoop (0x3c9520, EA SND library)
+
+pub(crate) const SND_UTK_DECODE: Callee = Callee {
+    addr: 0x003c_de68,
+    f: ee::s14::SND_UtkDecode,
+};
+
+pub(crate) const SND_UTK_SET_STATE: Callee = Callee {
+    addr: 0x003c_e0b8,
+    f: ee::s14::SND_UtkSetState,
+};
+
+pub(crate) const SND_UTK_SET_INPUT: Callee = Callee {
+    addr: 0x003c_dde8,
+    f: ee::s14::SND_UtkSetInput,
+};
+
+/// The looping MicroTalk decoder's fields: its UTK decoder, the sample
+/// position, the loop start and end samples, the stream data.
+pub(crate) const DU_DECODER: u32 = 0x1c;
+
+pub(crate) const DU_POS: u32 = 0x20;
+
+pub(crate) const DU_LOOP_START: u32 = 0x24;
+
+pub(crate) const DU_LOOP_END: u32 = 0x28;
+
+pub(crate) const DU_DATA: u32 = 0x2c;
+
+/// `int SND_DecUtk_DecodeLoop(DecUtk* d, int n, int, float* out)`
+/// (0x3c9520, the output cursor is passed through the frame): decodes `n`
+/// samples of a looping MicroTalk sound. Whenever the decoder runs out
+/// before the request is met, the position jumps back to the loop start,
+/// the decoder state is reset (`SND_UtkSetState({0, 0, 1})`) and the loop's
+/// `end - start + 1` samples are queued again (`SND_UtkSetInput`). Returns
+/// 1.
+pub fn snd_dec_utk_decode_loop(c: &mut Cpu) {
+    use crate::guest::Addr;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0]; // d
+        c.g[S1][0] = c.g[A1][0]; // n
+        let d = r32(c, S0);
+        let at = |o: u32| Addr(d.wrapping_add(o));
+        let out = frame.at(c, 0x10);
+        let a3 = c.g[A3][0];
+        Addr(out).sw(c, a3);
+        if (c.g[S1][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[S2][0] = 1;
+            c.g[A0][0] = at(DU_DECODER).lw(c);
+            loop {
+                // k = SND_UtkDecode(decoder, &out, n)
+                c.cycles += 13;
+                c.g[A2][0] = c.g[S1][0];
+                c.g[A1][0] = sx(out);
+                SND_UTK_DECODE.call(c, 0x003c_955c)?;
+                let k = r32(c, V0);
+                c.g[A0][0] = Addr(out).lw(c);
+                c.g[V1][0] = sx(k << 2);
+                c.g[A1][0] = at(DU_POS).lw(c);
+                c.g[S1][0] = sx(r32(c, S1).wrapping_sub(k));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(k << 2));
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(k));
+                let a0 = c.g[A0][0];
+                Addr(out).sw(c, a0);
+                c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[S1][0] as i64)) as u64;
+                let a1 = c.g[A1][0];
+                at(DU_POS).sw(c, a1);
+                if c.g[V0][0] != 0 {
+                    // Back to the loop start: reset and requeue the loop.
+                    c.cycles += 18;
+                    c.g[V0][0] = at(DU_LOOP_START).lw(c);
+                    c.g[A2][0] = 0;
+                    c.g[A0][0] = at(DU_DECODER).lw(c);
+                    c.g[A1][0] = c.g[SP][0];
+                    let start = c.g[V0][0];
+                    at(DU_POS).sw(c, start);
+                    Addr(frame.at(c, 4)).sw(c, 0);
+                    Addr(frame.at(c, 0)).sw(c, 0);
+                    let one = c.g[S2][0];
+                    Addr(frame.at(c, 8)).sw(c, one);
+                    SND_UTK_SET_STATE.call(c, 0x003c_95a8)?;
+                    c.g[A2][0] = at(DU_LOOP_END).lw(c);
+                    c.g[V0][0] = at(DU_LOOP_START).lw(c);
+                    c.g[A0][0] = at(DU_DECODER).lw(c);
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_sub(r32(c, V0)));
+                    c.g[A1][0] = at(DU_DATA).lw(c);
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+                    c.g[A3][0] = c.g[A2][0];
+                    c.g[A2][0] = sx(r32(c, A2) << 2);
+                    SND_UTK_SET_INPUT.call(c, 0x003c_95cc)?;
+                }
+                c.cycles += 2;
+                if (c.g[S1][0] as i64) <= 0 {
+                    break;
+                }
+                c.g[A0][0] = at(DU_DECODER).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_9550);
+                }
+            }
+        }
+        c.cycles += 7;
+        c.g[V0][0] = 1;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ===========================================================================
+// 0x003ba888 SND_CentsToPitch
+
+/// The pitch fraction table of [`snd_cents_to_pitch`]: 256 bytes, the
+/// fraction of a semitone step (`(2^(i/256) - 1) * 256`), at_2 0x44c480.
+pub const CENTS_PITCH_TABLE: u32 = 0x0045_0000 - 0x3b80;
+
+/// `int SND_CentsToPitch(int cents)` (0x3ba888): an SPU pitch (0x1000 =
+/// unchanged) for a detune in cents. Whole octaves (1200 cents) double or
+/// halve the pitch; the rest is scaled to 1/256 octave steps (`* 0x369d >>
+/// 16`, at_2 least -255) and looked up in the fraction table (`(pitch *
+/// (0x100 + frac)) >> 8`, one more shift for negative steps).
+pub fn snd_cents_to_pitch(c: &mut Cpu) {
+    const OCTAVE: u32 = 0x4b0;
+    c.cycles += 4;
+    c.g[A2][0] = 0x1000;
+    c.g[A3][0] = 0x45_0000;
+    // Whole octaves up (the first test uses the full register).
+    if (c.g[A0][0] as i64) >= 1200 {
+        loop {
+            c.cycles += 7;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_sub(OCTAVE));
+            c.g[A2][0] = sx(r32(c, A2) << 1);
+            let below = (c.g[A0][0] as i64) < 1200;
+            c.g[V0][0] = below as u64;
+            if below {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_a898);
+            }
+        }
+        c.cycles += 2;
+    } else {
+        c.cycles += 1;
+    }
+    // Whole octaves down.
+    loop {
+        let low = (c.g[A0][0] as i64) < -1199;
+        c.g[V0][0] = low as u64;
+        c.cycles += 5;
+        if !low {
+            break;
+        }
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(OCTAVE));
+        if event_due(c) {
+            deliver_event_here(c, 0x003b_a8c0);
+        }
+        c.cycles += 1;
+        c.g[A2][0] = sx(((r32(c, A2) as i32) >> 1) as u32);
+        c.cycles += 1;
+    }
+    // The 1/256-octave step.
+    c.cycles += 9;
+    c.g[V1][0] = sx(0xffff_ff00);
+    let cents = r32(c, A0);
+    let scaled = abi::mult(c, cents, 0x369d);
+    c.g[V0][0] = sx(scaled);
+    c.g[A0][0] = sx(0xffff_ff01);
+    c.g[A1][0] = sx(((scaled as i32) >> 16) as u32);
+    let above_min = (c.g[V1][0] as i64) < (c.g[A1][0] as i64);
+    c.g[V1][0] = above_min as u64;
+    if !above_min {
+        c.g[A1][0] = c.g[A0][0];
+    }
+    let step = c.g[A1][0];
+    c.g[V0][0] = sx(CENTS_PITCH_TABLE);
+    let (entry, shift) = if (step as i64) >= 0 {
+        c.cycles += 5;
+        (CENTS_PITCH_TABLE.wrapping_add(step as u32), 8)
+    } else {
+        c.cycles += 6;
+        (
+            CENTS_PITCH_TABLE
+                .wrapping_add(step as u32)
+                .wrapping_add(0x100),
+            9,
+        )
+    };
+    let base = CENTS_PITCH_TABLE.wrapping_add(step as u32);
+    c.g[V0][0] = sx(base);
+    let frac = Addr(entry).lbu(c);
+    let pitch = r32(c, A2);
+    let product = abi::mult(c, pitch, (frac as u32).wrapping_add(0x100));
+    c.g[V1][0] = sx(product);
+    c.g[A2][0] = sx(((product as i32) >> shift) as u32);
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A2][0];
+    abi::ret(c);
+}
+
+// ===========================================================================
+// 0x003c6380 SND_UMul32x32
+
+/// `__muldi3` (64-bit multiply), the partial-product helper.
+pub const MULDI3: u32 = 0x0041_14d0;
+
+/// One partial product of [`snd_umul32x32`]: `__muldi3(x, y)` on the
+/// registers `x` and `y`, returning to `ret`.
+pub(crate) fn umul_part(
+    c: &mut Cpu,
+    x: usize,
+    y: usize,
+    ret: u32,
+) -> Result<u64, crate::call::Unwound> {
+    c.g[A0][0] = c.g[x][0];
+    c.g[A1][0] = c.g[y][0];
+    call_ptr(c, MULDI3, ret)?;
+    Ok(c.g[V0][0])
+}
+
+/// `u64 SND_UMul32x32(u32 a, u32 b)` (0x3c6380): the full 64-bit product of
+/// two 32-bit values from four 16x16 partial products (each through
+/// `__muldi3`): `lo = al*bl`, `m1 = al*bh`, `m2 = ah*bl`, `hi = ah*bh`;
+/// the low word `lo + (m1 << 16) + (m2 << 16)`, the high word `hi + (m1 >>
+/// 16) + (m2 >> 16)` plus the carry out of the middle 16 bits. The two
+/// words meet in a doubleword on the stack (copied once) and come back in
+/// v0.
+pub fn snd_umul32x32(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x80);
+        c.cycles += 74;
+        frame.save(c, S0, 0x70);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        frame.save(c, S1, 0x60);
+        frame.save_ra(c, 0x20);
+        let (a, b) = (c.g[A0][0], c.g[A1][0]);
+        // The 16-bit halves (s0 = al, s2 = bl, s3 = ah, s4 = bh).
+        c.g[S0][0] = a & 0xffff;
+        c.g[S2][0] = b & 0xffff;
+        c.g[S3][0] = ((a as u32) >> 16) as u64;
+        c.g[S4][0] = ((b as u32) >> 16) as u64;
+
+        // The partial products (64-bit results in v0).
+        let mul = umul_part;
+        let lo = mul(c, S0, S2, 0x003c_63c8)?;
+        c.g[S1][0] = lo;
+        let m1 = mul(c, S0, S4, 0x003c_63d8)?;
+        c.g[S0][0] = m1;
+        let m2 = mul(c, S3, S2, 0x003c_63e8)?;
+        c.g[S2][0] = m2;
+        let hi = mul(c, S3, S4, 0x003c_63f8)?;
+
+        // The carry out of bits 16..31 and the two words.
+        c.g[A2][0] = m2 >> 16;
+        let carry = ((lo >> 16)
+            .wrapping_add(m1 & 0xffff)
+            .wrapping_add(m2 & 0xffff))
+            >> 16;
+        let high = (m1 >> 16)
+            .wrapping_add(m2 >> 16)
+            .wrapping_add(hi)
+            .wrapping_add(carry);
+        let low = lo.wrapping_add(m1 << 16).wrapping_add(m2 << 16);
+        let (high, low) = (sx(high as u32), sx(low as u32));
+        c.g[S0][0] = m1 << 16;
+        c.g[S1][0] = low;
+        c.g[S2][0] = m2 << 16;
+        let words = frame.at(c, 0);
+        Addr(words).off(4).sw(c, high);
+        Addr(words).sw(c, low);
+        let both = Addr(words).read_u64_unaligned(c);
+        Addr(words).off(0x10).write_u64_unaligned(c, both);
+        let low_word = Addr(words).off(0x10).lwu(c);
+        let high_word = Addr(words).off(0x14).lwu(c);
+        c.g[A0][0] = low_word;
+        c.g[A1][0] = 0xffff_ffff;
+        c.g[V1][0] = high_word << 32;
+        c.g[V0][0] = (hi & 0xffff_ffff_0000_0000 | low_word) & 0xffff_ffff | high_word << 32;
+
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const SND_EAXA_DECODE_BLOCKS: Callee = Callee {
+    addr: 0x003c_ca08,
+    f: ee::s14::SND_EaxaDecodeBlocks,
+};
+
+/// `int SND_EaxaDecode(EaxaState* s, float** pout, int n)` (0x3ccf90,
+/// `src/ealib/seg_2B4578.c`): decodes up to `n` samples of an EA ADPCM
+/// stream to `*pout`; returns how many were written.
+///
+/// First the samples left over from the last partial block are copied
+/// out, then whole 28-sample blocks are decoded straight to the output
+/// (`SND_EaxaDecodeBlocks`), and a remainder is decoded as one block into
+/// `s+0x24` and its first samples copied; the rest stays pending
+/// (`s+0x4` negated, read pointer `s+0x10`). The stream's remaining count
+/// (`s+0x8`) goes down by every sample delivered; when it runs out nothing
+/// stays pending.
+///
+/// The state pointer lives in `s0`, the delivered count in `s3` and the
+/// counters in `s1`/`s2` as in the original (`SND_EaxaDecodeBlocks` saves
+/// them on its stack), and every block's cycle charge and scratch register
+/// is reproduced.
+pub fn snd_eaxa_decode(c: &mut Cpu) {
+    use eaxa::*;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S3, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        c.g[S3][0] = 0;
+        frame.save(c, S2, 0x30);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        let s = r32(c, S0);
+        let out = Addr(r32(c, A1)).lw(c);
+        c.g[V0][0] = out;
+        let remaining = Addr(s + REMAINING).lw(c);
+        c.g[V1][0] = remaining;
+        Addr(s + OUT).sw(c, out);
+        if remaining == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        } else {
+            // m = min(n, remaining) (a1).
+            c.cycles += 5;
+            c.g[A1][0] = remaining;
+            let n_lt = ((c.g[A2][0] as i64) < (remaining as i64)) as u64;
+            c.g[V0][0] = n_lt;
+            let pending = Addr(s + PENDING).lw(c);
+            c.g[V1][0] = pending;
+            if n_lt != 0 {
+                c.g[A1][0] = c.g[A2][0];
+            }
+            if pending != 0 {
+                // k = min(m, pending) (a0, s1): copy k pending samples.
+                c.cycles += 5;
+                let m_lt = ((c.g[A1][0] as i64) < (pending as i64)) as u64;
+                c.g[V0][0] = m_lt;
+                c.g[A0][0] = if m_lt != 0 { c.g[A1][0] } else { pending };
+                c.g[S1][0] = c.g[A0][0];
+                if (c.g[A0][0] as i64) > 0 {
+                    c.cycles += 1;
+                    loop {
+                        c.cycles += 12;
+                        let s = r32(c, S0);
+                        let rd = Addr(s + READ).lw(c) as u32;
+                        c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+                        let dst = Addr(s + OUT).lw(c) as u32;
+                        c.lwc1(0, rd);
+                        c.swc1(0, dst);
+                        let dst = Addr(s + OUT).lw(c) as u32;
+                        let rd = Addr(s + READ).lw(c) as u32;
+                        c.g[V0][0] = sx(dst.wrapping_add(4));
+                        c.g[V1][0] = sx(rd.wrapping_add(4));
+                        Addr(s + OUT).sw(c, c.g[V0][0]);
+                        Addr(s + READ).sw(c, c.g[V1][0]);
+                        if c.g[S1][0] == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c_cff8);
+                        }
+                    }
+                }
+                c.cycles += 8;
+                let s = r32(c, S0);
+                let k = r32(c, A0);
+                let remaining = Addr(s + REMAINING).lw(c) as u32;
+                c.g[S3][0] = c.g[A0][0];
+                let pending = Addr(s + PENDING).lw(c) as u32;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_sub(k));
+                c.g[V1][0] = sx(remaining.wrapping_sub(k));
+                c.g[V0][0] = sx(pending.wrapping_sub(k));
+                Addr(s + REMAINING).sw(c, c.g[V1][0]);
+                Addr(s + PENDING).sw(c, c.g[V0][0]);
+            }
+            // Whole blocks: s1 = m / 28 * 28, s2 = the remainder.
+            c.cycles += 4;
+            c.g[V0][0] = BLOCK;
+            c.div(0, A1, V0);
+            c.cycles += 5;
+            c.g[V1][0] = c.lo[0];
+            c.mult(0, S1, V1, V0);
+            c.g[S2][0] = sx(r32(c, A1).wrapping_sub(r32(c, S1)));
+            let s = r32(c, S0);
+            Addr(s + COUNT).sw(c, c.g[S1][0]);
+            if (c.g[S1][0] as i64) > 0 {
+                c.cycles += 6;
+                c.g[A0][0] = sx(s + COUNT);
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(r32(c, S1)));
+                SND_EAXA_DECODE_BLOCKS.call(c, 0x003c_d078)?;
+                let s = r32(c, S0);
+                let remaining = Addr(s + REMAINING).lw(c) as u32;
+                c.g[V0][0] = sx(remaining.wrapping_sub(r32(c, S1)));
+                Addr(s + REMAINING).sw(c, c.g[V0][0]);
+            }
+            // The remainder: decode one block into the buffer, copy its
+            // first s2 samples to the output, leave the rest pending.
+            c.cycles += 2;
+            let s = r32(c, S0);
+            c.g[V0][0] = sx(s + BUF);
+            if (c.g[S2][0] as i64) > 0 {
+                c.cycles += 20;
+                c.g[S4][0] = Addr(s + OUT).lw(c);
+                Addr(s + COUNT).sw(c, c.g[S2][0]);
+                c.g[A0][0] = sx(s + COUNT);
+                Addr(s + OUT).sw(c, c.g[V0][0]);
+                c.g[S1][0] = 0;
+                SND_EAXA_DECODE_BLOCKS.call(c, 0x003c_d0a4)?;
+                let s = r32(c, S0);
+                let decoded = Addr(s + COUNT).lw(c) as u32;
+                c.g[A0][0] = sx(decoded);
+                c.g[A2][0] = sx(r32(c, S3).wrapping_add(r32(c, S2)));
+                let out = Addr(s + OUT).lw(c) as u32;
+                c.g[A1][0] = sx(out);
+                let remaining = Addr(s + REMAINING).lw(c) as u32;
+                c.g[V1][0] = sx(out.wrapping_add(decoded << 2));
+                c.g[A0][0] = sx(0u32.wrapping_sub(decoded));
+                c.g[V0][0] = sx(remaining.wrapping_sub(r32(c, S2)));
+                c.g[A1][0] = sx(out.wrapping_sub(0x70));
+                Addr(s + REMAINING).sw(c, c.g[V0][0]);
+                Addr(s + READ).sw(c, c.g[V1][0]);
+                Addr(s + PENDING).sw(c, c.g[A0][0]);
+                Addr(s + OUT).sw(c, c.g[A1][0]);
+                c.cycles += 1;
+                c.g[A1][0] = c.g[S4][0];
+                loop {
+                    c.cycles += 9;
+                    let s = r32(c, S0);
+                    let block = Addr(s + OUT).lw(c) as u32;
+                    c.g[V1][0] = sx(block);
+                    let i = r32(c, S1);
+                    c.g[S1][0] = sx(i.wrapping_add(1));
+                    c.g[V0][0] = sx((i << 2).wrapping_add(block));
+                    let more = (c.g[S1][0] as i64) < (c.g[S2][0] as i64);
+                    c.g[A0][0] = more as u64;
+                    c.lwc1(0, r32(c, V0));
+                    c.swc1(0, r32(c, A1));
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(4));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_d0e0);
+                    }
+                }
+                c.cycles += 1;
+                c.g[S3][0] = c.g[A2][0];
+            }
+            // Stream finished: nothing stays pending.
+            c.cycles += 3;
+            let s = r32(c, S0);
+            c.g[V0][0] = Addr(s + REMAINING).lw(c);
+            if (c.g[V0][0] as i64) <= 0 {
+                Addr(s + PENDING).sw(c, 0);
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S3][0];
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const SNDSTRM_GET_STREAM: Callee = Callee {
+    addr: 0x003b_6a38,
+    f: ee::s13::SNDSTRM_GetStream,
+};
+
+pub(crate) const SNDSTRM_FIND_REQUEST: Callee = Callee {
+    addr: 0x003b_7a70,
+    f: ee::s13::SNDSTRM_FindRequest,
+};
+
+pub(crate) const SND_UMUL32X32: Callee = Callee {
+    addr: 0x003c_6380,
+    f: ee::s13::SND_UMul32x32,
+};
+
+pub(crate) const SND_UDIV64BY32: Callee = Callee {
+    addr: 0x003c_64a8,
+    f: ee::s13::SND_UDiv64by32,
+};
+
+/// `int SNDSTRM_GetRequestStatus(int handle, SndStrmStatus* st)`
+/// (0x3b7c40): fills `st` (four words, cleared first) for a stream request.
+///
+/// A negative handle, or one whose stream (low byte, `SNDSTRM_GetStream`)
+/// does not exist, returns -8. Otherwise returns 0 with `st[0]` the
+/// state: 3 when the request is unknown (`SNDSTRM_FindRequest`), 0 when it
+/// is not active (`req+0x24`), 2 when it is the stream's current request
+/// (`stream+0x11c`) and 1 when it is queued. For active requests `st[1]`
+/// and `st[2]` are the start position (`req+0x14`) and the length
+/// (`req+0x18 - req+0x14`) in milliseconds at the stream's rate (current:
+/// `stream+0x14`, queued: `stream+0x18`; 64-bit `x * 1000 / rate`), and
+/// `st[3]` is `req+0x1c * 1000 / rate`.
+///
+/// Registers as the original: the handle and then the request in `s0`,
+/// the stream and then the rate in `s1`, `st` in `s2`, the 64-bit products
+/// passed through the stack, LO/HI from the final `mult`/`divu`.
+pub fn sndstrm_get_request_status(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        let st = r32(c, S2);
+        for i in 0..4 {
+            Addr(st + 4 * i).sw(c, 0);
+        }
+        'done: {
+            'bad: {
+                if (c.g[S0][0] as i64) < 0 {
+                    break 'bad;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0] & 0xff;
+                SNDSTRM_GET_STREAM.call(c, 0x003b_7c78)?;
+                c.g[S1][0] = c.g[V0][0];
+                if c.g[S1][0] == 0 {
+                    break 'bad;
+                }
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                SNDSTRM_FIND_REQUEST.call(c, 0x003b_7c94)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[V0][0] = 3;
+                let st = r32(c, S2);
+                'state: {
+                    if c.g[S0][0] == 0 {
+                        // Unknown request: state 3.
+                        c.cycles += 1;
+                        Addr(st).sw(c, c.g[V0][0]);
+                        break 'state;
+                    }
+                    c.cycles += 3;
+                    let req = r32(c, S0);
+                    c.g[V0][0] = Addr(req + 0x24).lbu(c);
+                    if c.g[V0][0] == 0 {
+                        // Not active: state 0.
+                        c.cycles += 2;
+                        Addr(st).sw(c, 0);
+                        break 'state;
+                    }
+                    let stream = r32(c, S1);
+                    c.g[V0][0] = Addr(stream + 0x11c).lw(c);
+                    c.cycles += 2;
+                    if c.g[V0][0] == c.g[S0][0] {
+                        // The current request: state 2, the stream's rate.
+                        c.cycles += 4;
+                        c.g[V0][0] = 2;
+                        Addr(st).sw(c, 2);
+                        c.g[S1][0] = Addr(stream + 0x14).lhu(c);
+                    } else {
+                        // Queued: state 1, the next rate.
+                        c.g[V0][0] = 1;
+                        c.cycles += 2;
+                        Addr(st).sw(c, 1);
+                        c.g[S1][0] = Addr(stream + 0x18).lhu(c);
+                    }
+                    // Start and length in milliseconds.
+                    c.cycles += 29;
+                    c.g[A0][0] = Addr(req + 0x14).lw(c);
+                    c.g[A1][0] = 1000;
+                    SND_UMUL32X32.call(c, 0x003b_7ce0)?;
+                    ms_from_product(c);
+                    SND_UDIV64BY32.call(c, 0x003b_7d00)?;
+                    let (st, req) = (r32(c, S2), r32(c, S0));
+                    Addr(st + 4).sw(c, c.g[V0][0]);
+                    c.g[A1][0] = 1000;
+                    let end = Addr(req + 0x18).lw(c) as u32;
+                    c.g[V0][0] = sx(end);
+                    let start = Addr(req + 0x14).lw(c) as u32;
+                    c.g[A0][0] = sx(end.wrapping_sub(start));
+                    SND_UMUL32X32.call(c, 0x003b_7d18)?;
+                    ms_from_product(c);
+                    SND_UDIV64BY32.call(c, 0x003b_7d38)?;
+                    let (st, req) = (r32(c, S2), r32(c, S0));
+                    Addr(st + 8).sw(c, c.g[V0][0]);
+                    c.g[V1][0] = 1000;
+                    // st[3] = req+0x1c * 1000 / rate (32-bit).
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(req + 0x1c).lw(c);
+                    c.mult(0, V0, V0, V1);
+                    c.divu(0, V0, S1);
+                    c.g[V0][0] = c.lo[0];
+                    Addr(st + 0xc).sw(c, c.g[V0][0]);
+                }
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                break 'done;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = (-8i64) as u64;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The 64-bit product in v0 split into words on the stack (`dsll32`/
+/// `dsrl32`, two `sw`), reloaded as one doubleword into a0 with the rate
+/// (s1) in a1: `SND_UDiv64by32`'s arguments.
+pub(crate) fn ms_from_product(c: &mut Cpu) {
+    let product = c.g[V0][0];
+    c.g[V1][0] = product & 0xffff_ffff;
+    c.g[V0][0] = product >> 32;
+    let at = sp(c);
+    Addr(at).sw(c, c.g[V1][0]);
+    Addr(at + 4).sw(c, c.g[V0][0]);
+    c.g[A0][0] = Addr(at).ld(c);
+    c.g[A1][0] = c.g[S1][0];
+}
+
+// ---------------------------------------------------------------------------
+// SND_EeMixBlock
+
+/// `SND_MixDeclick16(float* gain, short* buf)` (0x3c7600).
+pub(crate) const SND_MIX_DECLICK16: Callee = Callee {
+    addr: 0x003c_7600,
+    f: ee::s14::SND_MixDeclick16,
+};
+
+/// `int SND_EeVoiceMixRamp(Voice*)` (0x3c7ab0): mixes the 16-sample ramp of
+/// a voice whose gains changed; returns the samples done.
+pub(crate) const SND_EE_VOICE_MIX_RAMP: Callee = Callee {
+    addr: 0x003c_7ab0,
+    f: ee::s14::SND_EeVoiceMixRamp,
+};
+
+/// `SND_EeVoiceFinish(int voice)` (0x3c8430).
+pub(crate) const SND_EE_VOICE_FINISH: Callee = Callee {
+    addr: 0x003c_8430,
+    f: ee::s14::SND_EeVoiceFinish,
+};
+
+/// One playing voice (s1): finish its gain ramp, render the rest of the
+/// block from its source and mix it into every bus it sends to (and the
+/// declick bus).
+pub(crate) fn mix_voice(c: &mut Cpu) -> Flow {
+    use mixer::*;
+    let voice = r32(c, S1);
+    let s = sp(c);
+    c.cycles += 3;
+    c.g[V0][0] = c.lb(voice.wrapping_add(1));
+    c.g[S6][0] = 0;
+    if c.g[V0][0] == 0 {
+        c.cycles += 1;
+        c.g[A1][0] = c.g[FP][0];
+    } else {
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S1][0];
+        SND_EE_VOICE_MIX_RAMP.call(c, 0x003c_8728)?;
+        c.g[S6][0] = c.g[V0][0];
+        c.sb(voice.wrapping_add(1), 0);
+        c.g[A1][0] = sx(r32(c, FP).wrapping_sub(r32(c, S6)));
+    }
+    c.cycles += 3;
+    c.g[V0][0] = sx(r32(c, S0).wrapping_add(1));
+    c.sw(s.wrapping_add(0x4), c.g[V0][0]);
+    if c.g[A1][0] == 0 {
+        c.cycles += 1;
+        return Ok(());
+    }
+    // Render: n = source->render(source, count, scratch, samples, 0).
+    c.cycles += 11;
+    c.g[A0][0] = c.lw(voice.wrapping_add(0x40));
+    // (v1 keeps only the `lui` half of the mixer address here.)
+    c.g[V1][0] = 0x51_0000;
+    c.g[S3][0] = sx(BASE);
+    c.g[T0][0] = 0;
+    c.g[A2][0] = c.lw(BASE + SCRATCH);
+    c.g[V0][0] = c.lw(r32(c, A0));
+    let f = r32(c, V0);
+    c.g[A3][0] = c.lw(BASE + SAMPLES);
+    call_ptr(c, f, 0x003c_8768)?;
+    c.g[S5][0] = c.g[V0][0];
+    if (c.g[S5][0] as i64) < 0 {
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S0][0];
+        SND_EE_VOICE_FINISH.call(c, 0x003c_877c)?;
+        return Ok(());
+    }
+    c.cycles += 2;
+    c.g[V0][0] = sx(r32(c, S5) << 2);
+    if c.g[S5][0] == 0 {
+        c.cycles += 1;
+        return Ok(());
+    }
+    // Remember the last sample; mix into the buses with non-zero sends.
+    c.cycles += 7;
+    c.g[V1][0] = c.lw(BASE + SAMPLES);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+    c.lwc1(0, r32(c, V0).wrapping_sub(4));
+    c.swc1(0, voice.wrapping_add(0x3c));
+    c.g[V0][0] = c.lbu(BASE + BUS_COUNT);
+    c.g[S2][0] = 0;
+    if c.g[V0][0] != 0 {
+        c.cycles += 4;
+        c.mtc1(0, 20);
+        c.g[S7][0] = sx(r32(c, S6) << 2);
+        c.g[S4][0] = sx(BASE + BUS_BUF);
+        c.g[S0][0] = sx(voice.wrapping_add(0x1c));
+        loop {
+            c.cycles += 5;
+            c.lwc1(12, r32(c, S0));
+            c.c_eq_s(12, 20);
+            if !c.fcc() {
+                c.cycles += 7;
+                c.g[A2][0] = c.lw(r32(c, S4));
+                c.g[A0][0] = c.g[S5][0];
+                c.g[V0][0] = c.lw(BASE + MIX_FN);
+                c.g[A1][0] = c.lw(BASE + SAMPLES);
+                let f = r32(c, V0);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(r32(c, S7)));
+                call_ptr(c, f, 0x003c_87e4)?;
+            }
+            c.g[V0][0] = c.lbu(BASE + BUS_COUNT);
+            c.cycles += 5;
+            c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+            c.g[S4][0] = sx(r32(c, S4).wrapping_add(4));
+            c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_87b8);
+            }
+        }
+    }
+    c.cycles += 9;
+    c.mtc1(0, 20);
+    c.g[S3][0] = sx(BASE);
+    c.g[S6][0] = sx(r32(c, S6) << 2);
+    c.g[V0][0] = 0x51_0000;
+    c.g[S7][0] = sx(BASE + DECLICK_ON);
+    c.g[S4][0] = sx(DECLICK_BUF);
+    c.g[S0][0] = sx(voice.wrapping_add(0x38));
+    c.g[S2][0] = 0;
+    loop {
+        c.cycles += 4;
+        c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, S7)));
+        c.g[V1][0] = c.lb(r32(c, V0));
+        if c.g[V1][0] != 0 {
+            c.cycles += 5;
+            c.lwc1(12, r32(c, S0));
+            c.c_eq_s(12, 20);
+            if !c.fcc() {
+                c.cycles += 7;
+                c.g[V0][0] = c.lw(BASE + MIX_FN);
+                c.g[A0][0] = c.g[S5][0];
+                c.g[A1][0] = c.lw(BASE + SAMPLES);
+                let f = r32(c, V0);
+                c.g[A2][0] = sx(r32(c, S6).wrapping_add(DECLICK_BUF));
+                call_ptr(c, f, 0x003c_8858)?;
+                c.sw(DECLICK_BUF + 0x1800, 0);
+            }
+        }
+        c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+        c.cycles += 2;
+        let again = (c.g[S2][0] as i64) <= 0;
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+        if !again {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_8820);
+        }
+    }
+    c.cycles += 1;
+    Ok(())
+}
+
+/// `void SND_EeMixBlock(short** outs, int count)` (0x3c85d0): one block of
+/// the EE software mixer: fade the declick bus, clear every bus buffer
+/// (declicking it), mix each playing voice into its buses, run the post-mix
+/// hook and send every bus through its effect (if any) to its output.
+pub fn snd_ee_mix_block(c: &mut Cpu) {
+    use mixer::*;
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0xc0);
+        c.g[V1][0] = 0x51_0000;
+        frame.save_fpr(c, 20, 0xb0);
+        c.g[V0][0] = sx(BASE);
+        for (reg, off) in [
+            (S0, 0xa0),
+            (S1, 0x90),
+            (S2, 0x80),
+            (S3, 0x70),
+            (FP, 0x20),
+            (S4, 0x60),
+            (S5, 0x50),
+            (S6, 0x40),
+            (S7, 0x30),
+        ] {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = sx(BASE + DECLICK_GAIN);
+        c.g[S1][0] = 0x51_0000;
+        c.g[S2][0] = 0;
+        c.g[S3][0] = sx(BASE + DECLICK_ON);
+        c.g[FP][0] = c.g[A1][0];
+        c.mtc1(0, 20);
+        let s = sp(c);
+        c.sw(s, c.g[A0][0]);
+
+        // The declick bus fades (one bus).
+        loop {
+            c.cycles += 4;
+            c.g[V0][0] = sx(r32(c, S2).wrapping_add(r32(c, S3)));
+            c.g[V1][0] = c.lb(r32(c, V0));
+            if c.g[V1][0] != 0 {
+                c.cycles += 5;
+                c.lwc1(0, r32(c, S0));
+                c.c_eq_s(0, 20);
+                if !c.fcc() {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = sx(DECLICK_BUF);
+                    SND_MIX_DECLICK16.call(c, 0x003c_8658)?;
+                }
+            }
+            c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+            c.cycles += 2;
+            let again = (c.g[S2][0] as i64) <= 0;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+            if !again {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_8628);
+            }
+        }
+
+        // Clear every bus buffer (count samples) and declick it.
+        c.cycles += 5;
+        c.g[V0][0] = 0x51_0000;
+        c.g[V1][0] = sx(BASE);
+        c.g[V0][0] = c.lbu(BASE + BUS_COUNT);
+        c.g[S2][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            c.g[S1][0] = c.g[V1][0];
+            c.mtc1(0, 20);
+            c.g[S0][0] = sx(BASE + BUS_DECLICK);
+            loop {
+                c.cycles += 9;
+                let gain = r32(c, S0);
+                c.g[A0][0] = c.lw(gain.wrapping_sub(0x18));
+                c.g[A1][0] = 0;
+                c.g[A2][0] = sx(r32(c, FP) << 2);
+                call_ptr(c, MEMSET, 0x003c_8698)?;
+                c.lwc1(0, gain);
+                c.c_eq_s(0, 20);
+                if !c.fcc() {
+                    c.cycles += 4;
+                    c.g[A1][0] = c.lw(gain.wrapping_sub(0x18));
+                    c.g[A0][0] = c.g[S0][0];
+                    SND_MIX_DECLICK16.call(c, 0x003c_86b8)?;
+                }
+                c.g[V0][0] = c.lbu(BASE + BUS_COUNT);
+                c.cycles += 4;
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = sx(gain.wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_8688);
+                }
+            }
+        }
+
+        // The playing voices.
+        c.cycles += 5;
+        c.g[V0][0] = 0x51_0000;
+        c.g[V1][0] = sx(BASE);
+        c.g[V0][0] = c.lbu(BASE + VOICE_COUNT);
+        c.g[S0][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            c.g[V1][0] = VOICE_SIZE;
+            loop {
+                c.cycles += 11;
+                c.g[V0][0] = 0x51_0000;
+                c.mult(0, V1, S0, V1);
+                c.g[V0][0] = sx(BASE);
+                c.g[A0][0] = c.lw(BASE + VOICES);
+                c.g[V0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.sw(s.wrapping_add(0x4), c.g[V0][0]);
+                c.g[S1][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                c.g[V0][0] = c.lb(r32(c, S1));
+                let playing = c.g[V0][0] == 2;
+                c.g[V1][0] = 0x51_0000;
+                if playing {
+                    mix_voice(c)?;
+                    c.g[V1][0] = 0x51_0000;
+                }
+                c.cycles += 6;
+                c.g[S0][0] = c.lw(s.wrapping_add(0x4));
+                c.g[V1][0] = sx(BASE);
+                c.g[V0][0] = c.lbu(BASE + VOICE_COUNT);
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = VOICE_SIZE;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_86e8);
+                }
+            }
+        }
+
+        // The post-mix hook.
+        c.cycles += 5;
+        c.g[V0][0] = 0x51_0000;
+        c.g[S0][0] = sx(BASE);
+        c.g[V0][0] = c.lw(BASE + POST_MIX);
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            let f = r32(c, V0);
+            c.g[A0][0] = c.g[FP][0];
+            call_ptr(c, f, 0x003c_88a0)?;
+        }
+        c.g[V0][0] = c.lbu(BASE + BUS_COUNT);
+
+        // Each bus through its effect (if any) to its output.
+        c.cycles += 2;
+        c.g[S2][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[S3][0] = c.g[S0][0];
+            c.g[S0][0] = c.lw(s);
+            c.g[S1][0] = sx(BASE + BUS_BUF);
+            loop {
+                let bus = r32(c, S1);
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(bus.wrapping_add(BUS_FX));
+                c.g[A0][0] = c.g[V0][0];
+                let ret = if c.g[V0][0] != 0 {
+                    // fx->process(fx, count, bus, scratch, 0), then the output
+                    // from the scratch buffer.
+                    c.cycles += 15;
+                    c.g[A2][0] = c.lw(bus);
+                    c.g[A3][0] = c.lw(BASE + SCRATCH);
+                    c.g[A1][0] = c.g[FP][0];
+                    c.g[V0][0] = c.lw(r32(c, V0));
+                    let f = r32(c, V0);
+                    c.g[T0][0] = 0;
+                    call_ptr(c, f, 0x003c_88dc)?;
+                    c.g[A0][0] = c.lw(bus.wrapping_add(BUS_OUT));
+                    c.g[A1][0] = c.g[FP][0];
+                    c.g[A2][0] = c.lw(BASE + SCRATCH);
+                    0x003c_88f8
+                } else {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.lw(bus.wrapping_add(BUS_OUT));
+                    c.g[A1][0] = c.g[FP][0];
+                    c.g[A2][0] = c.lw(bus);
+                    0x003c_891c
+                };
+                // out->process(out, count, src, outs[i], 0).
+                c.g[T0][0] = 0;
+                c.g[V0][0] = c.lw(r32(c, A0));
+                let f = r32(c, V0);
+                c.g[A3][0] = c.lw(r32(c, S0));
+                call_ptr(c, f, ret)?;
+                c.g[V0][0] = c.lbu(BASE + BUS_COUNT);
+                c.cycles += 5;
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S1][0] = sx(bus.wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_88b8);
+                }
+            }
+        }
+
+        c.cycles += 13;
+        for (reg, off) in [
+            (S0, 0xa0),
+            (S1, 0x90),
+            (S2, 0x80),
+            (S3, 0x70),
+            (S4, 0x60),
+            (S5, 0x50),
+            (S6, 0x40),
+            (S7, 0x30),
+            (FP, 0x20),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x10);
+        frame.restore_fpr(c, 20, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4345,6 +5688,1082 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(u);
                 c.g[A1][0] = sx(out_slot);
                 c.g[A2][0] = sx(n as u32);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::fakes::{self};
+    use crate::difftest::fakes::{ptr, FAKE, LOG_RESULTS};
+    use crate::difftest::fresh;
+
+    pub(crate) use crate::game::ai::ai::ai_render;
+    pub(crate) use crate::game::ai::ai::rider_prewind_sub_handle_input;
+    pub(crate) use crate::game::ai::ai::rider_spin_sub_update_trick;
+    pub(crate) use crate::game::ai::control::handplantcontrol::rider_ground_state_compute_boost_accel;
+    pub(crate) use crate::game::ai::rider::rider_begin_frame;
+    pub(crate) use crate::game::camera::camera::tests::f;
+
+    /// SND_DecEaxa_DecodeStream: an empty ADPCM decoder that is refilled
+    /// from a real stream (`SNDSTRM_PopBlock` on a one-stream fixture whose
+    /// channel queue holds 0-2 blocks of 28 or 56 samples), old and new
+    /// codec versions (history seeding), requests satisfied mid-block and
+    /// requests the stream cannot satisfy (cleared tail with and without
+    /// unreleased samples), and a pending release on entry.
+    #[test]
+    fn snd_dec_eaxa_decode_stream_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{fill, DATA};
+        const SELF: u32 = DATA;
+        const DECODER: u32 = DATA + 0x200;
+        const STREAM: u32 = DATA + 0x1000;
+        const BLOCKS: u32 = DATA + 0x2000;
+        const OUT: u32 = DATA + 0x8000;
+        /// The stream table (`0x5157b8 + 0x304 + 4 * stream`).
+        const STREAMS: u32 = 0x0051_57b8 + 0x304;
+        crate::difftest::check(
+            ee::s14::f_003ca460__generated,
+            snd_dec_eaxa_decode_stream,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3ca4_60, 0);
+                c.pc = 0x003c_a460;
+                c.bus.write32(STREAMS, STREAM);
+                // The decoder: empty (no samples left, nothing buffered).
+                for k in 0..0x30 {
+                    c.bus.write32(DECODER + 4 * k, 0);
+                }
+                c.bus.write32(SELF + 0x1c, DECODER);
+                c.bus.write32(SELF + 0x20, 0);
+                c.bus.write32(SELF + 0x24, 0);
+                c.bus.write32(SELF + 0x28, r.next_u32() % 100);
+                c.bus.write32(SELF + 0x2c, r.next_u32() % 5);
+                c.bus.write32(SELF + 0x30, 0);
+                let pending = if seed % 3 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 64
+                };
+                c.bus.write32(SELF + 0x34, pending);
+                c.bus.write8(SELF + 0x38, 0);
+                // The stream: no extra channels, channel 0 is 0x42's, a ring of
+                // four block descriptors.
+                for k in 0..0x40 {
+                    c.bus.write32(STREAM + 4 * k, 0);
+                }
+                c.bus
+                    .write8(STREAM + 0x42, if seed % 2 == 0 { 0 } else { 1 });
+                c.bus.write16(STREAM + 0x40, 4);
+                c.bus.write16(STREAM + 0x44, (r.next_u32() % 4) as u16);
+                let queued = seed % 3;
+                c.bus.write16(STREAM + 0x34, queued as u16);
+                c.bus.write16(STREAM + 0x28, 0);
+                c.bus.write32(STREAM + 0x4c, 0x1000);
+                for d in 0..4u32 {
+                    let desc = STREAM + 0x7c + 0x20 * d;
+                    let samples = if r.next_u32() % 2 == 0 { 28 } else { 56 };
+                    c.bus
+                        .write32(desc + 4, samples | (r.next_u32() & 0x8000_0000));
+                    c.bus.write32(desc + 8, BLOCKS + 0x100 * d);
+                }
+                fill(c, &mut r, BLOCKS, 0x100);
+                let n = match seed % 5 {
+                    0 => 0,
+                    1 => 10,
+                    2 => 28,
+                    _ => 20 + r.next_u32() % 100,
+                };
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = n as u64;
+                c.g[A3][0] = sx(OUT);
+            },
+        );
+    }
+
+    /// SND_DecUtk_DecodeLoop with the real MicroTalk decoder (game image
+    /// tables): requests met by the decoded frame alone, and requests that
+    /// run the stream dry (LEFT below n, or 0) so the loop restarts
+    /// (`SND_UtkSetState`, `SND_UtkSetInput` with a 20..320-sample loop and
+    /// header parsing on random bits) once or several times; n <= 0.
+    #[test]
+    fn snd_dec_utk_decode_loop_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{elf_image, fill, DATA};
+        use crate::game::lib::snd::utk::*;
+        use crate::game::lib::snd::utk_frame as f;
+        const SELF: u32 = DATA;
+        const U: u32 = DATA + 0x1000;
+        const INPUT: u32 = DATA + 0x8000;
+        const OUT: u32 = DATA + 0x1_0000;
+        crate::difftest::check(
+            ee::s14::f_003c9520__generated,
+            snd_dec_utk_decode_loop,
+            96,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c95_20, 0);
+                elf_image(c);
+                c.pc = 0x003c_9520;
+                fill(c, &mut r, INPUT, 0x800);
+                // The decoder (as the SND_UtkDecode test builds it), mode 0.
+                c.bus.write32(U + BIT_PTR, INPUT + r.next_u32() % 8);
+                c.bus.write32(U + BIT_BUF, r.next_u32());
+                c.bus.write32(U + BIT_COUNT, 8 + r.next_u32() % 25);
+                c.bus
+                    .write32(U + f::REDUCED_BW, if r.next_u32() % 2 == 0 { 0 } else { 1 });
+                c.bus.write32(U + f::VOICED_THRESHOLD, r.next_u32() % 72);
+                for i in 0..64 {
+                    let v = r.f32(2.0);
+                    c.bus.write32(U + f::FIXED_GAINS + 4 * i, v);
+                }
+                for i in 0..12 {
+                    let v = r.f32(0.9);
+                    c.bus.write32(U + f::RC + 4 * i, v);
+                    let h = r.f32(100.0);
+                    c.bus.write32(U + 0x144 + 4 * i, h);
+                }
+                for i in 0..324 {
+                    let v = r.f32(1000.0);
+                    c.bus.write32(U + f::ADAPT_CB + 4 * i, v);
+                }
+                fill(c, &mut r, U + DECODED, 432);
+                c.bus.write32(U + MODE, 0);
+                let avail = r.next_u32() % 433;
+                c.bus.write32(U + AVAIL, avail);
+                let n: i32 = match seed % 6 {
+                    0 => -((r.next_u32() % 3) as i32),
+                    1 => (r.next_u32() % 50) as i32 + 1,
+                    _ => 50 + (r.next_u32() % 400) as i32,
+                };
+                let left = match seed % 4 {
+                    0 => 0,
+                    1 => avail.min(n.max(0) as u32 / 2),
+                    _ => 2000,
+                };
+                c.bus.write32(U + LEFT, left);
+                // The loop: samples 0..len-1 of the data.
+                let start = r.next_u32() % 100;
+                let len = 20 + r.next_u32() % 300;
+                c.bus.write32(SELF + 0x1c, U);
+                c.bus.write32(SELF + 0x20, r.next_u32() % 1000);
+                c.bus.write32(SELF + 0x24, start);
+                c.bus.write32(SELF + 0x28, start + len - 1);
+                c.bus
+                    .write32(SELF + 0x2c, INPUT + 0x400 + r.next_u32() % 16);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(n as u32);
+                c.g[A3][0] = sx(OUT);
+            },
+        );
+    }
+
+    // -- 0x001352a8 RiderSpinSub_UpdateTrick ---------------------------------
+
+    pub(crate) mod update_trick_fixture {
+        use super::*;
+        use crate::difftest::fakes::{fake_call, machine, FAKE};
+        use crate::difftest::{check, elf_image, Rng, DATA, GAME_GP};
+
+        /// The objects (zeroed RAM except the fields written below).
+        const THIS: u32 = DATA + 0x5_0000;
+        const RIDER: u32 = DATA + 0x5_1000;
+        const CTRL: u32 = DATA + 0x5_3000;
+        const CTRL_VT: u32 = DATA + 0x5_3100;
+        const SEQ_LISTS: u32 = DATA + 0x5_3200;
+        const SEQ1: u32 = DATA + 0x5_3300;
+        const SEQ2: u32 = DATA + 0x5_3400;
+        const METRIX: u32 = DATA + 0x5_5000;
+        const BE_LIBRARY: u32 = DATA + 0x5_7000;
+        const BE_OBJ: u32 = DATA + 0x5_7100;
+        const BE_VT: u32 = DATA + 0x5_7200;
+        const AUDIO: u32 = DATA + 0x5_9000;
+        /// The static animation table (28-byte entries; `+0` the kind
+        /// `AnimController_GetLayerAnimEntry` returns).
+        const ANIM_TABLE: u32 = 0x0044_6990;
+        /// The BAGT trick table (0x14-byte entries of halfword fields).
+        const TRICK_TABLE: u32 = 0x0045_aeb8;
+        /// The behaviour library's interface objects (`BELibrary_GetInterface`).
+        const BE_INTERFACES: u32 = 0x0053_08a8;
+        /// Fake methods: the behaviour interface getter, and the controller's
+        /// "current animation kind" (answers 0x207: `PlayAnim` stops there).
+        const FAKE_BE: u32 = FAKE;
+        const FAKE_ANIM_KIND: u32 = FAKE + 0x10;
+        /// Animation ids of layer 2 by kind: a wind-up (0x12), hold loop
+        /// (0x13), chain point (0x14), an ended one (2), anything else (0).
+        const KINDS: [u32; 5] = [0x12, 0x13, 0x14, 2, 0];
+
+        fn f(x: f32) -> u32 {
+            x.to_bits()
+        }
+
+        /// The fake hook: the animation-kind method answers 0x207.
+        fn miss(c: &mut Cpu, target: u32) {
+            fake_call(c, target);
+            if target == FAKE_ANIM_KIND {
+                c.g[V0][0] = 0x207;
+            }
+        }
+
+        fn setup(c: &mut Cpu, seed: u32) {
+            let mut r = machine(c, seed, 0x0013_52a8, 8);
+            let r = &mut r;
+            c.hooks.miss = miss;
+            elf_image(c);
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+
+            // The behaviour library: the singleton exists, interface 0 is an
+            // object whose getter is a fake; the character tables give a
+            // divisor (character 0 of player 0).
+            w(c, GAME_GP - 0x1f04, BE_LIBRARY);
+            w(c, GAME_GP - 0x1efc, 0);
+            w(c, BE_INTERFACES, BE_OBJ);
+            w(c, BE_OBJ + 4, BE_VT);
+            w(c, BE_VT + 0xc, FAKE_BE);
+            c.bus.write8(0x0053_08e2, 10);
+            c.bus.write8(0x0053_08e4, 10);
+            // The audio system (the grab sound returns at_2 once: the rider
+            // has no sound slot).
+            w(c, GAME_GP + 0x410, AUDIO);
+
+            // The rider: `Rider_AddBoost` returns at_2 once (state 3).
+            w(c, RIDER + 0x304, 3);
+            w(c, RIDER + 0x874, 0);
+            w(c, RIDER + 0xb34, 1 + r.next_u32() % 5);
+            w(c, RIDER + 0x2f4, r.next_u32() % 10); // uber level
+            w(
+                c,
+                RIDER + 0x2f0,
+                if r.next_u32() % 2 == 0 { 0 } else { f(1.0) },
+            );
+            w(c, RIDER + 0xb2c, r.next_u32() % 4); // uber flags
+            w(c, RIDER + 0x784, CTRL);
+            w(c, RIDER + 0x790, METRIX);
+            w(c, RIDER + 0x86c, 0);
+            w(c, METRIX + 0x1ac, RIDER);
+
+            // The animation controller: layer 1 and 2 sequences with random
+            // event flags; layer 2 plays an animation of a random kind (or
+            // none, 0x1b6).
+            w(c, CTRL + 0x50, SEQ_LISTS);
+            w(c, CTRL + 0x58, CTRL_VT);
+            w(c, CTRL_VT + 0x24, FAKE_ANIM_KIND);
+            w(c, SEQ_LISTS + 0xc, SEQ1);
+            w(c, SEQ_LISTS + 0x14, SEQ2);
+            c.bus.write64(SEQ1 + 0xb0, (r.next_u32() & 0xf) as u64);
+            let flags = match seed % 5 {
+                0 => 0,
+                1 => 0xf,
+                _ => r.next_u32() & 0xf,
+            };
+            c.bus.write64(SEQ2 + 0xb0, flags as u64);
+            w(c, CTRL + 4, 0x10d + r.next_u32() % 0x1c);
+            let id = if r.next_u32() % 8 == 0 {
+                0x1b6
+            } else {
+                0x10d + r.next_u32() % 0x1c
+            };
+            w(c, CTRL + 8, id);
+            if id != 0x1b6 {
+                let kind = KINDS[(r.next_u32() % 5) as usize];
+                w(c, ANIM_TABLE + id * 0x1c, kind);
+            }
+
+            // The trick table: tricks 0..7, each field an animation id or
+            // "none" (0x1b6).
+            for t in 0..8 {
+                for k in 0..6 {
+                    let v = if r.next_u32() % 3 == 0 {
+                        0x1b6
+                    } else {
+                        0x10d + r.next_u32() % 0x1c
+                    };
+                    c.bus.write16(TRICK_TABLE + t * 0x14 + k * 2, v as u16);
+                }
+            }
+
+            // The spin sub-state: every trick state (6: none of them), the
+            // current trick (or -1), the request the same, another or none,
+            // held or not.
+            let current = if r.next_u32() % 4 == 0 {
+                u32::MAX
+            } else {
+                r.next_u32() % 8
+            };
+            let trick = match (seed / 5) % 4 {
+                0 => u32::MAX,
+                1 | 2 => current,
+                _ => r.next_u32() % 8,
+            };
+            let held = if (seed / 3) % 2 == 0 {
+                0
+            } else {
+                1 + r.next_u32() as u64
+            };
+            w(c, THIS + 0x4, (seed / 7) % 7);
+            w(c, THIS + 0x8, current);
+            w(c, THIS + 0x58, RIDER);
+
+            c.g[A0][0] = sx(THIS);
+            c.g[A1][0] = sx(trick);
+            c.g[A2][0] = held;
+            // The generated body (no override slot yet) dispatches on `pc`:
+            // enter at_2 the start.
+            c.pc = 0x0013_52a8;
+        }
+
+        /// `RiderSpinSub_UpdateTrick`: every trick state, the trick
+        /// requested, changed or dropped, held or released, the layer's
+        /// event flags and animation kinds, trick-table entries with and
+        /// without animations, and fake callees that unwind.
+        #[test]
+        fn rider_spin_sub_update_trick_matches() {
+            check(
+                ssx3_ee::s01::f_001352a8__generated,
+                rider_spin_sub_update_trick,
+                300,
+                &setup,
+            );
+        }
+    }
+
+    // -- 0x0013c948 RiderGroundState_ComputeBoostAccel -----------------------
+
+    pub(crate) mod boost_accel_fixture {
+        use super::*;
+        use crate::difftest::fakes::machine;
+        use crate::difftest::fakes::FAKE;
+        use crate::difftest::{check, elf_image, put_vec, Rng, DATA, GAME_GP};
+
+        const THIS: u32 = DATA + 0x6_0000;
+        const RIDER: u32 = DATA + 0x6_1000;
+        const PARAMS: u32 = DATA + 0x6_2000;
+        const CTRL: u32 = DATA + 0x6_3000;
+        const BE_LIBRARY: u32 = DATA + 0x6_7000;
+        const BE_OBJ: u32 = DATA + 0x6_7100;
+        const BE_VT: u32 = DATA + 0x6_7200;
+        /// The behaviour library's interface objects (`BELibrary_GetInterface`).
+        const BE_INTERFACES: u32 = 0x0053_08a8;
+
+        fn f(x: f32) -> u32 {
+            x.to_bits()
+        }
+
+        /// A float that is 0 a third of the time, else in [-range, range).
+        fn maybe0(r: &mut Rng, range: f32) -> u32 {
+            if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                r.f32(range)
+            }
+        }
+
+        fn setup(c: &mut Cpu, seed: u32) {
+            let mut r = machine(c, seed, 0x0013_c948, 2);
+            let r = &mut r;
+            elf_image(c);
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+
+            // The behaviour library (interface getter: a fake).
+            w(c, GAME_GP - 0x1f04, BE_LIBRARY);
+            w(c, GAME_GP - 0x1efc, 0);
+            w(c, BE_INTERFACES, BE_OBJ);
+            w(c, BE_OBJ + 4, BE_VT);
+            w(c, BE_VT + 0xc, FAKE);
+            c.bus.write8(0x0053_08e2, 10);
+            c.bus.write8(0x0053_08e4, 10);
+
+            w(c, THIS + 0x18, RIDER);
+            // The rider: on the ground (`+0x214` zero) and racing most of
+            // the time; materials below 11, 11..13, 14..16 and >= 17.
+            w(c, RIDER + 0x434, r.next_u32() % 20);
+            w(c, RIDER + 0x214, if seed % 8 == 0 { r.f32(2.0) } else { 0 });
+            w(
+                c,
+                RIDER + 0x470,
+                if seed % 7 == 0 { f(1.0) } else { f(-1.0) },
+            );
+            c.bus.write16(RIDER + 0x2d4, (r.next_u32() & 0x30) as u16);
+            // The heading: either component 0 at_2 times, any quadrant.
+            put_vec(
+                c,
+                RIDER + 0x1b0,
+                [maybe0(r, 2.0), maybe0(r, 2.0), r.f32(2.0), r.f32(2.0)],
+            );
+            w(c, RIDER + 0x4cc, r.f32(4.0));
+            w(c, RIDER + 0x2e8, maybe0(r, 2.0));
+            w(c, RIDER + 0x2fc, r.f32(2.0));
+            w(c, RIDER + 0x1f0, r.f32(1.5));
+            w(c, RIDER + 0x3a8, r.f32(3.0));
+            w(c, RIDER + 0x220, r.f32(2.0));
+            w(c, RIDER + 0x378, r.f32(2.0));
+            let speed = if seed % 2 == 0 { 2.0 } else { 60.0 };
+            put_vec(
+                c,
+                RIDER + 0x1e0,
+                [r.f32(speed), r.f32(speed), r.f32(speed), r.f32(1.0)],
+            );
+            w(c, RIDER + 0x86c, 0);
+            w(c, RIDER + 0xb34, 1 + r.next_u32() % 5);
+            w(c, RIDER + 0x784, CTRL);
+            w(c, CTRL + 8, if r.next_u32() % 2 == 0 { 0x16 } else { 0x20 });
+            w(c, PARAMS + 0x20, r.f32(3.0));
+            w(c, PARAMS + 0x24, r.f32(3.0));
+
+            c.g[A0][0] = sx(THIS);
+            c.g[A1][0] = sx(PARAMS);
+            c.pc = 0x0013_c948;
+        }
+
+        /// `RiderGroundState_ComputeBoostAccel`: off the ground, finished,
+        /// flagged, every heading quadrant and axis case, every material
+        /// band, under and over the speed cap, the boost pose.
+        #[test]
+        fn rider_ground_state_compute_boost_accel_matches() {
+            check(
+                ssx3_ee::s01::f_0013c948__generated,
+                rider_ground_state_compute_boost_accel,
+                300,
+                &setup,
+            );
+        }
+    }
+
+    // -- 0x003ba888 SND_CentsToPitch -----------------------------------------
+
+    /// `SND_CentsToPitch`: octaves up and down (several), positive and
+    /// negative steps, the -255 clamp, a full 64-bit register on entry.
+    #[test]
+    fn snd_cents_to_pitch_matches() {
+        use crate::difftest::{check_lohi, fill, scramble, Rng};
+        check_lohi(
+            ssx3_ee::s13::f_003ba888__generated,
+            snd_cents_to_pitch,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003b_a888 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                fill(c, &mut r, CENTS_PITCH_TABLE, 0x40);
+                let cents: i32 = match seed % 6 {
+                    0 => (r.next_u32() % 1200) as i32 - 600,
+                    1 => 1200 * ((r.next_u32() % 6) as i32 - 3),
+                    2 => -1199 - (r.next_u32() % 3) as i32,
+                    _ => (r.next_u32() % 20000) as i32 - 10000,
+                };
+                c.g[A0][0] = if seed % 10 == 9 {
+                    (r.next_u32() as u64) << 32 | (cents as u32) as u64
+                } else {
+                    sx(cents as u32)
+                };
+                c.pc = 0x003b_a888;
+            },
+        );
+    }
+
+    // -- 0x003c6380 SND_UMul32x32 --------------------------------------------
+
+    /// `SND_UMul32x32`: random and edge operands (zero, all ones, carries
+    /// out of the middle bits), junk in the upper register halves.
+    #[test]
+    fn snd_umul32x32_matches() {
+        use crate::difftest::{check_lohi, scramble, Rng};
+        check_lohi(
+            ssx3_ee::s13::f_003c6380__generated,
+            snd_umul32x32,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003c_6380 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                let pick = |r: &mut Rng| match r.next_u32() % 5 {
+                    0 => 0,
+                    1 => u32::MAX,
+                    2 => 0xffff,
+                    3 => 0xffff_0000 | r.next_u32() & 0xffff,
+                    _ => r.next_u32(),
+                };
+                let (a, b) = (pick(&mut r), pick(&mut r));
+                c.g[A0][0] = (r.next_u32() as u64) << 32 | a as u64;
+                c.g[A1][0] = if seed % 2 == 0 { sx(b) } else { b as u64 };
+                c.pc = 0x003c_6380;
+            },
+        );
+    }
+
+    // -- 0x00120f20 Rider_BeginFrame -----------------------------------------
+
+    pub(crate) mod begin_frame_fixture {
+        use super::*;
+        use crate::difftest::check_lohi;
+        use crate::difftest::fakes::FAKE;
+        use crate::difftest::{Rng, DATA, GAME_GP};
+        use crate::game::ai::ridermetrix::tests::target_speed_fixture;
+
+        /// The rider of `Rider_UpdateTargetSpeed`'s fixture (random fields,
+        /// a course, the back end), plus the objects below (zeroed RAM
+        /// except the fields written).
+        const RIDER: u32 = target_speed_fixture::RIDER;
+        const FRAMES: u32 = DATA + 0x24_0000;
+        const TREE2: u32 = DATA + 0x24_0100;
+        const CONTROL: u32 = DATA + 0x24_0200;
+        const LIGHTS: u32 = DATA + 0x24_0300;
+        const MODEL: u32 = DATA + 0x24_1000;
+        const BONES: u32 = DATA + 0x24_2000;
+        const LIST: u32 = DATA + 0x24_4000;
+        const TREE: u32 = DATA + 0x24_5000;
+        const PROBE_VT: u32 = DATA + 0x24_6000;
+
+        fn setup(c: &mut Cpu, seed: u32) {
+            let mut r = target_speed_fixture::setup(c, seed, 3);
+            let r = &mut r;
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            // The game module the fixture's world points at_2: the frame
+            // counter, the spatial tree's stamp, the camera control, the
+            // light manager.
+            let app = c.bus.read32(GAME_GP - 0x848);
+            let module = c.bus.read32(app + 0x84);
+            let ai = c.bus.read32(RIDER + 0x86c);
+            // The rider's turn on every third seed.
+            let frame = ai + 3 * (r.next_u32() % 100) + [0, 1, 2][(seed % 3) as usize];
+            w(c, module + 0xc, FRAMES);
+            w(c, FRAMES + 8, frame);
+            w(c, module + 0x20, TREE2);
+            let stamp = r.next_u32();
+            w(c, TREE2 + 0xa0, stamp);
+            w(c, module + 0x34, CONTROL);
+            w(c, CONTROL + 0x70, (seed / 3) % 4);
+            w(c, module + 0x90, LIGHTS);
+            // The overlap list (empty tree), stamped as the world's or not.
+            w(c, RIDER + 0x860, LIST);
+            w(c, LIST, TREE);
+            w(
+                c,
+                LIST + 4,
+                if (seed / 12) % 2 == 0 {
+                    stamp
+                } else {
+                    stamp ^ 1
+                },
+            );
+            w(c, LIST + 8, 0);
+            // The model and its bones (hips and board root bone 0..3).
+            w(c, RIDER + 0x780, MODEL);
+            w(c, MODEL + 0x2c, BONES);
+            w(c, RIDER + 0x89c, r.next_u32() % 4);
+            w(c, RIDER + 0x8a0, r.next_u32() % 4);
+            // A scripted scene on every other seed (probe at_2 the bone or
+            // the position); the probe's shape method is a fake.
+            w(c, RIDER + 0xac4, (seed / 24) % 2);
+            w(c, RIDER + 0xafc, r.next_u32() % 2);
+            w(c, RIDER + 0xb00, r.next_u32() % 2);
+            w(c, RIDER + 0x6c0, PROBE_VT);
+            w(c, PROBE_VT + 0x10, 0);
+            w(c, PROBE_VT + 0x14, FAKE);
+            // Racing or finished; the finish clock's step.
+            w(
+                c,
+                RIDER + 0x470,
+                if seed % 5 == 0 {
+                    r.f32(100.0) & 0x7fff_ffff
+                } else {
+                    (-1.0f32).to_bits()
+                },
+            );
+            w(c, GAME_GP - 0x7920, (1.0f32 / 60.0).to_bits());
+            c.g[A0][0] = sx(RIDER);
+            c.pc = 0x0012_0f20;
+        }
+
+        /// `Rider_BeginFrame`: the rider's turn or not, the list stamped as
+        /// the world's or not, every camera control mode, in a scripted
+        /// scene (probe at_2 the bone or the position) or not, racing or
+        /// finished; real callees (the target speed's fakes may unwind).
+        #[test]
+        fn rider_begin_frame_matches() {
+            check_lohi(
+                ssx3_ee::s00::f_00120f20__generated,
+                rider_begin_frame,
+                300,
+                &setup,
+            );
+        }
+    }
+
+    // -- 0x0012e9b8 RiderPrewindSub_HandleInput ------------------------------
+
+    pub(crate) mod prewind_input_fixture {
+        use super::*;
+        use crate::difftest::fakes::{fake_call, machine, FAKE};
+        use crate::difftest::{check, elf_image, put_vec, Rng, DATA, GAME_GP};
+
+        /// The objects (zeroed RAM except the fields written below).
+        const THIS: u32 = DATA + 0x7_0000;
+        const PAD: u32 = DATA + 0x7_0100;
+        const RIDER: u32 = DATA + 0x7_1000;
+        const OWNER: u32 = DATA + 0x7_2000;
+        const CTRL: u32 = DATA + 0x7_3000;
+        const CTRL_VT: u32 = DATA + 0x7_3100;
+        const SEQ_LISTS: u32 = DATA + 0x7_3200;
+        const SEQ: u32 = DATA + 0x7_3300;
+        const MODEL: u32 = DATA + 0x7_4000;
+        const BONES: u32 = DATA + 0x7_4100;
+        const LIST: u32 = DATA + 0x7_5000;
+        const LIST_TREE: u32 = DATA + 0x7_5400;
+        const METRIX: u32 = DATA + 0x7_6000;
+        const AUDIO: u32 = DATA + 0x7_7000;
+        const BE_LIBRARY: u32 = DATA + 0x7_8000;
+        const BE_OBJ: u32 = DATA + 0x7_8100;
+        const BE_VT: u32 = DATA + 0x7_8200;
+        /// The static animation table (28-byte entries; `+0` the kind).
+        const ANIM_TABLE: u32 = 0x0044_6990;
+        const BE_INTERFACES: u32 = 0x0053_08a8;
+        /// The controller's "current animation kind" method: answers 0x207
+        /// (`PlayAnim` stops there).
+        const FAKE_ANIM_KIND: u32 = FAKE + 0x10;
+        /// Layer-2 animation ids: a kind-10 one, id 0x15, an ordinary one.
+        const ID_KIND10: u32 = 0x30;
+        const ID_PLAIN: u32 = 0x31;
+
+        fn f(x: f32) -> u32 {
+            x.to_bits()
+        }
+
+        fn miss(c: &mut Cpu, target: u32) {
+            fake_call(c, target);
+            if target == FAKE_ANIM_KIND {
+                c.g[V0][0] = 0x207;
+            }
+        }
+
+        /// A 6-bit signed axis: centred, inside or outside the dead zone.
+        fn axis(r: &mut Rng) -> u32 {
+            match r.next_u32() % 4 {
+                0 => 0,
+                1 => 3,
+                2 => 0x3d,
+                _ => r.next_u32() & 0x3f,
+            }
+        }
+
+        fn setup(c: &mut Cpu, seed: u32) {
+            let mut r = machine(c, seed, 0x0012_e9b8, 8);
+            let r = &mut r;
+            c.hooks.miss = miss;
+            elf_image(c);
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+
+            // The back end: the library exists, interface getters are fakes.
+            w(c, GAME_GP - 0x1f04, BE_LIBRARY);
+            w(c, GAME_GP - 0x1efc, 0);
+            w(c, BE_INTERFACES, BE_OBJ);
+            w(c, BE_OBJ + 4, BE_VT);
+            w(c, BE_VT + 0xc, FAKE);
+            c.bus.write8(0x0053_08e2, 10);
+            c.bus.write8(0x0053_08e4, 10);
+            w(c, GAME_GP + 0x410, AUDIO);
+
+            // The pad: never the reset bit; held (bit 13) on two of three
+            // seeds; the axes centred, small or large.
+            let held = seed % 3 != 0;
+            let mut buttons = r.next_u32() & !0x0000_3000;
+            buttons &= !(0x3f << 15 | 0x3f << 21);
+            buttons |= axis(r) << 15 | axis(r) << 21;
+            if held {
+                buttons |= 0x2000;
+            }
+            w(c, PAD, buttons);
+            w(c, PAD + 4, (r.next_u32() & !0xfff) | axis(r) | axis(r) << 6);
+
+            w(c, THIS, RIDER);
+            // The rider: racing (finished on every 16th seed), main state 2
+            // (no rail search), 1 (airborne: no launch) or 0.
+            w(
+                c,
+                RIDER + 0x470,
+                if seed % 16 == 15 { f(1.0) } else { f(-1.0) },
+            );
+            w(c, RIDER + 0x77c, OWNER);
+            w(c, OWNER + 0xde0, [2, 2, 1, 0][((seed / 3) % 4) as usize]);
+            w(c, RIDER + 0x328, (seed / 12) % 5);
+            w(c, RIDER + 0x304, 3);
+            w(c, RIDER + 0x780, MODEL);
+            w(c, MODEL + 0x2c, BONES);
+            w(c, RIDER + 0x860, LIST);
+            w(c, LIST, LIST_TREE);
+            w(c, RIDER + 0x790, METRIX);
+            w(c, METRIX + 0x1ac, RIDER);
+            for off in [0x220, 0x2a4, 0x2b0] {
+                w(c, RIDER + off, r.f32(2.0));
+            }
+            w(
+                c,
+                RIDER + 0x2dc,
+                if r.next_u32() % 2 == 0 { 0 } else { r.f32(1.0) },
+            );
+            put_vec(c, RIDER + 0x1e0, [r.f32(5.0), r.f32(5.0), r.f32(5.0), 0]);
+            for off in [0x100, 0x110, 0x120, 0x130] {
+                put_vec(c, RIDER + off, [r.f32(1.0), r.f32(1.0), r.f32(1.0), f(1.0)]);
+            }
+
+            // The animation controller: layer 2 plays a kind-10 animation,
+            // id 0x15 or an ordinary one.
+            w(c, RIDER + 0x784, CTRL);
+            w(c, CTRL + 0x50, SEQ_LISTS);
+            w(c, CTRL + 0x58, CTRL_VT);
+            w(c, CTRL_VT + 0x24, FAKE_ANIM_KIND);
+            for k in 0..4 {
+                w(c, SEQ_LISTS + 8 * k + 4, SEQ);
+            }
+            w(c, ANIM_TABLE + ID_KIND10 * 0x1c, 10);
+            w(c, ANIM_TABLE + ID_PLAIN * 0x1c, 0);
+            w(c, ANIM_TABLE + 0x15 * 0x1c, 0);
+            let id = [ID_KIND10, 0x15, ID_PLAIN, ID_PLAIN][(seed % 4) as usize];
+            w(c, CTRL + 8, id);
+
+            c.g[A0][0] = sx(THIS);
+            c.g[A1][0] = sx(PAD);
+            c.pc = 0x0012_e9b8;
+        }
+
+        /// `RiderPrewindSub_HandleInput`: finished or not, released (with
+        /// and without the launch, every prewind direction) or held (kind
+        /// 10, anim 0x15, turn-around, the trick stick's dead zone), real
+        /// callees with fakes that unwind.
+        #[test]
+        fn rider_prewind_sub_handle_input_matches() {
+            check(
+                ssx3_ee::s00::f_0012e9b8__generated,
+                rider_prewind_sub_handle_input,
+                300,
+                &setup,
+            );
+        }
+    }
+
+    // -- 0x001291e0 AI_Render -------------------------------------------------
+
+    pub(crate) mod ai_render_fixture {
+        use super::*;
+        use crate::difftest::fakes::{machine, vtable, FAKE};
+        use crate::difftest::{check_lohi, Rng, DATA, GAME_GP};
+
+        const THIS: u32 = DATA + 0xa_0000;
+        const ACTORS: u32 = DATA + 0xa_1000;
+        const RIDERS: u32 = DATA + 0xa_4000;
+        const OWNERS: u32 = DATA + 0xb_0000;
+        const GFX: u32 = DATA + 0xc_0000;
+        const GFX_VT: u32 = DATA + 0xc_2000;
+        const PACKET: u32 = DATA + 0xc_3000;
+        const APP: u32 = DATA + 0xc_4000;
+        const MODULE: u32 = DATA + 0xc_4100;
+        const FRAMES: u32 = DATA + 0xc_4200;
+        const CONTROL: u32 = DATA + 0xc_4300;
+        /// Rider `i` (0x1000 bytes each) and its owner (0x1000 bytes each,
+        /// zeroed: every effect is idle).
+        fn rider(i: u32) -> u32 {
+            RIDERS + 0x1000 * i
+        }
+        fn actor(i: u32) -> u32 {
+            ACTORS + 0x40 * i
+        }
+
+        fn setup(c: &mut Cpu, seed: u32) {
+            let mut r = machine(c, seed, 0x0012_91e0, 4);
+            let r = &mut r;
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            // The graphics manager: a packet buffer, the light-slot
+            // allocator and the trail batch's draw method are fakes.
+            w(c, GAME_GP - 0x854, GFX);
+            w(c, GFX + 0xe84, PACKET);
+            w(c, GFX + 0x10d8, GFX_VT);
+            for (slot, k) in [(0x390, 0), (0x2c8, 1)] {
+                c.bus.write16(GFX_VT + slot, 0);
+                w(c, GFX_VT + slot + 4, FAKE + 0x10 * k);
+            }
+            // The world: the frame counter object (no pulse), the camera
+            // control (mode 0 or not, or none).
+            w(c, GAME_GP - 0x848, APP);
+            w(c, APP + 0x84, MODULE);
+            w(c, MODULE + 0xc, FRAMES);
+            let control = match r.next_u32() % 3 {
+                0 => 0,
+                _ => CONTROL,
+            };
+            w(c, MODULE + 0x34, control);
+            w(c, CONTROL + 0x70, r.next_u32() % 2);
+
+            // Eight riders, none visible (`Rider_UpdateVisibility` gives
+            // 0): an owner or none, a light slot or not yet (-1).
+            for i in 0..8 {
+                let p = rider(i);
+                let owner = if r.next_u32() % 4 == 0 {
+                    0
+                } else {
+                    OWNERS + 0x1000 * i
+                };
+                w(c, p + 0x77c, owner);
+                w(
+                    c,
+                    p + 0x888,
+                    if r.next_u32() % 2 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 8
+                    },
+                );
+                w(c, p + 0x880, r.next_u32() % 8);
+                // Every eighth rider has the visible flag, but not state 7.
+                w(c, p + 0x884, (r.next_u32() % 8 == 0) as u32);
+                if c.bus.read32(p + 0x880) == 7 {
+                    w(c, p + 0x880, 6);
+                }
+            }
+            // Actors (some null) pointing at_2 riders.
+            let mut next = 0;
+            let mut actor_ptr = |c: &mut Cpu, r: &mut Rng| {
+                let i = next;
+                next += 1;
+                if r.next_u32() % 5 == 0 {
+                    0
+                } else {
+                    w(c, actor(i) + 0x18, rider(i % 8));
+                    actor(i)
+                }
+            };
+
+            // The manager: the light-slot list, the human / computer /
+            // other actors and their counts (at_2 most 8 riders in all).
+            let listed = seed % 5;
+            w(c, THIS + 0x78, listed);
+            for i in 0..listed {
+                w(c, THIS + 0x28 + 4 * i, rider(i));
+            }
+            let humans = (seed / 5) % 3;
+            w(c, THIS + 0x7c, humans);
+            for i in 0..2 {
+                let a = actor_ptr(c, r);
+                w(c, THIS + 0x40 + 4 * i, a);
+            }
+            let viewed = actor_ptr(c, r);
+            w(c, THIS + 0x70, viewed);
+            w(c, THIS + 0x88, (seed / 15) % 2);
+            w(c, THIS + 0x14, r.next_u32() % 2);
+            w(c, THIS + 0x80, r.next_u32() % 4);
+            for i in 0..3 {
+                let a = actor_ptr(c, r);
+                w(c, THIS + 0x48 + 4 * i, a);
+            }
+            w(c, THIS + 0x8c, r.next_u32() % 2);
+            w(c, THIS + 0x84, r.next_u32() % 4);
+            for i in 0..3 {
+                let a = actor_ptr(c, r);
+                w(c, THIS + 0x5c + 4 * i, a);
+            }
+
+            c.g[A0][0] = sx(THIS);
+            c.pc = 0x0012_91e0;
+        }
+
+        /// `AI_Render` with no rider visible: light slots handed out, every
+        /// way the drawn riders are chosen (single view by the camera mode,
+        /// humans, computers, others, null actors), the per-rider passes on
+        /// idle effects, the trail batch; fakes that unwind.
+        #[test]
+        fn ai_render_matches() {
+            check_lohi(ssx3_ee::s00::f_001291e0__generated, ai_render, 300, &setup);
+        }
+    }
+
+    // ---- SND_EaxaDecode (0x3ccf90) ----
+
+    /// A decoder state with nothing left, or with 0..300 samples left;
+    /// pending samples none, some, or negative (a partial block); a request
+    /// of 0..200 samples (whole blocks and a remainder); random ADPCM bytes
+    /// for the real `SND_EaxaDecodeBlocks` (coefficient table from the ELF).
+    pub(crate) fn snd_eaxa_decode_setup(c: &mut Cpu, seed: u32) {
+        const S: u32 = 0x00b0_0000;
+        const POUT: u32 = S + 0x1000;
+        const OUT: u32 = S + 0x1100;
+        const READ: u32 = S + 0x2000;
+        const SRC: u32 = S + 0x3000;
+        crate::difftest::elf_image(c);
+        let mut r = Rng(0x3ccf_9000 ^ seed as u64);
+        scramble(c, &mut r);
+        let remaining = if seed % 6 == 0 { 0 } else { r.next_u32() % 300 };
+        let pending = match seed % 4 {
+            0 => 0,
+            1 => 0u32.wrapping_sub(r.next_u32() % 28),
+            _ => 1 + r.next_u32() % 27,
+        };
+        c.bus.write32(S + 0x4, pending);
+        c.bus.write32(S + 0x8, remaining);
+        c.bus.write32(S + 0x10, READ);
+        c.bus.write32(S + 0x98, r.f32(1.0));
+        c.bus.write32(S + 0x9c, r.f32(1.0));
+        c.bus.write32(S + 0xa0, SRC);
+        fill(c, &mut r, READ, 32);
+        fill(c, &mut r, SRC, 0x100);
+        c.bus.write32(POUT, OUT);
+        c.g[A0][0] = S as u64;
+        c.g[A1][0] = POUT as u64;
+        c.g[A2][0] = (r.next_u32() % 200) as u64;
+        c.pc = 0x003c_cf90;
+    }
+
+    #[test]
+    fn snd_eaxa_decode_matches() {
+        check_lohi(
+            ee::s14::f_003ccf90__generated,
+            snd_eaxa_decode,
+            300,
+            &snd_eaxa_decode_setup,
+        );
+    }
+
+    // ---- SNDSTRM_GetRequestStatus (0x3b7c40) ----
+
+    /// Four stream slots (0x50a0a0, count byte 0x50a92e), some empty; each
+    /// stream with a two-request list (+0x11c) and non-zero rates
+    /// (+0x14/+0x18); handles that are negative, name a missing stream,
+    /// an unknown request, or the current or queued request, active or
+    /// not, with random positions.
+    pub(crate) fn sndstrm_get_request_status_setup(c: &mut Cpu, seed: u32) {
+        const B: u32 = 0x00b0_0000;
+        const STREAM_COUNT: u32 = 0x0050_a92e;
+        const STREAMS: u32 = 0x0050_a0a0;
+        let mut r = Rng(0x003b_7c40 ^ (seed as u64) << 5);
+        scramble(c, &mut r);
+        c.bus.write8(STREAM_COUNT, 4);
+        for i in 0..4u32 {
+            let stream = B + 0x1000 * i;
+            c.bus
+                .write32(STREAMS + 4 * i, if i == 3 { 0 } else { stream });
+            c.bus
+                .write16(stream + 0x14, (1 + r.next_u32() % 48000) as u16);
+            c.bus
+                .write16(stream + 0x18, (1 + r.next_u32() % 48000) as u16);
+            // Two requests: handles i | 0x100 and i | 0x200.
+            let (first, second) = (stream + 0x200, stream + 0x300);
+            c.bus.write32(stream + 0x11c, first);
+            c.bus.write32(first, second);
+            c.bus.write32(second, 0);
+            for (req, h) in [(first, 0x100u32), (second, 0x200)] {
+                c.bus.write32(req + 0xc, i | h);
+                c.bus.write8(req + 0x24, (r.next_u32() % 3 != 0) as u8);
+                c.bus.write32(req + 0x14, r.next_u32() % 0x10_0000);
+                c.bus.write32(req + 0x18, r.next_u32() % 0x10_0000);
+                c.bus.write32(req + 0x1c, r.next_u32() % 0x1_0000);
+            }
+        }
+        let stream = r.next_u32() % 4;
+        let handle = match seed % 5 {
+            0 => 0x8000_0000 | r.next_u32(),
+            1 => stream | 0x300,
+            2 => stream | 0x100,
+            _ => stream | 0x200,
+        };
+        c.g[A0][0] = handle as i32 as i64 as u64;
+        c.g[A1][0] = (B + 0x8000) as u64;
+        fill(c, &mut r, B + 0x8000, 4);
+        c.pc = 0x003b_7c40;
+    }
+
+    #[test]
+    fn sndstrm_get_request_status_matches() {
+        check_lohi(
+            ee::s13::f_003b7c40__generated,
+            sndstrm_get_request_status,
+            300,
+            &sndstrm_get_request_status_setup,
+        );
+    }
+
+    /// SND_EeMixBlock: the mixer at 0x515b40 with 0-2 buses (with or
+    /// without an effect, declick gain zero or not), the declick bus on or
+    /// off, 0-2 voices (playing or not, gains changed or not) whose sources
+    /// render through a fake (small sample counts forced), return 0
+    /// (`Rider_ReturnZero_25b8`) or -1 (`cFEStateRewardGallery_v26`, so the
+    /// voice is finished), sends zero or not, and the post-mix hook set or
+    /// not. All mix / effect / output functions are fakes.
+    #[test]
+    fn snd_ee_mix_block_matches() {
+        covered(
+            ee::s14::f_003c85d0__generated,
+            snd_ee_mix_block,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c85d0, 4);
+                c.pc = 0x003c_85d0;
+                let m = 0x0051_5b40u32;
+                let fake = |k: u32| fakes::FAKE + 0x10 * k;
+                for (i, v) in [2u32, 1, 3, 2, 1, 2, 3, 1].iter().enumerate() {
+                    c.bus.write32(fakes::LOG_RESULTS + 4 * i as u32, *v);
+                }
+                let objs = DATA + 0x6000;
+                let obj = |c: &mut Cpu, k: u32, f: u32| -> u32 {
+                    let o = objs + 0x10 * k;
+                    c.bus.write32(o, f);
+                    o
+                };
+                let buses = r.next_u32() % 3;
+                let voices = r.next_u32() % 3;
+                let gain = |r: &mut Rng| {
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        0.5f32.to_bits()
+                    }
+                };
+                c.bus.write8(m + 4, voices as u8);
+                c.bus.write8(m + 5, buses as u8);
+                c.bus.write8(m + 0xf, (r.next_u32() % 2) as u8);
+                c.bus.write32(m + 8, fake(7));
+                c.bus.write32(m + 0x100, gain(&mut r));
+                c.bus
+                    .write32(m + 0x10, if r.next_u32() % 2 == 0 { 0 } else { fake(6) });
+                c.bus.write32(m + 0xb0, DATA + 0x2000);
+                c.bus.write32(m + 0xb4, DATA + 0x3000);
+                for k in 0..8 {
+                    c.bus.write32(DATA + 0x3000 + 4 * k, r.f32(1.0));
+                }
+                c.bus.write32(m + 0x1e0, fake(5));
+                for i in 0..buses {
+                    c.bus.write32(m + 0xd0 + 4 * i, DATA + 0x1000 + 0x400 * i);
+                    c.bus.write32(m + 0xe8 + 4 * i, gain(&mut r));
+                    let fx = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        obj(c, i, fake(1))
+                    };
+                    c.bus.write32(m + 0x11c + 4 * i, fx);
+                    let out = obj(c, 2 + i, fake(2));
+                    c.bus.write32(m + 0x104 + 4 * i, out);
+                }
+                let table = DATA + 0x4000;
+                c.bus.write32(m + 0x1dc, table);
+                for v in 0..voices {
+                    let e = table + 0x60 * v;
+                    c.bus.write8(e, if r.next_u32() % 4 == 0 { 1 } else { 2 });
+                    let dirty = buses < 2 && v == 0 && r.next_u32() % 2 == 0;
+                    c.bus.write8(e + 1, dirty as u8);
+                    for k in 0..3 {
+                        c.bus.write32(e + 0x1c + 4 * k, gain(&mut r));
+                        c.bus.write32(e + 0x4 + 4 * k, gain(&mut r));
+                    }
+                    c.bus.write32(e + 0x38, gain(&mut r));
+                    let src = match r.next_u32() % 4 {
+                        0 => 0x0011_25b8,
+                        1 => 0x001d_faa0,
+                        _ => fake(3),
+                    };
+                    let o = obj(c, 4 + v, src);
+                    c.bus.write32(e + 0x40, o);
+                }
+                let outs = DATA + 0x5000;
+                for i in 0..2 {
+                    c.bus.write32(outs + 4 * i, DATA + 0x5100 + 0x200 * i);
+                }
+                c.g[A0][0] = sx(outs);
+                c.g[A1][0] = [16u64, 32][(seed % 2) as usize];
             },
         );
     }

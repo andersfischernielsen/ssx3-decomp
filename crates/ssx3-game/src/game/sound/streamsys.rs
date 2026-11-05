@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -32,6 +33,7 @@ use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
@@ -108,6 +110,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x002a_de88, sound_manager_ref_ctor, "SoundManagerRef_ctor"),
     (0x002a_dee8, sound_manager_ref_dtor, "SoundManagerRef_dtor"),
+    (
+        0x002a_c7f0,
+        bank_monitor_instance_update_range,
+        "BankMonitorInstance_UpdateRange",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -958,6 +965,73 @@ pub fn streambuffer_dtor(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod bank_range {
+    use super::*;
+
+    /// `BankMonitorInstance`: playing flag, audible range (0: always on).
+    pub const PLAYING: u32 = 0x8;
+
+    pub const RANGE: u32 = 0x8c;
+
+    pub const BANK_MONITOR_INSTANCE_FADE_OUT: Callee = Callee {
+        addr: 0x002a_c180,
+        f: ee::s08::f_002ac180,
+    };
+
+    pub const BANK_MONITOR_INSTANCE_PLAY: Callee = Callee {
+        addr: 0x002a_c220,
+        f: ee::s08::f_002ac220,
+    };
+}
+
+/// `bool BankMonitorInstance_UpdateRange(BankMonitorInstance* this, float
+/// dist)` (0x2ac7f0): starts or fades a positional sound by distance.
+/// Without a range: 1. Playing: beyond the range it fades out (0), else 1.
+/// Stopped: inside the range it starts playing (1), else 0.
+pub fn bank_monitor_instance_update_range(c: &mut Cpu) {
+    use bank_range::*;
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x10);
+        c.cycles += 8;
+        frame.save_ra(c, 0);
+        let this = Addr(abi::arg(c, 0));
+        let dist = abi::farg(c, 0);
+        let range = this.off(RANGE).read_fpu(c);
+        abi::set_fpr(c, 0, FpuF32::ZERO);
+        abi::set_fpr(c, 1, range);
+        let no_range = range.eq_s(FpuF32::ZERO);
+        abi::set_fcc(c, no_range);
+        c.g[V0][0] = 0x1;
+        if !no_range {
+            c.cycles += 3;
+            c.g[V0][0] = this.off(PLAYING).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                let beyond = abi::c_lt_s(c, range, dist);
+                c.g[V0][0] = 0x1;
+                if beyond {
+                    c.cycles += 4;
+                    BANK_MONITOR_INSTANCE_FADE_OUT.call(c, 0x002a_c834)?;
+                    c.g[V0][0] = 0;
+                }
+            } else {
+                c.cycles += 4;
+                let inside = abi::c_lt_s(c, dist, range);
+                c.g[V0][0] = 0;
+                if inside {
+                    c.cycles += 3;
+                    BANK_MONITOR_INSTANCE_PLAY.call(c, 0x002a_c854)?;
+                    c.g[V0][0] = 0x1;
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1396,6 +1470,44 @@ pub(crate) mod tests {
                 c.bus.write32(s + 4, 1);
                 c.bus.write32(s + 8, 0);
                 c.bus.write32(s + 0x74, 0);
+            },
+        );
+    }
+    use super::*;
+
+    // -- 0x002ac7f0 BankMonitorInstance_UpdateRange --------------------------
+
+    /// `BankMonitorInstance_UpdateRange`: no range, playing inside and
+    /// beyond, stopped inside and beyond (the fade-out and play callees on
+    /// their short paths: already fading, or a state without a voice).
+    #[test]
+    fn bank_monitor_instance_update_range_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA};
+        const THIS: u32 = DATA + 0x9_0000;
+        check(
+            ssx3_ee::s08::f_002ac7f0__generated,
+            bank_monitor_instance_update_range,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x002a_c7f0 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                let range = if seed % 5 == 0 {
+                    0
+                } else {
+                    (10.0 + (r.next_u32() % 100) as f32).to_bits()
+                };
+                c.bus.write32(THIS + 0x8c, range);
+                c.bus
+                    .write32(THIS + 0x8, (seed / 5) % 2 * (1 + r.next_u32() % 4));
+                c.bus.write32(THIS, [0, 5][(r.next_u32() % 2) as usize]);
+                c.bus.write32(THIS + 0x54, r.next_u32() % 2);
+                c.g[A0][0] = sx(THIS);
+                c.f[12] = match r.next_u32() % 4 {
+                    0 => r.edge_f32(),
+                    1 => range,
+                    _ => ((r.next_u32() % 200) as f32).to_bits(),
+                };
+                c.pc = 0x002a_c7f0;
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -17,6 +18,8 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::computer::delete_if_flag;
 pub(crate) use crate::game::ai::computer::DELETE;
+pub(crate) use crate::game::ai::rider::fr_3 as fr_2;
+pub(crate) use crate::game::ai::rider::set_fr;
 pub(crate) use crate::game::animation::rideranimbase::sw as sw_3;
 pub(crate) use crate::game::camera::cameraalgorithms::lh as lh_2;
 pub(crate) use crate::game::camera::script::scriptcontroller::vslot;
@@ -317,6 +320,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0024_2978,
         occlusion_man_compare_by_distance,
         "OcclusionMan_CompareByDistance",
+    ),
+    (
+        0x0024_29b0,
+        occlusion_man_build_occluder_planes,
+        "OcclusionMan_BuildOccluderPlanes",
     ),
 ];
 
@@ -5421,6 +5429,110 @@ pub(crate) fn movie_finish_step(c: &mut Cpu, ret: u32) -> crate::call::Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// OcclusionMan_BuildOccluderPlanes (0x002429b0)
+// ---------------------------------------------------------------------------
+
+/// Occluder fields: the four corners (+0x10..+0x40) and the four side
+/// planes (+0x60..+0x90, `(n, -eye.n)`).
+pub(crate) const OCC_CORNERS: u32 = 0x10;
+
+pub(crate) const OCC_PLANES: u32 = 0x60;
+
+/// `sp + off = v - eye` through VU0 (`sqc2` to `sp+0x40`, copied by `lq`/`sq`
+/// to `sp+0x30` and `sp+off`).
+pub(crate) fn occ_edge(c: &mut Cpu, s: u32, eye: u32, v: u32, off: u32) {
+    c.lqc2(3, v);
+    c.lqc2(4, eye);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s + 0x40);
+    c.lq(V0, s + 0x40);
+    c.sq(V0, s + 0x30);
+    c.sq(V0, s + off);
+}
+
+/// One side plane through the eye and the corners `a`, `b`:
+/// `n = normalize((a - eye) x (b - eye))`, `d = -(eye . n)`, stored at
+/// `out`. The first plane keeps its values in a different register order.
+pub(crate) fn occ_plane(c: &mut Cpu, s: u32, eye: u32, a: u32, b: u32, out: u32, first: bool) {
+    occ_edge(c, s, eye, a, 0);
+    occ_edge(c, s, eye, b, 0x10);
+    c.lqc2(4, s);
+    c.lqc2(5, s + 0x10);
+    {
+        let v = c.vu0();
+        v.opmula(4, 5);
+        v.opmsub(6, 5, 4);
+        v.sub(0b0001, 6, 6, Src::Vec(6));
+    }
+    c.sqc2(6, s + 0x50);
+    c.lq(V0, s + 0x50);
+    c.sq(V0, s + 0x40);
+    c.lqc2(3, s + 0x40);
+    {
+        let v = c.vu0();
+        v.add(0b1000, 6, 0, Src::Bc(0, W));
+        v.mul(0b1111, 4, 3, Src::Vec(3));
+        v.adda(0b1000, 4, Src::Bc(4, Y));
+        v.madda(0b1000, 6, Src::Bc(4, Z));
+        v.madd(0b1000, 4, 6, Src::Bc(4, W));
+        v.rsqrt(0, 3, 4, 0);
+        v.waitq();
+        v.mul(0b1111, 5, 3, Src::Q);
+    }
+    c.sqc2(5, s + 0x50);
+    c.lq(V0, s + 0x50);
+    c.sq(V0, s + 0x20);
+    c.sq(V0, s + 0x30);
+    // eye . n
+    c.lqc2(3, eye);
+    c.lqc2(5, s + 0x20);
+    {
+        let v = c.vu0();
+        v.add(0b1000, 6, 0, Src::Bc(0, W));
+        v.mul(0b1111, 4, 3, Src::Vec(5));
+        v.adda(0b1000, 4, Src::Bc(4, Y));
+        v.madda(0b1000, 6, Src::Bc(4, Z));
+        v.madd(0b1000, 4, 6, Src::Bc(4, W));
+    }
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 0);
+    let d = -fr_2(c, 0);
+    set_fr(c, 0, d);
+    Addr(s + 0x2c).write_fpu(c, d);
+    let nx = Addr(s + 0x20).read_u32(c);
+    let ny = Addr(s + 0x24).read_u32(c);
+    let nz = Addr(s + 0x28).read_u32(c);
+    c.f[1] = if first { nz } else { nx };
+    c.f[2] = ny;
+    if !first {
+        c.f[3] = nz;
+    }
+    Addr(out).write_u32(c, nx);
+    Addr(out + 4).write_u32(c, ny);
+    Addr(out + 8).write_u32(c, nz);
+    Addr(out + 0xc).write_fpu(c, d);
+}
+
+/// `void OcclusionMan_BuildOccluderPlanes(OcclusionMan* self,
+/// const Vec4* eye, Occluder* occ)` (0x002429b0): the occluder's four side
+/// planes from the eye through each pair of adjacent corners (normalised
+/// on VU0), each `(n, -eye.n)`.
+pub fn occlusion_man_build_occluder_planes(c: &mut Cpu) {
+    c.cycles += 215;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x60));
+    let s = sp(c);
+    let eye = r32(c, A1);
+    let occ = r32(c, A2);
+    let corner = |i: u32| occ + OCC_CORNERS + 0x10 * (i % 4);
+    for i in 0..4u32 {
+        let (a, b) = (corner(i + 1), corner(i));
+        occ_plane(c, s, eye, a, b, occ + OCC_PLANES + 0x10 * i, i == 0);
+    }
+    c.g[SP][0] = sx(s.wrapping_add(0x60));
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7453,6 +7565,42 @@ pub(crate) mod tests {
                 w(c, vt2 + 0xc, FAKE);
                 w(c, this + 0x108, if seed % 2 == 0 { 0 } else { 2 });
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+    use super::*;
+
+    /// `OcclusionMan_BuildOccluderPlanes`: random eyes and corners (some
+    /// degenerate: a corner on the eye, two corners equal).
+    #[test]
+    fn occlusion_man_build_occluder_planes_matches() {
+        check(
+            ee::s06::f_002429b0__generated,
+            occlusion_man_build_occluder_planes,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0024_29b0 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0024_29b0;
+                let eye = DATA;
+                let occ = DATA + 0x100;
+                let v = |r: &mut Rng| [r.f32(500.0), r.f32(500.0), r.f32(500.0), r.edge_f32()];
+                let e = v(&mut r);
+                put_vec(c, eye, e);
+                for i in 0..4 {
+                    let mut k = v(&mut r);
+                    if seed % 11 == i {
+                        k = e;
+                    }
+                    put_vec(c, occ + OCC_CORNERS + 0x10 * i, k);
+                }
+                if seed % 13 == 0 {
+                    let k = c.bus.read128(occ + OCC_CORNERS);
+                    c.bus.write128(occ + OCC_CORNERS + 0x10, k);
+                }
+                c.g[A0][0] = sx(DATA + 0x400);
+                c.g[A1][0] = sx(eye);
+                c.g[A2][0] = sx(occ);
             },
         );
     }

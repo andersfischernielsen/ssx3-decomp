@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -307,6 +308,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x003b_4448,
         shp_swizzle_addr_psmct32,
         "SHP_SwizzleAddrPSMCT32",
+    ),
+    (
+        0x003a_d120,
+        wscript_cache_get_object_slot,
+        "tWScriptCache_GetObjectSlot",
     ),
 ];
 
@@ -5542,6 +5548,59 @@ pub fn mpeg2_sequence_extension(c: &mut Cpu) {
     return;
 }
 
+// ------------------------------------------------ tWScriptCache_GetObjectSlot
+
+/// `int tWScriptCache_GetObjectSlot(sEntry* entry, Object* obj, int i)`
+/// (0x3ad120): an object's cached script slot `i`. The object's script
+/// (`obj+0x88`) carries an id (`script+8`, -1 = none) whose upper bits
+/// (`id >> 8`) index the entry's slot table (`entry+8` -> table, rows of
+/// 0x18 bytes at `table+0x1c`). Returns -1 when the object has no script,
+/// the entry no table, or the script no id.
+pub fn wscript_cache_get_object_slot(c: &mut Cpu) {
+    const OBJ_SCRIPT: u32 = 0x88;
+    const ENTRY_TABLE: u32 = 0x8;
+    const SCRIPT_ID: u32 = 0x8;
+    const TABLE_ROWS: u32 = 0x1c;
+    const ROW_SIZE: u64 = 0x18;
+
+    c.cycles += 3;
+    let script = Addr(abi::arg(c, 1)).off(OBJ_SCRIPT).lw(c);
+    c.g[V1][0] = script;
+    if script != 0 {
+        c.cycles += 3;
+        let table = Addr(abi::arg(c, 0)).off(ENTRY_TABLE).lw(c);
+        c.g[V0][0] = table;
+        c.g[A0][0] = table;
+        if table != 0 {
+            c.cycles += 4;
+            let id = Addr(script as u32).off(SCRIPT_ID).lw(c);
+            c.g[V1][0] = id;
+            if id != u64::MAX {
+                c.cycles += 9;
+                c.g[V0][0] = sx((id as u32) >> 8);
+                let rows = Addr(table as u32).off(TABLE_ROWS).lw(c);
+                c.g[A0][0] = rows;
+                c.g[V1][0] = ROW_SIZE;
+                c.mult(0, V0, V0, V1); // row index * 0x18 (also LO/HI)
+                c.g[V1][0] = sx((c.g[A2][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(rows as u32));
+                let slot = (c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32);
+                c.g[V1][0] = sx(slot);
+                c.g[V0][0] = Addr(slot).lw(c);
+                ret(c);
+                return;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = u64::MAX;
+            ret(c);
+            return;
+        }
+    }
+    c.cycles += 3;
+    c.g[V0][0] = u64::MAX;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7337,6 +7396,47 @@ pub(crate) mod tests {
                 c.bus.write32(0x0050_9510, 1);
                 c.bus.write32(DATA + 0x1_0000 + 0x420, 0);
                 put_words(c, DATA + 0x1_0000 + 0x424, &[r.next_u32()]);
+            },
+        );
+    }
+    use super::*;
+
+    // ------------------------------------------------ tWScriptCache_GetObjectSlot
+
+    /// `tWScriptCache_GetObjectSlot`: no script, no table, id -1, and real
+    /// lookups of slot `i` in row `id >> 8`.
+    #[test]
+    fn wscript_cache_get_object_slot_matches() {
+        check(
+            ssx3_ee::s13::f_003ad120__generated,
+            wscript_cache_get_object_slot,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3ad1_2000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003a_d120;
+                let obj = DATA;
+                let entry = DATA + 0x100;
+                let script = DATA + 0x200;
+                let table = DATA + 0x300;
+                let rows = DATA + 0x1000;
+                c.g[A0][0] = sx(entry);
+                c.g[A1][0] = sx(obj);
+                let i = r.next_u32() % 6;
+                c.g[A2][0] = (r.next_u32() as u64) << 32 | i as u64;
+                c.bus
+                    .write32(obj + 0x88, if seed % 5 == 0 { 0 } else { script });
+                c.bus
+                    .write32(entry + 0x8, if seed % 5 == 1 { 0 } else { table });
+                let row = r.next_u32() % 8;
+                let id = if seed % 5 == 2 {
+                    0xffff_ffff
+                } else {
+                    row << 8 | (r.next_u32() & 0xff)
+                };
+                c.bus.write32(script + 0x8, id);
+                c.bus.write32(table + 0x1c, rows);
+                c.bus.write32(rows + row * 0x18 + i * 4, r.next_u32());
             },
         );
     }

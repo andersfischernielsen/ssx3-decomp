@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -109,6 +110,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0035_b6d0,
         rail_modifier_list_unlink,
         "RailModifier_ListUnlink",
+    ),
+    (
+        0x0035_ac20,
+        multi_spline_modifier_update_nodes,
+        "MultiSplineModifier_UpdateNodes",
     ),
 ];
 
@@ -1204,6 +1210,578 @@ pub fn multisplinemodifier_v01(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// MultiSplineModifier_UpdateNodes (0x35ac20, splinemodifier.cpp)
+
+pub(crate) const MATH_SIN_COS: u32 = 0x0031_be50;
+
+pub(crate) const MATH_ATAN: u32 = 0x0031_c228;
+
+pub(crate) const SPLINE_EVAL_PATH_AT_DISTANCE: Callee = Callee {
+    addr: 0x0034_5248,
+    f: ee::s11::SplineModifier_EvalPathAtDistance,
+};
+
+/// MultiSplineModifier fields.
+pub(crate) const MSM_COUNT: u32 = 0x04;
+
+pub(crate) const MSM_MODE: u32 = 0x08;
+
+pub(crate) const MSM_SPIN: u32 = 0x0c;
+
+pub(crate) const MSM_START: u32 = 0x10;
+
+pub(crate) const MSM_DIRTY: u32 = 0x30;
+
+pub(crate) const MSM_STATES: u32 = 0x3c;
+
+pub(crate) const MSM_NODES: u32 = 0x44;
+
+pub(crate) const MSM_PATH: u32 = 0x48;
+
+pub(crate) const MSM_LENGTH: u32 = 0x54;
+
+/// Per-node state (0x60 bytes): position (0x00), direction (0x10),
+/// third output (0x20), squared direction x/z (0x50/0x54).
+pub(crate) const NS_DIR: u32 = 0x10;
+
+pub(crate) const NS_DIR_SQ: u32 = 0x50;
+
+pub(crate) const NS_STRIDE: u32 = 0x60;
+
+/// The world up axis (a global vec3).
+pub(crate) const UP_AXIS: u32 = 0x004f_f160;
+
+/// gp-relative `.lit4`: pi (atan quadrant fix), the +-pi/2 yaw and pitch
+/// values for a zero denominator.
+pub(crate) const GP_PI: u32 = 0x2a24;
+
+pub(crate) const GP_YAW_NEG: u32 = 0x2a20;
+
+pub(crate) const GP_YAW_POS: u32 = 0x2a1c;
+
+pub(crate) const GP_PITCH_NEG: u32 = 0x2a18;
+
+pub(crate) const GP_PITCH_POS: u32 = 0x2a14;
+
+/// Frame: per-node distances (0x000), spin matrix (0x400), node matrix
+/// scratch (0x450, 0x490), angles (0x440..), sin/cos outputs (0x4d0..).
+pub(crate) const MSM_F_SPIN: u32 = 0x400;
+
+pub(crate) const MSM_F_TMP_A: u32 = 0x450;
+
+pub(crate) const MSM_F_TMP_B: u32 = 0x490;
+
+/// `void MultiSplineModifier_UpdateNodes(MultiSplineModifier* self)`
+/// (0x35ac20): spreads the `count` nodes evenly over the path (`start +
+/// i * length / count`, wrapped into `[0, length)`), evaluates the path at
+/// each distance, derives the node's yaw (modes 2/3) and pitch (modes 1/3)
+/// from the path direction and writes the node object's matrix (rows from
+/// the angles' sines/cosines, translation = path position); a non-zero spin
+/// angle additionally rotates every node about the world up axis. Clears
+/// the dirty flag.
+pub fn multi_spline_modifier_update_nodes(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x5d0);
+        c.g[V0][0] = 1;
+        for (reg, off) in [
+            (S2, 0x560),
+            (S0, 0x580),
+            (S1, 0x570),
+            (S3, 0x550),
+            (S4, 0x540),
+            (S5, 0x530),
+            (S6, 0x520),
+            (S7, 0x510),
+            (FP, 0x500),
+        ] {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, 0x4f0);
+        for (f, off) in [
+            (26, 0x5c0),
+            (25, 0x5b8),
+            (24, 0x5b0),
+            (23, 0x5a8),
+            (22, 0x5a0),
+            (21, 0x598),
+            (20, 0x590),
+        ] {
+            frame.save_fpr(c, f, off);
+        }
+        c.g[S2][0] = c.g[A0][0];
+        let this = r32(c, S2);
+        let at = |o: u32| this.wrapping_add(o);
+
+        // dist[0] = start; step = length / count
+        c.g[V1][0] = Addr(at(MSM_COUNT)).lw(c);
+        c.lwc1(2, at(MSM_LENGTH));
+        c.mtc1(V1, 1);
+        c.cvt_s_w(1, 1);
+        c.lwc1(0, at(MSM_START));
+        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+        c.div_s(2, 2, 1);
+        let a = frame.at(c, 0);
+        c.swc1(0, a);
+        if c.g[V0][0] != 0 {
+            // dist[i] = dist[i - 1] + step
+            c.cycles += 3;
+            c.g[V0][0] = sx(r32(c, V1).wrapping_sub(1));
+            c.g[V1][0] = sx(frame.at(c, 4));
+            loop {
+                c.cycles += 6;
+                c.lwc1(0, r32(c, V1).wrapping_sub(4));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                c.add_s(0, 0, 2);
+                c.swc1(0, r32(c, V1));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_aca0);
+                }
+            }
+        }
+
+        // Wrap every distance into [0, length).
+        c.cycles += 3;
+        c.g[V0][0] = Addr(at(MSM_COUNT)).lw(c);
+        c.g[A0][0] = sx(at(MSM_COUNT));
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[V1][0] = c.g[V0][0];
+            c.mtc1(0, 2); // f2 = 0
+            c.g[V0][0] = c.g[SP][0];
+            loop {
+                c.cycles += 5;
+                c.lwc1(1, r32(c, V0));
+                c.c_lt_s(1, 2);
+                let negative = c.fcc();
+                c.lwc1(0, at(MSM_LENGTH));
+                let store = if negative {
+                    c.cycles += 2;
+                    c.add_s(0, 1, 0);
+                    true
+                } else {
+                    c.cycles += 4;
+                    c.c_le_s(0, 1);
+                    if c.fcc() {
+                        c.cycles += 1;
+                        c.sub_s(0, 1, 0);
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if store {
+                    c.cycles += 2;
+                    c.swc1(0, r32(c, V0));
+                }
+                c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+                c.cycles += 2;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+                if c.g[V1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_acd0);
+                }
+            }
+        }
+
+        // The spin matrix: a rotation by `spin` about the up axis.
+        c.cycles += 6;
+        c.lwc1(0, at(MSM_SPIN));
+        c.mtc1(0, 20); // f20 = 0
+        c.c_eq_s(0, 20);
+        if !c.fcc() {
+            c.cycles += 55;
+            c.lwc1(12, r32(c, A0).wrapping_add(8));
+            c.g[A1][0] = sx(frame.at(c, 0x4d4));
+            c.g[A0][0] = sx(frame.at(c, 0x4d0));
+            c.g[S0][0] = 0x50_0000;
+            call_ptr(c, MATH_SIN_COS, 0x0035_ad3c)?;
+            msm_spin_matrix(c, frame);
+        }
+        c.g[V0][0] = Addr(at(MSM_COUNT)).lw(c);
+
+        // Every node.
+        c.cycles += 3;
+        c.g[S4][0] = 0;
+        c.g[S1][0] = Addr(at(MSM_STATES)).lw(c);
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 6;
+            c.lwc1(25, r32(c, GP).wrapping_sub(GP_PI));
+            c.mov_s(26, 20); // roll = 0
+            c.g[S7][0] = sx(frame.at(c, MSM_F_TMP_B));
+            c.g[FP][0] = sx(frame.at(c, MSM_F_SPIN));
+            c.g[S6][0] = sx(frame.at(c, MSM_F_TMP_A));
+            c.g[S5][0] = c.g[SP][0];
+            loop {
+                // EvalPathAtDistance(&path, dist[i], &st->pos, &st->dir, &st->c)
+                c.cycles += 19;
+                let st = r32(c, S1);
+                c.lwc1(12, r32(c, S5));
+                c.g[A0][0] = sx(at(MSM_PATH));
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = sx(st.wrapping_add(NS_DIR));
+                c.mtc1(0, 23); // f23 = 0
+                c.g[A3][0] = sx(st.wrapping_add(0x20));
+                SPLINE_EVAL_PATH_AT_DISTANCE.call(c, 0x0035_ae44)?;
+                c.g[S0][0] = sx(r32(c, S4) << 2);
+                c.lwc1(21, st.wrapping_add(NS_DIR));
+                c.lwc1(20, st.wrapping_add(NS_DIR + 4));
+                c.mul_s(0, 21, 21);
+                c.mul_s(1, 20, 20);
+                c.swc1(0, st.wrapping_add(NS_DIR_SQ));
+                c.swc1(1, st.wrapping_add(NS_DIR_SQ + 4));
+                c.g[V0][0] = Addr(at(MSM_MODE)).lw(c);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(2));
+                c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+                c.mov_s(24, 23); // pitch = 0
+                if c.g[V0][0] != 0 {
+                    // yaw = -atan2(dir.y, dir.x) (modes 2, 3)
+                    msm_angle(c, 21, 20, 23, GP_YAW_NEG, GP_YAW_POS, 0x0035_aeb8, false)?;
+                }
+
+                c.cycles += 4;
+                c.g[V1][0] = Addr(at(MSM_MODE)).lw(c);
+                c.g[V0][0] = 1;
+                let mut pitch = c.g[V1][0] == c.g[V0][0];
+                c.g[V0][0] = 3;
+                if !pitch {
+                    c.cycles += 2;
+                    pitch = c.g[V1][0] == c.g[V0][0];
+                }
+                if pitch {
+                    // pitch = atan2(dir.z, |dir.xy|) (modes 1, 3)
+                    c.cycles += 9;
+                    c.lwc1(0, st.wrapping_add(NS_DIR_SQ));
+                    c.lwc1(1, st.wrapping_add(NS_DIR_SQ + 4));
+                    c.mtc1(0, 22); // f22 = 0
+                    c.add_s(0, 0, 1);
+                    c.lwc1(21, st.wrapping_add(NS_DIR + 8));
+                    c.sqrt_s(20, 0);
+                    msm_angle(c, 20, 21, 22, GP_PITCH_NEG, GP_PITCH_POS, 0x0035_af54, true)?;
+                    c.cycles += 1;
+                }
+                c.g[V0][0] = Addr(at(MSM_NODES)).lw(c);
+
+                // The node's matrix from (roll, pitch, yaw).
+                c.cycles += 89;
+                let a0 = frame.at(c, 0x4d8);
+                c.g[A0][0] = sx(a0);
+                let a = frame.at(c, 0x444);
+                c.swc1(24, a);
+                c.g[A1][0] = sx(frame.at(c, 0x4dc));
+                let a = frame.at(c, 0x448);
+                c.swc1(23, a);
+                c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+                let a = frame.at(c, 0x440);
+                c.swc1(26, a);
+                c.mov_s(12, 26);
+                c.g[S0][0] = Addr(r32(c, V0)).lw(c);
+                call_ptr(c, MATH_SIN_COS, 0x0035_afa4)?;
+                c.lwc1(12, frame.at(c, 0x444));
+                c.g[A0][0] = sx(frame.at(c, 0x4e0));
+                c.g[A1][0] = sx(frame.at(c, 0x4e4));
+                c.g[S3][0] = sx(r32(c, S0).wrapping_add(0x10));
+                call_ptr(c, MATH_SIN_COS, 0x0035_afb8)?;
+                c.lwc1(12, frame.at(c, 0x448));
+                c.g[A0][0] = sx(frame.at(c, 0x4e8));
+                c.g[A1][0] = sx(frame.at(c, 0x4ec));
+                call_ptr(c, MATH_SIN_COS, 0x0035_afc8)?;
+                msm_node_matrix(c, frame);
+                c.lwc1(0, at(MSM_SPIN));
+                c.c_eq_s(0, 26);
+                if !c.fcc() {
+                    // node = node * spin (through two scratch copies)
+                    c.cycles += 45;
+                    let (m, spin) = (r32(c, S3), r32(c, FP));
+                    for i in 0..4 {
+                        c.lqc2(4 + i, m + 0x10 * i as u32);
+                    }
+                    for i in 0..4 {
+                        c.lqc2(8 + i, spin + 0x10 * i as u32);
+                    }
+                    for i in 0..4 {
+                        let row = 8 + i;
+                        c.vu0().mula(0b1111, 4, Src::Bc(row, X));
+                        c.vu0().madda(0b1111, 5, Src::Bc(row, Y));
+                        c.vu0().madda(0b1111, 6, Src::Bc(row, Z));
+                        c.vu0().madd(0b1111, 12 + i, 7, Src::Bc(row, W));
+                    }
+                    let (b, a) = (r32(c, S7), r32(c, S6));
+                    for i in 0..4 {
+                        c.sqc2(12 + i, b + 0x10 * i as u32);
+                    }
+                    for (from, to) in [(b, a), (a, m)] {
+                        for i in 0..4 {
+                            c.lqc2(1 + i, from + 0x10 * i as u32);
+                        }
+                        for i in 0..4 {
+                            c.sqc2(1 + i, to + 0x10 * i as u32);
+                        }
+                    }
+                }
+                c.g[V0][0] = Addr(at(MSM_COUNT)).lw(c);
+
+                c.cycles += 5;
+                c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+                c.g[S5][0] = sx(r32(c, S5).wrapping_add(4));
+                c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(NS_STRIDE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_ae28);
+                }
+            }
+        }
+
+        c.cycles += 20;
+        Addr(at(MSM_DIRTY)).sw(c, 0);
+        for (reg, off) in [
+            (S0, 0x580),
+            (S1, 0x570),
+            (S2, 0x560),
+            (S3, 0x550),
+            (S4, 0x540),
+            (S5, 0x530),
+            (S6, 0x520),
+            (S7, 0x510),
+            (FP, 0x500),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x4f0);
+        for (f, off) in [
+            (26, 0x5c0),
+            (25, 0x5b8),
+            (24, 0x5b0),
+            (23, 0x5a8),
+            (22, 0x5a0),
+            (21, 0x598),
+            (20, 0x590),
+        ] {
+            frame.restore_fpr(c, f, off);
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One angle of a node: `atan(num / den)` fixed up by +-pi into the right
+/// quadrant, or +-pi/2 (by the sign of `num`) when `den` is 0, 0 when both
+/// are. `zero` holds 0.0. The yaw form (`pitch == false`, den = dir.x in
+/// f21, num = dir.y in f20) leaves `f23 = f24 - angle`; the pitch form (den
+/// = |dir.xy| in f20, num = dir.z in f21) leaves `f24 += angle`. The
+/// pitch form's final block cycle is charged by the caller.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn msm_angle(
+    c: &mut Cpu,
+    den: usize,
+    num: usize,
+    zero: usize,
+    gp_neg: u32,
+    gp_pos: u32,
+    ret_addr: u32,
+    pitch: bool,
+) -> crate::call::Flow {
+    // The angle accumulates into f23 (yaw) or f24 (pitch).
+    let apply = |c: &mut Cpu| {
+        if pitch {
+            c.add_s(24, 24, 0);
+        } else {
+            c.sub_s(23, 24, 0);
+        }
+    };
+    if !pitch {
+        c.cycles += 3;
+    }
+    c.c_eq_s(den, zero);
+    if c.fcc() {
+        // A zero denominator.
+        c.cycles += 4;
+        c.c_eq_s(num, zero);
+        let both_zero = c.fcc();
+        c.mov_s(0, num);
+        if both_zero {
+            c.cycles += 1;
+            apply(c);
+            return Ok(());
+        }
+        c.cycles += 4;
+        c.c_le_s(zero, num);
+        c.lwc1(0, r32(c, GP).wrapping_sub(gp_neg));
+        if c.fcc() {
+            c.cycles += 3;
+            c.lwc1(0, r32(c, GP).wrapping_sub(gp_pos));
+        }
+        apply(c);
+        return Ok(());
+    }
+    c.cycles += 7;
+    c.div_s(12, num, den);
+    call_ptr(c, MATH_ATAN, ret_addr)?;
+    c.c_lt_s(den, zero);
+    if !c.fcc() {
+        apply(c);
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.c_lt_s(zero, num);
+    if c.fcc() {
+        c.cycles += 1;
+        c.add_s(0, 0, 25);
+    } else {
+        c.sub_s(0, 0, 25);
+    }
+    c.cycles += 1;
+    apply(c);
+    Ok(())
+}
+
+/// The spin rotation about the up axis from `sin`/`cos` (frame 0x4d0/0x4d4)
+/// into the frame's 4x4 matrix at 0x400 (bottom row 0, 0, 0, 1). Verbatim
+/// register order of the original (f0..f13).
+pub(crate) fn msm_spin_matrix(c: &mut Cpu, frame: Frame) {
+    let sp = frame.at(c, 0);
+    let s = |o: u32| sp.wrapping_add(o);
+    c.lwc1(11, s(0x4d4));
+    c.g[V0][0] = sx(r32(c, S0).wrapping_sub(0xea0));
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 5);
+    c.lwc1(3, UP_AXIS + 8);
+    c.sub_s(1, 5, 11);
+    c.lwc1(0, UP_AXIS);
+    c.lwc1(6, UP_AXIS + 4);
+    c.lwc1(8, s(0x4d0));
+    c.mul_s(2, 1, 3);
+    c.swc1(5, s(0x43c));
+    c.mul_s(4, 1, 0);
+    c.swc1(20, s(0x430));
+    c.mul_s(1, 1, 6);
+    c.swc1(20, s(0x434));
+    c.mul_s(13, 8, 3);
+    c.swc1(20, s(0x438));
+    c.mul_s(12, 8, 0);
+    c.swc1(20, s(0x40c));
+    c.mul_s(9, 2, 3);
+    c.swc1(20, s(0x41c));
+    c.mul_s(10, 4, 3);
+    c.swc1(20, s(0x42c));
+    c.mul_s(5, 2, 0);
+    c.mul_s(7, 4, 0);
+    c.mul_s(3, 1, 3);
+    c.mul_s(0, 1, 0);
+    c.mul_s(8, 8, 6);
+    c.mul_s(2, 2, 6);
+    c.mul_s(4, 4, 6);
+    c.mul_s(1, 1, 6);
+    c.add_s(5, 5, 8);
+    c.sub_s(0, 0, 13);
+    c.sub_s(2, 2, 12);
+    c.add_s(9, 9, 11);
+    c.swc1(5, s(0x408));
+    c.add_s(7, 7, 11);
+    c.swc1(0, s(0x404));
+    c.add_s(4, 4, 13);
+    c.swc1(2, s(0x418));
+    c.sub_s(10, 10, 8);
+    c.swc1(9, s(0x428));
+    c.add_s(1, 1, 11);
+    c.swc1(7, s(0x400));
+    c.add_s(3, 3, 12);
+    c.swc1(4, s(0x410));
+    c.swc1(10, s(0x420));
+    c.swc1(1, s(0x414));
+    c.swc1(3, s(0x424));
+}
+
+/// The node object's matrix (s0 + 0x10): rotation rows from the sines and
+/// cosines of roll (0x4d8/0x4dc), pitch (0x4e0/0x4e4) and yaw (0x4e8/0x4ec),
+/// translation = the node state's position (s1), w = 1. Verbatim register
+/// order of the original.
+pub(crate) fn msm_node_matrix(c: &mut Cpu, frame: Frame) {
+    let sp = frame.at(c, 0);
+    let s = |o: u32| sp.wrapping_add(o);
+    let n = r32(c, S0);
+    let m = |o: u32| n.wrapping_add(o);
+    let st = r32(c, S1);
+    c.lwc1(0, s(0x4ec));
+    c.lwc1(1, s(0x4e4));
+    c.lwc1(2, s(0x4e0));
+    c.mul_s(1, 1, 0);
+    c.lwc1(3, s(0x4d8));
+    c.lwc1(0, s(0x4e8));
+    c.lwc1(4, s(0x4dc));
+    c.mul_s(3, 3, 2);
+    c.swc1(1, m(0x10));
+    c.mul_s(4, 4, 0);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 5);
+    c.lwc1(0, s(0x4e4));
+    c.lwc1(1, s(0x4e8));
+    c.neg_s(0, 0);
+    c.mul_s(0, 0, 1);
+    c.swc1(0, m(0x14));
+    c.lwc1(1, s(0x4e0));
+    c.sw(m(0x1c), 0);
+    c.swc1(1, m(0x18));
+    c.lwc1(0, s(0x4ec));
+    c.mul_s(0, 3, 0);
+    c.add_s(0, 0, 4);
+    c.swc1(0, m(0x20));
+    c.lwc1(0, s(0x4ec));
+    c.lwc1(2, s(0x4e8));
+    c.lwc1(1, s(0x4dc));
+    c.mul_s(3, 3, 2);
+    c.mul_s(1, 1, 0);
+    c.sub_s(1, 1, 3);
+    c.swc1(1, m(0x24));
+    c.lwc1(0, s(0x4d8));
+    c.lwc1(1, s(0x4e4));
+    c.neg_s(0, 0);
+    c.sw(m(0x2c), 0);
+    c.mul_s(0, 0, 1);
+    c.swc1(0, m(0x28));
+    c.lwc1(2, s(0x4e0));
+    c.lwc1(1, s(0x4dc));
+    c.lwc1(0, s(0x4d8));
+    c.mul_s(1, 1, 2);
+    c.lwc1(3, s(0x4e8));
+    c.lwc1(2, s(0x4ec));
+    c.mul_s(0, 0, 3);
+    c.mul_s(1, 1, 2);
+    c.sub_s(0, 0, 1);
+    c.swc1(0, m(0x30));
+    c.lwc1(2, s(0x4e0));
+    c.lwc1(1, s(0x4ec));
+    c.lwc1(0, s(0x4d8));
+    c.mul_s(4, 4, 2);
+    c.mul_s(0, 0, 1);
+    c.add_s(4, 4, 0);
+    c.swc1(4, m(0x34));
+    c.lwc1(1, s(0x4e4));
+    c.lwc1(0, s(0x4dc));
+    c.mul_s(0, 0, 1);
+    c.swc1(0, m(0x38));
+    c.sw(m(0x3c), 0);
+    c.lwc1(0, st);
+    c.swc1(0, m(0x40));
+    c.lwc1(1, st.wrapping_add(4));
+    c.swc1(1, m(0x44));
+    c.lwc1(2, st.wrapping_add(8));
+    c.swc1(5, m(0x4c));
+    c.swc1(2, m(0x48));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1695,6 +2273,93 @@ pub(crate) mod tests {
                 w(c, this + 0x38, 0);
                 w(c, this + 0x3c, 0);
                 w(c, this + 0x44, 0);
+            },
+        );
+    }
+    use super::*;
+
+    /// MultiSplineModifier_UpdateNodes: 0-5 nodes, every mode (0: neither
+    /// angle, 1: pitch, 2: yaw, 3: both, 4: neither), with and without a
+    /// spin angle, start distances below 0 and beyond the length (both
+    /// wraps). The path is one straight-forward segment whose direction
+    /// components are zeroed per seed (dir.x/dir.y/dir.z = 0 reach the
+    /// zero-denominator and zero-angle branches; negative components the
+    /// quadrant fixes). Real callees (EvalPathAtDistance, Math_SinCos,
+    /// Math_Atan) on the game image's constants.
+    #[test]
+    fn multi_spline_modifier_update_nodes_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{elf_image, put_vec, DATA};
+        const SELF: u32 = DATA;
+        const STATES: u32 = DATA + 0x1000;
+        const NODES: u32 = DATA + 0x2000;
+        const NODE_OBJS: u32 = DATA + 0x2100;
+        const SEG: u32 = DATA + 0x3000;
+        crate::difftest::check(
+            ee::s11::f_0035ac20__generated,
+            multi_spline_modifier_update_nodes,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35ac_20, 0);
+                elf_image(c);
+                c.pc = 0x0035_ac20;
+                let f = |x: f32| x.to_bits();
+                let n = match seed % 8 {
+                    0 => 0,
+                    1 => 1,
+                    _ => 2 + r.next_u32() % 4,
+                };
+                let len = 10.0 + (r.next_u32() % 100) as f32;
+                let start = match seed % 3 {
+                    0 => -((r.next_u32() % 50) as f32) - 0.5,
+                    1 => len + (r.next_u32() % 50) as f32,
+                    _ => (r.next_u32() % 10) as f32,
+                };
+                c.g[A0][0] = sx(SELF);
+                c.bus.write32(SELF + 0x4, n);
+                c.bus.write32(SELF + 0x8, (seed / 3) % 5);
+                let spin = if seed % 4 == 0 { 0 } else { r.f32(3.0) };
+                c.bus.write32(SELF + 0xc, spin);
+                c.bus.write32(SELF + 0x10, f(start));
+                c.bus.write32(SELF + 0x30, 1);
+                c.bus.write32(SELF + 0x3c, STATES);
+                c.bus.write32(SELF + 0x44, NODES);
+                c.bus.write32(SELF + 0x54, f(len));
+                for i in 0..6 {
+                    c.bus.write32(NODES + 4 * i, NODE_OBJS + 0x80 * i);
+                }
+                // The path: one segment covering everything.
+                c.bus.write32(SELF + 0x48 + 0x4, 0);
+                c.bus.write32(SELF + 0x48 + 0x8, SEG);
+                c.bus.write32(SELF + 0x48 + 0xc, f(len * 2.0));
+                c.bus.write32(SEG + 0x84, 0);
+                c.bus.write32(SEG + 0x60, 0);
+                c.bus.write32(SEG + 0x64, 0);
+                for k in 0..4 {
+                    c.bus
+                        .write32(SEG + 0x50 + 4 * k, f((r.next_u32() % 8) as f32 * 0.125));
+                }
+                // Direction columns, with components zeroed by seed.
+                let zero = (seed / 15) % 8; // bit 0: x, 1: y, 2: z
+                for row in 0..4u32 {
+                    let mut v = [
+                        r.f32(4.0),
+                        r.f32(4.0),
+                        r.f32(4.0),
+                        f(if row == 3 { 1.0 } else { 0.0 }),
+                    ];
+                    for k in 0..3usize {
+                        if zero & (1 << k) != 0 {
+                            v[k] = 0;
+                        }
+                    }
+                    put_vec(c, SEG + 0x10 + 0x10 * row, v);
+                }
+                // The world up axis.
+                put_vec(c, 0x004f_f160, [f(0.0), f(0.0), f(1.0), 0]);
+                if seed % 5 == 0 {
+                    put_vec(c, 0x004f_f160, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                }
             },
         );
     }

@@ -31,6 +31,8 @@ pub(crate) use crate::game::fe::feasyncfile::p_6 as p_5;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_4;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::fe::splashmanager::gpo;
+pub(crate) use crate::game::fe::splashmanager::stk;
 pub(crate) use crate::game::main::gamemode::lh_r;
 pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
@@ -358,6 +360,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PS2GraphicsMan_SetOrtho",
     ),
     (0x0038_9840, irradiance_rotate, "Irradiance_Rotate"),
+    (
+        0x0037_6c58,
+        ps2_graphics_man_set_perspective,
+        "PS2GraphicsMan_SetPerspective",
+    ),
+    (
+        0x0038_6bd0,
+        ps2_graphics_man_blend_bone_matrices,
+        "PS2GraphicsMan_v111",
+    ),
+    (
+        0x0038_9308,
+        irradiance_add_directional_scaled,
+        "Irradiance_AddDirectionalScaled",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -8856,6 +8873,822 @@ pub fn irradiance_rotate(c: &mut Cpu) {
     frame.close(c);
 }
 
+// ---------------------------------------------------------------------------
+// Irradiance_AddDirectionalScaled (0x389308, particle.cpp)
+
+/// gp-relative `.lit4`: the spherical-harmonic basis constants (band 0,
+/// band 1 and the five band-2 terms, with their per-term scales).
+pub(crate) const GP_SH_CONSTS: [(usize, u32); 11] = [
+    (30, 0x272c),
+    (29, 0x2728),
+    (28, 0x2724),
+    (27, 0x2720),
+    (18, 0x271c),
+    (17, 0x2718),
+    (26, 0x2714),
+    (25, 0x2710),
+    (24, 0x270c),
+    (23, 0x2708),
+    (22, 0x2704),
+];
+
+/// The callee-saved FPU registers the function uses, with their frame
+/// slots.
+pub(crate) const SH_SAVED: [(usize, u32); 11] = [
+    (20, 0x30),
+    (30, 0x80),
+    (29, 0x78),
+    (28, 0x70),
+    (27, 0x68),
+    (26, 0x60),
+    (25, 0x58),
+    (24, 0x50),
+    (23, 0x48),
+    (22, 0x40),
+    (21, 0x38),
+];
+
+/// `void Irradiance_AddDirectionalScaled(SH9Color* sh, const float rgb[3],
+/// float scale, float x, float y, float z)` (0x389308): adds a directional
+/// light of colour `rgb * scale` from direction (x, y, z) to the 9-term
+/// spherical-harmonic irradiance `sh` (per channel: band 0 at +0x00,
+/// band 2 terms at +0x10..+0x60 in 0x10 strides, band 1 at +0x70/+0x80/
+/// +0x90). The per-channel terms are spilled to the frame as the original
+/// does (0x00..0x20); every FPU temporary is left as the original leaves
+/// it. Leaf.
+pub fn irradiance_add_directional_scaled(c: &mut Cpu) {
+    c.cycles += 40;
+    // f0 = 3 z^2 - 1 (f19), f20 = x^2 - y^2; f16 = x.
+    c.g[AT][0] = 0x4040_0000;
+    c.mtc1(AT, 0);
+    c.mov_s(16, 13);
+    c.mul_s(2, 16, 16);
+    let frame = Frame::open(c, 0x90);
+    c.mul_s(0, 15, 0);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 3);
+    c.mul_s(1, 14, 14);
+    for (f, off) in SH_SAVED {
+        frame.save_fpr(c, f, off);
+    }
+    c.g[T0][0] = c.g[A0][0]; // sh
+    c.mul_s(0, 15, 0);
+    c.sub_s(20, 2, 1);
+    c.g[A3][0] = c.g[T0][0]; // band 0 cursor
+    c.sub_s(19, 0, 3);
+    c.g[T1][0] = c.g[A1][0]; // rgb cursor
+    c.g[T2][0] = 0; // channel
+    c.g[A2][0] = sx(r32(c, A3).wrapping_add(0x60)); // band 2 cursor
+    c.mov_s(21, 12); // scale
+    for (f, off) in GP_SH_CONSTS {
+        c.lwc1(f, r32(c, GP).wrapping_sub(off));
+    }
+    loop {
+        c.cycles += 81;
+        let sp = frame.at(c, 0);
+        c.lwc1(0, r32(c, T1));
+        c.g[V0][0] = sx(r32(c, T2) << 2);
+        c.lwc1(3, r32(c, A3));
+        c.g[V1][0] = sx(r32(c, T0).wrapping_add(0x70));
+        c.mul_s(0, 0, 21); // colour * scale
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        c.g[A0][0] = sx(r32(c, T0).wrapping_add(0x80));
+        c.g[A1][0] = sx(r32(c, T0).wrapping_add(0x90));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V0)));
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+        c.mul_s(4, 0, 30);
+        c.g[T2][0] = sx(r32(c, T2).wrapping_add(1));
+        c.g[T1][0] = sx(r32(c, T1).wrapping_add(4));
+        c.g[V0][0] = ((c.g[T2][0] as i64) < 3) as u64;
+        c.swc1(4, sp);
+        c.mul_s(4, 0, 29);
+        c.lwc1(2, sp);
+        c.mul_s(11, 4, 16);
+        c.mul_s(12, 4, 14);
+        c.mul_s(13, 4, 15);
+        c.mul_s(4, 0, 28);
+        c.swc1(11, sp + 0xc);
+        c.mul_s(2, 2, 25);
+        c.swc1(12, sp + 0x4);
+        c.swc1(13, sp + 0x8);
+        c.mul_s(11, 11, 17);
+        c.mul_s(6, 4, 16);
+        c.mul_s(8, 4, 14);
+        c.mul_s(4, 0, 27);
+        c.mul_s(9, 6, 15);
+        c.mul_s(8, 8, 15);
+        c.mul_s(7, 4, 19);
+        c.mul_s(4, 0, 26);
+        c.swc1(9, sp + 0x1c);
+        c.mul_s(6, 6, 14);
+        c.swc1(8, sp + 0x14);
+        c.mul_s(1, 7, 24);
+        c.swc1(7, sp + 0x18);
+        c.mul_s(0, 4, 20);
+        c.swc1(6, sp + 0x10);
+        c.mul_s(7, 7, 22);
+        c.sub_s(2, 2, 1);
+        c.swc1(0, sp + 0x20);
+        c.mul_s(10, 0, 23);
+        c.mul_s(6, 6, 18);
+        c.add_s(3, 3, 2);
+        c.mul_s(9, 9, 18);
+        c.mul_s(8, 8, 18);
+        c.swc1(3, r32(c, A3)); // band 0
+        c.mul_s(12, 12, 17);
+        c.mul_s(13, 13, 17);
+        c.g[A3][0] = sx(r32(c, A3).wrapping_add(4));
+        // Band 2: the five terms of this channel (0x10 strides).
+        let b2 = r32(c, A2);
+        c.lwc1(2, b2.wrapping_sub(0x50));
+        c.lwc1(4, b2.wrapping_sub(0x40));
+        c.lwc1(5, b2.wrapping_sub(0x30));
+        c.add_s(2, 2, 10);
+        c.lwc1(3, b2.wrapping_sub(0x20));
+        c.sub_s(4, 4, 10);
+        c.lwc1(1, b2.wrapping_sub(0x10));
+        c.add_s(5, 5, 7);
+        c.lwc1(0, b2);
+        c.add_s(3, 3, 6);
+        c.add_s(1, 1, 9);
+        c.swc1(2, b2.wrapping_sub(0x50));
+        c.add_s(0, 0, 8);
+        c.swc1(4, b2.wrapping_sub(0x40));
+        c.swc1(5, b2.wrapping_sub(0x30));
+        c.swc1(3, b2.wrapping_sub(0x20));
+        c.swc1(1, b2.wrapping_sub(0x10));
+        c.swc1(0, b2);
+        c.g[A2][0] = sx(b2.wrapping_add(4));
+        // Band 1: x, y, z terms.
+        for (reg, term) in [(V1, 11), (A0, 12), (A1, 13)] {
+            let a = r32(c, reg);
+            let f = if term == 12 { 1 } else { 0 };
+            c.lwc1(f, a);
+            c.add_s(f, f, term);
+            c.swc1(f, a);
+        }
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0038_93a8);
+        }
+    }
+    c.cycles += 13;
+    for (f, off) in SH_SAVED {
+        frame.restore_fpr(c, f, off);
+    }
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_v111 (0x386bd0, particle.cpp): blended skinning matrices
+
+/// The blend weights are hundredths (`0.01` in VU0's I register).
+pub(crate) const BLEND_WEIGHT_SCALE: u32 = 0x3c23_d70a;
+
+/// One weighted bone of a blend: `vf_acc (+)= matrix(bone) * weight / 100`
+/// (`first`: plain scale into vf1..vf4; else accumulate through ACC with
+/// vf6..vf9). `inf` points at `{s16 weight; u8 bone}`.
+#[inline]
+pub(crate) fn blend_bone(c: &mut Cpu, inf: u32, first: bool) {
+    use crate::guest::Addr;
+    use ssx3_ee_rt::vu0::{Src, W, X};
+    c.g[V0][0] = Addr(inf).off(2).lbu(c);
+    c.g[V1][0] = Addr(inf).lh(c);
+    c.g[V0][0] = sx(r32(c, V0) << 6);
+    c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+    let m = r32(c, V0);
+    c.qmtc2(V1, 5);
+    c.vu0().itof(0, 0b1000, 5, 5);
+    let base = if first { 1 } else { 6 };
+    c.lqc2(base, m);
+    c.lqc2(base + 1, m.wrapping_add(0x10));
+    c.vu0().mul(0b1000, 5, 5, Src::I);
+    c.lqc2(base + 2, m.wrapping_add(0x20));
+    c.lqc2(base + 3, m.wrapping_add(0x30));
+    for row in 0..4 {
+        if first {
+            c.vu0().mul(0b1111, 1 + row, 1 + row, Src::Bc(5, X));
+        } else {
+            c.vu0().mula(0b1111, 1 + row, Src::Bc(0, W));
+            c.vu0().madd(0b1111, 1 + row, 6 + row, Src::Bc(5, X));
+        }
+    }
+}
+
+/// `void PS2GraphicsMan_v111(PS2GraphicsMan* gm, const Matrix* bones,
+/// int, const Blend* blends, int count, Matrix* out)` (0x386bd0, a
+/// leaf; `out` defaults to the manager's buffer at +0x13e8 when null):
+/// for each of `count` blends (12 bytes: number of influences, pointer to
+/// `{s16 weight; u8 bone}` influences), writes the weighted sum of the
+/// bones' matrices (weights in hundredths) into the next 4x4 output
+/// matrix. VU0 macro code; leaves LO/HI as its index multiplies do.
+pub fn ps2_graphics_man_blend_bone_matrices(c: &mut Cpu) {
+    use crate::guest::Addr;
+    c.cycles += 4;
+    let frame = Frame::open(c, 0x10);
+    c.g[T5][0] = c.g[A3][0]; // blends
+    frame.save(c, S5, 0);
+    if c.g[T1][0] == 0 {
+        c.cycles += 1;
+        c.g[T1][0] = Addr(r32(c, A0)).off(0x13e8).lw(c);
+    }
+    c.cycles += 5;
+    c.g[V0][0] = BLEND_WEIGHT_SCALE as u64;
+    c.ctc2(V0, 21); // I = 0.01
+    c.g[A3][0] = 0;
+    if (c.g[T0][0] as i64) > 0 {
+        c.cycles += 2;
+        c.g[T4][0] = 0xc;
+        c.mult(0, V0, A3, T4);
+        loop {
+            c.cycles += 25;
+            c.g[T2][0] = c.g[T1][0]; // this output matrix
+            c.g[T1][0] = sx(r32(c, T2).wrapping_add(0x40));
+            c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, T5))); // blend
+            c.g[A2][0] = Addr(r32(c, A0)).off(4).lw(c);
+            blend_bone(c, r32(c, A2), true);
+            c.g[A0][0] = Addr(r32(c, A0)).lw(c); // influences
+            c.g[T3][0] = sx(r32(c, A3).wrapping_add(1));
+            c.g[A3][0] = 1;
+            c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_add(4));
+            if c.g[V0][0] != 0 {
+                c.cycles += 1;
+                c.g[A3][0] = sx(r32(c, A0).wrapping_sub(1));
+                loop {
+                    c.cycles += 22;
+                    blend_bone(c, r32(c, A2), false);
+                    c.g[A3][0] = sx(r32(c, A3).wrapping_sub(1));
+                    c.g[A2][0] = sx(r32(c, A2).wrapping_add(4));
+                    if c.g[A3][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0038_6c68);
+                    }
+                }
+            }
+            c.cycles += 8;
+            let out = r32(c, T2);
+            for row in 0..4u32 {
+                c.sqc2(1 + row as usize, out.wrapping_add(0x10 * row));
+            }
+            c.g[A3][0] = c.g[T3][0];
+            c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[T0][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.mult(0, V0, A3, T4);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0038_6c00);
+            }
+        }
+    }
+    c.cycles += 3;
+    frame.restore(c, S5, 0);
+    frame.close(c);
+}
+
+// --------------------------------------------- PS2GraphicsMan_SetPerspective
+
+/// `void PS2GraphicsMan_SetPerspective(PS2GraphicsMan* g, float fov, float
+/// near, float far)` (0x376c58): switch the current view (`g+0x10dc`, views
+/// of 0x230 bytes at_2 `g+0x6d20`) to a perspective projection. Stores
+/// near/far/fov in the view (clearing its ortho flag) and at_2
+/// `g+0x5908`/`0x590c`; reads the view rectangle and the mode's depth
+/// constants (mode 0x31 selects the large range); asks the display
+/// (`g+0x10d8`, methods at_2 +0x50/+0x58) for the screen size (the
+/// `(float)(u32)` conversions halve-and-double values with the sign bit
+/// set); takes `Math_SinCos(fov)` for the aspect-corrected focal length (the
+/// clamp modes 0..2 of `g+0x6b94` scale it by `g+0x6ba0`/`0x6ba4`); builds
+/// the screen matrix (`g+0x6af0`) and viewport quads (`0x6b70`/`0x6b80`),
+/// then with `tanf(fov)` the guard-band clip matrix (`0x57c0`), the
+/// projection (`0x5860`), the clip quads (`0x5840`/`0x5850`) and the
+/// viewport half sizes/offsets (`0x58e0`/`0x58f0`); clamps the scissor
+/// (`PS2GraphicsMan_SetScissorClamped`) and resets the constants at_2
+/// `0x5910..0x592c`.
+///
+/// The FPU sequence is the original's, register for register (every
+/// temporary it leaves in f0..f11 is reproduced); the blocks follow its
+/// labels.
+pub fn ps2_graphics_man_set_perspective(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0xc0);
+        'b_376d24: {
+            'b_376d10: {
+                c.cycles += 40;
+                c.g[A1][0] = 0x31;
+                frame.save(c, S0, 0x50);
+                frame.save(c, S2, 0x30);
+                c.g[S0][0] = c.g[A0][0];
+                frame.save_fpr(c, 27, 0x98);
+                c.g[A0][0] = 0x230;
+                frame.save_fpr(c, 25, 0x88);
+                c.mov_s(27, 12);
+                frame.save_fpr(c, 23, 0x78);
+                c.mov_s(25, 13);
+                frame.save(c, S1, 0x40);
+                c.mov_s(23, 14);
+                frame.save_ra(c, 0x20);
+                frame.save_fpr(c, 31, 0xb8);
+                frame.save_fpr(c, 30, 0xb0);
+                frame.save_fpr(c, 29, 0xa8);
+                frame.save_fpr(c, 28, 0xa0);
+                frame.save_fpr(c, 26, 0x90);
+                frame.save_fpr(c, 24, 0x80);
+                frame.save_fpr(c, 22, 0x70);
+                frame.save_fpr(c, 21, 0x68);
+                frame.save_fpr(c, 20, 0x60);
+                c.g[V0][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10dc));
+                c.mult(0, 2, 2, 4);
+                c.g[V0][0] = sx(crate::game::render::particle::at(c, V0, 0x6d20));
+                c.g[S2][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[V0][0] as u32)));
+                c.sw(crate::game::render::particle::at(c, S2, 0x20), 0u64);
+                c.swc1(25, crate::game::render::particle::at(c, S2, 0x10));
+                c.swc1(23, crate::game::render::particle::at(c, S2, 0x14));
+                c.swc1(27, crate::game::render::particle::at(c, S2, 0x18));
+                c.g[V0][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10dc));
+                c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x5a40));
+                c.mult(0, 6, 2, 4);
+                c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add((c.g[S0][0] as u32)));
+                c.lwc1(28, crate::game::render::particle::at(c, V0, 0x6d2c));
+                c.lwc1(29, crate::game::render::particle::at(c, V0, 0x6d20));
+                c.lwc1(30, crate::game::render::particle::at(c, V0, 0x6d24));
+                let t = c.g[V1][0] != c.g[A1][0];
+                c.lwc1(26, crate::game::render::particle::at(c, V0, 0x6d28));
+                if t {
+                    break 'b_376d10;
+                } else {
+                    c.cycles += 6;
+                    c.lwc1(0, gpo(c, -0x27c8));
+                    c.lwc1(1, gpo(c, -0x27c4));
+                    c.lwc1(20, gpo(c, -0x27c0));
+                    c.swc1(0, stk(c, 0x8));
+                    c.swc1(1, stk(c, 0xc));
+                    break 'b_376d24;
+                }
+            }
+            c.cycles += 5;
+            c.lwc1(5, gpo(c, -0x27bc));
+            c.lwc1(0, gpo(c, -0x27b8));
+            c.lwc1(20, gpo(c, -0x27b4));
+            c.swc1(5, stk(c, 0x8));
+            c.swc1(0, stk(c, 0xc));
+            break 'b_376d24;
+        }
+        'b_376d88: {
+            'b_376d70: {
+                c.cycles += 15;
+                c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10d8));
+                c.swc1(23, crate::game::render::particle::at(c, S0, 0x590c));
+                c.swc1(27, crate::game::render::particle::at(c, S0, 0x5908));
+                c.g[A0][0] = c.lh(crate::game::render::particle::at(c, V1, 0x58));
+                c.g[V0][0] = c.lw(crate::game::render::particle::at(c, V1, 0x5c));
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                call_ptr(c, t, 0x00376d40)?;
+                c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10d8));
+                c.g[S1][0] = c.g[V0][0];
+                c.g[A0][0] = c.lh(crate::game::render::particle::at(c, V1, 0x50));
+                c.g[V0][0] = c.lw(crate::game::render::particle::at(c, V1, 0x54));
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                call_ptr(c, t, 0x00376d58)?;
+                let t = (c.g[S1][0] as i64) < 0;
+                c.g[A0][0] = c.g[V0][0];
+                if t {
+                    break 'b_376d70;
+                } else {
+                    c.cycles += 4;
+                    c.mtc1(17, 1);
+                    c.cvt_s_w(1, 1);
+                    break 'b_376d88;
+                }
+            }
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[S1][0] as u32) >> 1);
+            c.g[V0][0] = c.g[S1][0] & 0x1;
+            c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+            c.mtc1(2, 1);
+            c.cvt_s_w(1, 1);
+            c.add_s(1, 1, 1);
+            break 'b_376d88;
+        }
+        'b_376dbc: {
+            'b_376da4: {
+                c.cycles += 3;
+                c.lwc1(0, gpo(c, -0x27b0));
+                let t = (c.g[A0][0] as i64) < 0;
+                c.mul_s(0, 1, 0);
+                if t {
+                    break 'b_376da4;
+                } else {
+                    c.cycles += 4;
+                    c.mtc1(4, 21);
+                    c.cvt_s_w(21, 21);
+                    break 'b_376dbc;
+                }
+            }
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[A0][0] as u32) >> 1);
+            c.g[V0][0] = c.g[A0][0] & 0x1;
+            c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+            c.mtc1(2, 21);
+            c.cvt_s_w(21, 21);
+            c.add_s(21, 21, 21);
+            break 'b_376dbc;
+        }
+        'b_376e18: {
+            'b_376e14: {
+                c.cycles += 16;
+                c.div_s(31, 0, 21);
+                c.mov_s(12, 27);
+                c.g[A0][0] = c.g[SP][0];
+                c.g[A1][0] = c.g[SP][0] | 0x4;
+                call_ptr(c, 0x0031be50, 0x00376dd0)?;
+                c.lwc1(1, stk(c, 0));
+                c.lwc1(2, stk(c, 0x4));
+                c.g[AT][0] = 0x3f000000;
+                c.mtc1(1, 0);
+                c.div_s(1, 1, 2);
+                c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x6b94));
+                c.mul_s(0, 26, 0);
+                c.g[V0][0] = ((c.g[V1][0] as i64) < 3i64) as u64;
+                c.div_s(21, 0, 1);
+                let t = c.g[V0][0] == 0u64;
+                c.mul_s(22, 21, 31);
+                if t {
+                    break 'b_376e14;
+                } else {
+                    c.cycles += 2;
+                    if (c.g[V1][0] as i64) < 0 {
+                        c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10d8));
+                        break 'b_376e18;
+                    } else {
+                        c.cycles += 4;
+                        c.lwc1(0, crate::game::render::particle::at(c, S0, 0x6ba0));
+                        c.lwc1(1, crate::game::render::particle::at(c, S0, 0x6ba4));
+                        c.mul_s(21, 21, 0);
+                        c.mul_s(22, 22, 1);
+                        break 'b_376e14;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10d8));
+            break 'b_376e18;
+        }
+        'b_376e54: {
+            'b_376e44: {
+                c.cycles += 7;
+                c.g[A0][0] = c.lh(crate::game::render::particle::at(c, V1, 0x50));
+                c.g[V0][0] = c.lw(crate::game::render::particle::at(c, V1, 0x54));
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                call_ptr(c, t, 0x00376e28)?;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                if (c.g[V0][0] as i64) < 0 {
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) >> 1);
+                    break 'b_376e44;
+                } else {
+                    c.cycles += 4;
+                    c.mtc1(2, 1);
+                    c.cvt_s_w(1, 1);
+                    c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10d8));
+                    break 'b_376e54;
+                }
+            }
+            c.cycles += 4;
+            c.mtc1(2, 1);
+            c.cvt_s_w(1, 1);
+            c.add_s(1, 1, 1);
+            c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10d8));
+            break 'b_376e54;
+        }
+        'b_376e98: {
+            'b_376e8c: {
+                c.cycles += 10;
+                c.g[AT][0] = 0x47000000;
+                c.mtc1(1, 0);
+                c.g[A0][0] = c.lh(crate::game::render::particle::at(c, V1, 0x58));
+                c.g[V0][0] = c.lw(crate::game::render::particle::at(c, V1, 0x5c));
+                c.sub_s(24, 0, 1);
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                call_ptr(c, t, 0x00376e70)?;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+                if (c.g[V0][0] as i64) < 0 {
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) >> 1);
+                    break 'b_376e8c;
+                } else {
+                    c.cycles += 4;
+                    c.mtc1(2, 3);
+                    c.cvt_s_w(3, 3);
+                    break 'b_376e98;
+                }
+            }
+            c.cycles += 3;
+            c.mtc1(2, 3);
+            c.cvt_s_w(3, 3);
+            c.add_s(3, 3, 3);
+            break 'b_376e98;
+        }
+        'b_376ffc: {
+            'b_376ff8: {
+                c.cycles += 82;
+                c.g[AT][0] = 0x3f000000;
+                c.mtc1(1, 0);
+                c.neg_s(5, 20);
+                c.sub_s(2, 23, 25);
+                c.g[AT][0] = 0x41800000;
+                c.mtc1(1, 4);
+                c.mul_s(1, 28, 0);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6b00), 0u64);
+                c.mul_s(0, 26, 0);
+                c.g[AT][0] = 0x47000000;
+                c.mtc1(1, 7);
+                c.mul_s(5, 5, 25);
+                c.swc1(2, stk(c, 0x10));
+                c.add_s(1, 1, 30);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6b20), 0u64);
+                c.add_s(0, 0, 29);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6af4), 0u64);
+                c.div_s(5, 5, 2);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6b24), 0u64);
+                c.sub_s(7, 7, 3);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6af8), 0u64);
+                c.mul_s(0, 0, 4);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6b08), 0u64);
+                c.mul_s(1, 1, 4);
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 20);
+                c.neg_s(2, 22);
+                c.mov_s(12, 27);
+                c.mul_s(6, 21, 4);
+                c.add_s(1, 1, 7);
+                c.swc1(5, crate::game::render::particle::at(c, S0, 0x6b18));
+                c.mul_s(2, 2, 4);
+                c.add_s(0, 0, 24);
+                c.swc1(6, crate::game::render::particle::at(c, S0, 0x6af0));
+                c.neg_s(3, 23);
+                c.swc1(1, crate::game::render::particle::at(c, S0, 0x6b14));
+                c.swc1(2, crate::game::render::particle::at(c, S0, 0x6b04));
+                c.add_s(6, 29, 26);
+                c.swc1(0, crate::game::render::particle::at(c, S0, 0x6b10));
+                c.add_s(2, 30, 28);
+                c.mul_s(3, 3, 5);
+                c.lwc1(0, crate::game::render::particle::at(c, S2, 0x1c));
+                c.mul_s(6, 6, 4);
+                c.mul_s(2, 2, 4);
+                c.swc1(20, crate::game::render::particle::at(c, S0, 0x6b1c));
+                c.add_s(3, 3, 0);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6afc), 0u64);
+                c.mul_s(0, 5, 23);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6b0c), 0u64);
+                c.mul_s(1, 29, 4);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6b2c), 0u64);
+                c.div_s(8, 20, 25);
+                c.sw(crate::game::render::particle::at(c, S0, 0x6b90), 0u64);
+                c.div_s(9, 20, 23);
+                c.swc1(3, crate::game::render::particle::at(c, S0, 0x6b28));
+                c.mul_s(4, 30, 4);
+                c.mul_s(5, 5, 25);
+                c.div_s(21, 26, 28);
+                c.add_s(6, 6, 24);
+                c.add_s(2, 2, 7);
+                c.swc1(8, crate::game::render::particle::at(c, S0, 0x6b7c));
+                c.add_s(0, 0, 3);
+                c.swc1(9, crate::game::render::particle::at(c, S0, 0x6b8c));
+                c.add_s(1, 1, 24);
+                c.swc1(6, crate::game::render::particle::at(c, S0, 0x6b80));
+                c.add_s(4, 4, 7);
+                c.swc1(2, crate::game::render::particle::at(c, S0, 0x6b84));
+                c.add_s(5, 5, 3);
+                c.swc1(0, crate::game::render::particle::at(c, S0, 0x6b88));
+                c.mul_s(21, 31, 21);
+                c.swc1(1, crate::game::render::particle::at(c, S0, 0x6b70));
+                c.swc1(4, crate::game::render::particle::at(c, S0, 0x6b74));
+                c.swc1(5, crate::game::render::particle::at(c, S0, 0x6b78));
+                call_ptr(c, 0x0040d588, 0x00376fc0)?;
+                c.div_s(22, 20, 0);
+                c.mov_s(12, 27);
+                call_ptr(c, 0x0040d588, 0x00376fcc)?;
+                c.div_s(20, 20, 0);
+                c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x6b94));
+                c.g[V0][0] = ((c.g[V1][0] as i64) < 3i64) as u64;
+                let t = c.g[V0][0] == 0u64;
+                c.mul_s(20, 20, 21);
+                if t {
+                    break 'b_376ff8;
+                } else {
+                    c.cycles += 2;
+                    if (c.g[V1][0] as i64) < 0 {
+                        c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10d8));
+                        break 'b_376ffc;
+                    } else {
+                        c.cycles += 4;
+                        c.lwc1(0, crate::game::render::particle::at(c, S0, 0x6ba0));
+                        c.lwc1(1, crate::game::render::particle::at(c, S0, 0x6ba4));
+                        c.mul_s(22, 22, 0);
+                        c.mul_s(20, 20, 1);
+                        break 'b_376ff8;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10d8));
+            break 'b_376ffc;
+        }
+        'b_377038: {
+            'b_377024: {
+                c.cycles += 6;
+                c.g[A0][0] = c.lh(crate::game::render::particle::at(c, V1, 0x50));
+                c.g[V0][0] = c.lw(crate::game::render::particle::at(c, V1, 0x54));
+                let t = c.g[V0][0] as u32;
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                call_ptr(c, t, 0x0037700c)?;
+                let t = (c.g[V0][0] as i64) < 0;
+                c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+                if t {
+                    break 'b_377024;
+                } else {
+                    c.cycles += 4;
+                    c.mtc1(2, 1);
+                    c.cvt_s_w(1, 1);
+                    break 'b_377038;
+                }
+            }
+            c.cycles += 5;
+            c.g[V0][0] = c.g[V0][0] & 0x1;
+            c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+            c.mtc1(2, 1);
+            c.cvt_s_w(1, 1);
+            c.add_s(1, 1, 1);
+            break 'b_377038;
+        }
+        'b_377090: {
+            'b_37707c: {
+                c.cycles += 13;
+                c.g[AT][0] = 0x3f000000;
+                c.mtc1(1, 0);
+                c.g[V1][0] = c.lw(crate::game::render::particle::at(c, S0, 0x10d8));
+                c.mul_s(1, 1, 0);
+                c.mul_s(0, 26, 0);
+                c.g[A0][0] = c.lh(crate::game::render::particle::at(c, V1, 0x58));
+                c.g[V0][0] = c.lw(crate::game::render::particle::at(c, V1, 0x5c));
+                c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                c.sub_s(0, 0, 1);
+                let t = c.g[V0][0] as u32;
+                c.add_s(21, 0, 29);
+                call_ptr(c, t, 0x00377064)?;
+                let t = (c.g[V0][0] as i64) < 0;
+                c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+                if t {
+                    break 'b_37707c;
+                } else {
+                    c.cycles += 4;
+                    c.mtc1(2, 3);
+                    c.cvt_s_w(3, 3);
+                    break 'b_377090;
+                }
+            }
+            c.cycles += 5;
+            c.g[V0][0] = c.g[V0][0] & 0x1;
+            c.g[V0][0] = c.g[V0][0] | c.g[V1][0];
+            c.mtc1(2, 3);
+            c.cvt_s_w(3, 3);
+            c.add_s(3, 3, 3);
+            break 'b_377090;
+        }
+        c.cycles += 122;
+        c.g[AT][0] = 0x3f000000;
+        c.mtc1(1, 8);
+        c.add_s(4, 23, 23);
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 11);
+        c.add_s(10, 23, 25);
+        c.mul_s(7, 28, 8);
+        c.swc1(22, crate::game::render::particle::at(c, S0, 0x5860));
+        c.mul_s(3, 3, 8);
+        c.swc1(11, crate::game::render::particle::at(c, S0, 0x588c));
+        c.mul_s(4, 4, 25);
+        c.sw(crate::game::render::particle::at(c, S0, 0x5864), 0u64);
+        c.abs_s(2, 21);
+        c.g[AT][0] = 0x45000000;
+        c.mtc1(1, 1);
+        c.sub_s(3, 7, 3);
+        c.lwc1(5, stk(c, 0x10));
+        c.neg_s(4, 4);
+        c.lwc1(9, gpo(c, -0x27ac));
+        c.add_s(2, 2, 2);
+        c.swc1(20, crate::game::render::particle::at(c, S0, 0x5874));
+        c.add_s(3, 3, 30);
+        c.sw(crate::game::render::particle::at(c, S0, 0x5868), 0u64);
+        c.abs_s(0, 3);
+        c.div_s(10, 10, 5);
+        c.div_s(4, 4, 5);
+        c.sw(crate::game::render::particle::at(c, S0, 0x586c), 0u64);
+        c.add_s(0, 0, 0);
+        c.sw(crate::game::render::particle::at(c, S0, 0x5870), 0u64);
+        c.sub_s(2, 1, 2);
+        c.sw(crate::game::render::particle::at(c, S0, 0x5878), 0u64);
+        c.add_s(3, 3, 9);
+        c.sw(crate::game::render::particle::at(c, S0, 0x587c), 0u64);
+        c.add_s(9, 21, 9);
+        c.sw(crate::game::render::particle::at(c, S0, 0x5880), 0u64);
+        c.sub_s(1, 1, 0);
+        c.swc1(10, crate::game::render::particle::at(c, S0, 0x5888));
+        c.neg_s(7, 7);
+        c.swc1(4, crate::game::render::particle::at(c, S0, 0x5898));
+        c.mul_s(0, 26, 8);
+        c.swc1(3, crate::game::render::particle::at(c, S0, 0x58f4));
+        c.div_s(5, 26, 2);
+        c.swc1(9, crate::game::render::particle::at(c, S0, 0x58f0));
+        c.swc1(7, crate::game::render::particle::at(c, S0, 0x58e4));
+        c.div_s(6, 28, 1);
+        c.sw(crate::game::render::particle::at(c, S0, 0x5884), 0u64);
+        c.mul_s(1, 1, 8);
+        c.sw(crate::game::render::particle::at(c, S0, 0x5890), 0u64);
+        c.mul_s(2, 2, 8);
+        c.sw(crate::game::render::particle::at(c, S0, 0x5894), 0u64);
+        c.mov_s(12, 29);
+        c.sw(crate::game::render::particle::at(c, S0, 0x589c), 0u64);
+        c.neg_s(1, 1);
+        c.swc1(0, crate::game::render::particle::at(c, S0, 0x58e0));
+        c.mul_s(5, 5, 22);
+        c.lwc1(0, stk(c, 0x8));
+        c.mul_s(6, 6, 20);
+        c.sw(crate::game::render::particle::at(c, S0, 0x58ec), 0u64);
+        c.mov_s(13, 30);
+        c.swc1(0, crate::game::render::particle::at(c, S0, 0x58e8));
+        c.mov_s(14, 26);
+        c.mov_s(15, 28);
+        c.g[A0][0] = c.g[S0][0];
+        c.lwc1(0, crate::game::render::particle::at(c, S2, 0x1c));
+        c.swc1(5, crate::game::render::particle::at(c, S0, 0x57c0));
+        c.lwc1(5, stk(c, 0xc));
+        c.swc1(6, crate::game::render::particle::at(c, S0, 0x57d4));
+        c.add_s(0, 5, 0);
+        c.sw(crate::game::render::particle::at(c, S0, 0x58fc), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x57c4), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x57c8), 0u64);
+        c.swc1(0, crate::game::render::particle::at(c, S0, 0x58f8));
+        c.sw(crate::game::render::particle::at(c, S0, 0x57cc), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x57d0), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x57d8), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x57dc), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x57e0), 0u64);
+        c.swc1(10, crate::game::render::particle::at(c, S0, 0x57e8));
+        c.swc1(11, crate::game::render::particle::at(c, S0, 0x57ec));
+        c.swc1(4, crate::game::render::particle::at(c, S0, 0x57f8));
+        c.swc1(2, crate::game::render::particle::at(c, S0, 0x5840));
+        c.swc1(1, crate::game::render::particle::at(c, S0, 0x5844));
+        c.lwc1(0, stk(c, 0x8));
+        c.swc1(9, crate::game::render::particle::at(c, S0, 0x5850));
+        c.swc1(3, crate::game::render::particle::at(c, S0, 0x5854));
+        c.swc1(0, crate::game::render::particle::at(c, S0, 0x5848));
+        c.sw(crate::game::render::particle::at(c, S0, 0x57e4), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x57f0), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x57f4), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x57fc), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x584c), 0u64);
+        c.lwc1(0, crate::game::render::particle::at(c, S2, 0x1c));
+        c.sw(crate::game::render::particle::at(c, S0, 0x585c), 0u64);
+        c.add_s(0, 5, 0);
+        c.swc1(0, crate::game::render::particle::at(c, S0, 0x5858));
+        call_ptr(c, 0x00376938, 0x00377210)?; // PS2GraphicsMan_SetScissorClamped
+        c.lwc1(1, gpo(c, -0x27a8));
+        c.lwc1(2, gpo(c, -0x27a4));
+        c.lwc1(0, gpo(c, -0x27a0));
+        c.swc1(1, crate::game::render::particle::at(c, S0, 0x5910));
+        c.swc1(0, crate::game::render::particle::at(c, S0, 0x592c));
+        c.swc1(2, crate::game::render::particle::at(c, S0, 0x5920));
+        c.sw(crate::game::render::particle::at(c, S0, 0x5924), 0u64);
+        c.sw(crate::game::render::particle::at(c, S0, 0x5928), 0u64);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 31, 0xb8);
+        frame.restore_fpr(c, 30, 0xb0);
+        frame.restore_fpr(c, 29, 0xa8);
+        frame.restore_fpr(c, 28, 0xa0);
+        frame.restore_fpr(c, 27, 0x98);
+        frame.restore_fpr(c, 26, 0x90);
+        frame.restore_fpr(c, 25, 0x88);
+        frame.restore_fpr(c, 24, 0x80);
+        frame.restore_fpr(c, 23, 0x78);
+        frame.restore_fpr(c, 22, 0x70);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11445,6 +12278,203 @@ pub(crate) mod tests {
                 c.g[A2][0] = first as u64;
                 c.g[A3][0] = last as u64;
                 c.pc = 0x0038_9840;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// Irradiance_AddDirectionalScaled: random coefficients, colours,
+    /// scales and directions (edge floats on every fourth seed), the
+    /// game's SH constants written at their gp slots.
+    #[test]
+    fn irradiance_add_directional_scaled_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{fill, DATA, GAME_GP};
+        const SH: u32 = DATA;
+        const RGB: u32 = DATA + 0x200;
+        crate::difftest::check(
+            ee::s12::f_00389308__generated,
+            irradiance_add_directional_scaled,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3893_08, 0);
+                c.pc = 0x0038_9308;
+                fill(c, &mut r, GAME_GP - 0x272c, 11);
+                for k in 0..0x30 {
+                    c.bus.write32(SH + 4 * k, r.f32(10.0));
+                }
+                for k in 0..3 {
+                    c.bus.write32(RGB + 4 * k, r.f32(2.0));
+                }
+                c.g[A0][0] = sx(SH);
+                c.g[A1][0] = sx(RGB);
+                let edge = seed % 4 == 0;
+                for f in 12..16 {
+                    c.f[f] = if edge { r.edge_f32() } else { r.f32(1.5) };
+                }
+                if !edge {
+                    for k in 0..11 {
+                        c.bus.write32(GAME_GP - 0x272c + 4 * k, r.f32(1.0));
+                    }
+                }
+            },
+        );
+    }
+
+    /// PS2GraphicsMan_v111: 0-4 blends of 0-4 influences (the first
+    /// influence is always applied, even for a count of 0 or 1) over eight
+    /// random bone matrices, into a given output buffer or the manager's
+    /// default one (+0x13e8). LO/HI checked too.
+    #[test]
+    fn ps2_graphics_man_blend_bone_matrices_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check_lohi, DATA};
+        const GM: u32 = DATA;
+        const BONES: u32 = DATA + 0x2000;
+        const BLENDS: u32 = DATA + 0x3000;
+        const INFS: u32 = DATA + 0x3100;
+        const OUT: u32 = DATA + 0x4000;
+        const DEFAULT_OUT: u32 = DATA + 0x5000;
+        check_lohi(
+            ee::s12::f_00386bd0__generated,
+            ps2_graphics_man_blend_bone_matrices,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x386b_d0, 0);
+                c.pc = 0x0038_6bd0;
+                c.bus.write32(GM + 0x13e8, DEFAULT_OUT);
+                for k in 0..0x80 {
+                    c.bus.write32(BONES + 4 * k, r.f32(4.0));
+                }
+                let count = seed % 5;
+                for b in 0..4u32 {
+                    let n = r.next_u32() % 5;
+                    c.bus.write32(BLENDS + 12 * b, n);
+                    c.bus.write32(BLENDS + 12 * b + 4, INFS + 0x20 * b);
+                    for i in 0..5u32 {
+                        let inf = INFS + 0x20 * b + 4 * i;
+                        c.bus.write16(inf, (r.next_u32() % 201) as u16);
+                        c.bus.write8(inf + 2, (r.next_u32() % 8) as u8);
+                        c.bus.write8(inf + 3, r.next_u32() as u8);
+                    }
+                }
+                c.g[A0][0] = sx(GM);
+                c.g[A1][0] = sx(BONES);
+                c.g[A3][0] = sx(BLENDS);
+                c.g[T0][0] = if seed % 11 == 0 {
+                    sx(0xffff_fffe)
+                } else {
+                    count as u64
+                };
+                c.g[T1][0] = if seed % 3 == 0 { 0 } else { sx(OUT) };
+            },
+        );
+    }
+
+    // -- 0x00376c58 PS2GraphicsMan_SetPerspective -----------------------------
+
+    /// The fake-call hook with sign-extended results, so a forced result
+    /// with bit 31 set reads negative as a 64-bit value.
+    pub(crate) fn set_perspective_fake(c: &mut Cpu, target: u32) {
+        crate::difftest::fakes::fake_call(c, target);
+        c.g[V0][0] = sx(c.g[V0][0] as u32);
+    }
+
+    /// `PS2GraphicsMan_SetPerspective`: a graphics manager at_2 DATA whose
+    /// display has fake width/height methods (forced results reach the
+    /// halving paths of all six conversions; some calls unwind), both depth
+    /// modes, both view slots, every clamp mode, plausible and edge-case
+    /// near/far; the real `Math_SinCos`, `tanf` and `SetScissorClamped` run
+    /// (the game image provides their constants).
+    #[test]
+    fn ps2_graphics_man_set_perspective_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{elf_image, put_words, DATA};
+        fn f(x: f32) -> u32 {
+            x.to_bits()
+        }
+        fn uf(r: &mut crate::difftest::Rng, lo: f32, hi: f32) -> u32 {
+            f(lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo))
+        }
+        const DISPLAY: u32 = 0x10d8;
+        const CUR_VIEW: u32 = 0x10dc;
+        const MODE: u32 = 0x5a40;
+        const VIEWS: u32 = 0x6d20;
+        const VIEW_STRIDE: u32 = 0x230;
+        covered(
+            ee::s12::f_00376c58__generated,
+            ps2_graphics_man_set_perspective,
+            240,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x37_6c58, 6);
+                c.hooks.miss = set_perspective_fake;
+                c.pc = 0x0037_6c58;
+                let gfx = DATA;
+                // Display: {delta 0, width()} at_2 +0x50, {delta 0, height()} at_2 +0x58.
+                let display = DATA + 0x8000;
+                c.bus.write16(display + 0x50, 0);
+                c.bus.write32(display + 0x54, FAKE);
+                c.bus.write16(display + 0x58, 0);
+                c.bus.write32(display + 0x5c, FAKE + 0x10);
+                c.bus.write32(gfx + DISPLAY, display);
+                let idx = seed % 2;
+                c.bus.write32(gfx + CUR_VIEW, idx);
+                let mode = if seed % 3 == 0 { 0x31 } else { 0x10 + seed % 4 };
+                c.bus.write32(gfx + MODE, mode);
+                // The view rectangle (x, y, w, h) and the view's +0x1c.
+                let view = gfx + VIEWS + idx * VIEW_STRIDE;
+                let rect = [
+                    uf(&mut r, -64.0, 64.0),
+                    uf(&mut r, -64.0, 64.0),
+                    uf(&mut r, 1.0, 640.0),
+                    uf(&mut r, 1.0, 480.0),
+                ];
+                put_words(c, view, &rect);
+                c.bus.write32(view + 0x1c, uf(&mut r, 0.0, 4.0));
+                // The clamp mode (0..2 scale the focal lengths, <0 and >=3
+                // do not) and the ratios.
+                let clamp = match seed % 4 {
+                    0 => 0,
+                    1 => 2,
+                    2 => 3,
+                    _ => 0xffff_ffff,
+                };
+                c.bus.write32(gfx + 0x6b94, clamp);
+                c.bus.write32(gfx + 0x6b98, f(0.75));
+                c.bus.write32(gfx + 0x6b9c, f(0.5));
+                c.bus.write32(gfx + 0x6ba0, uf(&mut r, 0.5, 1.5));
+                c.bus.write32(gfx + 0x6ba4, uf(&mut r, 0.5, 1.5));
+                // Forced display sizes for the six calls (height, width,
+                // width, height, width, height): bit 31 takes the halving
+                // path of the raw conversions (calls 0, 1, 4, 5), bit 28
+                // that of the `<< 3` ones (calls 2, 3); 0 keeps the fake's
+                // value.
+                let forced: [u32; 6] = match seed % 4 {
+                    1 => [
+                        0x8000_01e1,
+                        0x8000_0280,
+                        0x1000_0140,
+                        0x1000_00f0,
+                        0x8000_0281,
+                        0x8000_01e0,
+                    ],
+                    2 => [0x8000_0141, 0, 0x1000_0280, 0, 0x8000_0141, 0],
+                    3 => [0, 0x8000_0101, 0, 0x1000_0100, 0, 0x8000_0101],
+                    _ => [0x1e0, 0x280, 0x140, 0xf0, 0x280, 0x1e0],
+                };
+                put_words(c, LOG_RESULTS, &forced);
+                // fov, near, far.
+                c.f[12] = uf(&mut r, 0.2, 2.5);
+                if seed % 6 == 5 {
+                    c.f[13] = r.edge_f32();
+                    c.f[14] = r.edge_f32();
+                } else {
+                    c.f[13] = uf(&mut r, 0.05, 20.0);
+                    c.f[14] = uf(&mut r, 50.0, 20000.0);
+                }
+                c.g[A0][0] = sx(gfx);
             },
         );
     }

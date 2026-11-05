@@ -123,6 +123,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_7810, ai_fwd_diff_cache_ctor, "AIFwdDiffCache_ctor"),
     (0x0032_7828, ai_fwd_diff_cache_dtor, "AIFwdDiffCache_dtor"),
     (0x0032_6eb0, ps2_pad_update, "PS2Pad_Update"),
+    (
+        0x0032_52f8,
+        input_vm_read_pad_channel,
+        "InputVM_ReadPadChannel",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3064,6 +3069,160 @@ pub fn ps2_pad_update(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// InputVM_ReadPadChannel (0x003252f8)
+// ---------------------------------------------------------------------------
+
+/// The `switch (kind)` jump table of `InputVM_ReadPadChannel` in `.rodata`
+/// and its case labels (kinds 0..=5).
+pub(crate) const PAD_CHANNEL_TABLE: u32 = 0x0048_e310;
+
+pub(crate) const PAD_CHANNEL_CASES: [u32; 6] = [
+    0x0032_5320,
+    0x0032_5344,
+    0x0032_539c,
+    0x0032_53d4,
+    0x0032_53f8,
+    0x0032_541c,
+];
+
+/// `InputVM.defKind`: the kind used for kind 5 ("default").
+pub(crate) const PADVM_DEF_KIND: u32 = 0x0;
+
+/// `InputVM.list`: the pad channel list (`{ int count; Entry e[]; }`).
+pub(crate) const PADVM_LIST: u32 = 0x4;
+
+/// One channel entry is 0x1c bytes; the list's entries start at +4.
+pub(crate) const PAD_ENTRY_SIZE: u32 = 0x1c;
+
+/// Entry fields (relative to `list + idx * 0x1c`): the float value (+4) and
+/// the unsigned words read by kinds 1..=4.
+pub(crate) const PAD_ENTRY_VALUE: u32 = 0x4;
+
+pub(crate) const PAD_ENTRY_KIND_WORD: [u32; 5] = [0, 0x10, 0x8, 0xc, 0x14];
+
+/// `float InputVM_ReadPadChannel(InputVM* self, int idx, int kind)`
+/// (0x003252f8): the value of channel `idx` of the input VM's pad channel
+/// list, as a float. Kind 0 reads the entry's float, kinds 1..=4 one of its
+/// unsigned words (converted unsigned to float), kind 5 retries with the
+/// VM's default kind; an index past the count gives 0 (kinds 0) or the
+/// conversion of 0, an unknown kind 0.0.
+pub fn input_vm_read_pad_channel(c: &mut Cpu) {
+    c.cycles += 1;
+    c.g[A3][0] = c.g[A0][0];
+    let this = r32(c, A3);
+    let idx = c.g[A1][0];
+
+    // 0x003252fc: the switch head (kind 5 comes back here).
+    loop {
+        c.cycles += 3;
+        let kind = c.g[A2][0];
+        if kind >= 6 {
+            c.g[V0][0] = 0x49_0000;
+            break;
+        }
+        c.cycles += 6;
+        let entry = PAD_CHANNEL_TABLE.wrapping_add((kind as u32) << 2);
+        c.g[V1][0] = sx(entry);
+        c.g[V0][0] = sx(PAD_CHANNEL_TABLE);
+        c.g[A0][0] = sx(PAD_CHANNEL_CASES[kind as usize]);
+
+        if kind == 5 {
+            // 0x0032541c: kind = self->defKind, back to the head.
+            c.cycles += 2;
+            c.g[A2][0] = Addr(this.wrapping_add(PADVM_DEF_KIND)).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_52fc);
+            }
+            continue;
+        }
+
+        // Every case: `idx < list->count` (64-bit signed compare).
+        c.cycles += if kind == 1 { 3 } else { 5 };
+        let list = Addr(this.wrapping_add(PADVM_LIST)).lw(c);
+        c.g[A0][0] = list;
+        let count = Addr(list as u32).lw(c);
+        let in_range = (idx as i64) < (count as i64);
+        if kind == 1 {
+            c.cycles += 2;
+        }
+        c.g[V0][0] = PAD_ENTRY_SIZE as u64;
+
+        if kind == 0 {
+            if !in_range {
+                break;
+            }
+            // 0x00325334: f0 = entry.value.
+            c.cycles += 4;
+            let off = abi::mult(c, idx as u32, PAD_ENTRY_SIZE);
+            c.g[V1][0] = sx(off);
+            let at = off.wrapping_add(list as u32);
+            c.g[V0][0] = sx(at);
+            c.f[0] = Addr(at.wrapping_add(PAD_ENTRY_VALUE)).read_u32(c);
+            abi::ret(c);
+            return;
+        }
+
+        // Kinds 1..=4: the entry's word, or 0 past the count.
+        let word = if in_range {
+            c.cycles += 4;
+            let off = abi::mult(c, idx as u32, PAD_ENTRY_SIZE);
+            c.g[V1][0] = sx(off);
+            let at = off.wrapping_add(list as u32);
+            c.g[V0][0] = sx(at);
+            let w = Addr(at.wrapping_add(PAD_ENTRY_KIND_WORD[kind as usize])).lw(c);
+            if kind == 3 || kind == 4 {
+                c.g[V0][0] = w;
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_53c4);
+                }
+            }
+            w
+        } else {
+            // (Kinds 3 and 4 jump back to 0x003253c0.)
+            if kind >= 3 && event_due(c) {
+                deliver_event_here(c, 0x0032_53c0);
+            }
+            c.cycles += 1;
+            0
+        };
+        c.g[V0][0] = word;
+
+        // 0x0032536c / 0x003253c4: unsigned int to float.
+        c.cycles += 2;
+        let half = sx((word as u32) >> 1);
+        c.g[V1][0] = half;
+        if (word as i64) >= 0 {
+            if kind != 1 && event_due(c) {
+                deliver_event_here(c, 0x0032_5374);
+            }
+            // 0x00325374
+            c.cycles += 4;
+            c.f[0] = FpuF32::from_i32(word as i32).0;
+        } else {
+            // (x >> 1 | x & 1) converted and doubled.
+            c.cycles += if kind == 1 { 1 } else { 2 };
+            c.g[V0][0] = word & 1;
+            if kind != 1 && event_due(c) {
+                deliver_event_here(c, 0x0032_5388);
+            }
+            // 0x00325388
+            c.cycles += 5;
+            let v = c.g[V0][0] | half;
+            c.g[V0][0] = v;
+            let f = FpuF32::from_i32(v as i32);
+            c.f[0] = (f + f).0;
+        }
+        abi::ret(c);
+        return;
+    }
+
+    // 0x00325424: no value.
+    c.cycles += 3;
+    c.f[0] = 0;
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3933,6 +4092,54 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(pad);
                 c.g[A1][0] = sx(OUT);
                 c.pc = 0x0032_6eb0;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::put_words;
+
+    /// `InputVM_ReadPadChannel`: every kind (0..=5 and out of range), the
+    /// index inside and past the count, words with and without bit 31 (the
+    /// unsigned conversion's two paths); kind 5 retries with the default
+    /// kind (never 5 again).
+    #[test]
+    fn input_vm_read_pad_channel_matches() {
+        check_lohi(
+            ee::s10::f_003252f8__generated,
+            input_vm_read_pad_channel,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3252_f800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0032_52f8;
+                put_words(c, PAD_CHANNEL_TABLE, &PAD_CHANNEL_CASES);
+                let this = DATA;
+                let list = DATA + 0x100;
+                let count = 1 + r.next_u32() % 6;
+                let def = [0u32, 1, 2, 3, 4, 6, 9][(seed / 7 % 7) as usize];
+                c.bus.write32(this + PADVM_DEF_KIND, def);
+                c.bus.write32(this + PADVM_LIST, list);
+                c.bus.write32(list, count);
+                for i in 0..(count * PAD_ENTRY_SIZE / 4 + 8) {
+                    let w = match r.next_u32() % 3 {
+                        0 => r.next_u32() | 0x8000_0000,
+                        1 => r.next_u32() & 0x7fff_ffff,
+                        _ => r.next_u32() % 300,
+                    };
+                    c.bus.write32(list + 4 + i * 4, w);
+                }
+                c.g[A0][0] = sx(this);
+                let idx = match seed % 4 {
+                    0 => count,
+                    // A negative index passes the signed compare.
+                    1 => (-(1 + (r.next_u32() % 3) as i32)) as u32,
+                    _ => r.next_u32() % count,
+                };
+                c.g[A1][0] = sx(idx);
+                c.g[A2][0] = match seed % 7 {
+                    6 => [6u64, 0xffff_ffff_ffff_ffff, 1 << 40][(seed / 7 % 3) as usize],
+                    k => k as u64,
+                };
             },
         );
     }

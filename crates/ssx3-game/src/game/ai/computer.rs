@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -221,6 +222,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0011_3138, air_predictor_ctor, "AirPredictor_ctor"),
     (0x0011_3170, rider_dtor_free, "Rider_dtorFree"),
+    (
+        0x0011_2fb0,
+        rider_update_dist_to_finish,
+        "Rider_UpdateDistToFinish",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5863,6 +5869,183 @@ fn attack_candidate(c: &mut Cpu, ai: u32, mgr: u32, sp: u32) -> Result<bool, cal
     Ok(true)
 }
 
+pub(crate) mod dist {
+    pub(crate) use crate::game::ai::rider::dist::CLOSEST_POINT;
+    pub(crate) use crate::game::ai::rider::dist::DIST;
+    pub(crate) use crate::game::ai::rider::dist::PATH;
+    pub(crate) use crate::game::ai::rider::dist::PATH_HINT;
+    pub(crate) use crate::game::ai::rider::dist::PATH_LENGTH;
+    pub(crate) use crate::game::ai::rider::dist::PATH_VTABLE;
+    pub(crate) use crate::game::ai::rider::dist::POSITION;
+    pub(crate) use crate::game::ai::rider::dist::PREV_DIST;
+    pub(crate) use crate::game::ai::rider::dist::SEGMENT;
+    pub(crate) use crate::game::ai::rider::dist::SEGMENT_RESULT;
+    pub(crate) use crate::game::ai::rider::dist::SPLITS;
+}
+
+/// `void Rider_UpdateDistToFinish(Rider* r, float* along, vec* out, vec*
+/// closest)` (0x112fb0): project the rider onto the course path, store the
+/// distance along it and the distance to the finish; when the rider got
+/// closer, fire `Rider_OnSplitMarker` for each split marker (up to six)
+/// passed since the last update and update the segment cache with the
+/// new range; otherwise only refresh it at the old distance.
+pub fn rider_update_dist_to_finish(c: &mut Cpu) {
+    use self::dist::*;
+    use crate::call::VSlot;
+    use crate::ps2f::FpuF32;
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0x60);
+        c.g[T1][0] = 1;
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x10);
+        c.g[A2][0] = c.g[A3][0];
+        frame.save_ra(c, 0);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x50);
+        let rider = Addr(r32(c, S1));
+        c.g[A1][0] = sx(rider.off(POSITION).0);
+        c.g[A0][0] = rider.off(PATH).lw(c);
+        c.g[T0][0] = rider.off(PATH_HINT).lw(c);
+        call_ptr(c, CLOSEST_POINT, 0x0011_2ff0)?;
+
+        let along = FpuF32(c.f[0]);
+        Addr(r32(c, S0)).write_fpu(c, along);
+        let path = rider.off(PATH).lw(c);
+        c.g[A3][0] = path;
+        let prev = rider.off(PREV_DIST).read_fpu(c);
+        c.f[12] = prev.0;
+        let dist = Addr(path as u32).off(PATH_LENGTH).read_fpu(c) - along;
+        c.f[1] = dist.0;
+        let closer = dist.lt(prev);
+        abi::set_fcc(c, closer);
+        rider.off(DIST).write_fpu(c, dist);
+
+        if !closer {
+            // 0x001130e4: refresh the segment cache at the old distance.
+            c.cycles += 9;
+            let vtable = Addr(path as u32).off(PATH_VTABLE).lw(c);
+            c.g[V1][0] = vtable;
+            c.f[13] = c.f[12];
+            c.g[A1][0] = sx(rider.off(SEGMENT).0);
+            c.g[A2][0] = 0xc;
+            let slot = VSlot::read(c, vtable, 0x8);
+            c.g[V0][0] = slot.func;
+            c.g[A0][0] = slot.this(path);
+            call_ptr(c, slot.func as u32, 0x0011_3104)?;
+            rider.off(SEGMENT_RESULT).sw(c, c.g[V0][0]);
+        } else {
+            c.cycles += 10;
+            c.g[V0][0] = sx(0x004d_33a0);
+            c.f[2] = 0;
+            c.g[S2][0] = 0;
+            let first = Addr(SPLITS).off(4).read_fpu(c);
+            c.f[0] = first.0;
+            c.g[A1][0] = sx(SPLITS);
+            let no_splits = first.eq_s(FpuF32(c.f[2]));
+            abi::set_fcc(c, no_splits);
+            c.g[S3][0] = sx(rider.off(SEGMENT).0);
+            let mut reload_path = true;
+            if !no_splits {
+                c.cycles += 4;
+                let all_ahead = first.lt(FpuF32(c.f[1]));
+                abi::set_fcc(c, all_ahead);
+                if all_ahead {
+                    c.g[A3][0] = rider.off(PATH).lw(c);
+                    reload_path = false;
+                } else {
+                    c.cycles += 3;
+                    c.f[20] = c.f[2];
+                    c.g[S0][0] = c.g[A1][0];
+                    c.f[1] = Addr(r32(c, A1)).off(4).read_fpu(c).0;
+                    // 0x00113058: s0 = marker, s2 = count, f1 = its distance.
+                    loop {
+                        c.cycles += 5;
+                        let prev = rider.off(PREV_DIST).read_fpu(c);
+                        c.f[0] = prev.0;
+                        let crossed = FpuF32(c.f[1]).lt(prev);
+                        abi::set_fcc(c, crossed);
+                        if crossed {
+                            c.cycles += 3;
+                            c.g[A0][0] = c.g[S1][0];
+                            Callee {
+                                addr: 0x0010_e558,
+                                f: ee::s00::Rider_OnSplitMarker,
+                            }
+                            .call(c, 0x0011_3074)?;
+                        }
+                        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                        c.cycles += 3;
+                        let more = (c.g[S2][0] as i64) < 6;
+                        c.g[V0][0] = more as u64;
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(8));
+                        if !more {
+                            break;
+                        }
+                        c.cycles += 5;
+                        let next = Addr(r32(c, S0)).off(4).read_fpu(c);
+                        c.f[1] = next.0;
+                        let end = next.eq_s(FpuF32(c.f[20]));
+                        abi::set_fcc(c, end);
+                        c.g[A1][0] = c.g[S0][0];
+                        if end {
+                            break;
+                        }
+                        c.cycles += 5;
+                        let now = rider.off(DIST).read_fpu(c);
+                        c.f[0] = now.0;
+                        let ahead = next.lt(now);
+                        abi::set_fcc(c, ahead);
+                        if ahead {
+                            break;
+                        }
+                        c.f[1] = Addr(r32(c, A1)).off(4).read_fpu(c).0;
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0011_3058);
+                        }
+                    }
+                }
+            }
+            if reload_path {
+                c.cycles += 1;
+                c.g[A3][0] = rider.off(PATH).lw(c);
+            }
+
+            // 0x001130b0: update the segment cache over [dist, prev dist].
+            c.cycles += 13;
+            c.g[A1][0] = c.g[S3][0];
+            c.f[12] = rider.off(PREV_DIST).read_fpu(c).0;
+            c.g[A2][0] = 0xc;
+            let path = c.g[A3][0];
+            let vtable = Addr(path as u32).off(PATH_VTABLE).lw(c);
+            c.g[V1][0] = vtable;
+            c.f[13] = rider.off(DIST).read_fpu(c).0;
+            let slot = VSlot::read(c, vtable, 0x8);
+            c.g[V0][0] = slot.func;
+            c.g[A0][0] = slot.this(path);
+            call_ptr(c, slot.func as u32, 0x0011_30d4)?;
+            let now = rider.off(DIST).read_fpu(c);
+            c.f[0] = now.0;
+            rider.off(SEGMENT_RESULT).sw(c, c.g[V0][0]);
+            rider.off(PREV_DIST).write_fpu(c, now);
+        }
+
+        c.cycles += 8;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x50);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7742,5 +7925,122 @@ pub(crate) mod tests {
             let per_10s = (0..hz * 10).filter(|t| *t as u64 % period == 0).count();
             assert_eq!(per_10s, 10, "{hz} Hz");
         }
+    }
+    use super::*;
+
+    // ------------------------------------------------ OverlapList_FindClosestContact
+
+    /// Control block of the fake `OverlapList_CollideVolume`: a magic word
+    /// (other tests' machines never have it, so their calls run the real
+    /// body), the contact count and the template contacts to copy out.
+    pub(crate) const FCC_CTRL: u32 = 0x00a0_0000;
+
+    pub(crate) const FCC_MAGIC: u32 = 0xc011_1de5;
+
+    /// `OverlapList_CollideVolume` for the fixture: copy `count` template
+    /// contacts to `a2` and return the count (the real body needs a whole
+    /// world of collision objects).
+    pub(crate) fn fake_collide_volume(c: &mut Cpu) {
+        if c.bus.read32(FCC_CTRL) != FCC_MAGIC {
+            return ssx3_ee::s11::f_00333ef8__generated(c);
+        }
+        let count = c.bus.read32(FCC_CTRL + 4);
+        let template = c.bus.read32(FCC_CTRL + 8);
+        let out = c.g[A2][0] as u32;
+        for i in 0..count * 0x20 {
+            let w = c.bus.read32(template + 4 * i);
+            c.bus.write32(out + 4 * i, w);
+        }
+        c.cycles += 40 + count as u64;
+        c.g[V0][0] = count as u64;
+        c.g[V1][0] = 0x1234;
+        abi::ret(c);
+    }
+
+    /// Installs the gated fakes ([`fake_collide_volume`],
+    /// [`fake_closest_point`]) in their callees' slots once for the whole
+    /// test process: without their magic word in a machine's RAM they run
+    /// the generated body, so other tests are unaffected (and no test
+    /// restores a slot under another one running in parallel).
+    pub(crate) fn install_fake_slots() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| unsafe {
+            ssx3_ee::s11::OVERRIDE_00333EF8 = fake_collide_volume;
+            ssx3_ee::s07::OVERRIDE_0026A638 = fake_closest_point;
+        });
+    }
+
+    // ------------------------------------------------ Rider_UpdateDistToFinish
+
+    /// Control block of the fake `Path_GetClosestPointFrom`: magic word
+    /// (other tests run the real body) and the distance along it returns.
+    pub(crate) const UDF_CTRL: u32 = 0x00a1_0000;
+
+    pub(crate) const UDF_MAGIC: u32 = 0x0d15_7f1e;
+
+    /// `Path_GetClosestPointFrom` for the fixture: return the chosen
+    /// distance along the path in f0 (the real one walks a course path).
+    pub(crate) fn fake_closest_point(c: &mut Cpu) {
+        if c.bus.read32(UDF_CTRL) != UDF_MAGIC {
+            return ssx3_ee::s07::f_0026a638__generated(c);
+        }
+        c.f[0] = c.bus.read32(UDF_CTRL + 4);
+        c.f[1] = 0x4000_0000;
+        c.g[V0][0] = 0x55;
+        c.cycles += 31;
+        abi::ret(c);
+    }
+
+    /// `Rider_UpdateDistToFinish`: farther (old-distance refresh), closer
+    /// with no split list, all splits ahead, and crossing up to six split
+    /// markers (the list ending on a 0 entry or one still ahead); the path's
+    /// segment query is a fake that sometimes unwinds.
+    #[test]
+    fn rider_update_dist_to_finish_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        install_fake_slots();
+        check(
+            ssx3_ee::s00::f_00112fb0__generated,
+            rider_update_dist_to_finish,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_2fb0, 1);
+                c.pc = 0x0011_2fb0;
+                let rider = DATA + 0x1000;
+                let path = DATA + 0x3000;
+                let vtable = DATA + 0x3100;
+                c.g[A0][0] = sx(rider);
+                c.g[A1][0] = sx(DATA);
+                c.g[A2][0] = sx(DATA + 0x100);
+                c.g[A3][0] = sx(DATA + 0x200);
+                c.bus.write32(rider + 0xab4, path);
+                c.bus.write32(rider + 0xac0, r.next_u32());
+                c.bus.write32(rider + 0xec, r.next_u32());
+                c.bus.write32(path + 0x34, vtable);
+                c.bus.write16(vtable + 0x8, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vtable + 0xc, FAKE);
+                let length = 1000.0f32;
+                c.bus.write32(path + 0x38, length.to_bits());
+                let pick = |r: &mut Rng, set: &[f32]| set[r.next_u32() as usize % set.len()];
+                let dist = pick(&mut r, &[100.0, 180.0, 250.0, 320.0, 400.0]);
+                let prev = pick(&mut r, &[150.0, 250.0, 350.0, 450.0, 90.0]);
+                c.bus.write32(UDF_CTRL, UDF_MAGIC);
+                c.bus.write32(UDF_CTRL + 4, (length - dist).to_bits());
+                c.bus.write32(rider + 0x4d4, prev.to_bits());
+                // Split markers: distances (0 ends the list), mostly descending.
+                let mut d = pick(&mut r, &[0.0, 120.0, 300.0, 440.0, 520.0]);
+                for k in 0..8u32 {
+                    c.bus.write32(0x004d_33b8 + 8 * k, r.next_u32());
+                    c.bus.write32(0x004d_33bc + 8 * k, d.to_bits());
+                    d = if r.next_u32() % 6 == 0 {
+                        0.0
+                    } else {
+                        (d - 60.0).max(10.0)
+                    };
+                }
+                // Rider_OnSplitMarker's feature switch: off (its short path).
+                c.bus.write32(0x0053_08d0, 1 << 9);
+            },
+        );
     }
 }

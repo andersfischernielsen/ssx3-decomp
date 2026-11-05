@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -126,6 +127,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0037_08c0, emitter_render, "Emitter_Render"),
     (0x0037_0af8, emitter_load, "Emitter_Load"),
     (0x0037_0c08, dynamic_emitter_dtor, "DynamicEmitter_dtor"),
+    (
+        0x0036_d428,
+        emitter_update_descriptor,
+        "Emitter_UpdateDescriptor",
+    ),
 ];
 
 /// The game's render-context singleton (`gp+0x2a90`, `D_004A5B80`): its
@@ -5652,6 +5658,103 @@ pub fn ps2_graphics_man_match_blended_matrix(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// Emitter_UpdateDescriptor (0x36d428, graphicsman.cpp)
+
+pub(crate) const EMITTER_ADVANCE_DESC_TIME: Callee = Callee {
+    addr: 0x0036_d3e8,
+    f: ee::s12::Emitter_AdvanceDescTime,
+};
+
+pub(crate) const VU0_RAND_NEXT: Callee = Callee {
+    addr: 0x0036_d400,
+    f: ee::s12::Vu0_RandNext,
+};
+
+/// Emitter descriptor fields: the emission count (int), the time
+/// accumulator, the emission interval, the per-emission random seeds, the
+/// emission position and its per-emission step.
+pub(crate) const ED_COUNT: u32 = 0x00;
+
+pub(crate) const ED_TIME: u32 = 0x08;
+
+pub(crate) const ED_INTERVAL: u32 = 0x0c;
+
+pub(crate) const ED_POS: u32 = 0xb0;
+
+pub(crate) const ED_POS_STEP: u32 = 0xe0;
+
+/// The random seeds re-rolled per emission, with the return address of
+/// each `Vu0_RandNext` call.
+pub(crate) const ED_RANDOMS: [(u32, u32); 9] = [
+    (0x38, 0x0036_d488),
+    (0x3c, 0x0036_d490),
+    (0x40, 0x0036_d498),
+    (0x44, 0x0036_d4a0),
+    (0x48, 0x0036_d4a8),
+    (0x50, 0x0036_d4b0),
+    (0x54, 0x0036_d4b8),
+    (0x58, 0x0036_d4c0),
+    (0x5c, 0x0036_d4c8),
+];
+
+/// `void Emitter_UpdateDescriptor(EmitterDesc* d, float dt)` (0x36d428):
+/// advances the descriptor's clock (`Emitter_AdvanceDescTime`), then while
+/// `count * interval < time` steps it back by one interval, moves the
+/// emission position by its step (VU0) and re-rolls the nine random seeds
+/// (`Vu0_RandNext`).
+pub fn emitter_update_descriptor(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::Src;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        EMITTER_ADVANCE_DESC_TIME.call(c, 0x0036_d43c)?;
+        let d = r32(c, S0);
+        let due = |c: &mut Cpu, f: usize| {
+            c.lwc1(f, d.wrapping_add(ED_COUNT));
+            c.cvt_s_w(f, f);
+            c.lwc1(3, d.wrapping_add(ED_INTERVAL));
+            c.lwc1(2, d.wrapping_add(ED_TIME));
+            c.mul_s(f, f, 3);
+            c.c_lt_s(f, 2);
+            c.fcc()
+        };
+        if due(c, 0) {
+            c.cycles += 2;
+            c.sub_s(0, 2, 3); // time - interval
+            loop {
+                c.cycles += 33;
+                c.g[A0][0] = sx(d.wrapping_add(ED_RANDOMS[0].0));
+                c.swc1(0, d.wrapping_add(ED_TIME));
+                c.lqc2(3, d.wrapping_add(ED_POS));
+                c.lqc2(4, d.wrapping_add(ED_POS_STEP));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, d.wrapping_add(ED_POS));
+                for (off, ret_addr) in ED_RANDOMS {
+                    c.g[A0][0] = sx(d.wrapping_add(off));
+                    VU0_RAND_NEXT.call(c, ret_addr)?;
+                }
+                if !due(c, 1) {
+                    c.cycles += 1;
+                    break;
+                }
+                c.sub_s(0, 2, 3);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0036_d468);
+                }
+            }
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6284,6 +6387,44 @@ pub(crate) mod tests {
                         c.bus.write16(kb + off, v);
                     }
                 }
+            },
+        );
+    }
+    use super::*;
+
+    /// Emitter_UpdateDescriptor: no emission due, one, or up to five
+    /// (count * interval against the advanced time; positive intervals).
+    #[test]
+    fn emitter_update_descriptor_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::DATA;
+        crate::difftest::check(
+            ee::s12::f_0036d428__generated,
+            emitter_update_descriptor,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x36d4_28, 0);
+                c.pc = 0x0036_d428;
+                let f = |x: f32| x.to_bits();
+                let d = DATA;
+                for k in 0..0x40 {
+                    c.bus.write32(d + 4 * k, r.next_u32());
+                }
+                let count = (r.next_u32() % 6) as i32 - 1;
+                let interval = 0.25 + (r.next_u32() % 8) as f32 * 0.25;
+                c.bus.write32(d + 0x0, count as u32);
+                c.bus.write32(d + 0xc, f(interval));
+                let behind = (seed % 7) as f32 - 1.5; // emissions due, roughly
+                c.bus
+                    .write32(d + 0x8, f(count as f32 * interval + behind * interval));
+                c.bus
+                    .write32(d + 0x4c, f(1.0 + (r.next_u32() % 4) as f32 * 0.5));
+                for k in 0..8 {
+                    c.bus.write32(d + 0xb0 + 4 * k, r.f32(100.0));
+                    c.bus.write32(d + 0xe0 + 4 * k, r.f32(10.0));
+                }
+                c.g[A0][0] = sx(d);
+                c.f[12] = f((r.next_u32() % 4) as f32 * 0.0625);
             },
         );
     }

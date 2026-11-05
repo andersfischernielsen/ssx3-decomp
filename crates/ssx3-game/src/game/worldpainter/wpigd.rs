@@ -11,6 +11,7 @@ use crate::call::Flow;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::splashmanager::at;
 pub(crate) use crate::game::visualfx::boardwakefx::lh_2 as lh;
 pub(crate) use crate::game::visualfx::boardwakefx::lw_2 as lw;
 pub(crate) use crate::game::visualfx::boardwakefx::p;
@@ -20,6 +21,7 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
@@ -53,6 +55,13 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002b_cbd0, twpigd_danger_ctor, "tWPIGD_Danger_ctor"),
     (0x002b_feb0, weather_save_state, "tWPIGD_Weather_SaveState"),
     (0x002b_d698, twpigd_weather_blend, "tWPIGD_Weather_Blend"),
+    (
+        0x002b_d1b8,
+        twpigd_screen_tint_blend,
+        "tWPIGD_ScreenTint_Blend",
+    ),
+    (0x002b_d378, twpigd_sun_blend, "tWPIGD_Sun_Blend"),
+    (0x002b_d5a8, twpigd_lighting_blend, "tWPIGD_Lighting_Blend"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -586,6 +595,322 @@ pub fn twpigd_weather_blend(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod sun_blend {
+
+    /// `tWPIGD_Sun` (a world-painter sun record): the vtable, six float
+    /// (current, target) pairs from +0x8, an int pair at +0x38, two more
+    /// float pairs at +0x40.
+    pub const VTABLE: u32 = 0x4;
+
+    pub const FLOAT_PAIRS: u32 = 0x8;
+
+    pub const INT_PAIR: u32 = 0x38;
+
+    pub const TAIL_PAIRS: u32 = 0x40;
+
+    /// The source record: six floats from +0x4, an int at +0x1c, two floats
+    /// at +0x20.
+    pub const SRC_FLOATS: u32 = 0x4;
+
+    pub const SRC_INT: u32 = 0x1c;
+
+    pub const SRC_TAIL: u32 = 0x20;
+
+    /// The "changed" notification method (vtable slot).
+    pub const NOTIFY_SLOT: u32 = 0x218;
+}
+
+pub(crate) mod screen_tint {
+
+    pub const VPTR: u32 = 0x4;
+
+    pub const VT_HOOK_DELTA: u32 = 0x218;
+
+    pub const VT_HOOK: u32 = 0x21c;
+
+    pub const PAIRS: u32 = 0x8;
+
+    pub const KEY_VALUES: u32 = 0x4;
+}
+
+/// `void tWPIGD_Sun_Blend(tWPIGD_Sun* this, const SunSource* src, float t)`
+/// (0x2bd378): blends the sun parameters toward `src` with weight `t*t`
+/// (each pair: `cur = t² src + (1 - t²) cur`, `target = src`; the int
+/// pair through float and back), with the record's notify method called
+/// before and after.
+pub fn twpigd_sun_blend(c: &mut Cpu) {
+    use crate::call::VSlot;
+    use sun_blend::*;
+    guest(c, |c| {
+        c.cycles += 103;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        let this = Addr(r32(c, S0));
+        let src = Addr(r32(c, S1));
+        let t = abi::farg(c, 0);
+        let w = t * t;
+        abi::set_fpr(c, 20, w);
+
+        // Notify before the change.
+        let vt = this.off(VTABLE).lw(c);
+        c.g[V1][0] = vt;
+        let notify = VSlot::read(c, vt, NOTIFY_SLOT);
+        c.g[V0][0] = notify.func;
+        c.g[A0][0] = notify.this(c.g[S0][0]);
+        call_ptr(c, notify.func as u32, 0x002b_d3b0)?;
+
+        c.g[AT][0] = 0x3f80_0000;
+        let inv = FpuF32::ONE - w;
+        // The old current values, scaled by 1 - t² (f1, f2, f4..f8; the int
+        // one converted to float first).
+        let first = src.off(SRC_FLOATS).read_fpu(c);
+        let mut old = [FpuF32::ZERO; 6];
+        for (k, o) in old.iter_mut().enumerate() {
+            *o = this.off(FLOAT_PAIRS + 8 * k as u32).read_fpu(c);
+        }
+        let old_int = FpuF32::from_i32(this.off(INT_PAIR).read_u32(c) as i32);
+        let scaled: [FpuF32; 6] = old.map(|o| inv * o);
+        let scaled_int = inv * old_int;
+        for (k, s) in scaled.iter().enumerate() {
+            let k = k as u32;
+            let v = if k == 0 {
+                first
+            } else {
+                src.off(SRC_FLOATS + 4 * k).read_fpu(c)
+            };
+            this.off(FLOAT_PAIRS + 8 * k).write_fpu(c, w * v + *s);
+            let target = src.off(SRC_FLOATS + 4 * k).read_fpu(c);
+            this.off(FLOAT_PAIRS + 8 * k + 4).write_fpu(c, target);
+        }
+        // The int pair.
+        let v = FpuF32::from_i32(src.off(SRC_INT).read_u32(c) as i32);
+        let blended = w * v + scaled_int;
+        this.off(INT_PAIR).write_u32(c, blended.to_i32() as u32);
+        let target = src.off(SRC_INT).lw(c);
+        c.g[V0][0] = target;
+        this.off(INT_PAIR + 4).sw(c, target);
+        // The two tail pairs.
+        let a = w * src.off(SRC_TAIL).read_fpu(c);
+        let old_a = inv * this.off(TAIL_PAIRS).read_fpu(c);
+        let old_b = this.off(TAIL_PAIRS + 8).read_fpu(c);
+        c.g[V1][0] = this.off(VTABLE).lw(c);
+        let scaled_b = inv * old_b;
+        this.off(TAIL_PAIRS).write_fpu(c, a + old_a);
+        let target_a = src.off(SRC_TAIL).read_fpu(c);
+        this.off(TAIL_PAIRS + 4).write_fpu(c, target_a);
+        let vb = src.off(SRC_TAIL + 4).read_fpu(c);
+        let new_b = w * vb + scaled_b;
+        this.off(TAIL_PAIRS + 8).write_fpu(c, new_b);
+        let target_b = src.off(SRC_TAIL + 4).read_fpu(c);
+        this.off(TAIL_PAIRS + 0xc).write_fpu(c, target_b);
+
+        // The registers as the original leaves them at the second call.
+        abi::set_fpr(c, 0, target_b);
+        abi::set_fpr(c, 1, vb);
+        abi::set_fpr(c, 2, old_b);
+        abi::set_fpr(c, 3, scaled_b);
+        for (reg, s) in [
+            (4, scaled[2]),
+            (5, scaled[3]),
+            (6, scaled[4]),
+            (7, scaled[5]),
+        ] {
+            abi::set_fpr(c, reg, s);
+        }
+        abi::set_fpr(c, 8, scaled_int);
+        abi::set_fpr(c, 20, new_b);
+
+        // Notify after the change.
+        let vt = c.g[V1][0];
+        let notify = VSlot::read(c, vt, NOTIFY_SLOT);
+        c.g[V0][0] = notify.func;
+        c.g[A0][0] = notify.this(c.g[S0][0]);
+        call_ptr(c, notify.func as u32, 0x002b_d4fc)?;
+
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void tWPIGD_Lighting::Blend(const tWPIGD_Lighting* p, float t)`
+/// (0x2bd5a8): blends the world painter's lighting toward `p` with weight
+/// `w = t*t`.
+///
+/// Notifies the owner (vtable at `self+4`, slot +0x218) before and after;
+/// copies the four 16-byte light vectors (`p+0x4.. -> self+0x8..`,
+/// unaligned doubleword pairs), and for the two scalar parameters keeps
+/// the blended value and the target:
+/// `self+0x48 = w*p[0x24] + (1-w)*self[0x48]`, `self+0x4c = p[0x24]`, and
+/// the same for `p+0x28` into `self+0x50`/`self+0x54`.
+///
+/// `self` stays in `s0`, `p` in `s1` and `w` in f20 as in the original;
+/// the FPU temporaries f0-f3 and the 60-cycle block are kept.
+pub fn twpigd_lighting_blend(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 60;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        c.mov_s(20, 12);
+        c.mul_s(20, 20, 20);
+        let this = r32(c, S0);
+        let vt = Addr(this + 4).lw(c) as u32;
+        c.g[V1][0] = sx(vt);
+        lighting_notify(c, this, vt, 0x002b_d5e0)?;
+        // Four light vectors (v0 carries each doubleword).
+        let (this, p) = (r32(c, S0), r32(c, S1));
+        for (dst, src) in [(0x8u32, 0x4u32), (0x18, 0xc), (0x28, 0x14), (0x38, 0x1c)] {
+            if dst == 0x38 {
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 2);
+            }
+            c.ldl(V0, p + src + 7);
+            c.ldr(V0, p + src);
+            c.sdl(V0, this + dst + 7);
+            c.sdr(V0, this + dst);
+        }
+        // f2 = 1 - w; the two blended parameters.
+        c.sub_s(2, 2, 20);
+        c.lwc1(1, p + 0x24);
+        c.lwc1(0, this + 0x48);
+        c.mul_s(1, 20, 1);
+        c.lwc1(3, this + 0x50);
+        c.mul_s(0, 2, 0);
+        let vt = Addr(this + 4).lw(c) as u32;
+        c.g[V1][0] = sx(vt);
+        c.mul_s(2, 2, 3);
+        c.add_s(1, 1, 0);
+        c.swc1(1, this + 0x48);
+        c.lwc1(0, p + 0x24);
+        c.swc1(0, this + 0x4c);
+        c.lwc1(1, p + 0x28);
+        c.mul_s(20, 20, 1);
+        c.add_s(20, 20, 2);
+        c.swc1(20, this + 0x50);
+        c.lwc1(0, p + 0x28);
+        c.swc1(0, this + 0x54);
+        lighting_notify(c, this, vt, 0x002b_d680)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The owner notification: `this->vt[+0x218]` (`a0 = this + delta`).
+pub(crate) fn lighting_notify(c: &mut Cpu, this: u32, vt: u32, ret: u32) -> crate::call::Flow {
+    const NOTIFY: u32 = 0x218;
+    let slot = crate::call::VSlot::read(c, sx(vt), NOTIFY);
+    c.g[V0][0] = slot.func;
+    c.g[A0][0] = slot.this(sx(this));
+    call_ptr(c, slot.func as u32, ret)
+}
+
+/// The screen tint's vtable hook (`this + delta`, method at +0x21c),
+/// returning to `ret`; v1 holds the vptr.
+pub(crate) fn screen_tint_hook(c: &mut Cpu, ret_to: u32) -> crate::call::Flow {
+    use screen_tint::*;
+    c.g[A0][0] = c.lh(at(c, V1, VT_HOOK_DELTA));
+    c.g[V0][0] = c.lw(at(c, V1, VT_HOOK));
+    let method = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, method, ret_to)
+}
+
+/// `void tWPIGD_ScreenTint::Blend(const tWPIGD_ScreenTint* key, float t)`
+/// (0x2bd1b8): blends the tint's six settings toward a keyframe with the
+/// eased weight `w = t^2`: each pair `{current, target}` (+0x08 + 8i) gets
+/// `current = w * key[i] + (1 - w) * current` and `target = key[i]` (`key`
+/// from key+0x04). Calls its vtable hook (+0x218) before and after. Frame
+/// 0x40 (s0, s1, f20); 76 cycles charged at entry.
+///
+/// The loads, stores and FPU temporaries (f0..f7) follow the original's
+/// order (the key may alias the tint).
+pub fn twpigd_screen_tint_blend(c: &mut Cpu) {
+    use screen_tint::*;
+    guest(c, |c| {
+        c.cycles += 76;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        // f20 = w = t * t
+        c.mov_s(20, 12);
+        c.g[V1][0] = c.lw(at(c, S0, VPTR));
+        c.mul_s(20, 20, 20);
+        screen_tint_hook(c, 0x002b_d1f0)?;
+
+        let cur = |c: &Cpu, i: u32| at(c, S0, PAIRS + 8 * i);
+        let tgt = |c: &Cpu, i: u32| at(c, S0, PAIRS + 8 * i + 4);
+        let key = |c: &Cpu, i: u32| at(c, S1, KEY_VALUES + 4 * i);
+        // f2 = 1 - w; the (1 - w) * current terms of pairs 1..5 go to
+        // f3, f4, f6, f7, f2 (as the compiler scheduled them).
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 2);
+        c.lwc1(1, key(c, 0));
+        c.sub_s(2, 2, 20);
+        c.lwc1(0, cur(c, 0));
+        c.mul_s(1, 20, 1);
+        c.lwc1(3, cur(c, 1));
+        c.lwc1(4, cur(c, 2));
+        c.mul_s(0, 2, 0);
+        c.lwc1(6, cur(c, 3));
+        c.mul_s(3, 2, 3);
+        c.lwc1(7, cur(c, 4));
+        c.mul_s(4, 2, 4);
+        c.lwc1(5, cur(c, 5));
+        c.add_s(1, 1, 0);
+        c.g[V1][0] = c.lw(at(c, S0, VPTR));
+        c.mul_s(6, 2, 6);
+        c.mul_s(7, 2, 7);
+        c.swc1(1, cur(c, 0));
+        c.mul_s(2, 2, 5);
+        c.lwc1(1, key(c, 0));
+        c.swc1(1, tgt(c, 0));
+        // Pairs 1..4: current = w * key + (1 - w) * current; target = key.
+        for (i, scaled) in [(1, 3), (2, 4), (3, 6), (4, 7)] {
+            c.lwc1(0, key(c, i));
+            c.mul_s(0, 20, 0);
+            c.add_s(0, 0, scaled);
+            c.swc1(0, cur(c, i));
+            c.lwc1(1, key(c, i));
+            c.swc1(1, tgt(c, i));
+        }
+        // Pair 5 (through f20).
+        c.lwc1(0, key(c, 5));
+        c.mul_s(20, 20, 0);
+        c.add_s(20, 20, 2);
+        c.swc1(20, cur(c, 5));
+        c.lwc1(0, key(c, 5));
+        c.swc1(0, tgt(c, 5));
+        screen_tint_hook(c, 0x002b_d2d0)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -837,6 +1162,149 @@ pub(crate) mod tests {
                 };
                 // The vtable clear of the blended data (the blend cannot
                 // overwrite its hook slot before the second call).
+                let vt = this + 0x800;
+                c.bus
+                    .write16(vt + VT_HOOK_DELTA, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(vt + VT_HOOK, FAKE);
+                c.bus.write32(this + VPTR, vt);
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = key as u64;
+                c.f[12] = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(1.2)
+                };
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::fakes::{ptr, vtable, LOG_RESULTS};
+    use crate::difftest::{fill, fresh, put_vec};
+
+    // -- 0x002bd378 tWPIGD_Sun_Blend -----------------------------------------
+
+    /// `tWPIGD_Sun_Blend`: random records and weights (edge floats too),
+    /// a fake notify method that unwinds at either call.
+    #[test]
+    fn twpigd_sun_blend_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::{fill, DATA};
+        const THIS: u32 = DATA + 0x30_0000;
+        const SRC: u32 = DATA + 0x30_1000;
+        covered(
+            ssx3_ee::s08::f_002bd378__generated,
+            twpigd_sun_blend,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002b_d378, 2);
+                let vt = vtable(c, &mut r, &[0x218]);
+                fill(c, &mut r, THIS, 0x14);
+                fill(c, &mut r, SRC, 0x0a);
+                for k in 0..6 {
+                    c.bus.write32(THIS + 8 + 8 * k, r.f32(100.0));
+                    c.bus.write32(SRC + 4 + 4 * k, r.f32(100.0));
+                }
+                c.bus.write32(THIS + 0x38, r.next_u32() % 2000);
+                c.bus
+                    .write32(SRC + 0x1c, (r.next_u32() % 4000).wrapping_sub(2000));
+                for k in 0..2 {
+                    c.bus.write32(THIS + 0x40 + 8 * k, r.f32(100.0));
+                    c.bus.write32(SRC + 0x20 + 4 * k, r.edge_f32());
+                }
+                c.bus.write32(THIS + 4, vt);
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(SRC);
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(1.0)
+                };
+                c.pc = 0x002b_d378;
+            },
+        );
+    }
+
+    // ---- tWPIGD_Lighting_Blend (0x2bd5a8) ----
+
+    /// Lighting blocks with random vectors and parameters (sometimes
+    /// unaligned by 4, as the doubleword pairs allow), a blend weight from
+    /// the edge cases, and the owner notification a fake (unwinding at
+    /// either call).
+    pub(crate) fn twpigd_lighting_blend_setup(c: &mut Cpu, seed: u32) {
+        const B: u32 = 0x00b0_0000;
+        let mut r = machine(c, seed, 0x002b_d5a8, 2);
+        let this = B + 4 * (seed % 2);
+        let p = B + 0x100 + 4 * ((seed / 2) % 2);
+        for i in 0..0x18 {
+            c.bus.write32(this + 4 * i, r.f32(4.0));
+            c.bus.write32(p + 4 * i, r.f32(4.0));
+        }
+        let vt = vtable(c, &mut r, &[0x218]);
+        c.bus.write32(this + 4, vt);
+        c.g[A0][0] = this as u64;
+        c.g[A1][0] = p as u64;
+        c.f[12] = if seed % 3 == 0 {
+            r.edge_f32()
+        } else {
+            r.f32(1.0)
+        };
+        c.pc = 0x002b_d5a8;
+    }
+
+    #[test]
+    fn twpigd_lighting_blend_matches() {
+        covered(
+            ee::s08::f_002bd5a8__generated,
+            twpigd_lighting_blend,
+            200,
+            &twpigd_lighting_blend_setup,
+        );
+    }
+
+    // -- 0x002bd1b8 tWPIGD_ScreenTint_Blend -----------------------------------
+
+    /// `tWPIGD_ScreenTint_Blend`: the tint at a random data address with six
+    /// random `{current, target}` pairs (edge-case floats on some), a
+    /// keyframe with random values (on one seed in seven it overlaps the
+    /// tint's pairs, which checks the load/store order), t (f12) in
+    /// [-1.2, 1.2) or an edge case, and a vtable whose hook is a fake
+    /// (random this-delta) that unwinds on either call on some seeds.
+    #[test]
+    fn twpigd_screen_tint_blend_matches() {
+        use crate::difftest::fakes::{covered, machine, ptr, FAKE};
+        use screen_tint::*;
+        covered(
+            ee::s08::f_002bd1b8__generated,
+            twpigd_screen_tint_blend,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b_d1b8, 2);
+                c.pc = 0x002b_d1b8;
+                let this = ptr(&mut r) & !0xfff;
+                for i in 0..12 {
+                    let v = if r.next_u32() % 4 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(500.0)
+                    };
+                    c.bus.write32(this + PAIRS + 4 * i, v);
+                }
+                let key = if seed % 7 == 0 {
+                    this + 4 * (r.next_u32() % 12)
+                } else {
+                    let k = this + 0x400;
+                    for i in 0..6 {
+                        let v = if r.next_u32() % 8 == 0 {
+                            r.edge_f32()
+                        } else {
+                            r.f32(500.0)
+                        };
+                        c.bus.write32(k + KEY_VALUES + 4 * i, v);
+                    }
+                    k
+                };
                 let vt = this + 0x800;
                 c.bus
                     .write16(vt + VT_HOOK_DELTA, (r.next_u32() as i16 & !3) as u16);

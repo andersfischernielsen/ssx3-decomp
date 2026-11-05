@@ -18,6 +18,10 @@ use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::rider::fcc_lt;
+pub(crate) use crate::game::ai::rider::fr_3 as fr_2;
+pub(crate) use crate::game::ai::rider::gp_lit;
+pub(crate) use crate::game::ai::rider::set_fr;
 pub(crate) use crate::game::animation::rideranimbase::sw as sw_2;
 pub(crate) use crate::game::be::bedbreward::BUILTIN_DELETE_ADDR;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
@@ -197,6 +201,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_6518,
         rider_base_update_cheat_code,
         "RiderBase_UpdateCheatCode",
+    ),
+    (
+        0x002f_5400,
+        world_light_man_get_instance_lighting,
+        "WorldLightMan_GetInstanceLighting",
     ),
 ];
 
@@ -2803,6 +2812,602 @@ pub(crate) fn afx_emit_sparks(c: &mut Cpu) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// WorldLightMan_GetInstanceLighting (0x002f5400)
+// ---------------------------------------------------------------------------
+
+/// `WorldLightMan` fields: the world, the instance nodes (32 of 0x180
+/// bytes), the 32 hash heads and the node count.
+pub(crate) const WLM_WORLD: u32 = 0x4;
+
+pub(crate) const WLM_NODES: u32 = 0x210;
+
+pub(crate) const WLM_NODE_SIZE: u32 = 0x180;
+
+pub(crate) const WLM_MAX_NODES: u64 = 0x20;
+
+pub(crate) const WLM_HEADS: u32 = 0x3210;
+
+pub(crate) const WLM_COUNT: u32 = 0x3290;
+
+/// Instance node fields: id, priority, current lighting (0xa0 bytes),
+/// position, overlap region, target lighting (0xa0 bytes), hash links.
+pub(crate) const WLN_ID: u32 = 0x0;
+
+pub(crate) const WLN_PRIORITY: u32 = 0x4;
+
+pub(crate) const WLN_CUR: u32 = 0x10;
+
+pub(crate) const WLN_POS: u32 = 0xb0;
+
+pub(crate) const WLN_BOX: u32 = 0xc0;
+
+pub(crate) const WLN_TARGET: u32 = 0xd0;
+
+pub(crate) const WLN_NEXT: u32 = 0x170;
+
+pub(crate) const WLN_PREV: u32 = 0x174;
+
+/// Overlap region fields: id, priority, bounds (min, max), cell.
+pub(crate) const WLB_ID: u32 = 0x0;
+
+pub(crate) const WLB_PRIORITY: u32 = 0x4;
+
+pub(crate) const WLB_MIN: u32 = 0x10;
+
+pub(crate) const WLB_MAX: u32 = 0x20;
+
+pub(crate) const WLB_CELL: u32 = 0x30;
+
+/// Instance fields: the model (0 for a plain instance), the position, the
+/// lighting key.
+pub(crate) const INST_MODEL: u32 = 0xc;
+
+pub(crate) const INST_POS: u32 = 0x40;
+
+pub(crate) const INST_KEY: u32 = 0x78;
+
+/// gp-relative globals: the frame state (`+0x18` the priority stamp), the
+/// irradiance override flag, the default irradiance index; `.lit4` -99999.
+pub(crate) const GP_FRAME_STATE: u32 = 0x2a74;
+
+pub(crate) const GP_IRRADIANCE_OVERRIDE: u32 = 0xa74;
+
+pub(crate) const GP_DEFAULT_IRRADIANCE: u32 = 0x12d4;
+
+pub(crate) const GP_NEG_99999: u32 = 0x38b4;
+
+/// The irradiance table and the "resolved" tag of an irradiance reference.
+pub(crate) const IRRADIANCE_TABLE: u32 = 0x0050_47f8;
+
+pub(crate) const IRRADIANCE_RESOLVED: u64 = 0x12_3400;
+
+pub(crate) const WLM_EVICT_OLDEST: Callee = Callee {
+    addr: 0x002f_59d0,
+    f: ee::s09::f_002f59d0,
+};
+
+pub(crate) const WLM_GET_OVERLAP_REGION: Callee = Callee {
+    addr: 0x002f_5a70,
+    f: ee::s09::f_002f5a70,
+};
+
+pub(crate) const IRRADIANCE_GET_OVERRIDE: Callee = Callee {
+    addr: 0x002e_e2f8,
+    f: ee::s09::f_002ee2f8,
+};
+
+pub(crate) const WLM_ADD_POINT_LIGHTS: Callee = Callee {
+    addr: 0x002f_5af0,
+    f: ee::s09::f_002f5af0,
+};
+
+pub(crate) const INSTANCE_GET_NODE_MATRIX: u32 = 0x0034_fed8;
+
+pub(crate) const OVERLAP_LIST_GATHER_TYPE2: u32 = 0x0033_1450;
+
+pub(crate) const IRRADIANCE_FIND_INDEX: u32 = 0x0038_ac50;
+
+pub(crate) const IRRADIANCE_GET_ENTRY: u32 = 0x0038_abf8;
+
+/// Copy a lighting set (0xa0 bytes, 0x20 per step) from `v0` to `v1` up
+/// to `end` (in `a0` or `s7`), with `lq`/`sq` through `t0`/`t1` (GPR
+/// numbers `lo`, `lo + 1`); back-edge event checks at `head`.
+pub(crate) fn copy_lighting(c: &mut Cpu, end_reg: usize, lo: usize, head: u32) {
+    loop {
+        c.cycles += 7;
+        let src = r32(c, V0);
+        let dst = r32(c, V1);
+        c.lq(lo, src);
+        c.lq(lo + 1, src + 0x10);
+        c.sq(lo, dst);
+        c.sq(lo + 1, dst + 0x10);
+        c.g[V0][0] = sx(src.wrapping_add(0x20));
+        let more = c.g[V0][0] != c.g[end_reg][0];
+        c.g[V1][0] = sx(dst.wrapping_add(0x20));
+        if !more {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// The instance's position into `sp+0` (and `sp+0x10` / `sp+0x50`): the
+/// model node matrix's translation (`v0`, the model, non-zero; `a0` set by
+/// the caller), or the plain instance position.
+pub(crate) fn instance_position(
+    c: &mut Cpu,
+    s: u32,
+    matrix_cycles: u64,
+    plain_cycles: u64,
+    ret: u32,
+) -> crate::call::Flow {
+    let obj = r32(c, S0);
+    if c.g[V0][0] != 0 {
+        c.cycles += matrix_cycles;
+        c.g[A1][0] = 0;
+        c.g[A2][0] = sx(s + 0x10);
+        call_ptr(c, INSTANCE_GET_NODE_MATRIX, ret)?;
+        c.lq(V0, s + 0x40);
+        c.sq(V0, s);
+        c.sq(V0, s + 0x50);
+    } else {
+        c.cycles += plain_cycles;
+        c.lq(V0, obj + INST_POS);
+        c.sq(V0, s);
+        c.sq(V0, s + 0x10);
+    }
+    Ok(())
+}
+
+/// Resolve the irradiance reference in `s0` (tagging it resolved), fetch
+/// its entry and copy it into the node's target (`s4`).
+pub(crate) fn resolve_irradiance(
+    c: &mut Cpu,
+    ret_find: u32,
+    ret_get: u32,
+    head: u32,
+) -> crate::call::Flow {
+    c.cycles += 4;
+    let r = r32(c, S0);
+    c.g[V0][0] = Addr(r + 4).lw(c);
+    c.g[S1][0] |= 0x3400;
+    c.g[S5][0] = 0x50_0000;
+    if c.g[V0][0] != c.g[S1][0] {
+        c.cycles += 5;
+        c.g[A0][0] = sx(IRRADIANCE_TABLE);
+        c.g[A1][0] = c.g[S0][0];
+        call_ptr(c, IRRADIANCE_FIND_INDEX, ret_find)?;
+        Addr(r).sw(c, c.g[V0][0]);
+        Addr(r + 4).sw(c, c.g[S1][0]);
+    }
+    c.cycles += 5;
+    c.g[A1][0] = Addr(r).lw(c);
+    c.g[A0][0] = sx(IRRADIANCE_TABLE);
+    call_ptr(c, IRRADIANCE_GET_ENTRY, ret_get)?;
+    c.g[V1][0] = c.g[S4][0];
+    c.g[A0][0] = sx(r32(c, V0).wrapping_add(0xa0));
+    copy_lighting(c, A0, A1, head);
+    c.cycles += 2;
+    c.g[V0][0] = c.g[S4][0];
+    Ok(())
+}
+
+/// `Lighting* WorldLightMan_GetInstanceLighting(WorldLightMan* self,
+/// Instance* inst, int force)` (0x002f5400): the lighting set for a world
+/// instance, cached per instance key in 32 hashed nodes. A new instance
+/// takes a free node (or evicts the oldest) and is lit from scratch; a
+/// cached one is re-lit only when `force` is set and it moved more than 10
+/// units (its irradiance reloaded past 500). Re-lighting refreshes the
+/// node's overlap region (a fresh one, or rebuilt as a 1000-unit box when
+/// the position left it), reloads the irradiance (override, the world's
+/// two irradiance references, or the default entry), and adds the point
+/// lights to the copy. Returns `&node->cur`.
+pub fn world_light_man_get_instance_lighting(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x120);
+        frame.save(c, S0, 0x110);
+        frame.save(c, S1, 0x100);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S3, 0xe0);
+        c.g[S1][0] = 0;
+        frame.save(c, S5, 0xc0);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S6, 0xb0);
+        frame.save(c, S2, 0xf0);
+        c.g[S6][0] = c.g[A2][0];
+        frame.save(c, S4, 0xd0);
+        frame.save(c, S7, 0xa0);
+        frame.save(c, FP, 0x90);
+        frame.save_ra(c, 0x80);
+        let s = sp(c);
+        let obj = r32(c, S0);
+        let this = r32(c, S3);
+        let gp = r32(c, GP);
+
+        // The instance's hash chain.
+        let key = Addr(obj + INST_KEY).lw(c);
+        c.g[A0][0] = key;
+        c.g[V1][0] = sx((key as u32) >> 8);
+        c.g[S5][0] = c.g[V1][0] & 0x1f;
+        let slot = r32(c, S5);
+        c.g[V0][0] = sx(this.wrapping_add(slot << 2));
+        c.g[S2][0] = Addr(r32(c, V0) + WLM_HEADS).lw(c);
+        c.g[A1][0] = Addr(gp + GP_FRAME_STATE).lw(c);
+        if c.g[S2][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S2) + WLN_ID).lw(c);
+            if c.g[V0][0] == c.g[A0][0] {
+                c.g[S1][0] = 1;
+            } else {
+                c.cycles += 2;
+                c.g[S2][0] = Addr(r32(c, S2) + WLN_NEXT).lw(c);
+                // 0x002f5470
+                loop {
+                    c.cycles += 2;
+                    if c.g[S2][0] == 0 {
+                        break;
+                    }
+                    c.cycles += 4;
+                    c.g[V1][0] = Addr(r32(c, S2) + WLN_ID).lw(c);
+                    c.g[V0][0] = Addr(obj + INST_KEY).lw(c);
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.g[S2][0] = Addr(r32(c, S2) + WLN_NEXT).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x002f_5470);
+                        }
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[S1][0] = 1;
+                    break;
+                }
+            }
+        }
+
+        // 0x002f548c: a new node for a new instance.
+        c.cycles += 2;
+        c.g[S4][0] = Addr(r32(c, A1) + 0x18).lw(c);
+        if c.g[S1][0] == 0 {
+            c.cycles += 4;
+            c.g[A0][0] = Addr(this + WLM_COUNT).lw(c);
+            let fits = c.g[A0][0] < WLM_MAX_NODES;
+            c.g[V0][0] = WLM_NODE_SIZE as u64;
+            if fits {
+                c.cycles += 6;
+                let count = r32(c, A0);
+                c.g[V1][0] = sx(count.wrapping_add(1));
+                let off = abi::mult(c, count, WLM_NODE_SIZE);
+                c.g[V0][0] = sx(off);
+                Addr(this + WLM_COUNT).sw(c, c.g[V1][0]);
+                let off = off.wrapping_add(WLM_NODES);
+                c.g[V0][0] = sx(off);
+                c.g[S2][0] = sx(this.wrapping_add(off));
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A1][0] = c.g[S4][0];
+                WLM_EVICT_OLDEST.call(c, 0x002f_54c8)?;
+                c.g[S2][0] = c.g[V0][0];
+            }
+            // 0x002f54cc: link it at the head of its chain.
+            c.cycles += 9;
+            let node = r32(c, S2);
+            c.g[A0][0] = Addr(obj + INST_KEY).lw(c);
+            c.g[V1][0] = sx(slot << 2);
+            Addr(node + WLN_ID).sw(c, c.g[A0][0]);
+            let head = this.wrapping_add(WLM_HEADS).wrapping_add(slot << 2);
+            c.g[V0][0] = sx(head);
+            c.g[A0][0] = Addr(head).lw(c);
+            Addr(node + WLN_PREV).sw(c, 0);
+            Addr(node + WLN_NEXT).sw(c, c.g[A0][0]);
+            if c.g[A0][0] != 0 {
+                c.cycles += 1;
+                Addr(r32(c, A0) + WLN_PREV).sw(c, c.g[S2][0]);
+            }
+            c.cycles += 1;
+            Addr(head).sw(c, c.g[S2][0]);
+        }
+
+        // 0x002f54f8: stamp it; moved (s4) / reload (s5).
+        c.cycles += 4;
+        let node = r32(c, S2);
+        Addr(node + WLN_PRIORITY).sw(c, c.g[S4][0]);
+        c.g[S5][0] = 0;
+        c.g[S4][0] = 0;
+        if c.g[S1][0] == 0 {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(obj + INST_MODEL).lw(c);
+            c.g[S5][0] = 1;
+            c.g[S4][0] = 1;
+            if c.g[V0][0] != 0 {
+                c.cycles += 8;
+                c.g[A0][0] = c.g[S0][0];
+            }
+            instance_position(c, s, 0, 4, 0x002f_5528)?;
+        } else {
+            c.cycles += 2;
+            if c.g[S6][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(obj + INST_MODEL).lw(c);
+                c.g[A0][0] = c.g[S0][0];
+                instance_position(c, s, 7, 3, 0x002f_5568)?;
+                // 0x002f5584: how far it moved since it was lit.
+                c.cycles += 22;
+                c.lqc2(3, s);
+                c.lqc2(4, node + WLN_POS);
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, s + 0x20);
+                c.g[AT][0] = 0x4120_0000;
+                set_fr(c, 0, FpuF32(0x4120_0000));
+                c.lq(V0, s + 0x20);
+                c.sq(V0, s + 0x10);
+                c.lqc2(3, s + 0x10);
+                {
+                    let v = c.vu0();
+                    v.add(0b1000, 6, 0, Src::Bc(0, W));
+                    v.mul(0b1111, 4, 3, Src::Vec(3));
+                    v.adda(0b1000, 4, Src::Bc(4, Y));
+                    v.madda(0b1000, 6, Src::Bc(4, Z));
+                    v.madd(0b1000, 4, 6, Src::Bc(4, W));
+                    v.sqrt(4, 0);
+                    v.waitq();
+                }
+                c.cfc2(V1, 22);
+                c.mtc1(V1, 1);
+                let dist = fr_2(c, 1);
+                if fcc_lt(c, FpuF32(0x4120_0000), dist) {
+                    c.g[S4][0] = 1;
+                }
+                c.cycles += 6;
+                c.g[AT][0] = 0x43fa_0000;
+                set_fr(c, 0, FpuF32(0x43fa_0000));
+                if fcc_lt(c, FpuF32(0x43fa_0000), dist) {
+                    c.g[S5][0] = 1;
+                }
+            }
+        }
+
+        // 0x002f55f4
+        c.cycles += 2;
+        c.g[S6][0] = sx(node + WLN_CUR);
+        if c.g[S4][0] != 0 {
+            // The node's overlap region: its own, or a fresh one.
+            c.cycles += 5;
+            c.lq(V0, s);
+            c.g[A0][0] = 0;
+            c.g[V1][0] = Addr(node + WLN_BOX).lw(c);
+            c.sq(V0, node + WLN_POS);
+            let mut own = false;
+            if c.g[V1][0] != 0 {
+                c.cycles += 4;
+                c.g[V1][0] = Addr(r32(c, V1) + WLB_ID).lw(c);
+                c.g[V0][0] = Addr(node + WLN_ID).lw(c);
+                if c.g[V1][0] == c.g[V0][0] {
+                    c.g[V1][0] = Addr(node + WLN_BOX).lw(c);
+                    own = true;
+                }
+            }
+            if !own {
+                c.cycles += 8;
+                c.g[A1][0] = Addr(node + WLN_PRIORITY).lw(c);
+                c.g[A0][0] = c.g[S3][0];
+                WLM_GET_OVERLAP_REGION.call(c, 0x002f_562c)?;
+                c.g[V1][0] = Addr(node + WLN_ID).lw(c);
+                c.g[A0][0] = 1;
+                Addr(node + WLN_BOX).sw(c, c.g[V0][0]);
+                Addr(r32(c, V0) + WLB_ID).sw(c, c.g[V1][0]);
+                c.g[V1][0] = Addr(node + WLN_BOX).lw(c);
+            }
+            // 0x002f5640
+            c.cycles += 3;
+            c.g[V0][0] = Addr(node + WLN_PRIORITY).lw(c);
+            Addr(r32(c, V1) + WLB_PRIORITY).sw(c, c.g[V0][0]);
+            let mut rebuild = c.g[A0][0] != 0;
+            if !rebuild {
+                // 0x002f5658: is the position strictly inside the region's
+                // bounds (v1)? Failing x-min or z-max, or passing, goes
+                // through 0x002f56d4; v0 ends 1 either way.
+                let bx = Addr(node + WLN_BOX).lw(c);
+                c.g[V0][0] = bx;
+                let bx = bx as u32;
+                c.g[V1][0] = 0;
+                let via_d4 = 'test: {
+                    for i in 0..3u32 {
+                        c.cycles += if i == 0 { 7 } else { 6 };
+                        let lo = Addr(bx + WLB_MIN + 4 * i).read_fpu(c);
+                        let pos = Addr(node + WLN_POS + 4 * i).read_fpu(c);
+                        set_fr(c, 0, lo);
+                        set_fr(c, 1, pos);
+                        if !fcc_lt(c, lo, pos) {
+                            if i == 0 {
+                                break 'test true;
+                            }
+                            c.g[V0][0] = 1;
+                            break 'test false;
+                        }
+                        c.cycles += 5;
+                        let hi = Addr(bx + WLB_MAX + 4 * i).read_fpu(c);
+                        set_fr(c, 0, hi);
+                        if !fcc_lt(c, pos, hi) {
+                            if i == 2 {
+                                break 'test true;
+                            }
+                            c.g[V0][0] = 1;
+                            break 'test false;
+                        }
+                    }
+                    c.g[V1][0] = 1;
+                    true
+                };
+                if via_d4 {
+                    c.cycles += 1;
+                    c.g[V0][0] = 1;
+                }
+                // 0x002f56d8
+                c.cycles += 3;
+                if c.g[V1][0] == 0 {
+                    c.g[A0][0] = c.g[V0][0];
+                }
+                c.g[S4][0] = sx(node + WLN_TARGET);
+                rebuild = c.g[A0][0] != 0;
+            }
+            if rebuild {
+                // 0x002f56e4: a 1000-unit box around the position, its
+                // overlap list gathered again.
+                c.cycles += 34;
+                c.g[AT][0] = 0x447a_0000;
+                let k = FpuF32(0x447a_0000);
+                set_fr(c, 0, k);
+                c.g[A0][0] = Addr(node + WLN_BOX).lw(c);
+                Addr(s + 0x40).write_fpu(c, k);
+                Addr(s + 0x44).write_fpu(c, k);
+                Addr(s + 0x48).write_fpu(c, k);
+                Addr(s + 0x4c).sw(c, 0);
+                c.lqc2(3, node + WLN_POS);
+                c.lqc2(4, s + 0x40);
+                c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, s + 0x50);
+                c.lq(V0, s + 0x50);
+                Addr(s + 0x68).write_fpu(c, k);
+                c.sq(V0, s + 0x30);
+                Addr(s + 0x60).write_fpu(c, k);
+                Addr(s + 0x64).write_fpu(c, k);
+                Addr(s + 0x6c).sw(c, 0);
+                c.lqc2(3, node + WLN_POS);
+                c.lqc2(4, s + 0x60);
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, s + 0x70);
+                c.lq(V0, s + 0x70);
+                c.lq(V1, s + 0x30);
+                c.sq(V0, s + 0x20);
+                c.sq(V0, s + 0x50);
+                c.sq(V1, s + 0x10);
+                let bx = r32(c, A0);
+                c.sq(V1, bx + WLB_MIN);
+                c.lq(V0, s + 0x20);
+                c.sq(V0, bx + WLB_MAX);
+                let bx = Addr(node + WLN_BOX).lw(c) as u32;
+                c.g[A1][0] = sx(bx);
+                c.g[A0][0] = Addr(bx + WLB_CELL).lw(c);
+                c.g[A1][0] = sx(bx + WLB_MIN);
+                call_ptr(c, OVERLAP_LIST_GATHER_TYPE2, 0x002f_5768)?;
+                c.g[S4][0] = sx(node + WLN_TARGET);
+            }
+
+            // 0x002f576c: reload the target irradiance.
+            c.cycles += 4;
+            c.g[S6][0] = sx(node + WLN_CUR);
+            c.g[S7][0] = sx(node + WLN_NEXT);
+            c.g[FP][0] = sx(node + WLN_POS);
+            if c.g[S5][0] == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = c.g[S4][0];
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(gp + GP_IRRADIANCE_OVERRIDE).lw(c);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 4;
+                    IRRADIANCE_GET_OVERRIDE.call(c, 0x002f_5790)?;
+                    c.g[V1][0] = c.g[S4][0];
+                    c.g[A0][0] = sx(r32(c, V0).wrapping_add(0xa0));
+                    copy_lighting(c, A0, A1, 0x002f_5798);
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S4][0];
+                } else {
+                    c.g[A1][0] = Addr(this + WLM_WORLD).lw(c);
+                    // 0x002f57bc: the world samples the ground light under
+                    // the position, then its irradiance references.
+                    c.cycles += 19;
+                    let world = r32(c, A1);
+                    c.f[12] = Addr(node + WLN_POS).read_u32(c);
+                    c.g[V1][0] = Addr(world + 4).lw(c);
+                    let vt = r32(c, V1);
+                    c.f[13] = Addr(node + WLN_POS + 4).read_u32(c);
+                    c.g[A0][0] = Addr(vt + 0x10).lh(c);
+                    c.g[V0][0] = Addr(vt + 0x14).lw(c);
+                    c.f[14] = gp_lit(c, GP_NEG_99999).0;
+                    c.g[A0][0] = sx(world.wrapping_add(r32(c, A0)));
+                    call_ptr(c, r32(c, V0), 0x002f_57dc)?;
+                    c.g[V1][0] = Addr(this + WLM_WORLD).lw(c);
+                    c.g[A2][0] = Addr(r32(c, V1)).lw(c);
+                    c.g[A1][0] = Addr(r32(c, A2) + 4).lw(c);
+                    c.g[A0][0] = Addr(r32(c, A1) + 0x140).lh(c);
+                    c.g[V0][0] = Addr(r32(c, A1) + 0x144).lw(c);
+                    c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, A0)));
+                    call_ptr(c, r32(c, V0), 0x002f_57f8)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+                    c.g[S1][0] = 0x12_0000;
+                    if c.g[V0][0] != 0 {
+                        resolve_irradiance(c, 0x002f_5824, 0x002f_5838, 0x002f_5840)?;
+                    } else {
+                        // 0x002f5864: the second reference.
+                        c.cycles += 11;
+                        c.g[V0][0] = Addr(this + WLM_WORLD).lw(c);
+                        c.g[A1][0] = Addr(r32(c, V0)).lw(c);
+                        c.g[V1][0] = Addr(r32(c, A1) + 4).lw(c);
+                        c.g[A0][0] = Addr(r32(c, V1) + 0x128).lh(c);
+                        c.g[V0][0] = Addr(r32(c, V1) + 0x12c).lw(c);
+                        c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+                        call_ptr(c, r32(c, V0), 0x002f_5880)?;
+                        c.g[S0][0] = c.g[V0][0];
+                        c.g[V0][0] = Addr(r32(c, S0)).lb(c);
+                        c.g[S1][0] = 0x12_0000;
+                        if c.g[V0][0] != 0 {
+                            resolve_irradiance(c, 0x002f_58ac, 0x002f_58c0, 0x002f_58c8)?;
+                        } else {
+                            // 0x002f58ec: the default entry.
+                            c.cycles += 6;
+                            c.g[A0][0] = 0x50_0000;
+                            c.g[A1][0] = Addr(gp + GP_DEFAULT_IRRADIANCE).lw(c);
+                            c.g[A0][0] = sx(IRRADIANCE_TABLE);
+                            call_ptr(c, IRRADIANCE_GET_ENTRY, 0x002f_58fc)?;
+                            c.g[V1][0] = c.g[S4][0];
+                            c.g[A0][0] = sx(r32(c, V0).wrapping_add(0xa0));
+                            copy_lighting(c, A0, A1, 0x002f_5904);
+                            c.cycles += 1;
+                            c.g[V0][0] = c.g[S4][0];
+                        }
+                    }
+                }
+            }
+
+            // 0x002f5924: cur = target, plus the point lights.
+            c.cycles += 1;
+            c.g[V1][0] = c.g[S6][0];
+            copy_lighting(c, S7, A0, 0x002f_5928);
+            c.cycles += 7;
+            c.g[V0][0] = Addr(node + WLN_BOX).lw(c);
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = c.g[FP][0];
+            c.g[A3][0] = c.g[S6][0];
+            c.g[A2][0] = Addr(r32(c, V0) + WLB_CELL).lw(c);
+            c.g[T0][0] = 4;
+            WLM_ADD_POINT_LIGHTS.call(c, 0x002f_5960)?;
+        }
+
+        // 0x002f5960
+        c.cycles += 13;
+        c.g[V0][0] = c.g[S6][0];
+        frame.restore(c, S0, 0x110);
+        frame.restore(c, S1, 0x100);
+        frame.restore(c, S2, 0xf0);
+        frame.restore(c, S3, 0xe0);
+        frame.restore(c, S4, 0xd0);
+        frame.restore(c, S5, 0xc0);
+        frame.restore(c, S6, 0xb0);
+        frame.restore(c, S7, 0xa0);
+        frame.restore(c, FP, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3716,6 +4321,173 @@ pub(crate) mod tests {
                 c.bus.write32(SEQS + 8 + 4, SEQ);
                 let flags = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
                 c.bus.write64(SEQ + 0xb0, flags);
+            },
+        );
+    }
+    use super::*;
+
+    /// `WorldLightMan_GetInstanceLighting`: a light manager with 0..=32
+    /// cached nodes in consistent hash chains, overlap regions sharing one
+    /// empty cell (so the gather and the point lights take their short
+    /// paths), and the world's lookups as fakes (their irradiance
+    /// references forced to fixture records). Seeds cover a cached / new
+    /// instance (free node or eviction), a plain or modelled instance
+    /// (node matrix through fakes), `force` with small / medium / large
+    /// moves, the node's own region inside / outside its bounds or a fresh
+    /// region, and every irradiance source (override, first or second
+    /// reference resolved or by name, default); some fake calls unwind.
+    #[test]
+    fn world_light_man_get_instance_lighting_matches() {
+        use crate::difftest::elf_image;
+        use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
+        const THIS: u32 = 0x0085_0000;
+        const CELL: u32 = 0x0087_0000;
+        const TREE: u32 = 0x0087_1000;
+        const REF1: u32 = 0x0088_0000;
+        const REF2: u32 = 0x0088_0100;
+        const ENTRIES: u32 = 0x0089_0000;
+        const NAMES: u32 = 0x0089_1000;
+        const WORLD: u32 = 0x008a_0000;
+        const WORLD_VT: u32 = 0x008a_1000;
+        const INNER: u32 = 0x008a_2000;
+        const INNER_VT: u32 = 0x008a_3000;
+        const FRAME_STATE: u32 = 0x008a_4000;
+        const OBJ: u32 = 0x008b_0000;
+        const MODEL: u32 = 0x008b_1000;
+        const MODEL_VT: u32 = 0x008b_2000;
+        check(
+            ee::s09::f_002f5400__generated,
+            world_light_man_get_instance_lighting,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f54, 5);
+                elf_image(c);
+                c.pc = 0x002f_5400;
+                let gp = GAME_GP;
+                let fl = |x: f32| x.to_bits();
+                let prio = 100 + seed % 50;
+                put_words(c, FRAME_STATE + 0x18, &[prio]);
+                put_words(c, gp + GP_FRAME_STATE, &[FRAME_STATE]);
+
+                // World lookups: all fakes (delta 0).
+                put_words(c, THIS + WLM_WORLD, &[WORLD]);
+                put_words(c, WORLD, &[INNER, WORLD_VT]);
+                put_words(c, WORLD_VT + 0x10, &[0, FAKE]);
+                put_words(c, INNER + 4, &[INNER_VT]);
+                put_words(c, INNER_VT + 0x140, &[0, FAKE + 0x10]);
+                put_words(c, INNER_VT + 0x128, &[0, FAKE + 0x20]);
+
+                // Irradiance: table of 2 named entries, references.
+                put_words(c, IRRADIANCE_TABLE, &[0, 2, ENTRIES, NAMES]);
+                fill(c, &mut r, ENTRIES - 0xa0, 3 * 0x28);
+                put_words(c, NAMES, &[0x0063_6261, 0, 0x007a_7978, 0]);
+                let reference = |c: &mut Cpu, r: &mut Rng, at: u32, k: u32| match k {
+                    0 => put_words(c, at, &[0, 0]),
+                    1 => put_words(c, at, &[r.next_u32() % 3, IRRADIANCE_RESOLVED as u32]),
+                    2 => put_words(c, at, &[0x007a_7978, 0]),
+                    _ => put_words(c, at, &[0x0071_7171, 0]),
+                };
+                let k1 = r.next_u32() % 4;
+                let k2 = r.next_u32() % 4;
+                reference(c, &mut r, REF1, k1);
+                reference(c, &mut r, REF2, k2);
+                put_words(
+                    c,
+                    gp + 0x24c0,
+                    &[r.next_u32() % 3, IRRADIANCE_RESOLVED as u32],
+                );
+                put_words(c, gp + GP_IRRADIANCE_OVERRIDE, &[(seed % 5 == 0) as u32]);
+                put_words(c, gp + GP_DEFAULT_IRRADIANCE, &[r.next_u32() % 4]);
+                put_words(c, gp - GP_NEG_99999, &[fl(-99999.0)]);
+
+                // The instance.
+                let pos = [r.f32(800.0), r.f32(800.0), r.f32(800.0), fl(1.0)];
+                let modelled = seed % 3 == 0;
+                put_words(c, OBJ + INST_MODEL, &[if modelled { MODEL } else { 0 }]);
+                put_words(c, MODEL + 0xc, &[MODEL_VT]);
+                put_words(c, MODEL_VT + 0xd0, &[0, FAKE + 0x30]);
+                put_words(c, MODEL_VT + 0xe8, &[0, FAKE + 0x40]);
+                put_vec(c, OBJ + INST_POS, pos);
+
+                // Overlap regions (some free) sharing the empty cell.
+                put_words(c, CELL, &[TREE]);
+                for i in 0..8 {
+                    let b = THIS + 0x10 + i * 0x40;
+                    let id = if r.next_u32() % 3 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32()
+                    };
+                    put_words(c, b, &[id, r.next_u32() % prio]);
+                    put_words(c, b + WLB_CELL, &[CELL]);
+                }
+
+                // Cached nodes in consistent chains.
+                let count = match seed % 4 {
+                    0 => 32,
+                    _ => r.next_u32() % 33,
+                };
+                put_words(c, THIS + WLM_COUNT, &[count]);
+                let mut ids = Vec::new();
+                for i in 0..count {
+                    let n = THIS + WLM_NODES + i * WLM_NODE_SIZE;
+                    let id = (r.next_u32() & !0x1f00) | (r.next_u32() % 4) << 8;
+                    ids.push(id);
+                    put_words(c, n, &[id, r.next_u32() % (prio + 1)]);
+                    fill(c, &mut r, n + WLN_CUR, 0x28);
+                    fill(c, &mut r, n + WLN_TARGET, 0x28);
+                    // Its position: on the instance, moved a little, a lot.
+                    let d = [0.0f32, 30.0, 700.0][(r.next_u32() % 3) as usize];
+                    let p = [fl(f32::from_bits(pos[0]) + d), pos[1], pos[2], fl(1.0)];
+                    put_vec(c, n + WLN_POS, p);
+                    // Its region: none, its own (bounds around the instance,
+                    // sometimes not containing it), or someone else's.
+                    let b = THIS + 0x10 + (r.next_u32() % 8) * 0x40;
+                    match r.next_u32() % 4 {
+                        0 => put_words(c, n + WLN_BOX, &[0]),
+                        1 => {
+                            put_words(c, b, &[!id]);
+                            put_words(c, n + WLN_BOX, &[b]);
+                        }
+                        _ => {
+                            put_words(c, b, &[id]);
+                            put_words(c, n + WLN_BOX, &[b]);
+                            let mut lo = [0u32; 4];
+                            let mut hi = [0u32; 4];
+                            for a in 0..3 {
+                                let v = f32::from_bits(pos[a]);
+                                let out = r.next_u32() % 8;
+                                lo[a] = fl(if out == 0 { v + 5.0 } else { v - 900.0 });
+                                hi[a] = fl(if out == 1 { v - 5.0 } else { v + 900.0 });
+                            }
+                            put_vec(c, b + WLB_MIN, lo);
+                            put_vec(c, b + WLB_MAX, hi);
+                        }
+                    }
+                    // Link at the head of its chain.
+                    let head = THIS + WLM_HEADS + ((id >> 8) & 0x1f) * 4;
+                    let old = c.bus.read32(head);
+                    put_words(c, n + WLN_NEXT, &[old, 0]);
+                    if old != 0 {
+                        put_words(c, old + WLN_PREV, &[n]);
+                    }
+                    put_words(c, head, &[n]);
+                }
+                let key = if !ids.is_empty() && seed % 2 == 0 {
+                    ids[(r.next_u32() as usize) % ids.len()]
+                } else {
+                    (r.next_u32() & !0x1f00) | (r.next_u32() % 4) << 8
+                };
+                put_words(c, OBJ + INST_KEY, &[key]);
+
+                // Fake call results: the references (index after the world
+                // query, and the node matrix's two calls when modelled).
+                let base = if modelled { 3 } else { 1 };
+                put_words(c, LOG_RESULTS + 4 * base, &[REF1, REF2]);
+
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(OBJ);
+                c.g[A2][0] = (seed % 7 != 0) as u64;
             },
         );
     }

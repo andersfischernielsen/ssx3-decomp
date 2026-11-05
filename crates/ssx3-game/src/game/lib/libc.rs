@@ -2,13 +2,18 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
+use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::fe::splashmanager::at;
 pub(crate) use crate::game::lib::gcc::frame_ld;
 pub(crate) use crate::game::lib::gcc::frame_sd;
 pub(crate) use crate::game::lib::gcc::MULDF3;
@@ -17,7 +22,13 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -41,6 +52,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_14c0, mprec_log10, "_mprec_log10"),
     (0x0042_4558, fstat, "_fstat"),
     (0x0042_4578, kill, "_kill"),
+    (0x0041_1cd8, fpadd_parts_d, "_fpadd_parts_d"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3680,6 +3692,312 @@ pub fn vfiprintf_r(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------------------------------ _fpadd_parts_d
+
+/// `fp_number_type* _fpadd_parts_d(fp_number_type* a, fp_number_type* b,
+/// fp_number_type* tmp)` (0x411cd8, libgcc soft-float): the core of
+/// `__adddf3`/`__subdf3` on unpacked operands (class, sign, exponent,
+/// fraction; see `__unpack_d`).
+///
+/// - A NaN operand is returned as is (`a` first); infinity + infinity of
+///   opposite signs returns the static NaN (0x52adc0); an infinity or a zero
+///   operand returns the other one; zero + zero writes `tmp` as a copy of
+///   `a` with the signs and-ed.
+/// - Otherwise the smaller exponent's fraction is shifted right to align
+///   (keeping a sticky low bit), or dropped when the exponents are 64 or
+///   more apart; the fractions are added or subtracted by sign into `tmp`
+///   (negative differences flip the sign), normalised left until the
+///   implicit one reaches bit 60 and shifted right once (sticky) when the
+///   sum overflowed past it. `tmp` becomes class "number"; returns `tmp`.
+///
+/// Registers as the original: t0 = a (then a's sign), a1 = b (then b's
+/// sign, then the fraction), a3 = the exponent, t2/t3 = b's/a's fraction.
+pub fn fpadd_parts_d(c: &mut Cpu) {
+    const CLASS: u32 = 0x0;
+    const SIGN: u32 = 0x4;
+    /// The static NaN result (`0x530000 - 0x5240`).
+    const NAN: u64 = 0x0052_adc0;
+
+    'ret_a: {
+        c.cycles += 5;
+        c.g[T0][0] = c.g[A0][0];
+        c.g[A0][0] = c.lw(at(c, T0, CLASS));
+        c.g[V0][0] = (c.g[A0][0] < 2) as u64;
+        if c.g[V0][0] != 0 {
+            break 'ret_a; // a is a NaN
+        }
+        c.g[V1][0] = c.lw(at(c, A1, CLASS));
+        'ret_b: {
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[V1][0] < 2) as u64;
+            let b_nan = c.g[V0][0] != 0;
+            c.g[V0][0] = c.g[A0][0] ^ 0x4;
+            if b_nan {
+                break 'ret_b;
+            }
+            c.cycles += 2;
+            let a_inf = c.g[V0][0] == 0;
+            c.g[V0][0] = c.g[V1][0] ^ 0x4;
+            if a_inf {
+                // inf + x: x finite, or the same infinity, gives a.
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    break 'ret_a;
+                }
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(at(c, A1, SIGN));
+                c.g[V0][0] = c.lw(at(c, T0, SIGN));
+                let same = c.g[V0][0] == c.g[V1][0];
+                c.g[V0][0] = 0x0053_0000;
+                if same {
+                    break 'ret_a;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = NAN;
+                ret(c);
+                return;
+            }
+            c.cycles += 2;
+            let b_inf = c.g[V0][0] == 0;
+            c.g[V0][0] = c.g[V1][0] ^ 0x2;
+            if b_inf {
+                break 'ret_b;
+            }
+            c.cycles += 2;
+            let b_zero = c.g[V0][0] == 0;
+            c.g[V0][0] = c.g[A0][0] ^ 0x2;
+            if b_zero {
+                c.cycles += 2;
+                let a_nonzero = c.g[V0][0] != 0;
+                c.g[V0][0] = c.g[A2][0];
+                if a_nonzero {
+                    break 'ret_a;
+                }
+                // zero + zero: tmp = a with sign a.sign & b.sign.
+                c.cycles += 11;
+                c.g[A0][0] = c.ld(at(c, T0, 0));
+                c.sd(at(c, A2, 0), c.g[A0][0]);
+                c.g[V1][0] = c.ld(at(c, T0, 0x8));
+                c.sd(at(c, A2, 0x8), c.g[V1][0]);
+                c.g[A0][0] = c.ld(at(c, T0, 0x10));
+                c.sd(at(c, A2, 0x10), c.g[A0][0]);
+                c.g[V1][0] = c.lw(at(c, T0, SIGN));
+                c.g[A0][0] = c.lw(at(c, A1, SIGN));
+                c.g[V1][0] &= c.g[A0][0];
+                c.sw(at(c, A2, SIGN), c.g[V1][0]);
+                ret(c);
+                return;
+            }
+            c.cycles += 2;
+            let a_zero = c.g[V0][0] == 0;
+            c.g[V0][0] = u64::MAX;
+            if a_zero {
+                break 'ret_b;
+            }
+            fpadd_numbers(c);
+            return;
+        }
+        c.cycles += 2;
+        c.g[V0][0] = c.g[A1][0];
+        ret(c);
+        return;
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[T0][0];
+    ret(c);
+}
+
+/// `_fpadd_parts_d` on two numbers (from 0x411d74; v0 = -1, t0 = a, a1 = b,
+/// a2 = tmp): align, add, normalise, return `tmp`.
+pub(crate) fn fpadd_numbers(c: &mut Cpu) {
+    const SIGN: u32 = 0x4;
+    const EXP: u32 = 0x8;
+    const FRAC: u32 = 0x10;
+    /// The implicit one's bit (60) times two, minus one: fractions at or
+    /// below it are normalised further.
+    const NORMAL_LIMIT: u64 = (u64::MAX << 5) >> 4;
+    /// Above this the sum carried past bit 60.
+    const OVERFLOW_LIMIT: u64 = u64::MAX >> 3;
+
+    // Align the exponents.
+    'aligned: {
+        'far_apart: {
+            c.cycles += 10;
+            c.g[A3][0] = c.lw(at(c, T0, EXP)); // a.exp
+            c.g[T1][0] = c.lw(at(c, A1, EXP)); // b.exp
+            c.g[T3][0] = c.ld(at(c, T0, FRAC)); // a.frac
+            c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_sub(c.g[T1][0] as u32));
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+            c.g[A0][0] = sx(0u32.wrapping_sub(c.g[V1][0] as u32));
+            if c.g[V0][0] == 0 {
+                c.g[V1][0] = c.g[A0][0];
+            }
+            c.g[V1][0] = ((c.g[V1][0] as i64) < 64) as u64;
+            c.g[T2][0] = c.ld(at(c, A1, FRAC)); // b.frac
+            if c.g[V1][0] == 0 {
+                break 'far_apart;
+            }
+            // Shift b's fraction right while b.exp < a.exp (sticky bit 0).
+            'shift_a: {
+                'b_not_smaller: {
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                    let b_smaller = c.g[V0][0] != 0;
+                    c.g[T0][0] = c.lw(at(c, T0, SIGN));
+                    if !b_smaller {
+                        break 'b_not_smaller;
+                    }
+                    c.cycles += 2;
+                    c.g[A1][0] = c.lw(at(c, A1, SIGN));
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = c.g[T2][0] >> 1;
+                        c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(1));
+                        c.g[V1][0] = c.g[T2][0] & 0x1;
+                        c.g[A0][0] = ((c.g[T1][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                        c.g[T2][0] = c.g[V1][0] | c.g[V0][0];
+                        if c.g[A0][0] == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0041_1db8);
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[T1][0] as i64)) as u64;
+                    break 'shift_a;
+                }
+                c.cycles += 2;
+                c.g[A1][0] = c.lw(at(c, A1, SIGN));
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[T1][0] as i64)) as u64;
+            }
+            // Shift a's fraction right by b.exp - a.exp (sticky bit 0).
+            c.cycles += 2;
+            if c.g[V0][0] == 0 {
+                break 'aligned;
+            }
+            c.cycles += 1;
+            c.g[A3][0] = sx((c.g[T1][0] as u32).wrapping_sub(c.g[A3][0] as u32));
+            loop {
+                c.cycles += 7;
+                c.g[V1][0] = c.g[T3][0] >> 1;
+                c.g[V0][0] = c.g[T3][0] & 0x1;
+                c.g[T3][0] = c.g[V0][0] | c.g[V1][0];
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_sub(1));
+                if c.g[A3][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0041_1df0);
+                }
+            }
+            c.cycles += 2;
+            c.g[A3][0] = c.g[T1][0];
+            break 'aligned;
+        }
+        // 64 or more apart: the smaller operand's fraction drops out.
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[A3][0] as i64)) as u64;
+        let b_smaller = c.g[V0][0] != 0;
+        c.g[T0][0] = c.lw(at(c, T0, SIGN));
+        if b_smaller {
+            c.cycles += 3;
+            c.g[T2][0] = 0;
+            c.g[A1][0] = c.lw(at(c, A1, SIGN));
+            break 'aligned;
+        }
+        c.cycles += 3;
+        c.g[A3][0] = c.g[T1][0];
+        c.g[A1][0] = c.lw(at(c, A1, SIGN));
+        c.g[T3][0] = 0;
+    }
+
+    // Add (same signs) or subtract (the negative one from the other).
+    'normalised: {
+        c.cycles += 2;
+        let same_sign = c.g[T0][0] == c.g[A1][0];
+        c.g[V0][0] = c.g[T3][0].wrapping_add(c.g[T2][0]);
+        if same_sign {
+            c.cycles += 4;
+            c.sw(at(c, A2, SIGN), c.g[T0][0]);
+            c.sw(at(c, A2, EXP), c.g[A3][0]);
+            c.g[A1][0] = c.g[V0][0];
+            c.sd(at(c, A2, FRAC), c.g[V0][0]);
+            break 'normalised;
+        }
+        c.cycles += 2;
+        let a_negative = c.g[T0][0] != 0;
+        c.g[V0][0] = c.g[T2][0].wrapping_sub(c.g[T3][0]);
+        if !a_negative {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[T3][0].wrapping_sub(c.g[T2][0]);
+        }
+        c.cycles += 2;
+        let negative = (c.g[V0][0] as i64) < 0;
+        c.g[V1][0] = 0u64.wrapping_sub(c.g[V0][0]);
+        c.cycles += 4;
+        c.sw(at(c, A2, EXP), c.g[A3][0]);
+        if negative {
+            c.g[V0][0] = 0x1;
+            c.sd(at(c, A2, FRAC), c.g[V1][0]);
+            c.sw(at(c, A2, SIGN), c.g[V0][0]);
+        } else {
+            c.sd(at(c, A2, FRAC), c.g[V0][0]);
+            c.sw(at(c, A2, SIGN), 0);
+        }
+        // Normalise: shift left until the implicit one reaches bit 60.
+        c.cycles += 8;
+        c.g[A1][0] = c.ld(at(c, A2, FRAC));
+        c.g[V0][0] = NORMAL_LIMIT;
+        c.g[V1][0] = c.g[A1][0].wrapping_sub(1);
+        c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+        c.g[A3][0] = c.g[A1][0];
+        if c.g[V0][0] != 0 {
+            break 'normalised;
+        }
+        c.cycles += 3;
+        c.g[A1][0] = NORMAL_LIMIT;
+        loop {
+            c.cycles += 9;
+            c.g[V0][0] = c.lw(at(c, A2, EXP));
+            c.g[A0][0] = c.g[A3][0] << 1;
+            c.g[V1][0] = c.g[A0][0].wrapping_sub(1);
+            c.sd(at(c, A2, FRAC), c.g[A0][0]);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+            c.g[V1][0] = (c.g[A1][0] < c.g[V1][0]) as u64;
+            c.sw(at(c, A2, EXP), c.g[V0][0]);
+            c.g[A3][0] = c.g[A0][0];
+            if c.g[V1][0] != 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0041_1ea0);
+            }
+        }
+        c.cycles += 2;
+        c.g[A1][0] = c.g[A0][0];
+    }
+
+    // Class "number"; a carry past the implicit one shifts right once.
+    c.cycles += 6;
+    c.g[V1][0] = 0x3;
+    c.g[V0][0] = ((OVERFLOW_LIMIT) < c.g[A1][0]) as u64;
+    c.sw(at(c, A2, 0), c.g[V1][0]);
+    if c.g[V0][0] != 0 {
+        c.cycles += 7;
+        c.g[V0][0] = c.lw(at(c, A2, EXP));
+        c.g[A0][0] = c.g[A1][0] >> 1;
+        c.g[V1][0] = c.g[A1][0] & 0x1;
+        c.g[V1][0] |= c.g[A0][0];
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+        c.sd(at(c, A2, FRAC), c.g[V1][0]);
+        c.sw(at(c, A2, EXP), c.g[V0][0]);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A2][0];
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4265,5 +4583,80 @@ pub(crate) mod tests {
             );
             assert!(r.lohi.is_empty(), "seed {seed} (LO/HI): {:#?}", r.lohi);
         }
+    }
+    use super::*;
+
+    // -- 0x00411cd8 _fpadd_parts_d --------------------------------------------
+
+    /// `_fpadd_parts_d` against the generated body: every class pair (NaNs,
+    /// zeros, infinities of equal and opposite signs, numbers), exponents
+    /// equal, close (alignment shifts both ways) and 64 or more apart,
+    /// same and opposite signs (sums that carry past bit 60, differences
+    /// that cancel partly or completely and normalise left).
+    #[test]
+    fn fpadd_parts_d_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA};
+        const A: u32 = DATA;
+        const B: u32 = DATA + 0x40;
+        const TMP: u32 = DATA + 0x80;
+        check(
+            ee::s15::f_00411cd8__generated,
+            fpadd_parts_d,
+            400,
+            &|c, seed| {
+                let mut r = Rng(0x0041_1cd8 ^ (seed as u64) << 24 ^ 0x5bd1_e995);
+                scramble(c, &mut r);
+                c.pc = 0x0041_1cd8;
+                let class = |r: &mut Rng| match r.next_u32() % 10 {
+                    0 => 0,
+                    1 => 1,
+                    2 => 2,
+                    3 => 4,
+                    _ => 3,
+                };
+                let frac = |r: &mut Rng| {
+                    let f = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+                    match r.next_u32() % 4 {
+                        0 => f, // anything (NaN payloads, unnormalised)
+                        _ => (f & ((1u64 << 60) - 1)) | (1u64 << 60),
+                    }
+                };
+                let ea = (r.next_u32() % 200) as i32 - 100;
+                let eb = match r.next_u32() % 4 {
+                    0 => ea,
+                    1 => ea + (r.next_u32() % 70) as i32 - 35,
+                    2 => ea + 64 + (r.next_u32() % 10) as i32,
+                    _ => ea - 64 - (r.next_u32() % 10) as i32,
+                };
+                let fa = frac(&mut r);
+                // Near-cancellation: b's fraction close to a's.
+                let fb = if seed % 5 == 0 {
+                    fa ^ (r.next_u32() as u64 & 0xffff)
+                } else {
+                    frac(&mut r)
+                };
+                for (p, cl, e, fr) in [(A, class(&mut r), ea, fa), (B, class(&mut r), eb, fb)] {
+                    c.bus.write32(p, cl);
+                    c.bus.write32(p + 4, r.next_u32() % 2);
+                    c.bus.write32(p + 8, e as u32);
+                    c.bus.write64(p + 0x10, fr);
+                }
+                if seed % 7 == 0 {
+                    // Equal operands of opposite sign: exact cancellation.
+                    let (cl, sign, e) = (c.bus.read32(A), c.bus.read32(A + 4), c.bus.read32(A + 8));
+                    let fr = c.bus.read64(A + 0x10);
+                    c.bus.write32(B, cl);
+                    c.bus.write32(B + 4, sign ^ 1);
+                    c.bus.write32(B + 8, e);
+                    c.bus.write64(B + 0x10, fr);
+                }
+                for k in 0..6 {
+                    c.bus.write32(TMP + 4 * k, r.next_u32());
+                }
+                c.g[A0][0] = sx(A);
+                c.g[A1][0] = sx(B);
+                c.g[A2][0] = sx(TMP);
+            },
+        );
     }
 }

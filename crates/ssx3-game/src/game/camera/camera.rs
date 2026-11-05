@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -39,6 +40,7 @@ pub(crate) use crate::game::fe::feasyncfile::u32_at;
 pub(crate) use crate::game::fe::festateload::at as at_2;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::fe::ovstatepause::p;
+pub(crate) use crate::game::fe::splashmanager::stk;
 pub(crate) use crate::game::render::graphicsman::at as at_3;
 pub(crate) use crate::game::render::graphicsman::gp as gp_5;
 pub(crate) use crate::game::render::lightman::at;
@@ -359,6 +361,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0032_0bf0,
         input_binding_eval_float,
         "InputBinding_EvalFloat",
+    ),
+    (
+        0x0016_5938,
+        chase_camera_algorithm_apply_shake,
+        "ChaseCameraAlgorithm_ApplyShake",
+    ),
+    (
+        0x0016_68b8,
+        chase_camera_algorithm_rotate_by_pitch,
+        "ChaseCameraAlgorithm_RotateByPitch",
+    ),
+    (
+        0x0016_6f90,
+        chase_camera_build_output_view,
+        "ChaseCameraAlgorithm_BuildOutputView",
     ),
 ];
 
@@ -6841,6 +6858,988 @@ pub fn chase_camera_start_shake(c: &mut Cpu) {
     abi::ret(c);
 }
 
+pub(crate) mod chase_view {
+
+    /// The camera's look-at offset (a vec4 transformed by the base matrix).
+    pub const OFFSET: u32 = 0x40;
+
+    /// Set to 1.0 each build.
+    pub const SCALE: u32 = 0x4c;
+
+    /// The yaw (`+0x50`) and pitch (`+0x54`) angles, applied negated.
+    pub const YAW: u32 = 0x50;
+
+    pub const PITCH: u32 = 0x54;
+
+    /// The output: position (`+0x60`) and orientation quaternion (`+0x70`).
+    pub const OUT_POS: u32 = 0x60;
+
+    pub const OUT_QUAT: u32 = 0x70;
+
+    /// The base matrix and the pitch and yaw axes.
+    pub const BASE: u32 = 0x004f_f1a0;
+
+    pub const PITCH_AXIS: u32 = 0x004f_f150;
+
+    pub const YAW_AXIS: u32 = 0x004f_f160;
+
+    /// The `{0, 0, 0, 1}`-style row the rotations' last row is copied from.
+    pub const LAST_ROW: u32 = 0x004f_f130;
+
+    /// `void Math_SinCos(float a, float* sin, float* cos)`.
+    pub const SIN_COS: u32 = 0x0031_be50;
+
+    /// `void Mat4_ToPosQuat(Mat4* m, PosQuat* out)`.
+    pub const TO_POS_QUAT: u32 = 0x0031_b748;
+}
+
+pub(crate) mod shake {
+
+    pub const POS: u32 = 0x20;
+
+    pub const TARGET: u32 = 0x40;
+
+    /// Seconds of shake left.
+    pub const TIME_LEFT: u32 = 0x2b4;
+
+    /// Last frame's "shake requested" argument.
+    pub const LAST_REQUEST: u32 = 0x2ec;
+}
+
+/// `lqc2 vf1..vf4, src; sqc2 vf1..vf4, dst`: a 4x4 matrix copy through VU0.
+pub(crate) fn chase_copy_matrix(c: &mut Cpu, dst: u32, src: u32) {
+    for i in 0..4 {
+        c.lqc2(1 + i, src.wrapping_add(0x10 * i as u32));
+    }
+    for i in 0..4 {
+        c.sqc2(1 + i, dst.wrapping_add(0x10 * i as u32));
+    }
+}
+
+/// `dst = a * b` on VU0 (rows of `b` combined through the rows of `a`):
+/// `vf4..7 = a`, `vf8..11 = b`, `vf12..15` the product.
+pub(crate) fn chase_mul_matrix(c: &mut Cpu, dst: u32, a: u32, b: u32) {
+    use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
+    for i in 0..4 {
+        c.lqc2(4 + i, a.wrapping_add(0x10 * i as u32));
+    }
+    for i in 0..4 {
+        c.lqc2(8 + i, b.wrapping_add(0x10 * i as u32));
+    }
+    for i in 0..4 {
+        c.vu0().mula(0b1111, 4, Src::Bc(8 + i, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8 + i, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8 + i, Z));
+        c.vu0().madd(0b1111, 12 + i, 7, Src::Bc(8 + i, W));
+    }
+    for i in 0..4 {
+        c.sqc2(12 + i, dst.wrapping_add(0x10 * i as u32));
+    }
+}
+
+/// One axis rotation of `ChaseCameraAlgorithm_BuildOutputView`: with the
+/// angle already in f12, save the current matrix (at sp) to sp+0x40, get
+/// sin/cos into `sp+sincos`, build the axis-angle rotation matrix at sp
+/// (its last row copied from the quadword the original parks at sp+0x80),
+/// then `sp = rotation * saved`.
+pub(crate) fn chase_axis_rotation(
+    c: &mut Cpu,
+    axis: u32,
+    sincos: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    use self::chase_view::*;
+    use crate::ps2f::FpuF32;
+    let base = sp(c);
+    c.g[S1][0] = 0x0050_0000;
+    c.g[S2][0] = sx(axis);
+    c.g[S5][0] = sx(base);
+    c.f[12] = (-FpuF32(c.f[12])).0;
+    chase_copy_matrix(c, base.wrapping_add(0x40), base);
+    c.g[S3][0] = sx(LAST_ROW);
+    c.lq(V1, base.wrapping_add(0x70));
+    c.lq(V0, LAST_ROW);
+    c.g[A0][0] = sx(base.wrapping_add(sincos));
+    c.g[A1][0] = sx(base.wrapping_add(sincos + 4));
+    c.sq(V1, base.wrapping_add(0x80));
+    c.sq(V0, base.wrapping_add(0x70));
+    call_ptr(c, SIN_COS, ret)?;
+
+    let f = |c: &mut Cpu, n: usize| FpuF32(c.f[n]);
+    let cos = Addr(base.wrapping_add(sincos + 4)).read_fpu(c);
+    c.f[11] = cos.0;
+    let z = Addr(axis).off(8).read_fpu(c);
+    c.f[3] = z.0;
+    let t = f(c, 20) - cos; // 1 - cos
+    c.f[1] = t.0;
+    let x = Addr(axis).read_fpu(c);
+    c.f[0] = x.0;
+    let y = Addr(axis).off(4).read_fpu(c);
+    c.f[7] = y.0;
+    let sin = Addr(base.wrapping_add(sincos)).read_fpu(c);
+    c.f[8] = sin.0;
+    let tz = t * z;
+    c.lq(V0, base.wrapping_add(0x80));
+    let tx = t * x;
+    let ty = t * y;
+    let sz = sin * z;
+    let sx_ = sin * x;
+    let tzz = tz * z;
+    let txz = tx * z;
+    let tzx = tz * x;
+    let txx = tx * x;
+    let tyz = ty * z;
+    let tyx = ty * x;
+    let sy = sin * y;
+    let tzy = tz * y;
+    let txy = tx * y;
+    let tyy = ty * y;
+    // Rows 0..2 of the rotation, column 3 zero; row 3 from sp+0x80.
+    let m = [
+        (0x00, txx + cos, 6),
+        (0x04, tyx - sz, 0),
+        (0x08, tzx + sy, 5),
+        (0x10, txy + sz, 4),
+        (0x14, tyy + cos, 1),
+        (0x18, tzy - sx_, 2),
+        (0x20, txz - sy, 10),
+        (0x24, tyz + sx_, 3),
+        (0x28, tzz + cos, 9),
+    ];
+    for &(off, v, reg) in &m {
+        c.f[reg] = v.0;
+        Addr(base.wrapping_add(off)).write_fpu(c, v);
+    }
+    c.f[8] = sy.0;
+    c.f[12] = sx_.0;
+    c.f[13] = sz.0;
+    for off in [0x0c, 0x1c, 0x2c, 0x30, 0x34, 0x38] {
+        Addr(base.wrapping_add(off)).sw(c, 0);
+    }
+    let one = f(c, 20);
+    Addr(base.wrapping_add(0x3c)).write_fpu(c, one);
+    c.sq(V0, base.wrapping_add(0x30));
+
+    chase_mul_matrix(c, base, base, base.wrapping_add(0x40));
+    Ok(())
+}
+
+/// `void ChaseCameraAlgorithm_BuildOutputView(ChaseCameraAlgorithm* self)`
+/// (0x166f90): the chase camera's output transform. Start from the base
+/// matrix with its translation replaced by the transformed look-at offset,
+/// rotate by -pitch about the pitch axis and by -yaw about the yaw axis,
+/// split the result into position and quaternion (`Mat4_ToPosQuat`) and
+/// store them with the quaternion conjugated.
+pub fn chase_camera_build_output_view(c: &mut Cpu) {
+    use self::chase_view::*;
+    use crate::ps2f::FpuF32;
+    use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
+    guest(c, |c| {
+        c.cycles += 260;
+        let frame = Frame::open(c, 0x120);
+        c.g[V0][0] = sx(BASE);
+        frame.save_fpr(c, 20, 0x110);
+        frame.save(c, S0, 0x100);
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[20] = 0x3f80_0000;
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0xf0);
+        let this = Addr(r32(c, S0));
+        c.g[V1][0] = sx(this.off(OFFSET).0);
+        frame.save(c, S2, 0xe0);
+        frame.save(c, S3, 0xd0);
+        frame.save(c, S4, 0xc0);
+        frame.save(c, S5, 0xb0);
+        frame.save_ra(c, 0xa0);
+        let one = FpuF32(c.f[20]);
+        this.off(SCALE).write_fpu(c, one);
+        let base = sp(c);
+        chase_copy_matrix(c, base, BASE);
+        // Translation row = base matrix * offset.
+        for i in 0..4 {
+            c.lqc2(4 + i, base.wrapping_add(0x10 * i as u32));
+        }
+        c.lqc2(8, this.off(OFFSET).0);
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.sqc2(12, base.wrapping_add(0x30));
+
+        c.f[12] = this.off(PITCH).read_fpu(c).0;
+        c.g[S4][0] = sx(base.wrapping_add(0x40));
+        chase_axis_rotation(c, PITCH_AXIS, 0x90, 0x0016_7074)?;
+        c.f[12] = this.off(YAW).read_fpu(c).0;
+        chase_axis_rotation(c, YAW_AXIS, 0x98, 0x0016_71f4)?;
+
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = sx(base);
+        call_ptr(c, TO_POS_QUAT, 0x0016_7330)?;
+        let base = sp(c);
+        c.lq(V1, base.wrapping_add(0x50));
+        c.lq(V0, base.wrapping_add(0x40));
+        c.sq(V1, this.off(OUT_QUAT).0);
+        c.sq(V0, this.off(OUT_POS).0);
+        // Conjugate the quaternion (negate x, y, z).
+        for i in 0..3u32 {
+            let q = -this.off(OUT_QUAT + 4 * i).read_fpu(c);
+            c.f[i as usize] = q.0;
+            Addr(base.wrapping_add(0x50 + 4 * i)).write_fpu(c, q);
+        }
+        let w = this.off(OUT_QUAT + 0xc).read_fpu(c);
+        c.f[3] = w.0;
+        Addr(base.wrapping_add(0x5c)).write_fpu(c, w);
+        c.lq(V0, base.wrapping_add(0x50));
+        c.sq(V0, this.off(OUT_QUAT).0);
+        frame.restore(c, S0, 0x100);
+        frame.restore(c, S1, 0xf0);
+        frame.restore(c, S2, 0xe0);
+        frame.restore(c, S3, 0xd0);
+        frame.restore(c, S4, 0xc0);
+        frame.restore(c, S5, 0xb0);
+        frame.restore_ra(c, 0xa0);
+        frame.restore_fpr(c, 20, 0x110);
+        c.sq(V0, base.wrapping_add(0x40));
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------- ChaseCameraAlgorithm_RotateByPitch
+
+/// `void ChaseCameraAlgorithm_RotateByPitch(ChaseCameraAlgorithm* this,
+/// Vec4* out)` (0x1668b8): the chase camera's look direction. Starting from
+/// the identity (0x4ff1a0), rotates by `-this->+0x54` about the axis at
+/// 0x4ff150 and then by `-this->+0x50` about the axis at 0x4ff160 (each an
+/// axis-angle matrix from `Math_SinCos`, `R = (1-c) a a^T + c I + s [a]x`,
+/// multiplied on with VU0), and writes the first row to `out`.
+///
+/// Inlined `vu0` matrix copies and multiplies: the VU0 macro ops, stack
+/// layout (the matrix at sp, its copy at sp+0x40, the rotation at
+/// sp+0x40..0x70) and FPU temporaries are the original's.
+pub fn chase_camera_algorithm_rotate_by_pitch(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x130);
+        c.cycles += 233;
+        c.g[V0][0] = 0x500000; // 0x4ff1a0: the identity matrix
+        frame.save(c, S5, 0xc0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xe60));
+        frame.save(c, S6, 0xb0);
+        c.g[S5][0] = c.g[A0][0];
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, S0, 0x110);
+        frame.save(c, S1, 0x100);
+        frame.save(c, S2, 0xf0);
+        frame.save(c, S3, 0xe0);
+        frame.save(c, S4, 0xd0);
+        frame.save_ra(c, 0xa0);
+        frame.save_fpr(c, 20, 0x120);
+        c.lqc2(1, (c.g[V0][0] as u32));
+        c.lqc2(2, crate::game::render::particle::at(c, V0, 0x10));
+        c.lqc2(3, crate::game::render::particle::at(c, V0, 0x20));
+        c.lqc2(4, crate::game::render::particle::at(c, V0, 0x30));
+        c.sqc2(1, stk(c, 0));
+        c.sqc2(2, stk(c, 0x10));
+        c.sqc2(3, stk(c, 0x20));
+        c.sqc2(4, stk(c, 0x30));
+        c.lwc1(12, crate::game::render::particle::at(c, S5, 0x54));
+        c.g[S0][0] = 0x500000;
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xeb0)); // 0x4ff150: the first axis
+        c.g[S4][0] = c.g[SP][0];
+        c.neg_s(12, 12);
+        c.g[S3][0] = sx(stk(c, 0x40));
+        c.lqc2(1, (c.g[S4][0] as u32));
+        c.lqc2(2, crate::game::render::particle::at(c, S4, 0x10));
+        c.lqc2(3, crate::game::render::particle::at(c, S4, 0x20));
+        c.lqc2(4, crate::game::render::particle::at(c, S4, 0x30));
+        c.sqc2(1, (c.g[S3][0] as u32));
+        c.sqc2(2, crate::game::render::particle::at(c, S3, 0x10));
+        c.sqc2(3, crate::game::render::particle::at(c, S3, 0x20));
+        c.sqc2(4, crate::game::render::particle::at(c, S3, 0x30));
+        c.g[S2][0] = 0x500000;
+        c.lq(3, stk(c, 0x70));
+        c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(0xed0));
+        c.g[A0][0] = sx(stk(c, 0x90));
+        c.lq(2, (c.g[S2][0] as u32));
+        c.g[A1][0] = sx(stk(c, 0x94));
+        c.sq(3, stk(c, 0x80));
+        c.sq(2, stk(c, 0x70));
+        call_ptr(c, 0x0031be50, 0x0016696c)?; // Math_SinCos(-yaw)
+        c.g[AT][0] = 0x3f800000;
+        c.mtc1(1, 20);
+        c.lwc1(11, stk(c, 0x94));
+        c.lwc1(3, crate::game::render::particle::at(c, S1, 0x8));
+        c.sub_s(1, 20, 11);
+        c.lwc1(0, (c.g[S0][0] as u32).wrapping_sub(0xeb0));
+        c.lwc1(7, crate::game::render::particle::at(c, S1, 0x4));
+        c.lwc1(8, stk(c, 0x90));
+        c.mul_s(2, 1, 3);
+        c.lq(2, stk(c, 0x80));
+        c.mul_s(4, 1, 0);
+        c.sw(stk(c, 0x30), 0u64);
+        c.mul_s(1, 1, 7);
+        c.sw(stk(c, 0x34), 0u64);
+        c.mul_s(13, 8, 3);
+        c.sw(stk(c, 0x38), 0u64);
+        c.mul_s(12, 8, 0);
+        c.swc1(20, stk(c, 0x3c)); // the rotation's w = 1
+        c.mul_s(9, 2, 3);
+        c.sq(2, stk(c, 0x30));
+        c.mul_s(10, 4, 3);
+        c.sw(stk(c, 0xc), 0u64);
+        c.mul_s(5, 2, 0);
+        c.sw(stk(c, 0x1c), 0u64);
+        c.mul_s(6, 4, 0);
+        c.sw(stk(c, 0x2c), 0u64);
+        c.mul_s(3, 1, 3);
+        c.mul_s(0, 1, 0);
+        c.mul_s(8, 8, 7);
+        c.mul_s(2, 2, 7);
+        c.mul_s(4, 4, 7);
+        c.mul_s(1, 1, 7);
+        c.add_s(5, 5, 8);
+        c.sub_s(0, 0, 13);
+        c.sub_s(2, 2, 12);
+        c.add_s(9, 9, 11);
+        c.swc1(5, stk(c, 0x8));
+        c.add_s(6, 6, 11);
+        c.swc1(0, stk(c, 0x4));
+        c.add_s(4, 4, 13);
+        c.swc1(2, stk(c, 0x18));
+        c.sub_s(10, 10, 8);
+        c.swc1(9, stk(c, 0x28));
+        c.add_s(1, 1, 11);
+        c.swc1(6, stk(c, 0));
+        c.add_s(3, 3, 12);
+        c.swc1(4, stk(c, 0x10));
+        c.swc1(10, stk(c, 0x20));
+        c.swc1(1, stk(c, 0x14));
+        c.swc1(3, stk(c, 0x24));
+        c.lqc2(4, (c.g[S4][0] as u32));
+        c.lqc2(5, crate::game::render::particle::at(c, S4, 0x10));
+        c.lqc2(6, crate::game::render::particle::at(c, S4, 0x20));
+        c.lqc2(7, crate::game::render::particle::at(c, S4, 0x30));
+        c.lqc2(8, (c.g[S3][0] as u32));
+        c.lqc2(9, crate::game::render::particle::at(c, S3, 0x10));
+        c.lqc2(10, crate::game::render::particle::at(c, S3, 0x20));
+        c.lqc2(11, crate::game::render::particle::at(c, S3, 0x30));
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(9, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(9, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(9, Z));
+        c.vu0().madd(0b1111, 13, 7, Src::Bc(9, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(10, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(10, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(10, Z));
+        c.vu0().madd(0b1111, 14, 7, Src::Bc(10, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(11, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
+        c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
+        c.sqc2(12, (c.g[S4][0] as u32));
+        c.sqc2(13, crate::game::render::particle::at(c, S4, 0x10));
+        c.sqc2(14, crate::game::render::particle::at(c, S4, 0x20));
+        c.sqc2(15, crate::game::render::particle::at(c, S4, 0x30));
+        c.lwc1(12, crate::game::render::particle::at(c, S5, 0x50));
+        c.g[S0][0] = 0x500000;
+        c.g[S1][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xea0)); // 0x4ff160: the second axis
+        c.g[S4][0] = c.g[SP][0];
+        c.neg_s(12, 12);
+        c.lqc2(1, (c.g[S4][0] as u32));
+        c.lqc2(2, crate::game::render::particle::at(c, S4, 0x10));
+        c.lqc2(3, crate::game::render::particle::at(c, S4, 0x20));
+        c.lqc2(4, crate::game::render::particle::at(c, S4, 0x30));
+        c.sqc2(1, (c.g[S3][0] as u32));
+        c.sqc2(2, crate::game::render::particle::at(c, S3, 0x10));
+        c.sqc2(3, crate::game::render::particle::at(c, S3, 0x20));
+        c.sqc2(4, crate::game::render::particle::at(c, S3, 0x30));
+        c.lq(2, (c.g[S2][0] as u32));
+        c.g[A0][0] = sx(stk(c, 0x98));
+        c.lq(3, stk(c, 0x70));
+        c.g[A1][0] = sx(stk(c, 0x9c));
+        c.sq(2, stk(c, 0x70));
+        c.sq(3, stk(c, 0x80));
+        call_ptr(c, 0x0031be50, 0x00166af4)?; // Math_SinCos(-pitch)
+        c.lwc1(11, stk(c, 0x9c));
+        c.lwc1(3, crate::game::render::particle::at(c, S1, 0x8));
+        c.sub_s(1, 20, 11);
+        c.lwc1(0, (c.g[S0][0] as u32).wrapping_sub(0xea0));
+        c.lwc1(7, crate::game::render::particle::at(c, S1, 0x4));
+        c.lwc1(8, stk(c, 0x98));
+        c.mul_s(2, 1, 3);
+        c.lq(2, stk(c, 0x80));
+        c.mul_s(4, 1, 0);
+        c.swc1(20, stk(c, 0x3c)); // the rotation's w = 1
+        c.mul_s(1, 1, 7);
+        c.sw(stk(c, 0x30), 0u64);
+        c.mul_s(13, 8, 3);
+        c.sw(stk(c, 0x34), 0u64);
+        c.mul_s(12, 8, 0);
+        c.sw(stk(c, 0x38), 0u64);
+        c.mul_s(9, 2, 3);
+        c.sq(2, stk(c, 0x30));
+        c.mul_s(10, 4, 3);
+        c.sw(stk(c, 0xc), 0u64);
+        c.mul_s(5, 2, 0);
+        c.sw(stk(c, 0x1c), 0u64);
+        c.mul_s(6, 4, 0);
+        c.sw(stk(c, 0x2c), 0u64);
+        c.mul_s(3, 1, 3);
+        c.mul_s(0, 1, 0);
+        c.mul_s(8, 8, 7);
+        c.mul_s(2, 2, 7);
+        c.mul_s(4, 4, 7);
+        c.mul_s(1, 1, 7);
+        c.add_s(5, 5, 8);
+        c.sub_s(0, 0, 13);
+        c.sub_s(2, 2, 12);
+        c.add_s(9, 9, 11);
+        c.swc1(5, stk(c, 0x8));
+        c.add_s(6, 6, 11);
+        c.swc1(0, stk(c, 0x4));
+        c.add_s(4, 4, 13);
+        c.swc1(2, stk(c, 0x18));
+        c.sub_s(10, 10, 8);
+        c.swc1(9, stk(c, 0x28));
+        c.add_s(1, 1, 11);
+        c.swc1(6, stk(c, 0));
+        c.add_s(3, 3, 12);
+        c.swc1(4, stk(c, 0x10));
+        c.swc1(10, stk(c, 0x20));
+        c.swc1(1, stk(c, 0x14));
+        c.swc1(3, stk(c, 0x24));
+        c.lqc2(4, (c.g[S4][0] as u32));
+        c.lqc2(5, crate::game::render::particle::at(c, S4, 0x10));
+        c.lqc2(6, crate::game::render::particle::at(c, S4, 0x20));
+        c.lqc2(7, crate::game::render::particle::at(c, S4, 0x30));
+        c.lqc2(8, (c.g[S3][0] as u32));
+        c.lqc2(9, crate::game::render::particle::at(c, S3, 0x10));
+        c.lqc2(10, crate::game::render::particle::at(c, S3, 0x20));
+        c.lqc2(11, crate::game::render::particle::at(c, S3, 0x30));
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(9, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(9, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(9, Z));
+        c.vu0().madd(0b1111, 13, 7, Src::Bc(9, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(10, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(10, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(10, Z));
+        c.vu0().madd(0b1111, 14, 7, Src::Bc(10, W));
+        c.vu0().mula(0b1111, 4, Src::Bc(11, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(11, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(11, Z));
+        c.vu0().madd(0b1111, 15, 7, Src::Bc(11, W));
+        c.sqc2(12, (c.g[S4][0] as u32));
+        c.sqc2(13, crate::game::render::particle::at(c, S4, 0x10));
+        c.sqc2(14, crate::game::render::particle::at(c, S4, 0x20));
+        c.sqc2(15, crate::game::render::particle::at(c, S4, 0x30));
+        c.lq(2, stk(c, 0));
+        frame.restore(c, S0, 0x110);
+        c.sq(2, (c.g[S6][0] as u32));
+        frame.restore(c, S1, 0x100);
+        frame.restore(c, S2, 0xf0);
+        frame.restore(c, S3, 0xe0);
+        frame.restore(c, S4, 0xd0);
+        frame.restore(c, S5, 0xc0);
+        frame.restore(c, S6, 0xb0);
+        frame.restore_ra(c, 0xa0);
+        frame.restore_fpr(c, 20, 0x120);
+        c.sq(2, stk(c, 0x40));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ChaseCameraAlgorithm_ApplyShake
+
+/// `u32 Rand_NextMain()` (0x3177f0): the main random stream.
+pub(crate) const RAND_NEXT_MAIN: u32 = 0x0031_77f0;
+
+/// One of the six shake channels (x/y/z, slow and fast): a random target
+/// value is re-drawn each time its timer passes its period, and the output
+/// eases from the previous to the current target over the period.
+pub(crate) struct ShakeChannel {
+    timer: u32,
+    period: u32,
+    prev: u32,
+    cur: u32,
+    /// FPU registers: amplitude, period range and period base.
+    amp: usize,
+    range: usize,
+    base: usize,
+    /// The block charge and the two `Rand_NextMain` return addresses.
+    cycles: u64,
+    rets: [u32; 2],
+}
+
+pub(crate) const SHAKE_CHANNELS: [ShakeChannel; 6] = [
+    ShakeChannel {
+        timer: 0x278,
+        period: 0x254,
+        prev: 0x26c,
+        cur: 0x260,
+        amp: 22,
+        range: 26,
+        base: 24,
+        cycles: 29,
+        rets: [0x0016_5a54, 0x0016_5a90],
+    },
+    ShakeChannel {
+        timer: 0x27c,
+        period: 0x258,
+        prev: 0x270,
+        cur: 0x264,
+        amp: 22,
+        range: 26,
+        base: 24,
+        cycles: 30,
+        rets: [0x0016_5ae0, 0x0016_5b1c],
+    },
+    ShakeChannel {
+        timer: 0x280,
+        period: 0x25c,
+        prev: 0x274,
+        cur: 0x268,
+        amp: 23,
+        range: 26,
+        base: 24,
+        cycles: 29,
+        rets: [0x0016_5b70, 0x0016_5bac],
+    },
+    ShakeChannel {
+        timer: 0x2a8,
+        period: 0x284,
+        prev: 0x29c,
+        cur: 0x290,
+        amp: 22,
+        range: 24,
+        base: 25,
+        cycles: 29,
+        rets: [0x0016_5c0c, 0x0016_5c48],
+    },
+    ShakeChannel {
+        timer: 0x2ac,
+        period: 0x288,
+        prev: 0x2a0,
+        cur: 0x294,
+        amp: 22,
+        range: 24,
+        base: 25,
+        cycles: 30,
+        rets: [0x0016_5c98, 0x0016_5cd4],
+    },
+    ShakeChannel {
+        timer: 0x2b0,
+        period: 0x28c,
+        prev: 0x2a4,
+        cur: 0x298,
+        amp: 23,
+        range: 24,
+        base: 25,
+        cycles: 29,
+        rets: [0x0016_5d20, 0x0016_5d5c],
+    },
+];
+
+/// The channel's timer passed its period: new period `base + range *
+/// (rand - 1)`, the current target becomes the previous one, new target
+/// `-amp + 2 amp (rand - 1)`; the timer keeps the overshoot.
+pub(crate) fn shake_retarget(c: &mut Cpu, ch: &ShakeChannel) -> Flow {
+    let cam = r32(c, S2);
+    c.cycles += ch.cycles;
+    c.g[S0][0] = 0x7f_0000;
+    call_ptr(c, RAND_NEXT_MAIN, ch.rets[0])?;
+    c.g[S0][0] |= 0xffff;
+    c.g[S1][0] = 0x3f80_0000;
+    c.g[V0][0] &= c.g[S0][0];
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 21);
+    c.g[V0][0] |= c.g[S1][0];
+    c.lwc1(1, cam.wrapping_add(ch.cur));
+    c.mtc1(V0, 2);
+    c.swc1(1, cam.wrapping_add(ch.prev));
+    c.neg_s(20, ch.amp);
+    c.sub_s(0, 2, 21);
+    c.mul_s(0, ch.range, 0);
+    c.add_s(0, ch.base, 0);
+    c.swc1(0, cam.wrapping_add(ch.period));
+    call_ptr(c, RAND_NEXT_MAIN, ch.rets[1])?;
+    c.g[V0][0] &= c.g[S0][0];
+    c.sub_s(2, ch.amp, 20);
+    c.g[V0][0] |= c.g[S1][0];
+    c.lwc1(1, cam.wrapping_add(ch.timer));
+    c.mtc1(V0, 0);
+    c.sub_s(21, 0, 21);
+    c.lwc1(0, cam.wrapping_add(ch.period));
+    c.mul_s(2, 2, 21);
+    c.sub_s(1, 1, 0);
+    c.add_s(20, 20, 2);
+    c.swc1(1, cam.wrapping_add(ch.timer));
+    c.swc1(20, cam.wrapping_add(ch.cur));
+    Ok(())
+}
+
+/// The channel's ease weight into f`out`: 0 before the timer starts (f`zero`
+/// = 0), 1 past the period, else smoothstep `3t^2 - 2t^3` of `t = timer /
+/// period` capped at 1.
+pub(crate) fn shake_ease(c: &mut Cpu, ch: &ShakeChannel, out: usize, zero: usize) {
+    let cam = r32(c, S2);
+    c.cycles += 6;
+    c.mtc1(0, zero);
+    c.lwc1(0, cam.wrapping_add(ch.timer));
+    c.c_le_s(zero, 0);
+    let started = c.fcc();
+    c.lwc1(1, cam.wrapping_add(ch.period));
+    if !started {
+        c.cycles += 1;
+        c.mov_s(out, zero);
+        return;
+    }
+    c.cycles += 3;
+    c.c_le_s(0, 1);
+    if !c.fcc() {
+        c.cycles += 4;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, out);
+        return;
+    }
+    c.cycles += 14;
+    c.div_s(0, 0, 1);
+    c.g[AT][0] = 0x4040_0000;
+    c.mtc1(AT, 2);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 3);
+    c.add_s(1, 0, 0);
+    c.mul_s(0, 0, 0);
+    c.mul_s(1, 1, 0);
+    c.mul_s(0, 0, 2);
+    c.sub_s(0, 0, 1);
+    c.c_lt_s(3, 0);
+    if c.fcc() {
+        c.mov_s(0, 3);
+    }
+    c.cycles += 2;
+    c.mov_s(out, 0);
+}
+
+/// The distance from the camera to its target through VU0 (`|pos - target|`
+/// into f0), with the difference spilled at `sp+tmp` and copied to
+/// `sp+copy` as the original does.
+pub(crate) fn shake_target_distance(c: &mut Cpu, tmp: u32, copy: u32, f1_from: Option<u32>) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    let cam = r32(c, S2);
+    let s = sp(c);
+    c.lqc2(3, cam.wrapping_add(shake::POS));
+    c.lqc2(4, cam.wrapping_add(shake::TARGET));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s.wrapping_add(tmp));
+    match f1_from {
+        None => {
+            c.g[AT][0] = 0x4316_0000; // 150.0
+            c.mtc1(AT, 1);
+        }
+        Some(gp_off) => c.lwc1(1, r32(c, GP).wrapping_sub(gp_off)),
+    }
+    c.lq(V0, s.wrapping_add(tmp));
+    c.sq(V0, s.wrapping_add(copy));
+    c.lqc2(3, s.wrapping_add(copy));
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(V1, 22);
+    c.mtc1(V1, 0);
+}
+
+/// `void ChaseCameraAlgorithm_ApplyShake(Camera* cam, int request, int
+/// scale_by_distance, float period_base f12, float period_range f13, float
+/// amplitude f14)` (0x165938): camera shake. A new request (or the last one
+/// ending) sets 2 s of shake; the time left runs down by the frame step.
+/// Six channels (three axes at two speeds) re-draw random targets when
+/// their timers pass their random periods and ease between targets; the
+/// summed offset, scaled by half the time left (capped at 1), by 15 or a
+/// distance-based factor (within 150 units of the target), moves the
+/// camera position.
+pub fn chase_camera_algorithm_apply_shake(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::{Src, X};
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save_fpr(c, 26, 0xb0);
+        frame.save_fpr(c, 24, 0xa0);
+        frame.save_fpr(c, 22, 0x90);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S1, 0x60);
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 27, 0xb8);
+        frame.save_fpr(c, 25, 0xa8);
+        frame.save_fpr(c, 23, 0x98);
+        frame.save_fpr(c, 21, 0x88);
+        frame.save_fpr(c, 20, 0x80);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S3][0] = c.g[A2][0];
+        c.mov_s(26, 13);
+        c.mov_s(24, 12);
+        c.mov_s(22, 14);
+        let cam = r32(c, S2);
+        let request = c.g[A1][0] != 0;
+
+        // Time left: 0 while requested; 2 s when the request just ended.
+        if request {
+            c.cycles += 2;
+            c.sw(cam.wrapping_add(shake::TIME_LEFT), 0);
+            c.cycles += 1;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(cam.wrapping_add(shake::LAST_REQUEST));
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[AT][0] = 0x4000_0000;
+                c.mtc1(AT, 0);
+                c.swc1(0, cam.wrapping_add(shake::TIME_LEFT));
+                c.cycles += 1;
+            }
+        }
+        c.lwc1(2, cam.wrapping_add(shake::TIME_LEFT));
+        c.cycles += 5;
+        c.mtc1(0, 1);
+        c.c_lt_s(1, 2);
+        let running = c.fcc();
+        c.sw(cam.wrapping_add(shake::LAST_REQUEST), c.g[A1][0]);
+        if running {
+            c.cycles += 4;
+            c.lwc1(0, r32(c, GP).wrapping_sub(0x68d0));
+            c.sub_s(0, 2, 0);
+            c.max_s(0, 0, 1);
+            c.swc1(0, cam.wrapping_add(shake::TIME_LEFT));
+        }
+        // f27: the fade factor, half the time left (1 while requested).
+        c.cycles += 5;
+        c.lwc1(0, cam.wrapping_add(shake::TIME_LEFT));
+        c.c_lt_s(1, 0);
+        let fading = c.fcc();
+        c.mov_s(2, 0);
+        if fading {
+            c.cycles += 4;
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(AT, 0);
+            c.mul_s(27, 2, 0);
+        } else {
+            c.cycles += 2;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 27);
+        }
+        c.cycles += 2;
+        if !request {
+            c.cycles += 5;
+            c.mtc1(0, 0);
+            c.c_lt_s(0, 2);
+            let left = c.fcc();
+            frame.restore(c, S0, 0x70);
+            if !left {
+                return shake_epilogue(c, frame);
+            }
+        }
+
+        // Advance the slow channels' timers by the frame step and re-draw
+        // the channels whose timers passed their periods.
+        c.cycles += 13;
+        c.lwc1(1, r32(c, GP).wrapping_sub(0x68cc));
+        c.lwc1(0, cam.wrapping_add(0x278));
+        c.lwc1(3, cam.wrapping_add(0x27c));
+        c.add_s(0, 0, 1);
+        c.lwc1(2, cam.wrapping_add(0x280));
+        c.lwc1(4, cam.wrapping_add(0x254));
+        c.add_s(3, 3, 1);
+        c.add_s(2, 2, 1);
+        c.c_lt_s(4, 0);
+        c.swc1(0, cam.wrapping_add(0x278));
+        c.swc1(3, cam.wrapping_add(0x27c));
+        let due = c.fcc();
+        c.swc1(2, cam.wrapping_add(0x280));
+        if due {
+            shake_retarget(c, &SHAKE_CHANNELS[0])?;
+        }
+        c.cycles += 6;
+        c.lwc1(1, cam.wrapping_add(0x27c));
+        c.lwc1(0, cam.wrapping_add(0x258));
+        c.c_lt_s(0, 1);
+        if c.fcc() {
+            shake_retarget(c, &SHAKE_CHANNELS[1])?;
+        }
+        c.lwc1(0, cam.wrapping_add(0x280));
+        // The z channel's amplitude is scaled by the constant at gp-0x68c8 (f23).
+        c.cycles += 6;
+        c.lwc1(1, cam.wrapping_add(0x25c));
+        c.lwc1(2, r32(c, GP).wrapping_sub(0x68c8));
+        c.c_lt_s(1, 0);
+        let due = c.fcc();
+        c.mul_s(23, 22, 2);
+        if due {
+            shake_retarget(c, &SHAKE_CHANNELS[2])?;
+        }
+        // The fast channels: half the period base, range and amplitudes.
+        c.cycles += 10;
+        c.lwc1(2, cam.wrapping_add(0x2a8));
+        c.lwc1(1, cam.wrapping_add(0x284));
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 0);
+        c.c_lt_s(1, 2);
+        c.mul_s(25, 24, 0);
+        c.mul_s(22, 22, 0);
+        c.mul_s(24, 26, 0);
+        let due = c.fcc();
+        c.mul_s(23, 23, 0);
+        if due {
+            shake_retarget(c, &SHAKE_CHANNELS[3])?;
+        }
+        c.cycles += 6;
+        c.lwc1(1, cam.wrapping_add(0x2ac));
+        c.lwc1(0, cam.wrapping_add(0x288));
+        c.c_lt_s(0, 1);
+        if c.fcc() {
+            shake_retarget(c, &SHAKE_CHANNELS[4])?;
+        }
+        c.lwc1(1, cam.wrapping_add(0x2b0));
+        c.cycles += 4;
+        c.lwc1(0, cam.wrapping_add(0x28c));
+        c.c_lt_s(0, 1);
+        if c.fcc() {
+            shake_retarget(c, &SHAKE_CHANNELS[5])?;
+        }
+
+        // Ease weights f20..f15 (zero registers f13, f11, f6, f4, f3, f2).
+        for (ch, (out, zero)) in
+            SHAKE_CHANNELS
+                .iter()
+                .zip([(20, 13), (19, 11), (18, 6), (17, 4), (16, 3), (15, 2)])
+        {
+            shake_ease(c, ch, out, zero);
+        }
+
+        // Offset = sum over both speeds of prev + w (cur - prev), as
+        // (1 - w) prev + w cur (f13, f11, f6 = x, y, z).
+        c.cycles += 42;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.lwc1(5, cam.wrapping_add(0x26c));
+        c.sub_s(10, 0, 20);
+        c.lwc1(2, cam.wrapping_add(0x270));
+        c.sub_s(9, 0, 19);
+        c.lwc1(1, cam.wrapping_add(0x274));
+        c.sub_s(8, 0, 18);
+        c.lwc1(13, cam.wrapping_add(0x260));
+        c.sub_s(14, 0, 15);
+        c.lwc1(11, cam.wrapping_add(0x264));
+        c.sub_s(7, 0, 17);
+        c.lwc1(6, cam.wrapping_add(0x268));
+        c.mul_s(10, 10, 5);
+        c.lwc1(4, cam.wrapping_add(0x290));
+        c.mul_s(9, 9, 2);
+        c.lwc1(12, cam.wrapping_add(0x29c));
+        c.mul_s(8, 8, 1);
+        c.lwc1(3, cam.wrapping_add(0x294));
+        c.sub_s(0, 0, 16);
+        c.lwc1(5, cam.wrapping_add(0x2a0));
+        c.lwc1(2, cam.wrapping_add(0x298));
+        c.mul_s(7, 7, 12);
+        c.lwc1(1, cam.wrapping_add(0x2a4));
+        c.mul_s(13, 20, 13);
+        c.mul_s(0, 0, 5);
+        c.mul_s(14, 14, 1);
+        c.mul_s(11, 19, 11);
+        c.mul_s(6, 18, 6);
+        c.mul_s(4, 17, 4);
+        c.mul_s(3, 16, 3);
+        c.mul_s(2, 15, 2);
+        c.add_s(13, 13, 10);
+        c.add_s(11, 11, 9);
+        c.add_s(6, 6, 8);
+        c.add_s(4, 4, 7);
+        c.add_s(3, 3, 0);
+        c.add_s(2, 2, 14);
+        c.add_s(13, 13, 4);
+        c.add_s(11, 11, 3);
+        let by_distance = c.g[S3][0] != 0;
+        c.add_s(6, 6, 2);
+
+        // Scale (f0): 15, or distance * k within 150 units of the target.
+        let mut near = false;
+        if by_distance {
+            c.cycles += 21;
+            shake_target_distance(c, 0x10, 0, None);
+            c.c_le_s(0, 1);
+            near = c.fcc();
+            if near {
+                c.cycles += 19;
+                shake_target_distance(c, 0x20, 0x10, Some(0x68c4));
+                c.mul_s(0, 0, 1);
+            }
+        }
+        if !near {
+            c.cycles += 2;
+            c.g[AT][0] = 0x4170_0000;
+            c.mtc1(AT, 0);
+        }
+
+        // pos += offset * scale * fade.
+        let s = sp(c);
+        c.cycles += 17;
+        c.swc1(13, s.wrapping_add(0x10));
+        c.mul_s(0, 27, 0);
+        c.swc1(11, s.wrapping_add(0x14));
+        c.swc1(6, s.wrapping_add(0x18));
+        c.sw(s.wrapping_add(0x1c), 0);
+        c.mfc1(V1, 0);
+        c.lqc2(4, s.wrapping_add(0x10));
+        c.qmtc2(V1, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, s.wrapping_add(0x20));
+        c.lq(V0, s.wrapping_add(0x20));
+        c.sq(V0, s);
+        c.lqc2(3, cam.wrapping_add(shake::POS));
+        c.lqc2(4, s);
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, cam.wrapping_add(shake::POS));
+        frame.restore(c, S0, 0x70);
+        shake_epilogue(c, frame)
+    })
+}
+
+pub(crate) fn shake_epilogue(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 14;
+    frame.restore(c, S1, 0x60);
+    frame.restore(c, S2, 0x50);
+    frame.restore(c, S3, 0x40);
+    frame.restore_ra(c, 0x30);
+    for (f, off) in [
+        (27, 0xb8),
+        (26, 0xb0),
+        (25, 0xa8),
+        (24, 0xa0),
+        (23, 0x98),
+        (22, 0x90),
+        (21, 0x88),
+        (20, 0x80),
+    ] {
+        frame.restore_fpr(c, f, off);
+    }
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -9068,5 +10067,185 @@ pub(crate) mod tests {
             // Unconverted, two 120 Hz updates would leave 40 · 0.97².
             assert!(lift_after(120, 2) > 40.0 * 0.97 * 0.97 + 0.5);
         }
+    }
+    use super::*;
+
+    use super::*;
+    use super::*;
+
+    // ------------------------------------------------ ChaseCameraAlgorithm_BuildOutputView
+
+    /// `ChaseCameraAlgorithm_BuildOutputView`: random base matrix, axes,
+    /// offset and angles through the real `Math_SinCos` and
+    /// `Mat4_ToPosQuat`.
+    #[test]
+    fn chase_camera_build_output_view_matches() {
+        check(
+            ssx3_ee::s02::f_00166f90__generated,
+            chase_camera_build_output_view,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0016_6f90 ^ (seed as u64) << 16);
+                crate::difftest::elf_image(c);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(crate::difftest::GAME_GP);
+                c.pc = 0x0016_6f90;
+                let this = DATA;
+                c.g[A0][0] = sx(this);
+                for i in 0..0x20 {
+                    c.bus.write32(this + 4 * i, r.next_u32());
+                }
+                for i in 0..4 {
+                    c.bus.write32(this + 0x40 + 4 * i, r.f32(50.0));
+                }
+                c.bus.write32(this + 0x50, r.f32(3.5));
+                c.bus.write32(this + 0x54, r.f32(1.5));
+                // Base matrix: a rotation-ish matrix with a translation.
+                for i in 0..16u32 {
+                    let v = if i % 5 == 0 {
+                        1.0f32.to_bits()
+                    } else {
+                        r.f32(0.7)
+                    };
+                    c.bus.write32(0x004f_f1a0 + 4 * i, v);
+                }
+                let axes = [[1.0f32, 0.0, 0.0], [0.0, 1.0, 0.0], [0.6, 0.0, 0.8]];
+                for (k, a) in [0x004f_f150u32, 0x004f_f160].into_iter().enumerate() {
+                    let axis = axes[(k + seed as usize) % 3];
+                    for (j, v) in axis.iter().enumerate() {
+                        c.bus.write32(a + 4 * j as u32, v.to_bits());
+                    }
+                }
+                for (j, v) in [0.0f32, 0.0, 0.0, 1.0].iter().enumerate() {
+                    c.bus.write32(0x004f_f130 + 4 * j as u32, v.to_bits());
+                }
+                // The stack words the original parks and copies (sp+0x70).
+                for k in 0..0x48u32 {
+                    c.bus
+                        .write32(crate::difftest::SP - 0x120 + 4 * k, r.next_u32());
+                }
+            },
+        );
+    }
+
+    // -- 0x001668b8 ChaseCameraAlgorithm_RotateByPitch ------------------------
+
+    /// `ChaseCameraAlgorithm_RotateByPitch`: random and edge-case angles at
+    /// +0x50/+0x54 (the game image provides the identity, the axes and
+    /// `Math_SinCos`'s tables); the stack scratch starts random.
+    #[test]
+    fn chase_camera_algorithm_rotate_by_pitch_matches() {
+        use crate::difftest::{check, elf_image, fill, scramble, Rng, DATA, SP};
+        const THIS: u32 = DATA;
+        const OUT: u32 = DATA + 0x100;
+        check(
+            ee::s02::f_001668b8__generated,
+            chase_camera_algorithm_rotate_by_pitch,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = Rng(0x0016_68b8 ^ (seed as u64) << 20 ^ 0x2545_f491);
+                scramble(c, &mut r);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                c.pc = 0x0016_68b8;
+                fill(c, &mut r, SP - 0x140, 0x50);
+                let angle = |r: &mut Rng| {
+                    if r.next_u32() % 8 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(7.0)
+                    }
+                };
+                let pitch = angle(&mut r);
+                let yaw = angle(&mut r);
+                c.bus.write32(THIS + 0x50, pitch);
+                c.bus.write32(THIS + 0x54, yaw);
+                fill(c, &mut r, OUT, 4);
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(OUT);
+            },
+        );
+    }
+
+    pub(crate) fn f(x: f32) -> u32 {
+        x.to_bits()
+    }
+
+    /// ChaseCameraAlgorithm_ApplyShake: shake requested or not (with the
+    /// last request set or not), time left around 0..2, every channel's
+    /// timer before 0, inside or past its period (so re-draws through the
+    /// real `Rand_NextMain` and all ease branches run), and the distance
+    /// scale off, near or far (150 units).
+    #[test]
+    fn chase_camera_algorithm_apply_shake_matches() {
+        check(
+            ee::s01::f_00165938__generated,
+            chase_camera_algorithm_apply_shake,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x1659_38 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.pc = 0x0016_5938;
+                c.g[GP][0] = GAME_GP as u64;
+                let cam = DATA;
+                // The main random stream's state.
+                for k in 0..6 {
+                    c.bus.write32(0x004f_f018 + 4 * k, r.next_u32());
+                }
+                c.bus.write32(GAME_GP - 0x68d0, (1.0f32 / 60.0).to_bits());
+                c.bus.write32(GAME_GP - 0x68cc, (1.0f32 / 60.0).to_bits());
+                c.bus.write32(GAME_GP - 0x68c8, 0.5f32.to_bits());
+                c.bus.write32(GAME_GP - 0x68c4, 0.1f32.to_bits());
+                c.bus.write32(cam + 0x2ec, r.next_u32() % 2);
+                let left = [0.0f32, 0.01, 0.5, 1.9, 2.5][(r.next_u32() % 5) as usize];
+                c.bus.write32(cam + 0x2b4, left.to_bits());
+                for i in 0..6u32 {
+                    let (timer, period) = [
+                        (0x278, 0x254),
+                        (0x27c, 0x258),
+                        (0x280, 0x25c),
+                        (0x2a8, 0x284),
+                        (0x2ac, 0x288),
+                        (0x2b0, 0x28c),
+                    ][i as usize];
+                    let p = 0.2 + (r.next_u32() % 100) as f32 * 0.01;
+                    c.bus.write32(cam + period, p.to_bits());
+                    let t = match r.next_u32() % 4 {
+                        0 => -0.1f32,
+                        1 => p * 0.5,
+                        2 => p + 0.3,
+                        _ => p - 0.005,
+                    };
+                    c.bus.write32(cam + timer, t.to_bits());
+                }
+                for off in (0x260..0x26c).step_by(4).chain((0x26c..0x278).step_by(4)) {
+                    c.bus.write32(cam + off, r.f32(3.0));
+                }
+                for off in (0x290..0x2a8).step_by(4) {
+                    c.bus.write32(cam + off, r.f32(3.0));
+                }
+                put_vec(
+                    c,
+                    cam + 0x20,
+                    [r.f32(100.0), r.f32(100.0), r.f32(100.0), r.f32(1.0)],
+                );
+                let far = if r.next_u32() % 2 == 0 { 50.0 } else { 400.0 };
+                put_vec(
+                    c,
+                    cam + 0x40,
+                    [r.f32(far), r.f32(far), r.f32(far), r.f32(1.0)],
+                );
+                c.g[A0][0] = sx(cam);
+                c.g[A1][0] = if seed % 3 == 0 {
+                    r.next_u32() as u64 | 1
+                } else {
+                    0
+                };
+                c.g[A2][0] = if seed % 2 == 0 { 0 } else { 1 };
+                c.f[12] = 0.5f32.to_bits();
+                c.f[13] = 1.0f32.to_bits();
+                c.f[14] = r.f32(2.0);
+            },
+        );
     }
 }

@@ -126,6 +126,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_1c38, unpack_d, "__unpack_d"),
     (0x0041_1b08, pack_d, "__pack_d"),
     (0x0041_1fd8, muldf3, "__muldf3"),
+    (0x0040_f5a8, kernel_tanf, "__kernel_tanf"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3109,6 +3110,234 @@ pub fn muldf3(c: &mut Cpu) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// __kernel_tanf
+
+/// `float fabsf(float)` (0x40f8a0).
+pub(crate) const FABSF: Callee = Callee {
+    addr: 0x0040_f8a0,
+    f: ee::s15::fabsf,
+};
+
+/// The polynomial coefficients `T[0..12]` of newlib's `__kernel_tanf`.
+pub(crate) const TANF_T: u32 = 0x0049_9648;
+
+/// The newlib `__kernel_tanf` tail for `|x| >= 0.6744`: undo the `pi/4`
+/// reduction, `v = iy; w = x + r; (1 - ((hx >> 30) & 2)) * (v - 2(x -
+/// (w*w/(w+v) - r)))` (f3 = r, f11 = w, f12 = x).
+pub(crate) fn tanf_unreduce(c: &mut Cpu) {
+    c.cycles += 19;
+    c.mtc1(A0, 4);
+    c.cvt_s_w(4, 4);
+    c.g[V1][0] = sx(((c.g[A2][0] as u32) as i32 >> 30) as u32);
+    c.mul_s(0, 11, 11);
+    c.g[V1][0] &= 2;
+    c.g[V0][0] = 1;
+    c.add_s(1, 11, 4);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+    c.mtc1(V0, 2);
+    c.cvt_s_w(2, 2);
+    c.div_s(0, 0, 1);
+    c.sub_s(0, 0, 3);
+    c.sub_s(0, 12, 0);
+    c.add_s(0, 0, 0);
+    c.sub_s(0, 4, 0);
+    c.mul_s(0, 2, 0);
+}
+
+/// `-1/w` computed carefully for `iy == -1` and small `|x|` (f3 = r,
+/// f11 = w, f12 = x): `z = w` and `t = a = -1/w` truncated to 20 bits,
+/// `s = 1 + t*z`, `t + a*(s + t*(r - (z - x)))`.
+pub(crate) fn tanf_neg_recip(c: &mut Cpu) {
+    c.cycles += 29;
+    c.mfc1(V0, 11);
+    c.g[V1][0] = c.g[V0][0];
+    c.g[V0][0] = 0xffff_ffff_ffff_f000;
+    c.g[V1][0] &= c.g[V0][0];
+    c.mtc1(V1, 14);
+    c.sub_s(1, 14, 12);
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 0);
+    c.div_s(0, 0, 11);
+    c.sub_s(4, 3, 1);
+    c.mfc1(A0, 0);
+    c.g[V1][0] = c.g[A0][0];
+    c.g[V1][0] &= c.g[V0][0];
+    c.mtc1(V1, 0);
+    c.mul_s(1, 0, 14);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 0);
+    c.add_s(15, 1, 0);
+    c.mtc1(V1, 1);
+    c.mul_s(0, 1, 4);
+    c.mtc1(A0, 1);
+    c.add_s(0, 15, 0);
+    c.mul_s(0, 1, 0);
+    c.mtc1(V1, 1);
+    c.add_s(0, 1, 0);
+}
+
+/// `float __kernel_tanf(float x, float y, int iy)` (0x40f5a8, newlib):
+/// tan(x + y) on `[-pi/4, pi/4]` (`iy == 1`), or `-1/tan` (`iy == -1`).
+/// Tiny `|x|` returns x (or `1/|x|` for zero x with `iy == -1`, else
+/// `-1/x`); above 0.6744 the argument is reduced to `pi/4 - x` first; the
+/// odd polynomial uses the 13 coefficients at 0x499648.
+pub fn kernel_tanf(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        c.mfc1(V0, 12);
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[V0][0];
+        c.g[V1][0] = 0x7fff_ffff;
+        c.g[V0][0] = 0x317f_ffff;
+        c.g[A1][0] = c.g[A2][0] & c.g[V1][0];
+        let tiny_limit = c.g[V0][0];
+        c.g[V0][0] = ((tiny_limit as i64) < (c.g[A1][0] as i64)) as u64;
+        frame.save_ra(c, 0);
+        let mut main = c.g[V0][0] != 0;
+        if main {
+            c.cycles += 1;
+        } else {
+            // |x| < 2**-28: x itself unless it does not truncate to 0.
+            c.cycles += 5;
+            c.cvt_w_s(0, 12);
+            c.mfc1(V0, 0);
+            main = c.g[V0][0] != 0;
+        }
+        c.g[V0][0] = 0x3f2c_0000;
+        if !main {
+            c.cycles += 4;
+            c.g[V0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+            c.g[V0][0] |= c.g[A1][0];
+            let zero_neg = c.g[V0][0] == 0;
+            c.g[V0][0] = 1;
+            if zero_neg {
+                // x == 0 and iy == -1: 1/|x|.
+                c.cycles += 9;
+                FABSF.call(c, 0x0040_f600)?;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 1);
+                c.div_s(0, 1, 0);
+                frame.restore_ra(c, 0);
+            } else {
+                c.cycles += 2;
+                let tan = c.g[A0][0] == c.g[V0][0];
+                frame.restore_ra(c, 0);
+                if tan {
+                    c.cycles += 2;
+                    c.mov_s(0, 12);
+                    c.cycles += 1;
+                    frame.restore_ra(c, 0);
+                } else {
+                    c.cycles += 7;
+                    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                    c.mtc1(AT, 0);
+                    c.div_s(0, 0, 12);
+                }
+            }
+            c.cycles += 2;
+            frame.close(c);
+            return Ok(());
+        }
+
+        // z = x*x, after reducing x (and y) to pi/4 - x for |x| >= 0.6744
+        // (0x3f2ca13f).
+        c.cycles += 4;
+        c.g[V0][0] |= 0xa13f;
+        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+        if c.g[V0][0] == 0 {
+            c.mul_s(14, 12, 12);
+        } else {
+            c.cycles += 2;
+            if (c.g[A2][0] as i64) < 0 {
+                c.cycles += 2;
+                c.neg_s(12, 12);
+                c.neg_s(13, 13);
+            }
+            c.cycles += 11;
+            c.g[AT][0] = 0x3f49_0fda; // pio4
+            c.mtc1(AT, 0);
+            c.g[AT][0] = 0x3322_2168; // pio4lo
+            c.mtc1(AT, 1);
+            c.sub_s(14, 0, 12);
+            c.sub_s(11, 1, 13);
+            c.mtc1(0, 13);
+            c.add_s(12, 14, 11);
+            c.mul_s(14, 12, 12);
+        }
+
+        // r = y + z*(s*(r + v) + y) + T[0]*s*x; w = x + r, with r the odd
+        // and v the even half of the polynomial in w = z*z.
+        c.cycles += 50;
+        c.g[V1][0] = 0x4a_0000;
+        c.g[V0][0] = sx(TANF_T);
+        c.lwc1(9, TANF_T);
+        c.lwc1(4, TANF_T + 0x30);
+        c.g[V1][0] = 0x3f2c_0000;
+        c.mul_s(11, 14, 14);
+        c.lwc1(5, TANF_T + 0x2c);
+        c.lwc1(6, TANF_T + 0x28);
+        c.mul_s(15, 14, 12);
+        c.lwc1(2, TANF_T + 0x24);
+        c.g[V1][0] |= 0xa13f;
+        c.mul_s(4, 11, 4);
+        c.lwc1(3, TANF_T + 0x20);
+        c.mul_s(5, 11, 5);
+        c.lwc1(0, TANF_T + 0x1c);
+        c.lwc1(7, TANF_T + 0x18);
+        c.mul_s(9, 9, 15);
+        c.add_s(6, 6, 4);
+        c.lwc1(1, TANF_T + 0x14);
+        c.add_s(2, 2, 5);
+        c.lwc1(4, TANF_T + 0x10);
+        c.lwc1(5, TANF_T + 0xc);
+        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+        c.mul_s(6, 11, 6);
+        c.lwc1(8, TANF_T + 0x8);
+        c.mul_s(2, 11, 2);
+        c.lwc1(10, TANF_T + 0x4);
+        c.add_s(3, 3, 6);
+        c.add_s(0, 0, 2);
+        c.mul_s(3, 11, 3);
+        c.mul_s(0, 11, 0);
+        c.add_s(7, 7, 3);
+        c.add_s(1, 1, 0);
+        c.mul_s(7, 11, 7);
+        c.mul_s(1, 11, 1);
+        c.add_s(4, 4, 7);
+        c.add_s(5, 5, 1);
+        c.mul_s(4, 11, 4);
+        c.mul_s(5, 11, 5);
+        c.add_s(8, 8, 4);
+        c.add_s(3, 10, 5);
+        c.mul_s(4, 14, 8);
+        c.add_s(0, 3, 4);
+        c.mul_s(0, 15, 0);
+        c.add_s(0, 0, 13);
+        c.mul_s(0, 14, 0);
+        c.add_s(3, 13, 0);
+        c.add_s(3, 3, 9);
+        let reduced = c.g[V1][0] != 0;
+        c.add_s(11, 12, 3);
+        if reduced {
+            tanf_unreduce(c);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            let tan = c.g[A0][0] == c.g[V0][0];
+            c.mov_s(0, 11);
+            if !tan {
+                tanf_neg_recip(c);
+            }
+        }
+        c.cycles += 1;
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4196,5 +4425,62 @@ pub(crate) mod tests {
             c.g[A1][0] = b;
             c.pc = 0x0041_1fd8;
         });
+    }
+    use super::*;
+    use crate::difftest::fakes::{self};
+    use crate::difftest::put_vec;
+    pub(crate) use crate::game::camera::camera::tests::f;
+
+    /// __kernel_tanf: x in f12 from tiny (zero, 1e-10, values that do not
+    /// truncate to 0 cannot be tiny, so also NaN/inf edges), the middle range
+    /// and the reduced range (|x| >= 0.6744, both signs), y in f13, and iy
+    /// 1, -1 or other; the real coefficient table is written.
+    #[test]
+    fn kernel_tanf_matches() {
+        check(
+            ee::s15::f_0040f5a8__generated,
+            kernel_tanf,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x40f5_a8 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0040_f5a8;
+                let coeffs = [
+                    3.333_333_4e-1f32,
+                    1.333_340_8e-1,
+                    5.396_875_4e-2,
+                    2.186_948_8e-2,
+                    8.863_239_5e-3,
+                    3.592_079_3e-3,
+                    1.456_209_9e-3,
+                    5.880_412_3e-4,
+                    2.464_631_3e-4,
+                    7.817_944_4e-5,
+                    7.140_725_2e-5,
+                    -1.855_863_9e-5,
+                    2.590_730_7e-5,
+                ];
+                for (i, k) in coeffs.iter().enumerate() {
+                    c.bus.write32(0x0049_9648 + 4 * i as u32, k.to_bits());
+                }
+                let x = match seed % 8 {
+                    0 => 0.0f32.to_bits() | (r.next_u32() & 0x8000_0000),
+                    1 => (1.0e-10f32 * if r.next_u32() % 2 == 0 { 1.0 } else { -1.0 }).to_bits(),
+                    2 => r.edge_f32(),
+                    3 | 4 => r.f32(0.6),
+                    _ => {
+                        let v = 0.68 + (r.next_u32() % 1000) as f32 * 1.0e-4;
+                        (if r.next_u32() % 2 == 0 { v } else { -v }).to_bits()
+                    }
+                };
+                c.f[12] = x;
+                c.f[13] = r.f32(1.0e-8);
+                c.g[A0][0] = match r.next_u32() % 3 {
+                    0 => 1,
+                    1 => u64::MAX,
+                    _ => r.next_u32() as u64,
+                };
+            },
+        );
     }
 }

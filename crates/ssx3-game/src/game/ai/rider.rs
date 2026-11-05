@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -207,6 +208,34 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002a_3c00,
         ssx_audio_system_arcade_say20a8,
         "SSXAudioSystem_ArcadeSay20A8",
+    ),
+    (
+        0x0011_3f88,
+        rider_set_slew3_and4_targets,
+        "Rider_SetSlew3And4Targets",
+    ),
+    (
+        0x0011_4130,
+        rider_handle_boost_input,
+        "Rider_HandleBoostInput",
+    ),
+    (
+        0x0011_63b0,
+        rider_update_tweak_layer_anim,
+        "Rider_UpdateTweakLayerAnim",
+    ),
+    (0x0012_0f20, rider_begin_frame, "Rider_BeginFrame"),
+    (0x0012_10b0, rider_update_impacts, "Rider_UpdateImpacts"),
+    (
+        0x0012_1aa0,
+        rider_update_orientation,
+        "Rider_UpdateOrientation",
+    ),
+    (0x0012_2898, rider_draw_shadow, "Rider_DrawShadow"),
+    (
+        0x0012_7998,
+        player_get_control_input,
+        "Player_GetControlInput",
     ),
 ];
 
@@ -8941,6 +8970,2762 @@ pub fn player_get_trick_button(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod gci {
+
+    /// The rider object (`Rider_GetSubState` argument).
+    pub const RIDER: u32 = 0x18;
+
+    /// The input binding the buttons and sticks are read through.
+    pub const BINDING: u32 = 0xdf0;
+
+    /// The replay cache that records (or plays back) the input.
+    pub const REPLAY: u32 = 0xdf8;
+
+    /// `memset`.
+    pub const MEMSET: u32 = 0x003e_6448;
+
+    /// `int InputBinding_EvalBool(InputBinding*, int id)`.
+    pub const EVAL_BOOL: u32 = 0x0032_0c48;
+
+    /// `float InputBinding_EvalFloat(InputBinding*, int id)`.
+    pub const EVAL_FLOAT: u32 = 0x0032_0bf0;
+
+    /// `ReplayCache_Update(ReplayCache*, Input*)`.
+    pub const REPLAY_UPDATE: u32 = 0x0026_d178;
+
+    /// The `switch (substate)` jump table (14 cases) in `.rodata`.
+    pub const CASES: u32 = 0x0045_7ea0;
+
+    /// `31.0f`: stick values in [-1, 1] become 6-bit fields.
+    pub const STICK_SCALE: u32 = 0x41f8_0000;
+}
+
+pub(crate) mod dist {
+
+    /// Position projected onto the course path.
+    pub const POSITION: u32 = 0x110;
+
+    /// Distance to the finish now and on the previous update.
+    pub const DIST: u32 = 0x4d0;
+
+    pub const PREV_DIST: u32 = 0x4d4;
+
+    /// The rider's path segment cache (12 bytes) the path updates.
+    pub const SEGMENT: u32 = 0x4dc;
+
+    /// What the path's segment query returned.
+    pub const SEGMENT_RESULT: u32 = 0x59c;
+
+    /// The course path and its search hint.
+    pub const PATH: u32 = 0xab4;
+
+    pub const PATH_HINT: u32 = 0xac0;
+
+    /// `Path`: vtable and total length.
+    pub const PATH_VTABLE: u32 = 0x34;
+
+    pub const PATH_LENGTH: u32 = 0x38;
+
+    /// The split markers: `{?, float dist}` pairs, distance 0 ends the list.
+    pub const SPLITS: u32 = 0x004d_33b8;
+
+    /// `float Path_GetClosestPointFrom(Path*, vec* pos, vec* out, float*,
+    /// hint, 1)`.
+    pub const CLOSEST_POINT: u32 = 0x0026_a638;
+}
+
+pub(crate) mod slew34 {
+
+    pub const BRAKE_CUR: u32 = 0x214;
+
+    pub const BRAKE_STEP: u32 = 0x218;
+
+    pub const BRAKE_TARGET: u32 = 0x21c;
+
+    pub const CROUCH_CUR: u32 = 0x220;
+
+    pub const CROUCH_STEP: u32 = 0x224;
+
+    pub const CROUCH_TARGET: u32 = 0x228;
+
+    /// `vel` and `groundForward` (their x product decides "backward").
+    pub const VEL: u32 = 0x1e0;
+
+    pub const GROUND_FORWARD: u32 = 0x3a0;
+
+    /// The lean (sign of the powerslide side).
+    pub const LEAN: u32 = 0x1f0;
+}
+
+pub(crate) mod begin_frame {
+    use super::*;
+
+    /// Rider fields.
+    pub const POSITION: u32 = 0x110;
+
+    pub const COUNTER_3FC: u32 = 0x3fc;
+
+    /// The bounding box the overlap list is gathered for.
+    pub const BOUNDS: u32 = 0x400;
+
+    pub const FINISH_TIME: u32 = 0x470;
+
+    /// The ids of the objects visited this frame (-1: none).
+    pub const VISITED_IDS: u32 = 0x5b8;
+
+    pub const MODEL: u32 = 0x780;
+
+    pub const OVERLAPS: u32 = 0x860;
+
+    pub const AI_INDEX: u32 = 0x86c;
+
+    pub const BOARD_ROOT_BONE: u32 = 0x8a0;
+
+    /// The model offset (a quadword, reset from the default at 0x4ff120).
+    pub const MODEL_OFFSET: u32 = 0x9d0;
+
+    pub const COUNTER_A30: u32 = 0xa30;
+
+    pub const COUNTER_AA4: u32 = 0xaa4;
+
+    /// In a scripted scene (NIS): the ground is probed below the position,
+    /// or below the board's root bone when `PROBE_AT_BONE` is set.
+    pub const IN_NIS: u32 = 0xac4;
+
+    pub const PROBE_AT_BONE: u32 = 0xafc;
+
+    /// The model's bone matrices (0x20 bytes each).
+    pub const MODEL_BONES: u32 = 0x2c;
+
+    /// The overlap list's stamp, compared with the world tree's.
+    pub const LIST_STAMP: u32 = 0x4;
+
+    /// `g_App` (gp-0x848) -> game module (+0x84): the spatial tree (+0x20,
+    /// its stamp at +0xa0) and the camera control (+0x34, its mode at
+    /// +0x70).
+    pub const GP_APP: i32 = -0x848;
+
+    pub const APP_MODULE: u32 = 0x84;
+
+    pub const MODULE_TREE: u32 = 0x20;
+
+    pub const TREE_STAMP: u32 = 0xa0;
+
+    pub const MODULE_CONTROL: u32 = 0x34;
+
+    pub const CONTROL_MODE: u32 = 0x70;
+
+    /// `.lit4` 1/60: the finish clock's step.
+    pub const GP_TICK: i32 = -0x7920;
+
+    /// The default model offset quadword.
+    pub const DEFAULT_MODEL_OFFSET: u32 = 0x0050_0000 - 0xee0;
+
+    pub const AI_GET_FRAME_COUNTER: Callee = Callee {
+        addr: 0x0012_98c8,
+        f: ee::s00::f_001298c8,
+    };
+
+    pub const OVERLAP_LIST_GATHER_ALL: u32 = 0x0033_2db8;
+
+    pub const RIDER_FIND_NEARBY_LIGHTS: Callee = Callee {
+        addr: 0x0012_2088,
+        f: ee::s00::f_00122088,
+    };
+
+    pub const RIDER_IS_CONTROL_MODE3: u32 = 0x0014_48a8;
+
+    pub const RIDER_PROBE_GROUND: Callee = Callee {
+        addr: 0x0012_42b0,
+        f: ee::s00::f_001242b0,
+    };
+
+    pub const RIDER_UPDATE_TARGET_SPEED: Callee = Callee {
+        addr: 0x0011_b3f8,
+        f: ee::s00::f_0011b3f8,
+    };
+}
+
+pub(crate) mod rider_boost {
+
+    /// Boost meter, 0..1.
+    pub const METER: u32 = 0x2f8;
+
+    /// Boost strength while the button is held (0, 0.25, 0.625 or 1; 0
+    /// when not boosting).
+    pub const LEVEL: u32 = 0x2fc;
+
+    /// The meter drains only while this float is 0.
+    pub const DRAIN_HOLD: u32 = 0x2e8;
+
+    /// The meter drains only while this is set ...
+    pub const DRAIN_ON: u32 = 0x304;
+
+    /// ... and this count is below 10.
+    pub const DRAIN_COUNT: u32 = 0x2f4;
+
+    /// The rider's controller record (+0xd20: cheat-code input state).
+    pub const PAD: u32 = 0x77c;
+
+    /// `.lit4`: level thresholds 2/3 and 1/3, and the drain per tick.
+    pub const GP_TWO_THIRDS: u32 = 0x7bfc;
+
+    pub const GP_ONE_THIRD: u32 = 0x7bf8;
+
+    pub const GP_DRAIN: u32 = 0x7bf4;
+}
+
+pub(crate) mod impacts {
+
+    /// Impulse vector (decays by 0.98 a tick).
+    pub const IMPULSE: u32 = 0x3e0;
+
+    /// Impact accumulators (decay by 0.956 / 0.9783 a tick).
+    pub const ACCUM: u32 = 0x3f0;
+
+    pub const ACCUM2: u32 = 0x3f4;
+
+    /// The `RiderBase` owner (+0x30: handler state).
+    pub const OWNER: u32 = 0x77c;
+
+    /// Air predictor: +0xac mode, +0x98 / +0xa0 heights.
+    pub const AIR: u32 = 0x788;
+
+    /// `.lit4` decay factors.
+    pub const GP_IMPULSE_DECAY: u32 = 0x791c;
+
+    pub const GP_ACCUM_DECAY: u32 = 0x7918;
+
+    pub const GP_ACCUM2_DECAY: u32 = 0x7914;
+}
+
+pub(crate) mod tweak {
+
+    pub const SIDE: u32 = 0x1a0;
+
+    pub const TIME_SCALE: u32 = 0x300;
+
+    pub const SWITCH_SIDE: u32 = 0x320;
+
+    pub const ATTACK_DIR: u32 = 0x340;
+
+    pub const BLEND: u32 = 0x350;
+
+    pub const ANIM: u32 = 0x784;
+
+    pub const EVENT_OWNER: u32 = 0x8c0;
+
+    /// Controller: the owner word stamped on the events of a new animation.
+    pub const CTRL_EVENT_OWNER: u32 = 0x20;
+
+    /// Sequence fields.
+    pub const SEQ_FADE: u32 = 0x90;
+
+    pub const SEQ_WEIGHT: u32 = 0x94;
+
+    pub const SEQ_TARGET: u32 = 0x98;
+
+    pub const SEQ_FADE_TIME: u32 = 0x9c;
+
+    pub const SEQ_FLAGS: u32 = 0xb0;
+
+    /// The tweak animations.
+    pub const ANIM_BOTH: u32 = 0x142;
+
+    pub const ANIM_LEFT: u32 = 0x143;
+
+    pub const ANIM_RIGHT: u32 = 0x144;
+
+    pub const ANIM_BOTH_FROM: u32 = 0x145;
+
+    pub const ANIM_LEFT_OUT: u32 = 0x146;
+
+    pub const ANIM_RIGHT_OUT: u32 = 0x147;
+
+    /// Animation states.
+    pub const STATE_BOTH: u64 = 3;
+
+    pub const STATE_ONE: u64 = 0xd;
+}
+
+pub(crate) mod rshadow {
+
+    pub const MATRIX_UP: u32 = 0x1c0;
+
+    pub const MODEL: u32 = 0x780;
+
+    pub const BONE_A: u32 = 0x8e8;
+
+    pub const BONE_B: u32 = 0x918;
+
+    /// Set once the shadow projection was set up.
+    pub const READY: u32 = 0xaa4;
+
+    pub const SHADOW: u32 = 0xaa8;
+
+    /// Model: the bone matrices (0x40 each, translation at +0x30).
+    pub const MODEL_BONES: u32 = 0x30;
+
+    /// Graphics manager: render-state stack pointer (0x14-byte entries)
+    /// and the v-table.
+    pub const GM_STATE_TOP: u32 = 0xe84;
+
+    pub const GM_VTABLE: u32 = 0x10d8;
+
+    /// Shadow: texture handle, projection matrix and its two corners.
+    pub const SH_MATRIX: u32 = 0x110;
+
+    pub const SH_MIN: u32 = 0x150;
+
+    pub const SH_MAX: u32 = 0x160;
+
+    pub const SH_TEXTURE: u32 = 0x170;
+
+    /// The light direction (0, 0, -1), built once, and its flag.
+    pub const LIGHT_DIR: u32 = 0x004a_5e40;
+}
+
+/// Which registers a bit-field merge leaves the word and the mask in (the
+/// original's register allocation differs per site).
+#[derive(Clone, Copy)]
+pub(crate) enum Merge {
+    WordV1MaskA0,
+    WordA0MaskV1,
+    WordA1MaskV1,
+}
+
+/// `word = (word & ~(bits << shift)) | ((v0 & bits) << shift)` at `at`: the
+/// compiled bit-field store of the value in `v0`.
+pub(crate) fn gci_field(c: &mut Cpu, at: Addr, bits: u32, shift: u32, regs: Merge) {
+    let word = at.lw(c);
+    let mask = sx(!(bits << shift));
+    let value = sx(((c.g[V0][0] as u32) & bits) << shift);
+    let merged = (word & mask) | value;
+    c.g[V0][0] = value;
+    let (w, m) = match regs {
+        Merge::WordV1MaskA0 => (V1, A0),
+        Merge::WordA0MaskV1 => (A0, V1),
+        Merge::WordA1MaskV1 => (A1, V1),
+    };
+    c.g[w][0] = merged;
+    c.g[m][0] = mask;
+    at.sw(c, merged);
+}
+
+/// One button bit (`v0 & 1`) into bit `n` of the first input word.
+pub(crate) fn gci_bit(c: &mut Cpu, input: Addr, n: u32, regs: Merge) {
+    gci_field(c, input, 1, n, regs);
+}
+
+/// `f0 *= f[k]; f1 = (int)f0; v0 = f1`: a stick value scaled to an integer.
+pub(crate) fn gci_scaled(c: &mut Cpu, k: usize) {
+    use crate::ps2f::FpuF32;
+    let v = FpuF32(c.f[0]) * FpuF32(c.f[k]);
+    c.f[0] = v.0;
+    c.f[1] = v.to_i32() as u32;
+    c.g[V0][0] = sx(c.f[1]);
+}
+
+/// `li at, 31.0; mtc1 at, f[k]`.
+pub(crate) fn gci_scale_into(c: &mut Cpu, k: usize) {
+    c.g[AT][0] = sx(gci::STICK_SCALE);
+    c.f[k] = gci::STICK_SCALE;
+}
+
+/// `InputBinding_Eval{Bool,Float}(player->binding, id)` returning to `ret`.
+pub(crate) fn gci_eval(c: &mut Cpu, player: u32, f: u32, id: u64, ret: u32) -> crate::call::Flow {
+    c.g[A1][0] = id;
+    c.g[A0][0] = Addr(player).off(gci::BINDING).lw(c);
+    call_ptr(c, f, ret)
+}
+
+/// The `0x00128148` tail shared by substates 0, 1, 2 and 7: the stick value
+/// already read goes into bits 0-5 of the second word, then stick `next`
+/// into bits 6-11.
+pub(crate) fn gci_second_word_sticks(
+    c: &mut Cpu,
+    player: u32,
+    input: Addr,
+    next: u64,
+) -> crate::call::Flow {
+    c.cycles += 19;
+    let second = input.off(4);
+    gci_scaled(c, 20);
+    gci_field(c, second, 0x3f, 0, Merge::WordV1MaskA0);
+    gci_eval(c, player, gci::EVAL_FLOAT, next, 0x0012_8168)?;
+    gci_scaled(c, 20);
+    gci_field(c, second, 0x3f, 6, Merge::WordA0MaskV1);
+    Ok(())
+}
+
+/// The `0x001285f4` tail of substates 6 and 10: stick `id` into bits 12-17
+/// of the first word.
+pub(crate) fn gci_single_stick(
+    c: &mut Cpu,
+    player: u32,
+    input: Addr,
+    id: u64,
+) -> crate::call::Flow {
+    c.cycles += 13;
+    gci_eval(c, player, gci::EVAL_FLOAT, id, 0x0012_85fc)?;
+    gci_scale_into(c, 1);
+    gci_scaled(c, 1);
+    gci_field(c, input, 0x3f, 12, Merge::WordA0MaskV1);
+    c.cycles += 2;
+    Ok(())
+}
+
+/// `void Player_GetControlInput(Player* player, Input* input)` (0x127998):
+/// clear the 8-byte input record, then pack the buttons (one bit each) and
+/// the analog sticks (6 bits each, `(int)(value * 31)`) that the rider's
+/// current substate uses into it; the replay cache (`player+0xdf8`), if
+/// any, then records or plays back the record.
+pub fn player_get_control_input(c: &mut Cpu) {
+    use self::Merge::*;
+    use crate::ps2f::FpuF32;
+    guest(c, |c| {
+        const BOOL: u32 = gci::EVAL_BOOL;
+        const FLOAT: u32 = gci::EVAL_FLOAT;
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = 8;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x30);
+        let player = r32(c, S1);
+        let input = Addr(r32(c, S0));
+        // memset(input, 0, 8)
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, gci::MEMSET, 0x0012_79c4)?;
+        c.g[A0][0] = Addr(player).off(gci::RIDER).lw(c);
+        Callee {
+            addr: 0x0011_fee8,
+            f: ee::s00::Rider_GetSubState,
+        }
+        .call(c, 0x0012_79cc)?;
+        let substate = c.g[V0][0];
+        c.g[V1][0] = substate;
+        c.g[V0][0] = 0x0045_0000;
+        // Each case's code addresses the fields with these helpers.
+        let b = |c: &mut Cpu, id: u64, ret: u32| gci_eval(c, player, BOOL, id, ret);
+        let a = |c: &mut Cpu, id: u64, ret: u32| gci_eval(c, player, FLOAT, id, ret);
+        if substate < 0xe {
+            c.cycles += 6;
+            c.g[V1][0] = sx((substate as u32) << 2);
+            c.g[V0][0] = sx(gci::CASES);
+            let entry = gci::CASES.wrapping_add(substate as u32 * 4);
+            c.g[V1][0] = sx(entry);
+            c.g[A0][0] = Addr(entry).lw(c);
+            match substate {
+                // 0x001279f4
+                0 => {
+                    c.cycles += 122;
+                    gci_scale_into(c, 20);
+                    b(c, 0x2e, 0x0012_7a08)?;
+                    gci_bit(c, input, 12, WordV1MaskA0);
+                    b(c, 0x19, 0x0012_7a30)?;
+                    gci_bit(c, input, 13, WordV1MaskA0);
+                    b(c, 0x11, 0x0012_7a58)?;
+                    gci_bit(c, input, 14, WordV1MaskA0);
+                    b(c, 0x12, 0x0012_7a80)?;
+                    gci_bit(c, input, 15, WordA0MaskV1);
+                    b(c, 0x13, 0x0012_7aac)?;
+                    gci_bit(c, input, 16, WordA0MaskV1);
+                    b(c, 0x14, 0x0012_7ad8)?;
+                    gci_bit(c, input, 17, WordA0MaskV1);
+                    b(c, 5, 0x0012_7b04)?;
+                    gci_bit(c, input, 18, WordA0MaskV1);
+                    b(c, 6, 0x0012_7b30)?;
+                    gci_bit(c, input, 19, WordA0MaskV1);
+                    a(c, 0, 0x0012_7b5c)?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 20, WordA0MaskV1);
+                    a(c, 1, 0x0012_7b94)?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 26, WordA0MaskV1);
+                    a(c, 2, 0x0012_7bc8)?;
+                    gci_second_word_sticks(c, player, input, 3)?;
+                }
+                // 0x00127c68
+                1 => {
+                    c.cycles += 101;
+                    gci_scale_into(c, 20);
+                    b(c, 0x2e, 0x0012_7c7c)?;
+                    gci_bit(c, input, 12, WordV1MaskA0);
+                    b(c, 0x13, 0x0012_7ca4)?;
+                    gci_bit(c, input, 13, WordV1MaskA0);
+                    b(c, 0x14, 0x0012_7ccc)?;
+                    gci_bit(c, input, 14, WordV1MaskA0);
+                    b(c, 0x11, 0x0012_7cf4)?;
+                    gci_bit(c, input, 16, WordA0MaskV1);
+                    b(c, 0x12, 0x0012_7d20)?;
+                    gci_bit(c, input, 15, WordA0MaskV1);
+                    b(c, 0x16, 0x0012_7d4c)?;
+                    gci_bit(c, input, 17, WordA0MaskV1);
+                    a(c, 0x17, 0x0012_7d78)?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 24, WordA0MaskV1);
+                    a(c, 0, 0x0012_7db0)?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 18, WordA0MaskV1);
+                    a(c, 3, 0x0012_7de8)?;
+                    gci_second_word_sticks(c, player, input, 4)?;
+                }
+                // 0x0012803c
+                2 => {
+                    c.cycles += 67;
+                    gci_scale_into(c, 20);
+                    b(c, 0x2e, 0x0012_8050)?;
+                    gci_bit(c, input, 12, WordV1MaskA0);
+                    b(c, 0x12, 0x0012_8078)?;
+                    gci_bit(c, input, 13, WordV1MaskA0);
+                    b(c, 0x14, 0x0012_80a0)?;
+                    gci_bit(c, input, 14, WordV1MaskA0);
+                    a(c, 8, 0x0012_80c8)?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 15, WordA0MaskV1);
+                    a(c, 9, 0x0012_8100)?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 21, WordA0MaskV1);
+                    a(c, 7, 0x0012_8138)?;
+                    gci_second_word_sticks(c, player, input, 0x17)?;
+                }
+                // 0x00128194
+                3 => {
+                    c.cycles += 59;
+                    gci_scale_into(c, 20);
+                    b(c, 0x2e, 0x0012_81a8)?;
+                    gci_bit(c, input, 12, WordV1MaskA0);
+                    b(c, 0x13, 0x0012_81d0)?;
+                    gci_bit(c, input, 13, WordV1MaskA0);
+                    b(c, 0x14, 0x0012_81f8)?;
+                    gci_bit(c, input, 14, WordV1MaskA0);
+                    a(c, 0, 0x0012_8220)?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 15, WordA0MaskV1);
+                    a(c, 0x17, 0x0012_8258)?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 21, WordA0MaskV1);
+                    c.cycles += 2;
+                }
+                // 0x00128280 (4) and 0x001283a4 (5): with the trick button byte.
+                4 | 5 => {
+                    let five = substate == 5;
+                    c.cycles += if five { 109 } else { 73 };
+                    gci_scale_into(c, 20);
+                    let (ids, rets): ([u64; 4], [u32; 4]) = if five {
+                        (
+                            [0x2e, 0x19, 0x15, 0xc],
+                            [0x0012_83b8, 0x0012_83e0, 0x0012_8408, 0x0012_8430],
+                        )
+                    } else {
+                        (
+                            [0x2e, 0x19, 5, 6],
+                            [0x0012_8294, 0x0012_82bc, 0x0012_82e4, 0x0012_830c],
+                        )
+                    };
+                    b(c, ids[0], rets[0])?;
+                    gci_bit(c, input, 12, WordV1MaskA0);
+                    b(c, ids[1], rets[1])?;
+                    gci_bit(c, input, 13, WordV1MaskA0);
+                    b(c, ids[2], rets[2])?;
+                    gci_bit(c, input, 14, WordV1MaskA0);
+                    b(c, ids[3], rets[3])?;
+                    gci_bit(c, input, 15, WordA1MaskV1);
+                    c.g[A0][0] = c.g[S1][0];
+                    let ret = if five { 0x0012_8458 } else { 0x0012_8334 };
+                    Callee {
+                        addr: 0x0012_76f0,
+                        f: ee::s00::Player_GetTrickButton,
+                    }
+                    .call(c, ret)?;
+                    input.off(2).sb(c, c.g[V0][0]);
+                    let first = if five { 0xe } else { 0 };
+                    a(c, first, if five { 0x0012_8468 } else { 0x0012_8344 })?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 24, WordA0MaskV1);
+                    if !five {
+                        a(c, 1, 0x0012_837c)?;
+                        gci_scaled(c, 20);
+                        gci_field(c, input.off(4), 0x3f, 0, WordV1MaskA0);
+                    } else {
+                        let second = input.off(4);
+                        a(c, 0xf, 0x0012_84a0)?;
+                        gci_scaled(c, 20);
+                        gci_field(c, second, 0x3f, 0, WordV1MaskA0);
+                        a(c, 0xb, 0x0012_84d0)?;
+                        gci_scaled(c, 20);
+                        gci_field(c, second, 0x3f, 12, WordA0MaskV1);
+                        a(c, 0xa, 0x0012_8508)?;
+                        gci_scaled(c, 20);
+                        gci_field(c, second, 0x3f, 6, WordV1MaskA0);
+                        a(c, 3, 0x0012_853c)?;
+                        // Stick 3 as a -1/0/1 direction (dead zone 0.5).
+                        let v = FpuF32(c.f[0]);
+                        c.f[1] = v.0;
+                        gci_dead_zone(c, v);
+                        c.cycles += 9;
+                        let word = second.lw(c);
+                        let mask = 0xffff_ffff_fff3_ffffu64;
+                        c.g[V1][0] = mask;
+                        c.g[A0][0] = sx(((c.g[A0][0] & 3) as u32) << 18);
+                        let merged = (word & mask) | c.g[A0][0];
+                        c.g[V0][0] = merged;
+                        second.sw(c, merged);
+                    }
+                }
+                // 0x00127dfc
+                6 => {
+                    c.cycles += 3;
+                    gci_single_stick(c, player, input, 0x1a)?;
+                }
+                // 0x00127e08
+                7 => {
+                    c.cycles += 86;
+                    gci_scale_into(c, 20);
+                    b(c, 0x2e, 0x0012_7e1c)?;
+                    gci_bit(c, input, 12, WordV1MaskA0);
+                    b(c, 0x11, 0x0012_7e44)?;
+                    gci_bit(c, input, 13, WordV1MaskA0);
+                    b(c, 0x12, 0x0012_7e6c)?;
+                    gci_bit(c, input, 14, WordV1MaskA0);
+                    b(c, 0x13, 0x0012_7e94)?;
+                    gci_bit(c, input, 15, WordA0MaskV1);
+                    b(c, 0x14, 0x0012_7ec0)?;
+                    gci_bit(c, input, 16, WordA1MaskV1);
+                    c.g[A0][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x0012_7848,
+                        f: ee::s00::Player_GetUberGrindButton,
+                    }
+                    .call(c, 0x0012_7ee8)?;
+                    gci_field(c, input, 0xff, 17, WordA0MaskV1);
+                    a(c, 0x17, 0x0012_7f14)?;
+                    gci_scaled(c, 20);
+                    gci_field(c, input, 0x3f, 25, WordA0MaskV1);
+                    a(c, 0xd, 0x0012_7f4c)?;
+                    gci_second_word_sticks(c, player, input, 3)?;
+                }
+                // 0x00128598
+                8 => {
+                    c.cycles += 21;
+                    b(c, 0x2e, 0x0012_85a4)?;
+                    gci_bit(c, input, 12, WordV1MaskA0);
+                    b(c, 0x10, 0x0012_85cc)?;
+                    gci_bit(c, input, 13, WordV1MaskA0);
+                }
+                // 0x001285ec
+                10 => {
+                    c.cycles += 2;
+                    gci_single_stick(c, player, input, 0)?;
+                }
+                // 0x00127bdc
+                11 => {
+                    c.cycles += 35;
+                    b(c, 0x2e, 0x0012_7be8)?;
+                    gci_bit(c, input, 12, WordV1MaskA0);
+                    b(c, 0x19, 0x0012_7c10)?;
+                    gci_bit(c, input, 13, WordV1MaskA0);
+                    a(c, 0x18, 0x0012_7c38)?;
+                    gci_scale_into(c, 1);
+                    gci_scaled(c, 1);
+                    gci_field(c, input, 0x3f, 14, WordA0MaskV1);
+                    c.cycles += 2;
+                }
+                // 0x00127f60
+                12 => {
+                    c.cycles += 55;
+                    b(c, 0x2e, 0x0012_7f6c)?;
+                    gci_bit(c, input, 12, WordV1MaskA0);
+                    b(c, 0x13, 0x0012_7f94)?;
+                    gci_bit(c, input, 13, WordV1MaskA0);
+                    b(c, 0x14, 0x0012_7fbc)?;
+                    gci_bit(c, input, 14, WordV1MaskA0);
+                    c.g[A0][0] = c.g[S1][0];
+                    Callee {
+                        addr: 0x0012_7848,
+                        f: ee::s00::Player_GetUberGrindButton,
+                    }
+                    .call(c, 0x0012_7fe0)?;
+                    gci_field(c, input, 0xff, 15, WordA0MaskV1);
+                    a(c, 0x17, 0x0012_800c)?;
+                    gci_scale_into(c, 1);
+                    gci_scaled(c, 1);
+                    gci_field(c, input, 0x3f, 23, WordA0MaskV1);
+                    c.cycles += 2;
+                }
+                // 9 and 13: nothing to read (0x00128630).
+                _ => {}
+            }
+        }
+
+        // 0x00128630: let the replay cache record or play back the input.
+        c.cycles += 3;
+        let replay = Addr(player).off(gci::REPLAY).lw(c);
+        c.g[A0][0] = replay;
+        if replay != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, gci::REPLAY_UPDATE, 0x0012_8644)?;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// Substate 5's stick direction: `a0 = v < -0.5 ? -1 : (0.5 < v)`, with
+/// the compares, `f0`, `at` and the condition bit as the original leaves them.
+pub(crate) fn gci_dead_zone(c: &mut Cpu, v: crate::ps2f::FpuF32) {
+    use crate::ps2f::FpuF32;
+    c.g[AT][0] = sx(0xbf00_0000);
+    c.f[0] = 0xbf00_0000;
+    let above_low = FpuF32(0xbf00_0000).le(v);
+    abi::set_fcc(c, above_low);
+    if !above_low {
+        c.g[A0][0] = u64::MAX;
+        return;
+    }
+    c.cycles += 6;
+    c.g[AT][0] = 0x3f00_0000;
+    c.f[0] = 0x3f00_0000;
+    let above_high = FpuF32(0x3f00_0000).lt(v);
+    abi::set_fcc(c, above_high);
+    if above_high {
+        c.g[A0][0] = 1;
+    } else {
+        c.cycles += 1;
+        c.g[A0][0] = 0;
+    }
+}
+
+/// `void Rider_SetSlew3And4Targets(Rider* r, float crouch, float brake)`
+/// (0x113f88): crouch and brake exclude each other: while one is asked
+/// for and the other is still non-zero, only the other is sent to 0.
+/// Otherwise the crouch slew gets `crouch` (0 while braking) with a step
+/// proportional to the distance (`k * |d|`, floored), and the brake slew
+/// gets `brake`, signed by the lean side, cleared while crouching or when
+/// moving backward, with a step `k * min(max(|d|, lo), 1)`.
+pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
+    use self::slew34::*;
+    use crate::ps2f::FpuF32;
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    let rider = Addr(abi::arg(c, 0));
+    let gp = r32(c, GP);
+    let lit = |c: &mut Cpu, off: u32| Addr(gp.wrapping_sub(off)).read_fpu(c);
+    let f = |c: &mut Cpu, n: usize| FpuF32(c.f[n]);
+    let zero = FpuF32::ZERO;
+
+    // Crouching asked for while still braking: release the brake first.
+    c.cycles += 4;
+    c.f[1] = 0;
+    let crouch_asked = zero.lt(f(c, 12));
+    abi::set_fcc(c, crouch_asked);
+    if crouch_asked {
+        c.cycles += 4;
+        let brake_cur = rider.off(BRAKE_CUR).read_fpu(c);
+        c.f[0] = brake_cur.0;
+        let released = brake_cur.eq_s(zero);
+        abi::set_fcc(c, released);
+        if !released {
+            c.cycles += 4;
+            let step = lit(c, 0x7c20);
+            c.f[0] = step.0;
+            rider.off(BRAKE_TARGET).write_fpu(c, zero);
+            rider.off(BRAKE_STEP).write_fpu(c, step);
+            ret(c);
+            return;
+        }
+    }
+
+    // Braking asked for while still crouched: stand up first.
+    c.cycles += 4;
+    let brake_asked = zero.lt(f(c, 13));
+    abi::set_fcc(c, brake_asked);
+    let crouch_cur = rider.off(CROUCH_CUR).read_fpu(c);
+    c.f[2] = crouch_cur.0;
+    if brake_asked {
+        c.cycles += 3;
+        let standing = crouch_cur.eq_s(zero);
+        abi::set_fcc(c, standing);
+        if !standing {
+            c.cycles += 4;
+            let step = lit(c, 0x7c1c);
+            c.f[0] = step.0;
+            rider.off(CROUCH_TARGET).write_fpu(c, zero);
+            rider.off(CROUCH_STEP).write_fpu(c, step);
+            ret(c);
+            return;
+        }
+    }
+
+    // Slew #4 (crouch): no crouching while the brake is still on.
+    c.cycles += 5;
+    c.f[1] = 0;
+    let crouch_asked = zero.lt(f(c, 12));
+    abi::set_fcc(c, crouch_asked);
+    if crouch_asked {
+        c.cycles += 5;
+        let brake_cur = rider.off(BRAKE_CUR).read_fpu(c);
+        c.f[0] = brake_cur.0;
+        let released = brake_cur.eq_s(zero);
+        abi::set_fcc(c, released);
+        if !released {
+            c.f[12] = 0;
+        }
+        c.cycles += 1;
+    }
+    let delta = f(c, 12) - f(c, 2);
+    c.f[0] = delta.0;
+    c.cycles += 5;
+    let floor = lit(c, 0x7c18);
+    c.f[1] = floor.0;
+    let dist = delta.abs();
+    c.f[2] = dist.0;
+    let far = floor.le(dist);
+    abi::set_fcc(c, far);
+    let step = if far {
+        c.cycles += 3;
+        dist * lit(c, 0x7c14)
+    } else {
+        c.cycles += 1;
+        lit(c, 0x7c10)
+    };
+    c.f[0] = step.0;
+
+    // Slew #3 (brake): cleared while crouching or moving backward.
+    c.cycles += 6;
+    c.f[1] = 0;
+    let crouch_target = f(c, 12);
+    rider.off(CROUCH_TARGET).write_fpu(c, crouch_target);
+    let brake_asked = zero.lt(f(c, 13));
+    abi::set_fcc(c, brake_asked);
+    rider.off(CROUCH_STEP).write_fpu(c, step);
+    let mut charge_reload = true;
+    if brake_asked {
+        c.cycles += 5;
+        let crouch_cur = rider.off(CROUCH_CUR).read_fpu(c);
+        c.f[0] = crouch_cur.0;
+        let crouching = zero.lt(crouch_cur);
+        abi::set_fcc(c, crouching);
+        if crouching {
+            c.f[13] = 0;
+        } else {
+            c.cycles += 13;
+            c.lqc2(3, rider.off(VEL).0);
+            c.lqc2(5, rider.off(GROUND_FORWARD).0);
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(V0, 4);
+            c.f[0] = c.g[V0][0] as u32;
+            let backward = f(c, 0).lt(zero);
+            abi::set_fcc(c, backward);
+            if backward {
+                c.cycles += 1;
+                c.f[13] = 0;
+            } else {
+                charge_reload = false;
+            }
+        }
+    }
+    if charge_reload {
+        c.cycles += 1;
+    }
+    let brake_cur = rider.off(BRAKE_CUR).read_fpu(c);
+    c.f[0] = brake_cur.0;
+
+    // Powerslide side: flip the target when leaning the other way.
+    c.cycles += 6;
+    let small = lit(c, 0x7c0c);
+    c.f[3] = small.0;
+    let size = brake_cur.abs();
+    c.f[1] = size.0;
+    let settled = size.le(small);
+    abi::set_fcc(c, settled);
+    c.f[2] = brake_cur.0;
+    let mut flip = false;
+    let mut checked = false;
+    if settled {
+        c.cycles += 6;
+        let lean = rider.off(LEAN).read_fpu(c);
+        c.f[1] = lean.0;
+        c.f[0] = 0;
+        let left = lean.lt(zero);
+        abi::set_fcc(c, left);
+        flip = left;
+        checked = left;
+    }
+    if !checked {
+        c.cycles += 5;
+        let lo = lit(c, 0x7c08);
+        c.f[0] = lo.0;
+        let below = brake_cur.lt(lo);
+        abi::set_fcc(c, below);
+        if below {
+            c.cycles += 5;
+            let lean = rider.off(LEAN).read_fpu(c);
+            c.f[0] = lean.0;
+            let under = lean.lt(f(c, 3));
+            abi::set_fcc(c, under);
+            if under {
+                c.cycles += 1;
+            }
+            flip = under;
+        }
+    }
+    if flip {
+        c.f[13] = (-f(c, 13)).0;
+        c.cycles += 1;
+    }
+    let delta = f(c, 13) - brake_cur;
+    c.f[0] = delta.0;
+
+    // Step: k * min(max(|d|, lo), 1).
+    c.cycles += 8;
+    let lo = lit(c, 0x7c04);
+    let dist = delta.abs();
+    c.f[0] = dist.0;
+    c.g[AT][0] = 0x3f80_0000;
+    c.f[2] = 0x3f80_0000;
+    let above = lo.le(dist);
+    abi::set_fcc(c, above);
+    let clamped = if above { dist.min(FpuF32(c.f[2])) } else { lo };
+    c.f[1] = clamped.0;
+    c.cycles += 5;
+    let step = clamped * lit(c, 0x7c00);
+    c.f[0] = step.0;
+    let brake_target = f(c, 13);
+    rider.off(BRAKE_TARGET).write_fpu(c, brake_target);
+    rider.off(BRAKE_STEP).write_fpu(c, step);
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Rider_UpdateOrientation (0x00121aa0)
+// ---------------------------------------------------------------------------
+
+/// FPU register `r` as a value.
+#[inline(always)]
+pub(crate) fn fr_3(c: &Cpu, r: usize) -> FpuF32 {
+    FpuF32(c.f[r])
+}
+
+/// Set FPU register `r`.
+#[inline(always)]
+pub(crate) fn set_fr(c: &mut Cpu, r: usize, v: FpuF32) {
+    c.f[r] = v.0;
+}
+
+/// `c.eq.s a, b` (FCC set), returning the condition.
+#[inline(always)]
+pub(crate) fn fcc_eq(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
+    let t = a.eq_s(b);
+    abi::set_fcc(c, t);
+    t
+}
+
+/// `c.lt.s a, b` (FCC set), returning the condition.
+#[inline(always)]
+pub(crate) fn fcc_lt(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
+    let t = a.lt(b);
+    abi::set_fcc(c, t);
+    t
+}
+
+/// `c.le.s a, b` (FCC set), returning the condition.
+#[inline(always)]
+pub(crate) fn fcc_le(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
+    let t = a.le(b);
+    abi::set_fcc(c, t);
+    t
+}
+
+/// `Rider.orient`: the rider's orientation quaternion (x, y, z, w).
+pub(crate) const RIDER_QUAT: u32 = 0x120;
+
+/// The static zero vec4 and the reference axis (both in `.bss`, written at
+/// boot).
+pub(crate) const ZERO_VEC4: u32 = 0x004f_f120;
+
+pub(crate) const REF_AXIS: u32 = 0x004f_f140;
+
+/// `.lit4` constants (gp-relative, subtracted): -pi/2, pi/2, pi, pi, pi/2,
+/// 1e-5, pi/2, 1e-5 and the seconds per tick (1/60).
+pub(crate) const GP_NEG_HALF_PI: u32 = 0x78e8;
+
+pub(crate) const GP_HALF_PI_A: u32 = 0x78e4;
+
+pub(crate) const GP_PI_A: u32 = 0x78e0;
+
+pub(crate) const GP_PI_B: u32 = 0x78dc;
+
+pub(crate) const GP_HALF_PI_B: u32 = 0x78d8;
+
+pub(crate) const GP_EPS_A: u32 = 0x78d4;
+
+pub(crate) const GP_HALF_PI_C: u32 = 0x78d0;
+
+pub(crate) const GP_EPS_B: u32 = 0x78cc;
+
+pub(crate) const GP_TICK_STEP: u32 = 0x78c8;
+
+pub(crate) const QUAT_FROM_TWO_VECTORS: u32 = 0x0031_bb30;
+
+pub(crate) const MATH_ATAN: u32 = 0x0031_c228;
+
+pub(crate) const MATH_SIN_COS: u32 = 0x0031_be50;
+
+pub(crate) const MATH_ASIN: u32 = 0x0031_c128;
+
+pub(crate) const MATH_SIN: u32 = 0x0031_bf60;
+
+pub(crate) const RIDER_BUILD_WORLD_MATRIX: Callee = Callee {
+    addr: 0x0011_e098,
+    f: ee::s00::f_0011e098,
+};
+
+/// `vf8 = vf4 * vf5` (quaternion product, VU0 macro ops).
+pub(crate) fn quat_mul_vu0(c: &mut Cpu) {
+    let v = c.vu0();
+    v.mul(0b1111, 7, 4, Src::Vec(5));
+    v.opmula(4, 5);
+    v.opmsub(6, 5, 4);
+    v.mula(0b1110, 4, Src::Bc(5, W));
+    v.madda(0b1110, 5, Src::Bc(4, W));
+    v.suba(0b0001, 7, Src::Bc(7, X));
+    v.msuba(0b0001, 0, Src::Bc(7, Y));
+    v.msub(0b0001, 8, 0, Src::Bc(7, Z));
+    v.madd(0b1110, 8, 6, Src::Bc(0, W));
+}
+
+/// A gp-relative `.lit4` float (`lwc1 f, -off(gp)`).
+pub(crate) fn gp_lit(c: &mut Cpu, off: u32) -> FpuF32 {
+    Addr(r32(c, GP).wrapping_sub(off)).read_fpu(c)
+}
+
+/// `void Rider_UpdateOrientation(Rider* rider, const Vec4* up,
+/// const Vec4* heading, float rate, float maxTurn)` (0x00121aa0): turns
+/// the rider's orientation toward a target: the quaternion that brings the
+/// rider's local Z axis onto `up`, then (unless `heading` is the zero
+/// vector) spun about `up` to face `heading` (atan of the heading in the
+/// target frame). The rotation from the current to the target orientation
+/// is limited to `min(maxTurn, angle * rate) / 60` per tick about its
+/// axis (the reference axis when it is tiny), applied to the rider's
+/// quaternion, and the world matrix rebuilt.
+pub fn rider_update_orientation(c: &mut Cpu) {
+    guest(c, |c| {
+        // 0x00121aa0: frame, the rider's local Z axis.
+        c.cycles += 52;
+        let frame = Frame::open(c, 0xe0);
+        c.g[AT][0] = 0x3f80_0000;
+        set_fr(c, 7, FpuF32::ONE);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x80);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_fpr(c, 24, 0xd0);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save_fpr(c, 23, 0xc8);
+        c.f[24] = c.f[12];
+        frame.save_ra(c, 0x70);
+        c.f[23] = c.f[13];
+        frame.save_fpr(c, 22, 0xc0);
+        frame.save_fpr(c, 21, 0xb8);
+        frame.save_fpr(c, 20, 0xb0);
+        let s = sp(c);
+        let rider = r32(c, S1);
+        let up = r32(c, S2);
+        let heading = r32(c, S0);
+        let quat = rider.wrapping_add(RIDER_QUAT);
+        c.g[A0][0] = sx(s);
+        c.g[A1][0] = sx(s + 0x10);
+        c.g[A2][0] = c.g[S2][0];
+        let x = Addr(quat).read_fpu(c);
+        let y = Addr(quat + 4).read_fpu(c);
+        let z = Addr(quat + 8).read_fpu(c);
+        let w = Addr(quat + 0xc).read_fpu(c);
+        set_fr(c, 2, x);
+        set_fr(c, 3, y);
+        let xx = x * x;
+        let yy = y * y;
+        let zy = z * y;
+        c.lq(V0, quat);
+        let wx = w * x;
+        set_fr(c, 8, wx);
+        Addr(s + 0x1c).sw(c, 0);
+        set_fr(c, 6, yy);
+        c.sq(V0, s);
+        let zx = z * x;
+        let wy = w * y;
+        set_fr(c, 5, wy);
+        let sq2 = (xx + yy) + (xx + yy);
+        set_fr(c, 4, sq2);
+        let ay = zy - wx;
+        let ay = ay + ay;
+        let az = FpuF32::ONE - sq2;
+        let ax = zx + wy;
+        let ax = ax + ax;
+        set_fr(c, 1, ay);
+        set_fr(c, 7, az);
+        set_fr(c, 0, ax);
+        Addr(s + 0x14).write_fpu(c, ay);
+        Addr(s + 0x18).write_fpu(c, az);
+        Addr(s + 0x10).write_fpu(c, ax);
+        // target (sp+0) = the rotation of that axis onto `up`.
+        call_ptr(c, QUAT_FROM_TWO_VECTORS, 0x0012_1b50)?;
+
+        // 0x00121b50: is `heading` the zero vector?
+        c.g[V0][0] = 0x50_0000;
+        c.g[V1][0] = sx(ZERO_VEC4);
+        let lane = |c: &mut Cpu, i: u32, swap: bool| {
+            let h = Addr(heading + 4 * i).read_fpu(c);
+            let k = Addr(ZERO_VEC4 + 4 * i).read_fpu(c);
+            if swap {
+                set_fr(c, 1, k);
+                set_fr(c, 0, h);
+                fcc_eq(c, h, k)
+            } else {
+                set_fr(c, 1, h);
+                set_fr(c, 0, k);
+                fcc_eq(c, h, k)
+            }
+        };
+        let eq0 = lane(c, 0, false);
+        c.g[V0][0] = 0;
+        let differs = if !eq0 {
+            c.cycles += 1;
+            true
+        } else {
+            c.cycles += 6;
+            if !lane(c, 1, false) {
+                true
+            } else {
+                c.cycles += 6;
+                if !lane(c, 2, false) {
+                    true
+                } else {
+                    c.cycles += 5;
+                    if lane(c, 3, true) {
+                        false
+                    } else {
+                        c.cycles += 1;
+                        true
+                    }
+                }
+            }
+        };
+        if differs {
+            c.g[V0][0] = 1;
+        }
+
+        // 0x00121bb8
+        c.cycles += 2;
+        if differs {
+            // The heading in the target frame (vf8 = conj-rotated heading).
+            c.cycles += 21;
+            c.lqc2(4, s);
+            c.lqc2(5, heading);
+            {
+                let v = c.vu0();
+                v.sub(0b0001, 8, 8, Src::Vec(8));
+                v.opmula(4, 5);
+                v.opmsub(6, 5, 4);
+                v.opmula(4, 6);
+                v.opmsub(7, 6, 4);
+                v.mula(0b1110, 5, Src::Bc(0, W));
+                v.msuba(0b1110, 6, Src::Bc(4, W));
+                v.msuba(0b1110, 6, Src::Bc(4, W));
+                v.madda(0b1110, 7, Src::Bc(0, W));
+                v.madd(0b1110, 8, 7, Src::Bc(0, W));
+            }
+            c.sqc2(8, s + 0x20);
+            set_fr(c, 22, FpuF32::ZERO);
+            c.lq(V0, s + 0x20);
+            c.sq(V0, s + 0x10);
+            let hy = Addr(s + 0x14).read_fpu(c);
+            set_fr(c, 20, hy);
+            let y_zero = fcc_eq(c, hy, FpuF32::ZERO);
+            let hx = Addr(s + 0x10).read_fpu(c);
+            set_fr(c, 21, hx);
+            // f0 = -yaw
+            if !y_zero {
+                // 0x00121c40: atan(hx / hy), moved into the right quadrant.
+                c.cycles += 7;
+                set_fr(c, 12, hx.div(hy));
+                call_ptr(c, MATH_ATAN, 0x0012_1c4c)?;
+                let negative = fcc_lt(c, hy, FpuF32::ZERO);
+                c.f[12] = c.f[0];
+                if negative {
+                    c.cycles += 3;
+                    if fcc_lt(c, FpuF32::ZERO, hx) {
+                        c.cycles += 3;
+                        let pi = gp_lit(c, GP_PI_A);
+                        set_fr(c, 0, pi);
+                        set_fr(c, 12, fr_3(c, 12) + pi);
+                    } else {
+                        c.cycles += 2;
+                        let pi = gp_lit(c, GP_PI_B);
+                        set_fr(c, 0, pi);
+                        set_fr(c, 12, fr_3(c, 12) - pi);
+                    }
+                }
+                c.cycles += 1;
+                c.f[0] = c.f[12];
+                c.cycles += 1;
+                set_fr(c, 0, -fr_3(c, 0));
+            } else {
+                c.cycles += 4;
+                let x_zero = fcc_eq(c, hx, FpuF32::ZERO);
+                set_fr(c, 0, hx);
+                if x_zero {
+                    c.cycles += 1;
+                    set_fr(c, 0, -hx);
+                } else {
+                    c.cycles += 4;
+                    let positive = fcc_le(c, FpuF32::ZERO, hx);
+                    let k = gp_lit(c, GP_NEG_HALF_PI);
+                    if !positive {
+                        set_fr(c, 0, -k);
+                    } else {
+                        c.cycles += 3;
+                        let k = gp_lit(c, GP_HALF_PI_A);
+                        set_fr(c, 0, -k);
+                    }
+                }
+            }
+
+            // 0x00121c84: spin the target about `up` by the yaw.
+            c.cycles += 34;
+            c.g[AT][0] = 0x3f00_0000;
+            c.g[A0][0] = sx(s + 0x60);
+            c.g[A1][0] = sx(s + 0x64);
+            set_fr(c, 12, fr_3(c, 0) * FpuF32(0x3f00_0000));
+            call_ptr(c, MATH_SIN_COS, 0x0012_1c9c)?;
+            let ux = Addr(up).read_fpu(c);
+            let uy = Addr(up + 4).read_fpu(c);
+            let uz = Addr(up + 8).read_fpu(c);
+            let sin = Addr(s + 0x60).read_fpu(c);
+            let cos = Addr(s + 0x64).read_fpu(c);
+            set_fr(c, 4, uy);
+            set_fr(c, 2, cos);
+            let (qx, qy, qz) = (sin * ux, sin * uy, sin * uz);
+            set_fr(c, 3, qz);
+            set_fr(c, 1, qx);
+            set_fr(c, 0, qy);
+            Addr(s + 0x4c).write_fpu(c, cos);
+            Addr(s + 0x48).write_fpu(c, qz);
+            Addr(s + 0x40).write_fpu(c, qx);
+            Addr(s + 0x44).write_fpu(c, qy);
+            c.lqc2(4, s + 0x40);
+            c.lqc2(5, s);
+            quat_mul_vu0(c);
+            c.sqc2(8, s + 0x50);
+            c.lq(V0, s + 0x50);
+            c.sq(V0, s);
+            c.sq(V0, s + 0x30);
+        }
+        c.f[0] = Addr(quat).read_u32(c);
+
+        // 0x00121d0c: delta = target * conj(current) (sp+0x10).
+        c.cycles += 31;
+        let qx = fr_3(c, 0);
+        let qy = Addr(quat + 4).read_fpu(c);
+        let qz = Addr(quat + 8).read_fpu(c);
+        let qw = Addr(quat + 0xc).read_fpu(c);
+        set_fr(c, 0, -qx);
+        set_fr(c, 1, -qy);
+        set_fr(c, 3, qw);
+        set_fr(c, 2, -qz);
+        Addr(s + 0x30).write_fpu(c, -qx);
+        Addr(s + 0x3c).write_fpu(c, qw);
+        Addr(s + 0x34).write_fpu(c, -qy);
+        Addr(s + 0x38).write_fpu(c, -qz);
+        set_fr(c, 21, FpuF32::ZERO);
+        c.lq(V0, s + 0x30);
+        c.sq(V0, s + 0x20);
+        c.lqc2(4, s);
+        c.lqc2(5, s + 0x20);
+        quat_mul_vu0(c);
+        c.sqc2(8, s + 0x30);
+        c.lq(V0, s + 0x30);
+        c.sq(V0, s + 0x10);
+        let dw = Addr(s + 0x1c).read_fpu(c);
+        set_fr(c, 0, dw);
+
+        // Its angle (f20 = 2 acos |w|) and half-angle sign (f12 = +-0.5).
+        let has_axis = if fcc_lt(c, FpuF32::ZERO, dw) {
+            c.cycles += 12;
+            c.g[AT][0] = 0x3f80_0000;
+            set_fr(c, 12, dw.min(FpuF32::ONE));
+            call_ptr(c, MATH_ASIN, 0x0012_1d98)?;
+            let half_pi = gp_lit(c, GP_HALF_PI_B);
+            let eps = gp_lit(c, GP_EPS_A);
+            let d = half_pi - fr_3(c, 0);
+            set_fr(c, 1, d);
+            let angle = d + d;
+            set_fr(c, 20, angle);
+            let big = fcc_le(c, eps, angle);
+            c.f[2] = Addr(s + 0x10).read_u32(c);
+            if big {
+                c.cycles += 4;
+                c.g[AT][0] = 0x3f00_0000;
+                set_fr(c, 12, FpuF32(0x3f00_0000));
+                c.f[0] = Addr(s + 0x14).read_u32(c);
+            }
+            big
+        } else {
+            c.cycles += 13;
+            c.g[AT][0] = sx(0xbf80_0000);
+            set_fr(c, 12, -dw.max(FpuF32(0xbf80_0000)));
+            call_ptr(c, MATH_ASIN, 0x0012_1ddc)?;
+            let half_pi = gp_lit(c, GP_HALF_PI_C);
+            let eps = gp_lit(c, GP_EPS_B);
+            let d = half_pi - fr_3(c, 0);
+            set_fr(c, 1, d);
+            let angle = d + d;
+            set_fr(c, 20, angle);
+            let big = fcc_le(c, eps, angle);
+            c.f[2] = Addr(s + 0x10).read_u32(c);
+            if big {
+                c.cycles += 3;
+                c.g[AT][0] = sx(0xbf00_0000);
+                set_fr(c, 12, FpuF32(0xbf00_0000));
+                c.f[0] = Addr(s + 0x14).read_u32(c);
+            }
+            big
+        };
+        if has_axis {
+            // 0x00121e08: axis = delta.xyz / sin(+-angle/2) (sp+0x20).
+            c.cycles += 18;
+            set_fr(c, 12, fr_3(c, 20) * fr_3(c, 12));
+            c.f[1] = Addr(s + 0x18).read_u32(c);
+            Addr(s + 0x40).write_fpu(c, fr_3(c, 2));
+            Addr(s + 0x44).write_fpu(c, fr_3(c, 0));
+            Addr(s + 0x48).write_fpu(c, fr_3(c, 1));
+            Addr(s + 0x4c).write_fpu(c, fr_3(c, 21));
+            call_ptr(c, MATH_SIN, 0x0012_1e24)?;
+            c.mfc1(V1, 0);
+            c.qmtc2(V1, 3);
+            c.vu0().div(0, 3, 3, 0);
+            c.lqc2(4, s + 0x40);
+            c.vu0().waitq();
+            c.vu0().mul(0b1111, 4, 4, Src::Q);
+            c.sqc2(4, s + 0x50);
+            c.lq(V0, s + 0x50);
+            c.sq(V0, s + 0x20);
+            c.sq(V0, s + 0x30);
+        } else {
+            // 0x00121e50: no rotation to speak of, the reference axis.
+            c.cycles += 4;
+            c.g[V0][0] = sx(REF_AXIS);
+            c.lq(V1, REF_AXIS);
+            c.sq(V1, s + 0x20);
+        }
+
+        // 0x00121e60: turn by min(maxTurn, angle * rate) per second.
+        c.cycles += 52;
+        let step = gp_lit(c, GP_TICK_STEP);
+        set_fr(c, 1, step);
+        c.g[AT][0] = 0x3f00_0000;
+        c.g[A0][0] = sx(s + 0x68);
+        c.g[A1][0] = sx(s + 0x6c);
+        let turn = fr_3(c, 23).min(fr_3(c, 20) * fr_3(c, 24));
+        set_fr(c, 0, turn);
+        let angle = turn * step;
+        set_fr(c, 20, angle);
+        set_fr(c, 12, angle * FpuF32(0x3f00_0000));
+        call_ptr(c, MATH_SIN_COS, 0x0012_1e88)?;
+        let sin = Addr(s + 0x68).read_fpu(c);
+        c.g[A0][0] = c.g[S1][0];
+        let ax = Addr(s + 0x20).read_fpu(c);
+        let ay = Addr(s + 0x24).read_fpu(c);
+        let az = Addr(s + 0x28).read_fpu(c);
+        set_fr(c, 4, az);
+        let (rx, ry, rz) = (sin * ax, sin * ay, sin * az);
+        set_fr(c, 1, rx);
+        set_fr(c, 2, ry);
+        let cos = Addr(s + 0x6c).read_fpu(c);
+        set_fr(c, 3, cos);
+        set_fr(c, 0, rz);
+        Addr(s + 0x3c).write_fpu(c, cos);
+        Addr(s + 0x30).write_fpu(c, rx);
+        Addr(s + 0x34).write_fpu(c, ry);
+        Addr(s + 0x38).write_fpu(c, rz);
+        c.lq(V0, s + 0x30);
+        c.sq(V0, s + 0x10);
+        // orient = step * orient
+        c.lqc2(4, s + 0x10);
+        c.lqc2(5, quat);
+        quat_mul_vu0(c);
+        c.sqc2(8, s + 0x40);
+        c.lq(V0, s + 0x40);
+        c.sq(V0, quat);
+        c.sq(V0, s + 0x30);
+        RIDER_BUILD_WORLD_MATRIX.call(c, 0x0012_1f04)?;
+
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.restore_fpr(c, 24, 0xd0);
+        frame.restore_fpr(c, 23, 0xc8);
+        frame.restore_fpr(c, 22, 0xc0);
+        frame.restore_fpr(c, 21, 0xb8);
+        frame.restore_fpr(c, 20, 0xb0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void Rider_BeginFrame(Rider* r)` (0x120f20): per-tick setup of a rider.
+///
+/// - Clears two per-frame counters.
+/// - Re-gathers the overlap list for the rider's bounds and finds the
+///   nearby lights (`OverlapList_GatherAll`, `Rider_FindNearbyLights`) on
+///   the rider's turn (frame counter % 3 == AI index % 3), when the list's
+///   stamp differs from the world tree's, or when the camera control is in
+///   mode 3 or 1.
+/// - In a scripted scene, probes the ground below the position (or below
+///   the board root bone).
+/// - Resets the model offset, a counter and the visited ids (-1), updates
+///   the target speed, and advances the finish clock by 1/60 once the
+///   rider has finished.
+pub fn rider_begin_frame(c: &mut Cpu) {
+    use begin_frame::*;
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x40);
+        c.cycles += 14;
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        let rider = Addr(r32(c, S0));
+        rider.off(COUNTER_3FC).sw(c, 0);
+        rider.off(COUNTER_AA4).sw(c, 0);
+        AI_GET_FRAME_COUNTER.call(c, 0x0012_0f44)?;
+
+        // Whose turn: frame % 3 against the AI index % 3 (HI of each div).
+        c.g[V1][0] = 0x3;
+        c.g[A1][0] = 0x3;
+        c.div(0, V0, V1);
+        c.cycles += 6;
+        c.g[A0][0] = rider.off(AI_INDEX).lw(c);
+        c.g[A2][0] = c.hi[0];
+        c.div(0, A0, A1);
+        c.g[V0][0] = c.hi[0];
+        let my_turn = c.g[A2][0] == c.g[V0][0];
+        c.g[V0][0] = Addr(gp_4(c, GP_APP)).lw(c);
+        let gather = if my_turn {
+            c.cycles += 1;
+            true
+        } else {
+            c.cycles += 7;
+            let list = rider.off(OVERLAPS).lw(c);
+            c.g[V1][0] = list;
+            let module = Addr(c.g[V0][0] as u32).off(APP_MODULE).lw(c);
+            c.g[A1][0] = module;
+            c.g[A0][0] = Addr(list as u32).off(LIST_STAMP).lw(c);
+            c.g[V0][0] = Addr(module as u32).off(MODULE_TREE).lw(c);
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(TREE_STAMP).lw(c);
+            if c.g[A0][0] != c.g[V1][0] {
+                true
+            } else {
+                // Up to date: only while the camera control is in mode 3 or 1.
+                c.cycles += 6;
+                c.g[S1][0] = Addr(module as u32).off(MODULE_CONTROL).lw(c);
+                c.g[S2][0] = 0;
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, RIDER_IS_CONTROL_MODE3, 0x0012_0f9c)?;
+                if c.g[V0][0] != 0 {
+                    c.g[S2][0] = 0x1;
+                } else {
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(r32(c, S1)).off(CONTROL_MODE).lw(c) ^ 0x1;
+                    if c.g[V0][0] == 0 {
+                        c.g[S2][0] = 0x1;
+                    }
+                }
+                c.cycles += 2;
+                let busy = c.g[S2][0] != 0;
+                if busy {
+                    c.cycles += 1;
+                }
+                busy
+            }
+        };
+        if gather {
+            c.g[A0][0] = rider.off(OVERLAPS).lw(c);
+            c.cycles += 5;
+            c.g[A1][0] = sx(rider.off(BOUNDS).0);
+            call_ptr(c, OVERLAP_LIST_GATHER_ALL, 0x0012_0fc8)?;
+            c.g[A0][0] = c.g[S0][0];
+            RIDER_FIND_NEARBY_LIGHTS.call(c, 0x0012_0fd0)?;
+        }
+
+        // A scripted scene: probe the ground.
+        c.g[V0][0] = rider.off(IN_NIS).lw(c);
+        c.cycles += 2;
+        let in_nis = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x50_0000;
+        if in_nis {
+            c.cycles += 3;
+            c.g[V0][0] = rider.off(PROBE_AT_BONE).lw(c);
+            c.g[A1][0] = sx(rider.off(POSITION).0);
+            if c.g[V0][0] != 0 {
+                c.cycles += 5;
+                let model = rider.off(MODEL).lw(c);
+                c.g[V0][0] = model;
+                let bone = rider.off(BOARD_ROOT_BONE).lw(c);
+                let bones = Addr(model as u32).off(MODEL_BONES).lw(c);
+                c.g[A0][0] = bones;
+                c.g[V1][0] = sx((bone as u32) << 5);
+                c.g[A1][0] = sx((bones as u32).wrapping_add((bone as u32) << 5));
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            RIDER_PROBE_GROUND.call(c, 0x0012_1004)?;
+            c.g[V0][0] = 0x50_0000;
+        }
+
+        // Resets, then the target speed.
+        c.cycles += 15;
+        c.g[A1][0] = u64::MAX;
+        c.g[V0][0] = sx(DEFAULT_MODEL_OFFSET);
+        c.lq(V1, DEFAULT_MODEL_OFFSET);
+        c.g[A0][0] = c.g[S0][0];
+        rider.off(COUNTER_A30).sw(c, 0);
+        c.sq(V1, rider.off(MODEL_OFFSET).0);
+        rider.off(VISITED_IDS).sw(c, u64::MAX);
+        RIDER_UPDATE_TARGET_SPEED.call(c, 0x0012_102c)?;
+
+        // The finish clock runs once the line is crossed.
+        let t = rider.off(FINISH_TIME).read_fpu(c);
+        abi::set_fpr(c, 1, t);
+        abi::set_fpr(c, 0, FpuF32::ZERO);
+        let finished = FpuF32::ZERO.le(t);
+        abi::set_fcc(c, finished);
+        if finished {
+            c.cycles += 4;
+            let step = Addr(gp_4(c, GP_TICK)).read_fpu(c);
+            let t = t + step;
+            abi::set_fpr(c, 0, t);
+            rider.off(FINISH_TIME).write_fpu(c, t);
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const RECORD_CHEAT_CODE_INPUT: u32 = 0x002f_6ac8;
+
+pub(crate) const AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
+
+pub(crate) const AUDIO_START_BOOST_SOUND: u32 = 0x0029_8d90;
+
+pub(crate) const AUDIO_PLAY_BOOST_EMPTY_SOUND: u32 = 0x0029_9368;
+
+pub(crate) const AUDIO_STOP_BOOST_SOUND: u32 = 0x0029_92d8;
+
+/// `void Rider_HandleBoostInput(Rider* r, int held, int pressed)`
+/// (0x114130): the boost button.
+///
+/// A press is recorded for the cheat-code reader
+/// (`RiderBase_RecordCheatCodeInput(pad+0xd20, 0)`). While boost is held
+/// with meter left (`r+0x2f8 > 0`), the first tick picks the boost level
+/// from the meter (> 2/3: 1, > 1/3: 0.625, else 0.25) and starts the boost
+/// sound; the meter then drains by a fixed step per tick when
+/// `r+0x2e8 == 0`, `r+0x304` is set and `r+0x2f4 < 10`. Held with an empty
+/// meter, a press plays the "empty" sound. Otherwise (and after an empty
+/// press) a running boost sound is stopped and the level cleared.
+///
+/// Registers as the original: the rider in `s0`, `held` in `s2`,
+/// `pressed` in `s1`, the FPU temporaries f0-f2 and f20, every block's
+/// cycle charge.
+pub fn rider_handle_boost_input(c: &mut Cpu) {
+    use rider_boost::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x40);
+        if c.g[S1][0] != 0 {
+            c.cycles += 4;
+            let pad = Addr(r32(c, S0) + PAD).lw(c) as u32;
+            c.g[A1][0] = 0;
+            c.g[A0][0] = sx(pad.wrapping_add(0xd20));
+            call_ptr(c, RECORD_CHEAT_CODE_INPUT, 0x0011_4168)?;
+        }
+        let gp = r32(c, GP);
+        // Whether the function leaves through the shared tail (one more
+        // cycle) or straight from the "held with meter" branch.
+        let through_tail = 'level: {
+            c.cycles += 2;
+            if c.g[S2][0] != 0 {
+                c.cycles += 5;
+                let rider = r32(c, S0);
+                c.lwc1(1, rider + METER);
+                c.mtc1(0, 2);
+                c.c_lt_s(2, 1);
+                if c.fcc() {
+                    // Held with meter left.
+                    c.cycles += 5;
+                    c.lwc1(0, rider + LEVEL);
+                    c.c_eq_s(0, 2);
+                    if c.fcc() {
+                        // First tick: pick the level (f0) from the meter (f1).
+                        c.cycles += 6;
+                        c.lwc1(0, gp.wrapping_sub(GP_TWO_THIRDS));
+                        c.c_lt_s(0, 1);
+                        c.g[AT][0] = 0x3f80_0000;
+                        c.mtc1(AT, 0);
+                        if !c.fcc() {
+                            c.cycles += 6;
+                            c.lwc1(0, gp.wrapping_sub(GP_ONE_THIRD));
+                            c.c_lt_s(0, 1);
+                            c.g[AT][0] = 0x3e80_0000;
+                            c.mtc1(AT, 0);
+                            if c.fcc() {
+                                c.cycles += 2;
+                                c.g[AT][0] = 0x3f20_0000;
+                                c.mtc1(AT, 0);
+                            }
+                        }
+                        c.cycles += 7;
+                        c.swc1(0, rider + LEVEL);
+                        call_ptr(c, AUDIO_GET_INSTANCE, 0x0011_41d8)?;
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A2][0] = c.g[S1][0];
+                        c.g[A1][0] = c.g[S0][0];
+                        call_ptr(c, AUDIO_START_BOOST_SOUND, 0x0011_41e8)?;
+                    }
+                    let rider = r32(c, S0);
+                    c.lwc1(1, rider + DRAIN_HOLD);
+                    c.cycles += 5;
+                    c.mtc1(0, 0);
+                    c.c_eq_s(1, 0);
+                    if !c.fcc() {
+                        break 'level false;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(rider + DRAIN_ON).lw(c);
+                    if c.g[V0][0] == 0 {
+                        break 'level false;
+                    }
+                    c.cycles += 4;
+                    let count = Addr(rider + DRAIN_COUNT).lw(c);
+                    c.g[V0][0] = ((count as i64) < 10) as u64;
+                    if c.g[V0][0] == 0 {
+                        break 'level false;
+                    }
+                    c.cycles += 5;
+                    c.lwc1(0, rider + METER);
+                    c.lwc1(1, gp.wrapping_sub(GP_DRAIN));
+                    c.sub_s(0, 0, 1);
+                    c.swc1(0, rider + METER);
+                    break 'level true;
+                }
+                // Held with an empty meter: a press plays the empty sound.
+                c.cycles += 2;
+                if c.g[S1][0] != 0 {
+                    c.cycles += 6;
+                    call_ptr(c, AUDIO_GET_INSTANCE, 0x0011_4240)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = c.g[S0][0];
+                    call_ptr(c, AUDIO_PLAY_BOOST_EMPTY_SOUND, 0x0011_424c)?;
+                }
+            }
+            // Not boosting: stop a running boost sound, clear the level.
+            let rider = r32(c, S0);
+            c.lwc1(0, rider + LEVEL);
+            c.cycles += 5;
+            c.mtc1(0, 20);
+            c.c_lt_s(20, 0);
+            if c.fcc() {
+                c.cycles += 6;
+                call_ptr(c, AUDIO_GET_INSTANCE, 0x0011_426c)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, AUDIO_STOP_BOOST_SOUND, 0x0011_4278)?;
+            }
+            let rider = r32(c, S0);
+            c.swc1(20, rider + LEVEL);
+            true
+        };
+        if through_tail {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const RIDER_CHECK_RESET_PATH: Callee = Callee {
+    addr: 0x0011_6120,
+    f: ee::s00::Rider_CheckResetPath,
+};
+
+pub(crate) const RIDER_GET_MAIN_STATE: Callee = Callee {
+    addr: 0x0011_fe98,
+    f: ee::s00::Rider_GetMainState,
+};
+
+pub(crate) const RIDER_UPDATE_BOOST_TIMERS: Callee = Callee {
+    addr: 0x0012_00d0,
+    f: ee::s00::Rider_UpdateBoostTimers,
+};
+
+pub(crate) const RIDER_UPDATE_LEG_IK_BLEND: Callee = Callee {
+    addr: 0x0012_0d90,
+    f: ee::s00::Rider_UpdateLegIKBlend,
+};
+
+/// `void Rider_UpdateImpacts(Rider* r)` (0x1210b0): decays the impulse
+/// vector (VU0 `vmul` by 0.98) and the two impact accumulators, then puts
+/// the rider back on the course (`Rider_CheckResetPath(r, 0, 2)`) after a
+/// hard impact (`r+0x3f0 > 4.5`), or, when riding (main state 1, or 2 with
+/// the handler in state 1), after a fall of more than 45 units in air
+/// modes 1 and 3 or a second accumulator above 5. Always ends with the
+/// boost timers and the leg IK blend.
+///
+/// The rider stays in `s0` and the constant 1 in `s1` as in the original;
+/// the FPU temporaries, VF3-VF5 and every block's cycle charge are kept.
+pub fn rider_update_impacts(c: &mut Cpu) {
+    use impacts::*;
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x30);
+        let gp = r32(c, GP);
+        c.lwc1(0, gp.wrapping_sub(GP_IMPULSE_DECAY));
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let rider = r32(c, S0);
+        // impulse *= 0.98 (VU0, the factor broadcast from VF3.x).
+        c.mfc1(V0, 0);
+        c.lqc2(4, rider + IMPULSE);
+        c.qmtc2(V0, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, rider + IMPULSE);
+        // The accumulators decay; a hard impact (> 4.5) resets.
+        c.lwc1(3, gp.wrapping_sub(GP_ACCUM_DECAY));
+        c.lwc1(0, rider + ACCUM);
+        c.lwc1(1, rider + ACCUM2);
+        c.mul_s(0, 0, 3);
+        c.lwc1(2, gp.wrapping_sub(GP_ACCUM2_DECAY));
+        c.g[AT][0] = 0x4090_0000;
+        c.mtc1(AT, 3);
+        c.mul_s(1, 1, 2);
+        c.c_lt_s(3, 0);
+        c.swc1(0, rider + ACCUM);
+        c.swc1(1, rider + ACCUM2);
+        'reset: {
+            if c.fcc() {
+                c.cycles += 5;
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 2;
+                RIDER_CHECK_RESET_PATH.call(c, 0x0012_1118)?;
+                break 'reset;
+            }
+            // Riding: main state 1, or 2 with the handler in state 1.
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[S1][0] = 1;
+            RIDER_GET_MAIN_STATE.call(c, 0x0012_112c)?;
+            if c.g[V0][0] != c.g[S1][0] {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                RIDER_GET_MAIN_STATE.call(c, 0x0012_113c)?;
+                c.g[V1][0] = 2;
+                if c.g[V0][0] != c.g[V1][0] {
+                    break 'reset;
+                }
+                c.cycles += 4;
+                let owner = Addr(r32(c, S0) + OWNER).lw(c);
+                c.g[V0][0] = owner;
+                c.g[V1][0] = Addr((owner as u32).wrapping_add(0x30)).lw(c);
+                if c.g[V1][0] != c.g[S1][0] {
+                    break 'reset;
+                }
+                c.cycles += 1;
+            }
+            let rider = r32(c, S0);
+            let air = Addr(rider + AIR).lw(c);
+            c.g[V0][0] = air;
+            // Air modes 1 and 3 count falls (a1).
+            c.cycles += 4;
+            c.g[A1][0] = 0;
+            let mode = Addr((air as u32).wrapping_add(0xac)).lw(c);
+            c.g[V1][0] = mode;
+            c.g[A0][0] = air;
+            if mode == c.g[S1][0] {
+                c.cycles += 1;
+                c.g[A1][0] = 1;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 3;
+                if mode == 3 {
+                    c.cycles += 1;
+                    c.g[A1][0] = 1;
+                }
+            }
+            'fell: {
+                c.cycles += 2;
+                if c.g[A1][0] != 0 {
+                    // A fall of more than 45 units.
+                    c.cycles += 9;
+                    let air = r32(c, A0);
+                    c.lwc1(0, air + 0xa0);
+                    c.lwc1(1, air + 0x98);
+                    c.g[AT][0] = 0x4234_0000;
+                    c.mtc1(AT, 2);
+                    c.sub_s(1, 1, 0);
+                    c.c_lt_s(2, 1);
+                    c.g[A0][0] = c.g[S0][0];
+                    if c.fcc() {
+                        break 'fell;
+                    }
+                    c.cycles += 1;
+                }
+                // Or the second accumulator above 5.
+                c.lwc1(1, rider + ACCUM2);
+                c.cycles += 6;
+                c.g[AT][0] = 0x40a0_0000;
+                c.mtc1(AT, 0);
+                c.c_lt_s(0, 1);
+                c.g[A0][0] = c.g[S0][0];
+                if !c.fcc() {
+                    break 'reset;
+                }
+            }
+            c.cycles += 3;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 2;
+            RIDER_CHECK_RESET_PATH.call(c, 0x0012_11d0)?;
+        }
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S0][0];
+        RIDER_UPDATE_BOOST_TIMERS.call(c, 0x0012_11d8)?;
+        c.g[A0][0] = c.g[S0][0];
+        RIDER_UPDATE_LEG_IK_BLEND.call(c, 0x0012_11e0)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Rider_UpdateTweakLayerAnim
+
+/// `int AnimController_GetLayerAnimEntry(ctrl, layer)` (0x311ae8): the state
+/// of the animation playing on a layer (0 when none).
+pub(crate) const LAYER_STATE: u32 = 0x0031_1ae8;
+
+/// `AnimSequence* AnimController_GetLayerSequence(ctrl, layer)` (0x311b20).
+pub(crate) const LAYER_SEQ: u32 = 0x0031_1b20;
+
+/// `AnimController_PlayAnim(ctrl, id, flags, f12 = speed)` (0x3128e8).
+pub(crate) const PLAY_ANIM: u32 = 0x0031_28e8;
+
+/// `AnimController_FadeOutLayer(ctrl, layer, f12 = time)` (0x311e88).
+pub(crate) const FADE_OUT_LAYER: u32 = 0x0031_1e88;
+
+/// `int AnimController_GetLayerAnimId(ctrl, layer)` (0x312aa0).
+pub(crate) const LAYER_ANIM_ID: u32 = 0x0031_2aa0;
+
+/// `AnimSequence_SetWeightFade(seq, f12, f13)` (0x313a10).
+pub(crate) const SET_WEIGHT_FADE: u32 = 0x0031_3a10;
+
+/// `bool Flags64_Test(flags, bit)` (0x1446a0) and its second-word form
+/// `Flags64_TestSecond` (0x1446b8).
+pub(crate) const FLAGS_TEST: u32 = 0x0014_46a0;
+
+pub(crate) const FLAGS_TEST_SECOND: u32 = 0x0014_46b8;
+
+/// `ctrl = rider->anim` (`lw` from the rider in s0).
+pub(crate) fn tweak_anim(c: &mut Cpu) -> u64 {
+    c.lw(r32(c, S0).wrapping_add(tweak::ANIM))
+}
+
+/// `-1.0f` into f12 through `at`.
+pub(crate) fn tweak_minus_one_f12(c: &mut Cpu) {
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 12);
+}
+
+/// Play `id` on the controller with the rider's event owner stamped on it
+/// (`v1` = controller, `a1` = id, `a2` = flags), then clear the owner.
+pub(crate) fn tweak_play_stamped(c: &mut Cpu, ret: u32) -> Flow {
+    let rider = r32(c, S0);
+    c.g[V0][0] = c.ld(rider.wrapping_add(tweak::EVENT_OWNER));
+    c.sd(r32(c, V1).wrapping_add(tweak::CTRL_EVENT_OWNER), c.g[V0][0]);
+    c.g[A0][0] = tweak_anim(c);
+    call_ptr(c, PLAY_ANIM, ret)
+}
+
+/// Test bits 2 of layer 1's sequence flags (both words), into `dst`
+/// (s2 or s3): the sequence finished.
+pub(crate) fn tweak_seq_done(c: &mut Cpu, dst: usize, rets: [u32; 3]) -> Flow {
+    c.g[A1][0] = 1;
+    c.g[dst][0] = 0;
+    call_ptr(c, LAYER_SEQ, rets[0])?;
+    c.g[S1][0] = sx(r32(c, V0).wrapping_add(tweak::SEQ_FLAGS));
+    c.g[A1][0] = 2;
+    c.g[A0][0] = c.g[S1][0];
+    call_ptr(c, FLAGS_TEST, rets[1])?;
+    let set = c.g[V0][0] != 0;
+    c.g[A0][0] = c.g[S1][0];
+    if set {
+        c.cycles += 3;
+        c.g[A1][0] = 2;
+        call_ptr(c, FLAGS_TEST_SECOND, rets[2])?;
+        c.g[dst][0] = (c.g[V0][0] != 0) as u64;
+    }
+    Ok(())
+}
+
+/// Layer 1's sequence weight fade = 1.0, and fade layer 0 out over the
+/// time at `gp_off` (`A0` already holds the controller).
+pub(crate) fn tweak_fade_out(c: &mut Cpu, gp_off: u32, rets: [u32; 2]) -> Flow {
+    c.cycles += 9;
+    c.g[A1][0] = 1;
+    call_ptr(c, LAYER_SEQ, rets[0])?;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 0);
+    c.g[A1][0] = 0;
+    c.lwc1(12, r32(c, GP).wrapping_sub(gp_off));
+    c.swc1(0, r32(c, V0).wrapping_add(tweak::SEQ_FADE));
+    c.g[A0][0] = tweak_anim(c);
+    call_ptr(c, FADE_OUT_LAYER, rets[1])
+}
+
+/// Flags64 test of bit `bit` of layer 1's sequence (`a0` = controller):
+/// `rets` = the sequence call's and the test's return addresses.
+pub(crate) fn tweak_seq_flag(c: &mut Cpu, bit: u64, rets: [u32; 2]) -> Flow {
+    c.g[A1][0] = 1;
+    call_ptr(c, LAYER_SEQ, rets[0])?;
+    c.g[A0][0] = sx(r32(c, V0).wrapping_add(tweak::SEQ_FLAGS));
+    c.g[A1][0] = bit;
+    call_ptr(c, FLAGS_TEST, rets[1])
+}
+
+/// The rider's side vector negated through VU0 (`v0` = side, the GPR
+/// `scratch` carries -1.0 to vf3), as the original does it.
+pub(crate) fn tweak_negate_side(c: &mut Cpu, scratch: usize) {
+    use ssx3_ee_rt::vu0::{Src, X};
+    let s = sp(c);
+    tweak_minus_one_at_f0(c);
+    c.sq(V0, s.wrapping_add(0x10));
+    c.mfc1(scratch, 0);
+    c.lqc2(4, s.wrapping_add(0x10));
+    c.qmtc2(scratch, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s.wrapping_add(0x20));
+    c.lq(V0, s.wrapping_add(0x20));
+}
+
+pub(crate) fn tweak_minus_one_at_f0(c: &mut Cpu) {
+    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+    c.mtc1(AT, 0);
+}
+
+/// Layer 1 in the "both hands" state (3): with both inputs held, once the
+/// sequence finished, restart the "both" animation from layer 0's weights;
+/// otherwise fade layer 0 out.
+pub(crate) fn tweak_layer_both(c: &mut Cpu) -> Flow {
+    use tweak::*;
+    c.cycles += 2;
+    c.g[A0][0] = tweak_anim(c);
+    let both = c.g[S6][0] != 0 && {
+        c.cycles += 2;
+        c.g[S5][0] != 0
+    };
+    if both {
+        c.cycles += 9;
+        tweak_seq_done(c, S2, [0x0011_6420, 0x0011_6430, 0x0011_6440])?;
+        c.cycles += 2;
+        c.g[A0][0] = tweak_anim(c);
+        if c.g[S2][0] == 0 {
+            return Ok(());
+        }
+        c.cycles += 33;
+        c.g[A1][0] = 1;
+        call_ptr(c, LAYER_SEQ, 0x0011_6454)?;
+        c.sw(r32(c, V0).wrapping_add(SEQ_FADE), 0);
+        c.g[A2][0] = 0;
+        tweak_minus_one_f12(c);
+        c.g[A1][0] = ANIM_BOTH_FROM as u64;
+        c.g[V1][0] = tweak_anim(c);
+        tweak_play_stamped(c, 0x0011_647c)?;
+        // Layer 1's weight, target and fade time, onto layer 0.
+        c.g[A0][0] = tweak_anim(c);
+        c.g[A1][0] = 1;
+        call_ptr(c, LAYER_SEQ, 0x0011_6488)?;
+        c.g[A0][0] = tweak_anim(c);
+        c.g[A1][0] = 1;
+        c.lwc1(20, r32(c, V0).wrapping_add(SEQ_WEIGHT));
+        call_ptr(c, LAYER_SEQ, 0x0011_6498)?;
+        c.g[A0][0] = tweak_anim(c);
+        c.g[A1][0] = 1;
+        c.lwc1(22, r32(c, V0).wrapping_add(SEQ_TARGET));
+        call_ptr(c, LAYER_SEQ, 0x0011_64a8)?;
+        c.g[A0][0] = tweak_anim(c);
+        c.g[A1][0] = 0;
+        c.lwc1(21, r32(c, V0).wrapping_add(SEQ_FADE_TIME));
+        call_ptr(c, LAYER_SEQ, 0x0011_64b8)?;
+        c.mtc1(0, 0);
+        c.swc1(20, r32(c, V0).wrapping_add(SEQ_WEIGHT));
+        c.c_eq_s(21, 0);
+        let no_fade = c.fcc();
+        c.swc1(20, r32(c, V0).wrapping_add(SEQ_TARGET));
+        if !no_fade {
+            c.cycles += 7;
+            c.g[A0][0] = tweak_anim(c);
+            c.g[A1][0] = 0;
+            call_ptr(c, LAYER_SEQ, 0x0011_64dc)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.mov_s(12, 22);
+            c.mov_s(13, 21);
+            call_ptr(c, SET_WEIGHT_FADE, 0x0011_64ec)?;
+        }
+        c.cycles += 4;
+        c.g[V1][0] = tweak_anim(c);
+        c.g[V0][0] = u64::MAX;
+        c.sd(r32(c, V1).wrapping_add(CTRL_EVENT_OWNER), c.g[V0][0]);
+    } else {
+        tweak_fade_out(c, 0x7b24, [0x0011_6504, 0x0011_6520])?;
+    }
+    c.cycles += 1;
+    c.g[A0][0] = tweak_anim(c);
+    Ok(())
+}
+
+/// Layer 1 in the "one hand" state (0xd): when exactly one input is held
+/// and it matches the side being tweaked (or the other input for the other
+/// side), finish the animation once its sequence is done, step layer 0's
+/// blend towards 1 and point the attack direction to the side; otherwise
+/// fade layer 0 out.
+pub(crate) fn tweak_layer_one(c: &mut Cpu) -> Flow {
+    use tweak::*;
+    let rider = r32(c, S0);
+    c.cycles += 7;
+    c.g[A0][0] = tweak_anim(c);
+    c.g[A1][0] = 1;
+    call_ptr(c, LAYER_ANIM_ID, 0x0011_6544)?;
+    c.g[S2][0] = c.g[V0][0];
+    c.g[V0][0] = c.lw(rider.wrapping_add(SWITCH_SIDE));
+    let switched = c.g[V0][0] != 0;
+    c.g[V0][0] = c.g[S2][0] ^ ANIM_LEFT as u64;
+    if !switched {
+        c.cycles += 1;
+        c.g[V0][0] = c.g[S2][0] ^ ANIM_RIGHT as u64;
+    }
+    // s4: the playing animation is the side's own.
+    c.cycles += 2;
+    c.g[S4][0] = (c.g[V0][0] < 1) as u64;
+    let matches = c.g[S4][0] != 0;
+    let active;
+    if c.g[S6][0] != 0 {
+        c.cycles += 2;
+        c.g[A0][0] = tweak_anim(c);
+        if c.g[S5][0] != 0 {
+            active = false;
+        } else {
+            c.cycles += 2;
+            active = matches;
+            if !matches {
+                c.cycles += 2;
+            }
+        }
+    } else {
+        c.cycles += 2;
+        c.g[A0][0] = tweak_anim(c);
+        if c.g[S5][0] == 0 {
+            active = false;
+        } else {
+            c.cycles += 2;
+            active = !matches;
+        }
+    }
+    if !active {
+        return tweak_fade_out(c, 0x7b1c, [0x0011_66dc, 0x0011_66f8]);
+    }
+
+    c.cycles += 9;
+    tweak_seq_done(c, S3, [0x0011_6594, 0x0011_65a4, 0x0011_65b4])?;
+    c.cycles += 2;
+    c.g[A0][0] = tweak_anim(c);
+    if c.g[S3][0] != 0 {
+        // Finished: play the side's "out" animation.
+        c.cycles += 8;
+        c.g[A1][0] = 1;
+        call_ptr(c, LAYER_SEQ, 0x0011_65c8)?;
+        c.sw(r32(c, V0).wrapping_add(SEQ_FADE), 0);
+        c.g[A0][0] = ANIM_LEFT as u64;
+        c.g[V1][0] = tweak_anim(c);
+        c.g[V0][0] = c.ld(rider.wrapping_add(EVENT_OWNER));
+        let left = c.g[S2][0] == c.g[A0][0];
+        c.sd(r32(c, V1).wrapping_add(CTRL_EVENT_OWNER), c.g[V0][0]);
+        let (id, ret) = if left {
+            c.cycles += 8;
+            (ANIM_LEFT_OUT, 0x0011_65f8)
+        } else {
+            c.cycles += 7;
+            (ANIM_RIGHT_OUT, 0x0011_6618)
+        };
+        c.g[A0][0] = tweak_anim(c);
+        c.g[A1][0] = id as u64;
+        tweak_minus_one_f12(c);
+        c.g[A2][0] = 0;
+        call_ptr(c, PLAY_ANIM, ret)?;
+        c.g[V1][0] = tweak_anim(c);
+        c.cycles += 3;
+        c.g[V0][0] = u64::MAX;
+        c.sd(r32(c, V1).wrapping_add(CTRL_EVENT_OWNER), c.g[V0][0]);
+        c.g[A0][0] = tweak_anim(c);
+    }
+
+    // Layer 0 also one-handed: step the blend towards 1 by
+    // `time_scale * step` and copy it to layer 0's weight and target.
+    c.cycles += 5;
+    c.g[A1][0] = 0;
+    call_ptr(c, LAYER_STATE, 0x0011_6630)?;
+    c.g[V1][0] = STATE_ONE;
+    if c.g[V0][0] == STATE_ONE {
+        c.cycles += 11;
+        c.lwc1(0, r32(c, GP).wrapping_sub(0x7b20));
+        c.lwc1(1, rider.wrapping_add(TIME_SCALE));
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 3);
+        c.mul_s(1, 1, 0);
+        c.lwc1(2, rider.wrapping_add(BLEND));
+        c.add_s(0, 1, 3);
+        c.c_lt_s(0, 2);
+        if !c.fcc() {
+            c.sub_s(0, 3, 1);
+            c.cycles += 4;
+            c.c_lt_s(2, 0);
+            if c.fcc() {
+                c.add_s(3, 2, 1);
+            }
+        } else {
+            c.cycles += 2;
+            c.sub_s(3, 2, 1);
+        }
+        c.cycles += 7;
+        c.g[A0][0] = tweak_anim(c);
+        c.g[A1][0] = 0;
+        c.swc1(3, rider.wrapping_add(BLEND));
+        call_ptr(c, LAYER_SEQ, 0x0011_6690)?;
+        c.lwc1(0, rider.wrapping_add(BLEND));
+        c.swc1(0, r32(c, V0).wrapping_add(SEQ_WEIGHT));
+        c.swc1(0, r32(c, V0).wrapping_add(SEQ_TARGET));
+    }
+
+    // Attack direction: the side vector, negated for the side's own anim.
+    c.cycles += 2;
+    c.lq(V0, rider.wrapping_add(SIDE));
+    if c.g[S4][0] != 0 {
+        c.cycles += 9;
+        tweak_negate_side(c, V1);
+    }
+    c.cycles += 3;
+    c.sq(V0, rider.wrapping_add(ATTACK_DIR));
+    c.sq(V0, sp(c));
+    Ok(())
+}
+
+/// The input part: start the tweak animation for the held inputs (both:
+/// 0x142; one: the side's or the other side's), unless layer 1 still plays
+/// an unfinished tweak (then return 1 at once). Returns whether layer 1
+/// ends in a tweak state, in v0.
+pub(crate) fn tweak_start(c: &mut Cpu) -> Flow {
+    use tweak::*;
+    let rider = r32(c, S0);
+    /// What follows the input classification.
+    enum Then {
+        Both,
+        Single,
+        Play,
+        Final,
+    }
+    c.cycles += 2;
+    let then = if c.g[S6][0] != 0 {
+        c.cycles += 2;
+        c.g[A0][0] = tweak_anim(c);
+        if c.g[S5][0] != 0 {
+            Then::Both
+        } else {
+            Then::Single
+        }
+    } else {
+        c.cycles += 2;
+        c.g[A0][0] = tweak_anim(c);
+        if c.g[S5][0] == 0 {
+            Then::Final
+        } else {
+            Then::Single
+        }
+    };
+    let then = match then {
+        Then::Both => {
+            // Both inputs: busy while a one-handed tweak plays unfinished
+            // or the "both" one has not ended.
+            c.cycles += 5;
+            c.g[A1][0] = 1;
+            call_ptr(c, LAYER_STATE, 0x0011_6710)?;
+            c.g[V1][0] = STATE_ONE;
+            let one = c.g[V0][0] == STATE_ONE;
+            c.g[A0][0] = tweak_anim(c);
+            if one {
+                c.cycles += 7;
+                tweak_seq_flag(c, 0, [0x0011_6724, 0x0011_6730])?;
+                let started = c.g[V0][0] != 0;
+                c.g[A0][0] = tweak_anim(c);
+                if started {
+                    c.cycles += 7;
+                    tweak_seq_flag(c, 1, [0x0011_6740, 0x0011_674c])?;
+                    let done = c.g[V0][0] != 0;
+                    c.g[V0][0] = 1;
+                    if !done {
+                        return Ok(());
+                    }
+                    c.cycles += 1;
+                    c.g[A0][0] = tweak_anim(c);
+                }
+            }
+            c.cycles += 5;
+            c.g[A1][0] = 1;
+            call_ptr(c, LAYER_STATE, 0x0011_6760)?;
+            c.g[V1][0] = STATE_BOTH;
+            if c.g[V0][0] == STATE_BOTH {
+                c.cycles += 8;
+                c.g[A0][0] = tweak_anim(c);
+                tweak_seq_flag(c, 1, [0x0011_6778, 0x0011_6784])?;
+                let done = c.g[V0][0] != 0;
+                c.g[V0][0] = 1;
+                if !done {
+                    return Ok(());
+                }
+                c.cycles += 1;
+            }
+            c.g[V1][0] = tweak_anim(c);
+            c.cycles += 2;
+            c.g[A1][0] = ANIM_BOTH as u64;
+            Then::Play
+        }
+        other => other,
+    };
+    let then = match then {
+        Then::Single => {
+            // One input: busy while the "both" tweak plays unfinished or a
+            // one-handed one has not ended.
+            c.cycles += 5;
+            c.g[A1][0] = 1;
+            call_ptr(c, LAYER_STATE, 0x0011_67a8)?;
+            c.g[V1][0] = STATE_BOTH;
+            let both = c.g[V0][0] == STATE_BOTH;
+            c.g[A0][0] = tweak_anim(c);
+            if both {
+                c.cycles += 7;
+                tweak_seq_flag(c, 0, [0x0011_67bc, 0x0011_67c8])?;
+                let started = c.g[V0][0] != 0;
+                c.g[A0][0] = tweak_anim(c);
+                if started {
+                    c.cycles += 7;
+                    tweak_seq_flag(c, 1, [0x0011_67d8, 0x0011_67e4])?;
+                    let done = c.g[V0][0] != 0;
+                    c.g[V0][0] = 1;
+                    if !done {
+                        return Ok(());
+                    }
+                    c.cycles += 1;
+                    c.g[A0][0] = tweak_anim(c);
+                }
+            }
+            c.cycles += 5;
+            c.g[A1][0] = 1;
+            call_ptr(c, LAYER_STATE, 0x0011_67f8)?;
+            c.g[V1][0] = STATE_ONE;
+            if c.g[V0][0] == STATE_ONE {
+                c.cycles += 8;
+                c.g[A0][0] = tweak_anim(c);
+                tweak_seq_flag(c, 1, [0x0011_6810, 0x0011_681c])?;
+                let done = c.g[V0][0] != 0;
+                c.g[V0][0] = 1;
+                if !done {
+                    return Ok(());
+                }
+            }
+            // The animation for the held side, and the attack direction.
+            c.cycles += 2;
+            c.g[A2][0] = ANIM_RIGHT as u64;
+            if c.g[S6][0] != 0 {
+                c.cycles += 16;
+                c.lq(V0, rider.wrapping_add(SIDE));
+                c.g[A0][0] = c.lw(rider.wrapping_add(SWITCH_SIDE));
+                c.g[V1][0] = ANIM_LEFT as u64;
+                if c.g[A0][0] != 0 {
+                    c.g[A2][0] = c.g[V1][0];
+                }
+                tweak_negate_side(c, A1);
+                c.sq(V0, rider.wrapping_add(ATTACK_DIR));
+                c.sq(V0, sp(c));
+            } else {
+                c.cycles += 7;
+                c.lq(V0, rider.wrapping_add(SIDE));
+                c.g[A2][0] = ANIM_LEFT as u64;
+                c.g[A0][0] = c.lw(rider.wrapping_add(SWITCH_SIDE));
+                c.g[V1][0] = ANIM_RIGHT as u64;
+                c.sq(V0, rider.wrapping_add(ATTACK_DIR));
+                c.sq(V0, sp(c));
+                if c.g[A0][0] != 0 {
+                    c.g[A2][0] = c.g[V1][0];
+                }
+            }
+            c.cycles += 2;
+            c.g[V1][0] = tweak_anim(c);
+            c.g[A1][0] = c.g[A2][0];
+            Then::Play
+        }
+        other => other,
+    };
+    if let Then::Play = then {
+        c.cycles += 12;
+        c.g[A2][0] = 1;
+        tweak_minus_one_f12(c);
+        tweak_play_stamped(c, 0x0011_68ac)?;
+        c.g[V1][0] = tweak_anim(c);
+        c.g[V0][0] = u64::MAX;
+        c.sd(r32(c, V1).wrapping_add(CTRL_EVENT_OWNER), c.g[V0][0]);
+        c.sw(rider.wrapping_add(BLEND), 0);
+        c.g[A0][0] = tweak_anim(c);
+    }
+
+    // Result: layer 1 in a tweak state.
+    c.cycles += 6;
+    c.g[A1][0] = 1;
+    c.g[S1][0] = 0;
+    call_ptr(c, LAYER_STATE, 0x0011_68cc)?;
+    c.g[V1][0] = STATE_BOTH;
+    if c.g[V0][0] == STATE_BOTH {
+        c.g[S1][0] = 1;
+    } else {
+        c.cycles += 6;
+        c.g[A0][0] = tweak_anim(c);
+        c.g[A1][0] = 1;
+        call_ptr(c, LAYER_STATE, 0x0011_68e4)?;
+        c.g[V1][0] = STATE_ONE;
+        let one = c.g[V0][0] == STATE_ONE;
+        c.g[V0][0] = c.g[S1][0];
+        if !one {
+            return Ok(());
+        }
+        c.cycles += 1;
+        c.g[S1][0] = 1;
+    }
+    c.cycles += 1;
+    c.g[V0][0] = c.g[S1][0];
+    Ok(())
+}
+
+/// `bool Rider_UpdateTweakLayerAnim(Rider* rider, int left, int right)`
+/// (0x1163b0): drive the "tweak" (grab-style hand) animations on the
+/// rider's animation layers from the two tweak inputs: settle the layer-1
+/// "both hands" (state 3) and "one hand" (state 0xd) animations, then start
+/// the animation for the inputs held now. Returns whether layer 1 plays a
+/// tweak afterwards (or 1 at once while one is still busy).
+pub fn rider_update_tweak_layer_anim(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S2, 0x80);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S4, 0x60);
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 22, 0xc0);
+        frame.save_fpr(c, 21, 0xb8);
+        frame.save_fpr(c, 20, 0xb0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S5][0] = c.g[A2][0];
+        c.g[S6][0] = c.g[A1][0];
+        c.g[A1][0] = 1;
+        c.g[A0][0] = tweak_anim(c);
+        call_ptr(c, LAYER_STATE, 0x0011_63f8)?;
+        c.g[V1][0] = tweak::STATE_BOTH;
+        if c.g[V0][0] == tweak::STATE_BOTH {
+            tweak_layer_both(c)?;
+        } else {
+            c.g[A0][0] = tweak_anim(c);
+        }
+
+        c.cycles += 5;
+        c.g[A1][0] = 1;
+        call_ptr(c, LAYER_STATE, 0x0011_652c)?;
+        c.g[V1][0] = tweak::STATE_ONE;
+        if c.g[V0][0] == tweak::STATE_ONE {
+            tweak_layer_one(c)?;
+        }
+
+        tweak_start(c)?;
+
+        c.cycles += 13;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.restore_fpr(c, 22, 0xc0);
+        frame.restore_fpr(c, 21, 0xb8);
+        frame.restore_fpr(c, 20, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Rider_DrawShadow
+
+/// `BoaderShadow_ComputeProjection(shadow, centre, up, light_dir, bones,
+/// 0)` (0x374d00).
+pub(crate) const SHADOW_COMPUTE_PROJECTION: u32 = 0x0037_4d00;
+
+/// `BoaderShadow_Submit(shadow)` (0x375890).
+pub(crate) const SHADOW_SUBMIT: u32 = 0x0037_5890;
+
+/// `RiderModel_RenderShadow(model, 3, &colour_a, &colour_b)` (0x310948).
+pub(crate) const RIDER_MODEL_RENDER_SHADOW: u32 = 0x0031_0948;
+
+/// Call graphics-manager v-table slot `slot` (`{ i16 delta; fn }` at
+/// `vt+slot`) with `this = gm + delta`, `gm` in register `gm_reg` and the
+/// v-table in `vt_reg`, the function word into `fn_reg`.
+pub(crate) fn gm_vcall(
+    c: &mut Cpu,
+    gm_reg: usize,
+    vt_reg: usize,
+    fn_reg: usize,
+    slot: u32,
+    ret: u32,
+) -> Flow {
+    let vt = r32(c, vt_reg);
+    c.g[A0][0] = c.lh(vt.wrapping_add(slot));
+    c.g[fn_reg][0] = c.lw(vt.wrapping_add(slot + 4));
+    let f = r32(c, fn_reg);
+    c.g[A0][0] = sx(r32(c, gm_reg).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, f, ret)
+}
+
+/// The once-only part of `Rider_DrawShadow`: push a render state, build the
+/// shadow projection from the midpoint of two bones, the rider's up axis and
+/// the light direction, set the shadow render state (blend, z-test), draw
+/// the rider model's shadow pass with the shadow texture and matrix, then
+/// pop the render state.
+pub(crate) fn rider_draw_shadow_setup(c: &mut Cpu) -> Flow {
+    use rshadow::*;
+    use ssx3_ee_rt::vu0::{Src, X};
+    let rider = r32(c, S0);
+    let s = sp(c);
+    c.cycles += 55;
+    c.g[T0][0] = 1;
+    c.sw(rider.wrapping_add(READY), c.g[T0][0]);
+    c.g[S1][0] = sx(s.wrapping_add(0x20));
+    c.g[AT][0] = 0x3f00_0000;
+    c.mtc1(AT, 0);
+    c.g[A3][0] = 0x4a_0000;
+    // Push: copy the top render state (0x14 bytes) one entry up.
+    let gm = r32(c, A0);
+    c.g[V1][0] = c.lw(gm.wrapping_add(GM_STATE_TOP));
+    let top = r32(c, V1);
+    c.ldl(V0, top.wrapping_add(0x7));
+    c.ldr(V0, top);
+    c.ldl(A1, top.wrapping_add(0xf));
+    c.ldr(A1, top.wrapping_add(0x8));
+    c.g[A2][0] = c.lw(top.wrapping_add(0x10));
+    c.sdl(V0, top.wrapping_add(0x1b));
+    c.sdr(V0, top.wrapping_add(0x14));
+    c.sdl(A1, top.wrapping_add(0x23));
+    c.sdr(A1, top.wrapping_add(0x1c));
+    c.sw(top.wrapping_add(0x24), c.g[A2][0]);
+    c.g[V0][0] = c.lw(gm.wrapping_add(GM_STATE_TOP));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x14));
+    c.sw(gm.wrapping_add(GM_STATE_TOP), c.g[V0][0]);
+    // centre = (bone_b.pos + bone_a.pos) * 0.5, at sp+0.
+    c.g[A2][0] = c.lw(rider.wrapping_add(MODEL));
+    let model = r32(c, A2);
+    c.g[V0][0] = c.lw(rider.wrapping_add(BONE_B));
+    c.g[V1][0] = c.lw(model.wrapping_add(MODEL_BONES));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 6);
+    c.g[A1][0] = c.lw(rider.wrapping_add(BONE_A));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.lq(A0, r32(c, V1).wrapping_add(0x30));
+    c.g[A1][0] = sx((c.g[A1][0] as u32) << 6);
+    c.sq(A0, s.wrapping_add(0x30));
+    c.g[V0][0] = c.lw(model.wrapping_add(MODEL_BONES));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    c.lq(V1, r32(c, V0).wrapping_add(0x30));
+    c.sq(V1, s.wrapping_add(0x40));
+    c.lqc2(3, s.wrapping_add(0x30));
+    c.lqc2(4, s.wrapping_add(0x40));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s.wrapping_add(0x50));
+    c.lq(V0, s.wrapping_add(0x50));
+    c.sq(V0, s.wrapping_add(0x20));
+    c.mfc1(V1, 0);
+    c.lqc2(4, s.wrapping_add(0x20));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, s.wrapping_add(0x50));
+    c.lq(V0, s.wrapping_add(0x50));
+    c.sq(V0, s.wrapping_add(0x10));
+    c.lwc1(0, s.wrapping_add(0x10));
+    c.lwc1(1, s.wrapping_add(0x14));
+    c.lwc1(2, s.wrapping_add(0x18));
+    c.swc1(0, s);
+    c.swc1(1, s.wrapping_add(0x4));
+    c.swc1(2, s.wrapping_add(0x8));
+    // The light direction (0, 0, -1), once.
+    let gp = r32(c, GP);
+    c.g[V0][0] = c.lw(gp.wrapping_add(0x1b10));
+    if c.g[V0][0] == 0 {
+        c.cycles += 9;
+        c.mtc1(0, 0);
+        c.g[V0][0] = sx(LIGHT_DIR);
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(AT, 1);
+        c.swc1(0, LIGHT_DIR + 0x4);
+        c.swc1(1, LIGHT_DIR + 0x8);
+        c.sw(gp.wrapping_add(0x1b10), c.g[T0][0]);
+        c.swc1(0, LIGHT_DIR);
+    }
+    c.lq(V0, rider.wrapping_add(MATRIX_UP));
+
+    // The projection: up = the rider matrix's third row (at sp+0x10).
+    c.cycles += 91;
+    c.g[A1][0] = c.g[SP][0];
+    c.g[V1][0] = c.lw(rider.wrapping_add(MODEL));
+    c.g[A2][0] = sx(s.wrapping_add(0x10));
+    c.sq(V0, s.wrapping_add(0x20));
+    c.g[A3][0] = sx(LIGHT_DIR);
+    c.g[T1][0] = 0;
+    c.lwc1(20, gp.wrapping_sub(0x78c0));
+    c.lwc1(0, s.wrapping_add(0x20));
+    c.lwc1(1, s.wrapping_add(0x24));
+    c.lwc1(2, s.wrapping_add(0x28));
+    c.g[A0][0] = c.lw(rider.wrapping_add(SHADOW));
+    c.swc1(0, s.wrapping_add(0x10));
+    c.swc1(1, s.wrapping_add(0x14));
+    c.swc1(2, s.wrapping_add(0x18));
+    c.g[T0][0] = c.lw(r32(c, V1).wrapping_add(MODEL_BONES));
+    call_ptr(c, SHADOW_COMPUTE_PROJECTION, 0x0012_29fc)?;
+
+    // Shadow render state in the pushed entry: +8 bits 5-9 = 1; +4: bits
+    // 23-24 = 2, bits 20-21 = 0, bits 12-19 = 0x14, bit 22 = 1, bits 2-6 = 1.
+    c.g[A1][0] = c.lw(gp.wrapping_sub(0x854));
+    let gm = r32(c, A1);
+    c.g[T0][0] = 0xffff_ffff_ffff_fc1f;
+    c.g[V1][0] = 0xffff_ffff_fe7f_0000;
+    c.g[T3][0] = 0x0100_0000;
+    c.g[A0][0] = c.lw(gm.wrapping_add(GM_STATE_TOP));
+    c.g[V1][0] |= 0xffff;
+    c.g[A2][0] = 0xffff_ffff_ffcf_0000;
+    c.g[T1][0] = 0xffff_ffff_fff0_0000;
+    c.g[V0][0] = c.lw(r32(c, A0).wrapping_add(0x8));
+    c.g[A2][0] |= 0xffff;
+    c.g[T1][0] |= 0xfff;
+    c.g[A3][0] = 0x1_0000;
+    c.g[V0][0] &= c.g[T0][0];
+    c.g[A3][0] |= 0x4000;
+    c.g[V0][0] |= 0x20;
+    c.g[T0][0] = 0xffff_ffff_ffbf_0000;
+    c.sw(r32(c, A0).wrapping_add(0x8), c.g[V0][0]);
+    c.g[T0][0] |= 0xffff;
+    c.g[T2][0] = 0x40_0000;
+    c.g[T4][0] = 0xffff_ffff_ffff_ff83;
+    // (and, or) pairs applied to +4 of the top entry, alternating the
+    // register the entry pointer is loaded into.
+    let steps: [(usize, usize, Option<usize>); 5] = [
+        (A0, V1, Some(T3)),
+        (V1, A2, None),
+        (A0, T1, Some(A3)),
+        (V1, T0, Some(T2)),
+        (A0, T4, None),
+    ];
+    for (i, &(ptr, and, or)) in steps.iter().enumerate() {
+        c.g[ptr][0] = c.lw(gm.wrapping_add(GM_STATE_TOP));
+        let e = r32(c, ptr);
+        c.g[V0][0] = c.lw(e.wrapping_add(0x4));
+        c.g[V0][0] &= c.g[and][0];
+        match or {
+            Some(r) => c.g[V0][0] |= c.g[r][0],
+            None if i == 4 => c.g[V0][0] |= 0x4,
+            None => {}
+        }
+        c.sw(e.wrapping_add(0x4), c.g[V0][0]);
+    }
+    c.g[V1][0] = c.lw(gm.wrapping_add(GM_VTABLE));
+    gm_vcall(c, A1, V1, V0, 0xf8, 0x0012_2ac0)?;
+
+    // Texture: the shadow's.
+    c.g[A3][0] = c.lw(gp.wrapping_sub(0x854));
+    c.g[A2][0] = 1;
+    c.g[V0][0] = c.lw(rider.wrapping_add(SHADOW));
+    c.g[V1][0] = c.lw(r32(c, A3).wrapping_add(GM_VTABLE));
+    c.g[A1][0] = c.lw(r32(c, V0).wrapping_add(SH_TEXTURE));
+    gm_vcall(c, A3, V1, V0, 0x1a8, 0x0012_2ae4)?;
+
+    // Texture-unit setup with a zero vector at sp+0x20.
+    c.g[V1][0] = c.lw(gp.wrapping_sub(0x854));
+    c.g[A2][0] = c.g[S1][0];
+    c.g[V0][0] = c.lw(rider.wrapping_add(SHADOW));
+    c.g[A3][0] = c.lw(r32(c, V1).wrapping_add(GM_VTABLE));
+    c.g[A1][0] = c.lw(r32(c, V0).wrapping_add(SH_TEXTURE));
+    let vt = r32(c, A3);
+    c.g[A0][0] = c.lh(vt.wrapping_add(0x1b8));
+    c.sw(s.wrapping_add(0x20), 0);
+    c.sw(s.wrapping_add(0x24), 0);
+    c.sw(s.wrapping_add(0x28), 0);
+    c.sw(s.wrapping_add(0x2c), 0);
+    c.g[V0][0] = c.lw(vt.wrapping_add(0x1bc));
+    let f = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, V1).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, f, 0x0012_2b18)?;
+
+    // Darkness: 0.3 (gp-0x78c0) unless the rider has no main state.
+    c.g[A0][0] = c.g[S0][0];
+    RIDER_GET_MAIN_STATE.call(c, 0x0012_2b20)?;
+    let has_state = c.g[V0][0] != 0;
+    c.g[V0][0] = c.lw(rider.wrapping_add(SHADOW));
+    if !has_state {
+        c.cycles += 1;
+        c.mtc1(0, 20);
+    }
+
+    // Projection matrix (copied to sp+0x20) and corners to the manager.
+    c.cycles += 55;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(SH_MATRIX));
+    let m = r32(c, V0);
+    let dst = r32(c, S1);
+    for i in 0..4u32 {
+        c.lqc2(1 + i as usize, m.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u32 {
+        c.sqc2(1 + i as usize, dst.wrapping_add(0x10 * i));
+    }
+    c.g[A0][0] = c.lw(rider.wrapping_add(SHADOW));
+    c.g[A2][0] = sx(s.wrapping_add(0x60));
+    c.g[T0][0] = c.lw(gp.wrapping_sub(0x854));
+    c.g[A3][0] = sx(s.wrapping_add(0x70));
+    let shadow = r32(c, A0);
+    c.lq(V1, shadow.wrapping_add(SH_MIN));
+    c.g[A1][0] = c.g[S1][0];
+    c.sq(V1, s.wrapping_add(0x60));
+    c.lq(V0, shadow.wrapping_add(SH_MAX));
+    c.sq(V0, s.wrapping_add(0x70));
+    c.g[V1][0] = c.lw(r32(c, T0).wrapping_add(GM_VTABLE));
+    gm_vcall(c, T0, V1, V0, 0x328, 0x0012_2b88)?;
+
+    // The model's shadow pass with colours (1, k, k, k) and (1, c, c, c).
+    c.lwc1(0, gp.wrapping_sub(0x78bc));
+    c.g[A1][0] = 3;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 1);
+    c.g[A2][0] = sx(s.wrapping_add(0x80));
+    c.g[A0][0] = c.lw(rider.wrapping_add(MODEL));
+    c.g[A3][0] = sx(s.wrapping_add(0x90));
+    c.swc1(20, s.wrapping_add(0x8c));
+    c.swc1(1, s.wrapping_add(0x90));
+    c.swc1(0, s.wrapping_add(0x9c));
+    c.swc1(1, s.wrapping_add(0x80));
+    c.swc1(20, s.wrapping_add(0x84));
+    c.swc1(20, s.wrapping_add(0x88));
+    c.swc1(0, s.wrapping_add(0x94));
+    c.swc1(0, s.wrapping_add(0x98));
+    call_ptr(c, RIDER_MODEL_RENDER_SHADOW, 0x0012_2bc8)?;
+
+    c.g[A1][0] = c.lw(gp.wrapping_sub(0x854));
+    c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(GM_VTABLE));
+    gm_vcall(c, A1, V1, V0, 0x1b0, 0x0012_2be0)?;
+    c.g[A1][0] = c.lw(gp.wrapping_sub(0x854));
+    c.g[V0][0] = c.lw(r32(c, A1).wrapping_add(GM_VTABLE));
+    gm_vcall(c, A1, V0, V1, 0x100, 0x0012_2bf8)?;
+
+    // Pop the render state.
+    c.g[A0][0] = c.lw(gp.wrapping_sub(0x854));
+    let gm = r32(c, A0);
+    c.g[V0][0] = c.lw(gm.wrapping_add(GM_STATE_TOP));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x14));
+    c.sw(gm.wrapping_add(GM_STATE_TOP), c.g[V0][0]);
+    Ok(())
+}
+
+/// `void Rider_DrawShadow(Rider* rider)` (0x122898): set up the rider's
+/// projected ("boarder") shadow the first time, then submit it for drawing.
+pub fn rider_draw_shadow(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0xe0);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S1, 0xb0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0xa0);
+        frame.save_fpr(c, 20, 0xd0);
+        let rider = r32(c, S0);
+        c.g[V0][0] = c.lw(rider.wrapping_add(rshadow::READY));
+        c.g[A0][0] = c.lw(r32(c, GP).wrapping_sub(0x854));
+        if c.g[V0][0] == 0 {
+            rider_draw_shadow_setup(c)?;
+        }
+        c.cycles += 8;
+        c.g[A0][0] = c.lw(rider.wrapping_add(rshadow::SHADOW));
+        call_ptr(c, SHADOW_SUBMIT, 0x0012_2c10)?;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore_ra(c, 0xa0);
+        frame.restore_fpr(c, 20, 0xd0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11390,6 +14175,514 @@ pub(crate) mod tests {
                 // The stopped input VM leaves the tested value in f0.
                 let value = if seed % 2 == 0 { 0.0f32 } else { 1.0f32 };
                 w_9(c, SP - 0x1f8, value.to_bits());
+            },
+        );
+    }
+    use super::*;
+
+    use super::*;
+    use super::*;
+
+    use super::*;
+    use crate::difftest::fresh;
+
+    // ------------------------------------------------ Player_GetControlInput
+
+    /// An input binding whose every id (0..0x40) runs a three-word input VM
+    /// program `r0 = value; stop`, so `InputBinding_EvalBool/EvalFloat`
+    /// return chosen values through the real interpreter.
+    pub(crate) fn gci_binding(c: &mut Cpu, r: &mut Rng, binding: u32) {
+        let map = binding + 0x100;
+        let offsets = binding + 0x200;
+        let code = binding + 0x400;
+        c.bus.write32(binding, r.next_u32());
+        c.bus.write32(binding + 4, map);
+        c.bus.write32(map + 4, offsets);
+        c.bus.write32(map + 0x14, code);
+        for id in 0..0x40u32 {
+            c.bus.write32(offsets + 4 * id, 3 * id);
+            let value = match r.next_u32() % 6 {
+                0 => 0,
+                1 => 1.0f32.to_bits(),
+                2 => r.f32(1.5),
+                3 => [0.5f32, -0.5, 0.500_001, -0.500_001][r.next_u32() as usize % 4].to_bits(),
+                4 => r.edge_f32(),
+                _ => (-1.0f32).to_bits(),
+            };
+            let at = code + 12 * id;
+            c.bus.write32(at, 0); // op 0: r0 = the next word
+            c.bus.write32(at + 4, value);
+            c.bus.write32(at + 8, 0x20); // stop
+        }
+    }
+
+    /// `Player_GetControlInput`: every substate of the jump table (and out
+    /// of range), real button/stick reads through the input VM, the
+    /// trick/uber-grind helpers, and with or without a replay cache.
+    #[test]
+    fn player_get_control_input_matches() {
+        check(
+            ssx3_ee::s00::f_00127998__generated,
+            player_get_control_input,
+            160,
+            &|c, seed| {
+                let mut r = Rng(0x0012_7998 ^ (seed as u64) << 20);
+                crate::difftest::elf_image(c);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(crate::difftest::GAME_GP);
+                c.pc = 0x0012_7998;
+                let player = DATA;
+                let input = DATA + 0x1000;
+                let rider = DATA + 0x1100;
+                let base = DATA + 0x2000;
+                let binding = DATA + 0x4000;
+                let replay = DATA + 0x6000;
+                c.g[A0][0] = sx(player);
+                c.g[A1][0] = sx(input);
+                c.bus.write32(input, r.next_u32());
+                c.bus.write32(input + 4, r.next_u32());
+                c.bus.write32(player + 0x18, rider);
+                c.bus.write32(rider + 0x77c, base);
+                let substate = match seed % 17 {
+                    n @ 0..=15 => n,
+                    _ => 0xffff_fff0 | r.next_u32() % 16,
+                };
+                c.bus.write32(base + 0xde4, substate);
+                c.bus.write32(player + 0xdf0, binding);
+                gci_binding(c, &mut r, binding);
+                // Replay cache: none, or one whose `+0xc` is 0 (returns at once).
+                c.bus
+                    .write32(player + 0xdf8, if seed % 3 == 0 { 0 } else { replay });
+                c.bus.write32(replay + 0xc, 0);
+            },
+        );
+    }
+
+    // ------------------------------------------------ Rider_SetSlew3And4Targets
+
+    /// `Rider_SetSlew3And4Targets`: crouch/brake asked or not (0, positive,
+    /// negative, edge values), the other slew still on or settled, moving
+    /// forward or backward, both lean sides and settled/unsettled brake.
+    #[test]
+    fn rider_set_slew3_and4_targets_matches() {
+        check(
+            ssx3_ee::s00::f_00113f88__generated,
+            rider_set_slew3_and4_targets,
+            400,
+            &|c, seed| {
+                let mut r = Rng(0x0011_3f88 ^ (seed as u64) << 12);
+                crate::difftest::elf_image(c);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(crate::difftest::GAME_GP);
+                c.pc = 0x0011_3f88;
+                let rider = DATA;
+                c.g[A0][0] = sx(rider);
+                let pick = |r: &mut Rng| match r.next_u32() % 5 {
+                    0 | 1 => 0,
+                    2 => r.f32(1.0),
+                    3 => 1.0f32.to_bits(),
+                    _ => r.edge_f32(),
+                };
+                c.f[12] = pick(&mut r);
+                c.f[13] = pick(&mut r);
+                let small = |r: &mut Rng| match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => r.f32(0.01),
+                    2 => r.f32(1.0),
+                    _ => r.edge_f32(),
+                };
+                c.bus.write32(rider + 0x214, small(&mut r));
+                c.bus.write32(rider + 0x220, small(&mut r));
+                c.bus.write32(rider + 0x1f0, small(&mut r));
+                for k in 0..4 {
+                    c.bus.write32(rider + 0x1e0 + 4 * k, r.f32(20.0));
+                    c.bus.write32(rider + 0x3a0 + 4 * k, r.f32(1.0));
+                }
+            },
+        );
+    }
+
+    /// `Rider_UpdateOrientation`: random unit orientations, up vectors and
+    /// headings (zero in each lane combination, so every compare of the
+    /// zero-vector test is reached), and a set of "aligned" seeds (identity
+    /// orientation, up = +Z, heading on the X axis or zero) that reach the
+    /// exact-zero heading paths and the tiny-rotation fallback axis.
+    #[test]
+    fn rider_update_orientation_matches() {
+        use crate::difftest::elf_image;
+        fn unit(r: &mut Rng, n: usize) -> [u32; 4] {
+            let mut v = [0f32; 4];
+            for x in v.iter_mut().take(n) {
+                *x = f32::from_bits(r.f32(1.0));
+            }
+            let len = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-3);
+            v.map(|x| (x / len).to_bits())
+        }
+        check_lohi(
+            ee::s00::f_00121aa0__generated,
+            rider_update_orientation,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0121_aa00 ^ seed as u64);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x0012_1aa0;
+                let rider = DATA;
+                let up = DATA + 0x400;
+                let heading = DATA + 0x500;
+                put_vec(c, ZERO_VEC4, [0; 4]);
+                put_vec(c, REF_AXIS, unit(&mut r, 3));
+                let aligned = seed % 5 == 0;
+                if aligned {
+                    put_vec(c, rider + RIDER_QUAT, [0, 0, 0, 0x3f80_0000]);
+                    put_vec(c, up, [0, 0, 0x3f80_0000, 0]);
+                    let hx = [0u32, 0x3f80_0000, 0xbf80_0000, 0][(seed / 5 % 4) as usize];
+                    let hz = if seed / 5 % 4 == 3 { 0 } else { 0x3f00_0000 };
+                    put_vec(c, heading, [hx, 0, hz, 0]);
+                } else {
+                    let q = unit(&mut r, 4);
+                    put_vec(c, rider + RIDER_QUAT, q);
+                    put_vec(c, up, unit(&mut r, 3));
+                    let mut h = unit(&mut r, 4);
+                    // Zero lanes: all four (no heading), or a prefix.
+                    match seed % 7 {
+                        0 => h = [0; 4],
+                        1 => h[0] = 0,
+                        2 => (h[0], h[1]) = (0, 0),
+                        3 => (h[0], h[1], h[2]) = (0, 0, 0),
+                        _ => {}
+                    }
+                    put_vec(c, heading, h);
+                }
+                c.g[A0][0] = sx(rider);
+                c.g[A1][0] = sx(up);
+                c.g[A2][0] = sx(heading);
+                c.f[12] = r.f32(20.0) & 0x7fff_ffff;
+                c.f[13] = r.f32(10.0) & 0x7fff_ffff;
+            },
+        );
+    }
+
+    // ---- cOVStateHUD1P_DrawProgressMeter (0x20eda0) ----
+
+    /// The HUD state (`self`), the player rider and the other racers, the
+    /// world chain (`gp-0x848` -> +0x84 race manager -> +0xc race: +0x78
+    /// racer count, +0x28.. racer pointers; world +0xc0 -> mode), the
+    /// renderer (`gp-0x854`: vtable at +0x10d8, packet pointer at +0xe84),
+    /// the HUD font (`gp-0x98c`), the meter definition (`gp-0x9a0`) and the
+    /// course markers (`gp-0x998`).
+    pub(crate) mod meter {
+        /// Away from the fakes' random pointers (DATA..+1 MiB) and log.
+        const B: u32 = 0x00b0_0000;
+        pub const HUD: u32 = B;
+        pub const PLAYER: u32 = B + 0x1000;
+        pub const WORLD: u32 = B + 0x3000;
+        pub const RACE_MAN: u32 = B + 0x3400;
+        pub const RACE: u32 = B + 0x3800;
+        pub const MODE: u32 = B + 0x3c00;
+        pub const RENDERER: u32 = B + 0x4000;
+        pub const PACKET: u32 = B + 0x7000;
+        pub const FONT: u32 = B + 0x8000;
+        pub const METER: u32 = B + 0x9000;
+        pub const MARKERS: u32 = B + 0xa000;
+        pub const STYLES: u32 = B + 0xb000;
+        pub const RACERS: u32 = B + 0xc000;
+        /// Per-racer progress entries (6 x 0x18) and the colour/style table
+        /// (16-byte entries with a pointer at +0xc) in .bss.
+        pub const PROGRESS: u32 = 0x004c_8bc8;
+        pub const STYLE_TABLE: u32 = 0x004c_8c58;
+        /// The two smoothing vectors (0x4c6868, 0x4c6878) and the bit-9 flag word.
+        pub const VECS: u32 = 0x004c_6868;
+        pub const FLAGS: u32 = 0x0053_08d0;
+    }
+
+    // ---- Rider_HandleBoostInput (0x114130) ----
+
+    /// A rider with a meter that is empty, negative or 0..1 (every level
+    /// band), a level of 0 (first tick) or running, every drain condition,
+    /// and `held`/`pressed` both ways. The audio calls are real and take
+    /// their short path (no world in game, not a human rider).
+    pub(crate) fn rider_handle_boost_input_setup(c: &mut Cpu, seed: u32) {
+        const RIDER: u32 = 0x00b0_0000;
+        const PAD: u32 = RIDER + 0x1000;
+        const WORLD: u32 = RIDER + 0x2000;
+        const AUDIO: u32 = RIDER + 0x3000;
+        let mut r = Rng(0x0011_4130 ^ (seed as u64) << 4);
+        scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        put_words(
+            c,
+            GAME_GP - 0x7bfc,
+            &[0x3f2a_aaab, 0x3eaa_aaab, 0x3ac5_7fcc],
+        );
+        c.bus.write32(GAME_GP - 0x848, WORLD);
+        c.bus.write32(GAME_GP + 0x410, AUDIO);
+        c.bus.write32(RIDER + 0x77c, PAD);
+        c.bus.write32(RIDER + 0x874, 0);
+        let meter = match seed % 6 {
+            0 => 0,
+            1 => (-0.5f32).to_bits(),
+            2 => 0.2f32.to_bits(),
+            3 => 0.5f32.to_bits(),
+            _ => 0.9f32.to_bits(),
+        };
+        c.bus.write32(RIDER + 0x2f8, meter);
+        let level = if (seed / 6) % 2 == 0 {
+            0
+        } else {
+            0.625f32.to_bits()
+        };
+        c.bus.write32(RIDER + 0x2fc, level);
+        let hold = if r.next_u32() % 3 == 0 { r.f32(1.0) } else { 0 };
+        c.bus.write32(RIDER + 0x2e8, hold);
+        c.bus.write32(RIDER + 0x304, r.next_u32() & 1);
+        c.bus.write32(RIDER + 0x2f4, r.next_u32() % 16);
+        c.g[A0][0] = RIDER as u64;
+        c.g[A1][0] = ((seed / 12) % 2) as u64;
+        c.g[A2][0] = ((seed / 24) % 2) as u64;
+        c.pc = 0x0011_4130;
+    }
+
+    #[test]
+    fn rider_handle_boost_input_matches() {
+        check(
+            ee::s00::f_00114130__generated,
+            rider_handle_boost_input,
+            288,
+            &rider_handle_boost_input_setup,
+        );
+    }
+
+    // ---- Rider_UpdateImpacts (0x1210b0) ----
+
+    /// A zeroed object from the fakes' pointer pool.
+    pub(crate) fn zobj(r: &mut Rng) -> u32 {
+        ptr(r)
+    }
+
+    /// The game image plus back-end singletons and libraries whose
+    /// interfaces are fakes (as the rider-state tests build it), so the
+    /// real reset path's sound/replay calls stop at a fake.
+    pub(crate) fn game_world(c: &mut Cpu, r: &mut Rng) {
+        crate::difftest::elf_image(c);
+        for off in [0x1f04, 0x1f28] {
+            let singleton = zobj(r);
+            c.bus.write32(GAME_GP - off, singleton);
+        }
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        for i in 0..8 {
+            let lib = zobj(r);
+            c.bus.write32(0x0053_08a8 + 4 * i, lib);
+            let vt = vtable(c, r, &[8]);
+            c.bus.write32(lib + 4, vt);
+        }
+    }
+
+    /// A rider with impact accumulators below and above the reset limits,
+    /// an owner in main state 1, 2 (handler state 1 or not) or a state past
+    /// the state tables, an air predictor in every mode with falls below
+    /// and above 45 units; the boost-timer and leg-IK callees run for real
+    /// (their vtable slots are fakes, the animation table comes from the
+    /// game image).
+    pub(crate) fn rider_update_impacts_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0012_10b0, 8);
+        game_world(c, &mut r);
+        let rider = zobj(&mut r);
+        c.g[A0][0] = rider as u64;
+        put_vec(
+            c,
+            rider + 0x3e0,
+            [r.f32(10.0), r.f32(10.0), r.f32(10.0), r.f32(1.0)],
+        );
+        let big = |x: bool| (if x { 10.0f32 } else { 1.0f32 }).to_bits();
+        c.bus.write32(rider + 0x3f0, big(seed % 5 == 0));
+        c.bus.write32(rider + 0x3f4, big(seed % 3 == 0));
+        // Owner: main state 1, 2 or out of range; handler state 1 or not.
+        let owner = zobj(&mut r);
+        c.bus.write32(rider + 0x77c, owner);
+        let main = match (seed / 5) % 4 {
+            0 => 1,
+            1 | 2 => 2,
+            _ => 0xe + r.next_u32() % 8,
+        };
+        c.bus.write32(owner + 0xde0, main);
+        c.bus.write32(owner + 0xde4, 0xe + r.next_u32() % 8);
+        c.bus.write32(owner + 0x30, (seed / 20) % 2);
+        // Air predictor: modes 0..4, falls of 0..90 units.
+        let air = zobj(&mut r);
+        c.bus.write32(rider + 0x788, air);
+        c.bus.write32(air + 0xac, r.next_u32() % 5);
+        c.bus.write32(air + 0xa0, 0);
+        c.bus
+            .write32(air + 0x98, ((r.next_u32() % 90) as f32).to_bits());
+        // Boost timers and leg IK: vtable at +0x6c0, frame time, animation.
+        let vt = vtable(c, &mut r, &[0x48]);
+        c.bus.write32(rider + 0x6c0, vt);
+        c.bus.write32(rider + 0x300, 0.016_666_668f32.to_bits());
+        for off in [0x2f0u32, 0x2f8, 0x2fc, 0x318] {
+            c.bus.write32(rider + off, r.f32(2.0));
+        }
+        c.bus.write32(rider + 0x2f4, r.next_u32() % 12);
+        c.bus.write32(rider + 0x304, r.next_u32() % 5);
+        let anim = zobj(&mut r);
+        c.bus.write32(rider + 0x784, anim);
+        c.bus.write32(anim + 8, (r.next_u32() % 4) * 4);
+        c.pc = 0x0012_10b0;
+    }
+
+    #[test]
+    fn rider_update_impacts_matches() {
+        check(
+            ee::s00::f_001210b0__generated,
+            rider_update_impacts,
+            240,
+            &rider_update_impacts_setup,
+        );
+    }
+
+    /// Rider_UpdateTweakLayerAnim: the rider at DATA with its controller
+    /// (layer ids at +0/+4, sequence lists at +0x50, v-table at +0x58 whose
+    /// play slot is a fake answering "no animation" (0x207), so
+    /// `AnimController_PlayAnim` returns at once). Layer 1 plays a left /
+    /// right / other / no animation whose table state is "both" (3), "one"
+    /// (0xd) or neither; layer 0 is one-handed or not; layer 1's sequence
+    /// flags and the two inputs are random, so every settle, early-return
+    /// and start path is taken.
+    #[test]
+    fn rider_update_tweak_layer_anim_matches() {
+        covered(
+            ee::s00::f_001163b0__generated,
+            rider_update_tweak_layer_anim,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1163b0, 3);
+                c.pc = 0x0011_63b0;
+                let rider = DATA;
+                let ctrl = DATA + 0x4000;
+                let lists = DATA + 0x4100;
+                let seq0 = DATA + 0x4200;
+                let seq1 = DATA + 0x4400;
+                let vt = fakes::vtable(c, &mut r, &[0x20]);
+                for i in 0..8 {
+                    c.bus.write32(fakes::LOG_RESULTS + 4 * i, 0x207);
+                }
+                c.bus.write32(rider + 0x784, ctrl);
+                c.bus.write32(ctrl + 0x58, vt);
+                c.bus.write32(ctrl + 0x50, lists);
+                c.bus.write32(lists + 4, seq0);
+                c.bus.write32(lists + 0xc, seq1);
+                for seq in [seq0, seq1] {
+                    for off in [0x90, 0x94, 0x98, 0x9c] {
+                        c.bus.write32(seq + off, r.edge_f32());
+                    }
+                }
+                if seed % 5 == 0 {
+                    c.bus.write32(seq1 + 0x9c, 0);
+                }
+                c.bus.write64(seq1 + 0xb0, (r.next_u32() & 7) as u64);
+                c.bus.write64(seq1 + 0xb8, (r.next_u32() & 7) as u64);
+                // Layer ids and the states the animation table gives them.
+                let table = 0x0044_6990u32;
+                let id1 = [0x143u32, 0x144, 0x10, 0x1b6][(r.next_u32() % 4) as usize];
+                let id0 = [0x20u32, 0x1b6][(r.next_u32() % 2) as usize];
+                c.bus.write32(ctrl + 4, id1);
+                c.bus.write32(ctrl, id0);
+                let state1 = [3u32, 0xd, 5][(r.next_u32() % 3) as usize];
+                let state0 = [0xdu32, 2][(r.next_u32() % 2) as usize];
+                c.bus.write32(table + id1 * 0x1c, state1);
+                c.bus.write32(table + id0 * 0x1c, state0);
+                // Rider state.
+                c.bus.write32(rider + 0x320, r.next_u32() % 2);
+                c.bus.write32(rider + 0x300, r.f32(4.0));
+                let blend = [0.5f32, 1.0, 1.5, -1.0, 0.995][(r.next_u32() % 5) as usize];
+                c.bus.write32(rider + 0x350, blend.to_bits());
+                put_vec(
+                    c,
+                    rider + 0x1a0,
+                    [r.edge_f32(), r.edge_f32(), r.edge_f32(), r.next_u32()],
+                );
+                c.bus.write64(
+                    rider + 0x8c0,
+                    (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+                );
+                c.bus.write32(GAME_GP - 0x7b24, r.f32(1.0));
+                c.bus.write32(GAME_GP - 0x7b20, 0.011_111_112f32.to_bits());
+                c.bus.write32(GAME_GP - 0x7b1c, r.f32(1.0));
+                c.g[A0][0] = sx(rider);
+                c.g[A1][0] = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+                c.g[A2][0] = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+            },
+        );
+    }
+
+    /// Rider_DrawShadow: the shadow set up already (submit only) or not
+    /// (the whole setup; the light direction built or not, the rider with
+    /// or without a main state). The graphics manager (gp-0x854 and
+    /// gp+0x2a90) has a fake v-table, so every manager call is logged and
+    /// may unwind; the shadow projection and the model's shadow pass run
+    /// for real on random bones (the model has no meshes).
+    #[test]
+    fn rider_draw_shadow_matches() {
+        covered(
+            ee::s00::f_00122898__generated,
+            rider_draw_shadow,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x122898, 8);
+                c.pc = 0x0012_2898;
+                let rider = DATA;
+                let gm = DATA + 0x8000;
+                let stack = DATA + 0x9000;
+                let shadow = DATA + 0xa000;
+                let model = DATA + 0xb000;
+                let bones = DATA + 0xc000;
+                let state = DATA + 0xd000;
+                let vt = fakes::vtable(
+                    c,
+                    &mut r,
+                    &[0xf8, 0x100, 0x1a8, 0x1b0, 0x1b8, 0x218, 0x320, 0x328, 0x378],
+                );
+                c.bus.write32(GAME_GP - 0x854, gm);
+                c.bus.write32(GAME_GP + 0x2a90, gm);
+                c.bus.write32(gm + 0x10d8, vt);
+                c.bus.write32(gm + 0xe84, stack);
+                for k in 0..5 {
+                    c.bus.write32(stack + 4 * k, r.next_u32());
+                }
+                c.bus
+                    .write32(rider + 0xaa4, if seed % 3 == 0 { 1 } else { 0 });
+                c.bus.write32(rider + 0xaa8, shadow);
+                c.bus.write32(rider + 0x780, model);
+                c.bus.write32(rider + 0x77c, state);
+                c.bus.write32(state + 0xde0, r.next_u32() % 2);
+                c.bus.write32(rider + 0x8e8, r.next_u32() % 4);
+                c.bus.write32(rider + 0x918, r.next_u32() % 4);
+                put_vec(
+                    c,
+                    rider + 0x1c0,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)],
+                );
+                c.bus.write32(model + 0x30, bones);
+                for k in 0..0x40 {
+                    c.bus.write32(bones + 4 * k, r.f32(10.0));
+                }
+                for k in 0..0x5c {
+                    c.bus.write32(shadow + 4 * k, r.f32(10.0));
+                }
+                c.bus.write32(shadow + 0x170, r.next_u32());
+                c.bus.write32(GAME_GP + 0x1b10, r.next_u32() % 2);
+                c.bus.write32(GAME_GP - 0x78c0, 0.3f32.to_bits());
+                c.bus.write32(GAME_GP - 0x78bc, 0.3f32.to_bits());
+                c.g[A0][0] = sx(rider);
             },
         );
     }

@@ -39,6 +39,7 @@ pub(crate) use crate::game::fe::festateloadhint::p_3;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
 pub(crate) use crate::game::fe::ovstatepause::lw;
 pub(crate) use crate::game::fe::ovstatepause::p;
+pub(crate) use crate::game::fe::splashmanager::gpo;
 pub(crate) use crate::game::main::gamemode::low as low_2;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2;
@@ -342,6 +343,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0013_4dd0,
         rider_spin_sub_apply_pose_rotation,
         "RiderSpinSub_ApplyPoseRotation",
+    ),
+    (0x0012_91e0, ai_render, "AI_Render"),
+    (
+        0x0012_e9b8,
+        rider_prewind_sub_handle_input,
+        "RiderPrewindSub_HandleInput",
+    ),
+    (
+        0x0013_1620,
+        rider_cruise_sub_handle_input,
+        "RiderCruiseSub_HandleInput",
+    ),
+    (
+        0x0013_52a8,
+        rider_spin_sub_update_trick,
+        "RiderSpinSub_UpdateTrick",
     ),
 ];
 
@@ -8506,6 +8523,3282 @@ pub fn rider_spin_sub_apply_pose_rotation(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+pub(crate) mod update_trick {
+    use super::*;
+
+    /// `RiderSpinSub` (the trick part): the grab-trick state (0 starting,
+    /// 1 wind-up playing, 2 held pose reached, 3 holding, 4 hold pose
+    /// looping, 5 releasing), the trick index being played, the rider.
+    pub const STATE: u32 = 0x4;
+
+    pub const TRICK: u32 = 0x8;
+
+    pub const RIDER: u32 = 0x58;
+
+    /// Rider fields: uber timer (float), uber level, animation controller,
+    /// metrix, AI (player) index, uber flags.
+    pub const UBER_TIMER: u32 = 0x2f0;
+
+    pub const UBER_LEVEL: u32 = 0x2f4;
+
+    pub const ANIM_CTRL: u32 = 0x784;
+
+    pub const METRIX: u32 = 0x790;
+
+    pub const AI_INDEX: u32 = 0x86c;
+
+    pub const UBER_FLAGS: u32 = 0xb2c;
+
+    /// Animation sequence (`AnimController_GetLayerSequence`): playback
+    /// speed (float) and the 64-bit event flags (bit 0 started, 1 at the
+    /// hold point, 2 looped, 3 finished).
+    pub const SEQ_SPEED: u32 = 0x90;
+
+    pub const SEQ_FLAGS: u32 = 0xb0;
+
+    /// `.lit4` fade-out times (0.33 s on release / end / chain, 0.1 s when
+    /// the hold starts).
+    pub const FADE_ON_RELEASE: i32 = -0x735c;
+
+    pub const FADE_ON_HOLD: i32 = -0x7358;
+
+    pub const FADE_ON_END: i32 = -0x7354;
+
+    pub const FADE_ON_CHAIN: i32 = -0x7350;
+
+    pub const ANIM_CONTROLLER_FADE_OUT_LAYER: u32 = 0x0031_1e88;
+
+    pub const ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY: u32 = 0x0031_1ae8;
+
+    pub const ANIM_CONTROLLER_GET_LAYER_SEQUENCE: u32 = 0x0031_1b20;
+
+    pub const ANIM_CONTROLLER_PLAY_ANIM: u32 = 0x0031_28e8;
+
+    pub const BEBAGT_INT_GET_TRICK_ANIM2: Callee = Callee {
+        addr: 0x0015_02c8,
+        f: ee::s01::f_001502c8,
+    };
+
+    pub const BEBAGT_INT_GET_TRICK_ANIM: Callee = Callee {
+        addr: 0x0015_0198,
+        f: ee::s01::f_00150198,
+    };
+
+    pub const BEBAGT_INT_GET_TRICK_FIELD0: Callee = Callee {
+        addr: 0x0015_00d8,
+        f: ee::s01::f_001500d8,
+    };
+
+    pub const BEBAGT_INT_GET_TRICK_FIELD2: Callee = Callee {
+        addr: 0x0015_00f8,
+        f: ee::s01::f_001500f8,
+    };
+
+    pub const BEBAGT_INT_GET_TRICK_FIELD4: Callee = Callee {
+        addr: 0x0015_0118,
+        f: ee::s01::f_00150118,
+    };
+
+    pub const BEBAGT_INT_GET_TRICK_FIELD6: Callee = Callee {
+        addr: 0x0015_0138,
+        f: ee::s01::f_00150138,
+    };
+
+    pub const BEBAGT_INT_GET_TRICK_FIELD8: Callee = Callee {
+        addr: 0x0015_0158,
+        f: ee::s01::f_00150158,
+    };
+
+    pub const BEBAGT_INT_GET_TRICK_FIELD_A: Callee = Callee {
+        addr: 0x0015_0178,
+        f: ee::s01::f_00150178,
+    };
+
+    pub const BEBAGT_INT_GET_TRICK_VALUE: Callee = Callee {
+        addr: 0x0015_03f8,
+        f: ee::s01::f_001503f8,
+    };
+
+    pub const BE_LIBRARY_GET_INSTANCE: Callee = Callee {
+        addr: 0x0014_dc80,
+        f: ee::s01::f_0014dc80,
+    };
+
+    pub const BE_LIBRARY_GET_INTERFACE: Callee = Callee {
+        addr: 0x0014_dd58,
+        f: ee::s01::f_0014dd58,
+    };
+
+    pub const FLAGS64_TEST: Callee = Callee {
+        addr: 0x0014_46a0,
+        f: ee::s01::f_001446a0,
+    };
+
+    pub const RIDER_ADD_BOOST: u32 = 0x0010_e098;
+
+    pub const RIDER_GET_TRICK_SKILL_FACTOR: u32 = 0x0012_0038;
+
+    pub const RIDER_METRIX_ADD_TRICK: u32 = 0x0011_9708;
+
+    pub const RIDER_METRIX_COMPLETE_TRICK: u32 = 0x0011_97d8;
+
+    pub const SSX_AUDIO_SYSTEM_GET_INSTANCE: u32 = 0x0028_b180;
+
+    pub const SSX_AUDIO_SYSTEM_PLAY_GRAB_TRICK_SOUND: u32 = 0x0029_a530;
+}
+
+pub(crate) mod prewind_input {
+    use super::*;
+
+    /// `RiderPrewindSub`: the rider.
+    pub const RIDER: u32 = 0x0;
+
+    /// The pad: buttons (bit 12 reset, 13 prewind held, 14 boost; the
+    /// trick stick's 6-bit axes at bits 15 and 21) and sticks (6-bit axes
+    /// at bits 0 and 6).
+    pub const PAD_BUTTONS: u32 = 0x0;
+
+    pub const PAD_STICKS: u32 = 0x4;
+
+    /// Rider fields: the launch speed, the lean (slew 0: value, rate,
+    /// target) and pitch (slew 5) controls, the turn input, the prewind
+    /// direction (0 lean, else pitch; 3 and 4 tilt the animation), the
+    /// animation controller.
+    pub const LAUNCH_SPEED: u32 = 0x220;
+
+    pub const SLEW0_VALUE: u32 = 0x2a4;
+
+    pub const SLEW0_RATE: u32 = 0x2a8;
+
+    pub const SLEW0_TARGET: u32 = 0x2ac;
+
+    pub const SLEW5_VALUE: u32 = 0x2b0;
+
+    pub const SLEW5_RATE: u32 = 0x2b4;
+
+    pub const SLEW5_TARGET: u32 = 0x2b8;
+
+    pub const TURN_INPUT: u32 = 0x2dc;
+
+    pub const PREWIND_DIR: u32 = 0x328;
+
+    pub const ANIM_CTRL: u32 = 0x784;
+
+    pub const ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY: u32 = 0x0031_1ae8;
+
+    pub const ANIM_CONTROLLER_GET_LAYER_ANIM_ID: u32 = 0x0031_2aa0;
+
+    pub const ANIM_CONTROLLER_PLAY_ANIM: u32 = 0x0031_28e8;
+
+    pub const INPUT_QUANTIZE_STICK_DIRECTION: Callee = Callee {
+        addr: 0x0011_58b8,
+        f: ee::s00::f_001158b8,
+    };
+
+    pub const MATH_SIN_COS: u32 = 0x0031_be50;
+
+    pub const RIDER_CHECK_RESET_PATH: Callee = Callee {
+        addr: 0x0011_6120,
+        f: ee::s00::f_00116120,
+    };
+
+    pub const RIDER_EMPTY_STANCE_HOOK: Callee = Callee {
+        addr: 0x0011_6930,
+        f: ee::s00::f_00116930,
+    };
+
+    pub const RIDER_GET_MAIN_STATE: Callee = Callee {
+        addr: 0x0011_fe98,
+        f: ee::s00::f_0011fe98,
+    };
+
+    pub const RIDER_HANDLE_BOOST_INPUT: Callee = Callee {
+        addr: 0x0011_4130,
+        f: ee::s00::f_00114130,
+    };
+
+    pub const RIDER_LAUNCH_INTO_AIR: Callee = Callee {
+        addr: 0x0011_4298,
+        f: ee::s00::f_00114298,
+    };
+
+    pub const RIDER_PREWIND_SUB_PLAY_DIRECTIONAL_ANIM: Callee = Callee {
+        addr: 0x0012_ee30,
+        f: ee::s00::f_0012ee30,
+    };
+
+    pub const RIDER_SET_MAIN_STATE: Callee = Callee {
+        addr: 0x0011_fe78,
+        f: ee::s00::f_0011fe78,
+    };
+
+    pub const RIDER_SET_SLEW0_TARGET: Callee = Callee {
+        addr: 0x0011_3e80,
+        f: ee::s00::f_00113e80,
+    };
+
+    pub const RIDER_SET_SLEW3_AND4_TARGETS: Callee = Callee {
+        addr: 0x0011_3f88,
+        f: ee::s00::f_00113f88,
+    };
+
+    pub const RIDER_SET_SLEW5_TARGET: Callee = Callee {
+        addr: 0x0011_3f38,
+        f: ee::s00::f_00113f38,
+    };
+
+    pub const RIDER_SET_SUB_STATE: Callee = Callee {
+        addr: 0x0011_fec8,
+        f: ee::s00::f_0011fec8,
+    };
+
+    pub const RIDER_TRY_ENTER_FINISH_LINE: Callee = Callee {
+        addr: 0x0011_6378,
+        f: ee::s00::f_00116378,
+    };
+
+    pub const RIDER_TRY_START_RAILSLIDE: Callee = Callee {
+        addr: 0x0010_6848,
+        f: ee::s00::f_00106848,
+    };
+
+    pub const RIDER_TURN_AROUND_IF_BACKWARD: Callee = Callee {
+        addr: 0x0011_4cc0,
+        f: ee::s00::f_00114cc0,
+    };
+
+    pub const SSX_AUDIO_SYSTEM_PLAY_TAKEOFF_SOUND: u32 = 0x0029_4170;
+}
+
+pub(crate) mod ai_render_fields {
+    use super::*;
+
+    /// The AI manager: the riders whose light slot is checked (count,
+    /// array), whether only one view is drawn, the human actors (count,
+    /// array of two), the viewed actor, the computer actors (shown?, count,
+    /// array), the other actors (shown?, count, array). Actors point at
+    /// their rider at +0x18.
+    pub const SHOW_COMPUTERS: u32 = 0x14;
+
+    pub const RENDER_LIST: u32 = 0x28;
+
+    pub const HUMANS: u32 = 0x40;
+
+    pub const COMPUTERS: u32 = 0x48;
+
+    pub const OTHERS: u32 = 0x5c;
+
+    pub const VIEWED: u32 = 0x70;
+
+    pub const RENDER_COUNT: u32 = 0x78;
+
+    pub const HUMAN_COUNT: u32 = 0x7c;
+
+    pub const COMPUTER_COUNT: u32 = 0x80;
+
+    pub const OTHER_COUNT: u32 = 0x84;
+
+    pub const SINGLE_VIEW: u32 = 0x88;
+
+    pub const SHOW_OTHERS: u32 = 0x8c;
+
+    pub const ACTOR_RIDER: u32 = 0x18;
+
+    /// Rider fields: its owner (`RiderBase`, the effects), visible flag,
+    /// light slot (-1: none yet).
+    pub const RIDER_OWNER: u32 = 0x77c;
+
+    pub const RIDER_VISIBLE: u32 = 0x884;
+
+    pub const RIDER_LIGHT_SLOT: u32 = 0x888;
+
+    /// The owner's effects.
+    pub const WAKE_FX: u32 = 0x3b0;
+
+    pub const SPARK_FX: u32 = 0x470;
+
+    pub const TRAIL_FX: u32 = 0x520;
+
+    pub const SPEED_STREAMER_FX: u32 = 0x610;
+
+    pub const POWER_UP_TRAIL: u32 = 0x9c0;
+
+    pub const AIR_STREAMER_FX: u32 = 0xad0;
+
+    pub const ANGER_FX: u32 = 0xaf0;
+
+    pub const PULSE_FX: u32 = 0xb00;
+
+    pub const SPRAY_FX: u32 = 0xb40;
+
+    pub const ATTACK_FX: u32 = 0xc70;
+
+    pub const CHEAT_CODE: u32 = 0xd20;
+
+    /// The graphics manager (gp-0x854) and its vtable's light-slot
+    /// allocator; `g_App` (gp-0x848) -> game module -> camera control (its
+    /// mode at +0x70).
+    pub const GP_GFX: i32 = -0x854;
+
+    pub const GFX_VTABLE: u32 = 0x10d8;
+
+    pub const GFX_ALLOC_LIGHT_SLOT: u32 = 0x390;
+
+    pub const GP_APP: i32 = -0x848;
+
+    pub const APP_MODULE: u32 = 0x84;
+
+    pub const MODULE_CONTROL: u32 = 0x34;
+
+    pub const CONTROL_MODE: u32 = 0x70;
+
+    pub const C_AIR_STREAMER_FX_RENDER: u32 = 0x002e_f950;
+
+    pub const C_ANGER_FX_RENDER: u32 = 0x002d_5048;
+
+    pub const C_BOARD_SPARK_FX_RENDER: u32 = 0x002d_b478;
+
+    pub const C_BOARD_TRAIL_FX_RENDER_BATCH: u32 = 0x002e_a538;
+
+    pub const C_BOARD_WAKE_FX_RENDER: u32 = 0x002d_dab8;
+
+    pub const C_DYNAMIC_SPRAY_FX_RENDER: u32 = 0x002e_24d0;
+
+    pub const C_PLAYER_PULSE_FX_RENDER: u32 = 0x002e_3af8;
+
+    pub const C_SPEED_BOOST_STREAMER_FX_RENDER: u32 = 0x002e_7a10;
+
+    pub const RIDER_BASE_RENDER_ATTACK_FX: u32 = 0x002f_1510;
+
+    pub const RIDER_BASE_RENDER_CHEAT_CODE: u32 = 0x002f_6908;
+
+    pub const RIDER_BASE_RENDER_POWER_UP_TRAIL: u32 = 0x002e_b198;
+
+    pub const RIDER_PREPARE_LIGHTING: Callee = Callee {
+        addr: 0x0012_25c0,
+        f: ee::s00::f_001225c0,
+    };
+
+    pub const RIDER_RENDER_ATTACHED_FX: Callee = Callee {
+        addr: 0x0012_2638,
+        f: ee::s00::f_00122638,
+    };
+
+    pub const RIDER_RENDER_MODEL: Callee = Callee {
+        addr: 0x0012_2448,
+        f: ee::s00::f_00122448,
+    };
+
+    pub const RIDER_RENDER_SHADOW: Callee = Callee {
+        addr: 0x0012_25f0,
+        f: ee::s00::f_001225f0,
+    };
+
+    pub const RIDER_UPDATE_VISIBILITY: Callee = Callee {
+        addr: 0x0012_2278,
+        f: ee::s00::f_00122278,
+    };
+}
+
+pub(crate) mod cruise {
+
+    /// `sub+0`: the rider.
+    pub const RIDER: u32 = 0x0;
+
+    /// `pad+0`: the button word (bit 12 reset, 13 handplant, 14 cheat jump,
+    /// 15 jump, 16/17 boost, 18/19 tweak; bits 20..25 the steer axis, 26..31
+    /// the lean axis); `pad+4`: the stick word (bits 0..5 the crouch axis,
+    /// 6..11 the press axis).
+    pub const PAD_BUTTONS: u32 = 0x0;
+
+    pub const PAD_STICKS: u32 = 0x4;
+
+    /// Rider: velocity, forward axis (dotted for "moving backwards").
+    pub const VEL: u32 = 0x1e0;
+
+    pub const FORWARD: u32 = 0x3a0;
+
+    /// Rider: the slew targets the animation choice writes (rate, value).
+    pub const SLEW0_RATE: u32 = 0x200;
+
+    pub const SLEW0_VALUE: u32 = 0x204;
+
+    pub const SLEW1_RATE: u32 = 0x218;
+
+    pub const SLEW1_VALUE: u32 = 0x21c;
+
+    pub const SLEW2_RATE: u32 = 0x224;
+
+    pub const SLEW2_VALUE: u32 = 0x228;
+
+    /// Rider: the steer input (slewed), the carve input, the lean.
+    pub const STEER: u32 = 0x1f0;
+
+    pub const CARVE: u32 = 0x1fc;
+
+    pub const TURN: u32 = 0x214;
+
+    pub const CROUCH: u32 = 0x220;
+
+    pub const SPIN_SPEED: u32 = 0x2dc;
+
+    pub const BOOST_INPUT: u32 = 0x2fc;
+
+    pub const GOOFY: u32 = 0x320;
+
+    pub const SLOPE: u32 = 0x3b8;
+
+    pub const SURFACE: u32 = 0x438;
+
+    pub const ANIM: u32 = 0x784;
+}
+
+/// `bool RiderSpinSub_UpdateTrick(RiderSpinSub* this, int trick, int held)`
+/// (0x1352a8): the grab-trick state machine of an airborne rider, once per
+/// tick. `trick` is the requested trick index (-1 none), `held` whether the
+/// trick button is held.
+///
+/// - Reads the rider's trick skill factor (the playback speed of the
+///   trick layer) and the BAGT trick interface; `hi` = uber level >= 5.
+/// - State 0: a new trick starts its wind-up animation on layer 2 (on top
+///   of a playing kind-0x12 trick: blended), no trick stops the layer
+///   (anim 0x11f, speed -1); once the wind-up has started (flag 0), 1.
+/// - State 1: at the hold point (flag 1) the trick is scored
+///   (`RiderMetrix_AddTrick`, `Rider_AddBoost`), the layer is stopped and
+///   the "held" animation, if any, starts on layer 1; 2.
+/// - State 2: a different trick completes this one and fades layer 1
+///   (5); holding fades both layers, plays the hold pose (the uber variant
+///   when the uber timer runs and the flag allows), the grab sound; 3.
+/// - State 3: still held at the hold point scores again and plays the
+///   loop pose (kind 0x13: fields 8/A, else the uber value/anim2 tables);
+///   4. Otherwise once the layer reached a hold, loop or end point the
+///   trick is scored and completed; 5.
+/// - State 4: released or changed: completed, layer 1 faded; 5.
+/// - State 5: when layer 2 ends (anim kind 2 or flag 3), a held new trick
+///   on a kind-0x14 layer chains (3), else back to 0 with no trick.
+///
+/// Returns whether layer 2 plays a trick animation (kind 0x12..0x14).
+#[allow(unused_labels)]
+pub fn rider_spin_sub_update_trick(c: &mut Cpu) {
+    use update_trick::*;
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x90);
+        'b_13541c: {
+            'b_135418: {
+                c.cycles += 28;
+                frame.save(c, S1, 0x60);
+                frame.save(c, S2, 0x50);
+                c.g[S1][0] = c.g[A0][0];
+                frame.save(c, S4, 0x30);
+                frame.save(c, S5, 0x20);
+                c.g[S4][0] = c.g[A1][0];
+                frame.save(c, S6, 0x10);
+                frame.save_fpr(c, 21, 0x88);
+                c.g[S6][0] = c.g[A2][0];
+                frame.save(c, S0, 0x70);
+                frame.save(c, S3, 0x40);
+                frame.save_ra(c, 0);
+                frame.save_fpr(c, 20, 0x80);
+                c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                call_ptr(c, RIDER_GET_TRICK_SKILL_FACTOR, 0x001352e8)?;
+                c.mov_s(21, 0);
+                BE_LIBRARY_GET_INSTANCE.call(c, 0x001352f0)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 0x6;
+                BE_LIBRARY_GET_INTERFACE.call(c, 0x001352fc)?;
+                c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                c.g[S2][0] = c.g[V0][0];
+                c.g[V1][0] = c.lw(at(c, S1, STATE));
+                c.g[V0][0] = c.lw(at(c, A0, UBER_LEVEL));
+                c.g[V0][0] = ((c.g[V0][0] as i64) < 5i64) as u64;
+                let t = c.g[V1][0] != 0u64;
+                c.g[S5][0] = c.g[V0][0] ^ 0x1;
+                if t {
+                    break 'b_135418;
+                } else {
+                    'b_135414: {
+                        'b_135360: {
+                            c.cycles += 3;
+                            c.g[V0][0] = 0xffffffffffffffff;
+                            let t = c.g[S4][0] != c.g[V0][0];
+                            c.g[V0][0] = c.lw(at(c, S1, TRICK));
+                            if t {
+                                break 'b_135360;
+                            } else {
+                                c.cycles += 2;
+                                let t = c.g[V0][0] == c.g[S4][0];
+                                c.g[V0][0] = 0x1;
+                                if t {
+                                    break 'b_13541c;
+                                } else {
+                                    c.cycles += 13;
+                                    c.g[A0][0] = c.lw(at(c, A0, ANIM_CTRL));
+                                    c.g[A1][0] = 0x2;
+                                    call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x00135338)?;
+                                    c.g[AT][0] = 0xffffffffbf800000;
+                                    c.mtc1(1, 12);
+                                    c.g[A1][0] = 0x11f;
+                                    c.g[A2][0] = 0u64;
+                                    c.swc1(12, at(c, V0, SEQ_SPEED));
+                                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                    c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                    call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, 0x00135358)?;
+                                    c.sw(at(c, S1, TRICK), c.g[S4][0]);
+                                    break 'b_135414;
+                                }
+                            }
+                        }
+                        'b_1353f0: {
+                            c.cycles += 2;
+                            let t = c.g[V0][0] == c.g[S4][0];
+                            c.g[A1][0] = 0x2;
+                            if t {
+                                break 'b_1353f0;
+                            } else {
+                                'b_1353dc: {
+                                    'b_1353b0: {
+                                        c.cycles += 6;
+                                        c.sw(at(c, S1, TRICK), c.g[S4][0]);
+                                        c.g[A0][0] = c.lw(at(c, A0, ANIM_CTRL));
+                                        call_ptr(
+                                            c,
+                                            ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY,
+                                            0x00135374,
+                                        )?;
+                                        c.g[V1][0] = 0x12;
+                                        let t = c.g[V0][0] != c.g[V1][0];
+                                        c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                                        if t {
+                                            break 'b_1353b0;
+                                        } else {
+                                            c.cycles += 12;
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                            c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                            BEBAGT_INT_GET_TRICK_FIELD0.call(c, 0x00135390)?;
+                                            c.g[A0][0] = c.lw(at(c, S0, ANIM_CTRL));
+                                            c.g[A1][0] = c.g[V0][0];
+                                            c.g[AT][0] = 0xffffffffbf800000;
+                                            c.mtc1(1, 12);
+                                            c.g[A2][0] = 0x1;
+                                            call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, 0x001353a8)?;
+                                            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                            break 'b_1353dc;
+                                        }
+                                    }
+                                    c.cycles += 11;
+                                    c.g[A0][0] = c.g[S2][0];
+                                    c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                    c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                    BEBAGT_INT_GET_TRICK_FIELD0.call(c, 0x001353c0)?;
+                                    c.g[A0][0] = c.lw(at(c, S0, ANIM_CTRL));
+                                    c.g[A1][0] = c.g[V0][0];
+                                    c.g[AT][0] = 0xffffffffbf800000;
+                                    c.mtc1(1, 12);
+                                    c.g[A2][0] = 0u64;
+                                    call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, 0x001353d8)?;
+                                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                    break 'b_1353dc;
+                                }
+                                c.cycles += 5;
+                                c.g[A1][0] = 0x2;
+                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x001353e8)?;
+                                c.swc1(21, at(c, V0, SEQ_SPEED));
+                                break 'b_135414;
+                            }
+                        }
+                        c.cycles += 8;
+                        c.g[A0][0] = c.lw(at(c, A0, ANIM_CTRL));
+                        c.g[A1][0] = 0x2;
+                        call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x001353fc)?;
+                        c.g[A0][0] = sx(at(c, V0, SEQ_FLAGS));
+                        c.g[A1][0] = 0u64;
+                        FLAGS64_TEST.call(c, 0x00135408)?;
+                        let t = c.g[V0][0] == 0u64;
+                        c.g[V0][0] = 0x1;
+                        if t {
+                            break 'b_135414;
+                        } else {
+                            c.cycles += 1;
+                            c.sw(at(c, S1, STATE), c.g[V0][0]);
+                            break 'b_135414;
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[V1][0] = c.lw(at(c, S1, STATE));
+                    break 'b_135418;
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0x1;
+            break 'b_13541c;
+        }
+        'b_1354f8: {
+            c.cycles += 2;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[V1][0] = c.lw(at(c, S1, STATE));
+                break 'b_1354f8;
+            } else {
+                c.cycles += 9;
+                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                c.g[A1][0] = 0x2;
+                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x00135434)?;
+                c.g[A0][0] = sx(at(c, V0, SEQ_FLAGS));
+                c.g[A1][0] = 0x1;
+                FLAGS64_TEST.call(c, 0x00135440)?;
+                if c.g[V0][0] == 0u64 {
+                    c.g[V1][0] = c.lw(at(c, S1, STATE));
+                    break 'b_1354f8;
+                } else {
+                    'b_1354f0: {
+                        c.cycles += 25;
+                        c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                        c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                        BEBAGT_INT_GET_TRICK_FIELD4.call(c, 0x0013545c)?;
+                        c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                        c.g[A1][0] = c.g[V0][0];
+                        call_ptr(c, RIDER_METRIX_ADD_TRICK, 0x00135468)?;
+                        c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                        c.mov_s(12, 0);
+                        c.g[A1][0] = 0x1;
+                        call_ptr(c, RIDER_ADD_BOOST, 0x00135478)?;
+                        c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                        c.g[A1][0] = 0x2;
+                        c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                        call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x00135488)?;
+                        c.sw(at(c, V0, SEQ_SPEED), 0u64);
+                        c.g[A0][0] = c.g[S2][0];
+                        c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                        c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                        c.g[A1][0] = c.lw(at(c, V0, AI_INDEX));
+                        BEBAGT_INT_GET_TRICK_FIELD2.call(c, 0x001354a0)?;
+                        c.g[V1][0] = 0x1b6;
+                        let t = c.g[V0][0] == c.g[V1][0];
+                        c.g[V0][0] = 0x2;
+                        if t {
+                            break 'b_1354f0;
+                        } else {
+                            c.cycles += 17;
+                            c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                            c.g[A0][0] = c.g[S2][0];
+                            c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                            c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                            BEBAGT_INT_GET_TRICK_FIELD2.call(c, 0x001354c0)?;
+                            c.g[A0][0] = c.lw(at(c, S0, ANIM_CTRL));
+                            c.g[A1][0] = c.g[V0][0];
+                            c.g[AT][0] = 0xffffffffbf800000;
+                            c.mtc1(1, 12);
+                            c.g[A2][0] = 0u64;
+                            call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, 0x001354d8)?;
+                            c.g[V1][0] = c.lw(at(c, S1, RIDER));
+                            c.g[A1][0] = 0x1;
+                            c.g[A0][0] = c.lw(at(c, V1, ANIM_CTRL));
+                            call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x001354e8)?;
+                            c.swc1(21, at(c, V0, SEQ_SPEED));
+                            c.g[V0][0] = 0x2;
+                            break 'b_1354f0;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.sw(at(c, S1, STATE), c.g[V0][0]);
+                    c.g[V1][0] = c.lw(at(c, S1, STATE));
+                    break 'b_1354f8;
+                }
+            }
+        }
+        'b_135674: {
+            c.cycles += 3;
+            c.g[V0][0] = 0x2;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[V1][0] = c.lw(at(c, S1, STATE));
+                break 'b_135674;
+            } else {
+                'b_135670: {
+                    'b_13566c: {
+                        'b_135568: {
+                            c.cycles += 3;
+                            c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                            let t = c.g[S4][0] == c.g[A2][0];
+                            c.g[A0][0] = c.g[S2][0];
+                            if t {
+                                break 'b_135568;
+                            } else {
+                                c.cycles += 22;
+                                c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                                c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                BEBAGT_INT_GET_TRICK_FIELD4.call(c, 0x0013551c)?;
+                                c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                                c.g[A1][0] = c.g[V0][0];
+                                call_ptr(c, RIDER_METRIX_COMPLETE_TRICK, 0x00135528)?;
+                                c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                                c.mov_s(12, 0);
+                                c.g[A1][0] = 0x1;
+                                call_ptr(c, RIDER_ADD_BOOST, 0x00135538)?;
+                                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                c.g[A1][0] = 0x1;
+                                c.lwc1(12, gp(c, FADE_ON_RELEASE));
+                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                call_ptr(c, ANIM_CONTROLLER_FADE_OUT_LAYER, 0x0013554c)?;
+                                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                c.g[A1][0] = 0x2;
+                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x0013555c)?;
+                                c.swc1(21, at(c, V0, SEQ_SPEED));
+                                c.g[V0][0] = 0x5;
+                                break 'b_13566c;
+                            }
+                        }
+                        c.cycles += 2;
+                        let t = c.g[S6][0] == 0u64;
+                        c.g[A1][0] = 0x1;
+                        if t {
+                            break 'b_135670;
+                        } else {
+                            'b_135640: {
+                                'b_135614: {
+                                    'b_1355e4: {
+                                        c.cycles += 17;
+                                        c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                        c.lwc1(20, gp(c, FADE_ON_HOLD));
+                                        c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                        c.mov_s(12, 20);
+                                        call_ptr(c, ANIM_CONTROLLER_FADE_OUT_LAYER, 0x00135584)?;
+                                        c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                        c.mov_s(12, 20);
+                                        c.g[A1][0] = 0x2;
+                                        c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                        call_ptr(c, ANIM_CONTROLLER_FADE_OUT_LAYER, 0x00135598)?;
+                                        c.g[V1][0] = c.lw(at(c, S1, RIDER));
+                                        c.mtc1(0, 1);
+                                        c.lwc1(0, at(c, V1, UBER_TIMER));
+                                        c.c_eq_s(0, 1);
+                                        if c.fcc() {
+                                            c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                                            break 'b_1355e4;
+                                        } else {
+                                            'b_1355e0: {
+                                                c.cycles += 4;
+                                                c.g[V0][0] = c.lw(at(c, V1, UBER_FLAGS));
+                                                c.g[V0][0] = c.g[V0][0] & 0x1;
+                                                let t = c.g[V0][0] == 0u64;
+                                                c.g[A0][0] = c.g[S2][0];
+                                                if t {
+                                                    break 'b_1355e0;
+                                                } else {
+                                                    c.cycles += 7;
+                                                    c.g[A1][0] = c.lw(at(c, V1, AI_INDEX));
+                                                    c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                                    c.g[A3][0] = c.g[S5][0];
+                                                    BEBAGT_INT_GET_TRICK_ANIM
+                                                        .call(c, 0x001355d4)?;
+                                                    c.g[V1][0] = 0x1b6;
+                                                    if c.g[V0][0] != c.g[V1][0] {
+                                                        c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                                                        break 'b_135614;
+                                                    } else {
+                                                        break 'b_1355e0;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 1;
+                                            c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                                            break 'b_1355e4;
+                                        }
+                                    }
+                                    c.cycles += 12;
+                                    c.g[A0][0] = c.g[S2][0];
+                                    c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                    c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                    BEBAGT_INT_GET_TRICK_FIELD6.call(c, 0x001355f4)?;
+                                    c.g[A0][0] = c.lw(at(c, S0, ANIM_CTRL));
+                                    c.g[A1][0] = c.g[V0][0];
+                                    c.g[AT][0] = 0xffffffffbf800000;
+                                    c.mtc1(1, 12);
+                                    c.g[A2][0] = 0u64;
+                                    call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, 0x0013560c)?;
+
+                                    break 'b_135640;
+                                }
+                                c.cycles += 11;
+                                c.g[A0][0] = c.g[S2][0];
+                                c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                c.g[A3][0] = c.g[S5][0];
+                                c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                BEBAGT_INT_GET_TRICK_ANIM.call(c, 0x00135628)?;
+                                c.g[A0][0] = c.lw(at(c, S0, ANIM_CTRL));
+                                c.g[A1][0] = c.g[V0][0];
+                                c.g[AT][0] = 0xffffffffbf800000;
+                                c.mtc1(1, 12);
+                                c.g[A2][0] = 0u64;
+                                call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, 0x00135640)?;
+                                break 'b_135640;
+                            }
+                            c.cycles += 11;
+                            call_ptr(c, SSX_AUDIO_SYSTEM_GET_INSTANCE, 0x00135648)?;
+                            c.g[A1][0] = c.lw(at(c, S1, RIDER));
+                            c.g[A0][0] = c.g[V0][0];
+                            call_ptr(c, SSX_AUDIO_SYSTEM_PLAY_GRAB_TRICK_SOUND, 0x00135654)?;
+                            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                            c.g[A1][0] = 0x2;
+                            c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                            call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x00135664)?;
+                            c.swc1(21, at(c, V0, SEQ_SPEED));
+                            c.g[V0][0] = 0x3;
+                            break 'b_13566c;
+                        }
+                    }
+                    c.cycles += 1;
+                    c.sw(at(c, S1, STATE), c.g[V0][0]);
+                    break 'b_135670;
+                }
+                c.cycles += 1;
+                c.g[V1][0] = c.lw(at(c, S1, STATE));
+                break 'b_135674;
+            }
+        }
+        'b_135930: {
+            c.cycles += 3;
+            c.g[V0][0] = 0x3;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[V1][0] = c.lw(at(c, S1, STATE));
+                break 'b_135930;
+            } else {
+                'b_135928: {
+                    'b_1357e0: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(at(c, S1, TRICK));
+                        let t = c.g[S4][0] != c.g[V0][0];
+                        c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                        if t {
+                            break 'b_1357e0;
+                        } else {
+                            c.cycles += 2;
+                            let t = c.g[S6][0] == 0u64;
+
+                            if t {
+                                break 'b_1357e0;
+                            } else {
+                                c.cycles += 8;
+                                c.g[A1][0] = 0x2;
+                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x001356a0)?;
+                                c.g[A0][0] = sx(at(c, V0, SEQ_FLAGS));
+                                c.g[A1][0] = 0x1;
+                                FLAGS64_TEST.call(c, 0x001356ac)?;
+                                let t = c.g[V0][0] == 0u64;
+                                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                if t {
+                                    break 'b_1357e0;
+                                } else {
+                                    'b_1357d8: {
+                                        'b_1357b0: {
+                                            'b_135744: {
+                                                c.cycles += 11;
+                                                c.g[A1][0] = 0x2;
+                                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                                call_ptr(
+                                                    c,
+                                                    ANIM_CONTROLLER_GET_LAYER_SEQUENCE,
+                                                    0x001356c0,
+                                                )?;
+                                                c.sw(at(c, V0, SEQ_SPEED), 0u64);
+                                                c.g[A1][0] = 0x2;
+                                                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                                call_ptr(
+                                                    c,
+                                                    ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY,
+                                                    0x001356d4,
+                                                )?;
+                                                c.g[V1][0] = 0x13;
+                                                let t = c.g[V0][0] != c.g[V1][0];
+                                                c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                                                if t {
+                                                    break 'b_135744;
+                                                } else {
+                                                    c.cycles += 19;
+                                                    c.g[A0][0] = c.g[S2][0];
+                                                    c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                                    c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                                    BEBAGT_INT_GET_TRICK_FIELD_A
+                                                        .call(c, 0x001356f0)?;
+                                                    c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                                                    c.g[A1][0] = c.g[V0][0];
+                                                    call_ptr(
+                                                        c,
+                                                        RIDER_METRIX_ADD_TRICK,
+                                                        0x001356fc,
+                                                    )?;
+                                                    c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                                                    c.mov_s(12, 0);
+                                                    c.g[A1][0] = 0x1;
+                                                    call_ptr(c, RIDER_ADD_BOOST, 0x0013570c)?;
+                                                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                                    c.g[A0][0] = c.g[S2][0];
+                                                    c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                                    c.g[A1][0] = c.lw(at(c, V0, AI_INDEX));
+                                                    BEBAGT_INT_GET_TRICK_FIELD8
+                                                        .call(c, 0x00135720)?;
+                                                    c.g[V1][0] = 0x1b6;
+                                                    let t = c.g[V0][0] == c.g[V1][0];
+                                                    c.g[A0][0] = c.g[S2][0];
+                                                    if t {
+                                                        break 'b_1357d8;
+                                                    } else {
+                                                        c.cycles += 6;
+                                                        c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                                                        c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                                        c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                                        BEBAGT_INT_GET_TRICK_FIELD8
+                                                            .call(c, 0x0013573c)?;
+                                                        c.g[A0][0] = c.lw(at(c, S0, ANIM_CTRL));
+                                                        break 'b_1357b0;
+                                                    }
+                                                }
+                                            }
+                                            c.cycles += 21;
+                                            c.g[A3][0] = c.g[S5][0];
+                                            c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                            BEBAGT_INT_GET_TRICK_VALUE.call(c, 0x00135758)?;
+                                            c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                                            c.g[A1][0] = c.g[V0][0];
+                                            call_ptr(c, RIDER_METRIX_ADD_TRICK, 0x00135764)?;
+                                            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                                            c.mov_s(12, 0);
+                                            c.g[A1][0] = 0x1;
+                                            call_ptr(c, RIDER_ADD_BOOST, 0x00135774)?;
+                                            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                            c.g[A0][0] = c.g[S2][0];
+                                            c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                            c.g[A3][0] = c.g[S5][0];
+                                            c.g[A1][0] = c.lw(at(c, V0, AI_INDEX));
+                                            BEBAGT_INT_GET_TRICK_ANIM2.call(c, 0x0013578c)?;
+                                            c.g[V1][0] = 0x1b6;
+                                            let t = c.g[V0][0] == c.g[V1][0];
+                                            c.g[A3][0] = c.g[S5][0];
+                                            if t {
+                                                break 'b_1357d8;
+                                            } else {
+                                                c.cycles += 6;
+                                                c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                                                c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                                c.g[A0][0] = c.g[S2][0];
+                                                c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                                BEBAGT_INT_GET_TRICK_ANIM2.call(c, 0x001357ac)?;
+                                                c.g[A0][0] = c.lw(at(c, S0, ANIM_CTRL));
+                                                break 'b_1357b0;
+                                            }
+                                        }
+                                        c.cycles += 10;
+                                        c.g[A1][0] = c.g[V0][0];
+                                        c.g[AT][0] = 0xffffffffbf800000;
+                                        c.mtc1(1, 12);
+                                        c.g[A2][0] = 0u64;
+                                        call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, 0x001357c4)?;
+                                        c.g[V1][0] = c.lw(at(c, S1, RIDER));
+                                        c.g[A1][0] = 0x1;
+                                        c.g[A0][0] = c.lw(at(c, V1, ANIM_CTRL));
+                                        call_ptr(
+                                            c,
+                                            ANIM_CONTROLLER_GET_LAYER_SEQUENCE,
+                                            0x001357d4,
+                                        )?;
+                                        c.swc1(21, at(c, V0, SEQ_SPEED));
+                                        break 'b_1357d8;
+                                    }
+                                    c.cycles += 2;
+                                    c.g[V0][0] = 0x4;
+                                    break 'b_135928;
+                                }
+                            }
+                        }
+                    }
+                    'b_135844: {
+                        c.cycles += 8;
+                        c.g[A1][0] = 0x2;
+                        c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                        call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x001357ec)?;
+                        c.g[A0][0] = sx(at(c, V0, SEQ_FLAGS));
+                        c.g[A1][0] = 0x1;
+                        FLAGS64_TEST.call(c, 0x001357f8)?;
+                        let t = c.g[V0][0] != 0u64;
+                        c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                        if t {
+                            break 'b_135844;
+                        } else {
+                            c.cycles += 8;
+                            c.g[A1][0] = 0x2;
+                            c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                            call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x0013580c)?;
+                            c.g[A0][0] = sx(at(c, V0, SEQ_FLAGS));
+                            c.g[A1][0] = 0x3;
+                            FLAGS64_TEST.call(c, 0x00135818)?;
+                            let t = c.g[V0][0] != 0u64;
+                            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                            if t {
+                                break 'b_135844;
+                            } else {
+                                c.cycles += 8;
+                                c.g[A1][0] = 0x2;
+                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x0013582c)?;
+                                c.g[A0][0] = sx(at(c, V0, SEQ_FLAGS));
+                                c.g[A1][0] = 0x2;
+                                FLAGS64_TEST.call(c, 0x00135838)?;
+                                if c.g[V0][0] == 0u64 {
+                                    c.g[V1][0] = c.lw(at(c, S1, STATE));
+                                    break 'b_135930;
+                                } else {
+                                    c.cycles += 1;
+                                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                    break 'b_135844;
+                                }
+                            }
+                        }
+                    }
+                    'b_1358c0: {
+                        c.cycles += 6;
+                        c.g[A1][0] = 0x2;
+                        c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                        call_ptr(c, ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY, 0x00135850)?;
+                        c.g[V1][0] = 0x13;
+                        let t = c.g[V0][0] != c.g[V1][0];
+                        c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                        if t {
+                            break 'b_1358c0;
+                        } else {
+                            c.cycles += 25;
+                            c.g[A0][0] = c.g[S2][0];
+                            c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                            c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                            BEBAGT_INT_GET_TRICK_FIELD_A.call(c, 0x0013586c)?;
+                            c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                            c.g[A1][0] = c.g[V0][0];
+                            call_ptr(c, RIDER_METRIX_ADD_TRICK, 0x00135878)?;
+                            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                            c.mov_s(12, 0);
+                            c.g[A1][0] = 0x1;
+                            call_ptr(c, RIDER_ADD_BOOST, 0x00135888)?;
+                            c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                            c.g[A0][0] = c.g[S2][0];
+                            c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                            c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                            BEBAGT_INT_GET_TRICK_FIELD_A.call(c, 0x0013589c)?;
+                            c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                            c.g[A1][0] = c.g[V0][0];
+                            call_ptr(c, RIDER_METRIX_COMPLETE_TRICK, 0x001358a8)?;
+                            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                            c.mov_s(12, 0);
+                            c.g[A1][0] = 0x1;
+                            call_ptr(c, RIDER_ADD_BOOST, 0x001358b8)?;
+                            c.g[V0][0] = 0x5;
+                            break 'b_135928;
+                        }
+                    }
+                    c.cycles += 26;
+                    c.g[A3][0] = c.g[S5][0];
+                    c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                    BEBAGT_INT_GET_TRICK_VALUE.call(c, 0x001358d4)?;
+                    c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, RIDER_METRIX_ADD_TRICK, 0x001358e0)?;
+                    c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                    c.mov_s(12, 0);
+                    c.g[A1][0] = 0x1;
+                    call_ptr(c, RIDER_ADD_BOOST, 0x001358f0)?;
+                    c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                    c.g[A3][0] = c.g[S5][0];
+                    c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                    BEBAGT_INT_GET_TRICK_VALUE.call(c, 0x00135908)?;
+                    c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, RIDER_METRIX_COMPLETE_TRICK, 0x00135914)?;
+                    c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                    c.mov_s(12, 0);
+                    c.g[A1][0] = 0x1;
+                    call_ptr(c, RIDER_ADD_BOOST, 0x00135924)?;
+                    c.g[V0][0] = 0x5;
+                    break 'b_135928;
+                }
+                c.cycles += 2;
+                c.sw(at(c, S1, STATE), c.g[V0][0]);
+                c.g[V1][0] = c.lw(at(c, S1, STATE));
+                break 'b_135930;
+            }
+        }
+        'b_135a00: {
+            c.cycles += 3;
+            c.g[V0][0] = 0x4;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                break 'b_135a00;
+            } else {
+                'b_135950: {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw(at(c, S1, TRICK));
+                    let t = c.g[S4][0] != c.g[V0][0];
+                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                    if t {
+                        break 'b_135950;
+                    } else {
+                        c.cycles += 2;
+                        let t = c.g[S6][0] != 0u64;
+
+                        if t {
+                            break 'b_135a00;
+                        } else {
+                            break 'b_135950;
+                        }
+                    }
+                }
+                'b_1359d0: {
+                    'b_13599c: {
+                        c.cycles += 6;
+                        c.g[A1][0] = 0x2;
+                        c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                        call_ptr(c, ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY, 0x0013595c)?;
+                        c.g[V1][0] = 0x13;
+                        let t = c.g[V0][0] != c.g[V1][0];
+                        c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                        if t {
+                            break 'b_13599c;
+                        } else {
+                            c.cycles += 13;
+                            c.g[A0][0] = c.g[S2][0];
+                            c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                            c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                            BEBAGT_INT_GET_TRICK_FIELD_A.call(c, 0x00135978)?;
+                            c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                            c.g[A1][0] = c.g[V0][0];
+                            call_ptr(c, RIDER_METRIX_COMPLETE_TRICK, 0x00135984)?;
+                            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                            c.mov_s(12, 0);
+                            c.g[A1][0] = 0x1;
+                            call_ptr(c, RIDER_ADD_BOOST, 0x00135994)?;
+                            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                            break 'b_1359d0;
+                        }
+                    }
+                    c.cycles += 13;
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                    c.g[A3][0] = c.g[S5][0];
+                    c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                    BEBAGT_INT_GET_TRICK_VALUE.call(c, 0x001359b0)?;
+                    c.g[A0][0] = c.lw(at(c, S0, METRIX));
+                    c.g[A1][0] = c.g[V0][0];
+                    call_ptr(c, RIDER_METRIX_COMPLETE_TRICK, 0x001359bc)?;
+                    c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                    c.mov_s(12, 0);
+                    c.g[A1][0] = 0x1;
+                    call_ptr(c, RIDER_ADD_BOOST, 0x001359cc)?;
+                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                    break 'b_1359d0;
+                }
+                c.cycles += 12;
+                c.g[A1][0] = 0x1;
+                c.lwc1(12, gp(c, FADE_ON_END));
+                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                call_ptr(c, ANIM_CONTROLLER_FADE_OUT_LAYER, 0x001359e0)?;
+                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                c.g[A1][0] = 0x2;
+                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x001359f0)?;
+                c.swc1(21, at(c, V0, SEQ_SPEED));
+                c.g[V0][0] = 0x5;
+                c.sw(at(c, S1, STATE), c.g[V0][0]);
+                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                break 'b_135a00;
+            }
+        }
+        'b_135afc: {
+            c.cycles += 8;
+            c.g[A1][0] = 0x2;
+            c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+            call_ptr(c, ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY, 0x00135a0c)?;
+            c.g[S3][0] = c.g[V0][0];
+            c.g[V1][0] = c.lw(at(c, S1, STATE));
+            c.g[V0][0] = 0x5;
+            let t = c.g[V1][0] != c.g[V0][0];
+            c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x12));
+            if t {
+                break 'b_135afc;
+            } else {
+                'b_135af8: {
+                    'b_135a50: {
+                        c.cycles += 3;
+                        c.g[V0][0] = 0x2;
+                        let t = c.g[S3][0] == c.g[V0][0];
+                        c.g[V0][0] = 0x14;
+                        if t {
+                            break 'b_135a50;
+                        } else {
+                            c.cycles += 9;
+                            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                            c.g[A1][0] = 0x2;
+                            c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                            call_ptr(c, ANIM_CONTROLLER_GET_LAYER_SEQUENCE, 0x00135a3c)?;
+                            c.g[A0][0] = sx(at(c, V0, SEQ_FLAGS));
+                            c.g[A1][0] = 0x3;
+                            FLAGS64_TEST.call(c, 0x00135a48)?;
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[V0][0] = 0x14;
+                            if t {
+                                break 'b_135af8;
+                            } else {
+                                break 'b_135a50;
+                            }
+                        }
+                    }
+                    'b_135af4: {
+                        'b_135af0: {
+                            c.cycles += 2;
+                            let t = c.g[S3][0] != c.g[V0][0];
+                            c.g[V0][0] = 0xffffffffffffffff;
+                            if t {
+                                break 'b_135af0;
+                            } else {
+                                c.cycles += 2;
+                                if c.g[S6][0] == 0u64 {
+                                    c.sw(at(c, S1, STATE), 0u64);
+                                    break 'b_135af4;
+                                } else {
+                                    c.cycles += 2;
+                                    let t = c.g[S4][0] == c.g[V0][0];
+                                    c.g[A0][0] = c.g[S2][0];
+                                    if t {
+                                        break 'b_135af0;
+                                    } else {
+                                        'b_135aec: {
+                                            c.cycles += 8;
+                                            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                            c.g[A2][0] = c.g[S4][0];
+                                            c.g[A3][0] = c.g[S5][0];
+                                            c.g[A1][0] = c.lw(at(c, V0, AI_INDEX));
+                                            BEBAGT_INT_GET_TRICK_ANIM.call(c, 0x00135a7c)?;
+                                            c.g[V1][0] = 0x1b6;
+                                            let t = c.g[V0][0] == c.g[V1][0];
+                                            c.g[A1][0] = 0x1;
+                                            if t {
+                                                break 'b_135aec;
+                                            } else {
+                                                c.cycles += 25;
+                                                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                                c.sw(at(c, S1, TRICK), c.g[S4][0]);
+                                                c.lwc1(12, gp(c, FADE_ON_CHAIN));
+                                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                                call_ptr(
+                                                    c,
+                                                    ANIM_CONTROLLER_FADE_OUT_LAYER,
+                                                    0x00135a9c,
+                                                )?;
+                                                c.g[S0][0] = c.lw(at(c, S1, RIDER));
+                                                c.g[A3][0] = c.g[S5][0];
+                                                c.g[A2][0] = c.lw(at(c, S1, TRICK));
+                                                c.g[A0][0] = c.g[S2][0];
+                                                c.g[A1][0] = c.lw(at(c, S0, AI_INDEX));
+                                                BEBAGT_INT_GET_TRICK_ANIM.call(c, 0x00135ab4)?;
+                                                c.g[A0][0] = c.lw(at(c, S0, ANIM_CTRL));
+                                                c.g[A1][0] = c.g[V0][0];
+                                                c.g[AT][0] = 0xffffffffbf800000;
+                                                c.mtc1(1, 12);
+                                                c.g[A2][0] = 0x1;
+                                                call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, 0x00135acc)?;
+                                                c.g[V1][0] = c.lw(at(c, S1, RIDER));
+                                                c.g[A1][0] = 0x2;
+                                                c.g[A0][0] = c.lw(at(c, V1, ANIM_CTRL));
+                                                call_ptr(
+                                                    c,
+                                                    ANIM_CONTROLLER_GET_LAYER_SEQUENCE,
+                                                    0x00135adc,
+                                                )?;
+                                                c.swc1(21, at(c, V0, SEQ_SPEED));
+                                                c.g[V0][0] = 0x3;
+                                                c.sw(at(c, S1, STATE), c.g[V0][0]);
+                                                break 'b_135af8;
+                                            }
+                                        }
+                                        c.cycles += 1;
+                                        c.g[V0][0] = 0xffffffffffffffff;
+                                        break 'b_135af0;
+                                    }
+                                }
+                            }
+                        }
+                        c.cycles += 1;
+                        c.sw(at(c, S1, STATE), 0u64);
+                        break 'b_135af4;
+                    }
+                    c.cycles += 1;
+                    c.sw(at(c, S1, TRICK), c.g[V0][0]);
+                    break 'b_135af8;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = sx((c.g[S3][0] as u32).wrapping_sub(0x12));
+                break 'b_135afc;
+            }
+        }
+        c.cycles += 13;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        c.g[V0][0] = (c.g[V0][0] < 0x3u64) as u64;
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x88);
+        frame.restore_fpr(c, 20, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderPrewindSub_HandleInput(RiderPrewindSub* this, Pad* pad)`
+/// (0x12e9b8): the input of a rider crouching for a jump (prewind), once
+/// per tick.
+///
+/// - Crossing the finish line, a path reset (pad bit 12) or a rail jump
+///   end the function.
+/// - Released (bit 13 clear): the stick direction is quantized into the
+///   lean / pitch slews; prewind directions 3 and 4 reset the animation
+///   tilt (`Math_SinCos` of -0); the release animation (table 0x43d840);
+///   direction 0; unless already airborne (main state 1) the rider
+///   launches (`Rider_LaunchIntoAir` at `+0x220`, main state 1, take-off
+///   sound); slews zeroed, sub-state 5.
+/// - Held: boost input (bit 14), slews 3/4 to (1, 0); the stick axes
+///   (scaled, clamped to ±0.5) lean or pitch. On a kind-10 layer-2
+///   animation or anim id 0x15 the slews are parked (rate 1/12); a centred
+///   rider turning around plays anim 0x15; otherwise the trick stick's
+///   axes (±0.2 dead zone, to -1/0/1) set the slew targets with rates by
+///   the distance (5 per second), and the directional animation (table
+///   0x43d788) plays.
+#[allow(unused_labels)]
+pub fn rider_prewind_sub_handle_input(c: &mut Cpu) {
+    use prewind_input::*;
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x80);
+        'b_12ee0c: {
+            c.cycles += 14;
+            frame.save(c, S0, 0x50);
+            frame.save(c, S2, 0x30);
+            c.g[S0][0] = c.g[A1][0];
+            frame.save(c, S1, 0x40);
+            c.g[S2][0] = c.g[A0][0];
+            frame.save_ra(c, 0x20);
+            frame.save_fpr(c, 22, 0x70);
+            frame.save_fpr(c, 21, 0x68);
+            frame.save_fpr(c, 20, 0x60);
+            c.g[A0][0] = c.lw(at(c, S2, RIDER));
+            RIDER_TRY_ENTER_FINISH_LINE.call(c, 0x0012e9e8)?;
+            if c.g[V0][0] != 0u64 {
+                frame.restore(c, S0, 0x50);
+                break 'b_12ee0c;
+            } else {
+                c.cycles += 8;
+                c.g[A1][0] = c.lw(at(c, S0, PAD_BUTTONS));
+                c.g[A2][0] = 0u64;
+                c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 12) as u32);
+                c.g[A1][0] = c.g[A1][0] & 0x1;
+                RIDER_CHECK_RESET_PATH.call(c, 0x0012ea08)?;
+                if c.g[V0][0] != 0u64 {
+                    frame.restore(c, S0, 0x50);
+                    break 'b_12ee0c;
+                } else {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                    RIDER_TRY_START_RAILSLIDE.call(c, 0x0012ea18)?;
+                    if c.g[V0][0] != 0u64 {
+                        frame.restore(c, S0, 0x50);
+                        break 'b_12ee0c;
+                    } else {
+                        'b_12eb50: {
+                            c.cycles += 4;
+                            c.g[A1][0] = c.lw(at(c, S0, PAD_BUTTONS));
+                            c.g[V0][0] = c.g[A1][0] & 0x2000;
+                            let t = c.g[V0][0] != 0u64;
+                            c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 14) as u32);
+                            if t {
+                                break 'b_12eb50;
+                            } else {
+                                'b_12eac4: {
+                                    c.cycles += 12;
+                                    c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                    c.lwc1(12, gp(c, -0x7790));
+                                    c.lwc1(13, gp(c, -0x778c));
+                                    c.g[A1][0] = sx(at(c, A0, SLEW5_VALUE));
+                                    c.g[A2][0] = sx(at(c, A0, SLEW0_VALUE));
+                                    INPUT_QUANTIZE_STICK_DIRECTION.call(c, 0x0012ea48)?;
+                                    c.g[V1][0] = c.lw(at(c, S2, RIDER));
+                                    c.g[V0][0] = c.lw(at(c, V1, PREWIND_DIR));
+                                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x3));
+                                    c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[V0][0] = 0x500000;
+                                    if t {
+                                        break 'b_12eac4;
+                                    } else {
+                                        c.cycles += 25;
+                                        c.mtc1(0, 12);
+                                        c.g[S1][0] = c.lw(at(c, V1, ANIM_CTRL));
+                                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xed0));
+                                        c.lq(3, r32(c, V0));
+                                        c.neg_s(12, 12);
+                                        c.g[A0][0] = sx(at(c, SP, 0x10));
+                                        c.g[A1][0] = sx(at(c, SP, 0x14));
+                                        c.sq(3, at(c, S1, 0x30));
+                                        c.g[S0][0] = 0x500000;
+                                        call_ptr(c, MATH_SIN_COS, 0x0012ea88)?;
+                                        c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xea0));
+                                        c.lwc1(0, frame.at(c, 0x10));
+                                        c.lwc1(1, at(c, V0, 0x8));
+                                        c.lwc1(2, (c.g[S0][0] as u32).wrapping_sub(0xea0));
+                                        c.lwc1(4, at(c, V0, 0x4));
+                                        c.mul_s(1, 0, 1);
+                                        c.mul_s(2, 0, 2);
+                                        c.lwc1(3, frame.at(c, 0x14));
+                                        c.mul_s(0, 0, 4);
+                                        c.swc1(3, frame.at(c, 0xc));
+                                        c.swc1(1, frame.at(c, 0x8));
+                                        c.swc1(2, frame.at(c, 0));
+                                        c.swc1(0, frame.at(c, 0x4));
+                                        c.lq(2, frame.at(c, 0));
+                                        c.sq(2, at(c, S1, 0x40));
+                                        break 'b_12eac4;
+                                    }
+                                }
+                                'b_12eb1c: {
+                                    c.cycles += 13;
+                                    c.g[A1][0] = 0x440000;
+                                    c.g[A0][0] = c.g[S2][0];
+                                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x27c0));
+                                    RIDER_PREWIND_SUB_PLAY_DIRECTIONAL_ANIM.call(c, 0x0012ead4)?;
+                                    c.g[V0][0] = c.lw(at(c, S2, RIDER));
+                                    c.sw(at(c, V0, PREWIND_DIR), 0u64);
+                                    c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                    RIDER_EMPTY_STANCE_HOOK.call(c, 0x0012eae4)?;
+                                    c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                    RIDER_GET_MAIN_STATE.call(c, 0x0012eaec)?;
+                                    c.g[V1][0] = 0x1;
+                                    let t = c.g[V0][0] == c.g[V1][0];
+
+                                    if t {
+                                        break 'b_12eb1c;
+                                    } else {
+                                        c.cycles += 9;
+                                        c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                        c.lwc1(12, at(c, A0, LAUNCH_SPEED));
+                                        RIDER_LAUNCH_INTO_AIR.call(c, 0x0012eb04)?;
+                                        c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                        c.g[A1][0] = 0x1;
+                                        RIDER_SET_MAIN_STATE.call(c, 0x0012eb10)?;
+                                        c.g[A0][0] = c.lw(gp(c, 0x410));
+                                        c.g[A1][0] = c.lw(at(c, S2, RIDER));
+                                        call_ptr(
+                                            c,
+                                            SSX_AUDIO_SYSTEM_PLAY_TAKEOFF_SOUND,
+                                            0x0012eb1c,
+                                        )?;
+                                        break 'b_12eb1c;
+                                    }
+                                }
+                                c.cycles += 13;
+                                c.mtc1(0, 20);
+                                c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                c.mov_s(12, 20);
+                                RIDER_SET_SLEW0_TARGET.call(c, 0x0012eb2c)?;
+                                c.mov_s(12, 20);
+                                c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                c.mov_s(13, 12);
+                                RIDER_SET_SLEW3_AND4_TARGETS.call(c, 0x0012eb3c)?;
+                                c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                c.g[A1][0] = 0x5;
+                                RIDER_SET_SUB_STATE.call(c, 0x0012eb48)?;
+                                frame.restore(c, S0, 0x50);
+                                break 'b_12ee0c;
+                            }
+                        }
+                        'b_12ebb8: {
+                            c.cycles += 25;
+                            c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                            c.g[A1][0] = c.g[A1][0] & 0x1;
+                            c.g[A2][0] = 0u64;
+                            RIDER_HANDLE_BOOST_INPUT.call(c, 0x0012eb60)?;
+                            c.mtc1(0, 20);
+                            c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                            c.g[AT][0] = 0x3f800000;
+                            c.mtc1(1, 12);
+                            c.mov_s(13, 20);
+                            RIDER_SET_SLEW3_AND4_TARGETS.call(c, 0x0012eb78)?;
+                            c.g[V1][0] = c.lw(at(c, S0, PAD_STICKS));
+                            c.lwc1(3, gp(c, -0x7788));
+                            c.g[V0][0] = sx((c.g[V1][0] as u32) << 26);
+                            c.g[AT][0] = 0xffffffffbf000000;
+                            c.mtc1(1, 2);
+                            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 26) as u32);
+                            c.g[AT][0] = 0x3f000000;
+                            c.mtc1(1, 1);
+                            c.mtc1(2, 0);
+                            c.cvt_s_w(0, 0);
+                            c.mul_s(0, 0, 3);
+                            c.c_le_s(2, 0);
+                            let t = !c.fcc();
+                            c.mov_s(22, 2);
+                            if t {
+                                break 'b_12ebb8;
+                            } else {
+                                c.cycles += 1;
+                                c.min_s(22, 0, 1);
+                                break 'b_12ebb8;
+                            }
+                        }
+                        'b_12ebe0: {
+                            c.cycles += 9;
+                            c.g[V0][0] = sx((c.g[V1][0] as u32) << 20);
+                            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 26) as u32);
+                            c.mtc1(2, 0);
+                            c.cvt_s_w(0, 0);
+                            c.mul_s(0, 0, 3);
+                            c.c_le_s(2, 0);
+                            let t = !c.fcc();
+                            c.mov_s(21, 2);
+                            if t {
+                                break 'b_12ebe0;
+                            } else {
+                                c.cycles += 1;
+                                c.min_s(21, 0, 1);
+                                break 'b_12ebe0;
+                            }
+                        }
+                        'b_12ee08: {
+                            'b_12ec44: {
+                                c.cycles += 7;
+                                c.g[V0][0] = c.lw(at(c, S2, RIDER));
+                                c.g[A1][0] = 0x2;
+                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                call_ptr(c, ANIM_CONTROLLER_GET_LAYER_ANIM_ENTRY, 0x0012ebf0)?;
+                                c.g[V1][0] = 0xa;
+                                if c.g[V0][0] != c.g[V1][0] {
+                                    c.g[V0][0] = c.lw(at(c, S2, RIDER));
+                                    break 'b_12ec44;
+                                } else {
+                                    'b_12ec28: {
+                                        'b_12ec1c: {
+                                            c.cycles += 4;
+                                            c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                            c.g[V0][0] = c.lw(at(c, A0, PREWIND_DIR));
+                                            let t = c.g[V0][0] != 0u64;
+
+                                            if t {
+                                                break 'b_12ec1c;
+                                            } else {
+                                                c.cycles += 4;
+                                                c.mov_s(12, 22);
+                                                RIDER_SET_SLEW0_TARGET.call(c, 0x0012ec14)?;
+                                                c.g[V0][0] = c.lw(at(c, S2, RIDER));
+                                                break 'b_12ec28;
+                                            }
+                                        }
+                                        c.cycles += 3;
+                                        c.mov_s(12, 21);
+                                        RIDER_SET_SLEW5_TARGET.call(c, 0x0012ec24)?;
+                                        c.g[V0][0] = c.lw(at(c, S2, RIDER));
+                                        break 'b_12ec28;
+                                    }
+                                    c.cycles += 7;
+                                    c.lwc1(0, gp(c, -0x7784));
+                                    c.sw(at(c, V0, SLEW0_TARGET), 0u64);
+                                    c.swc1(0, at(c, V0, SLEW0_RATE));
+                                    c.g[V1][0] = c.lw(at(c, S2, RIDER));
+                                    c.swc1(0, at(c, V1, SLEW5_RATE));
+                                    c.sw(at(c, V1, SLEW5_TARGET), 0u64);
+                                    break 'b_12ee08;
+                                }
+                            }
+                            'b_12ec84: {
+                                c.cycles += 6;
+                                c.g[A1][0] = 0x2;
+                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                call_ptr(c, ANIM_CONTROLLER_GET_LAYER_ANIM_ID, 0x0012ec50)?;
+                                c.g[V1][0] = 0x15;
+                                let t = c.g[V0][0] != c.g[V1][0];
+                                c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                if t {
+                                    break 'b_12ec84;
+                                } else {
+                                    c.cycles += 10;
+                                    c.mov_s(12, 20);
+                                    RIDER_SET_SLEW0_TARGET.call(c, 0x0012ec64)?;
+                                    c.g[V0][0] = c.lw(at(c, S2, RIDER));
+                                    c.lwc1(0, gp(c, -0x7780));
+                                    c.swc1(20, at(c, V0, SLEW0_TARGET));
+                                    c.swc1(0, at(c, V0, SLEW0_RATE));
+                                    c.g[V1][0] = c.lw(at(c, S2, RIDER));
+                                    c.swc1(0, at(c, V1, SLEW5_RATE));
+                                    c.swc1(20, at(c, V1, SLEW5_TARGET));
+                                    break 'b_12ee08;
+                                }
+                            }
+                            'b_12ecd8: {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw(at(c, A0, PREWIND_DIR));
+                                if c.g[V0][0] != 0u64 {
+                                    c.g[V1][0] = c.lw(at(c, S2, RIDER));
+                                    break 'b_12ecd8;
+                                } else {
+                                    c.cycles += 5;
+                                    c.lwc1(0, at(c, A0, TURN_INPUT));
+                                    c.c_eq_s(0, 20);
+                                    if !c.fcc() {
+                                        c.g[V1][0] = c.lw(at(c, S2, RIDER));
+                                        break 'b_12ecd8;
+                                    } else {
+                                        'b_12ecd4: {
+                                            c.cycles += 4;
+                                            RIDER_TURN_AROUND_IF_BACKWARD.call(c, 0x0012ecac)?;
+                                            let t = c.g[V0][0] == 0u64;
+                                            c.g[A1][0] = 0x15;
+                                            if t {
+                                                break 'b_12ecd4;
+                                            } else {
+                                                c.cycles += 8;
+                                                c.g[V0][0] = c.lw(at(c, S2, RIDER));
+                                                c.g[AT][0] = 0xffffffffbf800000;
+                                                c.mtc1(1, 12);
+                                                c.g[A2][0] = 0u64;
+                                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                                call_ptr(c, ANIM_CONTROLLER_PLAY_ANIM, 0x0012eccc)?;
+                                                frame.restore(c, S0, 0x50);
+                                                break 'b_12ee0c;
+                                            }
+                                        }
+                                        c.cycles += 1;
+                                        c.g[V1][0] = c.lw(at(c, S2, RIDER));
+                                        break 'b_12ecd8;
+                                    }
+                                }
+                            }
+                            'b_12ecec: {
+                                c.cycles += 4;
+                                c.lwc1(5, gp(c, -0x777c));
+                                c.g[V0][0] = c.lw(at(c, V1, PREWIND_DIR));
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[A0][0] = c.g[V1][0];
+                                if t {
+                                    break 'b_12ecec;
+                                } else {
+                                    c.cycles += 1;
+                                    c.lwc1(5, gp(c, -0x7778));
+                                    break 'b_12ecec;
+                                }
+                            }
+                            'b_12ed58: {
+                                'b_12ed3c: {
+                                    c.cycles += 16;
+                                    c.g[V1][0] = c.lw(at(c, S0, PAD_BUTTONS));
+                                    c.lwc1(3, gp(c, -0x7774));
+                                    c.g[V0][0] = sx((c.g[V1][0] as u32) << 11);
+                                    c.lwc1(2, gp(c, -0x7770));
+                                    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 26) as u32);
+                                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 5);
+                                    c.mtc1(2, 1);
+                                    c.cvt_s_w(1, 1);
+                                    c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 26) as u32);
+                                    c.mtc1(3, 0);
+                                    c.cvt_s_w(0, 0);
+                                    c.mul_s(4, 1, 3);
+                                    c.c_lt_s(4, 2);
+                                    let t = !c.fcc();
+                                    c.mul_s(3, 0, 3);
+                                    if t {
+                                        break 'b_12ed3c;
+                                    } else {
+                                        c.cycles += 4;
+                                        c.g[AT][0] = 0xffffffffbf800000;
+                                        c.mtc1(1, 4);
+
+                                        break 'b_12ed58;
+                                    }
+                                }
+                                c.cycles += 5;
+                                c.lwc1(0, gp(c, -0x776c));
+                                c.c_lt_s(0, 4);
+                                c.mtc1(0, 4);
+                                let t = !c.fcc();
+
+                                if t {
+                                    break 'b_12ed58;
+                                } else {
+                                    c.cycles += 2;
+                                    c.g[AT][0] = 0x3f800000;
+                                    c.mtc1(1, 4);
+                                    break 'b_12ed58;
+                                }
+                            }
+                            'b_12ed94: {
+                                'b_12ed78: {
+                                    c.cycles += 4;
+                                    c.lwc1(0, gp(c, -0x7768));
+                                    c.c_lt_s(3, 0);
+                                    let t = !c.fcc();
+
+                                    if t {
+                                        break 'b_12ed78;
+                                    } else {
+                                        c.cycles += 4;
+                                        c.g[AT][0] = 0xffffffffbf800000;
+                                        c.mtc1(1, 3);
+                                        c.lwc1(0, at(c, A0, SLEW0_VALUE));
+                                        break 'b_12ed94;
+                                    }
+                                }
+                                c.cycles += 5;
+                                c.lwc1(0, gp(c, -0x7764));
+                                c.c_lt_s(0, 3);
+                                c.mtc1(0, 3);
+                                let t = !c.fcc();
+                                c.lwc1(0, at(c, A0, SLEW0_VALUE));
+                                if t {
+                                    break 'b_12ed94;
+                                } else {
+                                    c.cycles += 2;
+                                    c.g[AT][0] = 0x3f800000;
+                                    c.mtc1(1, 3);
+                                    break 'b_12ed94;
+                                }
+                            }
+                            'b_12edfc: {
+                                'b_12edf0: {
+                                    c.cycles += 19;
+                                    c.lwc1(1, gp(c, -0x7760));
+                                    c.sub_s(0, 4, 0);
+                                    c.swc1(4, at(c, A0, SLEW0_TARGET));
+                                    c.abs_s(0, 0);
+                                    c.mul_s(0, 5, 0);
+                                    c.mul_s(0, 0, 1);
+                                    c.swc1(0, at(c, A0, SLEW0_RATE));
+                                    c.g[V0][0] = c.lw(at(c, S2, RIDER));
+                                    c.lwc1(0, at(c, V0, SLEW5_VALUE));
+                                    c.swc1(3, at(c, V0, SLEW5_TARGET));
+                                    c.sub_s(0, 3, 0);
+                                    c.abs_s(0, 0);
+                                    c.mul_s(0, 5, 0);
+                                    c.mul_s(0, 0, 1);
+                                    c.swc1(0, at(c, V0, SLEW5_RATE));
+                                    c.g[A0][0] = c.lw(at(c, S2, RIDER));
+                                    c.g[V0][0] = c.lw(at(c, A0, PREWIND_DIR));
+                                    let t = c.g[V0][0] != 0u64;
+
+                                    if t {
+                                        break 'b_12edf0;
+                                    } else {
+                                        c.cycles += 4;
+                                        c.mov_s(12, 22);
+                                        RIDER_SET_SLEW0_TARGET.call(c, 0x0012ede8)?;
+                                        c.g[A1][0] = 0x440000;
+                                        break 'b_12edfc;
+                                    }
+                                }
+                                c.cycles += 3;
+                                c.mov_s(12, 21);
+                                RIDER_SET_SLEW5_TARGET.call(c, 0x0012edf8)?;
+                                c.g[A1][0] = 0x440000;
+                                break 'b_12edfc;
+                            }
+                            c.cycles += 3;
+                            c.g[A0][0] = c.g[S2][0];
+                            c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0x2878));
+                            RIDER_PREWIND_SUB_PLAY_DIRECTIONAL_ANIM.call(c, 0x0012ee08)?;
+                            break 'b_12ee08;
+                        }
+                        c.cycles += 1;
+                        frame.restore(c, S0, 0x50);
+                        break 'b_12ee0c;
+                    }
+                }
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 22, 0x70);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void AI_Render(AI* this)` (0x1291e0): draws the riders of a frame.
+///
+/// - Riders without a light slot (not visible, slot -1) get one from the
+///   graphics manager (+4).
+/// - The riders drawn (up to 8, on the stack): in a single view with
+///   humans, the first human's rider (camera control mode 0) or the viewed
+///   actor's; else every human's, and the computers' and others' when
+///   shown (null actors give null riders).
+/// - Per rider, in passes: visibility (`Rider_UpdateVisibility`, kept on
+///   the stack with the owner), lighting, model and shadow of the visible
+///   ones, the board trails as one batch, the owner's pulse, cheat code,
+///   wake, air streamer, speed streamer and power-up trail effects; the
+///   sparks, anger, spray and attack effects of the visible ones; the
+///   attached effects of all.
+#[allow(unused_labels)]
+pub fn ai_render(c: &mut Cpu) {
+    use ai_render_fields::*;
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x100);
+        'b_12926c: {
+            c.cycles += 12;
+            frame.save(c, S1, 0xe0);
+            frame.save(c, S2, 0xd0);
+            c.g[S1][0] = c.g[A0][0];
+            frame.save(c, S4, 0xb0);
+            c.g[S2][0] = 0u64;
+            frame.save(c, S0, 0xf0);
+            frame.save(c, S3, 0xc0);
+            frame.save_ra(c, 0xa0);
+            c.g[V0][0] = c.lw(at(c, S1, RENDER_COUNT));
+            let t = (c.g[V0][0] as i64) <= 0;
+            c.g[S4][0] = sx(at(c, SP, 0x60));
+            if t {
+                break 'b_12926c;
+            } else {
+                c.cycles += 2;
+                c.g[S3][0] = 0xffffffffffffffff;
+                c.g[S0][0] = sx(at(c, S1, RENDER_LIST));
+                'l_129218: loop {
+                    'b_12925c: {
+                        c.cycles += 4;
+                        c.g[V1][0] = c.lw(r32(c, S0));
+                        c.g[V0][0] = c.lw(at(c, V1, RIDER_VISIBLE));
+                        if c.g[V0][0] != 0u64 {
+                            c.g[V0][0] = c.lw(at(c, S1, RENDER_COUNT));
+                            break 'b_12925c;
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = c.lw(at(c, V1, RIDER_LIGHT_SLOT));
+                            if c.g[V0][0] != c.g[S3][0] {
+                                c.g[V0][0] = c.lw(at(c, S1, RENDER_COUNT));
+                                break 'b_12925c;
+                            } else {
+                                c.cycles += 10;
+                                c.g[A1][0] = c.lw(gp(c, GP_GFX));
+                                c.g[V1][0] = c.lw(at(c, A1, GFX_VTABLE));
+                                c.g[A0][0] = c.lh(at(c, V1, GFX_ALLOC_LIGHT_SLOT));
+                                c.g[V0][0] = c.lw(at(c, V1, GFX_ALLOC_LIGHT_SLOT + 4));
+                                let t = c.g[V0][0] as u32;
+                                c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(r32(c, A0)));
+                                call_ptr(c, t, 0x0012924c)?;
+                                c.g[V1][0] = c.lw(r32(c, S0));
+                                c.g[V0][0] = sx(at(c, V0, 0x4));
+                                c.sw(at(c, V1, RIDER_LIGHT_SLOT), c.g[V0][0]);
+                                c.g[V0][0] = c.lw(at(c, S1, RENDER_COUNT));
+                                break 'b_12925c;
+                            }
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[S2][0] = sx(at(c, S2, 0x1));
+                    c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let t = c.g[V0][0] != 0u64;
+                    c.g[S0][0] = sx(at(c, S0, 0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129218);
+                        }
+                        continue 'l_129218;
+                    } else {
+                        break 'b_12926c;
+                    }
+                }
+            }
+        }
+        'b_1293c0: {
+            'b_1292dc: {
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(at(c, S1, SINGLE_VIEW));
+                c.g[S2][0] = 0u64;
+                let t = (c.g[V0][0] as i64) <= 0;
+                c.g[V1][0] = c.lw(at(c, S1, HUMAN_COUNT));
+                if t {
+                    break 'b_1292dc;
+                } else {
+                    c.cycles += 2;
+                    let t = (c.g[V1][0] as i64) <= 0;
+                    c.g[V0][0] = c.lw(gp(c, GP_APP));
+                    if t {
+                        break 'b_1292dc;
+                    } else {
+                        'b_1292bc: {
+                            c.cycles += 4;
+                            c.g[V1][0] = c.lw(at(c, V0, APP_MODULE));
+                            c.g[V0][0] = c.lw(at(c, V1, MODULE_CONTROL));
+                            if c.g[V0][0] == 0u64 {
+                                c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+                                break 'b_1292bc;
+                            } else {
+                                c.cycles += 3;
+                                c.g[V0][0] = c.lw(at(c, V0, CONTROL_MODE));
+                                let t = c.g[V0][0] != 0u64;
+                                c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+                                if t {
+                                    break 'b_1292bc;
+                                } else {
+                                    'b_1292b4: {
+                                        c.cycles += 4;
+                                        c.g[A0][0] = c.lw(at(c, S1, HUMANS));
+                                        c.g[S2][0] = 0x1;
+                                        let t = c.g[A0][0] == 0u64;
+                                        c.g[V0][0] = 0u64;
+                                        if t {
+                                            break 'b_1292b4;
+                                        } else {
+                                            c.cycles += 1;
+                                            c.g[V0][0] = c.lw(at(c, A0, ACTOR_RIDER));
+                                            break 'b_1292b4;
+                                        }
+                                    }
+                                    c.cycles += 2;
+                                    c.sw(r32(c, SP), c.g[V0][0]);
+                                    break 'b_1293c0;
+                                }
+                            }
+                        }
+                        'b_1292d4: {
+                            c.cycles += 5;
+                            c.g[A0][0] = c.lw(at(c, S1, VIEWED));
+                            c.g[V0][0] = sx((c.g[SP][0] as u32).wrapping_add(r32(c, V0)));
+                            c.g[S2][0] = 0x1;
+                            let t = c.g[A0][0] == 0u64;
+                            c.g[V1][0] = 0u64;
+                            if t {
+                                break 'b_1292d4;
+                            } else {
+                                c.cycles += 1;
+                                c.g[V1][0] = c.lw(at(c, A0, ACTOR_RIDER));
+                                break 'b_1292d4;
+                            }
+                        }
+                        c.cycles += 2;
+                        c.sw(r32(c, V0), c.g[V1][0]);
+                        break 'b_1293c0;
+                    }
+                }
+            }
+            'b_129320: {
+                c.cycles += 2;
+                let t = (c.g[V1][0] as i64) <= 0;
+                c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+                if t {
+                    break 'b_129320;
+                } else {
+                    c.cycles += 5;
+                    c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x4));
+                    c.g[S0][0] = c.lw(at(c, S1, HUMAN_COUNT));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(r32(c, V0)));
+                    c.g[A1][0] = sx(at(c, S1, HUMANS));
+                    'l_1292f8: loop {
+                        'b_129310: {
+                            c.cycles += 5;
+                            c.g[V0][0] = c.lw(r32(c, A1));
+                            c.g[V1][0] = sx(at(c, V1, 0x4));
+                            c.g[S2][0] = sx(at(c, S2, 0x1));
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[A0][0] = 0u64;
+                            if t {
+                                break 'b_129310;
+                            } else {
+                                c.cycles += 1;
+                                c.g[A0][0] = c.lw(at(c, V0, ACTOR_RIDER));
+                                break 'b_129310;
+                            }
+                        }
+                        c.cycles += 4;
+                        c.sw(r32(c, V1), c.g[A0][0]);
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                        let t = c.g[S0][0] != 0u64;
+                        c.g[A1][0] = sx(at(c, A1, 0x4));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x001292f8);
+                            }
+                            continue 'l_1292f8;
+                        } else {
+                            break 'b_129320;
+                        }
+                    }
+                }
+            }
+            'b_129374: {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(at(c, S1, SHOW_COMPUTERS));
+                if c.g[V0][0] == 0u64 {
+                    c.g[V0][0] = c.lw(at(c, S1, SHOW_OTHERS));
+                    break 'b_129374;
+                } else {
+                    'b_129370: {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.lw(at(c, S1, COMPUTER_COUNT));
+                        let t = (c.g[A0][0] as i64) <= 0;
+                        c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+                        if t {
+                            break 'b_129370;
+                        } else {
+                            c.cycles += 4;
+                            c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x4));
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(r32(c, V0)));
+                            c.g[S0][0] = c.g[A0][0];
+                            c.g[A1][0] = sx(at(c, S1, COMPUTERS));
+                            'l_129348: loop {
+                                'b_129360: {
+                                    c.cycles += 5;
+                                    c.g[V0][0] = c.lw(r32(c, A1));
+                                    c.g[V1][0] = sx(at(c, V1, 0x4));
+                                    c.g[S2][0] = sx(at(c, S2, 0x1));
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[A0][0] = 0u64;
+                                    if t {
+                                        break 'b_129360;
+                                    } else {
+                                        c.cycles += 1;
+                                        c.g[A0][0] = c.lw(at(c, V0, ACTOR_RIDER));
+                                        break 'b_129360;
+                                    }
+                                }
+                                c.cycles += 4;
+                                c.sw(r32(c, V1), c.g[A0][0]);
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                                let t = c.g[S0][0] != 0u64;
+                                c.g[A1][0] = sx(at(c, A1, 0x4));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x00129348);
+                                    }
+                                    continue 'l_129348;
+                                } else {
+                                    break 'b_129370;
+                                }
+                            }
+                        }
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw(at(c, S1, SHOW_OTHERS));
+                    break 'b_129374;
+                }
+            }
+            c.cycles += 2;
+            let t = c.g[V0][0] == 0u64;
+
+            if t {
+                break 'b_1293c0;
+            } else {
+                c.cycles += 3;
+                c.g[A1][0] = c.lw(at(c, S1, OTHER_COUNT));
+                let t = (c.g[A1][0] as i64) <= 0;
+                c.g[V0][0] = sx((c.g[S2][0] as u32) << 2);
+                if t {
+                    break 'b_1293c0;
+                } else {
+                    c.cycles += 4;
+                    c.g[V1][0] = sx((c.g[SP][0] as u32).wrapping_sub(0x4));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(r32(c, V0)));
+                    c.g[A0][0] = sx(at(c, S1, OTHERS));
+                    c.g[S0][0] = c.g[A1][0];
+                    'l_129398: loop {
+                        'b_1293b0: {
+                            c.cycles += 5;
+                            c.g[V0][0] = c.lw(r32(c, A0));
+                            c.g[V1][0] = sx(at(c, V1, 0x4));
+                            c.g[S2][0] = sx(at(c, S2, 0x1));
+                            let t = c.g[V0][0] == 0u64;
+                            c.g[A1][0] = 0u64;
+                            if t {
+                                break 'b_1293b0;
+                            } else {
+                                c.cycles += 1;
+                                c.g[A1][0] = c.lw(at(c, V0, ACTOR_RIDER));
+                                break 'b_1293b0;
+                            }
+                        }
+                        c.cycles += 4;
+                        c.sw(r32(c, V1), c.g[A1][0]);
+                        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                        let t = c.g[S0][0] != 0u64;
+                        c.g[A0][0] = sx(at(c, A0, 0x4));
+                        if t {
+                            if event_due(c) {
+                                deliver_event_here(c, 0x00129398);
+                            }
+                            continue 'l_129398;
+                        } else {
+                            break 'b_1293c0;
+                        }
+                    }
+                }
+            }
+        }
+        'b_1293f4: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_1293f4;
+            } else {
+                c.cycles += 2;
+                c.g[S1][0] = c.g[SP][0];
+                c.g[S0][0] = c.g[S2][0];
+                'l_1293d0: loop {
+                    c.cycles += 9;
+                    c.g[A0][0] = c.lw(r32(c, S1));
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    RIDER_UPDATE_VISIBILITY.call(c, 0x001293dc)?;
+                    c.sw(at(c, S1, 0x40), c.g[V0][0]);
+                    c.g[V0][0] = c.lw(r32(c, S1));
+                    c.g[V1][0] = c.lw(at(c, V0, RIDER_OWNER));
+                    c.sw(at(c, S1, 0x20), c.g[V1][0]);
+                    let t = c.g[S0][0] != 0u64;
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x001293d0);
+                        }
+                        continue 'l_1293d0;
+                    } else {
+                        break 'b_1293f4;
+                    }
+                }
+            }
+        }
+        'b_129428: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_129428;
+            } else {
+                c.cycles += 3;
+                c.g[S1][0] = c.g[SP][0];
+                c.g[S0][0] = c.g[S2][0];
+                'l_129408: loop {
+                    'b_129420: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(at(c, S1, 0x40));
+                        if c.g[V0][0] == 0u64 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129420;
+                        } else {
+                            c.cycles += 3;
+                            c.g[A0][0] = c.lw(r32(c, S1));
+                            RIDER_PREPARE_LIGHTING.call(c, 0x0012941c)?;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129420;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != 0u64;
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129408);
+                        }
+                        continue 'l_129408;
+                    } else {
+                        break 'b_129428;
+                    }
+                }
+            }
+        }
+        'b_129458: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_129458;
+            } else {
+                c.cycles += 2;
+                c.g[S1][0] = c.g[SP][0];
+                c.g[S0][0] = c.g[S2][0];
+                'l_129438: loop {
+                    'b_129450: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(at(c, S1, 0x40));
+                        if c.g[V0][0] == 0u64 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129450;
+                        } else {
+                            c.cycles += 3;
+                            c.g[A0][0] = c.lw(r32(c, S1));
+                            RIDER_RENDER_MODEL.call(c, 0x0012944c)?;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129450;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != 0u64;
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129438);
+                        }
+                        continue 'l_129438;
+                    } else {
+                        break 'b_129458;
+                    }
+                }
+            }
+        }
+        'b_1294b8: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+            c.g[A1][0] = c.g[S4][0];
+            if t {
+                break 'b_1294b8;
+            } else {
+                c.cycles += 2;
+                c.g[S1][0] = c.g[SP][0];
+                c.g[S0][0] = c.g[S2][0];
+                'l_129468: loop {
+                    'b_129480: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(at(c, S1, 0x40));
+                        if c.g[V0][0] == 0u64 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129480;
+                        } else {
+                            c.cycles += 3;
+                            c.g[A0][0] = c.lw(r32(c, S1));
+                            RIDER_RENDER_SHADOW.call(c, 0x0012947c)?;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129480;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != 0u64;
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129468);
+                        }
+                        continue 'l_129468;
+                    } else {
+                        c.cycles += 2;
+                        let t = (c.g[S2][0] as i64) <= 0;
+                        c.g[A1][0] = c.g[S4][0];
+                        if t {
+                            break 'b_1294b8;
+                        } else {
+                            c.cycles += 2;
+                            c.g[A0][0] = sx(at(c, SP, 0x20));
+                            c.g[S0][0] = c.g[S2][0];
+                            'l_129498: loop {
+                                c.cycles += 8;
+                                c.g[V1][0] = c.lw(r32(c, A0));
+                                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                                c.g[A0][0] = sx(at(c, A0, 0x4));
+                                c.g[V0][0] = sx(at(c, V1, TRAIL_FX));
+                                if c.g[V1][0] == 0 {
+                                    c.g[V0][0] = 0u64;
+                                }
+                                c.sw(r32(c, A1), c.g[V0][0]);
+                                let t = c.g[S0][0] != 0u64;
+                                c.g[A1][0] = sx(at(c, A1, 0x4));
+                                if t {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x00129498);
+                                    }
+                                    continue 'l_129498;
+                                } else {
+                                    break 'b_1294b8;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        'b_1294f0: {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S4][0];
+            c.g[A1][0] = c.g[S2][0];
+            call_ptr(c, C_BOARD_TRAIL_FX_RENDER_BATCH, 0x001294c4)?;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_1294f0;
+            } else {
+                c.cycles += 3;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                c.g[S0][0] = c.g[S2][0];
+                c.g[A0][0] = c.lw(r32(c, S1));
+                'l_1294d8: loop {
+                    c.cycles += 6;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    c.g[A0][0] = sx(at(c, A0, PULSE_FX));
+                    call_ptr(c, C_PLAYER_PULSE_FX_RENDER, 0x001294e8)?;
+                    if c.g[S0][0] != 0u64 {
+                        c.g[A0][0] = c.lw(r32(c, S1));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x001294d8);
+                        }
+                        continue 'l_1294d8;
+                    } else {
+                        break 'b_1294f0;
+                    }
+                }
+            }
+        }
+        'b_129520: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_129520;
+            } else {
+                c.cycles += 4;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                c.g[S0][0] = c.g[S2][0];
+                c.g[A0][0] = c.lw(r32(c, S1));
+                'l_129508: loop {
+                    c.cycles += 6;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    c.g[A0][0] = sx(at(c, A0, CHEAT_CODE));
+                    call_ptr(c, RIDER_BASE_RENDER_CHEAT_CODE, 0x00129518)?;
+                    if c.g[S0][0] != 0u64 {
+                        c.g[A0][0] = c.lw(r32(c, S1));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129508);
+                        }
+                        continue 'l_129508;
+                    } else {
+                        break 'b_129520;
+                    }
+                }
+            }
+        }
+        'b_129550: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_129550;
+            } else {
+                c.cycles += 4;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                c.g[S0][0] = c.g[S2][0];
+                c.g[A0][0] = c.lw(r32(c, S1));
+                'l_129538: loop {
+                    c.cycles += 6;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    c.g[A0][0] = sx(at(c, A0, WAKE_FX));
+                    call_ptr(c, C_BOARD_WAKE_FX_RENDER, 0x00129548)?;
+                    if c.g[S0][0] != 0u64 {
+                        c.g[A0][0] = c.lw(r32(c, S1));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129538);
+                        }
+                        continue 'l_129538;
+                    } else {
+                        break 'b_129550;
+                    }
+                }
+            }
+        }
+        'b_129580: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_129580;
+            } else {
+                c.cycles += 4;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                c.g[S0][0] = c.g[S2][0];
+                c.g[A0][0] = c.lw(r32(c, S1));
+                'l_129568: loop {
+                    c.cycles += 6;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    c.g[A0][0] = sx(at(c, A0, AIR_STREAMER_FX));
+                    call_ptr(c, C_AIR_STREAMER_FX_RENDER, 0x00129578)?;
+                    if c.g[S0][0] != 0u64 {
+                        c.g[A0][0] = c.lw(r32(c, S1));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129568);
+                        }
+                        continue 'l_129568;
+                    } else {
+                        break 'b_129580;
+                    }
+                }
+            }
+        }
+        'b_1295b0: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_1295b0;
+            } else {
+                c.cycles += 4;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                c.g[S0][0] = c.g[S2][0];
+                c.g[A0][0] = c.lw(r32(c, S1));
+                'l_129598: loop {
+                    c.cycles += 6;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    c.g[A0][0] = sx(at(c, A0, SPEED_STREAMER_FX));
+                    call_ptr(c, C_SPEED_BOOST_STREAMER_FX_RENDER, 0x001295a8)?;
+                    if c.g[S0][0] != 0u64 {
+                        c.g[A0][0] = c.lw(r32(c, S1));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129598);
+                        }
+                        continue 'l_129598;
+                    } else {
+                        break 'b_1295b0;
+                    }
+                }
+            }
+        }
+        'b_1295e0: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_1295e0;
+            } else {
+                c.cycles += 4;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                c.g[S0][0] = c.g[S2][0];
+                c.g[A0][0] = c.lw(r32(c, S1));
+                'l_1295c8: loop {
+                    c.cycles += 6;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    c.g[A0][0] = sx(at(c, A0, POWER_UP_TRAIL));
+                    call_ptr(c, RIDER_BASE_RENDER_POWER_UP_TRAIL, 0x001295d8)?;
+                    if c.g[S0][0] != 0u64 {
+                        c.g[A0][0] = c.lw(r32(c, S1));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x001295c8);
+                        }
+                        continue 'l_1295c8;
+                    } else {
+                        break 'b_1295e0;
+                    }
+                }
+            }
+        }
+        'b_129614: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_129614;
+            } else {
+                c.cycles += 2;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                c.g[S0][0] = c.g[S2][0];
+                'l_1295f0: loop {
+                    'b_12960c: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(at(c, S1, 0x20));
+                        if c.g[V0][0] == 0u64 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_12960c;
+                        } else {
+                            c.cycles += 4;
+                            c.g[A0][0] = c.lw(r32(c, S1));
+                            c.g[A0][0] = sx(at(c, A0, SPARK_FX));
+                            call_ptr(c, C_BOARD_SPARK_FX_RENDER, 0x00129608)?;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_12960c;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != 0u64;
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x001295f0);
+                        }
+                        continue 'l_1295f0;
+                    } else {
+                        break 'b_129614;
+                    }
+                }
+            }
+        }
+        'b_12964c: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+
+            if t {
+                break 'b_12964c;
+            } else {
+                c.cycles += 3;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                c.g[S0][0] = c.g[S2][0];
+                'l_129628: loop {
+                    'b_129644: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(at(c, S1, 0x20));
+                        if c.g[V0][0] == 0u64 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129644;
+                        } else {
+                            c.cycles += 4;
+                            c.g[A0][0] = c.lw(r32(c, S1));
+                            c.g[A0][0] = sx(at(c, A0, ANGER_FX));
+                            call_ptr(c, C_ANGER_FX_RENDER, 0x00129640)?;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129644;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != 0u64;
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129628);
+                        }
+                        continue 'l_129628;
+                    } else {
+                        break 'b_12964c;
+                    }
+                }
+            }
+        }
+        'b_12967c: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+            c.g[S0][0] = c.g[S2][0];
+            if t {
+                break 'b_12967c;
+            } else {
+                c.cycles += 1;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                'l_129658: loop {
+                    'b_129674: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(at(c, S1, 0x20));
+                        if c.g[V0][0] == 0u64 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129674;
+                        } else {
+                            c.cycles += 4;
+                            c.g[A0][0] = c.lw(r32(c, S1));
+                            c.g[A0][0] = sx(at(c, A0, SPRAY_FX));
+                            call_ptr(c, C_DYNAMIC_SPRAY_FX_RENDER, 0x00129670)?;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_129674;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != 0u64;
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129658);
+                        }
+                        continue 'l_129658;
+                    } else {
+                        break 'b_12967c;
+                    }
+                }
+            }
+        }
+        'b_1296ac: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+            c.g[S0][0] = c.g[S2][0];
+            if t {
+                break 'b_1296ac;
+            } else {
+                c.cycles += 1;
+                c.g[S1][0] = sx(at(c, SP, 0x20));
+                'l_129688: loop {
+                    'b_1296a4: {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(at(c, S1, 0x20));
+                        if c.g[V0][0] == 0u64 {
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_1296a4;
+                        } else {
+                            c.cycles += 4;
+                            c.g[A0][0] = c.lw(r32(c, S1));
+                            c.g[A0][0] = sx(at(c, A0, ATTACK_FX));
+                            call_ptr(c, RIDER_BASE_RENDER_ATTACK_FX, 0x001296a0)?;
+                            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                            break 'b_1296a4;
+                        }
+                    }
+                    c.cycles += 2;
+                    let t = c.g[S0][0] != 0u64;
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    if t {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x00129688);
+                        }
+                        continue 'l_129688;
+                    } else {
+                        break 'b_1296ac;
+                    }
+                }
+            }
+        }
+        'b_1296d4: {
+            c.cycles += 2;
+            let t = (c.g[S2][0] as i64) <= 0;
+            c.g[S0][0] = c.g[S2][0];
+            if t {
+                break 'b_1296d4;
+            } else {
+                c.cycles += 3;
+                c.g[S1][0] = c.g[SP][0];
+                c.g[A0][0] = c.lw(r32(c, S1));
+                'l_1296c0: loop {
+                    c.cycles += 5;
+                    c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0x1));
+                    c.g[S1][0] = sx(at(c, S1, 0x4));
+                    RIDER_RENDER_ATTACHED_FX.call(c, 0x001296cc)?;
+                    if c.g[S0][0] != 0u64 {
+                        c.g[A0][0] = c.lw(r32(c, S1));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x001296c0);
+                        }
+                        continue 'l_1296c0;
+                    } else {
+                        break 'b_1296d4;
+                    }
+                }
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0xf0);
+        frame.restore(c, S1, 0xe0);
+        frame.restore(c, S2, 0xd0);
+        frame.restore(c, S3, 0xc0);
+        frame.restore(c, S4, 0xb0);
+        frame.restore_ra(c, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderCruiseSub_HandleInput(RiderCruiseSub* this, Pad* pad)`
+/// (0x131620): the ground cruise sub-state's input, once per tick.
+///
+/// - The stick axes become steer/press/crouch inputs (6-bit signed fields
+///   times 1/31); moving backwards (velocity . forward < 0) drops the crouch.
+/// - The finish line, a reset (pad bit 12), leaving the ground, a handplant
+///   (bit 13, otherwise a rail jump), a jump (`Rider_TryEnterPrewind`) and a
+///   board press each take over and end the function when they start; a
+///   handplant attempt or a tweak clamps the steer to +-0.5.
+/// - Boost input, the slew targets, the timed-event and idle-look
+///   animations.
+/// - Then the layer-2 (body) animation: kept on 0x16 (pushing off) and 0x15
+///   (turn around), on kinds 10 and 5; otherwise picked from the speed, the
+///   turn, the surface, the crouch and the carve (0x5..0x11), with the
+///   slew targets set to match, and played when it changed.
+///
+/// The blocks follow the original's (labels are their guest addresses);
+/// the scratch registers are left as it leaves them.
+pub fn rider_cruise_sub_handle_input(c: &mut Cpu) {
+    use cruise::*;
+    guest(c, |c| {
+        // The frame (0x60): ra, s0..s2, f20..f23.
+        let frame = Frame::open(c, 0x60);
+        {
+            c.cycles += 41;
+            c.lwc1(0, gpo(c, -0x75f4)); // 1/31
+            frame.save(c, S0, 0x30);
+            frame.save(c, S1, 0x20);
+            c.g[S0][0] = c.g[A1][0];
+            frame.save_fpr(c, 23, 0x58);
+            c.g[S1][0] = c.g[A0][0];
+            frame.save_fpr(c, 22, 0x50);
+            frame.save_fpr(c, 21, 0x48);
+            frame.save_fpr(c, 20, 0x40);
+            frame.save(c, S2, 0x10);
+            frame.save_ra(c, 0);
+            c.mtc1(0, 23); // f23 = 0
+            c.g[A0][0] = c.lw(at(c, S0, PAD_BUTTONS));
+            c.g[V0][0] = c.lw(at(c, S0, PAD_STICKS));
+            c.g[V1][0] = sx((c.g[A0][0] as u32) << 6);
+            c.g[A2][0] = c.lw(at(c, S1, RIDER));
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 26);
+            c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 26) as u32);
+            c.g[A0][0] = sx(((c.g[A0][0] as u32) as i32 >> 26) as u32);
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 26) as u32);
+            // velocity . forward
+            c.lqc2(3, at(c, A2, VEL));
+            c.lqc2(5, at(c, A2, FORWARD));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.qmfc2(5, 4);
+            c.mtc1(5, 2);
+            c.mtc1(3, 3);
+            c.cvt_s_w(3, 3);
+            c.mtc1(4, 4);
+            c.cvt_s_w(4, 4);
+            c.mtc1(2, 1);
+            c.cvt_s_w(1, 1);
+            c.c_lt_s(2, 23);
+            c.mul_s(21, 3, 0); // f21 steer
+            c.mul_s(20, 1, 0); // f20 crouch
+            let backwards = c.fcc();
+            c.mul_s(22, 4, 0); // f22 press
+            if backwards {
+                c.cycles += 1;
+                c.mov_s(20, 23);
+            }
+        }
+        'b_131c0c: {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[A2][0];
+            call_ptr(c, 0x0011_6378, 0x0013_16d0)?; // Rider_TryEnterFinishLine
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x30);
+                break 'b_131c0c;
+            }
+            c.cycles += 8;
+            c.g[A1][0] = c.lw(at(c, S0, PAD_BUTTONS));
+            c.g[A2][0] = 0;
+            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+            c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 12) as u32);
+            c.g[A1][0] &= 0x1;
+            call_ptr(c, 0x0011_6120, 0x0013_16f0)?; // Rider_CheckResetPath
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x30);
+                break 'b_131c0c;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0013_1cc0, 0x0013_1700)?; // RiderCruiseSub_CheckAirborne
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x30);
+                break 'b_131c0c;
+            }
+            'b_131780: {
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(at(c, S0, PAD_BUTTONS)) & 0x2000;
+                if c.g[V0][0] != 0 {
+                    // Handplant button: try a handplant (a1 = press > 0.5).
+                    c.cycles += 6;
+                    c.g[AT][0] = 0x3f00_0000;
+                    c.mtc1(1, 20);
+                    c.c_lt_s(20, 22);
+                    let hard = c.fcc();
+                    c.g[A1][0] = 0x1;
+                    if !hard {
+                        c.cycles += 1;
+                        c.g[A1][0] = 0;
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                    call_ptr(c, 0x0010_7578, 0x0013_173c)?; // Rider_TryStartHandplant
+                    if c.g[V0][0] != 0 {
+                        frame.restore(c, S0, 0x30);
+                        break 'b_131c0c;
+                    }
+                    // steer = clamp(steer, -0.5, 0.5); press 1, crouch 0.
+                    c.cycles += 6;
+                    c.g[AT][0] = 0xffff_ffff_bf00_0000;
+                    c.mtc1(1, 0);
+                    c.c_le_s(0, 21);
+                    if c.fcc() {
+                        c.min_s(0, 21, 20);
+                    }
+                    c.cycles += 5;
+                    c.mov_s(21, 0);
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(1, 22);
+                    c.mov_s(20, 23);
+                    break 'b_131780;
+                }
+                c.cycles += 4;
+                c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                call_ptr(c, 0x0010_6848, 0x0013_1778)?; // Rider_TryStartRailslide
+                if c.g[V0][0] != 0 {
+                    frame.restore(c, S0, 0x30);
+                    break 'b_131c0c;
+                }
+            }
+            c.cycles += 9;
+            c.g[A1][0] = c.lw(at(c, S0, PAD_BUTTONS));
+            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+            c.g[A2][0] = sx(((c.g[A1][0] as u32) as i32 >> 14) as u32);
+            c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 15) as u32);
+            c.g[A2][0] &= 0x1;
+            c.g[A1][0] &= 0x1;
+            call_ptr(c, 0x0011_62c8, 0x0013_179c)?; // Rider_TryEnterPrewind
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x30);
+                break 'b_131c0c;
+            }
+            c.cycles += 4;
+            let jump = c.lw(at(c, S0, PAD_BUTTONS)) & 0x8000;
+            c.g[V0][0] = jump;
+            c.g[V0][0] = c.lw(at(c, S0, PAD_STICKS));
+            if jump != 0 {
+                // Jump held: press 1, crouch 0.
+                c.cycles += 3;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 22);
+                c.mtc1(0, 20);
+            }
+            c.cycles += 10;
+            c.lwc1(0, gpo(c, -0x75f0)); // 1/31
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 20);
+            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+            c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 26) as u32);
+            c.mtc1(2, 12);
+            c.cvt_s_w(12, 12);
+            c.mul_s(12, 12, 0);
+            call_ptr(c, 0x0011_61d0, 0x0013_17e0)?; // Rider_TryEnterBoardPress
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x30);
+                break 'b_131c0c;
+            }
+            c.cycles += 9;
+            c.g[A1][0] = c.lw(at(c, S0, PAD_BUTTONS));
+            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+            c.g[A2][0] = sx(((c.g[A1][0] as u32) as i32 >> 19) as u32);
+            c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 18) as u32);
+            c.g[A2][0] &= 0x1;
+            c.g[A1][0] &= 0x1;
+            call_ptr(c, 0x0011_63b0, 0x0013_1804)?; // Rider_UpdateTweakLayerAnim
+            if c.g[V0][0] != 0 {
+                // A tweak plays: steer = clamp(steer, -0.5, 0.5).
+                c.cycles += 8;
+                c.g[AT][0] = 0xffff_ffff_bf00_0000;
+                c.mtc1(1, 0);
+                c.g[AT][0] = 0x3f00_0000;
+                c.mtc1(1, 1);
+                c.c_le_s(0, 21);
+                if c.fcc() {
+                    c.min_s(0, 21, 1);
+                }
+                c.cycles += 2;
+                c.mov_s(21, 0);
+            }
+            c.g[A1][0] = c.lw(at(c, S0, PAD_BUTTONS));
+            cruise_body_anim(c)?;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 9;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 23, 0x58);
+        frame.restore_fpr(c, 22, 0x50);
+        frame.restore_fpr(c, 21, 0x48);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `RiderCruiseSub_HandleInput` from 0x131834: boost, slews, the timed and
+/// idle animations, then the body-layer animation choice (s1 = this, a1 =
+/// the pad's buttons, f20..f22 crouch/steer/press). Ends with the final
+/// 1-cycle block (before the `lq s0`).
+pub(crate) fn cruise_body_anim(c: &mut Cpu) -> crate::call::Flow {
+    use cruise::*;
+    'b_131be8: {
+        'b_1318c4: {
+            c.cycles += 25;
+            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+            c.g[A2][0] = sx(((c.g[A1][0] as u32) as i32 >> 16) as u32);
+            c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 17) as u32);
+            c.g[A2][0] &= 0x1;
+            c.g[A1][0] &= 0x1;
+            call_ptr(c, 0x0011_4130, 0x0013_184c)?; // Rider_HandleBoostInput
+            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+            c.mov_s(12, 21);
+            call_ptr(c, 0x0011_3e80, 0x0013_1858)?; // Rider_SetSlew0Target
+            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+            c.mov_s(13, 20);
+            c.mov_s(12, 22);
+            call_ptr(c, 0x0011_3f88, 0x0013_1868)?; // Rider_SetSlew3And4Targets
+            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+            call_ptr(c, 0x0011_5b58, 0x0013_1870)?; // Rider_UpdateTimedEventAnim
+            c.g[A0][0] = c.lw(at(c, S1, RIDER));
+            call_ptr(c, 0x0011_5d48, 0x0013_1878)?; // Rider_UpdateIdleLookAnim
+            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+            c.g[A1][0] = 0x2;
+            c.g[A0][0] = c.lw(at(c, V0, ANIM));
+            call_ptr(c, 0x0031_2aa0, 0x0013_1888)?; // AnimController_GetLayerAnimId
+                                                    // s0 = the anim to play, s2 = the current one.
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V0][0] = 0x16;
+            c.g[S2][0] = c.g[S0][0];
+            if c.g[S0][0] != c.g[V0][0] {
+                break 'b_1318c4;
+            }
+            // 0x16 (pushing off): fixed slew rates (1/30), values 0.
+            c.cycles += 11;
+            c.g[V1][0] = c.lw(at(c, S1, RIDER));
+            c.lwc1(0, gpo(c, -0x75ec));
+            c.sw(at(c, V1, SLEW0_VALUE), 0);
+            c.swc1(0, at(c, V1, SLEW0_RATE));
+            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+            c.swc1(0, at(c, V0, SLEW1_RATE));
+            c.sw(at(c, V0, SLEW1_VALUE), 0);
+            c.g[V1][0] = c.lw(at(c, S1, RIDER));
+            c.swc1(0, at(c, V1, SLEW2_RATE));
+            c.sw(at(c, V1, SLEW2_VALUE), 0);
+            break 'b_131be8;
+        }
+        'b_13191c: {
+            'b_1318fc: {
+                c.cycles += 3;
+                c.g[V0][0] = 0x15;
+                if c.g[S0][0] == c.g[V0][0] {
+                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                    break 'b_1318fc;
+                }
+                c.cycles += 7;
+                c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                c.mtc1(0, 1);
+                c.lwc1(0, at(c, A0, SPIN_SPEED));
+                c.c_eq_s(0, 1);
+                if !c.fcc() {
+                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                    break 'b_13191c;
+                }
+                c.cycles += 4;
+                call_ptr(c, 0x0011_4cc0, 0x0013_18f4)?; // Rider_TurnAroundIfBackward
+                let turned = c.g[V0][0] != 0;
+                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                if !turned {
+                    break 'b_13191c;
+                }
+            }
+            // 0x15 (turn around).
+            c.cycles += 8;
+            c.g[S0][0] = 0x15;
+            c.lwc1(0, gpo(c, -0x75e8));
+            c.sw(at(c, V0, SLEW0_VALUE), 0);
+            c.swc1(0, at(c, V0, SLEW0_RATE));
+            c.g[V1][0] = c.lw(at(c, S1, RIDER));
+            c.swc1(0, at(c, V1, SLEW1_RATE));
+            c.sw(at(c, V1, SLEW1_VALUE), 0);
+            break 'b_131be8;
+        }
+        'b_131944: {
+            c.cycles += 6;
+            c.g[A1][0] = 0x2;
+            c.g[A0][0] = c.lw(at(c, V0, ANIM));
+            call_ptr(c, 0x0031_1ae8, 0x0013_1928)?; // AnimController_GetLayerAnimEntry
+            c.g[V1][0] = 0xa;
+            let other = c.g[V0][0] != c.g[V1][0];
+            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+            if other {
+                break 'b_131944;
+            }
+            // Kind 10: steer slew only.
+            c.cycles += 4;
+            c.lwc1(0, gpo(c, -0x75e4));
+            c.sw(at(c, V0, SLEW0_VALUE), 0);
+            c.swc1(0, at(c, V0, SLEW0_RATE));
+            break 'b_131be8;
+        }
+        'b_131980: {
+            c.cycles += 6;
+            c.g[A1][0] = 0x2;
+            c.g[A0][0] = c.lw(at(c, V0, ANIM));
+            call_ptr(c, 0x0031_1ae8, 0x0013_1950)?; // AnimController_GetLayerAnimEntry
+            c.g[V1][0] = 0x5;
+            if c.g[V0][0] != c.g[V1][0] {
+                c.g[V1][0] = c.lw(at(c, S1, RIDER));
+                break 'b_131980;
+            }
+            // Kind 5: steer slews toward the steer input.
+            c.cycles += 9;
+            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+            c.lwc1(1, gpo(c, -0x75e0));
+            c.lwc1(0, at(c, V0, STEER));
+            c.swc1(1, at(c, V0, SLEW0_RATE));
+            c.swc1(0, at(c, V0, SLEW0_VALUE));
+            c.g[V1][0] = c.lw(at(c, S1, RIDER));
+            c.swc1(1, at(c, V1, SLEW1_RATE));
+            c.sw(at(c, V1, SLEW1_VALUE), 0);
+            break 'b_131be8;
+        }
+        // The free choice: f20 = speed (|velocity|), v1 = rider.
+        'b_131b6c: {
+            c.cycles += 16;
+            c.mtc1(0, 3);
+            c.lqc2(3, at(c, V1, VEL));
+            c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+            c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+            c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+            c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+            c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+            c.vu0().sqrt(4, 0);
+            c.vu0().waitq();
+            c.cfc2(2, 22);
+            c.mtc1(2, 20);
+            c.lwc1(0, at(c, V1, TURN));
+            c.c_eq_s(0, 3);
+            let turning = !c.fcc();
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_sub(0xc));
+            if turning {
+                break 'b_131b6c;
+            }
+            'b_131a04: {
+                c.cycles += 7;
+                c.lwc1(0, gpo(c, -0x75dc));
+                c.lwc1(2, at(c, V1, STEER));
+                c.lwc1(1, gpo(c, -0x75d8));
+                c.c_lt_s(20, 0);
+                c.swc1(2, at(c, V1, SLEW0_VALUE));
+                let slow = c.fcc();
+                c.swc1(1, at(c, V1, SLEW0_RATE));
+                if !slow {
+                    break 'b_131a04;
+                }
+                c.cycles += 4;
+                c.c_lt_s(3, 22);
+                if c.fcc() {
+                    c.g[S0][0] = 0x16;
+                    break 'b_131be8;
+                }
+                c.cycles += 6;
+                c.lwc1(1, gpo(c, -0x75d4));
+                c.abs_s(0, 21);
+                c.c_lt_s(1, 0);
+                let steering = c.fcc();
+                c.g[S0][0] = 0x16;
+                if steering {
+                    break 'b_131be8;
+                }
+            }
+            'b_131a7c: {
+                c.cycles += 5;
+                c.g[A0][0] = c.lw(at(c, S1, RIDER));
+                c.g[V1][0] = 0x4;
+                c.g[V0][0] = c.lw(at(c, A0, SURFACE));
+                if c.g[V0][0] != c.g[V1][0] {
+                    c.lwc1(0, at(c, A0, CARVE));
+                    break 'b_131a7c;
+                }
+                // Surface 4.
+                c.cycles += 13;
+                c.lwc1(1, at(c, A0, STEER));
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(1, 0);
+                c.abs_s(3, 1);
+                c.g[AT][0] = 0x3f00_0000;
+                c.mtc1(1, 2);
+                c.sub_s(0, 0, 3);
+                c.lwc1(1, at(c, A0, CROUCH));
+                c.mul_s(0, 0, 2);
+                c.c_le_s(1, 0);
+                let low = c.fcc();
+                c.g[S0][0] = 0xe;
+                if low {
+                    break 'b_131be8;
+                }
+                c.cycles += 6;
+                c.lwc1(1, at(c, A0, BOOST_INPUT));
+                c.mtc1(0, 0);
+                c.c_lt_s(0, 1);
+                let boosting = c.fcc();
+                c.g[S0][0] = 0xf;
+                if !boosting {
+                    break 'b_131be8;
+                }
+                c.cycles += 4;
+                c.lwc1(0, gpo(c, -0x75d0));
+                c.c_lt_s(3, 0);
+                if !c.fcc() {
+                    break 'b_131be8;
+                }
+                c.cycles += 2;
+                c.g[S0][0] = 0x8;
+                break 'b_131be8;
+            }
+            'b_131af0: {
+                c.cycles += 6;
+                c.lwc1(1, gpo(c, -0x75cc));
+                c.abs_s(0, 0);
+                c.c_lt_s(1, 0);
+                if !c.fcc() {
+                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                    break 'b_131af0;
+                }
+                c.cycles += 7;
+                c.lwc1(0, at(c, A0, SLOPE));
+                c.lwc1(1, gpo(c, -0x75c8));
+                c.abs_s(0, 0);
+                c.c_lt_s(1, 0);
+                if !c.fcc() {
+                    c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                    break 'b_131af0;
+                }
+                c.cycles += 5;
+                call_ptr(c, 0x0031_7810, 0x0013_1ab8)?; // Rand_NextGame
+                c.g[V0][0] &= 0x1;
+                let odd = c.g[V0][0] != 0;
+                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                if odd {
+                    break 'b_131af0;
+                }
+                // A carve: 0x10 / 0x11 by side (flipped when goofy).
+                c.cycles += 3;
+                c.g[V1][0] = c.lw(at(c, V0, GOOFY));
+                c.lwc1(1, at(c, V0, CARVE));
+                if c.g[V1][0] != 0 {
+                    c.cycles += 1;
+                    c.neg_s(1, 1);
+                }
+                c.cycles += 5;
+                c.mtc1(0, 0);
+                c.c_lt_s(1, 0);
+                let left = c.fcc();
+                c.g[S0][0] = 0x11;
+                if !left {
+                    break 'b_131be8;
+                }
+                c.cycles += 2;
+                c.g[S0][0] = 0x10;
+                break 'b_131be8;
+            }
+            c.cycles += 13;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 1);
+            c.lwc1(0, at(c, V0, STEER));
+            c.abs_s(0, 0);
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 3);
+            c.sub_s(1, 1, 0);
+            c.lwc1(2, at(c, V0, CROUCH));
+            c.mul_s(1, 1, 3);
+            c.c_le_s(2, 1);
+            let low = c.fcc();
+            c.g[S0][0] = 0x5;
+            if low {
+                break 'b_131be8;
+            }
+            c.cycles += 6;
+            c.lwc1(1, at(c, V0, BOOST_INPUT));
+            c.mtc1(0, 0);
+            c.c_lt_s(0, 1);
+            let boosting = c.fcc();
+            c.g[S0][0] = 0x8;
+            if boosting {
+                break 'b_131be8;
+            }
+            c.cycles += 5;
+            c.lwc1(0, gpo(c, -0x75c4));
+            c.c_lt_s(20, 0);
+            let slow = c.fcc();
+            c.g[S0][0] = 0x7;
+            if slow {
+                break 'b_131be8;
+            }
+            c.cycles += 5;
+            c.g[V0][0] = c.lw(at(c, V0, SURFACE));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x2));
+            c.g[V0][0] = (c.g[V0][0] < 0x2) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[S0][0] = 0x6;
+                break 'b_131be8;
+            }
+            c.cycles += 2;
+            break 'b_131be8;
+        }
+        // Turning: 0xb, or 0xc / 0xd by the turn side (and stance).
+        {
+            c.cycles += 7;
+            c.lwc1(0, gpo(c, -0x75c0));
+            c.g[V0][0] = (c.g[V0][0] < 0x2) as u64;
+            c.swc1(3, at(c, V1, SLEW0_VALUE));
+            c.swc1(0, at(c, V1, SLEW0_RATE));
+            c.lwc1(0, gpo(c, -0x75bc));
+            if c.g[V0][0] != 0 {
+                c.cycles += 1;
+                c.lwc1(0, gpo(c, -0x75b8));
+            }
+        }
+        c.cycles += 4;
+        c.c_lt_s(0, 20);
+        if c.fcc() {
+            c.g[S0][0] = 0xb;
+            break 'b_131be8;
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.lw(at(c, S1, RIDER));
+        c.lwc1(1, gpo(c, -0x75b4));
+        c.lwc1(2, at(c, V0, TURN));
+        c.abs_s(0, 2);
+        c.c_lt_s(0, 1);
+        let gentle = c.fcc();
+        c.g[S0][0] = 0xb;
+        if gentle {
+            break 'b_131be8;
+        }
+        'b_131be4: {
+            c.cycles += 4;
+            c.c_lt_s(3, 2);
+            let right = c.fcc();
+            c.g[S0][0] = 0xd;
+            if right {
+                c.cycles += 3;
+                c.g[V1][0] = c.lw(at(c, V0, GOOFY));
+                c.g[V0][0] = 0xc;
+                break 'b_131be4;
+            }
+            c.cycles += 3;
+            c.g[V1][0] = c.lw(at(c, V0, GOOFY));
+            c.g[S0][0] = 0xc;
+            c.g[V0][0] = 0xd;
+        }
+        c.cycles += 1;
+        if c.g[V1][0] != 0 {
+            c.g[S0][0] = c.g[V0][0];
+        }
+    }
+    // Play the chosen animation when it changed.
+    c.cycles += 2;
+    c.g[A1][0] = c.g[S0][0];
+    if c.g[S0][0] != c.g[S2][0] {
+        c.cycles += 6;
+        c.g[V0][0] = c.lw(at(c, S1, RIDER));
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 12);
+        c.g[A2][0] = 0;
+        c.g[A0][0] = c.lw(at(c, V0, ANIM));
+        call_ptr(c, 0x0031_28e8, 0x0013_1c08)?; // AnimController_PlayAnim
+    }
+    c.cycles += 1;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -17,8 +18,10 @@ use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::call_indirect;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::{W, Y, Z};
 use ssx3_ee_rt::Cpu;
 
@@ -49,6 +52,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_4330,
         c_splash_manager_set_snow_amount,
         "cSplashManager_SetSnowAmount",
+    ),
+    (
+        0x002f_3e28,
+        c_splash_manager_render,
+        "cSplashManager_Render",
     ),
 ];
 
@@ -1259,6 +1267,330 @@ fn remove_crystal(c: &mut Cpu, this: u32) {
     Addr(this).off(splash::CRYSTAL_COUNT).sw(c, c.g[V0][0]);
 }
 
+/// `reg + off` (a field of the object a register points at).
+#[inline(always)]
+pub(crate) fn at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// `gp + off` (a `.lit4` constant or a global).
+#[inline(always)]
+pub(crate) fn gpo(c: &Cpu, off: i32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_add(off as u32)
+}
+
+/// `sp + off` (the stack frame).
+#[inline(always)]
+pub(crate) fn stk(c: &Cpu, off: u32) -> u32 {
+    sp(c).wrapping_add(off)
+}
+
+// ----------------------------------------------------- cSplashManager_Render
+
+/// `void cSplashManager::Render()` (0x2f3e28): draws the snow splashes when
+/// splashes are on (`gp+0x115c`, `gp+0x1160`) and the manager belongs to
+/// the current view (`this+0x10` against the game module's view id,
+/// `app->+0x84->+0x84->+0x14`). With `gp+0xa70` set it hands over to its
+/// own virtual (`this->vt+0x70`) instead. Otherwise, through the graphics
+/// manager (`gp+0x2a90`) and its display's virtuals: push the render state
+/// (+0xa8), read the screen origin (+0xe0) into the drop/crystal context
+/// (sp+0x10), set a 640x480 ortho view (+0xd0), (+0xf8), load the identity
+/// (+0x110, 0x4ff1a0); copy the two 20-byte GS records (the current one
+/// and the template at 0x501420) into the packet (`gfx+0xe84`) and patch
+/// the second one's register fields; render every drop
+/// (`cSplashManager_RenderDrop`, `this+0x14` of them at `this+0x1c`,
+/// 0x3c bytes each) and crystal (`cSplashManager_RenderCrystal`,
+/// `this+0x18` at `this+0x724`, 0x4c each); drop the record again and pop
+/// (+0x100, +0xb0).
+///
+/// The register use (including the mask constants left in a1..t6) and the
+/// blocks follow the original's.
+pub fn c_splash_manager_render(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x70);
+        'b_2f4104: {
+            'b_2f4100: {
+                'b_2f40fc: {
+                    c.cycles += 9;
+                    c.g[V0][0] = c.lw(at(c, GP, 0x115c));
+                    frame.save(c, S3, 0x30);
+                    frame.save(c, S0, 0x60);
+                    c.g[S3][0] = c.g[A0][0];
+                    frame.save(c, S1, 0x50);
+                    frame.save(c, S2, 0x40);
+                    let t = c.g[V0][0] == 0u64;
+                    frame.save_ra(c, 0x20);
+                    if t {
+                        break 'b_2f40fc;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw(at(c, GP, 0x1160));
+                        let t = c.g[V0][0] == 0u64;
+                        frame.restore(c, S0, 0x60);
+                        if t {
+                            break 'b_2f4100;
+                        } else {
+                            c.cycles += 7;
+                            c.g[A0][0] = c.lw(gpo(c, -0x848));
+                            c.g[A1][0] = c.lw(at(c, S3, 0x10));
+                            c.g[V0][0] = c.lw(at(c, A0, 0x84));
+                            c.g[V1][0] = c.lw(at(c, V0, 0x84));
+                            c.g[A0][0] = c.lw(at(c, V1, 0x14));
+                            let t = c.g[A1][0] != c.g[A0][0];
+                            frame.restore(c, S1, 0x50);
+                            if t {
+                                break 'b_2f4104;
+                            } else {
+                                'b_2f3e9c: {
+                                    c.cycles += 3;
+                                    c.g[V0][0] = c.lw(at(c, GP, 0xa70));
+                                    let t = c.g[V0][0] == 0u64;
+                                    c.g[S1][0] = c.lw(at(c, GP, 0x2a90));
+                                    if t {
+                                        break 'b_2f3e9c;
+                                    } else {
+                                        c.cycles += 7;
+                                        c.g[V0][0] = c.lw(at(c, S3, 0xc));
+                                        c.g[A0][0] = c.lh(at(c, V0, 0x70));
+                                        c.g[V1][0] = c.lw(at(c, V0, 0x74));
+                                        let t = c.g[V1][0] as u32;
+                                        c.g[A0][0] =
+                                            sx((c.g[S3][0] as u32)
+                                                .wrapping_add((c.g[A0][0] as u32)));
+                                        call_ptr(c, t, 0x002f3e94)?;
+                                        frame.restore(c, S0, 0x60);
+                                        break 'b_2f4100;
+                                    }
+                                }
+                                'b_2f409c: {
+                                    c.cycles += 118;
+                                    c.g[S2][0] = 0u64;
+                                    c.g[V0][0] = c.lw(at(c, S1, 0x10d8));
+                                    c.g[A0][0] = c.lh(at(c, V0, 0xa8));
+                                    c.g[V1][0] = c.lw(at(c, V0, 0xac));
+                                    let t = c.g[V1][0] as u32;
+                                    c.g[A0][0] =
+                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                    call_ptr(c, t, 0x002f3eb4)?;
+                                    c.g[V0][0] = c.lw(at(c, S1, 0x10d8));
+                                    c.g[A0][0] = c.g[SP][0];
+                                    c.g[A1][0] = c.lh(at(c, V0, 0xe0));
+                                    c.g[V1][0] = c.lw(at(c, V0, 0xe4));
+                                    let t = c.g[V1][0] as u32;
+                                    c.g[A1][0] =
+                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A1][0] as u32)));
+                                    call_ptr(c, t, 0x002f3ecc)?;
+                                    c.lwc1(0, stk(c, 0));
+                                    c.g[A2][0] = 0u64;
+                                    c.lwc1(1, stk(c, 0x4));
+                                    c.g[A1][0] = 0x1;
+                                    c.swc1(0, stk(c, 0x10));
+                                    c.swc1(1, stk(c, 0x14));
+                                    c.mtc1(0, 12);
+                                    c.g[V0][0] = c.lw(at(c, S1, 0x10d8));
+                                    c.g[AT][0] = 0x44200000;
+                                    c.mtc1(1, 14);
+                                    c.mov_s(13, 12);
+                                    c.g[A0][0] = c.lh(at(c, V0, 0xd0));
+                                    c.mov_s(16, 12);
+                                    c.g[AT][0] = 0x43f00000;
+                                    c.mtc1(1, 15);
+                                    c.g[AT][0] = 0x3f800000;
+                                    c.mtc1(1, 17);
+                                    c.g[V1][0] = c.lw(at(c, V0, 0xd4));
+                                    let t = c.g[V1][0] as u32;
+                                    c.g[A0][0] =
+                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                    call_ptr(c, t, 0x002f3f1c)?;
+                                    c.g[V0][0] = c.lw(at(c, S1, 0x10d8));
+                                    c.g[A0][0] = c.lh(at(c, V0, 0xf8));
+                                    c.g[V1][0] = c.lw(at(c, V0, 0xfc));
+                                    let t = c.g[V1][0] as u32;
+                                    c.g[A0][0] =
+                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                    call_ptr(c, t, 0x002f3f30)?;
+                                    c.g[A2][0] = c.lw(at(c, S1, 0x10d8));
+                                    c.g[A1][0] = 0x500000;
+                                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xe60));
+                                    c.g[A0][0] = c.lh(at(c, A2, 0x110));
+                                    c.g[V0][0] = c.lw(at(c, A2, 0x114));
+                                    let t = c.g[V0][0] as u32;
+                                    c.g[A0][0] =
+                                        sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                    call_ptr(c, t, 0x002f3f4c)?;
+                                    c.g[V1][0] = c.lw(at(c, S1, 0xe84));
+                                    c.g[A0][0] = 0x500000;
+                                    c.g[T2][0] = 0xfffffffffffffc1f;
+                                    c.g[A1][0] = 0xfffffffffe7f0000;
+                                    c.ldl(2, at(c, V1, 0x7));
+                                    c.ldr(2, (c.g[V1][0] as u32));
+                                    c.ldl(6, at(c, V1, 0xf));
+                                    c.ldr(6, at(c, V1, 0x8));
+                                    c.g[A3][0] = c.lw(at(c, V1, 0x10));
+                                    c.sdl(2, at(c, V1, 0x1b));
+                                    c.sdr(2, at(c, V1, 0x14));
+                                    c.sdl(6, at(c, V1, 0x23));
+                                    c.sdr(6, at(c, V1, 0x1c));
+                                    c.sw(at(c, V1, 0x24), c.g[A3][0]);
+                                    c.g[A1][0] = c.g[A1][0] | 0xffff;
+                                    c.g[T3][0] = 0x1000000;
+                                    c.g[A2][0] = 0xffffffffffcf0000;
+                                    c.g[V1][0] = c.lw(at(c, S1, 0xe84));
+                                    c.g[A2][0] = c.g[A2][0] | 0xffff;
+                                    c.g[A3][0] = 0xfffffffffff00000;
+                                    c.g[T4][0] = 0xfffffffffffffffc;
+                                    c.g[V0][0] = sx(at(c, V1, 0x14));
+                                    c.g[A3][0] = c.g[A3][0] | 0xfff;
+                                    c.sw(at(c, S1, 0xe84), c.g[V0][0]);
+                                    c.g[T0][0] = 0xffffffffe0000000;
+                                    c.g[V0][0] = sx(at(c, A0, 0x1420));
+                                    c.ldl(9, at(c, V0, 0x7));
+                                    c.ldr(9, (c.g[V0][0] as u32));
+                                    c.ldl(13, at(c, V0, 0xf));
+                                    c.ldr(13, at(c, V0, 0x8));
+                                    c.g[T6][0] = c.lw(at(c, V0, 0x10));
+                                    c.sdl(9, at(c, V1, 0x1b));
+                                    c.sdr(9, at(c, V1, 0x14));
+                                    c.sdl(13, at(c, V1, 0x23));
+                                    c.sdr(13, at(c, V1, 0x1c));
+                                    c.sw(at(c, V1, 0x24), c.g[T6][0]);
+                                    c.g[T0][0] = c.g[T0][0] | 0x3ff;
+                                    c.g[T1][0] = 0xffffffffffbf0000;
+                                    c.g[T5][0] = 0x400000;
+                                    c.g[V1][0] = c.lw(at(c, S1, 0xe84));
+                                    c.g[T1][0] = c.g[T1][0] | 0xffff;
+                                    c.g[V0][0] = c.lw(at(c, V1, 0x8));
+                                    c.g[V0][0] = c.g[V0][0] & c.g[T2][0];
+                                    c.g[V0][0] = c.g[V0][0] | 0x100;
+                                    c.sw(at(c, V1, 0x8), c.g[V0][0]);
+                                    c.g[A0][0] = c.lw(at(c, S1, 0xe84));
+                                    c.g[V0][0] = c.lw(at(c, A0, 0x4));
+                                    c.g[V0][0] = c.g[V0][0] & c.g[A1][0];
+                                    c.g[V0][0] = c.g[V0][0] | c.g[T3][0];
+                                    c.sw(at(c, A0, 0x4), c.g[V0][0]);
+                                    c.g[V1][0] = c.lw(at(c, S1, 0xe84));
+                                    c.g[V0][0] = c.lw(at(c, V1, 0x4));
+                                    c.g[V0][0] = c.g[V0][0] & c.g[A2][0];
+                                    c.sw(at(c, V1, 0x4), c.g[V0][0]);
+                                    c.g[A0][0] = c.lw(at(c, S1, 0xe84));
+                                    c.g[V0][0] = c.lw(at(c, A0, 0x4));
+                                    c.g[V0][0] = c.g[V0][0] & c.g[A3][0];
+                                    c.sw(at(c, A0, 0x4), c.g[V0][0]);
+                                    c.g[V1][0] = c.lw(at(c, S1, 0xe84));
+                                    c.g[V0][0] = c.lw(at(c, V1, 0x4));
+                                    c.g[V0][0] = c.g[V0][0] & c.g[T4][0];
+                                    c.sw(at(c, V1, 0x4), c.g[V0][0]);
+                                    c.g[A0][0] = c.lw(at(c, S1, 0xe84));
+                                    c.g[V0][0] = c.lw(at(c, A0, 0x8));
+                                    c.g[V0][0] = c.g[V0][0] & c.g[T0][0];
+                                    c.sw(at(c, A0, 0x8), c.g[V0][0]);
+                                    c.g[A1][0] = c.lw(at(c, S1, 0xe84));
+                                    c.g[V0][0] = c.lw(at(c, A1, 0x4));
+                                    c.g[V0][0] = c.g[V0][0] & c.g[T1][0];
+                                    c.g[V0][0] = c.g[V0][0] | c.g[T5][0];
+                                    c.sw(at(c, A1, 0x4), c.g[V0][0]);
+                                    c.g[V1][0] = c.lw(at(c, S3, 0x14));
+                                    if (c.g[V1][0] as i64) <= 0 {
+                                        c.g[V0][0] = c.lw(at(c, S3, 0x18));
+                                        break 'b_2f409c;
+                                    } else {
+                                        c.cycles += 1;
+                                        c.g[S0][0] = sx(at(c, S3, 0x1c));
+                                        'l_2f4078: loop {
+                                            c.cycles += 8;
+                                            c.g[A0][0] = c.g[S0][0];
+                                            c.g[A1][0] = sx(stk(c, 0x10));
+                                            call_ptr(c, 0x002f2c30, 0x002f4084)?; // cSplashManager_RenderDrop
+                                            c.g[S2][0] = sx(at(c, S2, 0x1));
+                                            c.g[V0][0] = c.lw(at(c, S3, 0x14));
+                                            c.g[V0][0] =
+                                                ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                            let t = c.g[V0][0] != 0u64;
+                                            c.g[S0][0] = sx(at(c, S0, 0x3c));
+                                            if t {
+                                                if event_due(c) {
+                                                    deliver_event_here(c, 0x002f4078);
+                                                }
+                                                continue 'l_2f4078;
+                                            } else {
+                                                c.cycles += 1;
+                                                c.g[V0][0] = c.lw(at(c, S3, 0x18));
+                                                break 'b_2f409c;
+                                            }
+                                        }
+                                    }
+                                }
+                                'b_2f40c8: {
+                                    c.cycles += 2;
+                                    let t = (c.g[V0][0] as i64) <= 0;
+                                    c.g[S2][0] = 0u64;
+                                    if t {
+                                        break 'b_2f40c8;
+                                    } else {
+                                        c.cycles += 1;
+                                        c.g[S0][0] = sx(at(c, S3, 0x724));
+                                        'l_2f40a8: loop {
+                                            c.cycles += 8;
+                                            c.g[A0][0] = c.g[S0][0];
+                                            c.g[A1][0] = sx(stk(c, 0x10));
+                                            call_ptr(c, 0x002f3418, 0x002f40b4)?; // cSplashManager_RenderCrystal
+                                            c.g[S2][0] = sx(at(c, S2, 0x1));
+                                            c.g[V0][0] = c.lw(at(c, S3, 0x18));
+                                            c.g[V0][0] =
+                                                ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                                            let t = c.g[V0][0] != 0u64;
+                                            c.g[S0][0] = sx(at(c, S0, 0x4c));
+                                            if t {
+                                                if event_due(c) {
+                                                    deliver_event_here(c, 0x002f40a8);
+                                                }
+                                                continue 'l_2f40a8;
+                                            } else {
+                                                break 'b_2f40c8;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 13;
+                                c.g[V0][0] = c.lw(at(c, S1, 0xe84));
+                                c.g[A1][0] = c.lw(at(c, S1, 0x10d8));
+                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x14));
+                                c.sw(at(c, S1, 0xe84), c.g[V0][0]);
+                                c.g[A0][0] = c.lh(at(c, A1, 0x100));
+                                c.g[V1][0] = c.lw(at(c, A1, 0x104));
+                                let t = c.g[V1][0] as u32;
+                                c.g[A0][0] =
+                                    sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                call_ptr(c, t, 0x002f40e8)?;
+                                c.g[V0][0] = c.lw(at(c, S1, 0x10d8));
+                                c.g[A0][0] = c.lh(at(c, V0, 0xb0));
+                                c.g[V1][0] = c.lw(at(c, V0, 0xb4));
+                                let t = c.g[V1][0] as u32;
+                                c.g[A0][0] =
+                                    sx((c.g[S1][0] as u32).wrapping_add((c.g[A0][0] as u32)));
+                                call_ptr(c, t, 0x002f40fc)?;
+                                break 'b_2f40fc;
+                            }
+                        }
+                    }
+                }
+                c.cycles += 1;
+                frame.restore(c, S0, 0x60);
+                break 'b_2f4100;
+            }
+            c.cycles += 1;
+            frame.restore(c, S1, 0x50);
+            break 'b_2f4104;
+        }
+        c.cycles += 5;
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1816,5 +2148,273 @@ pub(crate) mod tests {
                 );
             }
         }
+    }
+    use super::*;
+    pub(crate) use crate::game::ai::ai::rider_cruise_sub_handle_input;
+
+    // -- 0x00131620 RiderCruiseSub_HandleInput --------------------------------
+
+    pub(crate) mod cruise_input {
+        use super::*;
+        use crate::difftest::fakes::{fake_call, machine, FAKE};
+        use crate::difftest::{check, elf_image, put_vec, Rng, DATA, GAME_GP};
+
+        const THIS: u32 = DATA + 0x5_0000;
+        const PAD: u32 = DATA + 0x5_0100;
+        const RIDER: u32 = DATA + 0x5_1000;
+        const STATE: u32 = DATA + 0x5_2000;
+        const CTRL: u32 = DATA + 0x5_3000;
+        const CTRL_VT: u32 = DATA + 0x5_3100;
+        const SEQ_LISTS: u32 = DATA + 0x5_3200;
+        const SEQ: u32 = DATA + 0x5_3300;
+        const ANIM_STATE: u32 = DATA + 0x5_4000;
+        const METRIX: u32 = DATA + 0x5_5000;
+        const OVERLAPS: u32 = DATA + 0x5_6000;
+        const BE_LIBRARY: u32 = DATA + 0x5_7000;
+        const BE_OBJ: u32 = DATA + 0x5_7100;
+        const BE_VT: u32 = DATA + 0x5_7200;
+        const WORLD: u32 = DATA + 0x5_8000;
+        const WORLD_84: u32 = DATA + 0x5_8100;
+        const WORLD_TABLE: u32 = DATA + 0x5_8200;
+        /// The static animation table (28-byte entries; `+0` the kind
+        /// `AnimController_GetLayerAnimEntry` returns).
+        const ANIM_TABLE: u32 = 0x0044_6990;
+        const BE_INTERFACES: u32 = 0x0053_08a8;
+        /// "No animation" (kind 0 without a table lookup).
+        const NO_ANIM: u32 = 0x1b6;
+        const FAKE_BE: u32 = FAKE;
+        /// The controller's "current animation kind": 0x207 makes
+        /// `AnimController_PlayAnim` stop early.
+        const FAKE_ANIM_KIND: u32 = FAKE + 0x10;
+
+        fn f(x: f32) -> u32 {
+            x.to_bits()
+        }
+
+        fn miss(c: &mut Cpu, target: u32) {
+            fake_call(c, target);
+            if target == FAKE_ANIM_KIND {
+                c.g[V0][0] = 0x207;
+            }
+        }
+
+        /// A 6-bit signed stick field: centred a third of the time.
+        fn axis(r: &mut Rng) -> u32 {
+            if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                r.next_u32() & 0x3f
+            }
+        }
+
+        /// A float that is 0 a third of the time.
+        fn maybe0(r: &mut Rng, range: f32) -> u32 {
+            if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                r.f32(range)
+            }
+        }
+
+        fn setup(c: &mut Cpu, seed: u32) {
+            let mut r = machine(c, seed, 0x0013_1620, 0);
+            let r = &mut r;
+            c.hooks.miss = miss;
+            elf_image(c);
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            // The behaviour library and the world chain (as in the spin
+            // sub-state's fixture).
+            w(c, GAME_GP - 0x1f04, BE_LIBRARY);
+            w(c, GAME_GP - 0x1efc, 0);
+            w(c, BE_INTERFACES, BE_OBJ);
+            w(c, BE_OBJ + 4, BE_VT);
+            w(c, BE_VT + 0xc, FAKE_BE);
+            w(c, GAME_GP - 0x848, WORLD);
+            w(c, WORLD + 0x84, WORLD_84);
+            w(c, WORLD_84 + 0x44, WORLD_TABLE);
+
+            // The pad: never reset (12) or the cheat jump (14); the other
+            // buttons and the axes at random.
+            let buttons = (r.next_u32() & !0xfff0_5000) | axis(r) << 20 | axis(r) << 26;
+            let sticks = axis(r) | axis(r) << 6 | (r.next_u32() & 0xffff_f000);
+            w(c, PAD, buttons);
+            w(c, PAD + 4, sticks);
+            w(c, THIS, RIDER);
+
+            // The rider: main state 2 (not in the air: no airborne switch,
+            // no rail search), racing (finish timer -1), jump re-armed (no
+            // prewind), board-press blocked (+0x328 = 3), no timed event,
+            // the idle clock at 0.
+            w(c, RIDER + 0x77c, STATE);
+            w(c, STATE + 0xde0, 2);
+            w(c, RIDER + 0x470, f(-1.0));
+            w(c, RIDER + 0x360, f(1.0));
+            w(c, RIDER + 0x328, 3 + r.next_u32() % 2);
+            w(c, RIDER + 0x358, 0);
+            w(c, RIDER + 0x35c, 0);
+            w(c, RIDER + 0x784, CTRL);
+            w(c, RIDER + 0x788, ANIM_STATE);
+            w(c, RIDER + 0x790, METRIX);
+            w(c, RIDER + 0x860, OVERLAPS);
+            w(c, RIDER + 0x304, 3);
+            w(c, RIDER + 0x2f4, r.next_u32() % 10);
+            w(c, RIDER + 0x86c, 0);
+            w(c, RIDER + 0x28c, maybe0(r, 1.0));
+            w(c, RIDER + 0x298, maybe0(r, 1.0));
+            // The fields the animation choice reads.
+            let speed = (r.next_u32() % 2600) as f32;
+            let turn = maybe0(r, 1.6);
+            let spin = maybe0(r, 1.0);
+            // Backwards only when `Rider_TurnAroundIfBackward` (spin speed 0)
+            // gives up on its own (turn != 0): it would rebuild the matrix.
+            let backwards = (turn != 0 || spin != 0) && r.next_u32() % 3 == 0;
+            put_vec(c, RIDER + 0x1e0, [f(speed * 0.6), f(speed * 0.8), 0, 0]);
+            let s = if backwards { -1.0 } else { 1.0 };
+            put_vec(
+                c,
+                RIDER + 0x3a0,
+                [f(0.6 * s), f(0.8 * s), 0, f(r.next_u32() as f32 * 1e-9)],
+            );
+            w(c, RIDER + 0x214, turn);
+            w(c, RIDER + 0x2dc, spin);
+            w(c, RIDER + 0x1f0, maybe0(r, 1.0));
+            w(c, RIDER + 0x1fc, maybe0(r, 1.0));
+            w(c, RIDER + 0x220, maybe0(r, 1.0));
+            w(c, RIDER + 0x3b8, maybe0(r, 1.0));
+            w(c, RIDER + 0x320, r.next_u32() % 2);
+            w(
+                c,
+                RIDER + 0x438,
+                [2, 3, 4, 4, 0, 1][(r.next_u32() % 6) as usize],
+            );
+            put_vec(c, RIDER + 0x180, [f(1.0), 0, 0, 0]);
+            put_vec(c, ANIM_STATE + 0x20, [f(-1.0), 0, 0, 0]);
+            w(c, METRIX + 0x14, r.f32(1.0));
+
+            // The animation controller: layers 0/1 idle ("no animation"),
+            // layer 2 on 0x16, 0x15, a choice result (0x5..0x11) or another
+            // id, whose table kind is 10, 5 or other.
+            let id = match r.next_u32() % 5 {
+                0 => 0x16,
+                1 => 0x15,
+                2 => 0x200,
+                _ => 0x5 + r.next_u32() % 0xd,
+            };
+            w(c, CTRL, NO_ANIM);
+            w(c, CTRL + 4, NO_ANIM);
+            w(c, CTRL + 8, id);
+            const KINDS: [u32; 5] = [10, 5, 0, 2, 0];
+            w(
+                c,
+                ANIM_TABLE + id * 0x1c,
+                KINDS[(r.next_u32() % 5) as usize],
+            );
+            w(c, CTRL + 0x1c, f(1.0));
+            w(c, CTRL + 0x50, SEQ_LISTS);
+            w(c, CTRL + 0x58, CTRL_VT);
+            w(c, CTRL_VT + 0x24, FAKE_ANIM_KIND);
+            for layer in 0..3 {
+                w(c, SEQ_LISTS + 8 * layer + 4, SEQ);
+            }
+            w(c, SEQ + 0xc0, r.next_u32() % 2);
+
+            c.g[A0][0] = sx(THIS);
+            c.g[A1][0] = sx(PAD);
+            // The generated body (no override slot yet) dispatches on `pc`.
+            c.pc = 0x0013_1620;
+        }
+
+        /// `RiderCruiseSub_HandleInput` against the generated body: random
+        /// pad input (handplant attempts, jumps, tweaks, boosts), moving
+        /// forward or backwards at speeds around every threshold, turning or
+        /// not, every surface class and layer-2 animation (0x16, 0x15, kinds
+        /// 10 and 5, the choice results), with the real callees on short
+        /// paths (no state change: the rider is never airborne, re-armed,
+        /// board-press blocked, racing).
+        #[test]
+        fn rider_cruise_sub_handle_input_matches() {
+            check(
+                ssx3_ee::s00::f_00131620__generated,
+                rider_cruise_sub_handle_input,
+                300,
+                &setup,
+            );
+        }
+    }
+
+    // -- 0x002f3e28 cSplashManager_Render -------------------------------------
+
+    /// `cSplashManager_Render`: the splash flags on and off, the manager in
+    /// and out of the current view, the hand-over virtual, and the full
+    /// render with 0..3 drops and crystals (the real `RenderDrop` /
+    /// `RenderCrystal` draw through the same fake display methods); the
+    /// display virtuals are fakes (some calls unwind).
+    #[test]
+    fn c_splash_manager_render_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::difftest::{fill, DATA, GAME_GP};
+        const THIS: u32 = DATA;
+        const VT2: u32 = DATA + 0x1000;
+        const APP: u32 = DATA + 0x1100;
+        const M1: u32 = DATA + 0x1200;
+        const M2: u32 = DATA + 0x1300;
+        const GFX: u32 = DATA + 0x2_0000;
+        const DISP: u32 = DATA + 0x3_0000;
+        const PKT: u32 = DATA + 0x4_0000;
+        const TEMPLATE: u32 = 0x0050_1420;
+        covered(
+            ee::s09::f_002f3e28__generated,
+            c_splash_manager_render,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f_3e28, 10);
+                let r = &mut r;
+                c.pc = 0x002f_3e28;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                let gp = |o: i32| GAME_GP.wrapping_add(o as u32);
+                // Splash flags (mostly on), the hand-over flag (mostly off).
+                w(c, gp(0x115c), (seed % 9 != 0) as u32);
+                w(c, gp(0x1160), (seed % 11 != 0) as u32);
+                w(c, gp(0xa70), (seed % 7 == 0) as u32);
+                // The current view id and the manager's.
+                w(c, gp(-0x848), APP);
+                w(c, APP + 0x84, M1);
+                w(c, M1 + 0x84, M2);
+                let view = r.next_u32() % 4;
+                w(c, M2 + 0x14, view);
+                w(c, THIS + 0x10, if seed % 8 == 0 { view + 1 } else { view });
+                w(c, THIS + 0xc, VT2);
+                c.bus.write16(VT2 + 0x70, (r.next_u32() as i16 & !3) as u16);
+                w(c, VT2 + 0x74, FAKE + 0x800);
+                // The graphics manager, its display (every virtual a fake),
+                // the packet and the GS template.
+                w(c, gp(0x2a90), GFX);
+                w(c, gp(-0x854), GFX);
+                w(c, GFX + 0x10d8, DISP);
+                // (`gfx+0x10d8` points straight at the method slots.)
+                for k in 0..0x80 {
+                    c.bus.write16(DISP + 8 * k, 0);
+                    w(c, DISP + 8 * k + 4, FAKE + 0x10 * k);
+                }
+                w(c, GFX + 0xe84, PKT + 4 * (r.next_u32() % 8));
+                w(c, GFX + 0x1058, r.next_u32());
+                fill(c, r, PKT, 0x40);
+                fill(c, r, TEMPLATE, 5);
+                // The render-once flags of the drop/crystal renderers.
+                for o in [0x2408, 0x2418, 0x2428, 0x2438] {
+                    w(c, gp(o), r.next_u32() % 2);
+                }
+                // Drops and crystals.
+                w(c, THIS + 0x14, r.next_u32() % 4);
+                w(c, THIS + 0x18, r.next_u32() % 4);
+                for i in 0..(3 * 0x3c / 4) {
+                    w(c, THIS + 0x1c + 4 * i, r.f32(100.0));
+                }
+                for i in 0..(3 * 0x4c / 4) {
+                    w(c, THIS + 0x724 + 4 * i, r.f32(100.0));
+                }
+                c.g[A0][0] = sx(THIS);
+            },
+        );
     }
 }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -46,6 +47,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0035_0698,
         instance_has_anim_nodes,
         "Instance_HasAnimNodes",
+    ),
+    (
+        0x0034_fed8,
+        instance_get_node_matrix,
+        "Instance_GetNodeMatrix",
     ),
 ];
 
@@ -400,6 +406,260 @@ pub fn world_obj_build_matrices(c: &mut Cpu) {
     c.pc = ra;
 }
 
+pub(crate) mod inode {
+
+    pub const OWNER: u32 = 0xc;
+
+    pub const WORLD: u32 = 0x10;
+
+    pub const SKELETON: u32 = 0x80;
+
+    pub const SCALE: u32 = 0x84;
+
+    /// Skeleton: node table (0x10-byte entries `{ int parent; ...; Mat*
+    /// local at +0xc }`).
+    pub const NODES: u32 = 0x8;
+
+    /// Owner v-table slots: `HasNodeMatrix(node)`, `GetNodeMatrix(node)`,
+    /// `GetWorldMatrix()`.
+    pub const VT_HAS_NODE: u32 = 0xd0;
+
+    pub const VT_NODE_MATRIX: u32 = 0xe8;
+
+    pub const VT_WORLD: u32 = 0xc0;
+}
+
+// ---------------------------------------------------------------------------
+// Instance_GetNodeMatrix
+
+/// Copy a 4x4 matrix through vf1-vf4 (`lqc2` all four rows, then `sqc2`).
+pub(crate) fn vu0_copy_matrix(c: &mut Cpu, from: u32, to: u32) {
+    for i in 0..4u32 {
+        c.lqc2(1 + i as usize, from.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u32 {
+        c.sqc2(1 + i as usize, to.wrapping_add(0x10 * i));
+    }
+}
+
+/// `out = b * a` row by row on VU0 (vf4-vf7 = a, vf8-vf11 = b, result in
+/// vf12-vf15): each row of b combines a's rows by its x, y, z, w.
+pub(crate) fn vu0_mul_matrix(c: &mut Cpu, a: u32, b: u32, out: u32) {
+    use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
+    for i in 0..4u32 {
+        c.lqc2(4 + i as usize, a.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u32 {
+        c.lqc2(8 + i as usize, b.wrapping_add(0x10 * i));
+    }
+    for i in 0..4u8 {
+        c.vu0().mula(0b1111, 4, Src::Bc(8 + i, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8 + i, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8 + i, Z));
+        c.vu0().madd(0b1111, 12 + i, 7, Src::Bc(8 + i, W));
+    }
+    for i in 0..4u32 {
+        c.sqc2(12 + i as usize, out.wrapping_add(0x10 * i));
+    }
+}
+
+/// Virtual call on the owner in a1 (v-table in v1): `{ i16 delta; fn }` at
+/// `vt + slot`.
+pub(crate) fn owner_vcall(c: &mut Cpu, slot: u32, ret: u32) -> Flow {
+    let vt = r32(c, V1);
+    c.g[A0][0] = c.lh(vt.wrapping_add(slot));
+    c.g[V0][0] = c.lw(vt.wrapping_add(slot + 4));
+    let f = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, A1).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, f, ret)
+}
+
+/// `void Instance_GetNodeMatrix(Instance* inst, int node, Mat4* out)`
+/// (0x34fed8): the world matrix of one skeleton node. An instance with an
+/// owner object asks it (the owner's own node matrix when it has one, else
+/// its world matrix stands in for the instance's). For node -1 the result
+/// is the world matrix; otherwise the node's local matrices are chained up
+/// to the root (translations scaled by the instance scale) and then
+/// multiplied by the world matrix.
+pub fn instance_get_node_matrix(c: &mut Cpu) {
+    guest(c, |c| {
+        use inode::*;
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x160);
+        frame.save(c, S0, 0x150);
+        frame.save(c, S1, 0x140);
+        frame.save(c, S2, 0x130);
+        frame.save(c, S3, 0x120);
+        frame.save_ra(c, 0x110);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        c.g[S2][0] = c.g[A2][0];
+        let inst = r32(c, S1);
+        let out = r32(c, S2);
+        c.g[T1][0] = sx(inst.wrapping_add(WORLD));
+        c.g[A1][0] = c.lw(inst.wrapping_add(OWNER));
+        c.g[S3][0] = c.lw(inst.wrapping_add(SKELETON));
+        if c.g[A1][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = u64::MAX;
+            let world_only = c.g[S0][0] == c.g[V0][0];
+            c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(OWNER));
+            if !world_only {
+                c.cycles += 6;
+                owner_vcall(c, VT_HAS_NODE, 0x0034_ff28)?;
+                let has = c.g[V0][0] != 0;
+                c.g[A1][0] = c.g[S0][0];
+                if has {
+                    // The owner's own node matrix.
+                    c.cycles += 16;
+                    c.g[A2][0] = c.lw(inst.wrapping_add(OWNER));
+                    let owner = r32(c, A2);
+                    c.g[V1][0] = c.lw(owner.wrapping_add(OWNER));
+                    let vt = r32(c, V1);
+                    c.g[A0][0] = c.lh(vt.wrapping_add(VT_NODE_MATRIX));
+                    c.g[V0][0] = c.lw(vt.wrapping_add(VT_NODE_MATRIX + 4));
+                    let f = r32(c, V0);
+                    c.g[A0][0] = sx(owner.wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, f, 0x0034_ff48)?;
+                    vu0_copy_matrix(c, r32(c, V0), out);
+                    frame.restore(c, S0, 0x150);
+                    return node_matrix_epilogue(c, frame);
+                }
+                c.cycles += 2;
+                c.g[A1][0] = c.lw(inst.wrapping_add(OWNER));
+                c.g[V1][0] = c.lw(r32(c, A1).wrapping_add(OWNER));
+            }
+            c.cycles += 5;
+            owner_vcall(c, VT_WORLD, 0x0034_ff88)?;
+            c.g[T1][0] = c.g[V0][0];
+        }
+
+        c.cycles += 2;
+        c.g[T0][0] = c.lw(r32(c, S3).wrapping_add(NODES));
+        if (c.g[S0][0] as i64) < 0 {
+            c.cycles += 9;
+            vu0_copy_matrix(c, r32(c, T1), out);
+            frame.restore(c, S0, 0x150);
+            return node_matrix_epilogue(c, frame);
+        }
+
+        // Start from the node's local matrix with its translation scaled by
+        // (s, s, s, 1).
+        let s = sp(c);
+        c.cycles += 43;
+        c.lwc1(0, inst.wrapping_add(SCALE));
+        c.g[V1][0] = sx((c.g[S0][0] as u32) << 4);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 1);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+        c.swc1(0, s.wrapping_add(0x8));
+        c.swc1(1, s.wrapping_add(0xc));
+        c.swc1(0, s);
+        c.swc1(0, s.wrapping_add(0x4));
+        let node = r32(c, V1);
+        c.g[V0][0] = c.lw(node.wrapping_add(0xc));
+        vu0_copy_matrix(c, r32(c, V0), out);
+        c.lq(V0, out.wrapping_add(0x30));
+        c.g[T3][0] = sx(s.wrapping_add(0x50));
+        c.lwc1(0, s);
+        c.sq(V0, s.wrapping_add(0x20));
+        c.g[A0][0] = u64::MAX;
+        c.lwc1(4, s.wrapping_add(0x4));
+        c.lwc1(1, s.wrapping_add(0x20));
+        c.lwc1(2, s.wrapping_add(0x24));
+        c.mul_s(1, 1, 0);
+        c.lwc1(3, s.wrapping_add(0x28));
+        c.mul_s(2, 2, 4);
+        c.lwc1(5, s.wrapping_add(0x8));
+        c.lwc1(0, s.wrapping_add(0x2c));
+        c.lwc1(4, s.wrapping_add(0xc));
+        c.mul_s(3, 3, 5);
+        c.swc1(1, s.wrapping_add(0x10));
+        c.mul_s(0, 0, 4);
+        c.swc1(2, s.wrapping_add(0x14));
+        c.swc1(3, s.wrapping_add(0x18));
+        c.swc1(0, s.wrapping_add(0x1c));
+        c.lq(V0, s.wrapping_add(0x10));
+        c.sq(V0, out.wrapping_add(0x30));
+        c.g[S0][0] = c.lw(node);
+        let root = c.g[S0][0] == c.g[A0][0];
+        c.g[T5][0] = sx(s.wrapping_add(0x10));
+        if !root {
+            // Chain the parents: out = out * parent (scaled translation).
+            c.cycles += 6;
+            c.g[A3][0] = sx(s.wrapping_add(0x30));
+            c.g[A2][0] = sx(s.wrapping_add(0xd0));
+            c.g[T2][0] = sx(s.wrapping_add(0x70));
+            c.g[T4][0] = u64::MAX;
+            c.g[A1][0] = sx((c.g[S0][0] as u32) << 4);
+            loop {
+                c.cycles += 78;
+                c.lwc1(6, s);
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[T0][0] as u32));
+                c.lwc1(7, s.wrapping_add(0x4));
+                c.g[A0][0] = c.lw(r32(c, A1).wrapping_add(0xc));
+                let m = r32(c, A0);
+                c.lwc1(5, s.wrapping_add(0x8));
+                c.lq(V1, m);
+                c.lwc1(4, s.wrapping_add(0xc));
+                c.sq(V1, s.wrapping_add(0xb0));
+                c.sq(V1, s.wrapping_add(0x70));
+                c.lq(V0, m.wrapping_add(0x10));
+                c.sq(V0, s.wrapping_add(0xb0));
+                c.sq(V0, s.wrapping_add(0x80));
+                c.lq(V1, m.wrapping_add(0x20));
+                c.sq(V1, s.wrapping_add(0xb0));
+                c.sq(V1, s.wrapping_add(0x90));
+                c.lq(V0, m.wrapping_add(0x30));
+                c.sq(V0, s.wrapping_add(0xc0));
+                c.lwc1(1, s.wrapping_add(0xc0));
+                c.lwc1(2, s.wrapping_add(0xc4));
+                c.lwc1(3, s.wrapping_add(0xc8));
+                c.mul_s(1, 1, 6);
+                c.lwc1(0, s.wrapping_add(0xcc));
+                c.mul_s(2, 2, 7);
+                c.mul_s(3, 3, 5);
+                c.mul_s(0, 0, 4);
+                c.swc1(1, s.wrapping_add(0xb0));
+                c.swc1(2, s.wrapping_add(0xb4));
+                c.swc1(3, s.wrapping_add(0xb8));
+                c.swc1(0, s.wrapping_add(0xbc));
+                c.lq(V0, s.wrapping_add(0xb0));
+                c.sq(V0, s.wrapping_add(0xa0));
+                vu0_mul_matrix(c, s.wrapping_add(0x70), out, s.wrapping_add(0xd0));
+                vu0_copy_matrix(c, s.wrapping_add(0xd0), s.wrapping_add(0x30));
+                vu0_copy_matrix(c, s.wrapping_add(0x30), out);
+                c.g[S0][0] = c.lw(r32(c, A1));
+                c.g[A1][0] = sx((c.g[S0][0] as u32) << 4);
+                if c.g[S0][0] == c.g[T4][0] {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_0058);
+                }
+            }
+        }
+        // out = out * world.
+        c.cycles += 47;
+        c.g[V0][0] = c.g[T5][0];
+        vu0_mul_matrix(c, r32(c, T1), out, s.wrapping_add(0x50));
+        vu0_copy_matrix(c, s.wrapping_add(0x50), s.wrapping_add(0x10));
+        vu0_copy_matrix(c, s.wrapping_add(0x10), out);
+        frame.restore(c, S0, 0x150);
+        node_matrix_epilogue(c, frame)
+    })
+}
+
+pub(crate) fn node_matrix_epilogue(c: &mut Cpu, frame: Frame) -> Flow {
+    c.cycles += 6;
+    frame.restore(c, S1, 0x140);
+    frame.restore(c, S2, 0x130);
+    frame.restore(c, S3, 0x120);
+    frame.restore_ra(c, 0x110);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -518,6 +778,68 @@ pub(crate) mod tests {
                     let vt = vtable(c, &mut r, &[8]);
                     c.bus.write32(DATA + 0x800 + 0xc, vt);
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::{self};
+    use crate::difftest::{put_vec, scramble};
+
+    /// Instance_GetNodeMatrix: no owner, or an owner (fake v-table) that
+    /// has the node's matrix or not; node -1, the root node or a node with
+    /// one or two parents; random matrices and scale.
+    #[test]
+    fn instance_get_node_matrix_matches() {
+        covered(
+            ee::s11::f_0034fed8__generated,
+            instance_get_node_matrix,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34fed8, 2);
+                c.pc = 0x0034_fed8;
+                let inst = DATA;
+                let skel = DATA + 0x400;
+                let nodes = DATA + 0x500;
+                let mats = DATA + 0x1000;
+                let out = DATA + 0x3000;
+                let owner = DATA + 0x600;
+                for k in 0..0x10 {
+                    c.bus.write32(inst + 0x10 + 4 * k, r.f32(4.0));
+                }
+                c.bus.write32(inst + 0x84, r.f32(2.0));
+                c.bus.write32(inst + 0x80, skel);
+                c.bus.write32(skel + 8, nodes);
+                // Nodes 0..3: 0 is the root, 1 -> 0, 2 -> 1, 3 -> 0.
+                for (n, parent) in [(0u32, u32::MAX), (1, 0), (2, 1), (3, 0)] {
+                    c.bus.write32(nodes + 0x10 * n, parent);
+                    c.bus.write32(nodes + 0x10 * n + 0xc, mats + 0x40 * n);
+                }
+                for k in 0..0x40 {
+                    c.bus.write32(mats + 4 * k, r.f32(4.0));
+                }
+                let with_owner = seed % 3 == 0;
+                if with_owner {
+                    let vt = fakes::vtable(c, &mut r, &[0xc0, 0xd0, 0xe8]);
+                    c.bus.write32(inst + 0xc, owner);
+                    c.bus.write32(owner + 0xc, vt);
+                    // HasNodeMatrix: a fake answering non-zero, or the real
+                    // `Rider_ReturnZero_25b8` (0x1125b8). The matrix calls answer
+                    // matrix pointers.
+                    if r.next_u32() % 2 == 0 {
+                        c.bus.write32(vt + 0xd4, 0x0011_25b8);
+                        c.bus.write32(fakes::LOG_RESULTS, mats + 0x40);
+                    } else {
+                        c.bus.write32(fakes::LOG_RESULTS, mats + 0x80);
+                        c.bus.write32(fakes::LOG_RESULTS + 4, mats + 0x40);
+                    }
+                }
+                let node = match r.next_u32() % 5 {
+                    0 => u32::MAX,
+                    k => k - 1,
+                };
+                c.g[A0][0] = sx(inst);
+                c.g[A1][0] = sx(node);
+                c.g[A2][0] = sx(out);
             },
         );
     }

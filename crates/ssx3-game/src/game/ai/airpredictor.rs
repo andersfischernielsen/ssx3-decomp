@@ -2,6 +2,8 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -12,12 +14,21 @@ use crate::call::Frame;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::rider::fcc_lt;
+pub(crate) use crate::game::ai::rider::fr_3 as fr;
+pub(crate) use crate::game::ai::rider::gp_lit;
+pub(crate) use crate::game::ai::rider::set_fr;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -40,6 +51,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         air_predictor_load_state,
         "AirPredictor_LoadState",
     ),
+    (0x0011_39a0, air_predictor_step_2, "AirPredictor_Step"),
 ];
 
 /// `void AirPredictor_Update(AirPredictor *ap, Vec4 *pos, Vec4 *vel, float dt)`
@@ -259,6 +271,119 @@ pub fn air_predictor_clear_air_time(c: &mut Cpu) {
     abi::ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// AirPredictor_Step (0x001139a0)
+// ---------------------------------------------------------------------------
+
+/// `.lit4` constants (gp-relative, subtracted): seconds per tick (1/60),
+/// the per-tick horizontal drag (-0.2/60), the gravity step falling
+/// (-1900/60) and rising (-850/60).
+pub(crate) const GP_AIR_STEP: u32 = 0x7c50;
+
+pub(crate) const GP_AIR_DRAG: u32 = 0x7c4c;
+
+pub(crate) const GP_AIR_GRAVITY_FALLING: u32 = 0x7c48;
+
+pub(crate) const GP_AIR_GRAVITY_RISING: u32 = 0x7c44;
+
+/// `AirPredictor.maxSpeed`.
+pub(crate) const AIRP_MAX_SPEED: u32 = 0xa8;
+
+/// `vf5 = vf4 * f` with `f` passed through `v0` (`mfc1`/`qmtc2` into vf3).
+pub(crate) fn air_scale_vu0(c: &mut Cpu, v: u32, out: u32) {
+    c.mfc1(V0, 0);
+    c.lqc2(4, v);
+    c.qmtc2(V0, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, out);
+}
+
+/// `float AirPredictor_Step(AirPredictor* self, const Vec4* pos,
+/// const Vec4* vel, Vec4* outPos, Vec4* outVel)` (0x001139a0): one tick of
+/// the airborne path prediction: `outPos = pos + vel / 60`; `outVel = vel`
+/// with horizontal drag and gravity (weaker while rising), clamped to the
+/// predictor's maximum speed. Returns the new speed (f0).
+pub fn air_predictor_step_2(c: &mut Cpu) {
+    c.cycles += 27;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x30));
+    let s = sp(c);
+    let this = r32(c, A0);
+    let pos = r32(c, A1);
+    let vel = r32(c, A2);
+    let out_pos = r32(c, A3);
+    let out_vel = r32(c, T0);
+    let step = gp_lit(c, GP_AIR_STEP);
+    set_fr(c, 0, step);
+    air_scale_vu0(c, vel, s + 0x20);
+    set_fr(c, 5, FpuF32::ZERO);
+    c.lq(V0, s + 0x20);
+    let drag = gp_lit(c, GP_AIR_DRAG);
+    set_fr(c, 3, drag);
+    c.sq(V0, s + 0x10);
+    // outPos = pos + vel * step
+    c.lqc2(3, pos);
+    c.lqc2(4, s + 0x10);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s + 0x20);
+    let g = gp_lit(c, GP_AIR_GRAVITY_FALLING);
+    set_fr(c, 4, g);
+    c.lq(V0, s + 0x20);
+    c.sq(V0, out_pos);
+    c.sq(V0, s);
+    let vx = Addr(vel).read_fpu(c);
+    let vz = Addr(vel + 8).read_fpu(c);
+    let vy = Addr(vel + 4).read_fpu(c);
+    set_fr(c, 0, vz);
+    set_fr(c, 2, vx * drag);
+    let rising = fcc_lt(c, FpuF32::ZERO, vz);
+    set_fr(c, 1, vy * drag);
+    if rising {
+        c.cycles += 1;
+        let g = gp_lit(c, GP_AIR_GRAVITY_RISING);
+        set_fr(c, 4, g);
+    }
+
+    // 0x00113a10: outVel = vel + (drag x, drag y, gravity, 0).
+    c.cycles += 25;
+    Addr(s + 0x10).write_fpu(c, fr(c, 2));
+    Addr(s + 0x14).write_fpu(c, fr(c, 1));
+    Addr(s + 0x18).write_fpu(c, fr(c, 4));
+    Addr(s + 0x1c).write_fpu(c, fr(c, 5));
+    c.lqc2(3, vel);
+    c.lqc2(4, s + 0x10);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, s + 0x20);
+    c.lq(V0, s + 0x20);
+    c.sq(V0, out_vel);
+    c.sq(V0, s);
+    // |outVel| (xyzw) on VU0.
+    c.lqc2(3, out_vel);
+    {
+        let v = c.vu0();
+        v.add(0b1000, 6, 0, Src::Bc(0, W));
+        v.mul(0b1111, 4, 3, Src::Vec(3));
+        v.adda(0b1000, 4, Src::Bc(4, Y));
+        v.madda(0b1000, 6, Src::Bc(4, Z));
+        v.madd(0b1000, 4, 6, Src::Bc(4, W));
+        v.sqrt(4, 0);
+        v.waitq();
+    }
+    c.cfc2(V1, 22);
+    c.mtc1(V1, 0);
+    let speed = fr(c, 0);
+    let max = Addr(this + AIRP_MAX_SPEED).read_fpu(c);
+    set_fr(c, 1, max);
+    if fcc_lt(c, max, speed) {
+        c.cycles += 7;
+        set_fr(c, 0, max.div(speed));
+        air_scale_vu0(c, out_vel, out_vel);
+        set_fr(c, 0, max);
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx(s.wrapping_add(0x30));
+    abi::ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -470,6 +595,54 @@ pub(crate) mod tests {
             ssx3_ee::s00::f_00113998__generated,
             air_predictor_clear_air_time,
             22,
+        );
+    }
+    use super::*;
+    use crate::difftest::{fill, put_vec};
+
+    /// `AirPredictor_Step`: random positions and velocities (rising and
+    /// falling, edge floats), maximum speeds above and below the result.
+    #[test]
+    fn air_predictor_step_matches() {
+        use crate::difftest::elf_image;
+        check(
+            ee::s00::f_001139a0__generated,
+            air_predictor_step_2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0011_39a0 ^ seed as u64);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x0011_39a0;
+                let this = DATA;
+                let pos = DATA + 0x100;
+                let vel = DATA + 0x110;
+                let out_pos = DATA + 0x200;
+                let out_vel = DATA + 0x210;
+                put_vec(
+                    c,
+                    pos,
+                    [r.f32(5000.0), r.f32(5000.0), r.f32(5000.0), r.f32(2.0)],
+                );
+                let z = if seed % 9 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(60.0)
+                };
+                put_vec(c, vel, [r.f32(60.0), r.f32(60.0), z, r.f32(1.0)]);
+                let max = if seed % 2 == 0 {
+                    r.f32(30.0) & 0x7fff_ffff
+                } else {
+                    0x4479_c000
+                };
+                put_words(c, this + AIRP_MAX_SPEED, &[max]);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(pos);
+                c.g[A2][0] = sx(vel);
+                c.g[A3][0] = sx(out_pos);
+                c.g[T0][0] = sx(out_vel);
+            },
         );
     }
 }

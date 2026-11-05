@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -47,6 +48,7 @@ pub(crate) use crate::game::fe::festateloadhint::gp as gp_7;
 pub(crate) use crate::game::fe::festateloadhint::lqsp;
 pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
+pub(crate) use crate::game::fe::splashmanager::gpo;
 pub(crate) use crate::game::intersect::worldsphtree::sp_2 as sp_3;
 pub(crate) use crate::game::movie::movieplayer::gp as gp_5;
 use crate::guest::Addr;
@@ -138,6 +140,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0014_46a0, flags64_test, "Flags64_Test"),
     (0x0014_46b8, flags64_test_second, "Flags64_TestSecond"),
     (0x0014_48a8, rider_is_control_mode3, "Rider_IsControlMode3"),
+    (
+        0x0013_c948,
+        rider_ground_state_compute_boost_accel,
+        "RiderGroundState_ComputeBoostAccel",
+    ),
+    (
+        0x0013_ccf0,
+        rider_ground_state_compute_drag,
+        "RiderGroundState_ComputeDrag",
+    ),
+    (
+        0x0013_f178,
+        rider_ground_state_post_update,
+        "RiderGroundState_PostUpdate",
+    ),
+    (
+        0x0013_f488,
+        rider_ground_state_collide_walls,
+        "RiderGroundState_CollideWalls",
+    ),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -6149,6 +6171,1783 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
     return;
 }
 
+pub(crate) mod air_walls {
+
+    /// `RiderAirState`: the rider.
+    pub const RIDER: u32 = 0x4;
+
+    /// `Rider`: velocity, the controller (vtable slot `+0x40`: "use the
+    /// small hull"), the hull's sphere tree, the overlap list and its flags.
+    pub const VEL: u32 = 0x1e0;
+
+    pub const POSITION_ROW: u32 = 0x180;
+
+    pub const CONTROLLER: u32 = 0x6c0;
+
+    pub const SPHERE_TREE: u32 = 0xaa0;
+
+    pub const OVERLAP_LIST: u32 = 0x860;
+
+    pub const OVERLAP_FLAGS: u32 = 0x868;
+
+    pub const GET_SUB_STATE: u32 = 0x0011_fee8;
+
+    pub const HULL_CTOR: u32 = 0x0032_f650;
+
+    pub const HULL_DTOR: u32 = 0x0032_f708;
+
+    pub const FIND_CLOSEST_CONTACT: u32 = 0x0033_42d0;
+
+    pub const TRANSLATE: u32 = 0x0010_6538;
+
+    pub const BUILD_WORLD_MATRIX: u32 = 0x0011_e098;
+
+    pub const HANDLE_IMPACT: u32 = 0x0010_5d98;
+
+    /// Sub state 9: no wall collision.
+    pub const SUB_STATE_SKIP: u64 = 9;
+}
+
+pub(crate) mod boost_accel {
+    use super::*;
+
+    /// The ground state's rider.
+    pub const RIDER: u32 = 0x18;
+
+    /// Rider fields: the ground material (>= 17: the slow-snow scale), the
+    /// finish time (< 0 while racing), the AI (player) index, the character
+    /// slot, the animation controller.
+    pub const GROUND_MATERIAL: u32 = 0x434;
+
+    pub const FINISH_TIME: u32 = 0x470;
+
+    pub const AI_INDEX: u32 = 0x86c;
+
+    pub const CHARACTER_SLOT: u32 = 0xb34;
+
+    pub const ANIM_CTRL: u32 = 0x784;
+
+    /// The tuning parameters: base acceleration and boost factor.
+    pub const PARAM_ACCEL: u32 = 0x20;
+
+    pub const PARAM_BOOST: u32 = 0x24;
+
+    pub const ANIM_CONTROLLER_GET_LAYER_ANIM_ID: u32 = 0x0031_2aa0;
+
+    pub const BE_CHAR_INT_GET_ATTRIB1_FACTOR: Callee = Callee {
+        addr: 0x0014_93d8,
+        f: ee::s01::f_001493d8,
+    };
+
+    pub const BE_LIBRARY_GET_INSTANCE: Callee = Callee {
+        addr: 0x0014_dc80,
+        f: ee::s01::f_0014dc80,
+    };
+
+    pub const BE_LIBRARY_GET_INTERFACE: Callee = Callee {
+        addr: 0x0014_dd58,
+        f: ee::s01::f_0014dd58,
+    };
+
+    pub const MATH_ATAN: u32 = 0x0031_c228;
+}
+
+/// `vf5 = vf4(at) * x` with `x` moved through a GPR (`mfc1; qmtc2`), stored
+/// at `sp+out` and reloaded into v0 (`lq`): the original's vector scale.
+pub(crate) fn air_walls_scale(c: &mut Cpu, gpr: usize, fpr: usize, at: u32, out: u32) {
+    use ssx3_ee_rt::vu0::{Src, X};
+    let base = sp(c);
+    c.mfc1(gpr, fpr);
+    c.lqc2(4, base.wrapping_add(at));
+    c.qmtc2(gpr, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, base.wrapping_add(out));
+    c.lq(V0, base.wrapping_add(out));
+}
+
+/// `vf4 = vf3 * vf5; vf4.w = vf4.x + vf4.y + vf4.z` (the original's dot
+/// product macro, `vf6.w = 1`).
+pub(crate) fn air_walls_dot(c: &mut Cpu, b: u8) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(b));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+/// `int RiderAirState_CollideWalls(RiderAirState* self, vec* normal_out)`
+/// (0x13aa48): build the rider's collision hull (the small one when the
+/// controller says so), find the closest wall contact ahead of it, push the
+/// rider out along the contact normal, and when the rider is moving into
+/// the wall bounce its velocity off the normal (scaled by speed), rebuild
+/// its world matrix and report the impact. Returns 1 (and the normal) on
+/// an impact, else 0; sub state 9 skips everything.
+///
+/// Parked (not installed): its differential test could not be bounded (the
+/// real callees under `OverlapList_FindClosestContact` / `Rider_HandleImpact`
+/// run away on fixture data, pc 0x312138 in `AnimController_PlayAnimImpl`).
+/// The port is a straight transliteration of the generated body.
+#[allow(dead_code)]
+pub fn rider_air_state_collide_walls(c: &mut Cpu) {
+    use self::air_walls::*;
+    use crate::ps2f::FpuF32;
+    use ssx3_ee_rt::vu0::Src;
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x490);
+        frame.save(c, S1, 0x460);
+        frame.save(c, S4, 0x430);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x470);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S2, 0x450);
+        frame.save(c, S3, 0x440);
+        frame.save_ra(c, 0x420);
+        frame.save_fpr(c, 21, 0x488);
+        frame.save_fpr(c, 20, 0x480);
+        let this = Addr(r32(c, S1));
+        c.g[A0][0] = this.off(RIDER).lw(c);
+        call_ptr(c, GET_SUB_STATE, 0x0013_aa7c)?;
+        c.g[V1][0] = SUB_STATE_SKIP;
+        let mut impact = false;
+        if c.g[V0][0] == SUB_STATE_SKIP {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        } else {
+            let rider = this.off(RIDER).lw(c);
+            c.g[S0][0] = rider;
+            let rider = Addr(rider as u32);
+            c.cycles += 29;
+            let base = sp(c);
+            let hull = base.wrapping_add(0x80);
+            c.g[S2][0] = sx(hull);
+            c.f[21] = 0;
+            c.g[S3][0] = sx(hull);
+            // controller->useSmallHull()
+            let vtable = rider.off(CONTROLLER).lw(c);
+            c.g[V1][0] = vtable;
+            c.g[A1][0] = sx(rider.off(CONTROLLER).0);
+            let slot = crate::call::VSlot::read(c, vtable, 0x40);
+            c.g[V0][0] = slot.func;
+            c.g[A0][0] = slot.this(c.g[A1][0]);
+            call_ptr(c, slot.func as u32, 0x0013_aab4)?;
+            // CollHull hull(rider->sphereTree, !small)
+            c.g[A1][0] = rider.off(SPHERE_TREE).lw(c);
+            c.g[A0][0] = sx(hull);
+            c.g[A2][0] = c.g[V0][0] ^ 1;
+            call_ptr(c, HULL_CTOR, 0x0013_aac4)?;
+            // OverlapList_FindClosestContact(list, &hull, &contact, flags)
+            let rider_now = this.off(RIDER).lw(c);
+            c.g[V1][0] = rider_now;
+            let rider_now = Addr(rider_now as u32);
+            c.g[A0][0] = 1;
+            c.g[A1][0] = sx(hull);
+            c.g[A2][0] = sx(base);
+            c.lq(V0, rider_now.off(POSITION_ROW).0);
+            Addr(base.wrapping_add(0x88)).sw(c, 1);
+            c.sq(V0, base.wrapping_add(0x90));
+            c.sq(V0, base.wrapping_add(0x3a0));
+            c.g[A3][0] = rider_now.off(OVERLAP_FLAGS).lw(c);
+            c.g[A0][0] = rider_now.off(OVERLAP_LIST).lw(c);
+            call_ptr(c, FIND_CLOSEST_CONTACT, 0x0013_aaf0)?;
+            c.f[1] = c.f[0];
+            let depth = FpuF32(c.f[1]);
+            let missed = depth.lt(FpuF32(c.f[21]));
+            abi::set_fcc(c, missed);
+            c.g[A0][0] = c.g[S3][0];
+            if !missed {
+                // Push out: translate by normal * (k * depth).
+                c.cycles += 40;
+                c.f[0] = Addr(r32(c, GP).wrapping_sub(0x7190)).read_fpu(c).0;
+                c.g[A1][0] = sx(base.wrapping_add(0x3a0));
+                air_walls_scale(c, V1, 0, 0x10, 0x3c0);
+                c.sq(V0, base.wrapping_add(0x3b0));
+                air_walls_scale(c, V1, 1, 0x3b0, 0x3c0);
+                c.g[A0][0] = this.off(RIDER).lw(c);
+                c.sq(V0, base.wrapping_add(0x3a0));
+                call_ptr(c, TRANSLATE, 0x0013_ab4c)?;
+                // Into the wall? (-normal).x * vel.x < 0 means moving in.
+                c.g[AT][0] = sx(0xbf80_0000);
+                c.f[0] = 0xbf80_0000;
+                air_walls_scale(c, V0, 0, 0x10, 0x3c0);
+                let rider_now = this.off(RIDER).lw(c);
+                c.g[A0][0] = rider_now;
+                c.sq(V0, base.wrapping_add(0x3b0));
+                c.lqc2(3, base.wrapping_add(0x3b0));
+                c.lqc2(5, (rider_now as u32).wrapping_add(VEL));
+                air_walls_dot(c, 5);
+                c.qmfc2(V1, 4);
+                c.f[20] = c.g[V1][0] as u32;
+                let receding = FpuF32(c.f[20]).lt(FpuF32(c.f[21]));
+                abi::set_fcc(c, receding);
+                if receding {
+                    c.cycles += 1;
+                    c.g[A0][0] = c.g[S3][0];
+                } else {
+                    impact = true;
+                }
+            }
+            if !impact {
+                // 0x0013aba8: ~CollHull, no impact.
+                c.cycles += 4;
+                c.g[A1][0] = 2;
+                call_ptr(c, HULL_DTOR, 0x0013_abb0)?;
+                c.g[V0][0] = 0;
+            } else {
+                // 0x0013abb8: bounce, scaled by speed (with a floor).
+                c.cycles += 18;
+                let rider_now = r32(c, A0);
+                c.f[0] = Addr(r32(c, GP).wrapping_sub(0x718c)).read_fpu(c).0;
+                c.lqc2(3, rider_now.wrapping_add(VEL));
+                air_walls_dot(c, 3);
+                c.vu0().rsqrt(0, 3, 4, 0);
+                c.vu0().waitq();
+                c.vu0().mul(0b1111, 5, 3, Src::Q);
+                c.sqc2(5, base.wrapping_add(0x3c0));
+                let cap = Addr(r32(c, GP).wrapping_sub(0x7188)).read_fpu(c);
+                c.f[1] = cap.0;
+                let k = FpuF32(c.f[20]) * FpuF32(c.f[0]);
+                c.f[0] = k.0;
+                c.lq(V0, base.wrapping_add(0x3c0));
+                let floored = k.lt(cap);
+                abi::set_fcc(c, floored);
+                c.sq(V0, base.wrapping_add(0x3b0));
+                if floored {
+                    c.cycles += 1;
+                    c.f[0] = c.f[1];
+                }
+                c.cycles += 32;
+                c.f[0] = (FpuF32(c.f[20]) + FpuF32(c.f[0])).0;
+                air_walls_scale(c, V1, 0, 0x10, 0x3d0);
+                let rider_now = this.off(RIDER).lw(c);
+                c.g[V1][0] = rider_now;
+                c.sq(V0, base.wrapping_add(0x3c0));
+                let vel = (rider_now as u32).wrapping_add(VEL);
+                c.lqc2(3, vel);
+                c.lqc2(4, base.wrapping_add(0x3c0));
+                c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                c.sqc2(5, vel);
+                c.g[A0][0] = this.off(RIDER).lw(c);
+                call_ptr(c, BUILD_WORLD_MATRIX, 0x0013_ac40)?;
+                // Rider_HandleImpact(rider, &{contact.pos, dir, normal, speed}, contact.surface)
+                c.lq(V0, base.wrapping_add(0x3b0));
+                c.g[A1][0] = sx(base.wrapping_add(0x3e0));
+                c.lq(A3, base);
+                c.lq(V1, base.wrapping_add(0x10));
+                c.g[A0][0] = this.off(RIDER).lw(c);
+                c.g[A2][0] = Addr(base.wrapping_add(0x4c)).lw(c);
+                c.sq(V0, base.wrapping_add(0x3f0));
+                c.sq(A3, base.wrapping_add(0x3e0));
+                c.sq(V1, base.wrapping_add(0x400));
+                let speed = FpuF32(c.f[20]);
+                Addr(base.wrapping_add(0x410)).write_fpu(c, speed);
+                call_ptr(c, HANDLE_IMPACT, 0x0013_ac6c)?;
+                c.lq(V0, base.wrapping_add(0x10));
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = 2;
+                c.sq(V0, r32(c, S4));
+                call_ptr(c, HULL_DTOR, 0x0013_ac80)?;
+                c.g[V0][0] = 1;
+            }
+        }
+        c.cycles += 10;
+        frame.restore(c, S0, 0x470);
+        frame.restore(c, S1, 0x460);
+        frame.restore(c, S2, 0x450);
+        frame.restore(c, S3, 0x440);
+        frame.restore(c, S4, 0x430);
+        frame.restore_ra(c, 0x420);
+        frame.restore_fpr(c, 21, 0x488);
+        frame.restore_fpr(c, 20, 0x480);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// RiderGroundState_CollideWalls (0x13f488, handplantcontrol.cpp)
+
+/// Called functions (all through the function table, as the original).
+pub(crate) const RIDER_GET_SUB_STATE: u32 = 0x0011_fee8;
+
+pub(crate) const COLL_HULL_CTOR: u32 = 0x0032_f650;
+
+pub(crate) const COLL_HULL_DTOR: u32 = 0x0032_f708;
+
+pub(crate) const OVERLAP_LIST_FIND_CLOSEST_CONTACT: u32 = 0x0033_42d0;
+
+pub(crate) const RIDER_TRANSLATE: u32 = 0x0010_6538;
+
+pub(crate) const RIDER_DEFLECT_ALONG_WALL: u32 = 0x0010_65b0;
+
+pub(crate) const RIDER_BUILD_WORLD_MATRIX: u32 = 0x0011_e098;
+
+pub(crate) const RIDER_HANDLE_IMPACT: u32 = 0x0010_5d98;
+
+pub(crate) const SSX_AUDIO_SYSTEM_GET_INSTANCE: u32 = 0x0028_b180;
+
+pub(crate) const SSX_AUDIO_PLAY_GROUND_WALL_HIT_SOUND: u32 = 0x0029_89a8;
+
+/// The ground state's rider.
+pub(crate) const GS_RIDER: u32 = 0x18;
+
+/// Rider fields.
+pub(crate) const R_POS_Y: u32 = 0x118;
+
+pub(crate) const R_VEL: u32 = 0x1e0;
+
+pub(crate) const R_FORWARD: u32 = 0x370;
+
+pub(crate) const R_GROUND_Y: u32 = 0x498;
+
+pub(crate) const R_SPEED: u32 = 0x4c8;
+
+/// The rider's controller object (vtable slot 0x40: "is in contact").
+pub(crate) const R_CONTROLLER: u32 = 0x6c0;
+
+pub(crate) const R_OVERLAP_LIST: u32 = 0x860;
+
+pub(crate) const R_OVERLAP_HINT: u32 = 0x868;
+
+pub(crate) const R_HULL: u32 = 0xaa0;
+
+/// `.lit4` constants (gp-relative, subtracted): -0.9999 (head-on
+/// threshold), 1.1 (push-out factor), 0.05 (bounce factor), 27.777779 (the
+/// minimal bounce speed, 100 km/h in m/s).
+pub(crate) const GP_HEAD_ON: u32 = 0x6fa0;
+
+pub(crate) const GP_PUSH_OUT: u32 = 0x6f9c;
+
+pub(crate) const GP_BOUNCE_SCALE: u32 = 0x6f98;
+
+pub(crate) const GP_MIN_BOUNCE: u32 = 0x6f94;
+
+/// Frame layout: the contact (0x00: pos, 0x10: normal, 0x20: the hit
+/// surface's velocity,
+/// 0x4c: material, 0x50: object), the hull volume (0x80, +0x10 its
+/// direction), the impact info (0x3f0) and VU spill slots.
+pub(crate) const F_HIT: u32 = 0x00;
+
+pub(crate) const F_HIT_NORMAL: u32 = 0x10;
+
+pub(crate) const F_HIT_VELOCITY: u32 = 0x20;
+
+pub(crate) const F_HIT_MATERIAL: u32 = 0x4c;
+
+pub(crate) const F_HIT_OBJECT: u32 = 0x50;
+
+pub(crate) const F_HULL: u32 = 0x80;
+
+pub(crate) const F_SPILL_A: u32 = 0x3a0;
+
+pub(crate) const F_SPILL_B: u32 = 0x3b0;
+
+pub(crate) const F_SPILL_C: u32 = 0x3c0;
+
+pub(crate) const F_SPILL_D: u32 = 0x3d0;
+
+pub(crate) const F_SPILL_E: u32 = 0x3e0;
+
+pub(crate) const F_IMPACT: u32 = 0x3f0;
+
+/// `vf4.x = vf3 . vf<b>` (xyz, through the `vf6.x = 1 + vf0.w` trick the
+/// compiler's inline dot product uses).
+#[inline]
+pub(crate) fn vu_dot3(c: &mut Cpu, b: u8) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(b));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+/// `vf5 = vf3 * rsqrt(vf3 . vf3)` (the inline normalise).
+#[inline]
+pub(crate) fn vu_normalize3(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::Src;
+    vu_dot3(c, 3);
+    c.vu0().rsqrt(0, 3, 4, 0);
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 5, 3, Src::Q);
+}
+
+/// `vf5 = q(at) * x` with `x` passed through gpr `gpr` (`mfc1`/`qmtc2`).
+#[inline]
+pub(crate) fn vu_scale(c: &mut Cpu, gpr: usize, at: u32) {
+    use ssx3_ee_rt::vu0::{Src, X};
+    c.lqc2(4, at);
+    c.qmtc2(gpr, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+}
+
+/// `vf5 = q(a) - q(b)`.
+#[inline]
+pub(crate) fn vu_sub(c: &mut Cpu, a: u32, b: u32) {
+    use ssx3_ee_rt::vu0::Src;
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+}
+
+/// `sqc2 vf5, tmp; lq v0, tmp; sq v0, dst...` (the compiler's VU spill).
+#[inline]
+pub(crate) fn vu_spill(c: &mut Cpu, frame: Frame, tmp: u32, dst: &[u32]) {
+    let t = frame.at(c, tmp);
+    c.sqc2(5, t);
+    c.lq(2, t);
+    for &d in dst {
+        let a = frame.at(c, d);
+        c.sq(2, a);
+    }
+}
+
+/// `void RiderGroundState_CollideWalls(RiderGroundState* self)` (0x13f488):
+/// the ground state's wall collision. Skipped in sub-state 9, and for a slow
+/// rider (< 50) close to the ground that is not in contact. Otherwise the
+/// rider's hull is swept along its forward direction against its overlap
+/// list; on a hit (depth >= 0) the hit object is notified (vtable 0x150),
+/// and unless the rider runs head-on into the wall (forward . normal <
+/// -0.9999) the rider is pushed out by 1.1 * depth along the normal
+/// (flattened against the forward direction when it faces the wall). If the
+/// rider then still moves into the wall it is bounced off (by the into-wall
+/// speed plus 5% of it, at least 27.78), deflected along the wall, its
+/// matrix rebuilt, the impact handled and the wall-hit sound played. The
+/// hull is destroyed on every path after its construction.
+pub fn rider_ground_state_collide_walls(c: &mut Cpu) {
+    use crate::abi::{c_lt_s, set_fpr};
+    use crate::guest::Addr;
+    use crate::ps2f::FpuF32;
+    use ssx3_ee_rt::vu0::Src;
+
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x490);
+        frame.save(c, S2, 0x450);
+        frame.save(c, S0, 0x470);
+        frame.save(c, S1, 0x460);
+        frame.save(c, S3, 0x440);
+        frame.save_ra(c, 0x430);
+        frame.save_fpr(c, 21, 0x488);
+        frame.save_fpr(c, 20, 0x480);
+        c.g[S2][0] = c.g[A0][0]; // self
+        let this = Addr(r32(c, S2));
+
+        // Rider_GetSubState(rider) == 9: nothing to do.
+        c.g[A0][0] = this.off(GS_RIDER).lw(c);
+        call_ptr(c, RIDER_GET_SUB_STATE, 0x0013_f4b4)?;
+        c.g[V1][0] = 9;
+        let skip = if c.g[V0][0] == c.g[V1][0] {
+            true
+        } else {
+            // In contact? Else only when fast or off the ground.
+            c.cycles += 9;
+            let rider = this.off(GS_RIDER).lw(c) as u32;
+            controller_in_contact(c, rider, true, 0x0013_f4dc)?;
+            if c.g[V0][0] != 0 {
+                false
+            } else {
+                c.cycles += 8;
+                let rider = this.off(GS_RIDER).lw(c);
+                c.g[V0][0] = rider;
+                let rider = Addr(rider as u32);
+                c.g[AT][0] = 0x4248_0000;
+                let fifty = FpuF32(0x4248_0000);
+                set_fpr(c, 2, fifty);
+                let speed = rider.off(R_SPEED).read_fpu(c);
+                set_fpr(c, 0, speed);
+                if !c_lt_s(c, speed, fifty) {
+                    false
+                } else {
+                    c.cycles += 8;
+                    let y = rider.off(R_POS_Y).read_fpu(c);
+                    let ground = rider.off(R_GROUND_Y).read_fpu(c);
+                    set_fpr(c, 1, y);
+                    let height = (ground - y).abs();
+                    set_fpr(c, 0, height);
+                    if c_lt_s(c, height, fifty) {
+                        true
+                    } else {
+                        c.cycles += 1;
+                        false
+                    }
+                }
+            }
+        };
+        if !skip {
+            c.g[S0][0] = this.off(GS_RIDER).lw(c);
+            collide_walls_hit(c, frame)?;
+        }
+        frame.restore(c, S0, 0x470);
+
+        c.cycles += 8;
+        frame.restore(c, S1, 0x460);
+        frame.restore(c, S2, 0x450);
+        frame.restore(c, S3, 0x440);
+        frame.restore_ra(c, 0x430);
+        frame.restore_fpr(c, 21, 0x488);
+        frame.restore_fpr(c, 20, 0x480);
+        frame.close(c);
+        Ok(())
+    });
+
+    /// `rider->controller->vt[0x40]()` ("in contact"), returning to `ret`.
+    /// The two call sites leave different registers: the first keeps the
+    /// `this` delta in a1, the second the controller address.
+    fn controller_in_contact(c: &mut Cpu, rider: u32, first: bool, ret: u32) -> crate::call::Flow {
+        let ctl = rider.wrapping_add(R_CONTROLLER);
+        let vt = Addr(ctl).lw(c);
+        c.g[V1][0] = vt;
+        let delta = Addr(vt as u32).off(0x40).lh(c);
+        c.g[A1][0] = if first { delta } else { sx(ctl) };
+        let method = Addr(vt as u32).off(0x44).lw(c);
+        c.g[V0][0] = method;
+        c.g[A0][0] = sx(ctl.wrapping_add(delta as u32));
+        call_ptr(c, method as u32, ret)
+    }
+
+    /// The hull sweep and the response (rider in s0, self in s2).
+    fn collide_walls_hit(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+        c.cycles += 28;
+        c.g[S1][0] = sx(frame.at(c, F_HULL));
+        c.g[S3][0] = c.g[S1][0];
+        let rider = r32(c, S0);
+        // CollHull_ctor(&hull, rider->hull, !in_contact)
+        controller_in_contact(c, rider, false, 0x0013_f548)?;
+        c.g[A1][0] = Addr(rider).off(R_HULL).lw(c);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[V0][0] ^ 1;
+        call_ptr(c, COLL_HULL_CTOR, 0x0013_f558)?;
+        // hull.f8 = 1; hull.dir = rider->forward;
+        // d = OverlapList_FindClosestContact(rider->list, &hull, &hit, hint)
+        let rider = Addr(r32(c, S2)).off(GS_RIDER).lw(c);
+        c.g[V1][0] = rider;
+        let rider = Addr(rider as u32);
+        c.g[A0][0] = 1;
+        Addr(frame.at(c, F_HULL + 8)).sw(c, 1);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[SP][0];
+        c.lq(2, rider.off(R_FORWARD).0);
+        let a = frame.at(c, F_HULL + 0x10);
+        c.sq(2, a);
+        c.g[A3][0] = rider.off(R_OVERLAP_HINT).lw(c);
+        c.g[A0][0] = rider.off(R_OVERLAP_LIST).lw(c);
+        call_ptr(c, OVERLAP_LIST_FIND_CLOSEST_CONTACT, 0x0013_f580)?;
+        let depth = FpuF32(c.f[0]);
+        set_fpr(c, 20, depth);
+        set_fpr(c, 0, FpuF32::ZERO);
+        let missed = c_lt_s(c, depth, FpuF32::ZERO);
+        c.g[A0][0] = c.g[S3][0];
+        if missed {
+            return destroy_hull(c);
+        }
+
+        // Tell the hit object (vtable 0x150 of its owner).
+        c.cycles += 3;
+        let obj = Addr(frame.at(c, F_HIT_OBJECT)).lw(c);
+        c.g[A0][0] = obj;
+        if obj != 0 {
+            c.cycles += 3;
+            let owner = Addr(obj as u32).off(0xc).lw(c);
+            c.g[A2][0] = owner;
+            c.g[A1][0] = c.g[SP][0];
+            if owner != 0 {
+                c.cycles += 5;
+                let vt = Addr(owner as u32).off(0xc).lw(c);
+                c.g[V0][0] = vt;
+                let delta = Addr(vt as u32).off(0x150).lh(c);
+                let method = Addr(vt as u32).off(0x154).lw(c);
+                c.g[V1][0] = method;
+                c.g[A0][0] = sx((owner as u32).wrapping_add(delta as u32));
+                call_ptr(c, method as u32, 0x0013_f5c4)?;
+            }
+            c.cycles += 1;
+        }
+        let rider = Addr(r32(c, S2)).off(GS_RIDER).lw(c);
+        c.g[V1][0] = rider;
+        let rider = rider as u32;
+
+        // dot = forward . normal; head-on: give up.
+        c.cycles += 14;
+        c.lwc1(0, r32(c, GP).wrapping_sub(GP_HEAD_ON));
+        c.lqc2(3, rider.wrapping_add(R_FORWARD));
+        c.lqc2(5, frame.at(c, F_HIT_NORMAL));
+        vu_dot3(c, 5);
+        c.qmfc2(2, 4);
+        c.mtc1(2, 1);
+        c.c_lt_s(1, 0);
+        let head_on = c.fcc();
+        c.g[A0][0] = c.g[S3][0];
+        if head_on {
+            return destroy_hull(c);
+        }
+        c.cycles += 4;
+        c.mtc1(0, 21); // f21 = 0
+        let facing = c_lt_s(c, FpuF32(c.f[1]), FpuF32::ZERO);
+        if facing {
+            // normal = normalize(normal - forward * dot)
+            c.cycles += 26;
+            c.mfc1(2, 1);
+            vu_scale(c, 2, rider.wrapping_add(R_FORWARD));
+            vu_spill(c, frame, F_SPILL_D, &[F_SPILL_C]);
+            vu_sub(c, frame.at(c, F_HIT_NORMAL), frame.at(c, F_SPILL_C));
+            vu_spill(c, frame, F_SPILL_D, &[F_SPILL_B]);
+            c.lqc2(3, frame.at(c, F_SPILL_B));
+            vu_normalize3(c);
+            vu_spill(c, frame, F_SPILL_D, &[F_HIT_NORMAL, F_SPILL_A]);
+        }
+
+        // Rider_Translate(rider, normal * 1.1 * depth)
+        c.cycles += 47;
+        c.lwc1(0, r32(c, GP).wrapping_sub(GP_PUSH_OUT));
+        c.g[A1][0] = sx(frame.at(c, F_SPILL_A));
+        c.mfc1(3, 0);
+        vu_scale(c, 3, frame.at(c, F_HIT_NORMAL));
+        vu_spill(c, frame, F_SPILL_C, &[F_SPILL_B]);
+        c.mfc1(3, 20);
+        vu_scale(c, 3, frame.at(c, F_SPILL_B));
+        let t = frame.at(c, F_SPILL_C);
+        c.sqc2(5, t);
+        c.lq(2, t);
+        c.g[A0][0] = Addr(r32(c, S2)).off(GS_RIDER).lw(c);
+        let a = frame.at(c, F_SPILL_A);
+        c.sq(2, a);
+        call_ptr(c, RIDER_TRANSLATE, 0x0013_f6c0)?;
+
+        // rel = rider->vel - hit.velocity; into = -normal . rel
+        let rider = Addr(r32(c, S2)).off(GS_RIDER).lw(c);
+        c.g[V0][0] = rider;
+        let rider = rider as u32;
+        vu_sub(c, rider.wrapping_add(R_VEL), frame.at(c, F_HIT_VELOCITY));
+        let t = frame.at(c, F_SPILL_C);
+        c.sqc2(5, t);
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 0); // f0 = -1.0
+        c.lq(2, t);
+        let a = frame.at(c, F_SPILL_B);
+        c.sq(2, a);
+        c.mfc1(3, 0);
+        vu_scale(c, 3, frame.at(c, F_HIT_NORMAL));
+        vu_spill(c, frame, F_SPILL_D, &[F_SPILL_C]);
+        c.lqc2(3, frame.at(c, F_SPILL_C));
+        c.lqc2(5, frame.at(c, F_SPILL_B));
+        vu_dot3(c, 5);
+        c.qmfc2(3, 4);
+        c.mtc1(3, 20);
+        let into = FpuF32(c.f[20]);
+        let receding = c_lt_s(c, into, FpuF32(c.f[21]));
+        c.g[A0][0] = c.g[S3][0];
+        if receding {
+            return destroy_hull(c);
+        }
+
+        // dir = normalize(rel); push = max(into * 0.05, 27.78)
+        c.cycles += 18;
+        c.lwc1(0, r32(c, GP).wrapping_sub(GP_BOUNCE_SCALE));
+        c.lqc2(3, frame.at(c, F_SPILL_B));
+        vu_normalize3(c);
+        let t = frame.at(c, F_SPILL_D);
+        c.sqc2(5, t);
+        let min_push = Addr(r32(c, GP).wrapping_sub(GP_MIN_BOUNCE)).read_fpu(c);
+        set_fpr(c, 1, min_push);
+        let mut push = into * FpuF32(c.f[0]);
+        set_fpr(c, 0, push);
+        c.lq(2, t);
+        let small = c_lt_s(c, push, min_push);
+        let a = frame.at(c, F_SPILL_C);
+        c.sq(2, a);
+        if small {
+            c.cycles += 1;
+            push = min_push;
+            set_fpr(c, 0, push);
+        }
+
+        // rider->vel += normal * (into + push)
+        c.cycles += 38;
+        set_fpr(c, 0, into + push);
+        c.g[A1][0] = c.g[SP][0];
+        c.mfc1(3, 0);
+        vu_scale(c, 3, frame.at(c, F_HIT_NORMAL));
+        let t = frame.at(c, F_SPILL_E);
+        c.sqc2(5, t);
+        c.lq(2, t);
+        let rider = Addr(r32(c, S2)).off(GS_RIDER).lw(c);
+        c.g[V1][0] = rider;
+        let rider = rider as u32;
+        let a = frame.at(c, F_SPILL_D);
+        c.sq(2, a);
+        c.lqc2(3, rider.wrapping_add(R_VEL));
+        c.lqc2(4, frame.at(c, F_SPILL_D));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, rider.wrapping_add(R_VEL));
+        // Rider_DeflectAlongWall(rider, &hit); Rider_BuildWorldMatrix(rider)
+        c.g[A0][0] = Addr(r32(c, S2)).off(GS_RIDER).lw(c);
+        call_ptr(c, RIDER_DEFLECT_ALONG_WALL, 0x0013_f7d0)?;
+        c.g[A0][0] = Addr(r32(c, S2)).off(GS_RIDER).lw(c);
+        call_ptr(c, RIDER_BUILD_WORLD_MATRIX, 0x0013_f7d8)?;
+        // Rider_HandleImpact(rider, &{ hit.pos, dir, hit.normal, into },
+        // hit.material)
+        c.lq(7, frame.at(c, F_HIT));
+        c.g[A1][0] = sx(frame.at(c, F_IMPACT));
+        c.lq(2, frame.at(c, F_SPILL_C));
+        c.lq(3, frame.at(c, F_HIT_NORMAL));
+        c.g[A0][0] = Addr(r32(c, S2)).off(GS_RIDER).lw(c);
+        c.g[A2][0] = Addr(frame.at(c, F_HIT_MATERIAL)).lw(c);
+        let a = frame.at(c, F_IMPACT);
+        c.sq(7, a);
+        c.sq(2, a + 0x10);
+        c.sq(3, a + 0x20);
+        frame_swc1(c, frame, 20, F_IMPACT + 0x30);
+        call_ptr(c, RIDER_HANDLE_IMPACT, 0x0013_f804)?;
+        // SSXAudioSystem_PlayGroundWallHitSound(GetInstance(), rider)
+        call_ptr(c, SSX_AUDIO_SYSTEM_GET_INSTANCE, 0x0013_f80c)?;
+        c.g[A1][0] = Addr(r32(c, S2)).off(GS_RIDER).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, SSX_AUDIO_PLAY_GROUND_WALL_HIT_SOUND, 0x0013_f818)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 2;
+        call_ptr(c, COLL_HULL_DTOR, 0x0013_f824)
+    }
+
+    /// `swc1 f, off(sp)`.
+    fn frame_swc1(c: &mut Cpu, frame: Frame, f: usize, off: u32) {
+        let a = frame.at(c, off);
+        c.swc1(f, a);
+    }
+
+    /// `CollHull_dtor(&hull, 2)` (a0 already holds the hull).
+    fn destroy_hull(c: &mut Cpu) -> crate::call::Flow {
+        c.cycles += 4;
+        c.g[A1][0] = 2;
+        call_ptr(c, COLL_HULL_DTOR, 0x0013_f73c)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RiderGroundState_PostUpdate (0x13f178, handplantcontrol.cpp)
+
+pub(crate) const RIDER_LAUNCH_INTO_AIR: u32 = 0x0011_4298;
+
+pub(crate) const RIDER_START_WIPEOUT: u32 = 0x0010_eb30;
+
+pub(crate) const RIDER_CHECK_RESET_PATH: u32 = 0x0011_6120;
+
+pub(crate) const RIDER_UPDATE_BOUNDS: u32 = 0x0011_e150;
+
+pub(crate) const RIDER_HANDLE_WALL_COLLISION: u32 = 0x0010_5398;
+
+pub(crate) const RIDER_CHECK_RIDER_COLLISIONS: u32 = 0x0010_7888;
+
+pub(crate) const RIDER_GET_MAIN_STATE: u32 = 0x0011_fe98;
+
+pub(crate) const RIDER_SET_MAIN_STATE: u32 = 0x0011_fe78;
+
+pub(crate) const SSX_AUDIO_PLAY_TAKEOFF_SOUND: u32 = 0x0029_4170;
+
+pub(crate) const RIDER_GROUND_STATE_COLLIDE_WALLS: Callee = Callee {
+    addr: 0x0013_f488,
+    f: ee::s01::RiderGroundState_CollideWalls,
+};
+
+/// The ground state: "leaving the ground" flag.
+pub(crate) const GS_LEAVING: u32 = 0x0c;
+
+/// Rider fields.
+pub(crate) const R_POS: u32 = 0x110;
+
+pub(crate) const R_SURFACE: u32 = 0x438;
+
+pub(crate) const R_CONTACT_FLAGS: u32 = 0x2d4;
+
+pub(crate) const R_MAX_SPEED: u32 = 0x2e4;
+
+pub(crate) const R_SMOOTH_UP: u32 = 0x390;
+
+pub(crate) const R_SPEED_FRACTION: u32 = 0x75c;
+
+pub(crate) const R_ABS_VEL_Z: u32 = 0x754;
+
+pub(crate) const R_ABS_SPIN: u32 = 0x750;
+
+/// The surface type that wipes the rider out, and the surface table's
+/// entry size and "resets the path" word.
+pub(crate) const SURFACE_WIPEOUT: u64 = 0x12;
+
+pub(crate) const SURFACE_ENTRY: u64 = 0xb0;
+
+pub(crate) const SURFACE_RESETS: u32 = 0x44;
+
+/// gp-relative globals: the world, the hull's ground sphere mask, the audio
+/// system; `.lit4` 3333.3335 (the speed of a full speed fraction).
+pub(crate) const GP_WORLD: u32 = 0x848;
+
+pub(crate) const GP_HULL_GROUND_MASK: u32 = 0x1f94;
+
+pub(crate) const GP_AUDIO: u32 = 0x410;
+
+pub(crate) const GP_FULL_SPEED: u32 = 0x6fac;
+
+/// `void RiderGroundState_PostUpdate(RiderGroundState* self)` (0x13f178):
+/// after the ground physics step. A rider leaving the ground is launched
+/// (`Rider_LaunchIntoAir(-1)`); otherwise surface type 0x12 starts a
+/// wipeout (position, normalised velocity, forward), and a surface that
+/// resets the path (or contact flag 2) checks the reset path. Then the
+/// bounds are updated and the walls collided with the hull's ground spheres
+/// masked in; wall and rider collisions are handled; a rider leaving the
+/// ground while in main state 0 gets main state 1 and the take-off sound. Finally the smoothed up vector follows forward (normalise(up +
+/// forward / 2)), the velocity is clamped to the maximal speed, and the
+/// speed fraction (|v| / 3333.33, 0..1) and the absolute z velocity and spin
+/// are stored.
+pub fn rider_ground_state_post_update(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use ssx3_ee_rt::vu0::{Src, X};
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x70);
+        frame.save_ra(c, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        let this = Addr(r32(c, S0));
+        let rider = |c: &mut Cpu| this.off(GS_RIDER).lw(c);
+
+        c.g[V0][0] = this.off(GS_LEAVING).lw(c);
+        if c.g[V0][0] != 0 {
+            // Rider_LaunchIntoAir(rider, -1.0)
+            c.cycles += 6;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(AT, 12);
+            c.g[A0][0] = rider(c);
+            call_ptr(c, RIDER_LAUNCH_INTO_AIR, 0x0013_f1a4)?;
+        } else {
+            c.g[A3][0] = rider(c);
+            let r = r32(c, A3);
+            // entry = &world->surfaces->table[rider->surface]
+            c.cycles += 9;
+            c.g[V1][0] = SURFACE_ENTRY;
+            let world = Addr(r32(c, GP).wrapping_sub(GP_WORLD)).lw(c);
+            c.g[V0][0] = world;
+            c.g[A2][0] = SURFACE_WIPEOUT;
+            c.g[A1][0] = Addr(r).off(R_SURFACE).lw(c);
+            c.g[A0][0] = Addr(world as u32).off(0x84).lw(c);
+            c.mult(0, V1, A1, V1);
+            c.g[V0][0] = Addr(r32(c, A0)).off(0x44).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            if c.g[A1][0] == c.g[A2][0] {
+                // Rider_StartWipeout(rider, 0x168, 0, surface, &info)
+                c.cycles += 27;
+                c.lq(2, r.wrapping_add(R_POS));
+                c.g[A1][0] = 0x168;
+                c.g[A2][0] = 0;
+                c.g[T0][0] = c.g[SP][0];
+                let a = frame.at(c, 0);
+                c.sq(2, a);
+                c.lqc2(3, r.wrapping_add(R_VEL));
+                vu_normalize3(c);
+                vu_spill(c, frame, 0x50, &[0x10, 0x40]);
+                let r = rider(c);
+                c.g[V1][0] = r;
+                c.g[A0][0] = r;
+                c.lq(2, (r as u32).wrapping_add(R_FORWARD));
+                Addr(frame.at(c, 0x30)).sw(c, 0);
+                let a = frame.at(c, 0x20);
+                c.sq(2, a);
+                c.g[A3][0] = Addr(r as u32).off(R_SURFACE).lw(c);
+                call_ptr(c, RIDER_START_WIPEOUT, 0x0013_f234)?;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, V0)).off(SURFACE_RESETS).lw(c);
+                c.g[A0][0] = c.g[A3][0];
+                let mut reset = c.g[V0][0] != 0;
+                if !reset {
+                    c.cycles += 4;
+                    c.g[V0][0] = Addr(r).off(R_CONTACT_FLAGS).lh(c) & 2;
+                    reset = c.g[V0][0] != 0;
+                }
+                if reset {
+                    // Rider_CheckResetPath(rider, 0, 1)
+                    c.cycles += 4;
+                    c.g[A1][0] = 0;
+                    c.g[A2][0] = 1;
+                    call_ptr(c, RIDER_CHECK_RESET_PATH, 0x0013_f264)?;
+                }
+            }
+        }
+        c.g[A0][0] = rider(c);
+
+        // Rider_UpdateBounds(rider, 0); the walls with the ground spheres.
+        c.cycles += 21;
+        c.g[A1][0] = 0;
+        call_ptr(c, RIDER_UPDATE_BOUNDS, 0x0013_f270)?;
+        c.g[A1][0] = rider(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V1][0] = Addr(r32(c, GP).wrapping_sub(GP_HULL_GROUND_MASK)).lw(c);
+        c.g[V0][0] = Addr(r32(c, A1)).off(R_HULL).lw(c);
+        let mask = c.g[V1][0];
+        Addr(r32(c, V0)).off(0x28).sw(c, mask);
+        RIDER_GROUND_STATE_COLLIDE_WALLS.call(c, 0x0013_f288)?;
+        c.g[A0][0] = rider(c);
+        c.g[V0][0] = u64::MAX;
+        c.g[A1][0] = 0;
+        c.g[V1][0] = Addr(r32(c, A0)).off(R_HULL).lw(c);
+        let all = c.g[V0][0];
+        Addr(r32(c, V1)).off(0x28).sw(c, all);
+        // Rider_HandleWallCollision(rider, 0); Rider_CheckRiderCollisions(rider)
+        c.g[A0][0] = rider(c);
+        call_ptr(c, RIDER_HANDLE_WALL_COLLISION, 0x0013_f2a8)?;
+        c.g[A0][0] = rider(c);
+        call_ptr(c, RIDER_CHECK_RIDER_COLLISIONS, 0x0013_f2b0)?;
+        c.g[V0][0] = this.off(GS_LEAVING).lw(c);
+        if c.g[V0][0] != 0 {
+            // Main state 0: set 1 and play the take-off sound.
+            c.cycles += 4;
+            c.g[A0][0] = rider(c);
+            call_ptr(c, RIDER_GET_MAIN_STATE, 0x0013_f2c4)?;
+            let state = c.g[V0][0];
+            c.g[A0][0] = rider(c);
+            if state == 0 {
+                c.cycles += 6;
+                c.g[A1][0] = 1;
+                call_ptr(c, RIDER_SET_MAIN_STATE, 0x0013_f2d4)?;
+                c.g[A0][0] = Addr(r32(c, GP).wrapping_add(GP_AUDIO)).lw(c);
+                c.g[A1][0] = rider(c);
+                call_ptr(c, SSX_AUDIO_PLAY_TAKEOFF_SOUND, 0x0013_f2e0)?;
+            }
+        }
+        c.g[A0][0] = rider(c);
+
+        // up = normalize(up + forward * 0.5)
+        c.cycles += 44;
+        let r = r32(c, A0);
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 0);
+        c.mfc1(V1, 0);
+        vu_scale(c, V1, r.wrapping_add(R_FORWARD));
+        vu_spill(c, frame, 0x30, &[0x20]);
+        c.g[V1][0] = rider(c);
+        c.lqc2(3, r32(c, V1).wrapping_add(R_SMOOTH_UP));
+        c.lqc2(4, frame.at(c, 0x20));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        vu_spill(c, frame, 0x30, &[0x10]);
+        c.lqc2(3, frame.at(c, 0x10));
+        vu_normalize3(c);
+        vu_spill(c, frame, 0x30, &[0]);
+        c.sq(2, r.wrapping_add(R_SMOOTH_UP));
+        // |v|, clamped to the maximal speed.
+        let r = rider(c);
+        c.g[V1][0] = r;
+        let r = r as u32;
+        c.lqc2(3, r.wrapping_add(R_VEL));
+        vu_dot3(c, 3);
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(V0, 22);
+        c.mtc1(V0, 1); // f1 = |v|
+        c.lwc1(0, r.wrapping_add(R_MAX_SPEED));
+        c.c_lt_s(0, 1);
+        if c.fcc() {
+            c.cycles += 6;
+            c.div_s(0, 0, 1);
+            c.mfc1(V0, 0);
+            c.lqc2(4, r.wrapping_add(R_VEL));
+            c.qmtc2(V0, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, r.wrapping_add(R_VEL));
+        }
+        // fraction = 0 below 0, |v| / full below full, else 1.
+        c.cycles += 6;
+        c.mtc1(0, 0);
+        c.lwc1(2, r32(c, GP).wrapping_sub(GP_FULL_SPEED));
+        c.c_le_s(0, 1);
+        c.g[V0][0] = rider(c);
+        if c.fcc() {
+            c.cycles += 5;
+            c.c_le_s(1, 2);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 0);
+            if c.fcc() {
+                c.cycles += 1;
+                c.div_s(0, 1, 2);
+            }
+        }
+        c.cycles += 13;
+        frame.restore_ra(c, 0x60);
+        c.swc1(0, r32(c, V0).wrapping_add(R_SPEED_FRACTION));
+        let r = rider(c);
+        c.g[V1][0] = r;
+        c.lwc1(0, (r as u32).wrapping_add(0x1f0));
+        c.abs_s(0, 0);
+        c.swc1(0, (r as u32).wrapping_add(R_ABS_VEL_Z));
+        let r = rider(c);
+        c.g[V0][0] = r;
+        frame.restore(c, S0, 0x70);
+        c.lwc1(0, (r as u32).wrapping_add(0x214));
+        c.abs_s(0, 0);
+        c.swc1(0, (r as u32).wrapping_add(R_ABS_SPIN));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float RiderGroundState_ComputeBoostAccel(RiderGroundState* this,
+/// const Tuning* p)` (0x13c948): the forward acceleration of a riding
+/// rider this tick (f0); 0 when `+0x214` is non-zero (a brake / air
+/// state) or the rider has finished.
+///
+/// - A ground-material scale (1, or a `.lit4` factor on materials >= 17).
+/// - The slope factor: 1 when the rider is flagged (`+0x2d4` bit 4), else
+///   from the heading's angle (`Math_Atan` of the `+0x1b0` direction,
+///   folded into a half turn) relative to the fall line (`+0x4cc`), faded
+///   out past a `.lit4` angle; on materials >= 17 the factor is ignored
+///   when negative.
+/// - Speed-dependent drag (`+0x2e8`, `+0x2fc`, `+0x1f0`, `+0x3a8`) and,
+///   while the speed (VU0 length of `+0x1e0`) is under the boost cap, the
+///   character's acceleration attribute (`BECharInt_GetAttrib1Factor`), a
+///   boost-pose bonus (layer 2 anim id 0x16) and the carve factor on
+///   materials 11..13 (`+0x378`).
+/// - Result: `slope * (p.accel * accel * material + rider[0x220] * k)`.
+#[allow(unused_labels)]
+pub fn rider_ground_state_compute_boost_accel(c: &mut Cpu) {
+    use boost_accel::*;
+    guest(c, |c| {
+        let frame = Frame::open(c, 0xa0);
+        'b_13c9a0: {
+            c.cycles += 21;
+            frame.save(c, S0, 0x50);
+            frame.save(c, S1, 0x40);
+            frame.save(c, S2, 0x30);
+            c.g[S1][0] = c.g[A0][0];
+            frame.save_fpr(c, 26, 0x90);
+            frame.save_ra(c, 0x20);
+            frame.save_fpr(c, 25, 0x88);
+            frame.save_fpr(c, 24, 0x80);
+            frame.save_fpr(c, 23, 0x78);
+            frame.save_fpr(c, 22, 0x70);
+            frame.save_fpr(c, 21, 0x68);
+            frame.save_fpr(c, 20, 0x60);
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 26);
+            c.g[V1][0] = c.lw(at(c, S1, RIDER));
+            c.g[V0][0] = c.lw(at(c, V1, GROUND_MATERIAL));
+            c.g[S0][0] = ((c.g[V0][0] as i64) < 17i64) as u64;
+            c.g[S0][0] = c.g[S0][0] ^ 0x1;
+            let t = c.g[S0][0] == 0u64;
+            c.g[S2][0] = c.g[A1][0];
+            if t {
+                break 'b_13c9a0;
+            } else {
+                c.cycles += 1;
+                c.lwc1(26, gp(c, -0x70e4));
+                break 'b_13c9a0;
+            }
+        }
+        'b_13ccb8: {
+            c.cycles += 6;
+            c.lwc1(0, at(c, V1, 0x214));
+            c.mtc1(0, 23);
+            c.c_eq_s(0, 23);
+            let t = !c.fcc();
+            c.mov_s(0, 23);
+            if t {
+                break 'b_13ccb8;
+            } else {
+                c.cycles += 5;
+                c.lwc1(0, at(c, V1, FINISH_TIME));
+                c.c_le_s(23, 0);
+                let t = c.fcc();
+                c.mov_s(0, 23);
+                if t {
+                    break 'b_13ccb8;
+                } else {
+                    'b_13caf4: {
+                        'b_13c9f0: {
+                            c.cycles += 5;
+                            c.g[V0][0] = c.lh(at(c, V1, 0x2d4));
+                            c.mov_s(22, 23);
+                            c.g[V0][0] = c.g[V0][0] & 0x10;
+                            let t = c.g[V0][0] == 0u64;
+                            c.mov_s(24, 22);
+                            if t {
+                                break 'b_13c9f0;
+                            } else {
+                                c.cycles += 4;
+                                c.g[AT][0] = 0x3f800000;
+                                c.mtc1(1, 24);
+
+                                break 'b_13caf4;
+                            }
+                        }
+                        'b_13ca84: {
+                            'b_13ca80: {
+                                'b_13ca44: {
+                                    c.cycles += 10;
+                                    c.lq(2, at(c, V1, 0x1b0));
+                                    c.lwc1(25, gp(c, -0x70e0));
+                                    c.sq(2, frame.at(c, 0));
+                                    c.lq(2, at(c, V1, 0x1b0));
+                                    c.lwc1(21, frame.at(c, 0x4));
+                                    c.sq(2, frame.at(c, 0x10));
+                                    c.lwc1(20, frame.at(c, 0x10));
+                                    c.c_eq_s(20, 22);
+                                    let t = !c.fcc();
+
+                                    if t {
+                                        break 'b_13ca44;
+                                    } else {
+                                        c.cycles += 4;
+                                        c.c_eq_s(21, 22);
+                                        let t = c.fcc();
+                                        c.mov_s(12, 21);
+                                        if t {
+                                            break 'b_13ca80;
+                                        } else {
+                                            c.cycles += 4;
+                                            c.c_le_s(22, 21);
+                                            c.lwc1(12, gp(c, -0x70dc));
+                                            let t = !c.fcc();
+                                            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                            if t {
+                                                break 'b_13ca84;
+                                            } else {
+                                                c.cycles += 3;
+                                                c.lwc1(12, gp(c, -0x70d8));
+
+                                                break 'b_13ca84;
+                                            }
+                                        }
+                                    }
+                                }
+                                c.cycles += 7;
+                                c.div_s(12, 21, 20);
+                                call_ptr(c, MATH_ATAN, 0x0013ca50)?;
+                                c.c_lt_s(20, 22);
+                                let t = !c.fcc();
+                                c.mov_s(12, 0);
+                                if t {
+                                    break 'b_13ca80;
+                                } else {
+                                    'b_13ca78: {
+                                        c.cycles += 3;
+                                        c.c_lt_s(22, 21);
+                                        let t = !c.fcc();
+
+                                        if t {
+                                            break 'b_13ca78;
+                                        } else {
+                                            c.cycles += 3;
+                                            c.lwc1(0, gp(c, -0x70d4));
+                                            c.add_s(12, 12, 0);
+                                            break 'b_13ca80;
+                                        }
+                                    }
+                                    c.cycles += 2;
+                                    c.lwc1(0, gp(c, -0x70d0));
+                                    c.sub_s(12, 12, 0);
+                                    break 'b_13ca80;
+                                }
+                            }
+                            c.cycles += 1;
+                            c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                            break 'b_13ca84;
+                        }
+                        'b_13cac4: {
+                            c.cycles += 13;
+                            c.lwc1(0, gp(c, -0x70cc));
+                            c.lwc1(1, at(c, V0, 0x4cc));
+                            c.g[V1][0] = c.g[V0][0];
+                            c.g[AT][0] = 0x3f000000;
+                            c.mtc1(1, 2);
+                            c.sub_s(12, 12, 1);
+                            c.mul_s(0, 12, 0);
+                            c.add_s(0, 0, 2);
+                            c.cvt_w_s(1, 0);
+                            c.cvt_s_w(1, 1);
+                            c.c_lt_s(0, 1);
+                            let t = !c.fcc();
+
+                            if t {
+                                break 'b_13cac4;
+                            } else {
+                                c.cycles += 3;
+                                c.g[AT][0] = 0x3f800000;
+                                c.mtc1(1, 0);
+                                c.sub_s(1, 1, 0);
+                                break 'b_13cac4;
+                            }
+                        }
+                        c.cycles += 7;
+                        c.lwc1(0, gp(c, -0x70c8));
+                        c.mul_s(0, 1, 0);
+                        c.sub_s(0, 12, 0);
+                        c.abs_s(12, 0);
+                        c.c_lt_s(12, 25);
+                        let t = !c.fcc();
+
+                        if t {
+                            break 'b_13caf4;
+                        } else {
+                            c.cycles += 5;
+                            c.g[AT][0] = 0x3f800000;
+                            c.mtc1(1, 1);
+                            c.div_s(0, 1, 25);
+                            c.mul_s(0, 12, 0);
+                            c.sub_s(24, 1, 0);
+                            break 'b_13caf4;
+                        }
+                    }
+                    'b_13cb1c: {
+                        c.cycles += 7;
+                        c.mtc1(0, 0);
+                        c.g[AT][0] = 0x3f800000;
+                        c.mtc1(1, 25);
+                        c.c_le_s(24, 0);
+                        if !c.fcc() {
+                            c.lwc1(0, at(c, V1, 0x2e8));
+                            break 'b_13cb1c;
+                        } else {
+                            'b_13cb18: {
+                                c.cycles += 2;
+                                if c.g[S0][0] != 0u64 {
+                                    c.mov_s(25, 0);
+                                    break 'b_13cb18;
+                                } else {
+                                    break 'b_13cb18;
+                                }
+                            }
+                            c.cycles += 1;
+                            c.lwc1(0, at(c, V1, 0x2e8));
+                            break 'b_13cb1c;
+                        }
+                    }
+                    'b_13cb48: {
+                        c.cycles += 7;
+                        c.mtc1(0, 4);
+                        c.lwc1(2, at(c, V1, 0x2fc));
+                        c.lwc1(1, gp(c, -0x70c4));
+                        c.c_lt_s(4, 0);
+                        let t = !c.fcc();
+                        c.mul_s(2, 2, 1);
+                        if t {
+                            break 'b_13cb48;
+                        } else {
+                            c.cycles += 4;
+                            c.g[AT][0] = 0x40b00000;
+                            c.mtc1(1, 0);
+                            c.mul_s(0, 24, 0);
+                            c.max_s(2, 0, 2);
+                            break 'b_13cb48;
+                        }
+                    }
+                    'b_13cbb4: {
+                        c.cycles += 4;
+                        c.c_lt_s(4, 2);
+                        if !c.fcc() {
+                            c.lwc1(0, at(c, S2, PARAM_ACCEL));
+                            break 'b_13cbb4;
+                        } else {
+                            c.cycles += 8;
+                            c.lwc1(0, at(c, V1, 0x1f0));
+                            c.lwc1(1, gp(c, -0x70c0));
+                            c.abs_s(0, 0);
+                            c.sub_s(0, 1, 0);
+                            c.c_lt_s(4, 0);
+                            if !c.fcc() {
+                                c.lwc1(0, at(c, S2, PARAM_ACCEL));
+                                break 'b_13cbb4;
+                            } else {
+                                'b_13cba4: {
+                                    'b_13cba0: {
+                                        c.cycles += 5;
+                                        c.lwc1(3, at(c, V1, 0x3a8));
+                                        c.c_le_s(4, 3);
+                                        let t = !c.fcc();
+                                        c.mul_s(2, 2, 0);
+                                        if t {
+                                            break 'b_13cba0;
+                                        } else {
+                                            c.cycles += 5;
+                                            c.lwc1(0, gp(c, -0x70bc));
+                                            c.lwc1(1, gp(c, -0x70b8));
+                                            c.mul_s(0, 3, 0);
+                                            c.add_s(0, 0, 1);
+                                            break 'b_13cba4;
+                                        }
+                                    }
+                                    c.cycles += 1;
+                                    c.lwc1(0, gp(c, -0x70b4));
+                                    break 'b_13cba4;
+                                }
+                                c.cycles += 4;
+                                c.mul_s(0, 2, 0);
+                                c.add_s(0, 23, 0);
+                                c.mov_s(22, 0);
+                                c.lwc1(0, at(c, S2, PARAM_ACCEL));
+                                break 'b_13cbb4;
+                            }
+                        }
+                    }
+                    'b_13cc04: {
+                        c.cycles += 19;
+                        c.lqc2(3, at(c, V1, 0x1e0));
+                        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+                        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+                        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+                        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+                        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+                        c.vu0().sqrt(4, 0);
+                        c.vu0().waitq();
+                        c.cfc2(2, 22);
+                        c.mtc1(2, 3);
+                        c.lwc1(2, gp(c, -0x70b0));
+                        c.mul_s(0, 0, 26);
+                        c.lwc1(1, gp(c, -0x70ac));
+                        c.mul_s(0, 0, 2);
+                        c.sub_s(0, 0, 3);
+                        c.c_lt_s(0, 1);
+                        let t = !c.fcc();
+                        c.mov_s(20, 1);
+                        if t {
+                            break 'b_13cc04;
+                        } else {
+                            c.cycles += 1;
+                            c.mov_s(20, 0);
+                            break 'b_13cc04;
+                        }
+                    }
+                    'b_13cc9c: {
+                        c.cycles += 5;
+                        c.mtc1(0, 21);
+                        c.c_lt_s(21, 20);
+                        if !c.fcc() {
+                            c.lwc1(0, at(c, S2, PARAM_BOOST));
+                            break 'b_13cc9c;
+                        } else {
+                            'b_13cc60: {
+                                c.cycles += 17;
+                                BE_LIBRARY_GET_INSTANCE.call(c, 0x0013cc20)?;
+                                c.g[A0][0] = c.g[V0][0];
+                                c.g[A1][0] = 0x3;
+                                BE_LIBRARY_GET_INTERFACE.call(c, 0x0013cc2c)?;
+                                c.g[V1][0] = c.lw(at(c, S1, RIDER));
+                                c.g[A0][0] = c.g[V0][0];
+                                c.g[A1][0] = c.lw(at(c, V1, AI_INDEX));
+                                c.g[A2][0] = c.lw(at(c, V1, CHARACTER_SLOT));
+                                BE_CHAR_INT_GET_ATTRIB1_FACTOR.call(c, 0x0013cc40)?;
+                                c.g[V0][0] = c.lw(at(c, S1, RIDER));
+                                c.g[A1][0] = 0x2;
+                                c.g[A0][0] = c.lw(at(c, V0, ANIM_CTRL));
+                                call_ptr(c, ANIM_CONTROLLER_GET_LAYER_ANIM_ID, 0x0013cc50)?;
+                                c.g[V1][0] = 0x16;
+                                let t = c.g[V0][0] != c.g[V1][0];
+                                c.mov_s(1, 21);
+                                if t {
+                                    break 'b_13cc60;
+                                } else {
+                                    c.cycles += 1;
+                                    c.lwc1(1, gp(c, -0x70a8));
+                                    break 'b_13cc60;
+                                }
+                            }
+                            'b_13cc84: {
+                                c.cycles += 6;
+                                c.g[V1][0] = c.lw(at(c, S1, RIDER));
+                                c.g[V0][0] = c.lw(at(c, V1, GROUND_MATERIAL));
+                                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0xb));
+                                c.g[V0][0] = (c.g[V0][0] < 0x3u64) as u64;
+                                let t = c.g[V0][0] == 0u64;
+
+                                if t {
+                                    break 'b_13cc84;
+                                } else {
+                                    c.cycles += 3;
+                                    c.lwc1(0, at(c, V1, 0x378));
+                                    c.abs_s(0, 0);
+                                    c.mul_s(20, 20, 0);
+                                    break 'b_13cc84;
+                                }
+                            }
+                            c.cycles += 6;
+                            c.lwc1(0, gp(c, -0x70a4));
+                            c.mul_s(0, 1, 0);
+                            c.max_s(0, 24, 0);
+                            c.mul_s(0, 0, 20);
+                            c.add_s(22, 22, 0);
+                            c.lwc1(0, at(c, S2, PARAM_BOOST));
+                            break 'b_13cc9c;
+                        }
+                    }
+                    c.cycles += 7;
+                    c.lwc1(2, at(c, V1, 0x220));
+                    c.mul_s(0, 0, 22);
+                    c.lwc1(1, gp(c, -0x70a0));
+                    c.mul_s(2, 2, 1);
+                    c.mul_s(0, 0, 26);
+                    c.add_s(0, 0, 2);
+                    c.mul_s(0, 25, 0);
+                    break 'b_13ccb8;
+                }
+            }
+        }
+        c.cycles += 13;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 26, 0x90);
+        frame.restore_fpr(c, 25, 0x88);
+        frame.restore_fpr(c, 24, 0x80);
+        frame.restore_fpr(c, 23, 0x78);
+        frame.restore_fpr(c, 22, 0x70);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// --------------------------------------------- RiderGroundState_ComputeDrag
+
+/// `float RiderGroundState_ComputeDrag(RiderGroundState* this, DragCfg* cfg,
+/// float speed /*f12*/)` (0x13ccf0): the ground state's along-track drag.
+///
+/// - Three character factors from the behaviour library (interface 3:
+///   attribute factors 0, 1 and 3 of the rider's player/value): `k1 = 1 /
+///   (f1 * a + 1)`, `k3 = f3 * b + 1` (`.lit4` gains).
+/// - The drag curve: `|speed| * k` looked up in the four points of `cfg`
+///   (`+0x90..+0xac`: x/y pairs, linear between them, clamped at the ends),
+///   blended toward `k1` by `|speed| / max`.
+/// - A ramp on the rider's `+0x378` (0..1 between two thresholds) scales a
+///   turn-dependent lift (`|turn|^2 * k3`) and the turn drag.
+/// - Surfaces 2, 3 and 13 scale by `0.5 - depth / this->depth`; climbing
+///   (`+0x1e8 > +0x3d8`), a stance mismatch without boost, and climbing
+///   forward on surface 13 scale by `.lit4` factors.
+/// - Result in f0: `((-speed * surface) * (curve + lift) * climb * stance -
+///   turnDrag) * f5`.
+///
+/// The FPU sequence is the original's, register for register; the blocks
+/// follow its labels.
+pub fn rider_ground_state_compute_drag(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame::open(c, 0x50);
+        'b_13ce64: {
+            'b_13ce54: {
+                'b_13ce50: {
+                    'b_13ce2c: {
+                        c.cycles += 60;
+                        frame.save(c, S0, 0x20);
+                        frame.save(c, S1, 0x10);
+                        c.g[S0][0] = c.g[A1][0];
+                        frame.save_fpr(c, 23, 0x48);
+                        c.g[S1][0] = c.g[A0][0];
+                        frame.save_fpr(c, 22, 0x40);
+                        frame.save_fpr(c, 21, 0x38);
+                        frame.save_fpr(c, 20, 0x30);
+                        c.mov_s(21, 12);
+                        frame.save_ra(c, 0);
+                        c.g[AT][0] = 0x3f800000;
+                        c.mtc1(1, 22);
+                        c.g[V0][0] = c.lw(at(c, S1, 0x18));
+                        c.lwc1(0, at(c, V0, 0x214));
+                        c.abs_s(20, 0);
+                        call_ptr(c, 0x0014dc80, 0x0013cd38)?; // BELibrary_GetInstance
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0x3;
+                        call_ptr(c, 0x0014dd58, 0x0013cd44)?; // BELibrary_GetInterface
+                        c.g[V1][0] = c.lw(at(c, S1, 0x18));
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A2][0] = c.lw(at(c, V1, 0xb34));
+                        c.g[A1][0] = c.lw(at(c, V1, 0x86c));
+                        call_ptr(c, 0x001494c0, 0x0013cd58)?; // BECharInt_GetAttrib0Factor
+                        call_ptr(c, 0x0014dc80, 0x0013cd60)?; // BELibrary_GetInstance
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0x3;
+                        call_ptr(c, 0x0014dd58, 0x0013cd6c)?; // BELibrary_GetInterface
+                        c.g[V1][0] = c.lw(at(c, S1, 0x18));
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A2][0] = c.lw(at(c, V1, 0xb34));
+                        c.g[A1][0] = c.lw(at(c, V1, 0x86c));
+                        call_ptr(c, 0x001493d8, 0x0013cd80)?; // BECharInt_GetAttrib1Factor
+                        c.lwc1(1, gpo(c, -0x709c));
+                        c.mul_s(0, 0, 1);
+                        c.add_s(0, 0, 22);
+                        c.div_s(23, 22, 0);
+                        call_ptr(c, 0x0014dc80, 0x0013cd98)?; // BELibrary_GetInstance
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A1][0] = 0x3;
+                        call_ptr(c, 0x0014dd58, 0x0013cda4)?; // BELibrary_GetInterface
+                        c.g[V1][0] = c.lw(at(c, S1, 0x18));
+                        c.g[A0][0] = c.g[V0][0];
+                        c.g[A2][0] = c.lw(at(c, V1, 0xb34));
+                        c.g[A1][0] = c.lw(at(c, V1, 0x86c));
+                        call_ptr(c, 0x00148d80, 0x0013cdb8)?; // BECharInt_GetAttrib3Factor
+                        c.lwc1(1, gpo(c, -0x7098));
+                        c.abs_s(3, 21);
+                        c.lwc1(2, gpo(c, -0x7094));
+                        c.mul_s(3, 3, 1);
+                        c.lwc1(4, at(c, S0, 0x98));
+                        c.mul_s(0, 0, 2);
+                        c.c_lt_s(4, 3);
+                        let t = !c.fcc();
+                        c.add_s(9, 0, 22);
+                        if t {
+                            break 'b_13ce2c;
+                        } else {
+                            'b_13ce1c: {
+                                c.cycles += 5;
+                                c.lwc1(1, at(c, S0, 0xa0));
+                                c.c_lt_s(1, 3);
+                                if !c.fcc() {
+                                    c.lwc1(2, at(c, S0, 0x9c));
+                                    break 'b_13ce1c;
+                                } else {
+                                    'b_13ce10: {
+                                        c.cycles += 5;
+                                        c.lwc1(4, at(c, S0, 0xa8));
+                                        c.c_lt_s(4, 3);
+                                        if !c.fcc() {
+                                            c.lwc1(2, at(c, S0, 0xa4));
+                                            break 'b_13ce10;
+                                        } else {
+                                            c.cycles += 2;
+                                            c.lwc1(3, at(c, S0, 0xac));
+                                            break 'b_13ce64;
+                                        }
+                                    }
+                                    c.cycles += 3;
+                                    c.sub_s(3, 3, 1);
+                                    c.lwc1(0, at(c, S0, 0xac));
+                                    break 'b_13ce50;
+                                }
+                            }
+                            c.cycles += 4;
+                            c.sub_s(3, 3, 4);
+                            c.lwc1(0, at(c, S0, 0xa4));
+                            c.sub_s(1, 1, 4);
+                            break 'b_13ce54;
+                        }
+                    }
+                    'b_13ce48: {
+                        c.cycles += 5;
+                        c.lwc1(1, at(c, S0, 0x90));
+                        c.c_lt_s(3, 1);
+                        if !c.fcc() {
+                            c.lwc1(2, at(c, S0, 0x94));
+                            break 'b_13ce48;
+                        } else {
+                            c.cycles += 2;
+                            c.lwc1(3, at(c, S0, 0x94));
+                            break 'b_13ce64;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.sub_s(3, 3, 1);
+                    c.lwc1(0, at(c, S0, 0x9c));
+                    break 'b_13ce50;
+                }
+                c.cycles += 1;
+                c.sub_s(1, 4, 1);
+                break 'b_13ce54;
+            }
+            c.cycles += 4;
+            c.sub_s(0, 0, 2);
+            c.mul_s(0, 0, 3);
+            c.div_s(0, 0, 1);
+            c.add_s(3, 2, 0);
+            break 'b_13ce64;
+        }
+        'b_13ce90: {
+            c.cycles += 10;
+            c.lwc1(1, gpo(c, -0x7090));
+            c.abs_s(0, 21);
+            c.mtc1(0, 6);
+            c.div_s(0, 0, 1);
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 5);
+            c.c_le_s(6, 0);
+            let t = !c.fcc();
+            c.mov_s(1, 6);
+            if t {
+                break 'b_13ce90;
+            } else {
+                c.cycles += 1;
+                c.min_s(1, 0, 5);
+                break 'b_13ce90;
+            }
+        }
+        'b_13cee8: {
+            'b_13cee4: {
+                c.cycles += 12;
+                c.sub_s(0, 5, 1);
+                c.g[V0][0] = c.lw(at(c, S1, 0x18));
+                c.mul_s(1, 22, 1);
+                c.lwc1(4, gpo(c, -0x708c));
+                c.lwc1(2, at(c, V0, 0x378));
+                c.g[A0][0] = c.g[V0][0];
+                c.mul_s(0, 23, 0);
+                c.c_le_s(4, 2);
+                c.add_s(0, 0, 1);
+                c.mul_s(0, 22, 0);
+                let t = !c.fcc();
+                c.mul_s(3, 3, 0);
+                if t {
+                    break 'b_13cee4;
+                } else {
+                    c.cycles += 5;
+                    c.lwc1(0, gpo(c, -0x7088));
+                    c.c_le_s(2, 0);
+                    if !c.fcc() {
+                        c.mov_s(4, 5);
+                        break 'b_13cee8;
+                    } else {
+                        c.cycles += 4;
+                        c.sub_s(0, 2, 4);
+                        c.div_s(4, 0, 4);
+                        break 'b_13cee8;
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.mov_s(4, 6);
+            break 'b_13cee8;
+        }
+        'b_13cf48: {
+            'b_13cf2c: {
+                c.cycles += 14;
+                c.lwc1(0, gpo(c, -0x7084));
+                c.lwc1(1, gpo(c, -0x7080));
+                c.mul_s(0, 20, 0);
+                c.g[V1][0] = c.lw(at(c, A0, 0x438));
+                c.mul_s(1, 20, 1);
+                c.g[AT][0] = 0x3f800000;
+                c.mtc1(1, 8);
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(0x2));
+                c.mul_s(0, 4, 0);
+                c.g[V0][0] = (c.g[V0][0] < 0x2u64) as u64;
+                c.mul_s(7, 4, 1);
+                c.mul_s(0, 0, 20);
+                let t = c.g[V0][0] != 0u64;
+                c.mul_s(6, 0, 9);
+                if t {
+                    break 'b_13cf2c;
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0xd;
+                    if c.g[V1][0] != c.g[V0][0] {
+                        c.lwc1(0, at(c, A0, 0x1e8));
+                        break 'b_13cf48;
+                    } else {
+                        break 'b_13cf2c;
+                    }
+                }
+            }
+            c.cycles += 7;
+            c.lwc1(0, at(c, S1, 0x8));
+            c.lwc1(1, at(c, A0, 0x454));
+            c.g[AT][0] = 0x3f000000;
+            c.mtc1(1, 2);
+            c.div_s(1, 1, 0);
+            c.sub_s(8, 2, 1);
+            c.lwc1(0, at(c, A0, 0x1e8));
+            break 'b_13cf48;
+        }
+        'b_13cf70: {
+            c.cycles += 9;
+            c.lwc1(1, at(c, A0, 0x3d8));
+            c.mtc1(0, 4);
+            c.sub_s(0, 0, 1);
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 12);
+            c.c_lt_s(4, 0);
+            let t = !c.fcc();
+            c.g[V1][0] = c.lw(at(c, A0, 0x320));
+            if t {
+                break 'b_13cf70;
+            } else {
+                c.cycles += 1;
+                c.lwc1(12, gpo(c, -0x707c));
+                break 'b_13cf70;
+            }
+        }
+        'b_13cf98: {
+            c.cycles += 5;
+            c.g[V0][0] = c.lw(at(c, A0, 0x324));
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 2);
+            let t = c.g[V1][0] == c.g[V0][0];
+            if t {
+                break 'b_13cf98;
+            } else {
+                c.cycles += 4;
+                c.lwc1(0, at(c, A0, 0x2fc));
+                c.c_eq_s(0, 4);
+                let t = !c.fcc();
+                if t {
+                    break 'b_13cf98;
+                } else {
+                    c.cycles += 1;
+                    c.lwc1(2, gpo(c, -0x7078));
+                    break 'b_13cf98;
+                }
+            }
+        }
+        'b_13cfe4: {
+            c.cycles += 7;
+            c.mtc1(0, 4);
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 5);
+            c.c_lt_s(4, 21);
+            if !c.fcc() {
+                c.neg_s(0, 21);
+                break 'b_13cfe4;
+            } else {
+                'b_13cfe0: {
+                    c.cycles += 7;
+                    c.lwc1(0, at(c, A0, 0x1e8));
+                    c.lwc1(1, at(c, A0, 0x3d8));
+                    c.sub_s(0, 0, 1);
+                    c.c_lt_s(4, 0);
+                    let t = !c.fcc();
+                    c.g[V0][0] = 0xd;
+                    if t {
+                        break 'b_13cfe0;
+                    } else {
+                        c.cycles += 3;
+                        c.g[V1][0] = c.lw(at(c, A0, 0x438));
+                        if c.g[V1][0] != c.g[V0][0] {
+                            c.neg_s(0, 21);
+                            break 'b_13cfe4;
+                        } else {
+                            c.cycles += 1;
+                            c.lwc1(5, gpo(c, -0x7074));
+                            break 'b_13cfe0;
+                        }
+                    }
+                }
+                c.cycles += 1;
+                c.neg_s(0, 21);
+                break 'b_13cfe4;
+            }
+        }
+        c.cycles += 16;
+        frame.restore(c, S0, 0x20);
+        c.add_s(1, 3, 6);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        c.mul_s(0, 0, 8);
+        frame.restore_fpr(c, 23, 0x48);
+        frame.restore_fpr(c, 22, 0x40);
+        frame.restore_fpr(c, 21, 0x38);
+        c.mul_s(0, 0, 1);
+        frame.restore_fpr(c, 20, 0x30);
+        c.mul_s(0, 0, 12);
+        c.mul_s(0, 0, 2);
+        c.sub_s(0, 0, 7);
+        c.mul_s(0, 0, 5);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7327,5 +9126,548 @@ pub(crate) mod tests {
             assert!(r.soft.is_empty(), "seed {seed} soft: {:#?}", r.soft);
             assert!(r.lohi.is_empty(), "seed {seed} lo/hi: {:#?}", r.lohi);
         }
+    }
+    use super::*;
+
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::ai::computer::tests::fake_closest_point;
+    pub(crate) use crate::game::ai::computer::tests::fake_collide_volume;
+    pub(crate) use crate::game::ai::computer::tests::install_fake_slots;
+    pub(crate) use crate::game::ai::computer::tests::FCC_CTRL;
+    pub(crate) use crate::game::ai::computer::tests::FCC_MAGIC;
+    pub(crate) use crate::game::ai::computer::tests::UDF_CTRL;
+    pub(crate) use crate::game::ai::computer::tests::UDF_MAGIC;
+
+    // ------------------------------------------------ RiderAirState_CollideWalls
+
+    /// `RiderAirState_CollideWalls`: sub state 9 (skipped), no contact, and
+    /// a contact the rider recedes from (push-out through the real
+    /// `Rider_Translate`). The overlap query is the gated fake
+    /// `OverlapList_CollideVolume` under the real
+    /// `OverlapList_FindClosestContact`; the controller's virtual call lands
+    /// in the fakes, which sometimes unwind. The impact branch (bounce,
+    /// world matrix, `Rider_HandleImpact`) is not reached: the real
+    /// `Rider_HandleImpact` cannot be bounded on a fixture rider.
+    #[test]
+    #[ignore = "fixture runs away (pc 0x312138); the port is parked, not installed"]
+    fn rider_air_state_collide_walls_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::put_vec;
+        install_fake_slots();
+        check(
+            ssx3_ee::s01::f_0013aa48,
+            rider_air_state_collide_walls,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0013_aa48, 4);
+                crate::difftest::elf_image(c);
+                c.pc = 0x0013_aa48;
+                let f = |x: f32| x.to_bits();
+                let this = DATA;
+                let rider = DATA + 0x1000;
+                let sub = DATA + 0x3000;
+                let ctl_vt = DATA + 0x3100;
+                let tree = DATA + 0x3200;
+                let list = DATA + 0x3400;
+                let out = DATA + 0x3500;
+                let template = DATA + 0x1_0000;
+                let hit_obj = DATA + 0x3a00;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(out);
+                c.bus.write32(this + 0x4, rider);
+                c.bus.write32(rider + 0x77c, sub);
+                let sub_state = if seed % 11 == 0 { 9 } else { r.next_u32() % 8 };
+                c.bus.write32(sub + 0xde4, sub_state);
+                // Controller: vt[0x40] = { delta, fake } ("use the small hull").
+                c.bus.write32(rider + 0x6c0, ctl_vt);
+                c.bus.write16(ctl_vt + 0x40, (r.next_u32() % 4 * 4) as u16);
+                c.bus.write32(ctl_vt + 0x44, FAKE);
+                // Sphere tree: a single sphere (no children).
+                c.bus.write32(rider + 0xaa0, tree);
+                c.bus.write32(tree + 0x28, 0);
+                put_vec(
+                    c,
+                    tree + 0x10,
+                    [r.f32(50.0), r.f32(50.0), r.f32(50.0), f(1.0)],
+                );
+                c.bus
+                    .write32(tree + 0x20, f(0.5 + (r.next_u32() % 4) as f32));
+                c.bus.write32(rider + 0x860, list);
+                c.bus.write32(rider + 0x868, r.next_u32() % 0x40);
+                put_vec(
+                    c,
+                    rider + 0x110,
+                    [r.f32(50.0), r.f32(50.0), r.f32(50.0), f(1.0)],
+                );
+                put_vec(
+                    c,
+                    rider + 0x180,
+                    [r.f32(50.0), r.f32(50.0), r.f32(50.0), f(1.0)],
+                );
+                // Velocity x shares the sign of every contact normal's x, so the rider
+                // always recedes ((-n.x) * vel.x < 0): the impact path's
+                // Rider_HandleImpact runs the rider's animation/reset machinery (a
+                // runaway on a fixture rider, pc 0x312138 in
+                // AnimController_PlayAnimImpl), so it is left untested.
+                let side = if r.next_u32() & 1 == 0 { 1.0f32 } else { -1.0 };
+                let vx = side * (1.0 + (r.next_u32() % 30) as f32);
+                put_vec(c, rider + 0x1e0, [f(vx), r.f32(30.0), r.f32(30.0), 0]);
+                let unit = |r: &mut Rng| {
+                    let v = [
+                        (r.next_u32() % 200) as f32 - 100.0,
+                        (r.next_u32() % 200) as f32 - 100.0,
+                        (r.next_u32() % 200) as f32 - 100.0 + 0.5,
+                    ];
+                    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+                    [v[0] / n, v[1] / n, v[2] / n]
+                };
+                let fwd = unit(&mut r);
+                put_vec(c, rider + 0x370, [f(fwd[0]), f(fwd[1]), f(fwd[2]), 0]);
+
+                // The contacts the fake overlap query reports.
+                let count = if seed % 5 == 1 {
+                    0
+                } else {
+                    1 + r.next_u32() % 3
+                };
+                c.bus.write32(FCC_CTRL, FCC_MAGIC);
+                c.bus.write32(FCC_CTRL + 4, count);
+                c.bus.write32(FCC_CTRL + 8, template);
+                for i in 0..count {
+                    let hit = template + 0x80 * i;
+                    for k in 0..0x20 {
+                        c.bus.write32(hit + 4 * k, r.next_u32());
+                    }
+                    put_vec(c, hit, [r.f32(50.0), r.f32(50.0), r.f32(50.0), f(1.0)]);
+                    let mut n = unit(&mut r);
+                    n[0] = side * (n[0].abs() + 0.25);
+                    put_vec(c, hit + 0x10, [f(n[0]), f(n[1]), f(n[2]), 0]);
+                    put_vec(c, hit + 0x20, [r.f32(50.0), r.f32(50.0), r.f32(50.0), 0]);
+                    let depth = if seed % 6 == 2 {
+                        -((r.next_u32() % 10) as f32) - 0.5
+                    } else {
+                        (r.next_u32() % 10) as f32 * 0.25
+                    };
+                    c.bus.write32(hit + 0x40, f(depth));
+                    c.bus.write32(hit + 0x4c, r.next_u32() % 16);
+                    c.bus
+                        .write32(hit + 0x50, if seed % 3 == 0 { 0 } else { hit_obj });
+                    c.bus.write32(hit + 0x54, 0);
+                }
+                c.bus.write32(hit_obj + 0xc, 0);
+            },
+        );
+    }
+
+    /// RiderGroundState_CollideWalls fixture. `impact`: the rider moves into
+    /// the wall after the push-out (reaches the bounce, the deflection and
+    /// the impact/sound callees); otherwise it recedes from it.
+    ///
+    /// The sub-state is 9 or not; the controller's "in contact" method is the
+    /// real getter 0x2d1bd8 (returns the word at gp+0x16c8, set to 0 or 1);
+    /// speed and height pick the slow-on-the-ground early exit. The overlap
+    /// list holds no object (no contact: depth -1) or one static object with
+    /// a huge box whose sub-object's collide method (a fake) reports one
+    /// contact; the contact record then comes from the closest-contact
+    /// query's frame, which the fixture fills (depth, normal, surface velocity,
+    /// hit object with or without an owner to notify).
+    pub(crate) fn collide_walls_setup(c: &mut Cpu, seed: u32, impact: bool) {
+        use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{put_vec, DATA, GAME_GP, SP};
+        let f = |x: f32| x.to_bits();
+        let mut r = machine(c, seed, 0x13f4_88 ^ impact as u64, 4);
+        c.pc = 0x0013_f488;
+        const SELF: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const SUB: u32 = DATA + 0x3000;
+        const CTL_VT: u32 = DATA + 0x3100;
+        const HULL: u32 = DATA + 0x3200;
+        const LIST: u32 = DATA + 0x3400;
+        const OBJ: u32 = DATA + 0x3600;
+        const SUBOBJ: u32 = DATA + 0x3700;
+        const SUB_VT: u32 = DATA + 0x3800;
+        const HIT_OBJ: u32 = DATA + 0x3a00;
+        const OWNER: u32 = DATA + 0x3b00;
+        const OWNER_VT: u32 = DATA + 0x3c00;
+        // The closest-contact query's frame (0x2050 below ours, 0x490).
+        const RECORD: u32 = SP - 0x490 - 0x2050;
+
+        // .lit4 constants.
+        c.bus.write32(GAME_GP - 0x6fa0, f(-0.999_9));
+        c.bus.write32(GAME_GP - 0x6f9c, f(1.1));
+        c.bus.write32(GAME_GP - 0x6f98, f(0.05));
+        c.bus.write32(GAME_GP - 0x6f94, f(27.777_779));
+
+        c.g[A0][0] = sx(SELF);
+        c.bus.write32(SELF + 0x18, RIDER);
+        c.bus.write32(RIDER + 0x77c, SUB);
+        let sub_state = if !impact && seed % 9 == 0 {
+            9
+        } else {
+            r.next_u32() % 8
+        };
+        c.bus.write32(SUB + 0xde4, sub_state);
+        // Controller: vt[0x40] = { delta, 0x2d1bd8 }.
+        c.bus.write32(RIDER + 0x6c0, CTL_VT);
+        c.bus.write16(CTL_VT + 0x40, (r.next_u32() % 4 * 4) as u16);
+        c.bus.write32(CTL_VT + 0x44, 0x002d_1bd8);
+        let in_contact = impact || r.next_u32() % 2 == 0;
+        c.bus.write32(GAME_GP + 0x16c8, in_contact as u32);
+        c.bus.write32(RIDER + 0x4c8, f((r.next_u32() % 100) as f32));
+        let y = (r.next_u32() % 200) as f32 - 100.0;
+        c.bus.write32(RIDER + 0x118, f(y));
+        c.bus
+            .write32(RIDER + 0x498, f(y + (r.next_u32() % 100) as f32 - 50.0));
+        c.bus.write32(RIDER + 0xaa0, HULL);
+        c.bus.write32(RIDER + 0x860, LIST);
+        c.bus.write32(RIDER + 0x868, r.next_u32() % 0x40);
+        // Hull: no spheres (+0x28 mask, +0x2c count), radius at +0x20.
+        c.bus.write32(HULL + 0x20, f(0.5));
+
+        // Overlap list: no instances, zero or one object.
+        let contact = impact || seed % 5 != 1;
+        c.bus.write32(LIST + 0x8, contact as u32);
+        c.bus.write32(LIST + 0xc, LIST + 0x40);
+        c.bus.write32(LIST + 0x40, OBJ);
+        c.bus.write32(OBJ + 0x8, 0x20);
+        for k in 0..3 {
+            c.bus.write32(OBJ + 0x60 + 4 * k, f(-1.0e30));
+            c.bus.write32(OBJ + 0x6c + 4 * k, f(1.0e30));
+        }
+        c.bus.write32(OBJ + 0x88, 1);
+        c.bus.write32(OBJ + 0xc, SUBOBJ);
+        c.bus.write32(SUBOBJ + 0xc, SUB_VT);
+        c.bus.write32(SUB_VT + 0x134, FAKE);
+        c.bus.write32(SUB_VT + 0x13c, FAKE + 0x10);
+        // Fake call 1 (vt 0x13c) reports one contact.
+        c.bus.write32(LOG_RESULTS + 4, 1);
+
+        // The contact record.
+        let unit = |r: &mut crate::difftest::Rng| {
+            let v = [
+                (r.next_u32() % 200) as f32 - 100.0,
+                (r.next_u32() % 200) as f32 - 100.0,
+                (r.next_u32() % 200) as f32 - 100.0 + 0.5,
+            ];
+            let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            [v[0] / n, v[1] / n, v[2] / n]
+        };
+        let fwd = unit(&mut r);
+        let normal = if !impact && seed % 7 == 3 {
+            [-fwd[0], -fwd[1], -fwd[2]] // head-on
+        } else {
+            unit(&mut r)
+        };
+        put_vec(c, RIDER + 0x370, [f(fwd[0]), f(fwd[1]), f(fwd[2]), 0]);
+        put_vec(
+            c,
+            RECORD + 0x10,
+            [f(normal[0]), f(normal[1]), f(normal[2]), 0],
+        );
+        let point = [r.f32(50.0), r.f32(50.0), r.f32(50.0), 0];
+        put_vec(c, RECORD, [r.f32(50.0), r.f32(50.0), r.f32(50.0), f(1.0)]);
+        put_vec(c, RECORD + 0x20, point);
+        for k in 0x30..0x40 {
+            c.bus.write8(RECORD + k, r.next_u32() as u8);
+        }
+        let depth = if !impact && seed % 6 == 2 {
+            -((r.next_u32() % 10) as f32) - 0.5
+        } else {
+            (r.next_u32() % 10) as f32 * 0.25
+        };
+        c.bus.write32(RECORD + 0x40, f(depth));
+        c.bus.write32(RECORD + 0x44, r.next_u32());
+        c.bus.write32(RECORD + 0x48, r.next_u32());
+        c.bus.write32(RECORD + 0x4c, r.next_u32() % 16);
+        let hit_obj = match seed % 3 {
+            0 => 0,
+            _ => HIT_OBJ,
+        };
+        c.bus.write32(RECORD + 0x50, hit_obj);
+        for k in 0x54..0x80 {
+            c.bus.write8(RECORD + k, r.next_u32() as u8);
+        }
+        c.bus
+            .write32(HIT_OBJ + 0xc, if seed % 3 == 1 { 0 } else { OWNER });
+        c.bus.write32(OWNER + 0xc, OWNER_VT);
+        c.bus.write16(OWNER_VT + 0x150, 8);
+        c.bus.write32(OWNER_VT + 0x154, FAKE + 0x20);
+
+        // The rider's velocity relative to the hit surface's: along the
+        // normal (receding: no bounce) or against it (impact).
+        let k = (1 + r.next_u32() % 20) as f32 * if impact { -1.0 } else { 1.0 };
+        let p = |i: usize| f32::from_bits(point[i]);
+        put_vec(
+            c,
+            RIDER + 0x1e0,
+            [
+                f(p(0) + normal[0] * k),
+                f(p(1) + normal[1] * k),
+                f(p(2) + normal[2] * k),
+                0,
+            ],
+        );
+        for off in [0x110, 0x400, 0x410, 0x9d0] {
+            put_vec(
+                c,
+                RIDER + off,
+                [r.f32(100.0), r.f32(100.0), r.f32(100.0), f(1.0)],
+            );
+        }
+    }
+
+    /// RiderGroundState_CollideWalls up to the bounce decision: skipped
+    /// sub-state, slow-on-the-ground exit, no contact, head-on, facing and
+    /// not facing the wall (normal flattening), the hit-object notification,
+    /// and a rider receding from the wall after the push-out. Fakes unwind
+    /// at chosen calls.
+    #[test]
+    fn rider_ground_state_collide_walls_matches() {
+        crate::difftest::check(
+            ee::s01::f_0013f488__generated,
+            rider_ground_state_collide_walls,
+            300,
+            &|c, seed| collide_walls_setup(c, seed, false),
+        );
+    }
+
+    /// RiderGroundState_CollideWalls through the bounce: velocity update,
+    /// Rider_DeflectAlongWall, Rider_BuildWorldMatrix, Rider_HandleImpact
+    /// and the wall-hit sound (real callees on a mostly zeroed rider; their
+    /// virtual calls through empty memory land in the fakes).
+    #[test]
+    fn rider_ground_state_collide_walls_impact_matches() {
+        crate::difftest::check(
+            ee::s01::f_0013f488__generated,
+            rider_ground_state_collide_walls,
+            64,
+            &|c, seed| collide_walls_setup(c, seed, true),
+        );
+    }
+
+    /// RiderGroundState_PostUpdate fixture. `branches == false`: the rider
+    /// stays on the ground on an ordinary surface (no wipeout, no path
+    /// reset); `true`: leaving the ground (`Rider_LaunchIntoAir`) in a main
+    /// state other than 0. Sub-state 9 keeps the wall collisions
+    /// (`RiderGroundState_CollideWalls`, `Rider_HandleWallCollision`) on
+    /// their early exits; the rider's animation table answers "no bump"
+    /// (entry 0x1b6); the zeroed BELibrary dummy at gp-0x1f04 keeps
+    /// `BELibrary_GetInstance` (from `Rider_GetBumpStrength` /
+    /// `Rider_CheckRiderCollisions`) from building the library, which loads
+    /// files from disc (the runaway at 0x3de768). Velocities below and above
+    /// the maximal speed and the full-speed constant.
+    ///
+    /// Not reached (unbounded on a test machine): the wipeout surface
+    /// (`Rider_StartWipeout`), path resets (`Rider_CheckResetPath`) and
+    /// main state 0 on leaving (`Rider_SetMainState` + take-off sound):
+    /// their audio callees reach `BankMonitor_StopHandle` / sound playback,
+    /// which reach the same disc-loading request loop.
+    pub(crate) fn post_update_setup(c: &mut Cpu, seed: u32, branches: bool) {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{put_vec, DATA, GAME_GP};
+        let f = |x: f32| x.to_bits();
+        let mut r = machine(
+            c,
+            seed,
+            0x13f1_78 ^ branches as u64,
+            if branches { 3 } else { 0 },
+        );
+        c.pc = 0x0013_f178;
+        const SELF: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const SUB: u32 = DATA + 0x3000;
+        const HULL: u32 = DATA + 0x4000;
+        const WORLD: u32 = DATA + 0x4100;
+        const W84: u32 = DATA + 0x4200;
+        const SURF: u32 = DATA + 0x5000;
+        const ANIM: u32 = DATA + 0x6000;
+        const BE_LIBRARY: u32 = DATA + 0x8000;
+        for k in 0..0x400 {
+            c.bus.write32(BE_LIBRARY + 4 * k, 0);
+        }
+        c.bus.write32(GAME_GP - 0x1f04, BE_LIBRARY);
+        c.bus.write32(GAME_GP - 0x6fac, f(3333.3335));
+        c.bus.write32(GAME_GP - 0x1f94, r.next_u32());
+        c.bus.write32(GAME_GP - 0x848, WORLD);
+        c.bus.write32(WORLD + 0x84, W84);
+        c.bus.write32(W84 + 0x44, SURF);
+        c.g[A0][0] = sx(SELF);
+        c.bus.write32(SELF + 0x18, RIDER);
+        let leaving = branches;
+        c.bus.write32(SELF + 0xc, leaving as u32);
+        c.bus.write32(RIDER + 0x77c, SUB);
+        c.bus.write32(SUB + 0xde4, 9);
+        c.bus.write32(
+            SUB + 0xde0,
+            if seed % 2 == 0 && !leaving {
+                0
+            } else {
+                1 + r.next_u32() % 5
+            },
+        );
+        c.bus.write32(RIDER + 0xaa0, HULL);
+        c.bus.write32(RIDER + 0x784, ANIM);
+        c.bus.write32(ANIM + 4, 0x1b6);
+        let surface = r.next_u32() % 0x12;
+        c.bus.write32(RIDER + 0x438, surface);
+        let reset = false;
+        let by_table = reset && seed % 2 == 0;
+        c.bus.write32(SURF + surface * 0xb0 + 0x44, by_table as u32);
+        let flags = (r.next_u32() & 0xfffd) as u16 | if reset && !by_table { 2 } else { 0 };
+        c.bus.write16(RIDER + 0x2d4, flags);
+        for off in [0x110, 0x370, 0x390] {
+            put_vec(c, RIDER + off, [r.f32(1.0), r.f32(1.0), r.f32(1.0), f(1.0)]);
+        }
+        let speed = [10.0f32, 5000.0][(seed / 2 % 2) as usize];
+        put_vec(
+            c,
+            RIDER + 0x1e0,
+            [r.f32(speed), r.f32(speed), r.f32(speed), 0],
+        );
+        c.bus.write32(
+            RIDER + 0x2e4,
+            f([100.0f32, 8000.0][(seed / 4 % 2) as usize]),
+        );
+        c.bus.write32(RIDER + 0x1f0, r.f32(50.0));
+        c.bus.write32(RIDER + 0x214, r.f32(5.0));
+    }
+
+    /// RiderGroundState_PostUpdate on the ground: no launch, wipeout or
+    /// path reset; bounds, walls (masked hull spheres), rider collisions,
+    /// up smoothing, speed clamp and fraction.
+    #[test]
+    fn rider_ground_state_post_update_matches() {
+        crate::difftest::check(
+            ee::s01::f_0013f178__generated,
+            rider_ground_state_post_update,
+            160,
+            &|c, seed| post_update_setup(c, seed, false),
+        );
+    }
+
+    /// RiderGroundState_PostUpdate leaving the ground: `Rider_LaunchIntoAir`
+    /// (real, on a mostly empty rider; virtual calls through empty memory
+    /// land in the fakes, some of which unwind), main state already set.
+    #[test]
+    fn rider_ground_state_post_update_launch_matches() {
+        crate::difftest::check(
+            ee::s01::f_0013f178__generated,
+            rider_ground_state_post_update,
+            96,
+            &|c, seed| post_update_setup(c, seed, true),
+        );
+    }
+
+    // -- 0x0013ccf0 RiderGroundState_ComputeDrag ------------------------------
+
+    /// `RiderGroundState_ComputeDrag`: speeds below, between and beyond the
+    /// four curve points, every ramp band, the surface classes (2, 3, 13,
+    /// other), climbing or not, stance mismatches with and without boost;
+    /// the behaviour library's interface getter is a fake (some calls
+    /// unwind), the attribute-factor callees are real on the game image's
+    /// tables (values > 0, or <= 0 for the `attrib / 5` default).
+    #[test]
+    fn rider_ground_state_compute_drag_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::difftest::{elf_image, put_words, DATA, GAME_GP};
+        fn f(x: f32) -> u32 {
+            x.to_bits()
+        }
+        fn uf(r: &mut crate::difftest::Rng, lo: f32, hi: f32) -> u32 {
+            f(lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo))
+        }
+        const THIS: u32 = DATA;
+        const CFG: u32 = DATA + 0x400;
+        const RIDER: u32 = DATA + 0x1000;
+        const BE_LIBRARY: u32 = DATA + 0x3000;
+        const BE_OBJ: u32 = DATA + 0x3100;
+        const BE_VT: u32 = DATA + 0x3200;
+        const BE_INTERFACES: u32 = 0x0053_08a8;
+        const CHARACTER_MAX: u32 = 0x0053_08d8;
+        covered(
+            ee::s01::f_0013ccf0__generated,
+            rider_ground_state_compute_drag,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x13_ccf0, 3);
+                let r = &mut r;
+                c.pc = 0x0013_ccf0;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // The behaviour library: interface getter (vtable slot +8:
+                // delta 0, method a fake).
+                w(c, GAME_GP - 0x1f04, BE_LIBRARY);
+                w(c, GAME_GP - 0x1efc, 0);
+                w(c, BE_INTERFACES, BE_OBJ);
+                w(c, BE_OBJ + 4, BE_VT);
+                c.bus.write16(BE_VT + 8, 0);
+                w(c, BE_VT + 0xc, FAKE);
+                // Character maxima (non-zero divisors).
+                for ch in 0..16 {
+                    for n in 0..7 {
+                        c.bus.write8(
+                            CHARACTER_MAX + ch * 15 + 8 + n,
+                            1 + (r.next_u32() % 20) as u8,
+                        );
+                    }
+                }
+
+                // The state: its rider and the surface depth divisor.
+                w(c, THIS + 0x18, RIDER);
+                w(c, THIS + 0x8, uf(r, 1.0, 50.0));
+                // The curve: four increasing x with their y.
+                let mut x = 0.0f32;
+                for i in 0..4 {
+                    x += 5.0 + (r.next_u32() % 20) as f32;
+                    put_words(c, CFG + 0x90 + 8 * i, &[f(x), uf(r, 0.0, 30.0)]);
+                }
+                // The rider.
+                w(
+                    c,
+                    RIDER + 0x214,
+                    if seed % 5 == 0 { 0 } else { uf(r, -1.5, 1.5) },
+                );
+                w(c, RIDER + 0x86c, r.next_u32() % 6);
+                w(
+                    c,
+                    RIDER + 0xb34,
+                    if seed % 4 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 5
+                    },
+                );
+                w(c, RIDER + 0x378, uf(r, 0.0, 0.3));
+                w(
+                    c,
+                    RIDER + 0x438,
+                    [2, 3, 13, 13, 0, 7][(r.next_u32() % 6) as usize],
+                );
+                w(c, RIDER + 0x454, uf(r, -5.0, 5.0));
+                w(c, RIDER + 0x1e8, uf(r, -10.0, 10.0));
+                w(c, RIDER + 0x3d8, uf(r, -10.0, 10.0));
+                w(c, RIDER + 0x320, r.next_u32() % 2);
+                w(c, RIDER + 0x324, r.next_u32() % 2);
+                w(
+                    c,
+                    RIDER + 0x2fc,
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        uf(r, 0.0, 1.0)
+                    },
+                );
+
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(CFG);
+                // Speeds across the curve (|speed| * 0.036 vs the x points).
+                c.f[12] = if seed % 9 == 0 {
+                    r.edge_f32()
+                } else {
+                    uf(r, -2500.0, 2500.0)
+                };
+            },
+        );
     }
 }
