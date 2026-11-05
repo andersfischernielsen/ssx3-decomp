@@ -53,6 +53,7 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -236,6 +237,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0028_33a8, scriptobj_resume, "ScriptObj_Resume"),
     (0x0028_3430, script_obj_activate, "ScriptObj_Activate"),
     (0x0028_3440, script_obj_deactivate, "ScriptObj_Deactivate"),
+    (0x0028_20b0, script_engine_update_processes, "ScriptEngine_UpdateProcesses"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2737,6 +2739,145 @@ pub fn script_engine_start_script(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------- ScriptEngine_UpdateProcesses
+
+/// `ScriptEngine` layout: the sequence player (+0x2b8) and sixteen 0x24-byte
+/// process slots from +0x2c0 (type at +0x4, state at +0x20; 1 = pending).
+pub(crate) const SE_SEQ_PLAYER: u32 = 0x2b8;
+
+
+pub(crate) const SE_SLOTS: u32 = 0x2c0;
+
+
+pub(crate) const SE_SLOT_SIZE: u64 = 0x24;
+
+
+pub(crate) const SE_SLOT_TYPE: u32 = 0x4;
+
+
+pub(crate) const SE_SLOT_STATE: u32 = 0x20;
+
+
+/// The slot-type switch's jump table (six entries, `.rodata`).
+pub(crate) const SE_TYPE_TABLE: u32 = 0x0048_1f70;
+
+
+
+/// `InSeq_UpdateAll` (0x2728f8) and `ScriptEngine_LaunchPendingProcess`
+/// (0x282908).
+pub(crate) const SE_IN_SEQ_UPDATE_ALL: Callee = Callee {
+    addr: 0x0027_28f8,
+    f: ee::s07::f_002728f8,
+};
+
+
+pub(crate) const SE_LAUNCH_PENDING: Callee = Callee {
+    addr: 0x0028_2908,
+    f: ee::s07::f_00282908,
+};
+
+
+
+/// `void ScriptEngine_UpdateProcesses(ScriptEngine* self)` (0x2820b0), every
+/// frame: update all running sequences, then launch each pending process
+/// slot (state 1) of type 1 (`LaunchPendingProcess(self, slot)`; the other
+/// types are no-ops). The type switch goes through the original's jump
+/// table: its targets are the launch (0x282120), the skip (0x282128) and,
+/// as the generated code allows, a restart at the top; anything else leaves
+/// through `jump_out`. Frame 0x30 (s0 = slot index, s1 = self). Other
+/// entries (resume points) go to the generated `__entries` twin.
+pub fn script_engine_update_processes(c: &mut Cpu) {
+    guest(c, |c| {
+        'restart: loop {
+            c.cycles += 10;
+            let frame = Frame::open(c, 0x30);
+            frame.save(c, S0, 0x20);
+            frame.save(c, S1, 0x10);
+            c.g[S0][0] = 0;
+            frame.save_ra(c, 0);
+            c.g[S1][0] = c.g[A0][0];
+            c.g[A0][0] = Addr(r32(c, S1).wrapping_add(SE_SEQ_PLAYER)).lw(c);
+            SE_IN_SEQ_UPDATE_ALL.call(c, 0x0028_20d0)?;
+            c.g[V0][0] = SE_SLOT_SIZE;
+            loop {
+                c.cycles += 6;
+                c.mult(0, V0, S0, V0);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(SE_SLOTS));
+                let slot = r32(c, S1).wrapping_add(r32(c, V0));
+                c.g[A1][0] = sx(slot);
+                let state = Addr(slot.wrapping_add(SE_SLOT_STATE)).lw(c);
+                c.g[V1][0] = state;
+                c.g[V0][0] = 1;
+                // Whether the slot ends at the shared `s0++` (1 cycle).
+                let mut next = true;
+                if state != 0 {
+                    c.cycles += 2;
+                    if state != 1 {
+                        next = false;
+                    } else {
+                        c.cycles += 4;
+                        let ty = Addr(slot.wrapping_add(SE_SLOT_TYPE)).lw(c);
+                        c.g[V1][0] = ty;
+                        let known = ty < 6;
+                        c.g[V0][0] = known as u64;
+                        c.g[V0][0] = 0x0048_0000;
+                        if known {
+                            c.cycles += 6;
+                            c.g[V1][0] = sx((ty as u32) << 2);
+                            c.g[V0][0] = sx(SE_TYPE_TABLE);
+                            let entry = SE_TYPE_TABLE.wrapping_add(r32(c, V1));
+                            c.g[V1][0] = sx(entry);
+                            let target = Addr(entry).lw(c);
+                            c.g[A0][0] = target;
+                            match target as u32 {
+                                0x0028_20b0 => {
+                                    if event_due(c) {
+                                        deliver_event_here(c, 0x0028_20b0);
+                                    }
+                                    continue 'restart;
+                                }
+                                0x0028_2120 => {
+                                    c.cycles += 2;
+                                    c.g[A0][0] = c.g[S1][0];
+                                    SE_LAUNCH_PENDING.call(c, 0x0028_2128)?;
+                                }
+                                0x0028_2128 => {}
+                                t => {
+                                    c.jump_out(t, 0x0028_20b0, 0x0028_214c);
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+                if next {
+                    c.cycles += 1;
+                }
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.cycles += 3;
+                let more = (c.g[S0][0] as i64) < 16;
+                c.g[V0][0] = more as u64;
+                if !more {
+                    break;
+                }
+                c.g[V0][0] = SE_SLOT_SIZE;
+                if event_due(c) {
+                    deliver_event_here(c, 0x0028_20d8);
+                }
+            }
+            c.cycles += 5;
+            frame.restore(c, S0, 0x20);
+            frame.restore(c, S1, 0x10);
+            frame.restore_ra(c, 0);
+            frame.close(c);
+            return Ok(());
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3744,5 +3885,50 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(DATA + 0x3000);
             },
         );
+    }
+    use super::*;
+    use crate::difftest::{put_words};
+
+
+    /// ScriptEngine_UpdateProcesses: the real InSeq_UpdateAll with no
+    /// running sequences; sixteen slots that are free, running (state 2+),
+    /// or pending with types 0..7 (the jump table copied from the ELF); the
+    /// real LaunchPendingProcess for type 1 on its short path (no script
+    /// registered at the slot's index).
+    #[test]
+    fn script_engine_update_processes_matches() {
+        const ENGINE: u32 = DATA;
+        const SEQ: u32 = DATA + 0x1000;
+        const SCRIPTS: u32 = DATA + 0x2000;
+        check(ee::s07::f_002820b0__generated, script_engine_update_processes, 300, &|c, seed| {
+            let mut r = Rng(0x28_20b0 ^ (seed as u64) << 24);
+            scramble(c, &mut r);
+            c.pc = 0x0028_20b0;
+            put_words(
+                c,
+                SE_TYPE_TABLE,
+                &[0x28_2128, 0x28_2120, 0x28_2128, 0x28_2128, 0x28_2128, 0x28_2128],
+            );
+            c.bus.write32(ENGINE + SE_SEQ_PLAYER, SEQ);
+            c.bus.write32(SEQ + 0x1c, 0);
+            c.bus.write32(ENGINE + 0x2b0, SCRIPTS);
+            for i in 0..16 {
+                let slot = ENGINE + SE_SLOTS + 0x24 * i;
+                fill(c, &mut r, slot, 9);
+                let state = match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => 2 + r.next_u32() % 3,
+                    _ => 1,
+                };
+                c.bus.write32(slot + SE_SLOT_STATE, state);
+                let ty = if r.next_u32() % 2 == 0 { 1 } else { r.next_u32() % 8 };
+                c.bus.write32(slot + SE_SLOT_TYPE, ty);
+                c.bus.write32(slot + 0x14, r.next_u32() % 32);
+            }
+            for i in 0..32 {
+                c.bus.write32(SCRIPTS + 8 * i, 0);
+            }
+            c.g[A0][0] = sx(ENGINE);
+        });
     }
 }

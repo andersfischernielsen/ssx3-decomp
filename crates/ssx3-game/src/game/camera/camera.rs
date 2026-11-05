@@ -387,6 +387,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_camera_update_stream_view,
         "GameCamera_UpdateStreamView",
     ),
+    (0x003a_9658, world_cache_streamer_set_view, "cWorldCache_StreamerSetView"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8662,6 +8663,92 @@ pub fn game_camera_update_stream_view(c: &mut Cpu) {
     });
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// cWorldCache_StreamerSetView (0x3a9658)
+
+/// A world cache streamer (0x50 bytes, from +0x244 of the cache): active
+/// flag (+0x244), state (+0x248), view position (+0x250), the view box's
+/// low (+0x260) and high (+0x270) corners, the clearance (+0x280) and two
+/// zeroed floats (+0x284 / +0x288).
+pub(crate) const STREAMER_SIZE: u32 = 0x50;
+
+
+pub(crate) const STREAMER_ACTIVE: u32 = 0x244;
+
+
+pub(crate) const STREAMER_STATE: u32 = 0x248;
+
+
+pub(crate) const STREAMER_VIEW_POS: u32 = 0x250;
+
+
+pub(crate) const STREAMER_BOX_LO: u32 = 0x260;
+
+
+pub(crate) const STREAMER_BOX_HI: u32 = 0x270;
+
+
+pub(crate) const STREAMER_CLEARANCE: u32 = 0x280;
+
+
+pub(crate) const STREAMER_ZERO_A: u32 = 0x284;
+
+
+pub(crate) const STREAMER_ZERO_B: u32 = 0x288;
+
+
+
+/// `void cWorldCache_StreamerSetView(cWorldCache* self /*a0*/,
+/// unsigned i /*a1*/, sVec4* pos /*a2*/, float clearance /*f12*/)`
+/// (0x3a9658): point streamer `i` at `pos`: the view box is `pos -
+/// (r, r, r, 0)` .. `pos + (r, r, r, 0)` with `r = max(clearance, 0)`
+/// (the w components use 0), the streamer becomes active with state 0.
+/// Leaf, frame 0x20 (the copy of `pos` and the radius vector).
+pub fn world_cache_streamer_set_view(c: &mut Cpu) {
+    c.cycles += 34;
+    c.g[V0][0] = STREAMER_SIZE as u64;
+    c.mtc1(0, 1); // f1 = 0
+    c.mult(0, 3, 5, 2); // v1 = i * 0x50
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x20));
+    let frame = sp(c);
+    let pos = r32(c, A2);
+    c.lq(2, pos);
+    c.max_s(0, 12, 1); // f0 = max(clearance, 0)
+    c.g[A1][0] = 1;
+    c.g[A0][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+    let streamer = r32(c, A0);
+    c.sq(2, streamer.wrapping_add(STREAMER_VIEW_POS));
+    c.swc1(0, streamer.wrapping_add(STREAMER_CLEARANCE));
+    c.lq(2, pos);
+    c.sq(2, frame);
+    c.sq(2, frame.wrapping_add(0x10));
+    c.sq(2, streamer.wrapping_add(STREAMER_BOX_LO));
+    c.lq(3, frame.wrapping_add(0x10));
+    c.sq(3, streamer.wrapping_add(STREAMER_BOX_HI));
+    // The radius vector (clearance, clearance, clearance, 0).
+    c.swc1(12, frame.wrapping_add(0x8));
+    c.swc1(12, frame);
+    c.swc1(12, frame.wrapping_add(0x4));
+    c.swc1(1, frame.wrapping_add(0xc));
+    c.lqc2(3, streamer.wrapping_add(STREAMER_BOX_LO));
+    c.lqc2(4, frame);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, streamer.wrapping_add(STREAMER_BOX_LO));
+    c.lqc2(3, streamer.wrapping_add(STREAMER_BOX_HI));
+    c.lqc2(4, frame);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, streamer.wrapping_add(STREAMER_BOX_HI));
+    c.sw(streamer.wrapping_add(STREAMER_ACTIVE), c.g[A1][0]);
+    c.swc1(1, streamer.wrapping_add(STREAMER_ZERO_B));
+    c.sw(streamer.wrapping_add(STREAMER_STATE), 0);
+    c.swc1(1, streamer.wrapping_add(STREAMER_ZERO_A));
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11197,6 +11284,43 @@ pub(crate) mod tests {
                 c.bus.write32(cam + 0xb0, r.next_u32() % 4);
                 c.bus.write32(cam + 0xb4, r.next_u32());
                 c.g[A0][0] = sx(cam);
+            },
+        );
+    }
+    use super::*;
+
+
+    // --------------------------------------------- cWorldCache_StreamerSetView
+
+    /// `cWorldCache_StreamerSetView`: streamer indices 0..7, random view
+    /// positions and clearances (negative and edge values too: the `max`
+    /// with 0).
+    #[test]
+    fn world_cache_streamer_set_view_matches() {
+        use crate::difftest::{check, put_vec, scramble, Rng, DATA};
+        check(
+            ee::s13::f_003a9658__generated,
+            world_cache_streamer_set_view,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003a_9658 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003a_9658;
+                let cache = DATA;
+                let pos = DATA + 0x2000;
+                c.g[A0][0] = sx(cache);
+                c.g[A1][0] = (seed % 8) as u64;
+                c.g[A2][0] = sx(pos);
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(300.0)
+                };
+                put_vec(
+                    c,
+                    pos,
+                    [r.f32(5000.0), r.f32(5000.0), r.f32(5000.0), r.next_u32()],
+                );
             },
         );
     }

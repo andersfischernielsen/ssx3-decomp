@@ -25,6 +25,11 @@ use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::float;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -44,6 +49,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cCSICubicSpline_Evaluate",
     ),
     (0x0031_9e48, mem_pool_alloc, "MEM_PoolAlloc"),
+    (0x0031_f2c8, dlheap_memalign, "DLHeap_Memalign"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -674,6 +680,254 @@ pub fn mem_pool_alloc(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// DLHeap_Memalign (0x31f2c8)
+
+pub(crate) const DLHEAP_MALLOC: Callee = Callee {
+    addr: 0x0031_e818,
+    f: ee::s10::DLHeap_Malloc,
+};
+
+
+
+pub(crate) const DLHEAP_FREE: Callee = Callee {
+    addr: 0x0031_ed60,
+    f: ee::s10::DLHeap_Free,
+};
+
+
+
+/// `int* __errno()` (through the function table).
+pub(crate) const ERRNO: u32 = 0x0041_5fb8;
+
+
+pub(crate) const ENOMEM: u64 = 0xc;
+
+
+
+/// dlmalloc chunk header bits: previous chunk in use, chunk is mmapped.
+pub(crate) const PREV_INUSE: u64 = 0x1;
+
+
+pub(crate) const IS_MMAPPED: u64 = 0x2;
+
+
+
+/// `void* DLHeap_Memalign(DLHeap* heap /*a0*/, uint align /*a1*/,
+/// uint size /*a2*/)` (0x31f2c8): dlmalloc's `memalign`. An alignment of 16
+/// or less is a plain `DLHeap_Malloc`; otherwise the alignment is raised to
+/// at least 16 and to a power of two, the request padded to a chunk size
+/// (`ENOMEM` and null when it is too large), and `size + align + 16` bytes
+/// are allocated. A misaligned result gives up its leading part (as a free
+/// chunk, or by moving the offset of an mmapped chunk), a large enough tail
+/// is split off and freed. Frame 0x50 (ra at 0, s3 / s2 / s1 / s0 at
+/// 0x10 .. 0x40).
+pub fn dlheap_memalign(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S3, 0x10);
+        frame.save(c, S1, 0x30);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        c.g[A1][0] = c.g[A2][0];
+        c.g[V0][0] = (c.g[S0][0] < 0x11) as u64;
+        frame.save_ra(c, 0);
+        'tail: {
+            if c.g[V0][0] != 0 {
+                // Small alignment: plain malloc (a0 heap, a1 size).
+                c.cycles += 4;
+                DLHEAP_MALLOC.call(c, 0x0031_f2fc)?;
+                frame.restore(c, S0, 0x40);
+                break 'tail;
+            }
+            // s0 = the alignment, at least 16 and a power of two.
+            c.cycles += 8;
+            c.g[V0][0] = 0xf;
+            c.g[A0][0] = 0x10;
+            c.g[V0][0] = (c.g[V0][0] < c.g[S0][0]) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[S0][0] = c.g[A0][0];
+            }
+            c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+            c.g[V1][0] &= c.g[S0][0];
+            let pow2 = c.g[V1][0] == 0;
+            c.g[V1][0] = 0x20;
+            if !pow2 {
+                c.cycles += 3;
+                c.g[V0][0] = (c.g[V1][0] < c.g[S0][0]) as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[S0][0] = c.g[V1][0];
+                } else {
+                    c.cycles += 2;
+                    c.g[V1][0] = sx(r32(c, V1) << 1);
+                    loop {
+                        c.cycles += 7;
+                        c.g[V0][0] = (c.g[V1][0] < c.g[S0][0]) as u64;
+                        if c.g[V0][0] == 0 {
+                            c.cycles += 1;
+                            c.g[S0][0] = c.g[V1][0];
+                            break;
+                        }
+                        c.g[V1][0] = sx(r32(c, V1) << 1);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0031_f338);
+                        }
+                    }
+                }
+            }
+            // The request as a chunk size (s2), or ENOMEM.
+            c.cycles += 5;
+            c.g[V0][0] = 0xffff_ffff_ffff_ffdf;
+            c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+            c.g[V1][0] = sx(r32(c, A1).wrapping_add(0x13));
+            if c.g[V0][0] != 0 {
+                c.cycles += 6;
+                call_ptr(c, ERRNO, 0x0031_f374)?;
+                c.g[V1][0] = ENOMEM;
+                c.sw(r32(c, V0), c.g[V1][0]);
+                c.g[V0][0] = 0;
+                c.cycles += 1;
+                frame.restore(c, S0, 0x40);
+                break 'tail;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[V1][0] < 0x10) as u64;
+            c.g[S2][0] = 0x10;
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[V0][0] = 0xffff_ffff_ffff_fff0;
+                c.g[S2][0] = c.g[V1][0] & c.g[V0][0];
+            }
+            // Over-allocate: size + align + 16.
+            c.cycles += 7;
+            c.g[A1][0] = sx(r32(c, S2).wrapping_add(r32(c, S0)));
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(0x10));
+            DLHEAP_MALLOC.call(c, 0x0031_f3ac)?;
+            c.g[A3][0] = c.g[V0][0];
+            if c.g[A3][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                c.cycles += 1;
+                frame.restore(c, S0, 0x40);
+                break 'tail;
+            }
+            c.divu(0, A3, S0); // HI = misalignment
+            c.cycles += 2;
+            c.cycles += 3;
+            c.g[V0][0] = c.hi[0];
+            let misaligned = c.g[V0][0] != 0;
+            c.g[S1][0] = sx(r32(c, A3).wrapping_sub(8)); // the chunk
+            if misaligned {
+                // s0: the aligned chunk, t0: the leading size.
+                c.cycles += 18;
+                let mem = r32(c, A3);
+                let align = r32(c, S0);
+                c.g[V0][0] = sx(mem.wrapping_add(align));
+                c.g[V1][0] = sx(0u32.wrapping_sub(align));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                c.g[A1][0] = 0xf;
+                c.g[V0][0] &= c.g[V1][0];
+                c.g[A2][0] = c.lw(mem.wrapping_sub(4));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(8));
+                c.g[V1][0] = 0xffff_ffff_ffff_0000;
+                c.g[A0][0] = sx(r32(c, V0).wrapping_sub(r32(c, S1)));
+                c.g[S0][0] = sx(r32(c, V0).wrapping_add(align));
+                c.g[A1][0] = (c.g[A1][0] < c.g[A0][0]) as u64;
+                c.g[V1][0] |= 0xfffc;
+                if c.g[A1][0] != 0 {
+                    c.g[S0][0] = c.g[V0][0];
+                }
+                c.g[V1][0] = c.g[A2][0] & c.g[V1][0];
+                c.g[T0][0] = sx(r32(c, S0).wrapping_sub(r32(c, S1)));
+                c.g[A2][0] &= IS_MMAPPED;
+                let mmapped = c.g[A2][0] != 0;
+                c.g[A0][0] = sx(r32(c, V1).wrapping_sub(r32(c, T0)));
+                let chunk = r32(c, S0);
+                if mmapped {
+                    // Move the mmapped chunk's offset forward.
+                    c.cycles += 7;
+                    c.g[V1][0] = c.lw(mem.wrapping_sub(8));
+                    c.g[V0][0] = c.g[A0][0] | IS_MMAPPED;
+                    c.sw(chunk.wrapping_add(4), c.g[V0][0]);
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, T0)));
+                    c.g[V0][0] = sx(chunk.wrapping_add(8));
+                    c.sw(chunk, c.g[V1][0]);
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x40);
+                    break 'tail;
+                }
+                // Give the leading part back.
+                c.cycles += 14;
+                c.g[V0][0] = c.g[A0][0] | PREV_INUSE;
+                c.g[A2][0] = sx(chunk.wrapping_add(r32(c, A0)));
+                c.sw(chunk.wrapping_add(4), c.g[V0][0]);
+                c.g[A1][0] = c.g[A3][0];
+                c.g[A0][0] = c.g[S3][0];
+                c.g[S1][0] = c.g[S0][0];
+                let next = r32(c, A2);
+                c.g[V0][0] = c.lw(next.wrapping_add(4));
+                c.g[V0][0] |= PREV_INUSE;
+                c.sw(next.wrapping_add(4), c.g[V0][0]);
+                c.g[V1][0] = c.lw(mem.wrapping_sub(4));
+                c.g[V1][0] &= PREV_INUSE;
+                c.g[V1][0] |= c.g[T0][0];
+                c.sw(mem.wrapping_sub(4), c.g[V1][0]);
+                DLHEAP_FREE.call(c, 0x0031_f470)?;
+            }
+            // s1: the aligned chunk.
+            c.cycles += 4;
+            let chunk = r32(c, S1);
+            c.g[A0][0] = c.lw(chunk.wrapping_add(4));
+            c.g[V0][0] = c.g[A0][0] & IS_MMAPPED;
+            let mmapped = c.g[V0][0] != 0;
+            c.g[V0][0] = sx(chunk.wrapping_add(8));
+            if !mmapped {
+                // Split off and free a large enough tail.
+                c.cycles += 7;
+                c.g[V0][0] = 0xffff_ffff_ffff_0000;
+                c.g[V1][0] = sx(r32(c, S2).wrapping_add(0x10));
+                c.g[V0][0] |= 0xfffc;
+                c.g[V0][0] &= c.g[A0][0];
+                c.g[V1][0] = (c.g[V1][0] < c.g[V0][0]) as u64;
+                let split = c.g[V1][0] != 0;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, S2)));
+                if split {
+                    c.cycles += 10;
+                    let need = r32(c, S2);
+                    c.g[A1][0] = sx(chunk.wrapping_add(need));
+                    c.g[V0][0] |= PREV_INUSE;
+                    c.g[A0][0] = c.g[S3][0];
+                    c.sw(r32(c, A1).wrapping_add(4), c.g[V0][0]);
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_add(8));
+                    c.g[V0][0] = c.lw(chunk.wrapping_add(4));
+                    c.g[V0][0] &= PREV_INUSE;
+                    c.g[V0][0] |= c.g[S2][0];
+                    c.sw(chunk.wrapping_add(4), c.g[V0][0]);
+                    DLHEAP_FREE.call(c, 0x0031_f4c4)?;
+                }
+                c.cycles += 1;
+                c.g[V0][0] = sx(r32(c, S1).wrapping_add(8));
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x40);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -990,5 +1244,63 @@ pub(crate) mod tests {
                 c.pc = 0x0031_9e48;
             },
         );
+    }
+    use super::*;
+
+
+    // --------------------------------------------------------- DLHeap_Memalign
+
+    /// `DLHeap_Memalign` on a real dlmalloc heap (`DLHeap_InitArena` on a
+    /// 256 KiB arena, then a few random mallocs so results start at
+    /// different alignments): small alignments (plain malloc), powers of two
+    /// and other values up to 4 KiB (rounded up), sizes from 0 to beyond the
+    /// arena (malloc fails), and sizes above the limit (`ENOMEM` through
+    /// `__errno`). Not reached: the mmapped-chunk paths (the heap never
+    /// maps).
+    #[test]
+    fn dlheap_memalign_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA};
+        const HEAP: u32 = DATA + 0x2000;
+        const ARENA: u32 = DATA + 0x4_0000;
+        const BACK: u32 = 0x0000_7770;
+        fn run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
+            for (i, a) in args.iter().enumerate() {
+                c.g[[A0, A1, A2][i]][0] = *a;
+            }
+            c.g[RA][0] = BACK as u64;
+            c.pc = addr;
+            f(c);
+            assert_eq!(c.pc, BACK, "setup call {addr:#x} did not return");
+            c.g[V0][0]
+        }
+        check(ee::s10::f_0031f2c8__generated, dlheap_memalign, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0031_f2c8, 0);
+            let ra = c.g[RA][0];
+            run(
+                c,
+                0x0031_ff60,
+                ee::s10::DLHeap_InitArena,
+                &[HEAP as u64, ARENA as u64, 0x4_0000],
+            );
+            for _ in 0..r.next_u32() % 4 {
+                let n = (r.next_u32() % 0x300) as u64;
+                run(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[HEAP as u64, n]);
+            }
+            c.g[RA][0] = ra;
+            c.pc = 0x0031_f2c8;
+            c.g[A0][0] = sx(HEAP);
+            c.g[A1][0] = match seed % 6 {
+                0 => (r.next_u32() % 17) as u64,
+                1 => 1u64 << (5 + r.next_u32() % 8),
+                _ => (17 + r.next_u32() % 4096) as u64,
+            };
+            c.g[A2][0] = match seed % 11 {
+                0 => 0,
+                1 => 0x10_0000 + (r.next_u32() % 0x1000) as u64,
+                2 => sx(0xffff_ffe0 + r.next_u32() % 0x20),
+                _ => (r.next_u32() % 0x2000) as u64,
+            };
+        });
     }
 }

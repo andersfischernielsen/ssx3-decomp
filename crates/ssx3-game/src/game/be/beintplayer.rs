@@ -324,6 +324,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_char_int_get_overall_rating,
         "BECharInt_GetOverallRating",
     ),
+    (0x0014_5e68, be_new_player_int_char_profile_call523e8, "BENewPlayerInt_CharProfileCall523e8"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3231,6 +3232,71 @@ pub fn be_char_int_get_overall_rating(c: &mut Cpu) {
     })
 }
 
+
+
+
+/// `int BENewPlayerInt_CharProfileCall523e8(self, int player, int flag)`
+/// (0x145e68, beintplayer.cpp): tests a character-profile flag of a
+/// player's character: `BE_TestCharProfileFlag(&profiles[profile][char],
+/// flag)` with the rider profile index (`BE_GetRiderProfile`), the player's
+/// slot (`BENewPlayerInt_GetSlot`) and the slot's character id (signed byte
+/// +0x11 of the 0x1c-byte player record at 0x534fe0); the profile table is
+/// at 0x4a6ca8 (0x9b50 bytes per profile, 0xf88 per character).
+pub fn be_new_player_int_char_profile_call523e8(c: &mut Cpu) {
+    const PLAYERS: u32 = 0x0053_4fe0;
+    const PROFILES: u32 = 0x004a_6ca8;
+    const GET_RIDER_PROFILE: Callee = Callee {
+        addr: 0x0014_a0e0,
+        f: ee::s01::f_0014a0e0,
+    };
+    const GET_SLOT: Callee = Callee {
+        addr: 0x0014_7798,
+        f: ee::s01::f_00147798,
+    };
+    const TEST_FLAG: Callee = Callee {
+        addr: 0x0015_23e8,
+        f: ee::s01::f_001523e8,
+    };
+    guest(c, |c| {
+        c.cycles += 34;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 16, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, 18, 0x10);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, 17, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        GET_RIDER_PROFILE.call(c, 0x0014_5e8c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[S1][0] = c.g[V0][0];
+        GET_SLOT.call(c, 0x0014_5e98)?;
+        c.g[V1][0] = 0x1c;
+        let slot = r32(c, V0);
+        let record = abi::mult(c, slot, 0x1c);
+        c.g[V0][0] = sx(record);
+        c.g[A3][0] = 0xf88;
+        c.g[V1][0] = 0x9b50;
+        let profile_index = r32(c, S1);
+        let profile = abi::mult(c, profile_index, 0x9b50);
+        c.g[S1][0] = sx(profile);
+        c.g[A2][0] = sx(PROFILES);
+        c.g[A1][0] = c.g[S2][0];
+        let record = record.wrapping_add(PLAYERS);
+        c.g[V0][0] = sx(record);
+        let character = Addr(record).off(0x11).lb(c);
+        let character = abi::mult(c, character as u32, 0xf88);
+        c.g[A0][0] = sx(profile.wrapping_add(character.wrapping_add(PROFILES)));
+        TEST_FLAG.call(c, 0x0014_5ed8)?;
+        frame.restore(c, 16, 0x30);
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4472,6 +4538,60 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = (DATA + (r.next_u32() & 0xfff0)) as u64;
                 c.g[A1][0] = (r.next_u32() % 8) as u64;
+            },
+        );
+    }
+    use super::*;
+
+
+    /// `BENewPlayerInt_CharProfileCall523e8`: player 0..7 whose slot (table
+    /// 0x5305b0) is 0..3; the slot's rider record (0x535b20) is unused
+    /// (+0xc = -1: profile 2) or used (profile = +0x10 & 1); the character
+    /// byte 0..9; flag index 0..2 into the mask table at 0x45a7c0; random
+    /// profile flag words. All three callees are real leaves.
+    #[test]
+    fn be_new_player_int_char_profile_call523e8_matches() {
+        use crate::difftest::{check, scramble};
+        check(
+            ssx3_ee::s01::f_00145e68__generated,
+            be_new_player_int_char_profile_call523e8,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x145e_6800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0014_5e68;
+                let player = r.next_u32() % 8;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = player as u64;
+                c.g[A2][0] = (seed % 3) as u64;
+                for i in 0..8 {
+                    c.bus.write32(0x0053_05b0 + 4 * i, r.next_u32() % 4);
+                }
+                for slot in 0..4 {
+                    let rec = 0x0053_5b20 + 0x1c * slot;
+                    c.bus.write32(
+                        rec + 0xc,
+                        if r.next_u32() % 3 == 0 {
+                            u32::MAX
+                        } else {
+                            r.next_u32() >> 1
+                        },
+                    );
+                    c.bus.write32(rec + 0x10, r.next_u32());
+                    c.bus
+                        .write8(0x0053_4fe0 + 0x1c * slot + 0x11, (r.next_u32() % 10) as u8);
+                }
+                for i in 0..3 {
+                    c.bus.write32(0x0045_a7c0 + 4 * i, 1 << (r.next_u32() % 32));
+                }
+                for profile in 0..3 {
+                    for ch in 0..10 {
+                        c.bus.write32(
+                            0x004a_6ca8 + 0x9b50 * profile + 0xf88 * ch + 0xacc,
+                            r.next_u32(),
+                        );
+                    }
+                }
             },
         );
     }

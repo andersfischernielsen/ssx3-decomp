@@ -530,6 +530,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         script_audio_obj_update_sounds,
         "ScriptAudioObj_UpdateSounds",
     ),
+    (0x0027_8918, script_engine_poll_async_loads, "ScriptEngine_PollAsyncLoads"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8014,6 +8015,130 @@ pub fn script_audio_obj_update_sounds(c: &mut Cpu) {
     });
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// ScriptEngine_PollAsyncLoads (0x278918)
+
+/// The script engine: the number of async loads in flight (+0x620), the
+/// filter file's async handle (+0x538), ten bank slots of 0x10 bytes whose
+/// async handle is at +0x630 + 0x10 * i.
+pub(crate) const SCRIPT_PENDING_LOADS: u32 = 0x620;
+
+
+pub(crate) const SCRIPT_FILTER_HANDLE: u32 = 0x538;
+
+
+pub(crate) const SCRIPT_BANK_HANDLES: u32 = 0x630;
+
+
+pub(crate) const SCRIPT_BANK_SLOT_SIZE: u32 = 0x10;
+
+
+
+/// `bool AsyncFile_IsDone(int handle)` (through the function table).
+pub(crate) const ASYNC_FILE_IS_DONE: u32 = 0x003d_f980;
+
+
+
+pub(crate) const SCRIPT_ON_FILTER_LOADED: Callee = Callee {
+    addr: 0x0027_b6b0,
+    f: ee::s07::ScriptEngine_OnFilterLoaded,
+};
+
+
+
+pub(crate) const SCRIPT_ON_BANK_LOADED: Callee = Callee {
+    addr: 0x0027_b5d8,
+    f: ee::s07::ScriptEngine_OnBankLoaded,
+};
+
+
+
+/// `void ScriptEngine_PollAsyncLoads(ScriptEngine* self /*a0*/)`
+/// (0x278918): while loads are pending, hand every finished async load to
+/// its handler: the filter file (`ScriptEngine_OnFilterLoaded`), then each
+/// of the ten bank slots (`ScriptEngine_OnBankLoaded`). Frame 0x50 (ra at
+/// 0, s3 / s2 / s1 / s0 at 0x10 / 0x20 / 0x30 / 0x40).
+pub fn script_engine_poll_async_loads(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, S2);
+        c.g[V0][0] = c.lw(this.wrapping_add(SCRIPT_PENDING_LOADS));
+        frame.restore(c, S0, 0x40);
+        if c.g[V0][0] != 0 {
+            // The filter file.
+            c.cycles += 3;
+            c.g[A0][0] = c.lw(this.wrapping_add(SCRIPT_FILTER_HANDLE));
+            c.g[S1][0] = sx(this.wrapping_add(SCRIPT_BANK_HANDLES));
+            let mut tail = true;
+            if c.g[A0][0] != 0 {
+                c.cycles += 4;
+                call_ptr(c, ASYNC_FILE_IS_DONE, 0x0027_8954)?;
+                c.g[S3][0] = 9;
+                if c.g[V0][0] == 0 {
+                    tail = false;
+                } else {
+                    c.cycles += 4;
+                    let this = r32(c, S2);
+                    c.g[A1][0] = c.lw(this.wrapping_add(SCRIPT_FILTER_HANDLE));
+                    c.g[A0][0] = c.g[S2][0];
+                    SCRIPT_ON_FILTER_LOADED.call(c, 0x0027_8968)?;
+                    c.g[S1][0] = sx(r32(c, S2).wrapping_add(SCRIPT_BANK_HANDLES));
+                }
+            }
+            if tail {
+                c.cycles += 1;
+                c.g[S3][0] = 9;
+            }
+            // The bank slots (s1: the slot's handle, s3: slots left - 1).
+            loop {
+                c.cycles += 3;
+                c.g[S0][0] = c.lw(r32(c, S1));
+                if c.g[S0][0] != 0 {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, ASYNC_FILE_IS_DONE, 0x0027_8984)?;
+                    c.g[A1][0] = c.g[S0][0];
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[S2][0];
+                        SCRIPT_ON_BANK_LOADED.call(c, 0x0027_8994)?;
+                    }
+                    c.cycles += 1;
+                }
+                c.g[S3][0] = sx(r32(c, S3).wrapping_sub(1));
+                c.cycles += 2;
+                let more = (c.g[S3][0] as i64) >= 0;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(SCRIPT_BANK_SLOT_SIZE));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_8970);
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x40);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10845,6 +10970,73 @@ pub(crate) mod tests {
                 c.bus.write32(list + 0xbc, 0);
                 c.bus.write32(list + 0xc0, 0);
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+    use super::*;
+
+
+    // ---------------------------------------------- ScriptEngine_PollAsyncLoads
+
+    /// `ScriptEngine_PollAsyncLoads`: no pending loads; a filter handle that
+    /// is unknown (`AsyncFile_IsDone` -1: the handler runs), still loading
+    /// (0: skipped) or absent; bank slots mixing empty, loading and finished
+    /// handles. The handlers take their short paths: `AsyncFile_GetResult`
+    /// of an unknown handle leaves the size word on the stack, which the
+    /// fixture zeroes (filter: nothing loaded; bank: the slot is cleared).
+    /// The mutex syscalls are fakes, some of which unwind.
+    #[test]
+    fn script_engine_poll_async_loads_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA, SP};
+        /// `AsyncFile_FromHandle`'s table: count and pointer to 0x30-byte
+        /// entries (handle at +0, request state at +0x1c).
+        const FILE_COUNT: u32 = 0x0051_9bf0;
+        const FILE_TABLE_PTR: u32 = 0x0045_0c34;
+        const FILE_TABLE: u32 = DATA + 0x20_0000;
+        check(
+            ee::s07::f_00278918__generated,
+            script_engine_poll_async_loads,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0027_8918, 12);
+                c.pc = 0x0027_8918;
+                let this = DATA;
+                c.g[A0][0] = sx(this);
+                // Four known files, all still loading (state non-zero).
+                c.bus.write32(FILE_COUNT, 4);
+                c.bus.write32(FILE_TABLE_PTR, FILE_TABLE);
+                let loading = |i: u32| 0x100 * (i + 1) + i;
+                for i in 0..4 {
+                    c.bus.write32(FILE_TABLE + 0x30 * i, loading(i));
+                    c.bus
+                        .write32(FILE_TABLE + 0x30 * i + 0x1c, r.next_u32() | 1);
+                }
+                let unknown =
+                    |r: &mut crate::difftest::Rng| 0x1000 + (r.next_u32() & 0xff00) + 0x10;
+                c.bus.write32(
+                    this + SCRIPT_PENDING_LOADS,
+                    if seed % 6 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                let filter = match seed % 3 {
+                    0 => 0,
+                    1 => loading(r.next_u32() % 4),
+                    _ => unknown(&mut r),
+                };
+                c.bus.write32(this + SCRIPT_FILTER_HANDLE, filter);
+                for i in 0..10 {
+                    let h = match r.next_u32() % 4 {
+                        0 | 1 => 0,
+                        2 => loading(r.next_u32() % 4),
+                        _ => unknown(&mut r),
+                    };
+                    c.bus
+                        .write32(this + SCRIPT_BANK_HANDLES + SCRIPT_BANK_SLOT_SIZE * i, h);
+                }
+                // The handlers' `AsyncFile_GetResult` size words (their frames
+                // below ours): zero, so they take the short paths.
+                c.bus.write32(SP - 0x50 - 0x30 + 0x4, 0);
+                c.bus.write32(SP - 0x50 - 0xf0 + 0x84, 0);
             },
         );
     }

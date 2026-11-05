@@ -396,6 +396,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_spin_sub_get_spin_progress,
         "RiderSpinSub_GetSpinProgress",
     ),
+    (0x0012_cb68, rider_wipeout_sub_handle_input, "RiderWipeoutSub_HandleInput"),
 ];
 
 /// `gp`-relative globals used here.
@@ -13143,6 +13144,244 @@ pub fn rider_spin_sub_get_flip_progress(c: &mut Cpu) {
     });
 }
 
+
+pub(crate) mod wipeout_input {
+    use super::*;
+
+    pub const RIDER_HANDLE_BOOST_INPUT: Callee = Callee {
+        addr: 0x0011_4130,
+        f: ee::s00::f_00114130,
+    };
+
+    pub const RIDER_CHECK_RESET_PATH: Callee = Callee {
+        addr: 0x0011_6120,
+        f: ee::s00::f_00116120,
+    };
+
+    pub const UPDATE_PHASE0: Callee = Callee {
+        addr: 0x0012_cd20,
+        f: ee::s00::f_0012cd20,
+    };
+
+    pub const UPDATE_PHASE1: Callee = Callee {
+        addr: 0x0012_d4e8,
+        f: ee::s00::f_0012d4e8,
+    };
+
+    pub const UPDATE_PHASE2: Callee = Callee {
+        addr: 0x0012_d160,
+        f: ee::s00::f_0012d160,
+    };
+
+    pub const UPDATE_RECOVER: Callee = Callee {
+        addr: 0x0012_d848,
+        f: ee::s00::f_0012d848,
+    };
+
+    pub const UPDATE_PHASE4: Callee = Callee {
+        addr: 0x0012_d9d8,
+        f: ee::s00::f_0012d9d8,
+    };
+
+    /// `SSXAudioSystem_GetInstance` (table call).
+    pub const AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
+
+    /// `SSXAudioSystem_PlayWipeoutSlideSfx(audio, rider)` (table call).
+    pub const AUDIO_SLIDE_SFX: u32 = 0x0029_e970;
+
+    /// `SSXAudioSystem_PlayWipeoutImpactSfx(audio, rider, amount)` (table call).
+    pub const AUDIO_IMPACT_SFX: u32 = 0x0029_e590;
+
+
+    /// Wipeout sub-state: the phase (0..4; 3 = recovering).
+    pub const PHASE: u32 = 0x0;
+
+    /// Wipeout sub-state: the slide amount (decays toward 0, the slide
+    /// button pushes it up).
+    pub const SLIDE: u32 = 0x70;
+
+    /// Wipeout sub-state: the rider.
+    pub const RIDER: u32 = 0x80;
+
+    /// Rider: the wipeout kind (0, 2 or other) that picks the slide rate.
+    pub const RIDER_WIPEOUT_KIND: u32 = 0xb20;
+
+    /// The pad's slide button.
+    pub const SLIDE_BUTTON: u64 = 0x2000;
+
+    /// The phase switch's jump table (5 entries).
+    pub const PHASE_TABLE: u32 = 0x0045_7f80;
+
+    /// `.lit4` literals (gp-relative): slide decay per tick, 0, the slide
+    /// rates (default, kind 0, kind 2) and the tick length.
+    pub const GP_DECAY: u32 = 0x77dc;
+
+    pub const GP_ZERO: u32 = 0x77d8;
+
+    pub const GP_RATE: u32 = 0x77d4;
+
+    pub const GP_RATE_KIND0: u32 = 0x77d0;
+
+    pub const GP_RATE_KIND2: u32 = 0x77cc;
+
+    pub const GP_TICK: u32 = 0x77c8;
+}
+
+
+
+/// `void RiderWipeoutSub_HandleInput(RiderWipeoutSub* this, Pad* pad)`
+/// (0x12cb68): per-tick input of a wiped-out rider. Handles the boost input
+/// (no boost), lets the reset button reset the rider onto the path (then
+/// returns), otherwise (unless recovering, phase 3) decays the slide amount
+/// toward 0 and, while the slide button is held, pushes it up at the wipeout
+/// kind's rate and plays the slide sound (once it reaches 1) or the impact
+/// sound; finally runs the current phase's update.
+pub fn rider_wipeout_sub_handle_input(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    use wipeout_input::*;
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = 0;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        // Rider_HandleBoostInput(rider, 0, 0).
+        c.g[A1][0] = 0;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(RIDER)).lw(c);
+        RIDER_HANDLE_BOOST_INPUT.call(c, 0x0012_cb90)?;
+        // Rider_CheckResetPath(rider, pad bit 12, 0).
+        c.g[A1][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A2][0] = 0;
+        c.g[A0][0] = Addr(r32(c, S0).wrapping_add(RIDER)).lw(c);
+        c.g[A1][0] = sx(((c.g[A1][0] as u32) as i32 >> 12) as u32) & 0x1;
+        RIDER_CHECK_RESET_PATH.call(c, 0x0012_cba8)?;
+        'epilogue: {
+            if c.g[V0][0] != 0 {
+                // Reset onto the path: nothing else this tick.
+                frame.restore(c, S0, 0x20);
+                break 'epilogue;
+            }
+            c.cycles += 4;
+            let gp = r32(c, GP);
+            let lit = |off: u32| Addr(gp.wrapping_sub(off));
+            let this = r32(c, S0);
+            c.g[V0][0] = Addr(this.wrapping_add(PHASE)).lw(c) ^ 0x3;
+            if c.g[V0][0] != 0 {
+                // Decay the slide amount toward 0 by one step.
+                c.cycles += 5;
+                let slide = Addr(this.wrapping_add(SLIDE)).read_fpu(c);
+                let step = lit(GP_DECAY).read_fpu(c);
+                abi::set_fpr(c, 2, slide);
+                abi::set_fpr(c, 3, step);
+                if abi::c_lt_s(c, step, slide) {
+                    c.cycles += 2;
+                    abi::set_fpr(c, 1, slide - step);
+                } else {
+                    c.cycles += 6;
+                    let zero = lit(GP_ZERO).read_fpu(c);
+                    abi::set_fpr(c, 0, zero);
+                    abi::set_fpr(c, 1, FpuF32::ZERO);
+                    if abi::c_lt_s(c, slide, zero) {
+                        abi::set_fpr(c, 1, slide + step);
+                    }
+                }
+                c.cycles += 5;
+                let decayed = FpuF32(c.f[1]);
+                Addr(this.wrapping_add(SLIDE)).write_fpu(c, decayed);
+                c.g[V0][0] = Addr(r32(c, S1)).lw(c) & SLIDE_BUTTON;
+                if c.g[V0][0] != 0 {
+                    // The slide rate by wipeout kind.
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr(this.wrapping_add(RIDER)).lw(c);
+                    let mut rate = lit(GP_RATE).read_fpu(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(RIDER_WIPEOUT_KIND)).lw(c);
+                    c.g[V0][0] = 0x2;
+                    if c.g[V1][0] == 0 {
+                        c.cycles += 3;
+                        rate = lit(GP_RATE_KIND0).read_fpu(c);
+                    } else if c.g[V1][0] == c.g[V0][0] {
+                        c.cycles += 3;
+                        rate = lit(GP_RATE_KIND2).read_fpu(c);
+                    } else {
+                        c.cycles += 4;
+                    }
+                    abi::set_fpr(c, 2, rate);
+                    // slide += rate * tick.
+                    c.cycles += 10;
+                    let tick = lit(GP_TICK).read_fpu(c);
+                    let slide = Addr(this.wrapping_add(SLIDE)).read_fpu(c);
+                    let push = rate * tick;
+                    abi::set_fpr(c, 0, push);
+                    c.g[AT][0] = 0x3f80_0000;
+                    abi::set_fpr(c, 2, FpuF32::ONE);
+                    let pushed = slide + push;
+                    abi::set_fpr(c, 1, pushed);
+                    let full = FpuF32::ONE.le(pushed);
+                    abi::set_fcc(c, full);
+                    Addr(this.wrapping_add(SLIDE)).write_fpu(c, pushed);
+                    c.cycles += 7;
+                    if full {
+                        call_ptr(c, AUDIO_GET_INSTANCE, 0x0012_cc6c)?;
+                        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(RIDER)).lw(c);
+                        c.g[A0][0] = c.g[V0][0];
+                        call_ptr(c, AUDIO_SLIDE_SFX, 0x0012_cc78)?;
+                    } else {
+                        call_ptr(c, AUDIO_GET_INSTANCE, 0x0012_cc88)?;
+                        let this = r32(c, S0);
+                        c.g[A1][0] = Addr(this.wrapping_add(RIDER)).lw(c);
+                        c.g[A0][0] = c.g[V0][0];
+                        c.lwc1(12, this.wrapping_add(SLIDE));
+                        call_ptr(c, AUDIO_IMPACT_SFX, 0x0012_cc98)?;
+                    }
+                }
+            }
+            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(PHASE)).lw(c);
+            // switch (phase).
+            c.cycles += 3;
+            c.g[V0][0] = (c.g[V1][0] < 0x5) as u64;
+            let in_range = c.g[V0][0] != 0;
+            c.g[V0][0] = 0x0045_0000;
+            if !in_range {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x20);
+                break 'epilogue;
+            }
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx(PHASE_TABLE);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(PHASE_TABLE));
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            let target = c.g[A0][0] as u32;
+            let (update, ret) = match target {
+                0x0012_ccc0 => (UPDATE_PHASE0, 0x0012_ccc8),
+                0x0012_ccd0 => (UPDATE_PHASE1, 0x0012_ccd8),
+                0x0012_cce0 => (UPDATE_PHASE2, 0x0012_cce8),
+                0x0012_ccf0 => (UPDATE_RECOVER, 0x0012_ccf8),
+                0x0012_cd00 => (UPDATE_PHASE4, 0x0012_cd08),
+                _ => {
+                    c.jump_out(target, 0x0012_cb68, 0x0012_cd1c);
+                    return Ok(());
+                }
+            };
+            c.cycles += if target == 0x0012_cd00 { 2 } else { 4 };
+            c.g[A0][0] = c.g[S0][0];
+            update.call(c, ret)?;
+            if target == 0x0012_cd00 {
+                c.cycles += 1;
+            }
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15518,6 +15757,99 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(done);
                 c.g[A2][0] = sx(total);
+            },
+        );
+    }
+    use super::*;
+
+    // -- 0x0012cb68 RiderWipeoutSub_HandleInput --------------------------------
+
+    /// `RiderWipeoutSub_HandleInput` against the generated body: every phase
+    /// (recovering phase 3 skips the slide update; 5+ and negative ones fall
+    /// out of the switch), slide amounts around the decay step and around 1,
+    /// the slide button on and off, the three wipeout kinds. The real boost
+    /// input, reset-path check (reset button never pressed) and audio callees
+    /// run on their short paths (no boost, not in game, rider without a sound
+    /// slot). The phase jump table is empty RAM (each phase update is a fake
+    /// through `jump_out`, some unwinding), except that some phase-4 seeds put
+    /// the real entry there and run the real `UpdatePhase4` (timer not
+    /// expired, animation not finished).
+    #[test]
+    fn rider_wipeout_sub_handle_input_matches() {
+        use crate::difftest::fakes::{covered, machine};
+        use crate::difftest::{DATA, GAME_GP};
+        use super::wipeout_input::*;
+        const THIS: u32 = DATA + 0x6_0000;
+        const PAD: u32 = DATA + 0x6_0100;
+        const RIDER_OBJ: u32 = DATA + 0x6_1000;
+        const CTRL: u32 = DATA + 0x6_3000;
+        const SEQS: u32 = DATA + 0x6_3100;
+        const SEQ_NODE: u32 = DATA + 0x6_3200;
+        const WORLD: u32 = DATA + 0x6_4000;
+        const AUDIO: u32 = DATA + 0x6_5000;
+        const BE_LIBRARY: u32 = DATA + 0x6_6000;
+        covered(
+            ee::s00::f_0012cb68__generated,
+            rider_wipeout_sub_handle_input,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0012_cb68, 1);
+                c.pc = 0x0012_cb68;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                let f = |x: f32| x.to_bits();
+                // Globals: the behaviour library, the world (not in game:
+                // the audio calls stop early), the audio system.
+                w(c, GAME_GP - 0x1f04, BE_LIBRARY);
+                w(c, GAME_GP - 0x848, WORLD);
+                w(c, WORLD + 0x84, 0);
+                w(c, GAME_GP + 0x410, AUDIO);
+                // The literals.
+                w(c, GAME_GP - GP_DECAY, f(0.004_169_862_7));
+                w(c, GAME_GP - GP_ZERO, 0);
+                w(c, GAME_GP - GP_RATE, f(17.002_617));
+                w(c, GAME_GP - GP_RATE_KIND0, f(8.001_495));
+                w(c, GAME_GP - GP_RATE_KIND2, f(34.002_766));
+                w(c, GAME_GP - GP_TICK, f(1.0 / 60.0));
+                // The phase.
+                let phase = match seed % 8 {
+                    7 => 0xffff_fff0 | r.next_u32() % 16,
+                    p => p,
+                };
+                let real_phase4 = phase == 4 && r.next_u32() % 2 == 0;
+                if real_phase4 {
+                    w(c, PHASE_TABLE + 4 * 4, 0x0012_cd00);
+                }
+                // The slide amount: around the decay step, around 1, or
+                // small enough to stay below 1 (the real phase 4).
+                let slide = if real_phase4 {
+                    r.f32(0.4)
+                } else {
+                    match r.next_u32() % 4 {
+                        0 => r.f32(0.01),
+                        1 => f(1.0 - (r.next_u32() % 64) as f32 * 0.01),
+                        2 => 0,
+                        _ => r.f32(1.5),
+                    }
+                };
+                w(c, THIS + PHASE, phase);
+                w(c, THIS + SLIDE, slide);
+                w(c, THIS + RIDER, RIDER_OBJ);
+                // The pad: the reset button (bit 12) never pressed, the
+                // slide button at random.
+                w(c, PAD, r.next_u32() & !0x1000);
+                // The rider: no boost (+0x2fc), a wipeout kind, no sound slot
+                // (+0x874); for phase 4 the timer (+0x470) not expired and an
+                // animation controller whose layer 2 is not finished.
+                w(c, RIDER_OBJ + 0x2fc, 0);
+                w(c, RIDER_OBJ + RIDER_WIPEOUT_KIND, [0, 2, 1, 5][(r.next_u32() % 4) as usize]);
+                w(c, RIDER_OBJ + 0x874, 0);
+                w(c, RIDER_OBJ + 0x470, f(-1.0));
+                w(c, RIDER_OBJ + 0x784, CTRL);
+                w(c, CTRL + 0x50, SEQS);
+                w(c, SEQS + 0x14, SEQ_NODE);
+                w(c, SEQ_NODE + 0xc0, 0);
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(PAD);
             },
         );
     }

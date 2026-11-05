@@ -170,6 +170,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_world_cache_streamer_update,
         "cWorldCache_StreamerUpdate",
     ),
+    (0x003a_96e0, world_cache_streamer_get_view_clearance, "cWorldCache_StreamerGetViewClearance"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2778,6 +2779,88 @@ pub fn c_world_cache_streamer_update(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// cWorldCache_StreamerGetViewClearance (0x3a96e0)
+
+/// World cache: per-view streamer records (0x50 bytes each): in use, the
+/// view position quad, and the view's clearance (fade) value.
+pub(crate) const STREAM_VIEW_SIZE: u64 = 0x50;
+
+
+pub(crate) const STREAM_VIEW_USED: u32 = 0x240;
+
+
+pub(crate) const STREAM_VIEW_POS: u32 = 0x250;
+
+
+pub(crate) const STREAM_VIEW_CLEARANCE: u32 = 0x284;
+
+
+
+pub(crate) const WORLD_CACHE_STREAMER_UPDATE_VIEW: Callee = Callee {
+    addr: 0x003a_9d60,
+    f: ee::s13::cWorldCache_StreamerUpdateView,
+};
+
+
+
+/// `int cWorldCache_StreamerGetViewClearance(cWorldCache* cache, int view,
+/// Vec4* out_pos, float* out_t)` (0x3a96e0): for a used view record,
+/// update the view, copy its position to `out_pos` and `clearance - 0.5` to
+/// `out_t`; returns whether that is positive (0 for an unused record).
+pub fn world_cache_streamer_get_view_clearance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        c.g[V0][0] = STREAM_VIEW_SIZE;
+        let frame = Frame::open(c, 0x40);
+        c.mult(0, V1, A1, V0);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[S0][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+        let view = r32(c, S0);
+        c.g[V0][0] = Addr(view.wrapping_add(STREAM_VIEW_USED)).lw(c);
+        c.g[S2][0] = c.g[A3][0];
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 14;
+            WORLD_CACHE_STREAMER_UPDATE_VIEW.call(c, 0x003a_9720)?;
+            let view = r32(c, S0);
+            c.lq(V0, view.wrapping_add(STREAM_VIEW_POS));
+            c.g[V1][0] = 1;
+            c.g[AT][0] = 0x3f00_0000; // 0.5
+            c.mtc1(AT, 2);
+            c.sq(V0, r32(c, S1));
+            c.mtc1(ZERO, 1);
+            c.lwc1(0, view.wrapping_add(STREAM_VIEW_CLEARANCE));
+            c.sub_s(0, 0, 2);
+            c.c_lt_s(1, 0);
+            let positive = c.fcc();
+            c.swc1(0, r32(c, S2));
+            if !positive {
+                c.cycles += 1;
+                c.g[V1][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[V1][0];
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3877,6 +3960,42 @@ pub(crate) mod tests {
                 c.g[GP][0] = GAME_GP as u64;
                 c.next_event = c.cycles + 4 + (r.next_u32() % 40) as u64;
                 mode
+            },
+        );
+    }
+    use super::*;
+
+
+
+    /// `cWorldCache_StreamerGetViewClearance`: view 0 or 1, used or not,
+    /// random position and edge-case clearance values; the real
+    /// `cWorldCache_StreamerUpdateView` runs on the empty cache.
+    #[test]
+    fn world_cache_streamer_get_view_clearance_matches() {
+        check(
+            ee::s13::f_003a96e0__generated,
+            world_cache_streamer_get_view_clearance,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a96e0, 0);
+                crate::game::fe::feasyncfile::tests::env(c);
+                c.pc = 0x003a_96e0;
+                let this = DATA + 0x400;
+                let idx = seed % 2;
+                let e = this + 0x50 * idx;
+                c.bus.write32(e + STREAM_VIEW_USED, (seed % 3 != 0) as u32);
+                for k in 0..4u32 {
+                    c.bus.write32(e + STREAM_VIEW_POS + 4 * k, r.next_u32());
+                }
+                let t = match seed % 4 {
+                    0 => 0x3f00_0000,
+                    _ => r.edge_f32(),
+                };
+                c.bus.write32(e + STREAM_VIEW_CLEARANCE, t);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = idx as u64;
+                c.g[A2][0] = sx(DATA + 0x2000);
+                c.g[A3][0] = sx(DATA + 0x2100);
             },
         );
     }

@@ -66,6 +66,7 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -440,6 +441,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         spch_notify_part_callback,
         "SPCH_NotifyPartCallback",
     ),
+    (0x002a_f6c0, path_plat_set_volume, "PATH_PlatSetVolume"),
+    (0x002b_0290, speech_instance_is_stream_ready, "SpeechInstance_IsStreamReady"),
+    (0x002b_0c78, speech_system_update, "SpeechSystem_Update"),
+    (0x002b_2160, song_instance_set_volume, "SongInstance_SetVolume"),
+    (0x003d_1e80, path_service_queues, "PATH_ServiceQueues"),
+    (0x003d_5290, path_find_track, "PATH_FindTrack"),
 ];
 
 /// Same-shard direct callees used above.
@@ -6023,6 +6030,681 @@ pub fn music_player_enable_song_by_name(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod speech_stream_ready {
+    use super::*;
+
+    pub const STREAM_ARRAY_GET_STATE: Callee = Callee {
+        addr: 0x002a_ae08,
+        f: ee::s08::f_002aae08,
+    };
+
+    pub const STREAM_ARRAY_IS_PLAYING: Callee = Callee {
+        addr: 0x002a_b028,
+        f: ee::s08::f_002ab028,
+    };
+
+    pub const STREAM_ARRAY_GET_TIME_REMAINING: Callee = Callee {
+        addr: 0x002a_ae78,
+        f: ee::s08::f_002aae78,
+    };
+
+    /// `gp+0x6c4`: the speech system (its first word is the stream array).
+    pub const SPEECH_GP: u32 = 0x6c4;
+
+    /// Speech instance: its stream slot.
+    pub const STREAM_SLOT: u32 = 0x4;
+
+    /// A playing stream counts as ready when less than this much is left.
+    pub const READY_REMAINING: i64 = 500;
+}
+
+pub(crate) mod song_set_volume {
+    use super::*;
+
+    /// `SND_Lock()` / `SND_Unlock()` (table calls).
+    pub const SND_LOCK: u32 = 0x003b_58a0;
+
+    pub const SND_UNLOCK: u32 = 0x003b_58d8;
+
+    pub const GET_STREAM_HANDLE: Callee = Callee {
+        addr: 0x002b_2488,
+        f: ee::s08::f_002b2488,
+    };
+
+    /// `SNDSTRM_SetLowpass(handle, value)` (table call): the song's volume
+    /// goes through the stream's low-pass parameter.
+    pub const SNDSTRM_SET_LOWPASS: u32 = 0x003b_80a0;
+
+    /// Song instance: the current volume.
+    pub const VOLUME: u32 = 0x44;
+
+    pub const MAX_VOLUME: u64 = 0xffff;
+}
+
+pub(crate) mod path {
+
+    pub const SLOTS: u32 = 0x0051_7610;
+
+    pub const SLOT_SIZE: u32 = 0x928;
+
+    pub const SLOT_COUNT: u64 = 4;
+
+    /// Which id classes the file holds (top nibble: kind, next nibble: group).
+    pub const MASK: u32 = 0x30;
+
+    /// Non-zero when the slot is loaded.
+    pub const LOADED: u32 = 0x34;
+
+    /// The 24 tracks, one per bit of the id's low 24 bits.
+    pub const TRACKS: u32 = 0x58;
+
+    pub const TRACK_BITS: u64 = 24;
+}
+
+
+
+/// `int SpeechInstance_IsStreamReady(SpeechInstance* this)` (0x2b0290): 1
+/// when the instance's stream slot is idle (state 0); for a slot in state 1,
+/// 1 when it is playing with less than 500 left; 0 otherwise.
+pub fn speech_instance_is_stream_ready(c: &mut Cpu) {
+    use speech_stream_ready::*;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x30);
+        let speech = Addr(r32(c, GP).wrapping_add(SPEECH_GP));
+        c.g[V0][0] = speech.lw(c);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(STREAM_SLOT)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+        STREAM_ARRAY_GET_STATE.call(c, 0x002b_02b4)?;
+        c.g[S1][0] = c.g[V0][0]; // the state
+        'done: {
+            c.g[V0][0] = 1;
+            if c.g[S1][0] == 0 {
+                break 'done;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            let not_one = c.g[S1][0] != c.g[V0][0];
+            c.g[V0][0] = 0;
+            if not_one {
+                break 'done;
+            }
+            c.cycles += 6;
+            c.g[V0][0] = speech.lw(c);
+            c.g[A1][0] = Addr(r32(c, S0).wrapping_add(STREAM_SLOT)).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+            STREAM_ARRAY_IS_PLAYING.call(c, 0x002b_02dc)?;
+            let playing = c.g[V0][0] != 0;
+            c.g[V0][0] = speech.lw(c);
+            if !playing {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+                break 'done;
+            }
+            c.cycles += 9;
+            c.g[A1][0] = Addr(r32(c, S0).wrapping_add(STREAM_SLOT)).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+            STREAM_ARRAY_GET_TIME_REMAINING.call(c, 0x002b_02f0)?;
+            // (int)remaining < 500 ? state : 0.
+            c.cvt_w_s(1, 0);
+            c.mfc1(V1, 1);
+            c.g[V0][0] = 0;
+            c.g[V1][0] = ((c.g[V1][0] as i64) < READY_REMAINING) as u64;
+            if c.g[V1][0] != 0 {
+                c.g[V0][0] = c.g[S1][0];
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `void SongInstance_SetVolume(SongInstance* this, int volume)` (0x2b2160):
+/// clamp the volume to 0..0xffff; if it changed, under the SND lock, store
+/// it and pass it to the song's stream (when the song has one).
+pub fn song_instance_set_volume(c: &mut Cpu) {
+    use song_set_volume::*;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = MAX_VOLUME;
+        frame.save(c, S0, 0x20);
+        c.g[V1][0] = u64::MAX;
+        c.g[S0][0] = c.g[V0][0];
+        frame.save(c, S1, 0x10);
+        c.g[V0][0] = ((MAX_VOLUME as i64) < (c.g[A1][0] as i64)) as u64;
+        frame.save_ra(c, 0);
+        if c.g[V0][0] == 0 {
+            c.g[S0][0] = c.g[A1][0];
+        }
+        c.g[S1][0] = c.g[A0][0];
+        c.g[V1][0] = (-1 < (c.g[S0][0] as i64)) as u64;
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(VOLUME)).lw(c);
+        if c.g[V1][0] == 0 {
+            c.g[S0][0] = 0;
+        }
+        // s0: the clamped volume.
+        if c.g[S0][0] != c.g[V0][0] {
+            c.cycles += 6;
+            call_ptr(c, SND_LOCK, 0x002b_21a4)?;
+            c.g[A0][0] = c.g[S1][0];
+            GET_STREAM_HANDLE.call(c, 0x002b_21ac)?;
+            let no_stream = (c.g[V0][0] as i64) < 0;
+            c.g[A0][0] = c.g[V0][0];
+            if !no_stream {
+                c.cycles += 3;
+                Addr(r32(c, S1).wrapping_add(VOLUME)).sw(c, c.g[S0][0]);
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, SNDSTRM_SET_LOWPASS, 0x002b_21c0)?;
+            }
+            c.cycles += 3;
+            call_ptr(c, SND_UNLOCK, 0x002b_21c8)?;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `int PATH_PlatSetVolume(int path, int volume)` (0x2af6c0, bankmonitor.cpp):
+/// sets the volume of a playing path-music stream. `paths[path]` (the table
+/// at 0x4d3e98) is the stream record: +0x0 stream handle, +0x8 pending
+/// volume (-1: none), +0xc current volume, +0x64 "is a sound, not a stream"
+/// flag (its channel handle at `*(+0x6c) + 4`), +0x65 status dirty flag.
+/// Returns 0 when the audio system is off (`+0x6280` of the audio system),
+/// -8 when a different volume change is still pending; else clears the
+/// pending volume and, if the volume changed and both are non-negative,
+/// sets it under `SND_Lock` and records it.
+pub fn path_plat_set_volume(c: &mut Cpu) {
+    const PATHS: u32 = 0x004d_3e98;
+    const HANDLE: u32 = 0x0;
+    const PENDING: u32 = 0x8;
+    const CURRENT: u32 = 0xc;
+    const IS_SOUND: u32 = 0x64;
+    const DIRTY: u32 = 0x65;
+    const SOUND: u32 = 0x6c;
+    const AUDIO_ENABLED: u32 = 0x6280;
+    /// Where the generated body leaves the function.
+    enum Exit {
+        /// 0x2af784: `v0 = s2` first.
+        Result,
+        /// 0x2af788: restore s0, then the rest.
+        RestoreS0,
+        /// 0x2af78c: s0 already restored.
+        Rest,
+    }
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, 17, 0x20);
+        c.g[A0][0] = sx(r32(c, A0) << 2);
+        frame.save(c, 18, 0x10);
+        c.g[V0][0] = sx(PATHS);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(PATHS));
+        frame.save(c, 16, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[S0][0] = Addr(r32(c, A0)).lw(c);
+        c.g[S2][0] = 0;
+        call_ptr(c, 0x0028_b180, 0x002a_f6f4)?; // SSXAudioSystem_GetInstance
+        c.g[V1][0] = Addr(r32(c, V0)).off(AUDIO_ENABLED).lw(c);
+        c.g[V0][0] = 0;
+        let exit = if c.g[V1][0] == 0 {
+            Exit::RestoreS0
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, S0)).off(DIRTY).lb(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[A0][0] = 0;
+                Callee {
+                    addr: 0x002a_efa8,
+                    f: ee::s08::f_002aefa8,
+                }
+                .call(c, 0x002a_f714)?;
+            }
+            let path = Addr(r32(c, S0));
+            let pending = path.off(PENDING).lw(c);
+            c.g[V0][0] = pending;
+            c.cycles += 2;
+            let current = path.off(CURRENT).lw(c);
+            c.g[V1][0] = current;
+            let busy = (pending as i64) >= 0 && {
+                c.cycles += 2;
+                pending != current
+            };
+            if busy {
+                c.g[S2][0] = (-8i64) as u64;
+                Exit::Result
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = u64::MAX;
+                path.off(PENDING).sw(c, u64::MAX);
+                if current == c.g[S1][0] {
+                    Exit::Result
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S2][0];
+                    if (c.g[S1][0] as i64) < 0 {
+                        Exit::RestoreS0
+                    } else {
+                        c.cycles += 2;
+                        if (current as i64) < 0 {
+                            frame.restore(c, 16, 0x30);
+                            Exit::Rest
+                        } else {
+                            c.cycles += 5;
+                            call_ptr(c, 0x003b_58a0, 0x002a_f74c)?; // SND_Lock
+                            c.g[V0][0] = Addr(r32(c, S0)).off(IS_SOUND).lb(c);
+                            c.g[A1][0] = c.g[S1][0];
+                            if c.g[V0][0] != 0 {
+                                c.cycles += 5;
+                                let sound = Addr(r32(c, S0)).off(SOUND).lw(c);
+                                c.g[V0][0] = sound;
+                                c.g[A0][0] = Addr(sound as u32).off(4).lw(c);
+                                call_ptr(c, 0x003b_85f0, 0x002a_f764)?; // SND_SetVolume
+                            } else {
+                                c.cycles += 3;
+                                c.g[A0][0] = Addr(r32(c, S0)).off(HANDLE).lw(c);
+                                c.g[A1][0] = c.g[S1][0];
+                                call_ptr(c, 0x003b_7e70, 0x002a_f778)?; // SNDSTRM_SetVolume
+                            }
+                            c.cycles += 3;
+                            call_ptr(c, 0x003b_58d8, 0x002a_f780)?; // SND_Unlock
+                            let volume = c.g[S1][0];
+                            Addr(r32(c, S0)).off(CURRENT).sw(c, volume);
+                            Exit::Result
+                        }
+                    }
+                }
+            }
+        };
+        if let Exit::Result = exit {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[S2][0];
+        }
+        if !matches!(exit, Exit::Rest) {
+            c.cycles += 1;
+            frame.restore(c, 16, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, 17, 0x20);
+        frame.restore(c, 18, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `void SpeechSystem_Update(SpeechSystem* self)` (0x2b0c78,
+/// bankmonitor.cpp): updates both speech instances (`self->instances[i]`,
+/// the array at +0x4; empty slots skipped) with `SpeechInstance_Update(inst,
+/// i)`, then ticks the event contexts (`SpeechSystem_TickEventContexts`).
+pub fn speech_system_update(c: &mut Cpu) {
+    const INSTANCES: u32 = 0x4;
+    const INSTANCE_UPDATE: Callee = Callee {
+        addr: 0x002a_fc88,
+        f: ee::s08::f_002afc88,
+    };
+    const TICK_EVENT_CONTEXTS: Callee = Callee {
+        addr: 0x002b_1720,
+        f: ee::s08::f_002b1720,
+    };
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        c.g[S0][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[V1][0] = Addr(r32(c, S1)).off(INSTANCES).lw(c);
+        loop {
+            c.cycles += 5;
+            let at = (r32(c, S0) << 2).wrapping_add(r32(c, V1));
+            c.g[V0][0] = sx(at);
+            c.g[A0][0] = Addr(at).lw(c);
+            if c.g[A0][0] != 0 {
+                c.cycles += 3;
+                c.g[A1][0] = c.g[S0][0];
+                INSTANCE_UPDATE.call(c, 0x002b_0cb4)?;
+            }
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+            c.cycles += 3;
+            let more = (c.g[S0][0] as i64) < 2;
+            c.g[V0][0] = more as u64;
+            if !more {
+                break;
+            }
+            c.g[V1][0] = Addr(r32(c, S1)).off(INSTANCES).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x002b_0c98);
+            }
+        }
+        c.cycles += 7;
+        c.g[A0][0] = c.g[S1][0];
+        TICK_EVENT_CONTEXTS.call(c, 0x002b_0ccc)?;
+        frame.restore(c, 16, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `PATHTrack *PATH_FindTrack(u32 id)` (0x3d5290): the track named by `id`:
+/// the first loaded slot whose class mask shares the id's top nibble and its
+/// group nibble, then the track of the lowest set bit among the id's low 24
+/// bits. 0 when no slot has it.
+pub fn path_find_track(c: &mut Cpu) {
+    use path::*;
+    c.cycles += 14;
+    let id = c.g[A0][0];
+    c.g[T3][0] = sx(SLOTS + TRACKS);
+    c.g[T2][0] = id & 0xffff_ffff_f000_0000;
+    c.g[T1][0] = id & 0x0f00_0000;
+    c.g[A2][0] = 0x00ff_ffff;
+    c.g[T0][0] = 0;
+    c.g[A0][0] = id & 0x00ff_ffff;
+    c.g[A1][0] = sx(SLOTS + LOADED);
+    c.g[A3][0] = 0;
+    loop {
+        // a1: this slot's LOADED word; a3: the slot's offset.
+        c.cycles += 3;
+        let loaded = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[V0][0] = loaded;
+        c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_sub(LOADED - MASK)).lw(c);
+        let mut skip_cycle = true;
+        if loaded != 0 {
+            c.cycles += 3;
+            let mask = c.g[V1][0];
+            let kind = mask & c.g[T2][0];
+            c.g[V0][0] = mask & c.g[T1][0];
+            if kind != 0 {
+                c.cycles += 2;
+                if c.g[V0][0] == 0 {
+                    skip_cycle = false;
+                } else {
+                    // The track of the id's lowest set bit.
+                    c.cycles += 2;
+                    c.g[A2][0] = 0;
+                    c.g[V1][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[T3][0] as u32));
+                    loop {
+                        c.cycles += 4;
+                        let bit = ((c.g[A0][0] as u32) >> ((c.g[A2][0] as u32) & 31)) & 1;
+                        c.g[V0][0] = bit as u64;
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(1));
+                        if bit != 0 {
+                            c.cycles += 2;
+                            c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                            ret(c);
+                            return;
+                        }
+                        c.cycles += 3;
+                        let more = c.g[A2][0] < TRACK_BITS;
+                        c.g[V0][0] = more as u64;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(4));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d_52f0);
+                        }
+                    }
+                }
+            }
+        }
+        if skip_cycle {
+            c.cycles += 1;
+        }
+        c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(1));
+        c.cycles += 4;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(SLOT_SIZE));
+        let more = c.g[T0][0] < SLOT_COUNT;
+        c.g[V0][0] = more as u64;
+        c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(SLOT_SIZE));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_52c8);
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// PATH_ServiceQueues (0x3d1e80)
+
+/// `PATH_RemoveEvent` (0x3d1ba8) and `PATH_ServiceQueue` (0x3d1d28).
+pub(crate) const PATH_REMOVE_EVENT: Callee = Callee {
+    addr: 0x003d_1ba8,
+    f: ee::s14::PATH_RemoveEvent,
+};
+
+
+pub(crate) const PATH_SERVICE_QUEUE: Callee = Callee {
+    addr: 0x003d_1d28,
+    f: ee::s14::PATH_ServiceQueue,
+};
+
+
+/// The PATH state pointer and the PATH clock (ms), both 0x450000-relative.
+pub(crate) const PATH_STATE_OFF: u32 = 0xbe0;
+
+
+pub(crate) const PATH_TIME_OFF: u32 = 0xbc8;
+
+
+/// PATH state: the event queue heads (16) and their count.
+pub(crate) const PATH_QUEUES: u32 = 0xdc;
+
+
+pub(crate) const PATH_QUEUE_COUNT: u32 = 0x91c;
+
+
+pub(crate) const PATH_MAX_QUEUES: i64 = 16;
+
+
+/// Queue head: start time, lifetime (0 = forever), packed action indices
+/// (bits 16..21 = end, 22..27 = next).
+pub(crate) const QUEUE_START: u32 = 0x0;
+
+
+pub(crate) const QUEUE_LIFETIME: u32 = 0x4;
+
+
+pub(crate) const QUEUE_INDICES: u32 = 0xc;
+
+
+/// Resume points (dispatcher loop heads).
+pub(crate) const SERVICE_QUEUES_ENTRY: u32 = 0x003d_1e80;
+
+
+pub(crate) const SERVICE_QUEUES_NEXT: u32 = 0x003d_1f1c;
+
+
+pub(crate) const SERVICE_QUEUES_QUEUE: u32 = 0x003d_1ec0;
+
+
+
+/// The stages of PATH_ServiceQueues' loop (the original's block heads).
+#[derive(Clone, Copy)]
+pub(crate) enum ServiceStage {
+    /// 0x3d1f20: past the last queue slot? (s0 = index)
+    Check,
+    /// 0x3d1ec0: one live queue (a0 = head, v0 = its packed indices).
+    Queue,
+    /// 0x3d1f1c: index + 1.
+    Next,
+}
+
+
+
+/// `int PATH_ServiceQueues()` (0x3d1e80): runs every PATH event queue: a
+/// queue with actions left (and not expired) is serviced, one that is done
+/// or expired is removed (the later ones shift down); slots past the queue
+/// count are cleared. Returns the number of actions run. Dispatcher-shaped:
+/// an unwinding event at a back edge returns with `pc` at the loop head
+/// (0x3d1f1c or 0x3d1ec0), where the trampoline re-enters it with the loop
+/// state in s0..s5 (and a0/v0).
+pub fn path_service_queues(c: &mut Cpu) {
+    guest(c, |c| {
+        let frame = Frame { size: 0x70 };
+        let mut stage = match c.pc {
+            SERVICE_QUEUES_ENTRY => {
+                c.cycles += 15;
+                Frame::open(c, 0x70);
+                frame.save(c, S0, 0x60);
+                frame.save(c, S1, 0x50);
+                c.g[S0][0] = 0; // queue index
+                frame.save(c, S2, 0x40);
+                c.g[S1][0] = 0; // actions run
+                frame.save(c, S3, 0x30);
+                c.g[S2][0] = 1;
+                frame.save(c, S4, 0x20);
+                c.g[S3][0] = 0x45_0000;
+                frame.save(c, S5, 0x10);
+                c.g[S4][0] = 3;
+                frame.save_ra(c, 0);
+                c.g[S5][0] = 0x45_0000;
+                ServiceStage::Check
+            }
+            SERVICE_QUEUES_NEXT => ServiceStage::Next,
+            SERVICE_QUEUES_QUEUE => ServiceStage::Queue,
+            pc => {
+                c.jump_out(pc, SERVICE_QUEUES_ENTRY, 0x003d_1f80);
+                return Ok(());
+            }
+        };
+        loop {
+            match stage {
+                ServiceStage::Check => {
+                    c.cycles += 3;
+                    let index = c.g[S0][0] as i64;
+                    c.g[V0][0] = (index < PATH_MAX_QUEUES) as u64;
+                    let state = Addr(r32(c, S5).wrapping_sub(PATH_STATE_OFF)).lw(c);
+                    c.g[V1][0] = state;
+                    if index >= PATH_MAX_QUEUES {
+                        break;
+                    }
+                    c.cycles += 4;
+                    let count = Addr((state as u32).wrapping_add(PATH_QUEUE_COUNT)).lw(c);
+                    let live = index < count as i64;
+                    let slot = (state as u32).wrapping_add((index as u32) << 2);
+                    c.g[V0][0] = sx(slot);
+                    if !live {
+                        // A slot past the count: clear it.
+                        c.cycles += 3;
+                        Addr(slot).off(PATH_QUEUES).sw(c, 0);
+                        if crate::events::back_edge_unwinds(c, SERVICE_QUEUES_NEXT) {
+                            return Err(crate::call::Unwound);
+                        }
+                        stage = ServiceStage::Next;
+                        continue;
+                    }
+                    c.cycles += 4;
+                    let head = Addr(slot).off(PATH_QUEUES).lw(c);
+                    c.g[A0][0] = head;
+                    if head == 0 {
+                        break;
+                    }
+                    c.g[V0][0] = Addr(head as u32).off(QUEUE_INDICES).lw(c);
+                    if crate::events::back_edge_unwinds(c, SERVICE_QUEUES_QUEUE) {
+                        return Err(crate::call::Unwound);
+                    }
+                    stage = ServiceStage::Queue;
+                }
+                ServiceStage::Queue => {
+                    // Remove (a1 != 0) when no actions are left, or when the
+                    // lifetime ran out; else service.
+                    c.cycles += 9;
+                    let head = Addr(r32(c, A0));
+                    let mut remove = c.g[S4][0];
+                    let lifetime = head.off(QUEUE_LIFETIME).lw(c);
+                    c.g[A2][0] = lifetime;
+                    let indices = r32(c, V0);
+                    let end = sx(indices >> 16) & 0x3f;
+                    let next = sx(indices >> 22) & 0x3f;
+                    c.g[V1][0] = end;
+                    let pending = next < end;
+                    c.g[V0][0] = pending as u64;
+                    if pending {
+                        remove = 0;
+                    }
+                    if lifetime != 0 {
+                        c.cycles += 5;
+                        let start = head.off(QUEUE_START).lw(c);
+                        let now = Addr(r32(c, S3).wrapping_sub(PATH_TIME_OFF)).lw(c);
+                        c.g[V1][0] = now;
+                        let expiry = sx((start as u32).wrapping_add(lifetime as u32));
+                        let expired = expiry < now;
+                        c.g[V0][0] = expired as u64;
+                        if expired {
+                            remove = c.g[S2][0];
+                        }
+                    }
+                    c.g[A1][0] = remove;
+                    c.cycles += 2;
+                    if remove != 0 {
+                        c.cycles += 4;
+                        c.g[A0][0] = c.g[S0][0];
+                        PATH_REMOVE_EVENT.call(c, 0x003d_1f08)?;
+                        // The later queues moved down: stay on this index.
+                        c.g[S0][0] = sx(r32(c, S0).wrapping_sub(1));
+                    } else {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S0][0];
+                        PATH_SERVICE_QUEUE.call(c, 0x003d_1f18)?;
+                        c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, V0)));
+                    }
+                    stage = ServiceStage::Next;
+                }
+                ServiceStage::Next => {
+                    c.cycles += 1;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    stage = ServiceStage::Check;
+                }
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = c.g[S1][0];
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8262,6 +8944,365 @@ pub(crate) mod tests {
                 c.bus.write8(name + 1, 0);
                 c.g[A0][0] = sx(player);
                 c.g[A1][0] = sx(name);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+    // -- 0x002b0290 SpeechInstance_IsStreamReady -------------------------------
+
+    /// `SpeechInstance_IsStreamReady` against the generated body, through the
+    /// real stream array / stream buffer / SNDSTRM status calls (the SND lock
+    /// hooks are fakes, some unwinding): an empty array slot (state 0), a
+    /// stream in state 0, 1 or 2; in state 1 its request playing (status 2)
+    /// or not, with 0..1000 ms left (around the 500 threshold).
+    #[test]
+    fn speech_instance_is_stream_ready_matches() {
+        use super::speech_stream_ready::*;
+        use crate::difftest::fakes::{covered, machine};
+        use crate::difftest::{DATA, GAME_GP};
+        const THIS: u32 = DATA + 0x100;
+        const SPEECH: u32 = DATA + 0x200;
+        const ARRAY: u32 = DATA + 0x300;
+        const SLOTS: u32 = DATA + 0x400;
+        const BUFFER: u32 = DATA + 0x500;
+        const STREAM: u32 = DATA + 0x1000;
+        const REQUEST: u32 = DATA + 0x1400;
+        const SND_SLOT: u32 = DATA + 0x1800;
+        /// SNDSTRM: the stream count (byte) and the stream table.
+        const SNDSTRM_COUNT: u32 = 0x0051_0000 - 0x56d2;
+        const SNDSTRM_STREAMS: u32 = 0x0051_0000 - 0x5f60;
+        /// SNDSTRM: the per-slot table the buffered-bytes query reads.
+        const SNDSTRM_SLOTS: u32 = 0x0051_57b8 + 0x304;
+        covered(
+            ee::s08::f_002b0290__generated,
+            speech_instance_is_stream_ready,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002b_0290, 4);
+                c.pc = 0x002b_0290;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                let slot = r.next_u32() % 4;
+                c.g[A0][0] = sx(THIS);
+                w(c, THIS + STREAM_SLOT, slot);
+                w(c, GAME_GP + SPEECH_GP, SPEECH);
+                w(c, SPEECH, ARRAY);
+                w(c, ARRAY + 8, SLOTS);
+                w(c, SLOTS + 4 * slot, if seed % 7 == 0 { 0 } else { BUFFER });
+                // The buffer's SND stream handle 0.
+                w(c, BUFFER + 8, 0);
+                c.bus.write8(SNDSTRM_COUNT, 4);
+                w(c, SNDSTRM_STREAMS, STREAM);
+                // The stream: state, current request, rate (1000: the
+                // remaining time is the request's length in ms), SND slot 0
+                // with some bytes buffered.
+                let state = [0, 1, 1, 1, 2][(r.next_u32() % 5) as usize];
+                w(c, STREAM + 0x124, state);
+                w(c, STREAM + 0x11c, REQUEST);
+                c.bus.write16(STREAM + 0x14, 1000);
+                w(c, STREAM + 8, 0);
+                w(c, SNDSTRM_SLOTS, SND_SLOT);
+                w(c, SND_SLOT + 0x48, 0x800 + r.next_u32() % 0x800);
+                w(c, SND_SLOT + 0x4c, r.next_u32() % 0x800);
+                // The request: id 0 (stream 0), playing or not, its length.
+                w(c, REQUEST, 0);
+                w(c, REQUEST + 0xc, 0);
+                w(c, REQUEST + 0x10, 0);
+                c.bus.write8(REQUEST + 0x24, (r.next_u32() % 3 != 0) as u8);
+                w(c, REQUEST + 0x14, 0);
+                w(c, REQUEST + 0x18, r.next_u32() % 1000);
+                w(c, REQUEST + 0x1c, r.next_u32() % 1000);
+            },
+        );
+    }
+
+    // -- 0x002b2160 SongInstance_SetVolume -------------------------------------
+
+    /// `SongInstance_SetVolume` against the generated body: volumes above
+    /// 0xffff, negative, in range, and equal to the current one (nothing to
+    /// do); the real `SongInstance_GetStreamHandle` finding the song's track
+    /// (stream index valid or negative, stream handle valid or negative) or
+    /// not; the real `SNDSTRM_SetLowpass` finds no stream. The SND lock
+    /// hooks are fakes (some unwinding).
+    #[test]
+    fn song_instance_set_volume_matches() {
+        use super::song_set_volume::*;
+        use crate::difftest::fakes::{covered, machine};
+        use crate::difftest::DATA;
+        const THIS: u32 = DATA + 0x100;
+        const TRACK: u32 = DATA + 0x200;
+        const TRACK_DATA: u32 = DATA + 0x300;
+        /// PATH: the track groups (`+0x30` flags, `+0x34` used, `+0x58`
+        /// the tracks) and the per-stream track data pointers.
+        const PATH_GROUPS: u32 = 0x0051_7610;
+        const PATH_TRACK_DATA: u32 = 0x004d_3e98;
+        covered(ee::s08::f_002b2160__generated, song_instance_set_volume, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x002b_2160, 2);
+            c.pc = 0x002b_2160;
+            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+            let current = r.next_u32() % 0x1_0000;
+            w(c, THIS + VOLUME, current);
+            c.g[A0][0] = sx(THIS);
+            c.g[A1][0] = match seed % 6 {
+                0 => current as u64,
+                1 => 0x1_0000 + (r.next_u32() % 0x10_0000) as u64,
+                2 => (r.next_u32() | 0x8000_0000) as i32 as i64 as u64,
+                3 => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+                _ => (r.next_u32() % 0x1_0000) as u64,
+            };
+            // The song's track (key 0x11000001: group flags 0x1x000000, bit 0).
+            if seed % 5 != 0 {
+                w(c, PATH_GROUPS + 0x30, 0x1100_0000 | (r.next_u32() & 0x00ff_ffff));
+                w(c, PATH_GROUPS + 0x34, 1);
+                w(c, PATH_GROUPS + 0x58, TRACK);
+            }
+            let index = if seed % 7 == 0 { u32::MAX } else { r.next_u32() % 4 };
+            w(c, TRACK + 0x54, index);
+            for k in 0..4 {
+                w(c, PATH_TRACK_DATA + 4 * k, TRACK_DATA + 4 * k);
+                let handle = if r.next_u32() % 4 == 0 { 0xffff_fff8 } else { r.next_u32() % 8 };
+                w(c, TRACK_DATA + 4 * k, handle);
+            }
+        });
+    }
+
+
+    /// `PATH_PlatSetVolume`: path slot 0..23 of the table at 0x4d3e98 (the
+    /// other slots empty) points at a record; the audio system (gp+0x410)
+    /// is off on every sixth seed; the dirty flag is set on a third of the
+    /// seeds (then the real `PATH_PlatRefreshStatus` runs its short path:
+    /// stream handle negative); pending is -1, equal to or different from
+    /// the current volume; the new volume is negative, equal to the
+    /// current one or different; the current one is sometimes negative.
+    /// `SND_Lock`/`SND_Unlock` run for real with their hook pointers
+    /// (0x44c46c/0x44c470) at fakes; `SND_SetVolume` gets a negative channel
+    /// handle and `SNDSTRM_GetStream` finds no stream (count 0), so both
+    /// return early.
+    #[test]
+    fn path_plat_set_volume_matches() {
+        use crate::difftest::GAME_GP;
+        const PATH: u32 = DATA + 0x1000;
+        const SOUND: u32 = DATA + 0x2000;
+        const AUDIO: u32 = DATA + 0x10000;
+        covered(
+            ssx3_ee::s08::f_002af6c0__generated,
+            path_plat_set_volume,
+            300,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x2af6c0, 4);
+                c.pc = 0x002a_f6c0;
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus.write32(GAME_GP + 0x410, AUDIO);
+                c.bus.write32(
+                    AUDIO + 0x6280,
+                    if seed % 6 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                let slot = r.next_u32() % 24;
+                for i in 0..24 {
+                    c.bus
+                        .write32(0x004d_3e98 + 4 * i, if i == slot { PATH } else { 0 });
+                }
+                c.g[A0][0] = slot as u64 | (r.next_u32() as u64) << 32;
+                // SND_Lock/SND_Unlock hooks, stream count.
+                c.bus.write32(0x0044_c46c, FAKE);
+                c.bus.write32(0x0044_c470, FAKE + 0x10);
+                c.bus.write8(0x0050_a92e, 0);
+                let current = match seed % 5 {
+                    0 => (r.next_u32() | 0x8000_0000) as i32,
+                    _ => (r.next_u32() % 128) as i32,
+                };
+                let pending = match (seed / 5) % 3 {
+                    0 => -1,
+                    1 => current,
+                    _ => current.wrapping_add(1 + (r.next_u32() % 50) as i32),
+                };
+                let volume = match (seed / 3) % 4 {
+                    0 => -1 - (r.next_u32() % 100) as i32,
+                    1 => current,
+                    _ => (r.next_u32() % 128) as i32,
+                };
+                c.g[A1][0] = volume as i64 as u64;
+                c.bus.write32(PATH, r.next_u32() | 0x8000_0000);
+                c.bus.write32(PATH + 0x8, pending as u32);
+                c.bus.write32(PATH + 0xc, current as u32);
+                c.bus.write8(
+                    PATH + 0x64,
+                    (seed % 2) as u8 * (1 + r.next_u32() % 200) as u8,
+                );
+                c.bus.write8(PATH + 0x65, if seed % 3 == 0 { 1 } else { 0 });
+                c.bus.write32(PATH + 0x6c, SOUND);
+                c.bus.write32(SOUND + 4, r.next_u32() | 0x8000_0000);
+            },
+        );
+    }
+
+
+    /// `SpeechSystem_Update`: two instance slots, each empty or an instance
+    /// (stream index 0..3, "started" flag 0..3) for the real
+    /// `SpeechInstance_Update`: the speech listener (gp+0x6c4) has a stream
+    /// array with no buffers (state 0: the instance is ready), its vtable
+    /// slot 0x20 is a fake, `SPCH_ServiceChannel` is busy (gp+0x175c set)
+    /// and `SPCH_DequeueChannel` finds an empty channel table (0x44fff8), so
+    /// all return early; the real `SpeechSystem_TickEventContexts` counts
+    /// down ten random contexts.
+    #[test]
+    fn speech_system_update_matches() {
+        use crate::difftest::GAME_GP;
+        const SYS: u32 = DATA;
+        const SLOTS: u32 = DATA + 0x400;
+        const INST: u32 = DATA + 0x1000;
+        const LISTENER: u32 = DATA + 0x4000;
+        const ARRAY: u32 = DATA + 0x4400;
+        const BUFFERS: u32 = DATA + 0x4500;
+        const LVT: u32 = DATA + 0x4600;
+        covered(
+            ssx3_ee::s08::f_002b0c78__generated,
+            speech_system_update,
+            300,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x2b0c78, 2);
+                c.pc = 0x002b_0c78;
+                c.g[A0][0] = sx(SYS);
+                c.bus.write32(SYS + 4, SLOTS);
+                for i in 0..2u32 {
+                    let inst = INST + 0x1000 * i;
+                    let present = (seed >> i) % 4 != 0;
+                    c.bus.write32(SLOTS + 4 * i, if present { inst } else { 0 });
+                    c.bus.write32(inst + 4, r.next_u32() % 4);
+                    c.bus.write32(inst + 0x900, r.next_u32() % 4);
+                    c.bus.write32(0x0044_fff8 + 4 * i, 0);
+                }
+                c.bus.write32(GAME_GP + 0x6c4, LISTENER);
+                c.bus.write32(GAME_GP + 0x175c, 1);
+                c.bus.write32(LISTENER, ARRAY);
+                c.bus.write32(ARRAY + 8, BUFFERS);
+                for k in 0..4 {
+                    c.bus.write32(BUFFERS + 4 * k, 0);
+                }
+                c.bus.write32(LISTENER + 0x1bc, LVT);
+                c.bus.write16(LVT + 0x20, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(LVT + 0x24, FAKE);
+                for k in 0..10 {
+                    let ctx = SYS + 0x18 + 0x20 * k;
+                    c.bus.write32(ctx, r.next_u32() % 2);
+                    c.bus.write32(ctx + 4, (r.next_u32() % 4).wrapping_sub(1));
+                }
+            },
+        );
+    }
+
+
+    /// Four track slots with random loaded flags and class masks (often
+    /// matching the id's nibbles), random track pointers, ids with and
+    /// without low bits.
+    #[test]
+    fn path_find_track_matches() {
+        use path::*;
+        check(ssx3_ee::s14::f_003d5290__generated, path_find_track, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x3d5290, 0);
+            let kind = (1 + r.next_u32() % 15) << 28;
+            let group = (r.next_u32() % 16) << 24;
+            let low = match seed % 4 {
+                0 => 0,
+                1 => 1 << (r.next_u32() % 24),
+                _ => r.next_u32() & 0xff_ffff,
+            };
+            let mut id = (kind | group | low) as u64;
+            if seed % 5 == 0 {
+                id |= (r.next_u32() as u64) << 32;
+            }
+            c.g[A0][0] = id;
+            for i in 0..SLOT_COUNT as u32 {
+                let slot = SLOTS + i * SLOT_SIZE;
+                c.bus.write32(slot + LOADED, (r.next_u32() % 3 != 0) as u32);
+                let mask = match r.next_u32() % 4 {
+                    0 => r.next_u32(),
+                    1 => kind,
+                    _ => kind | group | (r.next_u32() & 0x00ff_ffff),
+                };
+                c.bus.write32(slot + MASK, mask);
+                for k in 0..24 {
+                    c.bus.write32(slot + TRACKS + 4 * k, r.next_u32());
+                }
+            }
+            c.pc = 0x003d_5290;
+        });
+    }
+
+
+    /// A PATH state with `count` queues for PATH_ServiceQueues: heads that
+    /// are pending (actions left, already run so no PATH_ExecuteAction),
+    /// done, expired or forever, a zero head that ends the scan, slots past
+    /// the count; the removal callback (0x44f428) a fake or none. Queue
+    /// heads live outside the state's action pool, so PATH_RemoveEvent
+    /// frees nothing.
+    pub(crate) fn path_queues_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let state = DATA + 0x1000;
+        let now = 1000 + r.next_u32() % 1000;
+        c.bus.write32(0x0045_0000 - PATH_STATE_OFF, state);
+        c.bus.write32(0x0045_0000 - PATH_TIME_OFF, now);
+        let callback = if seed % 2 == 0 { crate::difftest::fakes::FAKE } else { 0 };
+        c.bus.write32(0x0045_0000 - 0xbd8, callback);
+        let count = r.next_u32() % 17;
+        c.bus.write32(state + PATH_QUEUE_COUNT, count);
+        for i in 0..16u32 {
+            let node = DATA + 0x10000 + i * 0x800;
+            let head = if i >= count {
+                r.next_u32() | 1 // cleared, never read
+            } else if r.next_u32() % 12 == 0 {
+                0
+            } else {
+                node
+            };
+            c.bus.write32(state + PATH_QUEUES + 4 * i, head);
+            c.bus.write32(node + QUEUE_START, now.wrapping_sub(r.next_u32() % 300));
+            let lifetime = if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() % 400 };
+            c.bus.write32(node + QUEUE_LIFETIME, lifetime);
+            c.bus.write32(node + 0x8, r.next_u32());
+            let end = r.next_u32() % 5;
+            let next = r.next_u32() % 5;
+            let indices = (r.next_u32() & 0xf000_ffff) | end << 16 | next << 22;
+            c.bus.write32(node + QUEUE_INDICES, indices);
+            for k in 0..8u32 {
+                let action = node + 0x10 + 16 * k;
+                c.bus.write32(action + 4, 0);
+                c.bus.write32(action + 8, r.next_u32() | 0x0400_0000);
+            }
+        }
+    }
+
+
+    crate::difftest::events::driven!(gen_path_service_queues, ee::s14::f_003d1e80__generated);
+
+    crate::difftest::events::driven!(hand_path_service_queues, path_service_queues);
+
+
+    /// PATH_ServiceQueues with the real PATH_ServiceQueue / PATH_RemoveEvent
+    /// (fake callback, which may unwind), then with events delivered and
+    /// unwinding at the loop heads (re-entered at 0x3d1f1c / 0x3d1ec0).
+    #[test]
+    fn path_service_queues_matches() {
+        check(ee::s14::f_003d1e80__generated, path_service_queues, 240, &|c, seed| {
+            let mut r = crate::difftest::fakes::machine(c, seed, 0x3d1e80, 3);
+            c.pc = SERVICE_QUEUES_ENTRY;
+            path_queues_fixture(c, &mut r, seed);
+        });
+        crate::difftest::events::check_events(
+            gen_path_service_queues,
+            hand_path_service_queues,
+            120,
+            &|c, seed| {
+                let mut r = crate::difftest::fakes::machine(c, seed, 0x3d1e81, 0);
+                path_queues_fixture(c, &mut r, seed / 3);
+                let mode = crate::difftest::events::schedule(c, &mut r, seed, SERVICE_QUEUES_ENTRY);
+                if mode != crate::difftest::events::Events::Off {
+                    // Early enough for the short scans too.
+                    c.next_event = c.cycles + 4 + (r.next_u32() % 40) as u64;
+                }
+                mode
             },
         );
     }

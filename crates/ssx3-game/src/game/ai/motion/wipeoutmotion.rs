@@ -55,6 +55,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_wipeout_state_update_root_pose,
         "RiderWipeoutState_UpdateRootPose",
     ),
+    (0x0013_8960, rider_wipeout_state_cast_ground_ray, "RiderWipeoutState_CastGroundRay"),
 ];
 
 /// `RiderWipeoutState_LoadState(self, iface)` (0x138b10): `0x40`.
@@ -306,6 +307,185 @@ pub fn rider_wipeout_state_update_root_pose(c: &mut Cpu) {
     frame.close(c);
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// RiderWipeoutState_CastGroundRay (0x138960, wipeoutmotion.cpp)
+
+pub(crate) const WO_RIDER: u32 = 0x40;
+
+
+/// Rider fields: position, the surface id / contact uv / surface flags the
+/// ray stores, the overlap list and its collision flags.
+pub(crate) const WO_R_POS: u32 = 0x110;
+
+
+pub(crate) const WO_R_SURFACE: u32 = 0x430;
+
+
+pub(crate) const WO_R_CONTACT_U: u32 = 0xaac;
+
+
+pub(crate) const WO_R_CONTACT_V: u32 = 0xab0;
+
+
+pub(crate) const WO_R_SURFACE_FLAGS: u32 = 0x2d4;
+
+
+pub(crate) const WO_R_OVERLAP: u32 = 0x860;
+
+
+pub(crate) const WO_R_OVERLAP_FLAGS: u32 = 0x864;
+
+
+/// Contact fields: object, surface, uv.
+pub(crate) const HIT_OBJECT: u32 = 0x50;
+
+
+pub(crate) const HIT_SURFACE: u32 = 0x54;
+
+
+pub(crate) const HIT_U: u32 = 0x6c;
+
+
+pub(crate) const HIT_V: u32 = 0x70;
+
+
+
+pub(crate) const WO_COLL_SEGMENT_CTOR: u32 = 0x0032_e100;
+
+
+pub(crate) const WO_FIND_CLOSEST_CONTACT: u32 = 0x0033_42d0;
+
+
+
+/// `float RiderWipeoutState_CastGroundRay(RiderWipeoutState* self, Hit*
+/// hit, const Vec4* dir)` (0x138960): a capsule (radius `gp-0x721c`) from
+/// `pos - 200 * dir` to `pos + 200 * dir` through the rider's overlap list;
+/// on a contact (distance >= 0) stores the surface id (or -1 without a
+/// surface), the contact uv and the surface flags in the rider, and lets a
+/// hit object's handler (vtable slot 0x150) see the contact. Returns the
+/// distance.
+pub fn rider_wipeout_state_cast_ground_ray(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 55;
+        let frame = Frame::open(c, 0x140);
+        let at = |c: &Cpu, o: u32| sp(c).wrapping_add(o);
+        c.g[V1][0] = c.g[A2][0]; // dir
+        frame.save(c, S0, 0x120);
+        c.g[A2][0] = sx(at(c, 0xd0));
+        frame.save(c, S1, 0x110);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0x130);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0x100);
+        let (this, hit) = (r32(c, S0), r32(c, S1));
+        c.g[A0][0] = c.g[SP][0];
+        c.g[AT][0] = 0x4348_0000;
+        c.mtc1(AT, 0); // 200.0
+        c.g[A1][0] = sx(at(c, 0xb0));
+        c.g[T0][0] = Addr(this.wrapping_add(WO_RIDER)).lw(c);
+        c.g[A3][0] = 2;
+        // start = pos - dir * 200 (sp+0xb0)
+        c.mfc1(V0, 0);
+        c.lqc2(4, r32(c, V1));
+        c.qmtc2(V0, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, at(c, 0xd0));
+        c.lwc1(12, r32(c, GP).wrapping_sub(0x721c));
+        c.lq(V0, at(c, 0xd0));
+        c.sq(V0, at(c, 0xc0));
+        c.lqc2(3, r32(c, T0).wrapping_add(WO_R_POS));
+        c.lqc2(4, at(c, 0xc0));
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, at(c, 0xd0));
+        c.lq(V0, at(c, 0xd0));
+        c.sq(V0, at(c, 0xb0));
+        // end = pos + dir * 200 (sp+0xd0)
+        c.mfc1(T1, 0);
+        c.lqc2(4, r32(c, V1));
+        c.qmtc2(T1, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, at(c, 0xf0));
+        c.lq(V0, at(c, 0xf0));
+        c.sq(V0, at(c, 0xe0));
+        c.lqc2(3, r32(c, T0).wrapping_add(WO_R_POS));
+        c.lqc2(4, at(c, 0xe0));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, at(c, 0xf0));
+        c.lq(V0, at(c, 0xf0));
+        c.sq(V0, at(c, 0xd0));
+        call_ptr(c, WO_COLL_SEGMENT_CTOR, 0x0013_8a0c)?;
+        // d = FindClosestContact(rider->overlap, &seg, hit, rider->flags)
+        c.g[V1][0] = Addr(this.wrapping_add(WO_RIDER)).lw(c);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A3][0] = Addr(r32(c, V1).wrapping_add(WO_R_OVERLAP_FLAGS)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(WO_R_OVERLAP)).lw(c);
+        call_ptr(c, WO_FIND_CLOSEST_CONTACT, 0x0013_8a24)?;
+        c.mov_s(20, 0);
+        c.mtc1(0, 0);
+        c.c_le_s(0, 20);
+        let contact = c.fcc();
+        c.mov_s(0, 20);
+        if contact {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(hit.wrapping_add(HIT_SURFACE)).lw(c);
+            if c.g[V0][0] == 0 {
+                c.g[V1][0] = Addr(this.wrapping_add(WO_RIDER)).lw(c);
+                c.cycles += 3;
+                c.g[V0][0] = u64::MAX;
+                Addr(r32(c, V1).wrapping_add(WO_R_SURFACE)).sw(c, u64::MAX);
+            } else {
+                c.cycles += 14;
+                c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x150)).lw(c);
+                c.g[V0][0] = Addr(this.wrapping_add(WO_RIDER)).lw(c);
+                let v = c.g[V1][0];
+                Addr(r32(c, V0).wrapping_add(WO_R_SURFACE)).sw(c, v);
+                c.g[A0][0] = Addr(this.wrapping_add(WO_RIDER)).lw(c);
+                c.lwc1(0, hit.wrapping_add(HIT_U));
+                c.swc1(0, r32(c, A0).wrapping_add(WO_R_CONTACT_U));
+                c.g[V0][0] = Addr(this.wrapping_add(WO_RIDER)).lw(c);
+                c.lwc1(0, hit.wrapping_add(HIT_V));
+                c.swc1(0, r32(c, V0).wrapping_add(WO_R_CONTACT_V));
+                c.g[V1][0] = Addr(hit.wrapping_add(HIT_SURFACE)).lw(c);
+                c.g[A0][0] = Addr(this.wrapping_add(WO_RIDER)).lw(c);
+                c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0xa)).lhu(c);
+                let v = c.g[V0][0];
+                Addr(r32(c, A0).wrapping_add(WO_R_SURFACE_FLAGS)).sh(c, v);
+            }
+            c.cycles += 3;
+            c.g[A0][0] = Addr(hit.wrapping_add(HIT_OBJECT)).lw(c);
+            c.mov_s(0, 20);
+            if c.g[A0][0] != 0 {
+                c.cycles += 3;
+                c.g[A2][0] = Addr(r32(c, A0).wrapping_add(0xc)).lw(c);
+                c.g[A1][0] = c.g[S1][0];
+                if c.g[A2][0] != 0 {
+                    // handler->OnContact(hit) (vtable slot 0x150)
+                    c.cycles += 6;
+                    let handler = r32(c, A2);
+                    c.g[V0][0] = Addr(handler.wrapping_add(0xc)).lw(c);
+                    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(0x150)).lh(c);
+                    c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x154)).lw(c);
+                    let method = r32(c, V1);
+                    c.g[A0][0] = sx(handler.wrapping_add(r32(c, A0)));
+                    call_ptr(c, method, 0x0013_8ab8)?;
+                    c.mov_s(0, 20);
+                }
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x120);
+        frame.restore(c, S1, 0x110);
+        frame.restore_ra(c, 0x100);
+        frame.restore_fpr(c, 20, 0x130);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -422,5 +602,78 @@ pub(crate) mod tests {
                 );
             },
         );
+    }
+    use super::*;
+    use crate::difftest::{put_vec};
+
+
+    /// RiderWipeoutState_CastGroundRay: no contact (empty collision result),
+    /// one or a few template contacts (fake CollideVolume) with and
+    /// without a surface, with and without an object, and objects with and
+    /// without a contact handler (a fake). Real CollSegment_ctor and
+    /// FindClosestContact on the game image.
+    #[test]
+    fn rider_wipeout_state_cast_ground_ray_matches() {
+        use crate::difftest::fakes::vtable;
+        use crate::game::ai::computer::tests::{install_fake_slots, FCC_CTRL, FCC_MAGIC};
+        const SELF: u32 = DATA + 0x30_0000;
+        const RIDER: u32 = SELF + 0x100;
+        const HIT: u32 = SELF + 0x1000;
+        const DIR: u32 = SELF + 0x1100;
+        const TEMPLATE: u32 = SELF + 0x2000;
+        const OBJECTS: u32 = SELF + 0x4000;
+        const SURFACES: u32 = SELF + 0x5000;
+        install_fake_slots();
+        check(ee::s01::f_00138960__generated, rider_wipeout_state_cast_ground_ray, 240, &|c, seed| {
+            let mut r = machine(c, seed, 0x13_8960, 1);
+            elf_image(c);
+            c.pc = 0x0013_8960;
+            c.g[A0][0] = sx(SELF);
+            c.g[A1][0] = sx(HIT);
+            c.g[A2][0] = sx(DIR);
+            put_vec(c, DIR, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+            c.bus.write32(SELF + WO_RIDER, RIDER);
+            put_vec(c, RIDER + WO_R_POS, [r.f32(100.0), r.f32(100.0), r.f32(100.0), 0x3f80_0000]);
+            c.bus.write32(RIDER + WO_R_OVERLAP, SELF + 0x800);
+            c.bus.write32(RIDER + WO_R_OVERLAP_FLAGS, r.next_u32() % 2);
+            // The fake CollideVolume's contacts.
+            let count = match seed % 4 {
+                0 => 0,
+                1 => 1,
+                _ => 2 + r.next_u32() % 4,
+            };
+            c.bus.write32(FCC_CTRL, FCC_MAGIC);
+            c.bus.write32(FCC_CTRL + 4, count);
+            c.bus.write32(FCC_CTRL + 8, TEMPLATE);
+            for k in 0..3 {
+                let obj = OBJECTS + 0x100 * k;
+                c.bus.write32(obj + 0x78, r.next_u32() % 3);
+                let handler = if (seed / 4 + k) % 3 == 0 { 0 } else { obj + 0x80 };
+                c.bus.write32(obj + 0xc, handler);
+                let vt = vtable(c, &mut r, &[0x150]);
+                c.bus.write32(obj + 0x80 + 0xc, vt);
+                let surf = SURFACES + 0x200 * k;
+                c.bus.write32(surf + 0x150, r.next_u32() % 3);
+                c.bus.write16(surf + 0xa, r.next_u32() as u16);
+            }
+            for i in 0..count {
+                let h = TEMPLATE + 0x80 * i;
+                for w in 0..0x20 {
+                    c.bus.write32(h + 4 * w, r.next_u32());
+                }
+                let dist = [0.0f32, 1.0, 2.0, 3.0, 1.5][r.next_u32() as usize % 5];
+                c.bus.write32(h + 0x40, dist.to_bits());
+                let object = match r.next_u32() % 3 {
+                    0 => 0,
+                    _ => OBJECTS + 0x100 * (r.next_u32() % 3),
+                };
+                c.bus.write32(h + HIT_OBJECT, object);
+                let surface = match r.next_u32() % 3 {
+                    0 => 0,
+                    _ => SURFACES + 0x200 * (r.next_u32() % 3),
+                };
+                c.bus.write32(h + HIT_SURFACE, surface);
+            }
+        });
     }
 }

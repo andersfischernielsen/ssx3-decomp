@@ -132,6 +132,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         emitter_update_descriptor,
         "Emitter_UpdateDescriptor",
     ),
+    (0x0036_a1e8, deferred_delete_advance_frame, "DeferredDelete_AdvanceFrame"),
 ];
 
 /// The game's render-context singleton (`gp+0x2a90`, `D_004A5B80`): its
@@ -5755,6 +5756,98 @@ pub fn emitter_update_descriptor(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// DeferredDelete_AdvanceFrame (0x36a1e8, graphicsman.cpp)
+
+/// gp-relative index of the current deferred-delete bucket (0..3).
+pub(crate) const DD_INDEX: u32 = 0x2a98;
+
+
+/// The four buckets of objects whose deletion is deferred (0x53ab40).
+pub(crate) const DD_BUCKETS_HI: u32 = 0x0054_0000;
+
+
+pub(crate) const DD_BUCKETS_LO: u32 = 0x54c0;
+
+
+
+/// `void DeferredDelete_AdvanceFrame()` (0x36a1e8): advances the bucket
+/// index (`(index + 1) % 4`), deletes every object queued in that bucket
+/// four frames ago (virtual destructor with flags 3, through the list's
+/// `next` links) and empties the bucket.
+pub fn deferred_delete_advance_frame(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let index = Addr(r32(c, GP).wrapping_add(DD_INDEX));
+        c.g[V0][0] = index.lw(c);
+        c.g[V1][0] = u64::MAX;
+        let frame = Frame::open(c, 0x30);
+        c.g[A1][0] = DD_BUCKETS_HI as u64;
+        c.g[A0][0] = sx(r32(c, V0).wrapping_add(1));
+        frame.save(c, S1, 0x10);
+        // (index + 1) % 4, C remainder
+        c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+        if c.g[V1][0] != 0 {
+            c.g[V0][0] = c.g[A0][0];
+        }
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V0][0] = sx(((r32(c, V0) as i32) >> 2) as u32);
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_sub(r32(c, V0)));
+        c.g[A1][0] = sx(r32(c, A1).wrapping_sub(DD_BUCKETS_LO));
+        c.g[V1][0] = sx(r32(c, A0) << 2);
+        let new_index = c.g[A0][0];
+        index.sw(c, new_index);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+        c.g[A2][0] = Addr(r32(c, V1)).lw(c);
+        let empty = c.g[A2][0] == 0;
+        c.g[V0][0] = index.lw(c);
+        if !empty {
+            loop {
+                c.cycles += 2;
+                let node = r32(c, A2);
+                c.g[S0][0] = Addr(node).lw(c); // next
+                if c.g[A2][0] != 0 {
+                    // node->~Object() (deleting, flags 3)
+                    c.cycles += 6;
+                    c.g[V0][0] = Addr(node.wrapping_add(4)).lw(c);
+                    c.g[A1][0] = 3;
+                    c.g[A0][0] = Addr(r32(c, V0).wrapping_add(8)).lh(c);
+                    c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0xc)).lw(c);
+                    let dtor = r32(c, V1);
+                    c.g[A0][0] = sx(node.wrapping_add(r32(c, A0)));
+                    call_ptr(c, dtor, 0x0036_a260)?;
+                }
+                c.cycles += 3;
+                c.g[A2][0] = c.g[S0][0];
+                c.g[V0][0] = index.lw(c);
+                if c.g[A2][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0036_a240);
+                }
+            }
+        }
+        c.cycles += 9;
+        c.g[V1][0] = sx(r32(c, S1).wrapping_sub(DD_BUCKETS_LO));
+        frame.restore(c, S0, 0x20);
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        frame.restore(c, S1, 0x10);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        frame.restore_ra(c, 0);
+        Addr(r32(c, V0)).sw(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6427,5 +6520,38 @@ pub(crate) mod tests {
                 c.f[12] = f((r.next_u32() % 4) as f32 * 0.0625);
             },
         );
+    }
+    use super::*;
+    use crate::difftest::{elf_image};
+
+
+    /// DeferredDelete_AdvanceFrame: bucket indices -6..5 (both remainder
+    /// forms), buckets with 0-3 queued objects whose destructors are fakes.
+    #[test]
+    fn deferred_delete_advance_frame_matches() {
+        use crate::difftest::fakes::vtable;
+        const NODES: u32 = DATA + 0x20_0000;
+        check(ee::s12::f_0036a1e8__generated, deferred_delete_advance_frame, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x36_a1e8, 4);
+            c.pc = 0x0036_a1e8;
+            let gp = crate::difftest::GAME_GP;
+            let index = (seed % 12) as i32 - 6;
+            c.bus.write32(gp + DD_INDEX, index as u32);
+            let next = (index + 1) % 4;
+            let bucket = DD_BUCKETS_HI - DD_BUCKETS_LO;
+            for k in 0..4 {
+                c.bus.write32(bucket + 4 * k, r.next_u32());
+            }
+            let n = (seed / 12) % 4;
+            let mut head = 0;
+            for i in (0..n).rev() {
+                let node = NODES + 0x40 * i;
+                c.bus.write32(node, head);
+                let vt = vtable(c, &mut r, &[0x8]);
+                c.bus.write32(node + 4, vt);
+                head = node;
+            }
+            c.bus.write32(bucket.wrapping_add((next * 4) as u32), head);
+        });
     }
 }

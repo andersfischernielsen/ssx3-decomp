@@ -61,6 +61,7 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+pub(crate) use crate::game::intersect::riderspheretree::lt as lt_2;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -239,6 +240,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Player_GetControlInput",
     ),
     (0x0012_5b18, player_apply_rumble, "Player_ApplyRumble"),
+    (0x0010_6828, rider_update_sphere_tree, "Rider_UpdateSphereTree"),
+    (0x0011_4db8, rider_try_air_reverse, "Rider_TryAirReverse"),
+    (0x0012_0038, rider_get_trick_skill_factor, "Rider_GetTrickSkillFactor"),
+    (0x0012_2cd0, rider_is_on_ground_wrapper, "Rider_IsOnGround_Wrapper"),
+    (0x0012_78e8, player_update_rumble, "Player_UpdateRumble"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -11896,6 +11902,517 @@ pub fn player_apply_rumble(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod vu {
+    use ssx3_ee_rt::vu0::Src;
+    use ssx3_ee_rt::vu0::W;
+    use ssx3_ee_rt::vu0::X;
+    use ssx3_ee_rt::vu0::Y;
+    use ssx3_ee_rt::vu0::Z;
+    use ssx3_ee_rt::Cpu;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::dot;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::dot_vf3_vf5;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::normalize;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::scale;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::sub;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::add;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::copy;
+}
+
+pub(crate) mod air_reverse {
+    use super::ee;
+    use super::Callee;
+
+    /// Position (vec4).
+    pub const POS: u32 = 0x110;
+
+    /// Orientation quaternion.
+    pub const ROT: u32 = 0x120;
+
+    /// Velocity.
+    pub const VEL: u32 = 0x170;
+
+    /// Up axis.
+    pub const UP: u32 = 0x180;
+
+    /// Ground point.
+    pub const GROUND: u32 = 0x1e0;
+
+    /// The character (board-relative bone table).
+    pub const CHARACTER: u32 = 0x780;
+
+    /// Index of the reverse pivot bone.
+    pub const PIVOT_BONE: u32 = 0x89c;
+
+    /// The air predictor.
+    pub const PREDICTOR: u32 = 0x788;
+
+    /// Predictor: state (1, 3: landing ahead), surface, landing normal and point.
+    pub const PRED_STATE: u32 = 0xac;
+
+    pub const PRED_SURFACE: u32 = 0x90;
+
+    pub const PRED_NORMAL: u32 = 0x10;
+
+    pub const PRED_POINT: u32 = 0x20;
+
+    /// World: game at +0x84, its surface table (0xb0 per surface) at +0x44.
+    pub const SURFACE_SIZE: u32 = 0xb0;
+
+    /// The surface type whose landing plane is the rider's own.
+    pub const SURFACE_OWN_PLANE: u64 = 0x12;
+
+    /// Literals: dot limits (gp-0x7b94, gp-0x7b90), the prime time
+    /// (gp-0x7b8c), the reverse limit (0x4a0ea8), the origin (0x4ff130).
+    pub const GP_VEL_LIMIT: u32 = 0x7b94;
+
+    pub const GP_HEIGHT_LIMIT: u32 = 0x7b90;
+
+    pub const GP_PRIME_TIME: u32 = 0x7b8c;
+
+    pub const REVERSE_LIMIT: u32 = 0x004a_0ea8;
+
+    pub const ORIGIN: u32 = 0x004f_f130;
+
+    pub const BUILD_WORLD_MATRIX: Callee = Callee { addr: 0x0011_e098, f: ee::s00::f_0011e098 };
+
+    pub const TOGGLE_STANCE: Callee = Callee { addr: 0x0011_5168, f: ee::s00::f_00115168 };
+
+    pub const AIR_PREDICTOR_PRIME: Callee = Callee { addr: 0x0011_35b8, f: ee::s00::f_001135b8 };
+}
+
+
+
+// ---------------------------------------------------------------------------
+// Player_UpdateRumble (0x1278e8, rider.cpp)
+
+/// Player fields.
+pub(crate) const PL_RIDER: u32 = 0x18;
+
+
+pub(crate) const PL_PAD: u32 = 0xdf4;
+
+
+pub(crate) const PL_RUMBLE: u32 = 0xdfc;
+
+
+/// The rider's controller-input sub-object (vtable slot 0x38: the pad id).
+pub(crate) const RIDER_INPUT: u32 = 0x6c0;
+
+
+
+pub(crate) const PLAYER_APPLY_RUMBLE: Callee = Callee {
+    addr: 0x0012_5b18,
+    f: ee::s00::Player_ApplyRumble,
+};
+
+
+
+/// `void Player_UpdateRumble(Player* self)` (0x1278e8): with a pad
+/// attached, asks the BE player interface whether vibration is enabled for
+/// the rider's pad; if so, rumbling is allowed only once the world's race
+/// countdown (`world->0x84->0x28->[0]`) is 0 or at least 10. Then applies
+/// the rumble state (`Player_ApplyRumble(&self->rumble, pad, allowed)`).
+pub fn player_update_rumble(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S0, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        let this = r32(c, S1);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(this.wrapping_add(PL_PAD)).lw(c);
+        frame.restore(c, S0, 0x30);
+        if c.g[V0][0] != 0 {
+            c.cycles += 18;
+            c.g[S2][0] = 0;
+            call_ptr(c, 0x0014_dc80, 0x0012_7914)?; // cBE_getBE
+            c.g[A1][0] = 1;
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x0014_dd58, 0x0012_7920)?; // BELibrary_GetInterface(be, 1)
+            // pad id = rider->input.vfunc_0x38()
+            c.g[A0][0] = Addr(this.wrapping_add(PL_RIDER)).lw(c);
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V1][0] = Addr(r32(c, A0).wrapping_add(RIDER_INPUT)).lw(c);
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(RIDER_INPUT));
+            c.g[A1][0] = Addr(r32(c, V1).wrapping_add(0x38)).lh(c);
+            c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x3c)).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+            call_ptr(c, target, 0x0012_7940)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[V0][0];
+            call_ptr(c, 0x0014_74e8, 0x0012_794c)?; // BENewPlayerInt_GetVibration
+            let vibration = c.g[V0][0] != 0;
+            c.g[V0][0] = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+            if vibration {
+                c.cycles += 5;
+                c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0x84)).lw(c);
+                c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x28)).lw(c);
+                c.g[A0][0] = Addr(r32(c, A0)).lw(c);
+                c.g[A2][0] = 0;
+                if c.g[A0][0] != 0 {
+                    c.cycles += 1;
+                    c.g[A2][0] = ((c.g[A0][0] as i64) < 10) as u64;
+                }
+                c.cycles += 1;
+                c.g[S2][0] = c.g[A2][0] ^ 1;
+            }
+            c.cycles += 5;
+            c.g[A1][0] = Addr(this.wrapping_add(PL_PAD)).lw(c);
+            c.g[A2][0] = c.g[S2][0];
+            c.g[A0][0] = sx(this.wrapping_add(PL_RUMBLE));
+            PLAYER_APPLY_RUMBLE.call(c, 0x0012_7980)?;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// --------------------------------------------------- Rider_GetTrickSkillFactor
+
+/// Rider fields: AI (player) index (+0x86c) and stats index (+0xb34).
+pub(crate) const RIDER_AI_INDEX: u32 = 0x86c;
+
+
+pub(crate) const RIDER_STATS_INDEX: u32 = 0xb34;
+
+
+/// `.lit4` scale of the trick attribute factor (0.29988...).
+pub(crate) const GP_TRICK_SKILL_SCALE: u32 = 0x7960;
+
+
+
+/// `float Rider_GetTrickSkillFactor(Rider* self)` (0x120038): the rider's
+/// trick attribute as a factor, `1 + 0.2999 * attrib2Factor`, where the
+/// attribute factor comes from the back end's character interface
+/// (`cBE_getInterface(cBE_getBE(), 3)`,
+/// `BECharInt_GetAttrib2Factor(iface, aiIndex, statsIndex)`). Frame 0x20
+/// (s0).
+pub fn rider_get_trick_skill_factor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        // cBE_getBE()
+        call_ptr(c, 0x0014_dc80, 0x0012_004c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 3;
+        // cBE_getInterface(be, 3)
+        call_ptr(c, 0x0014_dd58, 0x0012_0058)?;
+        let rider = r32(c, S0);
+        c.g[A2][0] = Addr(rider.wrapping_add(RIDER_STATS_INDEX)).lw(c);
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = Addr(rider.wrapping_add(RIDER_AI_INDEX)).lw(c);
+        // BECharInt_GetAttrib2Factor(iface, aiIndex, statsIndex)
+        call_ptr(c, 0x0014_9690, 0x0012_0068)?;
+        let gp = r32(c, GP);
+        c.lwc1(1, gp.wrapping_sub(GP_TRICK_SKILL_SCALE));
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 2);
+        c.mul_s(0, 0, 1);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        c.add_s(0, 0, 2);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `gp`-relative global address.
+#[inline]
+pub(crate) fn gp_at(c: &Cpu, off: i32) -> Addr {
+    Addr((c.g[GP][0] as u32).wrapping_add(off as u32))
+}
+
+
+
+/// `bool Rider_TryAirReverse(Rider *rider)` (0x114db8): in the air with a
+/// landing predicted (predictor state 1 or 3), check the rider is above the
+/// landing plane, moving toward it and high enough; then flip the rider
+/// around the pivot bone (a half turn so it lands facing the other way):
+/// move the position by the rotated pivot offset, rebuild the world matrix,
+/// switch stance and re-prime the air predictor. Returns whether it did.
+pub fn rider_try_air_reverse(c: &mut Cpu) {
+    use air_reverse::*;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0xd0);
+        c.g[V0][0] = 1;
+        frame.save(c, S1, 0xb0);
+        frame.save(c, S0, 0xc0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0xa0);
+        frame.save_ra(c, 0x90);
+        let rider = r32(c, S1);
+        let pred = Addr(rider + PREDICTOR).lw(c) as u32;
+        c.g[V1][0] = Addr(pred + PRED_STATE).lw(c);
+        c.g[A0][0] = 0;
+        let landing = if c.g[V1][0] == 1 {
+            true
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 3;
+            c.g[V1][0] == 3
+        };
+        if landing {
+            c.cycles += 1;
+            c.g[A0][0] = 1;
+        }
+        c.cycles += 2;
+        c.g[V1][0] = SURFACE_SIZE as u64;
+        if !landing {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            try_reverse(c)?;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore_ra(c, 0x90);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `Rider_TryAirReverse` past the predictor-state test: leaves the result in
+/// v0.
+pub(crate) fn try_reverse(c: &mut Cpu) -> call::Flow {
+    use air_reverse::*;
+    let rider = r32(c, S1);
+    let s = sp(c);
+    // Two axes of the landing plane (sp, sp+0x10) and the rider's up at
+    // sp+0x20: the surface table says whether they are the rider's own (up,
+    // ground) or the predictor's landing pair.
+    c.cycles += 11;
+    c.g[T0][0] = Addr(rider + PREDICTOR).lw(c);
+    let pred = c.g[T0][0] as u32;
+    c.g[V0][0] = gp_at(c, -0x848).lw(c);
+    let world = c.g[V0][0] as u32;
+    c.g[A2][0] = SURFACE_OWN_PLANE;
+    c.g[A1][0] = Addr(pred + PRED_SURFACE).lw(c);
+    c.g[A0][0] = Addr(world + 0x84).lw(c);
+    c.mult(0, V1, A1, V1);
+    c.lq(A3, rider + UP);
+    c.g[V0][0] = Addr((c.g[A0][0] as u32).wrapping_add(0x44)).lw(c);
+    c.sq(A3, s + 0x20);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+    let mut own_plane = c.g[A1][0] == c.g[A2][0];
+    if !own_plane {
+        c.cycles += 3;
+        c.g[V0][0] = Addr((c.g[V0][0] as u32).wrapping_add(0x44)).lw(c);
+        if c.g[V0][0] == 0 {
+            // The predicted landing plane.
+            c.lq(V0, pred + PRED_POINT);
+            c.cycles += 3;
+            c.sq(V0, s);
+            vu::copy(c, pred + PRED_NORMAL, s + 0x10, V1);
+        } else {
+            own_plane = true;
+        }
+    }
+    if own_plane {
+        c.cycles += 4;
+        c.lq(V0, rider + GROUND);
+        c.sq(A3, s);
+        c.sq(V0, s + 0x10);
+    }
+
+    // The rider must be above the plane (up · plane >= 0) ...
+    c.cycles += 14;
+    c.mtc1(0, 6);
+    vu::dot(c, s + 0x20, s, V0, 0);
+    let below = lt_2(c, 0, 6);
+    c.g[V0][0] = 0;
+    if below {
+        return Ok(());
+    }
+    // ... moving into it (vel · ground under the limit) ...
+    c.cycles += 17;
+    c.lq(V0, rider + VEL);
+    c.g[S2][0] = sx(rider + GROUND);
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(GP_VEL_LIMIT));
+    c.sq(V0, s + 0x30);
+    vu::dot(c, s + 0x30, rider + GROUND, V1, 1);
+    let too_fast = lt_2(c, 0, 1);
+    c.g[V0][0] = 0;
+    if too_fast {
+        return Ok(());
+    }
+    // ... and along the plane's own direction.
+    c.cycles += 14;
+    c.lwc1(0, (c.g[GP][0] as u32).wrapping_sub(GP_HEIGHT_LIMIT));
+    vu::dot(c, s + 0x30, s, V0, 1);
+    let away = lt_2(c, 0, 1);
+    c.g[V0][0] = 0;
+    if away {
+        return Ok(());
+    }
+
+    // The velocity and the plane's second axis without their components
+    // along the plane, normalized; their dot product must stay within the
+    // reverse limit.
+    c.cycles += 75;
+    vu::scale(c, 1, s, s + 0x70, V0);
+    c.g[V1][0] = 0x004a_0000;
+    vu::copy(c, s + 0x70, s + 0x60, V0);
+    vu::sub(c, s + 0x30, s + 0x60, s + 0x70);
+    vu::copy(c, s + 0x70, s + 0x50, V0);
+    vu::normalize(c, s + 0x50, s + 0x70);
+    vu::copy(c, s + 0x70, s + 0x40, V0);
+    vu::dot(c, s + 0x10, s, A0, 0);
+    vu::scale(c, 0, s, s + 0x80, A1);
+    vu::copy(c, s + 0x80, s + 0x70, V0);
+    vu::sub(c, s + 0x10, s + 0x70, s + 0x80);
+    vu::copy(c, s + 0x80, s + 0x60, V0);
+    vu::normalize(c, s + 0x60, s + 0x80);
+    c.lq(V0, s + 0x80);
+    c.lwc1(1, REVERSE_LIMIT);
+    c.sq(V0, s + 0x10);
+    c.sq(V0, s + 0x50);
+    vu::dot(c, s + 0x40, s + 0x10, V1, 0);
+    if lt_2(c, 1, 0) {
+        c.g[V0][0] = 0;
+        return Ok(());
+    }
+
+    // The flip: the pivot bone scaled by the character's scale, relative to
+    // the origin, doubled; rotated by the orientation and added to the
+    // position.
+    c.cycles += 71;
+    let character = Addr(rider + CHARACTER).lw(c);
+    c.g[V1][0] = character;
+    let ch = character as u32;
+    c.g[A0][0] = c.g[S1][0];
+    c.g[V0][0] = Addr(rider + PIVOT_BONE).lw(c);
+    c.g[S0][0] = sx(rider + POS);
+    c.g[A1][0] = Addr(ch + 0x24).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 4);
+    c.lwc1(1, ch + 0x14c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    let bone = c.g[V0][0] as u32;
+    c.lwc1(4, ch + 0x140);
+    c.lwc1(3, bone + 0xc);
+    c.lwc1(0, bone);
+    c.mul_s(3, 3, 1);
+    c.lwc1(5, ch + 0x144);
+    c.mul_s(0, 0, 4);
+    c.lwc1(2, bone + 4);
+    c.lwc1(4, ch + 0x148);
+    c.lwc1(1, bone + 8);
+    c.mul_s(2, 2, 5);
+    c.g[V0][0] = 0x0050_0000;
+    c.swc1(0, s + 0x60);
+    c.mul_s(1, 1, 4);
+    c.swc1(3, s + 0x6c);
+    c.swc1(2, s + 0x64);
+    c.g[V0][0] = sx(ORIGIN);
+    c.g[AT][0] = 0x4000_0000;
+    c.mtc1(AT, 0);
+    c.swc1(1, s + 0x68);
+    vu::sub(c, s + 0x60, ORIGIN, s + 0x70);
+    vu::copy(c, s + 0x70, s + 0x50, V0);
+    c.swc1(6, s + 0x58);
+    vu::scale(c, 0, s + 0x50, s + 0x80, V1);
+    vu::copy(c, s + 0x80, s + 0x70, V0);
+    // Rotate by the orientation quaternion (VU0 macro sequence).
+    {
+        use ssx3_ee_rt::vu0::{Src, W};
+        c.lqc2(4, rider + ROT);
+        c.lqc2(5, s + 0x70);
+        c.vu0().sub(0b0001, 8, 8, Src::Vec(8));
+        c.vu0().opmula(4, 5);
+        c.vu0().opmsub(6, 5, 4);
+        c.vu0().opmula(4, 6);
+        c.vu0().opmsub(7, 6, 4);
+        c.vu0().mula(0b1110, 5, Src::Bc(0, W));
+        c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+        c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+        c.vu0().madda(0b1110, 7, Src::Bc(0, W));
+        c.vu0().madd(0b1110, 8, 7, Src::Bc(0, W));
+        c.sqc2(8, s + 0x80);
+    }
+    vu::copy(c, s + 0x80, s + 0x60, V0);
+    vu::add(c, rider + POS, s + 0x60, rider + POS);
+    BUILD_WORLD_MATRIX.call(c, 0x0011_5128)?;
+    c.g[A0][0] = c.g[S1][0];
+    TOGGLE_STANCE.call(c, 0x0011_5130)?;
+    c.g[A0][0] = Addr((c.g[S1][0] as u32).wrapping_add(PREDICTOR)).lw(c);
+    c.g[A1][0] = c.g[S0][0];
+    c.lwc1(12, (c.g[GP][0] as u32).wrapping_sub(GP_PRIME_TIME));
+    c.g[A2][0] = c.g[S2][0];
+    AIR_PREDICTOR_PRIME.call(c, 0x0011_5144)?;
+    c.g[V0][0] = 1;
+    Ok(())
+}
+
+
+
+// ---------------------------------------------------------------------------
+// Rider_IsOnGround_Wrapper (0x122cd0)
+
+/// `Rider_IsOnGround` (0x1231a8).
+pub(crate) const RIDER_IS_ON_GROUND: Callee = Callee {
+    addr: 0x0012_31a8,
+    f: ee::s00::Rider_IsOnGround,
+};
+
+
+
+/// `bool Rider_IsOnGround_Wrapper(Rider *rider)` (0x122cd0): forwards to
+/// `Rider_IsOnGround`.
+pub fn rider_is_on_ground_wrapper(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(RIDER_IS_ON_GROUND),
+        0x0012_2ce0,
+    );
+}
+
+
+
+// ---------------------------------------------------------------------------
+// Rider_UpdateSphereTree (0x106828)
+
+/// Rider: its collision sphere tree.
+pub(crate) const RIDER_SPHERE_TREE: u32 = 0xaa0;
+
+
+/// `RiderSphereTree_UpdateFromBones` (called through the function table).
+pub(crate) const RIDER_SPHERE_TREE_UPDATE_FROM_BONES: u32 = 0x0032_9ae0;
+
+
+
+/// `void Rider_UpdateSphereTree(Rider* rider)` (0x106828): move the rider's
+/// collision spheres onto its current bone positions
+/// (`RiderSphereTree_UpdateFromBones(rider->sphereTree)`).
+pub fn rider_update_sphere_tree(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        Some(RIDER_SPHERE_TREE),
+        crate::call::Target::Table(RIDER_SPHERE_TREE_UPDATE_FROM_BONES),
+        0x0010_6838,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14915,6 +15432,240 @@ pub(crate) mod tests {
                     let status = if seed % 3 == 0 { 3 } else { 2 };
                     c.bus.write32(LOG_RESULTS, status);
                 }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+
+    /// Player_UpdateRumble: no pad (early out); with a pad, vibration on/off
+    /// from the BE player slot table, the race countdown 0 / below 10 / 10+,
+    /// and Player_ApplyRumble's both paths (stop actuators with one or two
+    /// motors when not allowed, the motor-type check when allowed). BE
+    /// interface, rider input and pad methods are fakes (counts forced).
+    #[test]
+    fn player_update_rumble_matches() {
+        use crate::difftest::fakes::{vtable, LOG_RESULTS};
+        // Away from the fakes' random vtables (DATA..DATA+0xfffff).
+        const PLAYER: u32 = DATA + 0x20_0000;
+        const RIDER: u32 = PLAYER + 0x2000;
+        const PAD: u32 = PLAYER + 0x3000;
+        const IFACE_OBJ: u32 = PLAYER + 0x3100;
+        const WORLD: u32 = PLAYER + 0x3200;
+        const BE: u32 = PLAYER + 0x8000;
+        check(ee::s00::f_001278e8__generated, player_update_rumble, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x12_78e8, 7);
+            c.pc = 0x0012_78e8;
+            let gp = crate::difftest::GAME_GP;
+            c.g[A0][0] = sx(PLAYER);
+            c.bus.write32(PLAYER + PL_PAD, if seed % 6 == 0 { 0 } else { PAD });
+            c.bus.write32(PLAYER + PL_RIDER, RIDER);
+            // BELibrary singleton, interface table entry 0.
+            c.bus.write32(gp - 0x1f04, BE);
+            c.bus.write32(gp - 0x1efc, 0);
+            c.bus.write32(0x0053_08a8, IFACE_OBJ);
+            let vt = vtable(c, &mut r, &[0x8]);
+            c.bus.write32(IFACE_OBJ + 4, vt);
+            // The rider input's pad id (forced 1..3), its slot and flags.
+            let vt = vtable(c, &mut r, &[0x38]);
+            c.bus.write32(RIDER + RIDER_INPUT, vt);
+            let pad_id = 1 + seed % 3;
+            c.bus.write32(LOG_RESULTS + 4, pad_id);
+            let slot = r.next_u32() % 4;
+            c.bus.write32(0x0053_05b0 + 4 * pad_id, slot);
+            c.bus.write32(0x0053_4fe0 + slot * 0x1c + 0x10, r.next_u32());
+            // The world's countdown.
+            c.bus.write32(gp - 0x848, WORLD);
+            c.bus.write32(WORLD + 0x84, WORLD + 0x100);
+            c.bus.write32(WORLD + 0x100 + 0x28, WORLD + 0x200);
+            let count = match (seed / 6) % 3 {
+                0 => 0,
+                1 => r.next_u32() % 10,
+                _ => 10 + r.next_u32() % 100,
+            };
+            c.bus.write32(WORLD + 0x200, count);
+            // The pad: motor count / type (1 or 2), motor setters.
+            let vt = vtable(c, &mut r, &[0x18, 0x20]);
+            c.bus.write32(PAD, vt);
+            let k = 1 + (seed / 2) % 2;
+            for n in [2, 4, 6] {
+                c.bus.write32(LOG_RESULTS + 4 * n, k);
+            }
+            // Player_ApplyRumble's .lit4 constants.
+            for off in [0x7860u32, 0x785c, 0x7858, 0x7854, 0x7850, 0x784c, 0x7848] {
+                c.bus.write32(gp - off, r.f32(2.0));
+            }
+            c.bus.write32(PLAYER + PL_RUMBLE, r.f32(2.0));
+            c.bus.write32(PLAYER + PL_RUMBLE + 4, r.f32(2.0));
+        });
+    }
+
+
+    /// Rider_GetTrickSkillFactor: the game image (attribute tables, the
+    /// `.lit4` scale), a BE singleton, a library whose getInterface slot is
+    /// a fake (may unwind), and the real attribute-2 factor on random
+    /// profile slots, character records and stats indices (zero, small,
+    /// random: the fixed 0.5, the table value or the given value).
+    #[test]
+    fn rider_get_trick_skill_factor_matches() {
+        const RIDER: u32 = DATA + 0x7_0000;
+        covered(ee::s00::f_00120038__generated, rider_get_trick_skill_factor, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x12_0038, 1);
+            crate::difftest::elf_image(c);
+            c.pc = 0x0012_0038;
+            c.bus.write32(GAME_GP - 0x1f04, DATA + 0x6_0000);
+            c.bus.write32(GAME_GP - 0x1efc, 0);
+            // The lazily built BE interface singletons exist (new race,
+            // new player, char, aggression).
+            for g in [0x1f3c, 0x1f30, 0x1f2c, 0x1ea4] {
+                c.bus.write32(GAME_GP - g, DATA + 0xe_0000 + g * 0x10);
+            }
+            let lib = DATA + 0x5_0000;
+            c.bus.write32(0x0053_08a8, lib);
+            let vt = crate::difftest::fakes::vtable(c, &mut r, &[8]);
+            c.bus.write32(lib + 4, vt);
+            for p in 0..8 {
+                c.bus.write32(0x0053_05b0 + 4 * p, r.next_u32() % 8);
+            }
+            for s in 0..8 {
+                let rec = 0x0053_5b20 + s * 0x1c;
+                if r.next_u32() % 3 == 0 {
+                    c.bus.write32(rec + 0xc, u32::MAX);
+                }
+                c.bus.write8(rec + 0x11, (r.next_u32() % 10) as u8);
+            }
+            c.bus.write32(RIDER + RIDER_AI_INDEX, r.next_u32() % 8);
+            let stats = match r.next_u32() % 3 {
+                0 => 0,
+                1 => r.next_u32() % 40,
+                _ => r.next_u32(),
+            };
+            c.bus.write32(RIDER + RIDER_STATS_INDEX, stats);
+            c.g[A0][0] = sx(RIDER);
+        });
+    }
+
+
+    /// A rider in the air over random geometry: predictor state 1, 3 or
+    /// neither; the rider's own plane (surface 0x12 or a flagged surface) or
+    /// the predictor's; random up/velocity/axes so every limit test fails on
+    /// some seeds and some seeds flip (real BuildWorldMatrix, ToggleStance,
+    /// AirPredictor_Prime).
+    pub(crate) fn try_air_reverse_setup(c: &mut Cpu, seed: u32) {
+        use air_reverse::*;
+        let mut r = machine(c, seed, 0x114db8, 0);
+        crate::difftest::elf_image(c);
+        c.pc = 0x0011_4db8;
+        let rider = DATA;
+        let pred = DATA + 0x1000;
+        let character = DATA + 0x2000;
+        let bones = DATA + 0x3000;
+        let world = DATA + 0x4000;
+        let game = DATA + 0x4100;
+        let table = DATA + 0x5000;
+        let owner = DATA + 0x2_0000 + (r.next_u32() & 0xfff0);
+        for off in (0..0x900).step_by(4) {
+            c.bus.write32(rider + off, r.f32(1.5));
+        }
+        for off in (0..0x100).step_by(4) {
+            c.bus.write32(pred + off, r.f32(1.5));
+            c.bus.write32(bones + off, r.f32(3.0));
+        }
+        for off in (0x140..0x150).step_by(4) {
+            c.bus.write32(character + off, r.f32(2.0));
+        }
+        c.bus.write32(character + 0x24, bones);
+        c.bus.write32(rider + PIVOT_BONE, r.next_u32() % 8);
+        c.bus.write32(rider + CHARACTER, character);
+        c.bus.write32(rider + PREDICTOR, pred);
+        c.bus.write32(rider + 0x77c, owner);
+        c.bus.write32(rider + 0x784, owner);
+        let state = match seed % 5 {
+            0 | 3 => 1,
+            1 | 4 => 3,
+            _ => r.next_u32() % 3 * 2,
+        };
+        c.bus.write32(pred + PRED_STATE, state);
+        let surface = if seed / 5 % 3 == 0 { 0x12 } else { r.next_u32() % 8 };
+        c.bus.write32(pred + PRED_SURFACE, surface);
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+        c.bus.write32(world + 0x84, game);
+        c.bus.write32(game + 0x44, table);
+        for k in 0..0x13 {
+            c.bus.write32(table + k * SURFACE_SIZE + 0x44, r.next_u32() % 2);
+        }
+        c.g[A0][0] = rider as u64;
+    }
+
+
+    #[test]
+    fn rider_try_air_reverse_matches() {
+        check(ssx3_ee::s00::f_00114db8__generated, rider_try_air_reverse, 300, &try_air_reverse_setup);
+        // Some seeds really flip (the whole body runs).
+        let mut flipped = 0;
+        for seed in 0..300 {
+            let mut c = crate::difftest::fresh();
+            try_air_reverse_setup(&mut c, seed);
+            crate::difftest::run_generated(&mut c, ssx3_ee::s00::f_00114db8__generated);
+            flipped += (c.g[V0][0] == 1) as u32;
+        }
+        assert!(flipped >= 5, "flipped {flipped}");
+    }
+
+
+    /// Rider_IsOnGround_Wrapper through the real `Rider_IsOnGround`: main
+    /// state 0 (ground), 2 with/without the sub-state flag, or another state.
+    #[test]
+    fn rider_is_on_ground_wrapper_matches() {
+        check(ee::s00::f_00122cd0__generated, rider_is_on_ground_wrapper, 200, &|c, seed| {
+            let mut r = Rng(0x122c_d000 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x0012_2cd0;
+            let rider = DATA;
+            let base = DATA + 0x2000;
+            c.g[A0][0] = sx(rider);
+            c.bus.write32(rider + 0x77c, base);
+            let state = [0, 2, 2, 5][(seed % 4) as usize];
+            c.bus.write32(base + 0xde0, state);
+            c.bus.write32(base + 0x30, if seed % 8 < 4 { 0 } else { r.next_u32() | 1 });
+        });
+    }
+
+
+    /// `Rider_UpdateSphereTree`: a sphere tree of 0..5 spheres (and a
+    /// negative count) with random bone indices; the real
+    /// `RiderSphereTree_UpdateFromBones` copies the bone positions.
+    #[test]
+    fn rider_update_sphere_tree_matches() {
+        const RIDER: u32 = DATA;
+        const TREE: u32 = DATA + 0x1000;
+        const BONES: u32 = DATA + 0x2000;
+        check(
+            ee::s00::f_00106828__generated,
+            rider_update_sphere_tree,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x106828, 0);
+                c.pc = 0x0010_6828;
+                fill(c, &mut r, BONES, 8 * 16);
+                fill(c, &mut r, TREE, 0x100);
+                c.bus.write32(RIDER + RIDER_SPHERE_TREE, TREE);
+                c.bus.write32(TREE, BONES);
+                let count = match seed % 7 {
+                    6 => 0xffff_fff0 | r.next_u32() % 16,
+                    n => n as u32,
+                };
+                c.bus.write32(TREE + 0x2c, count);
+                c.bus.write32(TREE + 0x24, r.next_u32() % 16);
+                for i in 0..6 {
+                    c.bus.write32(TREE + 0x44 + 0x20 * i, r.next_u32() % 16);
+                }
+                c.g[A0][0] = sx(RIDER);
             },
         );
     }

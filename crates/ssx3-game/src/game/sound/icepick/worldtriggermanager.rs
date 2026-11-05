@@ -210,6 +210,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_trigger_manager_update,
         "WorldTriggerManager_Update",
     ),
+    (0x002b_7848, c_world_sound_update, "cWorldSound_Update"),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -3204,6 +3205,112 @@ pub fn world_trigger_manager_update(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ------------------------------------------------------- cWorldSound_Update
+
+/// `cWorldSound_RefreshNearbyEmitters` (0x2b75d0) and
+/// `cWorldSound_ProcessEmitter` (0x2b7908).
+pub(crate) const WS_REFRESH_NEARBY: Callee = Callee {
+    addr: 0x002b_75d0,
+    f: ee::s08::f_002b75d0,
+};
+
+
+pub(crate) const WS_PROCESS_EMITTER: Callee = Callee {
+    addr: 0x002b_7908,
+    f: ee::s08::f_002b7908,
+};
+
+
+
+/// Size of one listener's nearby-emitter list inside `cWorldSound`
+/// (count at +0, emitter pointers from +4, the position it was built for
+/// at +0x110).
+pub(crate) const WS_NEAR_LIST_SIZE: u64 = 0x120;
+
+
+
+/// `void cWorldSound_Update(cWorldSound* self, Vec4* listener, int idx)`
+/// (0x2b7848), every frame per listener: refresh the listener's list of
+/// nearby emitters (`self + idx * 0x120`) around `listener`, then run
+/// `cWorldSound_ProcessEmitter(self, listener, idx, emitter)` for each
+/// non-null entry. Frame 0x80 (s0-s6); the loop keeps its state in s0-s3
+/// (s3 = list, s0/s1 = entry cursor, s2 = index).
+pub fn c_world_sound_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x80);
+        c.g[V0][0] = WS_NEAR_LIST_SIZE;
+        frame.save(c, S6, 0x10);
+        c.g[S6][0] = c.g[A2][0];
+        frame.save(c, S5, 0x20);
+        c.mult(0, V1, S6, V0);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S4, 0x30);
+        c.g[S5][0] = c.g[A0][0];
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S2, 0x50);
+        frame.save(c, S1, 0x60);
+        // The listener's list: self + idx * 0x120.
+        c.g[S0][0] = sx(r32(c, V1).wrapping_add(r32(c, S5)));
+        frame.save(c, S3, 0x40);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        WS_REFRESH_NEARBY.call(c, 0x002b_788c)?;
+
+        let count = Addr(r32(c, S0)).lw(c);
+        c.g[V0][0] = count;
+        c.g[S2][0] = 0;
+        if (count as i64) > 0 {
+            c.cycles += 4;
+            c.g[S3][0] = c.g[S0][0];
+            c.g[S0][0] = sx(r32(c, S3).wrapping_add(4));
+            c.g[S1][0] = c.g[S0][0];
+            loop {
+                c.cycles += 3;
+                let entry = Addr(r32(c, S0)).lw(c);
+                c.g[V0][0] = entry;
+                c.g[A0][0] = c.g[S5][0];
+                if entry != 0 {
+                    // ProcessEmitter(self, listener, idx, entry)
+                    c.cycles += 4;
+                    c.g[A3][0] = Addr(r32(c, S1)).lw(c);
+                    c.g[A1][0] = c.g[S4][0];
+                    c.g[A2][0] = c.g[S6][0];
+                    WS_PROCESS_EMITTER.call(c, 0x002b_78c4)?;
+                }
+                c.cycles += 6;
+                let count = Addr(r32(c, S3)).lw(c);
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                let more = (c.g[S2][0] as i64) < (count as i64);
+                c.g[V0][0] = more as u64;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002b_78a8);
+                }
+            }
+        }
+
+        c.cycles += 10;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4385,5 +4492,73 @@ pub(crate) mod tests {
                 c.g[A0][0] = this as u64;
             },
         );
+    }
+    use super::*;
+
+
+    /// cWorldSound_Update: listener lists 0..2 with 0..5 entries (and a
+    /// negative count), null and non-null entries; the real
+    /// RefreshNearbyEmitters either keeps the list (listener moved less than
+    /// 10) or rebuilds it from an empty tree (count 0), and the real
+    /// ProcessEmitter runs on emitters whose data blocks have no records.
+    #[test]
+    fn c_world_sound_update_matches() {
+        const SELF: u32 = DATA;
+        const LISTENER: u32 = DATA + 0x800;
+        const SOURCES: u32 = DATA + 0x1000;
+        const WORLD: u32 = DATA + 0x2000;
+        const MODULE: u32 = DATA + 0x2100;
+        const TREE: u32 = DATA + 0x2200;
+        check(ee::s08::f_002b7848__generated, c_world_sound_update, 300, &|c, seed| {
+            let mut r = Rng(0x2b78_4800 ^ (seed as u64) << 12);
+            scramble(c, &mut r);
+            c.g[GP][0] = sx(GAME_GP);
+            c.pc = 0x002b_7848;
+            // World -> sound module -> emitter tree with no subtrees.
+            c.bus.write32(GAME_GP.wrapping_sub(0x848), WORLD);
+            c.bus.write32(WORLD + 0x84, MODULE);
+            c.bus.write32(MODULE + 0x20, TREE);
+            c.bus.write32(GAME_GP.wrapping_sub(0x452c), r.f32(2.0));
+            for k in 0..8 {
+                put_words(c, TREE + 0x14 * k, &[1, 0, 0, 0, 0]);
+            }
+            let idx = seed % 3;
+            let list = SELF + 0x120 * idx;
+            let p = [r.f32(20.0), r.f32(20.0), r.f32(20.0), r.f32(1.0)];
+            put_vec(c, LISTENER, p);
+            // Built for a position 3 (kept) or 12 (rebuilt) away; flag 0
+            // rebuilds every time.
+            let d = if seed % 5 == 0 { 12.0 } else { 3.0 };
+            put_vec(
+                c,
+                list + 0x110,
+                [(f32::from_bits(p[0]) + d).to_bits(), p[1], p[2], r.next_u32()],
+            );
+            c.bus.write32(list + 0x11c, if seed % 11 == 0 { 0 } else { 0x3f80_0000 });
+            let count: u32 = match seed % 9 {
+                0 => 0,
+                1 => 0xffff_fffe,
+                _ => 1 + seed % 5,
+            };
+            c.bus.write32(list, count);
+            for i in 0..5 {
+                let src = SOURCES + 0x80 * i;
+                let entry = if r.next_u32() % 4 == 0 { 0 } else { src };
+                c.bus.write32(list + 4 + 4 * i, entry);
+                // Source: object at +0xc, data block at +0x10 (no records).
+                let obj = src + 0x20;
+                let block = src + 0x60;
+                c.bus.write32(src + 0xc, obj);
+                c.bus.write32(src + 0x10, block);
+                for k in 0..3 {
+                    c.bus.write32(obj + 0x40 + 4 * k, r.f32(10.0));
+                }
+                c.bus.write32(block, r.next_u32() % 3);
+                c.bus.write32(block + 4, if r.next_u32() % 2 == 0 { 0 } else { 0xffff_ffff });
+            }
+            c.g[A0][0] = sx(SELF);
+            c.g[A1][0] = sx(LISTENER);
+            c.g[A2][0] = idx as u64;
+        });
     }
 }

@@ -145,6 +145,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003c_7388, snd_parse_next_tag, "SND_ParseNextTag"),
     (0x003c_7828, snd_mix_add_ramp16, "SND_MixAddRamp16"),
     (0x003c_8968, snd_ee_mix, "SND_EeMix"),
+    (0x003b_54e0, snd_run_change_callbacks, "SND_RunChangeCallbacks"),
+    (0x003b_6ea8, sndstrm_parse_data, "SNDSTRM_ParseData"),
+    (0x003b_7e70, sndstrm_set_volume, "SNDSTRM_SetVolume"),
+    (0x003b_7f18, sndstrm_get_volume, "SNDSTRM_GetVolume"),
+    (0x003b_86c0, snd_get_volume, "SND_GetVolume"),
+    (0x003b_a078, snd_is_voice_reserved, "SND_IsVoiceReserved"),
+    (0x003c_60e0, snd_run_service_callbacks, "SND_RunServiceCallbacks"),
+    (0x003c_6ab8, sndstrm_push_block, "SNDSTRM_PushBlock"),
+    (0x003c_6c28, sndstrm_get_free_blocks, "SNDSTRM_GetFreeBlocks"),
+    (0x003c_72f8, snd_read_big_endian, "SND_ReadBigEndian"),
+    (0x003c_7ab0, snd_ee_voice_mix_ramp, "SND_EeVoiceMixRamp"),
 ];
 
 /// Fields of the driver state block.
@@ -8512,6 +8523,1101 @@ pub fn snd_restore_vu0_flags(c: &mut Cpu) {
     frame.close(c);
 }
 
+
+pub(crate) mod ee_mix {
+
+    pub const STATE: u32 = 0x0051_5b40;
+
+    pub const COUNT: u32 = 0x5;
+
+    pub const DRY_ON: u32 = 0xf;
+
+    pub const FORMAT: u32 = 0xb0;
+
+    pub const BLOCK: u32 = 0xb4;
+
+    pub const SENDS: u32 = 0xd0;
+
+    pub const SET: u32 = 0x1e0;
+
+    /// The dry mix buffer.
+    pub const DRY_BUFFER: u32 = 0x0051_5d80;
+
+    /// `SND_MixAddRamp16`.
+    pub const MIX_ADD_RAMP16: u32 = 0x003c_7828;
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SND_RunChangeCallbacks (0x3b54e0, seg_2B4578.c)
+
+/// The sound library's globals (0x50a8e8): change-callback list (+0x1b4)
+/// and the change counter (+0x1c0); the counter value last seen (0x44c468).
+pub(crate) const SND_GLOBALS: u32 = 0x0051_0000 - 0x5718;
+
+
+pub(crate) const SND_CB_LIST: u32 = 0x1b4;
+
+
+pub(crate) const SND_CHANGE_COUNT: u32 = 0x1c0;
+
+
+pub(crate) const SND_SEEN_HI: u32 = 0x0045_0000;
+
+
+pub(crate) const SND_SEEN_LO: u32 = 0x3b98;
+
+
+
+/// `void SND_RunChangeCallbacks()` (0x3b54e0): when the sound library's
+/// change counter moved since the last call, remember it and call every
+/// registered callback (`node->fn(node->arg)`, `{next, ?, fn, arg}`).
+pub fn snd_run_change_callbacks(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 0x51_0000;
+        frame.save(c, S0, 0x10);
+        c.g[A1][0] = SND_SEEN_HI as u64;
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(SND_GLOBALS);
+        let seen = Addr(SND_SEEN_HI - SND_SEEN_LO);
+        c.g[V1][0] = seen.lw(c);
+        c.g[A0][0] = Addr(SND_GLOBALS + SND_CHANGE_COUNT).lw(c);
+        let unchanged = c.g[A0][0] == c.g[V1][0];
+        frame.restore(c, S0, 0x10);
+        if !unchanged {
+            c.cycles += 3;
+            c.g[S0][0] = Addr(SND_GLOBALS + SND_CB_LIST).lw(c);
+            let count = c.g[A0][0];
+            seen.sw(c, count);
+            if c.g[S0][0] != 0 {
+                c.cycles += 1;
+                c.g[V0][0] = Addr(r32(c, S0).wrapping_add(8)).lw(c);
+                loop {
+                    c.cycles += 5;
+                    let f = r32(c, V0);
+                    c.g[A0][0] = Addr(r32(c, S0).wrapping_add(0xc)).lw(c);
+                    call_ptr(c, f, 0x003b_5520)?;
+                    c.g[S0][0] = Addr(r32(c, S0)).lw(c);
+                    if c.g[S0][0] == 0 {
+                        break;
+                    }
+                    c.g[V0][0] = Addr(r32(c, S0).wrapping_add(8)).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003b_5518);
+                    }
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_GetVolume (0x3b7f18, seg_2B4578.c)
+
+/// Stream fields: the sound handle, the volume it was started with.
+pub(crate) const STRM_HANDLE: u32 = 0x4;
+
+
+pub(crate) const STRM_VOLUME: u32 = 0xec;
+
+
+/// SND error code: invalid handle.
+pub(crate) const SND_ERR_HANDLE: u64 = -8i64 as u64;
+
+
+
+pub(crate) const SNDSTRM_GET_STREAM_4: Callee = Callee {
+    addr: 0x003b_6a38,
+    f: ee::s13::SNDSTRM_GetStream,
+};
+
+
+pub(crate) const SND_GET_VOLUME: Callee = Callee {
+    addr: 0x003b_86c0,
+    f: ee::s13::SND_GetVolume,
+};
+
+
+
+/// `int SNDSTRM_GetVolume(int stream)` (0x3b7f18): the volume of the
+/// stream's playing sound, or the volume it was started with (signed byte
+/// at +0xec) when the sound is no longer playing; -8 for an unknown
+/// stream.
+pub fn sndstrm_get_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        SNDSTRM_GET_STREAM_4.call(c, 0x003b_7f2c)?;
+        c.g[S0][0] = c.g[V0][0];
+        let stream = r32(c, S0);
+        let none = c.g[S0][0] == 0;
+        c.g[V0][0] = SND_ERR_HANDLE;
+        if !none {
+            c.cycles += 5;
+            c.g[A0][0] = Addr(stream.wrapping_add(STRM_HANDLE)).lw(c);
+            SND_GET_VOLUME.call(c, 0x003b_7f44)?;
+            if (c.g[V0][0] as i64) < 0 {
+                c.g[V0][0] = Addr(stream.wrapping_add(STRM_VOLUME)).lb(c);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------- SNDSTRM_ParseData
+
+/// Stream decoder state (`self + 0x134`): byte-swap flag (+0x25, set for
+/// big-endian data), "block pushed" flag (+0x24), the sample clock (+0x1c)
+/// and the block tag (+0xc).
+pub(crate) const SS_STATE: u32 = 0x134;
+
+
+pub(crate) const SS_SWAP: u32 = 0x25;
+
+
+pub(crate) const SS_PUSHED: u32 = 0x24;
+
+
+pub(crate) const SS_CLOCK: u32 = 0x1c;
+
+
+pub(crate) const SS_TAG: u32 = 0xc;
+
+
+/// Stream: file handle (+0), stream index (+0x8), channel count (+0x16).
+pub(crate) const SS_CHANNELS: u32 = 0x16;
+
+
+/// Data chunk: sample count (+0x8), per-channel offsets from +0xc.
+pub(crate) const SS_CHUNK_SAMPLES: u32 = 0x8;
+
+
+pub(crate) const SS_CHUNK_OFFSETS: u32 = 0xc;
+
+
+
+/// `SNDSTRM_PushBlock` (0x3c6ab8).
+pub(crate) const SS_PUSH_BLOCK: Callee = Callee {
+    addr: 0x003c_6ab8,
+    f: ee::s13::f_003c6ab8,
+};
+
+
+
+/// `void SNDSTRM_ParseData(SndStream* self, Chunk* chunk)` (0x3b6ea8): turn
+/// an `SCDl` data chunk into a block descriptor on the stack (a 64-bit word
+/// at sp+0: low 32 bits kept, bits 32..62 the sample count, bit 63 "first
+/// block pushed"; then a pointer per channel at sp+0xc..): the sample count
+/// and each channel's offset (byte-swapped when the stream is big-endian)
+/// relative to the end of the offset table. An empty chunk is released
+/// back to the file (`StreamFile_ReleaseChunk`); otherwise the chunk is
+/// remembered just before the first channel's data, its first word gets the
+/// stream's tag, the clock advances by the sample count and the block goes
+/// to `SNDSTRM_PushBlock(stream index, &block)`. Frame 0x60 (s0, ra at
+/// +0x40).
+pub fn sndstrm_parse_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x60);
+        c.g[T4][0] = c.g[A0][0];
+        frame.save_ra(c, 0x40);
+        c.g[T3][0] = c.g[A1][0];
+        frame.save(c, S0, 0x50);
+        let this = r32(c, T4);
+        let chunk = r32(c, T3);
+        let state = Addr(this.wrapping_add(SS_STATE)).lw(c);
+        c.g[S0][0] = state;
+        let state = state as u32;
+        let swap = Addr(state.wrapping_add(SS_SWAP)).lbu(c);
+        c.g[V0][0] = swap;
+        let s = sp(c);
+        c.g[A0][0] = sx(s.wrapping_add(0x34));
+        // The low 31 bits / the rest of the block descriptor word.
+        const LOW31: u64 = 0x7fff_ffff;
+        const KEEP: u64 = 0x8000_0000_ffff_ffff;
+        if swap != 0 {
+            // Byte-swap the sample count through sp+0x34 -> sp+0x30.
+            c.cycles += 26;
+            let n = Addr(chunk.wrapping_add(SS_CHUNK_SAMPLES)).lw(c);
+            c.g[V0][0] = n;
+            c.g[A1][0] = sx(s.wrapping_add(0x30));
+            c.g[A3][0] = LOW31;
+            Addr(s.wrapping_add(0x34)).sw(c, n);
+            c.g[A2][0] = KEEP;
+            let b3 = Addr(s.wrapping_add(0x37)).lbu(c);
+            Addr(s.wrapping_add(0x30)).sb(c, b3);
+            let b2 = Addr(s.wrapping_add(0x36)).lbu(c);
+            c.g[V1][0] = b2;
+            Addr(s.wrapping_add(0x31)).sb(c, b2);
+            let b1 = Addr(s.wrapping_add(0x35)).lbu(c);
+            c.g[V0][0] = b1;
+            Addr(s.wrapping_add(0x32)).sb(c, b1);
+            let b0 = Addr(s.wrapping_add(0x34)).lbu(c);
+            c.g[V1][0] = b0;
+            Addr(s.wrapping_add(0x33)).sb(c, b0);
+            let count = Addr(s.wrapping_add(0x30)).lwu(c) & LOW31;
+            let word = Addr(s).ld(c) & KEEP;
+            c.g[V0][0] = count << 32;
+            let word = word | count << 32;
+            c.g[V1][0] = word;
+            Addr(s).sd(c, word);
+        } else {
+            c.cycles += 14;
+            let count = Addr(chunk.wrapping_add(SS_CHUNK_SAMPLES)).lwu(c) & LOW31;
+            c.g[A1][0] = LOW31;
+            c.g[A0][0] = KEEP;
+            c.g[V1][0] = count << 32;
+            let word = (Addr(s).ld(c) & KEEP) | count << 32;
+            c.g[V0][0] = word;
+            Addr(s).sd(c, word);
+        }
+
+        // Channel pointers: data start (after the offset table) + offset.
+        c.cycles += 5;
+        let channels = Addr(this.wrapping_add(SS_CHANNELS)).lbu(c);
+        c.g[V1][0] = channels;
+        let offsets = chunk.wrapping_add(SS_CHUNK_OFFSETS);
+        c.g[A0][0] = sx(offsets);
+        c.g[V0][0] = sx((channels as u32) << 2);
+        let data = offsets.wrapping_add((channels as u32) << 2);
+        c.g[T2][0] = sx(data);
+        if channels != 0 {
+            c.cycles += 6;
+            c.g[A2][0] = sx(offsets);
+            c.g[T1][0] = channels;
+            c.g[T0][0] = sx(s.wrapping_add(0x30));
+            c.g[A3][0] = sx(s.wrapping_add(0x38));
+            c.g[A1][0] = sx(s.wrapping_add(0xc));
+            loop {
+                c.cycles += 3;
+                let s = sp(c);
+                let swap = Addr(r32(c, S0).wrapping_add(SS_SWAP)).lbu(c);
+                let mut off = Addr(r32(c, A2)).lw(c);
+                c.g[V0][0] = off;
+                if swap != 0 {
+                    // Byte-swap through sp+0x38 -> sp+0x30.
+                    c.cycles += 10;
+                    Addr(s.wrapping_add(0x38)).sw(c, off);
+                    let b3 = Addr(s.wrapping_add(0x3b)).lbu(c);
+                    Addr(s.wrapping_add(0x30)).sb(c, b3);
+                    let b2 = Addr(s.wrapping_add(0x3a)).lbu(c);
+                    c.g[V0][0] = b2;
+                    Addr(s.wrapping_add(0x31)).sb(c, b2);
+                    let b1 = Addr(s.wrapping_add(0x39)).lbu(c);
+                    c.g[V1][0] = b1;
+                    Addr(s.wrapping_add(0x32)).sb(c, b1);
+                    let b0 = Addr(s.wrapping_add(0x38)).lbu(c);
+                    c.g[A0][0] = b0;
+                    Addr(s.wrapping_add(0x33)).sb(c, b0);
+                    off = Addr(s.wrapping_add(0x30)).lw(c);
+                }
+                c.cycles += 6;
+                let ptr = sx(r32(c, T2).wrapping_add(off as u32));
+                c.g[V0][0] = ptr;
+                Addr(r32(c, A1)).sw(c, ptr);
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(4));
+                c.g[T1][0] = sx(r32(c, T1).wrapping_sub(1));
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(4));
+                if c.g[T1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_6f98);
+                }
+            }
+        }
+
+        c.cycles += 6;
+        let s = sp(c);
+        let count = Addr(s.wrapping_add(4)).lw(c) & LOW31;
+        c.g[V0][0] = count;
+        c.g[A2][0] = LOW31;
+        let first = Addr(s.wrapping_add(0xc)).lw(c);
+        c.g[A0][0] = first;
+        if count == 0 {
+            // StreamFile_ReleaseChunk(file, chunk)
+            c.cycles += 5;
+            c.g[A0][0] = Addr(this).lw(c);
+            c.g[A1][0] = c.g[T3][0];
+            call_ptr(c, 0x003e_13e8, 0x003b_7008)?;
+        } else {
+            c.cycles += 24;
+            c.g[A3][0] = u64::MAX >> 1;
+            c.g[A1][0] = c.g[SP][0];
+            // The chunk, just before the first channel's data.
+            let chunk_reg = c.g[T3][0];
+            Addr((first as u32).wrapping_sub(4)).sw(c, chunk_reg);
+            let tag = Addr(state.wrapping_add(SS_TAG)).lw(c);
+            c.g[V1][0] = tag;
+            let count = Addr(s.wrapping_add(4)).lwu(c);
+            Addr(chunk).sw(c, tag);
+            let count = (((count << 32) as i64) >> 32) as u64 & LOW31;
+            c.g[V0][0] = count;
+            let clock = Addr(state.wrapping_add(SS_CLOCK)).lw(c);
+            let pushed = Addr(state.wrapping_add(SS_PUSHED)).lbu(c);
+            let clock = sx((clock as u32).wrapping_add(count as u32));
+            c.g[V1][0] = clock;
+            Addr(state.wrapping_add(SS_CLOCK)).sw(c, clock);
+            c.g[A2][0] = pushed << 63;
+            let word = (Addr(s).ld(c) & (u64::MAX >> 1)) | pushed << 63;
+            c.g[V0][0] = word;
+            c.g[A0][0] = Addr(this.wrapping_add(0x8)).lw(c);
+            Addr(s).sd(c, word);
+            SS_PUSH_BLOCK.call(c, 0x003b_7064)?;
+            c.g[V1][0] = 1;
+            Addr(r32(c, S0).wrapping_add(SS_PUSHED)).sb(c, 1);
+        }
+        frame.restore(c, S0, 0x50);
+        c.cycles += 3;
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// --------------------------------------------------- SND_RunServiceCallbacks
+
+/// Sound driver globals (0x50a8e8): service callbacks enabled (s8, +0x174),
+/// their count (s8, +0x178) and the function table (+0x19c).
+pub(crate) const SND_GLOBALS_2: u32 = 0x0050_a8e8;
+
+
+pub(crate) const SND_SERVICE_ON: u32 = 0x174;
+
+
+pub(crate) const SND_SERVICE_COUNT: u32 = 0x178;
+
+
+pub(crate) const SND_SERVICE_FNS: u32 = 0x19c;
+
+
+
+/// `void SND_RunServiceCallbacks(void)` (0x3c60e0), from the sound service
+/// tick: when enabled, call each registered service callback in order (the
+/// count is re-read after every call). Frame 0x40 (s0 = index, s1 = table
+/// cursor, s2 = globals); s0 is reloaded once right at the start (the
+/// original's delay slot) and again at the end.
+pub fn snd_run_service_callbacks(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = 0x0051_0000;
+        frame.save(c, S0, 0x30);
+        c.g[A0][0] = sx(SND_GLOBALS_2);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        let on = Addr(SND_GLOBALS_2 + SND_SERVICE_ON).lb(c);
+        c.g[V1][0] = on;
+        frame.restore(c, S0, 0x30);
+        if on != 0 {
+            c.cycles += 3;
+            let count = Addr(SND_GLOBALS_2 + SND_SERVICE_COUNT).lb(c);
+            c.g[V0][0] = count;
+            c.g[S0][0] = 0;
+            if (count as i64) > 0 {
+                c.cycles += 3;
+                c.g[S2][0] = c.g[A0][0];
+                c.g[S1][0] = sx(SND_GLOBALS_2 + SND_SERVICE_FNS);
+                c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+                loop {
+                    c.cycles += 7;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    let callback = r32(c, V1);
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+                    call_ptr(c, callback, 0x003c_612c)?;
+                    let count = Addr(r32(c, S2).wrapping_add(SND_SERVICE_COUNT)).lb(c);
+                    let more = (c.g[S0][0] as i64) < (count as i64);
+                    c.g[V0][0] = more as u64;
+                    if !more {
+                        break;
+                    }
+                    c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_6120);
+                    }
+                }
+            }
+            c.cycles += 1;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// 0x003ba078 SND_IsVoiceReserved
+
+/// The reserved-voice table (`short[]`) `SND_IsVoiceReserved` scans.
+pub(crate) const SND_RESERVED_VOICES: u32 = 0x0050_ac20;
+
+
+
+/// `int SND_IsVoiceReserved(int voice, int count)` (0x3ba078): 1 if `voice`
+/// is among the first `count` entries of the reserved-voice table, else 0.
+pub fn snd_is_voice_reserved(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[V1][0] = 0;
+    if (c.g[A1][0] as i64) > 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0x0051_0000;
+        c.g[A2][0] = sx(SND_RESERVED_VOICES);
+        loop {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, A2)).lh(c);
+            let differs = c.g[V0][0] != c.g[A0][0];
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+            if !differs {
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                ret(c);
+                return;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A1][0] as i64)) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_add(2));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_a088);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// 0x003c6c28 SNDSTRM_GetFreeBlocks
+
+/// SNDSTRM's per-slot state pointers (`+0x304 + 4 * slot`).
+pub(crate) const SNDSTRM_SLOT_BASE: u32 = 0x0051_57b8;
+
+
+pub(crate) const SNDSTRM_SLOT_STATES: u32 = 0x304;
+
+
+
+/// `int SNDSTRM_GetFreeBlocks(int slot)` (0x3c6c28): the slot's block count
+/// (`+0x40`) minus one minus the highest block index in use by its channels
+/// (`+0x62` channels, a signed halfword each at `+0x34`, at least 0).
+pub fn sndstrm_get_free_blocks(c: &mut Cpu) {
+    c.cycles += 8;
+    c.g[V0][0] = 0x0051_0000;
+    c.g[A0][0] = sx(r32(c, A0) << 2);
+    c.g[V0][0] = sx(SNDSTRM_SLOT_BASE);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+    let state = Addr(r32(c, V0).wrapping_add(SNDSTRM_SLOT_STATES)).lw(c);
+    c.g[A2][0] = state;
+    let state = state as u32;
+    c.g[V0][0] = Addr(state.wrapping_add(0x62)).lbu(c);
+    c.g[A1][0] = 0; // the highest index so far
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.g[A0][0] = c.g[V0][0]; // channels left
+        c.g[V1][0] = sx(state.wrapping_add(0x34));
+        loop {
+            c.cycles += 6;
+            let index = Addr(r32(c, V1)).lhu(c) as u32 as i16 as i64;
+            c.g[V0][0] = (index < c.g[A1][0] as i64) as u64;
+            if c.g[V0][0] == 0 {
+                c.cycles += 4;
+                c.g[V0][0] = sx((index as u32) << 16);
+                c.g[A1][0] = index as u64;
+            }
+            c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+            c.cycles += 2;
+            let more = c.g[A0][0] != 0;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(2));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_6c50);
+            }
+        }
+    }
+    c.cycles += 6;
+    let blocks = Addr(state.wrapping_add(0x40)).lhu(c) as u32 as i16 as i32 as u32;
+    c.g[V0][0] = sx(blocks.wrapping_sub(r32(c, A1)).wrapping_sub(1));
+    ret(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// 0x003c6ab8 SNDSTRM_PushBlock
+
+/// `int SNDSTRM_PushBlock(int slot, Block* block)` (0x3c6ab8): queue a
+/// stream block on the slot's ring. Fails with -13 when some channel's
+/// position (`+0x34`, one signed halfword per channel) has reached the last
+/// ring entry (`+0x40` entries). Otherwise writes the ring entry at the
+/// write index (`+0x46`, 0x20 bytes each from `+0x7c`): the sequence number
+/// (`+0x4`), the block's size word (low 31 bits) with its top bit kept as
+/// the block's flag, and one word per channel from the block (`+0xc`),
+/// advancing every channel's position; adds the size to the queued bytes
+/// (`+0x48`), bumps the sequence number and the write index (wrapping at the
+/// ring size). Returns the sequence number the block got.
+pub fn sndstrm_push_block(c: &mut Cpu) {
+    const ERR_FULL: u64 = 0xffff_ffff_ffff_fff3;
+    const SIZE_MASK: u64 = 0x7fff_ffff;
+    let lh16 = |c: &mut Cpu, a: u32| Addr(a).lhu(c) as u32 as i16 as i64 as u64;
+    c.cycles += 9;
+    c.g[V0][0] = 0x0051_0000;
+    c.g[A0][0] = sx(r32(c, A0) << 2);
+    c.g[V0][0] = sx(SNDSTRM_SLOT_BASE);
+    c.g[T2][0] = c.g[A1][0]; // the block
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+    c.g[A3][0] = Addr(r32(c, V0).wrapping_add(SNDSTRM_SLOT_STATES)).lw(c);
+    let st = r32(c, A3);
+    c.g[V0][0] = Addr(st.wrapping_add(0x62)).lbu(c);
+    c.g[T0][0] = 0;
+    'done: {
+        // Room check: every channel's position below the last entry.
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[V0][0]; // channels
+            c.g[A0][0] = sx(st.wrapping_add(0x34));
+            loop {
+                c.cycles += 10;
+                let pos_at = r32(c, A0);
+                c.g[V1][0] = lh16(c, pos_at);
+                c.g[V0][0] = lh16(c, st.wrapping_add(0x40));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                if c.g[V1][0] == 0 {
+                    c.cycles += 2;
+                    c.g[A1][0] = ERR_FULL;
+                    break 'done;
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(2));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_6ae8);
+                }
+            }
+        }
+        // The ring entry at the write index.
+        c.cycles += 26;
+        c.g[V0][0] = Addr(st.wrapping_add(0x46)).lhu(c);
+        c.g[A1][0] = SIZE_MASK;
+        let block = r32(c, T2);
+        c.g[A0][0] = Addr(block.wrapping_add(4)).lw(c);
+        c.g[V0][0] = sx(r32(c, V0) << 16);
+        c.g[A2][0] = 0xffff_ffff_8000_0000;
+        c.g[V0][0] = sx((r32(c, V0) as i32 >> 11) as u32);
+        c.g[A0][0] &= c.g[A1][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x7c));
+        c.g[T0][0] = 0;
+        let entry = st.wrapping_add(r32(c, V0));
+        c.g[T1][0] = sx(entry);
+        c.g[V1][0] = Addr(entry.wrapping_add(4)).lw(c);
+        c.g[V1][0] &= c.g[A2][0];
+        c.g[V1][0] |= c.g[A0][0];
+        Addr(entry.wrapping_add(4)).sw(c, c.g[V1][0]);
+        c.g[V1][0] &= c.g[A1][0];
+        c.g[V0][0] = Addr(block.wrapping_add(4)).lw(c);
+        c.g[V0][0] = sx(r32(c, V0) >> 31);
+        c.g[V0][0] = sx(r32(c, V0) << 31);
+        c.g[V1][0] |= c.g[V0][0];
+        Addr(entry.wrapping_add(4)).sw(c, c.g[V1][0]);
+        c.g[V0][0] = Addr(st.wrapping_add(4)).lw(c);
+        Addr(entry).sw(c, c.g[V0][0]);
+        c.g[V1][0] = Addr(st.wrapping_add(0x62)).lbu(c);
+        c.g[A1][0] = sx(entry.wrapping_add(8));
+        // One word per channel; each channel's position advances.
+        if c.g[V1][0] != 0 {
+            c.cycles += 3;
+            c.g[V1][0] = sx(st.wrapping_add(0x34));
+            c.g[A0][0] = sx(block.wrapping_add(0xc));
+            loop {
+                c.cycles += 12;
+                c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+                c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+                Addr(r32(c, A1)).sw(c, c.g[V0][0]);
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(4));
+                c.g[V0][0] = Addr(r32(c, V1)).lhu(c);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                Addr(r32(c, V1)).sh(c, c.g[V0][0]);
+                c.g[V0][0] = Addr(st.wrapping_add(0x62)).lbu(c);
+                c.g[V0][0] = ((c.g[T0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(2));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_6b98);
+                }
+            }
+        }
+        // Queued bytes, sequence number, write index.
+        c.cycles += 21;
+        c.g[A0][0] = Addr(block.wrapping_add(4)).lw(c);
+        c.g[V0][0] = SIZE_MASK;
+        c.g[V1][0] = Addr(st.wrapping_add(0x48)).lw(c);
+        c.g[A0][0] &= c.g[V0][0];
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+        Addr(st.wrapping_add(0x48)).sw(c, c.g[V1][0]);
+        c.g[A1][0] = Addr(st.wrapping_add(4)).lw(c);
+        c.g[V0][0] = Addr(st.wrapping_add(4)).lw(c);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+        Addr(st.wrapping_add(4)).sw(c, c.g[V0][0]);
+        c.g[V1][0] = Addr(st.wrapping_add(0x46)).lhu(c);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+        Addr(st.wrapping_add(0x46)).sh(c, c.g[V1][0]);
+        c.g[A0][0] = Addr(st.wrapping_add(0x46)).lhu(c);
+        c.g[V0][0] = Addr(st.wrapping_add(0x40)).lhu(c);
+        c.g[A0][0] = sx(r32(c, A0) << 16);
+        c.g[V0][0] = sx(r32(c, V0) << 16);
+        c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[A0][0] == 0 {
+            Addr(st.wrapping_add(0x46)).sh(c, 0);
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A1][0];
+    ret(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_SetVolume (0x3b7e70)
+
+pub(crate) const SNDSTRM_GET_STREAM_5: Callee = Callee {
+    addr: 0x003b_6a38,
+    f: ee::s13::SNDSTRM_GetStream,
+};
+
+
+
+pub(crate) const SND_SET_VOLUME: Callee = Callee {
+    addr: 0x003b_85f0,
+    f: ee::s13::SND_SetVolume,
+};
+
+
+
+/// A sound stream: its sound handle (+4) and volume byte (+0xec).
+pub(crate) const STREAM_SND_HANDLE: u32 = 0x4;
+
+
+pub(crate) const STREAM_VOLUME: u32 = 0xec;
+
+
+
+/// `int SNDSTRM_SetVolume(int stream /*a0*/, int volume /*a1*/)`
+/// (0x3b7e70): store the stream's volume byte and set the volume of its
+/// sound handle (`SND_SetVolume`); 0, or -8 when the stream does not exist.
+/// Frame 0x20 (ra at 0, s0 = volume at 0x10).
+pub fn sndstrm_set_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        SNDSTRM_GET_STREAM_5.call(c, 0x003b_7e84)?;
+        if c.g[V0][0] == 0 {
+            c.g[V0][0] = sx(-8i32 as u32);
+        } else {
+            c.cycles += 5;
+            let stream = r32(c, V0);
+            c.g[A0][0] = c.lw(stream.wrapping_add(STREAM_SND_HANDLE));
+            c.g[A1][0] = c.g[S0][0];
+            c.sb(stream.wrapping_add(STREAM_VOLUME), c.g[S0][0]);
+            SND_SET_VOLUME.call(c, 0x003b_7e9c)?;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+
+
+/// One send of [`snd_ee_voice_mix_ramp`] (blocks 0x3c7b9c/0x3c7c28): with
+/// the wanted level at `s0` and the current one at `s0 - back`, ramps from
+/// the current to the wanted level over the block (`SND_MixAddRamp16`) and
+/// stores it, or (no change) adds at the steady level through the state's
+/// `set` callback unless it is 0. `dry` picks the buffer: the dry buffer
+/// (`s4 + 0x5d80`) or the send buffer `*s3`. True when a call was made
+/// (the generated body's join block with its extra cycle).
+pub(crate) fn mix_ramp_send(
+    c: &mut Cpu,
+    back: u32,
+    dry: bool,
+    rets: (u32, u32),
+) -> Result<bool, crate::call::Unwound> {
+    let buffer = |c: &mut Cpu| {
+        if dry {
+            sx(r32(c, S4).wrapping_add(0x5d80))
+        } else {
+            Addr(r32(c, S3)).lw(c)
+        }
+    };
+    c.cycles += 5;
+    let cur = Addr(r32(c, S0).wrapping_sub(back)).read_fpu(c);
+    let want = Addr(r32(c, S0)).read_fpu(c);
+    c.f[12] = cur.0;
+    c.f[13] = want.0;
+    let same = cur.eq_s(want);
+    abi::set_fcc(c, same);
+    if !same {
+        c.cycles += 6;
+        c.g[A0][0] = Addr(r32(c, S2)).off(ee_mix::BLOCK).lw(c);
+        c.g[A1][0] = buffer(c);
+        Callee {
+            addr: ee_mix::MIX_ADD_RAMP16,
+            f: ee::s14::f_003c7828,
+        }
+        .call(c, rets.0)?;
+        let want = Addr(r32(c, S0)).read_fpu(c);
+        c.f[0] = want.0;
+        Addr(r32(c, S0).wrapping_sub(back)).write_fpu(c, want);
+        return Ok(true);
+    }
+    c.cycles += 4;
+    let off = FpuF32(c.f[13]).eq_s(FpuF32(c.f[20]));
+    abi::set_fcc(c, off);
+    if off {
+        return Ok(false);
+    }
+    c.cycles += 6;
+    let set = Addr(r32(c, S2)).off(ee_mix::SET).lw(c);
+    c.g[V0][0] = set;
+    c.f[12] = c.f[13];
+    c.g[A1][0] = Addr(r32(c, S2)).off(ee_mix::BLOCK).lw(c);
+    c.g[A0][0] = 0x10;
+    c.g[A2][0] = buffer(c);
+    call_ptr(c, set as u32, rets.1)?;
+    Ok(true)
+}
+
+
+
+/// `int SND_EeVoiceMixRamp(EeVoice* v)` (0x3c7ab0, seg_2B4578.c): mixes one
+/// EE voice's block into the dry buffer and its sends. The voice's source
+/// (`v+0x40`, method 0) renders the block first; when it renders nothing
+/// (<= 0) the levels jump to their targets (dry +0x34 <- +0x38, sends
+/// +0x4.. <- +0x1c..) and it returns 0. Otherwise it copies the block's
+/// header word (+0x3c), mixes the dry send (if on) and the `n` sends, each
+/// ramping from the current to the wanted level, and returns 0x10.
+pub fn snd_ee_voice_mix_ramp(c: &mut Cpu) {
+    use ee_mix::*;
+    const SOURCE: u32 = 0x40;
+    const DRY_CUR: u32 = 0x34;
+    const DRY_WANT: u32 = 0x38;
+    const HEADER: u32 = 0x3c;
+    const SEND_CUR: u32 = 0x4;
+    const SEND_WANT: u32 = 0x1c;
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = 0x51_0000;
+        frame.save(c, 16, 0x70);
+        c.g[A1][0] = 0x10;
+        frame.save(c, 19, 0x40);
+        c.g[S0][0] = sx(STATE);
+        frame.save(c, 22, 0x10);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, 17, 0x60);
+        c.g[S6][0] = 0x51_0000;
+        frame.save(c, 18, 0x50);
+        c.g[T0][0] = 0;
+        frame.save(c, 20, 0x30);
+        frame.save(c, 21, 0x20);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x80);
+        let source = Addr(r32(c, S3)).off(SOURCE).lw(c);
+        c.g[A0][0] = source;
+        c.g[A2][0] = Addr(STATE).off(FORMAT).lw(c);
+        let render = Addr(source as u32).lw(c);
+        c.g[V0][0] = render;
+        c.g[A3][0] = Addr(STATE).off(BLOCK).lw(c);
+        call_ptr(c, render as u32, 0x003c_7b04)?;
+        if (c.g[V0][0] as i64) > 0 {
+            let block = Addr(r32(c, S0)).off(BLOCK).lw(c);
+            c.g[V0][0] = block;
+            c.cycles += 9;
+            c.g[S2][0] = c.g[S0][0];
+            c.f[20] = 0;
+            c.g[S5][0] = sx(r32(c, S2).wrapping_add(DRY_ON));
+            let header = Addr(block as u32).off(HEADER).read_fpu(c);
+            c.f[0] = header.0;
+            c.g[S1][0] = 0;
+            c.g[S4][0] = 0x51_0000;
+            let voice = r32(c, S3);
+            c.g[S0][0] = sx(voice.wrapping_add(DRY_WANT));
+            Addr(voice).off(HEADER).write_fpu(c, header);
+            // The dry send (a loop over one entry).
+            c.cycles += 4;
+            let on_at = r32(c, S1).wrapping_add(r32(c, S5));
+            c.g[V0][0] = sx(on_at);
+            let on = Addr(on_at).lb(c);
+            c.g[V1][0] = on;
+            if on != 0 && mix_ramp_send(c, 4, true, (0x003c_7bc0, 0x003c_7bf4))? {
+                c.cycles += 1;
+            }
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+            c.cycles += 2;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+            // The sends.
+            c.cycles += 4;
+            let state = sx(r32(c, S6).wrapping_add(0x5b40));
+            c.g[V1][0] = state;
+            let n = Addr(state as u32).off(COUNT).lbu(c);
+            c.g[V0][0] = n;
+            c.g[S1][0] = 0;
+            if n != 0 {
+                c.cycles += 4;
+                c.g[S2][0] = state;
+                c.g[S0][0] = sx(r32(c, S3).wrapping_add(SEND_WANT));
+                c.f[20] = 0;
+                c.g[S3][0] = sx((state as u32).wrapping_add(SENDS));
+                loop {
+                    if mix_ramp_send(c, 0x18, false, (0x003c_7c40, 0x003c_7c74))? {
+                        c.cycles += 1;
+                    }
+                    let n = Addr(r32(c, S2)).off(COUNT).lbu(c);
+                    c.cycles += 5;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(4));
+                    let more = (c.g[S1][0] as i64) < (n as i64);
+                    c.g[V0][0] = more as u64;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_7c20);
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = 0x10;
+        } else {
+            // Nothing rendered: the levels jump to their targets.
+            c.cycles += 3;
+            let voice = r32(c, S3);
+            c.cycles += 7;
+            let want = Addr(voice).off(DRY_WANT).read_fpu(c);
+            c.f[0] = want.0;
+            c.g[S1][0] = u64::MAX;
+            Addr(voice).off(DRY_CUR).write_fpu(c, want);
+            c.g[V0][0] = sx(voice.wrapping_add(DRY_WANT + 4));
+            c.g[V1][0] = sx(voice.wrapping_add(DRY_CUR + 4));
+            c.cycles += 4;
+            let state = sx(r32(c, S6).wrapping_add(0x5b40));
+            c.g[V1][0] = state;
+            let n = Addr(state as u32).off(COUNT).lbu(c);
+            c.g[V0][0] = n;
+            c.g[S1][0] = 0;
+            if n != 0 {
+                c.cycles += 1;
+                c.g[A0][0] = sx(r32(c, S3).wrapping_add(SEND_CUR));
+                loop {
+                    c.cycles += 7;
+                    let cur = r32(c, A0);
+                    let want = Addr(cur).off(SEND_WANT - SEND_CUR).read_fpu(c);
+                    c.f[0] = want.0;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                    Addr(cur).write_fpu(c, want);
+                    let n = Addr(r32(c, V1)).off(COUNT).lbu(c);
+                    let more = (c.g[S1][0] as i64) < (n as i64);
+                    c.g[V0][0] = more as u64;
+                    c.g[A0][0] = sx(cur.wrapping_add(4));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_7b48);
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 11;
+        frame.restore(c, 16, 0x70);
+        frame.restore(c, 17, 0x60);
+        frame.restore(c, 18, 0x50);
+        frame.restore(c, 19, 0x40);
+        frame.restore(c, 20, 0x30);
+        frame.restore(c, 21, 0x20);
+        frame.restore(c, 22, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `int SND_ReadBigEndian(const u8* p, int n)` (0x3c72f8, seg_2B4578.c):
+/// reads an `n`-byte big-endian integer (a sound header tag field); 1-, 2-
+/// and 3-byte fields are sign-extended, 4-byte ones taken as they are.
+pub fn snd_read_big_endian(c: &mut Cpu) {
+    c.cycles += 3;
+    let n = c.g[A1][0];
+    c.g[A3][0] = 0;
+    c.g[A2][0] = sx(r32(c, A1).wrapping_sub(1));
+    if n != 0 {
+        c.cycles += 1;
+        c.g[T0][0] = u64::MAX;
+        loop {
+            c.cycles += 7;
+            let p = r32(c, A0);
+            let byte = Addr(p).lbu(c);
+            c.g[V1][0] = byte;
+            c.g[V0][0] = sx(r32(c, A3) << 8);
+            c.g[A0][0] = sx(p.wrapping_add(1));
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+            c.g[A3][0] = sx(r32(c, V0).wrapping_add(byte as u32));
+            if c.g[A2][0] == c.g[T0][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_7308);
+            }
+        }
+    }
+    'done: {
+        'extend: {
+            c.cycles += 3;
+            if n == 1 {
+                c.cycles += 3;
+                if (c.g[A3][0] as i64) >= 128 {
+                    c.cycles += 2;
+                    c.g[A3][0] = sx(r32(c, A3).wrapping_sub(0x100));
+                    break 'done;
+                }
+            }
+            c.cycles += 2;
+            if n == 2 {
+                c.cycles += 4;
+                c.g[V0][0] = 0xffff_ffff_ffff_0000;
+                if 0x7fff < (c.g[A3][0] as i64) {
+                    break 'extend;
+                }
+                c.cycles += 1;
+            }
+            c.cycles += 2;
+            if n != 3 {
+                break 'done;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = 0xffff_ffff_ff00_0000;
+            if 0x7f_ffff >= (c.g[A3][0] as i64) {
+                break 'done;
+            }
+        }
+        c.cycles += 1;
+        c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A3][0];
+    ret(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// SND_GetVolume (0x3b86c0)
+
+/// `SND_HandleToChannel` (0x3ba6e8).
+pub(crate) const SND_HANDLE_TO_CHANNEL_2: Callee = Callee {
+    addr: 0x003b_a6e8,
+    f: ee::s13::SND_HandleToChannel,
+};
+
+
+/// The pointer to the sound channel parameter array (0x8c bytes per
+/// channel) and the channel's volume (s16).
+pub(crate) const SND_CHANNEL_PARAMS: u32 = 0x0050_aad8;
+
+
+pub(crate) const SND_CHANNEL_PARAM_SIZE: u32 = 0x8c;
+
+
+pub(crate) const SND_CHANNEL_VOLUME: u32 = 0x3a;
+
+
+
+/// `short SND_GetVolume(int handle)` (0x3b86c0): the volume of the channel
+/// playing `handle`, or -8 when the handle is not playing.
+pub fn snd_get_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        SND_HANDLE_TO_CHANNEL_2.call(c, 0x003b_86d0)?;
+        let channel = c.g[V0][0];
+        c.g[V1][0] = SND_CHANNEL_PARAM_SIZE as u64;
+        if (channel as i64) < 0 {
+            c.cycles += 1;
+            c.g[V0][0] = (-8i64) as u64;
+        } else {
+            c.cycles += 6;
+            c.g[A0][0] = 0x51_0000;
+            let off = abi::mult(c, channel as u32, SND_CHANNEL_PARAM_SIZE);
+            let params = Addr(SND_CHANNEL_PARAMS).lw(c);
+            let entry = (params as u32).wrapping_add(off);
+            c.g[V1][0] = sx(entry);
+            c.g[V0][0] = Addr(entry).off(SND_CHANNEL_VOLUME).lh(c);
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -11520,5 +12626,442 @@ pub(crate) mod tests {
                 c.g[A0][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
             },
         );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+
+    /// SND_RunChangeCallbacks: counter unchanged, changed with an empty
+    /// list, and changed with 1-4 callbacks (fakes).
+    #[test]
+    fn snd_run_change_callbacks_matches() {
+        use crate::difftest::fakes::FAKE;
+        const NODES: u32 = DATA + 0x20_0000;
+        check(ee::s13::f_003b54e0__generated, snd_run_change_callbacks, 240, &|c, seed| {
+            let mut r = machine(c, seed, 0x3b_54e0, 5);
+            c.pc = 0x003b_54e0;
+            let count = r.next_u32();
+            c.bus.write32(SND_GLOBALS + SND_CHANGE_COUNT, count);
+            let seen = if seed % 4 == 0 { count } else { r.next_u32() };
+            c.bus.write32(SND_SEEN_HI - SND_SEEN_LO, seen);
+            let n = (seed / 4) % 5;
+            let mut head = 0;
+            for i in (0..n).rev() {
+                let node = NODES + 0x20 * i;
+                c.bus.write32(node, head);
+                c.bus.write32(node + 8, FAKE + 0x10 * i);
+                c.bus.write32(node + 0xc, r.next_u32());
+                head = node;
+            }
+            c.bus.write32(SND_GLOBALS + SND_CB_LIST, head);
+        });
+    }
+
+
+    /// SNDSTRM_GetVolume: stream ids out of range / negative / unused
+    /// (-8), and a stream whose handle is negative, out of the channel
+    /// range, on an inactive channel, on a channel playing another handle
+    /// (fallback to the start volume) or playing it (the channel volume).
+    #[test]
+    fn sndstrm_get_volume_matches() {
+        use crate::difftest::{scramble, Rng};
+        const STREAMS: u32 = DATA + 0x1000;
+        const CHANNELS: u32 = DATA + 0x2000;
+        const VOLUMES: u32 = DATA + 0x4000;
+        check(ee::s13::f_003b7f18__generated, sndstrm_get_volume, 300, &|c, seed| {
+            let mut r = Rng(0x3b_7f18 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            c.pc = 0x003b_7f18;
+            // Four stream slots, slot 3 unused.
+            c.bus.write8(0x0051_0000 - 0x56d2, 4);
+            for k in 0..4 {
+                let p = if k == 3 { 0 } else { STREAMS + 0x100 * k };
+                c.bus.write32(0x0051_0000 - 0x5f60 + 4 * k, p);
+            }
+            let id = (seed % 7) as i64 - 1; // -1..5
+            c.g[A0][0] = id as u64;
+            // Six channels.
+            let globals = SND_GLOBALS;
+            c.bus.write16(globals + 0x17e, 6);
+            c.bus.write32(globals + 0x1f0, CHANNELS);
+            c.bus.write32(0x0051_0000 - 0x5528, VOLUMES);
+            for k in 0..3 {
+                let st = STREAMS + 0x100 * k;
+                let ch = r.next_u32() % 8;
+                let handle = match (seed / 7 + k) % 4 {
+                    0 => 0x8000_0000 | ch,
+                    1 => (r.next_u32() << 8) | ch,
+                    _ => 0x100 * (k + 1) | ch,
+                };
+                c.bus.write32(st + STRM_HANDLE, handle);
+                c.bus.write8(st + STRM_VOLUME, r.next_u32() as u8);
+            }
+            for ch in 0..8 {
+                let cp = CHANNELS + 0x8c * ch;
+                c.bus.write8(cp + 0x69, (r.next_u32() % 3 != 0) as u8);
+                let k = r.next_u32() % 3;
+                c.bus.write32(cp, if r.next_u32() % 4 == 0 { r.next_u32() } else { 0x100 * (k + 1) | ch });
+                c.bus.write16(VOLUMES + 0x8c * ch + 0x3a, r.next_u32() as u16);
+            }
+        });
+    }
+
+
+    /// SNDSTRM_ParseData: little- and big-endian streams (byte-swapped sample
+    /// counts and offsets), 0..4 channels, empty chunks (count 0, or only
+    /// the top bit set) released through the real StreamFile_ReleaseChunk
+    /// (null file handle: the validation fails at once), non-empty ones
+    /// pushed through the real SNDSTRM_PushBlock (no queued blocks), with
+    /// the "pushed" flag set or clear.
+    #[test]
+    fn sndstrm_parse_data_matches() {
+        const STREAM: u32 = DATA;
+        const STATE: u32 = DATA + 0x200;
+        const CHUNK: u32 = DATA + 0x400;
+        const BLOCKS: u32 = DATA + 0x800;
+        check(ee::s13::f_003b6ea8__generated, sndstrm_parse_data, 300, &|c, seed| {
+            // Scrambled registers, game gp, random bytes around the frame.
+            let mut r = machine(c, seed, 0x3b_6ea8, 0);
+            c.pc = 0x003b_6ea8;
+            let swap = seed % 2 == 1;
+            let bytes = |v: u32| if swap { v.swap_bytes() } else { v };
+            let count = match seed % 7 {
+                0 => 0,
+                1 => 0x8000_0000,
+                _ => 1 + r.next_u32() % 0x4000 | (r.next_u32() & 0x8000_0000),
+            };
+            let channels = if count & 0x7fff_ffff == 0 && seed % 3 == 0 {
+                0
+            } else {
+                1 + r.next_u32() % 4
+            };
+            let idx = r.next_u32() % 4;
+            fill(c, &mut r, STREAM, 0x10);
+            c.bus.write32(STREAM, 0);
+            c.bus.write32(STREAM + 0x8, idx);
+            c.bus.write8(STREAM + SS_CHANNELS, channels as u8);
+            c.bus.write32(STREAM + SS_STATE, STATE);
+            fill(c, &mut r, STATE, 0x10);
+            c.bus.write8(STATE + SS_SWAP, swap as u8);
+            c.bus.write8(STATE + SS_PUSHED, (r.next_u32() % 2) as u8);
+            fill(c, &mut r, CHUNK, 0x10);
+            c.bus.write32(CHUNK + SS_CHUNK_SAMPLES, bytes(count));
+            for i in 0..channels {
+                let off = 4 + 0x40 * i + (r.next_u32() % 0x10) * 4;
+                c.bus.write32(CHUNK + SS_CHUNK_OFFSETS + 4 * i, bytes(off));
+            }
+            // SNDSTRM_PushBlock's stream table and stream (no queue).
+            for i in 0..4 {
+                let b = BLOCKS + 0x100 * i;
+                c.bus.write32(0x0051_57b8 + 0x304 + 4 * i, b);
+                fill(c, &mut r, b, 0x40);
+                c.bus.write8(b + 0x62, 0);
+                c.bus.write16(b + 0x46, (r.next_u32() % 4) as u16);
+                c.bus.write16(b + 0x40, 1 + (r.next_u32() % 4) as u16);
+            }
+            c.g[A0][0] = sx(STREAM);
+            c.g[A1][0] = sx(CHUNK);
+        });
+    }
+
+
+    /// SND_RunServiceCallbacks: disabled, enabled with a count of 0, a
+    /// negative count, or 1..5 fake callbacks (each may unwind).
+    #[test]
+    fn snd_run_service_callbacks_matches() {
+        covered(ee::s13::f_003c60e0__generated, snd_run_service_callbacks, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x3c_60e0, 5);
+            c.pc = 0x003c_60e0;
+            let on = if seed % 5 == 0 { 0 } else { 1 + r.next_u32() % 0x7f };
+            c.bus.write8(SND_GLOBALS_2 + SND_SERVICE_ON, on as u8);
+            let count: i8 = match seed % 7 {
+                0 => 0,
+                1 => -3,
+                _ => (1 + r.next_u32() % 5) as i8,
+            };
+            c.bus.write8(SND_GLOBALS_2 + SND_SERVICE_COUNT, count as u8);
+            for i in 0..6 {
+                c.bus.write32(SND_GLOBALS_2 + SND_SERVICE_FNS + 4 * i, FAKE + 0x10 * i);
+            }
+        });
+    }
+
+    // -- 0x003ba078 SND_IsVoiceReserved ----------------------------------------
+
+    /// `SND_IsVoiceReserved` against the generated body: counts from
+    /// negative to 24, voices that are in the scanned part of the table, past
+    /// it, or nowhere (and a voice with junk upper bits that never matches).
+    #[test]
+    fn snd_is_voice_reserved_matches() {
+        use crate::difftest::{check, scramble, Rng};
+        check(ee::s13::f_003ba078__generated, snd_is_voice_reserved, 300, &|c, seed| {
+            let mut r = Rng(0x003b_a078 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.pc = 0x003b_a078;
+            // A table of distinct signed halfwords.
+            for i in 0..32u32 {
+                let v = (i as i16 * 37 - 300) as u16;
+                c.bus.write16(SND_RESERVED_VOICES + 2 * i, v);
+            }
+            let count: i64 = match seed % 6 {
+                0 => -((r.next_u32() % 4) as i64),
+                _ => (r.next_u32() % 25) as i64,
+            };
+            c.g[A1][0] = count as u64;
+            let k = r.next_u32() % 32;
+            c.g[A0][0] = match seed % 4 {
+                0 => r.next_u32() as u64 | 1 << 40,
+                _ => (k as i16 * 37 - 300) as i64 as u64,
+            };
+        });
+    }
+
+    // -- 0x003c6c28 SNDSTRM_GetFreeBlocks --------------------------------------
+
+    /// `SNDSTRM_GetFreeBlocks` against the generated body: slots 0..7 with
+    /// 0..8 channels whose block indices are positive, negative (ignored:
+    /// the maximum starts at 0) or equal, and signed block counts.
+    #[test]
+    fn sndstrm_get_free_blocks_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA};
+        check(ee::s13::f_003c6c28__generated, sndstrm_get_free_blocks, 300, &|c, seed| {
+            let mut r = Rng(0x003c_6c28 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.pc = 0x003c_6c28;
+            let slot = r.next_u32() % 8;
+            let state = DATA + 0x100 * slot;
+            c.g[A0][0] = slot as u64 | (r.next_u32() as u64) << 32;
+            c.bus
+                .write32(SNDSTRM_SLOT_BASE + SNDSTRM_SLOT_STATES + 4 * slot, state);
+            c.bus.write8(state + 0x62, (r.next_u32() % 9) as u8);
+            for k in 0..8 {
+                let v = match r.next_u32() % 4 {
+                    0 => r.next_u32() as u16,
+                    1 => 7,
+                    _ => (r.next_u32() % 40) as u16,
+                };
+                c.bus.write16(state + 0x34 + 2 * k, v);
+            }
+            let blocks = if seed % 5 == 0 { r.next_u32() as u16 } else { (r.next_u32() % 64) as u16 };
+            c.bus.write16(state + 0x40, blocks);
+        });
+    }
+
+    // -- 0x003c6ab8 SNDSTRM_PushBlock ------------------------------------------
+
+    /// `SNDSTRM_PushBlock` against the generated body: slots 0..7 with 0..8
+    /// channels, positions below the last ring entry or at/after it (full),
+    /// write indices before the end, at the last entry (wrap) and past it,
+    /// size words with the top bit set or clear.
+    #[test]
+    fn sndstrm_push_block_matches() {
+        use crate::difftest::{check, fill, scramble, Rng, DATA};
+        check(ee::s13::f_003c6ab8__generated, sndstrm_push_block, 300, &|c, seed| {
+            let mut r = Rng(0x003c_6ab8 ^ (seed as u64) << 16);
+            scramble(c, &mut r);
+            c.pc = 0x003c_6ab8;
+            let slot = r.next_u32() % 8;
+            let state = DATA + 0x1000 * slot;
+            let block = DATA + 0x2_0000;
+            c.g[A0][0] = slot as u64 | (r.next_u32() as u64) << 32;
+            c.g[A1][0] = sx(block);
+            c.bus
+                .write32(SNDSTRM_SLOT_BASE + SNDSTRM_SLOT_STATES + 4 * slot, state);
+            // The ring: 1..16 entries (sometimes a signed junk count), the
+            // write index inside, at the end, or past it.
+            let entries = if seed % 11 == 0 { r.next_u32() as u16 } else { (1 + r.next_u32() % 16) as u16 };
+            c.bus.write16(state + 0x40, entries);
+            let write = match r.next_u32() % 4 {
+                0 => entries.wrapping_sub(1),
+                1 => entries.wrapping_add((r.next_u32() % 3) as u16),
+                _ => (r.next_u32() % entries.max(1) as u32) as u16,
+            };
+            c.bus.write16(state + 0x46, write);
+            let channels = (r.next_u32() % 9) as u8;
+            c.bus.write8(state + 0x62, channels);
+            for k in 0..8 {
+                let pos = if r.next_u32() % 8 == 0 {
+                    entries.wrapping_sub(1)
+                } else {
+                    (r.next_u32() % (entries.max(2) as u32 - 1)) as u16
+                };
+                c.bus.write16(state + 0x34 + 2 * k, pos);
+            }
+            c.bus.write32(state + 4, r.next_u32());
+            c.bus.write32(state + 0x48, r.next_u32());
+            fill(c, &mut r, block, 12);
+        });
+    }
+
+
+    // ------------------------------------------------------- SNDSTRM_SetVolume
+
+    /// `SNDSTRM_SetVolume`: stream indices in range (one slot empty), past
+    /// the count and negative; the stream's sound handle and the channels
+    /// come from `SND_SetVolume`'s own fixture (bad handles, unchanged
+    /// volume, one or more channels), which runs for real.
+    #[test]
+    fn sndstrm_set_volume_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA};
+        use crate::game::lib::snd::tests::set_volume_setup;
+        const STREAM_COUNT: u32 = 0x0050_a92e;
+        const STREAMS: u32 = 0x0050_a0a0;
+        check(ee::s13::f_003b7e70__generated, sndstrm_set_volume, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x003b_7e70, 0);
+            c.pc = 0x003b_7e70;
+            set_volume_setup(c, &mut r);
+            let handle = r32(c, A0);
+            c.bus.write8(STREAM_COUNT, 4);
+            for i in 0..4u32 {
+                let stream = DATA + 0x8_0000 + 0x200 * i;
+                c.bus
+                    .write32(STREAMS + 4 * i, if i == 2 { 0 } else { stream });
+                c.bus.write32(stream + STREAM_SND_HANDLE, handle);
+                c.bus.write8(stream + STREAM_VOLUME, r.next_u32() as u8);
+            }
+            c.g[A0][0] = match seed % 8 {
+                0 => sx(0x8000_0000 | r.next_u32()),
+                1 => 4 + (r.next_u32() % 100) as u64,
+                _ => (r.next_u32() % 4) as u64,
+            };
+        });
+    }
+
+
+    /// `SND_EeVoiceMixRamp`: a voice whose source's render method is a
+    /// fake (renders: positive pointer) or the real `return 0` leaf at
+    /// 0x1406c0 (every fourth seed); the mixer state at 0x515b40 with 0..6
+    /// sends, the dry send on or off, a 16-float sample block and buffers
+    /// in DATA, the `set` callback a fake. Levels per send: changed
+    /// (the real `SND_MixAddRamp16` ramps), unchanged non-zero (`set`),
+    /// unchanged zero (nothing).
+    #[test]
+    fn snd_ee_voice_mix_ramp_matches() {
+        const VOICE: u32 = DATA + 0x1000;
+        const SOURCE: u32 = DATA + 0x1100;
+        const BLOCK: u32 = DATA + 0x1200;
+        const BUFFERS: u32 = DATA + 0x2000;
+        covered(
+            ssx3_ee::s14::f_003c7ab0__generated,
+            snd_ee_voice_mix_ramp,
+            300,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x3c7ab0, 8);
+                c.pc = 0x003c_7ab0;
+                c.g[A0][0] = sx(VOICE);
+                c.bus.write32(VOICE + 0x40, SOURCE);
+                c.bus
+                    .write32(SOURCE, if seed % 4 == 0 { 0x0014_06c0 } else { FAKE });
+                let state = ee_mix::STATE;
+                let n = r.next_u32() % 7;
+                c.bus.write8(state + 0x5, n as u8);
+                c.bus.write8(state + 0xf, (r.next_u32() % 3) as u8);
+                c.bus.write32(state + 0xb0, r.next_u32());
+                c.bus.write32(state + 0xb4, BLOCK);
+                c.bus.write32(state + 0x1e0, FAKE + 0x10);
+                for i in 0..7 {
+                    c.bus
+                        .write32(state + 0xd0 + 4 * i, BUFFERS + 0x100 * (i + 1));
+                }
+                for i in 0..16 {
+                    c.bus.write32(BLOCK + 4 * i, r.f32(1.0));
+                    c.bus.write32(ee_mix::DRY_BUFFER + 4 * i, r.f32(100.0));
+                    for k in 1..8 {
+                        c.bus.write32(BUFFERS + 0x100 * k + 4 * i, r.f32(100.0));
+                    }
+                }
+                // Levels: (cur, want) pairs for the dry send and 6 sends.
+                let level = |r: &mut Rng| -> (u32, u32) {
+                    match r.next_u32() % 4 {
+                        0 => (0, 0),
+                        1 => {
+                            let v = r.f32(1.0);
+                            (v, v)
+                        }
+                        2 => (0x8000_0000, 0),
+                        _ => (r.f32(1.0), r.f32(1.0)),
+                    }
+                };
+                let (cur, want) = level(&mut r);
+                c.bus.write32(VOICE + 0x34, cur);
+                c.bus.write32(VOICE + 0x38, want);
+                for i in 0..6 {
+                    let (cur, want) = level(&mut r);
+                    c.bus.write32(VOICE + 0x4 + 4 * i, cur);
+                    c.bus.write32(VOICE + 0x1c + 4 * i, want);
+                }
+            },
+        );
+    }
+
+
+    /// `SND_ReadBigEndian`: 0..4 random bytes (high bit set or not, so the
+    /// sign extension of 1..3-byte fields goes both ways).
+    #[test]
+    fn snd_read_big_endian_matches() {
+        use crate::difftest::{check, scramble};
+        check(
+            ssx3_ee::s13::f_003c72f8__generated,
+            snd_read_big_endian,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3c72_f800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003c_72f8;
+                let at = DATA + (r.next_u32() & 0xff);
+                c.g[A0][0] = sx(at);
+                c.g[A1][0] = (seed % 5) as u64;
+                for i in 0..4 {
+                    let b = r.next_u32() as u8;
+                    c.bus.write8(
+                        at + i,
+                        if (seed / 5) % 2 == 0 {
+                            b & 0x7f
+                        } else {
+                            b | 0x80
+                        },
+                    );
+                }
+            },
+        );
+    }
+
+
+    /// SND_GetVolume through the real SND_HandleToChannel: negative handle,
+    /// channel out of range, inactive channel, handle mismatch, or a
+    /// playing channel whose volume is read.
+    #[test]
+    fn snd_get_volume_matches() {
+        crate::difftest::check_lohi(ee::s13::f_003b86c0__generated, snd_get_volume, 240, &|c, seed| {
+            let mut r = Rng(0x003b_86c0 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x003b_86c0;
+            // The SND state: channel count (+0x17e) and channel array (+0x1f0,
+            // 0x8c bytes per channel: handle at +0, active byte at +0x69).
+            let snd = 0x0050_a8e8;
+            let channels = DATA + 0x1000;
+            let params = DATA + 0x4000;
+            c.bus.write16(snd + 0x17e, 8);
+            c.bus.write32(snd + 0x1f0, channels);
+            c.bus.write32(SND_CHANNEL_PARAMS, params);
+            let ch = r.next_u32() % 10; // 8, 9: out of range
+            let handle = (r.next_u32() & 0x7fff_ff00) | ch;
+            c.g[A0][0] = match seed % 6 {
+                0 => (r.next_u32() | 0x8000_0000) as i32 as i64 as u64,
+                _ => handle as u64,
+            };
+            if ch < 8 {
+                let at = channels + ch * 0x8c;
+                c.bus.write8(at + 0x69, if seed % 6 == 1 { 0 } else { 1 });
+                c.bus.write32(at, if seed % 6 == 2 { handle ^ 0x100 } else { handle });
+                c.bus.write16(params + ch * 0x8c + 0x3a, r.next_u32() as u16);
+            }
+        });
     }
 }

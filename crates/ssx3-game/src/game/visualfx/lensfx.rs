@@ -53,6 +53,8 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::call;
+pub(crate) use crate::game::ai::rider::gp_at;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -199,6 +201,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         irradiance_ref_get_entry,
         "IrradianceRef_GetEntry",
     ),
+    (0x002e_e448, world_painter_get_weather08, "WorldPainter_GetWeather08"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2463,6 +2466,76 @@ pub fn irradiance_ref_get_entry(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod painter {
+
+    /// gp+0xa70: weather effects disabled.
+    pub const GP_DISABLED: i32 = 0xa70;
+
+    /// The world painter's per-view slots (0xf0 bytes each) at 0x4fa370.
+    pub const SLOTS: u32 = 0x0050_0000 - 0x5c90;
+
+    pub const SLOT_SIZE: u64 = 0xf0;
+
+    /// Slot: the weather object handle (`**obj`), the fade (1 = gone).
+    pub const SLOT_OBJ: u32 = 0x20;
+
+    pub const SLOT_FADE: u32 = 0x24;
+
+    /// The object's virtual `float *GetWeather08()` (slot +0x158/+0x15c).
+    pub const VT_GET: u32 = 0x158;
+}
+
+
+
+/// `float WorldPainter_GetWeather08(int view)` (0x2ee448): the weather
+/// object's value 0x08 for a view (its virtual getter), scaled by
+/// `1 - fade`; 0 when weather is disabled.
+pub fn world_painter_get_weather08(c: &mut Cpu) {
+    use painter::*;
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = gp_at(c, GP_DISABLED).lw(c);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.mtc1(0, 0);
+        } else {
+            c.cycles += 19;
+            c.g[S0][0] = SLOT_SIZE;
+            c.g[V0][0] = 0x0050_0000;
+            c.mult(0, S0, A0, S0);
+            c.g[V0][0] = sx(SLOTS);
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(SLOTS));
+            let slot = r32(c, S0);
+            c.g[V1][0] = Addr(slot + SLOT_OBJ).lw(c);
+            c.g[A2][0] = Addr(r32(c, V1)).lw(c);
+            let obj = r32(c, A2);
+            c.g[A1][0] = Addr(obj + 4).lw(c);
+            let vt = r32(c, A1);
+            c.g[A0][0] = Addr(vt + VT_GET).lh(c);
+            c.g[V0][0] = Addr(vt + VT_GET + 4).lw(c);
+            let f = r32(c, V0);
+            c.g[A0][0] = sx(obj.wrapping_add(r32(c, A0)));
+            call_ptr(c, f, 0x002e_e498)?;
+            let slot = r32(c, S0);
+            c.lwc1(2, slot + SLOT_FADE);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 0);
+            c.lwc1(1, r32(c, V0));
+            c.sub_s(0, 0, 2);
+            c.mul_s(0, 1, 0);
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3363,6 +3436,41 @@ pub(crate) mod tests {
                         c.bus.write8(this + 1, 0);
                     }
                 }
+            },
+        );
+    }
+    use super::*;
+    pub(crate) use crate::game::bx::memblockman::tests::put_gp;
+
+
+    /// Disabled (0) or a view's slot whose weather object's getter is a fake
+    /// (returning a pointer to a random float; some seeds unwind there).
+    #[test]
+    fn world_painter_get_weather08_matches() {
+        use painter::*;
+        crate::difftest::fakes::covered(
+            ssx3_ee::s09::f_002ee448__generated,
+            world_painter_get_weather08,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ee448, 1);
+                c.pc = 0x002e_e448;
+                put_gp(c, GP_DISABLED, if seed % 5 == 0 { r.next_u32() | 1 } else { 0 });
+                let view = r.next_u32() % 8;
+                let slot = SLOTS + view * SLOT_SIZE as u32;
+                let handle = DATA + 0x100;
+                let obj = DATA + 0x200;
+                let vt = DATA + 0x400;
+                let value = DATA + 0x800;
+                c.bus.write32(slot + SLOT_OBJ, handle);
+                c.bus.write32(slot + SLOT_FADE, r.f32(1.0));
+                c.bus.write32(handle, obj);
+                c.bus.write32(obj + 4, vt);
+                c.bus.write16(vt + VT_GET, ((r.next_u32() as i16) & !3) as u16);
+                c.bus.write32(vt + VT_GET + 4, crate::difftest::fakes::FAKE);
+                c.bus.write32(value, r.f32(100.0));
+                c.bus.write32(crate::difftest::fakes::LOG_RESULTS, value);
+                c.g[A0][0] = view as u64;
             },
         );
     }

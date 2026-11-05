@@ -153,6 +153,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0040_d758, expf, "expf"),
     (0x0040_da10, logf, "logf"),
     (0x0042_c0c0, e_intr, "EIntr"),
+    (0x0041_5fc8, memcmp, "memcmp"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7044,6 +7045,95 @@ pub fn computer_actor_rider_set_cruise_crouch(c: &mut Cpu) {
     ret(c);
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// memcmp (0x415fc8)
+
+/// `int memcmp(const void* a, const void* b, size_t n)` (0x415fc8): when
+/// `n >= 16` and both pointers are 16-byte aligned, compare quadwords
+/// (`lq`, `pxor`, fold the halves) while they match; the rest (or the
+/// first differing quadword) byte by byte. Returns the difference of the
+/// first differing bytes (unsigned), or 0.
+pub fn memcmp(c: &mut Cpu) {
+    const QUAD_LOOP: u32 = 0x0041_5fe0;
+    const BYTE_LOOP: u32 = 0x0041_6030;
+    c.cycles += 3;
+    let short = c.g[A2][0] < 0x10;
+    c.g[V0][0] = c.g[A0][0] | c.g[A1][0];
+    'bytes: {
+        if short {
+            break 'bytes;
+        }
+        c.cycles += 3;
+        c.g[V0][0] &= 0xf;
+        if c.g[V0][0] != 0 {
+            break 'bytes;
+        }
+        loop {
+            c.cycles += 11;
+            let a = r32(c, A0);
+            let b = r32(c, A1);
+            c.lq(3, a);
+            c.g[A3][0] = (c.g[A2][0] < 0x20) as u64;
+            c.lq(2, b);
+            c.g[A0][0] = sx(a.wrapping_add(0x10));
+            c.pxor(T0, V0, V1);
+            c.g[V0][0] = sx(b.wrapping_add(0x10));
+            c.pcpyud(T2, T0, A3);
+            c.g[T1][0] = c.g[T2][0] | c.g[T0][0];
+            if c.g[T1][0] != 0 {
+                // A difference in this quadword: find it byte by byte.
+                c.g[A0][0] = sx(r32(c, A0).wrapping_sub(0x10));
+                break 'bytes;
+            }
+            c.g[A1][0] = c.g[V0][0];
+            c.cycles += 2;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(0x10));
+            if c.g[A3][0] != 0 {
+                break 'bytes;
+            }
+            if event_due(c) {
+                deliver_event_here(c, QUAD_LOOP);
+            }
+        }
+    }
+    c.cycles += 5;
+    c.g[V0][0] = u64::MAX;
+    c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+    if c.g[A2][0] != u64::MAX {
+        c.cycles += 2;
+        c.g[A3][0] = u64::MAX;
+        loop {
+            c.cycles += 4;
+            let a = r32(c, A0);
+            let b = r32(c, A1);
+            c.g[V1][0] = Addr(a).lbu(c);
+            c.g[V0][0] = Addr(b).lbu(c);
+            c.g[A0][0] = sx(a.wrapping_add(1));
+            if c.g[V1][0] != c.g[V0][0] {
+                c.cycles += 2;
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                ret(c);
+                return;
+            }
+            c.cycles += 3;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+            c.g[A1][0] = sx(b.wrapping_add(1));
+            if c.g[A2][0] == c.g[A3][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, BYTE_LOOP);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -9693,6 +9783,47 @@ pub(crate) mod tests {
                 c.bus.write32(pad, r.next_u32());
             },
         );
+    }
+    use super::*;
+
+
+
+    /// `memcmp`: lengths 0..80, aligned or misaligned pointers, equal
+    /// buffers or one differing byte anywhere (inside or past `n`).
+    #[test]
+    fn memcmp_matches() {
+        const A: u32 = DATA + 0x100;
+        const B: u32 = DATA + 0x400;
+        check(ee::s15::f_00415fc8__generated, memcmp, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x415fc8, 0);
+            let (oa, ob) = match seed % 4 {
+                0 | 1 => (0, 0),
+                2 => (r.next_u32() % 16, 0),
+                _ => (0x10 * (r.next_u32() % 2), r.next_u32() % 16),
+            };
+            let n = match seed % 5 {
+                0 => r.next_u32() % 16,
+                _ => r.next_u32() % 80,
+            };
+            for i in 0..0x60 {
+                let v = r.next_u32();
+                c.bus.write32(A + 4 * i, v);
+                c.bus.write32(B + 4 * i, v);
+            }
+            // Shift B so that A+oa and B+ob hold the same bytes.
+            for i in 0..0x100u32 {
+                let v = c.bus.read8(A + oa + i);
+                c.bus.write8(B + ob + i, v);
+            }
+            if seed % 3 != 0 {
+                let at = r.next_u32() % (n + 4);
+                let v = c.bus.read8(B + ob + at);
+                c.bus.write8(B + ob + at, v ^ (1 + r.next_u32() % 255) as u8);
+            }
+            c.g[A0][0] = sx(A + oa);
+            c.g[A1][0] = sx(B + ob);
+            c.g[A2][0] = n as u64;
+        });
     }
 }
 

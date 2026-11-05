@@ -99,6 +99,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         dynamic_particle_modifier_update,
         "DynamicParticleModifier_Update",
     ),
+    (0x0034_5ef8, dynamic_particle_modifier_transform_points, "DynamicParticleModifier_TransformPoints"),
+    (0x0034_6070, dynamic_particle_modifier_render, "DynamicParticleModifier_Render"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -968,6 +970,135 @@ pub fn dynamic_particle_modifier_update(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// DynamicParticleModifier_Render (0x346070)
+
+/// `void DynamicEmitter_Render(DynamicEmitter*, int pass)` (through the
+/// function table).
+pub(crate) const DYNAMIC_EMITTER_RENDER: u32 = 0x0037_1380;
+
+
+
+/// The modifier: its "hidden" word (+0x18) and its embedded emitter (+0x60).
+pub(crate) const MODIFIER_HIDDEN: u32 = 0x18;
+
+
+pub(crate) const MODIFIER_EMITTER: u32 = 0x60;
+
+
+/// The render pass handed to the emitter.
+pub(crate) const MODIFIER_RENDER_PASS: u64 = 7;
+
+
+
+/// `void DynamicParticleModifier_Render(DynamicParticleModifier* self
+/// /*a0*/)` (0x346070): unless hidden, render the embedded emitter
+/// (`DynamicEmitter_Render(&self->emitter, 7)`). Frame 0x10 (ra at 0).
+pub fn dynamic_particle_modifier_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, A0);
+        c.g[V0][0] = c.lw(this.wrapping_add(MODIFIER_HIDDEN));
+        frame.restore_ra(c, 0);
+        if c.g[V0][0] == 0 {
+            c.cycles += 4;
+            c.g[A0][0] = sx(this.wrapping_add(MODIFIER_EMITTER));
+            c.g[A1][0] = MODIFIER_RENDER_PASS;
+            call_ptr(c, DYNAMIC_EMITTER_RENDER, 0x0034_6090)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+
+
+// ---------------------------------------------------------------------------
+// DynamicParticleModifier_TransformPoints (0x345ef8)
+
+/// Modifier: the instance it is attached to, and its node (bone) index.
+pub(crate) const DPM_INSTANCE: u32 = 0xc;
+
+
+pub(crate) const DPM_NODE: u32 = 0x10;
+
+
+/// Modifier: the two emitter points in node space, and in world space.
+pub(crate) const DPM_LOCAL_A: u32 = 0x20;
+
+
+pub(crate) const DPM_WORLD_A: u32 = 0x30;
+
+
+pub(crate) const DPM_WORLD_B: u32 = 0x40;
+
+
+pub(crate) const DPM_LOCAL_B: u32 = 0x50;
+
+
+
+pub(crate) const INSTANCE_GET_NODE_MATRIX: Callee = Callee {
+    addr: 0x0034_fed8,
+    f: ee::s11::Instance_GetNodeMatrix,
+};
+
+
+
+/// `void DynamicParticleModifier_TransformPoints(DynamicParticleModifier* m)`
+/// (0x345ef8): fetch the world matrix of the modifier's node on its
+/// instance into a stack matrix, and transform the two node-space points
+/// (`+0x20`, `+0x50`) into world space (`+0x30`, `+0x40`) with VU0
+/// `mula/madda/madd` (x, y, z, w columns).
+pub fn dynamic_particle_modifier_transform_points(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 38;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x70);
+        c.g[A2][0] = c.g[SP][0];
+        frame.save_ra(c, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        let this = r32(c, S0);
+        c.g[A0][0] = Addr(this.wrapping_add(DPM_INSTANCE)).lw(c);
+        c.g[A1][0] = Addr(this.wrapping_add(DPM_NODE)).lw(c);
+        INSTANCE_GET_NODE_MATRIX.call(c, 0x0034_5f18)?;
+        // One point: vf12 = M * p, through the stack slot at +0x50.
+        let transform = |c: &mut Cpu, local: u32| {
+            let this = r32(c, S0);
+            c.lqc2(8, this.wrapping_add(local));
+            c.lqc2(4, frame.at(c, 0));
+            c.lqc2(5, frame.at(c, 0x10));
+            c.lqc2(6, frame.at(c, 0x20));
+            c.lqc2(7, frame.at(c, 0x30));
+            c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+            c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+            c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+            c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+            c.sqc2(12, frame.at(c, 0x50));
+        };
+        transform(c, DPM_LOCAL_A);
+        frame.restore_ra(c, 0x60);
+        c.lq(2, frame.at(c, 0x50));
+        let this = r32(c, S0);
+        c.sq(2, this.wrapping_add(DPM_WORLD_A));
+        c.sq(2, frame.at(c, 0x40));
+        transform(c, DPM_LOCAL_B);
+        c.lq(2, frame.at(c, 0x50));
+        let this = r32(c, S0);
+        c.sq(2, this.wrapping_add(DPM_WORLD_B));
+        frame.restore(c, S0, 0x70);
+        c.sq(2, frame.at(c, 0x40));
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1381,6 +1512,103 @@ pub(crate) mod tests {
                     c.bus.write32(GAME_GP - k, r.f32(1.0));
                 }
                 c.g[A0][0] = s as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+
+    // ------------------------------------------ DynamicParticleModifier_Render
+
+    /// `DynamicParticleModifier_Render`: hidden, and visible with the real
+    /// `DynamicEmitter_Render` taking its early outs (no particles at
+    /// +0x174, no texture at +0x1e0, or a negative texture slot).
+    #[test]
+    fn dynamic_particle_modifier_render_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA, GAME_GP};
+        check(
+            ee::s11::f_00346070__generated,
+            dynamic_particle_modifier_render,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0034_6070, 0);
+                c.pc = 0x0034_6070;
+                let this = DATA;
+                let emitter = this + MODIFIER_EMITTER;
+                let table = DATA + 0x2_0000;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(
+                    this + MODIFIER_HIDDEN,
+                    if seed % 4 == 0 { r.next_u32() | 1 } else { 0 },
+                );
+                let k = r.next_u32() % 16;
+                match seed % 3 {
+                    0 => c.bus.write32(emitter + 0x174, 0),
+                    1 => {
+                        c.bus.write32(emitter + 0x174, r.next_u32() | 1);
+                        c.bus.write32(emitter + 0x1e0, 0);
+                    }
+                    _ => {
+                        c.bus.write32(emitter + 0x174, r.next_u32() | 1);
+                        c.bus.write32(emitter + 0x1e0, r.next_u32() | 1);
+                        c.bus.write32(GAME_GP + 0x2a90, table);
+                        c.bus.write32(emitter + 0x4, 0);
+                        c.bus.write32(emitter + 0x10, (k as f32).to_bits());
+                        c.bus
+                            .write32(table + 4 * k + 0xf50, 0x8000_0000 | r.next_u32());
+                    }
+                }
+            },
+        );
+    }
+
+
+
+    /// `DynamicParticleModifier_TransformPoints`: an instance without an
+    /// owner, node -1 (the world matrix) or a node with 0..2 parents (the
+    /// real `Instance_GetNodeMatrix` chains them), random points.
+    #[test]
+    fn dynamic_particle_modifier_transform_points_matches() {
+        const INST: u32 = DATA;
+        const SKEL: u32 = DATA + 0x400;
+        const NODES: u32 = DATA + 0x500;
+        const MATS: u32 = DATA + 0x1000;
+        const MODIFIER: u32 = DATA + 0x2000;
+        check(
+            ee::s11::f_00345ef8__generated,
+            dynamic_particle_modifier_transform_points,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x345ef8, 0);
+                c.pc = 0x0034_5ef8;
+                for k in 0..0x10 {
+                    c.bus.write32(INST + 0x10 + 4 * k, r.f32(4.0));
+                }
+                c.bus.write32(INST + 0xc, 0);
+                c.bus.write32(INST + 0x84, r.f32(2.0));
+                c.bus.write32(INST + 0x80, SKEL);
+                c.bus.write32(SKEL + 8, NODES);
+                for (n, parent) in [(0u32, u32::MAX), (1, 0), (2, 1), (3, 0)] {
+                    c.bus.write32(NODES + 0x10 * n, parent);
+                    c.bus.write32(NODES + 0x10 * n + 0xc, MATS + 0x40 * n);
+                }
+                for k in 0..0x40 {
+                    c.bus.write32(MATS + 4 * k, r.f32(4.0));
+                }
+                fill(c, &mut r, MODIFIER, 0x18);
+                for k in 0..4 {
+                    c.bus.write32(MODIFIER + DPM_LOCAL_A + 4 * k, r.f32(10.0));
+                    c.bus.write32(MODIFIER + DPM_LOCAL_B + 4 * k, r.edge_f32());
+                }
+                let node = match seed % 5 {
+                    0 => u32::MAX,
+                    k => k - 1,
+                };
+                c.bus.write32(MODIFIER + DPM_INSTANCE, INST);
+                c.bus.write32(MODIFIER + DPM_NODE, node);
+                c.g[A0][0] = sx(MODIFIER);
             },
         );
     }

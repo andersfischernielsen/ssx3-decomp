@@ -407,6 +407,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bezier_patch_cache_release_unused,
         "BezierPatchCache_ReleaseUnused",
     ),
+    (0x0037_25b0, vfx_tube_update_color_table, "VfxTube_UpdateColorTable"),
+    (0x0037_4440, bezier_patch_cache_tess_uv2, "BezierPatchCache_TessUV2"),
 ];
 
 /// Same-shard direct callees used above.
@@ -10911,6 +10913,217 @@ pub fn defer_man_reset_frame(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// BezierPatchCache_TessUV2 (0x374440, particle.cpp)
+
+/// Per-level tessellation sizes (`n` vertices per side).
+pub(crate) const BPC_TESS_N: u32 = 0x19c;
+
+
+
+/// `void BezierPatchCache_TessUV2(BezierPatchCache* self, const Rect* uv,
+/// Vec2* out, int level)` (0x374440): writes an `n x n` grid of uv pairs
+/// (`n = self->tess_n[level]`) spanning `uv` (origin at +0x10, size at
+/// +0x18; step = size / (n - 1)), row by row with v advancing fastest.
+/// Leaf; the 8-byte pairs move with ldl/ldr, sdl/sdr as in the original.
+pub fn bezier_patch_cache_tess_uv2(c: &mut Cpu) {
+    c.cycles += 26;
+    c.g[A3][0] = sx(r32(c, A3) << 2);
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x30));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A3)));
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 2); // f2 = 1.0
+    c.g[A0][0] = Addr(r32(c, A0).wrapping_add(BPC_TESS_N)).lw(c);
+    let rect = r32(c, A1);
+    let s = sp(c);
+    // pos = uv->origin (sp+0), step = uv->size (sp+0x10)
+    c.ldl(V0, rect.wrapping_add(0x17));
+    c.ldr(V0, rect.wrapping_add(0x10));
+    c.sdl(V0, s.wrapping_add(0x7));
+    c.sdr(V0, s);
+    c.g[V0][0] = sx(r32(c, A0).wrapping_sub(1));
+    c.ldl(T1, rect.wrapping_add(0x1f));
+    c.ldr(T1, rect.wrapping_add(0x18));
+    c.sdl(T1, s.wrapping_add(0x17));
+    c.sdr(T1, s.wrapping_add(0x10));
+    c.mtc1(V0, 3);
+    c.cvt_s_w(3, 3);
+    c.g[V1][0] = 0;
+    c.lwc1(1, s.wrapping_add(0x10));
+    c.lwc1(0, s.wrapping_add(0x14));
+    c.div_s(2, 2, 3); // 1 / (n - 1)
+    c.mul_s(0, 0, 2);
+    c.mul_s(1, 1, 2);
+    c.swc1(0, s.wrapping_add(0x14));
+    c.swc1(1, s.wrapping_add(0x10));
+    if (c.g[A0][0] as i64) > 0 {
+        loop {
+            // A row: cur = pos (sp+0x20).
+            c.cycles += 7;
+            let s = sp(c);
+            c.g[V0][0] = sx(r32(c, V1).wrapping_add(1));
+            c.ldl(T1, s.wrapping_add(0x7));
+            c.ldr(T1, s);
+            c.sdl(T1, s.wrapping_add(0x27));
+            c.sdr(T1, s.wrapping_add(0x20));
+            let empty = (c.g[A0][0] as i64) <= 0;
+            c.g[V1][0] = c.g[A0][0];
+            if !empty {
+                c.cycles += 1;
+                loop {
+                    // *out++ = cur; cur.y += step.y
+                    c.cycles += 11;
+                    c.lwc1(0, s.wrapping_add(0x24));
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+                    c.lwc1(1, s.wrapping_add(0x14));
+                    c.ldl(A3, s.wrapping_add(0x27));
+                    c.ldr(A3, s.wrapping_add(0x20));
+                    let out = r32(c, A2);
+                    c.sdl(A3, out.wrapping_add(0x7));
+                    c.sdr(A3, out);
+                    c.add_s(0, 0, 1);
+                    c.g[A2][0] = sx(out.wrapping_add(8));
+                    let more = c.g[V1][0] != 0;
+                    c.swc1(0, s.wrapping_add(0x24));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0037_44c8);
+                    }
+                }
+            }
+            // pos.x += step.x
+            c.cycles += 7;
+            c.lwc1(0, s);
+            c.g[V1][0] = c.g[V0][0];
+            c.lwc1(1, s.wrapping_add(0x10));
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            c.add_s(0, 0, 1);
+            let more = c.g[V0][0] != 0;
+            c.swc1(0, s);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0037_44a8);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x30));
+    ret(c);
+}
+
+
+
+// ---------------------------------------------------------------------------
+// VfxTube_UpdateColorTable (0x3725b0)
+
+/// gp-relative globals of the tube colour table: the wanted colour as ints
+/// (r, g, b) and the colour last written to the table (floats).
+pub(crate) const TUBE_COLOR_INT: u32 = 0x10f0;
+
+
+pub(crate) const TUBE_COLOR_LAST: u32 = 0x1140;
+
+
+/// The tube vertex table (0x106 vertices of 0x30 bytes) and its colour
+/// fields.
+pub(crate) const TUBE_VERTS: u32 = 0x0050_1440;
+
+
+pub(crate) const TUBE_VERT_SIZE: u32 = 0x30;
+
+
+pub(crate) const TUBE_VERTS_END: u32 = TUBE_VERTS + 0x106 * TUBE_VERT_SIZE;
+
+
+pub(crate) const TUBE_VERT_R: u32 = 0x10;
+
+
+
+/// `void VfxTube_UpdateColorTable()` (0x3725b0): when the tube colour (three
+/// ints at gp+0x10f0) differs from the floats last applied (gp+0x1140),
+/// writes the colour into all 0x106 tube vertices and remembers it.
+pub fn vfx_tube_update_color_table(c: &mut Cpu) {
+    let gp = r32(c, GP);
+    let int_at = |i: u32| Addr(gp.wrapping_add(TUBE_COLOR_INT + 4 * i));
+    let last_at = |i: u32| Addr(gp.wrapping_add(TUBE_COLOR_LAST + 4 * i));
+
+    // Compare channel by channel (the next "last" value is loaded in the
+    // branch delay slot, so f0 always holds one channel ahead).
+    c.cycles += 7;
+    let mut same = true;
+    for i in 0..3u32 {
+        if i == 1 {
+            c.cycles += 6;
+        } else if i == 2 {
+            c.cycles += 5;
+        }
+        let want = FpuF32::from_i32(int_at(i).lw(c) as i32);
+        c.f[1] = want.0;
+        let last = FpuF32(c.f[0]);
+        let last = if i == 0 { last_at(0).read_fpu(c) } else { last };
+        let eq = last.eq_s(want);
+        abi::set_fcc(c, eq);
+        if i < 2 {
+            c.f[0] = last_at(i + 1).read_fpu(c).0;
+        }
+        if !eq {
+            same = false;
+            break;
+        }
+    }
+
+    if !same {
+        c.cycles += 8;
+        c.g[V0][0] = 0x50_0000;
+        let r = int_at(0).lw(c);
+        let g = int_at(1).lw(c);
+        let b = int_at(2).lw(c);
+        c.g[A2][0] = r;
+        c.g[A1][0] = g;
+        c.g[A0][0] = b;
+        c.g[A3][0] = sx(TUBE_VERTS_END);
+        let mut v = TUBE_VERTS;
+        Addr(v + TUBE_VERT_R).sw(c, r);
+        loop {
+            c.cycles += 7;
+            Addr(v + TUBE_VERT_R + 4).sw(c, g);
+            Addr(v + TUBE_VERT_R + 8).sw(c, b);
+            v += TUBE_VERT_SIZE;
+            if v < TUBE_VERTS_END {
+                Addr(v + TUBE_VERT_R).sw(c, r);
+                if event_due(c) {
+                    c.g[V1][0] = sx(v);
+                    c.g[V0][0] = 1;
+                    deliver_event_here(c, 0x0037_2618);
+                }
+                continue;
+            }
+            break;
+        }
+        c.g[V1][0] = sx(v);
+        c.g[V0][0] = 0;
+
+        c.cycles += 9;
+        for i in 0..3u32 {
+            let f = FpuF32::from_i32(int_at(i).lw(c) as i32);
+            c.f[i as usize] = f.0;
+        }
+        for i in 0..3u32 {
+            let f = FpuF32(c.f[i as usize]);
+            last_at(i).write_fpu(c, f);
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14103,5 +14316,62 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DM);
             },
         );
+    }
+    use super::*;
+    use super::*;
+
+
+    /// BezierPatchCache_TessUV2: sizes -1..7 (none, a single vertex, grids),
+    /// 8-byte aligned and word-aligned rectangles and outputs.
+    #[test]
+    fn bezier_patch_cache_tess_uv2_matches() {
+        use crate::difftest::{scramble, Rng};
+        check(ee::s12::f_00374440__generated, bezier_patch_cache_tess_uv2, 300, &|c, seed| {
+            let mut r = Rng(0x37_4440 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            c.pc = 0x0037_4440;
+            let level = r.next_u32() % 4;
+            let this = DATA;
+            for k in 0..4 {
+                c.bus.write32(this + BPC_TESS_N + 4 * k, r.next_u32());
+            }
+            let n = (seed % 9) as i32 - 1;
+            c.bus.write32(this + BPC_TESS_N + 4 * level, n as u32);
+            let rect = DATA + 0x400 + 4 * (seed / 9 % 2);
+            for k in 0..4 {
+                c.bus.write32(rect + 0x10 + 4 * k, if seed % 7 == 0 { r.edge_f32() } else { r.f32(10.0) });
+            }
+            c.g[A0][0] = sx(this);
+            c.g[A1][0] = sx(rect);
+            c.g[A2][0] = sx(DATA + 0x1000 + 4 * (seed / 18 % 2));
+            c.g[A3][0] = level as u64 | (r.next_u32() as u64) << 32;
+        });
+    }
+
+
+    /// VfxTube_UpdateColorTable: colour unchanged (each channel equal up to
+    /// the first differing one) or changed (the whole table rewritten).
+    #[test]
+    fn vfx_tube_update_color_table_matches() {
+        check(ee::s12::f_003725b0__generated, vfx_tube_update_color_table, 200, &|c, seed| {
+            let mut r = Rng(0x3725_b0 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x0037_25b0;
+            let gp = GAME_GP;
+            // Ints, small enough to be exact as floats.
+            let ints = [r.next_u32() % 256, r.next_u32() % 256, r.next_u32() % 256];
+            // How many leading channels already match (3 = no update).
+            let matching = seed % 4;
+            for i in 0..3u32 {
+                c.bus.write32(gp + TUBE_COLOR_INT + 4 * i, ints[i as usize]);
+                let last = if i < matching {
+                    ints[i as usize] as f32
+                } else {
+                    ints[i as usize] as f32 + 1.0
+                };
+                c.bus.write32(gp + TUBE_COLOR_LAST + 4 * i, last.to_bits());
+            }
+        });
     }
 }

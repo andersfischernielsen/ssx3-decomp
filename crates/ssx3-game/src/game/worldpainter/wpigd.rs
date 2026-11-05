@@ -83,6 +83,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         music_trigger_blend,
         "tWPIGD_MusicTrigger_Blend",
     ),
+    (0x002b_ccc8, twpigd_mix_blend, "tWPIGD_Mix_Blend"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1131,6 +1132,78 @@ pub fn music_trigger_blend(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// tWPIGD_Mix_Blend (0x2bccc8, seg_1BA100.cpp)
+
+/// tWPIGD (audio parameter) fields: vtable at 4 (slot 0x218: lock/update),
+/// the integer value at 8, the target's value copied to 0xc.
+pub(crate) const WPIGD_VTABLE: u32 = 0x4;
+
+
+pub(crate) const WPIGD_VALUE: u32 = 0x8;
+
+
+pub(crate) const WPIGD_TARGET: u32 = 0xc;
+
+
+
+/// `void tWPIGD_Mix_Blend(tWPIGD* self, tWPIGD* target, float t)`
+/// (0x2bccc8): calls the vtable slot at 0x218, blends the integer value
+/// towards the target's by `t^2` (`value = t^2 * target + (1 - t^2) *
+/// value`, truncated), copies the target's value to +0xc and calls the
+/// slot again.
+pub fn twpigd_mix_blend(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 39;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        let (this, target) = (r32(c, S0), r32(c, S1));
+        frame.save_fpr(c, 20, 0x30);
+        c.mov_s(20, 12);
+        c.g[V1][0] = Addr(this.wrapping_add(WPIGD_VTABLE)).lw(c);
+        c.mul_s(20, 20, 20); // t^2
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x218)).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x21c)).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x002b_cd00)?;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0); // f0 = 1.0
+        c.lwc1(1, target.wrapping_add(4)); // the target's value
+        c.cvt_s_w(1, 1);
+        c.lwc1(2, this.wrapping_add(WPIGD_VALUE));
+        c.cvt_s_w(2, 2);
+        c.g[V1][0] = Addr(this.wrapping_add(WPIGD_VTABLE)).lw(c);
+        c.sub_s(0, 0, 20);
+        c.mul_s(20, 20, 1);
+        c.mul_s(0, 0, 2);
+        c.add_s(20, 20, 0);
+        c.cvt_w_s(0, 20);
+        c.swc1(0, this.wrapping_add(WPIGD_VALUE));
+        c.g[V0][0] = Addr(target.wrapping_add(4)).lw(c);
+        let v = c.g[V0][0];
+        Addr(this.wrapping_add(WPIGD_TARGET)).sw(c, v);
+        c.g[A0][0] = Addr(r32(c, V1).wrapping_add(0x218)).lh(c);
+        c.g[V0][0] = Addr(r32(c, V1).wrapping_add(0x21c)).lw(c);
+        let method = r32(c, V0);
+        c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x002b_cd4c)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1678,5 +1751,32 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(src);
             },
         );
+    }
+    use super::*;
+
+
+    /// tWPIGD_Mix_Blend: random integer values and blend factors (edge
+    /// floats), the vtable slot a fake.
+    #[test]
+    fn twpigd_mix_blend_matches() {
+        use crate::difftest::fakes::vtable;
+        const SELF: u32 = DATA + 0x20_0000;
+        const TARGET: u32 = SELF + 0x100;
+        check(ee::s08::f_002bccc8__generated, twpigd_mix_blend, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x2b_ccc8, 2);
+            c.pc = 0x002b_ccc8;
+            c.g[A0][0] = sx(SELF);
+            c.g[A1][0] = sx(TARGET);
+            c.f[12] = if seed % 2 == 0 { r.edge_f32() } else { r.f32(1.0) };
+            let vt = vtable(c, &mut r, &[0x218]);
+            c.bus.write32(SELF + WPIGD_VTABLE, vt);
+            let v = |r: &mut crate::difftest::Rng| match r.next_u32() % 3 {
+                0 => r.next_u32(),
+                _ => r.next_u32() % 2000,
+            };
+            let (a, b) = (v(&mut r), v(&mut r));
+            c.bus.write32(SELF + WPIGD_VALUE, a);
+            c.bus.write32(TARGET + 4, b);
+        });
     }
 }

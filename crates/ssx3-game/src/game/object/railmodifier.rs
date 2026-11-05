@@ -319,6 +319,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         tex_man_reset_usage_table,
         "TexMan_ResetUsageTable",
     ),
+    (0x0035_c4e0, rail_modifier_v03, "RailModifier_v03"),
+    (0x0036_1098, mod_obj_get_matrices, "ModObj_GetMatrices"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -5681,6 +5683,110 @@ pub fn rail_modifier_update_bounds(c: &mut Cpu) {
     });
 }
 
+
+
+
+/// `void RailModifier_v03(RailModifier* self)` (0x35c4e0, railmodifier.cpp):
+/// the rail modifier's per-frame update: recomputes its bounds (+0x10 min,
+/// +0x20 max) with `RailModifier_UpdateBounds` and moves its entry (id at
+/// +0x44) in the world's spatial hash from the old box (copied to the stack
+/// first) to the new one: `SpatialHash_Update(World_GetNash(), 2, id,
+/// &self->box, &old)`.
+pub fn rail_modifier_v03(c: &mut Cpu) {
+    const BOX: u32 = 0x10;
+    const ID: u32 = 0x44;
+    const UPDATE_BOUNDS: Callee = Callee {
+        addr: 0x0035_c040,
+        f: ee::s11::f_0035c040,
+    };
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, 16, 0x40);
+        frame.save(c, 17, 0x30);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        let this = r32(c, S0);
+        c.g[S1][0] = sx(this.wrapping_add(BOX));
+        // The old box, through v1/v0, to sp+0 / sp+0x10.
+        c.lq(V1, this.wrapping_add(BOX));
+        c.lq(V0, this.wrapping_add(BOX + 0x10));
+        let old = frame.at(c, 0);
+        c.sq(V1, old);
+        c.sq(V0, old.wrapping_add(0x10));
+        UPDATE_BOUNDS.call(c, 0x0035_c50c)?;
+        call_ptr(c, 0x002d_1be0, 0x0035_c514)?; // World_GetNash
+        c.g[A2][0] = Addr(r32(c, S0)).off(ID).lw(c);
+        c.g[A3][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 2;
+        c.g[T0][0] = c.g[SP][0];
+        call_ptr(c, 0x0032_91e0, 0x0035_c52c)?; // SpatialHash_Update
+        frame.restore(c, 16, 0x40);
+        frame.restore(c, 17, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// ModObj_GetMatrices (0x361098)
+
+/// ModObj: the embedded transform modifier (`+0x14`, its vtable at `+0x20`),
+/// the flags (`+0x26`, bit 0: the modifier is active) and the matrix array.
+pub(crate) const MODOBJ_MODIFIER: u32 = 0x14;
+
+
+pub(crate) const MODOBJ_MODIFIER_VT: u32 = 0x20;
+
+
+pub(crate) const MODOBJ_FLAGS: u32 = 0x26;
+
+
+pub(crate) const MODOBJ_MATRICES: u32 = 0x44;
+
+
+/// The modifier's "update matrices" vtable slot.
+pub(crate) const MODIFIER_UPDATE_SLOT: u32 = 0x198;
+
+
+
+/// `Matrix* ModObj_GetMatrices(ModObj* self)` (0x361098): the object's
+/// matrix array (`+0x44`), first letting the active transform modifier
+/// update it (virtual slot 0x198 on the embedded modifier at `+0x14`).
+pub fn mod_obj_get_matrices(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = r32(c, S0);
+        c.g[V0][0] = Addr(this.wrapping_add(MODOBJ_FLAGS)).lhu(c) & 1;
+        c.g[A1][0] = sx(this.wrapping_add(MODOBJ_MODIFIER));
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            c.g[V0][0] = Addr(this.wrapping_add(MODOBJ_MODIFIER_VT)).lw(c);
+            let vt = r32(c, V0);
+            c.g[A0][0] = Addr(vt.wrapping_add(MODIFIER_UPDATE_SLOT)).lh(c);
+            c.g[V1][0] = Addr(vt.wrapping_add(MODIFIER_UPDATE_SLOT + 4)).lw(c);
+            let method = r32(c, V1);
+            c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+            call_ptr(c, method, 0x0036_10cc)?;
+        }
+        c.cycles += 5;
+        let this = r32(c, S0);
+        c.g[V0][0] = Addr(this.wrapping_add(MODOBJ_MATRICES)).lw(c);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7755,6 +7861,101 @@ pub(crate) mod tests {
                     );
                 }
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+
+    /// `RailModifier_v03`: the real `RailModifier_UpdateBounds` asks the
+    /// rail object's vtable (slot 0x160: the real `return 0` leaf on every
+    /// third seed, so the box stays, else a fake) for the new box (slot
+    /// 0x168, a fake forced to return a point box P); the old box is
+    /// P -/+ 100 (integer coordinates, exact), so the grown new box equals it
+    /// and the real `SpatialHash_Update` (nash from the world chain
+    /// gp-0x848 -> +0x84 -> +0x20) finds the keys unchanged; the key's grid
+    /// constants at gp-0x2df8/-0x2df4 are set as in its own test.
+    #[test]
+    fn rail_modifier_v03_matches() {
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::difftest::{put_vec, GAME_GP};
+        const THIS: u32 = DATA;
+        const RAIL: u32 = DATA + 0x100;
+        const OBJ: u32 = DATA + 0x200;
+        const VT: u32 = DATA + 0x400;
+        const POINT: u32 = DATA + 0x800;
+        const APP: u32 = DATA + 0x900;
+        const GAME: u32 = DATA + 0xa00;
+        covered(
+            ssx3_ee::s11::f_0035c4e0__generated,
+            rail_modifier_v03,
+            300,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x35c4e0, 3);
+                c.pc = 0x0035_c4e0;
+                c.g[A0][0] = sx(THIS);
+                c.bus.write32(THIS + 0x40, RAIL);
+                c.bus.write32(THIS + 0x44, r.next_u32());
+                c.bus.write32(RAIL + 0xc, OBJ);
+                c.bus.write32(OBJ + 0xc, VT);
+                c.bus.write16(VT + 0x160, (r.next_u32() & 0x7c) as u16);
+                c.bus
+                    .write32(VT + 0x164, if seed % 3 == 0 { 0x0014_06c0 } else { FAKE });
+                c.bus.write16(VT + 0x168, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(VT + 0x16c, FAKE + 0x10);
+                c.bus.write32(LOG_RESULTS + 4, POINT);
+                let p: Vec<f32> = (0..3)
+                    .map(|_| (r.next_u32() % 2000) as f32 - 1000.0)
+                    .collect();
+                let one = 1.0f32.to_bits();
+                put_vec(
+                    c,
+                    POINT,
+                    [p[0].to_bits(), p[1].to_bits(), p[2].to_bits(), one],
+                );
+                put_vec(
+                    c,
+                    POINT + 0x10,
+                    [p[0].to_bits(), p[1].to_bits(), p[2].to_bits(), one],
+                );
+                let lo = |v: f32| (v - 100.0).to_bits();
+                let hi = |v: f32| (v + 100.0).to_bits();
+                put_vec(c, THIS + 0x10, [lo(p[0]), lo(p[1]), lo(p[2]), one]);
+                put_vec(c, THIS + 0x20, [hi(p[0]), hi(p[1]), hi(p[2]), one]);
+                c.bus.write32(GAME_GP - 0x848, APP);
+                c.bus.write32(APP + 0x84, GAME);
+                c.bus.write32(GAME + 0x20, r.next_u32());
+                // `SpatialKey_FromAABB`'s grid constants (scale 1.0, slack 0.25);
+                // zero RAM there makes its level search never end (pc 0x329070).
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2df8), 1.0f32.to_bits());
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x2df4), 0.25f32.to_bits());
+            },
+        );
+    }
+
+
+
+    /// `ModObj_GetMatrices`: modifier active or not; the modifier's update
+    /// slot is a fake (logging the call, sometimes unwinding).
+    #[test]
+    fn mod_obj_get_matrices_matches() {
+        use crate::difftest::fakes::vtable;
+        check(
+            ee::s12::f_00361098__generated,
+            mod_obj_get_matrices,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0036_1098, 1);
+                c.pc = 0x0036_1098;
+                c.g[A0][0] = sx(DATA);
+                let flags = (r.next_u32() & 0xfffe) as u16 | (seed % 2) as u16;
+                c.bus.write16(DATA + MODOBJ_FLAGS, flags);
+                c.bus.write32(DATA + MODOBJ_MATRICES, DATA + 0x3000);
+                let vt = vtable(c, &mut r, &[MODIFIER_UPDATE_SLOT]);
+                c.bus.write32(DATA + MODOBJ_MODIFIER_VT, vt);
             },
         );
     }

@@ -39,6 +39,7 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+pub(crate) use crate::game::ai::rider::gp_at;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -97,6 +98,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         avalanche_apply_history_data,
         "Avalanche_ApplyHistoryData",
     ),
+    (0x002d_8948, vfx_avalanche_update, "VfxAvalanche_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -865,6 +867,14 @@ mod av_callee {
     pub const ANIM_OBJECT_CTOR: u32 = 0x0034_1aa0;
     pub const AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
     pub const AUDIO_AVALANCHE_STUB: u32 = 0x0029_e560;
+
+    pub const BAKE_ALL: Callee = Callee { addr: 0x002d_96e0, f: ee::s09::f_002d96e0 };
+
+    pub const APPLY_HISTORY_DATA: Callee = Callee { addr: 0x002d_a028, f: ee::s09::f_002da028 };
+
+    pub const START: Callee = Callee { addr: 0x002d_97a8, f: ee::s09::f_002d97a8 };
+
+    pub const UPDATE_ACTIVE: Callee = Callee { addr: 0x002d_7ef8, f: ee::s09::f_002d7ef8 };
 }
 
 /// `void Avalanche_UpdateActive(Avalanche* self)` (0x2d7ef8): one tick of a
@@ -2217,6 +2227,137 @@ pub fn vfx_avalanche_render(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod avg {
+
+    /// Avalanches enabled.
+    pub const ENABLED: i32 = 0x940;
+
+    /// Bake requested (re-bake every history at the next update).
+    pub const BAKE_PENDING: i32 = 0x944;
+
+    /// Start requested (`< 0`: one-shot, cleared after the start).
+    pub const START_PENDING: i32 = 0x96c;
+
+    /// Update active instances (`< 0`: one-shot, cleared after the pass).
+    pub const UPDATE_PENDING: i32 = 0x970;
+
+    /// The avalanche to start.
+    pub const START_ID: i32 = 0x98c;
+
+    /// Has data (avalanche histories loaded).
+    pub const HAVE_DATA: i32 = 0x9cc;
+
+    /// Cleared together with the bake request.
+    pub const BAKE_CLEAR: i32 = 0x9d4;
+
+    /// The 16 active avalanches (0x1c bytes each) at 0x538938.
+    pub const ACTIVE: u32 = 0x0054_0000 - 0x76c8;
+
+    pub const ACTIVE_SIZE: u32 = 0x1c;
+
+    pub const ACTIVE_COUNT: u32 = 16;
+}
+
+
+
+/// `void VfxAvalanche_Update(void)` (0x2d8948): the avalanche manager's per
+/// frame update. When enabled: runs a pending bake (`Avalanche_BakeAll`),
+/// re-applies the history data, starts a requested avalanche, and updates
+/// the 16 active avalanches when histories are loaded and an update is
+/// requested. Negative (one-shot) requests are cleared after use.
+pub fn vfx_avalanche_update(c: &mut Cpu) {
+    use avg::*;
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = gp_at(c, ENABLED).lw(c);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        if c.g[V0][0] != 0 {
+            update_enabled(c)?;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// The enabled part of `VfxAvalanche_Update` (up to the epilogue).
+pub(crate) fn update_enabled(c: &mut Cpu) -> call::Flow {
+    use avg::*;
+    c.cycles += 3;
+    c.g[V0][0] = gp_at(c, BAKE_PENDING).lw(c);
+    if c.g[V0][0] != 0 {
+        c.cycles += 4;
+        av_callee::BAKE_ALL.call(c, 0x002d_8974)?;
+        gp_at(c, BAKE_PENDING).sw(c, 0);
+        gp_at(c, BAKE_CLEAR).sw(c, 0);
+    }
+    c.cycles += 5;
+    av_callee::APPLY_HISTORY_DATA.call(c, 0x002d_8984)?;
+    let start = gp_at(c, START_PENDING).lw(c);
+    c.g[V0][0] = gp_at(c, ENABLED).lw(c);
+    if start != 0 {
+        c.cycles += 5;
+        c.g[A0][0] = gp_at(c, START_ID).lw(c);
+        av_callee::START.call(c, 0x002d_8998)?;
+        c.g[V1][0] = gp_at(c, START_PENDING).lw(c);
+        if (c.g[V1][0] as i64) < 0 {
+            gp_at(c, START_PENDING).sw(c, 0);
+        }
+        c.cycles += 1;
+        c.g[V0][0] = gp_at(c, ENABLED).lw(c);
+    }
+    // Still enabled, histories loaded, update requested.
+    c.cycles += 2;
+    let enabled = c.g[V0][0] != 0;
+    c.g[V0][0] = gp_at(c, HAVE_DATA).lw(c);
+    if !enabled {
+        return Ok(());
+    }
+    c.cycles += 2;
+    let have_data = c.g[V0][0] != 0;
+    c.g[V0][0] = gp_at(c, UPDATE_PENDING).lw(c);
+    if !have_data {
+        return Ok(());
+    }
+    c.cycles += 2;
+    let update = c.g[V0][0] != 0;
+    c.g[V0][0] = 0x0054_0000;
+    if !update {
+        return Ok(());
+    }
+    c.cycles += 2;
+    c.g[S0][0] = sx(ACTIVE);
+    c.g[S1][0] = sx(ACTIVE + ACTIVE_COUNT * ACTIVE_SIZE);
+    loop {
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S0][0];
+        av_callee::UPDATE_ACTIVE.call(c, 0x002d_89d0)?;
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(ACTIVE_SIZE));
+        let more = (c.g[S0][0] as i64) < (c.g[S1][0] as i64);
+        c.g[V0][0] = gp_at(c, UPDATE_PENDING).lw(c);
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x002d_89c8);
+        }
+    }
+    c.cycles += 2;
+    if (c.g[V0][0] as i64) < 0 {
+        gp_at(c, UPDATE_PENDING).sw(c, 0);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2904,5 +3045,46 @@ pub(crate) mod tests {
                 }
             },
         );
+    }
+    use super::*;
+    pub(crate) use crate::game::bx::memblockman::tests::put_gp;
+
+
+    /// Every combination of the manager's flags except a bake request (the
+    /// bake branch, `Avalanche_BakeAll`, reads history files from disc and is
+    /// not reached here); no histories loaded
+    /// (gp+0x9c0 = 0) and empty active slots, so the real callees take their
+    /// short paths.
+    #[test]
+    fn vfx_avalanche_update_matches() {
+        use avg::*;
+        check(ssx3_ee::s09::f_002d8948__generated, vfx_avalanche_update, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x2d8948, 0);
+            let flag = |r: &mut Rng, k: u32| match (seed / 3u32.pow(k)) % 3 {
+                0 => 0,
+                1 => 1 + r.next_u32() % 0x7fff,
+                _ => 0x8000_0000 | r.next_u32(),
+            };
+            let enabled = if seed % 7 == 0 { 0 } else { 1 };
+            // No bake request: Avalanche_BakeAll always exports and reloads
+            // the history files (disc access, unbounded on test data).
+            let _ = flag(&mut r, 0);
+            let bake = 0;
+            let start = flag(&mut r, 1);
+            let data = flag(&mut r, 2);
+            let update = flag(&mut r, 3);
+            put_gp(c, ENABLED, enabled);
+            put_gp(c, BAKE_PENDING, bake);
+            put_gp(c, START_PENDING, start);
+            put_gp(c, UPDATE_PENDING, update);
+            put_gp(c, HAVE_DATA, data);
+            put_gp(c, BAKE_CLEAR, r.next_u32());
+            put_gp(c, START_ID, DATA + (r.next_u32() & 0xfff0));
+            put_gp(c, 0x9c0, 0);
+            // The BELibrary singleton (gp-0x1f04), so nothing builds one.
+            c.bus.write32(GAME_GP - 0x1f04, DATA + 0x6_0000);
+            c.bus.write32(GAME_GP - 0x1efc, 0);
+            c.pc = 0x002d_8948;
+        });
     }
 }

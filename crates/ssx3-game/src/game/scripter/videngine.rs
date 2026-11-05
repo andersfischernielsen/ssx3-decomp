@@ -31,6 +31,8 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::abi::ret;
+use crate::call;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -55,6 +57,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ScriptCmdQueue_IsEmpty",
     ),
     (0x0028_3dc0, script_cmd_queue_pop, "ScriptCmdQueue_Pop"),
+    (0x0028_3af8, script_movie_toggle_pause, "ScriptMovie_TogglePause"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -539,6 +542,87 @@ pub fn script_movie_open(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod script_movie {
+
+    /// ScriptMovie: the player, playing flag, pause request.
+    pub const PLAYER: u32 = 0x0;
+
+    pub const PLAYING: u32 = 0x4;
+
+    pub const PAUSE_REQ: u32 = 0x8;
+
+    /// VidEnginePlayer: paused flag.
+    pub const PLAYER_PAUSED: u32 = 0x8;
+
+    /// `VidEnginePlayer_Resume`, `_Pause`, `_Render(player, paused)`.
+    pub const RESUME: u32 = 0x0025_3a40;
+
+    pub const PAUSE: u32 = 0x0025_39e0;
+
+    pub const RENDER: u32 = 0x0025_3890;
+}
+
+
+
+/// `void ScriptMovie_TogglePause(ScriptMovie *self)` (0x283af8): for a
+/// playing movie, apply the pause request: resume a paused player when one is
+/// pending, else pause a running one; then render the player with the
+/// request's opposite and clear the request.
+pub fn script_movie_toggle_pause(c: &mut Cpu) {
+    use script_movie::*;
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let movie = r32(c, S0);
+        c.g[A0][0] = Addr(movie + PLAYER).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(movie + PLAYING).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                let request = Addr(movie + PAUSE_REQ).lw(c) != 0;
+                let player = r32(c, A0);
+                c.g[V0][0] = Addr(player + PLAYER_PAUSED).lw(c);
+                c.cycles += 2;
+                let reload = if request {
+                    if c.g[V0][0] == 0 {
+                        false
+                    } else {
+                        c.cycles += 4;
+                        call_ptr(c, RESUME, 0x0028_3b3c)?;
+                        true
+                    }
+                } else {
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 3;
+                        call_ptr(c, PAUSE, 0x0028_3b54)?;
+                    }
+                    true
+                };
+                let movie = r32(c, S0);
+                c.g[A1][0] = Addr(movie + PAUSE_REQ).lw(c);
+                if reload {
+                    c.cycles += 1;
+                    c.g[A0][0] = Addr(movie + PLAYER).lw(c);
+                }
+                c.cycles += 4;
+                c.g[A1][0] ^= 1;
+                call_ptr(c, RENDER, 0x0028_3b64)?;
+                Addr(r32(c, S0) + PAUSE_REQ).sw(c, 0);
+            }
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -748,5 +832,31 @@ pub(crate) mod tests {
                 c.g[A1][0] = if seed % 5 == 0 { 0 } else { sx(out) };
             },
         );
+    }
+    use super::*;
+    use crate::difftest::{put_vec};
+
+
+    /// Movies with and without a player, playing or not, every combination
+    /// of the pause request and the player's paused flag. The player is
+    /// mostly not set up (its +0x38 is 0, so the real Resume/Pause/Render
+    /// return at once), sometimes with only its stream (+0x38, no +0x3c).
+    #[test]
+    fn script_movie_toggle_pause_matches() {
+        use script_movie::*;
+        check(ssx3_ee::s07::f_00283af8__generated, script_movie_toggle_pause, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x283af8, 0);
+            c.pc = 0x0028_3af8;
+            let movie = DATA;
+            let player = DATA + 0x100;
+            let flag = |r: &mut Rng, k: u32| if (seed >> k) & 1 == 0 { 0 } else { r.next_u32() | 1 };
+            c.bus.write32(movie + PLAYER, if seed % 9 == 8 { 0 } else { player });
+            c.bus.write32(movie + PLAYING, if seed % 7 == 6 { 0 } else { r.next_u32() | 1 });
+            c.bus.write32(movie + PAUSE_REQ, flag(&mut r, 0));
+            c.bus.write32(player + PLAYER_PAUSED, flag(&mut r, 1));
+            c.bus.write32(player + 0x38, flag(&mut r, 2) & (seed / 4 % 2).wrapping_neg());
+            c.bus.write32(player + 0x3c, 0);
+            c.g[A0][0] = movie as u64;
+        });
     }
 }

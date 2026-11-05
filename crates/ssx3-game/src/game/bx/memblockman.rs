@@ -38,6 +38,9 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::call;
+pub(crate) use crate::game::intersect::riderspheretree::sw_reg;
+pub(crate) use crate::game::ai::rider::gp_at;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -89,6 +92,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_exec_man_vblank_end_intc,
         "PS2ExecMan_VBlankEndIntc",
     ),
+    (0x0031_aa58, ps2_exec_man_wait_frame, "PS2ExecMan_WaitFrame"),
+    (0x0031_ad20, ssx_cd_tray_callback, "ssx_CdTrayCallback"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1293,6 +1298,186 @@ pub fn ps2_exec_man_vblank_end_intc(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod cd_tray {
+
+    /// gp+0xde4: a tray request is pending (close the tray first).
+    pub const GP_TRAY_PENDING: i32 = 0xde4;
+
+    /// gp+0xde0: the tray was opened (disc changed).
+    pub const GP_TRAY_OPENED: i32 = 0xde0;
+
+    /// The CD status bits (0x519c40): bits 1|2 = the disc must be re-mounted.
+    pub const CD_STATUS: u32 = 0x0052_0000 - 0x63c0;
+
+    pub const REMOUNT: u64 = 0x6;
+
+    /// `sceCdTrayReq(mode, &traycnt)` (mode 2: check).
+    pub const SCE_CD_TRAY_REQ: u32 = 0x0040_2618;
+
+    pub const TRAY_CHECK: u64 = 2;
+
+    /// `EAFile_CdMountDisc()`.
+    pub const EAFILE_CD_MOUNT_DISC: u32 = 0x003e_3d78;
+}
+
+
+
+/// `int ssx_CdTrayCallback(void)` (0x31ad20): the CD tray poll: answer a
+/// pending tray request (`sceCdTrayReq(2, &cnt)`), and when the status asks
+/// for a re-mount, check the tray again (a non-zero count marks the tray as
+/// opened), clear the re-mount bits and mount the disc. Returns 0.
+pub fn ssx_cd_tray_callback(c: &mut Cpu) {
+    use cd_tray::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = gp_at(c, GP_TRAY_PENDING).lw(c);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S0, 0x30);
+        c.g[S1][0] = 0x0052_0000;
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = Addr(CD_STATUS).lw(c);
+        if c.g[V0][0] != 0 {
+            c.cycles += 5;
+            gp_at(c, GP_TRAY_PENDING).sw(c, 0);
+            c.g[A0][0] = TRAY_CHECK;
+            let s = sp(c);
+            Addr(s).sw(c, 0);
+            c.g[A1][0] = c.g[SP][0];
+            call_ptr(c, SCE_CD_TRAY_REQ, 0x0031_ad54)?;
+        }
+        c.cycles += 4;
+        c.g[V1][0] = c.g[S0][0] & REMOUNT;
+        c.g[V0][0] = REMOUNT;
+        let remount = c.g[V1][0] == REMOUNT;
+        frame.restore(c, S0, 0x30);
+        if remount {
+            c.cycles += 7;
+            let s = sp(c);
+            Addr(s + 4).sw(c, 0);
+            c.g[A0][0] = TRAY_CHECK;
+            c.g[A1][0] = c.g[SP][0] | 4;
+            call_ptr(c, SCE_CD_TRAY_REQ, 0x0031_ad74)?;
+            let s = sp(c);
+            c.g[V1][0] = Addr(s + 4).lw(c);
+            c.g[V0][0] = 1;
+            if c.g[V1][0] != 0 {
+                c.cycles += 1;
+                gp_at(c, GP_TRAY_OPENED).sw(c, 1);
+            }
+            c.cycles += 6;
+            c.g[V1][0] = 0xffff_ffff_ffff_fff9;
+            c.g[V0][0] = Addr(CD_STATUS).lw(c) & c.g[V1][0];
+            sw_reg(c, CD_STATUS, V0);
+            call_ptr(c, EAFILE_CD_MOUNT_DISC, 0x0031_ad98)?;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 5;
+        c.g[V0][0] = 0;
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// PS2ExecMan_WaitFrame (0x31aa58)
+
+/// PS2ExecMan: vtable, the frame semaphore id, the "waiting" flag.
+pub(crate) const EXEC_VT: u32 = 0x8;
+
+
+pub(crate) const EXEC_FRAME_SEMA: u32 = 0x18;
+
+
+pub(crate) const EXEC_WAITING: u32 = 0x1c;
+
+
+/// Virtual slots called before and after the wait.
+pub(crate) const EXEC_PRE_WAIT_SLOT: u32 = 0x58;
+
+
+pub(crate) const EXEC_POST_WAIT_SLOT: u32 = 0x60;
+
+
+/// `WaitSema` and `PollSema` (EE kernel wrappers, through the table).
+pub(crate) const WAIT_SEMA: u32 = 0x0042_3de0;
+
+
+pub(crate) const POLL_SEMA: u32 = 0x0042_3df0;
+
+
+
+/// `void PS2ExecMan_WaitFrame(PS2ExecMan* self)` (0x31aa58): mark the manager
+/// waiting, call its pre-wait hook (virtual slot 0x58), block on the frame
+/// semaphore, clear the flag, drain the semaphore (`PollSema` until it no
+/// longer returns the id), then call the post-wait hook (slot 0x60).
+pub fn ps2_exec_man_wait_frame(c: &mut Cpu) {
+    const DRAIN_LOOP: u32 = 0x0031_aa90;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = 1;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = r32(c, S0);
+        Addr(this.wrapping_add(EXEC_WAITING)).sw(c, 1);
+        virtual_call(c, EXEC_PRE_WAIT_SLOT, 0x0031_aa84)?;
+        let this = r32(c, S0);
+        c.g[A0][0] = Addr(this.wrapping_add(EXEC_FRAME_SEMA)).lw(c);
+        call_ptr(c, WAIT_SEMA, 0x0031_aa8c)?;
+        let this = r32(c, S0);
+        Addr(this.wrapping_add(EXEC_WAITING)).sw(c, 0);
+        loop {
+            c.cycles += 5;
+            let this = r32(c, S0);
+            c.g[A0][0] = Addr(this.wrapping_add(EXEC_FRAME_SEMA)).lw(c);
+            call_ptr(c, POLL_SEMA, 0x0031_aa98)?;
+            let this = r32(c, S0);
+            c.g[V1][0] = Addr(this.wrapping_add(EXEC_FRAME_SEMA)).lw(c);
+            if c.g[V0][0] != c.g[V1][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, DRAIN_LOOP);
+            }
+        }
+        c.cycles += 9;
+        // (`v0` holds the vtable here, `v1` the method.)
+        let this = r32(c, S0);
+        c.g[V0][0] = Addr(this.wrapping_add(EXEC_VT)).lw(c);
+        let vt = r32(c, V0);
+        c.g[A0][0] = Addr(vt.wrapping_add(EXEC_POST_WAIT_SLOT)).lh(c);
+        c.g[V1][0] = Addr(vt.wrapping_add(EXEC_POST_WAIT_SLOT + 4)).lw(c);
+        let method = r32(c, V1);
+        c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+        call_ptr(c, method, 0x0031_aab8)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// The pre-wait virtual call: `v1` holds the vtable, `v0` the method.
+pub(crate) fn virtual_call(c: &mut Cpu, slot: u32, ret: u32) -> crate::call::Flow {
+    let this = r32(c, S0);
+    c.g[V1][0] = Addr(this.wrapping_add(EXEC_VT)).lw(c);
+    let vt = r32(c, V1);
+    c.g[A0][0] = Addr(vt.wrapping_add(slot)).lh(c);
+    c.g[V0][0] = Addr(vt.wrapping_add(slot + 4)).lw(c);
+    let method = r32(c, V0);
+    c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1785,6 +1970,70 @@ pub(crate) mod tests {
                 c.pc = 0x0031_a490;
                 c.cop0[12] = r.next_u32();
                 c.g[A1][0] = FAKE as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+
+    /// Write a gp-relative global.
+    pub(crate) fn put_gp(c: &mut Cpu, off: i32, v: u32) {
+        c.bus.write32(GAME_GP.wrapping_add(off as u32), v);
+    }
+
+
+    /// The tray poll with and without a pending request, and status words
+    /// without the re-mount bits (both set means `EAFile_CdMountDisc`, which
+    /// mounts a disc and cannot be bounded in a test: that branch is not
+    /// reached here). The real `sceCdTrayReq` takes its "busy" exit (the
+    /// fake syscalls never grant the semaphore).
+    #[test]
+    fn ssx_cd_tray_callback_matches() {
+        use cd_tray::*;
+        check(ssx3_ee::s10::f_0031ad20__generated, ssx_cd_tray_callback, 200, &|c, seed| {
+            let mut r = machine(c, seed, 0x31ad20, 0);
+            c.pc = 0x0031_ad20;
+            put_gp(c, GP_TRAY_PENDING, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
+            put_gp(c, GP_TRAY_OPENED, r.next_u32());
+            let status = r.next_u32();
+            let status = match seed / 2 % 3 {
+                0 => status & !6,
+                1 => status & !4 | 2,
+                _ => status & !2 | 4,
+            };
+            c.bus.write32(CD_STATUS, status);
+        });
+    }
+
+
+
+    /// `PS2ExecMan_WaitFrame`: fake pre/post hooks (v-table), the real
+    /// `WaitSema`/`PollSema` wrappers on the fake syscall; `PollSema`
+    /// answers the semaphore id 0..3 times before something else; any call
+    /// may unwind.
+    #[test]
+    fn ps2_exec_man_wait_frame_matches() {
+        use crate::difftest::fakes::{vtable, LOG_RESULTS};
+        const SEMA: u32 = 0x17;
+        check(
+            ee::s10::f_0031aa58__generated,
+            ps2_exec_man_wait_frame,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_aa58, 6);
+                c.pc = 0x0031_aa58;
+                let this = DATA;
+                let vt = vtable(c, &mut r, &[EXEC_PRE_WAIT_SLOT, EXEC_POST_WAIT_SLOT]);
+                c.bus.write32(this + EXEC_VT, vt);
+                c.bus.write32(this + EXEC_FRAME_SEMA, SEMA);
+                c.bus.write32(this + EXEC_WAITING, r.next_u32());
+                // Calls: 0 pre hook, 1 WaitSema, 2.. PollSema, then the post hook.
+                let polls = seed % 4;
+                for k in 0..polls {
+                    c.bus.write32(LOG_RESULTS + 4 * (2 + k), SEMA);
+                }
+                c.g[A0][0] = sx(this);
             },
         );
     }

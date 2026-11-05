@@ -254,6 +254,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_update_mix_ramp,
         "SSXAudioSystem_UpdateMixRamp",
     ),
+    (0x0028_9c18, ssx_audio_system_get_rider_rating_tier, "SSXAudioSystem_GetRiderRatingTier"),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -3701,6 +3702,60 @@ pub fn ssx_audio_system_update_mix_ramp(c: &mut Cpu) {
     ret(c);
 }
 
+
+
+
+/// `int SSXAudioSystem_GetRiderRatingTier(self, Rider* rider)` (0x289c18,
+/// ssxAudio.cpp): the rider's overall rating tier for speech selection:
+/// asks the rider's controller (`rider + 0x6c0`, vtable slot 0x38) for its
+/// character, rates it with `BECharInt_GetOverallRating` on the BE library's
+/// interface 3, and returns 0 below 4, 1 below 8, else 2.
+pub fn ssx_audio_system_get_rider_rating_tier(c: &mut Cpu) {
+    const CONTROLLER: u32 = 0x6c0;
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, 16, 0x20);
+        frame.save(c, 17, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        call_ptr(c, 0x0014_dc80, 0x0028_9c30)?; // BELibrary_GetInstance
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 3;
+        call_ptr(c, 0x0014_dd58, 0x0028_9c3c)?; // BELibrary_GetInterface
+        let controller = r32(c, S0).wrapping_add(CONTROLLER);
+        let vt = Addr(controller).lw(c);
+        c.g[V1][0] = vt;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[S0][0] = sx(controller);
+        let delta = Addr(vt as u32).off(0x38).lh(c);
+        let method = Addr(vt as u32).off(0x3c).lw(c);
+        c.g[V0][0] = method;
+        c.g[A0][0] = sx(controller.wrapping_add(delta as u32));
+        call_ptr(c, method as u32, 0x0028_9c58)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[V0][0];
+        call_ptr(c, 0x0014_8950, 0x0028_9c64)?; // BECharInt_GetOverallRating
+        let rating = c.g[V0][0] as i64;
+        c.g[A0][0] = c.g[V0][0];
+        if rating < 4 {
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 4;
+            let below8 = rating < 8;
+            c.g[A0][0] = below8 as u64;
+            c.g[V1][0] = 1;
+            c.g[V0][0] = if below8 { 1 } else { 2 };
+        }
+        c.cycles += 5;
+        frame.restore(c, 16, 0x20);
+        frame.restore(c, 17, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4843,6 +4898,64 @@ pub(crate) mod tests {
                     c.bus.write32(GAME_GP + 0x43c + 4 * k, r.f32(1.0));
                 }
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+    use super::*;
+
+
+    /// `SSXAudioSystem_GetRiderRatingTier`: the BE library dummy at gp-0x1f04
+    /// (so `BELibrary_GetInstance` returns it), interface table 0x5308a8
+    /// indexed by gp-0x1efc whose object's `GetInterface` (+0x8) and the
+    /// rider controller's slot 0x38 are fakes (the latter forced to return a
+    /// rider 1..7); the real `BECharInt_GetOverallRating` on the rider
+    /// tables of its own test (ratings below 4, 4..7 and 8 up).
+    #[test]
+    fn ssx_audio_system_get_rider_rating_tier_matches() {
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::difftest::{fill, GAME_GP};
+        const BELIB: u32 = DATA + 0x1000;
+        const IFACE_OBJ: u32 = DATA + 0x1100;
+        const IFACE_VT: u32 = DATA + 0x1200;
+        const RIDER: u32 = DATA + 0x2000;
+        const CTRL_VT: u32 = DATA + 0x3000;
+        covered(
+            ssx3_ee::s07::f_00289c18__generated,
+            ssx_audio_system_get_rider_rating_tier,
+            300,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x289c18, 2);
+                c.pc = 0x0028_9c18;
+                c.bus.write32(GAME_GP - 0x1f04, BELIB);
+                let idx = r.next_u32() % 3;
+                c.bus.write32(GAME_GP - 0x1efc, idx);
+                c.bus.write32(0x0053_08a8 + 4 * idx, IFACE_OBJ);
+                c.bus.write32(IFACE_OBJ + 4, IFACE_VT);
+                c.bus.write16(IFACE_VT + 0x8, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(IFACE_VT + 0xc, FAKE);
+                c.g[A0][0] = sx(DATA + 0x5000);
+                c.g[A1][0] = sx(RIDER);
+                c.bus.write32(RIDER + 0x6c0, CTRL_VT);
+                c.bus.write16(CTRL_VT + 0x38, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(CTRL_VT + 0x3c, FAKE + 0x10);
+                c.bus.write32(LOG_RESULTS + 4, 1 + r.next_u32() % 7);
+                // BECharInt_GetOverallRating's tables.
+                for i in 0..8u32 {
+                    c.bus.write32(0x0053_05b0 + 4 * i, r.next_u32() % 8);
+                }
+                for i in 0..8u32 {
+                    let p = 0x0053_5b20 + 0x1c * i;
+                    fill(c, &mut r, p, 7);
+                    if r.next_u32() % 3 == 0 {
+                        c.bus.write32(p + 0xc, 0xffff_ffff);
+                    }
+                    c.bus.write8(p + 0x11, (r.next_u32() % 10) as u8);
+                }
+                let scale = [3u8, 7, 15, 31][(seed % 4) as usize];
+                for i in 0..0x100u32 {
+                    let v = r.next_u32() as u8 % (scale + 1);
+                    c.bus.write8(0x0053_5538 + i, v);
+                }
             },
         );
     }

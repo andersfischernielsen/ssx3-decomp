@@ -263,6 +263,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002e_3338, lens_fx_prepare_view, "LensFX_PrepareView"),
     (0x002e_3478, lens_fx_draw_flares, "LensFX_DrawFlares"),
     (0x002f_4690, lens_fx_draw_flare_set, "LensFX_DrawFlareSet"),
+    (0x002e_23e0, dynamic_spray_queue_burst, "cDynamicSprayFX_QueueBurst"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14002,6 +14003,147 @@ pub fn lens_fx_prepare_view(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// cDynamicSprayFX_QueueBurst (0x2e23e0)
+
+/// The spray effect: its rider (+0), the queued burst's strength (+0xe0),
+/// the queued position (+0xf0) and direction (+0x100), the burst's two
+/// parameters (+0x110 / +0x114), the "short range" flag (+0x124).
+pub(crate) const SPRAY_RIDER: u32 = 0x0;
+
+
+pub(crate) const SPRAY_STRENGTH: u32 = 0xe0;
+
+
+pub(crate) const SPRAY_POS: u32 = 0xf0;
+
+
+pub(crate) const SPRAY_DIR: u32 = 0x100;
+
+
+pub(crate) const SPRAY_PARAM_A: u32 = 0x110;
+
+
+pub(crate) const SPRAY_PARAM_B: u32 = 0x114;
+
+
+pub(crate) const SPRAY_SHORT_RANGE: u32 = 0x124;
+
+
+
+/// The rider fields read for "carving": +0xac4 set, +0xad0 clear, +0xafc
+/// set, then +0xb00 set.
+pub(crate) const RIDER_CARVE_A: u32 = 0xac4;
+
+
+pub(crate) const RIDER_CARVE_BLOCK: u32 = 0xad0;
+
+
+pub(crate) const RIDER_CARVE_B: u32 = 0xafc;
+
+
+pub(crate) const RIDER_CARVE_C: u32 = 0xb00;
+
+
+
+/// `void cDynamicSprayFX_QueueBurst(cDynamicSprayFX* self /*a0*/,
+/// sV4* pos /*a1*/, sV4* dir /*a2*/, int a /*a3*/, int b /*t0*/,
+/// float speed /*f12*/)` (0x2e23e0): queue a snow-spray burst. A stronger
+/// burst (|speed| above the queued strength) replaces the queued one when it
+/// is far enough from the queued position (180, or 100 with the short-range
+/// flag) or when the rider is carving; its strength is |speed| (doubled when
+/// `b` is 0). Leaf, frame 0x20 (a scratch quadword for the distance).
+pub fn dynamic_spray_queue_burst(c: &mut Cpu) {
+    c.cycles += 24;
+    let this = r32(c, A0);
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x20));
+    let scratch = sp(c);
+    // f1 = |speed|; distance = |queued pos - pos| through VU0.
+    c.abs_s(1, 12);
+    c.lqc2(3, this.wrapping_add(SPRAY_POS));
+    c.lqc2(4, r32(c, A1));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, scratch.wrapping_add(0x10));
+    c.g[AT][0] = 0x4334_0000; // 180.0
+    c.mtc1(1, 3);
+    c.lq(2, scratch.wrapping_add(0x10));
+    c.g[V1][0] = c.lw(this.wrapping_add(SPRAY_SHORT_RANGE));
+    c.sq(2, scratch);
+    c.lqc2(3, scratch);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(2, 22);
+    c.mtc1(2, 0);
+    c.abs_s(2, 0); // f2 = distance
+    c.lwc1(0, this.wrapping_add(SPRAY_STRENGTH));
+    if c.g[V1][0] != 0 {
+        c.cycles += 2;
+        c.g[AT][0] = 0x42c8_0000; // 100.0
+        c.mtc1(1, 3);
+    }
+    // f3 = range
+    c.cycles += 3;
+    c.c_lt_s(0, 1);
+    if c.fcc() {
+        c.cycles += 4;
+        c.c_lt_s(3, 2);
+        let far = c.fcc();
+        c.g[T2][0] = 0;
+        let mut queue = far;
+        if !far {
+            // Carving test on the rider.
+            c.cycles += 4;
+            c.g[V1][0] = c.lw(this.wrapping_add(SPRAY_RIDER));
+            let rider = r32(c, V1);
+            c.g[V0][0] = c.lw(rider.wrapping_add(RIDER_CARVE_A));
+            c.g[T1][0] = c.g[V1][0];
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(rider.wrapping_add(RIDER_CARVE_BLOCK));
+                if c.g[V0][0] == 0 {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.lw(rider.wrapping_add(RIDER_CARVE_B));
+                    c.g[T2][0] = (0 < c.g[V0][0]) as u64;
+                }
+            }
+            c.cycles += 2;
+            if c.g[T2][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(rider.wrapping_add(RIDER_CARVE_C));
+                queue = c.g[V0][0] != 0;
+            }
+        }
+        if queue {
+            c.cycles += 2;
+            if c.g[T0][0] != 0 {
+                c.swc1(1, this.wrapping_add(SPRAY_STRENGTH));
+            } else {
+                c.cycles += 2;
+                c.add_s(0, 1, 1);
+                c.swc1(0, this.wrapping_add(SPRAY_STRENGTH));
+            }
+            c.cycles += 6;
+            c.lq(2, r32(c, A1));
+            c.sq(2, this.wrapping_add(SPRAY_POS));
+            c.lq(3, r32(c, A2));
+            c.sw(this.wrapping_add(SPRAY_PARAM_B), c.g[T0][0]);
+            c.sq(3, this.wrapping_add(SPRAY_DIR));
+            c.sw(this.wrapping_add(SPRAY_PARAM_A), c.g[A3][0]);
+        }
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x20));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17847,6 +17989,97 @@ pub(crate) mod tests {
                     fill(c, &mut r, flare, 0xc);
                     c.bus.write32(flare + 0x20, src);
                 }
+            },
+        );
+    }
+    use super::*;
+
+
+    // ------------------------------------------------ cDynamicSprayFX_QueueBurst
+
+    /// `cDynamicSprayFX_QueueBurst`: weaker and stronger bursts, near and
+    /// far positions, the short-range flag, every step of the rider's
+    /// carving test, `b` zero and non-zero.
+    #[test]
+    fn dynamic_spray_queue_burst_matches() {
+        use crate::difftest::{check, put_vec, scramble, Rng, DATA};
+        check(
+            ee::s09::f_002e23e0__generated,
+            dynamic_spray_queue_burst,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x002e_23e0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x002e_23e0;
+                let this = DATA;
+                let rider = DATA + 0x1000;
+                let pos = DATA + 0x400;
+                let dir = DATA + 0x410;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(pos);
+                c.g[A2][0] = sx(dir);
+                c.g[A3][0] = r.next_u32() as u64;
+                c.g[T0][0] = if seed % 3 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                let speed = if seed % 7 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(50.0)
+                };
+                c.f[12] = speed;
+                c.bus.write32(
+                    this + SPRAY_STRENGTH,
+                    if seed % 5 == 0 {
+                        r.f32(100.0)
+                    } else {
+                        r.f32(10.0)
+                    },
+                );
+                c.bus.write32(
+                    this + SPRAY_SHORT_RANGE,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                c.bus.write32(this + SPRAY_RIDER, rider);
+                // Queued position near or far from the new one.
+                let spread = match seed % 4 {
+                    0 => 30.0,
+                    1 => 120.0,
+                    2 => 300.0,
+                    _ => 1000.0,
+                };
+                put_vec(
+                    c,
+                    this + SPRAY_POS,
+                    [r.f32(spread), r.f32(spread), r.f32(spread), r.next_u32()],
+                );
+                put_vec(
+                    c,
+                    this + SPRAY_DIR,
+                    [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                );
+                put_vec(
+                    c,
+                    pos,
+                    [r.f32(spread), r.f32(spread), r.f32(spread), r.next_u32()],
+                );
+                put_vec(
+                    c,
+                    dir,
+                    [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                );
+                let k = seed / 4;
+                let pick = |bit: u32, r: &mut Rng| if k & bit == 0 { 0 } else { r.next_u32() | 1 };
+                let a = pick(1, &mut r);
+                let block = if k & 2 == 0 { 0 } else { r.next_u32() | 1 };
+                let b = pick(4, &mut r);
+                let cc = pick(8, &mut r);
+                c.bus.write32(rider + RIDER_CARVE_A, a);
+                c.bus.write32(rider + RIDER_CARVE_BLOCK, block);
+                c.bus.write32(rider + RIDER_CARVE_B, b);
+                c.bus.write32(rider + RIDER_CARVE_C, cc);
             },
         );
     }

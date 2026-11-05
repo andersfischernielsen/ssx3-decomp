@@ -109,6 +109,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_module_begin_bezier_pass,
         "GameModule_BeginBezierPass",
     ),
+    (0x0022_c708, game_module_render_fog_particles, "GameModule_RenderFogParticles"),
+    (0x0022_c790, game_module_render_lens_flares, "GameModule_RenderLensFlares"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1157,6 +1159,165 @@ pub fn game_module_begin_bezier_pass(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod render_lens_flares {
+
+    /// `LensFX_ClearSources(fx, view)` (table call).
+    pub const CLEAR_SOURCES: u32 = 0x002e_2f98;
+
+    /// `LensFX_AddSources(fx, sources, count, kind, view)` (table call).
+    pub const ADD_SOURCES: u32 = 0x002e_2ff8;
+
+    /// `LensFX_Render(fx, view)` (table call).
+    pub const RENDER: u32 = 0x002e_30d0;
+
+    /// Game module: its lens FX.
+    pub const LENS_FX: u32 = 0x1c;
+
+    /// Lens FX: "rendering" flag (set around the render).
+    pub const RENDERING: u32 = 0x6494;
+
+    /// World: two flare source lists `{count, sources[]}` (kinds 0 and 2).
+    pub const SOURCES0_COUNT: u32 = 0x7bc0;
+
+    pub const SOURCES0: u32 = 0x7bc4;
+
+    pub const SOURCES2_COUNT: u32 = 0x7fc4;
+
+    pub const SOURCES2: u32 = 0x7fc8;
+}
+
+
+
+// ---------------------------------------------- GameModule_RenderFogParticles
+
+/// `GameModule`: the fog particle manager (+0x18; vtable at +0x4, slot 2
+/// `renderFog` at +0x10/+0x14).
+pub(crate) const GM_FOG_MAN: u32 = 0x18;
+
+
+pub(crate) const FOG_VTABLE: u32 = 0x4;
+
+
+pub(crate) const FOG_RENDER_SLOT: u32 = 0x10;
+
+
+/// World: the two fog volume lists (count, then the volumes): kind 0 at
+/// +0x78b4/+0x78b8, kind 2 at +0x7abc/+0x7ac0.
+pub(crate) const WORLD_FOG_LISTS: [(u32, u32, u64, u32); 2] =
+    [(0x78b4, 0x78b8, 0, 0x0022_c748), (0x7abc, 0x7ac0, 2, 0x0022_c770)];
+
+
+
+/// `void GameModule_RenderFogParticles(GameModule* self, World* world)`
+/// (0x22c708): hand each non-empty fog volume list of the world to the fog
+/// particle manager (`fogMan->renderFog(volumes, count, kind)`, kinds 0 and
+/// 2), then let it finish the frame (`cPS2FogParticleMan` 0x2dbf98).
+/// Frame 0x30 (s0 = world, s1 = self).
+pub fn game_module_render_fog_particles(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        for (i, &(count_off, list_off, kind, ret)) in WORLD_FOG_LISTS.iter().enumerate() {
+            if i > 0 {
+                c.cycles += 3;
+            }
+            let world = r32(c, S0);
+            let count = Addr(world.wrapping_add(count_off)).lw(c);
+            c.g[A2][0] = count;
+            c.g[A1][0] = sx(world.wrapping_add(list_off));
+            if count != 0 {
+                c.cycles += 7;
+                let man = Addr(r32(c, S1).wrapping_add(GM_FOG_MAN)).lw(c);
+                c.g[T0][0] = man;
+                c.g[A3][0] = kind;
+                let vt = Addr((man as u32).wrapping_add(FOG_VTABLE)).lw(c);
+                c.g[V0][0] = vt;
+                let delta = Addr((vt as u32).wrapping_add(FOG_RENDER_SLOT)).lh(c);
+                let method = Addr((vt as u32).wrapping_add(FOG_RENDER_SLOT + 4)).lw(c);
+                c.g[V1][0] = method;
+                c.g[A0][0] = sx((man as u32).wrapping_add(delta as u32));
+                call_ptr(c, method as u32, ret)?;
+            }
+        }
+        c.cycles += 7;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(GM_FOG_MAN)).lw(c);
+        call_ptr(c, 0x002d_bf98, 0x0022_c778)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `void GameModule_RenderLensFlares(GameModule* this, World* world, int
+/// view)` (0x22c790): rebuild the lens FX's flare sources for `view` from
+/// the world's two source lists (kinds 0 and 2) and render the flares, with
+/// the lens FX's "rendering" flag set meanwhile.
+pub fn game_module_render_lens_flares(c: &mut Cpu) {
+    use render_lens_flares::*;
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        c.g[V1][0] = 1;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A1][0]; // world
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0]; // this
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A2][0]; // view
+        c.g[A1][0] = c.g[S2][0];
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(LENS_FX)).lw(c);
+        Addr(r32(c, V0).wrapping_add(RENDERING)).sw(c, c.g[V1][0]);
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(LENS_FX)).lw(c);
+        call_ptr(c, CLEAR_SOURCES, 0x0022_c7c8)?;
+        // The kind-0 sources.
+        let world = r32(c, S0);
+        c.g[A2][0] = Addr(world.wrapping_add(SOURCES0_COUNT)).lw(c);
+        c.g[A1][0] = sx(world.wrapping_add(SOURCES0));
+        if c.g[A2][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = Addr(r32(c, S1).wrapping_add(LENS_FX)).lw(c);
+            c.g[A3][0] = 0;
+            c.g[T0][0] = c.g[S2][0];
+            call_ptr(c, ADD_SOURCES, 0x0022_c7e4)?;
+        }
+        // The kind-2 sources.
+        c.cycles += 3;
+        let world = r32(c, S0);
+        c.g[A2][0] = Addr(world.wrapping_add(SOURCES2_COUNT)).lw(c);
+        c.g[A1][0] = sx(world.wrapping_add(SOURCES2));
+        if c.g[A2][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = Addr(r32(c, S1).wrapping_add(LENS_FX)).lw(c);
+            c.g[A3][0] = 0x2;
+            c.g[T0][0] = c.g[S2][0];
+            call_ptr(c, ADD_SOURCES, 0x0022_c800)?;
+        }
+        c.cycles += 11;
+        c.g[A0][0] = Addr(r32(c, S1).wrapping_add(LENS_FX)).lw(c);
+        c.g[A1][0] = c.g[S2][0];
+        call_ptr(c, RENDER, 0x0022_c80c)?;
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(LENS_FX)).lw(c);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        Addr(r32(c, V0).wrapping_add(RENDERING)).sw(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1501,6 +1662,124 @@ pub(crate) mod tests {
                 }
                 fill(c, &mut r, CTX, 0x10);
                 c.g[A0][0] = CTX as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+
+    /// GameModule_RenderFogParticles: both, one or neither fog list
+    /// non-empty; the manager's renderFog slot is a fake (random this-delta,
+    /// may unwind); the real frame finisher on its short path (no particles:
+    /// first word 0).
+    #[test]
+    fn game_module_render_fog_particles_matches() {
+        const MODULE: u32 = DATA + 0x1_0000;
+        const WORLD: u32 = DATA + 0x2_0000;
+        const MAN: u32 = DATA + 0x3_0000;
+        covered(
+            ee::s05::f_0022c708__generated,
+            game_module_render_fog_particles,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x22_c708, 2);
+                c.pc = 0x0022_c708;
+                let vt = crate::difftest::fakes::vtable(c, &mut r, &[FOG_RENDER_SLOT]);
+                c.bus.write32(MAN, 0);
+                c.bus.write32(MAN + FOG_VTABLE, vt);
+                c.bus.write32(MODULE + GM_FOG_MAN, MAN);
+                for (k, &(count_off, _, _, _)) in WORLD_FOG_LISTS.iter().enumerate() {
+                    let n = if (seed >> k) % 2 == 0 { 0 } else { 1 + r.next_u32() % 20 };
+                    c.bus.write32(WORLD + count_off, n);
+                }
+                c.g[A0][0] = sx(MODULE);
+                c.g[A1][0] = sx(WORLD);
+            },
+        );
+    }
+
+    // -- 0x0022c790 GameModule_RenderLensFlares --------------------------------
+
+    /// `GameModule_RenderLensFlares` against the generated body, views 0 and
+    /// 1: each world source list empty, negative, or with 1..3 sources (the
+    /// real `LensFX_ClearSources` / `AddSources` rebuild the flares), then
+    /// the real `LensFX_Render` with the `LensFX_PrepareView` fixture (camera
+    /// interface slots and the projector's occlusion slot are fakes, the sun
+    /// texture is -1 so the sun is hidden) and the `LensFX_DrawFlares` render
+    /// state push/pop fakes (the added flares are off, nothing is drawn);
+    /// unwinds in the first six calls.
+    #[test]
+    fn game_module_render_lens_flares_matches() {
+        use super::render_lens_flares::*;
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{fill, DATA, GAME_GP};
+        use crate::game::visualfx::boardwakefx::lens_prep::{
+            CAMERA_GP, CAM_VT, VT_FOV, VT_VIEW_MATRIX, VT_VIEW_RECT,
+        };
+        use crate::game::visualfx::lensfx::tests::painter_sun;
+        const THIS: u32 = DATA + 0x1000;
+        const WORLD: u32 = DATA + 0x1_0000;
+        const FX: u32 = DATA + 0x4_0000;
+        const CAM: u32 = DATA + 0x5_0000;
+        const CAM_VTABLE: u32 = DATA + 0x5_1000;
+        const NO_SUN: u32 = DATA + 0x5_4000;
+        const SRC: u32 = DATA + 0x5_5000;
+        const MATRIX: u32 = DATA + 0x5_6000;
+        covered(
+            ee::s05::f_0022c790__generated,
+            game_module_render_lens_flares,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0022_c790, 6);
+                c.pc = 0x0022_c790;
+                let view = seed % 2;
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(WORLD);
+                c.g[A2][0] = view as u64;
+                c.bus.write32(THIS + LENS_FX, FX);
+                // The world's source lists.
+                for (count_at, list) in [(SOURCES0_COUNT, SOURCES0), (SOURCES2_COUNT, SOURCES2)] {
+                    let n = match r.next_u32() % 5 {
+                        0 => 0,
+                        1 => (r.next_u32() % 3 + 1).wrapping_neg(),
+                        _ => 1 + r.next_u32() % 3,
+                    };
+                    c.bus.write32(WORLD + count_at, n);
+                    for k in 0..3 {
+                        c.bus.write32(WORLD + list + 4 * k, SRC + 0x40 * k);
+                    }
+                }
+                fill(c, &mut r, SRC, 0x30);
+                // The camera and its interface (as in the PrepareView test).
+                c.bus.write32(GAME_GP + CAMERA_GP, CAM);
+                c.bus.write32(CAM + CAM_VT, CAM_VTABLE);
+                for (i, off) in [VT_VIEW_RECT, VT_VIEW_MATRIX, VT_FOV, 0x2d8]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let delta = (r.next_u32() as i16 as i32 % 64) & !3;
+                    c.bus.write16(CAM_VTABLE + off, delta as u16);
+                    c.bus.write32(CAM_VTABLE + off + 4, FAKE + 0x10 * i as u32);
+                }
+                fill(c, &mut r, MATRIX, 16);
+                c.bus.write32(LOG_RESULTS + 4, MATRIX);
+                for v in [6, 7] {
+                    painter_sun(c, &mut r, v, DATA + 0x5_2000, DATA + 0x5_3000, &[0x108]);
+                }
+                c.bus.write32(NO_SUN, u32::MAX);
+                c.bus.write32(LOG_RESULTS + 12, NO_SUN);
+                fill(c, &mut r, FX, 0x18);
+                // DrawFlares: the sun flag and the render-state methods.
+                c.bus.write32(GAME_GP + 0xa28, if seed % 3 == 0 { 0 } else { 1 });
+                // (At a fixed address: `vtable` picks a random one that could
+                // land on the lens FX.)
+                const FX_VT: u32 = DATA + 0x5_7000;
+                for (i, off) in [0x10u32, 0x18].into_iter().enumerate() {
+                    c.bus.write16(FX_VT + off, (r.next_u32() as i16 & !3) as u16);
+                    c.bus.write32(FX_VT + off + 4, FAKE + 0x40 + 0x10 * i as u32);
+                }
+                c.bus.write32(FX + 0x649c, FX_VT);
             },
         );
     }

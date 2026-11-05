@@ -94,6 +94,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_anim_seq_type00_update,
         "RiderAnim_UpdateSeqType00",
     ),
+    (0x0010_3cc8, rider_anim_blend_seq2, "RiderAnim_BlendSeq2"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1403,6 +1404,176 @@ pub fn rider_anim_seq_type00_update(c: &mut Cpu) {
     });
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// RiderAnim_BlendSeq2 (0x103cc8)
+
+/// `gp+0xd8c`: the rider animation bank (animation ids at +0x1030).
+pub(crate) const ANIM_BANK_GP: u32 = 0xd8c;
+
+
+pub(crate) const BANK_IDS: u32 = 0x1030;
+
+
+/// `gp-0x7f6c`: 1/60, ticks to seconds (`.lit4`).
+pub(crate) const SEQ2_TICK_GP: u32 = 0x7f6c;
+
+
+/// AnimSequence: track 0's time and length, track 1's speed.
+pub(crate) const SEQ_TIME0: u32 = 0x8;
+
+
+pub(crate) const SEQ_LENGTH0: u32 = 0x10;
+
+
+pub(crate) const SEQ_SPEED1: u32 = 0x2c;
+
+
+/// AnimSequence methods (through the function table).
+pub(crate) const ANIM_SEQ_SET_TRACK_ANIM_2: u32 = 0x0031_3c50;
+
+
+pub(crate) const ANIM_SEQ_SET_TRACK_TIME_2: u32 = 0x0031_3cf0;
+
+
+pub(crate) const ANIM_SEQ_SET_TRACK_WEIGHT_2: u32 = 0x0031_3d28;
+
+
+pub(crate) const ANIM_SEQ_SET_TRACK_LOOP_2: u32 = 0x0031_3d40;
+
+
+pub(crate) const ANIM_SEQ_ADVANCE_TRACK_2: u32 = 0x0031_35b0;
+
+
+pub(crate) const ANIM_SEQ_UPDATE_WEIGHT_FADE_2: u32 = 0x0031_3800;
+
+
+pub(crate) const ANIM_SEQ_LIST_REMOVE_2: u32 = 0x0031_45f8;
+
+
+
+/// `int RiderAnim_BlendSeq2(Rider* r, AnimList* list, AnimSequence* seq,
+/// int key_neg, int key_mid, float dt, float v, int key_pos)` (0x103cc8):
+/// a two-track blend: track 0 plays `key_mid`, track 1 plays `key_pos` for
+/// `v > 0` or `key_neg` otherwise, weighted `1 - |v|` and `|v|`; track 0
+/// loops and advances by `dt` seconds, track 1 follows its phase at its own
+/// speed. When the weight fade finishes the sequence leaves `list`
+/// (returns 1), else 0. (`a3` key_neg, `t0` key_mid, `t1` key_pos, `f12`
+/// dt, `f13` v.)
+pub fn rider_anim_blend_seq2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x60);
+        let gp = r32(c, GP);
+        c.g[V0][0] = Addr(gp.wrapping_add(ANIM_BANK_GP)).lw(c);
+        frame.save(c, S0, 0x40);
+        c.g[T0][0] = sx(r32(c, T0) << 2);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x20);
+        c.g[T0][0] = sx(r32(c, T0).wrapping_add(r32(c, V0)));
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save_fpr(c, 21, 0x58);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x50);
+        c.f[21] = c.f[12];
+        frame.save_ra(c, 0);
+        c.f[20] = c.f[13];
+        c.g[S1][0] = c.g[T1][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = Addr(r32(c, T0).wrapping_add(BANK_IDS)).lw(c);
+        c.g[A1][0] = 0;
+        call_ptr(c, ANIM_SEQ_SET_TRACK_ANIM_2, 0x0010_3d1c)?;
+
+        // Track 1: key_pos for v > 0, else key_neg with v negated.
+        c.f[0] = 0;
+        let v = FpuF32(c.f[20]);
+        let positive = abi::c_lt_s(c, FpuF32::ZERO, v);
+        let gp = r32(c, GP);
+        c.g[V1][0] = Addr(gp.wrapping_add(ANIM_BANK_GP)).lw(c);
+        let ret = if positive {
+            c.cycles += 8;
+            c.g[V0][0] = sx(r32(c, S1) << 2);
+            0x0010_3d48
+        } else {
+            c.cycles += 7;
+            c.g[V0][0] = sx(r32(c, S2) << 2);
+            c.f[20] = (-FpuF32(c.f[20])).0;
+            0x0010_3d6c
+        };
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        c.g[A1][0] = 1;
+        c.g[A2][0] = Addr(r32(c, V0).wrapping_add(BANK_IDS)).lw(c);
+        call_ptr(c, ANIM_SEQ_SET_TRACK_ANIM_2, ret)?;
+
+        // Weights 1 - w and w, track 0 loops.
+        c.cycles += 33;
+        c.g[AT][0] = 0x3f80_0000;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        c.f[12] = (FpuF32::ONE - FpuF32(c.f[20])).0;
+        call_ptr(c, ANIM_SEQ_SET_TRACK_WEIGHT_2, 0x0010_3d84)?;
+        c.f[12] = c.f[20];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 1;
+        call_ptr(c, ANIM_SEQ_SET_TRACK_WEIGHT_2, 0x0010_3d94)?;
+        c.g[A2][0] = 1;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, ANIM_SEQ_SET_TRACK_LOOP_2, 0x0010_3da4)?;
+
+        // Advance track 0 by dt seconds.
+        let gp = r32(c, GP);
+        let tick = Addr(gp.wrapping_sub(SEQ2_TICK_GP)).read_fpu(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        let step = FpuF32(c.f[21]) * tick;
+        c.f[20] = step.0;
+        c.f[12] = step.0;
+        call_ptr(c, ANIM_SEQ_ADVANCE_TRACK_2, 0x0010_3dbc)?;
+
+        // Track 1 follows track 0's phase at its own speed.
+        let seq = r32(c, S0);
+        let time0 = Addr(seq.wrapping_add(SEQ_TIME0)).read_fpu(c);
+        c.g[A0][0] = c.g[S0][0];
+        let length0 = Addr(seq.wrapping_add(SEQ_LENGTH0)).read_fpu(c);
+        c.f[1] = length0.0;
+        c.g[A1][0] = 1;
+        let speed1 = Addr(seq.wrapping_add(SEQ_SPEED1)).read_fpu(c);
+        c.f[0] = speed1.0;
+        c.f[12] = (time0.div(length0) * speed1).0;
+        call_ptr(c, ANIM_SEQ_SET_TRACK_TIME_2, 0x0010_3ddc)?;
+        c.f[12] = c.f[20];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, ANIM_SEQ_UPDATE_WEIGHT_FADE_2, 0x0010_3de8)?;
+        let faded = c.g[V0][0] != 0;
+        c.g[A0][0] = c.g[S3][0];
+        if faded {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, ANIM_SEQ_LIST_REMOVE_2, 0x0010_3e00)?;
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x58);
+        frame.restore_fpr(c, 20, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1920,6 +2091,66 @@ pub(crate) mod tests {
                 } else {
                     r.f32(0.05)
                 };
+            },
+        );
+    }
+    use super::*;
+
+
+
+    /// `RiderAnim_BlendSeq2`: random keys into an id bank, v around 0
+    /// (positive, zero, negative, edge cases), random sequence times and
+    /// track states; the real AnimSequence methods (from the game image)
+    /// run, including the list removal when the fade finishes.
+    #[test]
+    fn rider_anim_blend_seq2_matches() {
+        use crate::difftest::elf_image;
+        use crate::difftest::fakes::ptr;
+        check(
+            ee::s00::f_00103cc8__generated,
+            rider_anim_blend_seq2,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_3cc8, 0);
+                elf_image(c);
+                c.pc = 0x0010_3cc8;
+                let bank = ptr(&mut r);
+                c.bus.write32(GAME_GP + ANIM_BANK_GP, bank);
+                for k in 0..8 {
+                    c.bus.write32(bank + BANK_IDS + 4 * k, 0x100 + k * 0x101);
+                }
+                for reg in [A3, T0, T1] {
+                    c.g[reg][0] = (r.next_u32() % 8) as u64;
+                }
+                let seq = ptr(&mut r);
+                let list = ptr(&mut r);
+                c.g[A0][0] = sx(ptr(&mut r));
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(seq);
+                for off in [0x8, 0xc, 0x10, 0x2c, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
+                    let v = match r.next_u32() % 4 {
+                        0 => 0,
+                        1 => r.edge_f32(),
+                        _ => r.f32(3.0),
+                    };
+                    c.bus.write32(seq + off, v);
+                }
+                c.bus.write32(seq + 0x4, 0x100 + (r.next_u32() % 8) * 0x101);
+                c.bus.write32(seq + 0x1c, r.next_u32() & 1);
+                c.bus.write32(seq + 0xa0, r.next_u32() & 1);
+                let mut at = list + 4;
+                for _ in 0..seed % 3 {
+                    let other = ptr(&mut r) + 0x8;
+                    c.bus.write32(at, other);
+                    at = other + 200;
+                }
+                let vs = [-1.0f32, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0];
+                c.f[13] = match seed % 9 {
+                    7 => r.edge_f32(),
+                    8 => r.f32(1.0),
+                    i => vs[i as usize].to_bits(),
+                };
+                c.f[12] = if seed % 4 == 0 { r.edge_f32() } else { r.f32(3.0) };
             },
         );
     }

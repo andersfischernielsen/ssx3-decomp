@@ -110,6 +110,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         replay_cache_record_frame,
         "ReplayCache_RecordFrame",
     ),
+    (0x0026_d178, replay_cache_update, "ReplayCache_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1493,6 +1494,164 @@ pub fn replay_cache_record_frame(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// ReplayCache_Update (0x26d178)
+
+/// World pointer (`gp - 0x848`).
+pub(crate) const GP_WORLD: u32 = 0x848;
+
+
+/// World: the race manager (`+0x84`); race manager: the game state (`+0x28`).
+pub(crate) const WORLD_RACE: u32 = 0x84;
+
+
+pub(crate) const RACE_STATE: u32 = 0x28;
+
+
+/// Game state: three "paused/busy" flags that stop recording.
+pub(crate) const STATE_BUSY_A: u32 = 0x60c;
+
+
+pub(crate) const STATE_BUSY_B: u32 = 0x608;
+
+
+pub(crate) const STATE_BUSY_C: u32 = 0x610;
+
+
+/// Replay cache: the chunk buffer (null: no replay).
+pub(crate) const CACHE_CHUNKS: u32 = 0xc;
+
+
+/// The switch's jump table on the game mode (15 entries).
+pub(crate) const UPDATE_JUMP_TABLE: u32 = 0x0048_15b0;
+
+
+pub(crate) const UPDATE_RECORD: u32 = 0x0026_d1d0;
+
+
+pub(crate) const UPDATE_IDLE: u32 = 0x0026_d204;
+
+
+pub(crate) const UPDATE_READ: u32 = 0x0026_d20c;
+
+
+pub(crate) const UPDATE_DONE: u32 = 0x0026_d218;
+
+
+
+pub(crate) const REPLAY_CACHE_RECORD_FRAME: Callee = Callee {
+    addr: 0x0026_d2b0,
+    f: ee::s07::ReplayCache_RecordFrame,
+};
+
+
+pub(crate) const REPLAY_CACHE_READ_FRAME: Callee = Callee {
+    addr: 0x0026_d420,
+    f: ee::s07::ReplayCache_ReadFrame,
+};
+
+
+
+/// `int ReplayCache_Update(ReplayCache* cache, void* frame)` (0x26d178):
+/// once per tick, by game mode (the state word at world->race->state):
+/// mode 0 records `frame` unless one of the state's busy flags is set
+/// (then returns 1), modes 10-12/14 return 0, modes 1/2/4 read the next
+/// recorded frame into `frame` (its result), the rest return 1. A cache
+/// without a buffer returns 0.
+pub fn replay_cache_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let cache = r32(c, A2);
+        c.g[V0][0] = Addr(cache.wrapping_add(CACHE_CHUNKS)).lw(c);
+        let gp = r32(c, GP);
+        c.g[A0][0] = Addr(gp.wrapping_sub(GP_WORLD)).lw(c);
+        'out: {
+            if c.g[V0][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 0;
+                break 'out;
+            }
+            c.cycles += 7;
+            c.g[A3][0] = 1;
+            let world = r32(c, A0);
+            c.g[V0][0] = Addr(world.wrapping_add(WORLD_RACE)).lw(c);
+            let race = r32(c, V0);
+            c.g[V1][0] = Addr(race.wrapping_add(RACE_STATE)).lw(c);
+            let state = r32(c, V1);
+            c.g[V1][0] = Addr(state).lw(c);
+            c.g[V0][0] = (c.g[V1][0] < 0xf) as u64;
+            c.g[T0][0] = c.g[A0][0];
+            'done: {
+                if c.g[V0][0] == 0 {
+                    break 'done;
+                }
+                c.cycles += 7;
+                c.g[V0][0] = sx(UPDATE_JUMP_TABLE);
+                c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(UPDATE_JUMP_TABLE));
+                let slot = r32(c, V1);
+                c.g[A0][0] = Addr(slot).lw(c);
+                let target = r32(c, A0);
+                let mut case = target;
+                if case == UPDATE_RECORD {
+                    c.cycles += 5;
+                    let world = r32(c, T0);
+                    c.g[V0][0] = Addr(world.wrapping_add(WORLD_RACE)).lw(c);
+                    let race = r32(c, V0);
+                    c.g[A0][0] = Addr(race.wrapping_add(RACE_STATE)).lw(c);
+                    let state = r32(c, A0);
+                    c.g[V1][0] = Addr(state.wrapping_add(STATE_BUSY_A)).lw(c);
+                    c.g[V0][0] = c.g[A3][0];
+                    if c.g[V1][0] != 0 {
+                        break 'out;
+                    }
+                    for busy in [STATE_BUSY_B, STATE_BUSY_C] {
+                        c.cycles += 3;
+                        let flag = Addr(state.wrapping_add(busy)).lw(c);
+                        c.g[V0][0] = c.g[A3][0];
+                        if flag != 0 {
+                            break 'out;
+                        }
+                    }
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[A2][0];
+                    REPLAY_CACHE_RECORD_FRAME.call(c, UPDATE_IDLE)?;
+                    case = UPDATE_IDLE;
+                }
+                match case {
+                    UPDATE_IDLE => {
+                        c.cycles += 2;
+                        c.g[A3][0] = 0;
+                    }
+                    UPDATE_READ => {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[A2][0];
+                        REPLAY_CACHE_READ_FRAME.call(c, 0x0026_d214)?;
+                        c.g[A3][0] = c.g[V0][0];
+                    }
+                    UPDATE_DONE => {}
+                    _ => {
+                        c.jump_out(target, 0x0026_d178, 0x0026_d228);
+                        return Ok(());
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[V0][0] = c.g[A3][0];
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2071,6 +2230,70 @@ pub(crate) mod tests {
                 c.bus.write64(NEW, frame);
                 c.g[A0][0] = sx(CACHE);
                 c.g[A1][0] = sx(NEW);
+            },
+        );
+    }
+    use super::*;
+
+
+    /// `ReplayCache_Update`: every game mode 0..14 and some out of range,
+    /// the busy flags (none or one of three) in record mode, a cache with or
+    /// without a buffer; the real `ReplayCache_RecordFrame` (with `memcmp`
+    /// and `ReplayCache_PushFrame`) and `ReplayCache_ReadFrame` run.
+    #[test]
+    fn replay_cache_update_matches() {
+        const CACHE: u32 = DATA;
+        const WORLD: u32 = DATA + 0x100;
+        const RACE: u32 = DATA + 0x200;
+        const STATE: u32 = DATA + 0x400;
+        const CHUNKS: u32 = DATA + 0x1000;
+        const FRAME: u32 = DATA + 0x2000;
+        check(
+            ee::s07::f_0026d178__generated,
+            replay_cache_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x26d178, 0);
+                c.pc = 0x0026_d178;
+                put_words(
+                    c,
+                    UPDATE_JUMP_TABLE,
+                    &[
+                        0x26d1d0, 0x26d20c, 0x26d20c, 0x26d218, 0x26d20c, 0x26d218, 0x26d218,
+                        0x26d218, 0x26d218, 0x26d218, 0x26d204, 0x26d204, 0x26d204, 0x26d218,
+                        0x26d204,
+                    ],
+                );
+                c.bus.write32(GAME_GP - GP_WORLD, WORLD);
+                c.bus.write32(WORLD + WORLD_RACE, RACE);
+                c.bus.write32(RACE + RACE_STATE, STATE);
+                let mode = match seed % 20 {
+                    15 => 15 + r.next_u32() % 100,
+                    16 => 0x8000_0000 | r.next_u32(),
+                    17..=19 => 0,
+                    m => m,
+                };
+                c.bus.write32(STATE, mode);
+                for (i, off) in [STATE_BUSY_A, STATE_BUSY_B, STATE_BUSY_C].into_iter().enumerate() {
+                    let set = (seed / 20) % 4 == i as u32 + 1;
+                    c.bus.write32(STATE + off, if set { r.next_u32() | 1 } else { 0 });
+                }
+                // The cache: count, read position, repeat left, chunks.
+                fill(c, &mut r, CHUNKS, 32);
+                let count = 1 + r.next_u32() % 12;
+                c.bus.write32(CACHE, count);
+                c.bus.write32(CACHE + 4, r.next_u32() % (count + 1));
+                c.bus.write32(CACHE + 8, r.next_u32() % 4);
+                let chunks = if seed % 23 == 0 { 0 } else { CHUNKS };
+                c.bus.write32(CACHE + CACHE_CHUNKS, chunks);
+                let last = CHUNKS + 8 * (count - 1);
+                let mut frame = c.bus.read64(last) & !0xfff;
+                if seed % 3 == 0 {
+                    frame ^= 1u64 << (12 + r.next_u32() % 52);
+                }
+                c.bus.write64(FRAME, frame);
+                c.g[A0][0] = sx(CACHE);
+                c.g[A1][0] = sx(FRAME);
             },
         );
     }

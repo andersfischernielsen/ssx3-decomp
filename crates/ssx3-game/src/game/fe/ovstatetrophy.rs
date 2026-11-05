@@ -110,6 +110,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_ov_state_hud1p_draw_progress_meter,
         "cOVStateHUD1P_DrawProgressMeter",
     ),
+    (0x0020_ed20, hud1p_update_race_progress, "cOVStateHUD1P_UpdateRaceProgress"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3187,6 +3188,106 @@ break 'b_20fabc;
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// cOVStateHUD1P_UpdateRaceProgress (0x20ed20)
+
+pub(crate) const RACE_PROGRESS_UPDATE_RIDER: Callee = Callee {
+    addr: 0x0021_0618,
+    f: ee::s05::RaceProgress_UpdateRider,
+};
+
+
+
+/// The course (`gp-0x9a0`, null outside a race), the world (`gp-0x848`)
+/// and the "progress changed" word (`gp-0x990`).
+pub(crate) const GP_RACE_COURSE: u32 = 0x9a0;
+
+
+pub(crate) const GP_WORLD: u32 = 0x848;
+
+
+pub(crate) const GP_PROGRESS_DIRTY: u32 = 0x990;
+
+
+/// world+0x84 -> racers, racers+0xc -> race, race+0x78: the rider count.
+pub(crate) const WORLD_RACERS: u32 = 0x84;
+
+
+pub(crate) const RACERS_RACE: u32 = 0xc;
+
+
+pub(crate) const RACE_RIDER_COUNT: u32 = 0x78;
+
+
+/// The race-progress slots (0x18 bytes each; the active word at +0).
+pub(crate) const PROGRESS_SLOTS: u32 = 0x004c_8bc8;
+
+
+pub(crate) const PROGRESS_SLOT_SIZE: u32 = 0x18;
+
+
+
+/// `void cOVStateHUD1P_UpdateRaceProgress()` (0x20ed20): in a race, update
+/// every rider's progress (`RaceProgress_UpdateRider(i)`) and clear its
+/// slot's active word, then clear the "progress changed" word. Frame 0x40
+/// (ra at 0, s2 / s1 / s0 at 0x10 / 0x20 / 0x30).
+pub fn hud1p_update_race_progress(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x40);
+        let gp = r32(c, GP);
+        c.g[V0][0] = c.lw(gp.wrapping_sub(GP_RACE_COURSE));
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        if c.g[V0][0] != 0 {
+            c.cycles += 6;
+            c.g[V0][0] = c.lw(gp.wrapping_sub(GP_WORLD));
+            c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(WORLD_RACERS));
+            c.g[S2][0] = c.lw(r32(c, V1).wrapping_add(RACERS_RACE));
+            c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(RACE_RIDER_COUNT));
+            c.g[S0][0] = 0;
+            if (c.g[V0][0] as i64) > 0 {
+                // s0: the rider, s1: its slot.
+                c.cycles += 3;
+                c.g[V0][0] = 0x004d_0000;
+                c.g[S1][0] = sx(PROGRESS_SLOTS);
+                loop {
+                    c.cycles += 8;
+                    c.g[A0][0] = c.g[S0][0];
+                    RACE_PROGRESS_UPDATE_RIDER.call(c, 0x0020_ed68)?;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                    c.sw(r32(c, S1), 0);
+                    c.g[V0][0] = c.lw(r32(c, S2).wrapping_add(RACE_RIDER_COUNT));
+                    c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    let more = c.g[V0][0] != 0;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(PROGRESS_SLOT_SIZE));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0020_ed60);
+                    }
+                }
+            }
+            c.cycles += 1;
+            let gp = r32(c, GP);
+            c.sw(gp.wrapping_sub(GP_PROGRESS_DIRTY), 0);
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3655,5 +3756,53 @@ pub(crate) mod tests {
     pub(crate) fn slot(c: &mut Cpu, vt: u32, off: u32, f: u32) {
         c.bus.write16(vt + off, 0);
         c.bus.write32(vt + off + 4, f);
+    }
+    use super::*;
+
+
+    // ---------------------------------------- cOVStateHUD1P_UpdateRaceProgress
+
+    /// `cOVStateHUD1P_UpdateRaceProgress`: no course; a course with zero to
+    /// four riders, each updated by the real `RaceProgress_UpdateRider` on
+    /// its fixture (world, course, segments, riders 700 from the finish;
+    /// its projection is a fake, which may unwind).
+    #[test]
+    fn hud1p_update_race_progress_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, GAME_GP};
+        use crate::game::fe::ovstates7::tests::{
+            put_course, put_rider, put_world, COURSE, COURSE_SEGS, RACE, RIDER,
+        };
+        check(
+            ee::s05::f_0020ed20__generated,
+            hud1p_update_race_progress,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0020_ed20, 4);
+                c.pc = 0x0020_ed20;
+                put_world(c);
+                put_course(c);
+                c.bus.write32(GAME_GP - 0x99c, COURSE_SEGS);
+                c.bus.write32(GAME_GP - 0x54ac, 138.8889f32.to_bits());
+                c.bus.write32(
+                    COURSE + 0x10,
+                    (1100.0f32 + f32::from_bits(r.f32(400.0))).to_bits(),
+                );
+                let riders = seed % 5;
+                c.bus.write32(RACE + RACE_RIDER_COUNT, riders);
+                for i in 0..riders {
+                    put_rider(c, i);
+                    c.bus.write32(RIDER + 0x100 * i + 0x4d0, 700.0f32.to_bits());
+                    let slot = PROGRESS_SLOTS + PROGRESS_SLOT_SIZE * i;
+                    c.bus.write32(slot, r.next_u32() % 2);
+                    c.bus.write32(slot + 4, 0);
+                    c.bus.write32(slot + 8, r.f32(1000.0));
+                }
+                c.bus.write32(GAME_GP - GP_PROGRESS_DIRTY, r.next_u32());
+                if seed % 7 == 0 {
+                    c.bus.write32(GAME_GP - GP_RACE_COURSE, 0);
+                }
+            },
+        );
     }
 }

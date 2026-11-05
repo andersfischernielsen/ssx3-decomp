@@ -115,6 +115,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bank_monitor_instance_update_range,
         "BankMonitorInstance_UpdateRange",
     ),
+    (0x002a_9f80, stream_buffer_update_volume, "StreamBuffer_UpdateVolume"),
+    (0x002a_a020, stream_buffer_get_status, "StreamBuffer_GetStatus"),
+    (0x002a_ac28, stream_array_update_all, "StreamArray_UpdateAll"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1032,6 +1035,217 @@ pub fn bank_monitor_instance_update_range(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// StreamBuffer_GetStatus (0x2aa020, streamsys.cpp)
+
+pub(crate) const SND_LOCK: u32 = 0x003b_58a0;
+
+
+pub(crate) const SND_UNLOCK: u32 = 0x003b_58d8;
+
+
+pub(crate) const SNDSTRM_GET_STATUS: u32 = 0x003b_7b48;
+
+
+/// StreamBuffer field: the SND stream id.
+pub(crate) const SB_STREAM: u32 = 0x8;
+
+
+
+/// `int StreamBuffer_GetStatus(StreamBuffer* self, SndStreamStatus* out)`
+/// (0x2aa020): `SNDSTRM_GetStatus(self->stream, out)` under the sound
+/// library lock; returns its result.
+pub fn stream_buffer_get_status(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        let this = r32(c, S0);
+        call_ptr(c, SND_LOCK, 0x002a_a03c)?;
+        c.g[A0][0] = Addr(this.wrapping_add(SB_STREAM)).lw(c);
+        c.g[A1][0] = c.g[S1][0];
+        call_ptr(c, SNDSTRM_GET_STATUS, 0x002a_a048)?;
+        c.g[S0][0] = c.g[V0][0];
+        call_ptr(c, SND_UNLOCK, 0x002a_a050)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// StreamArray_UpdateAll (0x2aac28, streamsys.cpp)
+
+/// StreamArray fields: buffer count, buffer pointer array.
+pub(crate) const SA_COUNT: u32 = 0x4;
+
+
+pub(crate) const SA_BUFFERS: u32 = 0x8;
+
+
+
+pub(crate) const STREAM_BUFFER_UPDATE_VOLUME: Callee = Callee {
+    addr: 0x002a_9f80,
+    f: ee::s08::StreamBuffer_UpdateVolume,
+};
+
+
+
+/// `void StreamArray_UpdateAll(StreamArray* self)` (0x2aac28): updates the
+/// volume of every non-null stream buffer (`StreamBuffer_UpdateVolume`).
+pub fn stream_array_update_all(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(SA_COUNT)).lw(c);
+        let empty = (c.g[V0][0] as i64) <= 0;
+        c.g[S0][0] = 0;
+        if !empty {
+            c.cycles += 2;
+            c.g[V1][0] = Addr(r32(c, S1).wrapping_add(SA_BUFFERS)).lw(c);
+            loop {
+                c.cycles += 5;
+                c.g[V0][0] = sx(r32(c, S0) << 2);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+                if c.g[A0][0] != 0 {
+                    c.cycles += 3;
+                    STREAM_BUFFER_UPDATE_VOLUME.call(c, 0x002a_ac6c)?;
+                }
+                c.g[V0][0] = Addr(r32(c, S1).wrapping_add(SA_COUNT)).lw(c);
+                c.cycles += 4;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[V1][0] = Addr(r32(c, S1).wrapping_add(SA_BUFFERS)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x002a_ac50);
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+// ---------------------------------------------------------------------------
+// StreamBuffer_UpdateVolume (0x2a9f80)
+
+/// StreamBuffer fields: the SNDSTRM stream handle, the volume byte, the
+/// pointer to the volume scale (a float) and the starvation counter.
+pub(crate) const SB_HANDLE: u32 = 0x8;
+
+
+pub(crate) const SB_VOLUME: u32 = 0xc;
+
+
+pub(crate) const SB_SCALE_PTR: u32 = 0x10;
+
+
+pub(crate) const SB_STARVED: u32 = 0x80;
+
+
+
+/// `StreamBuffer_Stop` (0x2aa408).
+pub(crate) const STREAM_BUFFER_STOP: Callee = Callee {
+    addr: 0x002a_a408,
+    f: ee::s08::StreamBuffer_Stop,
+};
+
+
+
+/// `void StreamBuffer_UpdateVolume(StreamBuffer *sb)` (0x2a9f80): stops the
+/// stream when its starvation counter (+0x80) has passed two seconds of
+/// audio frames (and clears it); otherwise, with a volume scale (+0x10),
+/// sets the stream's volume to `volume byte * scale` clamped to 0..127,
+/// under the sound lock.
+pub fn stream_buffer_update_volume(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        call_ptr(c, 0x0028_b240, 0x002a_9f98)?; // Audio_GetFrameRate
+
+        let sb = Addr(r32(c, S1));
+        let starved = sb.off(SB_STARVED).lw(c);
+        c.g[V1][0] = starved;
+        let limit = sx(r32(c, V0) << 1);
+        c.g[V0][0] = ((limit as i64) < (starved as i64)) as u64;
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = sx(sb.0);
+            STREAM_BUFFER_STOP.call(c, 0x002a_9fb4)?;
+            Addr(r32(c, S1)).off(SB_STARVED).sw(c, 0);
+        } else {
+            let scale_ptr = sb.off(SB_SCALE_PTR).lw(c);
+            c.g[V1][0] = scale_ptr;
+            c.cycles += 2;
+            c.g[A0][0] = 0x7f;
+            if scale_ptr != 0 {
+                c.cycles += 18;
+                let volume = sb.off(SB_VOLUME).lb(c);
+                c.g[V0][0] = volume;
+                let scale = Addr(scale_ptr as u32).read_fpu(c);
+                c.f[1] = scale.0;
+                let vol_f = FpuF32::from_i32(volume as i32);
+                let prod = vol_f * scale;
+                c.f[0] = prod.0;
+                let mut v = prod.to_i32();
+                c.f[1] = v as u32;
+                let below = v < 128;
+                c.g[V0][0] = below as u64;
+                if !below {
+                    v = 0x7f;
+                }
+                let nonneg = -1 < v;
+                c.g[V1][0] = nonneg as u64;
+                if !nonneg {
+                    v = 0;
+                }
+                c.g[S0][0] = sx(v as u32);
+                call_ptr(c, 0x003b_58a0, 0x002a_9ff8)?; // SND_Lock
+                c.g[A0][0] = Addr(r32(c, S1)).off(SB_HANDLE).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, 0x003b_7e70, 0x002a_a004)?; // SNDSTRM_SetVolume
+                call_ptr(c, 0x003b_58d8, 0x002a_a00c)?; // SND_Unlock
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1510,5 +1724,104 @@ pub(crate) mod tests {
                 c.pc = 0x002a_c7f0;
             },
         );
+    }
+    use super::*;
+    use super::*;
+
+
+    /// StreamBuffer_GetStatus: an unknown stream (-8), a stream with no
+    /// request (0x124 = 0) and one with a request but no rate (+0x14 = 0),
+    /// the lock/unlock hooks fakes.
+    #[test]
+    fn stream_buffer_get_status_matches() {
+        use crate::difftest::fakes::FAKE;
+        const SELF: u32 = DATA + 0x20_0000;
+        const OUT: u32 = SELF + 0x100;
+        const STREAM: u32 = SELF + 0x1000;
+        const REQ: u32 = SELF + 0x2000;
+        check(ee::s08::f_002aa020__generated, stream_buffer_get_status, 240, &|c, seed| {
+            let mut r = machine(c, seed, 0x2a_a020, 2);
+            c.pc = 0x002a_a020;
+            c.g[A0][0] = sx(SELF);
+            c.g[A1][0] = sx(OUT);
+            // SND lock / unlock hooks.
+            c.bus.write32(0x0045_0000 - 0x3b94, FAKE);
+            c.bus.write32(0x0045_0000 - 0x3b90, FAKE + 0x10);
+            // One stream slot.
+            c.bus.write8(0x0051_0000 - 0x56d2, 1);
+            c.bus.write32(0x0051_0000 - 0x5f60, STREAM);
+            let id = if seed % 3 == 0 { 1 + r.next_u32() % 4 } else { 0 };
+            c.bus.write32(SELF + SB_STREAM, id);
+            c.bus.write32(STREAM + 0x124, if seed % 3 == 1 { 0 } else { r.next_u32() | 1 });
+            c.bus.write32(STREAM + 0x11c, REQ);
+            c.bus.write32(REQ + 0xc, r.next_u32());
+            c.bus.write16(STREAM + 0x14, 0);
+            c.bus.write8(0x0051_0000 - 0x5718 + 0x176, r.next_u32() as u8);
+        });
+    }
+
+
+    /// StreamArray_UpdateAll: counts -1..4, null and real buffers; each
+    /// buffer runs the real StreamBuffer_UpdateVolume on its short paths
+    /// (no volume source, or a volume set on an unknown SND stream; the
+    /// lock hooks are fakes, the age stays below the stop limit).
+    #[test]
+    fn stream_array_update_all_matches() {
+        use crate::difftest::fakes::FAKE;
+        const SELF: u32 = DATA + 0x20_0000;
+        const ARRAY: u32 = SELF + 0x100;
+        const BUFFERS: u32 = SELF + 0x1000;
+        const VOLUME: u32 = SELF + 0x3000;
+        check(ee::s08::f_002aac28__generated, stream_array_update_all, 240, &|c, seed| {
+            let mut r = machine(c, seed, 0x2a_ac28, 6);
+            c.pc = 0x002a_ac28;
+            c.g[A0][0] = sx(SELF);
+            c.bus.write32(0x0045_0000 - 0x3b94, FAKE);
+            c.bus.write32(0x0045_0000 - 0x3b90, FAKE + 0x10);
+            c.bus.write8(0x0051_0000 - 0x56d2, 0); // no SND streams
+            let n = (seed % 6) as i32 - 1;
+            c.bus.write32(SELF + SA_COUNT, n as u32);
+            c.bus.write32(SELF + SA_BUFFERS, ARRAY);
+            c.bus.write32(VOLUME, r.f32(1.0));
+            for i in 0..5u32 {
+                let b = BUFFERS + 0x100 * i;
+                c.bus.write32(ARRAY + 4 * i, if r.next_u32() % 4 == 0 { 0 } else { b });
+                c.bus.write32(b + 0x80, r.next_u32() % 121);
+                c.bus.write32(b + 0x10, if r.next_u32() % 2 == 0 { 0 } else { VOLUME });
+                c.bus.write8(b + 0xc, r.next_u32() as u8);
+                c.bus.write32(b + 0x8, r.next_u32() % 4);
+            }
+        });
+    }
+
+
+    /// StreamBuffer_UpdateVolume: starved (stop and clear), no scale
+    /// pointer, or a volume set through the real SND lock / SNDSTRM path
+    /// (fake lock hooks) with products below 0, inside and above 0..127.
+    #[test]
+    fn stream_buffer_update_volume_matches() {
+        check(ee::s08::f_002a9f80__generated, stream_buffer_update_volume, 240, &|c, seed| {
+            let mut r = crate::difftest::fakes::machine(c, seed, 0x2a9f80, 0);
+            c.pc = 0x002a_9f80;
+            let sb = DATA + 0x100;
+            let scale = DATA + 0x400;
+            c.g[A0][0] = sx(sb);
+            c.bus.write32(sb + SB_HANDLE, r.next_u32() % 8);
+            c.bus.write8(sb + SB_VOLUME, r.next_u32() as u8);
+            // Audio_GetFrameRate is 60: the limit is 120.
+            let starved = match seed % 4 {
+                0 => 121 + r.next_u32() % 100,
+                1 => 120,
+                _ => r.next_u32() % 120,
+            };
+            c.bus.write32(sb + SB_STARVED, starved);
+            c.bus.write32(sb + SB_SCALE_PTR, if seed % 5 == 1 { 0 } else { scale });
+            let f = match seed % 3 {
+                0 => r.f32(4.0),
+                1 => r.edge_f32(),
+                _ => r.f32(1.0),
+            };
+            c.bus.write32(scale, f);
+        });
     }
 }

@@ -120,6 +120,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_3448, modifier_block_save, "ModifierBlock_Save"),
     (0x0035_3b10, skybox_render, "SkyBox_Render"),
+    (0x0035_2bc0, modifier_block_set_transform_bounds, "ModifierBlock_SetTransformBounds"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
@@ -1502,6 +1503,48 @@ pub fn skybox_render(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ------------------------------------------ ModifierBlock_SetTransformBounds
+
+/// `sBoundBoxNode` vtable slot 13 (`setBoundBox`): this-delta (s16) at
+/// +0x68, method at +0x6c.
+pub(crate) const MB_SET_BOUND_BOX_SLOT: u32 = 0x68;
+
+
+
+/// `void ModifierBlock_SetTransformBounds(tModifierBlock* self,
+/// BoundBox* box)` (0x352bc0): forward the box to the block's bound node
+/// (`self->node`, at +0) through its virtual `setBoundBox`, if it has one.
+/// Frame 0x10 (ra only; reloaded before the null test as the original does).
+pub fn modifier_block_set_transform_bounds(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let node = Addr(r32(c, A0)).lw(c);
+        c.g[A2][0] = node;
+        frame.restore_ra(c, 0);
+        if node != 0 {
+            c.cycles += 6;
+            let node = node as u32;
+            let vt = Addr(node).lw(c);
+            c.g[V0][0] = vt;
+            let delta = Addr((vt as u32).wrapping_add(MB_SET_BOUND_BOX_SLOT)).lh(c);
+            let method = Addr((vt as u32).wrapping_add(MB_SET_BOUND_BOX_SLOT + 4)).lw(c);
+            c.g[V1][0] = method;
+            // node->setBoundBox(box): a1 passes through.
+            c.g[A0][0] = sx(node.wrapping_add(delta as u32));
+            call_ptr(c, method as u32, 0x0035_2be8)?;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2077,6 +2120,35 @@ pub(crate) mod tests {
                     fill(c, &mut r, CAMS + 0x100 * v + 0x20, 4);
                 }
                 c.g[A0][0] = SKY as u64;
+            },
+        );
+    }
+    use super::*;
+
+
+    /// ModifierBlock_SetTransformBounds: no node, or a node whose vtable
+    /// slot 13 is a fake method (random this-delta) that may unwind.
+    #[test]
+    fn modifier_block_set_transform_bounds_matches() {
+        covered(
+            ee::s11::f_00352bc0__generated,
+            modifier_block_set_transform_bounds,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_2bc0, 1);
+                c.pc = 0x0035_2bc0;
+                let block = DATA + 0x2_0000;
+                let node = if seed % 5 == 0 {
+                    0
+                } else {
+                    let vt = crate::difftest::fakes::vtable(c, &mut r, &[0x68]);
+                    let n = DATA + 0x3_0000 + (r.next_u32() & 0xff0);
+                    c.bus.write32(n, vt);
+                    n
+                };
+                c.bus.write32(block, node);
+                c.g[A0][0] = sx(block);
+                c.g[A1][0] = sx(DATA + 0x4_0000);
             },
         );
     }

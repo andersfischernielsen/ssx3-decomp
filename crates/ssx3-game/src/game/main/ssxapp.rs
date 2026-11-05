@@ -98,6 +98,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0022_a4a8, nash_classify_effects, "Nash_ClassifyEffects"),
     (0x0022_a770, nash_collect_effects, "Nash_CollectEffects"),
+    (0x0022_a368, nash_classify_instances, "Nash_ClassifyInstances"),
+    (0x0022_a408, nash_classify_patches, "Nash_ClassifyPatches"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -2871,6 +2873,203 @@ pub fn nash_collect_effects(c: &mut Cpu) {
     ret(c);
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// Nash_ClassifyPatches (0x22a408)
+
+pub(crate) const NASH_CLASSIFY_PATCH: Callee = Callee {
+    addr: 0x0022_a128,
+    f: ee::s05::Nash_ClassifyPatch,
+};
+
+
+
+/// A visible-list entry (8 bytes): the source (+0, whose first patch node
+/// is at +0x24) and the VU frustum handed to the classifier (+4).
+pub(crate) const VIS_SOURCE: u32 = 0x0;
+
+
+pub(crate) const VIS_FRUSTUM: u32 = 0x4;
+
+
+pub(crate) const VIS_ENTRY_SIZE: u32 = 0x8;
+
+
+pub(crate) const SOURCE_FIRST_PATCH: u32 = 0x24;
+
+
+/// A patch node's next link.
+pub(crate) const PATCH_NEXT: u32 = 0x0;
+
+
+/// The cell's pending list head (non-zero: one more classify with no node).
+pub(crate) const CELL_LIST_HEAD: u32 = 0x78b0;
+
+
+
+/// `void Nash_ClassifyPatches(Cell* cell /*a0*/, VisEntry* list /*a1*/,
+/// int count /*a2*/)` (0x22a408): run `Nash_ClassifyPatch(cell, node,
+/// entry->frustum)` on every patch node of every visible-list entry, then
+/// once more with no node when the cell's list head is set. Frame 0x60 (ra
+/// at 0, s4..s0 at 0x10..0x50).
+pub fn nash_classify_patches(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S4, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x50);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        if (c.g[A2][0] as i64) > 0 {
+            loop {
+                // s1: the entry, s3: entries left after it, s2: the next.
+                c.cycles += 5;
+                let entry = r32(c, S1);
+                c.g[V0][0] = c.lw(entry.wrapping_add(VIS_SOURCE));
+                c.g[S3][0] = sx(r32(c, A2).wrapping_sub(1));
+                c.g[S0][0] = c.lw(r32(c, V0).wrapping_add(SOURCE_FIRST_PATCH));
+                c.g[S2][0] = sx(entry.wrapping_add(VIS_ENTRY_SIZE));
+                if c.g[S0][0] != 0 {
+                    c.cycles += 1;
+                    c.g[A2][0] = c.lw(entry.wrapping_add(VIS_FRUSTUM));
+                    loop {
+                        c.cycles += 6;
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A0][0] = c.g[S4][0];
+                        NASH_CLASSIFY_PATCH.call(c, 0x0022_a454)?;
+                        c.g[S0][0] = c.lw(r32(c, S0).wrapping_add(PATCH_NEXT));
+                        if c.g[S0][0] == 0 {
+                            break;
+                        }
+                        c.g[A2][0] = c.lw(r32(c, S1).wrapping_add(VIS_FRUSTUM));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0022_a448);
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.g[A2][0] = c.g[S3][0];
+                c.g[S1][0] = c.g[S2][0];
+                if (c.g[A2][0] as i64) <= 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0022_a430);
+                }
+            }
+        }
+        c.cycles += 3;
+        let cell = r32(c, S4);
+        c.g[V0][0] = c.lw(cell.wrapping_add(CELL_LIST_HEAD));
+        c.g[A0][0] = c.g[S4][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            NASH_CLASSIFY_PATCH.call(c, 0x0022_a484)?;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+
+
+/// `void Nash_ClassifyInstances(Cell* cell, List* lists, int count)`
+/// (0x22a368, ssxapp.cpp): runs `Nash_ClassifyInstance(cell, node,
+/// list->frustum)` over every node (linked through +0x0) of each list's
+/// source (`list->src + 0x20` is the head; `+0x4` the frustum; lists are 8
+/// bytes apart), then once more with a null node if the cell's instance
+/// head (+0x50a4) is set.
+pub fn nash_classify_instances(c: &mut Cpu) {
+    const CLASSIFY: Callee = Callee {
+        addr: 0x0022_9fc8,
+        f: ee::s05::f_00229fc8,
+    };
+    const HEAD: u32 = 0x50a4;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, 17, 0x40);
+        frame.save(c, 20, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, 16, 0x50);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, 18, 0x30);
+        frame.save(c, 19, 0x20);
+        frame.save_ra(c, 0);
+        if (c.g[A2][0] as i64) > 0 {
+            loop {
+                c.cycles += 5;
+                let list = r32(c, S1);
+                let src = Addr(list).lw(c);
+                c.g[V0][0] = src;
+                c.g[S3][0] = sx(r32(c, A2).wrapping_sub(1));
+                c.g[S0][0] = Addr(src as u32).off(0x20).lw(c);
+                c.g[S2][0] = sx(list.wrapping_add(8));
+                if c.g[S0][0] != 0 {
+                    c.cycles += 1;
+                    c.g[A2][0] = Addr(list).off(4).lw(c);
+                    loop {
+                        c.cycles += 6;
+                        c.g[A1][0] = c.g[S0][0];
+                        c.g[A0][0] = c.g[S4][0];
+                        CLASSIFY.call(c, 0x0022_a3b4)?;
+                        c.g[S0][0] = Addr(r32(c, S0)).lw(c);
+                        if c.g[S0][0] == 0 {
+                            break;
+                        }
+                        c.g[A2][0] = Addr(r32(c, S1)).off(4).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0022_a3a8);
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.g[A2][0] = c.g[S3][0];
+                c.g[S1][0] = c.g[S2][0];
+                if (c.g[A2][0] as i64) <= 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0022_a390);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S4)).off(HEAD).lw(c);
+        c.g[A0][0] = c.g[S4][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            CLASSIFY.call(c, 0x0022_a3e4)?;
+        }
+        c.cycles += 8;
+        frame.restore(c, 16, 0x50);
+        frame.restore(c, 17, 0x40);
+        frame.restore(c, 18, 0x30);
+        frame.restore(c, 19, 0x20);
+        frame.restore(c, 20, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4036,6 +4235,146 @@ pub(crate) mod tests {
                         fx += 0x60;
                     }
                     c.bus.write32(node + NODE_EFFECTS, next);
+                }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+
+    // ---------------------------------------------------- Nash_ClassifyPatches
+
+    /// `Nash_ClassifyPatches`: zero, negative and up to four list entries,
+    /// sources with no patches and with chains of one to three; the cell's
+    /// list head set or clear (the extra no-node classify, whose `VI1`
+    /// handle picks every arm of the patch table). The patch nodes take the
+    /// classifier's early misses (negative handle word, or a slot word that
+    /// is not 6), so no VU0 micro program runs.
+    #[test]
+    fn nash_classify_patches_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, put_words, DATA};
+        use crate::game::main::ssxapp::tests::NASH_PATCH_HANDLERS;
+        use crate::game::main::ssxapp::NASH_PATCH_TABLE;
+        check(
+            ee::s05::f_0022a408__generated,
+            nash_classify_patches,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0022_a408, 0);
+                c.pc = 0x0022_a408;
+                put_words(c, NASH_PATCH_TABLE, &NASH_PATCH_HANDLERS);
+                c.bus.plat.write_ctrl(1, seed % 8);
+                let cell = DATA + 0x1_0000;
+                let block = DATA + 0x2_0000;
+                let heap = DATA + 0x3_0000;
+                let list = DATA + 0x4_0000;
+                let sources = DATA + 0x5_0000;
+                let nodes = DATA + 0x6_0000;
+                c.g[A0][0] = sx(cell);
+                c.g[A1][0] = sx(list);
+                // The classifier's heap: slot words all 0 (not 6), so a node with
+                // a non-negative handle misses too.
+                c.bus.write32(cell + 0x90, block);
+                c.bus.write32(block, heap);
+                c.bus.write32(cell + 0x50a8, r.next_u32() & 3);
+                c.bus.write32(cell + 0x70ac, r.next_u32() & 3);
+                c.bus.write32(
+                    cell + CELL_LIST_HEAD,
+                    if seed % 3 == 0 { 0 } else { nodes + 0x8000 },
+                );
+                let count = match seed % 7 {
+                    0 => 0,
+                    1 => (-(r.next_u32() as i32 & 0xff) - 1) as u32,
+                    _ => 1 + r.next_u32() % 4,
+                };
+                c.g[A2][0] = sx(count);
+                let entries = if (count as i32) > 0 { count } else { 0 };
+                let mut node = nodes;
+                for i in 0..entries {
+                    let src = sources + 0x40 * i;
+                    c.bus.write32(list + VIS_ENTRY_SIZE * i + VIS_SOURCE, src);
+                    c.bus
+                        .write32(list + VIS_ENTRY_SIZE * i + VIS_FRUSTUM, r.next_u32());
+                    let chain = r.next_u32() % 4;
+                    let mut link = src + SOURCE_FIRST_PATCH;
+                    for _ in 0..chain {
+                        c.bus.write32(link, node);
+                        let handle = if r.next_u32() % 2 == 0 {
+                            0xffff
+                        } else {
+                            r.next_u32() as u16 & 0x7
+                        };
+                        c.bus.write16(node + 0x156, handle);
+                        c.bus.write8(node + 0x155, r.next_u32() as u8);
+                        link = node + PATCH_NEXT;
+                        node += 0x200;
+                    }
+                    c.bus.write32(link, 0);
+                }
+            },
+        );
+    }
+
+
+    /// `Nash_ClassifyInstances`: 0..4 lists (or a negative count), each
+    /// source with 0..4 nodes; the real `Nash_ClassifyInstance` runs its
+    /// short paths: node type words not ending in 3 (a miss), or ending in
+    /// 3 with a heap slot word that is not 6 (a miss after the heap look-up);
+    /// the trailing null-node call (instance head at +0x50a4 set on half the
+    /// seeds) reads VU0 VI1 = 5..7 and stores the null node at the head.
+    #[test]
+    fn nash_classify_instances_matches() {
+        use crate::difftest::check;
+        const CELL: u32 = DATA;
+        const HEAPPTR: u32 = DATA + 0x6000;
+        const HEAP: u32 = DATA + 0x6100;
+        const LISTS: u32 = DATA + 0x8000;
+        const SRCS: u32 = DATA + 0x8100;
+        const NODES: u32 = DATA + 0x9000;
+        check(
+            ssx3_ee::s05::f_0022a368__generated,
+            nash_classify_instances,
+            300,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x22a368, 0);
+                c.pc = 0x0022_a368;
+                c.bus.plat.write_ctrl(1, 5 + seed % 3);
+                c.g[A0][0] = sx(CELL);
+                c.bus.write32(
+                    CELL + 0x50a4,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                c.bus.write32(CELL + 0x90, HEAPPTR);
+                c.bus.write32(HEAPPTR, HEAP);
+                for i in 0..0x40 {
+                    c.bus.write32(HEAP + 4 * i, r.next_u32() & !2);
+                }
+                let n = r.next_u32() % 5;
+                c.g[A1][0] = sx(LISTS);
+                c.g[A2][0] = if seed % 13 == 5 {
+                    sx(0xffff_fffd)
+                } else {
+                    n as u64
+                };
+                let mut node_at = NODES;
+                for i in 0..n {
+                    let src = SRCS + 0x40 * i;
+                    c.bus.write32(LISTS + 8 * i, src);
+                    c.bus.write32(LISTS + 8 * i + 4, r.next_u32());
+                    let mut next = 0;
+                    for _ in 0..r.next_u32() % 5 {
+                        let node = node_at;
+                        node_at += 0x100;
+                        c.bus.write32(node, next);
+                        let kind = r.next_u32();
+                        c.bus
+                            .write32(node + 8, if kind % 3 == 0 { kind | 3 } else { kind & !1 });
+                        c.bus.write8(node + 0x7d, (r.next_u32() % 6) as u8);
+                        next = node;
+                    }
+                    c.bus.write32(src + 0x20, next);
                 }
             },
         );

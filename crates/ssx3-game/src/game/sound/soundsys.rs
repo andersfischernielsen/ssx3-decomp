@@ -72,6 +72,7 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
+use crate::call;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -603,6 +604,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_flush_pending_speech,
         "SSXAudioSystem_FlushPendingSpeech",
     ),
+    (0x0029_47b0, ssx_audio_system_update_airborne_riders, "SSXAudioSystem_UpdateAirborneRiders"),
+    (0x0029_b738, ssx_audio_update_uber_speech, "SSXAudioSystem_UpdateUberSpeech"),
+    (0x0029_d610, ssx_audio_system_update_loop_sfx, "SSXAudioSystem_UpdateLoopSfx"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -11722,6 +11726,283 @@ pub fn ssx_audio_system_update_race_loop_sfx(c: &mut Cpu) {
     })
 }
 
+
+pub(crate) mod airborne_riders {
+    use super::*;
+
+    pub const GET_RACE_MAN: Callee = Callee {
+        addr: 0x0028_b1d8,
+        f: ee::s07::f_0028b1d8,
+    };
+
+    pub const UPDATE_RIDER_AIR_STATE: Callee = Callee {
+        addr: 0x0029_4678,
+        f: ee::s07::f_00294678,
+    };
+
+    /// Audio system: one "airborne" flag word per rider slot (6).
+    pub const AIR_FLAGS: u32 = 0x59e8;
+
+    /// Race manager: the rider count and the rider pointers.
+    pub const RACE_RIDER_COUNT: u32 = 0x78;
+
+    pub const RACE_RIDERS: u32 = 0x28;
+
+    /// The loop head (event checks).
+    pub const LOOP_HEAD: u32 = 0x0029_47d8;
+}
+
+pub(crate) mod loop_sfx {
+    use super::ee;
+    use super::Callee;
+
+    /// SSXAudioSystem: a looping effect is playing, and its SND handle.
+    pub const LOOP_ACTIVE: u32 = 0x5fc4;
+
+    pub const LOOP_HANDLE: u32 = 0x5fc8;
+
+    /// `SND_Lock`, `SND_IsHandleDone(handle)`, `SND_Unlock`.
+    pub const SND_LOCK: u32 = 0x003b_58a0;
+
+    pub const SND_IS_HANDLE_DONE: u32 = 0x003b_8ab8;
+
+    pub const SND_UNLOCK: u32 = 0x003b_58d8;
+
+    pub const STOP_LOOP_SFX: Callee = Callee { addr: 0x0029_d678, f: ee::s08::f_0029d678 };
+
+    pub const START_LOOP_SFX: Callee = Callee { addr: 0x0029_d370, f: ee::s08::f_0029d370 };
+}
+
+
+
+// ------------------------------------------- SSXAudioSystem_UpdateUberSpeech
+
+/// `SSXAudioSystem` fields: the rider id the uber-speech state belongs to
+/// (+0x5820) and the rider's last seen trick/boost state (+0x581c).
+pub(crate) const UBER_RIDER_ID: u32 = 0x5820;
+
+
+pub(crate) const UBER_LAST_STATE: u32 = 0x581c;
+
+
+/// Rider fields: player id (+0x870) and the state watched for "uber" (10).
+pub(crate) const UBER_RIDER_PLAYER_ID: u32 = 0x870;
+
+
+pub(crate) const UBER_RIDER_STATE: u32 = 0x2f4;
+
+
+/// Game module: game mode (+0x214); uber speech only in mode 4.
+pub(crate) const UBER_MODULE_MODE: u32 = 0x214;
+
+
+
+/// `SSXAudioSystem_ArcadeSay2133` (0x2a3de0).
+pub(crate) const UBER_ARCADE_SAY: Callee = Callee {
+    addr: 0x002a_3de0,
+    f: ee::s08::f_002a3de0,
+};
+
+
+
+/// `void SSXAudioSystem_UpdateUberSpeech(SSXAudioSystem* self)` (0x29b738),
+/// every frame: outside replays, find the followed rider
+/// (`FindRider(self, -1)`); when it is the rider tracked at +0x5820 and its
+/// state (+0x2f4) just became 10 (uber) in game mode 4, say line 0x2133
+/// (`ArcadeSay2133(self, rider, 2)`); a different rider is tracked from now
+/// on. The rider's state is remembered at +0x581c. Frame 0x30 (s0, s1).
+pub fn ssx_audio_update_uber_speech(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        // SSXAudioSystem_IsReplayPlaying(self)
+        call_ptr(c, 0x0028_8ae0, 0x0029_b750)?;
+        if c.g[V0][0] == 0 {
+            c.cycles += 8;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = u64::MAX;
+            // SSXAudioSystem_FindRider(self, -1)
+            call_ptr(c, 0x0028_5d98, 0x0029_b764)?;
+            c.g[S1][0] = c.g[V0][0];
+            let this = r32(c, S0);
+            let rider = r32(c, S1);
+            let tracked = Addr(this.wrapping_add(UBER_RIDER_ID)).lw(c);
+            c.g[V0][0] = tracked;
+            let id = Addr(rider.wrapping_add(UBER_RIDER_PLAYER_ID)).lw(c);
+            c.g[V1][0] = id;
+            if id != tracked {
+                // Another rider: track it.
+                Addr(this.wrapping_add(UBER_RIDER_ID)).sw(c, id);
+                c.cycles += 1;
+            } else {
+                c.cycles += 4;
+                let state = Addr(rider.wrapping_add(UBER_RIDER_STATE)).lw(c);
+                c.g[V1][0] = state;
+                c.g[V0][0] = 10;
+                if state == 10 {
+                    c.cycles += 3;
+                    let last = Addr(this.wrapping_add(UBER_LAST_STATE)).lw(c);
+                    c.g[V0][0] = last;
+                    if last != state {
+                        c.cycles += 6;
+                        // SSXAudioSystem_GetGameModule()
+                        call_ptr(c, 0x0028_b1c8, 0x0029_b79c)?;
+                        let mode = Addr(r32(c, V0).wrapping_add(UBER_MODULE_MODE)).lw(c);
+                        c.g[V1][0] = mode;
+                        c.g[V0][0] = 4;
+                        if mode == 4 {
+                            c.cycles += 6;
+                            c.g[A0][0] = c.g[S0][0];
+                            c.g[A1][0] = c.g[S1][0];
+                            c.g[A2][0] = 2;
+                            UBER_ARCADE_SAY.call(c, 0x0029_b7bc)?;
+                        }
+                    }
+                }
+            }
+            let state = Addr(r32(c, S1).wrapping_add(UBER_RIDER_STATE)).lw(c);
+            c.g[V0][0] = state;
+            c.cycles += 2;
+            Addr(r32(c, S0).wrapping_add(UBER_LAST_STATE)).sw(c, state);
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `void SSXAudioSystem_UpdateAirborneRiders(SSXAudioSystem* this)`
+/// (0x2947b0): for each of the 6 rider slots whose airborne flag is set,
+/// update that rider's air sound state if the race has such a rider;
+/// otherwise clear the flag.
+pub fn ssx_audio_system_update_airborne_riders(c: &mut Cpu) {
+    use airborne_riders::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        // s0: the slot's flag, s1: the slot, s3: the slot * 4.
+        c.g[S0][0] = sx(r32(c, S2).wrapping_add(AIR_FLAGS));
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S3][0] = 0;
+        loop {
+            'next: {
+                'clear: {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+                    if c.g[V0][0] == 0 {
+                        Addr(r32(c, S0)).sw(c, 0);
+                        break 'clear;
+                    }
+                    c.cycles += 6;
+                    GET_RACE_MAN.call(c, 0x0029_47ec)?;
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(RACE_RIDER_COUNT)).lw(c);
+                    c.g[V1][0] = ((c.g[S1][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    if c.g[V1][0] == 0 {
+                        Addr(r32(c, S0)).sw(c, 0);
+                        break 'clear;
+                    }
+                    c.cycles += 7;
+                    GET_RACE_MAN.call(c, 0x0029_4804)?;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(r32(c, S3)));
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(RACE_RIDERS)).lw(c);
+                    c.g[A1][0] = c.g[V1][0];
+                    if c.g[V1][0] == 0 {
+                        c.cycles += 1;
+                        Addr(r32(c, S0)).sw(c, 0);
+                        break 'clear;
+                    }
+                    // UpdateRiderAirState(this, rider).
+                    c.cycles += 4;
+                    c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                    UPDATE_RIDER_AIR_STATE.call(c, 0x0029_4820)?;
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                    break 'next;
+                }
+                c.cycles += 2;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+            }
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 6) as u64;
+            let more = c.g[V0][0] != 0;
+            c.g[S3][0] = sx(r32(c, S3).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, LOOP_HEAD);
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+
+
+/// `void SSXAudioSystem_UpdateLoopSfx(SSXAudioSystem *self)` (0x29d610):
+/// while a looping effect plays, check its SND handle (under the SND lock);
+/// when the sample has ended, stop it (fade 0) and start the next one.
+pub fn ssx_audio_system_update_loop_sfx(c: &mut Cpu) {
+    use loop_sfx::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(r32(c, S1) + LOOP_ACTIVE).lw(c);
+        frame.restore(c, S0, 0x20);
+        if c.g[V0][0] != 0 {
+            c.cycles += 8;
+            call_ptr(c, SND_LOCK, 0x0029_d638)?;
+            c.g[A0][0] = Addr(r32(c, S1) + LOOP_HANDLE).lw(c);
+            call_ptr(c, SND_IS_HANDLE_DONE, 0x0029_d640)?;
+            c.g[S0][0] = (c.g[V0][0] > 0) as u64;
+            call_ptr(c, SND_UNLOCK, 0x0029_d648)?;
+            let done = c.g[S0][0] != 0;
+            frame.restore(c, S0, 0x20);
+            if done {
+                c.cycles += 6;
+                c.mtc1(0, 12);
+                c.g[A0][0] = c.g[S1][0];
+                STOP_LOOP_SFX.call(c, 0x0029_d65c)?;
+                c.g[A0][0] = c.g[S1][0];
+                START_LOOP_SFX.call(c, 0x0029_d664)?;
+                frame.restore(c, S0, 0x20);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14958,5 +15239,156 @@ pub(crate) mod tests {
                 c.pc = 0x0029_d290;
             },
         );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+
+
+    /// SSXAudioSystem_UpdateUberSpeech: the real IsReplayPlaying (no game
+    /// module, no replay, replay state 0 / playing), the real FindRider over
+    /// up to three race-manager riders, the tracked id matching or not, the
+    /// rider state 10 or not, the last state 10 or not, game mode 4 or not,
+    /// and the real ArcadeSay2133 on its short paths (arcade speech gain 0,
+    /// or the rider's air value not negative).
+    #[test]
+    fn ssx_audio_update_uber_speech_matches() {
+        const SYS: u32 = DATA;
+        const GAME: u32 = DATA + 0x1_0000;
+        const MODULE: u32 = DATA + 0x1_0100;
+        const RACE_MAN: u32 = DATA + 0x1_0400;
+        const REPLAY: u32 = DATA + 0x1_0800;
+        const RIDERS: u32 = DATA + 0x2_0000;
+        check(ee::s08::f_0029b738__generated, ssx_audio_update_uber_speech, 300, &|c, seed| {
+            let mut r = Rng(0x29_b738 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            c.g[GP][0] = sx(GAME_GP);
+            c.pc = 0x0029_b738;
+            c.bus.write32(GAME_GP.wrapping_sub(0x848), GAME);
+            c.bus.write32(GAME + 0x84, if seed % 17 == 0 { 0 } else { MODULE });
+            c.bus.write32(MODULE + 0xc, RACE_MAN);
+            c.bus.write32(MODULE + 0x28, if seed % 4 == 0 { REPLAY } else { 0 });
+            c.bus.write32(REPLAY, [0, 0, 3, 12][(r.next_u32() % 4) as usize]);
+            c.bus.write32(REPLAY + 0x18, RIDERS);
+            c.bus.write32(RACE_MAN + 0x40, REPLAY);
+            c.bus.write32(MODULE + UBER_MODULE_MODE, [4, 4, 0, 2][(r.next_u32() % 4) as usize]);
+            c.bus.write32(RACE_MAN + 0x7c, r.next_u32() % 4);
+            c.bus.write32(RACE_MAN + 0x78, r.next_u32() % 4);
+            let id = r.next_u32() % 2;
+            for i in 0..3 {
+                let rd = RIDERS + 0x1000 * i;
+                c.bus.write32(RACE_MAN + 0x28 + 4 * i, rd);
+                c.bus.write32(rd + 0x874, r.next_u32() % 2);
+                c.bus.write32(rd + 0x87c, r.next_u32() % 2);
+                c.bus.write32(rd + 0xec, (r.next_u32() % 8).wrapping_sub(1));
+                c.bus.write32(rd + UBER_RIDER_PLAYER_ID, if r.next_u32() % 4 == 0 { 1 - id } else { id });
+                c.bus.write32(rd + UBER_RIDER_STATE, if r.next_u32() % 3 == 0 { 3 } else { 10 });
+                // Air value: not negative, so ArcadeSay2133 stops early.
+                c.bus.write32(rd + 0x470, r.f32(4.0) & 0x7fff_ffff);
+            }
+            c.bus.write32(SYS + UBER_RIDER_ID, id);
+            c.bus.write32(SYS + UBER_LAST_STATE, if r.next_u32() % 3 == 0 { 10 } else { 0 });
+            // Arcade speech gain (channel 10): off or on.
+            c.bus.write32(SYS + 0x635c, if r.next_u32() % 2 == 0 { 0 } else { 0x3f80_0000 });
+            c.g[A0][0] = sx(SYS);
+        });
+    }
+
+    // -- 0x002947b0 SSXAudioSystem_UpdateAirborneRiders ------------------------
+
+    /// `SSXAudioSystem_UpdateAirborneRiders` against the generated body: the
+    /// six airborne flags set or clear, rider counts from none to more than
+    /// six (and negative), empty rider slots. The real `UpdateRiderAirState`
+    /// runs its "landed" path (animation state neither 1 nor 3): its rider
+    /// virtual is a fake (some unwind, some forced to a slot index so
+    /// `SetRiderAirFlag` sets a later flag).
+    #[test]
+    fn ssx_audio_system_update_airborne_riders_matches() {
+        use super::airborne_riders::*;
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{DATA, GAME_GP};
+        const THIS: u32 = DATA + 0x1_0000;
+        const WORLD: u32 = DATA + 0x2_0000;
+        const GAME: u32 = DATA + 0x2_0100;
+        const RACE: u32 = DATA + 0x2_0200;
+        const RIDERS: u32 = DATA + 0x3_0000;
+        covered(
+            ee::s07::f_002947b0__generated,
+            ssx_audio_system_update_airborne_riders,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0029_47b0, 6);
+                c.pc = 0x0029_47b0;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                w(c, GAME_GP - 0x848, WORLD);
+                w(c, WORLD + 0x84, GAME);
+                w(c, GAME + 0xc, RACE);
+                let count = match r.next_u32() % 9 {
+                    8 => 0xffff_ffff,
+                    n => n,
+                };
+                w(c, RACE + RACE_RIDER_COUNT, count);
+                for i in 0..6u32 {
+                    w(c, THIS + AIR_FLAGS + 4 * i, if r.next_u32() % 3 == 0 { 0 } else { r.next_u32() | 1 });
+                    let rider = RIDERS + 0x1000 * i;
+                    let anim = rider + 0x800;
+                    w(c, RACE + RACE_RIDERS + 4 * i, if r.next_u32() % 5 == 0 { 0 } else { rider });
+                    w(c, rider + 0x788, anim);
+                    w(c, anim + 0xac, [0, 2, 4][(r.next_u32() % 3) as usize]);
+                    // The rider's air-state object's vtable (slot 0x38).
+                    let vt = rider + 0xc00;
+                    c.bus.write16(vt + 0x38, (r.next_u32() as i16 & !3) as u16);
+                    w(c, vt + 0x3c, FAKE + 0x10 * i);
+                    w(c, rider + 0x6c0, vt);
+                }
+                // Fake results: a pointer (no flag) or a slot index 1..5.
+                for n in 0..8u32 {
+                    let v = if r.next_u32() % 2 == 0 { 0 } else { 1 + r.next_u32() % 5 };
+                    w(c, LOG_RESULTS + 4 * n, v);
+                }
+                c.g[A0][0] = sx(THIS);
+            },
+        );
+    }
+
+
+    /// A looping effect off, or on with a handle that is live in the SND
+    /// channel table or negative (done). SND_Lock/SND_Unlock go
+    /// through the lock hooks, which are fakes (some seeds unwind there); the
+    /// next effect's StartLoopSfx returns at once (no loop list, +0x6c74 = 0).
+    #[test]
+    fn ssx_audio_system_update_loop_sfx_matches() {
+        use crate::difftest::fakes::{covered, FAKE, LOG_RESULTS};
+        use loop_sfx::*;
+        /// SND state (0x50a8e8): channel count (+0x17e), channel table (+0x1f0).
+        const SNDS: u32 = 0x0051_0000 - 0x5718;
+        const LOCK_HOOK: u32 = 0x0045_0000 - 0x3b94;
+        covered(ssx3_ee::s08::f_0029d610__generated, ssx_audio_system_update_loop_sfx, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x29d610, 2);
+            c.pc = 0x0029_d610;
+            for i in 0..2 {
+                c.bus.write32(LOG_RESULTS + 4 * i, 0);
+            }
+            c.bus.write32(LOCK_HOOK, FAKE + 0x100);
+            c.bus.write32(LOCK_HOOK + 4, FAKE + 0x110);
+            let channels = DATA + 0x8000;
+            c.bus.write16(SNDS + 0x17e, 8);
+            c.bus.write32(SNDS + 0x1f0, channels);
+            c.bus.write8(SNDS + 0x176, (r.next_u32() % 4) as u8);
+            let sys = DATA;
+            let handle = r.next_u32() & 0x7fff_ff00 | r.next_u32() % 8;
+            // The handle's channel is live (a stale non-negative handle
+            // would make StopLoopSfx stop it through a bank monitor).
+            let ch = channels + 0x8c * (handle & 0xff);
+            c.bus.write8(ch + 0x69, 1);
+            c.bus.write32(ch, handle);
+            c.bus.write32(sys + LOOP_ACTIVE, if seed % 6 == 0 { 0 } else { r.next_u32() | 1 });
+            c.bus.write32(
+                sys + LOOP_HANDLE,
+                if seed % 5 == 0 { 0x8000_0000 | r.next_u32() } else { handle },
+            );
+            c.bus.write32(sys + 0x6c74, 0);
+            c.g[A0][0] = sys as u64;
+        });
     }
 }

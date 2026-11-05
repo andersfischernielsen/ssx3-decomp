@@ -179,6 +179,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_update_target_speed,
         "Rider_UpdateTargetSpeed",
     ),
+    (0x0011_98d8, rider_metrix_set_flip_amount, "RiderMetrix_SetFlipAmount"),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -4215,6 +4216,50 @@ pub fn rider_update_target_speed(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_SetFlipAmount (0x1198d8)
+
+/// RiderMetrix: the trick's accumulated rotation total and the flip amount.
+pub(crate) const METRIX_ROTATION_TOTAL: u32 = 0x14;
+
+
+pub(crate) const METRIX_FLIP_AMOUNT: u32 = 0x38;
+
+
+/// `gp-0x7a10`: the flip weight in the rotation total (0.0286..., `.lit4`).
+pub(crate) const FLIP_WEIGHT_GP: u32 = 0x7a10;
+
+
+
+/// `float RiderMetrix_SetFlipAmount(RiderMetrix* m, float flip)` (0x1198d8):
+/// replace the flip amount, swapping its weighted magnitude in the
+/// rotation total (`total - |old| * k + |flip| * k`, not below 0). Returns
+/// 0.0 in f0.
+pub fn rider_metrix_set_flip_amount(c: &mut Cpu) {
+    c.cycles += 15;
+    let m = Addr(abi::arg(c, 0));
+    let gp = r32(c, GP);
+    let k = Addr(gp.wrapping_sub(FLIP_WEIGHT_GP)).read_fpu(c);
+    c.f[2] = k.0;
+    let flip = FpuF32(c.f[12]);
+    let old = m.off(METRIX_FLIP_AMOUNT).read_fpu(c);
+    let total = m.off(METRIX_ROTATION_TOTAL).read_fpu(c);
+    let removed = old.abs() * k;
+    m.off(METRIX_FLIP_AMOUNT).write_fpu(c, flip);
+    let added = flip.abs() * k;
+    let less = total - removed;
+    let new_total = (less + added).max(FpuF32::ZERO);
+    c.f[3] = less.0;
+    c.f[2] = 0;
+    c.f[0] = 0;
+    c.f[1] = new_total.0;
+    m.off(METRIX_ROTATION_TOTAL).write_fpu(c, new_total);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5227,6 +5272,35 @@ pub(crate) mod tests {
             super::rider_update_target_speed,
             90,
             &target_speed_fixture::setup_events,
+        );
+    }
+    use super::*;
+
+
+
+    /// `RiderMetrix_SetFlipAmount`: random and edge-case old/new flip
+    /// amounts and totals (including totals that would go negative), the
+    /// game's weight constant or an edge case.
+    #[test]
+    fn rider_metrix_set_flip_amount_matches() {
+        check(
+            ee::s00::f_001198d8__generated,
+            rider_metrix_set_flip_amount,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_98d8, 0);
+                c.pc = 0x0011_98d8;
+                let k = if seed % 5 == 0 { r.edge_f32() } else { 0x3cea_aef8 };
+                c.bus.write32(GAME_GP - FLIP_WEIGHT_GP, k);
+                let pick = |r: &mut Rng, i: u32| match i % 3 {
+                    0 => r.edge_f32(),
+                    _ => r.f32(400.0),
+                };
+                c.bus.write32(DATA + METRIX_FLIP_AMOUNT, pick(&mut r, seed));
+                c.bus.write32(DATA + METRIX_ROTATION_TOTAL, pick(&mut r, seed / 3));
+                c.f[12] = pick(&mut r, seed / 9);
+                c.g[A0][0] = sx(DATA);
+            },
         );
     }
 }

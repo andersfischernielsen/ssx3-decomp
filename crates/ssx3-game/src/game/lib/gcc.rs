@@ -148,6 +148,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_1438, floatdidf, "__floatdidf"),
     (0x0041_1f70, subdf3, "__subdf3"),
     (0x0041_39f8, fixunssfsi, "__fixunssfsi"),
+    (0x0041_1f18, adddf3, "__adddf3"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4568,6 +4569,49 @@ pub fn floatdidf(c: &mut Cpu) {
     })
 }
 
+
+
+
+// ---------------------------------------------------------------------------
+// __adddf3 (0x411f18)
+
+/// `double __adddf3(double a /*a0*/, double b /*a1*/)` (0x411f18): libgcc's
+/// soft-float `a + b`: unpack both into the frame, add the parts, pack the
+/// result (v0). Frame 0x90 (parts of a at 0, of b at 0x20, the sum at 0x40,
+/// the packed arguments at 0x60 / 0x68).
+pub fn adddf3(c: &mut Cpu) {
+    use crate::game::lib::gcc::softfp::*;
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x90);
+        let sp0 = sp(c);
+        c.sd(sp0 + A_PACKED, c.g[A0][0]);
+        c.sd(sp0 + B_PACKED, c.g[A1][0]);
+        c.g[A0][0] = sx(sp0 + A_PACKED);
+        c.sd(sp0 + 0x70, c.g[S0][0]);
+        frame.save_ra(c, 0x80);
+        c.g[A1][0] = c.g[SP][0];
+        UNPACK_D.call(c, 0x0041_1f38)?;
+        let sp0 = sp(c);
+        c.g[S0][0] = sx(sp0 + B_PARTS);
+        c.g[A0][0] = sx(sp0 + B_PACKED);
+        c.g[A1][0] = c.g[S0][0];
+        UNPACK_D.call(c, 0x0041_1f48)?;
+        let sp0 = sp(c);
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = sx(sp0 + SUM_PARTS);
+        c.g[A0][0] = c.g[SP][0];
+        FPADD_PARTS_D.call(c, 0x0041_1f58)?;
+        c.g[A0][0] = c.g[V0][0];
+        PACK_D.call(c, 0x0041_1f60)?;
+        frame.restore_ra(c, 0x80);
+        let a = frame.at(c, 0x70);
+        c.g[S0][0] = c.ld(a);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_fixunssfsi, ee::s15::f_004139f8__generated);
@@ -6053,5 +6097,42 @@ pub(crate) mod tests {
                 c.g[A0][0] = x;
             },
         );
+    }
+    use super::*;
+
+
+    // -------------------------------------------------------------- __adddf3
+
+    /// `__adddf3`: random doubles and edge cases (zeros of both signs,
+    /// infinities, NaNs, denormals, opposite operands) through the real
+    /// soft-float helpers.
+    #[test]
+    fn adddf3_matches() {
+        use crate::difftest::{check, scramble, Rng};
+        let edge = |r: &mut Rng| -> u64 {
+            let sign = ((r.next_u32() & 1) as u64) << 63;
+            let mant = ((r.next_u32() as u64) << 32 | r.next_u32() as u64) & ((1u64 << 52) - 1);
+            sign | match r.next_u32() % 8 {
+                0 => 0,
+                1 => mant,
+                2 => 0x7ff0_0000_0000_0000,
+                3 => 0x7ff0_0000_0000_0000 | mant | 1,
+                4 => 1.0f64.to_bits(),
+                _ => (((r.next_u32() % 200 + 923) as u64) << 52) | mant,
+            }
+        };
+        check(ee::s15::f_00411f18__generated, adddf3, 300, &|c, seed| {
+            let mut r = Rng(0x0041_1f18 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.pc = 0x0041_1f18;
+            let a = edge(&mut r);
+            let b = match seed % 5 {
+                0 => a,
+                1 => a ^ (1 << 63),
+                _ => edge(&mut r),
+            };
+            c.g[A0][0] = a;
+            c.g[A1][0] = b;
+        });
     }
 }
