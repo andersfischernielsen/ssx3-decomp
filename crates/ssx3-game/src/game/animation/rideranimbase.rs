@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -88,6 +89,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0031_39a8,
         anim_sequence_fire_end_triggers,
         "AnimSequence_FireEndTriggers",
+    ),
+    (
+        0x0031_30a8,
+        anim_data_base_decode_chan_cache,
+        "AnimDataBase_DecodeChanCache",
     ),
 ];
 
@@ -1697,6 +1703,296 @@ pub fn anim_controller_play_anim_direct(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// AnimDataBase_DecodeChanCache (0x3130a8)
+
+/// Anim database: channel array (0x14 bytes per channel), data pointers
+/// (+4..+0x10) and the per-type channel counters (+0x14..+0x17, types 6-9).
+pub(crate) const ADB_CHANNELS: u32 = 0x0;
+
+pub(crate) const ADB_DATA4: u32 = 0x4;
+
+pub(crate) const ADB_DATA8: u32 = 0x8;
+
+pub(crate) const ADB_DATA_C: u32 = 0xc;
+
+pub(crate) const ADB_DATA10: u32 = 0x10;
+
+pub(crate) const ADB_COUNT6: u32 = 0x14;
+
+pub(crate) const ADB_COUNT7: u32 = 0x15;
+
+pub(crate) const ADB_COUNT8: u32 = 0x16;
+
+pub(crate) const ADB_COUNT9: u32 = 0x17;
+
+/// Channel: type (+0), constants (+4..+0x10), index among its type (+0xc).
+pub(crate) const CHAN_SIZE: u32 = 0x14;
+
+pub(crate) const CHAN_TYPE: u32 = 0x0;
+
+pub(crate) const CHAN_TYPE_INDEX: u32 = 0xc;
+
+/// The `switch (type - 1)` jump table (in `.rodata`) and its case labels.
+pub(crate) const DECODE_JUMP_TABLE: u32 = 0x0048_a590;
+
+pub(crate) const CASE_ONE: u32 = 0x0031_3240;
+
+pub(crate) const CASE_THREE: u32 = 0x0031_3270;
+
+pub(crate) const CASE_FOUR: u32 = 0x0031_32f0;
+
+pub(crate) const CASE_FIVE: u32 = 0x0031_3398;
+
+pub(crate) const CASE_TWO: u32 = 0x0031_3434;
+
+/// One channel-type nibble (in `a0`) for channel `a1`: types 6-9 take the
+/// next index of their type (counter `self+0x14+type-6`, `t0` = self) into
+/// `chan+0xc`; every type is stored at `chan+0`. Registers v0/v1 as the
+/// original's compare chain against t3..a2 (6..9) leaves them.
+pub(crate) fn decode_chan_type(c: &mut Cpu) {
+    let this = r32(c, T0);
+    let chan = r32(c, A1);
+    let ty = c.g[A0][0];
+    let counter = if ty == c.g[T3][0] {
+        c.cycles += 5;
+        Some(ADB_COUNT6)
+    } else if {
+        c.cycles += 2;
+        ty == c.g[T2][0]
+    } {
+        c.cycles += 5;
+        Some(ADB_COUNT7)
+    } else if {
+        c.cycles += 2;
+        ty == c.g[T1][0]
+    } {
+        c.cycles += 5;
+        Some(ADB_COUNT8)
+    } else if {
+        c.cycles += 2;
+        ty == c.g[A2][0]
+    } {
+        c.cycles += 4;
+        Some(ADB_COUNT9)
+    } else {
+        None
+    };
+    if let Some(off) = counter {
+        let count = Addr(this).off(off).lbu(c);
+        c.g[V0][0] = count;
+        c.g[V1][0] = sx(1u32.wrapping_add(count as u32));
+        Addr(this).off(off).sb(c, c.g[V1][0]);
+        c.cycles += 2;
+        Addr(chan).off(CHAN_TYPE_INDEX).sw(c, c.g[V0][0]);
+    }
+    Addr(chan).off(CHAN_TYPE).sw(c, ty);
+}
+
+/// The 24-bit constant at `a3+k` (bytes b0 b1 b2) as the float bits
+/// `b0<<8 | b1<<16 | b2<<24`, stored from f0 at `a1+dst`; v1/v0/a0 keep the
+/// assembled word and its parts.
+pub(crate) fn decode_word24(c: &mut Cpu, k: u32, dst: u32) {
+    let p = r32(c, A3);
+    let b0 = Addr(p).off(k).lbu(c) as u32;
+    let b1 = Addr(p).off(k + 1).lbu(c) as u32;
+    let b2 = Addr(p).off(k + 2).lbu(c) as u32;
+    c.g[V0][0] = sx(b1 << 16);
+    c.g[A0][0] = sx(b2 << 24);
+    c.g[V1][0] = sx(b0 << 8) | c.g[V0][0] | c.g[A0][0];
+    c.mtc1(V1, 0);
+    let chan = r32(c, A1);
+    c.swc1(0, chan.wrapping_add(dst));
+}
+
+/// `void AnimDataBase_DecodeChanCache(AnimDataBase* self, u8* data, int frames)`
+/// (0x3130a8): decodes a channel cache header. `data[0]` is the channel
+/// count n (0: nothing to do); then one type nibble per channel (high
+/// nibble first) into `chan+0` (types 6-9 also count their channels:
+/// `self+0x14..0x17`, the index into `chan+0xc`); then per channel its
+/// constants as 24-bit floats (type 1: one, 2/6/7/8: two, 3: three, 4:
+/// four, 5: three and a 16-bit integer). Finally the four data stream
+/// pointers `self+4..0x10` after the header, sized from `frames` and the
+/// type counts (16-bit and 32-bit alignment padding).
+///
+/// Register-level port (leaf): t0 = self, t7 = data, a3 = cursor, t5 =
+/// frames, a1 = channel, t4 = end of channels, t3/t2/t1/a2 = 6/7/8/9,
+/// LO/HI from the products.
+pub fn anim_data_base_decode_chan_cache(c: &mut Cpu) {
+    c.cycles += 7;
+    c.g[T7][0] = c.g[A1][0];
+    c.g[T0][0] = c.g[A0][0];
+    c.g[A3][0] = c.g[T7][0];
+    c.g[T5][0] = c.g[A2][0];
+    c.g[V1][0] = Addr(r32(c, A3)).lbu(c);
+    c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+    if c.g[V1][0] == 0 {
+        c.cycles += 2;
+        return ret(c);
+    }
+    let this = r32(c, T0);
+    c.cycles += 13;
+    c.g[V0][0] = CHAN_SIZE as u64;
+    c.g[A1][0] = Addr(this).off(ADB_CHANNELS).lw(c);
+    c.mult(0, V0, V1, V0);
+    for off in [ADB_COUNT6, ADB_COUNT7, ADB_COUNT8] {
+        Addr(this).off(off).sb(c, 0);
+    }
+    c.g[T6][0] = sx(r32(c, T5).wrapping_sub(2));
+    c.g[T3][0] = 6;
+    Addr(this).off(ADB_COUNT9).sb(c, 0);
+    c.g[T2][0] = 7;
+    c.g[T4][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+    c.g[T1][0] = 8;
+    c.g[A2][0] = 9;
+
+    // The type nibbles, two per byte.
+    loop {
+        c.cycles += 4;
+        c.g[V0][0] = Addr(r32(c, A3)).lbu(c);
+        c.g[A0][0] = sx((c.g[V0][0] as u32) >> 4);
+        decode_chan_type(c);
+        c.cycles += 3;
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(CHAN_SIZE));
+        if c.g[A1][0] == c.g[T4][0] {
+            break;
+        }
+        c.cycles += 4;
+        c.g[V0][0] = Addr(r32(c, A3)).lbu(c);
+        c.g[A0][0] = c.g[V0][0] & 0xf;
+        decode_chan_type(c);
+        c.cycles += 3;
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(CHAN_SIZE));
+        if c.g[A1][0] == c.g[T4][0] {
+            break;
+        }
+        c.cycles += 2;
+        c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+        if event_due(c) {
+            deliver_event_here(c, 0x0031_30f8);
+        }
+    }
+    c.g[A1][0] = Addr(this).off(ADB_CHANNELS).lw(c);
+
+    // The constants of each channel.
+    c.cycles += 2;
+    c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+    c.g[V0][0] = Addr(r32(c, A1)).off(CHAN_TYPE).lw(c);
+    loop {
+        c.cycles += 4;
+        c.g[A0][0] = sx(r32(c, V0).wrapping_sub(1));
+        c.g[V1][0] = (c.g[A0][0] < 8) as u64;
+        c.g[V0][0] = 0x0049_0000;
+        if c.g[V1][0] != 0 {
+            c.cycles += 6;
+            c.g[V1][0] = sx(r32(c, A0) << 2);
+            c.g[V0][0] = sx(DECODE_JUMP_TABLE);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(DECODE_JUMP_TABLE));
+            c.g[A0][0] = Addr(r32(c, V1)).lw(c);
+            let case = r32(c, A0);
+            let size = match case {
+                CASE_ONE => {
+                    c.cycles += 12;
+                    decode_word24(c, 0, 4);
+                    3
+                }
+                CASE_THREE => {
+                    c.cycles += 32;
+                    for i in 0..3 {
+                        decode_word24(c, 3 * i, 4 + 4 * i);
+                    }
+                    9
+                }
+                CASE_FOUR => {
+                    c.cycles += 42;
+                    for i in 0..4 {
+                        decode_word24(c, 3 * i, 4 + 4 * i);
+                    }
+                    12
+                }
+                CASE_FIVE => {
+                    c.cycles += 39;
+                    for i in 0..3 {
+                        decode_word24(c, 3 * i, 4 + 4 * i);
+                    }
+                    // A 16-bit integer converted to float.
+                    let p = Addr(r32(c, A3));
+                    c.g[V0][0] = p.off(0xa).lbu(c);
+                    c.g[V1][0] = p.off(0x9).lbu(c);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 8);
+                    c.g[V1][0] |= c.g[V0][0];
+                    c.mtc1(V1, 0);
+                    c.cvt_s_w(0, 0);
+                    let chan = r32(c, A1);
+                    c.swc1(0, chan.wrapping_add(0x10));
+                    11
+                }
+                CASE_TWO => {
+                    c.cycles += 21;
+                    for i in 0..2 {
+                        decode_word24(c, 3 * i, 4 + 4 * i);
+                    }
+                    6
+                }
+                t => {
+                    c.jump_out(t, 0x0031_30a8, 0x0031_3508);
+                    return;
+                }
+            };
+            c.g[A3][0] = sx(r32(c, A3).wrapping_add(size));
+        }
+        c.cycles += 3;
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(CHAN_SIZE));
+        if c.g[A1][0] == c.g[T4][0] {
+            break;
+        }
+        c.g[V0][0] = Addr(r32(c, A1)).off(CHAN_TYPE).lw(c);
+        if event_due(c) {
+            deliver_event_here(c, 0x0031_3218);
+        }
+    }
+
+    // The data streams after the header: type-6 channels (frames bytes
+    // each), type-7 ((frames-2)/2+2 each), 16-bit aligned type-8 (2*frames
+    // each), then 32-bit aligned.
+    c.cycles += 27;
+    let frames_less_2 = r32(c, T6);
+    c.g[V0][0] = sx(frames_less_2 >> 31);
+    c.g[A1][0] = Addr(this).off(ADB_COUNT6).lbu(c);
+    c.g[V0][0] = sx(frames_less_2.wrapping_add(r32(c, V0)));
+    c.g[A2][0] = Addr(this).off(ADB_COUNT7).lbu(c);
+    c.g[V0][0] = sx(((r32(c, V0) as i32) >> 1) as u32);
+    c.mult(0, A1, T5, A1);
+    c.g[A0][0] = Addr(this).off(ADB_COUNT8).lbu(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(2));
+    c.mult(0, V0, V0, A2);
+    c.g[V1][0] = sx(r32(c, A3).wrapping_sub(r32(c, T7)));
+    c.mult(0, A0, T5, A0);
+    let cursor = r32(c, A3);
+    Addr(this).off(ADB_DATA4).sw(c, c.g[A3][0]);
+    let (size6, size7, size8) = (r32(c, A1), r32(c, V0), r32(c, A0));
+    let ofs = r32(c, V1).wrapping_add(size6).wrapping_add(size7);
+    let data8 = cursor.wrapping_add(size6);
+    Addr(this).off(ADB_DATA8).sw(c, sx(data8));
+    let pad = ofs & 1;
+    let size8x2 = size8 << 1;
+    let ofs2 = ofs.wrapping_add(size8x2).wrapping_add(pad) & 3;
+    let data_c = data8.wrapping_add(size7).wrapping_add(pad);
+    let data10 = data8
+        .wrapping_add(size7)
+        .wrapping_add(size8x2)
+        .wrapping_add(ofs2);
+    c.g[A1][0] = sx(data8);
+    c.g[A2][0] = pad as u64;
+    c.g[V1][0] = ofs2 as u64;
+    c.g[V0][0] = sx(data_c);
+    c.g[A0][0] = sx(data10);
+    Addr(this).off(ADB_DATA_C).sw(c, c.g[V0][0]);
+    Addr(this).off(ADB_DATA10).sw(c, c.g[A0][0]);
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2150,6 +2446,57 @@ pub(crate) mod tests {
                     c.bus.write32(lists + 8 * i + 4, head);
                 }
                 c.g[A0][0] = sx(anim);
+            },
+        );
+    }
+    use super::*;
+
+    /// AnimDataBase_DecodeChanCache: an anim database at DATA with its
+    /// channel array at DATA+0x1000; a header of 0..=12 channels (0: the
+    /// early return) with random type nibbles (0-15: every table case, the
+    /// counted types 6-9 and the skipped ones), random constant bytes and
+    /// frame counts (also small and negative).
+    #[test]
+    fn anim_data_base_decode_chan_cache_matches() {
+        check(
+            ee::s10::f_003130a8__generated,
+            anim_data_base_decode_chan_cache,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0031_30a8 ^ (seed as u64) << 7);
+                scramble(c, &mut r);
+                crate::difftest::put_words(
+                    c,
+                    DECODE_JUMP_TABLE,
+                    &[
+                        CASE_ONE, CASE_TWO, CASE_THREE, CASE_FOUR, CASE_FIVE, CASE_TWO, CASE_TWO,
+                        CASE_TWO,
+                    ],
+                );
+                let this = DATA;
+                let chans = DATA + 0x1000;
+                let data = DATA + 0x2000 + (r.next_u32() & 3);
+                fill(c, &mut r, this, 8);
+                c.bus.write32(this + ADB_CHANNELS, chans);
+                fill(c, &mut r, chans, 0x50);
+                let n = if seed % 10 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 12
+                };
+                c.bus.write8(data, n as u8);
+                for i in 0..0x100 {
+                    c.bus.write8(data + 1 + i, r.next_u32() as u8);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(data);
+                let frames = match seed % 4 {
+                    0 => r.next_u32() % 4,
+                    1 => (r.next_u32() % 8).wrapping_sub(4),
+                    _ => r.next_u32() % 400,
+                };
+                c.g[A2][0] = sx(frames);
+                c.pc = 0x0031_30a8;
             },
         );
     }

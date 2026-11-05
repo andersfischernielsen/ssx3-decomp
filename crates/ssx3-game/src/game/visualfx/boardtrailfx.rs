@@ -22,6 +22,10 @@ pub(crate) use crate::game::fe::ovstates::at as at_2;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::fe::ovstates::open;
 pub(crate) use crate::game::render::particle::this_with_delta;
+pub(crate) use crate::game::render::particle::PT_CTX;
+pub(crate) use crate::game::render::particle::PT_RS_TOP;
+pub(crate) use crate::game::render::particle::PT_VTABLE;
+pub(crate) use crate::game::render::particle::RS_SIZE;
 pub(crate) use crate::game::util::menu::gp_5;
 pub(crate) use crate::game::visualfx::angerfx::shl32;
 pub(crate) use crate::game::visualfx::boardwakefx::addiu;
@@ -131,6 +135,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002e_86f0,
         c_board_trail_fx_should_emit,
         "cBoardTrailFX_ShouldEmit",
+    ),
+    (
+        0x002e_a538,
+        cboard_trail_fx_render_batch,
+        "cBoardTrailFX_RenderBatch",
+    ),
+    (
+        0x002e_a900,
+        ccut_scene_transition_man_update,
+        "cCutSceneTransitionMan_Update",
     ),
 ];
 
@@ -4773,6 +4787,304 @@ pub fn c_board_trail_fx_should_emit(c: &mut Cpu) {
     frame.close(c);
 }
 
+// ---------------------------------------------------------------------------
+// cBoardTrailFX_RenderBatch (0x2ea538)
+
+/// `gp-0x854`: the render context (`D_004A289C`); `gp+0x14d8`: the trail
+/// texture scale divisor (`D_004A45C8`).
+pub(crate) const GP_RENDER_CTX: u32 = 0x854;
+
+pub(crate) const GP_TRAIL_TEX_DIV: u32 = 0x14d8;
+
+/// Board trail: ring of points at +0x10, ring head +0x8c, point count +0x90.
+pub(crate) const TRAIL_POINTS: u32 = 0x10;
+
+pub(crate) const TRAIL_HEAD: u32 = 0x8c;
+
+pub(crate) const TRAIL_LEN: u32 = 0x90;
+
+/// Ring size of a trail (points).
+pub(crate) const TRAIL_RING: u32 = 0x36;
+
+/// Renderer vtable slot drawing a batch of trail strips.
+pub(crate) const RC_VT_DRAW_TRAILS: u32 = 0x2c8;
+
+/// At most 16 strips of 0x14 bytes (points, start, count, 0, scale) on the
+/// stack.
+pub(crate) const MAX_STRIPS: i64 = 16;
+
+pub(crate) const STRIP_SIZE: u32 = 0x14;
+
+pub(crate) fn render_ctx(c: &mut Cpu) -> u32 {
+    let gp = c.g[GP][0] as u32;
+    Addr(gp.wrapping_sub(GP_RENDER_CTX)).lw(c) as u32
+}
+
+/// `void cBoardTrailFX_RenderBatch(Trail** trails, int n)` (0x2ea538):
+/// push the render state, collect a strip (visible ring segment, clipped to
+/// 0x32 points) for each trail with at least two points (at most 16), draw
+/// them through the renderer's `vt[0x2c8](ctx, strips, count)`, pop the
+/// state. The loop keeps its state in the original's registers (a0 trail
+/// cursor, a1 remaining, t0 strip cursor, t2 count) across its back-edge
+/// event check.
+pub fn cboard_trail_fx_render_batch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x150);
+        let ctx = render_ctx(c);
+        c.g[A2][0] = sx(ctx);
+        frame.save_ra(c, 0x140);
+        c.g[T2][0] = 0;
+        // Push: duplicate the top render state.
+        c.g[V1][0] = Addr(ctx).off(PT_RS_TOP).lw(c);
+        let top = c.g[V1][0] as u32;
+        c.g[V0][0] = Addr(top).read_u64_unaligned(c);
+        c.g[A3][0] = Addr(top).off(8).read_u64_unaligned(c);
+        c.g[T0][0] = Addr(top).off(0x10).lw(c);
+        let (q0, q1, w) = (c.g[V0][0], c.g[A3][0], c.g[T0][0]);
+        Addr(top).off(RS_SIZE).write_u64_unaligned(c, q0);
+        Addr(top).off(RS_SIZE + 8).write_u64_unaligned(c, q1);
+        Addr(top).off(RS_SIZE + 0x10).sw(c, w);
+        c.g[V0][0] = Addr(ctx).off(PT_RS_TOP).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(RS_SIZE));
+        let new_top = c.g[V0][0];
+        Addr(ctx).off(PT_RS_TOP).sw(c, new_top);
+        if (c.g[A1][0] as i64) > 0 {
+            c.cycles += 7;
+            let gp = c.g[GP][0] as u32;
+            c.g[T4][0] = Addr(gp.wrapping_add(GP_TRAIL_TEX_DIV)).lw(c);
+            c.g[T3][0] = TRAIL_RING as u64;
+            c.g[AT][0] = 0x3f80_0000;
+            c.f[1] = FpuF32::ONE.0;
+            c.g[T5][0] = 0;
+            c.g[T0][0] = c.g[SP][0];
+            loop {
+                c.cycles += 5;
+                c.g[T1][0] = Addr(c.g[A0][0] as u32).lw(c);
+                let trail = Addr(c.g[T1][0] as u32);
+                c.g[A2][0] = trail.off(TRAIL_LEN).lw(c);
+                let len = c.g[A2][0] as u32;
+                c.g[V0][0] = ((c.g[A2][0] as i64) < 2) as u64;
+                if c.g[V0][0] == 0 {
+                    // The visible segment: drop the oldest points beyond 0x32.
+                    c.cycles += 6;
+                    let head = trail.off(TRAIL_HEAD).lw(c) as u32;
+                    c.g[V0][0] = sx(len.wrapping_sub(0x39));
+                    c.g[A3][0] = sx(len.wrapping_sub(0x32));
+                    c.g[A2][0] = sx(len.wrapping_sub(2));
+                    c.g[V1][0] = sx(head.wrapping_sub(c.g[V0][0] as u32));
+                    if (c.g[A3][0] as i64) > 0 {
+                        c.cycles += 2;
+                        let over = c.g[A3][0] as u32;
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(over));
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(over));
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = ((c.g[A2][0] as i64) < 2) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 5;
+                        let (start, ring) = (c.g[V1][0] as u32, c.g[T3][0] as u32);
+                        abi::div(c, start, ring);
+                        let div = FpuF32::from_i32(c.g[T4][0] as u32 as i32);
+                        c.cycles += 5;
+                        c.g[V0][0] = ((c.g[T2][0] as i64) < MAX_STRIPS) as u64;
+                        let scale = FpuF32(c.f[1]).div(div);
+                        c.f[0] = scale.0;
+                        c.g[V1][0] = c.hi[0];
+                        let room = c.g[V0][0] != 0;
+                        c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_add(TRAIL_POINTS));
+                        if room {
+                            c.cycles += 7;
+                            let strip = Addr(c.g[T0][0] as u32);
+                            let (st, pts, cnt) = (c.g[V1][0], c.g[V0][0], c.g[A2][0]);
+                            strip.off(4).sw(c, st);
+                            strip.sw(c, pts);
+                            c.g[T2][0] = sx((c.g[T2][0] as u32).wrapping_add(1));
+                            strip.off(8).sw(c, cnt);
+                            strip.off(0x10).write_fpu(c, scale);
+                            strip.off(0xc).sw(c, 0);
+                            c.g[T0][0] = sx(strip.0.wrapping_add(STRIP_SIZE));
+                        }
+                        c.cycles += 1;
+                    }
+                }
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                c.cycles += 2;
+                let more = (c.g[A1][0] as i64) > 0;
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(4));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002e_a5a0);
+                }
+            }
+        }
+        // Draw the strips.
+        c.cycles += 15;
+        let ctx = render_ctx(c);
+        c.g[A3][0] = sx(ctx);
+        c.g[A2][0] = c.g[T2][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[V0][0] = Addr(ctx).off(PT_VTABLE).lw(c);
+        let vt = Addr(c.g[V0][0] as u32);
+        let delta = vt.off(RC_VT_DRAW_TRAILS).lh(c) as u32;
+        c.g[V1][0] = vt.off(RC_VT_DRAW_TRAILS + 4).lw(c);
+        c.g[A0][0] = sx(ctx.wrapping_add(delta));
+        let draw = c.g[V1][0] as u32;
+        call_ptr(c, draw, 0x002e_a650)?;
+        // Pop.
+        let ctx = render_ctx(c);
+        c.g[A0][0] = sx(ctx);
+        frame.restore_ra(c, 0x140);
+        c.g[V0][0] = Addr(ctx).off(PT_RS_TOP).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(RS_SIZE));
+        let popped = c.g[V0][0];
+        Addr(ctx).off(PT_RS_TOP).sw(c, popped);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// cCutSceneTransitionMan_Update (0x2ea900)
+
+/// `cCutSceneTransitionMan_ForceOff` / `_ForceOn` (0x2ea820 / 0x2ea860).
+pub(crate) const CUT_FORCE_OFF: Callee = Callee {
+    addr: 0x002e_a820,
+    f: ee::s09::f_002ea820,
+};
+
+pub(crate) const CUT_FORCE_ON: Callee = Callee {
+    addr: 0x002e_a860,
+    f: ee::s09::f_002ea860,
+};
+
+/// Transition manager fields: mode (2 = fading out, 3 = fading in), time,
+/// duration, paused count, colour id, `from` RGBA (0x24..0x30), `to` RGBA
+/// (0x38..0x44).
+pub(crate) const CUT_MODE: u32 = 0x10;
+
+pub(crate) const CUT_TIME: u32 = 0x14;
+
+pub(crate) const CUT_DURATION: u32 = 0x18;
+
+pub(crate) const CUT_PAUSED: u32 = 0x1c;
+
+pub(crate) const CUT_COLOUR_ID: u32 = 0x20;
+
+pub(crate) const CUT_FROM: u32 = 0x24;
+
+pub(crate) const CUT_TO: u32 = 0x38;
+
+/// `gp+0x2a74`: the game clock (`+0x10`: ticks per second).
+pub(crate) const GP_CLOCK: u32 = 0x2a74;
+
+pub(crate) const CLOCK_RATE: u32 = 0x10;
+
+/// Renderer vtable slot setting the full-screen fade colour.
+pub(crate) const RC_VT_SET_FADE: u32 = 0x148;
+
+/// `void cCutSceneTransitionMan_Update(cCutSceneTransitionMan* self)`
+/// (0x2ea900): unless paused, advance a fade (mode 2 or 3) by one tick;
+/// when the duration has passed finish it (ForceOff for 2, ForceOn for 3),
+/// otherwise send the interpolated colour (fade-out runs the factor
+/// backwards) to the renderer's `vt[0x148]`.
+pub fn ccut_scene_transition_man_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x30);
+        frame.save_ra(c, 0x20);
+        let this = Addr(c.g[A0][0] as u32);
+        c.g[V0][0] = this.off(CUT_PAUSED).lw(c);
+        frame.restore_ra(c, 0x20);
+        if c.g[V0][0] == 0 {
+            c.cycles += 5;
+            c.g[V1][0] = this.off(CUT_MODE).lw(c);
+            let mode = c.g[V1][0];
+            c.g[V0][0] = (sx((mode as u32).wrapping_sub(2)) < 2) as u64;
+            let fading = c.g[V0][0] != 0;
+            let gp = c.g[GP][0] as u32;
+            c.g[V0][0] = Addr(gp.wrapping_add(GP_CLOCK)).lw(c);
+            if fading {
+                // Advance the fade time by one tick.
+                c.cycles += 12;
+                c.g[AT][0] = 0x3f80_0000;
+                let one = FpuF32::ONE;
+                let rate = Addr(c.g[V0][0] as u32).off(CLOCK_RATE).read_u32(c);
+                let step = one.div(FpuF32::from_i32(rate as i32));
+                let time = this.off(CUT_TIME).read_fpu(c) + step;
+                let duration = this.off(CUT_DURATION).read_fpu(c);
+                let done = duration.lt(time);
+                abi::set_fcc(c, done);
+                this.off(CUT_TIME).write_fpu(c, time);
+                c.f[0] = step.0;
+                c.f[1] = time.0;
+                c.f[2] = duration.0;
+                c.f[3] = one.0;
+                if done {
+                    c.cycles += 3;
+                    c.g[V0][0] = 2;
+                    c.cycles += 4;
+                    if mode == 2 {
+                        CUT_FORCE_OFF.call(c, 0x002e_a96c)?;
+                    } else {
+                        CUT_FORCE_ON.call(c, 0x002e_a97c)?;
+                    }
+                    frame.restore_ra(c, 0x20);
+                } else {
+                    // Interpolate the colour.
+                    c.cycles += 4;
+                    let mut k = time.div(duration);
+                    c.g[V0][0] = 2;
+                    if mode == 2 {
+                        k = one - k;
+                    }
+                    c.cycles += 34;
+                    let from = this.off(CUT_FROM);
+                    let to = this.off(CUT_TO);
+                    let f = [0u32, 4, 8, 0xc].map(|o| from.off(o).read_fpu(c));
+                    let t = [0u32, 4, 8, 0xc].map(|o| to.off(o).read_fpu(c));
+                    let d = [0, 1, 2, 3].map(|i| (t[i] - f[i]) * k);
+                    let col = [0, 1, 2, 3].map(|i| f[i] + d[i]);
+                    c.g[A1][0] = c.g[SP][0];
+                    c.g[V0][0] = this.off(CUT_COLOUR_ID).lw(c);
+                    c.g[A2][0] = Addr(gp.wrapping_add(PT_CTX)).lw(c);
+                    let out = Addr(sp(c));
+                    let id = c.g[V0][0];
+                    out.sw(c, id);
+                    for i in 0..4 {
+                        out.off(4 + 4 * i as u32).write_fpu(c, col[i]);
+                    }
+                    // Registers as the original leaves them: f6/f7/f4/f5 the
+                    // colour (r, g, b, a), f3/f0/f1/f2 the scaled deltas.
+                    c.f[6] = col[0].0;
+                    c.f[7] = col[1].0;
+                    c.f[4] = col[2].0;
+                    c.f[5] = col[3].0;
+                    c.f[3] = d[0].0;
+                    c.f[0] = d[1].0;
+                    c.f[1] = d[2].0;
+                    c.f[2] = d[3].0;
+                    c.f[8] = k.0;
+                    let rc = c.g[A2][0] as u32;
+                    c.g[V0][0] = Addr(rc).off(PT_VTABLE).lw(c);
+                    let vt = Addr(c.g[V0][0] as u32);
+                    let delta = vt.off(RC_VT_SET_FADE).lh(c) as u32;
+                    c.g[V1][0] = vt.off(RC_VT_SET_FADE + 4).lw(c);
+                    c.g[A0][0] = sx(rc.wrapping_add(delta));
+                    let set_fade = c.g[V1][0] as u32;
+                    call_ptr(c, set_fade, 0x002e_aa18)?;
+                    frame.restore_ra(c, 0x20);
+                }
+            }
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5565,6 +5877,97 @@ pub(crate) mod tests {
                 c.bus.write32(GAME_GP - 0x39d0, r.f32(50.0));
                 c.f[12] = r.f32(50.0);
                 c.g[A0][0] = ((r.next_u32() as u64) << 32) | fx as u64;
+            },
+        );
+    }
+    use super::*;
+
+    /// cBoardTrailFX_RenderBatch: no trails (n <= 0), trails too short,
+    /// long trails clipped to 0x32 points, more than 16 strips, a fake draw
+    /// method.
+    #[test]
+    fn cboard_trail_fx_render_batch_matches() {
+        covered(
+            ee::s09::f_002ea538__generated,
+            cboard_trail_fx_render_batch,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2e_a538, 1);
+                c.pc = 0x002e_a538;
+                let ctx = DATA + 0x4000;
+                let top = DATA + 0x8000 + 4 * (seed % 4);
+                fill(c, &mut r, top, 0x10);
+                c.bus.write32(GAME_GP - GP_RENDER_CTX, ctx);
+                c.bus.write32(ctx + PT_RS_TOP, top);
+                let vt = vtable(c, &mut r, &[RC_VT_DRAW_TRAILS]);
+                c.bus.write32(ctx + PT_VTABLE, vt);
+                let div = if seed % 13 == 0 {
+                    0
+                } else {
+                    r.next_u32() % 2000 + 1
+                };
+                c.bus.write32(GAME_GP + GP_TRAIL_TEX_DIV, div);
+                let list = DATA + 0xc000;
+                let n: u64 = match seed % 6 {
+                    0 => 0,
+                    1 => (-(r.next_u32() as i64 % 5) as u64) | 0x8000_0000_0000_0000,
+                    2 => 20,
+                    _ => (r.next_u32() % 8) as u64,
+                };
+                for i in 0..20u32 {
+                    let trail = DATA + 0x10000 + i * 0x100;
+                    c.bus.write32(list + 4 * i, trail);
+                    c.bus.write32(trail + TRAIL_LEN, r.next_u32() % 0x40);
+                    c.bus.write32(trail + TRAIL_HEAD, r.next_u32() % 0x80);
+                }
+                c.g[A0][0] = list as u64;
+                c.g[A1][0] = n;
+            },
+        );
+    }
+
+    /// cCutSceneTransitionMan_Update: paused, not fading, fades in both
+    /// directions that end this tick (the real ForceOff/ForceOn, which reach
+    /// the fake renderer method) or interpolate the colour.
+    #[test]
+    fn ccut_scene_transition_man_update_matches() {
+        covered(
+            ee::s09::f_002ea900__generated,
+            ccut_scene_transition_man_update,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2e_a900, 1);
+                c.pc = 0x002e_a900;
+                let this = DATA;
+                let ctx = DATA + 0x4000;
+                let clock = DATA + 0x6000;
+                fill(c, &mut r, this, 0x14);
+                c.bus
+                    .write32(this + CUT_PAUSED, if seed % 10 == 0 { 1 } else { 0 });
+                let mode = match seed % 9 {
+                    0 => r.next_u32() % 8,
+                    1..=4 => 2,
+                    _ => 3,
+                };
+                c.bus.write32(this + CUT_MODE, mode);
+                c.bus.write32(
+                    this + CUT_TIME,
+                    ((r.next_u32() % 200) as f32 / 100.0).to_bits(),
+                );
+                c.bus.write32(
+                    this + CUT_DURATION,
+                    ((r.next_u32() % 200 + 10) as f32 / 100.0).to_bits(),
+                );
+                for i in 0..9 {
+                    c.bus.write32(this + CUT_FROM + 4 * i, r.f32(255.0));
+                }
+                c.bus.write32(GAME_GP + GP_CLOCK, clock);
+                c.bus
+                    .write32(clock + CLOCK_RATE, [60, 50, 30, 1][(seed % 4) as usize]);
+                c.bus.write32(GAME_GP + PT_CTX, ctx);
+                let vt = vtable(c, &mut r, &[RC_VT_SET_FADE]);
+                c.bus.write32(ctx + PT_VTABLE, vt);
+                c.g[A0][0] = this as u64;
             },
         );
     }

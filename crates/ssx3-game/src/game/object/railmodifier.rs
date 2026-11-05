@@ -4,7 +4,11 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fcc;
+use crate::abi::set_fpr;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -300,6 +304,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "UVScrollModifier_GetMatrix",
     ),
     (0x0036_4050, defer_man_sort_buckets, "DeferMan_SortBuckets"),
+    (
+        0x0035_c040,
+        rail_modifier_update_bounds,
+        "RailModifier_UpdateBounds",
+    ),
+    (
+        0x0036_1940,
+        position_modifier_get_matrix,
+        "PositionModifier_GetMatrix",
+    ),
+    (
+        0x0036_66f8,
+        tex_man_reset_usage_table,
+        "TexMan_ResetUsageTable",
+    ),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -5410,6 +5429,258 @@ pub fn defer_man_sort_buckets(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// TexMan_ResetUsageTable (0x3666f8)
+
+pub(crate) const SPR_STREAM_DOWNLOAD: Callee = Callee {
+    addr: 0x0038_f738,
+    f: ee::s12::SprStream_Download,
+};
+
+/// `InvalidDCache` (libkernel; a cross-shard call through the table).
+pub(crate) const INVALID_DCACHE: u32 = 0x0042_47d8;
+
+/// The texture usage table: 2000 8-byte entries.
+pub(crate) const TEX_USAGE_TABLE: u32 = 0x0053_ab80;
+
+pub(crate) const TEX_USAGE_TABLE_LAST: u32 = 0x0053_e9ff;
+
+pub(crate) const TEX_USAGE_ENTRIES: i64 = 2000;
+
+/// `gp`-relative: the scratchpad stream's free pointer (`0x7000_0000`-based;
+/// the scratchpad ends at `0x7000_4000`).
+pub(crate) const GP_SPR_FREE: u32 = 0x2a94;
+
+pub(crate) const SPR_END: u32 = 0x7000_4000;
+
+/// `void TexMan_ResetUsageTable(void)` (0x3666f8): sets all 2000 entries of
+/// the texture usage table (0x53ab80) to `0xffffffff` words: invalidates its
+/// data cache lines, fills the free scratchpad (from the stream's free
+/// pointer to the end) with the pattern quadword, and DMAs that scratchpad
+/// block over the table in chunks of `free / 8` entries
+/// (`SprStream_Download`, waiting for each).
+///
+/// The pattern quadword is built on the stack and kept in s0; s1 = entries
+/// done, s0 = chunk, s2 = 2000, s3 = the table.
+pub fn tex_man_reset_usage_table(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x60);
+        c.g[V0][0] = 0xffff_ffff;
+        let at = frame.at(c, 8);
+        c.sd(at, c.g[V0][0]);
+        c.g[A0][0] = 0x0054_0000;
+        let at = frame.at(c, 0);
+        c.sd(at, c.g[V0][0]);
+        c.g[A1][0] = 0x0054_0000;
+        frame.save(c, S0, 0x50);
+        c.g[A0][0] = TEX_USAGE_TABLE as u64;
+        frame.save(c, S1, 0x40);
+        c.g[A1][0] = TEX_USAGE_TABLE_LAST as u64;
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0x10);
+        frame.restore(c, S0, 0);
+        call_ptr(c, INVALID_DCACHE, 0x0036_6738)?;
+
+        // Fill the free scratchpad with the pattern.
+        let gp = r32(c, GP);
+        c.g[V1][0] = Addr(gp).off(GP_SPR_FREE).lw(c);
+        c.g[V0][0] = 0x7000_0000;
+        if c.g[V1][0] == 0 {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = sx(SPR_END.wrapping_sub(r32(c, V1)));
+        }
+        c.cycles += 3;
+        c.g[V0][0] = sx(r32(c, V0) >> 4);
+        if c.g[V0][0] != 0 {
+            loop {
+                c.cycles += 7;
+                let at = r32(c, V1);
+                c.sq(S0, at);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(0x10));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0036_6760);
+                }
+            }
+            c.cycles += 1;
+        }
+        c.g[V1][0] = Addr(gp).off(GP_SPR_FREE).lw(c);
+
+        // The free size in table entries per chunk.
+        c.cycles += 2;
+        c.g[V0][0] = 0x7000_0000;
+        if c.g[V1][0] == 0 {
+            c.cycles += 1;
+            c.g[A1][0] = 0;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = SPR_END as u64;
+            c.g[A1][0] = sx(SPR_END.wrapping_sub(r32(c, V1)));
+        }
+        c.cycles += 6;
+        c.g[V0][0] = 0x0054_0000;
+        c.g[S0][0] = sx(r32(c, A1) >> 3);
+        c.g[S3][0] = TEX_USAGE_TABLE as u64;
+        c.g[S1][0] = 0;
+        c.g[S2][0] = TEX_USAGE_ENTRIES as u64;
+        c.g[V1][0] = sx(r32(c, S2).wrapping_sub(r32(c, S1)));
+        loop {
+            c.cycles += 11;
+            c.g[A0][0] = sx(r32(c, S1) << 3);
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[S0][0] as i64)) as u64;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
+            if c.g[V0][0] != 0 {
+                // The last, shorter chunk.
+                c.g[S0][0] = c.g[V1][0];
+            }
+            c.g[A2][0] = 2;
+            c.g[A1][0] = sx(r32(c, S0) << 3);
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, S0)));
+            SPR_STREAM_DOWNLOAD.call(c, 0x0036_67d0)?;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < TEX_USAGE_ENTRIES) as u64;
+            c.g[V1][0] = sx(r32(c, S2).wrapping_sub(r32(c, S1)));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0036_67b0);
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PositionModifier_GetMatrix (0x361940)
+
+/// PositionModifier: non-zero when the matrix is stale.
+pub(crate) const POSMOD_DIRTY: u32 = 0x44;
+
+/// The matrix.
+pub(crate) const POSMOD_MATRIX: u32 = 0x50;
+
+/// Vtable slot that rebuilds the matrix.
+pub(crate) const SLOT_POSMOD_UPDATE: u32 = 0x18;
+
+/// `Matrix* PositionModifier::GetMatrix(PositionModifier* m)` (0x361940):
+/// rebuilds the matrix through the virtual update (slot 0x18) when the
+/// dirty word (+0x44) is set, and returns the matrix at +0x50.
+pub fn position_modifier_get_matrix(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        set_reg(c, S0, reg(c, A0));
+        let m = r32(c, S0);
+        let dirty = Addr(m.wrapping_add(POSMOD_DIRTY)).lw(c);
+        set_reg(c, V0, sx(m.wrapping_add(POSMOD_MATRIX)));
+        if dirty != 0 {
+            c.cycles += 6;
+            let vt = Addr(m).lw(c);
+            set_reg(c, V0, vt);
+            let slot = VSlot::read(c, vt, SLOT_POSMOD_UPDATE);
+            set_reg(c, V1, slot.func);
+            set_reg(c, A0, slot.this(sx(m)));
+            call_ptr(c, slot.func as u32, 0x0036_1970)?;
+            set_reg(c, V0, sx(m.wrapping_add(POSMOD_MATRIX)));
+        }
+        c.cycles += 4;
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ------------------------------------------------ RailModifier_UpdateBounds
+
+/// `void RailModifier_UpdateBounds(RailModifier* self)` (0x35c040): if the
+/// owner's object (`self+0x40 -> +0xc`) says it has bounds (virtual at
+/// vtable +0x160), copy its bounding box (virtual at +0x168: min, max) to
+/// `self+0x10` / `self+0x20`, grown by 100 units on x, y and z.
+pub fn rail_modifier_update_bounds(c: &mut Cpu) {
+    /// `RailModifier` fields.
+    const OWNER: u32 = 0x40;
+    const BOX_MIN: u32 = 0x10;
+    const BOX_MAX: u32 = 0x20;
+    /// The owner's object and its vtable slots `{delta: i16, method}`.
+    const OWNER_OBJECT: u32 = 0xc;
+    const VTABLE: u32 = 0xc;
+    const HAS_BOUNDS: u32 = 0x160;
+    const GET_BOUNDS: u32 = 0x168;
+    /// 100.0, the margin.
+    const MARGIN: u64 = 0x42c8_0000;
+    /// `object->vtable[slot](object)`.
+    fn call_object(c: &mut Cpu, this: u32, slot: u32, ret: u32) -> crate::call::Flow {
+        let owner = Addr(this).off(OWNER).lw(c);
+        c.g[V0][0] = owner;
+        let object = Addr(owner as u32).off(OWNER_OBJECT).lw(c);
+        c.g[A1][0] = object;
+        let vt = Addr(object as u32).off(VTABLE).lw(c);
+        c.g[V1][0] = vt;
+        let delta = Addr(vt as u32).off(slot).lh(c);
+        let method = Addr(vt as u32).off(slot + 4).lw(c);
+        c.g[V0][0] = method;
+        c.g[A0][0] = abi::addu(object, delta);
+        call_ptr(c, method as u32, ret)
+    }
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0x10);
+        let this = r32(c, A0);
+        c.g[S0][0] = c.g[A0][0];
+        call_object(c, this, HAS_BOUNDS, 0x0035_c06c)?;
+        if c.g[V0][0] != 0 {
+            c.cycles += 26;
+            call_object(c, this, GET_BOUNDS, 0x0035_c090)?;
+            let bounds = r32(c, V0);
+            c.lq(V1, bounds);
+            c.g[AT][0] = MARGIN;
+            c.f[0] = MARGIN as u32;
+            c.sq(V1, this.wrapping_add(BOX_MIN));
+            c.lq(A0, bounds.wrapping_add(0x10));
+            // The margin vector (100, 100, 100, 0) on the stack.
+            let pad = sp(c);
+            Addr(pad).off(0x8).write_fpu(c, FpuF32(MARGIN as u32));
+            c.sq(A0, this.wrapping_add(BOX_MAX));
+            Addr(pad).write_fpu(c, FpuF32(MARGIN as u32));
+            Addr(pad).off(0x4).write_fpu(c, FpuF32(MARGIN as u32));
+            Addr(pad).off(0xc).sw(c, 0);
+            c.lqc2(3, this.wrapping_add(BOX_MIN));
+            c.lqc2(4, pad);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, this.wrapping_add(BOX_MIN));
+            c.lqc2(3, this.wrapping_add(BOX_MAX));
+            c.lqc2(4, pad);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, this.wrapping_add(BOX_MAX));
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 3;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7378,6 +7649,112 @@ pub(crate) mod tests {
                 }
                 fill(c, &mut r, oc230_defer::SCRATCH, 2 * 64);
                 c.g[A0][0] = sx(man);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// TexMan_ResetUsageTable: the scratchpad stream's free pointer at
+    /// `gp+0x2a94` leaving 0x400..0x4000 free bytes (16..2 chunks, the last
+    /// one shorter when 2000 is not a multiple), random table and scratchpad
+    /// contents. The real InvalidDCache and SprStream_Download run (DMA from
+    /// the scratchpad, waiting). A null free pointer is not covered: the
+    /// chunk size would be 0 and the original would loop forever.
+    #[test]
+    fn tex_man_reset_usage_table_matches() {
+        check(
+            ee::s12::f_003666f8__generated,
+            tex_man_reset_usage_table,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0036_66f8 ^ (seed as u64) << 17);
+                scramble(c, &mut r);
+                c.g[GP][0] = crate::difftest::GAME_GP as u64;
+                let free = 0x400 + (r.next_u32() % 0x3c1) * 0x10;
+                let ptr = SPR_END - free;
+                c.bus.write32(crate::difftest::GAME_GP + GP_SPR_FREE, ptr);
+                fill(c, &mut r, TEX_USAGE_TABLE, 4000);
+                for i in 0..0x1000 {
+                    c.bus.spr[i * 4..i * 4 + 4].copy_from_slice(&r.next_u32().to_le_bytes());
+                }
+                c.pc = 0x0036_66f8;
+            },
+        );
+    }
+
+    /// `PositionModifier_GetMatrix`: the dirty word zero (no call) or not;
+    /// the update slot is a fake (logs, sometimes unwinds).
+    #[test]
+    fn position_modifier_get_matrix_matches() {
+        const M: u32 = DATA;
+        const VT: u32 = DATA + 0x1000;
+        covered(
+            ee::s12::f_00361940__generated,
+            position_modifier_get_matrix,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x361940, 1);
+                c.pc = 0x0036_1940;
+                c.bus.write32(M, VT);
+                c.bus.write32(
+                    M + POSMOD_DIRTY,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                c.bus
+                    .write16(VT + SLOT_POSMOD_UPDATE, (r.next_u32() as u16) & 0x00fc);
+                c.bus.write32(VT + SLOT_POSMOD_UPDATE + 4, FAKE);
+                c.g[A0][0] = sx(M);
+            },
+        );
+    }
+
+    // ------------------------------------------------ RailModifier_UpdateBounds
+
+    /// `RailModifier_UpdateBounds`: "has bounds" is a fake (nonzero) or the
+    /// real leaf at 0x1406c0 (returns 0); "get bounds" is a fake whose
+    /// forced result points at a random box. Some calls unwind.
+    #[test]
+    fn rail_modifier_update_bounds_matches() {
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::difftest::put_vec;
+        check(
+            ee::s11::f_0035c040__generated,
+            rail_modifier_update_bounds,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_c040, 2);
+                c.pc = 0x0035_c040;
+                let this = DATA + 0x1000;
+                let owner = DATA + 0x1100;
+                let object = DATA + 0x1200;
+                let vt = DATA + 0x1400;
+                let bounds = DATA + 0x2000;
+                c.bus.write32(this + 0x40, owner);
+                c.bus.write32(owner + 0xc, object);
+                c.bus.write32(object + 0xc, vt);
+                for slot in [0x160, 0x168] {
+                    c.bus
+                        .write16(vt + slot, (r.next_u32() as i16 & 0x7c) as u16);
+                }
+                c.bus
+                    .write32(vt + 0x164, if seed % 4 == 0 { 0x0014_06c0 } else { FAKE });
+                c.bus.write32(vt + 0x16c, FAKE + 0x10);
+                c.bus.write32(LOG_RESULTS + 4, bounds);
+                for k in 0..2 {
+                    put_vec(
+                        c,
+                        bounds + 0x10 * k,
+                        [r.f32(5000.0), r.f32(5000.0), r.f32(5000.0), r.next_u32()],
+                    );
+                    put_vec(
+                        c,
+                        this + 0x10 + 0x10 * k,
+                        [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                    );
+                }
+                c.g[A0][0] = sx(this);
             },
         );
     }

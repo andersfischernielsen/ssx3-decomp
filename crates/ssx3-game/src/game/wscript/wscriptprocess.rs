@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -140,6 +141,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0030_9b70,
         wscript_man_lookup_func,
         "WScriptMan_LookupFunc",
+    ),
+    (
+        0x0030_9118,
+        wscript_man_process_pending_request,
+        "WScriptMan_ProcessPendingRequest",
     ),
 ];
 
@@ -2010,6 +2016,169 @@ pub fn w_script_man_restart(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod wscript_pending {
+    use super::*;
+
+    /// The pending request kind (1..6; 0: none).
+    pub const REQUEST: u32 = 0x2ac;
+
+    /// The request's mission id (-1: none).
+    pub const MISSION: u32 = 0x2b0;
+
+    /// The id passed to the audio system's mission end.
+    pub const AUDIO_ID: u32 = 0x2a0;
+
+    /// The request jump table (`0x4898f0`, six entries).
+    pub const JUMP_TABLE: u32 = 0x0048_98f0;
+
+    pub const RUN_SETUP_SCRIPTS: Callee = Callee {
+        addr: 0x0030_8db8,
+        f: ee::s10::WScriptMan_RunMissionSetupScripts,
+    };
+
+    pub const MISSION_COMMAND: Callee = Callee {
+        addr: 0x0030_a868,
+        f: ee::s10::WScriptMan_MissionCommand,
+    };
+
+    /// `SSXAudioSystem* SSXAudioSystem_GetInstance()`.
+    pub const AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
+
+    /// `SSXAudioSystem_OnMissionEnd(audio, id)`.
+    pub const AUDIO_ON_MISSION_END: u32 = 0x0029_d6e0;
+
+    /// `SSXAudioSystem` FE confirmation sound (`audio, 1`).
+    pub const AUDIO_FE_SOUND: u32 = 0x0029_dbb0;
+
+    /// Replay hook on the world's replay object (`world->game->0x28`).
+    pub const REPLAY_ON_MISSION: u32 = 0x0026_f7b8;
+
+    /// Playback manager hook (`world->game->0x34`).
+    pub const PLAYBACK_ON_MISSION: u32 = 0x0026_cc48;
+}
+
+/// `void WScriptMan_ProcessPendingRequest(WScriptMan* self)` (0x309118):
+/// carry out the mission request queued in `self+0x2ac` (1: start — run the
+/// setup scripts, command 1, end the audio mission, poke the replay; 2:
+/// command 3; 3 and 4: command 0x12 / 5, rerun the setup scripts, play the
+/// FE sound; 5: poke the playback manager, command 1 (forced), rerun the
+/// setup scripts; 6: command 0x12 and rerun the setup scripts), then clear
+/// the request (kind 0, mission -1). The kind dispatches through the
+/// compiled jump table at 0x4898f0.
+pub fn wscript_man_process_pending_request(c: &mut Cpu) {
+    use wscript_pending::*;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = r32(c, S0);
+        c.g[V0][0] = c.lw(this + REQUEST);
+        c.g[A0][0] = sx(r32(c, V0).wrapping_sub(1));
+        c.g[V1][0] = (c.g[A0][0] < 6) as u64;
+        c.g[V0][0] = 0x0049_0000;
+        if c.g[V1][0] != 0 {
+            c.cycles += 6;
+            c.g[V1][0] = sx(r32(c, A0) << 2);
+            c.g[V0][0] = sx(JUMP_TABLE);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(JUMP_TABLE));
+            c.g[A0][0] = c.lw(r32(c, V1));
+            let target = r32(c, A0);
+            // Mission command `cmd` on the queued mission (a3 = forced).
+            let command = |c: &mut Cpu, a2: u64, ret: u32| {
+                c.g[A1][0] = c.lw(this + MISSION);
+                c.g[A0][0] = sx(this);
+                c.g[A2][0] = a2;
+                c.g[A3][0] = 0;
+                MISSION_COMMAND.call(c, ret)
+            };
+            let setup_scripts = |c: &mut Cpu, ret: u32| {
+                c.g[A0][0] = sx(this);
+                RUN_SETUP_SCRIPTS.call(c, ret)
+            };
+            match target {
+                // 1: start the mission.
+                0x0030_9154 => {
+                    c.cycles += 18;
+                    setup_scripts(c, 0x0030_915c)?;
+                    command(c, 1, 0x0030_9170)?;
+                    call_ptr(c, AUDIO_GET_INSTANCE, 0x0030_9178)?;
+                    c.g[A1][0] = c.lw(this + AUDIO_ID);
+                    c.g[A0][0] = c.g[V0][0];
+                    call_ptr(c, AUDIO_ON_MISSION_END, 0x0030_9184)?;
+                    let gp = r32(c, GP);
+                    c.g[V0][0] = c.lw(gp.wrapping_sub(0x848));
+                    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x84));
+                    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x28));
+                    call_ptr(c, REPLAY_ON_MISSION, 0x0030_9194)?;
+                }
+                // 2: command 3.
+                0x0030_919c => {
+                    c.cycles += 7;
+                    command(c, 3, 0x0030_91b0)?;
+                }
+                // 3 / 4: command 0x12 / 5, setup scripts, FE sound.
+                0x0030_91b8 | 0x0030_91c4 => {
+                    if target == 0x0030_91b8 {
+                        c.cycles += 3;
+                        c.g[A1][0] = c.lw(this + MISSION);
+                        c.g[A2][0] = 0x12;
+                    } else {
+                        c.cycles += 2;
+                        c.g[A1][0] = c.lw(this + MISSION);
+                        c.g[A2][0] = 5;
+                    }
+                    c.cycles += 12;
+                    c.g[A3][0] = 0;
+                    c.g[A0][0] = sx(this);
+                    MISSION_COMMAND.call(c, 0x0030_91d8)?;
+                    setup_scripts(c, 0x0030_91e0)?;
+                    call_ptr(c, AUDIO_GET_INSTANCE, 0x0030_91e8)?;
+                    c.g[A0][0] = c.g[V0][0];
+                    c.g[A1][0] = 1;
+                    call_ptr(c, AUDIO_FE_SOUND, 0x0030_91f4)?;
+                }
+                // 5: playback hook, forced command 1, setup scripts.
+                0x0030_91fc => {
+                    c.cycles += 13;
+                    let gp = r32(c, GP);
+                    c.g[V0][0] = c.lw(gp.wrapping_sub(0x848));
+                    c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(0x84));
+                    c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x34));
+                    call_ptr(c, PLAYBACK_ON_MISSION, 0x0030_920c)?;
+                    c.g[A1][0] = c.lw(this + MISSION);
+                    c.g[A0][0] = sx(this);
+                    c.g[A2][0] = 1;
+                    c.g[A3][0] = 1;
+                    MISSION_COMMAND.call(c, 0x0030_9220)?;
+                    setup_scripts(c, 0x0030_9228)?;
+                }
+                // 6: command 0x12, setup scripts.
+                0x0030_9230 => {
+                    c.cycles += 7;
+                    command(c, 0x12, 0x0030_9244)?;
+                    setup_scripts(c, 0x0030_924c)?;
+                }
+                _ => {
+                    c.jump_out(target, 0x0030_9118, 0x0030_926c);
+                    return Err(crate::call::Unwound);
+                }
+            }
+        }
+        // Clear the request.
+        c.cycles += 8;
+        c.g[V0][0] = 0xffff_ffff_ffff_0000;
+        c.sw(this + REQUEST, 0);
+        c.g[V0][0] |= 0xffff;
+        frame.restore_ra(c, 0);
+        c.sw(this + MISSION, c.g[V0][0]);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2735,6 +2904,78 @@ pub(crate) mod tests {
                 w(c, DATA + 0x2204, DATA + 0x2300);
                 w(c, DATA + 0x2300, r.next_u32());
                 w(c, DATA + 0x2308, r.next_u32());
+            },
+        );
+    }
+    use super::*;
+
+    // ------------------------------------------- WScriptMan_ProcessPendingRequest
+
+    /// `WScriptMan_ProcessPendingRequest`: every request kind 0..7 (0 and 7
+    /// out of the jump table). The real callees take their short paths: no
+    /// world sections (setup scripts), mission commands that stop at the
+    /// game-state check (`0x535c10 != 4`, behind a fake back-end interface
+    /// call that may unwind), an audio system whose mission end and FE
+    /// sound find nothing playing, an idle replay and a busy playback.
+    #[test]
+    fn wscript_man_process_pending_request_matches() {
+        use super::wscript_pending::*;
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, elf_image, DATA, GAME_GP};
+        const BE_LIBRARY: u32 = DATA + 0x8_6000;
+        const BE_IFACE: u32 = DATA + 0x8_7000;
+        const BE_VTABLE: u32 = DATA + 0x8_7100;
+        check(
+            ee::s10::f_00309118__generated,
+            wscript_man_process_pending_request,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_9118, 2);
+                elf_image(c);
+                c.pc = 0x0030_9118;
+                let (this, view, sections) = (DATA, DATA + 0x400, DATA + 0x500);
+                let (audio, world, game, riders, rider) = (
+                    DATA + 0x1_0000,
+                    DATA + 0x2000,
+                    DATA + 0x2100,
+                    DATA + 0x2200,
+                    DATA + 0x2300,
+                );
+                let (replay, playback) = (DATA + 0x3000, DATA + 0x3100);
+                c.bus.write32(this + REQUEST, seed % 8);
+                c.bus.write32(this + MISSION, r.next_u32());
+                c.bus.write32(this + AUDIO_ID, r.next_u32());
+                // Setup scripts: a world view without sections.
+                c.bus.write32(this + 0x28c, view);
+                c.bus.write32(view, sections);
+                c.bus.write32(sections + 0x14, 0);
+                // Mission command: the back end's interface (a fake call),
+                // then not in game state 4.
+                c.bus.write32(GAME_GP - 0x1f04, BE_LIBRARY);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, BE_IFACE);
+                c.bus.write32(BE_IFACE + 4, BE_VTABLE);
+                c.bus.write16(BE_VTABLE + 8, 0);
+                c.bus.write32(BE_VTABLE + 0xc, FAKE + 0x80);
+                c.bus.write8(0x0053_5c10, (r.next_u32() % 4) as u8);
+                // The audio system: nothing playing.
+                c.bus.write32(GAME_GP + 0x410, audio);
+                c.bus.write32(audio + 0x5fd4, 0);
+                c.bus.write32(audio + 0x5fdc, 0xffff_ffff);
+                c.bus.write32(audio + 0x118 + 0x408, 0);
+                c.bus.write32(audio + 0x608c, 2);
+                // The world: rider without wipeout loops, replay and playback.
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0xc, riders);
+                c.bus.write32(riders + 0x28, rider);
+                c.bus.write32(rider + 0x774, 0xffff_ffff);
+                c.bus.write32(rider + 0x778, 0xffff_ffff);
+                c.bus.write32(game + 0x28, replay);
+                c.bus.write32(replay, 0);
+                c.bus.write32(game + 0x34, playback);
+                c.bus.write32(playback + 0x70, 1);
+                c.g[A0][0] = sx(this);
             },
         );
     }

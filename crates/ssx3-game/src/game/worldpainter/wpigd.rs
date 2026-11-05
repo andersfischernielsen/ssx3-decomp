@@ -2,13 +2,19 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fcc;
+use crate::abi::set_fpr;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::fe::splashmanager::at;
@@ -71,6 +77,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002b_b100,
         t_wpigd_lighting_pair_differs,
         "tWPIGD_Lighting_PairDiffers",
+    ),
+    (
+        0x002b_cc00,
+        music_trigger_blend,
+        "tWPIGD_MusicTrigger_Blend",
     ),
 ];
 
@@ -1029,6 +1040,97 @@ pub fn t_wpigd_lighting_pair_differs(c: &mut Cpu) {
     abi::ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// tWPIGD_MusicTrigger_Blend (0x2bcc00)
+
+/// Music trigger: vtable pointer at +4 (gcc 2.9x layout).
+pub(crate) const MUSIC_TRIGGER_VT: u32 = 0x4;
+
+/// Two blended integer parameters, each followed by its last target.
+pub(crate) const MUSIC_TRIGGER_A: u32 = 0x8;
+
+pub(crate) const MUSIC_TRIGGER_A_TARGET: u32 = 0xc;
+
+pub(crate) const MUSIC_TRIGGER_B: u32 = 0x10;
+
+pub(crate) const MUSIC_TRIGGER_B_TARGET: u32 = 0x14;
+
+/// The source trigger's parameters.
+pub(crate) const MUSIC_SOURCE_A: u32 = 0x4;
+
+pub(crate) const MUSIC_SOURCE_B: u32 = 0x8;
+
+/// The vtable slot called before and after the blend.
+pub(crate) const SLOT_MUSIC_TRIGGER_SYNC: u32 = 0x218;
+
+/// `void tWPIGD_MusicTrigger::Blend(tWPIGD_MusicTrigger* t, const Source* p,
+/// float f)` (0x2bcc00): with `w = f * f`, sets both integer parameters to
+/// `(int)(w * p.x + (1 - w) * t.x)`, remembers `p.x` as their targets, and
+/// calls the virtual slot 0x218 before and after.
+pub fn music_trigger_blend(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 50;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        set_reg(c, S0, reg(c, A0));
+        frame.save_ra(c, 0);
+        set_reg(c, S1, reg(c, A1));
+        frame.save_fpr(c, 20, 0x30);
+        let (t, p) = (r32(c, S0), r32(c, S1));
+        let tf = |o: u32| Addr(t.wrapping_add(o));
+        let pf = |o: u32| Addr(p.wrapping_add(o));
+        let f = abi::farg(c, 0);
+        let w = f * f;
+        set_fpr(c, 20, w);
+        let vt = tf(MUSIC_TRIGGER_VT).lw(c);
+        set_reg(c, V1, vt);
+        let slot = VSlot::read(c, vt, SLOT_MUSIC_TRIGGER_SYNC);
+        set_reg(c, V0, slot.func);
+        set_reg(c, A0, slot.this(sx(t)));
+        call_ptr(c, slot.func as u32, 0x002b_cc38)?;
+
+        set_reg(c, AT, 0x3f80_0000);
+        let int_f = |c: &mut Cpu, a: Addr| FpuF32::from_i32(a.read_u32(c) as i32);
+        let to_a = int_f(c, pf(MUSIC_SOURCE_A));
+        let cur_a = int_f(c, tf(MUSIC_TRIGGER_A));
+        let vt = tf(MUSIC_TRIGGER_VT).lw(c);
+        set_reg(c, V1, vt);
+        let keep = FpuF32::ONE - w;
+        let new_a = w * to_a;
+        let cur_b = int_f(c, tf(MUSIC_TRIGGER_B));
+        set_fpr(c, 2, cur_b);
+        let old_a = keep * cur_a;
+        let old_b = keep * cur_b;
+        set_fpr(c, 3, old_b);
+        let a = new_a + old_a;
+        let a_bits = a.to_i32() as u32;
+        set_fpr(c, 1, FpuF32(a_bits));
+        tf(MUSIC_TRIGGER_A).write_u32(c, a_bits);
+        let target = pf(MUSIC_SOURCE_A).lw(c);
+        tf(MUSIC_TRIGGER_A_TARGET).sw(c, target);
+        let to_b = int_f(c, pf(MUSIC_SOURCE_B));
+        let b = w * to_b + old_b;
+        set_fpr(c, 20, b);
+        let b_bits = b.to_i32() as u32;
+        set_fpr(c, 0, FpuF32(b_bits));
+        tf(MUSIC_TRIGGER_B).write_u32(c, b_bits);
+        let target = pf(MUSIC_SOURCE_B).lw(c);
+        set_reg(c, V0, target);
+        tf(MUSIC_TRIGGER_B_TARGET).sw(c, target);
+        let slot = VSlot::read(c, vt, SLOT_MUSIC_TRIGGER_SYNC);
+        set_reg(c, V0, slot.func);
+        set_reg(c, A0, slot.this(sx(t)));
+        call_ptr(c, slot.func as u32, 0x002b_ccb0)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1521,6 +1623,59 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = sx(DATA + 0x10);
                 c.pc = 0x002b_b100;
+            },
+        );
+    }
+    use super::*;
+
+    /// `tWPIGD_MusicTrigger_Blend`: blend factors in [0, 1] or edge values,
+    /// random integer parameters (small or full range) on both sides, the
+    /// source sometimes the trigger itself; the slot 0x218 method is a fake
+    /// (logs, sometimes unwinds on either call).
+    #[test]
+    fn music_trigger_blend_matches() {
+        const T: u32 = DATA;
+        const SRC: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x1000;
+        covered(
+            ee::s08::f_002bcc00__generated,
+            music_trigger_blend,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2bcc00, 2);
+                c.pc = 0x002b_cc00;
+                let int = |r: &mut Rng| {
+                    if r.next_u32() % 4 == 0 {
+                        r.next_u32()
+                    } else {
+                        ((r.next_u32() % 2000) as i32 - 1000) as u32
+                    }
+                };
+                c.bus.write32(T + MUSIC_TRIGGER_VT, VT);
+                for o in [
+                    MUSIC_TRIGGER_A,
+                    MUSIC_TRIGGER_A_TARGET,
+                    MUSIC_TRIGGER_B,
+                    MUSIC_TRIGGER_B_TARGET,
+                ] {
+                    let v = int(&mut r);
+                    c.bus.write32(T + o, v);
+                }
+                let src = if seed % 11 == 0 { T + 4 } else { SRC };
+                for o in [MUSIC_SOURCE_A, MUSIC_SOURCE_B] {
+                    let v = int(&mut r);
+                    c.bus.write32(SRC + o, v);
+                }
+                c.bus
+                    .write16(VT + SLOT_MUSIC_TRIGGER_SYNC, (r.next_u32() as u16) & 0x00fc);
+                c.bus.write32(VT + SLOT_MUSIC_TRIGGER_SYNC + 4, FAKE);
+                c.f[12] = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    ((r.next_u32() % 1001) as f32 / 1000.0).to_bits()
+                };
+                c.g[A0][0] = sx(T);
+                c.g[A1][0] = sx(src);
             },
         );
     }

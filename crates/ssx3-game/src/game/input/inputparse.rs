@@ -128,6 +128,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         input_vm_read_pad_channel,
         "InputVM_ReadPadChannel",
     ),
+    (0x0032_6b88, pad_queue_poll, "PadQueue_Poll"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3223,6 +3224,109 @@ pub fn input_vm_read_pad_channel(c: &mut Cpu) {
     abi::ret(c);
 }
 
+pub(crate) mod pad_queue {
+
+    pub const TAIL: u32 = 0x2ee4;
+
+    pub const COUNT: u32 = 0x2ee8;
+
+    pub const DEVICES: u32 = 0x2eec;
+
+    pub const FRAME_SIZE: u64 = 0x190;
+
+    pub const RECORD_SIZE: u32 = 0x64;
+
+    pub const READ_SIZE: u64 = 0x18;
+
+    pub const FRAMES: u64 = 30;
+
+    /// Device vtable: `read(data, size)` at `+0x10`.
+    pub const VT_READ: u32 = 0x10;
+}
+
+/// `void PadQueue_Poll(PadQueue* q)` (0x326b88): read every device into
+/// the queue's current frame (`record.result = dev->read(record.data,
+/// 0x18)`), then advance the write index modulo 30.
+pub fn pad_queue_poll(c: &mut Cpu) {
+    use pad_queue::*;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S3, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        let q = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(q.wrapping_add(COUNT)).lw(c);
+        c.g[S3][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[S4][0] = FRAME_SIZE;
+            c.g[S2][0] = 0;
+            c.g[S1][0] = sx(q.wrapping_add(DEVICES));
+            loop {
+                // Device s3 (s1 its pointer, s2 its record offset).
+                c.cycles += 23;
+                c.g[A1][0] = Addr(q.wrapping_add(TAIL)).lw(c);
+                c.g[A2][0] = READ_SIZE;
+                c.g[A3][0] = Addr(c.g[S1][0] as u32).lw(c);
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+                c.mult(0, V0, A1, S4);
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(4));
+                let dev = c.g[A3][0] as u32;
+                c.g[V1][0] = Addr(dev).lw(c);
+                let vt = c.g[V1][0] as u32;
+                c.g[A0][0] = Addr(vt.wrapping_add(VT_READ)).lh(c);
+                let record = (c.g[V0][0] as u32)
+                    .wrapping_add(q)
+                    .wrapping_add(c.g[S2][0] as u32);
+                c.g[A1][0] = sx(record);
+                c.g[V0][0] = Addr(vt.wrapping_add(VT_READ + 4)).lw(c);
+                c.g[A0][0] = sx(dev.wrapping_add(c.g[A0][0] as u32));
+                let read = c.g[V0][0] as u32;
+                c.g[A1][0] = sx(record.wrapping_add(4));
+                call_ptr(c, read, 0x0032_6bf8)?;
+                // The record of the (re-read) current frame gets the result.
+                c.g[V1][0] = Addr(q.wrapping_add(TAIL)).lw(c);
+                c.mult(0, A0, V1, S4);
+                c.g[V1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[S2][0] as u32));
+                c.g[V1][0] = sx(q.wrapping_add(c.g[V1][0] as u32));
+                let result = c.g[V0][0];
+                Addr(c.g[V1][0] as u32).sw(c, result);
+                c.g[V0][0] = Addr(q.wrapping_add(COUNT)).lw(c);
+                c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(RECORD_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0032_6bc0);
+                }
+            }
+        }
+        c.cycles += 4;
+        c.g[V1][0] = Addr(q.wrapping_add(TAIL)).lw(c);
+        c.g[V0][0] = FRAMES;
+        c.cycles += 12;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+        c.divu(0, V1, V0);
+        c.g[A0][0] = c.hi[0];
+        let tail = c.g[A0][0];
+        Addr(q.wrapping_add(TAIL)).sw(c, tail);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4140,6 +4244,41 @@ pub(crate) mod tests {
                     6 => [6u64, 0xffff_ffff_ffff_ffff, 1 << 40][(seed / 7 % 3) as usize],
                     k => k as u64,
                 };
+            },
+        );
+    }
+    use super::*;
+
+    /// PadQueue_Poll: 0-4 devices (and a negative count), write index 0-29
+    /// (29 wraps); the devices' read methods are fakes (some unwind).
+    #[test]
+    fn pad_queue_poll_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, DATA};
+        check(
+            ee::s10::f_00326b88__generated,
+            pad_queue_poll,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_6b88, 4);
+                c.pc = 0x0032_6b88;
+                let q = DATA;
+                let n = if seed % 9 == 0 { u32::MAX } else { seed % 5 };
+                c.bus.write32(q + 0x2ee8, n);
+                c.bus.write32(
+                    q + 0x2ee4,
+                    if seed % 3 == 0 { 29 } else { r.next_u32() % 30 },
+                );
+                for i in 0..4u32 {
+                    let dev = DATA + 0x4000 + 0x40 * i;
+                    let vt = DATA + 0x5000 + 0x40 * i;
+                    c.bus.write32(q + 0x2eec + 4 * i, dev);
+                    c.bus.write32(dev, vt);
+                    c.bus
+                        .write16(vt + 0x10, (r.next_u32() as i16 as i32 & !3) as u16);
+                    c.bus.write32(vt + 0x14, FAKE + 0x10 * i);
+                }
+                c.g[A0][0] = sx(q);
             },
         );
     }

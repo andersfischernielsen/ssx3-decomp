@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -523,6 +524,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0028_1ed8,
         script_engine_script_db_dtor,
         "ScriptEngine_ScriptDbDtor",
+    ),
+    (
+        0x0028_0640,
+        script_audio_obj_update_sounds,
+        "ScriptAudioObj_UpdateSounds",
     ),
 ];
 
@@ -7862,6 +7868,152 @@ fn script_engine_update_leave(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
+// ---------------------------------------------- ScriptAudioObj_UpdateSounds
+
+/// `void ScriptAudioObj_UpdateSounds(ScriptAudioObj* self)` (0x280640):
+/// for each of the four sound triggers (`+0xbc`, `0xc` bytes each: sound
+/// id, stop request, target), a trigger with a sound either stops it now
+/// (stop requested) or is cleared once the bank monitor no longer has an
+/// instance playing it; a cleared trigger gets id and target -1 and no
+/// stop request. Then, if a speech cue is pending (`+0xf4`), clear it and,
+/// when speech instance 0 is ready, skip one entry of the script engine's
+/// current list.
+pub fn script_audio_obj_update_sounds(c: &mut Cpu) {
+    const AUDIO_GET_INSTANCE: Callee = Callee {
+        addr: 0x0028_b180,
+        f: ee::s07::SSXAudioSystem_GetInstance,
+    };
+    const LIST_SKIP: Callee = Callee {
+        addr: 0x0027_9070,
+        f: ee::s07::ScriptEngine_ListSkip,
+    };
+    /// `BankMonitor_StopHandle(bm, id, kind, fade)`.
+    const BANK_MONITOR_STOP_HANDLE: u32 = 0x002a_d5f0;
+    /// `BankMonitor_FindInstance(bm, id, kind)`.
+    const BANK_MONITOR_FIND_INSTANCE: u32 = 0x002a_d550;
+    /// `SpeechSystem_IsInstanceReady(speech, index)`.
+    const SPEECH_IS_INSTANCE_READY: u32 = 0x002b_0e28;
+    /// `ScriptAudioObj` fields.
+    const TRIGGERS: u32 = 0xbc;
+    const TRIGGER_SIZE: u32 = 0xc;
+    const TRIGGER_ID: u32 = 0x0;
+    const TRIGGER_STOP: u32 = 0x4;
+    const TRIGGER_TARGET: u32 = 0x8;
+    const SPEECH_PENDING: u32 = 0xf4;
+    /// `SSXAudioSystem`: the sound root (`**root + 0x1d8` is the bank
+    /// monitor) and the speech system.
+    const ROOT: u32 = 0x118;
+    const BANK_MONITOR: u32 = 0x1d8;
+    const SPEECH: u32 = 0x5560;
+    /// The script engine (`gp-0x84c`) and its current list index.
+    const ENGINE_GP: u32 = 0x84c;
+    const ENGINE_LIST: u32 = 0x550;
+    /// Bank-monitor instance kind 1: an SND handle.
+    const KIND_SND: u64 = 1;
+    /// Loop head (event checks).
+    const LOOP: u32 = 0x0028_0678;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S4, 0x10);
+        frame.save(c, S0, 0x50);
+        let this = r32(c, A0);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = sx(this.wrapping_add(TRIGGERS));
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = u64::MAX;
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S3][0] = 3;
+        AUDIO_GET_INSTANCE.call(c, 0x0028_0670)?;
+        c.g[S2][0] = c.g[V0][0];
+        let audio = r32(c, S2);
+        let monitor = |c: &mut Cpu| {
+            let root = Addr(audio).off(ROOT).lw(c);
+            c.g[V0][0] = root;
+            let snd = Addr(root as u32).lw(c);
+            c.g[A0][0] = sx((snd as u32).wrapping_add(BANK_MONITOR));
+        };
+        loop {
+            c.cycles += 3;
+            let trigger = r32(c, S0);
+            let id = Addr(trigger).off(TRIGGER_ID).lw(c);
+            c.g[A1][0] = id;
+            let mut clear = false;
+            if (id as i64) >= 0 {
+                c.cycles += 3;
+                let stop = Addr(trigger).off(TRIGGER_STOP).lw(c);
+                c.g[V0][0] = stop;
+                c.g[A2][0] = KIND_SND;
+                if stop != 0 {
+                    c.cycles += 7;
+                    c.f[12] = 0;
+                    monitor(c);
+                    call_ptr(c, BANK_MONITOR_STOP_HANDLE, 0x0028_06a4)?;
+                    Addr(r32(c, S0)).off(TRIGGER_TARGET).sw(c, u64::MAX);
+                    clear = true;
+                } else {
+                    c.cycles += 6;
+                    monitor(c);
+                    call_ptr(c, BANK_MONITOR_FIND_INSTANCE, 0x0028_06bc)?;
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 1;
+                        Addr(r32(c, S0)).off(TRIGGER_TARGET).sw(c, u64::MAX);
+                        clear = true;
+                    }
+                }
+            }
+            if clear {
+                c.cycles += 3;
+                let trigger = r32(c, S0);
+                Addr(trigger).off(TRIGGER_ID).sw(c, u64::MAX);
+                Addr(trigger).off(TRIGGER_STOP).sw(c, 0);
+            }
+            c.g[S3][0] = sx(r32(c, S3).wrapping_sub(1));
+            c.cycles += 2;
+            let more = (c.g[S3][0] as i64) >= 0;
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(TRIGGER_SIZE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, LOOP);
+            }
+        }
+
+        c.cycles += 3;
+        let pending = Addr(this).off(SPEECH_PENDING).lw(c);
+        c.g[V0][0] = pending;
+        c.g[A0][0] = sx(audio.wrapping_add(SPEECH));
+        if pending != 0 {
+            c.cycles += 5;
+            Addr(this).off(SPEECH_PENDING).sw(c, 0);
+            c.g[A1][0] = 0;
+            call_ptr(c, SPEECH_IS_INSTANCE_READY, 0x0028_06f4)?;
+            let ready = c.g[V0][0] != 0;
+            let engine = Addr(r32(c, GP).wrapping_sub(ENGINE_GP)).lw(c);
+            c.g[A0][0] = engine;
+            if ready {
+                c.cycles += 4;
+                c.g[A2][0] = 1;
+                c.g[A3][0] = 1;
+                c.g[A1][0] = Addr(engine as u32).off(ENGINE_LIST).lw(c);
+                LIST_SKIP.call(c, 0x0028_070c)?;
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10608,5 +10760,92 @@ pub(crate) mod tests {
             let q = hz / 60;
             assert_eq!(updates(hz), 30 * q - (q - 1), "{hz} Hz");
         }
+    }
+    use super::*;
+
+    // ---------------------------------------------- ScriptAudioObj_UpdateSounds
+
+    /// `ScriptAudioObj_UpdateSounds`: four triggers each without a sound,
+    /// with a stop request, or polling an id the bank monitor may or may
+    /// not still play (64 busy / free instances that are already fading, so
+    /// the real stop resets them without SND calls); a pending speech cue
+    /// with speech instance 0 missing or ready (the real list skip runs on
+    /// a list in state 3 that returns at once).
+    #[test]
+    fn script_audio_obj_update_sounds_matches() {
+        check(
+            ee::s07::f_00280640__generated,
+            script_audio_obj_update_sounds,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0028_0640, 0);
+                c.pc = 0x0028_0640;
+                let this = DATA + 0x1_0000;
+                let audio = DATA + 0x1000;
+                let root = DATA + 0x2000;
+                let snd = DATA + 0x3000;
+                let insts = DATA + 0x20_0000;
+                c.bus.write32(GAME_GP + 0x410, audio);
+                c.bus.write32(audio + 0x118, root);
+                c.bus.write32(root, snd);
+                c.bus.write32(snd + 0x1d8 + 0x8ec, insts);
+                for i in 0..64 {
+                    let inst = insts + i * 0xc0;
+                    c.bus.write32(inst, r.next_u32() % 3);
+                    c.bus.write32(inst + 4, r.next_u32() % 6);
+                    c.bus.write32(inst + 0x54, 1);
+                    c.bus.write32(inst + 0x9c, 0);
+                }
+                for k in 0..4 {
+                    let t = this + 0xbc + 0xc * k;
+                    let id = match r.next_u32() % 4 {
+                        0 => r.next_u32() | 0x8000_0000,
+                        _ => r.next_u32() % 6,
+                    };
+                    c.bus.write32(t, id);
+                    c.bus.write32(
+                        t + 4,
+                        if r.next_u32() % 3 == 0 {
+                            r.next_u32() | 1
+                        } else {
+                            0
+                        },
+                    );
+                    c.bus.write32(t + 8, r.next_u32());
+                }
+                c.bus.write32(
+                    this + 0xf4,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                // Speech: instance 0 missing or with a stream slot whose
+                // stream is gone (ready).
+                let speech = audio + 0x5560;
+                let spch_insts = DATA + 0x4000;
+                let spch = DATA + 0x4100;
+                let arrays = DATA + 0x4200;
+                let array = DATA + 0x4300;
+                let table = DATA + 0x4400;
+                c.bus.write32(speech + 4, spch_insts);
+                c.bus
+                    .write32(spch_insts, if seed % 2 == 0 { 0 } else { spch });
+                c.bus.write32(spch + 4, r.next_u32() % 4);
+                c.bus.write32(GAME_GP + 0x6c4, arrays);
+                c.bus.write32(arrays, array);
+                c.bus.write32(array + 8, table);
+                // The script engine and its list (state 3, nothing queued).
+                let engine = DATA + 0x5000;
+                let lists = DATA + 0x6000;
+                let index = r.next_u32() % 4;
+                let list = lists + 0xcc * index;
+                c.bus.write32(GAME_GP - 0x84c, engine);
+                c.bus.write32(engine + 0x550, index);
+                c.bus.write32(engine + 0x54c, lists);
+                c.bus.write32(list + 0xa4, 3);
+                c.bus.write32(list + 0xa8, 1);
+                c.bus.write32(list + 0xbc, 0);
+                c.bus.write32(list + 0xc0, 0);
+                c.g[A0][0] = sx(this);
+            },
+        );
     }
 }

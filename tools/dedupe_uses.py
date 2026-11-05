@@ -25,7 +25,7 @@ for f,lines in hits.items():
             keep=[x.strip() for x in m.group(2).replace('\n',' ').split(',') if x.strip() and x.strip() not in names]
             new=[] if not keep else [f"{m.group(1)}{{{', '.join(keep)}}};"]
         else:
-            m=re.match(r"\s*(?:pub(?:\(crate\))? )?use [\w:]+::(\w+)(?: as (\w+))?;\s*$",text)
+            m=re.match(r"\s*(?:pub(?:\(crate\))? )?use (?:[\w:]+::)?(\w+)(?: as (\w+))?;\s*$",text)
             nm = m and (m.group(2) or m.group(1))
             new=[] if nm in names else L[i:j+1]
         L[i:j+1]=new

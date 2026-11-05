@@ -28,6 +28,7 @@ pub(crate) use crate::game::fe::ovstates::at as at_2;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::fe::ovstates::open;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
+use crate::game::misc::STATUS_EIE;
 pub(crate) use crate::game::movie::movieplayer::p;
 pub(crate) use crate::game::render::particle::addi;
 pub(crate) use crate::game::render::particle::gp;
@@ -95,6 +96,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         crowd_man_2d_render_sprites,
         "CrowdMan2d_RenderSprites",
     ),
+    (0x0022_a4a8, nash_classify_effects, "Nash_ClassifyEffects"),
+    (0x0022_a770, nash_collect_effects, "Nash_CollectEffects"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -2143,6 +2146,29 @@ pub(crate) mod nash {
         0x94, 0x1098, 0x209c, 0x40a0, 0x50a8, 0x70ac, 0x78b4, 0x7abc, 0x7bc0, 0x7fc4, 0x50a4,
         0x78b0, 0x7ab8,
     ];
+
+    /// The effect-node count (`+0x7bc0`) and array (`+0x7bc4`) of type-8
+    /// nodes; the registration head (`+0x7ab8`).
+    pub const NODE_COUNT: u32 = 0x7bc0;
+
+    pub const NODES: u32 = 0x7bc4;
+
+    pub const HEAD: u32 = 0x7ab8;
+
+    /// An item (8 bytes): its model (`+0`, node list at `+0x28`) and an
+    /// argument (`+4`). A node: next (`+0`), type (`+8`: 7 an effect, 8 a
+    /// plain node).
+    pub const ITEM_SIZE: u32 = 8;
+
+    pub const ITEM_ARG: u32 = 4;
+
+    pub const MODEL_NODES: u32 = 0x28;
+
+    pub const NODE_TYPE: u32 = 8;
+
+    pub const EFFECT: u64 = 7;
+
+    pub const PLAIN: u64 = 8;
 }
 
 /// gp offset (negative) of the graphics object (`D_004A289C`): the camera
@@ -2598,6 +2624,251 @@ pub fn crowd_man_2d_render_sprites(c: &mut Cpu) {
         patch(c, V1, 0x4, 0xffff_ffff_ffff_ff83, 0x1c);
         c.g[A0][0] = 0xffff_ffff_ffff_ff83;
     }
+}
+
+pub(crate) mod nash_callee {
+    use super::ee;
+    use super::Callee;
+
+    pub const CLASSIFY_EFFECT: Callee = Callee {
+        addr: 0x0022_a270,
+        f: ee::s05::Nash_ClassifyEffect,
+    };
+}
+
+pub(crate) mod nash_fx {
+
+    /// Nash: emitter list (count at +0x78b4, entries from +0x78b8) and
+    /// light list (count at +0x7bc0, entries from +0x7bc4).
+    pub const EMITTER_COUNT: u32 = 0x78b4;
+
+    pub const EMITTERS: u32 = 0x78b8;
+
+    pub const LIGHT_COUNT: u32 = 0x7bc0;
+
+    pub const LIGHTS: u32 = 0x7bc4;
+
+    /// Visible-node pair (8 bytes): world node at +0, its clip word at +4
+    /// (0 = fully inside, no sphere test).
+    pub const PAIR_SIZE: u32 = 8;
+
+    pub const PAIR_CLIP: u32 = 4;
+
+    /// World node: effect list head at +0x28. Effect: next at +0, kind at
+    /// +8, bounding sphere at +0x50.
+    pub const NODE_EFFECTS: u32 = 0x28;
+
+    pub const FX_KIND: u32 = 0x8;
+
+    pub const FX_SPHERE: u32 = 0x50;
+
+    pub const KIND_EMITTER: u64 = 7;
+
+    pub const KIND_LIGHT: u64 = 8;
+
+    /// The sphere test microprogram's result (in vi1) for "outside".
+    pub const OUTSIDE: u64 = 2;
+}
+
+/// `void Nash_ClassifyEffects(Nash* self, Item* items, int n)` (0x22a4a8):
+/// walk the node lists of `n` items: effect nodes (type 7) are classified
+/// with the item's argument, plain nodes (type 8) are appended to the node
+/// array. Then, if anything is registered, classify a null effect (flush).
+pub fn nash_classify_effects(c: &mut Cpu) {
+    use nash::*;
+    use nash_callee::*;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S1, 0x70);
+        frame.save(c, S2, 0x60);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x80);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save_ra(c, 0);
+        let this = c.g[S1][0] as u32;
+        if (c.g[A2][0] as i64) > 0 {
+            c.cycles += 1;
+            loop {
+                // Item at s2; s5 = items left after it.
+                let item = c.g[S2][0] as u32;
+                c.cycles += 5;
+                c.g[V0][0] = Addr(item).lw(c);
+                c.g[S5][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+                c.g[S0][0] = Addr((c.g[V0][0] as u32).wrapping_add(MODEL_NODES)).lw(c);
+                c.g[S4][0] = sx(item.wrapping_add(ITEM_SIZE));
+                if c.g[S0][0] != 0 {
+                    c.cycles += 5;
+                    c.g[S7][0] = EFFECT;
+                    c.g[S6][0] = PLAIN;
+                    c.g[S3][0] = sx(this.wrapping_add(NODES));
+                    c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(NODE_TYPE)).lw(c);
+                    loop {
+                        let node = c.g[S0][0] as u32;
+                        let kind = c.g[V0][0];
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[S1][0];
+                        if kind == EFFECT {
+                            c.cycles += 5;
+                            c.g[A2][0] = Addr(item.wrapping_add(ITEM_ARG)).lw(c);
+                            c.g[A1][0] = c.g[S0][0];
+                            CLASSIFY_EFFECT.call(c, 0x0022_a51c)?;
+                        } else {
+                            c.cycles += 2;
+                            if kind == PLAIN {
+                                c.cycles += 7;
+                                c.g[V1][0] = Addr(this.wrapping_add(NODE_COUNT)).lw(c);
+                                let n = c.g[V1][0] as u32;
+                                c.g[V0][0] = sx(this.wrapping_add(NODES).wrapping_add(n << 2));
+                                c.g[V1][0] = sx(n.wrapping_add(1));
+                                Addr(c.g[V0][0] as u32).sw(c, node as i32 as i64 as u64);
+                                let count = c.g[V1][0];
+                                Addr(this.wrapping_add(NODE_COUNT)).sw(c, count);
+                            }
+                        }
+                        c.g[S0][0] = Addr(node).lw(c);
+                        c.cycles += 2;
+                        if c.g[S0][0] == 0 {
+                            break;
+                        }
+                        c.g[V0][0] = Addr((c.g[S0][0] as u32).wrapping_add(NODE_TYPE)).lw(c);
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0022_a508);
+                        }
+                    }
+                }
+                c.cycles += 3;
+                c.g[A2][0] = c.g[S5][0];
+                c.g[S2][0] = c.g[S4][0];
+                if (c.g[A2][0] as i64) <= 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0022_a4e0);
+                }
+            }
+        }
+        c.cycles += 3;
+        c.g[V0][0] = Addr(this.wrapping_add(HEAD)).lw(c);
+        c.g[A0][0] = c.g[S1][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            CLASSIFY_EFFECT.call(c, 0x0022_a574)?;
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void Nash_CollectEffects(Nash* this, NodePair* nodes, int count)`
+/// (0x22a770): walk the effects of every visible world node: emitters
+/// (kind 7) are appended to the emitter list unless the node is clipped
+/// and the VU0 sphere test (microprogram 0xef0, clip word in vi14) puts the
+/// emitter's sphere outside; lights (kind 8) are always appended to the
+/// light list.
+pub fn nash_collect_effects(c: &mut Cpu) {
+    use nash_fx::*;
+    c.cycles += 2;
+    if (c.g[A2][0] as i64) > 0 {
+        let me = r32(c, A0);
+        loop {
+            c.cycles += 5;
+            let pair = r32(c, A1);
+            c.g[V0][0] = Addr(pair).lw(c);
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+            c.g[A3][0] = Addr(r32(c, V0).wrapping_add(NODE_EFFECTS)).lw(c);
+            c.g[T2][0] = sx(pair.wrapping_add(PAIR_SIZE));
+            if c.g[A3][0] != 0 {
+                c.cycles += 7;
+                c.g[T5][0] = KIND_EMITTER;
+                c.g[T4][0] = OUTSIDE;
+                c.g[T1][0] = sx(me.wrapping_add(EMITTERS));
+                c.g[T3][0] = KIND_LIGHT;
+                c.g[T0][0] = sx(me.wrapping_add(LIGHTS));
+                c.g[V0][0] = Addr(r32(c, A3).wrapping_add(FX_KIND)).lw(c);
+                loop {
+                    c.cycles += 2;
+                    let fx = r32(c, A3);
+                    // Some((count field, list)) when the effect is appended.
+                    let append = if c.g[V0][0] == c.g[T5][0] {
+                        c.cycles += 3;
+                        c.g[V1][0] = Addr(pair.wrapping_add(PAIR_CLIP)).lw(c);
+                        c.g[V0][0] = sx(fx.wrapping_add(FX_SPHERE));
+                        let culled = c.g[V1][0] != 0 && {
+                            c.cycles += 7;
+                            c.lqc2(22, r32(c, V0));
+                            c.ctc2(V1, 14);
+                            c.vcallms(0xef0);
+                            c.cfc2(V1, 1);
+                            c.g[V1][0] == c.g[T4][0]
+                        };
+                        if culled {
+                            None
+                        } else {
+                            c.cycles += 7;
+                            Some((EMITTER_COUNT, T1))
+                        }
+                    } else {
+                        c.cycles += 2;
+                        if c.g[V0][0] != c.g[T3][0] {
+                            None
+                        } else {
+                            c.cycles += 6;
+                            Some((LIGHT_COUNT, T0))
+                        }
+                    };
+                    if let Some((count, list)) = append {
+                        let count = Addr(me.wrapping_add(count));
+                        c.g[V1][0] = count.lw(c);
+                        c.g[V0][0] = sx(r32(c, V1) << 2);
+                        c.g[V0][0] = sx(r32(c, list).wrapping_add(r32(c, V0)));
+                        c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+                        let (slot, fx_word, n) = (Addr(r32(c, V0)), c.g[A3][0], c.g[V1][0]);
+                        slot.sw(c, fx_word);
+                        count.sw(c, n);
+                        c.cycles += 1;
+                    }
+                    c.g[A3][0] = Addr(fx).lw(c);
+                    c.cycles += 2;
+                    if c.g[A3][0] == 0 {
+                        break;
+                    }
+                    c.g[V0][0] = Addr(r32(c, A3).wrapping_add(FX_KIND)).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0022_a7a8);
+                    }
+                }
+            }
+            c.cycles += 2;
+            let more = (c.g[A2][0] as i64) > 0;
+            c.g[A1][0] = c.g[T2][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0022_a778);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
 }
 
 #[cfg(test)]
@@ -3638,6 +3909,134 @@ pub(crate) mod tests {
                 fill(c, &mut r, cur - 0x20, 0x20);
                 fill(c, &mut r, 0x0050_1420, 6);
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// Nash_ClassifyEffects: 0-3 items whose models have no nodes or lists
+    /// of effect (7), plain (8) and other nodes; the registration head set
+    /// or not. Nash_ClassifyEffect runs for real on the fixture of its own
+    /// test (effect-kind table, VI1, small list counts).
+    #[test]
+    fn nash_classify_effects_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, put_words, DATA};
+        check(
+            ee::s05::f_0022a4a8__generated,
+            nash_classify_effects,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x22_a4a8, 2);
+                c.pc = 0x0022_a4a8;
+                let this = DATA;
+                fill(c, &mut r, this, 0x400);
+                c.bus.plat.write_ctrl(1, seed % 5);
+                put_words(
+                    c,
+                    0x0047_b380,
+                    &[
+                        0x0022_a30c,
+                        0x0022_a358,
+                        0x0022_a358,
+                        0x0022_a30c,
+                        0x0022_a334,
+                    ],
+                );
+                c.bus
+                    .write32(this + 0x7ab8, if seed % 2 == 0 { 0 } else { this });
+                c.bus.write32(this + 0x78b4, r.next_u32() & 3);
+                c.bus.write32(this + 0x7abc, r.next_u32() & 3);
+                c.bus.write32(this + 0x7bc0, r.next_u32() & 3);
+                let items = DATA + 0x9000;
+                let n = if seed % 7 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 3
+                };
+                let mut node_at = DATA + 0xa000;
+                for i in 0..n {
+                    let item = items + 8 * i;
+                    let model = DATA + 0x9800 + 0x40 * i;
+                    c.bus.write32(item, model);
+                    c.bus.write32(item + 4, r.next_u32() % 4);
+                    let len = r.next_u32() % 5;
+                    let mut next = 0;
+                    for _ in 0..len {
+                        let node = node_at;
+                        node_at += 0x100;
+                        fill(c, &mut r, node, 0x40);
+                        c.bus.write32(node, next);
+                        let kind = [7, 8, 7, 8, r.next_u32() % 16][(r.next_u32() % 5) as usize];
+                        c.bus.write32(node + 8, kind);
+                        next = node;
+                    }
+                    c.bus.write32(model + 0x28, next);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(items);
+                c.g[A2][0] = if seed % 11 == 3 {
+                    sx(0xffff_fffe)
+                } else {
+                    n as u64
+                };
+            },
+        );
+    }
+
+    /// `Nash_CollectEffects`: zero, negative and 1-4 visible nodes (clipped
+    /// or not), each with up to 5 effects of kind 7 (emitter), 8 (light) or
+    /// other; the test sphere microprogram culls clip word 2.
+    #[test]
+    fn nash_collect_effects_matches() {
+        use super::nash_fx::*;
+        use crate::game::main::ssxapp::tests::put_cull_microprogram;
+        crate::difftest::check(
+            ee::s05::f_0022a770__generated,
+            nash_collect_effects,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0022_a770 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                put_cull_microprogram(c);
+                c.pc = 0x0022_a770;
+                let (me, pairs) = (DATA, DATA + 0x9000);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(pairs);
+                c.g[A2][0] = match seed % 6 {
+                    0 => 0,
+                    1 => sx((r.next_u32() % 3 + 1).wrapping_neg()),
+                    _ => (1 + r.next_u32() % 4) as u64,
+                };
+                c.bus.write32(me + EMITTER_COUNT, r.next_u32() % 16);
+                c.bus.write32(me + LIGHT_COUNT, r.next_u32() % 16);
+                let mut fx = DATA + 0xa000;
+                for p in 0..4u32 {
+                    let node = DATA + 0x9100 + 0x40 * p;
+                    let pair = pairs + PAIR_SIZE * p;
+                    c.bus.write32(pair, node);
+                    let clip = match r.next_u32() % 3 {
+                        0 => 0,
+                        1 => OUTSIDE as u32,
+                        _ => r.next_u32() % 4,
+                    };
+                    c.bus.write32(pair + PAIR_CLIP, clip);
+                    let mut next = 0;
+                    for _ in 0..r.next_u32() % 6 {
+                        let kind = match r.next_u32() % 4 {
+                            0 | 1 => KIND_EMITTER as u32,
+                            2 => KIND_LIGHT as u32,
+                            _ => r.next_u32() % 16,
+                        };
+                        c.bus.write32(fx, next);
+                        c.bus.write32(fx + FX_KIND, kind);
+                        fill(c, &mut r, fx + FX_SPHERE, 4);
+                        next = fx;
+                        fx += 0x60;
+                    }
+                    c.bus.write32(node + NODE_EFFECTS, next);
+                }
             },
         );
     }

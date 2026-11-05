@@ -382,6 +382,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         chase_camera_update_chase_heading,
         "ChaseCameraAlgorithm_UpdateChaseHeading",
     ),
+    (
+        0x0015_ec98,
+        game_camera_update_stream_view,
+        "GameCamera_UpdateStreamView",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8499,6 +8504,164 @@ pub(crate) fn update_heading(c: &mut Cpu, frame: Frame, this: u32, info: u32) ->
     Ok(())
 }
 
+// ---------------------------------------------- GameCamera_UpdateStreamView
+
+/// `void GameCamera_UpdateStreamView(GameCamera* cam)` (0x15ec98): point
+/// the world-cache streamer slot of this camera at the camera position with
+/// a radius of 1.5x the view distance (+8, clamped to [0, 15000] except in
+/// mode 1 of the game module's race state), then flag the camera
+/// (`+0xb4 = 1`) when the streamer reports a clearance at least as large
+/// as the far limit (2/3 of the distance clamped to [15000, 30000]) or the
+/// view distance itself.
+pub fn game_camera_update_stream_view(c: &mut Cpu) {
+    /// `GameCamera` fields.
+    const VIEW_DIST: u32 = 0x8;
+    const POSITION: u32 = 0x20;
+    const STREAM_SLOT: u32 = 0xb0;
+    const CLEARANCE_OK: u32 = 0xb4;
+    /// Streamer slots: `0x50` bytes each, the active flag at +0x250 of the
+    /// world cache (the streamer starts at +0x10).
+    const SLOT_SIZE: u32 = 0x50;
+    const SLOT_ACTIVE: u32 = 0x250;
+    const STREAMER: u32 = 0x10;
+    /// `cWorldCache_StreamerSetView(streamer, slot, pos, radius)`.
+    const STREAMER_SET_VIEW: u32 = 0x003a_9658;
+    /// `cWorldCache_StreamerGetViewClearance(streamer, slot, &pos, &t)`.
+    const STREAMER_GET_VIEW_CLEARANCE: u32 = 0x003a_96e0;
+    /// Globals: the app (`gp-0x848`), the world cache pointer (`gp+0x16c8`).
+    const APP_GP: u32 = 0x848;
+    const WORLD_CACHE_GP: u32 = 0x16c8;
+    /// `.lit4`: 15000, 2/3, 15000, 30000.
+    const MAX_DIST_GP: u32 = 0x6c68;
+    const FAR_SCALE_GP: u32 = 0x6c64;
+    const FAR_MIN_GP: u32 = 0x6c60;
+    const FAR_MAX_GP: u32 = 0x6c5c;
+    let lit = |c: &Cpu, off: u32| r32(c, GP).wrapping_sub(off);
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x70);
+        let app = Addr(lit(c, APP_GP)).lw(c);
+        c.g[A1][0] = app;
+        frame.save(c, S1, 0x40);
+        c.g[A2][0] = 1;
+        frame.save(c, S0, 0x50);
+        let cam = r32(c, A0);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 21, 0x68);
+        frame.save_fpr(c, 20, 0x60);
+        let module = Addr(app as u32).off(0x84).lw(c);
+        c.g[V0][0] = module;
+        let race = Addr(module as u32).off(0x84).lw(c);
+        c.g[V1][0] = race;
+        let mode = Addr(race as u32).off(0x10).lw(c);
+        c.g[A0][0] = mode;
+        // The view distance, clamped unless in mode 1.
+        let dist = if mode != 1 {
+            let raw = Addr(cam).off(VIEW_DIST).read_fpu(c);
+            c.f[1] = raw.0;
+            c.cycles += 6;
+            c.f[0] = 0;
+            let max = Addr(lit(c, MAX_DIST_GP)).read_fpu(c);
+            c.f[2] = max.0;
+            let positive = FpuF32(0).le(raw);
+            abi::set_fcc(c, positive);
+            let mut d = FpuF32(0);
+            if positive {
+                c.cycles += 1;
+                d = raw.min(max);
+            }
+            c.f[3] = d.0;
+            c.cycles += 1;
+            d
+        } else {
+            c.cycles += 2;
+            Addr(cam).off(VIEW_DIST).read_fpu(c)
+        };
+        c.f[20] = dist.0;
+
+        // Radius and far limit.
+        c.cycles += 11;
+        let k = Addr(lit(c, FAR_SCALE_GP)).read_fpu(c);
+        let far_min = Addr(lit(c, FAR_MIN_GP)).read_fpu(c);
+        c.f[2] = far_min.0;
+        let scaled = dist * k;
+        c.f[0] = scaled.0;
+        c.g[AT][0] = 0x3fc0_0000;
+        let one_half = FpuF32(0x3fc0_0000);
+        c.f[1] = one_half.0;
+        let mut far = far_min;
+        let far_max = Addr(lit(c, FAR_MAX_GP)).read_fpu(c);
+        c.f[3] = far_max.0;
+        let above = far_min.le(scaled);
+        abi::set_fcc(c, above);
+        c.f[12] = (dist * one_half).0;
+        if above {
+            c.cycles += 1;
+            far = scaled.min(far_max);
+        }
+        c.f[21] = far.0;
+
+        // Mark the slot active and set the view.
+        c.cycles += 22;
+        c.g[V1][0] = Addr(cam).off(STREAM_SLOT).lw(c);
+        c.g[V0][0] = SLOT_SIZE as u64;
+        let cache_ptr = Addr(r32(c, GP).wrapping_add(WORLD_CACHE_GP)).lw(c);
+        c.g[S0][0] = cache_ptr;
+        c.g[S2][0] = 1;
+        c.mult(0, V1, V1, V0);
+        c.g[A2][0] = sx(cam.wrapping_add(POSITION));
+        let cache = Addr(cache_ptr as u32).lw(c);
+        c.g[V0][0] = abi::addu(cache, c.g[V1][0]);
+        Addr(r32(c, V0)).off(SLOT_ACTIVE).sw(c, 1);
+        let cache = Addr(cache_ptr as u32).lw(c);
+        c.g[A1][0] = Addr(cam).off(STREAM_SLOT).lw(c);
+        c.g[A0][0] = sx((cache as u32).wrapping_add(STREAMER));
+        call_ptr(c, STREAMER_SET_VIEW, 0x0015_ed60)?;
+        Addr(cam).off(CLEARANCE_OK).sw(c, 0);
+        c.g[A2][0] = c.g[SP][0];
+        c.g[A1][0] = Addr(cam).off(STREAM_SLOT).lw(c);
+        let clearance_at = frame.at(c, 0x10);
+        c.g[A3][0] = sx(clearance_at);
+        let cache = Addr(r32(c, S0)).lw(c);
+        c.g[A0][0] = sx((cache as u32).wrapping_add(STREAMER));
+        call_ptr(c, STREAMER_GET_VIEW_CLEARANCE, 0x0015_ed7c)?;
+        let have = c.g[V0][0] != 0;
+        let clearance = Addr(frame.at(c, 0x10)).read_fpu(c);
+        c.f[0] = clearance.0;
+        if !have {
+            c.cycles += 1;
+        } else {
+            c.cycles += 4;
+            let far_ok = far.le(clearance);
+            abi::set_fcc(c, far_ok);
+            if far_ok {
+                Addr(cam).off(CLEARANCE_OK).sw(c, 1);
+                c.cycles += 1;
+            } else {
+                c.cycles += 4;
+                let near_ok = dist.le(clearance);
+                abi::set_fcc(c, near_ok);
+                if near_ok {
+                    c.cycles += 1;
+                    Addr(cam).off(CLEARANCE_OK).sw(c, 1);
+                    c.cycles += 1;
+                }
+            }
+        }
+        frame.restore(c, S0, 0x50);
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10973,6 +11136,67 @@ pub(crate) mod tests {
                 }
                 c.bus.write32(hist + chase::H_IDX, r.next_u32() % 5);
                 put_words(c, hist + chase::H_K0, &[r.f32(1.0), r.f32(1.0), r.f32(1.0)]);
+            },
+        );
+    }
+    use super::*;
+
+    // ---------------------------------------------- GameCamera_UpdateStreamView
+
+    /// `GameCamera_UpdateStreamView`: race mode 1 or not, view distances
+    /// negative / small / mid / huge / edge (both clamps, both clearance
+    /// tests, and the no-clearance result of a non-positive radius); the
+    /// real streamer view setter and clearance query run on a world cache
+    /// with no streamer nodes.
+    #[test]
+    fn game_camera_update_stream_view_matches() {
+        check(
+            ee::s01::f_0015ec98__generated,
+            game_camera_update_stream_view,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0015_ec98, 0);
+                elf_image(c);
+                c.pc = 0x0015_ec98;
+                // App -> game module -> race state (mode at +0x10).
+                let app = DATA + 0x1000;
+                let module = DATA + 0x1100;
+                let race = DATA + 0x1200;
+                c.bus.write32(GAME_GP - 0x848, app);
+                c.bus.write32(app + 0x84, module);
+                c.bus.write32(module + 0x84, race);
+                c.bus.write32(
+                    race + 0x10,
+                    if seed % 4 == 0 { 1 } else { r.next_u32() % 3 },
+                );
+                // The world cache: streamer at +0x10 with no nodes
+                // (`streamer+4 -> {+8: 0}`); the frame clock at gp+0x2a74.
+                let cache_ptr = DATA + 0x2000;
+                let cache = DATA + 0x3000;
+                let nodes = DATA + 0x2100;
+                let clock = DATA + 0x2200;
+                c.bus.write32(GAME_GP + 0x16c8, cache_ptr);
+                c.bus.write32(cache_ptr, cache);
+                c.bus.write32(cache + 0x10 + 4, nodes);
+                c.bus.write32(nodes + 8, 0);
+                c.bus.write32(GAME_GP + 0x2a74, clock);
+                c.bus.write32(clock + 0x18, r.next_u32());
+                let cam = DATA + 0x8000;
+                let dist: u32 = match seed % 6 {
+                    0 => (-((r.next_u32() % 500) as f32)).to_bits(),
+                    1 => r.f32(2.0),
+                    2 => r.f32(12000.0),
+                    3 => r.f32(80000.0),
+                    4 => r.edge_f32(),
+                    _ => ((r.next_u32() % 40000) as f32).to_bits(),
+                };
+                c.bus.write32(cam + 0x8, dist);
+                for k in 0..4 {
+                    c.bus.write32(cam + 0x20 + 4 * k, r.f32(5000.0));
+                }
+                c.bus.write32(cam + 0xb0, r.next_u32() % 4);
+                c.bus.write32(cam + 0xb4, r.next_u32());
+                c.g[A0][0] = sx(cam);
             },
         );
     }

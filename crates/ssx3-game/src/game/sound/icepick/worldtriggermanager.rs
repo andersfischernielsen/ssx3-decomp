@@ -205,6 +205,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_sound_refresh_nearby_emitters,
         "cWorldSound_RefreshNearbyEmitters",
     ),
+    (
+        0x002b_5d78,
+        world_trigger_manager_update,
+        "WorldTriggerManager_Update",
+    ),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -3068,6 +3073,137 @@ pub fn world_sound_refresh_nearby_emitters(c: &mut Cpu) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// WorldTriggerManager_Update (0x2b5d78)
+
+/// `SSXAudioSystem_GetApp` (0x28b180) and `strcmp` (0x4165a8), called
+/// through the function table as the original does.
+pub(crate) const AUDIO_GET_APP: u32 = 0x0028_b180;
+
+pub(crate) const STRCMP: u32 = 0x0041_65a8;
+
+pub(crate) const AUDIO_EMPTY_TRIGGER_UPDATE: Callee = Callee {
+    addr: 0x0029_b960,
+    f: ee::s08::f_0029b960,
+};
+
+pub(crate) const TRIGGER_STOP: Callee = Callee {
+    addr: 0x002b_5758,
+    f: ee::s08::f_002b5758,
+};
+
+pub(crate) const TRIGGER_UPDATE: Callee = Callee {
+    addr: 0x002b_4c38,
+    f: ee::s08::f_002b4c38,
+};
+
+/// Audio app: "audio paused" word.
+pub(crate) const APP_PAUSED: u32 = 0x5fb0;
+
+/// 40 trigger instances of 0x70 bytes: active flag (+0), "touched this
+/// frame" (+0x34), sound name (+0x40).
+pub(crate) const TRIGGER_COUNT_MINUS_1: u64 = 0x27;
+
+pub(crate) const TRIGGER_SIZE: u32 = 0x70;
+
+pub(crate) const TRIGGER_TOUCHED: u32 = 0x34;
+
+pub(crate) const TRIGGER_NAME: u32 = 0x40;
+
+/// `D_004A35A8`: the name of the empty trigger sound.
+pub(crate) const EMPTY_TRIGGER_NAME: u32 = 0x004a_35a8;
+
+/// `void WorldTriggerManager_Update(WorldTriggerManager* self)` (0x2b5d78):
+/// unless the audio app is paused, for each active trigger instance: keep
+/// it playing if it was touched this frame (`Update`), else (telling the
+/// audio system about an "empty" trigger first) deactivate and stop it;
+/// then clear the touched flag. The loop counters live in s1 (offset), s2
+/// (remaining) as in the original, across the back-edge event check.
+pub fn world_trigger_manager_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = Addr(c.g[S0][0] as u32);
+        call_ptr(c, AUDIO_GET_APP, 0x002b_5d9c)?;
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(APP_PAUSED).lw(c);
+        if c.g[V1][0] == 0 {
+            c.cycles += 4;
+            c.g[S4][0] = 1;
+            c.g[S3][0] = 0x004a_0000;
+            c.g[S1][0] = 0;
+            c.g[S2][0] = TRIGGER_COUNT_MINUS_1;
+            loop {
+                c.cycles += 5;
+                c.g[V0][0] = this.lw(c);
+                let off = c.g[S1][0] as u32;
+                c.g[A0][0] = sx(off.wrapping_add(c.g[V0][0] as u32));
+                c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+                if c.g[V1][0] == c.g[S4][0] {
+                    c.cycles += 3;
+                    let inst = c.g[A0][0] as u32;
+                    c.g[V0][0] = Addr(inst).off(TRIGGER_TOUCHED).lw(c);
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 3;
+                        TRIGGER_UPDATE.call(c, 0x002b_5e30)?;
+                    } else {
+                        c.cycles += 5;
+                        c.g[A0][0] = sx(inst.wrapping_add(TRIGGER_NAME));
+                        c.g[A1][0] = sx(EMPTY_TRIGGER_NAME);
+                        call_ptr(c, STRCMP, 0x002b_5de4)?;
+                        if c.g[V0][0] != 0 {
+                            c.cycles += 8;
+                            call_ptr(c, AUDIO_GET_APP, 0x002b_5df4)?;
+                            let list = this.lw(c) as u32;
+                            c.g[A0][0] = c.g[V0][0];
+                            let name = list.wrapping_add(off).wrapping_add(TRIGGER_NAME);
+                            c.g[A1][0] = sx(name);
+                            AUDIO_EMPTY_TRIGGER_UPDATE.call(c, 0x002b_5e08)?;
+                        }
+                        c.cycles += 7;
+                        let list = this.lw(c) as u32;
+                        c.g[V0][0] = sx(off.wrapping_add(list));
+                        Addr(off.wrapping_add(list)).sw(c, 0);
+                        let list = this.lw(c) as u32;
+                        c.g[A0][0] = sx(list.wrapping_add(off));
+                        TRIGGER_STOP.call(c, 0x002b_5e20)?;
+                    }
+                    c.cycles += 3;
+                    let list = this.lw(c) as u32;
+                    c.g[V0][0] = sx(off.wrapping_add(list));
+                    Addr(off.wrapping_add(list)).off(TRIGGER_TOUCHED).sw(c, 0);
+                }
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+                c.cycles += 2;
+                let more = (c.g[S2][0] as i64) >= 0;
+                c.g[S1][0] = sx(off.wrapping_add(TRIGGER_SIZE));
+                if !more {
+                    c.cycles += 1;
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002b_5db8);
+                }
+            }
+        }
+        frame.restore(c, S0, 0x50);
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4187,6 +4323,66 @@ pub(crate) mod tests {
                 c.bus.write32(list + NEAR_COUNT, r.next_u32() % 8);
                 c.g[A0][0] = sx(list);
                 c.g[A1][0] = sx(pos);
+            },
+        );
+    }
+    use super::*;
+
+    /// WorldTriggerManager_Update: audio paused, and 40 instances that are
+    /// inactive, touched (the real `WorldTriggerInstance_Update`, on its
+    /// short path: no crowd source, flag-8 check off) or untouched (the real
+    /// `strcmp` against the empty-trigger name, the real no-op
+    /// `EmptyTriggerUpdate`, the real `WorldTriggerInstance_Stop` on its
+    /// short path).
+    #[test]
+    fn world_trigger_manager_update_matches() {
+        check(
+            ee::s08::f_002b5d78__generated,
+            world_trigger_manager_update,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b_5d78, 0);
+                c.pc = 0x002b_5d78;
+                let this = DATA;
+                let app = DATA + 0x1000;
+                let list = DATA + 0x10000;
+                c.bus.write32(GAME_GP + 0x410, app);
+                c.bus
+                    .write32(app + APP_PAUSED, if seed % 10 == 0 { 1 } else { 0 });
+                c.bus.write32(GAME_GP + 0x21e4, DATA + 0x8000);
+                c.bus.write32(this, list);
+                let names: [&[u8]; 3] = [b"empty\0", b"crowd\0", b"emptx\0"];
+                for (i, b) in names[0].iter().enumerate() {
+                    c.bus.write8(EMPTY_TRIGGER_NAME + i as u32, *b);
+                }
+                for i in 0..40 {
+                    let t = list + TRIGGER_SIZE * i;
+                    fill(c, &mut r, t, TRIGGER_SIZE / 4);
+                    c.bus.write32(
+                        t,
+                        if r.next_u32() % 3 == 0 {
+                            r.next_u32() % 3
+                        } else {
+                            1
+                        },
+                    );
+                    c.bus.write32(t + 0xc, r.next_u32() % 2);
+                    c.bus.write32(t + 0x30, -9999i32 as u32);
+                    c.bus.write32(t + 0x38, 0);
+                    c.bus.write32(
+                        t + TRIGGER_TOUCHED,
+                        if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            r.next_u32() | 1
+                        },
+                    );
+                    let name = names[(r.next_u32() % 3) as usize];
+                    for (k, b) in name.iter().enumerate() {
+                        c.bus.write8(t + TRIGGER_NAME + k as u32, *b);
+                    }
+                }
+                c.g[A0][0] = this as u64;
             },
         );
     }

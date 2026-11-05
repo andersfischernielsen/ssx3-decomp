@@ -588,6 +588,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_update_tracked_sounds,
         "SSXAudioSystem_UpdateTrackedSounds",
     ),
+    (
+        0x0029_7fa0,
+        ssx_audio_system_update_object_loops,
+        "SSXAudioSystem_UpdateObjectLoops",
+    ),
+    (
+        0x0029_d290,
+        ssx_audio_system_update_race_loop_sfx,
+        "SSXAudioSystem_UpdateRaceLoopSfx",
+    ),
+    (
+        0x002a_43b8,
+        ssx_audio_system_flush_pending_speech,
+        "SSXAudioSystem_FlushPendingSpeech",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -11156,6 +11171,557 @@ pub(crate) fn tracked_record(c: &mut Cpu, this: u32, rec: [u64; 5]) -> crate::ca
     Ok(())
 }
 
+pub(crate) mod pending_speech {
+
+    pub const DJ_20E5: u32 = 0x5768;
+
+    pub const DJ_212B: u32 = 0x5784;
+
+    pub const DJ_20BA: u32 = 0x576c;
+
+    pub const DJ_212C: u32 = 0x577c;
+
+    pub const DJ_212D: u32 = 0x5770;
+
+    pub const RIDER_20D3: u32 = 0x5788;
+
+    /// DJ line 0x20cf with its argument at `+0x5778`.
+    pub const DJ_20CF: u32 = 0x5774;
+
+    pub const DJ_20CF_ARG: u32 = 0x5778;
+
+    /// DJ chatter (kind 0, 0, 1).
+    pub const CHATTER_A: u32 = 0x574c;
+
+    pub const CHATTER_B: u32 = 0x5750;
+
+    pub const CHATTER_C: u32 = 0x5754;
+
+    /// DJ line 0x20cc with its argument at `+0x575c`.
+    pub const DJ_20CC: u32 = 0x5758;
+
+    pub const DJ_20CC_ARG: u32 = 0x575c;
+
+    pub const DJ_20E6: u32 = 0x5740;
+
+    /// Rider line 0x20b9 (independent of the others), for the race
+    /// manager's rider number `+0x5748` (riders at race `+0x28`).
+    pub const RIDER_20B9: u32 = 0x5744;
+
+    pub const RIDER_20B9_INDEX: u32 = 0x5748;
+
+    pub const RACE_RIDERS: u32 = 0x28;
+}
+
+pub(crate) mod speech_callee {
+    use super::ee;
+    use super::Callee;
+
+    macro_rules! callee {
+        ($name:ident, $addr:expr, $f:ident) => {
+            pub const $name: Callee = Callee {
+                addr: $addr,
+                f: ee::s08::$f,
+            };
+        };
+    }
+    pub(crate) use callee;
+
+    callee!(DJ_SAY_20E5, 0x002a_26f0, SSXAudioSystem_DJSay20E5);
+
+    callee!(DJ_SAY_212B, 0x002a_2ad0, SSXAudioSystem_DJSay212B);
+
+    callee!(DJ_SAY_20BA, 0x002a_2638, SSXAudioSystem_DJSay20BA);
+
+    callee!(DJ_SAY_212C, 0x002a_2b88, SSXAudioSystem_DJSay212C);
+
+    callee!(DJ_SAY_212D, 0x002a_2c30, SSXAudioSystem_DJSay212D);
+
+    callee!(RIDER_SAY_20D3, 0x002a_1138, SSXAudioSystem_RiderSay20D3);
+
+    callee!(DJ_SAY_20CF, 0x002a_2860, SSXAudioSystem_DJSay20CF);
+
+    callee!(PLAY_DJ_CHATTER, 0x002a_2e50, SSXAudioSystem_PlayDJChatter);
+
+    callee!(DJ_SAY_20CC, 0x002a_2568, SSXAudioSystem_DJSay20CC_2);
+
+    callee!(DJ_SAY_20E6, 0x002a_27d8, SSXAudioSystem_DJSay20E6);
+
+    callee!(RIDER_SAY_20B9, 0x002a_1400, SSXAudioSystem_RiderSay20B9);
+
+    /// `SSXAudioSystem_GetRaceMan` (through the function table).
+    pub const GET_RACE_MAN: u32 = 0x0028_b1d8;
+}
+
+pub(crate) mod object_loop {
+
+    pub const SLOTS: u32 = 0x5a00;
+
+    pub const SLOT_SIZE: u64 = 0x30;
+
+    pub const COUNT: i64 = 30;
+
+    /// Slot: active (`+0`, 1), the sound object (`+4`; its scene node at
+    /// `+0xc`, its own position at `+0x40`), the node's bone (`+8`, -1 the
+    /// node itself), the emitter position (`+0x10`, a quadword), the loop
+    /// handle (`+0x24`).
+    pub const ACTIVE: u32 = 0x0;
+
+    pub const OBJECT: u32 = 0x4;
+
+    pub const BONE: u32 = 0x8;
+
+    pub const POSITION: u32 = 0x10;
+
+    pub const HANDLE: u32 = 0x24;
+
+    pub const OBJ_NODE: u32 = 0xc;
+
+    pub const OBJ_POSITION: u32 = 0x40;
+
+    /// Node vtable (`+0xc`) slots: the world matrix (`+0xc0`), "has bones"
+    /// (`+0xd0`), a bone's matrix (`+0xe8`); matrices hold the translation
+    /// at `+0x30`.
+    pub const NODE_VTABLE: u32 = 0xc;
+
+    pub const VT_MATRIX: u32 = 0xc0;
+
+    pub const VT_HAS_BONES: u32 = 0xd0;
+
+    pub const VT_BONE_MATRIX: u32 = 0xe8;
+
+    pub const TRANSLATION: u32 = 0x30;
+
+    /// The audio system's channel table (`+0x118`; the bank monitor at
+    /// `*table + 0x1d8`).
+    pub const CHANNELS: u32 = 0x118;
+
+    pub const BANK_MONITOR: u32 = 0x1d8;
+}
+
+pub(crate) mod object_loop_callee {
+    use super::ee;
+    use super::Callee;
+
+    pub const STOP_HANDLE: Callee = Callee {
+        addr: 0x002a_d5f0,
+        f: ee::s08::BankMonitor_StopHandle,
+    };
+}
+
+/// `void SSXAudioSystem_FlushPendingSpeech(SSXAudioSystem* self)`
+/// (0x2a43b8): play the first pending DJ/rider line (in priority order) and
+/// clear its request; then, independently, the pending rider line 0x20b9
+/// for the race manager's rider (if that rider exists).
+pub fn ssx_audio_system_flush_pending_speech(c: &mut Cpu) {
+    use pending_speech::*;
+    use speech_callee::*;
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        let at = |off: u32| Addr(this.wrapping_add(off));
+        let me = c.g[S0][0];
+        // Play one line: the call, then clear its request (through s0 as
+        // the original does, not a saved copy).
+        let say = |c: &mut Cpu, callee: Callee, ret: u32, flag: u32| -> Flow {
+            callee.call(c, ret)?;
+            let s0 = c.g[S0][0] as u32;
+            Addr(s0.wrapping_add(flag)).sw(c, 0);
+            Ok(())
+        };
+        c.g[V0][0] = at(DJ_20E5).lw(c);
+        c.g[A1][0] = 0;
+        let played = 'played: {
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A2][0] = 0;
+                say(c, DJ_SAY_20E5, 0x002a_43dc, DJ_20E5)?;
+                break 'played true;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = at(DJ_212B).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A0][0] = me;
+                say(c, DJ_SAY_212B, 0x002a_43f8, DJ_212B)?;
+                break 'played true;
+            }
+            // Lines whose word the previous check loaded (delay slot).
+            for (flag, callee, ret) in [
+                (DJ_20BA, DJ_SAY_20BA, 0x002a_4410),
+                (DJ_212C, DJ_SAY_212C, 0x002a_4428),
+                (DJ_212D, DJ_SAY_212D, 0x002a_4440),
+            ] {
+                c.g[V0][0] = at(flag).lw(c);
+                c.cycles += 2;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 4;
+                    c.g[A0][0] = me;
+                    say(c, callee, ret, flag)?;
+                    break 'played true;
+                }
+            }
+            c.g[V0][0] = at(RIDER_20D3).lw(c);
+            c.cycles += 2;
+            c.g[A0][0] = me;
+            if c.g[V0][0] != 0 {
+                c.cycles += 5;
+                c.g[A1][0] = 0;
+                c.g[A2][0] = 0;
+                say(c, RIDER_SAY_20D3, 0x002a_445c, RIDER_20D3)?;
+                break 'played true;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = at(DJ_20CF).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 5;
+                c.g[A1][0] = at(DJ_20CF_ARG).lw(c);
+                c.g[A0][0] = me;
+                say(c, DJ_SAY_20CF, 0x002a_447c, DJ_20CF)?;
+                break 'played true;
+            }
+            c.g[V0][0] = at(CHATTER_A).lw(c);
+            c.cycles += 2;
+            c.g[A0][0] = me;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A1][0] = 0;
+                say(c, PLAY_DJ_CHATTER, 0x002a_4494, CHATTER_A)?;
+                break 'played true;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = at(CHATTER_B).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A1][0] = 0;
+                say(c, PLAY_DJ_CHATTER, 0x002a_44b0, CHATTER_B)?;
+                break 'played true;
+            }
+            c.g[V0][0] = at(CHATTER_C).lw(c);
+            c.cycles += 2;
+            c.g[A0][0] = me;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A1][0] = 1;
+                say(c, PLAY_DJ_CHATTER, 0x002a_44c8, CHATTER_C)?;
+                break 'played true;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = at(DJ_20CC).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 5;
+                c.g[A1][0] = at(DJ_20CC_ARG).lw(c);
+                c.g[A0][0] = me;
+                say(c, DJ_SAY_20CC, 0x002a_44e8, DJ_20CC)?;
+                break 'played true;
+            }
+            c.g[V0][0] = at(DJ_20E6).lw(c);
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[A0][0] = me;
+                say(c, DJ_SAY_20E6, 0x002a_4500, DJ_20E6)?;
+                break 'played true;
+            }
+            false
+        };
+        // A line played: the block at 0x2a4504.
+        if played {
+            c.cycles += 1;
+        }
+        // From here on `self` is s0 as the original reads it after the call.
+        let this = c.g[S0][0] as u32;
+        let at = |off: u32| Addr(this.wrapping_add(off));
+        c.g[V0][0] = at(RIDER_20B9).lw(c);
+
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            c.cycles += 8;
+            call_ptr(c, GET_RACE_MAN, 0x002a_4518)?;
+            c.g[V1][0] = at(RIDER_20B9_INDEX).lw(c);
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[V1][0] as u32));
+            c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(RACE_RIDERS)).lw(c);
+            if c.g[A1][0] != 0 {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                RIDER_SAY_20B9.call(c, 0x002a_4538)?;
+            }
+            let s0 = c.g[S0][0] as u32;
+            Addr(s0.wrapping_add(RIDER_20B9)).sw(c, 0);
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SSXAudioSystem_UpdateObjectLoops(SSXAudioSystem* self)`
+/// (0x297fa0): for every active object loop, follow its emitter: a sound
+/// object whose scene node is gone stops the loop; otherwise the position
+/// is the node's translation (bone -1), the bone's translation (node with
+/// bones) or the object's own position.
+pub fn ssx_audio_system_update_object_loops(c: &mut Cpu) {
+    use object_loop::*;
+    use object_loop_callee::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0;
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[V0][0] = SLOT_SIZE;
+        let this = c.g[S2][0] as u32;
+        loop {
+            // Slot i = s1 at s0 - 0x5a00.
+            c.cycles += 6;
+            c.g[A0][0] = 1;
+            c.mult(0, V1, S1, V0);
+            c.g[S0][0] = sx((c.g[V1][0] as u32).wrapping_add(this));
+            let slot = (c.g[S0][0] as u32).wrapping_add(SLOTS);
+            let at = |off: u32| Addr(slot.wrapping_add(off));
+            c.g[V1][0] = at(ACTIVE).lw(c);
+            if c.g[V1][0] == 1 {
+                c.cycles += 4;
+                c.g[V0][0] = at(OBJECT).lw(c);
+                c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(OBJ_NODE)).lw(c);
+                let node = c.g[A1][0] as u32;
+                if node == 0 {
+                    // The node is gone: stop the loop.
+                    c.cycles += 9;
+                    c.g[V0][0] = Addr(this.wrapping_add(CHANNELS)).lw(c);
+                    c.g[A2][0] = 1;
+                    c.g[A1][0] = at(HANDLE).lw(c);
+                    c.g[A0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                    abi::set_fpr(c, 12, FpuF32::ZERO);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(BANK_MONITOR));
+                    STOP_HANDLE.call(c, 0x0029_8004)?;
+                    at(ACTIVE).sw(c, 0);
+                } else {
+                    c.g[V1][0] = at(BONE).lw(c);
+                    c.cycles += 3;
+                    let bone = c.g[V1][0];
+                    c.g[V0][0] = u64::MAX;
+                    c.g[V1][0] = Addr(node.wrapping_add(NODE_VTABLE)).lw(c);
+                    let vt = c.g[V1][0] as u32;
+                    // Where the translation is read (`None`: the object's own
+                    // position, through v1 = the object).
+                    let matrix = if bone == u64::MAX {
+                        c.cycles += 6;
+                        virtual_call(c, node, vt, VT_MATRIX, 0x0029_8028)?;
+                        true
+                    } else {
+                        c.cycles += 6;
+                        virtual_call(c, node, vt, VT_HAS_BONES, 0x0029_8040)?;
+                        if c.g[V0][0] == 0 {
+                            c.g[V1][0] = at(OBJECT).lw(c);
+                            false
+                        } else {
+                            c.cycles += 9;
+                            c.g[V0][0] = at(OBJECT).lw(c);
+                            c.g[A1][0] = at(BONE).lw(c);
+                            c.g[A2][0] = Addr((c.g[V0][0] as u32).wrapping_add(OBJ_NODE)).lw(c);
+                            let node = c.g[A2][0] as u32;
+                            c.g[V1][0] = Addr(node.wrapping_add(NODE_VTABLE)).lw(c);
+                            let vt = c.g[V1][0] as u32;
+                            virtual_call(c, node, vt, VT_BONE_MATRIX, 0x0029_8068)?;
+                            true
+                        }
+                    };
+                    let sp0 = sp(c);
+                    if matrix {
+                        c.lq(V1, (c.g[V0][0] as u32).wrapping_add(TRANSLATION));
+                        c.cycles += 3;
+                        c.sq(V1, at(POSITION).0);
+                        c.sq(V1, sp0);
+                    } else {
+                        c.cycles += 3;
+                        c.lq(V0, (c.g[V1][0] as u32).wrapping_add(OBJ_POSITION));
+                        c.sq(V0, at(POSITION).0);
+                        c.sq(V0, sp0);
+                    }
+                }
+                c.cycles += 1;
+            }
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < COUNT) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            c.g[V0][0] = SLOT_SIZE;
+            if event_due(c) {
+                deliver_event_here(c, 0x0029_7fc0);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// A virtual call `node->vt[slot](node + delta)` (`{s16 delta; fn}` at
+/// `vt + slot`), as the original sets it up: a0 = node + delta, v0 = fn.
+pub(crate) fn virtual_call(c: &mut Cpu, node: u32, vt: u32, slot: u32, ret: u32) -> Flow {
+    c.g[A0][0] = Addr(vt.wrapping_add(slot)).lh(c);
+    c.g[V0][0] = Addr(vt.wrapping_add(slot + 4)).lw(c);
+    let f = c.g[V0][0] as u32;
+    c.g[A0][0] = sx(node.wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, f, ret)
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_UpdateRaceLoopSfx (0x29d290)
+
+/// `SSXAudioSystem_GetRaceMan` (cross-shard, through the table).
+pub(crate) const SSX_AUDIO_GET_RACE_MAN: u32 = 0x0028_b1d8;
+
+pub(crate) const SSX_AUDIO_START_LOOP_SFX: Callee = Callee {
+    addr: 0x0029_d370,
+    f: ee::s08::SSXAudioSystem_StartLoopSfx,
+};
+
+pub(crate) const SSX_AUDIO_STOP_LOOP_SFX: Callee = Callee {
+    addr: 0x0029_d678,
+    f: ee::s08::SSXAudioSystem_StopLoopSfx,
+};
+
+pub(crate) const BANK_MONITOR_STOP_BY_BANK: Callee = Callee {
+    addr: 0x002a_d650,
+    f: ee::s08::BankMonitor_StopByBank,
+};
+
+/// Race manager: its race state (+0x28) with the loop sound id (+0x430,
+/// -1: none) and the race phase (+0x434; below 22 the loop plays).
+pub(crate) const RACE_MAN_STATE: u32 = 0x28;
+
+pub(crate) const RACE_LOOP_ID: u32 = 0x430;
+
+pub(crate) const RACE_PHASE: u32 = 0x434;
+
+pub(crate) const RACE_PHASE_LOOPING: i64 = 22;
+
+/// Audio system: the loop id last seen (+0x5fc0, compared by its low byte)
+/// and the sound engine pointer (+0x118 -> object with the bank monitor at
+/// +0x1d8 and the event table at +0xacc: two events at +0x300/+0x360, each
+/// "on" word followed by its bank id).
+pub(crate) const AUDIO_LOOP_SEEN: u32 = 0x5fc0;
+
+pub(crate) const AUDIO_ENGINE: u32 = 0x118;
+
+pub(crate) const ENGINE_BANK_MONITOR: u32 = 0x1d8;
+
+pub(crate) const ENGINE_EVENTS: u32 = 0xacc;
+
+/// `gp`-relative fade times (`.lit4`): the loop stop and the two bank stops.
+pub(crate) const GP_LOOP_FADE: u32 = 0x4594;
+
+pub(crate) const GP_BANK_A_FADE: u32 = 0x4590;
+
+pub(crate) const GP_BANK_B_FADE: u32 = 0x458c;
+
+/// `BankMonitor_StopByBank(engine.bank_monitor, id, fade)` for the event at
+/// `events + on`: id = the bank id after the "on" word if that word is 1,
+/// else -1. `fade_gp` is the gp offset of the fade literal; `extra` the
+/// cycles charged with the call.
+pub(crate) fn stop_event_bank(
+    c: &mut Cpu,
+    on: u32,
+    fade_gp: u32,
+    extra: u64,
+    ret: u32,
+) -> crate::call::Flow {
+    let engine = Addr(r32(c, S0)).off(AUDIO_ENGINE).lw(c);
+    c.g[V0][0] = engine;
+    c.g[V1][0] = Addr(engine as u32).lw(c);
+    let object = r32(c, V1);
+    c.g[A1][0] = Addr(object).off(ENGINE_EVENTS).lw(c);
+    let events = r32(c, A1);
+    c.g[V0][0] = Addr(events).off(on).lw(c) ^ 1;
+    c.g[A0][0] = sx(object.wrapping_add(ENGINE_BANK_MONITOR));
+    if c.g[V0][0] != 0 {
+        c.cycles += 1;
+        c.g[A1][0] = u64::MAX;
+    } else {
+        c.cycles += 2;
+        c.g[A1][0] = Addr(events).off(on + 4).lw(c);
+    }
+    c.cycles += extra;
+    let gp = r32(c, GP);
+    c.lwc1(12, gp.wrapping_sub(fade_gp));
+    BANK_MONITOR_STOP_BY_BANK.call(c, ret)
+}
+
+/// `void SSXAudioSystem_UpdateRaceLoopSfx(SSXAudioSystem* self)` (0x29d290):
+/// follows the race's loop sound id (`raceMan->state+0x430`). When it is
+/// set (not -1) and its low byte differs from the one last seen
+/// (`self+0x5fc0`, then updated): in the looping phases (`+0x434 < 22`)
+/// starts the loop sfx; afterwards stops it (`StopLoopSfx` with a fade) and
+/// stops the banks of the two race events (`BankMonitor_StopByBank`).
+pub fn ssx_audio_system_update_race_loop_sfx(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        call_ptr(c, SSX_AUDIO_GET_RACE_MAN, 0x0029_d2a4)?;
+        let this = Addr(r32(c, S0));
+        c.g[A1][0] = Addr(r32(c, V0)).off(RACE_MAN_STATE).lw(c);
+        let race = Addr(r32(c, A1));
+        c.g[A0][0] = race.off(RACE_LOOP_ID).lw(c);
+        c.g[V0][0] = c.g[A0][0] & 0xff;
+        'out: {
+            if c.g[A0][0] == u64::MAX {
+                c.cycles += 1;
+                break 'out;
+            }
+            c.cycles += 3;
+            c.g[V1][0] = this.off(AUDIO_LOOP_SEEN).lbu(c);
+            if c.g[V0][0] == c.g[V1][0] {
+                break 'out;
+            }
+            c.cycles += 5;
+            this.off(AUDIO_LOOP_SEEN).sw(c, c.g[A0][0]);
+            c.g[V0][0] = race.off(RACE_PHASE).lw(c);
+            c.g[V0][0] = ((c.g[V0][0] as i64) < RACE_PHASE_LOOPING) as u64;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S0][0];
+                SSX_AUDIO_START_LOOP_SFX.call(c, 0x0029_d2e0)?;
+                break 'out;
+            }
+            c.cycles += 10;
+            let gp = r32(c, GP);
+            c.lwc1(12, gp.wrapping_sub(GP_LOOP_FADE));
+            c.g[A0][0] = c.g[S0][0];
+            SSX_AUDIO_STOP_LOOP_SFX.call(c, 0x0029_d2f4)?;
+            stop_event_bank(c, 0x300, GP_BANK_A_FADE, 10, 0x0029_d328)?;
+            stop_event_bank(c, 0x360, GP_BANK_B_FADE, 3, 0x0029_d35c)?;
+            c.cycles += 1;
+        }
+        c.cycles += 3;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14197,6 +14763,199 @@ pub(crate) mod tests {
                     }
                 }
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// SSXAudioSystem_FlushPendingSpeech: no request, each single request,
+    /// several at once (the first in priority order plays), and the rider
+    /// line 0x20b9 with its rider present or not. The real speech callees
+    /// run on the zeroed audio system of the DJ-line tests.
+    #[test]
+    fn ssx_audio_system_flush_pending_speech_matches() {
+        use crate::difftest::{check, DATA};
+        use crate::game::fe::feasyncfile::tests::W_6;
+        use crate::game::sound::soundsys::tests::dj_setup;
+        const FLAGS: [u32; 13] = [
+            0x5768, 0x5784, 0x576c, 0x577c, 0x5770, 0x5788, 0x5774, 0x574c, 0x5750, 0x5754, 0x5758,
+            0x5740, 0,
+        ];
+        check(
+            ee::s08::f_002a43b8__generated,
+            ssx_audio_system_flush_pending_speech,
+            150,
+            &|c, seed| {
+                dj_setup(c, seed, 0x2a_43b8);
+                c.pc = 0x002a_43b8;
+                let this = DATA;
+                let first = FLAGS[(seed % 13) as usize];
+                if first != 0 {
+                    c.bus.write32(this + first, 1 + seed);
+                    if seed % 3 == 0 {
+                        // A lower-priority request too.
+                        c.bus.write32(this + 0x5740, 1);
+                    }
+                }
+                c.bus.write32(this + 0x5778, seed % 7);
+                c.bus.write32(this + 0x575c, seed % 5);
+                c.bus.write32(this + 0x5744, (seed % 4 != 0) as u32);
+                let rider = seed % 4;
+                c.bus.write32(this + 0x5748, rider);
+                let race = W_6 + 0x2000;
+                c.bus.write32(
+                    race + 0x28 + 4 * rider,
+                    if seed % 2 == 0 { 0 } else { DATA + 0x2_0000 },
+                );
+            },
+        );
+    }
+
+    /// SSXAudioSystem_UpdateObjectLoops: 30 slots, active or not; a gone
+    /// node (the loop stops through the real BankMonitor_StopHandle on the
+    /// StopAllObjectLoops fixture), the node's matrix (bone -1), a bone
+    /// matrix, or no bones (a real leaf returning 0) and the object's own
+    /// position. The node methods are fakes (some unwind).
+    #[test]
+    fn ssx_audio_system_update_object_loops_matches() {
+        use crate::difftest::fakes::{FAKE, LOG_RESULTS};
+        use crate::difftest::{check, fill, DATA};
+        use crate::game::main::gamestate::tests::base_3;
+        const RETURN_ZERO: u32 = 0x0014_06c0;
+        check(
+            ee::s08::f_00297fa0__generated,
+            ssx_audio_system_update_object_loops,
+            120,
+            &|c, seed| {
+                let mut r = base_3(c, seed, 0x29_7fa0, 8);
+                c.pc = 0x0029_7fa0;
+                let s = DATA + 0x100;
+                let chans = DATA + 0x800;
+                let gain = DATA + 0x840;
+                c.g[A0][0] = sx(s);
+                c.bus.write32(s + 0x118, chans);
+                c.bus.write32(chans, gain);
+                // Two node vtables: with bones (fake) and without (0).
+                let (vt_bones, vt_flat) = (DATA + 0x6800, DATA + 0x6900);
+                for (vt, has_bones) in [(vt_bones, FAKE + 0x10), (vt_flat, RETURN_ZERO)] {
+                    for (off, f) in [(0xc0, FAKE), (0xd0, has_bones), (0xe8, FAKE + 0x20)] {
+                        c.bus
+                            .write16(vt + off, (r.next_u32() as i16 as i32 & !3) as u16);
+                        c.bus.write32(vt + off + 4, f);
+                    }
+                }
+                // Fake matrices with a translation.
+                for k in 0..4u32 {
+                    let m = DATA + 0x7000 + 0x100 * k;
+                    c.bus.write32(LOG_RESULTS + 4 * k, m);
+                    fill(c, &mut r, m + 0x30, 4);
+                }
+                for i in 0..30u32 {
+                    let slot = s + 0x5a00 + 0x30 * i;
+                    let obj = DATA + 0x2000 + 0x80 * i;
+                    let node = DATA + 0x4000 + 0x40 * i;
+                    let active = if (i + seed) % 3 == 0 {
+                        1
+                    } else {
+                        r.next_u32() % 3
+                    };
+                    c.bus.write32(slot, active);
+                    c.bus.write32(slot + 4, obj);
+                    c.bus.write32(
+                        slot + 8,
+                        if r.next_u32() % 2 == 0 {
+                            u32::MAX
+                        } else {
+                            r.next_u32() % 20
+                        },
+                    );
+                    c.bus.write32(slot + 0x24, r.next_u32() % 8);
+                    c.bus
+                        .write32(obj + 0xc, if r.next_u32() % 5 == 0 { 0 } else { node });
+                    fill(c, &mut r, obj + 0x40, 4);
+                    c.bus.write32(
+                        node + 0xc,
+                        if r.next_u32() % 2 == 0 {
+                            vt_bones
+                        } else {
+                            vt_flat
+                        },
+                    );
+                }
+            },
+        );
+    }
+
+    /// SSXAudioSystem_UpdateRaceLoopSfx: the world at `gp-0x848`
+    /// (`feasyncfile::tests::base_2`) with its race manager's state holding
+    /// a loop id that is -1, the same (low byte) as the one seen, or new;
+    /// phases below and from 22. The real StartLoopSfx (no loop bank:
+    /// `+0x6c74 = 0`), StopLoopSfx (nothing playing: `+0x5fc4 = 0`) and
+    /// BankMonitor_StopByBank (63 idle instances, the events on or off)
+    /// run.
+    #[test]
+    fn ssx_audio_system_update_race_loop_sfx_matches() {
+        use crate::game::fe::feasyncfile::tests::base_2;
+        check(
+            ee::s08::f_0029d290__generated,
+            ssx_audio_system_update_race_loop_sfx,
+            300,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x0029_d290);
+                let gp = crate::difftest::GAME_GP;
+                let app = c.bus.read32(gp - 0x848);
+                let man = c.bus.read32(app + 0x84);
+                let race_man = DATA + 0x10000;
+                let race = DATA + 0x10100;
+                let this = DATA + 0x11000;
+                let engine_ptr = DATA + 0x18000;
+                let object = DATA + 0x18100;
+                let events = DATA + 0x19000;
+                let instances = DATA + 0x1a000;
+                c.bus.write32(man + 0xc, race_man);
+                c.bus.write32(race_man + RACE_MAN_STATE, race);
+                for off in [GP_LOOP_FADE, GP_BANK_A_FADE, GP_BANK_B_FADE] {
+                    let v = r.f32(8.0);
+                    c.bus.write32(gp - off, v);
+                }
+                let seen = r.next_u32();
+                c.bus.write32(this + AUDIO_LOOP_SEEN, seen);
+                let id = match seed % 4 {
+                    0 => u32::MAX,
+                    1 => (r.next_u32() & !0xff) | (seen & 0xff),
+                    _ => r.next_u32() | 1,
+                };
+                c.bus.write32(race + RACE_LOOP_ID, id);
+                let phase = if seed % 2 == 0 {
+                    r.next_u32() % 22
+                } else {
+                    22 + r.next_u32() % 10
+                };
+                c.bus.write32(race + RACE_PHASE, phase);
+                c.bus.write32(this + 0x6c74, 0);
+                c.bus.write32(this + 0x5fc4, 0);
+                c.bus.write32(this + AUDIO_ENGINE, engine_ptr);
+                c.bus.write32(engine_ptr, object);
+                c.bus.write32(object + ENGINE_EVENTS, events);
+                for on in [0x300u32, 0x360] {
+                    let state = if r.next_u32() % 2 == 0 {
+                        1
+                    } else {
+                        r.next_u32() % 4
+                    };
+                    c.bus.write32(events + on, state);
+                    c.bus.write32(events + on + 4, r.next_u32() % 3);
+                }
+                c.bus
+                    .write32(object + ENGINE_BANK_MONITOR + 0x8ec, instances);
+                for i in 0..64u32 {
+                    let inst = instances + i * 0xc0;
+                    c.bus.write32(inst, 0);
+                    c.bus.write32(inst + 0xc, r.next_u32() % 3);
+                }
+                c.g[A0][0] = sx(this);
+                c.pc = 0x0029_d290;
             },
         );
     }

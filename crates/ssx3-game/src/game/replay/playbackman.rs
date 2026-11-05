@@ -2,8 +2,13 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fcc;
+use crate::abi::set_fpr;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -94,6 +99,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0026_ce50,
         playback_man_read_input_frame,
         "PlaybackMan_ReadInputFrame",
+    ),
+    (
+        0x0026_c5f8,
+        playback_man_poll_file_load,
+        "PlaybackMan_PollFileLoad",
+    ),
+    (
+        0x0026_d2b0,
+        replay_cache_record_frame,
+        "ReplayCache_RecordFrame",
     ),
 ];
 
@@ -1232,6 +1247,252 @@ pub fn playback_man_read_input_frame(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// PlaybackMan_PollFileLoad (0x26c5f8)
+
+/// Cross-shard calls through the function table.
+pub(crate) const ASYNC_FILE_IS_DONE: u32 = 0x003d_f980;
+
+pub(crate) const ASYNC_FILE_GET_RESULT: u32 = 0x003d_f9d8;
+
+pub(crate) const OPERATOR_NEW_NAMED: u32 = 0x0031_7e30;
+
+pub(crate) const EA_MEM_COPY: u32 = 0x003e_6574;
+
+pub(crate) const MEM_FREE: u32 = 0x0025_23a8;
+
+/// The allocation name passed to `operator_new_named` and its flags.
+pub(crate) const PLAYBACK_ALLOC_NAME: u64 = 0x0048_1560;
+
+pub(crate) const PLAYBACK_ALLOC_FLAGS: u64 = 0x2000_0000;
+
+/// PlaybackMan: entry array (+0x58, 12 bytes each: +4 buffer, +8 size),
+/// current entry (+0x74) and the pending async file handle (+0x78, -1:
+/// none).
+pub(crate) const PBM_ENTRIES: u32 = 0x58;
+
+pub(crate) const PBM_CURRENT: u32 = 0x74;
+
+pub(crate) const PBM_HANDLE: u32 = 0x78;
+
+pub(crate) const PBE_SIZE: u64 = 0xc;
+
+pub(crate) const PBE_BUFFER: u32 = 0x4;
+
+pub(crate) const PBE_BYTES: u32 = 0x8;
+
+/// `void PlaybackMan_PollFileLoad(PlaybackMan* self)` (0x26c5f8): when the
+/// pending async load (`+0x78`) has finished, takes its result
+/// (`AsyncFile_GetResult(handle, &data, &size)`); if it holds data, copies
+/// it into a new buffer (`operator_new_named(size, ..)`) of the current
+/// entry (`entries[cur]`: buffer, size) and frees the loaded block. The
+/// handle is then cleared (-1).
+///
+/// s2 = self, s0 = the entry, s1 = 12 (the entry size; LO/HI from the
+/// index products), `data`/`size` on the stack at 0/4.
+pub fn playback_man_poll_file_load(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S0, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        frame.save_ra(c, 0x10);
+        let this = Addr(r32(c, S2));
+        c.g[A0][0] = this.off(PBM_HANDLE).lw(c);
+        'done: {
+            if (c.g[A0][0] as i64) < 0 {
+                break 'done;
+            }
+            c.cycles += 5;
+            call_ptr(c, ASYNC_FILE_IS_DONE, 0x0026_c624)?;
+            c.g[V1][0] = 1;
+            if c.g[V0][0] != 1 {
+                break 'done;
+            }
+            c.cycles += 9;
+            c.g[A0][0] = this.off(PBM_HANDLE).lw(c);
+            let data_at = Addr(sp(c));
+            let size_at = data_at.off(4);
+            c.g[A1][0] = c.g[SP][0];
+            data_at.sw(c, 0);
+            c.g[A2][0] = c.g[SP][0] | 4;
+            size_at.sw(c, 0);
+            call_ptr(c, ASYNC_FILE_GET_RESULT, 0x0026_c648)?;
+            'clear: {
+                c.g[V1][0] = data_at.lw(c);
+                c.g[V0][0] = u64::MAX;
+                if c.g[V1][0] == 0 {
+                    break 'clear;
+                }
+                c.cycles += 3;
+                c.g[A0][0] = size_at.lw(c);
+                c.g[S1][0] = PBE_SIZE;
+                if (c.g[A0][0] as i64) <= 0 {
+                    break 'clear;
+                }
+                // entries[cur].buffer = operator_new_named(size, ..)
+                c.cycles += 27;
+                c.g[S0][0] = this.off(PBM_CURRENT).lw(c);
+                c.g[V0][0] = this.off(PBM_ENTRIES).lw(c);
+                c.mult(0, S0, S0, S1);
+                c.g[A1][0] = PLAYBACK_ALLOC_NAME;
+                c.g[A2][0] = PLAYBACK_ALLOC_FLAGS;
+                c.g[A3][0] = 0;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+                call_ptr(c, OPERATOR_NEW_NAMED, 0x0026_c684)?;
+                let entry = Addr(r32(c, S0));
+                entry.off(PBE_BUFFER).sw(c, c.g[V0][0]);
+                // entries[cur].size = size
+                c.g[V0][0] = this.off(PBM_CURRENT).lw(c);
+                c.g[V1][0] = this.off(PBM_ENTRIES).lw(c);
+                c.mult(0, V0, V0, S1);
+                c.g[A0][0] = size_at.lw(c);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                Addr(r32(c, V0)).off(PBE_BYTES).sw(c, c.g[A0][0]);
+                // EA_MemCopy(entries[cur].buffer, data, size)
+                c.g[V1][0] = this.off(PBM_CURRENT).lw(c);
+                c.g[V0][0] = this.off(PBM_ENTRIES).lw(c);
+                c.mult(0, V1, V1, S1);
+                c.g[A2][0] = size_at.lw(c);
+                c.g[A1][0] = data_at.lw(c);
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                c.g[A0][0] = Addr(r32(c, V1)).off(PBE_BUFFER).lw(c);
+                call_ptr(c, EA_MEM_COPY, 0x0026_c6c0)?;
+                c.g[A0][0] = data_at.lw(c);
+                call_ptr(c, MEM_FREE, 0x0026_c6c8)?;
+                c.g[V0][0] = u64::MAX;
+            }
+            c.cycles += 2;
+            this.off(PBM_HANDLE).sw(c, c.g[V0][0]);
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ReplayCache_RecordFrame (0x26d2b0)
+
+/// ReplayCache: number of chunks.
+pub(crate) const REPLAY_COUNT: u32 = 0x0;
+
+/// The chunk array: 8 bytes each, the low 12 bits of the first word a
+/// repeat count.
+pub(crate) const REPLAY_CHUNKS: u32 = 0xc;
+
+pub(crate) const REPLAY_REPEAT_MASK: u64 = 0xfff;
+
+/// `memcmp` (cross-shard, through the table).
+pub(crate) const MEMCMP: u32 = 0x0041_5fc8;
+
+pub(crate) const REPLAY_CACHE_PUSH_FRAME: Callee = Callee {
+    addr: 0x0026_d228,
+    f: ee::s07::ReplayCache_PushFrame,
+};
+
+/// `int ReplayCache::RecordFrame(ReplayCache* cache, const u64* frame)`
+/// (0x26d2b0): run-length records one 8-byte frame. If the last chunk
+/// (repeat count masked out) equals the frame and its count is below 0xfff,
+/// the count goes up; otherwise the frame is pushed as a new chunk
+/// (`ReplayCache_PushFrame`). Returns 1.
+pub fn replay_cache_record_frame(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        set_reg(c, S0, reg(c, A0));
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0x10);
+        let cache = r32(c, S0);
+        let count = Addr(cache.wrapping_add(REPLAY_COUNT)).lw(c);
+        set_reg(c, V1, count);
+        set_reg(c, S1, reg(c, A1));
+        let mut extended = false;
+        if count as i64 <= 0 {
+            c.cycles += 3;
+            set_reg(c, A0, reg(c, S0));
+            set_reg(c, A1, reg(c, S1));
+            REPLAY_CACHE_PUSH_FRAME.call(c, 0x0026_d370)?;
+            extended = true;
+        } else {
+            // Compare the last chunk, repeat count cleared, with the frame.
+            c.cycles += 18;
+            let chunks = Addr(cache.wrapping_add(REPLAY_CHUNKS)).lw(c);
+            set_reg(c, V0, chunks);
+            let last = (count as u32).wrapping_sub(1);
+            set_reg(c, V1, sx(last));
+            let off = last << 3;
+            set_reg(c, S2, sx(off));
+            set_reg(c, A3, !REPLAY_REPEAT_MASK);
+            let entry = off.wrapping_add(chunks as u32);
+            set_reg(c, V0, sx(entry));
+            let s = sp(c);
+            set_reg(c, A0, reg(c, SP));
+            c.ldl(V1, entry.wrapping_add(7));
+            c.ldr(V1, entry);
+            c.sdl(V1, s.wrapping_add(7));
+            c.sdr(V1, s);
+            let key = c.ld(s) & !REPLAY_REPEAT_MASK;
+            set_reg(c, A1, reg(c, S1));
+            set_reg(c, A2, 8);
+            set_reg(c, V0, key);
+            c.sd(s, key);
+            call_ptr(c, MEMCMP, 0x0026_d314)?;
+            let differs = reg(c, V0) != 0;
+            set_reg(c, A0, reg(c, S0));
+            if !differs {
+                c.cycles += 7;
+                let chunks = Addr(cache.wrapping_add(REPLAY_CHUNKS)).lw(c);
+                set_reg(c, V0, chunks);
+                let at = sx(r32(c, S2).wrapping_add(chunks as u32));
+                set_reg(c, A1, at);
+                let word = Addr(at as u32).lw(c);
+                set_reg(c, A0, word);
+                let repeat = word & REPLAY_REPEAT_MASK;
+                let room = (repeat as i64) < 0xfff;
+                set_reg(c, V0, room as u64);
+                set_reg(c, V1, addu(repeat, 1));
+                if room {
+                    c.cycles += 6;
+                    let v = (word & !REPLAY_REPEAT_MASK) | (reg(c, V1) & REPLAY_REPEAT_MASK);
+                    set_reg(c, V0, v);
+                    set_reg(c, V1, reg(c, V1) & REPLAY_REPEAT_MASK);
+                    Addr(at as u32).sw(c, v);
+                    extended = true;
+                } else {
+                    c.cycles += 1;
+                    set_reg(c, A0, reg(c, S0));
+                }
+            }
+            if !extended {
+                c.cycles += 4;
+                set_reg(c, A1, reg(c, S1));
+                REPLAY_CACHE_PUSH_FRAME.call(c, 0x0026_d35c)?;
+                frame.restore(c, S0, 0x40);
+            }
+        }
+        if extended {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x40);
+        }
+        c.cycles += 6;
+        set_reg(c, V0, 1);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1679,6 +1940,137 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r: Rng = machine(c, seed, 0x26_ce50, 0);
                 read_input_frame_setup(c, &mut r, seed);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// PlaybackMan_PollFileLoad: the engine allocator and fake syscalls
+    /// (`feasyncfile::tests::base_2`), four async file slots (0x450c34,
+    /// count 0x519bf0) and a PlaybackMan whose handle is negative, unknown,
+    /// a slot still loading, or a finished slot whose result has no data,
+    /// a zero/negative size, or a real allocated block (copied into a new
+    /// buffer of the current entry, then freed).
+    #[test]
+    fn playback_man_poll_file_load_matches() {
+        use crate::game::fe::feasyncfile::tests::base_2;
+        const RET: u64 = 0x0012_3450;
+        check(
+            ee::s07::f_0026c5f8__generated,
+            playback_man_poll_file_load,
+            300,
+            &|c, seed| {
+                let mut r = base_2(c, seed, 0x0026_c5f8);
+                let slots = DATA + 0x10000;
+                let this = DATA + 0x11000;
+                let entries = DATA + 0x11100;
+                c.bus.write32(0x0045_0c34, slots);
+                c.bus.write32(0x0051_9bf0, 4);
+                fill(c, &mut r, slots, 4 * 12);
+                for i in 0..4u32 {
+                    // Not done, no error, by default.
+                    let file = slots + 0x30 * i;
+                    c.bus.write32(file, 0x100 | i);
+                    c.bus.write32(file + 0x1c, 1);
+                    c.bus.write32(file + 0x10, 0);
+                }
+                fill(c, &mut r, this, 0x20);
+                fill(c, &mut r, entries, 0x30);
+                c.bus.write32(this + PBM_ENTRIES, entries);
+                c.bus.write32(this + PBM_CURRENT, r.next_u32() % 4);
+                let slot = r.next_u32() % 4;
+                let file = slots + 0x30 * slot;
+                let size = 1 + r.next_u32() % 0x180;
+                let handle = match seed % 6 {
+                    0 => 0x8000_0000 | r.next_u32(),
+                    1 => 0x200 | slot,
+                    _ => 0x100 | slot,
+                };
+                if seed % 6 != 2 {
+                    c.bus.write32(file + 0x1c, 0);
+                }
+                match seed % 6 {
+                    3 => {
+                        // Finished without data.
+                        c.bus.write32(file + 0x8, size);
+                        c.bus.write32(file + 0x2c, size);
+                    }
+                    4 => {
+                        // Finished with an empty or negative size.
+                        let n = if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            0x8000_0000 | r.next_u32()
+                        };
+                        c.bus.write32(file + 0x8, n);
+                        c.bus.write32(file + 0x2c, (DATA + 0x12000).wrapping_add(n));
+                    }
+                    _ => {
+                        // A loaded block from the engine allocator.
+                        c.g[A0][0] = size as u64;
+                        c.g[A1][0] = PLAYBACK_ALLOC_NAME;
+                        c.g[A2][0] = PLAYBACK_ALLOC_FLAGS;
+                        c.g[A3][0] = 0;
+                        c.g[RA][0] = RET;
+                        c.pc = OPERATOR_NEW_NAMED;
+                        ee::s10::f_00317e30(c);
+                        assert_eq!(c.pc, RET as u32, "operator_new_named did not return");
+                        let data = c.g[V0][0] as u32;
+                        assert!(data != 0, "no block");
+                        fill(c, &mut r, data, size / 4);
+                        c.bus.write32(file + 0x8, size);
+                        c.bus.write32(file + 0x2c, data + size);
+                    }
+                }
+                c.bus.write32(this + PBM_HANDLE, handle);
+                c.g[A0][0] = sx(this);
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = crate::difftest::SP as u64;
+                c.pc = 0x0026_c5f8;
+            },
+        );
+    }
+
+    /// `ReplayCache_RecordFrame`: chunk counts -1..12 (zero or less: pushed
+    /// at once), the last chunk's repeat count anywhere up to 0xfff, the
+    /// frame equal to the last chunk (repeat bits ignored) or differing in
+    /// one byte; the real `memcmp` and `ReplayCache_PushFrame` run.
+    #[test]
+    fn replay_cache_record_frame_matches() {
+        const CACHE: u32 = DATA;
+        const CHUNKS: u32 = DATA + 0x1000;
+        const NEW: u32 = DATA + 0x2000;
+        crate::difftest::check(
+            ee::s07::f_0026d2b0__generated,
+            replay_cache_record_frame,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x26d2b0, 0);
+                c.pc = 0x0026_d2b0;
+                let count = match seed % 4 {
+                    0 => (r.next_u32() % 2) as i32 - 1,
+                    _ => 1 + (r.next_u32() % 12) as i32,
+                };
+                c.bus.write32(CACHE + REPLAY_COUNT, count as u32);
+                c.bus.write32(CACHE + REPLAY_CHUNKS, CHUNKS);
+                fill(c, &mut r, CHUNKS, 32);
+                let last = CHUNKS + 8 * (count.max(1) as u32 - 1);
+                let repeat = match (seed / 4) % 4 {
+                    0 => 0xfff,
+                    1 => 0xffe,
+                    _ => r.next_u32() & 0xfff,
+                };
+                let w0 = c.bus.read32(last) & !0xfff | repeat;
+                c.bus.write32(last, w0);
+                let mut frame = c.bus.read64(last) & !0xfff;
+                frame |= (r.next_u32() & 0xfff) as u64;
+                frame &= !0xfffu64;
+                if seed % 3 == 0 {
+                    frame ^= 1u64 << (12 + r.next_u32() % 52);
+                }
+                c.bus.write64(NEW, frame);
+                c.g[A0][0] = sx(CACHE);
+                c.g[A1][0] = sx(NEW);
             },
         );
     }

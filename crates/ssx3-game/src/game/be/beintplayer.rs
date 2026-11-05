@@ -319,6 +319,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_new_player_int_is_sharing_char_record,
         "BENewPlayerInt_IsSharingCharRecord",
     ),
+    (
+        0x0014_8950,
+        be_char_int_get_overall_rating,
+        "BECharInt_GetOverallRating",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3093,6 +3098,139 @@ pub fn be_new_player_int_is_sharing_char_record(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------------------- BECharInt_GetOverallRating
+
+/// The seven attribute getters `BECharInt_GetOverallRating` averages, in
+/// call order, with their return addresses.
+pub(crate) const OVERALL_RATING_ATTRIBS: [(Callee, u32); 7] = [
+    // BECharInt_GetAttrib1
+    (
+        Callee {
+            addr: 0x0014_84e0,
+            f: ee::s01::f_001484e0,
+        },
+        0x0014_897c,
+    ),
+    // BECharInt_GetAttrib3
+    (
+        Callee {
+            addr: 0x0014_8680,
+            f: ee::s01::f_00148680,
+        },
+        0x0014_899c,
+    ),
+    // BECharInt_GetAttrib0
+    (
+        Callee {
+            addr: 0x0014_8410,
+            f: ee::s01::f_00148410,
+        },
+        0x0014_89c0,
+    ),
+    // BECharInt_GetAttrib4
+    (
+        Callee {
+            addr: 0x0014_8750,
+            f: ee::s01::f_00148750,
+        },
+        0x0014_89e4,
+    ),
+    // BECharInt_GetAttrib5
+    (
+        Callee {
+            addr: 0x0014_8820,
+            f: ee::s01::f_00148820,
+        },
+        0x0014_8a08,
+    ),
+    // BECharInt_GetAttrib6
+    (
+        Callee {
+            addr: 0x0014_88f0,
+            f: ee::s01::f_001488f0,
+        },
+        0x0014_8a2c,
+    ),
+    // BECharInt_GetAttrib2
+    (
+        Callee {
+            addr: 0x0014_85b0,
+            f: ee::s01::f_001485b0,
+        },
+        0x0014_8a50,
+    ),
+];
+
+/// `int BECharInt_GetOverallRating(BECharInt* self, int rider)` (0x148950):
+/// a rider's overall rating, the mean of its seven attribute ratings each
+/// divided by 5 (integer divisions: `sum(attr / 5) / 7`), at least 1.
+/// Frame 0x60 (s0-s4).
+pub fn be_char_int_get_overall_rating(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        let this = c.g[A0][0];
+        let rider = c.g[A1][0];
+        c.g[S2][0] = this;
+        c.g[S3][0] = rider;
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = 5;
+        let (getter, ret) = OVERALL_RATING_ATTRIBS[0];
+        getter.call(c, ret)?;
+        c.g[S4][0] = 0;
+        // attr / 5 (the divisor check `teq s0, s4` never traps).
+        c.div(0, V0, S0);
+
+        c.cycles += 10;
+        c.g[A0][0] = this;
+        c.g[S1][0] = c.lo[0];
+        c.g[A1][0] = rider;
+        let (getter, ret) = OVERALL_RATING_ATTRIBS[1];
+        getter.call(c, ret)?;
+        c.div(0, V0, S0);
+        c.g[V1][0] = 5;
+        c.g[A0][0] = this;
+        c.g[A1][0] = rider;
+
+        for &(getter, ret) in &OVERALL_RATING_ATTRIBS[2..] {
+            c.cycles += 9;
+            c.g[V0][0] = c.lo[0];
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            getter.call(c, ret)?;
+            c.div(0, V0, S0);
+            c.g[V1][0] = 5;
+            c.g[A0][0] = this;
+            c.g[A1][0] = rider;
+        }
+        // The last block loads 7 (the mean's divisor), 1 (the minimum).
+        c.g[V1][0] = 7;
+        c.g[A1][0] = 1;
+        c.g[A0][0] = 5;
+
+        c.cycles += 15;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = c.lo[0];
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.div(0, S1, V1);
+        let mean = c.lo[0];
+        c.g[S1][0] = mean;
+        c.g[V0][0] = if 0 < mean as i64 { mean } else { 1 };
+        c.g[S4][0] = (0 < mean as i64) as u64;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S4, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4289,6 +4427,51 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = player as u64;
                 c.pc = 0x0014_77e8;
+            },
+        );
+    }
+    use super::*;
+
+    /// BECharInt_GetOverallRating: the real attribute getters on a rider
+    /// table (0x5305b0: rider -> profile slot), profiles (0x535b20, stride
+    /// 0x1c: character byte at +0x11, the -1 / odd-flag words at +0xc /
+    /// +0x10) and a random signed attribute table (0x535538), so ratings
+    /// come out positive, zero and negative (the minimum of 1).
+    #[test]
+    fn be_char_int_get_overall_rating_matches() {
+        check(
+            ee::s01::f_00148950__generated,
+            be_char_int_get_overall_rating,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x14_8950, 0);
+                c.pc = 0x0014_8950;
+                for i in 0..8u32 {
+                    c.bus.write32(0x0053_05b0 + 4 * i, r.next_u32() % 8);
+                }
+                for i in 0..8u32 {
+                    let p = 0x0053_5b20 + 0x1c * i;
+                    fill(c, &mut r, p, 7);
+                    if r.next_u32() % 3 == 0 {
+                        c.bus.write32(p + 0xc, 0xffff_ffff);
+                    }
+                    c.bus.write8(p + 0x11, (r.next_u32() % 10) as u8);
+                }
+                // Mostly positive attributes; some seeds all negative.
+                let neg = seed % 5 == 0;
+                for i in 0..0x100u32 {
+                    let v = r.next_u32() as u8;
+                    let v = if neg {
+                        v | 0x80
+                    } else if seed % 5 < 3 {
+                        v & 0x7f
+                    } else {
+                        v
+                    };
+                    c.bus.write8(0x0053_5538 + i, v);
+                }
+                c.g[A0][0] = (DATA + (r.next_u32() & 0xfff0)) as u64;
+                c.g[A1][0] = (r.next_u32() % 8) as u64;
             },
         );
     }

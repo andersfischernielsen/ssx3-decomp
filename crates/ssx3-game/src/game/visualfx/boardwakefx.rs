@@ -2,8 +2,13 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fcc;
+use crate::abi::set_fpr;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -37,6 +42,7 @@ pub(crate) use crate::game::fe::ovstates::at as at_6;
 pub(crate) use crate::game::fe::ovstates::close;
 pub(crate) use crate::game::intersect::riderspheretree::p_2;
 pub(crate) use crate::game::misc::gp_lit;
+use crate::game::misc::STATUS_EIE;
 pub(crate) use crate::game::object::debouncenode::lw32;
 pub(crate) use crate::game::object::debouncenode::BOARD_WAKE_WORLD;
 pub(crate) use crate::game::object::splinemodifier::ldf as ldf_3;
@@ -244,6 +250,19 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x002e_5da0, snowfall_update, "SnowFall_Update"),
     (0x002e_6008, snow_fall_render, "SnowFall_Render"),
+    (
+        0x002d_e058,
+        board_wake_fx_advance_ring,
+        "cBoardWakeFX_AdvanceRing",
+    ),
+    (
+        0x002e_2260,
+        dynamic_spray_fx_update_emitter9,
+        "cDynamicSprayFX_UpdateEmitter9",
+    ),
+    (0x002e_3338, lens_fx_prepare_view, "LensFX_PrepareView"),
+    (0x002e_3478, lens_fx_draw_flares, "LensFX_DrawFlares"),
+    (0x002f_4690, lens_fx_draw_flare_set, "LensFX_DrawFlareSet"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12822,6 +12841,1167 @@ pub fn lens_fx_draw_flare_quad(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod flare_set {
+    use super::ee;
+    use super::Callee;
+
+    /// `gp-0x854`: the renderer (`+0x10d8` vtable: width at +0x50, height
+    /// at +0x58, DrawSprite at +0x270; `+0xe84` the draw state, whose
+    /// halfword at +0x10 takes the word at `+0x1004`).
+    pub const GP_RENDERER: u32 = 0x854;
+
+    pub const VTABLE: u32 = 0x10d8;
+
+    pub const RENDER_STATE: u32 = 0xe84;
+
+    pub const BLEND: u32 = 0x1004;
+
+    /// `LensFX`: sun position at +0x1f0/+0x1f4, the flare count at +0x200,
+    /// the intensity at +0x204; flares (0x1c each) from +0x30: type,
+    /// distance along the sun ray (+0x34), size (+0x38), colour (+0x3c).
+    pub const SUN_X: u32 = 0x1f0;
+
+    pub const SUN_Y: u32 = 0x1f4;
+
+    pub const COUNT: u32 = 0x200;
+
+    pub const INTENSITY: u32 = 0x204;
+
+    pub const FLARE_TYPE: u32 = 0x30;
+
+    pub const FLARE_DIST: u32 = 0x34;
+
+    pub const FLARE_SIZE: u32 = 0x38;
+
+    pub const FLARE_COLOUR: u32 = 0x3c;
+
+    pub const FLARE_STRIDE: u32 = 0x1c;
+
+    /// `WorldPainter_GetSunFlareIntensity(6)`.
+    pub const SUN_FLARE_INTENSITY: Callee = Callee {
+        addr: 0x002e_e268,
+        f: ee::s09::f_002ee268,
+    };
+}
+
+pub(crate) mod spray9 {
+
+    /// The rider object.
+    pub const OBJ: u32 = 0x0;
+
+    /// The spray level (seconds left).
+    pub const LEVEL: u32 = 0x4;
+
+    /// The emitter block (slot 9 lives at +0x1290).
+    pub const P28: u32 = 0x28;
+
+    /// The curve table (0x900: velocity scale).
+    pub const P2C: u32 = 0x2c;
+
+    /// Ring index into the bone list (0..30).
+    pub const RING: u32 = 0x78;
+
+    /// The bone list the ring walks.
+    pub const BONES: u32 = 0x7c;
+
+    /// The particle colour.
+    pub const COL: u32 = 0x90;
+
+    /// The speed compared against the limit.
+    pub const SPEED: u32 = 0xb8;
+
+    /// The spray mode (2: the level does not fade).
+    pub const MODE: u32 = 0xd4;
+
+    /// Emitter slot 9 inside the emitter block.
+    pub const SLOT: u32 = 0x1290;
+}
+
+pub(crate) mod lens_prep {
+    use super::*;
+
+    /// The camera / graphics object (`*(gp + 0x2a90)`), its interface's
+    /// vtable pointer at +0x10d8.
+    pub const CAMERA_GP: u32 = 0x2a90;
+
+    pub const CAM_VT: u32 = 0x10d8;
+
+    /// Interface slots: `GetViewRect(out)` (16-byte struct returned through
+    /// a hidden pointer), `GetViewMatrix()` (returns a 4x4 matrix pointer),
+    /// `GetFov(&x, &y, &z)`.
+    pub const VT_VIEW_RECT: u32 = 0xe0;
+
+    pub const VT_VIEW_MATRIX: u32 = 0x118;
+
+    pub const VT_FOV: u32 = 0xf0;
+
+    /// LensFX: view rect copy at +0, view matrix copy at +0x10, the three
+    /// FOV outputs at +0x50/+0x54/+0x58, per-view source counts at +0x60,
+    /// per-view flare arrays (0x3000 bytes, 0x30 per flare) at +0x68, per-view
+    /// sun state (0x210 bytes) at +0x6070.
+    pub const MATRIX: u32 = 0x10;
+
+    pub const FOV_X: u32 = 0x50;
+
+    pub const FOV_Y: u32 = 0x54;
+
+    pub const FOV_Z: u32 = 0x58;
+
+    pub const COUNTS: u32 = 0x60;
+
+    pub const FLARES: u32 = 0x68;
+
+    pub const FLARE_VIEW_SIZE: u64 = 0x3000;
+
+    pub const FLARE_SIZE: u32 = 0x30;
+
+    pub const SUN: u32 = 0x6070;
+
+    pub const SUN_SIZE: u64 = 0x210;
+
+    pub const UPDATE_SUN_POSITION: Callee = Callee {
+        addr: 0x002f_4db8,
+        f: ee::s09::LensFX_UpdateSunPosition,
+    };
+
+    pub const PROJECT_SOURCE: Callee = Callee {
+        addr: 0x002e_2b00,
+        f: ee::s09::LensFX_ProjectSource,
+    };
+}
+
+/// `(float)(unsigned)v` the way gcc converts an unsigned int: directly when
+/// it is non-negative, else halved (keeping the low bit) and doubled.
+/// Leaves `f1` = the result, and v0/v1 as the compiled code does (`v1` is
+/// set by the caller where the original sets it in a delay slot).
+pub(crate) fn flare_u32_to_f1(c: &mut Cpu, extra: u64) {
+    let v = c.g[V0][0];
+    if (v as i64) < 0 {
+        c.cycles += 2 + extra;
+        let half = sx((v as u32) >> 1);
+        c.g[V1][0] = half;
+        c.g[V0][0] = (v & 1) | half;
+        c.mtc1(V0, 1);
+        c.cvt_s_w(1, 1);
+        c.add_s(1, 1, 1);
+    } else {
+        c.cycles += 4;
+        c.mtc1(V0, 1);
+        c.cvt_s_w(1, 1);
+    }
+}
+
+/// An 8-byte struct copy through GPR `reg` (`ldl/ldr` + `sdl/sdr`).
+pub(crate) fn flare_copy8(c: &mut Cpu, reg: usize, src: u32, dst: u32) {
+    c.ldl(reg, src.wrapping_add(0x7));
+    c.ldr(reg, src);
+    c.sdl(reg, dst.wrapping_add(0x7));
+    c.sdr(reg, dst);
+}
+
+/// `void LensFX_DrawFlareSet(LensFX* fx)` (0x2f4690): draws the lens
+/// flares. The screen centre is half the renderer's width / height; each
+/// flare sits at `centre + (sun - centre) * dist`, with its colour's red
+/// scaled by the intensity times `WorldPainter_GetSunFlareIntensity(6)`,
+/// the quarter of the flare texture its type selects (0..3, else the left
+/// half), and a size of `size * 300`, drawn through the renderer's
+/// DrawSprite. Frame 0xf0 (s0-s3, f20/f21; centre at +0, sun at +0x10, ray
+/// at +0x20, position at +0x30, uv0 at +0x40, colour at +0x50, uv1 at
+/// +0x60, scratch / size at +0x70, the sprite position at +0x80).
+pub fn lens_fx_draw_flare_set(c: &mut Cpu) {
+    use flare_set::*;
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0xf0);
+        let gp = c.g[GP][0] as u32;
+        let rend = c.lw(gp.wrapping_sub(GP_RENDERER));
+        c.g[A1][0] = rend;
+        frame.save(c, S0, 0xd0);
+        frame.save(c, S1, 0xc0);
+        let fx = c.g[A0][0];
+        c.g[S0][0] = fx;
+        frame.save(c, S2, 0xb0);
+        frame.save(c, S3, 0xa0);
+        frame.save_ra(c, 0x90);
+        frame.save_fpr(c, 21, 0xe8);
+        frame.save_fpr(c, 20, 0xe0);
+        let fx = fx as u32;
+        // Width.
+        let vt = c.lw((rend as u32).wrapping_add(VTABLE));
+        c.g[V1][0] = vt;
+        let slot = crate::call::VSlot::read(c, vt, 0x50);
+        c.g[A0][0] = slot.delta;
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = slot.this(rend);
+        call_ptr(c, slot.func as u32, 0x002f_46cc)?;
+        let rend = c.lw(gp.wrapping_sub(GP_RENDERER));
+        c.g[A1][0] = rend;
+        flare_u32_to_f1(c, 4);
+
+        // centre.x = width * 0.5; height.
+        c.cycles += 10;
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 0);
+        let vt = c.lw((rend as u32).wrapping_add(VTABLE));
+        c.g[V1][0] = vt;
+        c.mul_s(20, 1, 0);
+        let slot = crate::call::VSlot::read(c, vt, 0x58);
+        c.g[A0][0] = slot.delta;
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = slot.this(rend);
+        call_ptr(c, slot.func as u32, 0x002f_471c)?;
+        c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+        flare_u32_to_f1(c, 3);
+
+        // centre, sun, ray = sun - centre; the renderer's blend word.
+        c.cycles += 20;
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 5);
+        let s = sp(c);
+        c.lwc1(0, fx.wrapping_add(SUN_X));
+        c.mul_s(1, 1, 5);
+        c.lwc1(3, fx.wrapping_add(SUN_Y));
+        c.sub_s(4, 0, 20);
+        c.swc1(20, s);
+        c.swc1(0, s.wrapping_add(0x10));
+        c.sub_s(2, 3, 1);
+        c.swc1(1, s.wrapping_add(0x4));
+        c.swc1(4, s.wrapping_add(0x20));
+        c.swc1(3, s.wrapping_add(0x14));
+        c.swc1(2, s.wrapping_add(0x24));
+        let rend = c.lw(gp.wrapping_sub(GP_RENDERER));
+        c.g[V1][0] = rend;
+        let state = c.lw((rend as u32).wrapping_add(RENDER_STATE));
+        c.g[A0][0] = state;
+        let blend = c.lw((rend as u32).wrapping_add(BLEND));
+        c.g[V0][0] = blend;
+        c.sh((state as u32).wrapping_add(0x10), blend);
+        let count = c.lw(fx.wrapping_add(COUNT));
+        c.g[V1][0] = count;
+        c.g[S3][0] = 0;
+        if (count as i64) > 0 {
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 21);
+            c.mov_s(20, 5);
+            c.g[S2][0] = sx(fx.wrapping_add(FLARE_COLOUR));
+            c.g[S1][0] = 0;
+            c.g[V0][0] = sx(fx);
+            loop {
+                // pos = centre + ray * dist; colour copy.
+                c.cycles += 32;
+                let s = sp(c);
+                let flare = c.g[V0][0] as u32;
+                c.lwc1(3, s.wrapping_add(0x20));
+                c.lwc1(4, flare.wrapping_add(FLARE_DIST));
+                c.lwc1(1, s.wrapping_add(0x24));
+                c.mul_s(3, 3, 4);
+                c.lwc1(2, s);
+                c.mul_s(1, 1, 4);
+                c.lwc1(0, s.wrapping_add(0x4));
+                c.add_s(2, 2, 3);
+                c.swc1(3, s.wrapping_add(0x40));
+                c.add_s(0, 0, 1);
+                c.swc1(1, s.wrapping_add(0x44));
+                c.swc1(2, s.wrapping_add(0x30));
+                c.swc1(0, s.wrapping_add(0x34));
+                let colour = c.g[S2][0] as u32;
+                crate::game::fe::ovstatehud::copy16_unaligned(
+                    c,
+                    V0,
+                    V1,
+                    colour,
+                    s.wrapping_add(0x50),
+                );
+                c.g[A0][0] = 6;
+                SUN_FLARE_INTENSITY.call(c, 0x002f_480c)?;
+
+                // colour.r *= intensity * sun flare intensity.
+                let s = sp(c);
+                c.lwc1(2, fx.wrapping_add(INTENSITY));
+                let flare = fx.wrapping_add(c.g[S1][0] as u32);
+                c.g[V0][0] = sx(flare);
+                c.lwc1(1, s.wrapping_add(0x50));
+                c.g[V1][0] = 1;
+                c.mul_s(2, 2, 0);
+                let ty = c.lw(flare.wrapping_add(FLARE_TYPE));
+                c.g[A0][0] = ty;
+                c.mul_s(1, 1, 2);
+                c.swc1(1, s.wrapping_add(0x50));
+
+                // uv0 (sp+0x40) and uv1 (sp+0x60) by type, staged at
+                // sp+0x70; f20 = 0.5, f21 = 1.0.
+                let ty = ty as i64;
+                let scratch = s.wrapping_add(0x70);
+                let (uv0, uv1) = (s.wrapping_add(0x40), s.wrapping_add(0x60));
+                if ty == 1 {
+                    c.cycles += 14;
+                    c.swc1(20, scratch);
+                    c.sw(scratch.wrapping_add(4), 0);
+                    flare_copy8(c, A1, scratch, uv0);
+                    c.swc1(21, scratch);
+                    c.swc1(20, scratch.wrapping_add(4));
+                    flare_copy8(c, A0, scratch, uv1);
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = (ty < 2) as u64;
+                    c.g[V0][0] = 2;
+                    if ty < 2 {
+                        c.cycles += 2;
+                        c.sw(scratch, 0);
+                        if ty == 0 {
+                            c.cycles += 13;
+                            c.sw(scratch.wrapping_add(4), 0);
+                            flare_copy8(c, V0, scratch, uv0);
+                            c.swc1(20, scratch);
+                            c.swc1(20, scratch.wrapping_add(4));
+                            flare_copy8(c, A2, scratch, uv1);
+                        } else {
+                            // Negative: the default.
+                            c.cycles += 2;
+                            c.sw(scratch.wrapping_add(4), 0);
+                            flare_default_uv(c, scratch, uv0, uv1);
+                        }
+                    } else {
+                        c.cycles += 2;
+                        c.g[V0][0] = 3;
+                        if ty == 2 {
+                            c.cycles += 14;
+                            c.sw(scratch, 0);
+                            c.swc1(20, scratch.wrapping_add(4));
+                            flare_copy8(c, V1, scratch, uv0);
+                            c.swc1(20, scratch);
+                            c.swc1(21, scratch.wrapping_add(4));
+                            flare_copy8(c, V0, scratch, uv1);
+                        } else if ty == 3 {
+                            c.cycles += 2;
+                            c.swc1(20, scratch);
+                            c.cycles += 13;
+                            c.swc1(20, scratch.wrapping_add(4));
+                            flare_copy8(c, A2, scratch, uv0);
+                            c.swc1(21, scratch);
+                            c.swc1(21, scratch.wrapping_add(4));
+                            flare_copy8(c, A1, scratch, uv1);
+                        } else {
+                            // Not 3 either (+2), the zero store (+2).
+                            c.cycles += 4;
+                            c.sw(scratch, 0);
+                            c.cycles += 1;
+                            c.sw(scratch.wrapping_add(4), 0);
+                            flare_default_uv(c, scratch, uv0, uv1);
+                        }
+                    }
+                }
+                let flare = fx.wrapping_add(c.g[S1][0] as u32);
+                c.g[V0][0] = sx(flare);
+
+                // DrawSprite(R, (pos, 0, 1), (size, size), uv0, uv1, colour).
+                c.cycles += 30;
+                c.g[AT][0] = 0x4396_0000;
+                c.mtc1(AT, 1);
+                c.lwc1(0, flare.wrapping_add(FLARE_SIZE));
+                c.g[A1][0] = sx(s.wrapping_add(0x80));
+                let rend = c.lw(gp.wrapping_sub(GP_RENDERER));
+                c.g[V1][0] = rend;
+                c.g[A2][0] = sx(scratch);
+                c.mul_s(0, 0, 1);
+                c.lwc1(2, s.wrapping_add(0x30));
+                c.lwc1(1, s.wrapping_add(0x34));
+                c.g[A3][0] = sx(uv0);
+                c.g[T0][0] = sx(uv1);
+                c.g[T1][0] = sx(s.wrapping_add(0x50));
+                c.swc1(0, scratch.wrapping_add(4));
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+                c.swc1(0, scratch);
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(FLARE_STRIDE));
+                let vt = c.lw((rend as u32).wrapping_add(VTABLE));
+                c.g[V0][0] = vt;
+                let slot = crate::call::VSlot::read(c, vt, 0x270);
+                c.g[A0][0] = slot.delta;
+                c.swc1(2, s.wrapping_add(0x80));
+                c.swc1(1, s.wrapping_add(0x84));
+                c.g[A0][0] = slot.this(rend);
+                c.sw(s.wrapping_add(0x88), 0);
+                c.swc1(21, s.wrapping_add(0x8c));
+                c.g[V1][0] = slot.func;
+                c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(FLARE_STRIDE));
+                call_ptr(c, slot.func as u32, 0x002f_49d4)?;
+                let count = c.lw(fx.wrapping_add(COUNT));
+                let more = (c.g[S3][0] as i64) < (count as i64);
+                c.g[V0][0] = more as u64;
+                c.g[V0][0] = sx(fx.wrapping_add(c.g[S1][0] as u32));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_47b0);
+                }
+            }
+        }
+
+        c.cycles += 9;
+        frame.restore(c, S0, 0xd0);
+        frame.restore(c, S1, 0xc0);
+        frame.restore(c, S2, 0xb0);
+        frame.restore(c, S3, 0xa0);
+        frame.restore_ra(c, 0x90);
+        frame.restore_fpr(c, 21, 0xe8);
+        frame.restore_fpr(c, 20, 0xe0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The default flare texture quarter: uv0 (0, 0) (the zeroed scratch),
+/// uv1 (0.5, 1).
+pub(crate) fn flare_default_uv(c: &mut Cpu, scratch: u32, uv0: u32, uv1: u32) {
+    c.cycles += 11;
+    flare_copy8(c, A0, scratch, uv0);
+    c.swc1(20, scratch);
+    c.swc1(21, scratch.wrapping_add(4));
+    flare_copy8(c, V1, scratch, uv1);
+}
+
+/// `void cDynamicSprayFX_UpdateEmitter9(cDynamicSprayFX* fx)` (0x2e2260):
+/// while the spray has a level and the rider is fast enough, spawn one
+/// particle at the next bone of a 30-entry ring (the bone's matrix
+/// translation), coloured with alpha `clamp(1.5 level, 0, 1)` and thrown
+/// along the rider's velocity (`obj + 0x1e0`) times the curve's scale; then
+/// fade the level by 1/60 (not below 0) unless the mode is 2. Otherwise slot
+/// 9 is only kept alive at the rider's bone `obj + 0x89c`.
+pub fn dynamic_spray_fx_update_emitter9(c: &mut Cpu) {
+    use spray9::*;
+    use ssx3_ee_rt::vu0::{Src, X};
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x50);
+        frame.save_fpr(c, 20, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x40);
+        frame.save_fpr(c, 21, 0x68);
+        let fx = r32(c, S0);
+        let gp = r32(c, GP);
+        c.mtc1(0, 20); // 0.0
+        c.lwc1(2, fx + LEVEL);
+        c.g[V0][0] = c.lw(fx + P28);
+        c.c_lt_s(20, 2);
+        let has_level = c.fcc();
+        c.g[A0][0] = sx(r32(c, V0).wrapping_add(SLOT));
+        let mut spawn = false;
+        if has_level {
+            c.cycles += 6;
+            c.lwc1(1, gp.wrapping_sub(0x3a4c)); // speed limit
+            c.lwc1(0, fx + SPEED);
+            c.c_lt_s(1, 0);
+            spawn = c.fcc();
+            if !spawn {
+                // (delay slot of the branch to the idle path)
+                c.g[V0][0] = c.lw(fx + OBJ);
+            }
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(fx + OBJ);
+        }
+        if spawn {
+            // alpha = clamp(1.5 level, 0, 1) in f3.
+            c.cycles += 9;
+            c.g[AT][0] = 0x3fc0_0000;
+            c.mtc1(AT, 0);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 1);
+            c.mul_s(0, 2, 0);
+            c.c_le_s(20, 0);
+            let positive = c.fcc();
+            c.mov_s(3, 20);
+            if positive {
+                c.cycles += 1;
+                c.min_s(3, 0, 1);
+            }
+
+            // col (alpha in w) -> sp+0; bone translation -> sp+0x10;
+            // velocity * scale -> sp+0x20.
+            c.cycles += 36;
+            let sp0 = sp(c);
+            c.lq(V0, fx + COL);
+            c.g[A1][0] = sx(sp0.wrapping_add(0x10));
+            c.g[T1][0] = c.lw(fx + RING);
+            c.g[A2][0] = sx(sp0.wrapping_add(0x20));
+            c.sq(V0, sp0);
+            c.g[A3][0] = c.g[SP][0];
+            c.swc1(3, sp0.wrapping_add(0xc));
+            c.g[T1][0] = sx(r32(c, T1) << 2);
+            c.lwc1(21, gp.wrapping_sub(0x3a48)); // 1/60
+            c.g[T0][0] = 1;
+            c.g[V0][0] = c.lw(fx + BONES);
+            c.g[T2][0] = c.lw(fx + OBJ);
+            c.mov_s(12, 21);
+            c.g[T1][0] = sx(r32(c, T1).wrapping_add(r32(c, V0)));
+            c.g[T4][0] = c.lw(fx + P2C);
+            c.g[T3][0] = c.lw(r32(c, T2).wrapping_add(0x780));
+            c.g[V0][0] = c.lw(r32(c, T1));
+            c.g[V1][0] = c.lw(r32(c, T3).wrapping_add(0x30));
+            c.g[V0][0] = sx(r32(c, V0) << 6);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            c.lq(T1, r32(c, V1).wrapping_add(0x30));
+            c.sq(T1, sp0.wrapping_add(0x10));
+            c.lwc1(0, r32(c, T4).wrapping_add(0x900));
+            c.mfc1(V1, 0);
+            c.lqc2(4, r32(c, T2).wrapping_add(0x1e0));
+            c.qmtc2(V1, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, sp0.wrapping_add(0x30));
+            c.lq(V0, sp0.wrapping_add(0x30));
+            c.sq(V0, sp0.wrapping_add(0x20));
+            call_ptr(c, 0x0037_17c0, 0x002e_2350)?;
+
+            // Advance the ring (wrap at 30).
+            c.g[V0][0] = c.lw(fx + RING);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+            c.g[V1][0] = ((c.g[V0][0] as i64) < 30) as u64;
+            let in_range = c.g[V1][0] != 0;
+            c.sw(fx + RING, c.g[V0][0]);
+            if !in_range {
+                c.cycles += 1;
+                c.sw(fx + RING, 0);
+            }
+
+            // Fade the level unless the mode holds it.
+            c.cycles += 4;
+            c.g[V1][0] = c.lw(fx + MODE);
+            c.g[V0][0] = 2;
+            if c.g[V1][0] != c.g[V0][0] {
+                c.cycles += 5;
+                c.lwc1(0, fx + LEVEL);
+                c.sub_s(0, 0, 21);
+                c.max_s(0, 0, 20);
+                c.swc1(0, fx + LEVEL);
+                c.cycles += 1;
+            }
+            frame.restore(c, S0, 0x50);
+        } else {
+            // Idle: keep slot 9 alive at the rider's bone obj+0x89c.
+            c.cycles += 13;
+            let sp0 = sp(c);
+            let obj = r32(c, V0);
+            c.g[A1][0] = c.g[SP][0];
+            c.lwc1(12, gp.wrapping_sub(0x3a44)); // 1/60
+            c.g[A2][0] = 0;
+            c.g[T0][0] = c.lw(obj.wrapping_add(0x780));
+            c.g[A3][0] = 0;
+            c.g[T1][0] = c.lw(obj.wrapping_add(0x89c));
+            c.g[V1][0] = c.lw(r32(c, T0).wrapping_add(0x30));
+            c.g[T1][0] = sx(r32(c, T1) << 6);
+            c.g[T0][0] = 0;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, T1)));
+            c.lq(V0, r32(c, V1).wrapping_add(0x30));
+            c.sq(V0, sp0);
+            call_ptr(c, 0x0037_17c0, 0x002e_23c4)?;
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 5;
+        frame.restore_ra(c, 0x40);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// cBoardWakeFX_AdvanceRing (0x2de058)
+
+/// cBoardWakeFX: the owner (rider) whose colour source sits at +0x6c0.
+pub(crate) const WAKE_OWNER: u32 = 0x00;
+
+/// Live segments in the ring (grows up to the capacity).
+pub(crate) const WAKE_COUNT: u32 = 0x04;
+
+/// Ring index of the newest segment.
+pub(crate) const WAKE_HEAD_2: u32 = 0x08;
+
+/// The main ring: `cap` entries of 0x30 bytes (`f32 pos; ... int r, g, b`
+/// at +0x10/+0x14/+0x18).
+pub(crate) const WAKE_RING: u32 = 0x10;
+
+/// Four trail rings (pointers), mirrored from the main ring's head entry.
+pub(crate) const WAKE_TRAILS: u32 = 0x14;
+
+/// Animation phase, wrapped into [0, 4).
+pub(crate) const WAKE_PHASE_2: u32 = 0x38;
+
+/// Frame counter (an int, converted to float for the segment position).
+pub(crate) const WAKE_FRAME: u32 = 0x40;
+
+/// Current wake colour (four floats, clamped to [0, 1]).
+pub(crate) const WAKE_COLOUR: u32 = 0xa0;
+
+/// Ring capacity.
+pub(crate) const WAKE_CAP: u32 = 0xb8;
+
+/// Bytes per ring entry.
+pub(crate) const RING_STRIDE: u32 = 0x30;
+
+/// The colour source object inside the owner (a vtable at its start).
+pub(crate) const OWNER_COLOUR_SOURCE: u32 = 0x6c0;
+
+/// Its vtable slot returning the colour index.
+pub(crate) const SLOT_COLOUR_INDEX: u32 = 0x38;
+
+/// `.lit4` phase step per tick (1/30), at gp-0x3bdc.
+pub(crate) const GP_WAKE_PHASE_STEP: u32 = 0x3bdc;
+
+/// Colour table `D_004FA398`: 0xf0-byte records starting with four floats.
+pub(crate) const WAKE_COLOUR_TABLE: u32 = 0x004f_a398;
+
+pub(crate) const WAKE_COLOUR_STRIDE: u32 = 0xf0;
+
+/// Loop head of the trail copy (event checks).
+pub(crate) const WAKE_TRAIL_HEAD: u32 = 0x002d_e2c0;
+
+/// `void cBoardWakeFX::AdvanceRing(cBoardWakeFX* fx)` (0x2de058): one tick
+/// of a board's wake ribbon. Advances the phase (wrapping at 4), grows the
+/// live count up to the capacity, steps the ring head back one slot, fetches
+/// the owner's wake colour (a virtual call for the colour index into the
+/// colour table), doubles and clamps it to [0, 1], then fills the new head
+/// entry: position `frame / 2` folded into [-32, 32) per 64 and the colour
+/// as 0..128 ints; copies that entry into the four trail rings and bumps the
+/// frame counter.
+pub fn board_wake_fx_advance_ring(c: &mut Cpu) {
+    guest(c, |c| {
+        // Phase += step; wrap at 4.
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        let step = Addr(r32(c, GP).wrapping_sub(GP_WAKE_PHASE_STEP)).read_fpu(c);
+        set_fpr(c, 1, step);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0x10);
+        set_reg(c, S0, reg(c, A0));
+        let fx = r32(c, S0);
+        let at = |o: u32| Addr(fx.wrapping_add(o));
+        set_reg(c, AT, 0x4080_0000);
+        let four = FpuF32(0x4080_0000);
+        set_fpr(c, 2, four);
+        let mut phase = at(WAKE_PHASE_2).read_fpu(c) + step;
+        let wrap = four.le(phase);
+        set_fcc(c, wrap);
+        at(WAKE_PHASE_2).write_fpu(c, phase);
+        if wrap {
+            c.cycles += 2;
+            phase = phase - four;
+            at(WAKE_PHASE_2).write_fpu(c, phase);
+        }
+        set_fpr(c, 0, phase);
+
+        // count = min(count + 1, cap).
+        c.cycles += 5;
+        let count = at(WAKE_COUNT).lw(c);
+        let cap = at(WAKE_CAP).lw(c);
+        set_reg(c, V1, count);
+        set_reg(c, V0, addu(count, 1));
+        if (count as i64) < (cap as i64) {
+            c.cycles += 1;
+            at(WAKE_COUNT).sw(c, reg(c, V0));
+        }
+
+        // head = (head + cap - 1) % cap.
+        c.cycles += 4;
+        let cap = at(WAKE_CAP).lw(c);
+        let head = at(WAKE_HEAD_2).lw(c);
+        set_reg(c, V1, cap);
+        c.cycles += 43;
+        let n = (head as u32).wrapping_add(cap as u32).wrapping_sub(1);
+        set_reg(c, V0, sx(n));
+        let owner = at(WAKE_OWNER).lw(c);
+        set_reg(c, A1, owner);
+        let (_, new_head) = abi::div(c, n, cap as u32);
+        let source = (owner as u32).wrapping_add(OWNER_COLOUR_SOURCE);
+        set_reg(c, A2, sx(source));
+        set_reg(c, A0, sx(new_head));
+        at(WAKE_HEAD_2).sw(c, sx(new_head));
+
+        // The owner's colour index (virtual call).
+        let vt = Addr(source).lw(c);
+        set_reg(c, V1, vt);
+        let slot = VSlot::read(c, vt, SLOT_COLOUR_INDEX);
+        set_reg(c, V0, slot.func);
+        set_reg(c, A0, slot.this(sx(source)));
+        call_ptr(c, slot.func as u32, 0x002d_e0ec)?;
+
+        // Copy the table colour to the stack and double it.
+        let index = r32(c, V0);
+        set_reg(c, A0, WAKE_COLOUR_STRIDE as u64);
+        set_reg(c, V1, 0x50_0000);
+        let off = abi::mult(c, index, WAKE_COLOUR_STRIDE);
+        set_reg(c, V0, sx(off));
+        set_reg(c, V1, sx(WAKE_COLOUR_TABLE));
+        let zero = FpuF32::ZERO;
+        let one = FpuF32::ONE;
+        set_fpr(c, 4, zero);
+        set_reg(c, AT, 0x3f80_0000);
+        set_fpr(c, 5, one);
+        set_fpr(c, 6, zero);
+        let entry = off.wrapping_add(WAKE_COLOUR_TABLE);
+        set_reg(c, V0, sx(entry));
+        c.ldl(V1, entry.wrapping_add(7));
+        c.ldr(V1, entry);
+        c.ldl(A0, entry.wrapping_add(0xf));
+        c.ldr(A0, entry.wrapping_add(8));
+        let s = sp(c);
+        c.sdl(V1, s.wrapping_add(7));
+        c.sdr(V1, s);
+        c.sdl(A0, s.wrapping_add(0xf));
+        c.sdr(A0, s.wrapping_add(8));
+        let tmp = |o: u32| Addr(s.wrapping_add(o));
+        let y = tmp(4).read_fpu(c);
+        let x = tmp(0).read_fpu(c);
+        let y2 = y + y;
+        let z = tmp(8).read_fpu(c);
+        let w = tmp(0xc).read_fpu(c);
+        let x2 = x + x;
+        let z2 = z + z;
+        let w2 = w + w;
+        tmp(4).write_fpu(c, y2);
+        // Clamp each lane to [0, 1] (negative -> 0).
+        let pos = zero.le(y2);
+        set_fcc(c, pos);
+        tmp(0).write_fpu(c, x2);
+        tmp(8).write_fpu(c, z2);
+        tmp(0xc).write_fpu(c, w2);
+        let mut cy = zero;
+        if pos {
+            c.cycles += 1;
+            cy = y2.min(one);
+        }
+        c.cycles += 4;
+        let pos = zero.le(z2);
+        set_fcc(c, pos);
+        tmp(4).write_fpu(c, cy);
+        let mut cz = zero;
+        if pos {
+            c.cycles += 1;
+            cz = z2.min(one);
+        }
+        c.cycles += 4;
+        let pos = zero.le(w2);
+        set_fcc(c, pos);
+        tmp(8).write_fpu(c, cz);
+        let mut cw = zero;
+        if pos {
+            c.cycles += 1;
+            cw = w2.min(one);
+        }
+        c.cycles += 4;
+        let pos = zero.le(x2);
+        set_fcc(c, pos);
+        tmp(0xc).write_fpu(c, cw);
+        let mut cx = zero;
+        if pos {
+            c.cycles += 1;
+            cx = x2.min(one);
+        }
+
+        // Store the colour in the effect.
+        c.cycles += 70;
+        tmp(0).write_fpu(c, cx);
+        set_reg(c, A0, RING_STRIDE as u64);
+        set_reg(c, AT, 0x3f00_0000);
+        let half = FpuF32(0x3f00_0000);
+        set_reg(c, A3, RING_STRIDE as u64);
+        c.ldl(V0, s.wrapping_add(7));
+        c.ldr(V0, s);
+        c.ldl(V1, s.wrapping_add(0xf));
+        c.ldr(V1, s.wrapping_add(8));
+        let col = fx.wrapping_add(WAKE_COLOUR);
+        c.sdl(V0, col.wrapping_add(7));
+        c.sdr(V0, col);
+        c.sdl(V1, col.wrapping_add(0xf));
+        c.sdr(V1, col.wrapping_add(8));
+        set_reg(c, T0, 3);
+        set_reg(c, AT, 0x3c80_0000);
+        let sixty_fourth = FpuF32(0x3c80_0000);
+        let trails = fx.wrapping_add(WAKE_TRAILS);
+        set_reg(c, A2, sx(trails));
+
+        // Head entry position: frame / 2, folded per 64 into [-32, 32).
+        let head = at(WAKE_HEAD_2).lw(c);
+        set_reg(c, V0, head);
+        let frame_no = FpuF32::from_i32(at(WAKE_FRAME).read_u32(c) as i32);
+        let ring = at(WAKE_RING).lw(c);
+        set_reg(c, V1, ring);
+        let off = abi::mult(c, head as u32, RING_STRIDE);
+        set_reg(c, AT, 0x4280_0000);
+        let sixty_four = FpuF32(0x4280_0000);
+        let pos0 = frame_no * half;
+        set_reg(c, AT, 0x4200_0000);
+        let thirty_two = FpuF32(0x4200_0000);
+        set_reg(c, AT, 0x4300_0000);
+        let one_two_eight = FpuF32(0x4300_0000);
+        let e = off.wrapping_add(ring as u32);
+        set_reg(c, V0, sx(e));
+        Addr(e).write_fpu(c, pos0);
+        let head = at(WAKE_HEAD_2).lw(c);
+        let ring = at(WAKE_RING).lw(c);
+        set_reg(c, V0, ring);
+        let off = abi::mult(c, head as u32, RING_STRIDE);
+        let e = off.wrapping_add(ring as u32);
+        set_reg(c, V1, sx(e));
+        let pos = Addr(e).read_fpu(c);
+        let scaled = pos * sixty_fourth;
+        set_fpr(c, 2, scaled);
+        let whole = scaled.to_i32();
+        set_reg(c, V0, sx(whole as u32));
+        let fold = FpuF32::from_i32(whole) * sixty_four + thirty_two;
+        let pos = pos - fold;
+        Addr(e).write_fpu(c, pos);
+
+        // Colour channels as 0..128 ints at +0x10/+0x14/+0x18 (the head and
+        // ring registers alternate between v0 and v1).
+        let mut last = zero;
+        for (k, (src, dst)) in [(0xa4u32, 0x10u32), (0xa8, 0x14), (0xac, 0x18)]
+            .into_iter()
+            .enumerate()
+        {
+            let (hreg, rreg) = if k == 1 { (V1, V0) } else { (V0, V1) };
+            let head = at(WAKE_HEAD_2).lw(c);
+            let chan = at(src).read_fpu(c);
+            let off = abi::mult(c, head as u32, RING_STRIDE);
+            let ring = at(WAKE_RING).lw(c);
+            set_reg(c, rreg, ring);
+            let v = chan * one_two_eight;
+            let e = off.wrapping_add(ring as u32);
+            set_reg(c, hreg, sx(e));
+            Addr(e.wrapping_add(dst)).write_u32(c, v.to_i32() as u32);
+            last = v;
+        }
+        set_fpr(c, 0, last);
+        set_fpr(c, 1, FpuF32(last.to_i32() as u32));
+        set_fpr(c, 3, one_two_eight);
+        set_fpr(c, 4, thirty_two);
+        set_fpr(c, 5, sixty_four);
+        set_fpr(c, 6, cy);
+
+        // Mirror the head entry into the four trail rings.
+        let mut trail_at = trails;
+        let mut left: u32 = 3;
+        loop {
+            c.cycles += 35;
+            let head = at(WAKE_HEAD_2).lw(c);
+            set_reg(c, V0, head);
+            left = left.wrapping_sub(1);
+            set_reg(c, T0, sx(left));
+            let ring = at(WAKE_RING).lw(c);
+            set_reg(c, V1, ring);
+            let off = abi::mult(c, head as u32, RING_STRIDE);
+            set_reg(c, V0, sx(off));
+            let trail = Addr(trail_at).lw(c);
+            set_reg(c, A0, trail);
+            let src = off.wrapping_add(ring as u32);
+            set_reg(c, V1, sx(src));
+            let p = Addr(src).read_fpu(c);
+            set_fpr(c, 0, p);
+            let dst = off.wrapping_add(trail as u32);
+            set_reg(c, V0, sx(dst));
+            Addr(dst).write_fpu(c, p);
+            // r, g, b: registers rotate (head, ring, off, src, dst).
+            for (field, h, rg, sr, ds) in [
+                (0x10u32, V1, A0, A0, V1),
+                (0x14, A0, V1, V1, A0),
+                (0x18, V1, A0, A0, V1),
+            ] {
+                let head = at(WAKE_HEAD_2).lw(c);
+                set_reg(c, h, head);
+                let ring = at(WAKE_RING).lw(c);
+                set_reg(c, rg, ring);
+                let off = abi::mult(c, head as u32, RING_STRIDE);
+                set_reg(c, h, sx(off));
+                let trail = Addr(trail_at).lw(c);
+                set_reg(c, A1, trail);
+                if field == 0x18 {
+                    trail_at = trail_at.wrapping_add(4);
+                    set_reg(c, A2, sx(trail_at));
+                }
+                let src = off.wrapping_add(ring as u32);
+                set_reg(c, sr, sx(src));
+                let v = Addr(src.wrapping_add(field)).lw(c);
+                set_reg(c, V0, v);
+                let dst = off.wrapping_add(trail as u32);
+                set_reg(c, ds, sx(dst));
+                Addr(dst.wrapping_add(field)).sw(c, v);
+            }
+            if (left as i32) < 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, WAKE_TRAIL_HEAD);
+            }
+        }
+
+        // frame++.
+        c.cycles += 7;
+        let n = at(WAKE_FRAME).lw(c);
+        frame.restore_ra(c, 0x10);
+        set_reg(c, V0, addu(n, 1));
+        at(WAKE_FRAME).sw(c, reg(c, V0));
+        frame.restore(c, S0, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// -------------------------------------------------------- LensFX_DrawFlares
+
+/// `void LensFX_DrawFlares(LensFX* fx, int view)` (0x2e3478): draw the sun
+/// of this view (when the sun is enabled, `gp+0xa28`), then, between the
+/// lens FX's push / pop render-state methods (vtable at +0x649c, slots
+/// +0x10 and +0x18), every flare quad of the view whose "on" flag is set.
+/// Per view: a flare count at `+0x60 + 4*view`, `0x3000` bytes of flares
+/// (`0x30` each, the "on" halfword at flare +0x2c) from +0x68, and a sun
+/// record of `0x210` bytes at +0x6070.
+pub fn lens_fx_draw_flares(c: &mut Cpu) {
+    const DRAW_SUN: Callee = Callee {
+        addr: 0x002f_4a08,
+        f: ee::s09::LensFX_DrawSun,
+    };
+    const DRAW_FLARE_QUAD: Callee = Callee {
+        addr: 0x002e_2868,
+        f: ee::s09::LensFX_DrawFlareQuad,
+    };
+    /// `gp+0xa28`: the sun is enabled.
+    const SUN_ENABLED_GP: u32 = 0xa28;
+    /// `LensFX` layout.
+    const COUNTS: u32 = 0x60;
+    const FLARES: u32 = 0x68;
+    const FLARES_PER_VIEW: u32 = 0x3000;
+    const FLARE_SIZE: u32 = 0x30;
+    /// The flare's "on" halfword (`FLARES + 0x2c`), relative to the lens FX.
+    const FLARE_ON: u32 = 0x94;
+    const SUNS: u32 = 0x6070;
+    const SUN_SIZE: u32 = 0x210;
+    const VTABLE: u32 = 0x649c;
+    /// Vtable slots `{delta: i16, method}`: push / pop render state.
+    const PUSH_STATE: u32 = 0x10;
+    const POP_STATE: u32 = 0x18;
+    /// Loop head (event checks).
+    const LOOP: u32 = 0x002e_3510;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        let sun_on = Addr(r32(c, GP).wrapping_add(SUN_ENABLED_GP)).lw(c);
+        c.g[V0][0] = sun_on;
+        frame.save(c, S2, 0x40);
+        frame.save(c, S4, 0x20);
+        let fx = r32(c, A0);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x60);
+        let view = r32(c, A1);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S1, 0x50);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        if sun_on != 0 {
+            c.cycles += 7;
+            c.g[V0][0] = sx(fx.wrapping_add(SUNS));
+            let off = abi::mult(c, view, SUN_SIZE);
+            c.g[A1][0] = c.g[S2][0];
+            c.g[A2][0] = c.g[S4][0];
+            c.g[A0][0] = sx(fx.wrapping_add(SUNS).wrapping_add(off));
+            DRAW_SUN.call(c, 0x002e_34c4)?;
+        }
+
+        // Push the render state.
+        c.cycles += 12;
+        let vt = Addr(fx).off(VTABLE).lw(c);
+        c.g[V0][0] = vt;
+        c.g[S3][0] = 0;
+        let delta = Addr(vt as u32).off(PUSH_STATE).lh(c);
+        let method = Addr(vt as u32).off(PUSH_STATE + 4).lw(c);
+        c.g[V1][0] = method;
+        c.g[A0][0] = abi::addu(c.g[S2][0], delta);
+        call_ptr(c, method as u32, 0x002e_34dc)?;
+        c.g[A0][0] = sx(view << 2);
+        c.g[V0][0] = sx(fx.wrapping_add(COUNTS));
+        let count_at = fx.wrapping_add(COUNTS).wrapping_add(view << 2);
+        c.g[A1][0] = sx(count_at);
+        let count = Addr(count_at).lw(c);
+        c.g[V1][0] = count;
+        c.g[V0][0] = FLARES_PER_VIEW as u64;
+        if (count as i64) > 0 {
+            c.cycles += 7;
+            c.g[A0][0] = sx(fx.wrapping_add(FLARES));
+            let block = abi::mult(c, view, FLARES_PER_VIEW);
+            c.g[V0][0] = sx(block);
+            c.g[S5][0] = c.g[A1][0];
+            c.g[V1][0] = sx(block.wrapping_add(FLARE_ON));
+            c.g[S1][0] = sx(fx.wrapping_add(FLARES).wrapping_add(block));
+            c.g[S0][0] = sx(block.wrapping_add(FLARE_ON).wrapping_add(fx));
+            loop {
+                c.cycles += 3;
+                let on = Addr(r32(c, S0)).lhu(c);
+                c.g[V0][0] = on;
+                c.g[A0][0] = c.g[S1][0];
+                if on != 0 {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[S4][0];
+                    DRAW_FLARE_QUAD.call(c, 0x002e_3524)?;
+                }
+                c.cycles += 6;
+                let count = Addr(r32(c, S5)).lw(c);
+                c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(FLARE_SIZE));
+                let more = (c.g[S3][0] as i64) < (count as i64);
+                c.g[V0][0] = more as u64;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(FLARE_SIZE));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LOOP);
+                }
+            }
+        }
+
+        // Pop the render state.
+        c.cycles += 14;
+        let vt = Addr(fx).off(VTABLE).lw(c);
+        c.g[V0][0] = vt;
+        let delta = Addr(vt as u32).off(POP_STATE).lh(c);
+        let method = Addr(vt as u32).off(POP_STATE + 4).lw(c);
+        c.g[V1][0] = method;
+        c.g[A0][0] = abi::addu(c.g[S2][0], delta);
+        call_ptr(c, method as u32, 0x002e_3550)?;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `void LensFX_PrepareView(LensFX* fx, int view)` (0x2e3338): per view,
+/// before the flares are drawn: copy the camera's view rect, view matrix
+/// (VU0 quadword copy) and FOV values into the lens FX, update the sun
+/// position for this view, then project every flare source of the view.
+pub fn lens_fx_prepare_view(c: &mut Cpu) {
+    use crate::call::VSlot;
+    use lens_prep::*;
+    guest(c, |c| {
+        c.cycles += 59;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        c.g[S1][0] = c.g[A0][0]; // fx
+        frame.save(c, S2, 0x30);
+        c.g[S3][0] = c.g[A1][0]; // view
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.g[SP][0];
+        let gp = r32(c, GP);
+        c.g[S0][0] = Addr(gp.wrapping_add(CAMERA_GP)).lw(c);
+        let cam = c.g[S0][0];
+
+        // The view rect, returned into sp+0 and copied (unaligned) to fx+0.
+        c.g[V0][0] = Addr((cam as u32).wrapping_add(CAM_VT)).lw(c);
+        let vt = c.g[V0][0];
+        let slot = VSlot::read(c, vt, VT_VIEW_RECT);
+        c.g[V1][0] = slot.func;
+        c.g[A1][0] = slot.this(cam);
+        call_ptr(c, slot.func as u32, 0x002e_3374)?;
+        let (stack, fx) = (sp(c), r32(c, S1));
+        c.ldl(V0, stack.wrapping_add(0x7));
+        c.ldr(V0, stack);
+        c.ldl(V1, stack.wrapping_add(0xf));
+        c.ldr(V1, stack.wrapping_add(0x8));
+        c.sdl(V0, fx.wrapping_add(0x7));
+        c.sdr(V0, fx);
+        c.sdl(V1, fx.wrapping_add(0xf));
+        c.sdr(V1, fx.wrapping_add(0x8));
+
+        // The view matrix.
+        c.g[V1][0] = Addr((cam as u32).wrapping_add(CAM_VT)).lw(c);
+        let vt = c.g[V1][0];
+        let slot = VSlot::read(c, vt, VT_VIEW_MATRIX);
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = slot.this(cam);
+        call_ptr(c, slot.func as u32, 0x002e_33a8)?;
+        let src = r32(c, V0);
+        let dst = fx.wrapping_add(MATRIX);
+        c.g[V1][0] = sx(dst);
+        for row in 0..4u32 {
+            c.lqc2(1 + row as usize, src.wrapping_add(0x10 * row));
+        }
+        for row in 0..4u32 {
+            c.sqc2(1 + row as usize, dst.wrapping_add(0x10 * row));
+        }
+
+        // The FOV values.
+        c.g[V1][0] = Addr((cam as u32).wrapping_add(CAM_VT)).lw(c);
+        c.g[A3][0] = sx(fx.wrapping_add(FOV_Z));
+        c.g[A1][0] = sx(fx.wrapping_add(FOV_X));
+        c.g[A2][0] = sx(fx.wrapping_add(FOV_Y));
+        let vt = c.g[V1][0];
+        let slot = VSlot::read(c, vt, VT_FOV);
+        c.g[S2][0] = 0;
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = slot.this(cam);
+        call_ptr(c, slot.func as u32, 0x002e_33f0)?;
+
+        // The sun of this view.
+        c.g[A0][0] = SUN_SIZE;
+        c.g[V0][0] = sx(fx.wrapping_add(SUN));
+        c.mult(0, A0, S3, A0);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = c.g[S3][0];
+        c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        UPDATE_SUN_POSITION.call(c, 0x002e_340c)?;
+
+        // Project the view's flare sources.
+        c.g[A0][0] = sx(r32(c, S3) << 2);
+        c.g[V0][0] = sx(fx.wrapping_add(COUNTS));
+        c.g[A3][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        c.g[V1][0] = Addr(r32(c, A3)).lw(c);
+        c.g[V0][0] = FLARE_VIEW_SIZE;
+        if (c.g[V1][0] as i64) > 0 {
+            c.cycles += 5;
+            c.g[V1][0] = sx(fx.wrapping_add(FLARES));
+            c.mult(0, V0, S3, V0);
+            c.g[S3][0] = c.g[A3][0]; // &counts[view]
+            c.g[S0][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+            loop {
+                c.cycles += 8;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S1][0];
+                PROJECT_SOURCE.call(c, 0x002e_3444)?;
+                c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+                c.g[V0][0] = Addr(r32(c, S3)).lw(c);
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(FLARE_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002e_3438);
+                }
+            }
+        }
+
+        c.cycles += 7;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16261,6 +17441,412 @@ pub(crate) mod tests {
                 c.bus.write16(vt + 0x278, (r.next_u32() as i16 & !3) as u16);
                 c.bus.write32(vt + 0x27c, fakes::FAKE);
                 c.g[A0][0] = fx as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::lib::gcc::fixunssfsi;
+    pub(crate) use crate::game::lib::snd::sndstrm_is_prebuffering;
+
+    /// A uniform float in `lo..hi`.
+    pub(crate) fn oc238_uf(r: &mut Rng, lo: f32, hi: f32) -> f32 {
+        lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo)
+    }
+
+    crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
+
+    crate::difftest::events::driven!(oc238_hand_prebuffering, sndstrm_is_prebuffering);
+
+    crate::difftest::events::driven!(oc238_gen_fixunssfsi, ee::s15::f_004139f8__generated);
+
+    crate::difftest::events::driven!(oc238_hand_fixunssfsi, fixunssfsi);
+
+    /// LensFX_DrawFlareSet: the renderer's width / height through a real
+    /// word getter (0x2743c0: positive, or with the top bit set for the
+    /// unsigned-conversion path), 0..5 flares (or a negative count) of every
+    /// type (-1..5), the painter's sun flare intensity and DrawSprite as
+    /// fakes (some seeds unwind).
+    #[test]
+    fn lens_fx_draw_flare_set_matches() {
+        const GET_WORD: u32 = 0x0027_43c0;
+        covered(
+            ee::s09::f_002f4690__generated,
+            lens_fx_draw_flare_set,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f_4690, 6);
+                c.pc = 0x002f_4690;
+                let rend = DATA + 0x1_0000;
+                let rvt = DATA + 0x1_2000;
+                let state = DATA + 0x1_3000;
+                c.bus.write32(GAME_GP.wrapping_sub(0x854), rend);
+                c.bus.write32(rend + 0x10d8, rvt);
+                c.bus.write32(rend + 0xe84, state);
+                c.bus.write32(rend + 0x1004, r.next_u32());
+                fill(c, &mut r, state, 8);
+                let dim = |r: &mut Rng, top: bool| -> u32 {
+                    if top {
+                        0x8000_0000 | r.next_u32()
+                    } else {
+                        r.next_u32() % 1024
+                    }
+                };
+                let w = dim(&mut r, seed % 4 == 1);
+                let h = dim(&mut r, seed % 5 == 2);
+                c.bus.write32(rend, w);
+                c.bus.write32(rend + 4, h);
+                c.bus.write16(rvt + 0x50, 0);
+                c.bus.write32(rvt + 0x54, GET_WORD);
+                c.bus.write16(rvt + 0x58, 4);
+                c.bus.write32(rvt + 0x5c, GET_WORD);
+                c.bus
+                    .write16(rvt + 0x270, ((r.next_u32() & 0x3f) * 4) as u16);
+                c.bus.write32(rvt + 0x274, FAKE + 0x20);
+                // The painter's sun flare entry (index 6).
+                let p = DATA + 0x1_4000;
+                let obj = DATA + 0x1_4100;
+                let pvt = DATA + 0x1_4200;
+                c.bus.write32(0x004f_a370 + 6 * 0xf0 + 0x14, p);
+                c.bus.write32(p, obj);
+                c.bus.write32(obj + 4, pvt);
+                c.bus
+                    .write16(pvt + 0x110, ((r.next_u32() & 0x3f) * 4) as u16);
+                c.bus.write32(pvt + 0x114, FAKE + 0x10);
+                // The flares.
+                let fx = DATA + 0x1_8000;
+                c.bus
+                    .write32(fx + 0x1f0, oc238_uf(&mut r, 0.0, 640.0).to_bits());
+                c.bus
+                    .write32(fx + 0x1f4, oc238_uf(&mut r, 0.0, 448.0).to_bits());
+                let count = match seed % 7 {
+                    0 => 0,
+                    1 => 0xffff_fffe,
+                    _ => 1 + r.next_u32() % 5,
+                };
+                c.bus.write32(fx + 0x200, count);
+                c.bus
+                    .write32(fx + 0x204, oc238_uf(&mut r, 0.0, 2.0).to_bits());
+                for k in 0..5 {
+                    let f = fx + 0x1c * k;
+                    let ty = (r.next_u32() % 7).wrapping_sub(1);
+                    c.bus.write32(f + 0x30, ty);
+                    c.bus
+                        .write32(f + 0x34, oc238_uf(&mut r, -1.0, 2.0).to_bits());
+                    c.bus
+                        .write32(f + 0x38, oc238_uf(&mut r, 0.0, 0.5).to_bits());
+                    for j in 0..4 {
+                        c.bus
+                            .write32(f + 0x3c + 4 * j, oc238_uf(&mut r, 0.0, 255.0).to_bits());
+                    }
+                }
+                c.g[A0][0] = fx as u64;
+            },
+        );
+    }
+
+    // ------------------------------------------- cDynamicSprayFX_UpdateEmitter9
+
+    /// `cDynamicSprayFX_UpdateEmitter9`: level zero / positive, speed below /
+    /// above the limit, alpha clamped or not, the ring wrapping at 30 or not,
+    /// mode 2 (no fade) or not; the real slot-9 emitter spawn runs.
+    #[test]
+    fn dynamic_spray_fx_update_emitter9_matches() {
+        use super::spray9::*;
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, elf_image, DATA, GAME_GP};
+        use crate::game::visualfx::boardwakefx::tests::put_spray_slot;
+        let f = |x: f32| x.to_bits();
+        check(
+            ee::s09::f_002e2260__generated,
+            dynamic_spray_fx_update_emitter9,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2e22, 0);
+                elf_image(c);
+                c.pc = 0x002e_2260;
+                let (fx, obj, em, curve, bones, holder, mats) = (
+                    DATA,
+                    DATA + 0x5000,
+                    DATA + 0x2000,
+                    DATA + 0x5600,
+                    DATA + 0x5800,
+                    DATA + 0x5900,
+                    DATA + 0x9000,
+                );
+                let (world, g, players) = (DATA + 0x6000, DATA + 0x6200, DATA + 0x6400);
+                c.bus.write32(fx + OBJ, obj);
+                c.bus.write32(fx + P28, em);
+                c.bus.write32(fx + P2C, curve);
+                c.bus.write32(fx + BONES, bones);
+                c.bus.write32(
+                    fx + LEVEL,
+                    match seed % 5 {
+                        0 => 0,
+                        1 => f(0.25),
+                        2 => f(0.9),
+                        3 => f(0.01),
+                        _ => f(-0.5),
+                    },
+                );
+                c.bus.write32(
+                    fx + SPEED,
+                    f([100.0f32, 300.0, 2000.0][((seed / 5) % 3) as usize]),
+                );
+                c.bus.write32(GAME_GP.wrapping_sub(0x3a4c), f(250.0));
+                c.bus.write32(GAME_GP.wrapping_sub(0x3a48), f(1.0 / 60.0));
+                c.bus.write32(GAME_GP.wrapping_sub(0x3a44), f(1.0 / 60.0));
+                c.bus.write32(
+                    fx + RING,
+                    [0u32, 28, 29, r.next_u32() % 30][((seed / 15) % 4) as usize],
+                );
+                c.bus
+                    .write32(fx + MODE, if seed % 7 == 0 { 2 } else { r.next_u32() % 4 });
+                for k in 0..4u32 {
+                    c.bus.write32(fx + COL + 4 * k, r.f32(10.0));
+                    c.bus.write32(obj + 0x1e0 + 4 * k, r.f32(100.0));
+                }
+                c.bus.write32(curve + 0x900, r.f32(3.0));
+                for k in 0..30u32 {
+                    c.bus.write32(bones + 4 * k, r.next_u32() % 16);
+                }
+                c.bus.write32(obj + 0x780, holder);
+                c.bus.write32(holder + 0x30, mats);
+                c.bus.write32(obj + 0x89c, r.next_u32() % 16);
+                for k in 0..16u32 {
+                    for j in 0..4u32 {
+                        c.bus.write32(mats + 0x40 * k + 0x30 + 4 * j, r.f32(50.0));
+                    }
+                }
+                put_spray_slot(c, &mut r, em + SLOT, DATA + 0x8000);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(world + 0x84, g);
+                c.bus.write32(g + 0x84, players);
+                c.bus.write32(players + 0x10, 0);
+                c.bus.write32(GAME_GP + 0xa0c, r.next_u32());
+                c.g[A0][0] = sx(fx);
+            },
+        );
+    }
+
+    /// `cBoardWakeFX_AdvanceRing`: an effect at DATA with phase 0..4.5 (wraps
+    /// or not), count 0..9 against capacity 1..8 (grows or not), head below
+    /// the capacity, a ring and four trail rings of random words, a random
+    /// frame counter. The owner's colour source has a vtable whose colour
+    /// index slot is a fake (forced index 1..12, sometimes unwinding); the
+    /// colour table records hold floats in [-1.5, 1.5] or edge values, so
+    /// the doubled lanes hit all three clamp cases.
+    #[test]
+    fn board_wake_fx_advance_ring_matches() {
+        const FX: u32 = DATA;
+        const OWNER: u32 = DATA + 0x1000;
+        const VT: u32 = DATA + 0x3000;
+        const RING: u32 = DATA + 0x4000;
+        const TRAIL: u32 = DATA + 0x5000;
+        covered(
+            ee::s09::f_002de058__generated,
+            board_wake_fx_advance_ring,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2de058, 1);
+                c.pc = 0x002d_e058;
+                let step = if seed % 2 == 0 {
+                    0x3d08_8889
+                } else {
+                    r.f32(1.0)
+                };
+                put_words(c, GAME_GP - GP_WAKE_PHASE_STEP, &[step]);
+                fill(c, &mut r, FX, 0x30);
+                let cap = 1 + r.next_u32() % 8;
+                c.bus.write32(FX + WAKE_OWNER, OWNER);
+                c.bus.write32(FX + WAKE_COUNT, r.next_u32() % 10);
+                c.bus.write32(FX + WAKE_HEAD_2, r.next_u32() % cap);
+                c.bus.write32(FX + WAKE_RING, RING);
+                for i in 0..4 {
+                    c.bus.write32(FX + WAKE_TRAILS + 4 * i, TRAIL + 0x200 * i);
+                }
+                let phase = (r.next_u32() % 4500) as f32 / 1000.0;
+                c.bus.write32(FX + WAKE_PHASE_2, phase.to_bits());
+                c.bus.write32(
+                    FX + WAKE_FRAME,
+                    if seed % 5 == 0 {
+                        r.next_u32()
+                    } else {
+                        r.next_u32() % 100_000
+                    },
+                );
+                c.bus.write32(FX + WAKE_CAP, cap);
+                fill(c, &mut r, RING, 0x60);
+                fill(c, &mut r, TRAIL, 0x200);
+                c.bus.write32(OWNER + OWNER_COLOUR_SOURCE, VT);
+                c.bus
+                    .write16(VT + SLOT_COLOUR_INDEX, (r.next_u32() as u16) & 0xfffc);
+                c.bus.write32(VT + SLOT_COLOUR_INDEX + 4, FAKE);
+                let index = 1 + r.next_u32() % 12;
+                c.bus.write32(LOG_RESULTS, index);
+                for k in 0..4 {
+                    let v = if seed % 7 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(1.5)
+                    };
+                    c.bus
+                        .write32(WAKE_COLOUR_TABLE + index * WAKE_COLOUR_STRIDE + 4 * k, v);
+                }
+                c.g[A0][0] = sx(FX);
+            },
+        );
+    }
+
+    // -------------------------------------------------------- LensFX_DrawFlares
+
+    /// `LensFX_DrawFlares`: view 0 or 1, sun on or off, 0..5 flares (or a
+    /// negative count), each off or on; the real sun draw returns at once
+    /// (its "on" halfword is 0), the real flare-quad draw runs on random
+    /// particles of every type (its sprite draw is a fake), and the push /
+    /// pop render-state methods are fakes (some calls unwind).
+    #[test]
+    fn lens_fx_draw_flares_matches() {
+        covered(
+            ee::s09::f_002e3478__generated,
+            lens_fx_draw_flares,
+            300,
+            &|c, seed| {
+                use crate::difftest::fakes::vtable;
+                let mut r = machine(c, seed, 0x002e_3478, 7);
+                c.pc = 0x002e_3478;
+                let fx = DATA + 0x30_0000;
+                let view = seed % 2;
+                c.bus.write32(
+                    GAME_GP + 0xa28,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                let vt = vtable(c, &mut r, &[0x10, 0x18]);
+                c.bus.write32(fx + 0x649c, vt);
+                let count = if seed % 13 == 0 {
+                    r.next_u32() | 0x8000_0000
+                } else {
+                    seed / 2 % 6
+                };
+                c.bus.write32(fx + 0x60 + 4 * view, count);
+                // The renderer the flare quads draw with (as in the
+                // `LensFX_DrawFlareQuad` test).
+                let gfx = DATA + 0x20_0000;
+                let top = DATA + 0x20_3000;
+                let gvt = DATA + 0x20_4000;
+                c.bus.write32(GAME_GP + 0x2a90, gfx);
+                c.bus.write32(gfx + 0xe84, top);
+                fill(c, &mut r, top, 8);
+                c.bus.write32(gfx + 0x1024, r.next_u32());
+                c.bus.write32(gfx + 0x1028, r.next_u32());
+                c.bus.write32(gfx + 0x10d8, gvt);
+                c.bus
+                    .write16(gvt + 0x278, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(gvt + 0x27c, FAKE + 0x20);
+                for k in 0..6 {
+                    let flare = fx + 0x68 + view * 0x3000 + k * 0x30;
+                    let part = DATA + 0x21_0000 + k * 0x100;
+                    let on = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() as u16 % 3
+                    };
+                    c.bus.write16(flare + 0x2c, on);
+                    c.bus.write16(flare + 0x2e, (r.next_u32() % 2) as u16);
+                    c.bus.write32(flare + 0x20, part);
+                    c.bus.write32(flare + 0x28, r.f32(6.3));
+                    for j in 0..3 {
+                        let v = if r.next_u32() % 7 == 3 {
+                            0
+                        } else {
+                            r.f32(50.0)
+                        };
+                        c.bus.write32(part + 0x10 + 4 * j, v);
+                        c.bus.write32(part + 0x1c + 4 * j, r.f32(1000.0));
+                    }
+                    for j in 0..4 {
+                        let a = match r.next_u32() % 4 {
+                            0 => 0,
+                            1 => r.f32(1.0) | 0x8000_0000,
+                            _ => r.f32(1.0) & !0x8000_0000,
+                        };
+                        c.bus.write32(part + 0x40 + 4 * j, a);
+                    }
+                    let kind = [0x10, 0x20, 0x40, 0x00, 0x30, 0x50, 0x60, 0x70]
+                        [(r.next_u32() % 8) as usize];
+                    c.bus.write32(part + 0xc, (r.next_u32() & !0x70) | kind);
+                }
+                c.g[A0][0] = sx(fx);
+                c.g[A1][0] = view as u64;
+            },
+        );
+    }
+
+    /// `LensFX_PrepareView` for views 0 and 1: the camera interface's view
+    /// rect / matrix / FOV slots and the projector's occlusion slot are
+    /// fakes (the matrix call returns a random matrix; occlusion is always
+    /// reported, so the real `LensFX_ProjectSource` takes its short path);
+    /// the painter's sun texture is -1 (the real `LensFX_UpdateSunPosition`
+    /// hides the sun); zero, negative and 1-4 flare sources; unwinds in the
+    /// first four calls.
+    #[test]
+    fn lens_fx_prepare_view_matches() {
+        use super::lens_prep::*;
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::GAME_GP;
+        use crate::game::visualfx::lensfx::tests::painter_sun;
+        covered(
+            ee::s09::f_002e3338__generated,
+            lens_fx_prepare_view,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002e_3338, 4);
+                c.pc = 0x002e_3338;
+                let fx = DATA + 0x4_0000;
+                let cam = DATA + 0x5_0000;
+                let vt = DATA + 0x5_1000;
+                let no_sun = DATA + 0x5_4000;
+                let src = DATA + 0x5_5000;
+                let matrix = DATA + 0x5_6000;
+                let view = seed % 2;
+                c.g[A0][0] = sx(fx);
+                c.g[A1][0] = view as u64;
+                // The camera and its interface.
+                c.bus.write32(GAME_GP + CAMERA_GP, cam);
+                c.bus.write32(cam + CAM_VT, vt);
+                for (i, off) in [VT_VIEW_RECT, VT_VIEW_MATRIX, VT_FOV, 0x2d8]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let delta = (r.next_u32() as i16 as i32 % 64) & !3;
+                    c.bus.write16(vt + off, delta as u16);
+                    c.bus.write32(vt + off + 4, FAKE + 0x10 * i as u32);
+                }
+                fill(c, &mut r, matrix, 16);
+                c.bus.write32(LOG_RESULTS + 4, matrix);
+                // Painter views 6 and 7: sun texture -1.
+                for v in [6, 7] {
+                    painter_sun(c, &mut r, v, DATA + 0x5_2000, DATA + 0x5_3000, &[0x108]);
+                }
+                c.bus.write32(no_sun, u32::MAX);
+                c.bus.write32(LOG_RESULTS + 12, no_sun);
+                // The lens FX: header, counts, flares pointing at one source.
+                fill(c, &mut r, fx, 0x18);
+                fill(c, &mut r, src, 0x10);
+                let count = match seed % 4 {
+                    0 => 0,
+                    1 => (r.next_u32() % 5 + 1).wrapping_neg(),
+                    _ => 1 + r.next_u32() % 4,
+                };
+                c.bus.write32(fx + COUNTS + 4 * view, count);
+                for k in 0..4 {
+                    let flare = fx + FLARES + view * FLARE_VIEW_SIZE as u32 + k * FLARE_SIZE;
+                    fill(c, &mut r, flare, 0xc);
+                    c.bus.write32(flare + 0x20, src);
+                }
             },
         );
     }

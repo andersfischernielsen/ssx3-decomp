@@ -2,8 +2,12 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -29,6 +33,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0031_18a8,
         ai_anim_event_map_destroy,
         "AIAnimEventMap_Destroy",
+    ),
+    (
+        0x0031_1710,
+        ai_anim_event_map_pick_anim,
+        "AIAnimEventMap_PickAnim",
     ),
 ];
 
@@ -197,6 +206,171 @@ pub fn ai_anim_event_map_destroy(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod pick_anim {
+    use super::ee;
+    use super::Callee;
+
+    /// The event-map entries (`D_00449960`, 12 bytes each): weight, flags,
+    /// animation value.
+    pub const ENTRIES_HI: u64 = 0x0045_0000;
+
+    pub const ENTRIES: u32 = 0x0044_9960;
+
+    pub const ENTRY_SIZE: u64 = 0xc;
+
+    pub const ENTRY_FLAGS: u32 = 0x4;
+
+    pub const RAND_NEXT_GAME: Callee = Callee {
+        addr: 0x0031_7810,
+        f: ee::s10::f_00317810,
+    };
+}
+
+/// `int AIAnimEventMap_PickAnim(Ranges* t, int idx, uint mask)` (0x311710):
+/// picks an animation for an AI event. Range `t[idx]` (s16 start, s16
+/// count) selects event-map entries; a single entry is returned directly,
+/// else a weighted random choice among the entries whose flags contain all
+/// of `mask` (`AIrand() % total weight`, walking down the weights); the
+/// range's last entry if none is reached. Frame 0x60 (s0-s4).
+pub fn ai_anim_event_map_pick_anim(c: &mut Cpu) {
+    use pick_anim::*;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x60);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+        frame.save(c, S0, 0x50);
+        let range = (c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32);
+        c.g[V0][0] = sx(range);
+        frame.save(c, S1, 0x40);
+        c.g[A0][0] = sx(range);
+        frame.save(c, S2, 0x30);
+        let mask = c.g[A2][0];
+        c.g[S0][0] = mask;
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        let count = c.lh(range.wrapping_add(0x2));
+        c.g[V1][0] = count;
+        c.g[V0][0] = 1;
+        let start = c.lh(range);
+        c.g[S2][0] = start;
+
+        // The chosen entry's address ends up in v1.
+        'pick: {
+            if count == 1 {
+                c.cycles += 6;
+                c.g[V1][0] = ENTRY_SIZE;
+                c.g[V0][0] = sx(ENTRIES);
+                c.mult(0, V1, S2, V1);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(ENTRIES));
+                break 'pick;
+            }
+
+            // Total weight of the matching entries.
+            c.cycles += 5;
+            let end = sx((start as u32).wrapping_add(count as u32));
+            c.g[S3][0] = end;
+            c.g[S1][0] = 0;
+            c.g[V0][0] = ((start as i64) < (end as i64)) as u64;
+            c.g[S4][0] = ENTRIES_HI;
+            if (start as i64) < (end as i64) {
+                c.cycles += 6;
+                c.g[V0][0] = ENTRY_SIZE;
+                c.g[V1][0] = sx(ENTRIES);
+                c.mult(0, V0, S2, V0);
+                c.g[A0][0] = sx((end as u32).wrapping_sub(start as u32));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(ENTRIES));
+                loop {
+                    c.cycles += 4;
+                    let e = c.g[V1][0] as u32;
+                    c.g[V0][0] = c.lw(e.wrapping_add(0x4)) & mask;
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+                    if c.g[V0][0] == mask {
+                        c.cycles += 2;
+                        c.g[V0][0] = c.lw(e);
+                        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    }
+                    c.cycles += 2;
+                    c.g[V1][0] = sx(e.wrapping_add(0xc));
+                    if c.g[A0][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_1790);
+                    }
+                }
+            }
+
+            // r = AIrand() % total (unsigned; the zero check never traps).
+            c.cycles += 6;
+            RAND_NEXT_GAME.call(c, 0x0031_17b8)?;
+            c.divu(0, V0, S1);
+            c.g[A1][0] = start;
+
+            c.cycles += 4;
+            c.g[V0][0] = ((start as i64) < (end as i64)) as u64;
+            c.g[V1][0] = c.hi[0];
+            c.g[A2][0] = c.hi[0];
+            if (start as i64) < (end as i64) {
+                c.cycles += 8;
+                c.g[V0][0] = ENTRY_SIZE;
+                c.g[V1][0] = ENTRIES_HI;
+                c.mult(0, V0, A1, V0);
+                c.g[A3][0] = sx(ENTRIES);
+                c.g[A0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x4));
+                c.g[V1][0] = c.g[V0][0];
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(ENTRIES));
+                loop {
+                    c.cycles += 4;
+                    let w = c.g[A0][0] as u32;
+                    c.g[V0][0] = c.lw(w.wrapping_add(ENTRY_FLAGS)) & mask;
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+                    if c.g[V0][0] == mask {
+                        c.cycles += 4;
+                        c.g[V0][0] = c.lw(w);
+                        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                        if (c.g[A2][0] as i64) <= 0 {
+                            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(ENTRIES));
+                            break 'pick;
+                        }
+                    }
+                    c.cycles += 4;
+                    c.g[A0][0] = sx(w.wrapping_add(0xc));
+                    let more = (c.g[A1][0] as i64) < (end as i64);
+                    c.g[V0][0] = more as u64;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0xc));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_17f8);
+                    }
+                }
+            }
+
+            // None reached: the range's last entry.
+            c.cycles += 5;
+            c.g[V0][0] = ENTRY_SIZE;
+            c.g[V1][0] = sx((end as u32).wrapping_sub(1));
+            c.mult(0, V1, V1, V0);
+            c.g[A0][0] = sx(ENTRIES);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(ENTRIES));
+        }
+
+        c.cycles += 9;
+        c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -276,6 +450,60 @@ pub(crate) mod tests {
                     GAME_GP.wrapping_add(0xd0c),
                     if seed % 4 == 0 { 0 } else { DATA + 0x100 },
                 );
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fill;
+
+    /// AIAnimEventMap_PickAnim: ranges of count 1 (direct pick), 0 or
+    /// negative (empty sums), and 2..8 entries with flags that match the
+    /// mask or not and small weights (including zero and negative), so the
+    /// weighted walk returns early, runs off the end, or divides by a zero
+    /// total; the real random generator with a random state.
+    #[test]
+    fn ai_anim_event_map_pick_anim_matches() {
+        check(
+            ee::s10::f_00311710__generated,
+            ai_anim_event_map_pick_anim,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_1710, 0);
+                c.pc = 0x0031_1710;
+                fill(c, &mut r, 0x004f_f030, 8);
+                // Entries 0..64.
+                let mask = [0u32, 1, 3, 4][(seed % 4) as usize];
+                for i in 0..64u32 {
+                    let e = 0x0044_9960 + 12 * i;
+                    let w = match r.next_u32() % 6 {
+                        0 => 0,
+                        1 => (r.next_u32() % 5).wrapping_neg(),
+                        _ => r.next_u32() % 20,
+                    };
+                    c.bus.write32(e, w);
+                    let flags = if r.next_u32() % 3 == 0 {
+                        r.next_u32() & 7
+                    } else {
+                        mask | (r.next_u32() & 8)
+                    };
+                    c.bus.write32(e + 4, flags);
+                    c.bus.write32(e + 8, r.next_u32());
+                }
+                let t = DATA + (r.next_u32() & 0xff0);
+                let idx = r.next_u32() % 4;
+                let start = r.next_u32() % 48;
+                let count = match seed % 7 {
+                    0 => 1,
+                    1 => 0,
+                    2 => 0xffff,
+                    _ => 2 + r.next_u32() % 12,
+                };
+                c.bus.write16(t + 4 * idx, start as u16);
+                c.bus.write16(t + 4 * idx + 2, count as u16);
+                c.g[A0][0] = t as u64;
+                c.g[A1][0] = idx as u64;
+                c.g[A2][0] = mask as u64;
             },
         );
     }

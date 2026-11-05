@@ -128,6 +128,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003f_f9a8, libpad_get_dma_buffer, "libpad_GetDmaBuffer"),
     (0x003f_fa58, sce_pad_read, "scePadRead"),
     (0x0040_d588, tanf, "tanf"),
+    (
+        0x0010_0f88,
+        computer_actor_rider_cruise_chase_rider,
+        "ComputerActorRider_CruiseChaseRider",
+    ),
+    (
+        0x0010_bbf8,
+        computer_actor_rider_find_board_press_marker,
+        "ComputerActorRider_FindBoardPressMarker",
+    ),
+    (
+        0x0010_c0a8,
+        computer_actor_rider_set_cruise_crouch,
+        "ComputerActorRider_SetCruiseCrouch",
+    ),
+    (
+        0x0030_19c8,
+        wscript_fn_get_object_slot32,
+        "WScriptFn_GetObjectSlot32",
+    ),
+    (0x003e_4db8, ea_timer_rcnt1_handler, "EATimer_Rcnt1Handler"),
+    (0x003f_fbc0, sce_pad_get_state, "scePadGetState"),
+    (0x0040_d758, expf, "expf"),
+    (0x0040_da10, logf, "logf"),
+    (0x0042_c0c0, e_intr, "EIntr"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5645,6 +5670,1380 @@ pub fn libpad_get_dma_buffer(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod get_object_slot32 {
+
+    /// `gp+0x25fc`: the default arguments are initialised.
+    pub const GP_DEFAULTS_READY: u32 = 0x25fc;
+
+    /// The default arguments (12 bytes at 0x4fbc00 = 0x500000 - 0x4400):
+    /// object id -1, time -1.0, a byte at +8.
+    pub const DEFAULTS_HI: u64 = 0x0050_0000;
+
+    pub const DEFAULTS: u32 = 0x004f_bc00;
+
+    /// `gp+0xba8`: the declared argument types (2 = float).
+    pub const GP_ARG_TYPES: u32 = 0xba8;
+
+    pub const TYPE_FLOAT: u64 = 2;
+
+    /// `gp+0x16c8`: the script object manager (`**mgr + 8`: the per-class
+    /// tables, `+0x1c` of a class: the handle table); `gp+0xce8`: the
+    /// world (`+0x290`: the player object, for id -1).
+    pub const GP_OBJECT_MAN: u32 = 0x16c8;
+
+    pub const GP_WORLD: u32 = 0xce8;
+
+    pub const WORLD_PLAYER: u32 = 0x290;
+
+    /// `gp-0x3368`: 1/30 (frames to seconds).
+    pub const GP_FRAME_TIME: u32 = 0x3368;
+
+    /// `EA_MemCopy(dst, src, n)` and `LunoVMRegister_AsInt(reg)` (through
+    /// the table).
+    pub const MEM_COPY: u32 = 0x003e_6574;
+
+    pub const REGISTER_AS_INT: u32 = 0x0022_6610;
+}
+
+pub(crate) mod libm_wrap {
+    use super::*;
+
+    /// `_LIB_VERSION` (-1 `_IEEE_`, 0 `_SVID_`, 2 `_POSIX_`), at 0x499688.
+    pub const LIB_VERSION: u32 = 0x0049_9688;
+
+    /// The name string "expf" the exception record points at.
+    pub const EXPF_NAME: u32 = 0x0049_9088;
+
+    /// `HUGE` (SVID overflow result, a double).
+    pub const SVID_HUGE: u32 = 0x0049_9090;
+
+    /// `HUGE_VAL` (a double).
+    pub const HUGE_VAL: u32 = 0x0049_9680;
+
+    /// `struct exception` on the frame: type, name, arg1, arg2, retval, err.
+    pub const EXC_TYPE: u32 = 0x0;
+
+    pub const EXC_NAME: u32 = 0x4;
+
+    pub const EXC_ARG1: u32 = 0x8;
+
+    pub const EXC_ARG2: u32 = 0x10;
+
+    pub const EXC_RETVAL: u32 = 0x18;
+
+    pub const EXC_ERR: u32 = 0x20;
+
+    pub const IEEE754_EXPF: Callee = Callee {
+        addr: 0x0040_e048,
+        f: ee::s15::__ieee754_expf,
+    };
+
+    pub const FINITEF: Callee = Callee {
+        addr: 0x0040_f8c0,
+        f: ee::s15::finitef,
+    };
+
+    pub const EXTENDSFDF2: Callee = Callee {
+        addr: 0x0041_3af8,
+        f: ee::s15::__extendsfdf2,
+    };
+
+    pub const MATHERR: Callee = Callee {
+        addr: 0x0040_f878,
+        f: ee::s15::matherr,
+    };
+
+    pub const GETREENT: Callee = Callee {
+        addr: 0x0041_5fb8,
+        f: ee::s15::__getreent,
+    };
+
+    pub const TRUNCDFSF2: Callee = Callee {
+        addr: 0x0041_27a8,
+        f: ee::s15::__truncdfsf2,
+    };
+}
+
+pub(crate) mod libpad {
+    use super::*;
+
+    /// The port/slot table (`0x526250 + port * 0x70 + slot * 0x1c`).
+    pub const PORTS: u32 = 0x0052_6250;
+
+    pub const PORT_STRIDE: u32 = 0x70;
+
+    pub const SLOT_STRIDE: u32 = 0x1c;
+
+    /// Non-zero while the port is open.
+    pub const OPEN: u32 = 0x10;
+
+    /// The DMA buffer's state byte (6: stable) and request state (2: busy).
+    pub const STATE: u32 = 0x70;
+
+    pub const REQ_STATE: u32 = 0x71;
+
+    /// `u8* libpad_GetDmaBuffer(int port, int slot)` (0x3ff9a8).
+    pub const GET_DMA_BUFFER: Callee = Callee {
+        addr: 0x003f_f9a8,
+        f: ee::s15::libpad_GetDmaBuffer,
+    };
+}
+
+pub(crate) mod cruise {
+
+    /// Computer actor: the rider (`Rider*` at +0x18; its velocity vector at
+    /// +0x1e0) and the rider's speed at +0xdf8.
+    pub const RIDER: u32 = 0x18;
+
+    pub const RIDER_VELOCITY: u32 = 0x1e0;
+
+    pub const SPEED: u32 = 0xdf8;
+
+    /// `.lit4`: the fast-speed threshold (833.33) and the cruise crouch
+    /// amount (0.97).
+    pub const LIT_FAST: u32 = 0x7de4;
+
+    pub const LIT_CROUCH: u32 = 0x7de0;
+
+    /// The virtual pad word: crouch amount (0..31) in its top 6 bits.
+    pub const PAD_CROUCH_KEEP: u64 = 0x03ff_ffff;
+
+    pub const PAD_CROUCH_SHIFT: u32 = 26;
+}
+
+/// `LunoVMRegister* WScriptFn_GetObjectSlot32(LunoVMRegister* ret, int n,
+/// Arg* args)` (0x3019c8): script function. The arguments (object id,
+/// time) start from the defaults (-1, -1.0) and take each passed argument
+/// `{idx, val, _, type}` (an int passed for a float slot is converted). The
+/// object is the player for id -1, else looked up by class (low byte) and
+/// handle (the rest). Answers, as an int register, the object's
+/// controller's virtual `+0x100` (slot 32) called with `time / 30`, or 0
+/// without a controller or object. Frame 0x70 (s0-s3; the arguments at
+/// +0x10).
+pub fn wscript_fn_get_object_slot32(c: &mut Cpu) {
+    use get_object_slot32::*;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        let gp = c.g[GP][0] as u32;
+        let ready = c.lw(gp.wrapping_add(GP_DEFAULTS_READY));
+        c.g[V0][0] = ready;
+        frame.save(c, S3, 0x30);
+        frame.save(c, S1, 0x50);
+        let args = c.g[A2][0];
+        c.g[S3][0] = args;
+        frame.save(c, S2, 0x40);
+        let ret = c.g[A0][0];
+        c.g[S1][0] = ret;
+        frame.save(c, S0, 0x60);
+        let n = c.g[A1][0];
+        c.g[S2][0] = n;
+        frame.save_ra(c, 0x20);
+        c.g[A2][0] = DEFAULTS_HI;
+        if ready == 0 {
+            // First use: defaults = { -1, -1.0f, (byte kept) }.
+            c.cycles += 12;
+            c.g[V1][0] = sx(DEFAULTS);
+            c.g[V0][0] = u64::MAX;
+            let b = c.lbu(DEFAULTS.wrapping_add(0x8));
+            c.g[A1][0] = b;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.mtc1(AT, 0);
+            c.g[A0][0] = 1;
+            c.sw(DEFAULTS, u64::MAX);
+            c.sb(DEFAULTS.wrapping_add(0x8), b);
+            c.swc1(0, DEFAULTS.wrapping_add(0x4));
+            c.sw(gp.wrapping_add(GP_DEFAULTS_READY), 1);
+            c.sb(sp(c), b);
+        }
+
+        // buf (sp+0x10) = defaults.
+        c.cycles += 10;
+        c.g[V0][0] = u64::MAX;
+        let buf = sp(c).wrapping_add(0x10);
+        c.g[S0][0] = sx(buf);
+        c.g[A1][0] = sx(DEFAULTS);
+        c.g[A2][0] = 0xc;
+        c.sw(buf, u64::MAX);
+        c.g[A0][0] = sx(buf);
+        call_ptr(c, MEM_COPY, 0x0030_1a48)?;
+        c.g[A2][0] = args;
+        if (n as i64) > 0 {
+            // Each passed argument into its slot.
+            c.cycles += 4;
+            c.g[A1][0] = n;
+            c.g[T0][0] = sx(gp.wrapping_add(GP_ARG_TYPES));
+            c.g[A3][0] = TYPE_FLOAT;
+            loop {
+                c.cycles += 8;
+                let arg = c.g[A2][0] as u32;
+                let idx = c.lw(arg);
+                let ty = c.lw(arg.wrapping_add(0xc));
+                c.g[V1][0] = ty;
+                let off = (idx as u32) << 2;
+                let slot = buf.wrapping_add(off);
+                c.g[A0][0] = sx(slot);
+                let declared = c.lw((c.g[T0][0] as u32).wrapping_add(off));
+                c.g[V0][0] = declared;
+                if ty != declared && declared == TYPE_FLOAT {
+                    c.cycles += 6;
+                    c.lwc1(0, arg.wrapping_add(0x4));
+                    c.cvt_s_w(0, 0);
+                    c.swc1(0, slot);
+                } else {
+                    if ty != declared {
+                        c.cycles += 2;
+                    }
+                    c.cycles += 1;
+                    let val = c.lw(arg.wrapping_add(0x4));
+                    c.g[V0][0] = val;
+                    c.sw(slot, val);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                c.g[A2][0] = sx(arg.wrapping_add(0x10));
+                if c.g[A1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0030_1a60);
+                }
+            }
+        }
+
+        // The object: the player for id -1, else class table[id & 0xff],
+        // handle table[id >> 8] >> 8, times 4.
+        c.cycles += 4;
+        let buf = c.g[S0][0] as u32;
+        let id = c.lw(buf);
+        c.g[A2][0] = id;
+        c.g[V0][0] = !id;
+        let man = c.lw(gp.wrapping_add(GP_OBJECT_MAN));
+        c.g[A1][0] = man;
+        let obj = if id == u64::MAX {
+            c.cycles += 3;
+            let world = c.lw(gp.wrapping_add(GP_WORLD));
+            c.g[V0][0] = world;
+            c.lw((world as u32).wrapping_add(WORLD_PLAYER))
+        } else {
+            c.cycles += 8;
+            let class_off = ((id & 0xff) as u32) << 2;
+            c.g[V0][0] = sx(class_off);
+            let m = c.lw(man as u32);
+            c.g[V1][0] = m;
+            let tables = c.lw((m as u32).wrapping_add(0x8));
+            c.g[A0][0] = tables;
+            let entry = class_off.wrapping_add(tables as u32);
+            c.g[V0][0] = sx(entry);
+            let class = c.lw(entry);
+            c.g[V1][0] = class;
+            c.g[V0][0] = sx((id as u32) >> 8);
+            let mut obj = 0;
+            if class != 0 {
+                c.cycles += 7;
+                let handles = c.lw((class as u32).wrapping_add(0x1c));
+                c.g[A0][0] = handles;
+                let h = ((id as u32) >> 8) << 2;
+                c.g[V0][0] = sx(h.wrapping_add(handles as u32));
+                let word = c.lw(h.wrapping_add(handles as u32));
+                c.g[V1][0] = word;
+                let index = (word as u32) >> 8;
+                obj = sx(index << 2);
+                if index == 0 {
+                    c.g[V0][0] = obj;
+                }
+            }
+            if obj == 0 {
+                c.cycles += 1;
+            }
+            obj
+        };
+        c.g[V0][0] = obj;
+
+        c.cycles += 2;
+        if obj == 0 {
+            // No object: 0.
+            c.g[V0][0] = 1;
+            c.cycles += 4;
+            c.g[A0][0] = ret;
+            c.sw((ret as u32).wrapping_add(0x8), 1);
+            call_ptr(c, REGISTER_AS_INT, 0x0030_1b64)?;
+            c.sw(c.g[V0][0] as u32, 0);
+        } else {
+            c.cycles += 3;
+            let ctrl = c.lw((obj as u32).wrapping_add(0xc));
+            c.g[A1][0] = ctrl;
+            c.lwc1(0, buf.wrapping_add(0x4));
+            let value = if ctrl != 0 {
+                // ctrl->vslot32(time / 30).
+                c.cycles += 9;
+                let vt = c.lw((ctrl as u32).wrapping_add(0xc));
+                c.g[V1][0] = vt;
+                c.lwc1(12, gp.wrapping_sub(GP_FRAME_TIME));
+                let slot = crate::call::VSlot::read(c, vt, 0x100);
+                c.g[A0][0] = slot.delta;
+                c.mul_s(12, 0, 12);
+                c.g[V0][0] = slot.func;
+                c.g[A0][0] = slot.this(ctrl);
+                call_ptr(c, slot.func as u32, 0x0030_1b34)?;
+                c.g[V0][0]
+            } else {
+                c.cycles += 1;
+                0
+            };
+            c.g[S0][0] = value;
+            c.cycles += 6;
+            c.g[V0][0] = 1;
+            c.g[A0][0] = ret;
+            c.sw((ret as u32).wrapping_add(0x8), 1);
+            call_ptr(c, REGISTER_AS_INT, 0x0030_1b50)?;
+            c.sw(c.g[V0][0] as u32, value);
+        }
+
+        c.cycles += 8;
+        c.g[V0][0] = ret;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `float expf(float x)` (0x40d758), newlib's `w_expf.c` wrapper: compute
+/// `__ieee754_expf(x)`; unless `_LIB_VERSION` is `_IEEE_` or `x` is not
+/// finite, report overflow (`x > 88.72284`, type 3) or underflow (`x <
+/// -103.97208`, type 4) through `matherr` / `errno = ERANGE` (POSIX skips
+/// `matherr`) and return the exception's (double) result as a float.
+pub fn expf(c: &mut Cpu) {
+    use libm_wrap::*;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x70);
+        frame.save_fpr(c, 20, 0x60);
+        c.mov_s(20, 12);
+        let a = frame.at(c, 0x40);
+        c.sd(a, c.g[S1][0]);
+        let a = frame.at(c, 0x30);
+        c.sd(a, c.g[S0][0]);
+        frame.save_fpr(c, 21, 0x68);
+        frame.save_ra(c, 0x50);
+        c.g[S1][0] = 0x004a_0000;
+        IEEE754_EXPF.call(c, 0x0040_d77c)?;
+        c.g[S0][0] = c.lw(LIB_VERSION);
+        c.g[V0][0] = u64::MAX;
+        let ieee = c.g[S0][0] == c.g[V0][0];
+        c.mov_s(21, 0); // the result
+        'checked: {
+            if ieee {
+                break 'checked;
+            }
+            c.cycles += 4;
+            c.mov_s(12, 20);
+            FINITEF.call(c, 0x0040_d794)?;
+            let finite = c.g[V0][0] != 0;
+            c.mov_s(0, 21);
+            if !finite {
+                break 'checked;
+            }
+            let version = c.g[S0][0];
+            // The error path: the exception record is filled, then
+            // matherr (unless POSIX) and errno.
+            let posix;
+            c.cycles += 7;
+            c.g[AT][0] = 0x42b1_7180; // 88.72284
+            c.mtc1(AT, 0);
+            c.c_lt_s(0, 20);
+            let overflow = c.fcc();
+            c.g[V0][0] = 0x004a_0000;
+            if overflow {
+                c.cycles += 10;
+                c.g[V1][0] = 3;
+                c.g[V0][0] = sx(EXPF_NAME);
+                let sp0 = sp(c);
+                c.sw(sp0 + EXC_TYPE, c.g[V1][0]);
+                c.sw(sp0 + EXC_NAME, c.g[V0][0]);
+                c.mov_s(12, 20);
+                c.sw(sp0 + EXC_ERR, 0);
+                EXTENDSFDF2.call(c, 0x0040_d7d4)?;
+                let sp0 = sp(c);
+                c.sd(sp0 + EXC_ARG1, c.g[V0][0]);
+                c.sd(sp0 + EXC_ARG2, c.g[V0][0]);
+                if version != 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x004a_0000;
+                    c.g[V1][0] = c.ld(HUGE_VAL);
+                    c.sd(sp0 + EXC_RETVAL, c.g[V1][0]);
+                } else {
+                    c.cycles += 4;
+                    c.g[AT][0] = 0x004a_0000;
+                    c.g[V0][0] = c.ld(SVID_HUGE);
+                    c.sd(sp0 + EXC_RETVAL, c.g[V0][0]);
+                }
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(r32(c, S1).wrapping_sub(0x6978));
+                c.g[V0][0] = 2;
+                posix = c.g[V1][0] == c.g[V0][0];
+                if !posix {
+                    c.cycles += 2;
+                }
+            } else {
+                c.cycles += 7;
+                c.g[AT][0] = 0xffff_ffff_c2cf_f1b5; // -103.97208
+                c.mtc1(AT, 0);
+                c.c_lt_s(20, 0);
+                let underflow = c.fcc();
+                c.g[V1][0] = 4;
+                if !underflow {
+                    c.cycles += 1;
+                    c.mov_s(0, 21);
+                    break 'checked;
+                }
+                c.cycles += 12;
+                c.g[V0][0] = sx(EXPF_NAME);
+                let sp0 = sp(c);
+                c.sw(sp0 + EXC_TYPE, c.g[V1][0]);
+                c.sw(sp0 + EXC_NAME, c.g[V0][0]);
+                c.mov_s(12, 20);
+                c.sw(sp0 + EXC_ERR, 0);
+                EXTENDSFDF2.call(c, 0x0040_d848)?;
+                let sp0 = sp(c);
+                c.g[V1][0] = 0;
+                c.sd(sp0 + EXC_ARG1, c.g[V0][0]);
+                c.sd(sp0 + EXC_RETVAL, c.g[V1][0]);
+                c.g[V1][0] = 2;
+                posix = c.g[S0][0] == c.g[V1][0];
+                c.sd(sp0 + EXC_ARG2, c.g[V0][0]);
+            }
+            let mut set_errno = posix;
+            if !posix {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[SP][0];
+                MATHERR.call(c, 0x0040_d868)?;
+                let handled = c.g[V0][0] != 0;
+                c.g[V0][0] = c.lw(sp(c) + EXC_ERR);
+                set_errno = !handled;
+            }
+            if set_errno {
+                // errno = ERANGE.
+                c.cycles += 5;
+                GETREENT.call(c, 0x0040_d878)?;
+                c.g[V1][0] = 0x22;
+                c.sw(r32(c, V0), c.g[V1][0]);
+                c.g[V0][0] = c.lw(sp(c) + EXC_ERR);
+            }
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                // errno = exc.err.
+                c.cycles += 4;
+                GETREENT.call(c, 0x0040_d894)?;
+                c.g[V1][0] = c.lw(sp(c) + EXC_ERR);
+                c.sw(r32(c, V0), c.g[V1][0]);
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.ld(sp(c) + EXC_RETVAL);
+            TRUNCDFSF2.call(c, 0x0040_d8a4)?;
+            frame.restore_ra(c, 0x50);
+            return finish(c, frame);
+        }
+        c.cycles += 1;
+        frame.restore_ra(c, 0x50);
+        finish(c, frame)
+    });
+
+    /// The shared epilogue (ra already reloaded).
+    fn finish(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+        c.cycles += 6;
+        let a = frame.at(c, 0x40);
+        c.g[S1][0] = c.ld(a);
+        let a = frame.at(c, 0x30);
+        c.g[S0][0] = c.ld(a);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    }
+}
+
+/// `int scePadGetState(int port, int slot)` (0x3ffbc0): 0x63 when the
+/// port is not open; otherwise the DMA buffer's state byte, except that a
+/// stable pad (6) with a request still running (2) reports 5 (`scePadStateExecCmd`).
+pub fn sce_pad_get_state(c: &mut Cpu) {
+    use libpad::*;
+    guest(c, |c| {
+        c.cycles += 14;
+        c.g[A2][0] = c.g[A0][0];
+        c.g[V1][0] = PORT_STRIDE as u64;
+        c.g[A0][0] = SLOT_STRIDE as u64;
+        c.mult(1, V1, A2, V1); // port * 0x70
+        c.mult(0, A0, A1, A0); // slot * 0x1c
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = sx(PORTS);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+        c.g[V0][0] = sx(PORTS.wrapping_add(r32(c, A0)));
+        c.g[V1][0] = c.lw(r32(c, V0).wrapping_add(OPEN));
+        let open = c.g[V1][0] != 0;
+        c.g[V0][0] = 0x63;
+        if !open {
+            c.cycles += 1;
+        } else {
+            c.cycles += 7;
+            c.g[A0][0] = c.g[A2][0];
+            GET_DMA_BUFFER.call(c, 0x003f_fc00)?;
+            c.g[A0][0] = c.g[V0][0];
+            let buf = r32(c, A0);
+            c.g[V1][0] = 6;
+            c.g[V0][0] = c.lbu(buf + STATE);
+            let stable = c.g[V0][0] == c.g[V1][0];
+            if stable {
+                c.cycles += 4;
+                c.g[V1][0] = c.lbu(buf + REQ_STATE);
+                c.g[V0][0] = 2;
+                if c.g[V1][0] != c.g[V0][0] {
+                    c.g[V0][0] = c.lbu(buf + STATE);
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 5;
+                }
+            }
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider_FindBoardPressMarker (0x10bbf8)
+
+/// Computer rider: its rider (+0x18); rider: the course query object
+/// (+0xab8) and the track position (+0x4c0) and distance (+0x4c4).
+pub(crate) const CAR_RIDER: u32 = 0x18;
+
+pub(crate) const RIDER_QUERY: u32 = 0xab8;
+
+pub(crate) const RIDER_TRACK_POS: u32 = 0x4c0;
+
+pub(crate) const RIDER_TRACK_DIST: u32 = 0x4c4;
+
+/// The query object's vtable pointer (+0x34) and its "markers in range"
+/// slot `{delta, fn}` at +0x8.
+pub(crate) const QUERY_VTABLE: u32 = 0x34;
+
+pub(crate) const QUERY_VT_MARKERS: u32 = 0x8;
+
+/// Marker hits on the stack: 12 of 0x10 bytes `{type, value, ..}`.
+pub(crate) const MAX_HITS: u64 = 12;
+
+pub(crate) const HIT_SIZE: u32 = 0x10;
+
+pub(crate) const MARKER_BOARD_PRESS: u64 = 0x13;
+
+/// `bool ComputerActorRider_FindBoardPressMarker(ComputerActorRider* self,
+/// int* press)` (0x10bbf8): ask the course for up to 12 markers between the
+/// rider's track position and 50 units ahead; on the first board-press
+/// marker (type 0x13) store whether its value is positive and return 1,
+/// else `*press = 0` and return 0. The scan keeps its state in the
+/// original's registers (v1 cursor, a0 index, a1 count) across the
+/// back-edge event check.
+pub fn computer_actor_rider_find_board_press_marker(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0xe0);
+        c.g[AT][0] = 0x4248_0000;
+        let ahead = FpuF32(0x4248_0000);
+        c.f[0] = ahead.0;
+        frame.save(c, S0, 0xd0);
+        c.g[A2][0] = MAX_HITS;
+        frame.save_ra(c, 0xc0);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[A1][0] = c.g[SP][0];
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(CAR_RIDER).lw(c);
+        let rider = Addr(c.g[V0][0] as u32);
+        c.g[A3][0] = rider.off(RIDER_QUERY).lw(c);
+        let query = c.g[A3][0] as u32;
+        let dist = rider.off(RIDER_TRACK_DIST).read_fpu(c);
+        c.g[V1][0] = Addr(query).off(QUERY_VTABLE).lw(c);
+        let vt = Addr(c.g[V1][0] as u32);
+        c.f[12] = rider.off(RIDER_TRACK_POS).read_fpu(c).0;
+        c.f[13] = (dist + ahead).0;
+        let delta = vt.off(QUERY_VT_MARKERS).lh(c) as u32;
+        c.g[V0][0] = vt.off(QUERY_VT_MARKERS + 4).lw(c);
+        c.g[A0][0] = sx(query.wrapping_add(delta));
+        let markers = c.g[V0][0] as u32;
+        call_ptr(c, markers, 0x0010_bc40)?;
+        c.g[A1][0] = c.g[V0][0];
+        let press = Addr(c.g[S0][0] as u32);
+        press.sw(c, 0);
+        c.g[A0][0] = 0;
+        let mut found = false;
+        if (c.g[A1][0] as i64) > 0 {
+            c.cycles += 2;
+            c.g[A2][0] = MARKER_BOARD_PRESS;
+            c.g[V1][0] = c.g[SP][0];
+            loop {
+                c.cycles += 3;
+                let hit = Addr(c.g[V1][0] as u32);
+                c.g[V0][0] = hit.lw(c);
+                if c.g[V0][0] == c.g[A2][0] {
+                    c.cycles += 5;
+                    let value = hit.off(4).lw(c);
+                    c.g[V0][0] = 1;
+                    c.g[V1][0] = (0 < value as i64) as u64;
+                    let v = c.g[V1][0];
+                    press.sw(c, v);
+                    found = true;
+                    break;
+                }
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                c.g[V1][0] = sx(hit.0.wrapping_add(HIT_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_bc58);
+                }
+            }
+        }
+        if !found {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0xd0);
+        frame.restore_ra(c, 0xc0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// EATimer_Rcnt1Handler (0x3e4db8)
+
+/// EE timer 1 registers.
+pub(crate) const T1_COUNT: u32 = 0x1000_0800;
+
+pub(crate) const T1_MODE: u32 = 0x1000_0810;
+
+pub(crate) const T1_COMP: u32 = 0x1000_0820;
+
+/// T1_MODE: clear the compare interrupt flag (write 1).
+pub(crate) const T1_MODE_EQUF: u64 = 0x400;
+
+/// EATimer state: the 8 tick callbacks, tick counters, period (halfword)
+/// and the "in callback" flag.
+pub(crate) const EATIMER_CALLBACKS: u32 = 0x0045_0da8;
+
+pub(crate) const EATIMER_TICKS: u32 = 0x0045_0dcc;
+
+pub(crate) const EATIMER_TICKS2: u32 = 0x0045_0dd0;
+
+pub(crate) const EATIMER_PERIOD: u32 = 0x0045_0de0;
+
+pub(crate) const EATIMER_IN_CALLBACK: u32 = 0x0045_0de4;
+
+/// `int EATimer_Rcnt1Handler(void)` (0x3e4db8): the timer 1 compare
+/// interrupt. Advance the compare value by the period (relative to the
+/// current count), reset the count, acknowledge the interrupt, bump both
+/// tick counters, run each of the 8 registered callbacks with the
+/// in-callback flag set, re-enable interrupts and return 0. The loop
+/// keeps the original's registers (s1 slot pointer, s0 remaining) across
+/// its back-edge event check.
+pub fn ea_timer_rcnt1_handler(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 36;
+        let frame = Frame::open(c, 0x50);
+        c.g[V1][0] = 0x0045_0000;
+        frame.save(c, S0, 0x40);
+        c.g[A1][0] = T1_COMP as u64;
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[A0][0] = T1_COUNT as u64;
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = T1_MODE as u64;
+        // Next compare = period + compare - count; restart the count.
+        let period = Addr(EATIMER_PERIOD).lhu(c);
+        let compare = Addr(T1_COMP).lw(c);
+        c.g[T0][0] = 0x0045_0000;
+        c.g[A3][0] = Addr(T1_COUNT).lw(c);
+        c.g[T1][0] = 0x0045_0000;
+        c.g[S2][0] = 0x0045_0000;
+        let next = (period as u32)
+            .wrapping_add(compare as u32)
+            .wrapping_sub(c.g[A3][0] as u32);
+        c.g[V0][0] = sx(next);
+        Addr(T1_COMP).sw(c, sx(next));
+        c.g[S1][0] = sx(EATIMER_CALLBACKS);
+        Addr(T1_COUNT).sw(c, 0);
+        c.g[S3][0] = 1;
+        c.g[S0][0] = 7;
+        // Acknowledge the interrupt.
+        let mode = Addr(T1_MODE).lw(c) | T1_MODE_EQUF;
+        Addr(T1_MODE).sw(c, mode);
+        // Tick counters.
+        c.g[V0][0] = sx((Addr(EATIMER_TICKS).lw(c) as u32).wrapping_add(1));
+        let v = c.g[V0][0];
+        Addr(EATIMER_TICKS).sw(c, v);
+        c.g[V1][0] = sx((Addr(EATIMER_TICKS2).lw(c) as u32).wrapping_add(1));
+        let v = c.g[V1][0];
+        Addr(EATIMER_TICKS2).sw(c, v);
+        loop {
+            c.cycles += 3;
+            let slot = Addr(c.g[S1][0] as u32);
+            c.g[V0][0] = slot.lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                let callback = c.g[V0][0] as u32;
+                let flag = c.g[S3][0];
+                Addr(EATIMER_IN_CALLBACK).sw(c, flag);
+                call_ptr(c, callback, 0x003e_4e5c)?;
+                Addr(EATIMER_IN_CALLBACK).sw(c, 0);
+            }
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_sub(1));
+            c.cycles += 2;
+            let more = (c.g[S0][0] as i64) >= 0;
+            c.g[S1][0] = sx(slot.0.wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003e_4e48);
+            }
+        }
+        c.cycles += 10;
+        c.ei();
+        frame.restore(c, S0, 0x40);
+        c.g[V0][0] = 0;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------- logf
+
+/// `float logf(float x)` (0x40da10): newlib's `w_logf.c` wrapper. Returns
+/// `__ieee754_logf(x)`; unless `_LIB_VERSION` is `_IEEE_` or `x` is NaN or
+/// positive, it builds a `struct exception` on the stack ("log", `x` as
+/// both doubles, retval `-HUGE` for `_SVID_` else `-HUGE_VAL`), sets type
+/// `SING` for 0 / `DOMAIN` for negatives, sets `errno` (ERANGE / EDOM) for
+/// `_POSIX_` or when `matherr` declines, copies the struct's `err` to
+/// `errno` when nonzero, and returns the retval as a float.
+pub fn logf(c: &mut Cpu) {
+    const IEEE754_LOGF: Callee = Callee {
+        addr: 0x0040_e550,
+        f: ee::s15::__ieee754_logf,
+    };
+    const ISNANF: Callee = Callee {
+        addr: 0x0040_f9d0,
+        f: ee::s15::isnanf,
+    };
+    const EXTENDSFDF2: Callee = Callee {
+        addr: 0x0041_3af8,
+        f: ee::s15::__extendsfdf2,
+    };
+    const SUBDF3: Callee = Callee {
+        addr: 0x0041_1f70,
+        f: ee::s15::__subdf3,
+    };
+    const GETREENT: Callee = Callee {
+        addr: 0x0041_5fb8,
+        f: ee::s15::__getreent,
+    };
+    const MATHERR: Callee = Callee {
+        addr: 0x0040_f878,
+        f: ee::s15::matherr,
+    };
+    const TRUNCDFSF2: Callee = Callee {
+        addr: 0x0041_27a8,
+        f: ee::s15::__truncdfsf2,
+    };
+    /// `_LIB_VERSION` (`0x4a0000 - 0x6978`): -1 `_IEEE_`, 0 `_SVID_`, 2 `_POSIX_`.
+    const HI: u32 = 0x004a_0000;
+    const LIB_VERSION: u32 = HI - 0x6978;
+    const IEEE: u64 = u64::MAX;
+    const SVID: u32 = 0;
+    const POSIX: u64 = 2;
+    /// The name "log", the `-HUGE` (SVID) double, `HUGE_VAL` (+inf).
+    const NAME_LOG: u32 = HI - 0x6f58;
+    const MINUS_HUGE: u32 = HI - 0x6f50;
+    const HUGE_VAL: u32 = HI - 0x6980;
+    /// `struct exception` on the stack.
+    const EXC_TYPE: u32 = 0x0;
+    const EXC_NAME: u32 = 0x4;
+    const EXC_ARG1: u32 = 0x8;
+    const EXC_ARG2: u32 = 0x10;
+    const EXC_RETVAL: u32 = 0x18;
+    const EXC_ERR: u32 = 0x20;
+    /// Exception types and errno values.
+    const DOMAIN: u64 = 1;
+    const SING: u64 = 2;
+    const EDOM: u64 = 0x21;
+    const ERANGE: u64 = 0x22;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x70);
+        frame.save_fpr(c, 20, 0x60);
+        let x = FpuF32(c.f[12]);
+        c.f[20] = x.0;
+        let a = frame.at(c, 0x40);
+        c.sd(a, c.g[S1][0]);
+        let a = frame.at(c, 0x30);
+        c.sd(a, c.g[S0][0]);
+        frame.save_fpr(c, 21, 0x68);
+        frame.save_ra(c, 0x50);
+        c.g[S1][0] = HI as u64;
+        IEEE754_LOGF.call(c, 0x0040_da34)?;
+        let version = Addr(LIB_VERSION).lw(c);
+        c.g[S0][0] = version;
+        c.g[V0][0] = IEEE;
+        c.f[21] = c.f[0];
+        let mut error = false;
+        if version != IEEE {
+            c.cycles += 4;
+            c.f[12] = x.0;
+            ISNANF.call(c, 0x0040_da4c)?;
+            let nan = c.g[V0][0] != 0;
+            c.f[0] = c.f[21];
+            if nan {
+                return finish(c, frame);
+            }
+            c.cycles += 5;
+            c.f[0] = 0;
+            let positive = FpuF32(0).lt(x);
+            abi::set_fcc(c, positive);
+            c.g[V0][0] = HI as u64;
+            error = !positive;
+        }
+        if !error {
+            c.cycles += 2;
+            c.f[0] = c.f[21];
+            return finish(c, frame);
+        }
+
+        // Fill the exception record.
+        c.cycles += 8;
+        let exc = |c: &Cpu, off: u32| sp(c).wrapping_add(off);
+        Addr(exc(c, EXC_ERR)).sw(c, 0);
+        c.g[V0][0] = sx(NAME_LOG);
+        c.f[12] = x.0;
+        Addr(exc(c, EXC_NAME)).sw(c, NAME_LOG as u64);
+        EXTENDSFDF2.call(c, 0x0040_da84)?;
+        let a = exc(c, EXC_ARG1);
+        c.sd(a, c.g[V0][0]);
+        let a = exc(c, EXC_ARG2);
+        c.sd(a, c.g[V0][0]);
+        if c.g[S0][0] == SVID as u64 {
+            c.cycles += 4;
+            c.g[AT][0] = HI as u64;
+            c.g[V0][0] = c.ld(MINUS_HUGE);
+        } else {
+            c.cycles += 5;
+            c.g[V0][0] = HI as u64;
+            c.g[A0][0] = 0;
+            c.g[A1][0] = c.ld(HUGE_VAL);
+            SUBDF3.call(c, 0x0040_dab0)?;
+        }
+        let a = exc(c, EXC_RETVAL);
+        c.sd(a, c.g[V0][0]);
+
+        // Classify, then errno.
+        c.cycles += 5;
+        c.f[0] = 0;
+        let zero = x.eq_s(FpuF32(0));
+        abi::set_fcc(c, zero);
+        c.g[V0][0] = SING;
+        let errno_value;
+        let mut ask_matherr = false;
+        if zero {
+            c.cycles += 3;
+            c.g[V1][0] = Addr(LIB_VERSION).lw(c);
+            Addr(exc(c, EXC_TYPE)).sw(c, SING);
+            if c.g[V1][0] != POSIX {
+                ask_matherr = true;
+                errno_value = 0;
+            } else {
+                c.cycles += 4;
+                GETREENT.call(c, 0x0040_dadc)?;
+                errno_value = ERANGE;
+            }
+        } else {
+            c.cycles += 5;
+            c.g[V1][0] = DOMAIN;
+            c.g[V0][0] = Addr(LIB_VERSION).lw(c);
+            c.g[A0][0] = POSIX;
+            Addr(exc(c, EXC_TYPE)).sw(c, DOMAIN);
+            ask_matherr = c.g[V0][0] != POSIX;
+            errno_value = EDOM;
+        }
+        let mut set_errno = !ask_matherr || errno_value == ERANGE;
+        if ask_matherr {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[SP][0];
+            MATHERR.call(c, 0x0040_db00)?;
+            let handled = c.g[V0][0] != 0;
+            c.g[V0][0] = Addr(exc(c, EXC_ERR)).lw(c);
+            set_errno = !handled;
+        }
+        if set_errno {
+            let code = if errno_value == ERANGE {
+                ERANGE
+            } else {
+                // `DOMAIN`, or a declined `SING` (EDOM here as well).
+                c.cycles += 3;
+                GETREENT.call(c, 0x0040_db10)?;
+                EDOM
+            };
+            c.g[V1][0] = code;
+            c.cycles += 2;
+            Addr(r32(c, V0)).sw(c, code);
+            c.g[V0][0] = Addr(exc(c, EXC_ERR)).lw(c);
+        }
+        // A nonzero `err` from matherr goes to errno.
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            GETREENT.call(c, 0x0040_db2c)?;
+            let err = Addr(exc(c, EXC_ERR)).lw(c);
+            c.g[V1][0] = err;
+            Addr(r32(c, V0)).sw(c, err);
+        }
+        c.cycles += 2;
+        let a = exc(c, EXC_RETVAL);
+        c.g[A0][0] = c.ld(a);
+        TRUNCDFSF2.call(c, 0x0040_db3c)?;
+        finish(c, frame)
+    });
+
+    /// The epilogue.
+    fn finish(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+        c.cycles += 7;
+        frame.restore_ra(c, 0x50);
+        let a = frame.at(c, 0x40);
+        c.g[S1][0] = c.ld(a);
+        let a = frame.at(c, 0x30);
+        c.g[S0][0] = c.ld(a);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    }
+}
+
+// -------------------------------------- ComputerActorRider_CruiseChaseRider
+
+/// `void ComputerActorRider_CruiseChaseRider(ComputerActorRider* self,
+/// ControlInput* pad)` (0x100f88): the "chase a rider" cruise step. With
+/// the target rider (AI rider slot `self+0xe70`) and the record of that
+/// slot in the model (`model + slot*0x24`: distance +8, heading +0xc):
+///
+/// - heading difference to the target wrapped to [-pi, pi]; own and
+///   target speeds (the target's velocity from its path interface, vtable
+///   +0x10 at `+0x6c0`);
+/// - behind (|angle| > pi/2): steer at the path, boost when slower than
+///   the target, else cruise-crouch;
+/// - otherwise the "close enough" angle `atan(150 / d)` (pi/2 at d == 0,
+///   +pi when d < 0): outside it, or not faster than the target, steer and
+///   crouch; else when the target is ready (vtable +0x48), re-select the AI
+///   path if both follow the same one, then steer and crouch;
+/// - pack the steering (`* 31`, 6 bits at bit 20) into the pad flags, then
+///   resolve the jump state as the other cruise steps do.
+///
+/// The original's blocks are laid out in address order and entered by
+/// falling out of the previous one; each `'b_…` label is one of them.
+pub fn computer_actor_rider_cruise_chase_rider(c: &mut Cpu) {
+    use crate::game::ai::computer::{cruise, jump_desc_copy, vu0_length_sq};
+    const SELECT_AI_PATH: Callee = Callee {
+        addr: 0x0011_2a50,
+        f: ee::s00::Rider_SelectAIPath,
+    };
+    /// `float Math_Atan(float)`.
+    const MATH_ATAN: u32 = 0x0031_c228;
+    /// Rider fields.
+    const R_MODEL: u32 = 0x18;
+    const R_MARKER_DIST: u32 = 0xdf0;
+    const R_TARGET: u32 = 0xe70;
+    const R_JUMP_STATE: u32 = 0xf38;
+    /// Rider-slot record in the model: `0x24` bytes, distance and heading.
+    const REC_SIZE: u64 = 0x24;
+    const REC_DIST: u32 = 0x8;
+    const REC_HEADING: u32 = 0xc;
+    /// Model fields: heading, velocity, followed AI path.
+    const M_HEADING: u32 = 0x4cc;
+    const M_VELOCITY: u32 = 0x1e0;
+    const M_AI_PATH: u32 = 0xab8;
+    /// The target rider entry's path interface (`{delta, fn}` slots).
+    const E_IFACE: u32 = 0x6c0;
+    const IFACE_GET_VELOCITY: u32 = 0x10;
+    const IFACE_READY: u32 = 0x48;
+    /// The jump descriptors (`0x450000 - 0x30e0`).
+    const JUMP_DESCS: u32 = 0x0044_0000 - 0x30e0;
+    let gp_lit = |c: &Cpu, off: u32| r32(c, GP).wrapping_sub(off);
+    guest(c, |c| {
+        c.cycles += 39;
+        let frame = Frame::open(c, 0xc0);
+        let a = gp_lit(c, 0x7fa8);
+        c.lwc1(0, a); // 1 / 2pi
+        frame.save(c, S0, 0x80);
+        frame.save(c, S2, 0x60);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S4, 0x40);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S1, 0x70);
+        c.g[S4][0] = REC_SIZE;
+        frame.save(c, S3, 0x50);
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 24, 0xb0);
+        frame.save_fpr(c, 23, 0xa8);
+        frame.save_fpr(c, 22, 0xa0);
+        frame.save_fpr(c, 21, 0x98);
+        frame.save_fpr(c, 20, 0x90);
+        let this = r32(c, S0);
+        c.g[V0][0] = Addr(gp_lit(c, 0x848)).lw(c);
+        c.g[A0][0] = Addr(this).off(R_TARGET).lw(c);
+        c.g[A2][0] = Addr(this).off(R_MODEL).lw(c);
+        c.mult(0, A0, A0, S4);
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(1, 3); // 0.5
+        c.lwc1(2, r32(c, A2).wrapping_add(M_HEADING));
+        c.g[A1][0] = Addr(r32(c, V0)).off(0x84).lw(c);
+        c.g[V1][0] = Addr(this).off(R_TARGET).lw(c);
+        c.g[A0][0] = abi::addu(c.g[A2][0], c.g[A0][0]);
+        c.g[V0][0] = Addr(r32(c, A1)).off(0xc).lw(c);
+        c.lwc1(1, r32(c, A0).wrapping_add(REC_HEADING));
+        c.g[V1][0] = sx(r32(c, V1) << 2);
+        c.g[V0][0] = abi::addu(c.g[V0][0], c.g[V1][0]);
+        c.sub_s(1, 1, 2);
+        c.g[S1][0] = Addr(r32(c, V0)).off(0x28).lw(c);
+        // floor(diff / 2pi + 0.5)
+        c.mul_s(0, 1, 0);
+        c.add_s(0, 0, 3);
+        c.cvt_w_s(2, 0);
+        c.cvt_s_w(2, 2);
+        c.c_lt_s(0, 2);
+        if c.fcc() {
+            c.cycles += 3;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(1, 0);
+            c.sub_s(2, 2, 0);
+        }
+
+        'b_101200: {
+            'b_1011a4: {
+                'b_101190: {
+                    'b_1010fc: {
+                        c.cycles += 37;
+                        let a = gp_lit(c, 0x7fa4);
+                        c.lwc1(0, a); // 2pi
+                        c.lqc2(3, r32(c, A2).wrapping_add(M_VELOCITY));
+                        vu0_length_sq(c);
+                        c.cfc2(V0, 22);
+                        c.mtc1(V0, 24); // own speed
+                        let entry = r32(c, S1);
+                        c.g[V1][0] = Addr(entry).off(E_IFACE).lw(c);
+                        c.g[A1][0] = sx(entry.wrapping_add(E_IFACE));
+                        c.mul_s(0, 2, 0);
+                        c.g[S3][0] = c.g[A1][0];
+                        let vt = r32(c, V1);
+                        c.g[A0][0] = Addr(vt).off(IFACE_GET_VELOCITY).lh(c);
+                        c.g[V0][0] = Addr(vt).off(IFACE_GET_VELOCITY + 4).lw(c);
+                        c.sub_s(22, 1, 0); // the wrapped angle
+                        let target = r32(c, V0);
+                        c.g[A0][0] = abi::addu(c.g[A1][0], c.g[A0][0]);
+                        call_ptr(c, target, 0x0010_1080)?;
+                        c.mtc1(0, 21); // steer = 0
+                        let a = gp_lit(c, 0x7fa0);
+                        c.lwc1(1, a); // pi/2
+                        c.abs_s(0, 22);
+                        c.lqc2(3, r32(c, V0));
+                        vu0_length_sq(c);
+                        c.cfc2(V1, 22);
+                        c.mtc1(V1, 23); // target speed
+                        c.c_lt_s(1, 0);
+                        let behind = c.fcc();
+                        c.g[A0][0] = c.g[SP][0];
+                        if !behind {
+                            break 'b_1010fc;
+                        }
+                        c.cycles += 9;
+                        c.g[A1][0] = c.g[S0][0];
+                        cruise::GET_STEER_TARGET.call(c, 0x0010_10cc)?;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[SP][0];
+                        cruise::COMPUTE_STEER.call(c, 0x0010_10d8)?;
+                        c.c_lt_s(24, 23);
+                        let slower = c.fcc();
+                        c.mov_s(21, 0);
+                        if !slower {
+                            break 'b_101190;
+                        }
+                        c.cycles += 5;
+                        c.g[A0][0] = c.g[S0][0];
+                        c.g[A1][0] = c.g[S2][0];
+                        cruise::CROUCH_AND_BOOST.call(c, 0x0010_10f4)?;
+                        break 'b_101200;
+                    }
+                    // Ahead: the "close enough" angle from the distance.
+                    'b_101178: {
+                        'b_101154: {
+                            'b_101128: {
+                                c.cycles += 8;
+                                c.g[V0][0] = Addr(this).off(R_TARGET).lw(c);
+                                c.g[V1][0] = Addr(this).off(R_MODEL).lw(c);
+                                c.mult(0, V0, V0, S4);
+                                c.g[V1][0] = abi::addu(c.g[V1][0], c.g[V0][0]);
+                                c.lwc1(20, r32(c, V1).wrapping_add(REC_DIST));
+                                c.c_eq_s(20, 21);
+                                if !c.fcc() {
+                                    break 'b_101128;
+                                }
+                                c.cycles += 3;
+                                let a = gp_lit(c, 0x7f9c);
+                                c.lwc1(1, a); // pi/2
+                                break 'b_101154;
+                            }
+                            c.cycles += 9;
+                            c.g[AT][0] = 0x4316_0000; // 150.0
+                            c.mtc1(1, 12);
+                            c.div_s(12, 12, 20);
+                            call_ptr(c, MATH_ATAN, 0x0010_113c)?;
+                            c.c_lt_s(20, 21);
+                            let negative = c.fcc();
+                            c.mov_s(1, 0);
+                            if negative {
+                                c.cycles += 2;
+                                let a = gp_lit(c, 0x7f98);
+                                c.lwc1(0, a); // pi
+                                c.add_s(1, 1, 0);
+                            }
+                        }
+                        c.cycles += 5;
+                        c.abs_s(0, 22);
+                        c.c_lt_s(1, 0);
+                        let outside = c.fcc();
+                        c.g[A0][0] = c.g[SP][0];
+                        if outside {
+                            break 'b_101178;
+                        }
+                        c.cycles += 4;
+                        c.c_le_s(24, 23);
+                        if !c.fcc() {
+                            // Faster than the target: ask whether it is ready.
+                            c.g[V1][0] = Addr(r32(c, S1)).off(E_IFACE).lw(c);
+                            break 'b_1011a4;
+                        }
+                    }
+                    c.cycles += 6;
+                    c.g[A1][0] = c.g[S0][0];
+                    cruise::GET_STEER_TARGET.call(c, 0x0010_1180)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[SP][0];
+                    cruise::COMPUTE_STEER.call(c, 0x0010_118c)?;
+                    c.mov_s(21, 0);
+                }
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S2][0];
+                cruise::SET_CRUISE_CROUCH.call(c, 0x0010_119c)?;
+                break 'b_101200;
+            }
+            c.cycles += 6;
+            let vt = r32(c, V1);
+            c.g[A0][0] = Addr(vt).off(IFACE_READY).lh(c);
+            c.g[V0][0] = Addr(vt).off(IFACE_READY + 4).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = abi::addu(c.g[S3][0], c.g[A0][0]);
+            call_ptr(c, target, 0x0010_11b4)?;
+            if c.g[V0][0] == 0 {
+                break 'b_101200;
+            }
+            c.cycles += 5;
+            c.g[A0][0] = Addr(this).off(R_MODEL).lw(c);
+            c.g[V1][0] = Addr(r32(c, S1)).off(M_AI_PATH).lw(c);
+            c.g[V0][0] = Addr(r32(c, A0)).off(M_AI_PATH).lw(c);
+            if c.g[V1][0] == c.g[V0][0] {
+                // Both follow the same AI path: pick another.
+                c.cycles += 3;
+                c.g[A1][0] = 0;
+                SELECT_AI_PATH.call(c, 0x0010_11d8)?;
+            }
+            c.g[A0][0] = c.g[SP][0];
+            c.cycles += 9;
+            c.g[A1][0] = c.g[S0][0];
+            cruise::GET_STEER_TARGET.call(c, 0x0010_11e4)?;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[SP][0];
+            cruise::COMPUTE_STEER.call(c, 0x0010_11f0)?;
+            c.mov_s(21, 0);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S2][0];
+            cruise::SET_CRUISE_CROUCH.call(c, 0x0010_1200)?;
+        }
+
+        // Pack the steering, then the jump state.
+        'b_1012dc: {
+            c.cycles += 24;
+            c.g[AT][0] = 0x41f8_0000; // 31.0
+            c.mtc1(1, 0);
+            c.g[V0][0] = 0xffff_ffff_fc0f_0000;
+            let pad = r32(c, S2);
+            c.g[V1][0] = Addr(pad).lw(c);
+            c.g[V0][0] |= 0xffff;
+            c.mul_s(0, 21, 0);
+            let sp0 = sp(c);
+            Addr(sp0).off(0x24).sw(c, 0);
+            c.g[V1][0] &= c.g[V0][0];
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = sx(this.wrapping_add(R_MARKER_DIST));
+            c.g[A2][0] = sx(sp0.wrapping_add(0x10));
+            c.cvt_w_s(1, 0);
+            c.mfc1(V0, 1);
+            c.g[T0][0] = sx(sp0.wrapping_add(0x18));
+            c.g[A3][0] = sx(sp0.wrapping_add(0x14));
+            c.g[T1][0] = sx(sp0.wrapping_add(0x1c));
+            c.g[T2][0] = sx(sp0.wrapping_add(0x20));
+            c.g[V0][0] &= 0x3f;
+            c.g[V0][0] = sx(r32(c, V0) << 20);
+            c.g[V1][0] |= c.g[V0][0];
+            let flags = c.g[V1][0];
+            Addr(pad).sw(c, flags);
+            cruise::FIND_JUMP_MARKER.call(c, 0x0010_1258)?;
+            let none = c.g[V0][0] == 0;
+            c.g[V0][0] = u64::MAX;
+            if !none {
+                c.cycles += 9;
+                c.g[V1][0] = 0x44_0000;
+                Addr(this).off(R_TARGET).sw(c, u64::MAX);
+                c.g[A2][0] = sx(JUMP_DESCS);
+                jump_desc_copy(c, V0, JUMP_DESCS, 7, 0);
+                Addr(this).off(R_JUMP_STATE).sh(c, 0);
+                break 'b_1012dc;
+            }
+            'b_1012d8: {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = sx(sp(c).wrapping_add(0x24));
+                cruise::SELECT_TARGET_RIDER.call(c, 0x0010_1290)?;
+                let selected = c.g[V0][0] != 0;
+                c.g[V0][0] = Addr(sp(c)).off(0x24).lw(c);
+                if !selected {
+                    c.cycles += 8;
+                    c.g[V0][0] = sx(JUMP_DESCS);
+                    jump_desc_copy(c, A3, JUMP_DESCS, 0xf, 0x8);
+                    c.g[V1][0] = 1;
+                    break 'b_1012d8;
+                }
+                c.cycles += 2;
+                let none = c.g[V0][0] == 0;
+                c.g[V0][0] = 0x44_0000;
+                if none {
+                    break 'b_1012dc;
+                }
+                c.cycles += 6;
+                c.g[V1][0] = 3;
+                c.g[V0][0] = sx(JUMP_DESCS);
+                jump_desc_copy(c, A3, JUMP_DESCS, 0x1f, 0x18);
+            }
+            c.cycles += 1;
+            let state = c.g[V1][0];
+            Addr(this).off(R_JUMP_STATE).sh(c, state);
+        }
+        c.cycles += 13;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.restore_fpr(c, 24, 0xb0);
+        frame.restore_fpr(c, 23, 0xa8);
+        frame.restore_fpr(c, 22, 0xa0);
+        frame.restore_fpr(c, 21, 0x98);
+        frame.restore_fpr(c, 20, 0x90);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `int EIntr(void)` (0x42c0c0): enable interrupts (`ei`); returns 1 if
+/// they were already enabled.
+pub fn e_intr(c: &mut Cpu) {
+    c.cycles += 6;
+    c.mfc0(V0, 12);
+    c.g[V1][0] = STATUS_EIE;
+    c.g[V0][0] &= c.g[V1][0];
+    c.ei();
+    c.g[V0][0] = (c.g[V0][0] != 0) as u64;
+    ret(c);
+}
+
+/// `void ComputerActorRider_SetCruiseCrouch(ComputerActor* self, Pad* pad)`
+/// (0x10c0a8): the AI's crouch while cruising: full (1.0) below the fast
+/// speed (|velocity| < 833.33, VU0 length), 0.97 when faster, none below
+/// speed 20; written as `crouch * 31` into the pad word's top 6 bits.
+pub fn computer_actor_rider_set_cruise_crouch(c: &mut Cpu) {
+    use cruise::*;
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    c.cycles += 17;
+    let gp = r32(c, GP);
+    let me = abi::arg(c, 0);
+    c.lwc1(1, gp.wrapping_sub(LIT_FAST));
+    c.g[V0][0] = Addr(me.wrapping_add(RIDER)).lw(c);
+    c.lqc2(3, r32(c, V0).wrapping_add(RIDER_VELOCITY));
+    // |velocity| (x, y, z) into Q, then f0.
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(V1, 22);
+    c.mtc1(V1, 0);
+    c.lwc1(2, gp.wrapping_sub(LIT_CROUCH));
+    c.c_lt_s(0, 1);
+    let slow = c.fcc();
+    c.lwc1(1, me.wrapping_add(SPEED));
+    if slow {
+        c.cycles += 2;
+        c.g[AT][0] = 0x3f80_0000; // 1.0
+        c.mtc1(AT, 2);
+    }
+    c.cycles += 5;
+    c.g[AT][0] = 0x41a0_0000; // 20.0
+    c.mtc1(AT, 0);
+    c.c_lt_s(1, 0);
+    if c.fcc() {
+        c.cycles += 1;
+        c.mtc1(0, 2);
+    }
+    c.cycles += 13;
+    c.g[AT][0] = 0x41f8_0000; // 31.0
+    c.mtc1(AT, 0);
+    c.g[V1][0] = PAD_CROUCH_KEEP;
+    let pad = Addr(abi::arg(c, 1));
+    c.g[A0][0] = pad.lw(c);
+    c.mul_s(0, 2, 0);
+    c.g[A0][0] &= c.g[V1][0];
+    c.cvt_w_s(1, 0);
+    c.mfc1(V0, 1);
+    c.g[V0][0] = sx(r32(c, V0) << PAD_CROUCH_SHIFT);
+    c.g[A0][0] |= c.g[V0][0];
+    let word = c.g[A0][0];
+    pad.sw(c, word);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -7866,6 +9265,432 @@ pub(crate) mod tests {
                 c.g[A0][0] = port as u64;
                 c.g[A1][0] = slot as u64;
                 c.pc = 0x003f_f9a8;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::oc238_uf;
+
+    /// WScriptFn_GetObjectSlot32: defaults initialised or not; 0..3 passed
+    /// arguments (none, or n <= 0) with matching / int-for-float / other
+    /// types; ids -1 (the player, present or not) and class/handle ids with
+    /// a missing class, a zero handle or an object; objects with or without
+    /// a controller, whose slot-32 method is a fake (may unwind).
+    #[test]
+    fn wscript_fn_get_object_slot32_matches() {
+        covered(
+            ee::s10::f_003019c8__generated,
+            wscript_fn_get_object_slot32,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30_19c8, 1);
+                c.pc = 0x0030_19c8;
+                let gp = |off: i32| GAME_GP.wrapping_add(off as u32);
+                let ready = seed % 4 != 0;
+                c.bus.write32(gp(0x25fc), ready as u32);
+                // An object id: -1 (the player) or handle << 8 | class.
+                let some_id = |r: &mut Rng| -> u32 {
+                    if r.next_u32() % 3 == 0 {
+                        0xffff_ffff
+                    } else {
+                        (r.next_u32() % 16) << 8 | r.next_u32() % 8
+                    }
+                };
+                fill(c, &mut r, 0x004f_bc00, 3);
+                let default_id = some_id(&mut r);
+                c.bus.write32(0x004f_bc00, default_id);
+                // Declared types: id int, time float, a third slot.
+                c.bus.write32(gp(0xba8), r.next_u32() % 2);
+                c.bus
+                    .write32(gp(0xba8 + 4), if seed % 5 == 0 { 1 } else { 2 });
+                c.bus.write32(gp(0xba8 + 8), r.next_u32() % 3);
+                c.bus.write32(gp(-0x3368), (1.0f32 / 30.0).to_bits());
+                // Objects.
+                let mgr = DATA + 0x100;
+                let m = DATA + 0x200;
+                let tables = DATA + 0x300;
+                let class = DATA + 0x400;
+                let handles = DATA + 0x800;
+                let world = DATA + 0xc00;
+                let obj = DATA + 0x1000;
+                let ctrl = DATA + 0x1100;
+                let vt = DATA + 0x1200;
+                c.bus.write32(gp(0x16c8), mgr);
+                c.bus.write32(mgr, m);
+                c.bus.write32(m + 8, tables);
+                for k in 0..8 {
+                    let present = r.next_u32() % 4 != 0;
+                    c.bus
+                        .write32(tables + 4 * k, if present { class } else { 0 });
+                }
+                c.bus.write32(class + 0x1c, handles);
+                for k in 0..16 {
+                    let word = if r.next_u32() % 4 == 0 {
+                        r.next_u32() & 0xff
+                    } else {
+                        ((obj >> 2) << 8) | (r.next_u32() & 0xff)
+                    };
+                    c.bus.write32(handles + 4 * k, word);
+                }
+                c.bus.write32(gp(0xce8), world);
+                c.bus
+                    .write32(world + 0x290, if seed % 7 == 0 { 0 } else { obj });
+                c.bus
+                    .write32(obj + 0xc, if seed % 5 == 1 { 0 } else { ctrl });
+                c.bus.write32(ctrl + 0xc, vt);
+                c.bus
+                    .write16(vt + 0x100, ((r.next_u32() & 0x3f) * 4) as u16);
+                c.bus.write32(vt + 0x104, FAKE);
+                // Arguments {idx, val, _, type}.
+                let args = DATA + 0x2000;
+                let n = match seed % 6 {
+                    0 => 0,
+                    1 => 0xffff_ffff,
+                    _ => 1 + r.next_u32() % 3,
+                };
+                for k in 0..3 {
+                    let a = args + 0x10 * k;
+                    let idx = if k == 0 {
+                        r.next_u32() % 2
+                    } else {
+                        r.next_u32() % 3
+                    };
+                    c.bus.write32(a, idx);
+                    let val = if idx == 0 {
+                        some_id(&mut r)
+                    } else if r.next_u32() % 2 == 0 {
+                        r.next_u32() % 1000
+                    } else {
+                        oc238_uf(&mut r, -100.0, 100.0).to_bits()
+                    };
+                    c.bus.write32(a + 4, val);
+                    c.bus.write32(a + 8, r.next_u32());
+                    c.bus.write32(a + 0xc, r.next_u32() % 3);
+                }
+                c.g[A0][0] = (DATA + 0x3000) as u64;
+                c.g[A1][0] = sx(n);
+                c.g[A2][0] = args as u64;
+            },
+        );
+    }
+
+    // ------------------------------------------------------------------ expf
+
+    /// `expf`: arguments in range, overflowing, underflowing, at the
+    /// thresholds and not finite, under each `_LIB_VERSION` (IEEE, SVID,
+    /// XOPEN, POSIX); the real libm helpers (`matherr` returns 0).
+    #[test]
+    fn expf_matches() {
+        use super::libm_wrap::*;
+        use crate::difftest::{check, elf_image, scramble, Rng, GAME_GP};
+        let f = |x: f32| x.to_bits();
+        check(ee::s15::f_0040d758__generated, expf, 300, &|c, seed| {
+            let mut r = Rng(0x40d7_5800 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            elf_image(c);
+            c.g[GP][0] = GAME_GP as u64;
+            c.pc = 0x0040_d758;
+            let version = [0xffff_ffffu32, 0, 1, 2][(seed % 4) as usize];
+            c.bus.write32(LIB_VERSION, version);
+            let x = match (seed / 4) % 9 {
+                0 => f(1.5),
+                1 => f(-2.25),
+                2 => f(88.8),
+                3 => f(500.0),
+                4 => f(-104.5),
+                5 => f(-2000.0),
+                6 => f(88.72284),
+                7 => r.edge_f32(),
+                _ => r.f32(120.0),
+            };
+            c.f[12] = x;
+        });
+    }
+
+    // -------------------------------------------------------- scePadGetState
+
+    /// `scePadGetState`: ports and slots 0..3, the port closed or open, a
+    /// DMA buffer (either half, by the real `libpad_GetDmaBuffer`) whose
+    /// state is 6 or another value, request state 2 or another value.
+    #[test]
+    fn sce_pad_get_state_matches() {
+        use super::libpad::*;
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check_lohi, elf_image, DATA};
+        check_lohi(
+            ee::s15::f_003ffbc0__generated,
+            sce_pad_get_state,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003f_fbc0, 0);
+                elf_image(c);
+                c.pc = 0x003f_fbc0;
+                let (port, slot) = (r.next_u32() % 2, r.next_u32() % 4);
+                let entry = PORTS + port * PORT_STRIDE + slot * SLOT_STRIDE;
+                let buf = DATA + 0x100 * (r.next_u32() % 8);
+                c.bus.write32(entry, buf);
+                c.bus
+                    .write32(entry + OPEN, if seed % 5 == 0 { 0 } else { 1 });
+                c.bus.write32(buf + 0x58, r.next_u32() % 4);
+                c.bus.write32(buf + 0xd8, r.next_u32() % 4);
+                for half in [buf, buf + 0x80] {
+                    let state = if r.next_u32() % 2 == 0 {
+                        6
+                    } else {
+                        r.next_u32() % 8
+                    };
+                    let req = if r.next_u32() % 2 == 0 {
+                        2
+                    } else {
+                        r.next_u32() % 4
+                    };
+                    c.bus.write8(half + STATE, state as u8);
+                    c.bus.write8(half + REQ_STATE, req as u8);
+                }
+                c.g[A0][0] = port as u64;
+                c.g[A1][0] = slot as u64;
+            },
+        );
+    }
+
+    /// ComputerActorRider_FindBoardPressMarker: no markers (the vtable
+    /// method is the real leaf at 0x1406c0 returning 0), and a fake returning
+    /// 1..12 hits with or without a board-press marker (positive or not)
+    /// among them.
+    #[test]
+    fn computer_actor_rider_find_board_press_marker_matches() {
+        covered(
+            ee::s00::f_0010bbf8__generated,
+            computer_actor_rider_find_board_press_marker,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_bbf8, 1);
+                c.pc = 0x0010_bbf8;
+                let this = DATA;
+                let rider = DATA + 0x1000;
+                let query = DATA + 0x2000;
+                let press = DATA + 0x3000;
+                c.bus.write32(this + CAR_RIDER, rider);
+                c.bus.write32(rider + RIDER_QUERY, query);
+                c.bus.write32(rider + RIDER_TRACK_POS, r.edge_f32());
+                c.bus.write32(rider + RIDER_TRACK_DIST, r.f32(5000.0));
+                let vt = vtable(c, &mut r, &[QUERY_VT_MARKERS]);
+                c.bus.write32(query + QUERY_VTABLE, vt);
+                if seed % 8 == 0 {
+                    c.bus.write32(vt + QUERY_VT_MARKERS + 4, 0x0014_06c0);
+                }
+                let n = r.next_u32() % 12 + 1;
+                c.bus.write32(LOG_RESULTS, n);
+                // The hit buffer the (fake) query leaves on the stack.
+                let buf = crate::difftest::SP - 0xe0;
+                for i in 0..12 {
+                    let ty = if r.next_u32() % 5 == 0 {
+                        0x13
+                    } else {
+                        r.next_u32() % 0x20
+                    };
+                    let ty = if seed % 3 == 0 && ty == 0x13 {
+                        0x12
+                    } else {
+                        ty
+                    };
+                    c.bus.write32(buf + HIT_SIZE * i, ty);
+                    c.bus
+                        .write32(buf + HIT_SIZE * i + 4, (r.next_u32() % 4) << 30);
+                }
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = press as u64;
+            },
+        );
+    }
+
+    /// EATimer_Rcnt1Handler: the timer 1 registers of the test machine, a
+    /// random period and tick counters, and 8 callback slots that are empty
+    /// or fakes.
+    #[test]
+    fn ea_timer_rcnt1_handler_matches() {
+        covered(
+            ee::s14::f_003e4db8__generated,
+            ea_timer_rcnt1_handler,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e_4db8, 8);
+                c.pc = 0x003e_4db8;
+                c.bus.write16(EATIMER_PERIOD, r.next_u32() as u16);
+                c.bus.write32(EATIMER_TICKS, r.next_u32());
+                c.bus.write32(EATIMER_TICKS2, r.next_u32());
+                c.bus.write32(EATIMER_IN_CALLBACK, r.next_u32());
+                c.bus.write32(T1_COMP, r.next_u32() & 0xffff);
+                c.bus.write32(T1_COUNT, r.next_u32() & 0xffff);
+                for i in 0..8 {
+                    let cb = if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        FAKE + 0x10 * i
+                    };
+                    c.bus.write32(EATIMER_CALLBACKS + 4 * i, cb);
+                }
+            },
+        );
+    }
+
+    // ---------------------------------------------------------------------- logf
+
+    /// `logf` under every `_LIB_VERSION` (-1 `_IEEE_`, 0 `_SVID_`, 1
+    /// `_XOPEN_`, 2 `_POSIX_`) with positive, NaN, +-0, negative and
+    /// infinite inputs; the real `__ieee754_logf`, soft-float helpers,
+    /// `matherr` and `__getreent` run on the ELF image.
+    #[test]
+    fn logf_matches() {
+        check(ee::s15::f_0040da10__generated, logf, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x0040_da10, 0);
+            elf_image(c);
+            c.pc = 0x0040_da10;
+            let version = match seed % 5 {
+                0 => u32::MAX,
+                1 => 0,
+                2 => 1,
+                _ => 2,
+            };
+            c.bus.write32(0x004a_0000 - 0x6978, version);
+            c.f[12] = match seed / 5 % 7 {
+                0 => r.f32(1000.0) & 0x7fff_ffff,
+                1 => 0x7fc0_0000 | (r.next_u32() & 0x803f_ffff),
+                2 => (r.next_u32() & 1) << 31,
+                3 => r.f32(1000.0) | 0x8000_0000,
+                4 => 0xff80_0000,
+                5 => 0x7f80_0000,
+                _ => r.edge_f32(),
+            };
+        });
+    }
+
+    // -------------------------------------- ComputerActorRider_CruiseChaseRider
+
+    /// `ComputerActorRider_CruiseChaseRider` on the cruise fixture of
+    /// `ComputerActorRider_CruiseFollowPath` (same steering, crouch, boost,
+    /// jump-marker and target-rider callees, all real): the chased rider is
+    /// AI slot 1..3, whose path interface returns a random velocity (fake)
+    /// and is ready or not (fake / the real zero leaf); headings behind and
+    /// ahead, record distances zero / positive / negative / edge, the same
+    /// or another AI path than the model (real path re-selection).
+    #[test]
+    fn computer_actor_rider_cruise_chase_rider_matches() {
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::difftest::put_vec;
+        use crate::game::ai::computer::tests::{
+            cruise_setup, MODEL, PMF, RIDER_2, RIDER_ENTRY, WORLD,
+        };
+        check(
+            ee::s00::f_00100f88__generated,
+            computer_actor_rider_cruise_chase_rider,
+            240,
+            &|c, seed| {
+                cruise_setup(c, seed);
+                let mut r = Rng(0x0010_0f88 ^ (seed as u64) << 20);
+                c.pc = 0x0010_0f88;
+                // The chased rider: AI slot 1..3 (`ai + 0x28 + 4*slot`).
+                let slot = 1 + seed % 3;
+                let ai = WORLD + 0x200;
+                c.bus.write32(RIDER_2 + 0xe70, slot);
+                for i in 1..4u32 {
+                    c.bus
+                        .write32(ai + 0x28 + 4 * i, RIDER_ENTRY + 0x100 * (i - 1));
+                }
+                let entry = RIDER_ENTRY + 0x100 * (slot - 1);
+                c.bus.write32(entry + 0x6c0, PMF);
+                c.bus.write32(
+                    entry + 0xab8,
+                    if seed % 5 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                // Its path interface: velocity (first fake call; the forced
+                // result points at a random vector) and "ready".
+                let vel = DATA + 0x9_0000;
+                c.bus.write16(PMF + 0x10, 0);
+                c.bus.write32(PMF + 0x14, FAKE + 0x30);
+                c.bus.write16(PMF + 0x48, 0);
+                c.bus.write32(
+                    PMF + 0x4c,
+                    if seed % 4 == 0 {
+                        0x0014_06c0
+                    } else {
+                        FAKE + 0x40
+                    },
+                );
+                c.bus.write32(LOG_RESULTS, vel);
+                put_vec(c, vel, [r.f32(150.0), r.f32(150.0), r.f32(150.0), 0]);
+                // Headings and the slot record (distance, heading).
+                c.bus.write32(MODEL + 0x4cc, r.f32(3.2));
+                let rec = MODEL + 0x24 * slot;
+                c.bus.write32(
+                    rec + 0x8,
+                    match seed % 5 {
+                        0 => 0,
+                        1 => r.f32(400.0) & 0x7fff_ffff,
+                        2 => r.f32(400.0) | 0x8000_0000,
+                        3 => r.f32(40.0),
+                        _ => r.edge_f32(),
+                    },
+                );
+                c.bus.write32(rec + 0xc, r.f32(6.4));
+            },
+        );
+    }
+
+    /// `EIntr` with interrupts on and off (random other Status bits).
+    #[test]
+    fn e_intr_matches() {
+        crate::difftest::check(ee::s15::f_0042c0c0__generated, e_intr, 64, &|c, seed| {
+            let mut r = Rng(0x42c0_c000 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            let status = r.next_u32() & !(STATUS_EIE as u32);
+            c.cop0[12] = if seed % 2 == 0 {
+                status
+            } else {
+                status | STATUS_EIE as u32
+            };
+            c.pc = 0x0042_c0c0;
+        });
+    }
+
+    /// `ComputerActorRider_SetCruiseCrouch`: rider velocities below and
+    /// above the fast threshold, speeds below and above 20, the real
+    /// `.lit4` constants; a random pad word (the low 26 bits kept).
+    #[test]
+    fn computer_actor_rider_set_cruise_crouch_matches() {
+        use super::cruise::*;
+        use crate::difftest::GAME_GP;
+        crate::difftest::check(
+            ee::s00::f_0010c0a8__generated,
+            computer_actor_rider_set_cruise_crouch,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0010_c0a8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0010_c0a8;
+                c.g[GP][0] = GAME_GP as u64;
+                let (me, rider, pad) = (DATA, DATA + 0x1000, DATA + 0x2000);
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(pad);
+                c.bus.write32(GAME_GP - LIT_FAST, 833.333_4f32.to_bits());
+                c.bus.write32(GAME_GP - LIT_CROUCH, 0.97f32.to_bits());
+                c.bus.write32(me + RIDER, rider);
+                let v = if seed % 2 == 0 { 400.0 } else { 1200.0 };
+                for i in 0..4 {
+                    c.bus.write32(rider + RIDER_VELOCITY + 4 * i, r.f32(v));
+                }
+                let speed = if seed % 3 == 0 {
+                    r.f32(20.0)
+                } else {
+                    r.f32(100.0)
+                };
+                c.bus
+                    .write32(me + SPEED, if seed % 5 == 0 { r.edge_f32() } else { speed });
+                c.bus.write32(pad, r.next_u32());
             },
         );
     }

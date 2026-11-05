@@ -6,6 +6,7 @@ use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fcc;
 use crate::abi::set_fpr;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
@@ -20,6 +21,7 @@ use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::events::Resume;
 pub(crate) use crate::game::ai::ai::at as at_2;
+use crate::game::misc::STATUS_EIE;
 use crate::game::visualfx::boardwakefx as bw;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
@@ -127,6 +129,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003c_64a8, snd_udiv64by32, "SND_UDiv64by32"),
     (0x003c_7010, sndstrm_release_bytes, "SNDSTRM_ReleaseBytes"),
     (0x003c_a6a8, snd_dsp_clip16_process, "SND_DspClip16_Process"),
+    (
+        0x003b_70f8,
+        sndstrm_is_prebuffering,
+        "SNDSTRM_IsPrebuffering",
+    ),
+    (0x003b_7a70, sndstrm_find_request, "SNDSTRM_FindRequest"),
+    (0x003c_07a8, snd_restore_vu0_flags, "SND_RestoreVu0Flags"),
+    (
+        0x003c_08f8,
+        snd_restore_vu0_context,
+        "SND_RestoreVu0Context",
+    ),
+    (0x003c_7080, sndstrm_run_callbacks, "SNDSTRM_RunCallbacks"),
+    (0x003c_7388, snd_parse_next_tag, "SND_ParseNextTag"),
+    (0x003c_7828, snd_mix_add_ramp16, "SND_MixAddRamp16"),
+    (0x003c_8968, snd_ee_mix, "SND_EeMix"),
 ];
 
 /// Fields of the driver state block.
@@ -7636,8 +7654,868 @@ pub fn snd_dsp_clip16_process(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod prebuffering {
+
+    /// Entry, the "prebuffer done" resume point (an event check branches
+    /// there), and the end of the function.
+    pub const ENTRY: u32 = 0x003b_70f8;
+
+    pub const RESET: u32 = 0x003b_7184;
+
+    pub const END: u32 = 0x003b_71d4;
+
+    /// `SNDSTRM`: the stream file handle at +0, the queued-request count at
+    /// +0x130, the prebuffer state at +0x134.
+    pub const STREAM_FILE: u32 = 0x0;
+
+    pub const QUEUED: u32 = 0x130;
+
+    pub const PREBUFFER: u32 = 0x134;
+
+    /// Prebuffer state: data rate (bytes per second) at +0x10, the target
+    /// in milliseconds at +0x20 (negative: wait forever, 0: done).
+    pub const RATE: u32 = 0x10;
+
+    pub const TARGET_MS: u32 = 0x20;
+
+    /// `StreamFile_GetChannelBytes(file)`, `StreamFile_GetReadState(file)`
+    /// (other shard, through the table); read state 2 = at end of file.
+    pub const GET_CHANNEL_BYTES: u32 = 0x003e_14c8;
+
+    pub const GET_READ_STATE: u32 = 0x003e_14f8;
+
+    pub const READ_AT_END: u64 = 2;
+
+    /// The buffered byte count is capped at 4,000,000 before `* 1000`.
+    pub const BYTES_CAP: u64 = 0x003d_0900;
+}
+
+pub(crate) mod snd_tags {
+    use super::*;
+
+    /// The read pointer.
+    pub const P: u32 = 0x0;
+
+    /// The current tag byte.
+    pub const TAG: u32 = 0x4;
+
+    /// The tag's value when its payload is at most 4 bytes (big endian).
+    pub const VALUE: u32 = 0x8;
+
+    /// The payload pointer.
+    pub const PAYLOAD: u32 = 0xc;
+
+    /// The payload length.
+    pub const LEN: u32 = 0x10;
+
+    /// `u32 SND_ReadBigEndian(const u8* p, int n)` (0x3c72f8).
+    pub const READ_BIG_ENDIAN: Callee = Callee {
+        addr: 0x003c_72f8,
+        f: ee::s13::SND_ReadBigEndian,
+    };
+}
+
+pub(crate) mod sndstrm_cb {
+
+    /// `int`: queued callback events.
+    pub const COUNT: u32 = 0x0051_57b8;
+
+    /// The events (8 bytes: `u16 kind`, `u16 stream`, `u32 value`).
+    pub const EVENTS: u32 = 0x0051_57bc;
+
+    pub const EVENT_SIZE: u32 = 8;
+
+    pub const EV_KIND: u32 = 0;
+
+    pub const EV_STREAM: u32 = 2;
+
+    pub const EV_VALUE: u32 = 4;
+
+    /// `Stream*` per stream id, after the events.
+    pub const STREAMS: u32 = EVENTS + 0x300;
+
+    /// Stream: `value_cb(value, user)`, `stream_cb(id, value, user)`, user.
+    pub const VALUE_CB: u32 = 0x54;
+
+    pub const STREAM_CB: u32 = 0x58;
+
+    pub const USER: u32 = 0x5c;
+}
+
+/// Where `SNDSTRM_IsPrebuffering` goes after its checks.
+pub(crate) enum PrebufferNext {
+    /// The epilogue (v0 holds the result).
+    Done,
+    /// Prebuffering finished: clear the target, return 0.
+    Reset,
+    /// An event at the branch to `RESET` asked the thread to unwind.
+    Unwind,
+}
+
+/// The checks of `SNDSTRM_IsPrebuffering` from its entry (prologue
+/// included) up to the epilogue or the reset.
+pub(crate) fn sndstrm_prebuffer_checks(c: &mut Cpu) -> Result<PrebufferNext, crate::call::Unwound> {
+    use prebuffering::*;
+    c.cycles += 8;
+    let frame = Frame::open(c, 0x30);
+    frame.save(c, S1, 0x10);
+    frame.save_ra(c, 0);
+    let strm = c.g[A0][0];
+    c.g[S1][0] = strm;
+    frame.save(c, S0, 0x20);
+    let strm = strm as u32;
+    let pre = c.lw(strm.wrapping_add(PREBUFFER));
+    c.g[S0][0] = pre;
+    c.g[V0][0] = 0;
+    if pre == 0 {
+        return Ok(PrebufferNext::Done);
+    }
+    let pre = pre as u32;
+    c.cycles += 3;
+    let rate = c.lw(pre.wrapping_add(RATE));
+    c.g[V0][0] = 0;
+    if rate == 0 {
+        return Ok(PrebufferNext::Done);
+    }
+    c.cycles += 3;
+    let target = c.lw(pre.wrapping_add(TARGET_MS));
+    c.g[V0][0] = 1;
+    if (target as i64) < 0 {
+        return Ok(PrebufferNext::Done);
+    }
+    c.cycles += 3;
+    let target = c.lw(pre.wrapping_add(TARGET_MS));
+    c.g[V0][0] = 0;
+    if target == 0 {
+        return Ok(PrebufferNext::Done);
+    }
+
+    // Buffered milliseconds: min(bytes, 4e6) * 1000 / rate.
+    c.cycles += 10;
+    c.g[A0][0] = c.lw(strm.wrapping_add(STREAM_FILE));
+    call_ptr(c, GET_CHANNEL_BYTES, 0x003b_7144)?;
+    c.g[A2][0] = 1000;
+    let rate = c.lw(pre.wrapping_add(RATE));
+    c.g[A1][0] = rate;
+    c.g[V1][0] = BYTES_CAP;
+    let over = BYTES_CAP < c.g[V0][0];
+    c.g[A0][0] = over as u64;
+    c.cycles += 8;
+    if !over {
+        c.g[V1][0] = c.g[V0][0];
+    }
+    c.mult(0, V1, V1, A2);
+    c.g[V0][0] = c.lw(pre.wrapping_add(TARGET_MS));
+    // (The divisor check `teq a1, zero` never traps: rate is non-zero.)
+    c.divu(0, V1, A1);
+    let short = c.lo[0] < c.g[V0][0];
+    c.g[V1][0] = short as u64;
+    if !short {
+        return Ok(PrebufferNext::Reset);
+    }
+
+    // Not enough yet: done anyway when the file has been read to its end.
+    c.cycles += 5;
+    c.g[A0][0] = c.lw(strm.wrapping_add(STREAM_FILE));
+    call_ptr(c, GET_READ_STATE, 0x003b_7198)?;
+    c.g[V1][0] = READ_AT_END;
+    if c.g[V0][0] == READ_AT_END {
+        return Ok(if back_edge_unwinds(c, RESET) {
+            PrebufferNext::Unwind
+        } else {
+            PrebufferNext::Reset
+        });
+    }
+    // Or when requests are queued (> 0) still prebuffering; else done when
+    // the file is idle (read state 0).
+    c.cycles += 3;
+    let queued = c.lw(strm.wrapping_add(QUEUED));
+    c.g[V0][0] = 1;
+    if (queued as i64) > 0 {
+        return Ok(PrebufferNext::Done);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.lw(strm.wrapping_add(STREAM_FILE));
+    call_ptr(c, GET_READ_STATE, 0x003b_71b8)?;
+    let idle = c.g[V0][0] == 0;
+    c.g[V0][0] = 1;
+    if idle {
+        return Ok(if back_edge_unwinds(c, RESET) {
+            PrebufferNext::Unwind
+        } else {
+            PrebufferNext::Reset
+        });
+    }
+    Ok(PrebufferNext::Done)
+}
+
+/// `int SNDSTRM_IsPrebuffering(SNDSTRM* s)` (0x3b70f8): whether a sound
+/// stream is still prebuffering. No prebuffer state, a zero data rate or a
+/// zero target: no (0); a negative target: yes (1). Else it compares the
+/// buffered time (`min(bytes, 4e6) * 1000 / rate` ms) with the target:
+/// reached, or the file read to its end, or (with no queued requests) the
+/// file idle, clears the target and answers 0; otherwise 1. Resumable at
+/// 0x3b7184 (the event check on the way to clearing the target). Frame 0x30
+/// (s0, s1).
+pub fn sndstrm_is_prebuffering(c: &mut Cpu) {
+    use prebuffering::*;
+    guest(c, |c| {
+        let frame = Frame { size: 0x30 };
+        let next = match c.pc {
+            ENTRY => sndstrm_prebuffer_checks(c)?,
+            RESET => PrebufferNext::Reset,
+            pc => {
+                c.jump_out(pc, ENTRY, END);
+                return Ok(());
+            }
+        };
+        match next {
+            PrebufferNext::Unwind => return Ok(()),
+            PrebufferNext::Reset => {
+                c.cycles += 3;
+                let pre = c.g[S0][0] as u32;
+                c.sw(pre.wrapping_add(TARGET_MS), 0);
+                c.g[V0][0] = 0;
+            }
+            PrebufferNext::Done => {}
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_RestoreVu0Context (0x3c08f8)
+
+/// `SND_RestoreVu0Flags(int status)` (0x3c07a8).
+pub(crate) const SND_RESTORE_VU0_FLAGS: Callee = Callee {
+    addr: 0x003c_07a8,
+    f: ee::s13::SND_RestoreVu0Flags,
+};
+
+/// `void SND_RestoreVu0Context(Vu0Context* ctx)` (0x3c08f8): the inverse of
+/// `SND_SaveVu0Context`: reload ACC from the saved slot (`+0x1f0`, through
+/// `ACC = vf1 + vf0.x`), vf1-vf6, the MAC/status flags (`+0x200`, rebuilt by
+/// `SND_RestoreVu0Flags`), vf7-vf31 and the status register (`+0x204` into
+/// vi16).
+pub fn snd_restore_vu0_context(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::{Src, X};
+    guest(c, |c| {
+        c.cycles += 47;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[T0][0] = c.g[S0][0];
+        let ctx = r32(c, S0);
+        c.lqc2(1, ctx.wrapping_add(0x1f0));
+        c.vu0().adda(0b1111, 1, Src::Bc(0, X));
+        for vf in 1..=6u32 {
+            c.lqc2(vf as usize, ctx.wrapping_add((vf - 1) * 0x10));
+        }
+        c.g[A0][0] = c.lw(ctx.wrapping_add(0x200));
+        SND_RESTORE_VU0_FLAGS.call(c, 0x003c_0934)?;
+        c.g[T0][0] = c.g[S0][0];
+        for vf in 7..=12u32 {
+            c.lqc2(vf as usize, ctx.wrapping_add((vf - 1) * 0x10));
+        }
+        c.g[T1][0] = c.lw(ctx.wrapping_add(0x204));
+        c.lqc2(13, ctx.wrapping_add(0xc0));
+        c.lqc2(14, ctx.wrapping_add(0xd0));
+        c.ctc2(T1, 16);
+        for vf in 15..=31u32 {
+            c.lqc2(vf as usize, ctx.wrapping_add((vf - 1) * 0x10));
+        }
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// `int SND_ParseNextTag(TagStream* s)` (0x3c7388): skip 0xfc padding, read
+/// the next tag byte; 0xff ends the stream (returns 0); 0xfd and 0xfe are
+/// bare markers; otherwise read the length byte (0xff: a 4-byte big-endian
+/// length follows), note the payload, decode payloads of up to 4 bytes as a
+/// big-endian value, and skip past the payload (returns 1).
+pub fn snd_parse_next_tag(c: &mut Cpu) {
+    use snd_tags::*;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        c.g[V1][0] = 0xfc;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let s = r32(c, S0);
+        c.g[A1][0] = c.lw(s + P);
+        c.g[V0][0] = c.lbu(r32(c, A1));
+        if c.g[V0][0] == c.g[V1][0] {
+            // Skip the 0xfc padding.
+            c.cycles += 1;
+            c.g[A2][0] = 0xfc;
+            loop {
+                c.cycles += 7;
+                c.g[A0][0] = c.g[A1][0];
+                c.g[V1][0] = sx(r32(c, A0).wrapping_add(1));
+                c.sw(s + P, c.g[V1][0]);
+                c.g[V0][0] = c.lbu(r32(c, A0).wrapping_add(1));
+                let more = c.g[V0][0] == c.g[A2][0];
+                c.g[A1][0] = c.g[V1][0];
+                if !more {
+                    c.cycles += 1;
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_73b0);
+                }
+            }
+        }
+        c.g[A0][0] = c.lw(s + P);
+
+        c.cycles += 5;
+        c.g[A2][0] = 0xff;
+        let p = r32(c, A0);
+        c.g[A1][0] = c.lbu(p);
+        c.sw(s + TAG, c.g[A1][0]);
+        c.g[V0][0] = 0;
+        'done: {
+            if c.g[A1][0] == c.g[A2][0] {
+                break 'done; // end of stream
+            }
+            c.cycles += 5;
+            c.g[V0][0] = sx(p.wrapping_add(1));
+            c.g[V1][0] = 0xfd;
+            c.sw(s + P, c.g[V0][0]);
+            let tag = c.g[A1][0];
+            c.g[V0][0] = 1;
+            if tag == 0xfd {
+                break 'done;
+            }
+            c.cycles += 3;
+            c.g[V0][0] = 0xfe;
+            if tag == 0xfe {
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                break 'done;
+            }
+            // The length byte (0xff: a 4-byte length follows).
+            c.g[V0][0] = c.lbu(p.wrapping_add(1));
+            c.cycles += 2;
+            let long = c.g[V0][0] == c.g[A2][0];
+            c.sw(s + LEN, c.g[V0][0]);
+            if long {
+                c.cycles += 7;
+                c.g[A0][0] = sx(p.wrapping_add(2));
+                c.g[A1][0] = 4;
+                READ_BIG_ENDIAN.call(c, 0x003c_7420)?;
+                c.g[V1][0] = c.lw(s + P);
+                c.sw(s + LEN, c.g[V0][0]);
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                c.sw(s + P, c.g[V1][0]);
+            }
+            // The payload.
+            c.cycles += 7;
+            c.g[V0][0] = c.lw(s + P);
+            c.g[A1][0] = c.lw(s + LEN);
+            c.g[A0][0] = sx(r32(c, V0).wrapping_add(1));
+            c.sw(s + P, c.g[A0][0]);
+            c.g[V0][0] = (c.g[A1][0] < 5) as u64;
+            let short = c.g[V0][0] != 0;
+            c.sw(s + PAYLOAD, c.g[A0][0]);
+            if short {
+                c.cycles += 3;
+                READ_BIG_ENDIAN.call(c, 0x003c_7454)?;
+                c.sw(s + VALUE, c.g[V0][0]);
+            }
+            c.cycles += 5;
+            c.g[V1][0] = c.lw(s + P);
+            c.g[V0][0] = 1;
+            c.g[A0][0] = c.lw(s + LEN);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+            c.sw(s + P, c.g[V1][0]);
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_FindRequest (0x3b7a70)
+
+pub(crate) const SNDSTRM_GET_STREAM_3: Callee = Callee {
+    addr: 0x003b_6a38,
+    f: ee::s13::SNDSTRM_GetStream,
+};
+
+/// Stream: head of its request list.
+pub(crate) const STREAM_REQUESTS: u32 = 0x11c;
+
+/// Request: next request in the list (+0) and its handle (+0xc).
+pub(crate) const REQUEST_NEXT: u32 = 0x0;
+
+pub(crate) const REQUEST_HANDLE: u32 = 0xc;
+
+/// `SndStrmRequest* SNDSTRM_FindRequest(int handle)` (0x3b7a70): the request
+/// with this handle in the request list of its stream (`handle & 0xff`,
+/// `SNDSTRM_GetStream`), or 0 for a negative handle, a missing stream or an
+/// unknown request. The handle stays in `s0` (64-bit compare with the
+/// sign-extended handle words).
+pub fn sndstrm_find_request(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let handle = c.g[S0][0];
+        'done: {
+            'none: {
+                if (handle as i64) < 0 {
+                    break 'none;
+                }
+                c.cycles += 4;
+                c.g[A0][0] = handle & 0xff;
+                SNDSTRM_GET_STREAM_3.call(c, 0x003b_7a8c)?;
+                let stream = r32(c, V0);
+                if stream == 0 {
+                    break 'none;
+                }
+                c.g[V1][0] = Addr(stream).off(STREAM_REQUESTS).lw(c);
+                loop {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[V1][0];
+                    if c.g[V1][0] == 0 {
+                        break 'done;
+                    }
+                    c.cycles += 3;
+                    let req = r32(c, V1);
+                    c.g[V0][0] = Addr(req).off(REQUEST_HANDLE).lw(c);
+                    if c.g[V0][0] == c.g[S0][0] {
+                        c.cycles += 1;
+                        c.g[V0][0] = c.g[V1][0];
+                        break 'done;
+                    }
+                    c.g[V1][0] = Addr(req).off(REQUEST_NEXT).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003b_7aa0);
+                    }
+                }
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_MixAddRamp16 (0x3c7828)
+
+/// `1/17` (0x3d70f0f1): the ramp step over a 16-sample block.
+pub(crate) const RAMP16_STEP_SCALE: FpuF32 = FpuF32(0x3d70_f0f1);
+
+/// `void SND_MixAddRamp16(const float* src, float* dst, float g0, float g1)`
+/// (0x3c7828): mixes 16 samples into `dst` with a linear gain ramp,
+/// `dst[i] += src[i] * (g0 + step * (i + 1))`, `step = (g1 - g0) / 17`
+/// (gain 2 as `step + step`, gains 3..16 as `step * k`).
+///
+/// The original keeps the gains and partly mixed samples in f1..f25 (f20..f25
+/// saved on a 0x30 stack frame) and interleaves the loads and stores; the
+/// memory order is kept (`dst[0..12]` are read before the first stores, each
+/// `src[k]` after `dst[k-1]` is written), and so are the registers it leaves.
+pub fn snd_mix_add_ramp16(c: &mut Cpu) {
+    c.cycles += 159;
+    let src = Addr(abi::arg(c, 0));
+    let dst = Addr(abi::arg(c, 1));
+    let g0 = FpuF32(c.f[12]);
+    let step = (FpuF32(c.f[13]) - g0) * RAMP16_STEP_SCALE;
+    let k = |n: u32| FpuF32((n as f32).to_bits());
+    let mut gain = [FpuF32::ZERO; 17];
+    gain[1] = g0 + step;
+    gain[2] = g0 + (step + step);
+    for n in 3..=16 {
+        gain[n as usize] = g0 + step * k(n);
+    }
+    // dst[i] = d + src[i] * gain; returns (new dst[i], the product).
+    let mix = |c: &mut Cpu, d: FpuF32, i: u32| -> (FpuF32, FpuF32) {
+        let product = src.off(4 * i).read_fpu(c) * gain[i as usize + 1];
+        let out = d + product;
+        dst.off(4 * i).write_fpu(c, out);
+        (out, product)
+    };
+
+    let s0 = src.read_fpu(c);
+    let d0 = dst.read_fpu(c);
+    // Save f20..f25 (restored below).
+    let frame = Frame::open(c, 0x30);
+    for (i, f) in (20..=25).enumerate() {
+        frame.save_fpr(c, f, 8 * i as u32);
+    }
+    let mut d = [FpuF32::ZERO; 16];
+    d[0] = d0;
+    for i in 1..4 {
+        d[i] = dst.off(4 * i as u32).read_fpu(c);
+    }
+    let out0 = d0 + s0 * gain[1];
+    dst.write_fpu(c, out0);
+    for i in 4..8 {
+        d[i] = dst.off(4 * i as u32).read_fpu(c);
+    }
+    let (out1, _) = mix(c, d[1], 1);
+    for i in 8..12 {
+        d[i] = dst.off(4 * i as u32).read_fpu(c);
+    }
+    let mut out = [FpuF32::ZERO; 16];
+    out[0] = out0;
+    out[1] = out1;
+    for i in 2..12 {
+        out[i] = mix(c, d[i], i as u32).0;
+    }
+    for (i, f) in (20..=25).enumerate() {
+        frame.restore_fpr(c, f, 8 * i as u32);
+    }
+    // The last four: src[12] first, then dst[12..16].
+    let s12 = src.off(0x30).read_fpu(c);
+    for i in 12..16 {
+        d[i] = dst.off(4 * i as u32).read_fpu(c);
+    }
+    out[12] = d[12] + s12 * gain[13];
+    dst.off(0x30).write_fpu(c, out[12]);
+    let mut last_product = FpuF32::ZERO;
+    for i in 13..16 {
+        (out[i], last_product) = mix(c, d[i], i as u32);
+    }
+
+    // Registers as the original leaves them.
+    c.g[AT][0] = 0x4180_0000;
+    let set = |c: &mut Cpu, f: usize, v: FpuF32| c.f[f] = v.0;
+    set(c, 0, last_product);
+    set(c, 1, out[12]);
+    set(c, 2, out[13]);
+    set(c, 3, out[14]);
+    set(c, 4, out[15]);
+    set(c, 5, gain[4]);
+    set(c, 6, gain[11]);
+    set(c, 7, gain[12]);
+    set(c, 8, gain[14]);
+    set(c, 9, gain[5]);
+    set(c, 10, gain[6]);
+    set(c, 11, gain[7]);
+    set(c, 12, gain[16]);
+    set(c, 13, step * k(16));
+    set(c, 14, gain[8]);
+    set(c, 15, gain[15]);
+    set(c, 16, out[2]);
+    set(c, 17, out[11]);
+    set(c, 18, out[8]);
+    set(c, 19, out[9]);
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// SND_EeMix (0x3c8968)
+
+/// The EE software mixer state (`D_00515B40`).
+pub(crate) const MIXER: u32 = 0x0051_5b40;
+
+/// Number of output buses (one output pointer each).
+pub(crate) const MIXER_BUS_COUNT: u32 = 0x5;
+
+/// Bytes each output pointer advances per mixed block.
+pub(crate) const MIXER_OUT_STEP: u32 = 0xc;
+
+/// Samples per mixed block.
+pub(crate) const MIX_BLOCK: u32 = 0x200;
+
+pub(crate) const SND_EE_MIX_BLOCK: Callee = Callee {
+    addr: 0x003c_85d0,
+    f: ee::s14::SND_EeMixBlock,
+};
+
+/// `void SND_EeMix(int** outs, int len)` (0x3c8968): mix `len` samples in
+/// blocks of 0x200. Copies the bus output pointers into a local array, then
+/// per block calls `SND_EeMixBlock(array, min(len, 0x200))` and advances
+/// every output pointer by the mixer's step (+0xc).
+pub fn snd_ee_mix(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x70);
+        set_reg(c, V0, 0x51_0000);
+        frame.save(c, S0, 0x60);
+        let buses = Addr(MIXER + MIXER_BUS_COUNT).lbu(c);
+        set_reg(c, V0, buses);
+        set_reg(c, S0, reg(c, A1));
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save_ra(c, 0x20);
+
+        // outs[0..buses] -> the local array at sp.
+        if buses != 0 {
+            c.cycles += 2;
+            set_reg(c, A2, buses);
+            set_reg(c, V1, reg(c, SP));
+            loop {
+                c.cycles += 7;
+                let (src, dst) = (r32(c, A0), r32(c, V1));
+                let p = Addr(src).lw(c);
+                set_reg(c, V0, p);
+                set_reg(c, A2, addu(reg(c, A2), u32::MAX as u64));
+                set_reg(c, A0, sx(src.wrapping_add(4)));
+                Addr(dst).sw(c, p);
+                let more = reg(c, A2) != 0;
+                set_reg(c, V1, sx(dst.wrapping_add(4)));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_8998);
+                }
+            }
+        }
+
+        // Blocks of up to 0x200 samples.
+        c.cycles += 2;
+        set_reg(c, V0, 0x51_0000);
+        if reg(c, S0) as i64 > 0 {
+            c.cycles += 5;
+            set_reg(c, S3, MIX_BLOCK as u64);
+            set_reg(c, S2, sx(MIXER));
+            set_reg(c, S1, sx(MIXER));
+            set_reg(c, V0, ((reg(c, S0) as i64) < 513) as u64);
+            loop {
+                c.cycles += 7;
+                let n = if reg(c, V0) != 0 {
+                    reg(c, S0)
+                } else {
+                    reg(c, S3)
+                };
+                set_reg(c, A1, n);
+                set_reg(c, A0, reg(c, SP));
+                SND_EE_MIX_BLOCK.call(c, 0x003c_89e0)?;
+                let buses = Addr(r32(c, S2).wrapping_add(MIXER_BUS_COUNT)).lbu(c);
+                set_reg(c, V0, buses);
+                set_reg(c, A1, sx(r32(c, S0).wrapping_sub(MIX_BLOCK)));
+                if buses != 0 {
+                    // Advance every output pointer.
+                    c.cycles += 3;
+                    let mixer = r32(c, S1);
+                    let step = Addr(mixer.wrapping_add(MIXER_OUT_STEP)).lhu(c);
+                    set_reg(c, A0, step);
+                    set_reg(c, V1, reg(c, SP));
+                    let count = Addr(mixer.wrapping_add(MIXER_BUS_COUNT)).lbu(c);
+                    set_reg(c, A2, count);
+                    loop {
+                        c.cycles += 7;
+                        let at = r32(c, V1);
+                        let p = Addr(at).lw(c);
+                        set_reg(c, A2, addu(reg(c, A2), u32::MAX as u64));
+                        let p = addu(p, reg(c, A0));
+                        set_reg(c, V0, p);
+                        Addr(at).sw(c, p);
+                        let more = reg(c, A2) != 0;
+                        set_reg(c, V1, sx(at.wrapping_add(4)));
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c_89f8);
+                        }
+                    }
+                }
+                c.cycles += 3;
+                set_reg(c, S0, reg(c, A1));
+                let more = reg(c, S0) as i64 > 0;
+                set_reg(c, V0, ((reg(c, S0) as i64) < 513) as u64);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_89d0);
+                }
+            }
+        }
+
+        c.cycles += 7;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void SNDSTRM_RunCallbacks(void)` (0x3c7080): deliver the queued stream
+/// callback events: kind 0 calls the stream's `stream_cb(id, value, user)`,
+/// any other kind its `value_cb(value, user)`; then empty the queue.
+pub fn sndstrm_run_callbacks(c: &mut Cpu) {
+    use sndstrm_cb::*;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S2, 0x30);
+        c.g[S2][0] = 0x51_0000;
+        frame.save(c, S1, 0x40);
+        frame.save(c, S4, 0x10);
+        c.g[S1][0] = 0;
+        c.g[V0][0] = Addr(COUNT).lw(c);
+        c.g[S4][0] = c.g[S2][0];
+        frame.save(c, S0, 0x50);
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0);
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[V0][0] = sx(EVENTS);
+            c.g[S3][0] = sx(STREAMS);
+            c.g[S0][0] = c.g[V0][0];
+            loop {
+                c.cycles += 6;
+                let ev = r32(c, S0);
+                c.g[A0][0] = Addr(ev + EV_STREAM).lhu(c);
+                c.g[V1][0] = Addr(ev + EV_KIND).lhu(c);
+                c.g[V0][0] = sx((r32(c, A0) << 2).wrapping_add(r32(c, S3)));
+                c.g[V0][0] = Addr(r32(c, V0)).lw(c);
+                let stream = r32(c, V0);
+                if c.g[V1][0] == 0 {
+                    c.cycles += 6;
+                    c.g[A2][0] = Addr(stream + USER).lw(c);
+                    c.g[V0][0] = Addr(stream + STREAM_CB).lw(c);
+                    c.g[A1][0] = Addr(ev + EV_VALUE).lw(c);
+                    call_ptr(c, r32(c, V0), 0x003c_70e8)?;
+                } else {
+                    c.cycles += 5;
+                    c.g[A1][0] = Addr(stream + USER).lw(c);
+                    c.g[V0][0] = Addr(stream + VALUE_CB).lw(c);
+                    c.g[A0][0] = Addr(ev + EV_VALUE).lw(c);
+                    call_ptr(c, r32(c, V0), 0x003c_7100)?;
+                }
+                c.g[V0][0] = Addr(COUNT).lw(c);
+                c.cycles += 4;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(EVENT_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_70c0);
+                }
+            }
+        }
+        c.cycles += 9;
+        Addr(COUNT).sw(c, 0);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_RestoreVu0Flags (0x3c07a8)
+
+/// `void SND_RestoreVu0Flags(int status)` (0x3c07a8): rebuild the VU0 MAC /
+/// status flags saved by the sound mixer by multiplying two vectors built
+/// from `status` (one lane per bit, shifted each lane): `a` is 0 / 1.0
+/// (no overflow/underflow bit 0x8800) or 1e-30 / 1e30 (bit 8 selects the
+/// small value), `b` is `a` negated where bit 0x80 is set. VF1 and VF2 are
+/// kept across the `vmul` (`qmfc2`/`qmtc2` through t0/t1).
+pub fn snd_restore_vu0_flags(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::Src;
+    c.cycles += 4;
+    let frame = Frame::open(c, 0x20);
+    c.g[A2][0] = 0; // lane
+    c.g[A3][0] = sx(sp(c).wrapping_add(0x10)); // b
+    c.g[A1][0] = c.g[SP][0]; // &a[lane]
+    loop {
+        c.cycles += 3;
+        let saturated = c.g[A0][0] & 0x8800 != 0;
+        c.g[V0][0] = c.g[A0][0] & 0x8;
+        let small = c.g[V0][0] != 0;
+        // `tail`: the 1-cycle block that tests the sign bit.
+        let tail = if !saturated {
+            c.cycles += 3;
+            c.mtc1(0, 0); // 0.0
+            c.g[V1][0] = sx(r32(c, A2) << 2);
+            if small {
+                true
+            } else {
+                c.cycles += 4;
+                c.g[AT][0] = 0x3f80_0000; // 1.0
+                c.mtc1(AT, 0);
+                c.g[V0][0] = c.g[A0][0] & 0x80;
+                false
+            }
+        } else {
+            c.cycles += 5;
+            c.g[AT][0] = 0x0da2_4260; // 1e-30
+            c.mtc1(AT, 0);
+            c.g[V1][0] = sx(r32(c, A2) << 2);
+            if !small {
+                c.cycles += 3;
+                c.g[AT][0] = 0x7149_f2ca; // 1e30
+                c.mtc1(AT, 0);
+            }
+            true
+        };
+        if tail {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[A0][0] & 0x80;
+        }
+        c.cycles += 2;
+        c.swc1(0, r32(c, A1));
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            c.neg_s(0, 0);
+        }
+        c.cycles += 7;
+        c.g[V0][0] = sx(r32(c, A3).wrapping_add(r32(c, V1)));
+        c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+        c.swc1(0, r32(c, V0));
+        c.g[A0][0] = sx(r32(c, A0) << 1);
+        c.g[V0][0] = ((c.g[A2][0] as i64) < 4) as u64;
+        c.g[A1][0] = sx(r32(c, A1).wrapping_add(4));
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_07b8);
+        }
+    }
+    c.cycles += 10;
+    c.qmfc2(T0, 1);
+    c.qmfc2(T1, 2);
+    c.lqc2(1, sp(c));
+    c.lqc2(2, sp(c).wrapping_add(0x10));
+    c.vu0().mul(0b1111, 1, 1, Src::Vec(2));
+    c.qmtc2(T0, 1);
+    c.qmtc2(T1, 2);
+    c.vu0().vnop();
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+    crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
+    crate::difftest::events::driven!(oc238_hand_prebuffering, sndstrm_is_prebuffering);
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
@@ -10253,6 +11131,393 @@ pub(crate) mod tests {
                 c.g[A1][0] = count as u64;
                 c.g[A2][0] = input as u64;
                 c.g[A3][0] = out as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// The SNDSTRM_IsPrebuffering fixture: a stream at DATA with its file
+    /// handle (StreamFile magic, or a bad one so the real getters answer 0),
+    /// channel bytes below and above the 4e6 cap, read states 0..3, queued
+    /// counts negative / zero / positive, and prebuffer state absent or with
+    /// zero / random rate and negative / zero / small / large targets. Some
+    /// seeds enter at the reset resume point (inside the frame, s0 = the
+    /// prebuffer state). `evented` biases toward the two event-checked
+    /// branches (large target, read state 2 or 0).
+    pub(crate) fn oc238_prebuffer_setup(c: &mut Cpu, seed: u32, evented: bool) -> u32 {
+        let mut r = machine(c, seed, 0x3b_70f8, 0);
+        let strm = DATA;
+        let pre = DATA + 0x400;
+        let file = DATA + 0x800;
+        let state = DATA + 0xc00;
+        c.bus.write32(strm, file);
+        let queued = match r.next_u32() % 3 {
+            0 => 0,
+            1 => 1 + r.next_u32() % 4,
+            _ => (1 + r.next_u32() % 4).wrapping_neg(),
+        };
+        c.bus.write32(strm + 0x130, queued);
+        let has_pre = evented || seed % 11 != 0;
+        c.bus.write32(strm + 0x134, if has_pre { pre } else { 0 });
+        let rate = if !evented && seed % 13 == 0 {
+            0
+        } else {
+            1 + r.next_u32() % 200_000
+        };
+        c.bus.write32(pre + 0x10, rate);
+        let target = if evented {
+            0x4000_0000
+        } else {
+            match r.next_u32() % 6 {
+                0 => 0,
+                1 => (1 + r.next_u32() % 100).wrapping_neg(),
+                2 => 0x7fff_0000,
+                _ => r.next_u32() % 5000,
+            }
+        };
+        c.bus.write32(pre + 0x20, target);
+        c.bus.write32(file, state);
+        c.bus.write32(file + 8, r.next_u32() % 0x50_0000);
+        let magic = if !evented && seed % 9 == 0 {
+            0x1234_5678
+        } else {
+            0x4d52_5453
+        };
+        c.bus.write32(state, magic);
+        let read = if evented {
+            [0, 2][(r.next_u32() % 2) as usize]
+        } else {
+            r.next_u32() % 4
+        };
+        c.bus.write32(state + 0x38, read);
+        c.g[A0][0] = strm as u64;
+        if seed % 10 == 7 {
+            // Resumed at the reset: inside the frame, s0 = the state.
+            c.g[ssx3_ee_rt::cpu::reg::SP][0] = (crate::difftest::SP - 0x30) as u64;
+            fill(c, &mut r, crate::difftest::SP - 0x30, 12);
+            c.g[S0][0] = pre as u64;
+            // The saved ra (sp+0) returns to the test's sentinel.
+            c.bus
+                .write64(crate::difftest::SP - 0x30, crate::difftest::RA as u64);
+            0x003b_7184
+        } else {
+            0x003b_70f8
+        }
+    }
+
+    /// SNDSTRM_IsPrebuffering: every branch (real StreamFile getters), the
+    /// resume entry, and events delivered or unwinding at the two
+    /// event-checked branches to the reset.
+    #[test]
+    fn sndstrm_is_prebuffering_matches() {
+        check(
+            ee::s13::f_003b70f8__generated,
+            sndstrm_is_prebuffering,
+            300,
+            &|c, seed| {
+                let entry = oc238_prebuffer_setup(c, seed, false);
+                c.pc = entry;
+            },
+        );
+        crate::difftest::events::check_events(
+            oc238_gen_prebuffering,
+            oc238_hand_prebuffering,
+            120,
+            &|c, seed| {
+                let entry = oc238_prebuffer_setup(c, seed, true);
+                let mut r = Rng(0x3b_70f8 ^ seed as u64);
+                let mode = crate::difftest::events::schedule(c, &mut r, seed, entry);
+                c.next_event = c.cycles + 4;
+                mode
+            },
+        );
+    }
+
+    // ------------------------------------------------- SND_RestoreVu0Context
+
+    /// `SND_RestoreVu0Context`: a saved context of random vectors and random
+    /// flag/status words (the real `SND_RestoreVu0Flags` runs).
+    #[test]
+    fn snd_restore_vu0_context_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        check(
+            ee::s13::f_003c08f8__generated,
+            snd_restore_vu0_context,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003c_08f8, 0);
+                c.pc = 0x003c_08f8;
+                let ctx = DATA + (r.next_u32() & 0xff0);
+                fill(c, &mut r, ctx, 0x82);
+                for k in 0..32u32 {
+                    c.bus
+                        .write32(ctx + 0x10 * k + 4 * (r.next_u32() % 4), r.edge_f32());
+                }
+                c.g[A0][0] = sx(ctx);
+            },
+        );
+    }
+
+    // ------------------------------------------------------ SND_ParseNextTag
+
+    /// `SND_ParseNextTag`: 0..3 bytes of 0xfc padding, then the end tag, a
+    /// bare marker (0xfd / 0xfe) or a data tag with a short (0..4), long
+    /// (5..) or extended (0xff + 4-byte big-endian) length.
+    #[test]
+    fn snd_parse_next_tag_matches() {
+        use super::snd_tags::*;
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, fill, DATA};
+        check(
+            ee::s13::f_003c7388__generated,
+            snd_parse_next_tag,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003c_7388, 0);
+                c.pc = 0x003c_7388;
+                let (s, data) = (DATA, DATA + 0x100);
+                fill(c, &mut r, s, 8);
+                fill(c, &mut r, data, 0x40);
+                let mut at = data;
+                for _ in 0..seed % 4 {
+                    c.bus.write8(at, 0xfc);
+                    at += 1;
+                }
+                let tag = match (seed / 4) % 5 {
+                    0 => 0xff,
+                    1 => 0xfd,
+                    2 => 0xfe,
+                    _ => (r.next_u32() % 0xfc) as u8,
+                };
+                c.bus.write8(at, tag);
+                let len = match (seed / 20) % 3 {
+                    0 => (r.next_u32() % 5) as u8,
+                    1 => 5 + (r.next_u32() % 20) as u8,
+                    _ => 0xff,
+                };
+                c.bus.write8(at + 1, len);
+                if len == 0xff {
+                    let long = r.next_u32() % 9;
+                    c.bus.write8(at + 2, 0);
+                    c.bus.write8(at + 3, 0);
+                    c.bus.write8(at + 4, 0);
+                    c.bus.write8(at + 5, long as u8);
+                }
+                c.bus.write32(s + P, data);
+                c.g[A0][0] = sx(s);
+            },
+        );
+    }
+
+    /// SNDSTRM_FindRequest: four stream slots (one empty), each with a
+    /// two-request list; handles that are negative, name the empty slot or an
+    /// unknown request, or match the first or second request.
+    #[test]
+    fn sndstrm_find_request_matches() {
+        check(
+            ee::s13::f_003b7a70__generated,
+            sndstrm_find_request,
+            300,
+            &|c, seed| {
+                const B: u32 = 0x00b0_0000;
+                const STREAM_COUNT: u32 = 0x0050_a92e;
+                const STREAMS: u32 = 0x0050_a0a0;
+                let mut r = Rng(0x003b_7a70 ^ (seed as u64) << 5);
+                scramble(c, &mut r);
+                c.bus.write8(STREAM_COUNT, 4);
+                for i in 0..4u32 {
+                    let stream = B + 0x1000 * i;
+                    c.bus
+                        .write32(STREAMS + 4 * i, if i == 3 { 0 } else { stream });
+                    let (first, second) = (stream + 0x200, stream + 0x300);
+                    c.bus.write32(stream + STREAM_REQUESTS, first);
+                    c.bus.write32(first, second);
+                    c.bus.write32(second, 0);
+                    c.bus.write32(first + REQUEST_HANDLE, i | 0x100);
+                    c.bus.write32(second + REQUEST_HANDLE, i | 0x200);
+                }
+                let stream = r.next_u32() % 4;
+                let handle = match seed % 5 {
+                    0 => 0x8000_0000 | r.next_u32(),
+                    1 => stream | 0x300,
+                    2 => stream | 0x100,
+                    _ => stream | 0x200,
+                };
+                c.g[A0][0] = handle as i32 as i64 as u64;
+                c.pc = 0x003b_7a70;
+            },
+        );
+    }
+
+    /// SND_MixAddRamp16: 16 random (edge-case or ordinary) source and
+    /// destination samples in separate buffers, or the same buffer (in-place
+    /// mixing), and random start/end gains.
+    #[test]
+    fn snd_mix_add_ramp16_matches() {
+        check(
+            ee::s14::f_003c7828__generated,
+            snd_mix_add_ramp16,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003c_7828 ^ (seed as u64) << 11);
+                scramble(c, &mut r);
+                let src = DATA;
+                let dst = if seed % 5 == 0 { DATA } else { DATA + 0x100 };
+                for i in 0..16 {
+                    let v = if seed % 3 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(2.0)
+                    };
+                    c.bus.write32(src + 4 * i, v);
+                    if dst != src {
+                        let v = if seed % 3 == 0 {
+                            r.edge_f32()
+                        } else {
+                            r.f32(2.0)
+                        };
+                        c.bus.write32(dst + 4 * i, v);
+                    }
+                }
+                c.g[A0][0] = sx(src);
+                c.g[A1][0] = sx(dst);
+                c.f[12] = if seed % 7 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(1.0)
+                };
+                c.f[13] = if seed % 7 == 1 {
+                    r.edge_f32()
+                } else {
+                    r.f32(1.0)
+                };
+                c.pc = 0x003c_7828;
+            },
+        );
+    }
+
+    /// `SND_EeMix`: the mixer at 0x515b40 with 0-2 buses (output pointers
+    /// copied, then advanced by a random step after every block), no voices,
+    /// the declick bus off, declick gains zero, the post-mix hook set or not,
+    /// each bus with or without an effect and an output stage (fakes that log
+    /// and sometimes unwind); `SND_EeMixBlock` runs for real. Lengths -3..0x700
+    /// (no block, one partial, several full and a partial).
+    #[test]
+    fn snd_ee_mix_matches() {
+        covered(
+            ee::s14::f_003c8968__generated,
+            snd_ee_mix,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c8968, 4);
+                c.pc = 0x003c_8968;
+                let m = MIXER;
+                let fake = |k: u32| FAKE + 0x10 * k;
+                let objs = DATA + 0x6000;
+                let obj = |c: &mut Cpu, k: u32, f: u32| -> u32 {
+                    let o = objs + 0x10 * k;
+                    c.bus.write32(o, f);
+                    o
+                };
+                let buses = seed % 3;
+                c.bus.write8(m + 4, 0);
+                c.bus.write8(m + MIXER_BUS_COUNT, buses as u8);
+                c.bus.write16(m + MIXER_OUT_STEP, r.next_u32() as u16);
+                c.bus.write8(m + 0xf, 0);
+                c.bus.write32(m + 8, fake(7));
+                c.bus.write32(m + 0x100, 0);
+                c.bus
+                    .write32(m + 0x10, if r.next_u32() % 2 == 0 { 0 } else { fake(6) });
+                c.bus.write32(m + 0xb0, DATA + 0x2000);
+                c.bus.write32(m + 0xb4, DATA + 0x3000);
+                c.bus.write32(m + 0x1e0, fake(5));
+                c.bus.write32(m + 0x1dc, DATA + 0x4000);
+                for i in 0..buses {
+                    c.bus.write32(m + 0xd0 + 4 * i, DATA + 0x1000 + 0x800 * i);
+                    c.bus.write32(m + 0xe8 + 4 * i, 0);
+                    let fx = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        obj(c, i, fake(1))
+                    };
+                    c.bus.write32(m + 0x11c + 4 * i, fx);
+                    let out = obj(c, 2 + i, fake(2));
+                    c.bus.write32(m + 0x104 + 4 * i, out);
+                }
+                let outs = DATA + 0x5000;
+                fill(c, &mut r, outs, 4);
+                c.g[A0][0] = sx(outs);
+                let len = match seed % 5 {
+                    0 => (r.next_u32() % 4) as i32 - 3,
+                    1 => 0x200,
+                    2 => 1 + (r.next_u32() % 0x200) as i32,
+                    _ => (r.next_u32() % 0x700) as i32,
+                };
+                c.g[A1][0] = len as i64 as u64;
+            },
+        );
+    }
+
+    /// `SNDSTRM_RunCallbacks`: zero, negative and 1-6 queued events of both
+    /// kinds on random streams (ids 0-7) whose callbacks are fakes (some
+    /// unwind).
+    #[test]
+    fn sndstrm_run_callbacks_matches() {
+        use super::sndstrm_cb::*;
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        covered(
+            ee::s13::f_003c7080__generated,
+            sndstrm_run_callbacks,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003c_7080, 4);
+                c.pc = 0x003c_7080;
+                let count = match seed % 5 {
+                    0 => 0,
+                    1 => (r.next_u32() % 3 + 1).wrapping_neg(),
+                    _ => 1 + r.next_u32() % 6,
+                };
+                c.bus.write32(COUNT, count);
+                for i in 0..8u32 {
+                    let stream = DATA + 0x100 * i;
+                    c.bus.write32(STREAMS + 4 * i, stream);
+                    c.bus.write32(stream + VALUE_CB, FAKE + 0x10);
+                    c.bus.write32(stream + STREAM_CB, FAKE + 0x20);
+                    c.bus.write32(stream + USER, r.next_u32());
+                }
+                for i in 0..6u32 {
+                    let ev = EVENTS + EVENT_SIZE * i;
+                    let kind = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 0xffff
+                    };
+                    c.bus.write16(ev + EV_KIND, kind as u16);
+                    c.bus.write16(ev + EV_STREAM, (r.next_u32() % 8) as u16);
+                    c.bus.write32(ev + EV_VALUE, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// `SND_RestoreVu0Flags` with random status words (every combination of
+    /// the 0x8800 / 8 / 0x80 bits over the four lanes) and random VF1/VF2.
+    #[test]
+    fn snd_restore_vu0_flags_matches() {
+        crate::difftest::check(
+            ee::s13::f_003c07a8__generated,
+            snd_restore_vu0_flags,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003c_07a8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003c_07a8;
+                c.g[A0][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -53,6 +54,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         mdf_file_create_model_by_name,
         "MdfFile_CreateModelByName",
     ),
+    (0x0031_3dd0, anim_sequence_save, "AnimSequence_Save"),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -639,6 +641,132 @@ pub fn mdf_file_create_model_by_name(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------- AnimSequence_Save
+
+/// The fixed part of an `AnimSequence` `AnimSequence_Save` writes, in
+/// order: (offset, size). The key list head is at +0xac.
+pub(crate) const ANIM_SEQUENCE_FIELDS: [(u32, u64); 16] = [
+    (0x0, 0x4),
+    (0x4, 0x54),
+    (0x60, 0x20),
+    (0x80, 0x4),
+    (0x84, 0x4),
+    (0x88, 0x8),
+    (0x90, 0x4),
+    (0x94, 0x4),
+    (0x98, 0x4),
+    (0x9c, 0x4),
+    (0xa0, 0x4),
+    (0xa4, 0x4),
+    (0xa8, 0x4),
+    (0xb0, 0x10),
+    (0xc0, 0x4),
+    (0xc4, 0x4),
+];
+
+/// `void AnimSequence_Save(AnimSequence* seq, cAsStream* s)` (0x313dd0):
+/// writes a sequence to a stream through the stream's virtual
+/// `Write(data, size)` (vtable slot +0x8): the sixteen fixed fields, the
+/// number of keys in the list at +0xac (linked through +0xc), then each
+/// key's 16 bytes. Frame 0x50 (s0-s2; the count at +0).
+pub fn anim_sequence_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 122;
+        let frame = Frame::open(c, 0x50);
+        c.g[A2][0] = 0x4;
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        let stream = c.g[A1][0];
+        c.g[S1][0] = stream;
+        frame.save_ra(c, 0x10);
+        let seq = c.g[A0][0];
+        c.g[S2][0] = seq;
+        let seq = seq as u32;
+        for (i, &(off, size)) in ANIM_SEQUENCE_FIELDS.iter().enumerate() {
+            let vt = c.lw(stream as u32);
+            c.g[V1][0] = vt;
+            c.g[A1][0] = sx(seq.wrapping_add(off));
+            c.g[A2][0] = size;
+            let slot = crate::call::VSlot::read(c, vt, 0x8);
+            c.g[A0][0] = slot.delta;
+            c.g[V0][0] = slot.func;
+            c.g[A0][0] = slot.this(stream);
+            call_ptr(c, slot.func as u32, 0x0031_3e08 + 0x1c * i as u32)?;
+        }
+
+        // The key count.
+        let head = c.lw(seq.wrapping_add(0xac));
+        c.g[S0][0] = head;
+        let s = sp(c);
+        c.sw(s, 0);
+        if head != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+            loop {
+                c.cycles += 7;
+                c.g[S0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(0xc));
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+                if c.g[S0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_3fc0);
+                }
+            }
+            c.cycles += 1;
+            c.sw(sp(c), c.g[V0][0]);
+        }
+        c.cycles += 10;
+        let vt = c.lw(stream as u32);
+        c.g[V0][0] = vt;
+        c.g[A1][0] = sx(sp(c));
+        c.g[A2][0] = 0x4;
+        let slot = crate::call::VSlot::read(c, vt, 0x8);
+        c.g[A0][0] = slot.delta;
+        c.g[V1][0] = slot.func;
+        c.g[A0][0] = slot.this(stream);
+        call_ptr(c, slot.func as u32, 0x0031_3ffc)?;
+
+        // The keys.
+        let head = c.lw(seq.wrapping_add(0xac));
+        c.g[S0][0] = head;
+        if head != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = c.lw(stream as u32);
+            loop {
+                c.cycles += 9;
+                let key = c.g[S0][0];
+                c.g[A1][0] = key;
+                c.g[A2][0] = 0x10;
+                let vt = c.g[V0][0];
+                let slot = crate::call::VSlot::read(c, vt, 0x8);
+                c.g[A0][0] = slot.delta;
+                c.g[V1][0] = slot.func;
+                c.g[A0][0] = slot.this(stream);
+                call_ptr(c, slot.func as u32, 0x0031_4028)?;
+                c.g[S0][0] = c.lw((key as u32).wrapping_add(0xc));
+                if c.g[S0][0] == 0 {
+                    c.cycles += 1;
+                    break;
+                }
+                c.g[V0][0] = c.lw(stream as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_4010);
+                }
+            }
+        }
+        frame.restore(c, S0, 0x40);
+
+        c.cycles += 5;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -937,6 +1065,40 @@ pub(crate) mod tests {
                 c.g[A0][0] = this as u64;
                 c.g[A1][0] = query as u64;
             }),
+        );
+    }
+    use super::*;
+
+    /// AnimSequence_Save: a stream whose Write is a fake (some seeds
+    /// unwind, at any of the up to 21 calls); key lists of 0..4 keys.
+    #[test]
+    fn anim_sequence_save_matches() {
+        covered(
+            ee::s10::f_00313dd0__generated,
+            anim_sequence_save,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_3dd0, 21);
+                c.pc = 0x0031_3dd0;
+                let seq = DATA + 0x1000;
+                let stream = DATA + 0x2000;
+                let vt = DATA + 0x3000;
+                fill(c, &mut r, seq, 0x34);
+                c.bus.write32(stream, vt);
+                c.bus.write16(vt + 0x8, ((r.next_u32() & 0x3f) * 4) as u16);
+                c.bus.write32(vt + 0xc, FAKE);
+                let n = seed % 5;
+                let mut next = 0;
+                for k in (0..n).rev() {
+                    let key = DATA + 0x4000 + 0x40 * k;
+                    fill(c, &mut r, key, 4);
+                    c.bus.write32(key + 0xc, next);
+                    next = key;
+                }
+                c.bus.write32(seq + 0xac, next);
+                c.g[A0][0] = seq as u64;
+                c.g[A1][0] = stream as u64;
+            },
         );
     }
 }

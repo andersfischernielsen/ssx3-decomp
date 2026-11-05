@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -30,6 +31,7 @@ pub(crate) use crate::game::fe::festateloadhint::p_3 as p_2;
 pub(crate) use crate::game::fe::festateloadhint::sqsp;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::sw;
+use crate::game::misc::STATUS_EIE;
 #[cfg(test)]
 pub(crate) use crate::game::render::bezierman::f;
 pub(crate) use crate::game::render::particle::add32;
@@ -339,6 +341,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PathData_GetTrackPath",
     ),
     (0x0026_af88, path_data_get_ai_path, "PathData_GetAIPath"),
+    (0x0026_a428, path_get_closest_point, "Path_GetClosestPoint"),
+    (
+        0x003d_0d70,
+        path_set_track_control_value,
+        "PATH_SetTrackControlValue",
+    ),
+    (
+        0x003d_4b00,
+        path_select_master_track,
+        "PATH_SelectMasterTrack",
+    ),
+    (
+        0x003d_5508,
+        path_set_volume_percent,
+        "PATH_SetVolumePercent",
+    ),
 ];
 
 /// `Path` field: the base time the query window is shifted by.
@@ -3060,6 +3078,805 @@ pub fn csetupman_host_recv_msg11(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod path_music {
+
+    /// Initialised flag (byte), the master volume (byte), a map selection
+    /// in progress (word: the selected map's flags), the selected map.
+    pub const INITED: u32 = 0x0044_f42c;
+
+    pub const MASTER_VOLUME: u32 = 0x0044_f42e;
+
+    pub const SELECTED: u32 = 0x0044_f430;
+
+    pub const CURRENT_MAP: u32 = 0x0044_f420;
+
+    /// The four maps (0x928 bytes each): flags (`+0x30`, high nibbles
+    /// matched against the mask), loaded (`+0x34`); a map's 24 tracks at
+    /// `+0x58`.
+    pub const MAPS: u32 = 0x0051_7610;
+
+    pub const MAP_SIZE: u64 = 0x928;
+
+    pub const MAP_FLAGS: u32 = 0x30;
+
+    pub const MAP_LOADED: u32 = 0x34;
+
+    pub const MAP_TRACKS: u32 = 0x58;
+
+    pub const TRACKS: u32 = 24;
+}
+
+pub(crate) mod path_callee {
+    use super::ee;
+    use super::Callee;
+
+    pub const SELECT_MAP: Callee = Callee {
+        addr: 0x003d_5450,
+        f: ee::s14::PATH_SelectMap,
+    };
+
+    pub const TRACK_SET_VOLUME: Callee = Callee {
+        addr: 0x003d_62c8,
+        f: ee::s14::PATH_TrackSetVolume,
+    };
+}
+
+pub(crate) mod path_ctl {
+
+    /// `u8`: the PATH player is initialised.
+    pub const ENABLED: u32 = 0x0044_f42c;
+
+    /// `PathMap*` of the selected map (its 24 track slots at +0x58).
+    pub const CURRENT_MAP: u32 = 0x0044_f420;
+
+    /// `int` id of the selected map (0 = none selected).
+    pub const CURRENT_ID: u32 = 0x0044_f430;
+
+    /// `&maps[0].loaded` (+0x34) and `&maps[0].id` (+0x30): the loop walks
+    /// both with a stride of one map.
+    pub const MAP0_LOADED: u32 = 0x0051_7644;
+
+    pub const MAP0_ID: u32 = 0x0051_7640;
+
+    pub const MAP_SIZE: u64 = 0x928;
+
+    pub const SLOT0: u32 = 0x58;
+
+    /// Track bytes: the control value and its previous value.
+    pub const VALUE: u32 = 0x1;
+
+    pub const PREV_VALUE: u32 = 0x2;
+}
+
+/// `void PATH_SetVolumePercent(u32 mask, s8 percent)` (0x3d5508): clamp
+/// the volume to 0..100 (mask -1 also sets the master volume) and give it
+/// to every track whose bit is set in `mask`, of every loaded map whose
+/// flag nibbles match the mask. Does nothing before init or while a map is
+/// selected.
+pub fn path_set_volume_percent(c: &mut Cpu) {
+    use path_callee::*;
+    use path_music::*;
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0x0045_0000;
+        frame.save(c, S1, 0x80);
+        c.g[A1][0] = sx((c.g[A1][0] as u32) << 24);
+        frame.save(c, S2, 0x70);
+        c.g[S1][0] = sx(((c.g[A1][0] as u32) as i32 >> 24) as u32);
+        c.g[V1][0] = Addr(INITED).lbu(c);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x90);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        let mask = c.g[S2][0];
+        // Whether the exit passes the block at 0x3d5668 (+1 cycle).
+        let mut tail = true;
+        'body: {
+            if c.g[V1][0] == 0 {
+                break 'body;
+            }
+            c.cycles += 4;
+            c.g[V1][0] = 0x0045_0000;
+            c.g[V0][0] = Addr(SELECTED).lw(c);
+            if c.g[V0][0] != 0 {
+                tail = false;
+                break 'body;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = u64::MAX;
+            SELECT_MAP.call(c, 0x003d_5564)?;
+            c.g[V1][0] = 100;
+            if c.g[V0][0] == 0 {
+                break 'body;
+            }
+            // Clamp to 0..100.
+            c.cycles += 8;
+            c.g[A0][0] = ((c.g[S1][0] as i64) < 101) as u64;
+            if c.g[A0][0] == 0 {
+                c.g[S1][0] = 100;
+            }
+            c.g[V0][0] = (-1 < c.g[S1][0] as i64) as u64;
+            c.g[V1][0] = u64::MAX;
+            if c.g[V0][0] == 0 {
+                c.g[S1][0] = 0;
+            }
+            if mask == u64::MAX {
+                c.cycles += 2;
+                c.g[V0][0] = 0x0045_0000;
+                let vol = c.g[S1][0];
+                Addr(MASTER_VOLUME).sb(c, vol);
+            }
+            c.cycles += 9;
+            c.g[V0][0] = 0x0051_0000;
+            c.g[A0][0] = 0;
+            c.g[S5][0] = sx(MAPS + MAP_LOADED);
+            c.g[S4][0] = 0x0045_0000;
+            c.g[FP][0] = MAP_SIZE;
+            c.g[S7][0] = 0xffff_ffff_f000_0000;
+            c.g[S6][0] = 0x0f00_0000;
+            c.mult(0, A1, A0, FP);
+            loop {
+                // Map i = a0 (a1 = i * 0x928).
+                let map = MAPS.wrapping_add(c.g[A1][0] as u32);
+                c.cycles += 4;
+                c.g[V0][0] = sx(map.wrapping_add(MAP_LOADED));
+                c.g[V1][0] = Addr(map.wrapping_add(MAP_LOADED)).lw(c);
+                c.g[S3][0] = sx((c.g[A0][0] as u32).wrapping_add(1));
+                let mut skip_tail = true;
+                'map: {
+                    if c.g[V1][0] == 0 {
+                        break 'map;
+                    }
+                    c.cycles += 8;
+                    c.g[V0][0] = sx(MAPS + MAP_FLAGS);
+                    c.g[V1][0] = sx(map.wrapping_add(MAP_FLAGS));
+                    c.g[V1][0] = Addr(map.wrapping_add(MAP_FLAGS)).lw(c);
+                    let flags = c.g[V1][0];
+                    let high = flags & c.g[S7][0] & mask;
+                    c.g[V0][0] = flags & c.g[S6][0];
+                    if high == 0 {
+                        break 'map;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] &= mask;
+                    if c.g[V0][0] == 0 {
+                        c.g[A0][0] = c.g[S3][0];
+                        skip_tail = false;
+                        break 'map;
+                    }
+                    c.cycles += 4;
+                    SELECT_MAP.call(c, 0x003d_55fc)?;
+                    let selected = c.g[V0][0] != 0;
+                    c.g[A0][0] = c.g[S3][0];
+                    if !selected {
+                        skip_tail = false;
+                        break 'map;
+                    }
+                    // The selected map's tracks in the mask.
+                    c.cycles += 3;
+                    c.g[S0][0] = 0;
+                    c.g[V0][0] = Addr(CURRENT_MAP).lw(c);
+                    loop {
+                        let j = c.g[S0][0] as u32;
+                        c.cycles += 5;
+                        c.g[V1][0] = sx(j << 2);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(j << 2));
+                        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(MAP_TRACKS)).lw(c);
+                        let track = c.g[A0][0];
+                        c.g[V0][0] = sx((mask as u32) >> (j & 31));
+                        let mut step_tail = true;
+                        if track != 0 {
+                            c.cycles += 4;
+                            c.g[V0][0] = (c.g[V0][0] ^ 1) & 1;
+                            if c.g[V0][0] != 0 {
+                                step_tail = false;
+                            } else {
+                                c.cycles += 2;
+                                c.g[A1][0] = c.g[S1][0];
+                                TRACK_SET_VOLUME.call(c, 0x003d_563c)?;
+                            }
+                        }
+                        if step_tail {
+                            c.cycles += 1;
+                        }
+                        c.g[S0][0] = sx(j.wrapping_add(1));
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[S0][0] as i64) < TRACKS as i64) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.g[V0][0] = Addr(CURRENT_MAP).lw(c);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003d_5610);
+                        }
+                    }
+                }
+                if skip_tail {
+                    c.cycles += 1;
+                    c.g[A0][0] = c.g[S3][0];
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < 4) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.mult(0, A1, A0, FP);
+                if event_due(c) {
+                    deliver_event_here(c, 0x003d_55b8);
+                }
+            }
+            // Done: forget the selection.
+            c.cycles += 3;
+            c.g[V0][0] = 0x0045_0000;
+            Addr(CURRENT_MAP).sw(c, 0);
+            Addr(SELECTED).sw(c, 0);
+        }
+        if tail {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x90);
+        c.cycles += 11;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) fn gp_lit(c: &mut Cpu, neg: u32) -> FpuF32 {
+    let gp = c.g[GP][0] as u32;
+    Addr(gp.wrapping_sub(neg)).read_fpu(c)
+}
+
+pub(crate) fn frame_f(c: &mut Cpu, off: u32) -> FpuF32 {
+    Addr(sp(c).wrapping_add(off)).read_fpu(c)
+}
+
+pub(crate) fn set_frame_f(c: &mut Cpu, off: u32, v: FpuF32) {
+    Addr(sp(c).wrapping_add(off)).write_fpu(c, v)
+}
+
+// ---------------------------------------------------------------------------
+// Path_GetClosestPoint (0x26a428)
+
+/// Path: segment count (+0x8), start point (+0xc..0x14), segments (+0x18:
+/// 0x10 bytes each, unit direction xyz and length).
+pub(crate) const PATH_SEG_COUNT: u32 = 0x8;
+
+pub(crate) const PATH_START: u32 = 0xc;
+
+pub(crate) const PATH_SEGMENTS: u32 = 0x18;
+
+pub(crate) const SEG_SIZE: u32 = 0x10;
+
+/// `.lit4` at `gp-0x4a58`: the initial best distance (a large value).
+pub(crate) const LIT_PATH_FAR: u32 = 0x4a58;
+
+/// Frame slots (0x60 bytes): the current segment start point, the segment
+/// direction, the point-to-start delta, the candidate point and VU0
+/// spill slots.
+pub(crate) const CP_START: u32 = 0x00;
+
+pub(crate) const CP_DIR: u32 = 0x10;
+
+pub(crate) const CP_DELTA: u32 = 0x20;
+
+pub(crate) const CP_POINT: u32 = 0x30;
+
+pub(crate) const CP_STEP: u32 = 0x40;
+
+pub(crate) const CP_SPILL: u32 = 0x50;
+
+/// `vf5 = a - b` (lane-wise, `vsub`), spilled through `spill` and v0 to `dst`.
+pub(crate) fn vu_sub_spill(c: &mut Cpu, a: u32, b: u32, spill: u32, dst: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, spill);
+    c.lq(V0, spill);
+    c.sq(V0, dst);
+}
+
+/// `vf5 = a + b`, spilled through `spill` and v0 to `dst`.
+pub(crate) fn vu_add_spill(c: &mut Cpu, a: u32, b: u32, spill: u32, dst: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, spill);
+    c.lq(V0, spill);
+    c.sq(V0, dst);
+}
+
+/// `vf5 = dir * s` with `s` moved in through GPR `gpr` (`mfc1`, `qmtc2` to
+/// vf3), spilled to the spill slot and loaded into v0.
+pub(crate) fn vu_scale_dir(c: &mut Cpu, gpr: usize, s: FpuF32) {
+    let base = sp(c);
+    c.g[gpr][0] = sx(s.0);
+    c.lqc2(4, base + CP_DIR);
+    c.qmtc2(gpr, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, base + CP_SPILL);
+}
+
+/// The 4-lane dot product `a . b` on VU0 (vf4.x, through v0), returned as
+/// the float moved to f1.
+pub(crate) fn vu_dot4_f1(c: &mut Cpu, a: u32, b: u32) -> FpuF32 {
+    c.lqc2(3, a);
+    c.lqc2(5, b);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(V0, 4);
+    FpuF32(c.g[V0][0] as u32)
+}
+
+/// The squared length of the frame vector at `off` in the xy plane.
+pub(crate) fn xy_len2(c: &mut Cpu, off: u32) -> (FpuF32, FpuF32) {
+    let x = frame_f(c, off);
+    let y = frame_f(c, off + 4);
+    (x * x, y * y)
+}
+
+/// `float Path_GetClosestPoint(Path* path, Vec4* p, Vec4* closest,
+/// float* dist, int flat)` (0x26a428): walk the path's segments; project
+/// `p` onto each (in the xy plane when `flat`, else with the 4-lane VU0
+/// dot product), clamp to the segment, and keep the nearest point in
+/// `*closest`. Returns the distance along the path of that point in f0
+/// and stores the distance to it in `*dist`. The segment loop keeps its
+/// state in the frame and the original's registers (t1 index, f5 length
+/// so far, f6 best length, f7/f9 best distances, f8 zero) across its
+/// back-edge event check.
+pub fn path_get_closest_point(c: &mut Cpu) {
+    c.cycles += 17;
+    let path = Addr(c.g[A0][0] as u32);
+    let start_x = path.off(PATH_START).read_fpu(c);
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x60));
+    let start_y = path.off(PATH_START + 4).read_fpu(c);
+    c.g[T1][0] = 0;
+    let start_z = path.off(PATH_START + 8).read_fpu(c);
+    c.g[AT][0] = 0x3f80_0000;
+    c.g[V0][0] = path.off(PATH_SEG_COUNT).lw(c);
+    let base = sp(c);
+    set_frame_f(c, CP_START, start_x);
+    set_frame_f(c, CP_START + 4, start_y);
+    set_frame_f(c, CP_START + 8, start_z);
+    let far = gp_lit(c, LIT_PATH_FAR);
+    set_frame_f(c, CP_START + 0xc, FpuF32::ONE);
+    c.f[0] = start_x.0;
+    c.f[1] = start_y.0;
+    c.f[2] = start_z.0;
+    c.f[3] = FpuF32::ONE.0;
+    c.f[5] = 0;
+    c.f[6] = 0;
+    c.f[7] = 0;
+    c.f[9] = far.0;
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 3;
+        c.f[8] = c.f[6];
+        c.g[V1][0] = path.off(PATH_SEGMENTS).lw(c);
+        loop {
+            // The segment: direction into the frame, delta = p - start.
+            c.cycles += 17;
+            let flat = c.g[T0][0] != 0;
+            let p = c.g[A1][0] as u32;
+            let seg = Addr(((c.g[T1][0] as u32) << 4).wrapping_add(c.g[V1][0] as u32));
+            c.g[V0][0] = sx(seg.0);
+            let dx = seg.read_fpu(c);
+            set_frame_f(c, CP_DIR, dx);
+            let dy = seg.off(4).read_fpu(c);
+            set_frame_f(c, CP_DIR + 4, dy);
+            let dz = seg.off(8).read_fpu(c);
+            Addr(base + CP_DIR + 0xc).sw(c, 0);
+            set_frame_f(c, CP_DIR + 8, dz);
+            let len = seg.off(0xc).read_fpu(c);
+            c.f[0] = dz.0;
+            c.f[1] = dy.0;
+            c.f[4] = len.0;
+            vu_sub_spill(c, p, base + CP_START, base + CP_POINT, base + CP_DELTA);
+            // Projection of the delta on the direction.
+            let along = if flat {
+                c.cycles += 8;
+                let ex = frame_f(c, CP_DELTA);
+                let gx = frame_f(c, CP_DIR);
+                let ey = frame_f(c, CP_DELTA + 4);
+                let gy = frame_f(c, CP_DIR + 4);
+                let a = ex * gx;
+                let b = ey * gy;
+                c.f[0] = b.0;
+                c.f[2] = gy.0;
+                c.f[3] = gx.0;
+                a + b
+            } else {
+                c.cycles += 9;
+                vu_dot4_f1(c, base + CP_DELTA, base + CP_DIR)
+            };
+            c.f[1] = along.0;
+            // Clamp to [0, len].
+            c.cycles += 4;
+            let zero = FpuF32(c.f[8]);
+            let ge = zero.le(along);
+            abi::set_fcc(c, ge);
+            let t = if ge {
+                c.cycles += 1;
+                along.min(len)
+            } else {
+                zero
+            };
+            c.f[2] = t.0;
+            // Candidate point = start + dir * t; delta = p - candidate.
+            c.cycles += 21;
+            vu_scale_dir(c, V1, t);
+            c.lq(V0, base + CP_SPILL);
+            c.sq(V0, base + CP_STEP);
+            vu_add_spill(
+                c,
+                base + CP_START,
+                base + CP_STEP,
+                base + CP_SPILL,
+                base + CP_POINT,
+            );
+            vu_sub_spill(c, p, base + CP_POINT, base + CP_SPILL, base + CP_DELTA);
+            c.sq(V0, base + CP_STEP);
+            let dist2 = if flat {
+                c.cycles += 6;
+                let (x2, y2) = xy_len2(c, CP_DELTA);
+                c.f[0] = y2.0;
+                x2 + y2
+            } else {
+                c.cycles += 9;
+                vu_dot4_f1(c, base + CP_DELTA, base + CP_DELTA)
+            };
+            c.f[1] = dist2.0;
+            // Nearer than the best so far?
+            c.cycles += 3;
+            let best = FpuF32(c.f[9]);
+            let nearer = dist2.lt(best);
+            abi::set_fcc(c, nearer);
+            if nearer {
+                c.cycles += 2;
+                c.f[9] = dist2.0;
+                if flat {
+                    c.cycles += 2;
+                    c.f[7] = dist2.0;
+                } else {
+                    c.cycles += 5;
+                    let (x2, y2) = xy_len2(c, CP_DELTA);
+                    c.f[1] = x2.0;
+                    c.f[0] = y2.0;
+                    c.f[7] = (x2 + y2).0;
+                }
+                c.cycles += 3;
+                c.lq(V0, base + CP_POINT);
+                c.f[6] = (FpuF32(c.f[5]) + t).0;
+                let out = c.g[A2][0] as u32;
+                c.sq(V0, out);
+            }
+            // Next segment start = start + dir * len.
+            c.cycles += 17;
+            vu_scale_dir(c, V0, len);
+            c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(1));
+            c.lq(V0, base + CP_SPILL);
+            c.f[5] = (FpuF32(c.f[5]) + len).0;
+            c.sq(V0, base + CP_STEP);
+            c.lqc2(3, base + CP_START);
+            c.lqc2(4, base + CP_STEP);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, base + CP_START);
+            c.g[V0][0] = path.off(PATH_SEG_COUNT).lw(c);
+            c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            c.g[V1][0] = path.off(PATH_SEGMENTS).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x0026_a478);
+            }
+        }
+    }
+    c.cycles += 5;
+    let dist = FpuF32(c.f[7]).sqrt();
+    c.f[1] = dist.0;
+    c.f[0] = c.f[6];
+    Addr(c.g[A3][0] as u32).write_fpu(c, dist);
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x60));
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// PATH_SelectMasterTrack (0x3d4b00)
+
+/// The PATH module's state pointer (`0x44f420`): the master track selection
+/// (+0 index, +4 length, +8 kind) and 24 track pointers from +0x58.
+pub(crate) const PATH_STATE: u32 = 0x0044_f420;
+
+pub(crate) const PATH_MASTER_INDEX: u32 = 0x0;
+
+pub(crate) const PATH_MASTER_LENGTH: u32 = 0x4;
+
+pub(crate) const PATH_MASTER_KIND: u32 = 0x8;
+
+pub(crate) const PATH_TRACKS: u32 = 0x58;
+
+pub(crate) const PATH_TRACK_COUNT: i64 = 24;
+
+/// Track: disabled byte (+3), length (+0x24), header pointer (+0x30, its
+/// first word holds the kind in bits 21-26), signed halfword (+0x36,
+/// negative: not a candidate).
+pub(crate) const TRACK_DISABLED: u32 = 0x3;
+
+pub(crate) const TRACK_LENGTH: u32 = 0x24;
+
+pub(crate) const TRACK_HEADER: u32 = 0x30;
+
+pub(crate) const TRACK_FLAGS: u32 = 0x36;
+
+/// `void PATH_SelectMasterTrack(void)` (0x3d4b00): picks the longest of the
+/// 24 PATH tracks that is present, enabled (`+3 == 0`), has a header and a
+/// non-negative `+0x36`: index, length (unsigned compare, strictly longer
+/// wins) and kind (`header[0] >> 21 & 0x3f`) into the state's master
+/// selection (reset to -1/0/0 first).
+///
+/// Registers as the original: a1 = state, a2 = track slot cursor, a3 =
+/// index, t0 = 1, a0/v0/v1 scratch.
+pub fn path_select_master_track(c: &mut Cpu) {
+    c.cycles += 12;
+    c.g[V0][0] = 0x0045_0000;
+    c.g[A0][0] = u64::MAX;
+    c.g[V1][0] = Addr(PATH_STATE).lw(c);
+    c.g[A3][0] = 0;
+    c.g[T0][0] = 1;
+    c.g[A1][0] = c.g[V1][0];
+    let state = Addr(r32(c, A1));
+    state.off(PATH_MASTER_INDEX).sw(c, u64::MAX);
+    state.off(PATH_MASTER_LENGTH).sw(c, 0);
+    c.g[A2][0] = sx(state.0.wrapping_add(PATH_TRACKS));
+    state.off(PATH_MASTER_KIND).sw(c, 0);
+    c.g[A0][0] = Addr(r32(c, A2)).lw(c);
+    loop {
+        c.cycles += 2;
+        let track = r32(c, A0);
+        c.g[A2][0] = sx(r32(c, A2).wrapping_add(4));
+        // Through the shared `a3++` with its extra cycle, or straight to the
+        // loop test (the original's two increments).
+        let mut tail_cycle = true;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(track).off(TRACK_DISABLED).lbu(c);
+            c.g[V1][0] = 0;
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(track).off(TRACK_FLAGS).lh(c);
+                if (c.g[V0][0] as i64) >= 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = Addr(track).off(TRACK_HEADER).lw(c);
+                    c.g[V1][0] = if c.g[V0][0] == 0 { 0 } else { c.g[T0][0] };
+                }
+                c.cycles += 2;
+                if c.g[V1][0] == 0 {
+                    tail_cycle = false;
+                } else {
+                    c.cycles += 5;
+                    c.g[V1][0] = Addr(track).off(TRACK_LENGTH).lw(c);
+                    c.g[V0][0] = state.off(PATH_MASTER_LENGTH).lw(c);
+                    c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+                    if c.g[V0][0] == 0 {
+                        tail_cycle = false;
+                    } else {
+                        // The longest so far.
+                        c.cycles += 7;
+                        state.off(PATH_MASTER_LENGTH).sw(c, c.g[V1][0]);
+                        state.off(PATH_MASTER_INDEX).sw(c, c.g[A3][0]);
+                        c.g[V1][0] = Addr(track).off(TRACK_HEADER).lw(c);
+                        c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+                        c.g[V0][0] = sx(r32(c, V0) >> 21) & 0x3f;
+                        state.off(PATH_MASTER_KIND).sw(c, c.g[V0][0]);
+                    }
+                }
+            }
+        }
+        if tail_cycle {
+            c.cycles += 1;
+        }
+        c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[A3][0] as i64) < PATH_TRACK_COUNT) as u64;
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        c.g[A0][0] = Addr(r32(c, A2)).lw(c);
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_4b30);
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+pub(crate) const PATH_SELECT_MAP: Callee = Callee {
+    addr: 0x003d_5450,
+    f: ee::s14::PATH_SelectMap,
+};
+
+/// `int PATH_SetTrackControlValue(uint mask, uint value)` (0x3d0d70): set
+/// the control byte of every track of every loaded path map whose id
+/// matches `mask` in both its top and second nibbles (the old value moves
+/// to the previous-value byte). Fails with -18 unless the player is on, no
+/// map is selected and the `PATH_SelectMap(-1)` query succeeds; values of
+/// 0x80 and above change nothing. Clears the selection and returns 0.
+pub fn path_set_track_control_value(c: &mut Cpu) {
+    use path_ctl::*;
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0x45_0000;
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        c.g[S1][0] = c.g[A1][0];
+        c.g[V1][0] = Addr(ENABLED).lbu(c);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x90);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+
+        let mut ready = false;
+        let mut busy = false;
+        if c.g[V1][0] != 0 {
+            c.cycles += 4;
+            c.g[V1][0] = 0x45_0000;
+            busy = Addr(CURRENT_ID).lw(c) != 0;
+            c.g[V0][0] = sx(-18i32 as u32);
+            if !busy {
+                c.cycles += 4;
+                c.g[A0][0] = u64::MAX;
+                PATH_SELECT_MAP.call(c, 0x003d_0dc8)?;
+                ready = c.g[V0][0] != 0;
+                c.g[V0][0] = (c.g[S1][0] < 0x80) as u64;
+            }
+        }
+        if !busy && !ready {
+            c.cycles += 2;
+            c.g[V0][0] = sx(-18i32 as u32);
+        } else if ready {
+            c.cycles += 2;
+            c.g[S5][0] = 0x45_0000;
+            if c.g[V0][0] != 0 {
+                set_values(c)?;
+            }
+            c.cycles += 4;
+            c.g[V0][0] = 0x45_0000;
+            Addr(CURRENT_MAP).sw(c, 0);
+            Addr(CURRENT_ID).sw(c, 0);
+            c.g[V0][0] = 0;
+        }
+
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The map loop of `PATH_SetTrackControlValue`: a0 = map index, a1 = its
+/// byte offset (`mult`), s1 = value, s2 = mask.
+pub(crate) fn set_values(c: &mut Cpu) -> crate::call::Flow {
+    use path_ctl::*;
+    c.cycles += 8;
+    c.g[V0][0] = 0x51_0000;
+    c.g[A0][0] = 0;
+    c.g[S3][0] = sx(MAP0_LOADED);
+    c.g[S7][0] = MAP_SIZE;
+    c.g[FP][0] = sx(MAP0_ID);
+    c.g[S6][0] = 0xffff_ffff_f000_0000;
+    c.g[S4][0] = 0x0f00_0000;
+    c.mult(0, A1, A0, S7);
+    loop {
+        c.cycles += 4;
+        c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, S3)));
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+        c.g[S0][0] = sx(r32(c, A0).wrapping_add(1));
+        // `direct`: the second-nibble test failed; skip the 1-cycle tail.
+        let mut direct = false;
+        if c.g[V1][0] != 0 {
+            c.cycles += 6;
+            c.g[V1][0] = Addr(r32(c, A1).wrapping_add(r32(c, FP))).lw(c);
+            let top = c.g[V1][0] & c.g[S6][0] & c.g[S2][0];
+            c.g[V0][0] = c.g[V1][0] & c.g[S4][0];
+            if top != 0 {
+                c.cycles += 3;
+                c.g[V0][0] &= c.g[S2][0];
+                if c.g[V0][0] == 0 {
+                    c.g[A0][0] = c.g[S0][0];
+                    direct = true;
+                } else {
+                    c.cycles += 4;
+                    c.g[A0][0] &= 0xff;
+                    PATH_SELECT_MAP.call(c, 0x003d_0e3c)?;
+                    let selected = c.g[V0][0] != 0;
+                    c.g[A0][0] = 0;
+                    if selected {
+                        set_map_tracks(c);
+                    }
+                }
+            }
+        }
+        if !direct {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S0][0];
+        }
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[A0][0] as i64) < 4) as u64;
+        if c.g[V0][0] == 0 {
+            return Ok(());
+        }
+        c.mult(0, A1, A0, S7);
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_0e00);
+        }
+    }
+}
+
+/// Write the value (s1) into the 24 track slots of the selected map.
+pub(crate) fn set_map_tracks(c: &mut Cpu) {
+    use path_ctl::*;
+    c.cycles += 3;
+    c.g[A1][0] = 0x45_0000;
+    c.g[V0][0] = Addr(CURRENT_MAP).lw(c);
+    loop {
+        c.cycles += 5;
+        c.g[V1][0] = sx(r32(c, A0) << 2);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(SLOT0)).lw(c);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+        if c.g[V1][0] != 0 {
+            c.cycles += 3;
+            let track = Addr(r32(c, V1));
+            let (value, prev) = (c.g[S1][0], track.off(VALUE).lbu(c));
+            c.g[V0][0] = prev;
+            track.off(VALUE).sb(c, value);
+            track.off(PREV_VALUE).sb(c, prev);
+        }
+        c.cycles += 3;
+        let more = (c.g[A0][0] as i64) < 24;
+        c.g[V0][0] = Addr(CURRENT_MAP).lw(c);
+        if !more {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_0e50);
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4675,6 +5492,225 @@ pub(crate) mod tests {
                 w(c, prev, 0);
                 c.g[A0][0] = sx(DATA + 0x3000);
                 c.g[A1][0] = sx(msg);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// PATH_SetVolumePercent: not initialised, a selection in progress, or
+    /// the four maps (loaded or not, flag nibbles matching the mask or not)
+    /// with 24 tracks (present or not); masks -1 or random, volumes in and
+    /// out of 0..100.
+    #[test]
+    fn path_set_volume_percent_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA};
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        check(
+            ee::s14::f_003d5508__generated,
+            path_set_volume_percent,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3d_5508, 0);
+                c.pc = 0x003d_5508;
+                c.bus.write8(0x0044_f42c, (seed % 11 != 0) as u8);
+                c.bus.write8(0x0044_f42e, r.next_u32() as u8);
+                w(
+                    c,
+                    0x0044_f430,
+                    if seed % 13 == 1 { r.next_u32() | 1 } else { 0 },
+                );
+                w(c, 0x0044_f420, r.next_u32());
+                let mask = if seed % 4 == 0 {
+                    u32::MAX
+                } else {
+                    r.next_u32()
+                };
+                for i in 0..4u32 {
+                    let map = 0x0051_7610 + 0x928 * i;
+                    w(c, map + 0x34, (r.next_u32() % 4 != 0) as u32);
+                    let flags = match r.next_u32() % 3 {
+                        0 => r.next_u32(),
+                        1 => mask & 0xff00_0000 | 1,
+                        _ => mask & 0xf000_0000,
+                    };
+                    w(c, map + 0x30, flags);
+                    for j in 0..24u32 {
+                        let t = if r.next_u32() % 3 == 0 {
+                            0
+                        } else {
+                            DATA + 0x40 * (j + 24 * i)
+                        };
+                        w(c, map + 0x58 + 4 * j, t);
+                    }
+                }
+                c.g[A0][0] = sx(mask);
+                c.g[A1][0] = match seed % 5 {
+                    0 => 200,
+                    1 => sx(0xffff_ff80),
+                    _ => r.next_u32() as u64 | (r.next_u32() as u64) << 32,
+                };
+            },
+        );
+    }
+
+    /// Path_GetClosestPoint: paths of 0..5 segments (and a negative
+    /// count), the point anywhere around them, flat (xy) and full (VU0)
+    /// distances, so the projection clamps at both ends and the best point
+    /// changes or not.
+    #[test]
+    fn path_get_closest_point_matches() {
+        check(
+            ee::s07::f_0026a428__generated,
+            path_get_closest_point,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x26_a428, 0);
+                c.pc = 0x0026_a428;
+                let path = DATA;
+                let segs = DATA + 0x1000;
+                let p = DATA + 0x2000;
+                let out = DATA + 0x3000;
+                let dist = DATA + 0x3100;
+                let n = match seed % 11 {
+                    0 => 0,
+                    1 => r.next_u32() | 0x8000_0000,
+                    _ => r.next_u32() % 5 + 1,
+                };
+                c.bus.write32(path + PATH_SEG_COUNT, n);
+                for i in 0..3 {
+                    c.bus.write32(path + PATH_START + 4 * i, r.f32(50.0));
+                }
+                c.bus.write32(path + PATH_SEGMENTS, segs);
+                for s in 0..5 {
+                    let a = (r.next_u32() % 628) as f32 / 100.0;
+                    let z = (r.next_u32() % 100) as f32 / 400.0;
+                    let seg = segs + SEG_SIZE * s;
+                    c.bus.write32(seg, a.cos().to_bits());
+                    c.bus.write32(seg + 4, a.sin().to_bits());
+                    c.bus.write32(seg + 8, z.to_bits());
+                    c.bus
+                        .write32(seg + 0xc, ((r.next_u32() % 4000) as f32 / 100.0).to_bits());
+                }
+                for i in 0..4 {
+                    c.bus.write32(p + 4 * i, r.f32(80.0));
+                }
+                fill(c, &mut r, out, 4);
+                let far = if seed % 5 == 0 { 100.0f32 } else { 1.0e30 };
+                c.bus.write32(GAME_GP - LIT_PATH_FAR, far.to_bits());
+                c.g[A0][0] = path as u64;
+                c.g[A1][0] = p as u64;
+                c.g[A2][0] = out as u64;
+                c.g[A3][0] = dist as u64;
+                c.g[T0][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64 | 1
+                };
+            },
+        );
+    }
+
+    /// PATH_SelectMasterTrack: the state at DATA (pointer at 0x44f420) with
+    /// 24 track slots, each empty, disabled, with a negative `+0x36`, no
+    /// header, or a candidate with a random length (sometimes equal to an
+    /// earlier one, sometimes with the top bit set) and header word.
+    #[test]
+    fn path_select_master_track_matches() {
+        check(
+            ee::s14::f_003d4b00__generated,
+            path_select_master_track,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003d_4b00 ^ (seed as u64) << 9);
+                scramble(c, &mut r);
+                let state = DATA;
+                c.bus.write32(PATH_STATE, state);
+                fill(c, &mut r, state, 4);
+                let lengths = [r.next_u32() % 100, r.next_u32()];
+                for i in 0..24u32 {
+                    let track = DATA + 0x1000 + 0x100 * i;
+                    let header = DATA + 0x4000 + 0x10 * i;
+                    let empty = r.next_u32() % 6 == 0;
+                    c.bus
+                        .write32(state + PATH_TRACKS + 4 * i, if empty { 0 } else { track });
+                    fill(c, &mut r, track, 0x10);
+                    c.bus
+                        .write8(track + TRACK_DISABLED, (r.next_u32() % 5 == 0) as u8);
+                    let flags = if r.next_u32() % 5 == 0 {
+                        0x8000 | r.next_u32()
+                    } else {
+                        r.next_u32() & 0x7fff
+                    };
+                    c.bus.write16(track + TRACK_FLAGS, flags as u16);
+                    c.bus.write32(
+                        track + TRACK_HEADER,
+                        if r.next_u32() % 5 == 0 { 0 } else { header },
+                    );
+                    c.bus.write32(header, r.next_u32());
+                    let len = match r.next_u32() % 4 {
+                        0 => lengths[0],
+                        1 => lengths[1],
+                        _ => r.next_u32() % (100 + 10 * seed),
+                    };
+                    c.bus.write32(track + TRACK_LENGTH, len);
+                }
+                c.pc = 0x003d_4b00;
+            },
+        );
+    }
+
+    /// PATH_SetTrackControlValue: player on/off, a map already selected or
+    /// not, values below and above 0x80, random masks (sometimes all ones)
+    /// against four maps with random ids and loaded flags, each with 24
+    /// slots that are empty or point at a random track; the real
+    /// `PATH_SelectMap`.
+    #[test]
+    fn path_set_track_control_value_matches() {
+        use super::path_ctl::*;
+        check_lohi(
+            ee::s14::f_003d0d70__generated,
+            path_set_track_control_value,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003d_0d70 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003d_0d70;
+                let enabled = if seed % 8 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 255
+                };
+                c.bus.write8(ENABLED, enabled as u8);
+                let id = if seed % 8 == 1 { r.next_u32() | 1 } else { 0 };
+                c.bus.write32(CURRENT_ID, id);
+                c.bus.write32(CURRENT_MAP, r.next_u32());
+                let mask = if seed % 3 == 0 {
+                    u64::MAX
+                } else {
+                    (r.next_u32() as u64) << 32 | r.next_u32() as u64
+                };
+                c.g[A0][0] = mask;
+                c.g[A1][0] = if seed % 5 == 0 {
+                    (r.next_u32() as u64) << 32 | r.next_u32() as u64
+                } else {
+                    (r.next_u32() % 0x80) as u64
+                };
+                for m in 0..4u32 {
+                    let map = MAP0_ID - 0x30 + m * MAP_SIZE as u32;
+                    c.bus.write32(map + 0x30, r.next_u32());
+                    c.bus
+                        .write32(map + 0x34, if r.next_u32() % 3 == 0 { 0 } else { 1 });
+                    for j in 0..24u32 {
+                        let track = DATA + (m * 24 + j) * 0x10;
+                        fill(c, &mut r, track, 4);
+                        let p = if r.next_u32() % 4 == 0 { 0 } else { track };
+                        c.bus.write32(map + SLOT0 + 4 * j, p);
+                    }
+                }
             },
         );
     }

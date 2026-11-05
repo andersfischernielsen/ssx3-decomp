@@ -6,6 +6,7 @@ use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fcc;
 use crate::abi::set_fpr;
 use crate::abi::set_reg;
 use crate::call;
@@ -21,6 +22,8 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::bx::bxstring2::frame_f;
+pub(crate) use crate::game::bx::bxstring2::set_frame_f;
 pub(crate) use crate::game::bx::memblockman::gp_2;
 pub(crate) use crate::game::camera::camera::gp_4;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_2;
@@ -391,6 +394,19 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "PS2GraphicsMan_SetTexFunction",
     ),
     (0x0041_1340, fixunssfdi, "__fixunssfdi"),
+    (0x0036_2cc8, defer_man_reset_frame, "DeferMan_ResetFrame"),
+    (0x0037_1380, dynamic_emitter_render, "DynamicEmitter_Render"),
+    (0x0037_1940, dma_send_gif_normal, "Dma_SendGifNormal"),
+    (
+        0x0037_4298,
+        bezier_patch_cache_tess_uvs,
+        "BezierPatchCache_TessUVs",
+    ),
+    (
+        0x0037_4b38,
+        bezier_patch_cache_release_unused,
+        "BezierPatchCache_ReleaseUnused",
+    ),
 ];
 
 /// Same-shard direct callees used above.
@@ -10145,6 +10161,756 @@ pub fn ps2_graphics_man_set_tex_function(c: &mut Cpu) {
     );
 }
 
+pub(crate) mod patch_cache {
+
+    /// Entries in use (`+0`) and the entry lists (`+0x18`; 12-byte entries).
+    pub const COUNT: u32 = 0x0;
+
+    pub const ENTRIES: u32 = 0x18;
+
+    /// Free entry-index lists (`+0x30`) and their counts (`+0x3c`).
+    pub const FREE_LIST: u32 = 0x30;
+
+    pub const FREE_COUNT: u32 = 0x3c;
+
+    /// Free slot lists (`+0x1cc`) and their counts (`+0x1d8`).
+    pub const SLOT_LIST: u32 = 0x1cc;
+
+    pub const SLOT_COUNT: u32 = 0x1d8;
+
+    /// Entry: owner (`+0`), flags (`+4`: 4 and 8 = used this frame / last
+    /// frame), slot (`+8`, -1 none); the owner's slot index per level is a
+    /// halfword at `+0x1a6 + 2 * i`.
+    pub const E_OWNER: u32 = 0x0;
+
+    pub const E_FLAGS: u32 = 0x4;
+
+    pub const E_SLOT: u32 = 0x8;
+
+    pub const E_SIZE: u32 = 0xc;
+
+    pub const OWNER_SLOT: u32 = 0x1a6;
+}
+
+/// `void BezierPatchCache_ReleaseUnused(BezierPatchCache* cache)` (0x374b38):
+/// age the cached patch entries of the three levels: an entry used this
+/// frame (flag 4) or last frame (flag 8) loses that flag; any other
+/// non-empty entry is released: its owner forgets the slot (-1), its slot (if
+/// any) goes back to the level's free slots, and the entry index to the free
+/// entries. A leaf with a frame for s0-s6.
+pub fn bezier_patch_cache_release_unused(c: &mut Cpu) {
+    use patch_cache::*;
+    c.cycles += 16;
+    let frame = Frame::open(c, 0x70);
+    let cache = c.g[A0][0] as u32;
+    c.g[T2][0] = c.g[A0][0];
+    frame.save(c, S2, 0x40);
+    c.g[A1][0] = 0;
+    frame.save(c, S3, 0x30);
+    c.g[S2][0] = sx(cache.wrapping_add(FREE_COUNT));
+    frame.save(c, S4, 0x20);
+    c.g[S3][0] = sx(cache.wrapping_add(FREE_LIST));
+    frame.save(c, S5, 0x10);
+    c.g[S4][0] = sx(cache.wrapping_add(SLOT_COUNT));
+    frame.save(c, S6, 0);
+    c.g[S5][0] = sx(cache.wrapping_add(SLOT_LIST));
+    frame.save(c, S0, 0x60);
+    c.g[S6][0] = sx(cache.wrapping_add(ENTRIES));
+    frame.save(c, S1, 0x50);
+    c.g[A0][0] = 0;
+    loop {
+        // Level i = a1 (a0 = 4 * i).
+        let level = c.g[A1][0] as u32;
+        let i4 = c.g[A0][0] as u32;
+        c.cycles += 7;
+        c.g[A3][0] = 0;
+        c.g[V0][0] = sx(cache.wrapping_add(i4));
+        c.g[V1][0] = sx(cache.wrapping_add(ENTRIES).wrapping_add(i4));
+        c.g[T3][0] = Addr(cache.wrapping_add(COUNT + i4)).lw(c);
+        c.g[T7][0] = sx(level.wrapping_add(1));
+        let count = c.g[T3][0] as i64;
+        c.g[V0][0] = Addr(cache.wrapping_add(ENTRIES + i4)).lw(c);
+        if count > 0 {
+            c.cycles += 11;
+            c.g[T6][0] = sx(level << 1);
+            let free_count = cache.wrapping_add(FREE_COUNT).wrapping_add(i4);
+            let slot_list = cache.wrapping_add(SLOT_LIST).wrapping_add(i4);
+            let slot_count = cache.wrapping_add(SLOT_COUNT).wrapping_add(i4);
+            let free_list = cache.wrapping_add(FREE_LIST).wrapping_add(i4);
+            c.g[T1][0] = sx(free_count);
+            c.g[A2][0] = c.g[V0][0];
+            c.g[S1][0] = !4u64;
+            c.g[S0][0] = !8u64;
+            c.g[T9][0] = u64::MAX;
+            c.g[T5][0] = sx(slot_list);
+            c.g[T0][0] = sx(slot_count);
+            c.g[T8][0] = u64::MAX;
+            c.g[T4][0] = sx(free_list);
+            loop {
+                // Entry j = a3 at a2.
+                let e = c.g[A2][0] as u32;
+                c.cycles += 4;
+                let flags = Addr(e.wrapping_add(E_FLAGS)).lw(c);
+                c.g[V1][0] = flags;
+                c.g[V0][0] = flags & !4;
+                let mut tail = true;
+                if flags & 4 != 0 {
+                    c.cycles += 2;
+                    Addr(e.wrapping_add(E_FLAGS)).sw(c, flags & !4);
+                } else {
+                    c.cycles += 3;
+                    c.g[V0][0] = flags & !8;
+                    if flags & 8 != 0 {
+                        c.cycles += 2;
+                        Addr(e.wrapping_add(E_FLAGS)).sw(c, flags & !8);
+                    } else {
+                        c.cycles += 2;
+                        if flags == 0 {
+                            tail = false;
+                        } else {
+                            // Release: the owner forgets its slot.
+                            c.cycles += 7;
+                            let owner = Addr(e.wrapping_add(E_OWNER)).lw(c);
+                            Addr(e.wrapping_add(E_FLAGS)).sw(c, 0);
+                            c.g[V0][0] = sx((owner as u32).wrapping_add(level << 1));
+                            Addr((c.g[V0][0] as u32).wrapping_add(OWNER_SLOT)).sh(c, u64::MAX);
+                            let slot = Addr(e.wrapping_add(E_SLOT)).lw(c);
+                            c.g[A1][0] = slot;
+                            if (slot as i64) >= 0 {
+                                // The slot goes back to the free slots.
+                                c.cycles += 9;
+                                let n = Addr(slot_count).lw(c);
+                                let list = Addr(slot_list).lw(c);
+                                c.g[A0][0] = list;
+                                c.g[V1][0] = sx(((n as u32) << 2).wrapping_add(list as u32));
+                                c.g[V0][0] = sx((n as u32).wrapping_add(1));
+                                Addr(c.g[V1][0] as u32).sw(c, slot);
+                                let n1 = c.g[V0][0];
+                                Addr(slot_count).sw(c, n1);
+                                Addr(e.wrapping_add(E_SLOT)).sw(c, u64::MAX);
+                            }
+                            // The entry index goes to the free entries.
+                            let n = Addr(free_count).lw(c);
+                            c.cycles += 6;
+                            let list = Addr(free_list).lw(c);
+                            c.g[A0][0] = list;
+                            c.g[V1][0] = sx(((n as u32) << 2).wrapping_add(list as u32));
+                            c.g[V0][0] = sx((n as u32).wrapping_add(1));
+                            let j = c.g[A3][0];
+                            Addr(c.g[V1][0] as u32).sw(c, j);
+                            let n1 = c.g[V0][0];
+                            Addr(free_count).sw(c, n1);
+                        }
+                    }
+                }
+                if tail {
+                    c.cycles += 1;
+                }
+                c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[T3][0] as i64)) as u64;
+                c.g[A2][0] = sx(e.wrapping_add(E_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0037_4bc0);
+                }
+            }
+        }
+        c.cycles += 4;
+        c.g[A1][0] = c.g[T7][0];
+        c.g[V0][0] = ((c.g[A1][0] as i64) < 3) as u64;
+        c.g[A0][0] = sx((c.g[A1][0] as u32) << 2);
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0037_4b78);
+        }
+    }
+    c.cycles += 9;
+    frame.restore(c, S0, 0x60);
+    frame.restore(c, S1, 0x50);
+    frame.restore(c, S2, 0x40);
+    frame.restore(c, S3, 0x30);
+    frame.restore(c, S4, 0x20);
+    frame.restore(c, S5, 0x10);
+    frame.restore(c, S6, 0);
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// DynamicEmitter_Render (0x371380)
+
+/// Emitter fields: texture base index, animation frame (float), blend kind,
+/// "visible" and "has particles" flags, and the render state block
+/// (`rs`: 0x14 bytes at 0x1e4, flags A/B at 0x1e8/0x1ec, texture id 0x1f4).
+pub(crate) const EM_TEX_BASE: u32 = 0x4;
+
+pub(crate) const EM_KIND: u32 = 0x8;
+
+pub(crate) const EM_FRAME: u32 = 0x10;
+
+pub(crate) const EM_ACTIVE: u32 = 0x174;
+
+pub(crate) const EM_PARTICLES: u32 = 0x1e0;
+
+pub(crate) const EM_RS: u32 = 0x1e4;
+
+pub(crate) const EM_RS_FLAGS_A: u32 = 0x1e8;
+
+pub(crate) const EM_RS_FLAGS_B: u32 = 0x1ec;
+
+pub(crate) const EM_RS_TEX: u32 = 0x1f4;
+
+/// The particle context (`gp+0x2a90` holds the pointer): texture-id table,
+/// render-state stack top (0x14-byte entries) and the renderer's vtable.
+pub(crate) const PT_CTX: u32 = 0x2a90;
+
+pub(crate) const PT_TEX_IDS: u32 = 0xf50;
+
+pub(crate) const PT_RS_TOP: u32 = 0xe84;
+
+pub(crate) const PT_VTABLE: u32 = 0x10d8;
+
+pub(crate) const PT_VT_DRAW: u32 = 0x298;
+
+pub(crate) const RS_SIZE: u32 = 0x14;
+
+/// `D_0044B420`: blend mode per emitter kind.
+pub(crate) const KIND_BLEND: u32 = 0x0044_b420;
+
+/// Copy one 0x14-byte render state (`ldl/ldr` pairs and a word, through
+/// registers `r1`, `r2` and a2).
+pub(crate) fn copy_render_state_5(c: &mut Cpu, src: u32, dst: u32, r1: usize, r2: usize) {
+    c.g[r1][0] = Addr(src).read_u64_unaligned(c);
+    c.g[r2][0] = Addr(src).off(8).read_u64_unaligned(c);
+    c.g[A2][0] = Addr(src).off(0x10).lw(c);
+    let (a, b) = (c.g[r1][0], c.g[r2][0]);
+    Addr(dst).write_u64_unaligned(c, a);
+    Addr(dst).off(8).write_u64_unaligned(c, b);
+    let w = c.g[A2][0];
+    Addr(dst).off(0x10).sw(c, w);
+}
+
+/// `void DynamicEmitter_Render(Emitter* self, int blend)` (0x371380): if
+/// the emitter is active and has particles and its current animation frame
+/// has a texture, fold the kind's blend mode and `blend` into its render
+/// state, push that state on the particle context's stack, draw through the
+/// renderer's `vt[0x298]` and pop the state again.
+pub fn dynamic_emitter_render(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        c.g[T0][0] = c.g[A0][0];
+        let em = Addr(c.g[T0][0] as u32);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = em.off(EM_ACTIVE).lw(c);
+        c.g[A3][0] = c.g[A1][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = em.off(EM_PARTICLES).lw(c);
+            let gp = c.g[GP][0] as u32;
+            c.g[S0][0] = Addr(gp.wrapping_add(PT_CTX)).lw(c);
+            let ctx = c.g[S0][0] as u32;
+            if c.g[V0][0] != 0 {
+                // The texture of the current animation frame.
+                c.cycles += 10;
+                let anim_frame = em.off(EM_FRAME).read_fpu(c);
+                c.f[0] = anim_frame.0;
+                c.f[1] = anim_frame.to_i32() as u32;
+                c.g[V1][0] = sx(c.f[1]);
+                let base = em.off(EM_TEX_BASE).lw(c) as u32;
+                let idx = base.wrapping_add(c.f[1]);
+                c.g[V0][0] = sx(ctx.wrapping_add(idx << 2));
+                c.g[T1][0] = Addr(ctx.wrapping_add(idx << 2)).off(PT_TEX_IDS).lw(c);
+                c.g[V0][0] = 0x0045_0000;
+                if (c.g[T1][0] as i64) >= 0 {
+                    c.cycles += 53;
+                    // Fold the blend mode bits into the render state.
+                    let kind = em.off(EM_KIND).lw(c) as u32;
+                    c.g[V1][0] = sx((kind << 2).wrapping_add(KIND_BLEND));
+                    let mode = Addr(c.g[V1][0] as u32).lw(c) as u32;
+                    let flags_a = em.off(EM_RS_FLAGS_A).lw(c);
+                    let flags_b = em.off(EM_RS_FLAGS_B).lw(c);
+                    c.g[A0][0] = 0xffff_ffff_ffff_ff83;
+                    c.g[V1][0] = 0xffff_ffff_ffff_fc1f;
+                    c.g[A3][0] = sx((c.g[A3][0] as u32) << 5) & 0x3e0;
+                    c.g[V0][0] = sx(mode << 2) & 0x7c;
+                    c.g[A1][0] = (flags_a & 0xffff_ffff_ffff_ff83) | c.g[V0][0];
+                    c.g[A2][0] = (flags_b & 0xffff_ffff_ffff_fc1f) | c.g[A3][0];
+                    let (fa, fb) = (c.g[A1][0], c.g[A2][0]);
+                    em.off(EM_RS_FLAGS_A).sw(c, fa);
+                    em.off(EM_RS_FLAGS_B).sw(c, fb);
+                    c.g[A1][0] = c.g[T0][0];
+                    let tex = c.g[T1][0];
+                    em.off(EM_RS_TEX).sh(c, tex);
+                    // Push: duplicate the top entry, then overwrite it.
+                    c.g[V0][0] = Addr(ctx).off(PT_RS_TOP).lw(c);
+                    let top = c.g[V0][0] as u32;
+                    copy_render_state_5(c, top, top.wrapping_add(RS_SIZE), V1, A0);
+                    c.g[V1][0] = Addr(ctx).off(PT_RS_TOP).lw(c);
+                    let top = c.g[V1][0] as u32;
+                    c.g[V0][0] = sx(top.wrapping_add(RS_SIZE));
+                    let new_top = c.g[V0][0];
+                    Addr(ctx).off(PT_RS_TOP).sw(c, new_top);
+                    copy_render_state_5(
+                        c,
+                        em.0.wrapping_add(EM_RS),
+                        top.wrapping_add(RS_SIZE),
+                        V0,
+                        A0,
+                    );
+                    // Draw through the renderer.
+                    c.g[V0][0] = Addr(ctx).off(PT_VTABLE).lw(c);
+                    let vt = Addr(c.g[V0][0] as u32);
+                    let delta = vt.off(PT_VT_DRAW).lh(c);
+                    c.g[V1][0] = vt.off(PT_VT_DRAW + 4).lw(c);
+                    c.g[A0][0] = sx(ctx.wrapping_add(delta as u32));
+                    let draw = c.g[V1][0] as u32;
+                    call_ptr(c, draw, 0x0037_1498)?;
+                    // Pop.
+                    c.g[V0][0] = Addr(ctx).off(PT_RS_TOP).lw(c);
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(RS_SIZE));
+                    let popped = c.g[V0][0];
+                    Addr(ctx).off(PT_RS_TOP).sw(c, popped);
+                }
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// BezierPatchCache_TessUVs (0x374298)
+
+/// Patch: tessellation level per LOD (`int n[]` at +0x19c); source patch:
+/// the four corner UVs (`{u, v}` at +0x20, +0x28, +0x30, +0x38).
+pub(crate) const PATCH_TESS_LEVELS: u32 = 0x19c;
+
+pub(crate) const SRC_CORNER_UV: u32 = 0x20;
+
+/// The frame (0x90 bytes) holds the whole loop state, as the original:
+/// corners c0..c3, the per-row steps of the two edges, the current point
+/// (first the raw right-edge delta), the per-column step and the raw row
+/// delta.
+pub(crate) const UV_C0: u32 = 0x00;
+
+pub(crate) const UV_C1: u32 = 0x10;
+
+pub(crate) const UV_C2: u32 = 0x20;
+
+pub(crate) const UV_C3: u32 = 0x30;
+
+pub(crate) const UV_DL: u32 = 0x40;
+
+pub(crate) const UV_DR: u32 = 0x50;
+
+pub(crate) const UV_P: u32 = 0x60;
+
+pub(crate) const UV_D: u32 = 0x70;
+
+pub(crate) const UV_ROW: u32 = 0x80;
+
+/// Copy a `{u, v}` pair through a GPR (`ldl/ldr`, `sdl/sdr`).
+pub(crate) fn copy_uv(c: &mut Cpu, reg: usize, src: u32, dst: u32) {
+    c.g[reg][0] = Addr(src).read_u64_unaligned(c);
+    let v = c.g[reg][0];
+    Addr(dst).write_u64_unaligned(c, v);
+}
+
+/// `void BezierPatchCache_TessUVs(Patch* self, Src* src, UV* out, int lod)`
+/// (0x374298): bilinearly interpolate the four corner UVs over an n x n grid
+/// (n = the LOD's tessellation level), row by row into `out`. A leaf; the
+/// loops keep their state in the stack frame and the original's registers
+/// (v1/v0 row counters, a0 n, a2 output cursor) across their back-edge
+/// event checks.
+pub fn bezier_patch_cache_tess_uvs(c: &mut Cpu) {
+    c.cycles += 50;
+    c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x90));
+    let level = (c.g[A0][0] as u32).wrapping_add(c.g[A3][0] as u32);
+    c.g[A0][0] = sx(level);
+    c.g[AT][0] = 0x3f80_0000;
+    let one = FpuF32::ONE;
+    c.g[A0][0] = Addr(level).off(PATCH_TESS_LEVELS).lw(c);
+    let n = c.g[A0][0] as u32;
+    let src = (c.g[A1][0] as u32).wrapping_add(SRC_CORNER_UV);
+    let s = sp(c);
+    copy_uv(c, V0, src, s + UV_C0);
+    c.g[V0][0] = sx(n.wrapping_sub(1));
+    copy_uv(c, T1, src + 8, s + UV_C1);
+    let n1 = FpuF32::from_i32(c.g[V0][0] as u32 as i32);
+    c.g[V1][0] = 0;
+    copy_uv(c, T1, src + 0x10, s + UV_C2);
+    copy_uv(c, T0, src + 0x18, s + UV_C3);
+    let step = one.div(n1);
+    // Per-row steps of the left (c0 -> c2) and right (c1 -> c3) edges.
+    let c0u = frame_f(c, UV_C0);
+    let c0v = frame_f(c, UV_C0 + 4);
+    let dlu_raw = frame_f(c, UV_C2) - c0u;
+    let dlv_raw = frame_f(c, UV_C2 + 4) - c0v;
+    let c1u = frame_f(c, UV_C1);
+    let c1v = frame_f(c, UV_C1 + 4);
+    let dru_raw = frame_f(c, UV_C3) - c1u;
+    let drv_raw = frame_f(c, UV_C3 + 4) - c1v;
+    let dlu = dlu_raw * step;
+    let dru = dru_raw * step;
+    let dlv = dlv_raw * step;
+    let drv = drv_raw * step;
+    set_frame_f(c, UV_P, dru_raw);
+    set_frame_f(c, UV_DL, dlu);
+    set_frame_f(c, UV_P + 4, drv_raw);
+    set_frame_f(c, UV_DR, dru);
+    set_frame_f(c, UV_DL + 4, dlv);
+    set_frame_f(c, UV_DR + 4, drv);
+    c.f[0] = drv.0;
+    c.f[1] = drv_raw.0;
+    c.f[2] = dlu.0;
+    c.f[3] = dlv.0;
+    c.f[4] = dru.0;
+    c.f[5] = c1u.0;
+    c.f[8] = step.0;
+    if (c.g[A0][0] as i64) > 0 {
+        loop {
+            // Row start: p = c0, d = (c1 - c0) * step.
+            c.cycles += 18;
+            let s = sp(c);
+            copy_uv(c, A1, s + UV_C0, s + UV_P);
+            c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+            let step = FpuF32(c.f[8]);
+            let c0u = frame_f(c, UV_C0);
+            let c0v = frame_f(c, UV_C0 + 4);
+            let ru = frame_f(c, UV_C1) - c0u;
+            let rv = frame_f(c, UV_C1 + 4) - c0v;
+            let du = ru * step;
+            set_frame_f(c, UV_ROW, ru);
+            let dv = rv * step;
+            set_frame_f(c, UV_ROW + 4, rv);
+            set_frame_f(c, UV_D, du);
+            set_frame_f(c, UV_D + 4, dv);
+            c.f[0] = ru.0;
+            c.f[1] = rv.0;
+            c.f[2] = dv.0;
+            c.f[3] = du.0;
+            if (c.g[A0][0] as i64) > 0 {
+                c.cycles += 2;
+                c.g[V1][0] = c.g[A0][0];
+                loop {
+                    // Emit p, then p += d.
+                    c.cycles += 15;
+                    let pu = frame_f(c, UV_P);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+                    let pv = frame_f(c, UV_P + 4);
+                    let du = frame_f(c, UV_D);
+                    let dv = frame_f(c, UV_D + 4);
+                    let nu = pu + du;
+                    let out = c.g[A2][0] as u32;
+                    copy_uv(c, T2, s + UV_P, out);
+                    let nv = pv + dv;
+                    c.g[A2][0] = sx(out.wrapping_add(8));
+                    set_frame_f(c, UV_P, nu);
+                    set_frame_f(c, UV_P + 4, nv);
+                    c.f[0] = du.0;
+                    c.f[1] = nv.0;
+                    c.f[2] = nu.0;
+                    c.f[3] = dv.0;
+                    if c.g[V1][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0037_43b0);
+                    }
+                }
+            }
+            // Next row: c0 += dl, c1 += dr.
+            c.cycles += 19;
+            let c0u = frame_f(c, UV_C0);
+            c.g[V1][0] = c.g[V0][0];
+            let c0v = frame_f(c, UV_C0 + 4);
+            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            let c1u = frame_f(c, UV_C1);
+            let c1v = frame_f(c, UV_C1 + 4);
+            let dlu = frame_f(c, UV_DL);
+            let dlv = frame_f(c, UV_DL + 4);
+            let dru = frame_f(c, UV_DR);
+            let drv = frame_f(c, UV_DR + 4);
+            let c0u = c0u + dlu;
+            let c0v = c0v + dlv;
+            let c1u = c1u + dru;
+            let c1v = c1v + drv;
+            set_frame_f(c, UV_C0, c0u);
+            set_frame_f(c, UV_C0 + 4, c0v);
+            set_frame_f(c, UV_C1, c1u);
+            set_frame_f(c, UV_C1 + 4, c1v);
+            c.f[0] = dlu.0;
+            c.f[1] = drv.0;
+            c.f[2] = c1u.0;
+            c.f[3] = c1v.0;
+            c.f[4] = dlv.0;
+            c.f[5] = dru.0;
+            c.f[6] = c0v.0;
+            c.f[7] = c0u.0;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0037_4360);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[SP][0] = sx(sp(c).wrapping_add(0x90));
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Dma_SendGifNormal (0x371940)
+
+/// DMA channel 2 (GIF) registers and `CHCR.STR`.
+pub(crate) const GIF_CHCR: u32 = 0x1000_a000;
+
+pub(crate) const GIF_MADR: u32 = 0x1000_a010;
+
+pub(crate) const GIF_QWC: u32 = 0x1000_a020;
+
+pub(crate) const DMA_CHCR_STR: u64 = 0x100;
+
+/// The VIF1 FIFO and `GIF_MODE`.
+pub(crate) const VIF1_FIFO: u32 = 0x1000_5000;
+
+pub(crate) const GIF_MODE: u32 = 0x1000_3010;
+
+/// The quadword pushed into the VIF1 FIFO first (a `MSKPATH3` VIF code).
+pub(crate) const GIF_SEND_VIF_PREFIX: u32 = 0x0044_b430;
+
+/// `flags`: wait until the channel is idle before / after the transfer.
+pub(crate) const GIF_WAIT_BEFORE: u64 = 4;
+
+pub(crate) const GIF_WAIT_AFTER: u64 = 2;
+
+/// Spin while the GIF channel is busy (v1 = CHCR, v0 = the busy bit); the
+/// poll goes through `Cpu::lw`, so the DMA model sees the original's cycles.
+pub(crate) fn gif_spin(c: &mut Cpu, head: u32) {
+    c.g[V1][0] = GIF_CHCR as u64;
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = c.lw(GIF_CHCR) & DMA_CHCR_STR;
+        if c.g[V0][0] == 0 {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `void Dma_SendGifNormal(void* madr, int qwc, int flags)` (0x371940):
+/// sends `qwc` quadwords at `madr` to the GIF through DMA channel 2 in
+/// normal mode. `flags & 4`: wait for the channel first; then the VIF1
+/// FIFO gets the `MSKPATH3` quadword at 0x44b430, `GIF_MODE = 4`, MADR (a
+/// scratchpad address above 0x6fffffff becomes `madr & 0x3ff0 | SPR`), QWC,
+/// `CHCR = 0x101` (start, from memory); `flags & 2`: wait for completion.
+pub fn dma_send_gif_normal(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[A3][0] = c.g[A0][0];
+    c.g[T0][0] = c.g[A1][0];
+    c.g[V0][0] = c.g[A2][0] & GIF_WAIT_BEFORE;
+    c.g[A0][0] = 0x0045_0000;
+    if c.g[V0][0] != 0 {
+        c.cycles += 6;
+        c.g[V0][0] = c.lw(GIF_CHCR) & DMA_CHCR_STR;
+        c.g[V1][0] = 0x1000_0000;
+        if c.g[V0][0] != 0 {
+            c.cycles += 1;
+            gif_spin(c, 0x0037_1970);
+        }
+    }
+
+    c.cycles += 14;
+    c.g[V0][0] = GIF_SEND_VIF_PREFIX as u64;
+    c.lq(A1, GIF_SEND_VIF_PREFIX);
+    c.sq(A1, VIF1_FIFO);
+    c.g[A0][0] = GIF_MODE as u64;
+    c.sw(GIF_MODE, 4);
+    c.g[V1][0] = 4;
+    let madr = c.g[A3][0];
+    c.g[V0][0] = madr & 0x3ff0;
+    if 0x6fff_ffffu64 < madr {
+        // Scratchpad source.
+        c.cycles += 7;
+        c.g[V1][0] = GIF_MADR as u64;
+        c.g[A0][0] = 0xffff_ffff_8000_0000;
+        c.g[V0][0] |= c.g[A0][0];
+        c.sw(GIF_MADR, c.g[V0][0]);
+    } else {
+        c.cycles += 4;
+        c.sw(GIF_MADR, madr);
+    }
+    c.g[V0][0] = 0x1000_0000;
+
+    c.cycles += 9;
+    c.g[A0][0] = GIF_CHCR as u64;
+    c.g[V0][0] = GIF_QWC as u64;
+    c.sw(GIF_QWC, c.g[T0][0]);
+    c.g[V1][0] = 0x101;
+    c.sw(GIF_CHCR, 0x101);
+    c.g[V0][0] = c.g[A2][0] & GIF_WAIT_AFTER;
+    if c.g[V0][0] != 0 {
+        c.cycles += 5;
+        c.g[V0][0] = c.lw(GIF_CHCR) & DMA_CHCR_STR;
+        c.g[V1][0] = 0x1000_0000;
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            gif_spin(c, 0x0037_1a30);
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// DeferMan_ResetFrame (0x362cc8)
+
+/// DeferMan (a ~430 KB frame record): the deferred item count.
+pub(crate) const DEFER_COUNT: u32 = 0x0;
+
+/// Copied from +0x57484 to +0x51480 (the frame's starting value).
+pub(crate) const DEFER_RESET_FROM: u32 = 0x5_7484;
+
+pub(crate) const DEFER_RESET_TO: u32 = 0x5_1480;
+
+pub(crate) const DEFER_57494: u32 = 0x5_7494;
+
+/// Two 0x400-byte buffers refilled from the scratchpad.
+pub(crate) const DEFER_BUF_A: u32 = 0x6_74a0;
+
+pub(crate) const DEFER_BUF_B: u32 = 0x6_78a0;
+
+pub(crate) const DEFER_67CA4: u32 = 0x6_7ca4;
+
+/// A 20-byte record reset from the template `D_00501420`.
+pub(crate) const DEFER_RECORD: u32 = 0x6_9ca8;
+
+pub(crate) const DEFER_RECORD_TEMPLATE: u32 = 0x0050_1420;
+
+/// Fields relative to +0x68000 (as the original addresses them).
+pub(crate) const DEFER_HI: u32 = 0x6_8000;
+
+pub(crate) const DEFER_69CC0: u32 = 0x1cc0;
+
+pub(crate) const DEFER_69CC4: u32 = 0x1cc4;
+
+pub(crate) const DEFER_69CC8: u32 = 0x1cc8;
+
+pub(crate) const DEFER_6AED0: u32 = 0x2ed0;
+
+/// `InvalidDCache(from, to)` and `EA_MemSet` (cross-shard, through the table).
+pub(crate) const INVALID_DCACHE: u32 = 0x0042_47d8;
+
+pub(crate) const EA_MEMSET: u32 = 0x003e_6448;
+
+pub(crate) const SPR_STREAM_DOWNLOAD: Callee = Callee {
+    addr: 0x0038_f738,
+    f: ee::s12::SprStream_Download,
+};
+
+/// `gp`-relative: the scratchpad stream's free pointer.
+pub(crate) const GP_SPR_FREE: u32 = 0x2a94;
+
+/// `void DeferMan::ResetFrame(DeferMan* dm)` (0x362cc8): start a new frame
+/// of deferred work: zero the count, restore +0x51480 from +0x57484,
+/// invalidate the data cache over both 0x400-byte buffers, clear 0x400
+/// bytes of free scratchpad and DMA them over both buffers, reset the
+/// 20-byte record from its template and the trailing fields (two -1, two 0).
+pub fn defer_man_reset_frame(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 72;
+        let frame = Frame::open(c, 0x40);
+        set_reg(c, V0, 0x5_0000);
+        frame.save(c, S0, 0x30);
+        set_reg(c, A1, 0x6_0000);
+        frame.save(c, S1, 0x20);
+        set_reg(c, S0, reg(c, A0));
+        frame.save(c, S2, 0x10);
+        let dm = r32(c, S0);
+        let f = |o: u32| Addr(dm.wrapping_add(o));
+        set_reg(c, V0, sx(dm.wrapping_add(0x5_0000)));
+        frame.save_ra(c, 0);
+        f(DEFER_COUNT).sw(c, 0);
+        let buf_a = dm.wrapping_add(DEFER_BUF_A);
+        set_reg(c, S2, sx(buf_a));
+        let start = f(DEFER_RESET_FROM).lw(c);
+        set_reg(c, V1, start);
+        set_reg(c, A1, sx(dm.wrapping_add(DEFER_BUF_A + 0x3ff)));
+        f(DEFER_57494).sw(c, 0);
+        set_reg(c, A0, sx(buf_a));
+        f(DEFER_RESET_TO).sw(c, start);
+        call_ptr(c, INVALID_DCACHE, 0x0036_2d18)?;
+        let buf_b = dm.wrapping_add(DEFER_BUF_B);
+        set_reg(c, S1, sx(buf_b));
+        set_reg(c, A1, sx(dm.wrapping_add(DEFER_BUF_B + 0x3ff)));
+        set_reg(c, A0, sx(buf_b));
+        call_ptr(c, INVALID_DCACHE, 0x0036_2d38)?;
+
+        // Clear 0x400 bytes of scratchpad, DMA them over both buffers.
+        let spr = Addr(r32(c, GP).wrapping_add(GP_SPR_FREE)).lw(c);
+        set_reg(c, A0, spr);
+        set_reg(c, A1, 0);
+        set_reg(c, A2, 0x400);
+        call_ptr(c, EA_MEMSET, 0x0036_2d48)?;
+        set_reg(c, A0, sx(buf_a));
+        set_reg(c, A1, 0x400);
+        set_reg(c, A2, 2);
+        SPR_STREAM_DOWNLOAD.call(c, 0x0036_2d58)?;
+        set_reg(c, A0, sx(buf_b));
+        set_reg(c, A2, 2);
+        set_reg(c, A1, 0x400);
+        SPR_STREAM_DOWNLOAD.call(c, 0x0036_2d68)?;
+
+        // The record from its template, the trailing fields.
+        let record = dm.wrapping_add(DEFER_RECORD);
+        set_reg(c, A0, sx(record));
+        set_reg(c, V0, sx(dm.wrapping_add(0x6_0000)));
+        set_reg(c, V1, DEFER_HI as u64);
+        f(DEFER_67CA4).sw(c, 0);
+        let hi = dm.wrapping_add(DEFER_HI);
+        set_reg(c, S0, sx(hi));
+        set_reg(c, A1, 0x50_0000);
+        let t = DEFER_RECORD_TEMPLATE;
+        set_reg(c, T0, sx(t));
+        c.ldl(V1, t + 7);
+        c.ldr(V1, t);
+        c.ldl(A2, t + 0xf);
+        c.ldr(A2, t + 8);
+        let last = Addr(t + 0x10).lw(c);
+        set_reg(c, A3, last);
+        c.sdl(V1, record.wrapping_add(7));
+        c.sdr(V1, record);
+        c.sdl(A2, record.wrapping_add(0xf));
+        c.sdr(A2, record.wrapping_add(8));
+        Addr(record.wrapping_add(0x10)).sw(c, last);
+        set_reg(c, V0, u64::MAX);
+        let h = |o: u32| Addr(hi.wrapping_add(o));
+        h(DEFER_69CC4).sw(c, u64::MAX);
+        h(DEFER_6AED0).sw(c, 0);
+        h(DEFER_69CC0).sw(c, u64::MAX);
+        h(DEFER_69CC8).sw(c, 0);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13119,6 +13885,222 @@ pub(crate) mod tests {
                     (seed % 8) as u64
                 };
                 c.g[A2][0] = r.next_u32() as u64 | (r.next_u32() as u64) << 32;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// BezierPatchCache_ReleaseUnused: three levels of 0-7 entries with
+    /// flags 0, 4, 8, both, or other non-zero bits, slots -1 or >= 0.
+    #[test]
+    fn bezier_patch_cache_release_unused_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA};
+        check(
+            ee::s12::f_00374b38__generated,
+            bezier_patch_cache_release_unused,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x374b_3800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0037_4b38;
+                let cache = DATA;
+                let owners = DATA + 0x1000;
+                for lv in 0..3u32 {
+                    let n = if seed % 9 == 0 { 0 } else { r.next_u32() % 8 };
+                    let entries = DATA + 0x400 + 0x100 * lv;
+                    let (free, slots) = (DATA + 0x800 + 0x80 * lv, DATA + 0xa00 + 0x80 * lv);
+                    c.bus.write32(cache + 4 * lv, n);
+                    c.bus.write32(cache + 0x18 + 4 * lv, entries);
+                    c.bus.write32(cache + 0x30 + 4 * lv, free);
+                    c.bus.write32(cache + 0x3c + 4 * lv, r.next_u32() % 4);
+                    c.bus.write32(cache + 0x1cc + 4 * lv, slots);
+                    c.bus.write32(cache + 0x1d8 + 4 * lv, r.next_u32() % 4);
+                    for j in 0..n {
+                        let e = entries + 0xc * j;
+                        let flags = match r.next_u32() % 6 {
+                            0 => 0,
+                            1 => 4,
+                            2 => 8,
+                            3 => 12,
+                            4 => r.next_u32() & !0xc,
+                            _ => r.next_u32(),
+                        };
+                        c.bus.write32(e, owners + 0x10 * (r.next_u32() % 16));
+                        c.bus.write32(e + 4, flags);
+                        let slot = if r.next_u32() % 2 == 0 {
+                            u32::MAX
+                        } else {
+                            r.next_u32() % 64
+                        };
+                        c.bus.write32(e + 8, slot);
+                    }
+                }
+                c.g[A0][0] = sx(cache);
+            },
+        );
+    }
+
+    /// DynamicEmitter_Render: inactive, no particles, a frame without a
+    /// texture (negative id), and the full push/draw/pop with a fake draw
+    /// method; the stack top is word-aligned but not always 8-aligned (the
+    /// `ldl`/`ldr` copies).
+    #[test]
+    fn dynamic_emitter_render_matches() {
+        covered(
+            ee::s12::f_00371380__generated,
+            dynamic_emitter_render,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37_1380, 1);
+                c.pc = 0x0037_1380;
+                let em = DATA;
+                let ctx = DATA + 0x4000;
+                let top = DATA + 0x8000 + 4 * (seed % 4);
+                fill(c, &mut r, em, 0x80);
+                fill(c, &mut r, top, 0x10);
+                c.bus.write32(GAME_GP + PT_CTX, ctx);
+                c.bus
+                    .write32(em + EM_ACTIVE, if seed % 9 == 0 { 0 } else { r.next_u32() });
+                c.bus
+                    .write32(em + EM_PARTICLES, if seed % 11 == 0 { 0 } else { 1 });
+                let base = r.next_u32() % 8;
+                c.bus.write32(em + EM_TEX_BASE, base);
+                let fr = (r.next_u32() % 8) as f32 + 0.25 * (r.next_u32() % 4) as f32;
+                c.bus.write32(em + EM_FRAME, fr.to_bits());
+                let kind = r.next_u32() % 8;
+                c.bus.write32(em + EM_KIND, kind);
+                c.bus.write32(KIND_BLEND + 4 * kind, r.next_u32());
+                for i in 0..16 {
+                    let id = if seed % 7 == 0 {
+                        0x8000_0000 | r.next_u32()
+                    } else {
+                        r.next_u32() & 0x7fff_ffff
+                    };
+                    c.bus.write32(ctx + PT_TEX_IDS + 4 * i, id);
+                }
+                c.bus.write32(ctx + PT_RS_TOP, top);
+                let vt = vtable(c, &mut r, &[PT_VT_DRAW]);
+                c.bus.write32(ctx + PT_VTABLE, vt);
+                c.g[A0][0] = em as u64;
+                c.g[A1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// BezierPatchCache_TessUVs: grids of 0..6 points per side (and a
+    /// negative level), corner UVs and the output only word-aligned in some
+    /// seeds (the `ldl`/`sdl` copies).
+    #[test]
+    fn bezier_patch_cache_tess_uvs_matches() {
+        check(
+            ee::s12::f_00374298__generated,
+            bezier_patch_cache_tess_uvs,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37_4298, 0);
+                c.pc = 0x0037_4298;
+                let patch = DATA;
+                let src = DATA + 0x1000 + 4 * (seed % 2);
+                let out = DATA + 0x2000 + 4 * (seed / 2 % 2);
+                let lod = r.next_u32() % 4;
+                let n = match seed % 9 {
+                    0 => r.next_u32() | 0x8000_0000,
+                    _ => r.next_u32() % 7,
+                };
+                c.bus.write32(patch + PATCH_TESS_LEVELS + 4 * lod, n);
+                for i in 0..8 {
+                    c.bus.write32(src + SRC_CORNER_UV + 4 * i, r.f32(4.0));
+                }
+                fill(c, &mut r, out, 0x60);
+                c.g[A0][0] = patch as u64;
+                c.g[A1][0] = src as u64;
+                c.g[A2][0] = out as u64;
+                c.g[A3][0] = lod as u64;
+            },
+        );
+    }
+
+    /// Dma_SendGifNormal: a GIF packet of 0..=16 empty end-of-packet GIF
+    /// tags in main memory (or a scratchpad address above 0x6fffffff), the
+    /// `MSKPATH3` quadword at 0x44b430, and every combination of the wait
+    /// flags (with the channel busy or idle beforehand: a first transfer
+    /// started by the setup).
+    #[test]
+    fn dma_send_gif_normal_matches() {
+        check(
+            ee::s12::f_00371940__generated,
+            dma_send_gif_normal,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0037_1940 ^ (seed as u64) << 13);
+                scramble(c, &mut r);
+                crate::difftest::put_words(c, GIF_SEND_VIF_PREFIX, &[0x0600_0000, 0, 0, 0]);
+                let qwc = r.next_u32() % 17;
+                for i in 0..16 {
+                    crate::difftest::put_vec(c, DATA + 0x10 * i, [0x8000, 0, 0, 0]);
+                    c.bus.spr[0x10 * i as usize..0x10 * i as usize + 4]
+                        .copy_from_slice(&0x8000u32.to_le_bytes());
+                }
+                let madr = if seed % 4 == 0 {
+                    0x7000_0000 | (r.next_u32() % 4) << 4
+                } else {
+                    DATA
+                };
+                c.g[A0][0] = sx(madr);
+                c.g[A1][0] = sx(qwc);
+                c.g[A2][0] = sx(r.next_u32() % 8 | r.next_u32() & 0xff00);
+                if seed % 3 == 0 {
+                    // A transfer in flight: the channel is busy at the start.
+                    c.sw(GIF_MADR, DATA as u64);
+                    c.sw(GIF_QWC, 16);
+                    c.sw(GIF_CHCR, 0x101);
+                }
+                c.pc = 0x0037_1940;
+            },
+        );
+    }
+
+    /// `DeferMan_ResetFrame`: a DeferMan at DATA with random words in the
+    /// fields it touches, a random template record, the scratchpad stream's
+    /// free pointer leaving 0x400..0x4000 free bytes and random scratchpad
+    /// contents. The real InvalidDCache, EA_MemSet and SprStream_Download
+    /// run (DMA from the scratchpad, waiting).
+    #[test]
+    fn defer_man_reset_frame_matches() {
+        const DM: u32 = DATA;
+        crate::difftest::check(
+            ee::s12::f_00362cc8__generated,
+            defer_man_reset_frame,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0036_2cc8 ^ (seed as u64) << 17);
+                crate::difftest::scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0036_2cc8;
+                let free = 0x400 + (r.next_u32() % 0x3c1) * 0x10;
+                c.bus.write32(GAME_GP + GP_SPR_FREE, 0x7000_4000 - free);
+                for i in 0..0x1000 {
+                    c.bus.spr[i * 4..i * 4 + 4].copy_from_slice(&r.next_u32().to_le_bytes());
+                }
+                for o in [
+                    DEFER_COUNT,
+                    DEFER_RESET_FROM,
+                    DEFER_RESET_TO,
+                    DEFER_57494,
+                    DEFER_67CA4,
+                ] {
+                    c.bus.write32(DM + o, r.next_u32());
+                }
+                fill(c, &mut r, DM + DEFER_BUF_A, 0x200);
+                fill(c, &mut r, DM + DEFER_RECORD, 8);
+                fill(c, &mut r, DEFER_RECORD_TEMPLATE, 5);
+                for o in [DEFER_69CC0, DEFER_69CC4, DEFER_69CC8, DEFER_6AED0] {
+                    c.bus.write32(DM + DEFER_HI + o, r.next_u32());
+                }
+                c.g[A0][0] = sx(DM);
             },
         );
     }

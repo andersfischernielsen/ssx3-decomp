@@ -9,6 +9,7 @@ use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
@@ -42,6 +43,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_csi_cubic_spline_evaluate,
         "cCSICubicSpline_Evaluate",
     ),
+    (0x0031_9e48, mem_pool_alloc, "MEM_PoolAlloc"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -527,6 +529,151 @@ pub(crate) fn oc230_spline_exit(c: &mut Cpu, frame: Frame) -> crate::call::Flow 
     Ok(())
 }
 
+pub(crate) mod pool_alloc {
+    use super::ee;
+    use super::Callee;
+
+    /// `gp+0xdd8`: the size-class pools are set up.
+    pub const GP_POOLS_READY: u32 = 0xdd8;
+
+    pub(crate) const fn pool(addr: u32, f: super::GuestFn) -> Callee {
+        Callee { addr, f }
+    }
+
+    /// The 8-byte class (`MEM_Pool8Alloc(pool)`, gp slot, return address).
+    pub const POOL8: (u32, Callee, u32) =
+        (0x2a70, pool(0x0032_02c0, ee::s10::f_003202c0), 0x0031_9e88);
+
+    /// The larger classes in order: (upper size limit, gp slot of the
+    /// pool, `MEM_PoolNAlloc(pool, align)`, return address).
+    pub const CLASSES: [(u64, u32, Callee, u32); 6] = [
+        (
+            0x10,
+            0x2a60,
+            pool(0x0032_02f8, ee::s10::f_003202f8),
+            0x0031_9ea4,
+        ),
+        (
+            0x20,
+            0x2a6c,
+            pool(0x0032_0330, ee::s10::f_00320330),
+            0x0031_9ec0,
+        ),
+        (
+            0x40,
+            0x2a7c,
+            pool(0x0032_0368, ee::s10::f_00320368),
+            0x0031_9edc,
+        ),
+        (
+            0x80,
+            0x2a84,
+            pool(0x0032_03b8, ee::s10::f_003203b8),
+            0x0031_9ef8,
+        ),
+        (
+            0x100,
+            0x2a78,
+            pool(0x0032_0408, ee::s10::f_00320408),
+            0x0031_9f14,
+        ),
+        (
+            0x200,
+            0x2a68,
+            pool(0x0032_0448, ee::s10::f_00320448),
+            0x0031_9f30,
+        ),
+    ];
+
+    /// `MEM_AllocInternal(size, align, 0, 0)`.
+    pub const ALLOC_INTERNAL: Callee = pool(0x0031_9a90, ee::s10::f_00319a90);
+}
+
+/// `void* MEM_PoolAlloc(uint size, uint align)` (0x319e48): allocates a
+/// small block. `size = max(size, align)`; with the pools ready it is
+/// rounded up to 4 and served by the smallest size-class pool (8 ... 512
+/// bytes) that fits; anything larger, or every request before the pools
+/// exist (as size 0x201), goes to `MEM_AllocInternal(size, max(align, 8),
+/// 0, 0)`. Frame 0x10 (ra only).
+pub fn mem_pool_alloc(c: &mut Cpu) {
+    use pool_alloc::*;
+    guest(c, |c| {
+        c.cycles += 7;
+        let align = c.g[A1][0];
+        c.g[A2][0] = align;
+        let frame = Frame::open(c, 0x10);
+        let bigger = align < c.g[A0][0];
+        c.g[V0][0] = bigger as u64;
+        let gp = c.g[GP][0] as u32;
+        let ready = c.lw(gp.wrapping_add(GP_POOLS_READY));
+        c.g[V1][0] = ready;
+        frame.save_ra(c, 0);
+        if !bigger {
+            c.g[A0][0] = align;
+        }
+
+        'internal: {
+            if ready == 0 {
+                c.cycles += 2;
+                c.g[A0][0] = 0x201;
+                c.g[V0][0] = 7;
+                break 'internal;
+            }
+            // Round up to a multiple of 4.
+            c.cycles += 7;
+            let pad = (0u32.wrapping_sub((c.g[A0][0] & 3) as u32) & 3) as u64;
+            c.g[V0][0] = pad;
+            let size = sx((c.g[A0][0] as u32).wrapping_add(pad as u32));
+            c.g[A0][0] = size;
+            c.g[V1][0] = (size < 9) as u64;
+            c.g[V0][0] = (size < 0x11) as u64;
+            if size < 9 {
+                c.cycles += 4;
+                let (slot, alloc, ret) = POOL8;
+                c.g[A0][0] = c.lw(gp.wrapping_add(slot));
+                alloc.call(c, ret)?;
+                frame.restore_ra(c, 0);
+                c.cycles += 2;
+                frame.close(c);
+                return Ok(());
+            }
+            for (i, &(limit, slot, alloc, ret)) in CLASSES.iter().enumerate() {
+                c.cycles += 2;
+                c.g[V0][0] = match CLASSES.get(i + 1) {
+                    Some(&(next, ..)) => (size < next + 1) as u64,
+                    None => 7,
+                };
+                if size < limit + 1 {
+                    c.cycles += 5;
+                    c.g[A0][0] = c.lw(gp.wrapping_add(slot));
+                    c.g[A1][0] = align;
+                    alloc.call(c, ret)?;
+                    frame.restore_ra(c, 0);
+                    c.cycles += 2;
+                    frame.close(c);
+                    return Ok(());
+                }
+            }
+        }
+
+        // MEM_AllocInternal(size, max(align, 8), 0, 0); v0 holds 7.
+        c.cycles += 7;
+        c.g[A1][0] = 8;
+        let wider = c.g[V0][0] < align;
+        c.g[V0][0] = wider as u64;
+        c.g[A3][0] = 0;
+        if wider {
+            c.g[A1][0] = align;
+        }
+        c.g[A2][0] = 0;
+        ALLOC_INTERNAL.call(c, 0x0031_9f58)?;
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -763,6 +910,84 @@ pub(crate) mod tests {
                 };
                 c.f[12] = f(t);
                 c.g[A0][0] = sx(spline);
+            },
+        );
+    }
+    use super::*;
+
+    /// Runs a generated function to completion as a setup step.
+    pub(crate) fn oc238_run(c: &mut Cpu, addr: u32, f: fn(&mut Cpu), args: &[u64]) -> u64 {
+        for (i, a) in args.iter().enumerate() {
+            c.g[[A0, A1, A2, A3][i]][0] = *a;
+        }
+        c.g[RA][0] = crate::difftest::RA as u64;
+        c.pc = addr;
+        f(c);
+        assert_eq!(
+            c.pc,
+            crate::difftest::RA,
+            "setup call {addr:#x} did not return"
+        );
+        c.g[V0][0]
+    }
+
+    /// MEM_PoolAlloc: pools ready (64 free nodes per size class) or not;
+    /// sizes in every class, at the class limits (rounding up by 4 crosses
+    /// them), above 0x200 and huge; alignments 0..128 (bigger than the size
+    /// or not); the main dlmalloc heap behind MEM_AllocInternal.
+    #[test]
+    fn mem_pool_alloc_matches() {
+        check(
+            ee::s10::f_00319e48__generated,
+            mem_pool_alloc,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_9e48, 0);
+                oc238_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::f_0031ff60,
+                    &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                );
+                if seed % 4 != 0 {
+                    c.bus.write32(GAME_GP + 0xdd8, 1);
+                    // (gp slot, free-list head offset in the pool, block stride)
+                    const POOLS: [(u32, u32, u32); 7] = [
+                        (0x2a70, 0x800, 0x40),
+                        (0x2a60, 0x2000, 0x40),
+                        (0x2a6c, 0x6000, 0x40),
+                        (0x2a7c, 0x32000, 0x40),
+                        (0x2a84, 0x25800, 0x80),
+                        (0x2a78, 0x20000, 0x100),
+                        (0x2a68, 0x20000, 0x200),
+                    ];
+                    let mut pool = DATA + 0xc_0000;
+                    let mut base = DATA + 0x8_0000;
+                    for (slot, head, stride) in POOLS {
+                        for n in 0..64u32 {
+                            let node = base + stride * n;
+                            c.bus.write32(node, if n == 63 { 0 } else { node + stride });
+                        }
+                        c.bus.write32(pool + head, base);
+                        c.bus.write32(GAME_GP + slot, pool);
+                        pool += 0x100;
+                        base += 0x8000;
+                    }
+                } else {
+                    c.bus.write32(GAME_GP + 0xdd8, 0);
+                }
+                let limits = [8u32, 0x10, 0x20, 0x40, 0x80, 0x100, 0x200];
+                let size = match seed % 6 {
+                    0 => r.next_u32() % 0x220,
+                    1 => limits[(r.next_u32() % 7) as usize] - (r.next_u32() % 4),
+                    2 => limits[(r.next_u32() % 7) as usize] + 1 + (r.next_u32() % 3),
+                    3 => r.next_u32() % 0x40,
+                    4 => r.next_u32() % 0x2000,
+                    _ => r.next_u32() % 0x210,
+                };
+                c.g[A0][0] = size as u64;
+                c.g[A1][0] = [0u64, 4, 8, 16, 32, 64, 128, 0x100][(r.next_u32() % 8) as usize];
+                c.pc = 0x0031_9e48;
             },
         );
     }

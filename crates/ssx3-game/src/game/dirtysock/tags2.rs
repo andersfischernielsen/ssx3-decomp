@@ -614,6 +614,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0026_8720, net_event_fc_clone, "NetEventFC_Clone"),
     (0x0026_8790, net_event10d_dtor, "NetEvent10D_dtor"),
     (0x0026_68e8, usb_keyboard_update, "cUsbKeyboard_Update"),
+    (0x0026_6ba8, c_usb_keyboard_get_key, "cUsbKeyboard_GetKey"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5724,6 +5725,7 @@ macro_rules! event_clone {
     };
 }
 use crate::abi::ret;
+use crate::game::misc::STATUS_EIE;
 pub(crate) use event_clone;
 
 event_clone!(
@@ -11559,6 +11561,126 @@ pub(crate) fn usb_keyboard_read_port(c: &mut Cpu, frame: Frame, this: u32) -> cr
     Ok(())
 }
 
+pub(crate) mod usb_kb {
+
+    /// Per-keyboard channels (0x8c bytes): queued key count at +0, read
+    /// index at +4, a 64-entry ring of key pairs (two bytes) at +8.
+    pub const CHANNEL_SIZE: u64 = 0x8c;
+
+    pub const COUNT: u32 = 0x0;
+
+    pub const READ: u32 = 0x4;
+
+    pub const RING: u32 = 0x8;
+
+    /// Keyboard: non-zero once opened.
+    pub const ACTIVE: u32 = 0x460;
+
+    /// `int UsbKb_GetMaxKeyboards(void)`.
+    pub const GET_MAX_KEYBOARDS: u32 = 0x003f_6348;
+}
+
+/// `int cUsbKeyboard_GetKey(cUsbKeyboard* kb, int ch, int* key, int* mod)`
+/// (0x266ba8): pop the next queued key pair of keyboard channel `ch`.
+/// `*key` and `*mod` are -1 unless the popped pair's byte is non-zero.
+/// Returns 1 if a pair was popped, 0 if the keyboard is closed, `ch` is out
+/// of range or the queue is empty.
+pub fn c_usb_keyboard_get_key(c: &mut Cpu) {
+    use usb_kb::*;
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = u64::MAX;
+        frame.save(c, S0, 0x50);
+        c.g[S3][0] = c.g[A2][0]; // key
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0]; // kb
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S4][0] = c.g[A3][0]; // mod
+        let (key, modifier, kb) = (Addr(r32(c, S3)), Addr(r32(c, S4)), r32(c, S0));
+        key.sw(c, u64::MAX);
+        modifier.sw(c, u64::MAX);
+        c.g[V0][0] = Addr(kb + ACTIVE).lw(c);
+        let active = c.g[V0][0] != 0;
+        c.g[S1][0] = c.g[A1][0]; // ch
+        let mut popped = false;
+        if active {
+            c.cycles += 5;
+            call_ptr(c, GET_MAX_KEYBOARDS, 0x0026_6bf0)?;
+            let in_range = (c.g[S1][0] as i64) < (c.g[V0][0] as i64);
+            c.g[V0][0] = (in_range) as u64;
+            c.g[V0][0] = CHANNEL_SIZE;
+            if in_range {
+                c.cycles += 9;
+                c.g[V1][0] = sx(kb.wrapping_add(READ));
+                c.mult(0, A1, S1, V0);
+                let off = r32(c, A1);
+                c.g[A3][0] = sx(r32(c, V1).wrapping_add(off));
+                c.g[A0][0] = sx(kb.wrapping_add(off));
+                let read_at = Addr(r32(c, A3));
+                c.g[A2][0] = read_at.lw(c);
+                c.g[V0][0] = Addr(r32(c, A0)).lw(c);
+                let queued = (c.g[A2][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V0][0] = queued as u64;
+                c.g[V1][0] = ((c.g[S2][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                if queued {
+                    // The ring slot `read % 64` (C remainder), two bytes each.
+                    c.cycles += 12;
+                    let read = r32(c, A2);
+                    c.g[V0][0] = if c.g[V1][0] != 0 {
+                        c.g[A2][0]
+                    } else {
+                        sx(read.wrapping_add(0x3f))
+                    };
+                    c.g[A0][0] = sx(kb.wrapping_add(RING));
+                    let rounded = ((r32(c, V0) as i32 >> 6) as u32) << 6;
+                    let slot = read.wrapping_sub(rounded) << 1;
+                    c.g[V0][0] = sx(slot);
+                    c.g[V1][0] = sx(slot.wrapping_add(off));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+                    c.g[V0][0] = Addr(r32(c, A0)).lbu(c);
+                    if c.g[V0][0] != 0 {
+                        let k = c.g[V0][0];
+                        key.sw(c, k);
+                    }
+                    c.cycles += 5;
+                    c.g[V0][0] = sx(kb.wrapping_add(RING + 1).wrapping_add(r32(c, V1)));
+                    c.g[V1][0] = Addr(r32(c, V0)).lbu(c);
+                    c.g[V0][0] = c.g[V1][0];
+                    if c.g[V1][0] != 0 {
+                        c.cycles += 1;
+                        let m = c.g[V0][0];
+                        modifier.sw(c, m);
+                    }
+                    c.cycles += 5;
+                    c.g[V1][0] = read_at.lw(c);
+                    c.g[V0][0] = 1;
+                    c.g[V1][0] = sx(r32(c, V1).wrapping_add(1));
+                    let next = c.g[V1][0];
+                    read_at.sw(c, next);
+                    popped = true;
+                }
+            }
+        }
+        if !popped {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15576,6 +15698,65 @@ pub(crate) mod tests {
                             _ => r.next_u32() % 0x100,
                         };
                         c.bus.write16(d + 0xc + 2 * k, code as u16);
+                    }
+                }
+            },
+        );
+    }
+    use super::*;
+
+    /// `cUsbKeyboard_GetKey`: open and closed keyboards, channels in and
+    /// out of range (negative too) of the real `UsbKb_GetMaxKeyboards`,
+    /// empty and non-empty queues with negative and large read indices,
+    /// zero and non-zero key / modifier bytes.
+    #[test]
+    fn c_usb_keyboard_get_key_matches() {
+        use super::usb_kb::*;
+        crate::difftest::check_lohi(
+            ee::s07::f_00266ba8__generated,
+            c_usb_keyboard_get_key,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0026_6ba8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0026_6ba8;
+                let (kb, key, modifier) = (DATA, DATA + 0x800, DATA + 0x810);
+                let max = 1 + r.next_u32() % 4;
+                c.bus.write32(0x0052_6010, max);
+                c.bus.write32(
+                    kb + ACTIVE,
+                    if seed % 6 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                let ch = match seed % 7 {
+                    0 => max + r.next_u32() % 3,
+                    1 => (r.next_u32() % 3 + 1).wrapping_neg(),
+                    _ => r.next_u32() % max,
+                };
+                c.g[A0][0] = sx(kb);
+                c.g[A1][0] = sx(ch);
+                c.g[A2][0] = sx(key);
+                c.g[A3][0] = sx(modifier);
+                for i in 0..4u32 {
+                    let chan = kb + i * CHANNEL_SIZE as u32;
+                    let read = match r.next_u32() % 4 {
+                        0 => (r.next_u32() % 200).wrapping_neg(),
+                        1 => r.next_u32() % 1000,
+                        _ => r.next_u32() % 64,
+                    };
+                    let count = if r.next_u32() % 4 == 0 {
+                        read
+                    } else {
+                        read.wrapping_add(1 + r.next_u32() % 5)
+                    };
+                    c.bus.write32(chan + COUNT, count);
+                    c.bus.write32(chan + READ, read);
+                    for b in 0..0x80u32 {
+                        let v = if r.next_u32() % 3 == 0 {
+                            0
+                        } else {
+                            r.next_u32() as u8
+                        };
+                        c.bus.write8(chan + RING + b, v);
                     }
                 }
             },

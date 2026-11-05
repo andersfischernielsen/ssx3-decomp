@@ -4,6 +4,7 @@ use ssx3_ee_rt::funcs::GuestFn;
 
 pub mod appman;
 pub mod bigfile;
+pub mod bxrandom;
 pub mod bxstring;
 pub mod bxstring2;
 pub mod bxstringctor;
@@ -18,6 +19,7 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     let mut v = Vec::new();
     v.extend_from_slice(appman::OVERRIDES);
     v.extend_from_slice(bigfile::OVERRIDES);
+    v.extend_from_slice(bxrandom::OVERRIDES);
     v.extend_from_slice(bxstring::OVERRIDES);
     v.extend_from_slice(bxstring2::OVERRIDES);
     v.extend_from_slice(bxstringctor::OVERRIDES);

@@ -28,6 +28,7 @@ pub(crate) use crate::game::fe::fepopup::sq;
 pub(crate) use crate::game::fe::fepopup::sw_4 as sw_3;
 pub(crate) use crate::game::fe::fepopup3::p_2;
 pub(crate) use crate::game::fe::fepopup3::sw;
+use crate::game::misc::STATUS_EIE;
 pub(crate) use crate::game::render::particle::add32;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::render::particle::fconst;
@@ -90,6 +91,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x001f_31e0, load_indicator_draw, "LoadIndicator_Draw"),
     (0x001f_1840, hud_draw_time, "HUD_DrawTime"),
     (0x001f_1b30, hud_draw_text_elem, "HUD_DrawTextElem"),
+    (0x001f_16c0, hud_draw_time_elem, "HUD_DrawTimeElem"),
+    (0x0021_ea00, hud_draw_panel_segment, "HUD_DrawPanelSegment"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15176,6 +15179,420 @@ pub fn hud_draw_time(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod hud_time_elem {
+    use super::ee;
+    use super::Callee;
+
+    /// `HudElemDef` (0x24 bytes): pos (2 x s16), size, scale (2 x f32) at
+    /// +0x8, colour at +0x10, horizontal / vertical alignment (s8) at
+    /// +0x20 / +0x21.
+    pub const DEF_SIZE: u64 = 0x24;
+
+    pub const DEF_ALIGN_H: u32 = 0x20;
+
+    pub const DEF_ALIGN_V: u32 = 0x21;
+
+    pub const GET_ELEM_POS: Callee = Callee {
+        addr: 0x001e_91f8,
+        f: ee::s04::f_001e91f8,
+    };
+
+    pub const GET_ELEM_SCALE: Callee = Callee {
+        addr: 0x001e_9290,
+        f: ee::s04::f_001e9290,
+    };
+
+    pub const GET_ELEM_COLOR: Callee = Callee {
+        addr: 0x001e_91a8,
+        f: ee::s04::f_001e91a8,
+    };
+
+    pub const DRAW_TIME: Callee = Callee {
+        addr: 0x001f_1840,
+        f: ee::s04::f_001f1840,
+    };
+}
+
+pub(crate) mod hud_seg {
+
+    /// The renderer (`*(gp - 0x854)`): interface vtable at +0x10d8, slot
+    /// 0x238 = `DrawStrip(verts, count, flags)`.
+    pub const RENDERER_GP: u32 = 0x854;
+
+    pub const RENDERER_VT: u32 = 0x10d8;
+
+    pub const VT_DRAW_STRIP: u32 = 0x238;
+
+    /// Strip vertex (0x30 bytes, on the stack): u, v, q at +0, colour words
+    /// at +0x10..+0x1c, position vector at +0x20.
+    pub const VERTEX_SIZE: u32 = 0x30;
+
+    pub const V_Q: u32 = 0x8;
+
+    pub const V_COLOUR: u32 = 0x10;
+
+    /// Taller panels get 36-pixel end caps (8 vertices instead of 4).
+    pub const CAP_MIN_HEIGHT: u32 = 0x4290_0000;
+}
+
+/// `void HUD_DrawTimeElem(HUD* hud, int a, int b, int c, int frac (t0),
+/// int flags (t1), HudElemDef* defs (t2), int idx (t3), int screen,
+/// float* scaleMul, float* posOff, sColor* color)` (0x1f16c0): draws a race
+/// time at HUD element `defs[idx]`: the element's position (shifted by
+/// `posOff`), its scale (times `scaleMul`), the caller's colour or the
+/// element's, and the element's alignment, all handed to `HUD_DrawTime`.
+/// Frame 0x100 (s0-s7, fp; pos at +0x20, scale at +0x30, colour at +0x40).
+pub fn hud_draw_time_elem(c: &mut Cpu) {
+    use hud_time_elem::*;
+    guest(c, |c| {
+        c.cycles += 33;
+        let frame = Frame::open(c, 0x100);
+        c.g[V0][0] = DEF_SIZE;
+        frame.save(c, S4, 0xb0);
+        c.g[S4][0] = c.g[T3][0];
+        frame.save(c, S3, 0xc0);
+        c.mult(0, V1, S4, V0);
+        c.g[S3][0] = c.g[T2][0];
+        frame.save(c, S1, 0xe0);
+        frame.save(c, S6, 0x90);
+        let s = sp(c);
+        c.sw(s.wrapping_add(0x50), c.g[A0][0]);
+        c.g[S6][0] = c.g[A1][0];
+        // The element: defs + idx * 0x24.
+        let def = sx((c.g[V1][0] as u32).wrapping_add(c.g[S3][0] as u32));
+        c.g[S1][0] = def;
+        frame.save(c, S0, 0xf0);
+        frame.save(c, S2, 0xd0);
+        c.g[A1][0] = sx(s.wrapping_add(0x20));
+        frame.save(c, S5, 0xa0);
+        c.g[A0][0] = def;
+        frame.save(c, S7, 0x80);
+        frame.save(c, FP, 0x70);
+        c.g[S7][0] = c.g[A2][0];
+        c.sw(s.wrapping_add(0x54), c.g[T0][0]);
+        c.sw(s.wrapping_add(0x58), c.g[T1][0]);
+        let scale_mul = c.lw(s.wrapping_add(0x108));
+        c.g[S0][0] = scale_mul;
+        let pos_off = c.lw(s.wrapping_add(0x110));
+        c.g[S2][0] = pos_off;
+        let color = c.lw(s.wrapping_add(0x118));
+        c.g[S5][0] = color;
+        frame.save_ra(c, 0x60);
+        c.g[FP][0] = c.g[A3][0];
+        GET_ELEM_POS.call(c, 0x001f_1730)?;
+        c.g[A1][0] = sx(sp(c).wrapping_add(0x30));
+        c.g[A0][0] = def;
+        GET_ELEM_SCALE.call(c, 0x001f_173c)?;
+
+        // scale *= scaleMul.
+        let s = sp(c);
+        c.lwc1(1, s.wrapping_add(0x30));
+        if scale_mul != 0 {
+            c.cycles += 7;
+            let m = scale_mul as u32;
+            c.lwc1(3, m.wrapping_add(0x4));
+            c.lwc1(2, m);
+            c.lwc1(0, s.wrapping_add(0x34));
+            c.mul_s(1, 1, 2);
+            c.mul_s(0, 0, 3);
+            c.swc1(1, s.wrapping_add(0x30));
+            c.swc1(0, s.wrapping_add(0x34));
+        }
+
+        // pos += posOff.
+        c.cycles += 2;
+        c.lwc1(1, s.wrapping_add(0x20));
+        if pos_off != 0 {
+            c.cycles += 7;
+            let o = pos_off as u32;
+            c.lwc1(3, o.wrapping_add(0x4));
+            c.lwc1(2, o);
+            c.lwc1(0, s.wrapping_add(0x24));
+            c.add_s(1, 1, 2);
+            c.add_s(0, 0, 3);
+            c.swc1(1, s.wrapping_add(0x20));
+            c.swc1(0, s.wrapping_add(0x24));
+        }
+
+        // The colour at sp+0x40: the element's or the caller's.
+        c.cycles += 2;
+        let col = sx(s.wrapping_add(0x40));
+        c.g[S0][0] = col;
+        if color == 0 {
+            c.cycles += 5;
+            c.g[A0][0] = def;
+            c.g[A1][0] = col;
+            GET_ELEM_COLOR.call(c, 0x001f_1798)?;
+        } else {
+            c.cycles += 9;
+            crate::game::fe::ovstatehud::copy16_unaligned(
+                c,
+                A0,
+                A1,
+                color as u32,
+                s.wrapping_add(0x40),
+            );
+        }
+        c.g[V1][0] = DEF_SIZE;
+
+        // HUD_DrawTime(hud, a, b, c, frac, flags, pos, scale, &col,
+        // def.alignH, def.alignV, screen).
+        c.cycles += 30;
+        let s = sp(c);
+        c.sw(s, col);
+        c.mult(0, V0, S4, V1);
+        c.g[A0][0] = c.lw(s.wrapping_add(0x50));
+        c.g[T0][0] = c.lw(s.wrapping_add(0x54));
+        c.g[A1][0] = c.g[S6][0];
+        c.g[T1][0] = c.lw(s.wrapping_add(0x58));
+        c.g[A2][0] = c.g[S7][0];
+        c.g[A3][0] = c.g[FP][0];
+        c.g[T3][0] = sx(s.wrapping_add(0x30));
+        let d = (c.g[V0][0] as u32).wrapping_add(c.g[S3][0] as u32);
+        c.g[V1][0] = sx(d);
+        c.g[T2][0] = sx(s.wrapping_add(0x20));
+        let align_h = c.lb(d.wrapping_add(DEF_ALIGN_H));
+        c.sw(s.wrapping_add(0x8), align_h);
+        let screen = c.lw(s.wrapping_add(0x100));
+        c.g[V0][0] = screen;
+        let align_v = c.lb(d.wrapping_add(DEF_ALIGN_V));
+        c.g[T4][0] = align_v;
+        c.sw(s.wrapping_add(0x18), screen);
+        c.sw(s.wrapping_add(0x10), align_v);
+        DRAW_TIME.call(c, 0x001f_180c)?;
+
+        frame.restore(c, S0, 0xf0);
+        frame.restore(c, S1, 0xe0);
+        frame.restore(c, S2, 0xd0);
+        frame.restore(c, S3, 0xc0);
+        frame.restore(c, S4, 0xb0);
+        frame.restore(c, S5, 0xa0);
+        frame.restore(c, S6, 0x90);
+        frame.restore(c, S7, 0x80);
+        frame.restore(c, FP, 0x70);
+        frame.restore_ra(c, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void HUD_DrawPanelSegment(void*, const float colour[4], const float
+/// pos[2], float w, float h, float u0, float v0, float u1, float v1)`
+/// (0x21ea00): draw a textured HUD panel piece as one vertex strip through
+/// the renderer: 4 vertices, or 8 when `h > 72` (36-pixel caps at the top
+/// and bottom, the middle rows at the texture's middle v). Colour channels
+/// are scaled by 128 to integers; q is 1. The vertices are built on the
+/// stack as the original does (vector temporaries at sp+0x180 / sp+0xc0).
+pub fn hud_draw_panel_segment(c: &mut Cpu) {
+    use crate::call::VSlot;
+    use hud_seg::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        c.g[AT][0] = CAP_MIN_HEIGHT as u64;
+        c.mtc1(AT, 0);
+        let frame = Frame::open(c, 0x1a0);
+        frame.save_ra(c, 0x190);
+        c.c_lt_s(0, 13);
+        let capped = c.fcc();
+        c.g[T1][0] = c.g[A2][0]; // pos
+        let (count, ctor_head, vert_head) = if capped {
+            c.cycles += 4;
+            c.add_s(7, 15, 17); // v0 + v1 (halved below: the middle v)
+            c.g[V0][0] = 7;
+            (8u32, 0x0021_ea30, 0x0021_eaa0)
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 3;
+            (4u32, 0x0021_ebf8, 0x0021_ec68)
+        };
+        c.g[V1][0] = u64::MAX;
+        // The vertex array's (empty) constructor loop.
+        loop {
+            c.cycles += 7;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            c.g[A0][0] = 0;
+            if c.g[V0][0] == c.g[V1][0] {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, ctor_head);
+            }
+        }
+        // Colour channels * 128 as integers: t0, a3, a1, a2 = r, g, b, a.
+        c.cycles += 21;
+        let colour = r32(c, A1);
+        c.g[AT][0] = 0x4300_0000; // 128.0
+        c.mtc1(AT, 1);
+        c.lwc1(0, colour + 0x8);
+        c.g[V1][0] = c.g[SP][0];
+        c.lwc1(4, colour + 0xc);
+        c.lwc1(2, colour);
+        c.mul_s(0, 0, 1);
+        c.lwc1(3, colour + 0x4);
+        c.mul_s(4, 4, 1);
+        c.mul_s(2, 2, 1);
+        c.g[AT][0] = 0x3f80_0000; // 1.0
+        c.mtc1(AT, 5);
+        c.mul_s(3, 3, 1);
+        c.cvt_w_s(1, 0);
+        c.mfc1(A1, 1);
+        c.cvt_w_s(1, 2);
+        c.mfc1(T0, 1);
+        c.cvt_w_s(1, 3);
+        c.mfc1(A3, 1);
+        c.cvt_w_s(0, 4);
+        c.mfc1(A2, 0);
+        // Colour, q = 1 and u (u0 for even vertices, u1 for odd ones).
+        loop {
+            c.cycles += 7;
+            let v = r32(c, V1);
+            c.sw(v + V_COLOUR + 0xc, c.g[T0][0]);
+            c.g[V0][0] = c.g[A0][0] & 1;
+            c.sw(v + V_COLOUR, c.g[A3][0]);
+            c.sw(v + V_COLOUR + 0x4, c.g[A1][0]);
+            c.sw(v + V_COLOUR + 0x8, c.g[A2][0]);
+            c.swc1(5, v + V_Q);
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.swc1(16, v);
+            } else {
+                c.cycles += 1;
+                c.swc1(14, v);
+            }
+            c.cycles += 4;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+            c.g[V0][0] = ((c.g[A0][0] as i64) < count as i64) as u64;
+            c.g[V1][0] = sx(v.wrapping_add(VERTEX_SIZE));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, vert_head);
+            }
+        }
+        // v coordinates and positions (x, y, 0, 1) built through a vector
+        // temporary; a1 = count, a2 = the vertices, a3 = 0.
+        let s = sp(c);
+        let pos = r32(c, T1);
+        if capped {
+            c.cycles += 69;
+            c.lwc1(0, pos + 0x4);
+            c.g[A1][0] = 0x8;
+            c.lwc1(3, pos);
+            c.g[A2][0] = c.g[SP][0];
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 1);
+            c.add_s(6, 0, 13);
+            c.swc1(3, s + 0x180);
+            c.add_s(5, 3, 12);
+            c.sw(s + 0x188, 0u64);
+            c.g[A3][0] = 0u64;
+            c.swc1(0, s + 0x184);
+            c.swc1(1, s + 0x18c);
+            c.g[AT][0] = 0x42100000;
+            c.mtc1(1, 2);
+            c.lq(8, s + 0x180);
+            c.swc1(5, s + 0x180);
+            c.add_s(4, 0, 2);
+            c.sw(s + 0x188, 0u64);
+            c.sub_s(2, 6, 2);
+            c.g[AT][0] = 0x3f000000;
+            c.mtc1(1, 0);
+            c.lq(4, s + 0x180);
+            c.swc1(3, s + 0x180);
+            c.mul_s(0, 7, 0);
+            c.sw(s + 0x188, 0u64);
+            c.swc1(4, s + 0x184);
+            c.sq(8, s + 0x20);
+            c.lq(2, s + 0x180);
+            c.swc1(5, s + 0x180);
+            c.sw(s + 0x188, 0u64);
+            c.sq(4, s + 0x50);
+            c.lq(3, s + 0x180);
+            c.sq(2, s + 0x80);
+            c.swc1(15, s + 0x34);
+            c.swc1(0, s + 0xf4);
+            c.swc1(17, s + 0x154);
+            c.swc1(15, s + 0x4);
+            c.swc1(0, s + 0x64);
+            c.swc1(0, s + 0x94);
+            c.swc1(0, s + 0xc4);
+            c.swc1(17, s + 0x124);
+            c.sq(3, s + 0xb0);
+            c.sw(s + 0x188, 0u64);
+            c.swc1(3, s + 0x180);
+            c.swc1(2, s + 0x184);
+            c.g[T0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+            c.lq(2, s + 0x180);
+            c.swc1(5, s + 0x180);
+            c.sw(s + 0x188, 0u64);
+            c.sq(2, s + 0xe0);
+            c.lq(3, s + 0x180);
+            c.swc1(3, s + 0x180);
+            c.sw(s + 0x188, 0u64);
+            c.swc1(6, s + 0x184);
+            c.sq(3, s + 0x110);
+            c.lq(4, s + 0x180);
+            c.swc1(5, s + 0x180);
+            c.sw(s + 0x188, 0u64);
+            c.sq(4, s + 0x140);
+            c.lq(2, s + 0x180);
+            c.sq(2, s + 0x170);
+            let vt = Addr(r32(c, T0).wrapping_add(RENDERER_VT)).lw(c);
+            c.g[V1][0] = vt;
+            let slot = VSlot::read(c, vt, VT_DRAW_STRIP);
+            c.g[V0][0] = slot.func;
+            c.g[A0][0] = slot.this(c.g[T0][0]);
+            call_ptr(c, slot.func as u32, 0x0021_ebe4)?;
+        } else {
+            c.cycles += 39;
+            c.lwc1(0, pos + 0x4);
+            c.g[A1][0] = 0x4;
+            c.lwc1(1, pos);
+            c.g[A2][0] = c.g[SP][0];
+            c.g[AT][0] = 0x3f800000;
+            c.mtc1(1, 2);
+            c.add_s(4, 0, 13);
+            c.swc1(1, s + 0xc0);
+            c.add_s(3, 1, 12);
+            c.sw(s + 0xc8, 0u64);
+            c.g[A3][0] = 0u64;
+            c.swc1(0, s + 0xc4);
+            c.swc1(2, s + 0xcc);
+            c.swc1(15, s + 0x34);
+            c.lq(2, s + 0xc0);
+            c.swc1(3, s + 0xc0);
+            c.sw(s + 0xc8, 0u64);
+            c.sq(2, s + 0x20);
+            c.lq(4, s + 0xc0);
+            c.swc1(1, s + 0xc0);
+            c.sw(s + 0xc8, 0u64);
+            c.swc1(4, s + 0xc4);
+            c.swc1(17, s + 0x94);
+            c.lq(3, s + 0xc0);
+            c.swc1(3, s + 0xc0);
+            c.sw(s + 0xc8, 0u64);
+            c.sq(4, s + 0x50);
+            c.lq(2, s + 0xc0);
+            c.sq(3, s + 0x80);
+            c.sq(2, s + 0xb0);
+            c.swc1(15, s + 0x4);
+            c.swc1(17, s + 0x64);
+            c.g[T0][0] = c.lw((c.g[GP][0] as u32).wrapping_sub(0x854));
+            let vt = Addr(r32(c, T0).wrapping_add(RENDERER_VT)).lw(c);
+            c.g[V0][0] = vt;
+            let slot = VSlot::read(c, vt, VT_DRAW_STRIP);
+            c.g[V1][0] = slot.func;
+            c.g[A0][0] = slot.this(c.g[T0][0]);
+            call_ptr(c, slot.func as u32, 0x0021_ed38)?;
+        }
+        frame.restore_ra(c, 0x190);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -16275,6 +16692,190 @@ pub(crate) mod tests {
                 c.g[T1][0] = (r.next_u32() % 8) as u64;
                 c.g[T2][0] = ARGS as u64;
                 c.g[T3][0] = (ARGS + 0x10) as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::oc238_uf;
+
+    pub(crate) fn oc238_cstr(c: &mut Cpu, at: u32, s: &[u8]) {
+        for (i, b) in s.iter().enumerate() {
+            c.bus.write8(at + i as u32, *b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    /// HUD_DrawTimeElem: element definitions with random positions, scales,
+    /// colours and alignments; with and without scale multiplier, position
+    /// offset and caller colour; the real HUD_DrawTime behind it (the HUD
+    /// fixture of its own test: font renderer whose DrawText is a fake that
+    /// may unwind).
+    #[test]
+    fn hud_draw_time_elem_matches() {
+        use crate::game::fe::ovstatehud::hud_time::*;
+        const HUD: u32 = DATA + 0x1_0000;
+        const FONT_AT: u32 = DATA + 0x1_1000;
+        const VT: u32 = DATA + 0x1_2000;
+        const ARGS: u32 = DATA + 0x1_3000;
+        const DEFS: u32 = DATA + 0x1_4000;
+        covered(
+            ee::s04::f_001f16c0__generated,
+            hud_draw_time_elem,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1f_16c0, 6);
+                c.pc = 0x001f_16c0;
+                for off in (0..0x100).step_by(8) {
+                    c.bus.write16(VT + off, ((r.next_u32() % 16) * 4) as u16);
+                    c.bus.write32(VT + off + 4, FAKE + 2 * off);
+                }
+                let rend = DATA + 0x1_8000;
+                c.bus.write32(GAME_GP + 0x2a90, rend);
+                c.bus
+                    .write32(rend + 0x10d8, VT - 0x280 + 8 * (r.next_u32() % 8));
+                let state = DATA + 0x1_c000 + 4 * (r.next_u32() % 16);
+                c.bus.write32(rend + 0xe84, state);
+                fill(c, &mut r, state & !0xf, 0x20);
+                // The font.
+                fill(c, &mut r, FONT_AT, 0x20);
+                for i in 0..8 {
+                    c.bus.write32(
+                        FONT_AT + 0x18 + 4 * i,
+                        oc238_uf(&mut r, 0.5, 30.0).to_bits(),
+                    );
+                }
+                for i in 0..2 {
+                    let v = if r.next_u32() % 2 == 0 { 0 } else { r.f32(3.0) };
+                    c.bus.write32(FONT_AT + 0x28 + 4 * i, v);
+                }
+                c.bus.write32(FONT_AT + FONT_LINES, 1 + r.next_u32() % 3);
+                let codes = DATA + 0x3000;
+                let n = 1 + r.next_u32() % 40;
+                let mut code = 0;
+                for i in 0..n {
+                    code += 1 + r.next_u32() % 6;
+                    c.bus.write16(codes + 2 * i, code as u16);
+                }
+                fill(c, &mut r, DATA + 0x4000, 0x400);
+                c.bus.write32(FONT_AT, n);
+                c.bus.write32(FONT_AT + 4, codes);
+                c.bus
+                    .write32(FONT_AT + 8, DATA + 0x4000 + 12 * (r.next_u32() % 8));
+                c.bus.write32(FONT_AT + 0xc, r.next_u32() % 64);
+                c.bus.write32(FONT_AT + 0x10, 64 + r.next_u32() % 128);
+                // The HUD.
+                fill(c, &mut r, HUD + 0x160, 0x8);
+                for off in [SEP_W, DIGIT_W, SIGN_ADVANCE, ONE_W] {
+                    c.bus
+                        .write32(HUD + off, oc238_uf(&mut r, 1.0, 24.0).to_bits());
+                }
+                c.bus.write32(HUD + FONT, FONT_AT);
+                c.bus.write32(HUD + SEPARATOR, ARGS + 0x100);
+                oc238_cstr(c, ARGS + 0x100, b":");
+                oc238_cstr(c, STR_PLUS, b"+");
+                oc238_cstr(c, STR_MINUS, b"-");
+                oc238_cstr(c, FMT_TWO_DIGITS, b"%02d");
+                oc238_cstr(c, FMT_FRACTION, b".%02d");
+                // Element definitions: pos (s16), scale, colour, alignment.
+                for i in 0..4 {
+                    let d = DEFS + 0x24 * i;
+                    fill(c, &mut r, d, 9);
+                    c.bus.write16(d, (r.next_u32() % 600) as u16);
+                    c.bus.write16(d + 2, (r.next_u32() % 400) as u16);
+                    c.bus.write32(d + 8, oc238_uf(&mut r, 0.25, 2.0).to_bits());
+                    c.bus
+                        .write32(d + 0xc, oc238_uf(&mut r, 0.25, 2.0).to_bits());
+                    c.bus.write8(d + 0x20, (r.next_u32() % 4) as u8);
+                    c.bus.write8(d + 0x21, (r.next_u32() % 4) as u8);
+                }
+                // Optional scale multiplier, position offset, colour.
+                let opt = |c: &mut Cpu, r: &mut Rng, on: bool, at: u32| -> u32 {
+                    if on {
+                        for k in 0..4 {
+                            c.bus.write32(at + 4 * k, oc238_uf(r, 0.5, 2.0).to_bits());
+                        }
+                        at
+                    } else {
+                        0
+                    }
+                };
+                let scale_mul = opt(c, &mut r, seed % 2 == 0, ARGS + 0x40);
+                let pos_off = opt(c, &mut r, seed % 3 == 0, ARGS + 0x50);
+                let colour = if seed % 4 < 2 {
+                    let at = ARGS + 0x60 + r.next_u32() % 8;
+                    for k in 0..16 {
+                        c.bus.write8(at + k, r.next_u32() as u8);
+                    }
+                    at
+                } else {
+                    0
+                };
+                let sp0 = crate::difftest::SP;
+                c.bus.write32(sp0, r.next_u32() % 4);
+                c.bus.write32(sp0 + 0x8, scale_mul);
+                c.bus.write32(sp0 + 0x10, pos_off);
+                c.bus.write32(sp0 + 0x18, colour);
+                let group = |r: &mut Rng| -> u64 {
+                    let v = match r.next_u32() % 5 {
+                        0 => 11,
+                        1 => 10 + r.next_u32() % 10,
+                        2 => 1 + 10 * (r.next_u32() % 10),
+                        3 => r.next_u32() % 100,
+                        _ => r.next_u32() % 10,
+                    };
+                    v as u64
+                };
+                c.g[A0][0] = HUD as u64;
+                c.g[A1][0] = group(&mut r);
+                c.g[A2][0] = group(&mut r);
+                c.g[A3][0] = group(&mut r);
+                c.g[T0][0] = group(&mut r);
+                c.g[T1][0] = (r.next_u32() % 8) as u64;
+                c.g[T2][0] = DEFS as u64;
+                c.g[T3][0] = (r.next_u32() % 4) as u64;
+            },
+        );
+    }
+
+    /// `HUD_DrawPanelSegment`: heights below and above 72 (4 or 8
+    /// vertices), random colours, position and texture coordinates; the
+    /// renderer's strip slot is a fake (some calls unwind).
+    #[test]
+    fn hud_draw_panel_segment_matches() {
+        use super::hud_seg::*;
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::difftest::GAME_GP;
+        covered(
+            ee::s05::f_0021ea00__generated,
+            hud_draw_panel_segment,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0021_ea00, 1);
+                c.pc = 0x0021_ea00;
+                let (colour, pos, renderer, vt) = (DATA, DATA + 0x20, DATA + 0x1000, DATA + 0x3000);
+                c.bus.write32(GAME_GP - RENDERER_GP, renderer);
+                c.bus.write32(renderer + RENDERER_VT, vt);
+                let delta = (r.next_u32() as i16 as i32 % 64) & !3;
+                c.bus.write16(vt + VT_DRAW_STRIP, delta as u16);
+                c.bus.write32(vt + VT_DRAW_STRIP + 4, FAKE);
+                for i in 0..4 {
+                    let ch = (r.next_u32() % 1000) as f32 / 500.0;
+                    c.bus.write32(colour + 4 * i, ch.to_bits());
+                }
+                c.bus.write32(pos, r.f32(640.0));
+                c.bus.write32(pos + 4, r.f32(480.0));
+                c.g[A1][0] = sx(colour);
+                c.g[A2][0] = sx(pos);
+                c.f[12] = ((r.next_u32() % 400) as f32 / 2.0).to_bits();
+                c.f[13] = match seed % 4 {
+                    0 => 72.0f32.to_bits(),
+                    1 => ((r.next_u32() % 72) as f32).to_bits(),
+                    _ => (72.5 + (r.next_u32() % 300) as f32).to_bits(),
+                };
+                for f in 14..18 {
+                    c.f[f] = r.f32(1.0);
+                }
             },
         );
     }

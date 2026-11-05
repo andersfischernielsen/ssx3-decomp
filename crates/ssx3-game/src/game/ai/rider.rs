@@ -18,6 +18,7 @@ use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::control::handplantcontrol::gp_4;
+pub(crate) use crate::game::bx::bxstring2::gp_lit as gp_lit_2;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::at as at_4;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at as lw_at_2;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
@@ -237,6 +238,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         player_get_control_input,
         "Player_GetControlInput",
     ),
+    (0x0012_5b18, player_apply_rumble, "Player_ApplyRumble"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -11726,6 +11728,174 @@ pub fn rider_draw_shadow(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Player_ApplyRumble (0x125b18)
+
+/// Rumble state: `float level[2]` (heavy motor, light motor).
+pub(crate) const RUMBLE_HEAVY: u32 = 0x0;
+
+pub(crate) const RUMBLE_LIGHT: u32 = 0x4;
+
+/// `.lit4` constants (gp-relative): heavy decay factor and offset, light
+/// decay factor, heavy and light scales of the two motor outputs.
+pub(crate) const LIT_HEAVY_DECAY: u32 = 0x7860;
+
+pub(crate) const LIT_HEAVY_DROP: u32 = 0x785c;
+
+pub(crate) const LIT_LIGHT_DECAY: u32 = 0x7858;
+
+pub(crate) const LIT_M0_HEAVY_DIV: u32 = 0x7854;
+
+pub(crate) const LIT_M0_LIGHT_SCALE: u32 = 0x7850;
+
+pub(crate) const LIT_M1_HEAVY_DIV: u32 = 0x784c;
+
+pub(crate) const LIT_M1_LIGHT_SCALE: u32 = 0x7848;
+
+/// Pad vtable slots: `{int16 delta, fn}` pairs.
+pub(crate) const VT_STATUS: u32 = 0x18;
+
+pub(crate) const VT_SET_MOTOR: u32 = 0x20;
+
+/// The pad's "stop motors" helper (0x326cf0).
+pub(crate) const PAD_STOP_MOTORS: u32 = 0x0032_6cf0;
+
+/// Call the pad's `vt[slot]` method on `this = s1 + delta` (registers set
+/// as the original: v0/v1 holds the function, a0 the adjusted `this`).
+pub(crate) fn pad_vt_load(c: &mut Cpu, slot: u32, fn_reg: usize, vt_reg: usize) -> u32 {
+    let pad = c.g[S1][0] as u32;
+    c.g[vt_reg][0] = Addr(pad).lw(c);
+    let vt = c.g[vt_reg][0] as u32;
+    c.g[A0][0] = Addr(vt).off(slot).lh(c);
+    c.g[fn_reg][0] = Addr(vt).off(slot + 4).lw(c);
+    c.g[A0][0] = sx(pad.wrapping_add(c.g[A0][0] as u32));
+    c.g[fn_reg][0] as u32
+}
+
+/// One motor output: `max(max((light - light_off) * light_scale,
+/// (heavy - heavy_off) / heavy_div), 0)` into f12, then `vt[4](pad, f12,
+/// motor)`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn set_motor(
+    c: &mut Cpu,
+    state: Addr,
+    motor: u64,
+    heavy_off: u32,
+    light_off: u32,
+    lit_div: u32,
+    lit_scale: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    c.g[A1][0] = motor;
+    c.g[AT][0] = heavy_off as u64;
+    let heavy = state.off(RUMBLE_HEAVY).read_fpu(c);
+    let div = gp_lit_2(c, lit_div);
+    let heavy_term = (heavy - FpuF32(heavy_off)).div(div);
+    let light = state.off(RUMBLE_LIGHT).read_fpu(c);
+    c.g[AT][0] = light_off as u64;
+    let scale = gp_lit_2(c, lit_scale);
+    let light_term = (light - FpuF32(light_off)) * scale;
+    let target = pad_vt_load(c, VT_SET_MOTOR, V1, V0);
+    let zero = FpuF32(c.f[20]);
+    let level = light_term.max(heavy_term).max(zero);
+    c.f[0] = light_off;
+    c.f[1] = heavy_term.0;
+    c.f[2] = div.0;
+    c.f[3] = scale.0;
+    c.f[12] = level.0;
+    call_ptr(c, target, ret)
+}
+
+/// `void Player_ApplyRumble(float* state, Pad* pad, int on)` (0x125b18):
+/// the per-frame controller rumble. Off: zero both levels and stop the
+/// motors. On: decay the heavy level (`x * k - d`, floored at 0) and the
+/// light level (`x * k`); if the pad reports status 2 (vibration capable),
+/// drive motor 0 and motor 1 from the two levels.
+pub fn player_apply_rumble(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 20, 0x30);
+        let state = Addr(c.g[S0][0] as u32);
+        if c.g[A2][0] == 0 {
+            // Rumble off: clear both levels, stop the motors.
+            c.cycles += 7;
+            c.f[0] = 0;
+            c.g[A0][0] = c.g[S1][0];
+            state.off(RUMBLE_HEAVY).write_fpu(c, FpuF32::ZERO);
+            state.off(RUMBLE_LIGHT).write_fpu(c, FpuF32::ZERO);
+            call_ptr(c, PAD_STOP_MOTORS, 0x0012_5b4c)?;
+        } else {
+            // Decay the heavy level, floored at zero.
+            c.cycles += 10;
+            let heavy = state.off(RUMBLE_HEAVY).read_fpu(c);
+            let k = gp_lit_2(c, LIT_HEAVY_DECAY);
+            let drop = gp_lit_2(c, LIT_HEAVY_DROP);
+            let decayed = heavy * k - drop;
+            let zero = FpuF32::ZERO;
+            c.f[20] = zero.0;
+            let ge = zero.le(decayed);
+            abi::set_fcc(c, ge);
+            let new_heavy = if ge {
+                c.cycles += 1;
+                decayed
+            } else {
+                zero
+            };
+            c.f[0] = decayed.0;
+            c.f[1] = k.0;
+            c.f[2] = new_heavy.0;
+            // Decay the light level.
+            c.cycles += 13;
+            let light = state.off(RUMBLE_LIGHT).read_fpu(c);
+            let k = gp_lit_2(c, LIT_LIGHT_DECAY);
+            state.off(RUMBLE_HEAVY).write_fpu(c, new_heavy);
+            let new_light = light * k;
+            c.f[0] = new_light.0;
+            c.f[1] = k.0;
+            state.off(RUMBLE_LIGHT).write_fpu(c, new_light);
+            let status = pad_vt_load(c, VT_STATUS, V0, V1);
+            call_ptr(c, status, 0x0012_5ba8)?;
+            c.g[V1][0] = 2;
+            if c.g[V0][0] == 2 {
+                c.cycles += 41;
+                set_motor(
+                    c,
+                    state,
+                    0,
+                    0x4000_0000,
+                    0x3f00_0000,
+                    LIT_M0_HEAVY_DIV,
+                    LIT_M0_LIGHT_SCALE,
+                    0x0012_5c04,
+                )?;
+                set_motor(
+                    c,
+                    state,
+                    1,
+                    0x42c8_0000,
+                    0x428c_0000,
+                    LIT_M1_HEAVY_DIV,
+                    LIT_M1_LIGHT_SCALE,
+                    0x0012_5c54,
+                )?;
+            }
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14683,6 +14853,68 @@ pub(crate) mod tests {
                 c.bus.write32(GAME_GP - 0x78c0, 0.3f32.to_bits());
                 c.bus.write32(GAME_GP - 0x78bc, 0.3f32.to_bits());
                 c.g[A0][0] = sx(rider);
+            },
+        );
+    }
+    use super::*;
+
+    /// The `.lit4` constants of Player_ApplyRumble.
+    pub(crate) fn rumble_lits(c: &mut Cpu) {
+        let f = |x: f32| x.to_bits();
+        put_words(
+            c,
+            GAME_GP - LIT_HEAVY_DECAY,
+            &[
+                f(0.913_333_36),
+                f(18.518_518),
+                f(0.991_666_7),
+                f(972.222_2),
+                f(0.01),
+                f(5000.0),
+                f(0.006_25),
+            ],
+        );
+    }
+
+    /// Player_ApplyRumble: off (levels cleared, the real
+    /// `PadDevice_StopActuators` over a pad whose count/motor methods are
+    /// fakes returning a count of 1), and on with the pad status 2 (both
+    /// motors driven) or something else (decay only). Heavy levels on both
+    /// sides of the floor.
+    #[test]
+    fn player_apply_rumble_matches() {
+        covered(
+            ee::s00::f_00125b18__generated,
+            player_apply_rumble,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12_5b18, 3);
+                c.pc = 0x0012_5b18;
+                rumble_lits(c);
+                let state = 0x00a0_0000;
+                let heavy = match seed % 4 {
+                    0 => r.edge_f32(),
+                    1 => r.f32(10.0),
+                    _ => r.f32(3000.0),
+                };
+                c.bus.write32(state + RUMBLE_HEAVY, heavy);
+                c.bus.write32(state + RUMBLE_LIGHT, r.f32(200.0));
+                let pad = ptr(&mut r);
+                let vt = vtable(c, &mut r, &[VT_STATUS, VT_SET_MOTOR]);
+                c.bus.write32(pad, vt);
+                c.g[A0][0] = state as u64;
+                c.g[A1][0] = sx(pad);
+                let on = seed % 5 != 0;
+                if !on {
+                    c.g[A2][0] = 0;
+                    for n in 0..4 {
+                        c.bus.write32(LOG_RESULTS + 4 * n, 1);
+                    }
+                } else {
+                    c.g[A2][0] = if seed % 7 == 0 { 1 << 40 } else { 1 };
+                    let status = if seed % 3 == 0 { 3 } else { 2 };
+                    c.bus.write32(LOG_RESULTS, status);
+                }
             },
         );
     }

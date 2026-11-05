@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -214,6 +215,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_7dd8, multi_particle_ctor, "MultiParticle_ctor"),
     (0x0035_7e80, multi_particle_ctor_2, "MultiParticle_ctor_2"),
     (0x0035_7fa0, multi_particle_dtor, "MultiParticle_dtor"),
+    (0x0035_6b30, mod_obj_save, "ModObj_Save"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3731,6 +3733,91 @@ pub fn multi_particle_ctor_2(c: &mut Cpu) {
     return;
 }
 
+pub(crate) mod mod_obj {
+    use super::*;
+
+    /// The three saved words.
+    pub const WORDS: [u32; 3] = [0x20, 0x24, 0x28];
+
+    /// The modifier block (0: none).
+    pub const BLOCK: u32 = 0x1c;
+
+    /// The stream's `Write(stream, data, size)` slot (`{delta, fn}` at 8).
+    pub const WRITE_SLOT: u32 = 0x8;
+
+    pub const WORLD_OBJ_SAVE: Callee = Callee {
+        addr: 0x0034_fe90,
+        f: ee::s11::WorldObj_Save,
+    };
+
+    pub const MODIFIER_BLOCK_SAVE: Callee = Callee {
+        addr: 0x0035_3448,
+        f: ee::s11::ModifierBlock_Save,
+    };
+}
+
+/// `void ModObj_Save(ModObj* self, Stream* stream)` (0x356b30): save the
+/// world object, then write the words at +0x20, +0x24, +0x28 and a
+/// "has modifier block" flag (4 bytes each) with `stream->Write`, then let
+/// the modifier block (+0x1c) save itself.
+pub fn mod_obj_save(c: &mut Cpu) {
+    use mod_obj::*;
+    guest(c, |c| {
+        c.cycles += 41;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        WORLD_OBJ_SAVE.call(c, 0x0035_6b4c)?;
+        let this = r32(c, S0);
+        let stream = r32(c, S1);
+        // stream->Write(&self->word, 4) for each word.
+        for (word, ret) in WORDS
+            .into_iter()
+            .zip([0x0035_6b68u32, 0x0035_6b84, 0x0035_6ba0])
+        {
+            c.g[V1][0] = c.lw(stream);
+            c.g[A1][0] = sx(this.wrapping_add(word));
+            c.g[A2][0] = 4;
+            let vt = r32(c, V1);
+            c.g[A0][0] = c.lh(vt.wrapping_add(WRITE_SLOT));
+            c.g[V0][0] = c.lw(vt.wrapping_add(WRITE_SLOT + 4));
+            let target = r32(c, V0);
+            c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+            call_ptr(c, target, ret)?;
+        }
+        // The flag, on the frame.
+        c.g[A3][0] = c.lw(stream);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[V0][0] = c.lw(this.wrapping_add(BLOCK));
+        c.g[A2][0] = 4;
+        let vt = r32(c, A3);
+        c.g[A0][0] = c.lh(vt.wrapping_add(WRITE_SLOT));
+        c.g[V0][0] = (0 < c.g[V0][0]) as u64;
+        c.g[V1][0] = c.lw(vt.wrapping_add(WRITE_SLOT + 4));
+        c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+        let target = r32(c, V1);
+        c.sw(sp(c), c.g[V0][0]);
+        call_ptr(c, target, 0x0035_6bc8)?;
+        c.g[A0][0] = c.lw(this.wrapping_add(BLOCK));
+        let has_block = c.g[A0][0] != 0;
+        frame.restore(c, S0, 0x30);
+        if has_block {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[S1][0];
+            MODIFIER_BLOCK_SAVE.call(c, 0x0035_6bdc)?;
+            frame.restore(c, S0, 0x30);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5339,6 +5426,35 @@ pub(crate) mod tests {
                 c.bus.write32(MPART_STREAM, vt6);
                 c.bus.write32(MPART_STREAM + 0x4, (seed % 3) as u32);
                 let _ = &mut r;
+            },
+        );
+    }
+    use super::*;
+
+    // ----------------------------------------------------------- ModObj_Save
+
+    /// `ModObj_Save`: with and without a modifier block (an empty one: only
+    /// its header is written); the stream's write slots are fakes, some of
+    /// which unwind; the real `WorldObj_Save` and `ModifierBlock_Save` run.
+    #[test]
+    fn mod_obj_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::{fill, DATA};
+        covered(
+            ee::s11::f_00356b30__generated,
+            mod_obj_save,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_6b30, 7);
+                c.pc = 0x0035_6b30;
+                let (this, stream, block) = (DATA + 0x100, DATA + 0x400, DATA + 0x800);
+                fill(c, &mut r, this, 0x10);
+                c.bus
+                    .write32(this + 0x1c, if seed % 3 == 0 { 0 } else { block });
+                let vt = vtable(c, &mut r, &[8, 0x30]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
             },
         );
     }

@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -104,6 +105,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_9228, anim_delta_ctor, "AnimDelta_ctor"),
     (0x0035_93d0, anim_delta_v36, "AnimDelta_v36"),
     (0x0035_9410, anim_delta_save, "AnimDelta_Save"),
+    (
+        0x0035_8260,
+        multi_particle_emit_at_instances,
+        "MultiParticle_EmitAtInstances",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1784,6 +1790,140 @@ pub fn rail_man_enable_rail(c: &mut Cpu) {
     return;
 }
 
+// -------------------------------------------- MultiParticle_EmitAtInstances
+
+/// `void MultiParticle_EmitAtInstances(MultiParticle* self)` (0x358260):
+/// for each of the `count` world-instance handles in `refs`, resolve the
+/// handle through the world's handle table (low byte: table index, upper
+/// bits: slot); for a live instance, offset the emit box (+0x20 min, +0x30
+/// max) by the instance position (+0x40) and render the emitter descriptor
+/// (+0x10) there, at instance position + `center` (+0x40).
+pub fn multi_particle_emit_at_instances(c: &mut Cpu) {
+    /// `MultiParticle` fields.
+    const COUNT: u32 = 0x4;
+    const REFS: u32 = 0xc;
+    const DESC: u32 = 0x10;
+    const BOX_MIN: u32 = 0x20;
+    const BOX_MAX: u32 = 0x30;
+    const CENTER: u32 = 0x40;
+    /// Instance position.
+    const INSTANCE_POS: u32 = 0x40;
+    /// `World* World_Get()` (`*(gp+0x16c8)`).
+    const WORLD_GET: u32 = 0x002d_1bd8;
+    /// `Emitter_RenderAt(desc, box, pos)`.
+    const EMITTER_RENDER_AT: u32 = 0x0037_0888;
+    /// The loop head (event checks).
+    const LOOP: u32 = 0x0035_8280;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S1, 0x60);
+        let this = r32(c, A0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x50);
+        c.g[V0][0] = Addr(this).off(COUNT).lw(c);
+        let empty = (c.g[V0][0] as i64) <= 0;
+        c.g[S1][0] = 0;
+        if !empty {
+            loop {
+                c.cycles += 14;
+                call_ptr(c, WORLD_GET, 0x0035_8288)?;
+                let world = r32(c, V0);
+                let i = r32(c, S1);
+                // Resolve the handle.
+                let refs = Addr(this).off(REFS).lw(c);
+                c.g[A0][0] = refs;
+                let tables = Addr(world).lw(c);
+                c.g[A1][0] = tables;
+                let handle = Addr((i << 2).wrapping_add(refs as u32)).lw(c);
+                c.g[V1][0] = handle;
+                let table = Addr(tables as u32).off(8).lw(c);
+                let entry_at = ((handle as u32 & 0xff) << 2).wrapping_add(table as u32);
+                let entry = Addr(entry_at).lw(c);
+                c.g[A0][0] = entry;
+                let slot = handle as u32 >> 8;
+                c.g[V0][0] = sx(slot);
+                let instance = if entry == 0 {
+                    c.cycles += 2;
+                    0
+                } else {
+                    c.cycles += 7;
+                    let slots = Addr(entry as u32).off(0x1c).lw(c);
+                    c.g[A0][0] = slots;
+                    let word = Addr((slot << 2).wrapping_add(slots as u32)).lw(c);
+                    c.g[V1][0] = word;
+                    let index = word as u32 >> 8;
+                    let mut p = sx(index << 2);
+                    if index == 0 {
+                        c.cycles += 1;
+                        p = 0;
+                    }
+                    c.g[V0][0] = p;
+                    c.cycles += 1;
+                    p
+                };
+                c.g[A0][0] = instance;
+
+                c.cycles += 2;
+                c.g[A1][0] = c.g[SP][0];
+                if instance != 0 {
+                    c.cycles += 27;
+                    let inst = instance as u32;
+                    let at = |c: &Cpu, off: u32| sp(c).wrapping_add(off);
+                    // box = self->box + pos (both corners).
+                    c.lq(V0, this.wrapping_add(BOX_MIN));
+                    c.lq(V1, this.wrapping_add(BOX_MAX));
+                    c.g[A2][0] = sx(at(c, 0x20));
+                    c.sq(V0, at(c, 0));
+                    c.sq(V1, at(c, 0x10));
+                    c.lq(V0, inst.wrapping_add(INSTANCE_POS));
+                    c.sq(V0, at(c, 0x20));
+                    c.lqc2(3, at(c, 0));
+                    c.lqc2(4, at(c, 0x20));
+                    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, at(c, 0));
+                    c.lq(V0, inst.wrapping_add(INSTANCE_POS));
+                    c.sq(V0, at(c, 0x20));
+                    c.lqc2(3, at(c, 0x10));
+                    c.lqc2(4, at(c, 0x20));
+                    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, at(c, 0x10));
+                    // at = pos + center.
+                    c.lq(V0, inst.wrapping_add(INSTANCE_POS));
+                    c.sq(V0, at(c, 0x30));
+                    c.lqc2(3, at(c, 0x30));
+                    c.lqc2(4, this.wrapping_add(CENTER));
+                    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+                    c.sqc2(5, at(c, 0x40));
+                    c.lq(V0, at(c, 0x40));
+                    c.g[A0][0] = Addr(this).off(DESC).lw(c);
+                    c.sq(V0, at(c, 0x20));
+                    call_ptr(c, EMITTER_RENDER_AT, 0x0035_8358)?;
+                }
+
+                c.cycles += 5;
+                let count = Addr(this).off(COUNT).lw(c);
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                let more = (c.g[S1][0] as i64) < (count as i64);
+                c.g[V0][0] = more as u64;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, LOOP);
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2319,6 +2459,80 @@ pub(crate) mod tests {
                 );
                 for i in 0..6 {
                     c.bus.write32(RAIL_NODE + 0x6c + 4 * i, r.f32(10.0));
+                }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::elf_image;
+
+    // -------------------------------------------- MultiParticle_EmitAtInstances
+
+    /// `MultiParticle_EmitAtInstances`: 0..4 handles, each with an empty
+    /// table entry, an empty slot (index 0) or a live instance; the real
+    /// `Emitter_RenderAt` runs on a descriptor with nothing pending (its two
+    /// graphics-manager hooks are fakes, some unwind).
+    #[test]
+    fn multi_particle_emit_at_instances_matches() {
+        use crate::difftest::put_vec;
+        check(
+            ee::s11::f_00358260__generated,
+            multi_particle_emit_at_instances,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_8260, 8);
+                c.pc = 0x0035_8260;
+                let this = DATA + 0x1000;
+                let refs = DATA + 0x1100;
+                let desc = DATA + 0x2000;
+                let world = DATA + 0x3000;
+                let tables = DATA + 0x3100;
+                let table = DATA + 0x3200;
+                fill(c, &mut r, desc, 0x80);
+                c.bus.write32(desc + 0xc, 0);
+                c.bus.write32(GAME_GP + 0x16c8, world);
+                c.bus.write32(world, tables);
+                c.bus.write32(tables + 8, table);
+                let count = seed % 5;
+                c.bus.write32(
+                    this + 4,
+                    if seed % 11 == 0 {
+                        (-(seed as i32)) as u32
+                    } else {
+                        count
+                    },
+                );
+                c.bus.write32(this + 0xc, refs);
+                c.bus.write32(this + 0x10, desc);
+                for off in [0x20, 0x30, 0x40] {
+                    put_vec(
+                        c,
+                        this + off,
+                        [r.f32(100.0), r.f32(100.0), r.f32(100.0), r.f32(1.0)],
+                    );
+                }
+                for i in 0..count {
+                    let index = (r.next_u32() % 16) as u32;
+                    let slot = r.next_u32() % 32;
+                    c.bus.write32(refs + 4 * i, slot << 8 | index);
+                    let entry = DATA + 0x4000 + 0x400 * i;
+                    let slots = entry + 0x100;
+                    let kind = r.next_u32() % 4;
+                    c.bus
+                        .write32(table + 4 * index, if kind == 0 { 0 } else { entry });
+                    c.bus.write32(entry + 0x1c, slots);
+                    let inst = DATA + 0x8000 + 0x100 * i;
+                    let word = if kind == 1 {
+                        r.next_u32() & 0xff
+                    } else {
+                        (inst >> 2) << 8 | (r.next_u32() & 0xff)
+                    };
+                    c.bus.write32(slots + 4 * slot, word);
+                    put_vec(
+                        c,
+                        inst + 0x40,
+                        [r.f32(500.0), r.f32(500.0), r.f32(500.0), r.f32(1.0)],
+                    );
                 }
             },
         );

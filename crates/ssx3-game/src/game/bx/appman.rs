@@ -3,8 +3,10 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
 use crate::events::deliver_event_here;
@@ -16,6 +18,7 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -35,6 +38,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0031_7600,
         app_load_progress_complete,
         "App_LoadProgressComplete",
+    ),
+    (
+        0x0031_74a8,
+        ps2_exec_man_invoke_callback,
+        "PS2ExecMan_InvokeCallback",
     ),
 ];
 
@@ -198,6 +206,60 @@ pub fn app_v02(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+// ------------------------------------------------ PS2ExecMan_InvokeCallback
+
+/// `void PS2ExecMan_InvokeCallback(Callback* cb, int notify)` (0x3174a8,
+/// `cExecutionMan::checkHalt`): call `cb->func(cb->arg)` if a function is
+/// set; then, when `notify` is nonzero, tell the owner at `cb+8` through
+/// its virtual method at +0x70 (`this` adjusted by the slot's delta, so
+/// relative to `cb`).
+pub fn ps2_exec_man_invoke_callback(c: &mut Cpu) {
+    /// `Callback` fields.
+    const FUNC: u32 = 0x0;
+    const ARG: u32 = 0x4;
+    const OWNER: u32 = 0x8;
+    /// The owner's vtable slot `{delta: i16, method}` (embedded at +0x70).
+    const SLOT_DELTA: u32 = 0x70;
+    const SLOT_METHOD: u32 = 0x74;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        let cb = r32(c, A0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let func = Addr(cb).off(FUNC).lw(c);
+        c.g[V0][0] = func;
+        c.g[S1][0] = c.g[A1][0];
+        if func == 0 {
+            c.cycles += 1;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = Addr(cb).off(ARG).lw(c);
+            call_ptr(c, func as u32, 0x0031_74d0)?;
+            // `notify` is compared as the full 64-bit register.
+            if c.g[S1][0] != 0 {
+                c.cycles += 5;
+                let owner = Addr(cb).off(OWNER).lw(c);
+                c.g[V0][0] = owner;
+                c.g[A0][0] = Addr(owner as u32).off(SLOT_DELTA).lh(c);
+                c.g[V1][0] = Addr(owner as u32).off(SLOT_METHOD).lw(c);
+                let method = r32(c, V1);
+                c.g[A0][0] = abi::addu(c.g[S0][0], c.g[A0][0]);
+                call_ptr(c, method, 0x0031_74ec)?;
+                c.cycles += 1;
+            }
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
 }
 
 #[cfg(test)]
@@ -377,6 +439,41 @@ pub(crate) mod tests {
                 c.bus.write32(obj + 8, vt);
                 vtable(c, vt, &[(0x18, 0, FAKE), (0x8, 0, FAKE + 0x10)]);
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::{elf_image, fill};
+
+    // ------------------------------------------------ PS2ExecMan_InvokeCallback
+
+    /// `PS2ExecMan_InvokeCallback`: a callback with or without a function,
+    /// `notify` zero, nonzero in the low word, or nonzero only in the upper
+    /// word (64-bit compare); both calls go to fakes (some unwind).
+    #[test]
+    fn ps2_exec_man_invoke_callback_matches() {
+        covered(
+            ee::s10::f_003174a8__generated,
+            ps2_exec_man_invoke_callback,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_74a8, 2);
+                c.pc = 0x0031_74a8;
+                let cb = crate::difftest::fakes::ptr(&mut r);
+                let owner = cb + 0x100;
+                c.bus.write32(cb, if seed % 4 == 0 { 0 } else { FAKE });
+                c.bus.write32(cb + 4, r.next_u32());
+                c.bus.write32(cb + 8, owner);
+                c.bus
+                    .write16(owner + 0x70, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(owner + 0x74, FAKE + 0x10);
+                c.g[A0][0] = sx(cb);
+                c.g[A1][0] = match seed % 3 {
+                    0 => 0,
+                    1 => r.next_u32() as u64 | 1,
+                    _ => (r.next_u32() as u64 | 1) << 32,
+                };
             },
         );
     }

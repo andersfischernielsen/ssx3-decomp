@@ -249,6 +249,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_update_speech_ducking,
         "SSXAudioSystem_UpdateSpeechDucking",
     ),
+    (
+        0x0028_87f8,
+        ssx_audio_system_update_mix_ramp,
+        "SSXAudioSystem_UpdateMixRamp",
+    ),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -3541,6 +3546,161 @@ pub fn ssx_audio_system_update_speech_ducking(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod mix_ramp {
+
+    /// Non-zero while a ramp is in progress.
+    pub const DIRTY: u32 = 0x6410;
+
+    /// Eleven per-channel ramp steps (0: idle).
+    pub const DELTA: u32 = 0x6414;
+
+    /// Eleven current levels.
+    pub const CUR: u32 = 0x63e4;
+
+    /// Eleven targets (`CUR + 0x5c`).
+    pub const TARGET_FROM_CUR: u32 = 0x5c;
+
+    /// Eleven channel pairs `{base, scaled}` (16 bytes apart; `scaled` at
+    /// 0x62c8 + 16 i, `base` 4 bytes before it).
+    pub const CHAN_SCALED: u32 = 0x62c8;
+
+    /// The master level.
+    pub const MASTER: u32 = 0x6308;
+
+    /// Ten outputs: master times the gp table at 0x43c..0x460.
+    pub const OUT: u32 = 0x636c;
+}
+
+/// `void SSXAudioSystem_UpdateMixRamp(SSXAudioSystem* self)` (0x2887f8):
+/// while a mix ramp is running, step each of the eleven channel levels
+/// toward its target (clamping and stopping the step on arrival, keeping
+/// the ramp running otherwise), rescale each stepping channel by its level,
+/// and recompute the ten master outputs from the gp gain table.
+pub fn ssx_audio_system_update_mix_ramp(c: &mut Cpu) {
+    use mix_ramp::*;
+    c.cycles += 3;
+    let this = r32(c, A0);
+    c.g[V0][0] = c.lw(this + DIRTY);
+    c.g[T1][0] = 1;
+    if c.g[V0][0] != 0 {
+        c.cycles += 7;
+        c.sw(this + DIRTY, 0);
+        c.mtc1(0, 2); // 0.0
+        c.g[A2][0] = sx(this + CHAN_SCALED);
+        c.g[V1][0] = sx(this + CUR);
+        c.g[A1][0] = sx(this + DELTA);
+        c.g[T0][0] = 0;
+        c.g[A3][0] = 10;
+        loop {
+            // Loop state lives in a1 (delta), v1 (cur), a2 (channel), t0
+            // (byte offset), a3 (count down).
+            let this = r32(c, A0);
+            let delta = r32(c, A1);
+            let cur = r32(c, V1);
+            c.cycles += 5;
+            c.lwc1(1, delta);
+            c.c_eq_s(1, 2);
+            if c.fcc() {
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x10));
+            } else {
+                // cur += delta (f1).
+                c.cycles += 8;
+                c.lwc1(0, cur);
+                c.add_s(1, 0, 1);
+                c.swc1(1, cur);
+                c.lwc1(0, delta);
+                c.c_lt_s(0, 2);
+                let falling = c.fcc();
+                c.g[V0][0] = sx(this + CUR);
+                let arrived;
+                if falling {
+                    c.cycles += 5;
+                    c.lwc1(0, cur + TARGET_FROM_CUR);
+                    c.c_le_s(1, 0);
+                    arrived = c.fcc();
+                    if !arrived {
+                        c.cycles += 2;
+                    }
+                } else {
+                    c.cycles += 5;
+                    c.lwc1(0, cur + TARGET_FROM_CUR);
+                    c.c_le_s(0, 1);
+                    arrived = c.fcc();
+                    if arrived {
+                        c.cycles += 1;
+                    }
+                }
+                if arrived {
+                    // Clamp to the target, stop stepping.
+                    c.swc1(0, cur);
+                    c.cycles += 1;
+                    c.sw(delta, 0);
+                } else {
+                    c.sw(this + DIRTY, c.g[T1][0]);
+                }
+                // scaled = base * cur.
+                c.cycles += 6;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T0)));
+                let chan = r32(c, A2);
+                c.lwc1(0, chan.wrapping_sub(4));
+                c.lwc1(1, r32(c, V0));
+                c.mul_s(0, 0, 1);
+                c.swc1(0, chan);
+                c.g[A2][0] = sx(chan.wrapping_add(0x10));
+            }
+            c.cycles += 5;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+            c.g[A1][0] = sx(r32(c, A1).wrapping_add(4));
+            c.g[A3][0] = sx(r32(c, A3).wrapping_sub(1));
+            let more = (c.g[A3][0] as i64) >= 0;
+            c.g[T0][0] = sx(r32(c, T0).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0028_8820);
+            }
+        }
+        // Outputs: master * gain[k].
+        c.cycles += 31;
+        let gp = r32(c, GP);
+        let this = r32(c, A0);
+        c.lwc1(8, gp + 0x43c);
+        c.lwc1(9, gp + 0x440);
+        c.lwc1(10, gp + 0x444);
+        c.lwc1(6, gp + 0x448);
+        c.lwc1(7, gp + 0x44c);
+        c.lwc1(5, gp + 0x450);
+        c.lwc1(4, gp + 0x454);
+        c.lwc1(2, gp + 0x458);
+        c.lwc1(1, gp + 0x45c);
+        c.lwc1(0, this + MASTER);
+        c.lwc1(3, gp + 0x460);
+        c.mul_s(8, 0, 8);
+        c.mul_s(9, 0, 9);
+        c.mul_s(10, 0, 10);
+        c.mul_s(6, 0, 6);
+        c.swc1(8, this + OUT);
+        c.mul_s(7, 0, 7);
+        c.swc1(9, this + OUT + 0x4);
+        c.mul_s(5, 0, 5);
+        c.swc1(10, this + OUT + 0x8);
+        c.mul_s(4, 0, 4);
+        c.swc1(6, this + OUT + 0xc);
+        c.mul_s(2, 0, 2);
+        c.swc1(7, this + OUT + 0x10);
+        c.mul_s(1, 0, 1);
+        c.swc1(5, this + OUT + 0x14);
+        c.mul_s(0, 0, 3);
+        c.swc1(4, this + OUT + 0x18);
+        c.swc1(2, this + OUT + 0x1c);
+        c.swc1(1, this + OUT + 0x20);
+        c.swc1(0, this + OUT + 0x24);
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4629,6 +4789,58 @@ pub(crate) mod tests {
                 c.bus.write32(this + 0x6c5c, cur);
                 for off in [0x63c4u32, 0x63c8, 0x63cc, 0x63d0] {
                     c.bus.write32(this + off, r.f32(1.0));
+                }
+                c.g[A0][0] = sx(this);
+            },
+        );
+    }
+    use super::*;
+
+    // ------------------------------------------- SSXAudioSystem_UpdateMixRamp
+
+    /// `SSXAudioSystem_UpdateMixRamp`: idle or ramping; per channel an idle
+    /// step, a rising or falling step that arrives (clamped) or not, with
+    /// edge-case floats mixed in.
+    #[test]
+    fn ssx_audio_system_update_mix_ramp_matches() {
+        use super::mix_ramp::*;
+        use crate::difftest::{check, scramble, Rng, DATA, GAME_GP};
+        let f = |x: f32| x.to_bits();
+        check(
+            ee::s07::f_002887f8__generated,
+            ssx_audio_system_update_mix_ramp,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2887_f800 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0028_87f8;
+                let this = DATA;
+                c.bus.write32(
+                    this + DIRTY,
+                    if seed % 9 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                for i in 0..11u32 {
+                    let cur = (r.next_u32() % 200) as f32 * 0.01;
+                    let target = (r.next_u32() % 200) as f32 * 0.01;
+                    let delta = match r.next_u32() % 6 {
+                        0 => 0.0,
+                        1 => 0.05,
+                        2 => -0.05,
+                        3 => 1.0,
+                        4 => -1.0,
+                        _ => f32::from_bits(r.edge_f32()),
+                    };
+                    c.bus.write32(this + CUR + 4 * i, f(cur));
+                    c.bus
+                        .write32(this + CUR + TARGET_FROM_CUR + 4 * i, f(target));
+                    c.bus.write32(this + DELTA + 4 * i, f(delta));
+                    c.bus.write32(this + CHAN_SCALED - 4 + 0x10 * i, r.f32(2.0));
+                    c.bus.write32(this + CHAN_SCALED + 0x10 * i, r.next_u32());
+                }
+                c.bus.write32(this + MASTER, r.f32(1.0));
+                for k in 0..10u32 {
+                    c.bus.write32(GAME_GP + 0x43c + 4 * k, r.f32(1.0));
                 }
                 c.g[A0][0] = sx(this);
             },

@@ -89,6 +89,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderAnim_FireSoundEvents",
     ),
     (0x0010_3e28, rider_anim_blend_seq4, "RiderAnim_BlendSeq4"),
+    (
+        0x0010_48c0,
+        rider_anim_seq_type00_update,
+        "RiderAnim_UpdateSeqType00",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1335,6 +1340,69 @@ pub fn rider_anim_fire_sound_events(c: &mut Cpu) {
     })
 }
 
+// ------------------------------------------------ RiderAnim_UpdateSeqType00
+
+/// `int RiderAnim_UpdateSeqType00(RiderAnim* anim, SeqList* list,
+/// AnimSequence* seq, float dt)` (0x1048c0): a one-shot sequence. Advance
+/// its track by `dt * (1/60)`; when the track has ended, or else when its
+/// weight fade has finished, remove it from the list. Returns whether it
+/// was removed. (Same shape as type 02, with its own `.lit4` constant.)
+pub fn rider_anim_seq_type00_update(c: &mut Cpu) {
+    /// `AnimSequence_AdvanceTrack(seq, 0, step)`: nonzero when it ended.
+    const ADVANCE_TRACK: u32 = 0x0031_35b0;
+    /// `AnimSequence_UpdateWeightFade(seq, step)`: nonzero when faded out.
+    const UPDATE_WEIGHT_FADE: u32 = 0x0031_3800;
+    /// `AnimSeqList_Remove(list, seq)`.
+    const LIST_REMOVE: u32 = 0x0031_45f8;
+    /// `gp-0x7f44`: 1/60, ticks to seconds (`.lit4`, follows the rate).
+    const TICK_GP: u32 = 0x7f44;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x40);
+        let k = Addr(r32(c, GP).wrapping_sub(TICK_GP)).read_fpu(c);
+        c.f[0] = k.0;
+        frame.save_fpr(c, 20, 0x30);
+        let step = FpuF32(c.f[12]) * k;
+        c.f[20] = step.0;
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A2][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[S0][0];
+        c.f[12] = step.0;
+        call_ptr(c, ADVANCE_TRACK, 0x0010_48f4)?;
+        let ended = c.g[V0][0] != 0;
+        c.g[V0][0] = 1;
+        if !ended {
+            c.cycles += 3;
+            c.f[12] = c.f[20];
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, UPDATE_WEIGHT_FADE, 0x0010_4908)?;
+        }
+        c.cycles += 2;
+        let remove = c.g[V0][0] != 0;
+        c.g[A0][0] = c.g[S1][0];
+        if remove {
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, LIST_REMOVE, 0x0010_4918)?;
+            c.g[V0][0] = 1;
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1805,6 +1873,53 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(anim);
                 c.pc = 0x0010_3aa0;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::ptr;
+    use crate::difftest::fill;
+
+    // ------------------------------------------------ RiderAnim_UpdateSeqType00
+
+    /// `RiderAnim_UpdateSeqType00`: the real track advance, weight fade and
+    /// list removal on a random sequence (ended / faded / still running).
+    #[test]
+    fn rider_anim_seq_type00_update_matches() {
+        check(
+            ee::s00::f_001048c0__generated,
+            rider_anim_seq_type00_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_48c0, 0);
+                elf_image(c);
+                c.pc = 0x0010_48c0;
+                let seq = ptr(&mut r);
+                let list = ptr(&mut r);
+                c.g[A0][0] = sx(ptr(&mut r));
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(seq);
+                for off in [0x8, 0xc, 0x10, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
+                    let v = match r.next_u32() % 4 {
+                        0 => 0,
+                        1 => r.edge_f32(),
+                        _ => r.f32(3.0),
+                    };
+                    c.bus.write32(seq + off, v);
+                }
+                c.bus.write32(seq + 0x1c, r.next_u32() & 1);
+                c.bus.write32(seq + 0xa0, r.next_u32() & 1);
+                let mut at = list + 4;
+                for _ in 0..seed % 3 {
+                    let other = ptr(&mut r) + 0x8;
+                    c.bus.write32(at, other);
+                    at = other + 200;
+                }
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(0.05)
+                };
             },
         );
     }

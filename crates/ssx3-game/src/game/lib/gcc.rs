@@ -4,7 +4,11 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fcc;
+use crate::abi::set_fpr;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -13,6 +17,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -140,6 +145,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0040_e550, ieee754_logf, "__ieee754_logf"),
     (0x0041_26a0, fixunsdfsi, "__fixunsdfsi"),
     (0x0041_3068, unpack_f, "__unpack_f"),
+    (0x0041_1438, floatdidf, "__floatdidf"),
+    (0x0041_1f70, subdf3, "__subdf3"),
+    (0x0041_39f8, fixunssfsi, "__fixunssfsi"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4262,8 +4270,308 @@ pub fn unpack_f(c: &mut Cpu) {
     abi::ret(c);
 }
 
+pub(crate) mod fixunssfsi {
+    use super::ee;
+    use super::Callee;
+
+    pub const ENTRY: u32 = 0x0041_39f8;
+
+    /// The "answer 0" block the negative-exponent branch (event-checked)
+    /// goes to: a resume point.
+    pub const ZERO: u32 = 0x0041_3a28;
+
+    pub const END: u32 = 0x0041_3a90;
+
+    /// `__unpack_f(const float* in, fp_number_type* out)`.
+    pub const UNPACK_F: Callee = Callee {
+        addr: 0x0041_3068,
+        f: ee::s15::f_00413068,
+    };
+
+    /// `fp_number_type` at sp+0: class, sign, normal exponent, fraction
+    /// (`FRACBITS` 30, the implicit one at bit 30).
+    pub const CLASS: u32 = 0x0;
+
+    pub const SIGN: u32 = 0x4;
+
+    pub const EXP: u32 = 0x8;
+
+    pub const FRAC: u32 = 0xc;
+
+    /// Classes: 0 sNaN, 1 qNaN, 2 zero, 4 infinity (3 normal).
+    pub const CLASS_ZERO: u64 = 2;
+
+    pub const CLASS_INFINITY: u64 = 4;
+}
+
+pub(crate) mod softfp {
+    use super::*;
+
+    pub const UNPACK_D: Callee = Callee {
+        addr: 0x0041_1c38,
+        f: ee::s15::__unpack_d,
+    };
+
+    pub const FPADD_PARTS_D: Callee = Callee {
+        addr: 0x0041_1cd8,
+        f: ee::s15::_fpadd_parts_d,
+    };
+
+    pub const PACK_D: Callee = Callee {
+        addr: 0x0041_1b08,
+        f: ee::s15::__pack_d,
+    };
+
+    /// The frame: unpacked a at 0, unpacked b at 0x20, the sum at 0x40,
+    /// the packed arguments at 0x60 / 0x68.
+    pub const A_PARTS: u32 = 0x0;
+
+    pub const B_PARTS: u32 = 0x20;
+
+    pub const SUM_PARTS: u32 = 0x40;
+
+    pub const A_PACKED: u32 = 0x60;
+
+    pub const B_PACKED: u32 = 0x68;
+
+    /// The sign word of an unpacked number.
+    pub const SIGN: u32 = 0x4;
+}
+
+/// `unsigned __fixunssfsi(float f)` (libgcc soft-float, 0x4139f8): float to
+/// unsigned int. NaN, zero, negative and below-one values give 0, infinity
+/// and values of 2^32 and above give 0xffffffff, else the fraction shifted
+/// by the exponent. Resumable at 0x413a28 (the "answer 0" block, reached
+/// through an event check). Frame 0x30 (the unpacked number at +0, `f` at
+/// +0x10).
+pub fn fixunssfsi(c: &mut Cpu) {
+    use fixunssfsi::*;
+    guest(c, |c| {
+        let frame = Frame { size: 0x30 };
+        'zero: {
+            match c.pc {
+                ENTRY => {}
+                ZERO => break 'zero,
+                pc => {
+                    c.jump_out(pc, ENTRY, END);
+                    return Ok(());
+                }
+            }
+            c.cycles += 10;
+            let frame = Frame::open(c, 0x30);
+            frame.save_ra(c, 0x20);
+            let s = sp(c);
+            c.g[A0][0] = sx(s.wrapping_add(0x10));
+            c.swc1(12, s.wrapping_add(0x10));
+            c.g[A1][0] = sx(s);
+            UNPACK_F.call(c, 0x0041_3a10)?;
+            let s = sp(c);
+            let class = c.lw(s.wrapping_add(CLASS));
+            c.g[V1][0] = class;
+            c.g[V0][0] = (class < 2) as u64;
+            if class == CLASS_ZERO {
+                break 'zero;
+            }
+            // NaN: 0.
+            c.cycles += 2;
+            let sign = c.lw(s.wrapping_add(SIGN));
+            c.g[V0][0] = sign;
+            if class < 2 {
+                break 'zero;
+            }
+            // Negative: 0.
+            c.cycles += 2;
+            c.g[V0][0] = 0;
+            if sign != 0 {
+                fixunssfsi_exit(c, frame);
+                return Ok(());
+            }
+            c.cycles += 3;
+            c.g[V0][0] = class ^ CLASS_INFINITY;
+            let exp = c.lw(s.wrapping_add(EXP));
+            c.g[A0][0] = exp;
+            let exp = exp as i64;
+            let saturate = 'sat: {
+                if class == CLASS_INFINITY {
+                    break 'sat true;
+                }
+                // Below one: 0 (an event check on the way).
+                c.cycles += 2;
+                c.g[V0][0] = (exp < 32) as u64;
+                if exp < 0 {
+                    if back_edge_unwinds(c, ZERO) {
+                        return Ok(());
+                    }
+                    break 'zero;
+                }
+                c.cycles += 2;
+                exp >= 32
+            };
+            if saturate {
+                c.cycles += 3;
+                c.g[V0][0] = u64::MAX;
+                fixunssfsi_exit(c, frame);
+                return Ok(());
+            }
+            c.g[V0][0] = (exp < 31) as u64;
+            c.cycles += 2;
+            if exp < 31 {
+                // fraction >> (30 - exp).
+                c.g[V0][0] = 0x1e;
+                c.cycles += 3;
+                let frac = c.lw(s.wrapping_add(FRAC));
+                c.g[V1][0] = frac;
+                let shift = 30u32.wrapping_sub(exp as u32);
+                c.g[V0][0] = sx(shift);
+                c.g[V0][0] = sx((frac as u32) >> (shift & 31));
+            } else {
+                // exp == 31: fraction << 1.
+                c.cycles += 4;
+                let frac = c.lw(s.wrapping_add(FRAC));
+                c.g[V1][0] = frac;
+                let shift = (exp as u32).wrapping_sub(0x1e);
+                c.g[V0][0] = sx((frac as u32) << (shift & 31));
+            }
+            fixunssfsi_exit(c, frame);
+            return Ok(());
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        fixunssfsi_exit(c, frame);
+        Ok(())
+    })
+}
+
+/// The epilogue of `__fixunssfsi`.
+pub(crate) fn fixunssfsi_exit(c: &mut Cpu, frame: Frame) {
+    c.cycles += 3;
+    frame.restore_ra(c, 0x20);
+    frame.close(c);
+}
+
+/// `double __subdf3(double a /*a0*/, double b /*a1*/)` (0x411f70):
+/// libgcc's soft-float `a - b`: unpack both, flip b's sign, add the parts,
+/// pack the result (v0).
+pub fn subdf3(c: &mut Cpu) {
+    use softfp::*;
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0x90);
+        let sp0 = sp(c);
+        c.sd(sp0 + A_PACKED, c.g[A0][0]);
+        c.sd(sp0 + B_PACKED, c.g[A1][0]);
+        c.g[A0][0] = sx(sp0 + A_PACKED);
+        c.sd(sp0 + 0x70, c.g[S0][0]);
+        frame.save_ra(c, 0x80);
+        c.g[A1][0] = c.g[SP][0];
+        UNPACK_D.call(c, 0x0041_1f90)?;
+        let sp0 = sp(c);
+        c.g[S0][0] = sx(sp0 + B_PARTS);
+        c.g[A0][0] = sx(sp0 + B_PACKED);
+        c.g[A1][0] = c.g[S0][0];
+        UNPACK_D.call(c, 0x0041_1fa0)?;
+        // b.sign ^= 1
+        let sp0 = sp(c);
+        c.g[V0][0] = c.lw(sp0 + B_PARTS + SIGN);
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = sx(sp0 + SUM_PARTS);
+        c.g[A0][0] = c.g[SP][0];
+        c.g[V0][0] ^= 1;
+        c.sw(sp0 + B_PARTS + SIGN, c.g[V0][0]);
+        FPADD_PARTS_D.call(c, 0x0041_1fbc)?;
+        c.g[A0][0] = c.g[V0][0];
+        PACK_D.call(c, 0x0041_1fc4)?;
+        frame.restore_ra(c, 0x80);
+        let a = frame.at(c, 0x70);
+        c.g[S0][0] = c.ld(a);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// __floatdidf (0x411438)
+
+pub(crate) const FLOATSIDF: Callee = Callee {
+    addr: 0x0041_2550,
+    f: ee::s15::__floatsidf,
+};
+
+pub(crate) const MULDF3_2: Callee = Callee {
+    addr: 0x0041_1fd8,
+    f: ee::s15::__muldf3,
+};
+
+pub(crate) const ADDDF3_2: Callee = Callee {
+    addr: 0x0041_1f18,
+    f: ee::s15::__adddf3,
+};
+
+/// 65536.0 and 2^32 as IEEE doubles (`0x81e0 << 47`, `0x83e0 << 47`).
+pub(crate) const DF_TWO_16: u64 = 0x81e0 << 47;
+
+pub(crate) const DF_TWO_32: u64 = 0x83e0 << 47;
+
+/// `double __floatdidf(long long x)` (0x411438, libgcc soft-float): the
+/// high word converted and scaled by 65536 twice, plus the low word
+/// converted as signed and corrected by 2^32 when its top bit is set.
+pub fn floatdidf(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x30);
+        let at = frame.at(c, 0);
+        let v = reg(c, S0);
+        c.sd(at, v);
+        let x = reg(c, A0);
+        set_reg(c, S0, x);
+        let at = frame.at(c, 0x10);
+        let v = reg(c, S1);
+        c.sd(at, v);
+        set_reg(c, S1, DF_TWO_16);
+        set_reg(c, A0, ((x as i64) >> 32) as u64);
+        frame.save_ra(c, 0x20);
+        FLOATSIDF.call(c, 0x0041_1460)?;
+        // hi * 65536 * 65536.
+        set_reg(c, A1, reg(c, S1));
+        set_reg(c, A0, reg(c, V0));
+        MULDF3_2.call(c, 0x0041_146c)?;
+        set_reg(c, A1, reg(c, S1));
+        set_reg(c, A0, reg(c, V0));
+        MULDF3_2.call(c, 0x0041_1478)?;
+        set_reg(c, S1, reg(c, V0));
+        // The low word, as a signed int.
+        set_reg(c, V0, 0xffff_ffff);
+        let lo = x as u32 as i32 as i64 as u64;
+        set_reg(c, S0, lo);
+        set_reg(c, A0, lo);
+        FLOATSIDF.call(c, 0x0041_1498)?;
+        set_reg(c, A0, reg(c, S1));
+        if (lo as i64) < 0 {
+            c.cycles += 5;
+            set_reg(c, A1, DF_TWO_32);
+            set_reg(c, A0, reg(c, V0));
+            ADDDF3_2.call(c, 0x0041_14b0)?;
+            set_reg(c, A0, reg(c, S1));
+        }
+        c.cycles += 7;
+        set_reg(c, A1, reg(c, V0));
+        ADDDF3_2.call(c, 0x0041_14bc)?;
+        frame.restore_ra(c, 0x20);
+        let at = frame.at(c, 0x10);
+        let v = c.ld(at);
+        set_reg(c, S1, v);
+        let at = frame.at(c, 0);
+        let v = c.ld(at);
+        set_reg(c, S0, v);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
+    crate::difftest::events::driven!(oc238_gen_fixunssfsi, ee::s15::f_004139f8__generated);
+    crate::difftest::events::driven!(oc238_hand_fixunssfsi, fixunssfsi);
     use super::*;
     use crate::difftest::check;
     use crate::difftest::events::check_events;
@@ -5617,5 +5925,133 @@ pub(crate) mod tests {
             c.g[A1][0] = sx(DATA + 0x10);
             c.pc = 0x0041_3068;
         });
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::visualfx::boardwakefx::tests::oc238_uf;
+
+    /// The __fixunssfsi argument: edge cases, NaN / infinity bit patterns,
+    /// negatives, values below one, around 2^30 / 2^31 / 2^32 and random
+    /// magnitudes. `small`: mostly in (0, 1) (the event-checked branch).
+    /// Some seeds enter at the "answer 0" resume point inside the frame.
+    pub(crate) fn oc238_fixunssfsi_setup(c: &mut Cpu, seed: u32, small: bool) -> u32 {
+        let mut r = machine(c, seed, 0x41_39f8, 0);
+        let bits = if small && seed % 4 != 0 {
+            oc238_uf(&mut r, 0.0, 0.999).to_bits()
+        } else {
+            match seed % 9 {
+                0 => r.edge_f32(),
+                1 => 0x7f80_0000 | (r.next_u32() & 0x807f_ffff),
+                2 => oc238_uf(&mut r, -1e6, 0.0).to_bits(),
+                3 => oc238_uf(&mut r, 0.0, 1.0).to_bits(),
+                4 => (0x4e80_0000u32 - 2 + r.next_u32() % 5) as u32,
+                5 => (0x4f00_0000u32 - 2 + r.next_u32() % 5) as u32,
+                6 => (0x4f80_0000u32 - 2 + r.next_u32() % 5) as u32,
+                7 => (0x3f80_0000 + (r.next_u32() % 32 << 23)) | (r.next_u32() & 0x7f_ffff),
+                _ => r.next_u32(),
+            }
+        };
+        c.f[12] = bits;
+        if seed % 10 == 7 {
+            c.g[SP][0] = (crate::difftest::SP - 0x30) as u64;
+            fill(c, &mut r, crate::difftest::SP - 0x30, 12);
+            // The saved ra (sp+0x20) returns to the test's sentinel.
+            c.bus
+                .write64(crate::difftest::SP - 0x10, crate::difftest::RA as u64);
+            0x0041_3a28
+        } else {
+            0x0041_39f8
+        }
+    }
+
+    /// __fixunssfsi: every class and exponent range with the real
+    /// __unpack_f; the resume entry; events at the below-one branch.
+    #[test]
+    fn fixunssfsi_matches() {
+        check(
+            ee::s15::f_004139f8__generated,
+            fixunssfsi,
+            400,
+            &|c, seed| {
+                let entry = oc238_fixunssfsi_setup(c, seed, false);
+                c.pc = entry;
+            },
+        );
+        crate::difftest::events::check_events(
+            oc238_gen_fixunssfsi,
+            oc238_hand_fixunssfsi,
+            120,
+            &|c, seed| {
+                let entry = oc238_fixunssfsi_setup(c, seed, true);
+                let mut r = Rng(0x41_39f8 ^ seed as u64);
+                let mode = crate::difftest::events::schedule(c, &mut r, seed, entry);
+                c.next_event = c.cycles + 4;
+                mode
+            },
+        );
+    }
+
+    // -------------------------------------------------------------- __subdf3
+
+    /// `__subdf3`: random doubles and edge cases (zeros of both signs,
+    /// infinities, NaNs, denormals, equal operands) through the real
+    /// soft-float helpers.
+    #[test]
+    fn subdf3_matches() {
+        use crate::difftest::{check, scramble, Rng};
+        let edge = |r: &mut Rng| -> u64 {
+            let sign = ((r.next_u32() & 1) as u64) << 63;
+            let mant = ((r.next_u32() as u64) << 32 | r.next_u32() as u64) & ((1u64 << 52) - 1);
+            sign | match r.next_u32() % 8 {
+                0 => 0,
+                1 => mant,
+                2 => 0x7ff0_0000_0000_0000,
+                3 => 0x7ff0_0000_0000_0000 | mant | 1,
+                4 => 1.0f64.to_bits(),
+                _ => (((r.next_u32() % 200 + 923) as u64) << 52) | mant,
+            }
+        };
+        check(ee::s15::f_00411f70__generated, subdf3, 300, &|c, seed| {
+            let mut r = Rng(0x0041_1f70 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            c.pc = 0x0041_1f70;
+            let a = edge(&mut r);
+            let b = match seed % 5 {
+                0 => a,
+                1 => a ^ (1 << 63),
+                _ => edge(&mut r),
+            };
+            c.g[A0][0] = a;
+            c.g[A1][0] = b;
+        });
+    }
+
+    /// `__floatdidf`: 64-bit values with every combination of high-word
+    /// sign and low-word top bit, zero, small numbers, the extremes; the
+    /// soft-float callees run for real.
+    #[test]
+    fn floatdidf_matches() {
+        crate::difftest::check(
+            ee::s15::f_00411438__generated,
+            floatdidf,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x411438, 0);
+                c.pc = 0x0041_1438;
+                let hi = r.next_u32() as u64;
+                let lo = r.next_u32() as u64;
+                let x = match seed % 8 {
+                    0 => 0,
+                    1 => lo & 0x7fff_ffff,
+                    2 => (lo | 0x8000_0000) & 0xffff_ffff,
+                    3 => (-(lo as i64 & 0xffff)) as u64,
+                    4 => i64::MIN as u64,
+                    5 => i64::MAX as u64,
+                    _ => hi << 32 | lo,
+                };
+                c.g[A0][0] = x;
+            },
+        );
     }
 }

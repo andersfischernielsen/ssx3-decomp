@@ -4,7 +4,11 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fcc;
+use crate::abi::set_fpr;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -376,6 +380,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0013_5180,
         rider_spin_sub_get_spin_factor,
         "RiderSpinSub_GetSpinFactor",
+    ),
+    (
+        0x0012_f118,
+        rider_prewind_sub_get_hud_angle,
+        "RiderPrewindSub_GetHUDAngle",
+    ),
+    (
+        0x0013_5cb0,
+        rider_spin_sub_get_flip_progress,
+        "RiderSpinSub_GetFlipProgress",
+    ),
+    (
+        0x0013_5db0,
+        rider_spin_sub_get_spin_progress,
+        "RiderSpinSub_GetSpinProgress",
     ),
 ];
 
@@ -12702,6 +12721,428 @@ pub fn rider_spin_sub_get_spin_factor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// RiderSpinSub_GetSpinProgress (0x135db0)
+
+/// RiderSpinSub: spin start angle.
+pub(crate) const SPIN_START: u32 = 0x10;
+
+/// Current spin angle.
+pub(crate) const SPIN_ANGLE: u32 = 0x18;
+
+/// Spin rate (radians per tick).
+pub(crate) const SPIN_RATE: u32 = 0x3c;
+
+/// The rider.
+pub(crate) const SPIN_RIDER: u32 = 0x58;
+
+/// Rider: a float that, when positive, halves the spin progress scale.
+pub(crate) const RIDER_SPIN_HALVE: u32 = 0x2ec;
+
+/// Rider: player index and character (for the behaviour attribute).
+pub(crate) const RIDER_PLAYER: u32 = 0x86c;
+
+pub(crate) const RIDER_CHARACTER: u32 = 0xb34;
+
+/// `.lit4`: 2*pi, ~0.5 (0.50006247), the attribute factor scale (~0.5003).
+pub(crate) const GP_SPIN_TWO_PI: u32 = 0x7324;
+
+pub(crate) const GP_SPIN_HALF: u32 = 0x7320;
+
+pub(crate) const GP_SPIN_ATTRIB_SCALE: u32 = 0x731c;
+
+pub(crate) const BE_LIBRARY_GET_INSTANCE: Callee = Callee {
+    addr: 0x0014_dc80,
+    f: ee::s01::BELibrary_GetInstance,
+};
+
+pub(crate) const BE_LIBRARY_GET_INTERFACE: Callee = Callee {
+    addr: 0x0014_dd58,
+    f: ee::s01::BELibrary_GetInterface,
+};
+
+pub(crate) const BE_CHAR_INT_GET_ATTRIB4_FACTOR: Callee = Callee {
+    addr: 0x0014_95a8,
+    f: ee::s01::BECharInt_GetAttrib4Factor,
+};
+
+/// `void RiderSpinSub::GetSpinProgress(RiderSpinSub* spin, float* done,
+/// float* full)` (0x135db0): how far the current spin has turned in ticks
+/// (`|angle - start|`, less one turn past 2*pi, over the rate) and how many
+/// ticks a full turn takes (2*pi over the rate); both halved (x0.50006) when
+/// the rider's +0x2ec is positive, then divided by `1 + 0.50026 *` the
+/// character's spin attribute (`BECharInt_GetAttrib4Factor`).
+pub fn rider_spin_sub_get_spin_progress(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        let gp = r32(c, GP);
+        let two_pi = Addr(gp.wrapping_sub(GP_SPIN_TWO_PI)).read_fpu(c);
+        set_fpr(c, 3, two_pi);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        set_reg(c, S0, reg(c, A0));
+        frame.save(c, S2, 0x10);
+        set_reg(c, S1, reg(c, A1));
+        frame.save_ra(c, 0);
+        set_reg(c, S2, reg(c, A2));
+        let spin = r32(c, S0);
+        let (done, full) = (Addr(r32(c, S1)), Addr(r32(c, S2)));
+        let start = Addr(spin.wrapping_add(SPIN_START)).read_fpu(c);
+        let angle = Addr(spin.wrapping_add(SPIN_ANGLE)).read_fpu(c);
+        let diff = angle - start;
+        set_fpr(c, 0, diff);
+        let mut turned = diff.abs();
+        let over = two_pi.lt(turned);
+        set_fcc(c, over);
+        if over {
+            turned = turned - two_pi;
+        }
+        set_fpr(c, 1, turned);
+
+        c.cycles += 12;
+        let rate = Addr(spin.wrapping_add(SPIN_RATE)).read_fpu(c);
+        let zero = FpuF32::ZERO;
+        set_fpr(c, 2, zero);
+        let d = turned.div(rate);
+        set_fpr(c, 0, d);
+        done.write_fpu(c, d);
+        let rate = Addr(spin.wrapping_add(SPIN_RATE)).read_fpu(c);
+        let f = two_pi.div(rate);
+        set_fpr(c, 1, f);
+        full.write_fpu(c, f);
+        let rider = Addr(spin.wrapping_add(SPIN_RIDER)).lw(c);
+        set_reg(c, V0, rider);
+        let halve = Addr((rider as u32).wrapping_add(RIDER_SPIN_HALVE)).read_fpu(c);
+        set_fpr(c, 0, halve);
+        let pos = zero.lt(halve);
+        set_fcc(c, pos);
+        if pos {
+            c.cycles += 6;
+            let h = Addr(gp.wrapping_sub(GP_SPIN_HALF)).read_fpu(c);
+            set_fpr(c, 2, h);
+            let f = f * h;
+            set_fpr(c, 1, f);
+            full.write_fpu(c, f);
+            let d = done.read_fpu(c) * h;
+            set_fpr(c, 0, d);
+            done.write_fpu(c, d);
+        }
+
+        // The character's spin attribute.
+        c.cycles += 28;
+        BE_LIBRARY_GET_INSTANCE.call(c, 0x0013_5e44)?;
+        set_reg(c, A0, reg(c, V0));
+        set_reg(c, A1, 3);
+        BE_LIBRARY_GET_INTERFACE.call(c, 0x0013_5e50)?;
+        let rider = Addr(spin.wrapping_add(SPIN_RIDER)).lw(c);
+        set_reg(c, V1, rider);
+        set_reg(c, A0, reg(c, V0));
+        let character = Addr((rider as u32).wrapping_add(RIDER_CHARACTER)).lw(c);
+        set_reg(c, A2, character);
+        let player = Addr((rider as u32).wrapping_add(RIDER_PLAYER)).lw(c);
+        set_reg(c, A1, player);
+        BE_CHAR_INT_GET_ATTRIB4_FACTOR.call(c, 0x0013_5e64)?;
+
+        // Both divided by 1 + attribute * scale.
+        let scale = Addr(gp.wrapping_sub(GP_SPIN_ATTRIB_SCALE)).read_fpu(c);
+        set_fpr(c, 3, scale);
+        set_reg(c, AT, 0x3f80_0000);
+        let attrib = FpuF32(c.f[0]) * scale;
+        let f = full.read_fpu(c);
+        frame.restore(c, S0, 0x30);
+        frame.restore_ra(c, 0);
+        let div = attrib + FpuF32::ONE;
+        set_fpr(c, 0, div);
+        let m = FpuF32::ONE.div(div);
+        set_fpr(c, 2, m);
+        let f = f * m;
+        set_fpr(c, 1, f);
+        full.write_fpu(c, f);
+        frame.restore(c, S2, 0x10);
+        let d = done.read_fpu(c) * m;
+        set_fpr(c, 0, d);
+        done.write_fpu(c, d);
+        frame.restore(c, S1, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderPrewindSub_GetHUDAngle (0x12f118)
+
+/// Rider (through the sub-state's first word): the stick's y and x.
+pub(crate) const RIDER_STICK_Y: u32 = 0x2b0;
+
+pub(crate) const RIDER_STICK_X: u32 = 0x2a4;
+
+/// `.lit4`: the dead zone (0.1), the angles for x == 0 (y < 0, y >= 0), the
+/// corrections for x < 0 (y > 0: added; else subtracted).
+pub(crate) const GP_HUD_DEAD_ZONE: u32 = 0x7730;
+
+pub(crate) const GP_HUD_DOWN: u32 = 0x772c;
+
+pub(crate) const GP_HUD_UP: u32 = 0x7728;
+
+pub(crate) const GP_HUD_ADD_PI: u32 = 0x7724;
+
+pub(crate) const GP_HUD_SUB_PI: u32 = 0x7720;
+
+/// `Math_Atan` (cross-shard, through the table): f0 = atan(f12).
+pub(crate) const MATH_ATAN_2: u32 = 0x0031_c228;
+
+/// `float RiderPrewindSub::GetHUDAngle(RiderPrewindSub* sub, int* centred)`
+/// (0x12f118): the stick direction for the prewind HUD. Each stick axis
+/// under 0.1 counts as 0; with both 0, `*centred = 1` and 0 is returned.
+/// Otherwise `*centred = 0` and the angle is `atan2(y, x)` built from
+/// `Math_Atan(y / x)` with the quadrant corrections (x == 0: the up or down
+/// angle).
+pub fn rider_prewind_sub_get_hud_angle(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        let rider = Addr(r32(c, A0)).lw(c);
+        set_reg(c, V0, rider);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 22, 0x20);
+        frame.save_fpr(c, 21, 0x18);
+        frame.save_fpr(c, 20, 0x10);
+        let gp = r32(c, GP);
+        let lit = |c: &mut Cpu, o: u32| Addr(gp.wrapping_sub(o)).read_fpu(c);
+        let dead = lit(c, GP_HUD_DEAD_ZONE);
+        set_fpr(c, 1, dead);
+        let rider = rider as u32;
+        let mut y = Addr(rider.wrapping_add(RIDER_STICK_Y)).read_fpu(c);
+        set_fpr(c, 0, y.abs());
+        let small = abi::c_lt_s(c, y.abs(), dead);
+        let mut x = Addr(rider.wrapping_add(RIDER_STICK_X)).read_fpu(c);
+        let zero = FpuF32::ZERO;
+        if small {
+            c.cycles += 1;
+            y = zero;
+        }
+        c.cycles += 4;
+        set_fpr(c, 0, x.abs());
+        if abi::c_lt_s(c, x.abs(), dead) {
+            c.cycles += 1;
+            x = zero;
+        }
+        set_fpr(c, 20, y);
+        set_fpr(c, 21, x);
+
+        // Centred: both axes zero.
+        c.cycles += 5;
+        set_fpr(c, 0, zero);
+        let mut centred = 0u64;
+        let y_zero = y.eq_s(zero);
+        set_fcc(c, y_zero);
+        if y_zero {
+            c.cycles += 4;
+            let x_zero = x.eq_s(zero);
+            set_fcc(c, x_zero);
+            if x_zero {
+                centred = 1;
+            }
+        }
+        set_reg(c, V0, centred);
+        c.cycles += 2;
+        Addr(r32(c, A1)).sw(c, centred);
+        if centred != 0 {
+            c.cycles += 3;
+            set_fpr(c, 0, zero);
+            frame.restore_ra(c, 0);
+            c.cycles += 1;
+            frame.restore_fpr(c, 22, 0x20);
+        } else {
+            c.cycles += 4;
+            set_fpr(c, 22, zero);
+            let x_zero = x.eq_s(zero);
+            set_fcc(c, x_zero);
+            if x_zero {
+                // Straight up or down.
+                c.cycles += 4;
+                let y_zero = y.eq_s(zero);
+                set_fcc(c, y_zero);
+                set_fpr(c, 0, y);
+                if y_zero {
+                    c.cycles += 1;
+                    frame.restore_ra(c, 0);
+                    c.cycles += 1;
+                    frame.restore_fpr(c, 22, 0x20);
+                } else {
+                    c.cycles += 4;
+                    let up = zero.le(y);
+                    set_fcc(c, up);
+                    let down = lit(c, GP_HUD_DOWN);
+                    set_fpr(c, 0, down);
+                    frame.restore_ra(c, 0);
+                    if !up {
+                        c.cycles += 1;
+                        frame.restore_ra(c, 0);
+                        c.cycles += 1;
+                        frame.restore_fpr(c, 22, 0x20);
+                    } else {
+                        c.cycles += 3;
+                        let up = lit(c, GP_HUD_UP);
+                        set_fpr(c, 0, up);
+                        frame.restore_fpr(c, 22, 0x20);
+                    }
+                }
+            } else {
+                // atan(y / x), corrected into the left half-plane.
+                c.cycles += 7;
+                set_fpr(c, 12, y.div(x));
+                call_ptr(c, MATH_ATAN_2, 0x0012_f1e4)?;
+                let left = abi::c_lt_s(c, x, zero);
+                let mut angle = FpuF32(c.f[0]);
+                set_fpr(c, 12, angle);
+                if left {
+                    c.cycles += 3;
+                    if abi::c_lt_s(c, zero, y) {
+                        c.cycles += 3;
+                        let k = lit(c, GP_HUD_ADD_PI);
+                        set_fpr(c, 0, k);
+                        angle = angle + k;
+                    } else {
+                        c.cycles += 2;
+                        let k = lit(c, GP_HUD_SUB_PI);
+                        set_fpr(c, 0, k);
+                        angle = angle - k;
+                    }
+                    set_fpr(c, 12, angle);
+                }
+                c.cycles += 1;
+                set_fpr(c, 0, angle);
+                c.cycles += 1;
+                frame.restore_ra(c, 0);
+                c.cycles += 1;
+                frame.restore_fpr(c, 22, 0x20);
+            }
+        }
+        c.cycles += 4;
+        frame.restore_fpr(c, 21, 0x18);
+        frame.restore_fpr(c, 20, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderSpinSub_GetFlipProgress(RiderSpinSub* self, float* done,
+/// float* total)` (0x135cb0): how far the current flip has turned. `done`
+/// is the flip angle covered (`|end - start|`, folded below pi) over the
+/// flip rate, `total` pi over the rate; both halved (times ~0.5) when the
+/// rider's flip boost (+0x2ec) is positive, then scaled by
+/// `1 / (1 + attrib4 * ~0.5)` from the rider's character attribute 4.
+pub fn rider_spin_sub_get_flip_progress(c: &mut Cpu) {
+    /// `RiderSpinSub` fields.
+    const FLIP_START: u32 = 0x14;
+    const FLIP_END: u32 = 0x1c;
+    const FLIP_RATE: u32 = 0x38;
+    const RIDER: u32 = 0x58;
+    /// Rider fields.
+    const RIDER_FLIP_BOOST: u32 = 0x2ec;
+    const RIDER_INDEX: u32 = 0x86c;
+    const RIDER_ATTRIB4: u32 = 0xb34;
+    /// `.lit4` constants: pi, the boost scale, the attribute scale.
+    const PI_GP: u32 = 0x7330;
+    const BOOST_GP: u32 = 0x732c;
+    const ATTRIB_GP: u32 = 0x7328;
+    /// `BELibrary` interface id of the character interface.
+    const CHAR_INTERFACE: u64 = 3;
+    let lit = |c: &Cpu, off: u32| r32(c, GP).wrapping_sub(off);
+    let fpr = |c: &Cpu, n: usize| FpuF32(c.f[n]);
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x40);
+        let pi = Addr(lit(c, PI_GP)).read_fpu(c);
+        c.f[3] = pi.0;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        let this = r32(c, A0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A2][0];
+        let done_out = r32(c, S1);
+        let total_out = r32(c, S2);
+        let start = Addr(this).off(FLIP_START).read_fpu(c);
+        let end = Addr(this).off(FLIP_END).read_fpu(c);
+        let diff = end - start;
+        c.f[0] = diff.0;
+        let mut angle = diff.abs();
+        let wrapped = pi.lt(angle);
+        abi::set_fcc(c, wrapped);
+        if wrapped {
+            angle = angle - pi;
+        }
+        c.f[1] = angle.0;
+
+        c.cycles += 12;
+        let rate = Addr(this).off(FLIP_RATE).read_fpu(c);
+        c.f[2] = 0;
+        let done = angle.div(rate);
+        c.f[0] = done.0;
+        Addr(done_out).write_fpu(c, done);
+        let rate = Addr(this).off(FLIP_RATE).read_fpu(c);
+        let total = pi.div(rate);
+        c.f[1] = total.0;
+        Addr(total_out).write_fpu(c, total);
+        let rider = Addr(this).off(RIDER).lw(c);
+        c.g[V0][0] = rider;
+        let boost = Addr(rider as u32).off(RIDER_FLIP_BOOST).read_fpu(c);
+        c.f[0] = boost.0;
+        let boosted = FpuF32(0).lt(boost);
+        abi::set_fcc(c, boosted);
+        if boosted {
+            c.cycles += 6;
+            let half = Addr(lit(c, BOOST_GP)).read_fpu(c);
+            c.f[2] = half.0;
+            let total = fpr(c, 1) * half;
+            c.f[1] = total.0;
+            Addr(total_out).write_fpu(c, total);
+            let done = Addr(done_out).read_fpu(c) * half;
+            c.f[0] = done.0;
+            Addr(done_out).write_fpu(c, done);
+        }
+
+        c.cycles += 28;
+        BE_LIBRARY_GET_INSTANCE.call(c, 0x0013_5d44)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = CHAR_INTERFACE;
+        BE_LIBRARY_GET_INTERFACE.call(c, 0x0013_5d50)?;
+        let rider = Addr(this).off(RIDER).lw(c);
+        c.g[V1][0] = rider;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A2][0] = Addr(rider as u32).off(RIDER_ATTRIB4).lw(c);
+        c.g[A1][0] = Addr(rider as u32).off(RIDER_INDEX).lw(c);
+        BE_CHAR_INT_GET_ATTRIB4_FACTOR.call(c, 0x0013_5d64)?;
+        let k = Addr(lit(c, ATTRIB_GP)).read_fpu(c);
+        c.f[3] = k.0;
+        c.g[AT][0] = 0x3f80_0000;
+        let one = FpuF32(0x3f80_0000);
+        let scaled = fpr(c, 0) * k;
+        let total = Addr(total_out).read_fpu(c);
+        frame.restore(c, S0, 0x30);
+        frame.restore_ra(c, 0);
+        let denom = scaled + one;
+        c.f[0] = denom.0;
+        let m = one.div(denom);
+        c.f[2] = m.0;
+        let total = total * m;
+        c.f[1] = total.0;
+        Addr(total_out).write_fpu(c, total);
+        frame.restore(c, S2, 0x10);
+        let done = Addr(done_out).read_fpu(c) * m;
+        c.f[0] = done.0;
+        Addr(done_out).write_fpu(c, done);
+        frame.restore(c, S1, 0x20);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14868,6 +15309,215 @@ pub(crate) mod tests {
                 let y = pick(&mut r, (seed / 5) % 5);
                 c.bus.write32(input + 0x2dc, x);
                 c.bus.write32(input + 0x2e0, y);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// `RiderSpinSub_GetSpinProgress`: spin angles in [-10, 10] (the turn
+    /// is past 2*pi or not), rates 0.05..0.5 or edge values, the rider's
+    /// halving float positive, zero or negative, `done` and `full` distinct
+    /// or the same pointer. The behaviour library exists (gp-0x1f04); its
+    /// interface getter is a fake (sometimes unwinding);
+    /// `BECharInt_GetAttrib4Factor` runs for real on the game image
+    /// (player 0, characters 1..5).
+    #[test]
+    fn rider_spin_sub_get_spin_progress_matches() {
+        const SPIN: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const OUT: u32 = DATA + 0x3000;
+        const BE_LIBRARY: u32 = DATA + 0x5000;
+        const BE_OBJ: u32 = DATA + 0x5100;
+        const BE_VT: u32 = DATA + 0x5200;
+        const BE_INTERFACES: u32 = 0x0053_08a8;
+        covered(
+            ee::s01::f_00135db0__generated,
+            rider_spin_sub_get_spin_progress,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x135db0, 1);
+                c.pc = 0x0013_5db0;
+                crate::difftest::elf_image(c);
+                c.bus.write32(GAME_GP - 0x1f04, BE_LIBRARY);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(BE_INTERFACES, BE_OBJ);
+                c.bus.write32(BE_OBJ + 4, BE_VT);
+                c.bus.write32(BE_VT + 0xc, FAKE);
+                c.bus.write8(0x0053_08e2, 10);
+                c.bus.write8(0x0053_08e4, 10);
+                c.bus.write32(SPIN + SPIN_START, r.f32(10.0));
+                c.bus.write32(SPIN + SPIN_ANGLE, r.f32(10.0));
+                let rate = if seed % 9 == 0 {
+                    r.edge_f32()
+                } else {
+                    (0.05 + (r.next_u32() % 450) as f32 / 1000.0).to_bits()
+                };
+                c.bus.write32(SPIN + SPIN_RATE, rate);
+                c.bus.write32(SPIN + SPIN_RIDER, RIDER);
+                let halve = match seed % 3 {
+                    0 => 0,
+                    1 => 1.0f32.to_bits(),
+                    _ => r.f32(2.0),
+                };
+                c.bus.write32(RIDER + RIDER_SPIN_HALVE, halve);
+                c.bus.write32(RIDER + RIDER_PLAYER, 0);
+                c.bus.write32(RIDER + RIDER_CHARACTER, 1 + r.next_u32() % 5);
+                c.g[A0][0] = sx(SPIN);
+                c.g[A1][0] = sx(OUT);
+                c.g[A2][0] = sx(if seed % 7 == 0 { OUT } else { OUT + 4 });
+            },
+        );
+    }
+
+    /// `RiderPrewindSub_GetHUDAngle`: each stick axis zero, inside the dead
+    /// zone (either sign), or anywhere in [-2, 2] (or an edge value), so
+    /// every quadrant, the x == 0 up/down cases and the centred case occur;
+    /// the real `Math_Atan` runs on the game image's constants.
+    #[test]
+    fn rider_prewind_sub_get_hud_angle_matches() {
+        const SUB: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const OUT: u32 = DATA + 0x2000;
+        crate::difftest::check(
+            ee::s00::f_0012f118__generated,
+            rider_prewind_sub_get_hud_angle,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12f118, 0);
+                crate::difftest::elf_image(c);
+                c.pc = 0x0012_f118;
+                let axis = |r: &mut Rng, k: u32| match k % 6 {
+                    0 => 0,
+                    1 => r.f32(0.099),
+                    2 => 0x8000_0000,
+                    3 => r.edge_f32(),
+                    _ => r.f32(2.0),
+                };
+                let y = axis(&mut r, seed);
+                let x = axis(&mut r, seed / 6);
+                c.bus.write32(SUB, RIDER);
+                c.bus.write32(RIDER + RIDER_STICK_Y, y);
+                c.bus.write32(RIDER + RIDER_STICK_X, x);
+                fill(c, &mut r, OUT, 1);
+                c.g[A0][0] = sx(SUB);
+                c.g[A1][0] = sx(OUT);
+            },
+        );
+    }
+
+    // --------------------------------------------- RiderSpinSub_GetFlipProgress
+
+    /// The BE tables `BECharInt_GetAttrib4Factor` reads (as in `ai`'s
+    /// `be_tables`): attribute and character-max noise, profile ids, the
+    /// player slots (human or CPU), rider records and the BE singletons.
+    pub(crate) fn be_attrib_tables(c: &mut Cpu, r: &mut Rng) {
+        const ATTRIBS: u32 = 0x0053_5538;
+        const CHARACTER_MAX: u32 = 0x0053_08d8;
+        const PLAYERS: u32 = 0x0053_4fe0;
+        fill(c, r, ATTRIBS - 0x400, 0x400);
+        fill(c, r, CHARACTER_MAX - 0x800, 0x400);
+        for p in 0..8 {
+            c.bus.write32(0x0053_05b0 + 4 * p, r.next_u32() % 8);
+        }
+        fill(c, r, PLAYERS, 8 * 0x1c / 4);
+        for s in 0..8 {
+            let pad = if r.next_u32() % 2 == 0 {
+                r.next_u32() | 0x8000_0000
+            } else {
+                r.next_u32() % 4
+            };
+            c.bus.write32(PLAYERS + s * 0x1c + 0xc, pad);
+        }
+        fill(c, r, 0x0053_5b20, 16 * 0x1c / 4);
+        for s in 0..16 {
+            let rec = 0x0053_5b20 + s * 0x1c;
+            if r.next_u32() % 2 == 0 {
+                c.bus.write32(rec + 0xc, u32::MAX);
+            }
+            c.bus.write8(rec + 0x11, (r.next_u32() % 10) as u8);
+        }
+        for ch in 0..10 {
+            for n in 0..7 {
+                if r.next_u32() % 6 == 0 {
+                    c.bus.write8(CHARACTER_MAX + ch * 15 + 8 + n, 0);
+                }
+            }
+        }
+        c.bus.write32(0x0053_5c08, r.next_u32() % 40);
+        fill(c, r, 0x0043_d950, 40 * 0x64 / 4);
+        for t in 0..40 {
+            c.bus
+                .write32(0x0043_d950 + t * 0x64 + 0x54, r.next_u32() % 4);
+        }
+        // NEW_RACE_INT, NEW_PLAYER_INT, AGGRESSION_INT, CHAR_INT exist.
+        for g in [0x1f3c, 0x1f30, 0x1ea4, 0x1f2c] {
+            c.bus.write32(GAME_GP - g, DATA + 0xe_0000 + g * 0x10);
+        }
+    }
+
+    /// `RiderSpinSub_GetFlipProgress`: flip angles below and above pi,
+    /// edge-case rates, boost positive / zero / negative; the BELibrary
+    /// singleton exists and its interface lookup is a fake (some unwind);
+    /// the real attribute-4 factor runs on random BE tables.
+    #[test]
+    fn rider_spin_sub_get_flip_progress_matches() {
+        use crate::difftest::fakes::vtable;
+        covered(
+            ee::s01::f_00135cb0__generated,
+            rider_spin_sub_get_flip_progress,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0013_5cb0, 1);
+                elf_image(c);
+                c.pc = 0x0013_5cb0;
+                // The BELibrary singleton; interface slot 0 is an object
+                // whose vtable slot +8 is a fake.
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x1000);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(0x0053_08a8, DATA + 0x1100);
+                c.bus.write32(DATA + 0x1104, vt);
+                be_attrib_tables(c, &mut r);
+                let this = DATA + 0x30_0000;
+                let rider = DATA + 0x30_1000;
+                let done = DATA + 0x30_2000;
+                let total = DATA + 0x30_2010;
+                let pi = std::f32::consts::PI;
+                let a = r.f32(4.0);
+                let b = match seed % 3 {
+                    0 => r.f32(1.0),
+                    1 => (f32::from_bits(a) + if seed % 2 == 0 { 4.0 } else { -4.0 }).to_bits(),
+                    _ => r.edge_f32(),
+                };
+                c.bus.write32(this + 0x14, a);
+                c.bus.write32(this + 0x1c, b);
+                let rate = if seed % 7 == 0 {
+                    r.edge_f32()
+                } else {
+                    (pi * 2.0).to_bits()
+                };
+                c.bus.write32(this + 0x38, rate);
+                c.bus.write32(this + 0x58, rider);
+                let boost = match seed % 4 {
+                    0 => 0,
+                    1 => 1.0f32.to_bits(),
+                    2 => (-1.0f32).to_bits(),
+                    _ => r.edge_f32(),
+                };
+                c.bus.write32(rider + 0x2ec, boost);
+                c.bus.write32(rider + 0x86c, r.next_u32() % 8);
+                c.bus.write32(
+                    rider + 0xb34,
+                    match r.next_u32() % 3 {
+                        0 => 0,
+                        1 => r.next_u32() % 40,
+                        _ => r.next_u32(),
+                    },
+                );
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(done);
+                c.g[A2][0] = sx(total);
             },
         );
     }

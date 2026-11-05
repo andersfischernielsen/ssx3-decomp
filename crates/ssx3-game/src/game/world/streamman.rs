@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -44,6 +45,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x003a_6f88, c_stream_man_queue_read, "cStreamMan_QueueRead"),
     (0x003a_7058, cstream_man_set_rate, "cStreamMan_SetRate"),
+    (0x003a_7098, c_stream_man_update, "cStreamMan_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -493,6 +495,249 @@ pub fn c_stream_man_queue_read(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod stream_man {
+
+    /// The world cache this manager streams into (`+0`).
+    pub const CACHE: u32 = 0x0;
+
+    /// The stream file handle (`+0x88`).
+    pub const FILE: u32 = 0x88;
+
+    /// The decompression buffer (`+0x8c`).
+    pub const BUFFER: u32 = 0x8c;
+
+    /// A hull is streaming (`+0x90`) and which one (`+0x94`).
+    pub const ACTIVE: u32 = 0x90;
+
+    pub const HULL: u32 = 0x94;
+
+    /// Parsing stopped mid-buffer and must be resumed first (`+0xac`).
+    pub const PENDING: u32 = 0xac;
+
+    /// Bytes left in the buffer (`+0xb0`) and the read cursor (`+0xb4`).
+    pub const LEFT: u32 = 0xb0;
+
+    pub const CURSOR: u32 = 0xb4;
+
+    /// Throttled streaming (`+0xd4`): a chunk every `+0xdc` audio ticks,
+    /// `+0xe0` the ticks still to wait, `+0xe4` the tick last seen.
+    pub const THROTTLED: u32 = 0xd4;
+
+    pub const INTERVAL: u32 = 0xdc;
+
+    pub const WAIT: u32 = 0xe0;
+
+    pub const LAST_TICK: u32 = 0xe4;
+
+    /// `gp+0x2a74`: the audio frame clock; its tick count at `+0x18`.
+    pub const GP_CLOCK: u32 = 0x2a74;
+
+    pub const CLOCK_TICKS: u32 = 0x18;
+}
+
+pub(crate) mod stream_callee {
+    use super::ee;
+    use super::Callee;
+
+    pub const PARSE_CHUNKS: Callee = Callee {
+        addr: 0x003a_7238,
+        f: ee::s13::cStreamMan_ParseChunks,
+    };
+
+    pub const DECOMPRESS: Callee = Callee {
+        addr: 0x003a_7218,
+        f: ee::s13::cStreamMan_Decompress,
+    };
+
+    pub const SET_HULL_RESIDENT: Callee = Callee {
+        addr: 0x003a_8650,
+        f: ee::s13::cWorldCache_SetHullResident,
+    };
+
+    /// `StreamFile_GetChunk`, `StreamFile_ReleaseChunk`, `StreamFile_IsIdle`
+    /// (called through the function table).
+    pub const GET_CHUNK: u32 = 0x003e_12e0;
+
+    pub const RELEASE_CHUNK: u32 = 0x003e_13e8;
+
+    pub const IS_IDLE: u32 = 0x003e_1530;
+}
+
+/// `void cStreamMan_Update(cStreamMan* self)` (0x3a7098): per-frame hull
+/// streaming. While a hull is streaming: resume a parse that ran out of
+/// buffer; when throttled, count the audio ticks down and wait; then take
+/// every chunk the stream file has, decompress it into the buffer and parse
+/// its resources (stopping after one chunk when throttled, or when parsing
+/// stalls, which marks it pending). When the file is idle, the hull is
+/// resident: tell the world cache and stop.
+pub fn c_stream_man_update(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        let this = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(this + stream_man::ACTIVE).lw(c);
+        // The paths through the block at 0x3a71fc charge one more cycle.
+        let mut tail = false;
+        if c.g[V0][0] != 0 {
+            tail = stream_man_update_active(c, this)?;
+        }
+        if tail {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The body of [`c_stream_man_update`] for an active manager; `Ok(true)`
+/// when it leaves through the block at 0x3a71fc (pending set, or hull done).
+pub(crate) fn stream_man_update_active(
+    c: &mut Cpu,
+    this: u32,
+) -> Result<bool, crate::call::Unwound> {
+    use stream_callee::*;
+    use stream_man::*;
+    let at = |off: u32| Addr(this.wrapping_add(off));
+
+    // Resume a parse that stopped mid-buffer (a0 is still `this`).
+    c.cycles += 3;
+    c.g[V0][0] = at(PENDING).lw(c);
+    c.g[A1][0] = sx(this.wrapping_add(LEFT));
+    if c.g[V0][0] != 0 {
+        c.cycles += 4;
+        c.g[A2][0] = sx(this.wrapping_add(CURSOR));
+        PARSE_CHUNKS.call(c, 0x003a_70d0)?;
+        if c.g[V0][0] == 0 {
+            return Ok(false);
+        }
+    }
+
+    // Throttled: count the audio ticks since the last frame off the wait.
+    c.cycles += 3;
+    c.g[V0][0] = at(THROTTLED).lw(c);
+    let throttled = c.g[V0][0] != 0;
+    let gp = c.g[GP][0] as u32;
+    c.g[V0][0] = Addr(gp.wrapping_add(GP_CLOCK)).lw(c);
+    if throttled {
+        c.cycles += 4;
+        c.g[A0][0] = at(LAST_TICK).lw(c);
+        let clock = c.g[V0][0] as u32;
+        c.g[V1][0] = Addr(clock.wrapping_add(CLOCK_TICKS)).lw(c);
+        let same = c.g[A0][0] == c.g[V1][0];
+        c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(c.g[A0][0] as u32));
+        if !same {
+            c.cycles += 6;
+            let wait = at(WAIT).read_fpu(c);
+            let ticks = FpuF32::from_i32(c.g[V0][0] as u32 as i32);
+            abi::set_fpr(c, 1, ticks);
+            let now = c.g[V1][0];
+            at(LAST_TICK).sw(c, now);
+            let wait = wait - ticks;
+            abi::set_fpr(c, 0, wait);
+            at(WAIT).write_fpu(c, wait);
+        }
+        c.cycles += 6;
+        let wait = at(WAIT).read_fpu(c);
+        abi::set_fpr(c, 1, wait);
+        abi::set_fpr(c, 0, FpuF32::ZERO);
+        if abi::c_lt_s(c, FpuF32::ZERO, wait) {
+            return Ok(false);
+        }
+    }
+
+    // Take the chunks the stream file has.
+    c.cycles += 5;
+    c.g[A0][0] = at(FILE).lw(c);
+    call_ptr(c, GET_CHUNK, 0x003a_712c)?;
+    c.g[S1][0] = c.g[V0][0];
+    c.g[S2][0] = 1;
+    if c.g[S1][0] != 0 {
+        c.cycles += 2;
+        let interval = at(INTERVAL).read_fpu(c);
+        abi::set_fpr(c, 0, interval);
+        loop {
+            // One chunk: tag/size word at +4, payload at +8.
+            let chunk = c.g[S1][0] as u32;
+            let ch = |off: u32| Addr(chunk.wrapping_add(off));
+            c.cycles += 28;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = at(BUFFER).lw(c);
+            c.g[A3][0] = sx(chunk.wrapping_add(8));
+            let interval = FpuF32(c.f[0]);
+            at(WAIT).write_fpu(c, interval);
+            let b7 = ch(7).lbu(c);
+            c.g[V0][0] = sx((ch(6).lbu(c) as u32) << 16);
+            c.g[V1][0] = sx((ch(5).lbu(c) as u32) << 8);
+            c.g[T0][0] = ch(4).lbu(c);
+            let size = sx((b7 as u32) << 24) | c.g[V0][0] | c.g[V1][0] | c.g[T0][0];
+            c.g[A2][0] = sx((size as u32).wrapping_sub(8));
+            DECOMPRESS.call(c, 0x003a_7180)?;
+            c.g[A0][0] = at(FILE).lw(c);
+            c.g[A1][0] = c.g[S1][0];
+            let left = c.g[V0][0];
+            at(LEFT).sw(c, left);
+            call_ptr(c, RELEASE_CHUNK, 0x003a_7190)?;
+            c.g[V0][0] = at(BUFFER).lw(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = sx(this.wrapping_add(LEFT));
+            c.g[A2][0] = sx(this.wrapping_add(CURSOR));
+            let buffer = c.g[V0][0];
+            at(CURSOR).sw(c, buffer);
+            PARSE_CHUNKS.call(c, 0x003a_71a8)?;
+            if c.g[V0][0] == 0 {
+                // Stalled: resume next frame.
+                c.cycles += 2;
+                let one = c.g[S2][0];
+                at(PENDING).sw(c, one);
+                return Ok(true);
+            }
+            c.g[V0][0] = at(THROTTLED).lw(c);
+            c.cycles += 2;
+            if c.g[V0][0] != 0 {
+                break;
+            }
+            c.cycles += 5;
+            c.g[A0][0] = at(FILE).lw(c);
+            call_ptr(c, GET_CHUNK, 0x003a_71c8)?;
+            c.g[S1][0] = c.g[V0][0];
+            if c.g[S1][0] == 0 {
+                break;
+            }
+            let interval = at(INTERVAL).read_fpu(c);
+            abi::set_fpr(c, 0, interval);
+            if event_due(c) {
+                deliver_event_here(c, 0x003a_7140);
+            }
+        }
+    }
+
+    // Everything read and parsed: the hull is resident.
+    c.cycles += 4;
+    c.g[A0][0] = at(FILE).lw(c);
+    call_ptr(c, IS_IDLE, 0x003a_71dc)?;
+    if c.g[V0][0] == 0 {
+        return Ok(false);
+    }
+    c.cycles += 6;
+    c.g[A0][0] = at(CACHE).lw(c);
+    c.g[A1][0] = at(HULL).lw(c);
+    SET_HULL_RESIDENT.call(c, 0x003a_71f0)?;
+    c.g[V0][0] = u64::MAX;
+    at(ACTIVE).sw(c, 0);
+    at(HULL).sw(c, u64::MAX);
+    Ok(true)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -660,6 +905,137 @@ pub(crate) mod tests {
                 c.g[A3][0] = 0x444e4543;
                 c.bus.write32(DATA + 0x90, (seed % 2) as u32);
                 c.bus.write32(DATA + 0x88, DATA + 0x1000);
+            },
+        );
+    }
+    use super::*;
+
+    /// cStreamMan_Update over its paths: inactive; a pending parse resumed
+    /// (no resource, a resource allocated, or the allocation failing so the
+    /// update stops); throttled waits (ticks counted down or still waiting);
+    /// 0-3 chunks of junk (decompress to nothing) or of a RefPack stream
+    /// holding one resource header (allocated, or failing so the update
+    /// marks the parse pending); a throttled run stopping after one chunk;
+    /// the stream file idle or not (and an invalid handle). The real
+    /// StreamFile/ParseChunks/AllocResource callees run; their mutex kernel
+    /// calls are fakes (some unwind).
+    #[test]
+    fn c_stream_man_update_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA, GAME_GP};
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        check(
+            ee::s13::f_003a7098__generated,
+            c_stream_man_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a_7098, 6);
+                c.pc = 0x003a_7098;
+                let this = DATA;
+                let cache = DATA + 0x1000;
+                let (table, res, refc) = (DATA + 0x1400, DATA + 0x1500, DATA + 0x1600);
+                let (allocs, alloc, block) = (DATA + 0x1700, DATA + 0x1800, DATA + 0x1900);
+                let (queue, queue_items) = (DATA + 0x1a00, DATA + 0x1b00);
+                let (h, man, ring) = (DATA + 0x2000, DATA + 0x2100, DATA + 0x2800);
+                let buffer = DATA + 0x3800;
+                let clock = DATA + 0x3c00;
+                for a in (this..this + 0x100).step_by(4) {
+                    w(c, a, 0);
+                }
+                // The manager.
+                w(c, this, cache);
+                w(c, this + 0x88, if seed % 17 == 0 { 0 } else { h });
+                w(c, this + 0x8c, buffer);
+                w(c, this + 0x90, (seed % 11 != 0) as u32);
+                let hull = r.next_u32() % 4;
+                w(c, this + 0x94, hull);
+                w(c, this + 0x98, r.next_u32() % 2);
+                // A pending parse: an empty buffer and a resource of type 1 to
+                // allocate (size 0: nothing to allocate).
+                w(c, this + 0xac, (seed % 3 == 0) as u32);
+                w(c, this + 0xb8, 1);
+                w(c, this + 0xbc, 0);
+                w(c, this + 0xc0, if seed % 2 == 0 { 0 } else { 0x40 });
+                // Throttling: the audio clock and the wait.
+                let throttled = seed % 5 == 1 || seed % 5 == 2;
+                w(c, this + 0xd4, throttled as u32);
+                w(
+                    c,
+                    this + 0xdc,
+                    (1.0f32 + (r.next_u32() % 4) as f32).to_bits(),
+                );
+                let ticks = r.next_u32() % 8;
+                w(c, GAME_GP + 0x2a74, clock);
+                w(c, clock + 0x18, ticks);
+                w(
+                    c,
+                    this + 0xe4,
+                    if seed % 4 == 0 {
+                        ticks
+                    } else {
+                        r.next_u32() % 8
+                    },
+                );
+                w(c, this + 0xe0, ((r.next_u32() % 6) as f32 - 2.0).to_bits());
+                // The world cache: resource table -> refcounts; allocator for
+                // type 1 -> one block whose base 0 makes the allocation fail.
+                w(c, cache + 8, table);
+                w(c, table, res);
+                w(c, res + 4 + 8, refc);
+                for a in (refc..refc + 0x10).step_by(4) {
+                    w(c, a, 0);
+                }
+                w(c, cache + 0xc, allocs);
+                w(c, allocs + 0x3c, alloc);
+                w(c, alloc + 8, 1);
+                w(c, alloc + 0x10, block);
+                let base = if seed % 7 == 3 { 0 } else { DATA + 0x5000 };
+                w(c, block, base);
+                w(c, block + 4, 0x1_0000);
+                w(c, block + 8, 0);
+                w(c, block + 0xc, 0);
+                for i in 0..4 {
+                    w(c, cache + 0x3f8 + 0x18 * i, queue);
+                }
+                w(c, queue + 8, 0);
+                w(c, queue + 0xc, queue_items);
+                // The stream file: handle -> manager ("STRM", mutex, ring).
+                w(c, h, man);
+                w(c, man, 0x4d52_5453);
+                w(c, man + 8, r.next_u32() % 4);
+                w(c, man + 0xc, r.next_u32() % 3);
+                w(c, man + 0x10, r.next_u32() % 64);
+                w(c, man + 0x30, ring);
+                // Chunks lie past the ring end: ReleaseChunk leaves them alone.
+                w(c, man + 0x34, ring + 4);
+                w(c, man + 0x38, (seed % 6 == 5) as u32);
+                let tag = 1 + r.next_u32() % 255;
+                w(c, h + 4, tag);
+                let k = r.next_u32() % 4;
+                let mut at = ring;
+                for _ in 0..k {
+                    let size = 0x20;
+                    w(c, at, 0);
+                    w(c, at + 4, tag << 24 | size);
+                    let p = at + 8;
+                    if r.next_u32() % 2 == 0 {
+                        // RefPack: 8 literal bytes = a resource header (type 1,
+                        // size 0x40, id 0).
+                        let stream: [u8; 14] =
+                            [0x10, 0xfb, 0, 0, 8, 0xe1, 1, 0x40, 0, 0, 0, 0, 0, 0];
+                        for (i, &b) in stream.iter().enumerate() {
+                            c.bus.write8(p + i as u32, b);
+                        }
+                        c.bus.write8(p + 14, 0xfc);
+                    } else {
+                        w(c, p, r.next_u32());
+                        c.bus.write8(p + 1, 0);
+                    }
+                    at += size;
+                }
+                w(c, h + 8, 0x20 * k);
+                w(c, h + 0xc, ring);
+                c.g[A0][0] = sx(this);
             },
         );
     }

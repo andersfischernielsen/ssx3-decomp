@@ -7,6 +7,7 @@ pub mod bedbprofile;
 pub mod bedbreward;
 pub mod beintaggression;
 pub mod beintbagt;
+pub mod beintcharacter;
 pub mod beintecon;
 pub mod beintmission;
 pub mod beintnetwork;
@@ -30,6 +31,7 @@ pub fn overrides() -> Vec<(u32, GuestFn, &'static str)> {
     v.extend_from_slice(bedbreward::OVERRIDES);
     v.extend_from_slice(beintaggression::OVERRIDES);
     v.extend_from_slice(beintbagt::OVERRIDES);
+    v.extend_from_slice(beintcharacter::OVERRIDES);
     v.extend_from_slice(beintecon::OVERRIDES);
     v.extend_from_slice(beintmission::OVERRIDES);
     v.extend_from_slice(beintnetwork::OVERRIDES);

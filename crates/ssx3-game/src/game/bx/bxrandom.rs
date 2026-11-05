@@ -1,0 +1,86 @@
+//! `src/bx/bxrandom.cpp`: hand-written replacements (moved from the
+//! batch modules by `tools/reorg_modules.py`).
+
+use crate::abi;
+use crate::abi::addu;
+use crate::abi::r32;
+use crate::abi::reg;
+use crate::abi::ret;
+use crate::abi::set_fcc;
+use crate::abi::set_fpr;
+use crate::abi::set_reg;
+use crate::call::call_ptr;
+use crate::call::guest;
+use crate::call::sp;
+use crate::call::Callee;
+use crate::call::Frame;
+use crate::call::VSlot;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
+use crate::guest::Addr;
+use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
+use ssx3_ee_rt::cpu::reg::*;
+use ssx3_ee_rt::cpu::sx;
+use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::Cpu;
+
+/// Replacements in this unit: (address, function, name).
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(0x0031_77f0, rand_next_main, "Rand_NextMain")];
+
+// ---------------------------------------------------------------------------
+// Rand_NextMain (0x3177f0)
+
+/// The game's main random generator state (`0x500000 - 0xfe8`).
+pub(crate) const RAND_MAIN: u32 = 0x004f_f018;
+
+pub(crate) const RAND_NEXT: Callee = Callee {
+    addr: 0x0031_7a08,
+    f: ee::s10::Rand_Next,
+};
+
+/// `unsigned BXrand(void)` (0x3177f0): the next number of the main random
+/// generator (`Rand_Next(&main_rand)`).
+pub fn rand_next_main(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        set_reg(c, A0, 0x50_0000);
+        frame.save_ra(c, 0);
+        set_reg(c, A0, sx(RAND_MAIN));
+        RAND_NEXT.call(c, 0x0031_7804)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fill;
+    use crate::difftest::put_words;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+
+    /// `Rand_NextMain`: random generator state words (indices and table
+    /// entries); the real `Rand_Next` runs.
+    #[test]
+    fn rand_next_main_matches() {
+        crate::difftest::check(
+            ee::s10::f_003177f0__generated,
+            rand_next_main,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3177f0, 0);
+                c.pc = 0x0031_77f0;
+                fill(c, &mut r, RAND_MAIN, 0x10);
+            },
+        );
+    }
+}

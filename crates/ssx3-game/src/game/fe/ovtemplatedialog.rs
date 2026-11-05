@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -975,6 +976,201 @@ pub fn replay_begin_playback(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod game_ui {
+
+    /// `gp-0x848`: the world; its game module (`+0x84`) and BE library
+    /// (`+0x78`).
+    pub const GP_WORLD: u32 = 0x848;
+
+    pub const W_GAME: u32 = 0x84;
+
+    pub const W_BE: u32 = 0x78;
+
+    /// `gp-0x9f4`: the pending UI action (0 none, 1 menu result, 2 leave the
+    /// replay, 3 close the PDA template, 4 request game state 0xe).
+    pub const GP_ACTION: u32 = 0x9f4;
+
+    /// Game module: replay (`+0x28`), UI manager (`+0x48`, its state stack at
+    /// `+0x18`), the HUD block (`+0x200`, its "dirty" word at `+8`), the game
+    /// mode (`+0x214`).
+    pub const G_REPLAY: u32 = 0x28;
+
+    pub const G_UI: u32 = 0x48;
+
+    pub const UI_STACK: u32 = 0x18;
+
+    pub const G_HUD: u32 = 0x200;
+
+    pub const G_MODE: u32 = 0x214;
+
+    /// UI state id (`+0x98`); 8 is the pause menu.
+    pub const S_ID: u32 = 0x98;
+
+    /// The action jump table.
+    pub const JUMP_TABLE: u32 = 0x0047_1ae0;
+
+    /// The "online" flag word the pause-menu exit checks.
+    pub const ONLINE: u32 = 0x0053_4b30;
+}
+
+pub(crate) mod game_ui_callee {
+    use super::ee;
+    use super::Callee;
+
+    pub const HANDLE_MENU_RESULT: Callee = Callee {
+        addr: 0x0020_ccf8,
+        f: ee::s05::GameUI_HandleMenuResult,
+    };
+
+    pub const PDA_TEMPLATE_CLOSE: Callee = Callee {
+        addr: 0x0020_d190,
+        f: ee::s05::OVScreenPDATemplate_Close,
+    };
+
+    /// Called through the function table.
+    pub const GET_ACTIVE_STATE: u32 = 0x0039_fa88;
+
+    pub const REPLAY_FINISH: u32 = 0x0027_06f0;
+
+    pub const BE_GET_INTERFACE: u32 = 0x0014_dd58;
+
+    pub const CLOSE_ALL: u32 = 0x0039_f840;
+
+    pub const REQUEST_STATE: u32 = 0x0023_1250;
+}
+
+/// `void GameUI_Update(void)` (0x20cfd0): run the pending UI action
+/// (`gp-0x9f4`, through a jump table): 1 handles the menu result; 2 leaves
+/// the replay (stop it, mark the HUD dirty and, online in the pause menu of
+/// mode 2, close every UI state); 3 closes the PDA template and every UI
+/// state; 4 requests game state 0xe. Actions 2-4 clear the pending action.
+#[allow(dead_code)]
+pub fn game_ui_update(c: &mut Cpu) {
+    use game_ui::*;
+    use game_ui_callee::*;
+    guest(c, |c| {
+        let gp = c.g[GP][0] as u32;
+        let gpa = |off: u32| Addr(gp.wrapping_sub(off));
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x30);
+        c.g[V1][0] = gpa(GP_WORLD).lw(c);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(W_GAME)).lw(c);
+        c.g[S1][0] = Addr((c.g[V0][0] as u32).wrapping_add(G_UI)).lw(c);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(UI_STACK));
+        c.g[S0][0] = 0;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, GET_ACTIVE_STATE, 0x0020_d000)?;
+            c.g[S0][0] = c.g[V0][0];
+        }
+
+        c.cycles += 4;
+        c.g[V1][0] = gpa(GP_ACTION).lw(c);
+        c.g[V0][0] = (c.g[V1][0] < 5) as u64;
+        let in_range = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x0047_0000;
+        // Whether the exit passes the block at 0x20d0f8 (+1 cycle).
+        let mut via_d0f8 = true;
+        if in_range {
+            c.cycles += 6;
+            c.g[V1][0] = sx(((c.g[V1][0] as u32) << 2).wrapping_add(JUMP_TABLE));
+            c.g[V0][0] = sx(JUMP_TABLE);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            let target = c.g[A0][0] as u32;
+            match target {
+                0x0020_d02c => {
+                    // 1: the menu result.
+                    c.cycles += 4;
+                    HANDLE_MENU_RESULT.call(c, 0x0020_d034)?;
+                    via_d0f8 = false;
+                }
+                0x0020_d03c => {
+                    // 2: leave the replay.
+                    c.cycles += 11;
+                    c.g[V1][0] = gpa(GP_WORLD).lw(c);
+                    gpa(GP_ACTION).sw(c, 0);
+                    c.g[V0][0] = Addr((c.g[V1][0] as u32).wrapping_add(W_GAME)).lw(c);
+                    c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(G_REPLAY)).lw(c);
+                    call_ptr(c, REPLAY_FINISH, 0x0020_d050)?;
+                    c.g[A1][0] = gpa(GP_WORLD).lw(c);
+                    let world = c.g[A1][0] as u32;
+                    c.g[A0][0] = 1;
+                    c.g[V0][0] = Addr(world.wrapping_add(W_GAME)).lw(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(G_HUD)).lw(c);
+                    Addr((c.g[V1][0] as u32).wrapping_add(8)).sw(c, 1);
+                    // The state is read from s0 again, as the original does
+                    // (a callee that misbehaves on test data can change it).
+                    if c.g[S0][0] != 0 {
+                        via_d0f8 = false;
+                        c.cycles += 5;
+                        c.g[V0][0] = Addr(world.wrapping_add(W_GAME)).lw(c);
+                        c.g[A0][0] = 2;
+                        c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(G_MODE)).lw(c);
+                        if c.g[V1][0] == 2 {
+                            c.cycles += 4;
+                            c.g[V1][0] = Addr((c.g[S0][0] as u32).wrapping_add(S_ID)).lw(c);
+                            c.g[V0][0] = 8;
+                            if c.g[V1][0] == 8 {
+                                c.cycles += 7;
+                                c.g[A0][0] = Addr(world.wrapping_add(W_BE)).lw(c);
+                                c.g[A1][0] = 7;
+                                call_ptr(c, BE_GET_INTERFACE, 0x0020_d098)?;
+                                c.g[V1][0] = 0x0053_0000;
+                                c.g[V0][0] = Addr(ONLINE).lw(c);
+                                if c.g[V0][0] != 0 {
+                                    c.cycles += 4;
+                                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(UI_STACK));
+                                    call_ptr(c, CLOSE_ALL, 0x0020_d0b0)?;
+                                }
+                            }
+                        }
+                    }
+                }
+                0x0020_d0b8 => {
+                    // 3: close the PDA template and every UI state.
+                    c.cycles += 9;
+                    gpa(GP_ACTION).sw(c, 0);
+                    PDA_TEMPLATE_CLOSE.call(c, 0x0020_d0c0)?;
+                    c.g[V0][0] = gpa(GP_WORLD).lw(c);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(W_GAME)).lw(c);
+                    c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(G_UI)).lw(c);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(UI_STACK));
+                    call_ptr(c, CLOSE_ALL, 0x0020_d0d4)?;
+                    via_d0f8 = false;
+                }
+                0x0020_d0dc => {
+                    // 4: request game state 0xe.
+                    c.cycles += 7;
+                    c.g[V0][0] = gpa(GP_WORLD).lw(c);
+                    c.g[A1][0] = 0xe;
+                    gpa(GP_ACTION).sw(c, 0);
+                    c.g[A2][0] = 2;
+                    c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(W_GAME)).lw(c);
+                    c.g[A3][0] = 0;
+                    call_ptr(c, REQUEST_STATE, 0x0020_d0f8)?;
+                }
+                0x0020_d0f8 => {}
+                t => {
+                    c.jump_out(t, 0x0020_cfd0, 0x0020_d10c);
+                    return Ok(());
+                }
+            }
+        }
+        if via_d0f8 {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1250,5 +1446,90 @@ pub(crate) mod tests {
                 w_5(c, OBJ2_2 + 0x18, 0);
             },
         );
+    }
+    use super::*;
+
+    /// GameUI_Update: actions 0-6 and -1 (jump table written in), no UI
+    /// manager or a state stack with none / an inactive / an active state
+    /// (pause menu id 8 or other), game mode 2 or not, online or not. The
+    /// real callees run; the BE interface lookup is a fake.
+    #[test]
+    #[ignore = "fixture unbounded: real callees jump through jump tables the test machine never loads; port parked, not installed"]
+    fn game_ui_update_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA, GAME_GP};
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        check(ee::s05::f_0020cfd0, game_ui_update, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x20_cfd0, 3);
+            c.pc = 0x0020_cfd0;
+            let gp = GAME_GP;
+            let (world, game, mgr) = (DATA, DATA + 0x1000, DATA + 0x2000);
+            let (replay, hud) = (DATA + 0x3000, DATA + 0x3800);
+            let (sentinel, n1, n2) = (DATA + 0x4000, DATA + 0x4100, DATA + 0x4200);
+            // BELibrary dummy (GameUI_HandleMenuResult gets its instance).
+            w(c, gp - 0x1f04, DATA + 0x3_0000);
+            w(c, gp - 0x848, world);
+            w(c, gp - 0x9e4, 0);
+            let action = [0u32, 1, 2, 3, 4, 5, 6, u32::MAX][(seed % 8) as usize];
+            w(c, gp - 0x9f4, action);
+            for (i, t) in [
+                0x0020_d0f8u32,
+                0x0020_d02c,
+                0x0020_d03c,
+                0x0020_d0b8,
+                0x0020_d0dc,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                w(c, 0x0047_1ae0 + 4 * i as u32, t);
+            }
+            w(c, 0x0053_4b30, (seed % 3 != 0) as u32);
+            w(c, world + 0x84, game);
+            w(c, world + 0x78, r.next_u32());
+            w(c, world + 0xc0, 0);
+            w(c, game + 0x28, replay);
+            w(c, replay + 0x61c, 0);
+            w(c, game + 0x200, hud);
+            w(c, game + 0x214, if seed % 5 == 0 { 1 } else { 2 });
+            w(
+                c,
+                game + 0x48,
+                if seed % 13 == 0 { 0xffff_ffe8 } else { mgr },
+            );
+            // The UI state stack at mgr+0x18: nodes {prev, next, .., flags
+            // +0x1c (bit 5 active), id +0x98}, ending at a sentinel.
+            w(c, sentinel, sentinel);
+            w(c, sentinel + 4, sentinel);
+            let id = if seed % 4 == 3 { 3 } else { 8 };
+            for (n, next) in [(n1, n2), (n2, sentinel)] {
+                w(c, n, mgr + 0x18);
+                w(c, n + 4, next);
+                w(c, n + 0x98, id);
+            }
+            w(
+                c,
+                n1 + 0x1c,
+                if seed % 6 == 1 {
+                    0x20
+                } else {
+                    r.next_u32() & !0x20
+                },
+            );
+            w(
+                c,
+                n2 + 0x1c,
+                r.next_u32() | if seed % 9 == 2 { 0 } else { 0x20 },
+            );
+            w(
+                c,
+                mgr + 0x18 + 4,
+                match (seed / 3) % 3 {
+                    0 => sentinel,
+                    1 => n2,
+                    _ => n1,
+                },
+            );
+        });
     }
 }

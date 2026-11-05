@@ -207,6 +207,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_light_man_get_instance_lighting,
         "WorldLightMan_GetInstanceLighting",
     ),
+    (
+        0x002f_6910,
+        rider_base_match_cheat_code,
+        "RiderBase_MatchCheatCode",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1988,6 +1993,22 @@ pub(crate) mod cheat {
 
     /// Event and progress bits (bit 1: the cheat's variant flag).
     pub const FLAGS: u32 = 0x07;
+
+    pub const STATE_2: u32 = 0x4;
+
+    pub const STEP: u32 = 0x5;
+
+    pub const COUNT: u32 = 0x6;
+
+    pub const FLAGS_2: u32 = 0x7;
+
+    /// The code: presses per step (9 signed bytes at 0x445e30).
+    pub const CODE: u32 = 0x0044_5e30;
+
+    pub const STEPS: u64 = 9;
+
+    /// `gp+0xad0`: set to 8 when the full code is entered with both buttons.
+    pub const GP_UNLOCK: u32 = 0xad0;
 }
 
 pub(crate) mod cheat_rider {
@@ -2065,6 +2086,16 @@ pub(crate) mod cheat_callee {
 
     /// The zero vector the velocity is reset to.
     pub const ZERO_VEC: u32 = 0x004f_f130;
+
+    pub const GET_EVENTS: Callee = Callee {
+        addr: 0x002f_6b38,
+        f: ee::s09::RiderBase_GetCheatCodeEvents,
+    };
+
+    pub const CLEAR_EVENTS: Callee = Callee {
+        addr: 0x002f_6b28,
+        f: ee::s09::RiderBase_ClearCheatCodeEvents,
+    };
 }
 
 pub(crate) mod attack_fx {
@@ -3408,6 +3439,182 @@ pub fn world_light_man_get_instance_lighting(c: &mut Cpu) {
     });
 }
 
+/// How [`rider_base_match_cheat_code`] leaves: straight to the epilogue
+/// (`lq s0` already done), through 0x2f6a44 (+1, `lq s0`), or through
+/// 0x2f6a40 (+1, store the flags in v0, then 0x2f6a44).
+pub(crate) enum CheatExit {
+    Direct,
+    Done,
+    StoreFlags,
+}
+
+/// `void RiderBase_MatchCheatCode(Matcher* self)` (0x2f6910): consume the
+/// pending button events; on a new press (flag 1 clear) step the code
+/// state machine: from failed (-1) the 0x40 button restarts; while entering
+/// (0) a 0x10 press counts and a 0x20 press checks the count against the
+/// code's step (9 steps unlock, a mismatch fails); once unlocked (1) both
+/// buttons (0x60) set `gp+0xad0 = 8` and 0x40 toggles flag 2. With no event
+/// flag 1 is cleared.
+pub fn rider_base_match_cheat_code(c: &mut Cpu) {
+    use cheat::*;
+    use cheat_callee::*;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = c.g[S0][0] as u32;
+        let at = |off: u32| Addr(this.wrapping_add(off));
+        GET_EVENTS.call(c, 0x002f_6928)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S0][0];
+        CLEAR_EVENTS.call(c, 0x002f_6934)?;
+        let events = c.g[S1][0];
+        let exit = if events == 0 {
+            c.cycles += 3;
+            c.g[V0][0] = at(FLAGS).lbu(c) & 0xfe;
+            CheatExit::StoreFlags
+        } else {
+            c.g[V1][0] = at(FLAGS).lbu(c);
+            c.cycles += 3;
+            c.g[V0][0] = c.g[V1][0] & 1;
+            if c.g[V0][0] != 0 {
+                CheatExit::Direct
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[V1][0] | 1;
+                c.g[V1][0] = at(STATE).lb(c);
+                let flags = c.g[A0][0];
+                at(FLAGS).sb(c, flags);
+                let state = c.g[V1][0] as i64;
+                if state == 0 {
+                    cheat_entering(c, this, events)
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 1;
+                    if state > 0 {
+                        c.cycles += 2;
+                        c.g[V0][0] = 0x60;
+                        if state == 1 {
+                            // Unlocked.
+                            c.cycles += 2;
+                            if events == 0x60 {
+                                c.cycles += 3;
+                                c.g[V0][0] = 8;
+                                let gp = c.g[GP][0] as u32;
+                                Addr(gp.wrapping_add(GP_UNLOCK)).sw(c, 8);
+                                CheatExit::Done
+                            } else {
+                                c.cycles += 2;
+                                let toggle = events & 0x40 != 0;
+                                c.g[V0][0] = c.g[A0][0] ^ 2;
+                                if toggle {
+                                    CheatExit::StoreFlags
+                                } else {
+                                    CheatExit::Done
+                                }
+                            }
+                        } else {
+                            c.cycles += 2;
+                            CheatExit::Direct
+                        }
+                    } else {
+                        c.cycles += 3;
+                        c.g[V0][0] = events & 0x40;
+                        if state == -1 {
+                            // Failed: the 0x40 button restarts.
+                            c.cycles += 2;
+                            if c.g[V0][0] == 0 {
+                                CheatExit::Direct
+                            } else {
+                                c.cycles += 5;
+                                at(FLAGS).sb(c, 0);
+                                at(STATE).sb(c, 0);
+                                at(COUNT).sb(c, 0);
+                                at(STEP).sb(c, 0);
+                                CheatExit::Done
+                            }
+                        } else {
+                            c.cycles += 2;
+                            CheatExit::Direct
+                        }
+                    }
+                }
+            }
+        };
+        match exit {
+            CheatExit::StoreFlags => {
+                c.cycles += 2;
+                let flags = c.g[V0][0];
+                at(FLAGS).sb(c, flags);
+                frame.restore(c, S0, 0x20);
+            }
+            CheatExit::Done => {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x20);
+            }
+            CheatExit::Direct => frame.restore(c, S0, 0x20),
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// State 0 of [`rider_base_match_cheat_code`]: count 0x10 presses; on 0x20
+/// compare the count with the code's step.
+pub(crate) fn cheat_entering(c: &mut Cpu, this: u32, events: u64) -> CheatExit {
+    use cheat::*;
+    let at = |off: u32| Addr(this.wrapping_add(off));
+    c.cycles += 3;
+    c.g[V0][0] = events & 0x20;
+    if events & 0x10 != 0 {
+        c.cycles += 4;
+        c.g[V0][0] = sx((at(COUNT).lbu(c) as u32).wrapping_add(1));
+        let n = c.g[V0][0];
+        at(COUNT).sb(c, n);
+        return CheatExit::Done;
+    }
+    c.cycles += 2;
+    if c.g[V0][0] == 0 {
+        c.g[V0][0] = 0x44_0000;
+        return CheatExit::Done;
+    }
+    c.cycles += 7;
+    let step = at(STEP).lb(c);
+    c.g[A0][0] = at(COUNT).lb(c);
+    c.g[V1][0] = sx((step as u32).wrapping_add(CODE));
+    c.g[V0][0] = Addr(c.g[V1][0] as u32).lb(c);
+    c.g[A1][0] = at(STEP).lbu(c);
+    if c.g[A0][0] != c.g[V0][0] {
+        // Wrong count: failed.
+        c.cycles += 3;
+        c.g[V0][0] = u64::MAX;
+        at(STATE).sb(c, u64::MAX);
+        return CheatExit::Done;
+    }
+    c.cycles += 6;
+    c.g[V0][0] = sx((c.g[A1][0] as u32).wrapping_add(1));
+    at(COUNT).sb(c, 0);
+    c.g[A0][0] = c.g[V0][0] & 0xff;
+    c.g[V1][0] = STEPS;
+    let next = c.g[V0][0];
+    at(STEP).sb(c, next);
+    if c.g[A0][0] == STEPS {
+        // The whole code: unlocked.
+        c.cycles += 5;
+        c.g[V0][0] = 1;
+        at(STEP).sb(c, 0);
+        at(STATE).sb(c, 1);
+        at(COUNT).sb(c, 0);
+    }
+    CheatExit::Done
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4488,6 +4695,55 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(THIS);
                 c.g[A1][0] = sx(OBJ);
                 c.g[A2][0] = (seed % 7 != 0) as u64;
+            },
+        );
+    }
+    use super::*;
+
+    /// RiderBase_MatchCheatCode: every state (-2, -1, 0, 1, 2), flag bytes
+    /// with and without flag 1 and the event bits (0x60 exactly too), counts
+    /// that match the code's step or not, the last step.
+    #[test]
+    fn rider_base_match_cheat_code_matches() {
+        use crate::difftest::{check, scramble, Rng, DATA, GAME_GP};
+        check(
+            ee::s09::f_002f6910__generated,
+            rider_base_match_cheat_code,
+            400,
+            &|c, seed| {
+                let mut r = Rng(0x2f69_1000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x002f_6910;
+                c.g[GP][0] = GAME_GP as u64;
+                let code = [3u8, 1, 4, 1, 5, 9, 2, 6, 5];
+                for (i, &n) in code.iter().enumerate() {
+                    c.bus.write8(0x0044_5e30 + i as u32, n);
+                }
+                let this = DATA;
+                let state = [0xffu8, 0, 1, 2, 0xfe][(seed % 5) as usize];
+                let step = if seed % 3 == 0 {
+                    8
+                } else {
+                    (r.next_u32() % 9) as u8
+                };
+                let count = if seed % 2 == 0 {
+                    code[step as usize]
+                } else {
+                    (r.next_u32() % 10) as u8
+                };
+                let flags = match (seed / 5) % 6 {
+                    0 => 0x60,
+                    1 => 0x60 | (r.next_u32() as u8 & 0x8e),
+                    2 => r.next_u32() as u8 & 0x8e,
+                    3 => r.next_u32() as u8 & !1,
+                    _ => r.next_u32() as u8,
+                };
+                c.bus.write32(this, r.next_u32());
+                c.bus.write8(this + 4, state);
+                c.bus.write8(this + 5, step);
+                c.bus.write8(this + 6, count);
+                c.bus.write8(this + 7, flags);
+                c.g[A0][0] = sx(this);
             },
         );
     }
