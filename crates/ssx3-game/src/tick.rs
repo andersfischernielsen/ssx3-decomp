@@ -764,6 +764,20 @@ pub fn frame60_ran(c: &mut Cpu, key: u32, frame: u32) {
     });
 }
 
+/// How far an object's [`frame60_due`] clock is into its current 60 Hz frame,
+/// in sixtieths of a tick (0 to `rate - 1`; divided by the rate, the
+/// fraction of the frame): 0 at or below 60, for an object with no clock,
+/// and when the object was moved from the `frame` its clock last recorded.
+pub fn frame60_phase(c: &mut Cpu, key: u32, frame: u32) -> u32 {
+    if rate(c) <= 60 {
+        return 0;
+    }
+    CLOCKS.with(|m| match m.borrow().get(&key) {
+        Some(k) if k.frame == frame => k.credit,
+        _ => 0,
+    })
+}
+
 /// A 60 Hz frame boundary for UI/script timelines authored at 60 fps: true
 /// once per 60 Hz frame at any rate (always at 60).
 ///

@@ -36,8 +36,10 @@ Status (2026-10-23):
   velocity is a per-60-Hz-frame value applied as `60/rate`, and the two
   per-tick chase-camera blend rates are converted at their callers
   (`docs/plans/tick/chasecam-callers.tsv`).
+- ✅ UI animation: menu widgets take in-between values on the ticks between
+  their 60 Hz frames (`UIAnim_Apply`, see "UI animation and screen scripts").
 - ⏳ T3 next (see "Left for a design decision"): the script timeline (now
-  portable), the UI animation frame clock, and the race-start offset.
+  portable) and the race-start offset.
 
 ## How the game keeps time
 
@@ -364,6 +366,21 @@ Measured (race replay, 60 Hz frame F vs 240 Hz frame 4F, mean absolute
 difference): the screen transitions after each button press went from 45-105
 to 0-12; the description text wraps as at 60. Remaining differences are the
 loading/race start.
+
+`UIAnim_Apply` (0x3975e0) and `UIScreen_Update` (0x39d778) are ported, and
+the in-between values live inside the `UIAnim_Apply` port: on the ticks
+between steps each channel is set between its frame and the next one by the
+stepping clock's phase (`tick::frame60_phase`, 0 at or below 60, where the
+original runs untouched). Mode 0 blends along the timeline thread of the
+screen whose `UIScreen_Update` is running, other modes along the
+animation's own clock. Only one frame at a time: a held or stopped timeline
+keeps its frame's values, parameter 12 keeps its integer steps, and no blend
+spans a wrap, a jump or a multi-frame step. In the browser build an update
+cut off by a VBlank unwind is finished by the generated body, and its
+timeline widgets keep their frame's values for the rest of that tick.
+Measured (race replay input at 120 Hz, the 90 frames after each scripted
+button press, 320x240 captures): a menu frame changes on 1772 of 1800 ticks,
+1418 before.
 
 ### T4: per-tick updates with no 1/60 marker (done)
 
