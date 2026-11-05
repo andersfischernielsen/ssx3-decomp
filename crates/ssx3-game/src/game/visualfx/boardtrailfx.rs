@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -125,6 +126,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002e_be20,
         transition_effect_ctor_random2,
         "TransitionEffect_ctorRandom2",
+    ),
+    (
+        0x002e_86f0,
+        c_board_trail_fx_should_emit,
+        "cBoardTrailFX_ShouldEmit",
     ),
 ];
 
@@ -4631,6 +4637,142 @@ pub fn transition_wipe_draw(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod trail_emit {
+
+    /// The owning rider.
+    pub const OWNER: u32 = 0x00;
+
+    /// Rider position at the last emitted point (quadword).
+    pub const LAST_POS: u32 = 0xb0;
+
+    /// Trail mode (1: emit every other tick).
+    pub const MODE: u32 = 0x94;
+
+    /// Ticks to wait before the next emit check.
+    pub const COOLDOWN: u32 = 0xe0;
+
+    /// Rider: world position (quadword).
+    pub const RIDER_POS: u32 = 0x460;
+
+    /// Rider flags: on the ground / not grinding / on a rail.
+    pub const RIDER_GROUNDED: u32 = 0xac4;
+
+    pub const RIDER_GRINDING: u32 = 0xad0;
+
+    pub const RIDER_RAIL: u32 = 0xafc;
+}
+
+/// `bool cBoardTrailFX_ShouldEmit(cBoardTrailFX* self, float speed /* f12 */)`
+/// (0x2e86f0): whether the wake trail adds a point this tick. While the
+/// cooldown runs it is counted down and the answer is no. Otherwise the
+/// rider's distance from the last point (VU0 length) is compared with 110
+/// (30 when grounded, not grinding and on a rail): far enough, or mode 1,
+/// or `speed` above the `.lit4` threshold at gp-0x39d0 emits and records the
+/// rider position (mode 1 also sets the cooldown to 2).
+pub fn c_board_trail_fx_should_emit(c: &mut Cpu) {
+    use trail_emit::*;
+    c.cycles += 4;
+    let fx = Addr(r32(c, A0));
+    c.g[A1][0] = c.g[A0][0];
+    let cooldown = fx.off(COOLDOWN).lw(c);
+    c.g[V1][0] = cooldown;
+    let frame = Frame::open(c, 0x20);
+    if cooldown as i64 > 0 {
+        c.cycles += 4;
+        c.g[V1][0] = sx((cooldown as u32).wrapping_sub(1));
+        c.g[V0][0] = 0;
+        fx.off(COOLDOWN).sw(c, c.g[V1][0]);
+    } else {
+        // Distance from the last point: sqrt(|rider pos - last pos|^2) into
+        // f0 (through VU0 Q), threshold 110 into f1.
+        c.cycles += 24;
+        let rider = fx.off(OWNER).lw(c);
+        c.g[V0][0] = rider;
+        c.g[A2][0] = 0;
+        c.lqc2(3, (rider as u32).wrapping_add(RIDER_POS));
+        c.lqc2(4, fx.off(LAST_POS).0);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, frame.at(c, 0x10));
+        c.g[AT][0] = 0x42dc_0000;
+        c.f[1] = 0x42dc_0000; // 110.0
+        c.lq(V0, frame.at(c, 0x10));
+        let rider = fx.off(OWNER).lw(c);
+        c.g[A0][0] = rider;
+        c.sq(V0, frame.at(c, 0));
+        c.lqc2(3, frame.at(c, 0));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(V1, 22);
+        c.f[0] = c.g[V1][0] as u32;
+        let rider = Addr(rider as u32);
+        c.g[V0][0] = rider.off(RIDER_GROUNDED).lw(c);
+        if c.g[V0][0] != 0 {
+            c.cycles += 3;
+            c.g[V0][0] = rider.off(RIDER_GRINDING).lw(c);
+            if c.g[V0][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = rider.off(RIDER_RAIL).lw(c);
+                c.g[A2][0] = (0 < c.g[V0][0]) as u64;
+            }
+        }
+        c.cycles += 2;
+        let on_rail = c.g[A2][0] != 0;
+        c.g[V1][0] = fx.off(MODE).lw(c);
+        if on_rail {
+            c.cycles += 2;
+            c.g[AT][0] = 0x41f0_0000;
+            c.f[1] = 0x41f0_0000; // 30.0
+        }
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        let emit = if c.g[V1][0] == 1 {
+            // Mode 1: emit and wait two ticks.
+            c.g[V0][0] = 2;
+            c.cycles += 3;
+            fx.off(COOLDOWN).sw(c, 2);
+            c.g[A0][0] = fx.off(OWNER).lw(c);
+            c.g[V0][0] = 1;
+            true
+        } else {
+            c.cycles += 4;
+            let dist = FpuF32(c.f[0]);
+            let far = FpuF32(c.f[1]).le(dist);
+            abi::set_fcc(c, far);
+            if far {
+                c.g[A0][0] = fx.off(OWNER).lw(c);
+                true
+            } else {
+                c.cycles += 5;
+                let fast = Addr(r32(c, GP).wrapping_sub(0x39d0)).read_fpu(c);
+                c.f[0] = fast.0;
+                let quick = abi::farg(c, 0).lt(fast);
+                abi::set_fcc(c, quick);
+                if quick {
+                    c.cycles += 2;
+                    c.g[A0][0] = fx.off(OWNER).lw(c);
+                    true
+                } else {
+                    c.g[V0][0] = 0;
+                    false
+                }
+            }
+        };
+        if emit {
+            // Remember where the rider is.
+            c.cycles += 2;
+            c.lq(V1, (c.g[A0][0] as u32).wrapping_add(RIDER_POS));
+            c.sq(V1, fx.off(LAST_POS).0);
+        }
+    }
+    c.cycles += 2;
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5356,6 +5498,73 @@ pub(crate) mod tests {
                 for off in [0x39a0u32, 0x39a4, 0x3998, 0x399c] {
                     f_2(c, crate::difftest::GAME_GP.wrapping_sub(off), r.edge_f32());
                 }
+            },
+        );
+    }
+    use super::*;
+
+    /// Trail emit check: cooldown running / zero / negative; rider and last
+    /// position up to ~170 apart (both thresholds, 30 and 110, on either
+    /// side); grounded / grinding / rail flags; mode 1 or not; speed below
+    /// or above the threshold literal.
+    #[test]
+    fn c_board_trail_fx_should_emit_matches() {
+        use crate::difftest::{put_vec, GAME_GP};
+        use trail_emit::*;
+        check(
+            ee::s09::f_002e86f0__generated,
+            c_board_trail_fx_should_emit,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x86f0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x002e_86f0;
+                let fx = DATA;
+                let rider = DATA + 0x1000;
+                c.bus.write32(fx + OWNER, rider);
+                let cooldown = match seed % 5 {
+                    0 => 1 + r.next_u32() % 3,
+                    1 => r.next_u32() | 0x8000_0000,
+                    _ => 0,
+                };
+                c.bus.write32(fx + COOLDOWN, cooldown);
+                let mode = if r.next_u32() % 3 == 0 {
+                    1
+                } else {
+                    r.next_u32() % 4
+                };
+                c.bus.write32(fx + MODE, mode);
+                let pos = [r.f32(1000.0), r.f32(1000.0), r.f32(1000.0), r.next_u32()];
+                put_vec(c, rider + RIDER_POS, pos);
+                let spread = [30.0f32, 100.0, 1.0][(seed / 5 % 3) as usize];
+                let mut last = [0u32; 4];
+                for k in 0..3 {
+                    let d = f32::from_bits(r.f32(spread));
+                    last[k] = (f32::from_bits(pos[k]) + d).to_bits();
+                }
+                last[3] = r.next_u32();
+                put_vec(c, fx + LAST_POS, last);
+                let flag = |r: &mut Rng| {
+                    if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32()
+                    }
+                };
+                let g = flag(&mut r);
+                c.bus.write32(rider + RIDER_GROUNDED, g);
+                let gr = if r.next_u32() % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(rider + RIDER_GRINDING, gr);
+                let rail = flag(&mut r);
+                c.bus.write32(rider + RIDER_RAIL, rail);
+                c.bus.write32(GAME_GP - 0x39d0, r.f32(50.0));
+                c.f[12] = r.f32(50.0);
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | fx as u64;
             },
         );
     }

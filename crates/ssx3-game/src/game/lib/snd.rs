@@ -6,6 +6,7 @@ use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fpr;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -13,11 +14,13 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::events::Resume;
 pub(crate) use crate::game::ai::ai::at as at_2;
+use crate::game::visualfx::boardwakefx as bw;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -104,6 +107,15 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SND_DecEaxa_DecodeStream",
     ),
     (0x003c_cf90, snd_eaxa_decode, "SND_EaxaDecode"),
+    (0x003b_55f0, snd_tick, "SND_Tick"),
+    (0x003b_7b48, sndstrm_get_status, "SNDSTRM_GetStatus"),
+    (
+        0x003c_1298,
+        snd_release_finished_voices,
+        "SND_ReleaseFinishedVoices",
+    ),
+    (0x003c_38e0, snd_channel_apply_pan, "SND_ChannelApplyPan"),
+    (0x003c_6de0, sndstrm_pop_block, "SNDSTRM_PopBlock"),
 ];
 
 /// Fields of the driver state block.
@@ -4894,12 +4906,1917 @@ pub fn snd_ee_mix_block(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod pan {
+
+    /// The driver state block (`snd::STATE`).
+    pub const STATE: u32 = 0x0050_a8e8;
+
+    /// `u8`: speaker count.
+    pub const SPEAKERS: u32 = 0x47;
+
+    /// `u8`: auxiliary sends.
+    pub const AUX_SENDS: u32 = 0x48;
+
+    /// `SndChannel*`: the channel array.
+    pub const CHANNELS: u32 = 0x1f0;
+
+    /// The second global block (`snd::SYNC`).
+    pub const SYNC: u32 = 0x0050_ad00;
+
+    /// `float[voice][8]`: per-voice output gains (`SYNC + 0xe98`).
+    pub const GAINS: u32 = 0x0050_bb98;
+
+    /// `{ s16 angle; s16 level; }[layout][6]`: the speaker layouts (0x18
+    /// bytes each): per voice slot, a pan angle offset and a level.
+    pub const LAYOUTS: u32 = 0x0050_ab20;
+
+    /// The `level` halves of `LAYOUTS`.
+    pub const LAYOUT_LEVELS: u32 = 0x0050_ab22;
+
+    /// Bytes per layout.
+    pub const LAYOUT_SIZE: u64 = 0x18;
+
+    /// `SndChannel` size.
+    pub const CHAN_SIZE: u64 = 0x8c;
+
+    /// `s16[]`: the channel's voice numbers.
+    pub const VOICES: u32 = 0x04;
+
+    /// `u16`: the channel's pan angle.
+    pub const ANGLE: u32 = 0x1c;
+
+    /// `u8`: number of voices.
+    pub const VOICE_COUNT: u32 = 0x23;
+
+    /// `u16`: flags.
+    pub const FLAGS: u32 = 0x24;
+
+    /// `u16[]`: per-voice pan angles.
+    pub const VOICE_ANGLES: u32 = 0x50;
+
+    /// Flag: SPU voices (a centre-rear split in 5-speaker mode).
+    pub const F_SPU: u64 = 0x8;
+
+    /// Flag: pan by the smooth lookup table (instead of the gain tables).
+    pub const F_SMOOTH: u64 = 0x40;
+
+    /// `1/sqrt(2)`: the mono gain of both sides.
+    pub const HALF_POWER: u32 = 0x3f35_04f4;
+
+    /// `32767.0`.
+    pub const FULL_SCALE: u32 = 0x46ff_fe00;
+
+    /// `1.0`.
+    pub const ONE: u32 = 0x3f80_0000;
+}
+
+pub(crate) mod snd_tick {
+
+    /// The driver state (`0x510000 - 0x5718`).
+    pub const STATE: u32 = 0x0050_a8e8;
+
+    /// `s8`: number of tick callbacks.
+    pub const TICK_CALLBACKS: u32 = 0x177;
+
+    /// `s16`: number of voice channels.
+    pub const CHANNEL_COUNT: u32 = 0x17e;
+
+    /// `u32`: driver ticks run so far.
+    pub const TICKS: u32 = 0x180;
+
+    /// `void (*)()[]`: the tick callbacks.
+    pub const CALLBACKS: u32 = 0x184;
+
+    /// `SndChannel*`: the channel array (0x8c bytes each).
+    pub const CHANNELS: u32 = 0x1f0;
+
+    pub const CHANNEL_SIZE: u64 = 0x8c;
+
+    /// Channel: volume sweep step per tick (0: no sweep).
+    pub const SWEEP_STEP: u32 = 0x30;
+
+    /// Channel: sweep target.
+    pub const SWEEP_TARGET: u32 = 0x34;
+
+    /// Channel: current sweep value.
+    pub const SWEEP: u32 = 0x38;
+
+    /// Channel: envelope level step per tick.
+    pub const ENV_STEP: u32 = 0x3c;
+
+    /// Channel: envelope level (16.16).
+    pub const ENV_LEVEL: u32 = 0x40;
+
+    /// Channel: ticks left in the envelope segment.
+    pub const ENV_TICKS: u32 = 0x44;
+
+    /// Channel: number of envelope segments (`s8`).
+    pub const ENV_SEGMENTS: u32 = 0x5c;
+
+    /// Channel: current envelope segment (`u8`).
+    pub const ENV_SEGMENT: u32 = 0x5d;
+
+    /// Channel: volume LFO length / position (`u8`).
+    pub const VOL_LFO_LEN: u32 = 0x65;
+
+    /// Channel: pitch LFO length (`u8`).
+    pub const PITCH_LFO_LEN: u32 = 0x66;
+
+    pub const VOL_LFO_POS: u32 = 0x67;
+
+    pub const PITCH_LFO_POS: u32 = 0x68;
+
+    /// Channel: allocated flag (`s8`, 1 when allocated).
+    pub const ALLOCATED: u32 = 0x69;
+
+    /// Channel: envelope segment table (`{ticks, level}` pairs).
+    pub const ENV_TABLE: u32 = 0x6c;
+
+    /// Channel: volume LFO table, or null.
+    pub const VOL_LFO: u32 = 0x78;
+
+    /// Channel: pitch LFO (modulation) table, or null.
+    pub const PITCH_LFO: u32 = 0x7c;
+
+    /// Channel: cached pitch (`u16`), cleared to force a recompute.
+    pub const PITCH_CACHE: u32 = 0x86;
+}
+
+pub(crate) mod snd_tick_callee {
+    use crate::call::Callee;
+    use ssx3_ee as ee;
+
+    pub const TICK_STUB: Callee = Callee {
+        addr: 0x003c_2438,
+        f: ee::s13::SND_TickStub,
+    };
+
+    pub const CALC_PITCH: Callee = Callee {
+        addr: 0x003b_a938,
+        f: ee::s13::SND_ChannelCalcPitch,
+    };
+
+    pub const APPLY_PITCH: Callee = Callee {
+        addr: 0x003c_25e0,
+        f: ee::s13::SND_ChannelApplyPitch,
+    };
+
+    pub const STOP: Callee = Callee {
+        addr: 0x003b_89e0,
+        f: ee::s13::SND_Stop,
+    };
+
+    pub const CALC_VOLUME: Callee = Callee {
+        addr: 0x003b_a7b0,
+        f: ee::s13::SND_ChannelCalcVolume,
+    };
+
+    pub const APPLY_VOLUME: Callee = Callee {
+        addr: 0x003c_2a50,
+        f: ee::s13::SND_ChannelApplyVolume,
+    };
+}
+
+pub(crate) mod sndstrm {
+
+    /// Stream: its stream file (`StreamFile_GetChannelBytes`).
+    pub const FILE: u32 = 0x00;
+
+    /// Stream: buffer slot index (`SNDSTRM_GetBufferedBytes`).
+    pub const BUFFER: u32 = 0x08;
+
+    /// Stream: playback rate in bytes per second (u16).
+    pub const RATE: u32 = 0x14;
+
+    /// Stream: the current request (list head).
+    pub const REQUEST: u32 = 0x11c;
+
+    /// Stream: state (0: idle).
+    pub const STATE: u32 = 0x124;
+
+    /// Request: its id, and its total byte count.
+    pub const REQ_ID: u32 = 0x0c;
+
+    pub const REQ_BYTES: u32 = 0x10;
+
+    /// Status out: state, request id, buffered milliseconds.
+    pub const OUT_STATE: u32 = 0x0;
+
+    pub const OUT_REQUEST: u32 = 0x4;
+
+    pub const OUT_MS: u32 = 0x8;
+}
+
+pub(crate) mod release {
+
+    /// `lui 0x51`: the high half both blocks are addressed from.
+    pub const HI: u64 = 0x0051_0000;
+
+    /// The driver state (`HI - 0x5718`).
+    pub const STATE: u32 = 0x0050_a8e8;
+
+    /// The voice status block (`HI - 0x5300`).
+    pub const VOICES: u32 = 0x0050_ad00;
+
+    // State fields.
+    /// Channel table pointer.
+    pub const CHANNELS: u32 = 0x1f0;
+
+    /// Number of hardware-voice channels (u8): the first group.
+    pub const COUNT_A: u32 = 0x30;
+
+    /// Number of channels of the second group (u8), after the first.
+    pub const COUNT_B: u32 = 0x2f;
+
+    /// Output mode (u8); 2 releases a voice's mirror (`+0x18`) as well.
+    pub const MODE: u32 = 0x49;
+
+    // Channel fields (0x8c bytes each).
+    pub const CHANNEL_SIZE: u32 = 0x8c;
+
+    /// Voice indices (s16 each).
+    pub const CH_VOICES: u32 = 0x04;
+
+    /// Number of voices (u8).
+    pub const CH_VOICE_COUNT: u32 = 0x23;
+
+    /// Timed-stop state (s16); -1 = no timed stop pending.
+    pub const CH_STOP: u32 = 0x28;
+
+    // Voice status block fields.
+    /// Pointer to the status table the IOP fills in.
+    pub const STATUS: u32 = 0xcb0;
+
+    /// Last key seen per first-group voice (8-byte slots: key, remaining).
+    pub const SEEN_A: u32 = 0x83c;
+
+    /// Last key seen per second-group voice (8-byte slots: key, remaining).
+    pub const SEEN_B: u32 = 0x9bc;
+
+    // Status table entries.
+    /// First group: key word, 8-byte stride.
+    pub const KEY_A: u32 = 0x20;
+
+    /// Second group: key word, 16-byte stride.
+    pub const KEY_B: u32 = 0x1a0;
+
+    /// Mode 2: the mirror voice of voice `h` is `h + 0x18`.
+    pub const MIRROR: u32 = 0x18;
+
+    /// Return addresses of the two `SND_ChannelRelease` calls.
+    pub const RET_A: u32 = 0x003c_13b0;
+
+    pub const RET_B: u32 = 0x003c_1504;
+
+    /// Loop heads (event checks).
+    pub const HEAD_A: u32 = 0x003c_12e8;
+
+    pub const HEAD_A_VOICES: u32 = 0x003c_1388;
+
+    pub const HEAD_B: u32 = 0x003c_1428;
+
+    pub const HEAD_B_VOICES: u32 = 0x003c_14c8;
+
+    pub const SND_CHANNEL_RELEASE: super::Callee = super::Callee {
+        addr: 0x003b_a550,
+        f: super::ee::s13::SND_ChannelRelease,
+    };
+}
+
+pub(crate) const SND_CHANNEL_APPLY_VOLUME: Callee = Callee {
+    addr: 0x003c_2a50,
+    f: ee::s13::SND_ChannelApplyVolume,
+};
+
+pub(crate) const SND_PAN_LOOKUP: Callee = Callee {
+    addr: 0x003c_3728,
+    f: ee::s13::SND_PanLookup,
+};
+
+pub(crate) const SND_PAN_FIX_QUADRANT: Callee = Callee {
+    addr: 0x003c_3780,
+    f: ee::s13::SND_PanFixQuadrant,
+};
+
+pub(crate) const SND_GET_PAN_GAINS: Callee = Callee {
+    addr: 0x003b_c4c0,
+    f: ee::s13::SND_GetPanGains,
+};
+
+/// `addu`-style 32-bit add of a register and a value, sign-extended.
+#[inline(always)]
+pub(crate) fn add(a: u64, b: u64) -> u64 {
+    sx((a as u32).wrapping_add(b as u32))
+}
+
+/// `sll r, 5` / `sll r, 2` / ...: 32-bit shift, sign-extended.
+#[inline(always)]
+pub(crate) fn shl(a: u64, n: u32) -> u64 {
+    sx((a as u32) << n)
+}
+
+/// `void SND_ChannelApplyPan(int channel)` (0x3c38e0): spread a channel's
+/// voices over the speakers. One speaker: every voice gets `1/sqrt 2` on
+/// both sides. One voice: the channel's pan angle through the smooth lookup
+/// (flag 0x40; result also kept as 16-bit levels) or the gain tables, with a
+/// centre-rear split on 5 speakers (SPU flag). Several voices: pick a
+/// speaker layout from the speaker/voice counts, pan each voice by its own
+/// angle plus the layout's offset, scale by the layout's level, flip
+/// out-of-range smooth pans, and route a 6th voice (LFE) to the aux send.
+/// Then `SND_ChannelApplyVolume(channel)`.
+pub fn snd_channel_apply_pan(c: &mut Cpu) {
+    use pan::*;
+    guest(c, |c| {
+        // Prologue: the channel, its gain block and the speaker count.
+        c.cycles += 28;
+        let frame = Frame::open(c, 0xd0);
+        let index_at = frame.at(c, 0x20);
+        c.sw(index_at, c.g[A0][0]);
+        c.g[A0][0] = CHAN_SIZE;
+        frame.save(c, S0, 0xc0);
+        c.g[V0][0] = c.lw(index_at);
+        frame.save(c, S2, 0xa0);
+        c.mult(0, A0, V0, A0);
+        frame.save(c, S1, 0xb0);
+        frame.save(c, S3, 0x90);
+        frame.save(c, S4, 0x80);
+        frame.save(c, S5, 0x70);
+        frame.save(c, S6, 0x60);
+        frame.save(c, S7, 0x50);
+        frame.save(c, FP, 0x40);
+        frame.save_ra(c, 0x30);
+        c.g[A3][0] = sx(STATE);
+        c.g[A2][0] = sx(GAINS);
+        c.g[V0][0] = c.lw(index_at);
+        c.g[A1][0] = c.lw(STATE + CHANNELS);
+        c.g[V1][0] = shl(c.g[V0][0], 5);
+        c.g[T0][0] = c.lbu(STATE + SPEAKERS);
+        let ch = (c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32);
+        c.g[S2][0] = sx(ch);
+        c.g[S0][0] = add(c.g[V1][0], GAINS as u64);
+        c.g[A0][0] = 1;
+        c.g[A1][0] = 0;
+        let speakers = c.g[T0][0];
+
+        if speakers == 1 {
+            // Mono: both sides of every voice at half power.
+            c.cycles += 3;
+            c.g[V0][0] = c.lbu(ch + VOICE_COUNT);
+            c.g[S0][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 7;
+                c.g[A1][0] = sx(GAINS);
+                c.g[AT][0] = HALF_POWER as u64;
+                c.f[0] = HALF_POWER;
+                c.g[A2][0] = sx(GAINS + 4);
+                c.g[A0][0] = sx(ch + VOICES);
+                loop {
+                    c.cycles += 11;
+                    let voice = c.lh(r32(c, A0));
+                    c.g[S0][0] = add(c.g[S0][0], 1);
+                    c.g[V0][0] = shl(voice, 5);
+                    c.g[V1][0] = add(c.g[V0][0], (GAINS + 4) as u64);
+                    c.swc1(0, r32(c, V1));
+                    c.g[V0][0] = add(c.g[V0][0], GAINS as u64);
+                    c.swc1(0, r32(c, V0));
+                    let count = c.lbu(ch + VOICE_COUNT);
+                    c.g[V1][0] = ((c.g[S0][0] as i64) < (count as i64)) as u64;
+                    c.g[A0][0] = add(c.g[A0][0], 2);
+                    if c.g[V1][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003c_3978);
+                    }
+                }
+            }
+            // A sixth voice (LFE) gets nothing on the front pair.
+            c.cycles += 4;
+            c.g[V1][0] = c.lbu(ch + VOICE_COUNT);
+            c.g[V0][0] = 6;
+            c.g[A0][0] = 0x51_0000;
+            if c.g[V1][0] == 6 {
+                c.cycles += 9;
+                let lfe = shl(c.lh(ch + VOICES + 10), 5);
+                c.g[A0][0] = sx(SYNC);
+                c.g[V0][0] = add(lfe, SYNC as u64);
+                c.sw((c.g[V0][0] as u32).wrapping_add(0xe98), 0);
+                c.g[V1][0] = shl(c.lh(ch + VOICES + 10), 5);
+                c.g[A0][0] = add(c.g[A0][0], c.g[V1][0]);
+                c.sw((c.g[A0][0] as u32).wrapping_add(0xe9c), 0);
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.lw(index_at_now(c, frame));
+            SND_CHANNEL_APPLY_VOLUME.call(c, 0x003c_39e0)?;
+            frame.restore(c, S0, 0xc0);
+            pan_epilogue(c, frame);
+            return Ok(());
+        }
+
+        c.cycles += 4;
+        let count = c.lbu(ch + VOICE_COUNT);
+        c.g[V0][0] = count;
+        c.g[V1][0] = count & 0xff;
+        c.g[A2][0] = count;
+        if count == 1 {
+            pan_one_voice(c, frame, ch)?;
+        } else {
+            pan_voices(c, frame, ch, speakers)?;
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.lw(index_at_now(c, frame));
+        SND_CHANNEL_APPLY_VOLUME.call(c, 0x003c_3e74)?;
+        frame.restore(c, S0, 0xc0);
+        pan_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+/// `sp + 0x20`, where the channel index was saved.
+#[inline(always)]
+pub(crate) fn index_at_now(c: &Cpu, frame: Frame) -> u32 {
+    frame.at(c, 0x20)
+}
+
+/// Restore s1-s7, fp and ra and return.
+pub(crate) fn pan_epilogue(c: &mut Cpu, frame: Frame) {
+    c.cycles += 11;
+    frame.restore(c, S1, 0xb0);
+    frame.restore(c, S2, 0xa0);
+    frame.restore(c, S3, 0x90);
+    frame.restore(c, S4, 0x80);
+    frame.restore(c, S5, 0x70);
+    frame.restore(c, S6, 0x60);
+    frame.restore(c, S7, 0x50);
+    frame.restore(c, FP, 0x40);
+    frame.restore_ra(c, 0x30);
+    frame.close(c);
+}
+
+/// One voice: the channel's angle into its gain block (s0).
+pub(crate) fn pan_one_voice(c: &mut Cpu, frame: Frame, ch: u32) -> crate::call::Flow {
+    use pan::*;
+    let gains = c.g[S0][0] as u32;
+    c.cycles += 3;
+    c.g[V0][0] = c.lbu(STATE + AUX_SENDS);
+    if c.g[V0][0] != 0 {
+        // Nothing on the first aux send.
+        c.cycles += 5;
+        c.g[V0][0] = shl(c.lbu(STATE + SPEAKERS), 2);
+        c.g[V0][0] = add(c.g[S0][0], c.g[V0][0]);
+        c.sw(r32(c, V0), 0);
+    }
+    c.g[V0][0] = c.lhu(ch + FLAGS);
+    c.cycles += 3;
+    c.g[V0][0] &= F_SMOOTH;
+    c.g[A0][0] = c.lhu(ch + ANGLE);
+    if c.g[V0][0] != 0 {
+        c.cycles += 22;
+        c.g[A1][0] = sx(gains);
+        SND_PAN_LOOKUP.call(c, 0x003c_3a2c)?;
+        c.g[A0][0] = c.lhu(ch + ANGLE);
+        c.g[A1][0] = sx(gains + 4);
+        c.g[A3][0] = c.lh(gains + 0x1c);
+        c.g[A2][0] = sx(gains);
+        c.g[T0][0] = c.lh(gains + 0x1e);
+        SND_PAN_FIX_QUADRANT.call(c, 0x003c_3a44)?;
+        // Keep the pair as 16-bit levels too.
+        c.g[AT][0] = FULL_SCALE as u64;
+        let scale = FpuF32(FULL_SCALE);
+        let right = Addr(gains + 4).read_fpu(c) * scale;
+        let left = Addr(gains).read_fpu(c) * scale;
+        set_fpr(c, 1, left);
+        let right_w = right.to_i32() as u32;
+        let left_w = left.to_i32() as u32;
+        c.f[2] = right_w;
+        c.f[0] = left_w;
+        c.g[V0][0] = sx(right_w);
+        c.g[V1][0] = sx(left_w);
+        c.sh(gains + 0x1c, c.g[V0][0]);
+        c.sh(gains + 0x1e, c.g[V1][0]);
+    } else {
+        c.cycles += 2;
+        c.g[A1][0] = sx(gains);
+        SND_GET_PAN_GAINS.call(c, 0x003c_3a84)?;
+    }
+    c.cycles += 6;
+    c.g[A0][0] = 5;
+    c.g[V0][0] = sx(STATE);
+    c.g[V1][0] = c.lbu(STATE + SPEAKERS);
+    if c.g[V1][0] == 5 {
+        c.cycles += 4;
+        c.g[V0][0] = c.lhu(ch + FLAGS) & F_SPU;
+        c.g[A1][0] = c.g[SP][0];
+        if c.g[V0][0] != 0 {
+            // SPU voices on 5 speakers: the opposite angle's front/rear
+            // gains go to the centre and rear slots.
+            c.cycles += 9;
+            let angle = sx((c.lhu(ch + ANGLE) as u32).wrapping_sub(0x8000));
+            c.g[A0][0] = angle & 0xffff;
+            SND_GET_PAN_GAINS.call(c, 0x003c_3abc)?;
+            let tmp = frame.at(c, 0);
+            c.lwc1(0, tmp + 8);
+            c.lwc1(1, tmp + 0xc);
+            c.swc1(0, gains + 0x10);
+            c.swc1(1, gains + 4);
+        }
+    }
+    Ok(())
+}
+
+/// Where a layout decision continues (the original's join points).
+pub(crate) enum LayoutJoin {
+    /// `a1 = 0` if v0 is non-zero, then reload the voice count.
+    ZeroIfV0,
+    /// Reload the voice count.
+    Reload,
+    /// v0 already holds the voice count.
+    Loaded,
+}
+
+/// Several voices: choose a speaker layout (a1), then pan every voice.
+pub(crate) fn pan_voices(c: &mut Cpu, frame: Frame, ch: u32, speakers: u64) -> crate::call::Flow {
+    use pan::*;
+    // Layout by speaker/voice counts (registers: a0 = 1, a1 = 0,
+    // v1 = a2 = voice count).
+    let count = c.g[A2][0];
+    c.cycles += 3;
+    c.g[V0][0] = 5;
+    let mut join = None;
+    if speakers == 5 {
+        c.cycles += 3;
+        c.g[V0][0] = c.lbu(STATE + AUX_SENDS);
+        if c.g[V0][0] == 0 {
+            // 5 speakers without aux sends: layout 1 for 6 voices.
+            c.cycles += 3;
+            c.g[V0][0] = c.g[V1][0] ^ 6;
+            c.g[A1][0] = c.g[A0][0];
+            join = Some(LayoutJoin::ZeroIfV0);
+        }
+    }
+    let join = match join {
+        Some(j) => j,
+        None => {
+            c.g[A0][0] = 0x51_0000;
+            c.cycles += 5;
+            c.g[V1][0] = 4;
+            c.g[V0][0] = sx(STATE);
+            c.g[A0][0] = c.lbu(STATE + SPEAKERS);
+            c.g[V0][0] = 2;
+            if c.g[A0][0] == 4 {
+                // Quad: layout 2 for 5-6 voices.
+                c.cycles += 7;
+                c.g[V0][0] = sx((count as u32).wrapping_sub(5)) & 0xff;
+                c.g[V1][0] = (1 < c.g[V0][0]) as u64;
+                c.g[A1][0] = if c.g[V1][0] != 0 { 0 } else { 2 };
+                LayoutJoin::Reload
+            } else {
+                c.cycles += 2;
+                if c.g[A0][0] != 2 {
+                    c.g[V0][0] = c.lbu(ch + VOICE_COUNT);
+                    LayoutJoin::Loaded
+                } else {
+                    // Stereo.
+                    c.cycles += 4;
+                    let smooth = c.lhu(ch + FLAGS) & F_SMOOTH != 0;
+                    c.g[V0][0] = count & 0xff;
+                    if smooth {
+                        // Layout 1 for 6 voices.
+                        c.cycles += 3;
+                        c.g[V0][0] ^= 6;
+                        c.g[A1][0] = (c.g[V0][0] < 1) as u64;
+                        LayoutJoin::Reload
+                    } else {
+                        // Layout 3 for 5-6 voices, 5 for 4.
+                        c.cycles += 5;
+                        c.g[V0][0] = sx((count as u32).wrapping_sub(5)) & 0xff;
+                        c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+                        c.g[A1][0] = 3;
+                        if c.g[V0][0] != 0 {
+                            LayoutJoin::Reload
+                        } else {
+                            c.cycles += 3;
+                            c.g[V0][0] = (count & 0xff) ^ 4;
+                            c.g[A1][0] = 5;
+                            LayoutJoin::ZeroIfV0
+                        }
+                    }
+                }
+            }
+        }
+    };
+    if let LayoutJoin::ZeroIfV0 = join {
+        c.cycles += 1;
+        if c.g[V0][0] != 0 {
+            c.g[A1][0] = 0;
+        }
+    }
+    if !matches!(join, LayoutJoin::Loaded) {
+        c.cycles += 1;
+        c.g[V0][0] = c.lbu(ch + VOICE_COUNT);
+    }
+    c.cycles += 2;
+    c.g[S0][0] = 0;
+    if c.g[V0][0] == 0 {
+        return Ok(());
+    }
+
+    // Per voice: s0 index, s7 the layout's byte offset, fp the voice angles.
+    c.cycles += 8;
+    c.g[V0][0] = LAYOUT_SIZE;
+    c.g[A2][0] = sx(ch + VOICES);
+    c.mult(0, S7, A1, V0);
+    let voices_at = frame.at(c, 0x24);
+    c.sw(voices_at, c.g[A2][0]);
+    c.g[FP][0] = sx(ch + VOICE_ANGLES);
+    let layout_at = frame.at(c, 0x28);
+    c.sw(layout_at, c.g[S7][0]);
+    c.g[V0][0] = 5;
+    loop {
+        pan_voice(c, frame, ch)?;
+        // Next voice.
+        c.cycles += 5;
+        let count = c.lbu(ch + VOICE_COUNT);
+        c.g[S0][0] = c.g[S1][0];
+        let more = (c.g[S0][0] as i64) < (count as i64);
+        c.g[V0][0] = 5;
+        if !more {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_3b98);
+        }
+    }
+}
+
+/// Where a voice's panning continues before the level scaling.
+pub(crate) enum VoiceJoin {
+    /// `a2 = 0x510000`, then as `State`.
+    Hi,
+    /// `a2 = STATE`.
+    State,
+    /// a2 already holds `STATE`.
+    Done,
+}
+
+/// Pan voice s0 of a multi-voice channel.
+pub(crate) fn pan_voice(c: &mut Cpu, frame: Frame, ch: u32) -> crate::call::Flow {
+    use pan::*;
+    let i = c.g[S0][0];
+    let join = 'pan: {
+        c.cycles += 2;
+        if i == 5 {
+            // The sixth voice (LFE): all to the first aux send if any.
+            c.cycles += 5;
+            c.g[A0][0] = 0x51_0000;
+            c.g[V1][0] = sx(STATE);
+            c.g[V0][0] = c.lbu(STATE + AUX_SENDS);
+            c.g[A1][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 5;
+                c.g[V0][0] = c.lbu(STATE + SPEAKERS);
+                c.g[S3][0] = shl(i, 1);
+                c.g[S5][0] = sx(ch + VOICES);
+                c.g[S1][0] = add(i, 1);
+                let voice_at = add(c.g[S5][0], c.g[S3][0]) as u32;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 4;
+                    c.g[A3][0] = c.g[V0][0];
+                    c.g[A2][0] = sx(voice_at);
+                    c.g[V0][0] = 0x51_0000;
+                    c.g[T0][0] = sx(GAINS);
+                    loop {
+                        c.cycles += 9;
+                        let voice = c.lh(voice_at);
+                        c.g[V1][0] = shl(c.g[A1][0], 2);
+                        c.g[A1][0] = add(c.g[A1][0], 1);
+                        c.g[V0][0] = shl(voice, 5);
+                        c.g[A0][0] = ((c.g[A1][0] as i64) < (c.g[A3][0] as i64)) as u64;
+                        c.g[V1][0] = add(add(c.g[V1][0], c.g[V0][0]), GAINS as u64);
+                        c.sw(r32(c, V1), 0);
+                        if c.g[A0][0] == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003c_3bd8);
+                        }
+                    }
+                }
+                c.cycles += 12;
+                c.g[A0][0] = sx(voice_at);
+                c.g[V1][0] = shl(c.g[A1][0], 2);
+                let voice = c.lh(voice_at);
+                c.g[AT][0] = ONE as u64;
+                c.f[0] = ONE;
+                c.g[V0][0] = shl(voice, 5);
+                c.g[A0][0] = sx(GAINS);
+                c.g[V1][0] = add(add(c.g[V1][0], c.g[V0][0]), GAINS as u64);
+                c.swc1(0, r32(c, V1));
+                break 'pan VoiceJoin::Hi;
+            }
+            c.cycles += 1;
+        }
+        let flags = c.lhu(ch + FLAGS);
+        c.cycles += 3;
+        c.g[V0][0] = shl(i, 2);
+        let voices = c.lw(frame.at(c, 0x24));
+        if flags & F_SMOOTH != 0 {
+            // Smooth: angle + layout offset through the lookup table.
+            c.cycles += 23;
+            c.g[A0][0] = voices;
+            c.g[V1][0] = shl(i, 1);
+            c.g[V0][0] = add(c.g[V0][0], c.g[S7][0]);
+            c.g[A1][0] = add(c.g[FP][0], c.g[V1][0]);
+            c.g[A3][0] = add(voices, c.g[V1][0]);
+            c.g[V0][0] = add(c.g[V0][0], LAYOUTS as u64);
+            let angle = c.lhu(r32(c, A1));
+            let offset = c.lhu(r32(c, V0));
+            c.g[S3][0] = c.g[V1][0];
+            let voice = c.lh(r32(c, A3));
+            c.g[S5][0] = sx(ch + VOICES);
+            c.g[S1][0] = add(i, 1);
+            c.g[A2][0] = sx(GAINS);
+            c.g[A0][0] = add(angle, offset) & 0xffff;
+            c.g[A1][0] = add(shl(voice, 5), GAINS as u64);
+            SND_PAN_LOOKUP.call(c, 0x003c_3c90)?;
+            c.g[A2][0] = 0x51_0000;
+            break 'pan VoiceJoin::State;
+        }
+        // Gain tables: angle + layout offset.
+        c.cycles += 25;
+        c.g[A0][0] = voices;
+        c.g[A3][0] = shl(i, 1);
+        c.g[V1][0] = add(voices, c.g[A3][0]);
+        c.g[V0][0] = add(add(c.g[V0][0], c.g[S7][0]), LAYOUTS as u64);
+        let voice = c.lh(r32(c, V1));
+        c.g[S3][0] = c.g[A3][0];
+        c.g[V1][0] = c.lh(r32(c, V0));
+        c.g[A2][0] = add(c.g[FP][0], c.g[A3][0]);
+        c.g[V0][0] = 0x51_0000;
+        let angle = c.lhu(r32(c, A2));
+        c.g[S6][0] = sx(GAINS);
+        c.g[A0][0] = add(angle, c.g[V1][0]);
+        c.g[A1][0] = add(shl(voice, 5), GAINS as u64);
+        SND_GET_PAN_GAINS.call(c, 0x003c_3ce0)?;
+        c.g[S5][0] = sx(ch + VOICES);
+        let count = c.lbu(ch + VOICE_COUNT);
+        c.g[V1][0] = 0x51_0000;
+        c.g[S4][0] = sx(STATE);
+        c.g[V0][0] = (count < 5) as u64;
+        c.g[S1][0] = add(i, 1);
+        if c.g[V0][0] != 0 {
+            break 'pan VoiceJoin::Hi;
+        }
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        c.g[A2][0] = 0x51_0000;
+        if i != 1 {
+            break 'pan VoiceJoin::State;
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.lbu(STATE + SPEAKERS);
+        c.g[A0][0] = 5;
+        c.g[A2][0] = sx(STATE);
+        if c.g[V0][0] != 5 {
+            break 'pan VoiceJoin::Done;
+        }
+        c.cycles += 4;
+        c.g[V0][0] = c.lhu(ch + FLAGS) & F_SPU;
+        c.g[A0][0] = 0x8000;
+        if c.g[V0][0] == 0 {
+            break 'pan VoiceJoin::Hi;
+        }
+        // SPU voices on 5 speakers: the second voice's centre and rear
+        // slots get the opposite angle's gains.
+        c.cycles += 12;
+        c.g[A1][0] = c.g[SP][0];
+        SND_GET_PAN_GAINS.call(c, 0x003c_3d30)?;
+        let tmp = frame.at(c, 0);
+        let second = c.lh(ch + VOICES + 2);
+        c.lwc1(0, tmp + 8);
+        c.g[V1][0] = add(c.g[S6][0], shl(second, 5));
+        c.lwc1(1, tmp + 0xc);
+        c.swc1(0, r32(c, V1).wrapping_add(0x10));
+        let second = c.lh(ch + VOICES + 2);
+        c.g[V0][0] = add(c.g[S6][0], shl(second, 5));
+        c.swc1(1, r32(c, V0).wrapping_add(4));
+        VoiceJoin::Hi
+    };
+    match join {
+        VoiceJoin::Hi => {
+            c.cycles += 2;
+            c.g[A2][0] = sx(STATE);
+        }
+        VoiceJoin::State => {
+            c.cycles += 1;
+            c.g[A2][0] = sx(STATE);
+        }
+        VoiceJoin::Done => {}
+    }
+
+    // Scale the voice's outputs by the layout's level / 32767.
+    c.cycles += 5;
+    let outputs = add(c.lbu(STATE + SPEAKERS), c.lbu(STATE + AUX_SENDS));
+    c.g[V1][0] = outputs;
+    c.g[V0][0] = c.lbu(STATE + AUX_SENDS);
+    c.g[A1][0] = 0;
+    if outputs != 0 {
+        c.cycles += 21;
+        c.g[A0][0] = c.lw(frame.at(c, 0x28));
+        let level_at = add(add(shl(i, 2), c.g[A0][0]), LAYOUT_LEVELS as u64);
+        let level = c.lh(level_at as u32);
+        c.g[V0][0] = level;
+        c.g[A3][0] = add(c.g[S5][0], c.g[S3][0]);
+        c.g[A0][0] = c.lbu(STATE + SPEAKERS);
+        c.g[V1][0] = c.lbu(STATE + AUX_SENDS);
+        let level = FpuF32::from_i32(level as i32);
+        set_fpr(c, 1, level);
+        c.g[AT][0] = FULL_SCALE as u64;
+        let scale = FpuF32(FULL_SCALE);
+        c.f[2] = FULL_SCALE;
+        c.g[T0][0] = sx(GAINS);
+        c.g[A2][0] = add(c.g[A0][0], c.g[V1][0]);
+        let voice_at = r32(c, A3);
+        loop {
+            c.cycles += 12;
+            let voice = c.lh(voice_at);
+            c.g[V0][0] = shl(c.g[A1][0], 2);
+            c.g[A1][0] = add(c.g[A1][0], 1);
+            c.g[V1][0] = shl(voice, 5);
+            c.g[A0][0] = ((c.g[A1][0] as i64) < (c.g[A2][0] as i64)) as u64;
+            c.g[V0][0] = add(add(c.g[V0][0], c.g[V1][0]), GAINS as u64);
+            let gain = Addr(r32(c, V0));
+            let g = (gain.read_fpu(c) * level).div(scale);
+            set_fpr(c, 0, g);
+            gain.write_fpu(c, g);
+            if c.g[A0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_3dc8);
+            }
+        }
+    }
+
+    // Smooth pans: a summed angle in the back half flips the first gain.
+    c.cycles += 4;
+    let smooth = c.lhu(ch + FLAGS) & F_SMOOTH != 0;
+    c.g[V0][0] = 0;
+    c.g[V1][0] = add(c.g[FP][0], c.g[S3][0]);
+    if smooth {
+        c.cycles += 12;
+        c.g[A0][0] = add(add(shl(i, 2), c.g[S7][0]), LAYOUTS as u64);
+        let angle = c.lhu(r32(c, V1));
+        let offset = c.lh(r32(c, A0));
+        c.g[V1][0] = offset;
+        let back = sx((angle as u32)
+            .wrapping_add(offset as u32)
+            .wrapping_sub(0x4001))
+            < 0x7fff;
+        c.g[V0][0] = back as u64;
+        c.g[V1][0] = add(c.g[S5][0], c.g[S3][0]);
+        if back {
+            c.cycles += 8;
+            c.g[A0][0] = sx(GAINS);
+            let voice = c.lh(r32(c, V1));
+            c.g[V0][0] = add(shl(voice, 5), GAINS as u64);
+            let gain = Addr(r32(c, V0));
+            let g = -gain.read_fpu(c);
+            set_fpr(c, 0, g);
+            gain.write_fpu(c, g);
+        }
+    }
+    Ok(())
+}
+
+/// `void SND_Tick(void)` (0x3b55f0): the sound driver's tick. Counts the
+/// tick, runs the registered tick callbacks, then steps every allocated,
+/// playing channel: the pitch LFO (recomputing and applying the pitch), the
+/// volume LFO, the volume sweep (toward its target), and the envelope (the
+/// level ramps by its step; at the end of a segment the next one is loaded,
+/// or the voice is stopped after the last one, or when the sweep goes
+/// negative). A channel whose volume inputs moved gets its volume recomputed
+/// and applied.
+pub fn snd_tick(c: &mut Cpu) {
+    use snd_tick::*;
+    use snd_tick_callee as callee;
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = 0x0051_0000;
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = sx(STATE);
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = 0;
+        frame.save(c, S2, 0x20);
+        c.g[S3][0] = c.g[V0][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = sx((c.lw(STATE + TICKS) as u32).wrapping_add(1));
+        c.sw(STATE + TICKS, c.g[V1][0]);
+        callee::TICK_STUB.call(c, 0x003b_562c)?;
+        // The tick callbacks.
+        c.g[V0][0] = c.lb(STATE + TICK_CALLBACKS);
+        c.g[S2][0] = c.g[S0][0];
+        if c.g[V0][0] as i64 > 0 {
+            c.cycles += 2;
+            c.g[S0][0] = sx(STATE + CALLBACKS);
+            c.g[V1][0] = c.lw(r32(c, S0));
+            loop {
+                c.cycles += 7;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                let callback = r32(c, V1);
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(4));
+                call_ptr(c, callback, 0x003b_564c)?;
+                c.g[V0][0] = c.lb(STATE + TICK_CALLBACKS);
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[V1][0] = c.lw(r32(c, S0));
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_5640);
+                }
+            }
+        }
+        // The channels.
+        c.cycles += 4;
+        c.g[V1][0] = sx(r32(c, S3).wrapping_sub(0x5718));
+        c.g[V0][0] = c.lh(r32(c, V1) + CHANNEL_COUNT);
+        c.g[S1][0] = 0;
+        if c.g[V0][0] as i64 > 0 {
+            c.cycles += 3;
+            c.g[S2][0] = c.g[V1][0];
+            c.g[V1][0] = CHANNEL_SIZE;
+            loop {
+                snd_tick_channel(c)?;
+                c.cycles += 4;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[V1][0] = CHANNEL_SIZE;
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_5678);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+/// One channel of [`snd_tick`]: `s1` is the index, `s2` the driver state;
+/// leaves the channel count in `v0` (`lh`) for the loop test.
+pub(crate) fn snd_tick_channel(c: &mut Cpu) -> crate::call::Flow {
+    use snd_tick::*;
+    use snd_tick_callee as callee;
+    let state = r32(c, S2);
+    let count = |c: &mut Cpu| c.g[V0][0] = c.lh(state + CHANNEL_COUNT);
+    c.cycles += 7;
+    c.g[A0][0] = c.lw(state + CHANNELS);
+    c.mult(0, 3, 17, 3); // index * 0x8c
+    c.g[A1][0] = 1;
+    c.g[S0][0] = sx(r32(c, A0).wrapping_add(r32(c, V1)));
+    let ch = r32(c, S0);
+    c.g[V0][0] = c.lb(bw::p(ch, ALLOCATED));
+    if c.g[V0][0] != c.g[A1][0] {
+        count(c);
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(ch);
+    if (c.g[V0][0] as i64) < 0 {
+        count(c);
+        return Ok(());
+    }
+    // Pitch LFO: step its position (wrapping at the length) and re-pitch.
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(bw::p(ch, PITCH_LFO));
+    if c.g[V0][0] != 0 {
+        c.cycles += 7;
+        c.g[V0][0] = c.lbu(bw::p(ch, PITCH_LFO_POS));
+        c.g[A0][0] = c.lbu(bw::p(ch, PITCH_LFO_LEN));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+        c.g[V1][0] = c.g[V0][0] & 0xff;
+        c.g[V1][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+        let inside = c.g[V1][0] != 0;
+        c.sb(bw::p(ch, PITCH_LFO_POS), c.g[V0][0]);
+        if !inside {
+            c.cycles += 1;
+            c.sb(bw::p(ch, PITCH_LFO_POS), 0);
+        }
+        c.cycles += 6;
+        c.sh(bw::p(ch, PITCH_CACHE), 0);
+        c.g[A0][0] = c.g[S1][0];
+        callee::CALC_PITCH.call(c, 0x003b_56d8)?;
+        c.g[A0][0] = c.g[S1][0];
+        callee::APPLY_PITCH.call(c, 0x003b_56e0)?;
+    }
+    c.g[V0][0] = c.lw(bw::p(ch, VOL_LFO));
+    // Volume LFO: step its position; a1 = volume changed.
+    c.cycles += 2;
+    c.g[A1][0] = 0;
+    if c.g[V0][0] != 0 {
+        c.cycles += 8;
+        c.g[V0][0] = c.lbu(bw::p(ch, VOL_LFO_POS));
+        c.g[A1][0] = 1;
+        c.g[A0][0] = c.lbu(bw::p(ch, VOL_LFO_LEN));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+        c.g[V1][0] = c.g[V0][0] & 0xff;
+        c.g[V1][0] = (c.g[V1][0] < c.g[A0][0]) as u64;
+        let inside = c.g[V1][0] != 0;
+        c.sb(bw::p(ch, VOL_LFO_POS), c.g[V0][0]);
+        if !inside {
+            c.cycles += 1;
+            c.sb(bw::p(ch, VOL_LFO_POS), 0);
+        }
+    }
+    'volume: {
+        'next_segment: {
+            'stop: {
+                'envelope: {
+                    // Sweep toward the target; a negative sweep stops.
+                    c.cycles += 3;
+                    c.g[V1][0] = c.lw(bw::p(ch, SWEEP_STEP));
+                    if c.g[V1][0] == 0 {
+                        c.g[V0][0] = c.lw(bw::p(ch, ENV_TICKS));
+                        break 'envelope;
+                    }
+                    'reached: {
+                        c.cycles += 5;
+                        c.g[V0][0] = c.lw(bw::p(ch, SWEEP));
+                        c.g[A1][0] = 1;
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                        let rising = (c.g[V1][0] as i64) >= 0;
+                        c.sw(bw::p(ch, SWEEP), c.g[V0][0]);
+                        if !rising {
+                            c.cycles += 3;
+                            c.g[V1][0] = c.lw(bw::p(ch, SWEEP_TARGET));
+                            c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                            break 'reached;
+                        }
+                        c.cycles += 2;
+                        c.g[V1][0] = c.lw(bw::p(ch, SWEEP_TARGET));
+                        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                    }
+                    c.cycles += 2;
+                    if c.g[V0][0] != 0 {
+                        c.g[V0][0] = c.lw(bw::p(ch, SWEEP));
+                    } else {
+                        // Target reached: snap and end the sweep.
+                        c.cycles += 3;
+                        c.sw(bw::p(ch, SWEEP), c.g[V1][0]);
+                        c.sw(bw::p(ch, SWEEP_STEP), 0);
+                        c.g[V0][0] = c.lw(bw::p(ch, SWEEP));
+                    }
+                    c.cycles += 2;
+                    if (c.g[V0][0] as i64) < 0 {
+                        break 'stop;
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw(bw::p(ch, ENV_TICKS));
+                }
+                // Envelope: count the segment down and ramp the level.
+                c.cycles += 4;
+                c.g[V1][0] = c.lw(bw::p(ch, ENV_STEP));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                let flat = c.g[V1][0] == 0;
+                c.sw(bw::p(ch, ENV_TICKS), c.g[V0][0]);
+                if !flat {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(bw::p(ch, ENV_LEVEL));
+                    c.g[A1][0] = 1;
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.sw(bw::p(ch, ENV_LEVEL), c.g[V0][0]);
+                }
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(bw::p(ch, ENV_TICKS));
+                if c.g[V0][0] != 0 {
+                    break 'volume;
+                }
+                // Segment over: the next one, or stop after the last.
+                c.cycles += 8;
+                c.g[V0][0] = c.lbu(bw::p(ch, ENV_SEGMENT));
+                c.g[V1][0] = c.lb(bw::p(ch, ENV_SEGMENTS));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                c.g[A0][0] = sx(r32(c, V0) << 24);
+                c.g[A0][0] = sx(((r32(c, A0) as i32) >> 24) as u32);
+                c.g[V1][0] = ((c.g[A0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                let more = c.g[V1][0] != 0;
+                c.sb(bw::p(ch, ENV_SEGMENT), c.g[V0][0]);
+                if more {
+                    break 'next_segment;
+                }
+                break 'stop;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.lw(ch);
+            callee::STOP.call(c, 0x003b_57b8)?;
+            count(c);
+            return Ok(());
+        }
+        // Load segment a0: {ticks (negative: forever), level << 16}; the
+        // step spreads the level change over the ticks.
+        c.cycles += 6;
+        c.g[V0][0] = c.lw(bw::p(ch, ENV_TABLE));
+        c.g[V1][0] = sx(r32(c, A0) << 3);
+        c.g[V1][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        c.g[A0][0] = c.lw(r32(c, V1));
+        let finite = (c.g[A0][0] as i64) >= 0;
+        c.sw(bw::p(ch, ENV_TICKS), c.g[A0][0]);
+        if !finite {
+            c.cycles += 3;
+            c.g[V0][0] = 0x7fff_ffff;
+            c.sw(bw::p(ch, ENV_TICKS), c.g[V0][0]);
+        }
+        c.cycles += 8;
+        c.g[V0][0] = c.lw(bw::p(r32(c, V1), 4));
+        c.g[A0][0] = c.lw(bw::p(ch, ENV_LEVEL));
+        c.g[V1][0] = c.lw(bw::p(ch, ENV_TICKS));
+        c.g[V0][0] = sx(r32(c, V0) << 16);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, A0)));
+        c.div(0, 2, 3);
+        c.cycles += 2;
+        c.g[V0][0] = c.lo[0];
+        c.sw(bw::p(ch, ENV_STEP), c.g[V0][0]);
+    }
+    // Volume inputs moved: recompute and apply.
+    c.cycles += 2;
+    if c.g[A1][0] == 0 {
+        count(c);
+        return Ok(());
+    }
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S1][0];
+    callee::CALC_VOLUME.call(c, 0x003b_581c)?;
+    c.g[V0][0] = c.lw(ch);
+    if (c.g[V0][0] as i64) < 0 {
+        count(c);
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[A0][0] = c.g[S1][0];
+    callee::APPLY_VOLUME.call(c, 0x003b_5830)?;
+    count(c);
+    Ok(())
+}
+
+/// `SNDSTRM_GetStream(id)` (0x3b6a38).
+pub(crate) const SNDSTRM_GET_STREAM_2: Callee = Callee {
+    addr: 0x003b_6a38,
+    f: ee::s13::f_003b6a38,
+};
+
+/// `SNDSTRM_GetBufferedBytes(slot)` (0x3c6c98).
+pub(crate) const SNDSTRM_GET_BUFFERED_BYTES: Callee = Callee {
+    addr: 0x003c_6c98,
+    f: ee::s13::f_003c6c98,
+};
+
+/// `SNDSTRM_FindRequest(id)` (0x3b7a70).
+pub(crate) const SNDSTRM_FIND_REQUEST_2: Callee = Callee {
+    addr: 0x003b_7a70,
+    f: ee::s13::f_003b7a70,
+};
+
+/// `StreamFile_GetChannelBytes(file)` (0x3e14c8).
+pub(crate) const STREAM_FILE_GET_CHANNEL_BYTES: u32 = 0x003e_14c8;
+
+/// `int SNDSTRM_GetStatus(int id, SNDSTRMStatus* out)` (0x3b7b48): fill
+/// `out` with stream `id`'s state, current request id and how many
+/// milliseconds of audio are buffered (`bytes * 1000 / rate`; when nothing
+/// is buffered yet, the request's channel bytes, capped at 0x3d0900, times
+/// 1000 over the request's total). Returns -8 for an unknown stream, else 0.
+pub fn sndstrm_get_status(c: &mut Cpu) {
+    use sndstrm::*;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S1, 0x30);
+        let out = Addr(r32(c, A1));
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x40);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        out.off(OUT_MS).sw(c, 0);
+        out.off(OUT_REQUEST).sw(c, 0);
+        out.off(OUT_STATE).sw(c, 0);
+        SNDSTRM_GET_STREAM_2.call(c, 0x003b_7b74)?;
+        c.g[S1][0] = c.g[V0][0];
+        let stream = Addr(r32(c, V0));
+        let found = c.g[V0][0] != 0;
+        c.g[V0][0] = (-8i64) as u64;
+        // false: the shared "return 0" (one more cycle).
+        let mut done = true;
+        if found {
+            done = false;
+            c.cycles += 3;
+            c.g[V0][0] = stream.off(STATE).lw(c);
+            out.off(OUT_STATE).sw(c, c.g[V0][0]);
+            if c.g[V0][0] != 0 {
+                c.cycles += 6;
+                let req = stream.off(REQUEST).lw(c);
+                c.g[S0][0] = req;
+                c.g[V0][0] = Addr((req as u32).wrapping_add(REQ_ID)).lw(c);
+                out.off(OUT_REQUEST).sw(c, c.g[V0][0]);
+                c.g[V1][0] = stream.off(RATE).lhu(c);
+                c.g[V0][0] = 0;
+                if c.g[V1][0] == 0 {
+                    done = true;
+                } else {
+                    // Buffered bytes in milliseconds.
+                    c.cycles += 7;
+                    c.g[A0][0] = stream.off(BUFFER).lw(c);
+                    c.g[S3][0] = 1000;
+                    SNDSTRM_GET_BUFFERED_BYTES.call(c, 0x003b_7bb0)?;
+                    let scaled = abi::mult(c, r32(c, V0), 1000);
+                    c.g[V0][0] = sx(scaled);
+                    c.g[V1][0] = stream.off(RATE).lhu(c);
+                    c.cycles += 4;
+                    let (ms, _) = abi::divu(c, scaled, r32(c, V1));
+                    c.g[V0][0] = sx(ms);
+                    out.off(OUT_MS).sw(c, c.g[V0][0]);
+                    if ms == 0 {
+                        // Nothing buffered: from the request's file instead.
+                        c.cycles += 6;
+                        c.g[A0][0] = out.off(OUT_REQUEST).lw(c);
+                        SNDSTRM_FIND_REQUEST_2.call(c, 0x003b_7bd8)?;
+                        c.g[S0][0] = c.g[V0][0];
+                        let req = Addr(r32(c, V0));
+                        let total = req.off(REQ_BYTES).lw(c);
+                        c.g[V0][0] = 0;
+                        if total == 0 {
+                            done = true;
+                        } else {
+                            c.cycles += 8;
+                            c.g[A0][0] = stream.off(FILE).lw(c);
+                            call_ptr(c, STREAM_FILE_GET_CHANNEL_BYTES, 0x003b_7bf0)?;
+                            const CAP: u64 = 0x003d_0900;
+                            c.g[A1][0] = req.off(REQ_BYTES).lw(c);
+                            c.cycles += 6;
+                            let over = CAP < c.g[V0][0];
+                            c.g[A0][0] = over as u64;
+                            c.g[V1][0] = if over { CAP } else { c.g[V0][0] };
+                            let scaled = abi::mult(c, r32(c, V1), 1000);
+                            let (ms, _) = abi::divu(c, scaled, r32(c, A1));
+                            c.g[V1][0] = sx(ms);
+                            out.off(OUT_MS).sw(c, c.g[V1][0]);
+                        }
+                    }
+                }
+            }
+        }
+        if !done {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SNDSTRM_PopBlock (0x3c6de0)
+
+/// The stream manager (`D_005157B8`): +0 event count, +4 events (8 bytes:
+/// u16 type, u16 stream id, u32 value), +0x304 queue pointer per stream.
+pub(crate) const SNDSTRM_MAN_HI: u64 = 0x51_0000;
+
+pub(crate) const SNDSTRM_MAN: u32 = 0x0051_57b8;
+
+pub(crate) const SNDSTRM_QUEUES: u32 = 0x304;
+
+/// Stream queue fields.
+pub(crate) const Q_WR: u32 = 0x8;
+
+// blocks written (consumed by every reader)
+pub(crate) const Q_RD: u32 = 0xc;
+
+// blocks read by all readers
+pub(crate) const Q_POS: u32 = 0x10;
+
+// u32 per reader: blocks read
+pub(crate) const Q_RIDX: u32 = 0x28;
+
+// u16 per reader: ring read index
+pub(crate) const Q_CNT: u32 = 0x34;
+
+// u16 per reader: blocks pending
+pub(crate) const Q_SIZE: u32 = 0x40;
+
+// u16 ring size
+pub(crate) const Q_WIDX: u32 = 0x44;
+
+// u16 ring write index
+pub(crate) const Q_BYTES_A: u32 = 0x48;
+
+pub(crate) const Q_BYTES_B: u32 = 0x4c;
+
+pub(crate) const Q_NOTIFY: u32 = 0x54;
+
+pub(crate) const Q_READERS: u32 = 0x62;
+
+// u8
+/// Ring entries (0x20 bytes) start at +0x7c: +4 length (bit 31: flag),
+/// +8 value per reader.
+pub(crate) const Q_ENTRIES: u32 = 0x7c;
+
+/// `u32 SNDSTRM_PopBlock(int id, int reader, int* len, int* flag)`
+/// (0x3c6de0): if every reader has passed the write mark, advance it (and
+/// post a "block done" event when the queue asks for one); then pop the
+/// reader's next block: its length and flag go to `*len`/`*flag`, the reader
+/// advances, and once all readers have passed the read mark the shared byte
+/// counters move. Returns the block's value for this reader (0 becomes -1),
+/// or 0 when the reader has nothing pending. Kept register-shaped: the two
+/// loops check events at their back edges with every register live.
+pub fn sndstrm_pop_block(c: &mut Cpu) {
+    c.cycles += 11;
+    c.g[V0][0] = SNDSTRM_MAN_HI;
+    c.g[T5][0] = c.g[A0][0];
+    c.g[T3][0] = c.g[V0][0];
+    c.g[V1][0] = sx((c.g[T5][0] as u32) << 2);
+    c.g[V0][0] = sx(SNDSTRM_MAN);
+    c.g[T2][0] = 1; // all readers past the write mark
+    c.g[V0][0] = addu(c.g[V0][0], c.g[V1][0]);
+    c.g[T0][0] = Addr(c.g[V0][0] as u32).off(SNDSTRM_QUEUES).lw(c);
+    let q = Addr(c.g[T0][0] as u32);
+    c.g[V0][0] = q.off(Q_READERS).lbu(c);
+    c.g[T4][0] = 1; // all readers past the read mark
+    if c.g[V0][0] != 0 {
+        c.cycles += 3;
+        c.g[T1][0] = c.g[V0][0];
+        c.g[A0][0] = addu(c.g[T0][0], Q_POS as u64);
+        loop {
+            c.cycles += 7;
+            c.g[V1][0] = Addr(c.g[A0][0] as u32).lw(c);
+            c.g[T1][0] = addu(c.g[T1][0], (-1i64) as u64);
+            c.g[V0][0] = q.off(Q_WR).lw(c);
+            c.g[A0][0] = addu(c.g[A0][0], 4);
+            c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[T2][0] = 0;
+            }
+            if c.g[T1][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_6e18);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V1][0] = addu(c.g[T0][0], Q_CNT as u64);
+    if c.g[T2][0] != 0 {
+        // Advance the write mark.
+        c.cycles += 7;
+        c.g[V0][0] = q.off(Q_WIDX).lhu(c);
+        c.g[V1][0] = q.off(Q_NOTIFY).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 16);
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 11) as u32);
+        c.g[V0][0] = addu(c.g[V0][0], Q_ENTRIES as u64);
+        c.g[T1][0] = addu(c.g[T0][0], c.g[V0][0]);
+        if c.g[V1][0] != 0 {
+            // Post event {type 1, id, value of reader 0}.
+            c.cycles += 13;
+            let man = Addr((c.g[T3][0] as u32).wrapping_add(0x57b8));
+            c.g[V1][0] = man.lw(c);
+            c.g[V0][0] = sx(man.0);
+            c.g[V0][0] = addu(c.g[V0][0], 4);
+            c.g[A0][0] = 1;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 3);
+            c.g[V1][0] = addu(c.g[V1][0], c.g[V0][0]);
+            let ev = Addr(c.g[V1][0] as u32);
+            ev.sh(c, c.g[A0][0]);
+            ev.off(2).sh(c, c.g[T5][0]);
+            c.g[A0][0] = Addr(c.g[T1][0] as u32).off(8).lw(c);
+            ev.off(4).sw(c, c.g[A0][0]);
+            c.g[V0][0] = man.lw(c);
+            c.g[V0][0] = addu(c.g[V0][0], 1);
+            man.sw(c, c.g[V0][0]);
+        }
+        c.cycles += 13;
+        c.g[V0][0] = q.off(Q_WIDX).lhu(c);
+        c.g[V0][0] = addu(c.g[V0][0], 1);
+        q.off(Q_WIDX).sh(c, c.g[V0][0]);
+        c.g[V1][0] = q.off(Q_WR).lw(c);
+        c.g[V1][0] = addu(c.g[V1][0], 1);
+        q.off(Q_WR).sw(c, c.g[V1][0]);
+        c.g[A0][0] = q.off(Q_WIDX).lhu(c);
+        c.g[V0][0] = q.off(Q_SIZE).lhu(c);
+        c.g[A0][0] = sx((c.g[A0][0] as u32) << 16);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 16);
+        c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[A0][0] == 0 {
+            q.off(Q_WIDX).sh(c, 0);
+        }
+        c.cycles += 1;
+        c.g[V1][0] = addu(c.g[T0][0], Q_CNT as u64);
+    }
+    c.cycles += 7;
+    c.g[V0][0] = sx((c.g[A1][0] as u32) << 1);
+    c.g[T9][0] = c.g[V1][0];
+    c.g[T5][0] = c.g[V0][0];
+    c.g[V1][0] = addu(c.g[V1][0], c.g[V0][0]);
+    c.g[A0][0] = Addr(c.g[V1][0] as u32).lhu(c);
+    let pending = c.g[A0][0] != 0;
+    c.g[A0][0] = addu(c.g[T0][0], Q_RIDX as u64);
+    if !pending {
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        ret(c);
+        return;
+    }
+    // Pop the reader's block.
+    c.cycles += 28;
+    c.g[A1][0] = sx((c.g[A1][0] as u32) << 2);
+    c.g[T7][0] = c.g[A0][0];
+    c.g[V0][0] = addu(c.g[T0][0], Q_POS as u64);
+    c.g[A0][0] = addu(c.g[A0][0], c.g[T5][0]);
+    c.g[T8][0] = c.g[A1][0];
+    let ridx = Addr(c.g[A0][0] as u32);
+    c.g[V1][0] = ridx.lhu(c);
+    c.g[A1][0] = addu(c.g[V0][0], c.g[A1][0]);
+    c.g[T2][0] = c.g[V0][0];
+    c.g[T1][0] = 0;
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 16);
+    c.g[T6][0] = 1;
+    c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 11) as u32);
+    c.g[V1][0] = addu(c.g[V1][0], Q_ENTRIES as u64);
+    c.g[T3][0] = addu(c.g[T0][0], c.g[V1][0]);
+    let entry = Addr(c.g[T3][0] as u32);
+    c.g[V0][0] = entry.off(4).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+    c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+    Addr(c.g[A2][0] as u32).sw(c, c.g[V0][0]); // *len
+    c.g[V1][0] = entry.off(4).lw(c);
+    c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 31) as u32);
+    Addr(c.g[A3][0] as u32).sw(c, c.g[V1][0]); // *flag
+    c.g[V0][0] = ridx.lhu(c);
+    c.g[V0][0] = addu(c.g[V0][0], 1);
+    ridx.sh(c, c.g[V0][0]);
+    let pos = Addr(c.g[A1][0] as u32);
+    c.g[V1][0] = pos.lw(c);
+    c.g[V1][0] = addu(c.g[V1][0], 1);
+    pos.sw(c, c.g[V1][0]);
+    // Have all readers passed the read mark? (stops at the first that has not)
+    loop {
+        c.cycles += 7;
+        c.g[V1][0] = Addr(c.g[T2][0] as u32).lw(c);
+        c.g[T1][0] = addu(c.g[T1][0], 1);
+        c.g[V0][0] = q.off(Q_RD).lw(c);
+        c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+        if c.g[V0][0] == 0 {
+            c.g[T4][0] = 0;
+        }
+        let all_so_far = c.g[T4][0] == c.g[T6][0];
+        c.g[T2][0] = addu(c.g[T2][0], 4);
+        if !all_so_far {
+            break;
+        }
+        c.cycles += 4;
+        c.g[V0][0] = q.off(Q_READERS).lbu(c);
+        c.g[V0][0] = ((c.g[T1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x003c_6f58);
+        }
+    }
+    c.cycles += 2;
+    c.g[A0][0] = addu(c.g[T7][0], c.g[T5][0]);
+    if c.g[T4][0] != 0 {
+        // Advance the read mark; move the block's bytes from A to B.
+        c.cycles += 16;
+        c.g[V0][0] = q.off(Q_RD).lw(c);
+        c.g[V0][0] = addu(c.g[V0][0], 1);
+        q.off(Q_RD).sw(c, c.g[V0][0]);
+        c.g[V1][0] = entry.off(4).lw(c);
+        c.g[A0][0] = q.off(Q_BYTES_A).lw(c);
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 1);
+        c.g[V1][0] = sx(((c.g[V1][0] as u32) as i32 >> 1) as u32);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(c.g[V1][0] as u32));
+        q.off(Q_BYTES_A).sw(c, c.g[A0][0]);
+        c.g[V0][0] = entry.off(4).lw(c);
+        c.g[V1][0] = q.off(Q_BYTES_B).lw(c);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 1) as u32);
+        c.g[V1][0] = addu(c.g[V1][0], c.g[V0][0]);
+        q.off(Q_BYTES_B).sw(c, c.g[V1][0]);
+        c.g[A0][0] = addu(c.g[T7][0], c.g[T5][0]);
+    }
+    // Wrap the read index.
+    c.cycles += 7;
+    let ridx = Addr(c.g[A0][0] as u32);
+    c.g[V1][0] = ridx.lhu(c);
+    c.g[V0][0] = q.off(Q_SIZE).lhu(c);
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 16);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 16);
+    c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+    if c.g[V1][0] == 0 {
+        ridx.sh(c, 0);
+    }
+    c.cycles += 10;
+    c.g[A0][0] = addu(c.g[T9][0], c.g[T5][0]);
+    c.g[A1][0] = addu(c.g[T3][0], c.g[T8][0]);
+    let cnt = Addr(c.g[A0][0] as u32);
+    c.g[V0][0] = cnt.lhu(c);
+    c.g[V1][0] = u64::MAX;
+    c.g[V0][0] = addu(c.g[V0][0], (-1i64) as u64);
+    cnt.sh(c, c.g[V0][0]);
+    c.g[V0][0] = Addr(c.g[A1][0] as u32).off(8).lw(c);
+    if c.g[V0][0] == 0 {
+        c.g[V0][0] = c.g[V1][0];
+    }
+    ret(c);
+}
+
+/// `slt_2`: signed 64-bit compare of two registers.
+#[inline]
+pub(crate) fn slt_2(a: u64, b: u64) -> u64 {
+    ((a as i64) < (b as i64)) as u64
+}
+
+/// `addiu_2`-style 32-bit add of an immediate, sign-extended.
+#[inline]
+pub(crate) fn addiu_2(a: u64, k: i32) -> u64 {
+    sx((a as u32).wrapping_add(k as u32))
+}
+
+/// `void SND_ReleaseFinishedVoices(void)` (0x3c1298): walks both channel
+/// groups of the SND driver and releases the voices of every channel whose
+/// hardware voice has finished. For each channel `i` with a non-zero key in
+/// the IOP status table and no timed stop pending (`stop == -1`):
+///
+/// - first group: when the key changed since last time, the remaining
+///   count is reloaded from the key's low 23 bits; when it is zero, each of
+///   the channel's voices gets its status key cleared and
+///   `SND_ChannelRelease(voice)` (in mode 2 the mirror voice `+0x18` too);
+/// - second group: when the key changed, the remaining word is cleared;
+///   when it is -1, each voice's status key is cleared and
+///   `SND_ChannelRelease(voice)`.
+pub fn snd_release_finished_voices(c: &mut Cpu) {
+    use release::*;
+    guest(c, |c| {
+        let st = |o: u32| Addr(STATE + o);
+        let vo = |o: u32| Addr(VOICES + o);
+        c.cycles += 17;
+        let frame = Frame::open(c, 0xa0);
+        set_reg(c, A0, HI);
+        frame.save(c, S2, 0x70);
+        set_reg(c, V0, sx(STATE));
+        frame.save(c, FP, 0x10);
+        set_reg(c, S2, 0);
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save_ra(c, 0);
+        let count_a = st(COUNT_A).lbu(c);
+        set_reg(c, V1, count_a);
+        set_reg(c, FP, HI);
+
+        // First group.
+        if count_a != 0 {
+            c.cycles += 3;
+            set_reg(c, V0, HI);
+            set_reg(c, S7, sx(VOICES));
+            let mut i: u32 = 0;
+            loop {
+                c.cycles += 6;
+                let status = vo(STATUS).lw(c);
+                let slot = sx(i << 3);
+                set_reg(c, A2, slot);
+                let entry = addu(status, slot);
+                set_reg(c, V0, entry);
+                let key = Addr((entry as u32).wrapping_add(KEY_A)).lw(c);
+                set_reg(c, A1, key);
+                set_reg(c, S6, sx(i.wrapping_add(1)));
+                // true: through the one-cycle block that reloads v1.
+                let short = 'ch: {
+                    if key == 0 {
+                        break 'ch true;
+                    }
+                    c.cycles += 9;
+                    set_reg(c, V0, CHANNEL_SIZE as u64);
+                    set_reg(c, T0, sx(STATE));
+                    let off = sx(abi::mult(c, i, CHANNEL_SIZE));
+                    set_reg(c, A3, off);
+                    let chans = st(CHANNELS).lw(c);
+                    let ch = addu(off, chans);
+                    set_reg(c, V0, ch);
+                    let stop = Addr((ch as u32).wrapping_add(CH_STOP)).lh(c);
+                    set_reg(c, V0, u64::MAX);
+                    set_reg(c, V1, sx(STATE));
+                    if stop != u64::MAX {
+                        break 'ch false;
+                    }
+                    c.cycles += 5;
+                    let seen_key = sx(VOICES + SEEN_A);
+                    set_reg(c, T1, seen_key);
+                    let at = addu(slot, seen_key);
+                    set_reg(c, V0, at);
+                    let seen = Addr(at as u32).lw(c);
+                    set_reg(c, V1, seen);
+                    let seen_left = sx(VOICES + SEEN_A + 4);
+                    set_reg(c, A0, seen_left);
+                    if seen != key {
+                        c.cycles += 5;
+                        let at = addu(slot, seen_left);
+                        set_reg(c, V1, at);
+                        let left = key & 0x7f_ffff;
+                        set_reg(c, V0, left);
+                        Addr(at as u32).sw(c, left);
+                    }
+                    c.cycles += 4;
+                    let at = addu(slot, seen_left);
+                    set_reg(c, V0, at);
+                    let left = Addr(at as u32).lw(c);
+                    set_reg(c, V1, sx(STATE));
+                    if left != 0 {
+                        break 'ch false;
+                    }
+                    c.cycles += 5;
+                    let chans = st(CHANNELS).lw(c);
+                    let ch = addu(off, chans);
+                    set_reg(c, V0, ch);
+                    let n = Addr((ch as u32).wrapping_add(CH_VOICE_COUNT)).lbu(c);
+                    set_reg(c, V1, n);
+                    set_reg(c, S1, 0);
+                    if n == 0 {
+                        break 'ch true;
+                    }
+                    c.cycles += 6;
+                    set_reg(c, S3, sx(STATE));
+                    set_reg(c, S2, off);
+                    set_reg(c, S4, sx(VOICES));
+                    set_reg(c, S5, 2);
+                    let mut chans = st(CHANNELS).lw(c);
+                    set_reg(c, V0, chans);
+                    let mut j: u32 = 0;
+                    loop {
+                        c.cycles += 13;
+                        let half = sx(j << 1);
+                        set_reg(c, V1, half);
+                        let status = vo(STATUS).lw(c);
+                        let at = addu(addu(off, chans), half);
+                        set_reg(c, V0, at);
+                        let voice = Addr((at as u32).wrapping_add(CH_VOICES)).lh(c);
+                        set_reg(c, S0, voice);
+                        let v8 = sx((voice as u32) << 3);
+                        set_reg(c, V1, v8);
+                        set_reg(c, A0, voice);
+                        let e = addu(status, v8);
+                        set_reg(c, A1, e);
+                        Addr((e as u32).wrapping_add(KEY_A)).sw(c, 0);
+                        SND_CHANNEL_RELEASE.call(c, RET_A)?;
+                        let mode = st(MODE).lbu(c);
+                        set_reg(c, V0, mode);
+                        if mode == 2 {
+                            c.cycles += 6;
+                            let status = vo(STATUS).lw(c);
+                            let m8 = sx((voice as u32).wrapping_add(MIRROR) << 3);
+                            set_reg(c, V0, m8);
+                            let e = addu(status, m8);
+                            set_reg(c, V1, e);
+                            Addr((e as u32).wrapping_add(KEY_A)).sw(c, 0);
+                        }
+                        let chans_now = st(CHANNELS).lw(c);
+                        c.cycles += 6;
+                        j = j.wrapping_add(1);
+                        set_reg(c, S1, sx(j));
+                        let ch = addu(off, chans_now);
+                        set_reg(c, V1, ch);
+                        let n = Addr((ch as u32).wrapping_add(CH_VOICE_COUNT)).lbu(c);
+                        let more = slt_2(sx(j), n);
+                        set_reg(c, V0, more);
+                        if more == 0 {
+                            break 'ch true;
+                        }
+                        chans = st(CHANNELS).lw(c);
+                        set_reg(c, V0, chans);
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD_A_VOICES);
+                        }
+                    }
+                };
+                if short {
+                    c.cycles += 1;
+                    set_reg(c, V1, sx(STATE));
+                }
+                c.cycles += 5;
+                i = i.wrapping_add(1);
+                set_reg(c, S2, sx(i));
+                let count = st(COUNT_A).lbu(c);
+                let more = slt_2(sx(i), count);
+                set_reg(c, V0, more);
+                set_reg(c, A0, HI);
+                if more == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, HEAD_A);
+                }
+            }
+        }
+
+        // Second group: channels COUNT_A.. (status slots from 0).
+        c.cycles += 5;
+        set_reg(c, A0, HI);
+        set_reg(c, V0, sx(STATE));
+        let count_b = st(COUNT_B).lbu(c);
+        set_reg(c, V1, count_b);
+        set_reg(c, S2, 0);
+        if count_b != 0 {
+            c.cycles += 4;
+            set_reg(c, V0, HI);
+            set_reg(c, S7, sx(VOICES));
+            let mut status = vo(STATUS).lw(c);
+            set_reg(c, V0, status);
+            let mut i: u32 = 0;
+            loop {
+                c.cycles += 5;
+                let slot16 = sx(i << 4);
+                set_reg(c, V1, slot16);
+                let entry = addu(status, slot16);
+                set_reg(c, V0, entry);
+                let key = Addr((entry as u32).wrapping_add(KEY_B)).lw(c);
+                set_reg(c, A3, key);
+                set_reg(c, S6, sx(i.wrapping_add(1)));
+                let short = 'ch: {
+                    if key == 0 {
+                        break 'ch true;
+                    }
+                    c.cycles += 11;
+                    set_reg(c, T0, sx(STATE));
+                    set_reg(c, T2, CHANNEL_SIZE as u64);
+                    let first = st(COUNT_A).lbu(c);
+                    let chans = st(CHANNELS).lw(c);
+                    set_reg(c, V1, chans);
+                    let idx = addu(sx(i), first);
+                    let off = sx(abi::mult(c, idx as u32, CHANNEL_SIZE));
+                    let ch = addu(off, chans);
+                    set_reg(c, V0, ch);
+                    let stop = Addr((ch as u32).wrapping_add(CH_STOP)).lh(c);
+                    set_reg(c, A2, stop);
+                    set_reg(c, V0, u64::MAX);
+                    set_reg(c, A0, HI);
+                    if stop != u64::MAX {
+                        break 'ch false;
+                    }
+                    c.cycles += 6;
+                    let slot = sx(i << 3);
+                    set_reg(c, A1, slot);
+                    let seen_key = sx(VOICES + SEEN_B);
+                    set_reg(c, T1, seen_key);
+                    let at = addu(slot, seen_key);
+                    set_reg(c, V1, at);
+                    let seen = Addr(at as u32).lw(c);
+                    set_reg(c, V0, seen);
+                    let seen_left = sx(VOICES + SEEN_B + 4);
+                    set_reg(c, A0, seen_left);
+                    if seen != key {
+                        c.cycles += 2;
+                        let at = addu(slot, seen_left);
+                        set_reg(c, V0, at);
+                        Addr(at as u32).sw(c, 0);
+                    }
+                    c.cycles += 4;
+                    let at = addu(slot, seen_left);
+                    set_reg(c, V0, at);
+                    let left = Addr(at as u32).lw(c);
+                    set_reg(c, V1, left);
+                    set_reg(c, A0, HI);
+                    if left != stop {
+                        break 'ch false;
+                    }
+                    c.cycles += 8;
+                    let first = st(COUNT_A).lbu(c);
+                    let chans = st(CHANNELS).lw(c);
+                    set_reg(c, A0, chans);
+                    let idx = addu(sx(i), first);
+                    let off = sx(abi::mult(c, idx as u32, CHANNEL_SIZE));
+                    let ch = addu(off, chans);
+                    set_reg(c, V0, ch);
+                    let n = Addr((ch as u32).wrapping_add(CH_VOICE_COUNT)).lbu(c);
+                    set_reg(c, V1, n);
+                    set_reg(c, S1, 0);
+                    if n == 0 {
+                        break 'ch true;
+                    }
+                    c.cycles += 4;
+                    set_reg(c, S3, sx(STATE));
+                    set_reg(c, S5, sx(VOICES));
+                    set_reg(c, S4, CHANNEL_SIZE as u64);
+                    let mut first = st(COUNT_A).lbu(c);
+                    set_reg(c, V1, first);
+                    let mut j: u32 = 0;
+                    loop {
+                        c.cycles += 24;
+                        let half = sx(j << 1);
+                        set_reg(c, A2, half);
+                        let chans = st(CHANNELS).lw(c);
+                        set_reg(c, A0, chans);
+                        j = j.wrapping_add(1);
+                        set_reg(c, S1, sx(j));
+                        let status = vo(STATUS).lw(c);
+                        let idx = addu(sx(i), first);
+                        let off = sx(abi::mult(c, idx as u32, CHANNEL_SIZE));
+                        let at = addu(addu(off, chans), half);
+                        set_reg(c, V0, at);
+                        let voice = Addr((at as u32).wrapping_add(CH_VOICES)).lh(c);
+                        set_reg(c, S0, voice);
+                        let v16 = sx((voice as u32).wrapping_sub(first as u32) << 4);
+                        set_reg(c, V1, v16);
+                        set_reg(c, A0, voice);
+                        let e = addu(status, v16);
+                        set_reg(c, A1, e);
+                        Addr((e as u32).wrapping_add(KEY_B)).sw(c, 0);
+                        SND_CHANNEL_RELEASE.call(c, RET_B)?;
+                        let first_now = st(COUNT_A).lbu(c);
+                        let chans = st(CHANNELS).lw(c);
+                        set_reg(c, A0, chans);
+                        let idx = addu(sx(i), first_now);
+                        let off = sx(abi::mult(c, idx as u32, CHANNEL_SIZE));
+                        let ch = addu(off, chans);
+                        set_reg(c, V0, ch);
+                        let n = Addr((ch as u32).wrapping_add(CH_VOICE_COUNT)).lbu(c);
+                        let more = slt_2(sx(j), n);
+                        set_reg(c, V1, more);
+                        if more == 0 {
+                            break 'ch true;
+                        }
+                        first = st(COUNT_A).lbu(c);
+                        set_reg(c, V1, first);
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD_B_VOICES);
+                        }
+                    }
+                };
+                if short {
+                    c.cycles += 1;
+                    set_reg(c, A0, HI);
+                }
+                c.cycles += 6;
+                i = i.wrapping_add(1);
+                set_reg(c, S2, sx(i));
+                set_reg(c, V1, sx(STATE));
+                let count = st(COUNT_B).lbu(c);
+                let more = slt_2(sx(i), count);
+                set_reg(c, V0, more);
+                if more == 0 {
+                    break;
+                }
+                status = vo(STATUS).lw(c);
+                set_reg(c, V0, status);
+                if event_due(c) {
+                    deliver_event_here(c, HEAD_B);
+                }
+            }
+        }
+
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::difftest::check;
     use crate::difftest::check_lohi;
     use crate::difftest::elf_image;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
@@ -5695,7 +7612,6 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
     use super::*;
-    use crate::difftest::fakes::{self};
     use crate::difftest::fakes::{ptr, FAKE, LOG_RESULTS};
     use crate::difftest::fresh;
 
@@ -6764,6 +8680,431 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(outs);
                 c.g[A1][0] = [16u64, 32][(seed % 2) as usize];
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::check_paths;
+    use crate::game::visualfx::boardwakefx::tests::{gp_at, put_spray_slot};
+
+    /// `SND_PanLookup`'s sine table (`0x450000 - 0x2288`).
+    pub(crate) const PAN_SINES: u32 = 0x0044_dd78;
+
+    /// `SND_GetPanGains`' per-speaker byte tables (pointers).
+    pub(crate) const PAN_TABLES: u32 = 0x0050_ac38;
+
+    /// A channel (snd's fixture) with 1-6 speakers, 0-2 aux sends, 0-7
+    /// voices, random smooth/SPU flags, angles, layouts and pan tables.
+    pub(crate) fn apply_pan_setup(c: &mut Cpu, seed: u32) {
+        use crate::game::lib::snd::tests::{channel_flags, setup_channel};
+        let mut r = Rng(0x38e0_0001 ^ (seed as u64) << 8);
+        scramble(c, &mut r);
+        c.pc = 0x003c_38e0;
+        let flags = channel_flags(&mut r, seed);
+        setup_channel(c, &mut r, seed, flags);
+        let ch = DATA + (c.g[A0][0] as u32) * 0x8c;
+        let speakers = [1u8, 2, 4, 5, 3, 6][(seed % 6) as usize];
+        c.bus.write8(pan::STATE + pan::SPEAKERS, speakers);
+        c.bus
+            .write8(pan::STATE + pan::AUX_SENDS, ((seed / 6) % 3) as u8);
+        c.bus.write8(ch + pan::VOICE_COUNT, ((seed / 18) % 8) as u8);
+        let mut f = flags & !0x48;
+        if r.next_u32() & 1 != 0 {
+            f |= 0x40;
+        }
+        if r.next_u32() & 1 != 0 {
+            f |= 0x8;
+        }
+        c.bus.write16(ch + pan::FLAGS, f);
+        for i in 0..8 {
+            c.bus
+                .write16(ch + pan::VOICES + 2 * i, (6 + r.next_u32() % 18) as u16);
+            c.bus
+                .write16(ch + pan::VOICE_ANGLES + 2 * i, r.next_u32() as u16);
+        }
+        c.bus.write16(ch + pan::ANGLE, r.next_u32() as u16);
+        fill(c, &mut r, pan::LAYOUTS, 0x30);
+        fill(c, &mut r, PAN_SINES, 0x102);
+        for i in 0..8 {
+            c.bus
+                .write32(PAN_TABLES + 4 * i, DATA + 0x4_0000 + 0x100 * i);
+        }
+        fill(c, &mut r, DATA + 0x4_0000, 0x200);
+    }
+
+    /// `SND_ChannelApplyPan`: every speaker layout, the mono, one-voice
+    /// and LFE paths, smooth and table pans, the SPU centre/rear split.
+    #[test]
+    fn snd_channel_apply_pan_matches() {
+        check(
+            ee::s13::f_003c38e0__generated,
+            snd_channel_apply_pan,
+            300,
+            &apply_pan_setup,
+        );
+    }
+
+    /// `SND_Tick` over 0-3 tick callbacks (fakes) and 0-4 channels with
+    /// random LFO, sweep and envelope states: unallocated / stopped
+    /// channels, LFO wrap, sweep up/down to the target or below zero (stop),
+    /// envelope ramps, the next segment (finite or forever) and the last
+    /// segment (stop), with the real pitch/volume/stop callees (no voices).
+    #[test]
+    fn snd_tick_matches() {
+        use snd_tick::*;
+        check_lohi(ee::s13::f_003b55f0__generated, snd_tick, 300, &|c, seed| {
+            let mut r = machine(c, seed, 0x3b55, 3);
+            let channels = DATA + 0x1_0000;
+            let tables = DATA + 0x2_0000;
+            fill(c, &mut r, tables, 0x400);
+            c.bus.write32(STATE + TICKS, r.next_u32());
+            let callbacks = r.next_u32() % 4;
+            c.bus.write8(STATE + TICK_CALLBACKS, callbacks as u8);
+            for i in 0..4 {
+                c.bus.write32(STATE + CALLBACKS + 4 * i, FAKE + 0x20 * i);
+            }
+            let n = (seed / 4) % 5;
+            c.bus.write16(STATE + CHANNEL_COUNT, n as u16);
+            c.bus.write32(STATE + CHANNELS, channels);
+            let small = |r: &mut Rng, m: u32| (r.next_u32() % (2 * m + 1)) as i32 - m as i32;
+            for i in 0..n {
+                let ch = channels + i * CHANNEL_SIZE as u32;
+                fill(c, &mut r, ch, CHANNEL_SIZE as u32 / 4);
+                let alloc = if r.next_u32() % 5 != 0 {
+                    1
+                } else {
+                    r.next_u32() as u8 % 3
+                };
+                c.bus.write8(ch + ALLOCATED, alloc);
+                let h = if r.next_u32() % 5 != 0 {
+                    (r.next_u32() << 8 | i) & 0x7fff_ffff
+                } else {
+                    r.next_u32() | 0x8000_0000
+                };
+                c.bus.write32(ch, h);
+                c.bus.write8(ch + 0x23, 0); // no voices
+                c.bus.write32(
+                    ch + 0x74,
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        tables + 0x80
+                    },
+                );
+                let lfo = |r: &mut Rng| {
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        tables + 0x100
+                    }
+                };
+                let (pl, vl) = (lfo(&mut r), lfo(&mut r));
+                c.bus.write32(ch + PITCH_LFO, pl);
+                c.bus.write32(ch + VOL_LFO, vl);
+                for off in [PITCH_LFO_POS, PITCH_LFO_LEN, VOL_LFO_POS, VOL_LFO_LEN] {
+                    c.bus.write8(ch + off, (r.next_u32() % 6) as u8);
+                }
+                let step = match r.next_u32() % 3 {
+                    0 => 0,
+                    1 => small(&mut r, 40),
+                    _ => -(1 + r.next_u32() as i32 % 40).abs(),
+                };
+                c.bus.write32(ch + SWEEP_STEP, step as u32);
+                c.bus.write32(ch + SWEEP, small(&mut r, 60) as u32);
+                c.bus.write32(ch + SWEEP_TARGET, small(&mut r, 60) as u32);
+                c.bus.write32(
+                    ch + ENV_STEP,
+                    if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32()
+                    },
+                );
+                c.bus.write32(
+                    ch + ENV_TICKS,
+                    [1u32, 1, 2, 30][(r.next_u32() % 4) as usize],
+                );
+                c.bus.write8(ch + ENV_SEGMENTS, (r.next_u32() % 4) as u8);
+                c.bus.write8(ch + ENV_SEGMENT, (r.next_u32() % 4) as u8);
+                c.bus.write32(ch + ENV_TABLE, tables + 0x200);
+            }
+            // Segment table: {ticks (some forever / zero), level}.
+            for k in 0..8u32 {
+                let ticks = match r.next_u32() % 4 {
+                    0 => u32::MAX,
+                    1 => 0,
+                    _ => 1 + r.next_u32() % 100,
+                };
+                c.bus.write32(tables + 0x200 + 8 * k, ticks);
+                c.bus.write32(tables + 0x204 + 8 * k, r.next_u32() % 0x8000);
+            }
+            c.pc = 0x003b_55f0;
+        });
+    }
+
+    /// Stream status: unknown / negative stream id; state idle or not;
+    /// rate 0 or not; buffered bytes zero or not; the request found or not
+    /// (negative request id), its total zero or not; the stream file valid
+    /// ("MRTS") or not, channel bytes below or above the 0x3d0900 cap.
+    #[test]
+    fn sndstrm_get_status_matches() {
+        use sndstrm::*;
+        check(
+            ee::s13::f_003b7b48__generated,
+            sndstrm_get_status,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x7b48 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003b_7b48;
+                const STREAM_COUNT: u32 = 0x0050_a92e;
+                const STREAM_TABLE: u32 = 0x0050_a0a0;
+                const BUFFER_TABLE: u32 = 0x0051_57b8 + 0x304;
+                let out = DATA;
+                let stream = DATA + 0x1000;
+                let req = DATA + 0x2000;
+                let buf = DATA + 0x3000;
+                let file = DATA + 0x4000;
+                let header = DATA + 0x5000;
+                fill(c, &mut r, out, 4);
+                c.bus.write8(STREAM_COUNT, 4);
+                let id: u32 = match seed % 10 {
+                    0 => 4 + r.next_u32() % 100,
+                    1 => r.next_u32() | 0x8000_0000,
+                    _ => r.next_u32() % 4,
+                };
+                for k in 0..4 {
+                    c.bus.write32(STREAM_TABLE + 4 * k, stream);
+                }
+                let state = if seed % 7 == 2 {
+                    0
+                } else {
+                    1 + r.next_u32() % 5
+                };
+                c.bus.write32(stream + STATE, state);
+                c.bus.write32(stream + REQUEST, req);
+                // The request id names this stream in its low byte (or is negative).
+                let req_id = if seed % 9 == 4 {
+                    r.next_u32() | 0x8000_0000
+                } else {
+                    (id & 0xff) | (r.next_u32() % 16) << 8
+                };
+                c.bus.write32(req + REQ_ID, req_id);
+                c.bus.write32(req, 0);
+                let rate = if seed % 11 == 3 {
+                    0
+                } else {
+                    1 + r.next_u32() % 48000
+                };
+                c.bus.write16(stream + RATE, rate as u16);
+                let slot = r.next_u32() % 4;
+                c.bus.write32(stream + BUFFER, slot);
+                c.bus.write32(BUFFER_TABLE + 4 * slot, buf);
+                let (b0, b1) = if seed % 2 == 0 {
+                    (0, 0)
+                } else {
+                    (r.next_u32() % 0x10000, r.next_u32() % 0x10000)
+                };
+                c.bus.write32(buf + 0x48, b0);
+                c.bus.write32(buf + 0x4c, b1);
+                let total = if seed % 13 == 6 {
+                    0
+                } else {
+                    1 + r.next_u32() % 0x80_0000
+                };
+                c.bus.write32(req + REQ_BYTES, total);
+                c.bus.write32(stream + FILE, file);
+                c.bus.write32(file, header);
+                let magic = if seed % 5 == 1 {
+                    r.next_u32()
+                } else {
+                    0x4d52_5453
+                };
+                c.bus.write32(header, magic);
+                let channel = if r.next_u32() % 2 == 0 {
+                    r.next_u32() % 0x40_0000
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(file + 8, channel);
+                c.g[A0][0] = sx(id);
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | out as u64;
+            },
+        );
+    }
+
+    /// SNDSTRM_PopBlock: readers behind/past the write and read marks, the
+    /// notify event, ring wrap of both indices, nothing pending, value 0.
+    #[test]
+    fn sndstrm_pop_block_matches() {
+        check(
+            ee::s13::f_003c6de0__generated,
+            sndstrm_pop_block,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3c6d_e000 ^ seed as u64);
+                scramble(c, &mut r);
+                let id = r.next_u32() % 4;
+                let readers = if seed % 11 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 4
+                };
+                let reader = r.next_u32() % readers.max(1);
+                c.g[A0][0] = id as u64;
+                c.g[A1][0] = reader as u64;
+                c.g[A2][0] = sx(DATA + 0x1000);
+                c.g[A3][0] = sx(DATA + 0x1004);
+                let q = DATA;
+                fill(c, &mut r, q, 0x80);
+                put_words(c, SNDSTRM_MAN, &[r.next_u32() % 6]);
+                c.bus.write32(SNDSTRM_MAN + SNDSTRM_QUEUES + 4 * id, q);
+                c.bus.write8(q + Q_READERS, readers as u8);
+                let size = 2 + r.next_u32() % 6;
+                c.bus.write16(q + Q_SIZE, size as u16);
+                // Write index at the end of the ring now and then (wraps).
+                let widx = if seed % 4 == 0 {
+                    size - 1
+                } else {
+                    r.next_u32() % size
+                };
+                c.bus.write16(q + Q_WIDX, widx as u16);
+                let wr = 10 + r.next_u32() % 4;
+                let rd = 10 + r.next_u32() % 4;
+                c.bus.write32(q + Q_WR, wr);
+                c.bus.write32(q + Q_RD, rd);
+                let ahead = seed % 3 == 0;
+                for i in 0..4 {
+                    let p = if ahead {
+                        14 + r.next_u32() % 2
+                    } else {
+                        9 + r.next_u32() % 7
+                    };
+                    c.bus.write32(q + Q_POS + 4 * i, p);
+                    let ri = if seed % 5 == 0 {
+                        size - 1
+                    } else {
+                        r.next_u32() % size
+                    };
+                    c.bus.write16(q + Q_RIDX + 2 * i, ri as u16);
+                    let cnt = if seed % 7 == 0 { 0 } else { r.next_u32() % 3 };
+                    c.bus.write16(q + Q_CNT + 2 * i, cnt as u16);
+                }
+                c.bus
+                    .write32(q + Q_NOTIFY, if seed % 2 == 0 { 0 } else { 1 });
+                for e in 0..8 {
+                    let entry = q + Q_ENTRIES + 0x20 * e;
+                    if r.next_u32() % 4 == 0 {
+                        c.bus.write32(entry + 8 + 4 * reader, 0);
+                    }
+                }
+            },
+        );
+    }
+
+    /// SND_ReleaseFinishedVoices over random channel groups: keys zero or
+    /// not, timed stops pending or not, seen keys equal or changed (with a
+    /// key whose low 23 bits are zero), remaining 0 / -1 or not, 0-3 voices
+    /// per channel, mode 2 or not; the real `SND_ChannelRelease` runs on
+    /// the same channel table.
+    #[test]
+    fn snd_release_finished_voices_matches() {
+        use super::release::*;
+        check_lohi(
+            ee::s13::f_003c1298__generated,
+            snd_release_finished_voices,
+            300,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x3c_1298, 0);
+                c.pc = 0x003c_1298;
+                let count_a = r.next_u32() % 5;
+                let count_b = r.next_u32() % 4;
+                let total = (count_a + count_b).max(1);
+                let chans = DATA;
+                let status = DATA + 0x4000;
+                c.bus.write32(STATE + CHANNELS, chans);
+                c.bus.write8(STATE + COUNT_A, count_a as u8);
+                c.bus.write8(STATE + COUNT_B, count_b as u8);
+                let mode = if r.next_u32() % 2 == 0 {
+                    2
+                } else {
+                    r.next_u32() as u8
+                };
+                c.bus.write8(STATE + MODE, mode);
+                c.bus
+                    .write16(crate::sound::snd::CHANNEL_COUNT.0, total as u16);
+                c.bus.write32(VOICES + STATUS, status);
+                fill(c, &mut r, status - 0x100, 0x500 / 4);
+                for i in 0..total {
+                    let ch = chans + i * CHANNEL_SIZE;
+                    fill(c, &mut r, ch, CHANNEL_SIZE / 4);
+                    let stop = if r.next_u32() % 4 != 0 {
+                        0xffff
+                    } else {
+                        r.next_u32() as u16
+                    };
+                    c.bus.write16(ch + CH_STOP, stop);
+                    let n = r.next_u32() % 4;
+                    c.bus.write8(ch + CH_VOICE_COUNT, n as u8);
+                    for j in 0..4 {
+                        c.bus
+                            .write16(ch + CH_VOICES + 2 * j, (r.next_u32() % total) as u16);
+                    }
+                    // SND_ChannelRelease's fields: group, allocated state.
+                    c.bus.write8(ch + 0x26, (r.next_u32() % 3) as u8);
+                    c.bus.write8(ch + 0x69, (r.next_u32() % 3) as u8);
+                }
+                let key = |r: &mut Rng| match r.next_u32() % 4 {
+                    0 => 0,
+                    1 => 0x0080_0000 * (r.next_u32() % 4),
+                    _ => r.next_u32(),
+                };
+                for i in 0..count_a {
+                    let k = key(&mut r);
+                    c.bus.write32(status + KEY_A + 8 * i, k);
+                    let seen = VOICES + SEEN_A + 8 * i;
+                    c.bus.write32(
+                        seen,
+                        if r.next_u32() % 2 == 0 {
+                            k
+                        } else {
+                            r.next_u32()
+                        },
+                    );
+                    c.bus.write32(
+                        seen + 4,
+                        if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            r.next_u32()
+                        },
+                    );
+                }
+                for i in 0..count_b {
+                    let k = key(&mut r);
+                    c.bus.write32(status + KEY_B + 16 * i, k);
+                    let seen = VOICES + SEEN_B + 8 * i;
+                    c.bus.write32(
+                        seen,
+                        if r.next_u32() % 2 == 0 {
+                            k
+                        } else {
+                            r.next_u32()
+                        },
+                    );
+                    c.bus.write32(
+                        seen + 4,
+                        if r.next_u32() % 2 == 0 {
+                            u32::MAX
+                        } else {
+                            r.next_u32()
+                        },
+                    );
+                }
             },
         );
     }

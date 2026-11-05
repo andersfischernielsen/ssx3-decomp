@@ -43,6 +43,7 @@ pub(crate) use crate::game::object::splinemodifier::stf as stf_2;
 pub(crate) use crate::game::render::particle::addi;
 pub(crate) use crate::game::render::particle::at as at_2;
 pub(crate) use crate::game::replay::replay2::destroy_if_flag;
+use crate::game::visualfx::boardwakefx as bw;
 pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
@@ -217,6 +218,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "cDynamicSprayFX_Update",
     ),
     (0x002e_4f50, snow_box_update, "SnowBox_Update"),
+    (
+        0x002e_1a80,
+        dynamic_spray_fx_update_emitter7,
+        "cDynamicSprayFX_UpdateEmitter7",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -10460,6 +10466,425 @@ pub(crate) fn spray_vu0_length(c: &mut Cpu) {
     c.vu0().waitq();
 }
 
+pub(crate) mod spray7 {
+
+    /// The rider (`+0x370` up vector, `+0x3b0` side axis, `+0x1e0` velocity).
+    pub const OBJ: u32 = 0x00;
+
+    /// Base of the dynamic emitter array (0x210 bytes per slot).
+    pub const P28: u32 = 0x28;
+
+    /// Curve table (`+0x730..0x738`: up/normal/side spawn scales).
+    pub const P2C: u32 = 0x2c;
+
+    /// The edge normal the spray is thrown along.
+    pub const NORMAL: u32 = 0x50;
+
+    /// Spawn colour.
+    pub const COL: u32 = 0x90;
+
+    /// Spray position.
+    pub const POS: u32 = 0xa0;
+
+    /// Non-zero while the board is carving.
+    pub const ACTIVE: u32 = 0xb0;
+
+    /// Side of the board (negative flips the throw direction).
+    pub const SIDE: u32 = 0xb4;
+
+    /// Ground speed.
+    pub const SPEED: u32 = 0xb8;
+
+    /// Scale of the up-vector offset.
+    pub const UP_SCALE: u32 = 0xbc;
+
+    /// Board direction (dotted with the rider's side axis).
+    pub const DIR: u32 = 0xc0;
+
+    /// Configuration (`+0x50` enabled, `+0x54` throw scale).
+    pub const CFG: u32 = 0xd0;
+
+    /// Turn rate: the spray only spawns while it is small.
+    pub const TURN: u32 = 0x12c;
+
+    /// The emitter slot this update drives (7 * 0x210).
+    pub const SLOT: u32 = 0xe70;
+}
+
+/// `void cDynamicSprayFX_UpdateEmitter7(cDynamicSprayFX* fx)` (0x2e1a80): the
+/// carve spray. The spawn chance grows with how sideways the board runs
+/// (`2|dir . side|`, capped at 1), the rider's lean (`+0x1f0`) and the square
+/// of the speed above 416.67 (over 1250). While carving, with the spray
+/// enabled and a small turn rate, a random draw below that chance spawns one
+/// particle in slot 7: thrown along the edge normal (flipped by the side) plus
+/// the rider's velocity and up vector, at the trail point, scaled by the
+/// curve table. Otherwise slot 7 is kept alive at the spray position.
+pub fn dynamic_spray_fx_update_emitter7(c: &mut Cpu) {
+    use spray7::*;
+    guest(c, |c| {
+        // chance = min(2 |dir . side|, 1).
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x150);
+        bw::fconst(c, 6, 0x3f80_0000); // 1
+        frame.save(c, S1, 0x130);
+        frame.save(c, S2, 0x120);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x140);
+        c.mov_s(1, 6);
+        frame.save_ra(c, 0x110);
+        let fx = r32(c, S1);
+        let sp0 = sp(c);
+        c.g[T1][0] = c.lw(fx);
+        c.lqc2(3, bw::p(r32(c, T1), 0x3b0));
+        c.lqc2(5, bw::p(fx, DIR));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.qmfc2(V0, 4);
+        c.mtc1(V0, 0);
+        c.g[V1][0] = c.lw(bw::p(fx, P28));
+        c.abs_s(0, 0);
+        c.add_s(0, 0, 0);
+        c.c_le_s(0, 6); // 2|d| <= 1 ?
+        let small = c.fcc();
+        c.g[S2][0] = sx(r32(c, V1).wrapping_add(SLOT));
+        if small {
+            c.cycles += 1;
+            c.mov_s(1, 0);
+        }
+        // s = min((speed - 416.67) / 1250, 1); lean = |rider+0x1f0| + |chance| - 0.1.
+        c.cycles += 15;
+        c.abs_s(4, 1);
+        c.lwc1(2, bw::gp(c, -0x3a90)); // 416.66669
+        c.lwc1(1, bw::p(fx, SPEED));
+        c.mov_s(5, 6);
+        c.lwc1(3, bw::gp(c, -0x3a8c)); // 1250
+        c.sub_s(1, 1, 2);
+        c.lwc1(0, bw::p(r32(c, T1), 0x1f0));
+        c.abs_s(0, 0);
+        c.lwc1(2, bw::gp(c, -0x3a88)); // 0.1
+        c.add_s(0, 0, 4);
+        c.div_s(1, 1, 3);
+        c.c_lt_s(1, 6);
+        let under = c.fcc();
+        c.sub_s(0, 0, 2);
+        if under {
+            c.cycles += 1;
+            c.mov_s(5, 1);
+        }
+        'idle: {
+            // A random draw in [0, 0.4) against lean * s^2.
+            c.cycles += 21;
+            c.g[V0][0] = c.lw(bw::gp(c, 0xa0c));
+            c.g[A1][0] = 0x0001_8fcd;
+            c.g[A0][0] = 0x00e9_507c;
+            c.mult(0, 2, 2, 5);
+            c.g[A2][0] = 0x007f_ffff;
+            c.g[T2][0] = 0x3f80_0000;
+            c.mul_s(5, 5, 5);
+            c.g[V1][0] = c.lw(bw::p(fx, ACTIVE));
+            c.g[V0][0] = bw::add32(c.g[V0][0], c.g[A0][0]);
+            c.lwc1(1, bw::gp(c, -0x3a84)); // 0.4
+            c.g[V0][0] &= c.g[A2][0];
+            c.mul_s(2, 0, 5);
+            c.g[T0][0] = c.g[V0][0] | c.g[T2][0];
+            c.sw(bw::gp(c, 0xa0c), c.g[T0][0]);
+            c.lwc1(0, bw::gp(c, 0xa0c));
+            c.sub_s(0, 0, 6);
+            let inactive = c.g[V1][0] == 0;
+            c.mul_s(0, 0, 1);
+            if inactive {
+                break 'idle;
+            }
+            c.cycles += 3;
+            c.c_le_s(0, 2);
+            if !c.fcc() {
+                break 'idle;
+            }
+            c.cycles += 4;
+            c.g[A3][0] = c.lw(bw::p(fx, CFG));
+            c.g[V0][0] = c.lw(bw::p(r32(c, A3), 0x50));
+            if c.g[V0][0] == 0 {
+                break 'idle;
+            }
+            c.cycles += 7;
+            c.lwc1(0, bw::p(fx, TURN));
+            c.lwc1(1, bw::gp(c, -0x3a80)); // 0.2
+            c.abs_s(0, 0);
+            c.c_lt_s(0, 1);
+            let turning = !c.fcc();
+            c.mult(0, 2, 8, 5);
+            if turning {
+                break 'idle;
+            }
+            // Spawn: k = (next random - 0.5) * cfg scale; the throw is
+            // pos + up * k*3 * 1/60 ... (see the vector steps below).
+            c.cycles += 69;
+            bw::fconst(c, 4, 0x3f00_0000); // 0.5
+            bw::fconst(c, 3, 0x4040_0000); // 3
+            c.lwc1(2, bw::gp(c, -0x3a7c)); // 1/60
+            c.mtc1(0, 5); // f5 = 0
+            c.g[V1][0] = bw::add32(c.g[V0][0], c.g[A0][0]);
+            c.lq(2, bw::p(fx, POS));
+            c.g[V1][0] &= c.g[A2][0];
+            c.g[V1][0] |= c.g[T2][0];
+            c.sq(2, sp0);
+            c.lwc1(1, bw::p(r32(c, A3), 0x54));
+            c.sw(bw::gp(c, 0xa0c), c.g[V1][0]);
+            c.lwc1(0, bw::gp(c, 0xa0c));
+            c.sub_s(0, 0, 6);
+            c.add_s(0, 0, 4);
+            c.mul_s(1, 0, 1);
+            // up * f1 -> sp+0x20.
+            c.mfc1(3, 1);
+            c.lqc2(4, bw::p(r32(c, T1), 0x370));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x30));
+            c.lq(2, bw::p(sp0, 0x30));
+            c.g[V1][0] = c.lw(fx);
+            c.sq(2, bw::p(sp0, 0x20));
+            // velocity * f3 * f2 * f0 -> sp+0x30.
+            c.mfc1(4, 3);
+            c.lqc2(4, bw::p(r32(c, V1), 0x1e0));
+            c.qmtc2(4, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x60));
+            c.lq(2, bw::p(sp0, 0x60));
+            c.sq(2, bw::p(sp0, 0x50));
+            c.mfc1(3, 2);
+            c.lqc2(4, bw::p(sp0, 0x50));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x60));
+            c.lq(2, bw::p(sp0, 0x60));
+            c.sq(2, bw::p(sp0, 0x40));
+            c.mfc1(3, 0);
+            c.lqc2(4, bw::p(sp0, 0x40));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x60));
+            c.lq(2, bw::p(sp0, 0x60));
+            c.sq(2, bw::p(sp0, 0x30));
+            // pos += up*f1 - that.
+            c.lqc2(3, bw::p(sp0, 0x20));
+            c.lqc2(4, bw::p(sp0, 0x30));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, bw::p(sp0, 0x60));
+            c.lq(2, bw::p(sp0, 0x60));
+            c.sq(2, bw::p(sp0, 0x10));
+            c.lqc2(3, sp0);
+            c.lqc2(4, bw::p(sp0, 0x10));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, sp0);
+            // side = normal x up (x cleared), flipped when SIDE < 0.
+            c.g[V0][0] = c.lw(fx);
+            c.lqc2(4, bw::p(fx, NORMAL));
+            c.lqc2(5, bw::p(r32(c, V0), 0x370));
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+            c.sqc2(6, bw::p(sp0, 0x20));
+            c.lwc1(0, bw::p(fx, SIDE));
+            c.lq(2, bw::p(sp0, 0x20));
+            c.c_lt_s(0, 5);
+            let flip = c.fcc();
+            c.sq(2, bw::p(sp0, 0x10));
+            if flip {
+                c.cycles += 10;
+                bw::fconst(c, 0, 0xbf80_0000); // -1
+                c.mfc1(3, 0);
+                c.lqc2(4, bw::p(sp0, 0x10));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, bw::p(sp0, 0x30));
+                c.lq(2, bw::p(sp0, 0x30));
+                c.sq(2, bw::p(sp0, 0x10));
+                c.sq(2, bw::p(sp0, 0x20));
+            }
+            // The edge normal, negated when the rider's +0x320 is set.
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(fx);
+            c.g[V1][0] = c.lw(bw::p(r32(c, V0), 0x320));
+            if c.g[V1][0] == 0 {
+                c.lq(2, bw::p(fx, NORMAL));
+            } else {
+                c.cycles += 8;
+                bw::fconst(c, 0, 0xbf80_0000); // -1
+                c.mfc1(3, 0);
+                c.lqc2(4, bw::p(fx, NORMAL));
+                c.qmtc2(3, 3);
+                c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+                c.sqc2(5, bw::p(sp0, 0x30));
+                c.lq(2, bw::p(sp0, 0x30));
+            }
+            // vel = (-normal * speed - velocity) * 0.3; then the trail point.
+            c.cycles += 134;
+            c.sq(2, bw::p(sp0, 0x20));
+            bw::fconst(c, 1, 0xbf80_0000); // -1
+            c.g[S0][0] = sx(bw::p(sp0, 0x60));
+            c.mfc1(2, 1);
+            c.lqc2(4, bw::p(sp0, 0x20));
+            c.qmtc2(2, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x50));
+            c.lwc1(2, bw::gp(c, -0x3a78)); // 0.3
+            c.lq(2, bw::p(sp0, 0x50));
+            c.lwc1(0, bw::p(fx, SPEED));
+            c.sq(2, bw::p(sp0, 0x40));
+            c.mfc1(3, 0);
+            c.lqc2(4, bw::p(sp0, 0x40));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x50));
+            c.lq(2, bw::p(sp0, 0x50));
+            c.g[V1][0] = c.lw(fx);
+            c.sq(2, bw::p(sp0, 0x30));
+            c.mfc1(4, 1);
+            c.lqc2(4, bw::p(r32(c, V1), 0x1e0));
+            c.qmtc2(4, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x50));
+            c.lq(2, bw::p(sp0, 0x50));
+            c.sq(2, bw::p(sp0, 0x40));
+            c.lqc2(3, bw::p(sp0, 0x30));
+            c.lqc2(4, bw::p(sp0, 0x40));
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, bw::p(sp0, 0x70));
+            c.lq(2, bw::p(sp0, 0x70));
+            c.sq(2, bw::p(sp0, 0x60));
+            c.mfc1(3, 2);
+            c.lqc2(4, bw::p(sp0, 0x60));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x70));
+            c.lq(2, bw::p(sp0, 0x70));
+            // The trail point through the rider's vtable (+0x6c0 slot 0x10).
+            c.g[A0][0] = c.lw(fx);
+            c.sq(2, bw::p(sp0, 0x50));
+            c.g[A1][0] = sx(r32(c, A0).wrapping_add(0x6c0));
+            c.g[V1][0] = c.lw(bw::p(r32(c, A0), 0x6c0));
+            c.g[A0][0] = c.lh(bw::p(r32(c, V1), 0x10));
+            c.g[V0][0] = c.lw(bw::p(r32(c, V1), 0x14));
+            let target = r32(c, V0);
+            c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+            call_ptr(c, target, 0x002e_1de4)?;
+            // Spawn offset = trail * curve[0x730] + side * speed * f0
+            //   + up * curve[0x734] + up * curve[0x738] * UP_SCALE + vel.
+            c.g[V1][0] = c.lw(bw::p(fx, P2C));
+            c.g[A0][0] = c.g[S2][0];
+            c.mtc1(0, 1); // f1 = 0
+            c.g[A2][0] = c.g[S0][0];
+            c.lwc1(0, bw::p(r32(c, V1), 0x730));
+            c.g[A3][0] = sx(bw::p(fx, COL));
+            c.mfc1(3, 0);
+            c.lqc2(4, r32(c, V0));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0xb0));
+            c.lwc1(12, bw::gp(c, -0x3a74)); // 1/60
+            c.lq(2, bw::p(sp0, 0xb0));
+            c.g[A1][0] = c.g[SP][0];
+            c.lwc1(0, bw::p(fx, SPEED));
+            c.g[T0][0] = 1;
+            c.sq(2, bw::p(sp0, 0xa0));
+            c.mfc1(3, 0);
+            c.lqc2(4, bw::p(sp0, 0x10));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0xd0));
+            c.lq(2, bw::p(sp0, 0xd0));
+            c.sq(2, bw::p(sp0, 0xc0));
+            c.mfc1(3, 1);
+            c.lqc2(4, bw::p(sp0, 0xc0));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0xd0));
+            c.lq(2, bw::p(sp0, 0xd0));
+            c.sq(2, bw::p(sp0, 0xb0));
+            c.lqc2(3, bw::p(sp0, 0xa0));
+            c.lqc2(4, bw::p(sp0, 0xb0));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, bw::p(sp0, 0xd0));
+            c.lq(2, bw::p(sp0, 0xd0));
+            c.g[T1][0] = c.lw(bw::p(fx, P2C));
+            c.sq(2, bw::p(sp0, 0x90));
+            c.lwc1(0, bw::p(r32(c, T1), 0x734));
+            c.g[V1][0] = c.lw(fx);
+            c.mfc1(10, 0);
+            c.lqc2(4, bw::p(r32(c, V1), 0x370));
+            c.qmtc2(10, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0xe0));
+            c.lq(2, bw::p(sp0, 0xe0));
+            c.sq(2, bw::p(sp0, 0xd0));
+            c.lqc2(3, bw::p(sp0, 0x90));
+            c.lqc2(4, bw::p(sp0, 0xd0));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, bw::p(sp0, 0xe0));
+            c.lq(2, bw::p(sp0, 0xe0));
+            c.g[T1][0] = c.lw(bw::p(fx, P2C));
+            c.sq(2, bw::p(sp0, 0x80));
+            c.lwc1(0, bw::p(r32(c, T1), 0x738));
+            c.g[V1][0] = c.lw(fx);
+            c.mfc1(10, 0);
+            c.lqc2(4, bw::p(r32(c, V1), 0x370));
+            c.qmtc2(10, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x100));
+            c.lq(2, bw::p(sp0, 0x100));
+            c.lwc1(0, bw::p(fx, UP_SCALE));
+            c.sq(2, bw::p(sp0, 0xf0));
+            c.mfc1(3, 0);
+            c.lqc2(4, bw::p(sp0, 0xf0));
+            c.qmtc2(3, 3);
+            c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+            c.sqc2(5, bw::p(sp0, 0x100));
+            c.lq(2, bw::p(sp0, 0x100));
+            c.sq(2, bw::p(sp0, 0xe0));
+            c.lqc2(3, bw::p(sp0, 0x80));
+            c.lqc2(4, bw::p(sp0, 0xe0));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, bw::p(sp0, 0x100));
+            c.lq(2, bw::p(sp0, 0x100));
+            c.sq(2, bw::p(sp0, 0x70));
+            c.lqc2(3, bw::p(sp0, 0x70));
+            c.lqc2(4, bw::p(sp0, 0x50));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, bw::p(sp0, 0x100));
+            c.lq(2, bw::p(sp0, 0x100));
+            c.sq(2, bw::p(sp0, 0x60));
+            // DynamicEmitter_SpawnAt(slot 7, &pos, &vel, &colour, 1/60, 1).
+            call_ptr(c, 0x0037_17c0, 0x002e_1f34)?;
+            frame.restore(c, S0, 0x140);
+            c.cycles += 5;
+            frame.restore(c, S1, 0x130);
+            frame.restore(c, S2, 0x120);
+            frame.restore_ra(c, 0x110);
+            frame.close(c);
+            return Ok(());
+        }
+        // Idle: keep slot 7 alive at the spray position.
+        c.cycles += 8;
+        c.lwc1(12, bw::gp(c, -0x3a70)); // 1/60
+        c.g[A0][0] = c.g[S2][0];
+        c.g[A1][0] = sx(bw::p(r32(c, S1), POS));
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[T0][0] = 0;
+        call_ptr(c, 0x0037_17c0, 0x002e_1f58)?;
+        frame.restore(c, S0, 0x140);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x130);
+        frame.restore(c, S2, 0x120);
+        frame.restore_ra(c, 0x110);
+        frame.close(c);
+        Ok(())
+    });
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13320,6 +13745,91 @@ pub(crate) mod tests {
                 c.bus.write32(EM + 0xbc4, (seed % 5 == 1) as u32);
 
                 c.g[A0][0] = sx(FX);
+            },
+        );
+    }
+    use super::*;
+
+    /// Emitter 7 (the carve spray): the chance inputs (side dot, lean,
+    /// speed), the carving/enabled/turn gates, the side and +0x320 flips, the
+    /// trail-point vtable call (a fake) and the real `DynamicEmitter_SpawnAt`
+    /// on slot 7, with the idle keep-alive when any gate fails.
+    #[test]
+    fn dynamic_spray_fx_update_emitter7_matches() {
+        use spray7::*;
+        check_lohi(
+            ee::s09::f_002e1a80__generated,
+            dynamic_spray_fx_update_emitter7,
+            250,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2e1a, 2);
+                c.pc = 0x002e_1a80;
+                let (fx, obj, cfg, em, vt, curve, world, g, players) = (
+                    DATA,
+                    DATA + 0x5000,
+                    DATA + 0x5200,
+                    DATA + 0x3000,
+                    DATA + 0x5400,
+                    DATA + 0x5600,
+                    DATA + 0x6000,
+                    DATA + 0x6200,
+                    DATA + 0x6400,
+                );
+                c.bus.write32(fx + OBJ, obj);
+                c.bus.write32(fx + P28, em);
+                c.bus.write32(fx + P2C, curve);
+                c.bus.write32(fx + CFG, cfg);
+                for k in 0..4u32 {
+                    c.bus.write32(obj + 0x3b0 + 4 * k, r.f32(1.0));
+                    c.bus.write32(fx + DIR + 4 * k, r.f32(1.0));
+                    c.bus.write32(obj + 0x370 + 4 * k, r.f32(10.0));
+                    c.bus.write32(obj + 0x1e0 + 4 * k, r.f32(10.0));
+                    c.bus.write32(fx + NORMAL + 4 * k, r.f32(10.0));
+                    c.bus.write32(fx + POS + 4 * k, r.f32(10.0));
+                    c.bus.write32(fx + COL + 4 * k, r.f32(10.0));
+                }
+                c.bus
+                    .write32(obj + 0x1f0, f([0.0f32, 0.05, -3.0][(seed % 3) as usize]));
+                c.bus.write32(
+                    fx + SPEED,
+                    f([300.0f32, 900.0, 3000.0][((seed / 3) % 3) as usize]),
+                );
+                c.bus.write32(fx + ACTIVE, (seed % 5 != 0) as u32);
+                c.bus.write32(cfg + 0x50, (seed % 7 != 0) as u32);
+                c.bus.write32(cfg + 0x54, r.f32(4.0));
+                c.bus.write32(
+                    fx + TURN,
+                    f([0.05f32, 0.5, -0.1][((seed / 2) % 3) as usize]),
+                );
+                c.bus.write32(fx + SIDE, r.f32(1.0));
+                c.bus.write32(fx + UP_SCALE, r.f32(2.0));
+                c.bus.write32(obj + 0x320, seed % 2);
+                c.bus.write32(obj + 0x6c0, vt);
+                c.bus.write16(vt + 0x10, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt + 0x14, FAKE);
+                for off in [0x730u32, 0x734, 0x738] {
+                    c.bus.write32(curve + off, r.f32(3.0));
+                }
+                put_spray_slot(c, &mut r, em + SLOT, DATA + 0x8000);
+                c.bus.write32(gp_at(-0x848), world);
+                c.bus.write32(world + 0x84, g);
+                c.bus.write32(g + 0x84, players);
+                c.bus.write32(players + 0x10, 0);
+                c.bus.write32(gp_at(0xa0c), r.next_u32());
+                for (off, v) in [
+                    (-0x3a90, 416.66669f32),
+                    (-0x3a8c, 1250.0),
+                    (-0x3a88, 0.1),
+                    (-0x3a84, 0.4),
+                    (-0x3a80, 0.2),
+                    (-0x3a7c, 1.0 / 60.0),
+                    (-0x3a78, 0.3),
+                    (-0x3a74, 1.0 / 60.0),
+                    (-0x3a70, 1.0 / 60.0),
+                ] {
+                    c.bus.write32(gp_at(off), f(v));
+                }
+                c.g[A0][0] = sx(fx);
             },
         );
     }

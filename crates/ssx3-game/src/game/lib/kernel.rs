@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -14,10 +15,16 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -49,6 +56,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0042_4210, init_tlb, "_InitTLB"),
     (0x0042_45f0, sync_dcache, "_SyncDCache"),
     (0x0042_4730, invalid_dcache, "_InvalidDCache"),
+    (0x0042_47d8, invalid_dcache_2, "InvalidDCache"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -348,6 +356,71 @@ pub fn poll_sema(c: &mut Cpu) {
     syscall_wrapper(c, 0x45, 0x0042_3df4, 0x0042_3df8);
 }
 
+// ---------------------------------------------------------------------------
+// InvalidDCache (0x4247d8)
+
+/// `DIntr()` (0x42c078): disable interrupts, return whether they were on.
+pub(crate) const DINTR: Callee = Callee {
+    addr: 0x0042_c078,
+    f: ee::s15::f_0042c078,
+};
+
+/// `_InvalidDCache(start, end)` (0x424730): the cache-line loop.
+pub(crate) const INVALID_DCACHE_LINES: Callee = Callee {
+    addr: 0x0042_4730,
+    f: ee::s15::f_00424730,
+};
+
+/// `EIntr()` (0x42c0c0).
+pub(crate) const EINTR: u32 = 0x0042_c0c0;
+
+/// `void InvalidDCache(void* start, void* end)` (0x4247d8, libkernel):
+/// invalidate the data cache lines covering [start, end] (both rounded down
+/// to 64 bytes) with interrupts disabled; re-enables them (tail call to
+/// `EIntr`) if they were enabled on entry (Status.EIE, COP0 r12 bit 16).
+pub fn invalid_dcache_2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x40);
+        let at = frame.at(c, 0x20);
+        c.sd(at, c.g[S2][0]);
+        let at = frame.at(c, 0x10);
+        c.sd(at, c.g[S1][0]);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        let at = frame.at(c, 0);
+        c.sd(at, c.g[S0][0]);
+        c.mfc0(S0, 12);
+        c.g[V0][0] = 0x10000;
+        c.g[S0][0] &= 0x10000;
+        let enabled = c.g[S0][0] != 0;
+        if enabled {
+            c.cycles += 2;
+            DINTR.call(c, 0x0042_4810)?;
+        }
+        c.cycles += 7;
+        const LINE_MASK: u64 = 0xffff_ffff_ffff_ffc0;
+        c.g[A1][0] = c.g[S1][0] & LINE_MASK;
+        c.g[A0][0] = c.g[S2][0] & LINE_MASK;
+        INVALID_DCACHE_LINES.call(c, 0x0042_4824)?;
+        frame.restore_ra(c, 0x30);
+        c.cycles += 5;
+        c.g[S2][0] = c.ld(frame.at(c, 0x20));
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        if enabled {
+            // Tail call: EIntr returns to our caller.
+            c.g[SP][0] = sx(sp(c).wrapping_add(0x40));
+            c.pc = EINTR;
+            ee::s15::f_0042c0c0(c);
+        } else {
+            frame.close(c);
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -565,5 +638,33 @@ pub(crate) mod tests {
     #[test]
     fn poll_sema_matches() {
         syscall_test_2(ssx3_ee::s15::f_00423df0__generated, poll_sema, 37);
+    }
+    use super::*;
+
+    /// Data-cache invalidate: interrupts enabled or not on entry (Status
+    /// bit 16, with other Status bits random), random ranges.
+    #[test]
+    fn invalid_dcache_matches_2() {
+        check(
+            ee::s15::f_004247d8__generated,
+            invalid_dcache_2,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x47d8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0042_47d8;
+                let status = r.next_u32() & !0x1_0000;
+                c.cop0[12] = if seed % 2 == 0 {
+                    status | 0x1_0000
+                } else {
+                    status
+                };
+                c.cop0[28] = r.next_u32();
+                let start = r.next_u32() % 0x0200_0000;
+                let end = start.wrapping_add(r.next_u32() % 0x2000);
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | start as u64;
+                c.g[A1][0] = sx(end);
+            },
+        );
     }
 }

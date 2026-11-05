@@ -2,8 +2,11 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -11,11 +14,17 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::gp;
+pub(crate) use crate::game::fe::ovstatehud::oc224_gp;
+pub(crate) use crate::game::fe::ovstatehud::oc224_ld_u;
+pub(crate) use crate::game::fe::ovstatehud::oc224_sd_u;
 pub(crate) use crate::game::fe::splashmanager::gpo;
 pub(crate) use crate::game::fe::splashmanager::stk;
+pub(crate) use crate::game::ui::uistate::oc224_at;
+use crate::game::visualfx::boardwakefx as bw;
 pub(crate) use crate::game::visualfx::lensfx::at;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
@@ -58,6 +67,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_base_render_attack_fx,
         "RiderBase_RenderAttackFX",
     ),
+    (0x0011_3e80, rider_set_slew0_target, "Rider_SetSlew0Target"),
+    (0x0012_20d8, rider_build_light_set, "Rider_BuildLightSet"),
+    (0x0021_e7a8, hud_align_y, "HUD_AlignY"),
+    (0x0022_00c0, hud_draw_speedometer, "HUD_DrawSpeedometer"),
+    (0x002f_4a08, lens_fx_draw_sun, "LensFX_DrawSun"),
+    (0x003d_4f10, path_update_tracks, "PATH_UpdateTracks"),
+    (0x003e_12e0, stream_file_get_chunk, "StreamFile_GetChunk"),
+    (0x0042_c078, d_intr, "DIntr"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2303,6 +2320,1571 @@ pub fn computer_actor_rider_select_target_rider(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod rider_lights {
+
+    /// The rider's vtable (`+0x38` slot: the AI/view index getter).
+    pub const VTABLE: u32 = 0x6c0;
+
+    pub const AI_INDEX_SLOT: u32 = 0x38;
+
+    /// `RiderHandler*` (its `+0xd30` holds the extra directional lights).
+    pub const HANDLER: u32 = 0x77c;
+
+    /// Eight dynamic lights affecting the rider (null for none).
+    pub const DYNAMIC_LIGHTS: u32 = 0x794;
+
+    /// The rider's irradiance (light set).
+    pub const LIGHTS: u32 = 0x7c0;
+
+    /// Handler offset of the directional-light block: `{x, y, z, n}` and
+    /// `n` lights (`+0x10` points, 12 bytes each; `+0x50` directions, 16
+    /// bytes each).
+    pub const HANDLER_LIGHTS: u32 = 0xd30;
+}
+
+pub(crate) mod renderer {
+    pub(crate) use crate::game::fe::ovstatehud::renderer::CONTEXT_ID;
+    pub(crate) use crate::game::fe::ovstatehud::renderer::GP;
+    pub(crate) use crate::game::fe::ovstatehud::renderer::STATE;
+    pub(crate) use crate::game::fe::ovstatehud::renderer::VTABLE;
+}
+
+pub(crate) mod lens_fx {
+
+    /// Non-zero while the sun is on screen (halfword).
+    pub const VISIBLE: u32 = 0x2c;
+
+    /// The sun's screen position (x, y).
+    pub const SUN_X: u32 = 0x1f0;
+
+    pub const SUN_Y: u32 = 0x1f4;
+
+    /// The flare intensity.
+    pub const INTENSITY: u32 = 0x204;
+}
+
+pub(crate) mod sun_callee {
+    use super::Callee;
+    use ssx3_ee as ee;
+
+    pub const RED: Callee = Callee {
+        addr: 0x002e_e100,
+        f: ee::s09::WorldPainter_GetSunRed,
+    };
+
+    pub const GREEN: Callee = Callee {
+        addr: 0x002e_e148,
+        f: ee::s09::WorldPainter_GetSunGreen,
+    };
+
+    pub const BLUE: Callee = Callee {
+        addr: 0x002e_e190,
+        f: ee::s09::WorldPainter_GetSunBlue,
+    };
+
+    pub const INTENSITY: Callee = Callee {
+        addr: 0x002e_e1d8,
+        f: ee::s09::WorldPainter_GetSunIntensity,
+    };
+
+    pub const SIZE: Callee = Callee {
+        addr: 0x002e_e2b0,
+        f: ee::s09::WorldPainter_GetSunSize,
+    };
+
+    pub const TEXTURE: Callee = Callee {
+        addr: 0x002e_e220,
+        f: ee::s09::WorldPainter_GetSunTexture,
+    };
+
+    pub const DRAW_FLARE_SET: Callee = Callee {
+        addr: 0x002f_4690,
+        f: ee::s09::LensFX_DrawFlareSet,
+    };
+}
+
+pub(crate) mod path {
+
+    /// `PathState*`: tick lengths at +0xc (normal) and +0x10 (streamed),
+    /// the 24 track slots at +0x58.
+    pub const STATE: u32 = 0x0044_f420;
+
+    /// Mode byte: `'B'` = streamed (block) mode.
+    pub const MODE: u32 = 0x0044_f434;
+
+    /// Current PATH time.
+    pub const TIME: u32 = 0x0044_f438;
+
+    pub const TRACKS: u32 = 24;
+
+    pub const SLOT0: u32 = 0x58;
+}
+
+pub(crate) mod track {
+
+    pub const BUSY: u32 = 0x3;
+
+    pub const VOLUME_FADE: u32 = 0xd;
+
+    pub const PLAY_STATE: u32 = 0xe;
+
+    pub const AUX_FADE: u32 = 0x15;
+
+    pub const FADE3: u32 = 0x1d;
+
+    pub const LEAD: u32 = 0x24;
+
+    pub const STREAMED: u32 = 0x2f;
+
+    pub const ACTIVE: u32 = 0x30;
+
+    pub const NODE: u32 = 0x36;
+
+    pub const DEADLINE: u32 = 0x48;
+
+    pub const STOP_AT: u32 = 0x4c;
+
+    pub const HANDLE: u32 = 0x54;
+}
+
+pub(crate) mod speedo {
+
+    /// The HUD settings block copied to the stack (0x288 bytes, 8-aligned).
+    pub const SETTINGS: u32 = 0x0053_5610;
+
+    pub const SETTINGS_SIZE: u32 = 0x280;
+
+    /// Settings word 0: bit 19 clear = the converted units (factor and
+    /// second label).
+    pub const UNITS_FLAG: u64 = 0x8_0000;
+
+    /// The rider's velocity provider (an object with a vtable).
+    pub const RIDER_VELOCITY: u32 = 0x6c0;
+
+    pub const SLOT_GET_VELOCITY: u32 = 0x10;
+
+    /// The speedometer's HUD element (element 25 of 0x24 bytes).
+    pub const ELEM: u32 = 0x384;
+
+    pub const ELEM_ALIGN_X: u32 = 0x3a4;
+
+    pub const ELEM_ALIGN_Y: u32 = 0x3a5;
+
+    /// The HUD's text object.
+    pub const HUD_TEXT: u32 = 0x42c;
+
+    /// Text object fields: colour (8 bytes at 0x40), base scale, scale.
+    pub const TEXT_COLOR: u32 = 0x40;
+
+    pub const TEXT_BASE_SCALE: u32 = 0x30;
+
+    pub const TEXT_SCALE: u32 = 0x38;
+
+    pub const TEXT_LINE: u32 = 0x14;
+
+    /// The two unit labels (flag set / clear) and the number format.
+    pub const LABEL_A: u32 = 0x004a_2308;
+
+    pub const LABEL_B: u32 = 0x004a_2310;
+
+    pub const NUMBER_FORMAT: u32 = 0x004a_2138;
+
+    /// `gp -` constants: speed scale, units conversion factor, the two digit-scale
+    /// factors (fewer than three digits or not), the label offset.
+    pub const GP_NEG_SPEED_SCALE: u32 = 0x5320;
+
+    pub const GP_NEG_UNITS_FACTOR: u32 = 0x531c;
+
+    pub const GP_NEG_SCALE_SHORT: u32 = 0x5318;
+
+    pub const GP_NEG_SCALE_LONG: u32 = 0x5314;
+
+    pub const GP_NEG_LABEL_OFFSET: u32 = 0x5310;
+
+    // Callees (all called through the function table).
+    pub const BE_LIBRARY_GET_INSTANCE: u32 = 0x0014_dc80;
+
+    pub const BE_LIBRARY_GET_INTERFACE: u32 = 0x0014_dd58;
+
+    pub const HUD_GET_ELEM_POS: u32 = 0x001e_91f8;
+
+    pub const HUD_GET_ELEM_SCALE: u32 = 0x001e_9290;
+
+    pub const HUD_GET_ELEM_COLOR: u32 = 0x001e_91a8;
+
+    pub const FONT_MEASURE_TEXT: u32 = 0x0039_1fb0;
+
+    pub const HUD_ALIGN_ELEM_POS: u32 = 0x001f_10f8;
+
+    pub const FONT_DRAW_TEXT: u32 = 0x0039_1cb0;
+
+    pub const SPRINTF: u32 = 0x0041_7828;
+
+    pub const STRLEN: u32 = 0x0041_6810;
+
+    pub const FONT_DRAW_TEXT_CENTERED: u32 = 0x0039_2908;
+
+    pub const COPY_HEAD: u32 = 0x0022_01e0;
+}
+
+pub(crate) mod chunk {
+    use super::ee;
+    use super::Callee;
+
+    /// Stream manager (`*handle`): the ring start (`+0x30`) and its mutex
+    /// (`+4`).
+    pub const MAN_MUTEX: u32 = 0x4;
+
+    pub const MAN_RING: u32 = 0x30;
+
+    /// Stream handle: its tag (`+4`), the bytes still queued (`+8`), the
+    /// next chunk (`+0xc`).
+    pub const H_TAG: u32 = 0x4;
+
+    pub const H_QUEUED: u32 = 0x8;
+
+    pub const H_NEXT: u32 = 0xc;
+
+    /// Chunk header: `+0` -1 = wrap to the ring start; `+4` tag (top byte)
+    /// and size (low 24 bits).
+    pub const CH_WRAP: u32 = 0x0;
+
+    pub const CH_TAG_SIZE: u32 = 0x4;
+
+    pub const SIZE_MASK: u64 = 0xff_ffff;
+
+    pub const TAG_MASK: u64 = 0xffff_ffff_ff00_0000;
+
+    pub const HEAD: u32 = 0x003e_13a0;
+
+    pub const STREAM_FILE_VALIDATE: Callee = Callee {
+        addr: 0x003d_fbd0,
+        f: ee::s14::StreamFile_Validate,
+    };
+
+    pub const EA_MUTEX_LOCK: Callee = Callee {
+        addr: 0x003e_5700,
+        f: ee::s14::EAMutex_Lock,
+    };
+
+    pub const EA_MUTEX_UNLOCK: Callee = Callee {
+        addr: 0x003e_5760,
+        f: ee::s14::EAMutex_Unlock,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// HUD_AlignY (0x0021e7a8)
+
+/// `float HUD_AlignY(void* self, int align, float pos, float size, float
+/// scale)` (0x0021e7a8): the top edge of a HUD element aligned at `pos`.
+/// `align == 0` centres it (`pos - scale*size*0.5`), `align > 0` bottom
+/// aligns it (`pos - scale*size`), `align < 0` keeps `pos` (top aligned).
+/// Result in f0 (and f12 holds it too).
+pub fn hud_align_y(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    let align = c.g[A1][0];
+    let pos = FpuF32(c.f[12]);
+    let size = FpuF32(c.f[13]);
+    let scale = FpuF32(c.f[14]);
+    c.cycles += 2;
+    let mut top = pos;
+    if align == 0 {
+        c.cycles += 5;
+        const HALF: u32 = 0x3f00_0000;
+        c.g[AT][0] = HALF as u64;
+        c.f[1] = HALF;
+        let offset = (scale * size) * FpuF32(HALF);
+        c.f[0] = offset.0;
+        c.cycles += 1;
+        top = pos - offset;
+    } else {
+        c.cycles += 2;
+        if (align as i64) > 0 {
+            c.cycles += 1;
+            let offset = scale * size;
+            c.f[0] = offset.0;
+            c.cycles += 1;
+            top = pos - offset;
+        }
+    }
+    c.f[12] = top.0;
+    c.cycles += 2;
+    c.f[0] = top.0;
+    ret(c);
+}
+
+/// `int rider->GetAIIndex()` through the rider's vtable, returning to `ret`.
+pub(crate) fn rider_ai_index(c: &mut Cpu, rider: u32, ret: u32) -> crate::call::Flow {
+    use rider_lights::*;
+    c.g[V1][0] = c.lw(rider.wrapping_add(VTABLE));
+    c.g[A1][0] = sx(rider.wrapping_add(VTABLE));
+    c.g[A0][0] = c.lh(bw::p(r32(c, V1), AI_INDEX_SLOT));
+    c.g[V0][0] = c.lw(bw::p(r32(c, V1), AI_INDEX_SLOT + 4));
+    let method = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, A1).wrapping_add(r32(c, A0)));
+    call_ptr(c, method, ret)
+}
+
+/// `void Rider_BuildLightSet(cRider* r)` (0x1220d8): rebuild the rider's
+/// irradiance at `+0x7c0`: clear it, copy the view's ambient set
+/// (`WorldPainter_GetViewIrradiance(index)`, 0xa0 bytes), add the
+/// camera-relative light at the hips (`WorldPainter_GetLighting30`), each of
+/// the eight dynamic lights, and, if the rider handler has them, its
+/// directional block: the offset vector, then one directional light per
+/// entry.
+pub fn rider_build_light_set(c: &mut Cpu) {
+    use rider_lights::*;
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S2, 0x60);
+        frame.save(c, S0, 0x80);
+        c.g[S2][0] = c.g[A0][0];
+        let rider = r32(c, S2);
+        c.g[S0][0] = sx(rider.wrapping_add(LIGHTS));
+        frame.save(c, S1, 0x70);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        frame.save_ra(c, 0x20);
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x0038_9260, 0x0012_2108)?; // Irradiance_Clear
+        rider_ai_index(c, rider, 0x0012_2120)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x002e_dfb8, 0x0012_2128)?; // WorldPainter_GetViewIrradiance
+                                                // Copy the view's irradiance (0xa0 bytes, two quadwords a step).
+        c.g[V1][0] = sx(r32(c, V0).wrapping_add(0xa0));
+        loop {
+            c.cycles += 7;
+            c.lq(A0, r32(c, V0));
+            c.lq(A1, bw::p(r32(c, V0), 0x10));
+            c.sq(A0, r32(c, S0));
+            c.sq(A1, bw::p(r32(c, S0), 0x10));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(0x20));
+            let more = c.g[V0][0] != c.g[V1][0];
+            c.g[S0][0] = sx(r32(c, S0).wrapping_add(0x20));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0012_212c);
+            }
+        }
+        // The camera-relative light at the hips.
+        c.cycles += 20;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A1][0] = c.g[S2][0];
+        Callee {
+            addr: 0x0011_ff48,
+            f: ee::s00::Rider_GetHipsPosition,
+        }
+        .call(c, 0x0012_2154)?;
+        c.g[S0][0] = sx(rider.wrapping_add(LIGHTS));
+        c.g[S4][0] = c.g[S0][0];
+        c.g[S1][0] = sx(rider.wrapping_add(DYNAMIC_LIGHTS));
+        c.g[S3][0] = 7;
+        rider_ai_index(c, rider, 0x0012_217c)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, 0x002e_efa8, 0x0012_2184)?; // WorldPainter_GetLighting30
+        c.mov_s(12, 0);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[SP][0];
+        call_ptr(c, 0x0038_9cb8, 0x0012_2194)?; // Irradiance_AddCameraRelativeLight
+                                                // The dynamic lights.
+        loop {
+            c.cycles += 3;
+            c.g[A2][0] = c.lw(r32(c, S1));
+            let none = c.g[A2][0] == 0;
+            c.g[A0][0] = c.g[S4][0];
+            if !none {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[SP][0];
+                call_ptr(c, 0x0038_a6a8, 0x0012_21ac)?; // Irradiance_AddDynamicLight
+            }
+            c.cycles += 3;
+            c.g[S3][0] = sx(r32(c, S3).wrapping_sub(1));
+            let more = (c.g[S3][0] as i64) >= 0;
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0012_2198);
+            }
+        }
+        // The handler's directional block.
+        c.cycles += 6;
+        c.g[V1][0] = c.lw(rider.wrapping_add(HANDLER));
+        c.g[S1][0] = 0;
+        c.g[V0][0] = sx(r32(c, V1).wrapping_add(HANDLER_LIGHTS));
+        if c.g[V1][0] != 0 {
+            c.g[S1][0] = c.g[V0][0];
+        }
+        let block = r32(c, S1);
+        c.g[A1][0] = sx(bw::p(sp(c), 0x10));
+        if block != 0 {
+            c.cycles += 13;
+            c.lwc1(0, block);
+            c.lwc1(1, bw::p(block, 0x4));
+            c.g[S5][0] = c.g[A1][0];
+            c.lwc1(2, bw::p(block, 0x8));
+            c.g[A0][0] = c.g[S4][0];
+            c.swc1(0, bw::p(sp(c), 0x10));
+            c.g[S3][0] = 0;
+            c.swc1(1, bw::p(sp(c), 0x14));
+            c.swc1(2, bw::p(sp(c), 0x18));
+            call_ptr(c, 0x0038_9558, 0x0012_21f8)?; // Vec3_AddTo
+            c.g[V0][0] = c.lw(bw::p(block, 0xc));
+            c.g[S0][0] = sx(bw::p(block, 0x18));
+            if c.g[V0][0] as i64 > 0 {
+                c.cycles += 3;
+                c.g[S2][0] = sx(bw::p(block, 0x50));
+                c.lwc1(0, r32(c, S0).wrapping_sub(0x8));
+                loop {
+                    c.cycles += 16;
+                    c.g[A1][0] = c.g[S2][0];
+                    c.lwc1(1, r32(c, S0).wrapping_sub(0x4));
+                    c.g[A0][0] = c.g[S4][0];
+                    c.lwc1(2, r32(c, S0));
+                    c.g[A2][0] = c.g[S5][0];
+                    c.swc1(0, bw::p(sp(c), 0x10));
+                    c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+                    c.swc1(1, bw::p(sp(c), 0x14));
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(0xc));
+                    c.swc1(2, bw::p(sp(c), 0x18));
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(0x10));
+                    call_ptr(c, 0x0038_9520, 0x0012_2240)?; // Irradiance_AddDirectional
+                    c.g[V0][0] = c.lw(bw::p(block, 0xc));
+                    c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        break;
+                    }
+                    c.lwc1(0, r32(c, S0).wrapping_sub(0x8));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0012_2210);
+                    }
+                }
+            }
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// DIntr (0x42c078).
+
+/// COP0 Status bit EIE (interrupts enabled).
+pub(crate) const STATUS_EIE: u64 = 0x1_0000;
+
+/// `int DIntr(void)` (0x42c078): disable interrupts; returns 1 if they were
+/// enabled. The `di` is repeated until Status.EIE reads back clear.
+pub fn d_intr(c: &mut Cpu) {
+    c.cycles += 5;
+    c.mfc0(V1, 12);
+    c.g[V0][0] = STATUS_EIE;
+    c.g[V1][0] &= c.g[V0][0];
+    let was_on = c.g[V1][0] != 0;
+    c.g[A0][0] = was_on as u64;
+    if !was_on {
+        c.cycles += 3;
+        c.g[A0][0] = 0;
+        c.g[V0][0] = 0;
+        ret(c);
+        return;
+    }
+    c.cycles += 1;
+    loop {
+        c.cycles += 7;
+        c.di();
+        c.mfc0(V0, 12);
+        c.g[V1][0] = STATUS_EIE;
+        c.g[V0][0] &= c.g[V1][0];
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0042_c090);
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A0][0];
+    ret(c);
+}
+
+/// `void LensFX_DrawSun(LensFX* fx, Viewport* vp, int second_view)`
+/// (0x2f4a08): while the sun is visible, reads the view's sun colour,
+/// intensity, size (1 means 320) and texture from the world painter
+/// (view 6 or 7); if the alpha `intensity * fx->intensity` is positive,
+/// pushes an additive 2D draw state on the renderer (`gp+0x2a90`), sets the
+/// viewport, binds the texture, draws the sun sprite at the sun's screen
+/// position, draws the flare set (`LensFX_DrawFlareSet`), and pops the
+/// state.
+pub fn lens_fx_draw_sun(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x100);
+        frame.save(c, S4, 0x90);
+        frame.save(c, S5, 0x80);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S0, 0xd0);
+        frame.save(c, S1, 0xc0);
+        frame.save(c, S2, 0xb0);
+        frame.save(c, S3, 0xa0);
+        frame.save(c, S6, 0x70);
+        frame.save(c, S7, 0x60);
+        frame.save_ra(c, 0x50);
+        frame.save_fpr(c, 22, 0xf0);
+        frame.save_fpr(c, 21, 0xe8);
+        frame.save_fpr(c, 20, 0xe0);
+        let fx = r32(c, S4);
+        c.g[V0][0] = c.lhu(fx.wrapping_add(lens_fx::VISIBLE));
+        c.g[S5][0] = c.g[A1][0];
+        if c.g[V0][0] != 0 {
+            let drawn = draw_sun_body(c, fx)?;
+            if drawn {
+                c.cycles += 1;
+                frame.restore(c, S0, 0xd0);
+            }
+        } else {
+            c.cycles += 1;
+            frame.restore(c, S0, 0xd0);
+        }
+        c.cycles += 13;
+        frame.restore(c, S1, 0xc0);
+        frame.restore(c, S2, 0xb0);
+        frame.restore(c, S3, 0xa0);
+        frame.restore(c, S4, 0x90);
+        frame.restore(c, S5, 0x80);
+        frame.restore(c, S6, 0x70);
+        frame.restore(c, S7, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.restore_fpr(c, 22, 0xf0);
+        frame.restore_fpr(c, 21, 0xe8);
+        frame.restore_fpr(c, 20, 0xe0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The visible body: false when the alpha was not positive (s0 already
+/// restored), true after drawing.
+pub(crate) fn draw_sun_body(c: &mut Cpu, fx: u32) -> Result<bool, crate::call::Unwound> {
+    // Colour (1, r, g, b) at sp+0x10, copied to sp+0.
+    c.cycles += 42;
+    c.g[V0][0] = 6;
+    c.g[S0][0] = 7;
+    if c.g[A2][0] == 0 {
+        c.g[S0][0] = c.g[V0][0];
+    }
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 22);
+    c.g[A0][0] = c.g[S0][0];
+    sun_callee::RED.call(c, 0x002f_4a68)?;
+    c.mov_s(21, 0);
+    c.g[A0][0] = c.g[S0][0];
+    sun_callee::GREEN.call(c, 0x002f_4a74)?;
+    c.mov_s(20, 0);
+    c.g[A0][0] = c.g[S0][0];
+    sun_callee::BLUE.call(c, 0x002f_4a80)?;
+    let sp = sp(c);
+    c.swc1(20, sp.wrapping_add(0x18));
+    c.g[S7][0] = sx(sp.wrapping_add(0x10));
+    c.swc1(21, sp.wrapping_add(0x14));
+    c.swc1(0, sp.wrapping_add(0x1c));
+    c.swc1(22, sp.wrapping_add(0x10));
+    oc224_ld_u(c, V0, sp.wrapping_add(0x10));
+    oc224_ld_u(c, V1, sp.wrapping_add(0x18));
+    oc224_sd_u(c, V0, sp);
+    oc224_sd_u(c, V1, sp.wrapping_add(8));
+    // alpha *= fx->intensity * sun intensity
+    c.g[A0][0] = c.g[S0][0];
+    sun_callee::INTENSITY.call(c, 0x002f_4abc)?;
+    c.lwc1(2, fx.wrapping_add(lens_fx::INTENSITY));
+    c.g[A0][0] = c.g[S0][0];
+    c.lwc1(1, sp);
+    c.mul_s(2, 2, 0);
+    c.mul_s(1, 1, 2);
+    c.swc1(1, sp);
+    sun_callee::SIZE.call(c, 0x002f_4ad8)?;
+    c.mov_s(20, 0);
+    c.g[A0][0] = c.g[S0][0];
+    sun_callee::TEXTURE.call(c, 0x002f_4ae4)?;
+    c.c_eq_s(20, 22);
+    let unit = c.fcc();
+    c.g[S6][0] = c.g[V0][0];
+    if unit {
+        c.cycles += 2;
+        c.g[AT][0] = 0x43a0_0000;
+        c.mtc1(AT, 20);
+    }
+    c.cycles += 6;
+    c.lwc1(0, sp);
+    c.mtc1(0, 21);
+    c.c_le_s(0, 21);
+    let invisible = c.fcc();
+    c.lq(S0, sp.wrapping_add(0xd0));
+    if invisible {
+        return Ok(false);
+    }
+
+    // Push the draw state (a copy one up), then the default 2D record.
+    c.cycles += 155;
+    c.g[S0][0] = c.lw(oc224_gp(c, 0x2a90));
+    c.g[A0][0] = 0x0050_0000;
+    c.g[V0][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    let st = r32(c, V0);
+    oc224_ld_u(c, A3, st);
+    oc224_ld_u(c, V1, st.wrapping_add(8));
+    c.g[A1][0] = c.lw(st.wrapping_add(0x10));
+    oc224_sd_u(c, A3, st.wrapping_add(0x14));
+    oc224_sd_u(c, V1, st.wrapping_add(0x1c));
+    let v = c.g[A1][0];
+    c.sw(st.wrapping_add(0x24), v);
+    c.g[V1][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_add(0x14));
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, S0, renderer::STATE), v);
+    c.g[A2][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1420));
+    let def = r32(c, A2);
+    oc224_ld_u(c, A3, def);
+    oc224_ld_u(c, V0, def.wrapping_add(8));
+    c.g[A1][0] = c.lw(def.wrapping_add(0x10));
+    let st = r32(c, V1);
+    oc224_sd_u(c, A3, st.wrapping_add(0x14));
+    oc224_sd_u(c, V0, st.wrapping_add(0x1c));
+    let v = c.g[A1][0];
+    c.sw(st.wrapping_add(0x24), v);
+    // BeginScene (vt[0xa8]).
+    c.g[V0][0] = c.lw(oc224_at(c, S0, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, V0, 0xa8));
+    c.g[V1][0] = c.lw(oc224_at(c, V0, 0xac));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x002f_4b94)?;
+    // SetViewport(vp, 1, 0, 0, 1) (vt[0xd0]).
+    let vp = r32(c, S5);
+    c.g[V0][0] = c.lw(oc224_at(c, S0, renderer::VTABLE));
+    c.mov_s(16, 21);
+    c.lwc1(12, vp);
+    c.mov_s(17, 22);
+    c.g[A0][0] = c.lh(oc224_at(c, V0, 0xd0));
+    c.g[A2][0] = 0;
+    c.lwc1(13, vp.wrapping_add(4));
+    c.g[A1][0] = 1;
+    c.lwc1(14, vp.wrapping_add(8));
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    c.g[V1][0] = c.lw(oc224_at(c, V0, 0xd4));
+    let t = r32(c, V1);
+    c.lwc1(15, vp.wrapping_add(0xc));
+    call_ptr(c, t, 0x002f_4bc8)?;
+    // Begin2D (vt[0xf8]), SetTexture(0x4ff1a0) (vt[0x110]).
+    c.g[V0][0] = c.lw(oc224_at(c, S0, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, V0, 0xf8));
+    c.g[V1][0] = c.lw(oc224_at(c, V0, 0xfc));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x002f_4bdc)?;
+    c.g[A2][0] = c.lw(oc224_at(c, S0, renderer::VTABLE));
+    c.g[A1][0] = 0x0050_0000;
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xe60));
+    c.g[A0][0] = c.lh(oc224_at(c, A2, 0x110));
+    c.g[V0][0] = c.lw(oc224_at(c, A2, 0x114));
+    let t = r32(c, V0);
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x002f_4bf8)?;
+
+    // The state's blend/test bits.
+    c.g[A2][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[V1][0] = 0xffff_ffff_ffbf_0000;
+    c.g[V1][0] |= 0xffff;
+    c.g[A1][0] = 0x0040_0000;
+    c.g[V0][0] = c.lw(oc224_at(c, A2, 4));
+    c.g[A0][0] = 0xffff_ffff_fe7f_0000;
+    c.g[A0][0] |= 0xffff;
+    c.g[T7][0] = 0x0100_0000;
+    c.g[V0][0] &= c.g[V1][0];
+    c.g[T3][0] = 0xffff_ffff_ffcf_0000;
+    c.g[V0][0] |= c.g[A1][0];
+    c.g[T3][0] |= 0xffff;
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, A2, 4), v);
+    c.g[T4][0] = 0xffff_ffff_fff0_0000;
+    c.g[T4][0] |= 0xfff;
+    c.g[T5][0] = 0x0001_0000;
+    c.g[V1][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[T5][0] |= 0x4000;
+    c.g[S1][0] = 0xffff_ffff_ffff_fffc;
+    c.g[T6][0] = 0xffff_ffff_e000_0000;
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 4));
+    c.g[T6][0] |= 0x3ff;
+    c.g[S2][0] = 0xffff_ffff_ffff_ff83;
+    c.g[S3][0] = 0xffff_ffff_ffff_fc1f;
+    c.g[V0][0] &= c.g[A0][0];
+    c.g[T2][0] = sx((c.g[S6][0] as u32).wrapping_add(0x33));
+    c.g[V0][0] |= c.g[T7][0];
+    c.g[T2][0] = sx((c.g[T2][0] as u32) << 2);
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, V1, 4), v);
+    c.g[T2][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[T2][0] as u32));
+    c.g[A3][0] = sx(sp.wrapping_add(0x30));
+    c.g[T0][0] = sx(sp.wrapping_add(0x40));
+    c.g[V1][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[T1][0] = c.g[SP][0];
+    c.g[A2][0] = sx(sp.wrapping_add(0x20));
+    c.g[A1][0] = c.g[S7][0];
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 4));
+    c.g[V0][0] &= c.g[T3][0];
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, V1, 4), v);
+    c.g[A0][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, A0, 4));
+    c.g[V0][0] &= c.g[T4][0];
+    c.g[V0][0] |= c.g[T5][0];
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, A0, 4), v);
+    c.g[V1][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 4));
+    c.g[V0][0] &= c.g[S1][0];
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, V1, 4), v);
+    c.g[A0][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, A0, 8));
+    c.g[V0][0] &= c.g[T6][0];
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, A0, 8), v);
+    c.g[V1][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 4));
+    c.g[V0][0] &= c.g[S2][0];
+    c.g[V0][0] |= 0x1c;
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, V1, 4), v);
+    c.g[A0][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, A0, 8));
+    c.g[V0][0] &= c.g[S3][0];
+    c.g[V0][0] |= 0x100;
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, A0, 8), v);
+    // The texture id (renderer table at +0x101c) into the state.
+    c.g[V1][0] = c.lw(oc224_at(c, T2, 0xf50));
+    c.g[V0][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    let v = c.g[V1][0];
+    c.sh(oc224_at(c, V0, 0x10), v);
+    // DrawSprite((x, y, 0, 1), (size, size), (0, 0), (1, 1), colour).
+    c.swc1(21, sp.wrapping_add(0x18));
+    c.lwc1(0, fx.wrapping_add(lens_fx::SUN_X));
+    c.lwc1(1, fx.wrapping_add(lens_fx::SUN_Y));
+    c.swc1(0, sp.wrapping_add(0x10));
+    c.swc1(1, sp.wrapping_add(0x14));
+    c.swc1(22, sp.wrapping_add(0x1c));
+    c.g[V1][0] = c.lw(oc224_at(c, S0, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, V1, 0x270));
+    c.swc1(20, sp.wrapping_add(0x20));
+    c.swc1(20, sp.wrapping_add(0x24));
+    c.swc1(21, sp.wrapping_add(0x34));
+    c.swc1(22, sp.wrapping_add(0x44));
+    c.swc1(21, sp.wrapping_add(0x30));
+    c.swc1(22, sp.wrapping_add(0x40));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 0x274));
+    let t = r32(c, V0);
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x002f_4d40)?;
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = c.g[S5][0];
+    sun_callee::DRAW_FLARE_SET.call(c, 0x002f_4d4c)?;
+    // Pop the state; End2D (vt[0x100]), EndScene (vt[0xb0]).
+    c.g[V0][0] = c.lw(oc224_at(c, S0, renderer::STATE));
+    c.g[A1][0] = c.lw(oc224_at(c, S0, renderer::VTABLE));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x14));
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, S0, renderer::STATE), v);
+    c.g[A0][0] = c.lh(oc224_at(c, A1, 0x100));
+    c.g[V1][0] = c.lw(oc224_at(c, A1, 0x104));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x002f_4d6c)?;
+    c.g[V0][0] = c.lw(oc224_at(c, S0, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, V0, 0xb0));
+    c.g[V1][0] = c.lw(oc224_at(c, V0, 0xb4));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x002f_4d80)?;
+    Ok(true)
+}
+
+// ---------------------------------------------------------------------------
+// Rider_SetSlew0Target (0x113e80)
+
+/// Rider: +0x1e0 velocity, slew 0 (lean) value +0x1f0, rate +0x1f4,
+/// target +0x1f8, +0x438 the main state.
+pub(crate) const RIDER_VELOCITY: u32 = 0x1e0;
+
+pub(crate) const RIDER_SLEW0: u32 = 0x1f0;
+
+pub(crate) const RIDER_SLEW0_RATE: u32 = 0x1f4;
+
+pub(crate) const RIDER_SLEW0_TARGET: u32 = 0x1f8;
+
+pub(crate) const RIDER_MAIN_STATE: u32 = 0x438;
+
+/// gp-relative constants: full-lean speed (694.54), rate per unit of
+/// distance (12.0), minimum and maximum rate (0.1, 14.0), the rate factor
+/// in states 2, 3 and 13 (0.756), seconds per tick (1/60).
+pub(crate) const GP_SLEW0_FULL_SPEED: u32 = 0x7c40;
+
+pub(crate) const GP_SLEW0_RATE_SCALE: u32 = 0x7c3c;
+
+pub(crate) const GP_SLEW0_RATE_MIN: u32 = 0x7c38;
+
+pub(crate) const GP_SLEW0_RATE_MAX: u32 = 0x7c34;
+
+pub(crate) const GP_SLEW0_STATE_FACTOR: u32 = 0x7c30;
+
+pub(crate) const GP_SLEW0_DT: u32 = 0x7c2c;
+
+/// `void Rider_SetSlew0Target(Rider* rider, float target)` (0x113e80): set
+/// the lean slew target, scaled down below full-lean speed, and its rate:
+/// the distance to the current value times 12, clamped to [0.1, 14] (the
+/// lower bound wins when above it; reduced in states 2, 3 and 13), per tick.
+pub fn rider_set_slew0_target(c: &mut Cpu) {
+    let rider = Addr(abi::arg(c, 0));
+    let gp = c.g[GP][0] as u32;
+    let lit = |o: u32| Addr(gp.wrapping_sub(o));
+    c.cycles += 18;
+    let full = lit(GP_SLEW0_FULL_SPEED).read_fpu(c);
+    abi::set_fpr(c, 1, full);
+    // |velocity| (VU0 macro mode, as the original).
+    c.lqc2(3, rider.off(RIDER_VELOCITY).0);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(V0, 22);
+    let speed = FpuF32(c.g[V0][0] as u32);
+    c.g[AT][0] = 0x3f80_0000; // 1.0
+    let one = FpuF32(0x3f80_0000);
+    abi::set_fpr(c, 2, one);
+    let ratio = speed.div(full);
+    abi::set_fpr(c, 0, ratio);
+    let slow = ratio.lt(one);
+    abi::set_fcc(c, slow);
+    let mut target = abi::farg(c, 0);
+    if slow {
+        target = target * ratio;
+        abi::set_fpr(c, 12, target);
+    }
+    c.cycles += 11;
+    let cur = rider.off(RIDER_SLEW0).read_fpu(c);
+    let scale = lit(GP_SLEW0_RATE_SCALE).read_fpu(c);
+    let lo = lit(GP_SLEW0_RATE_MIN).read_fpu(c);
+    let hi = lit(GP_SLEW0_RATE_MAX).read_fpu(c);
+    abi::set_fpr(c, 3, hi);
+    abi::set_fpr(c, 1, lo);
+    let d = (target - cur).abs() * scale;
+    abi::set_fpr(c, 0, d);
+    let above = lo.le(d);
+    abi::set_fcc(c, above);
+    let mut rate = lo;
+    if above {
+        c.cycles += 1;
+        rate = d.min(hi);
+    }
+    abi::set_fpr(c, 2, rate);
+    c.cycles += 5;
+    c.g[V1][0] = rider.off(RIDER_MAIN_STATE).lw(c);
+    c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(2));
+    c.g[V0][0] = (c.g[V0][0] < 2) as u64;
+    let mut slowed = c.g[V0][0] != 0;
+    if !slowed {
+        c.cycles += 3;
+        c.g[V0][0] = 0xd;
+        slowed = c.g[V1][0] == c.g[V0][0];
+    }
+    if slowed {
+        c.cycles += 2;
+        let k = lit(GP_SLEW0_STATE_FACTOR).read_fpu(c);
+        abi::set_fpr(c, 0, k);
+        rate = rate * k;
+    }
+    abi::set_fpr(c, 1, rate);
+    c.cycles += 5;
+    let dt = lit(GP_SLEW0_DT).read_fpu(c);
+    rider.off(RIDER_SLEW0_TARGET).write_fpu(c, target);
+    let per_tick = rate * dt;
+    abi::set_fpr(c, 0, per_tick);
+    rider.off(RIDER_SLEW0_RATE).write_fpu(c, per_tick);
+    abi::ret(c);
+}
+
+pub(crate) const PATH_SERVICE_QUEUES: Callee = Callee {
+    addr: 0x003d_1e80,
+    f: ee::s14::PATH_ServiceQueues,
+};
+
+pub(crate) const PATH_VOLUME_FADE: Callee = Callee {
+    addr: 0x003d_5a98,
+    f: ee::s14::PATH_TrackUpdateVolumeFade,
+};
+
+pub(crate) const PATH_AUX_FADE: Callee = Callee {
+    addr: 0x003d_5cc0,
+    f: ee::s14::PATH_TrackUpdateAuxSendFade,
+};
+
+pub(crate) const PATH_FADE3: Callee = Callee {
+    addr: 0x003d_5ee8,
+    f: ee::s14::PATH_TrackUpdateFade3,
+};
+
+pub(crate) const PATH_QUEUED_COUNT: Callee = Callee {
+    addr: 0x003d_4950,
+    f: ee::s14::PATH_TrackGetQueuedCount,
+};
+
+pub(crate) const PATH_TRACK_ADVANCE: Callee = Callee {
+    addr: 0x003d_3d20,
+    f: ee::s14::PATH_TrackAdvance,
+};
+
+/// `void PATH_UpdateTracks(void)` (0x3d4f10): the per-tick service of the
+/// PATH interactive-music player. Unless in streamed (`'B'`) mode, service
+/// the event queues first. For each of the 24 track slots that is in use
+/// and idle: run its volume / aux-send / third fades while it is active;
+/// then, for the active tracks of the current mode, stop a track whose stop
+/// time has come, or (if its platform stream is playing) advance it to the
+/// next node once its queue runs low. Finally (normal mode) service the
+/// queues until they are empty.
+pub fn path_update_tracks(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        c.g[V1][0] = 0x45_0000;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = Addr(path::MODE).lbu(c);
+        frame.save(c, S4, 0x50);
+        c.g[V0][0] ^= 0x42;
+        frame.save(c, S0, 0x90);
+        frame.save(c, S1, 0x80);
+        c.g[S4][0] = (c.g[V0][0] == 0) as u64;
+        frame.save(c, S2, 0x70);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S5, 0x40);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save(c, FP, 0x10);
+        frame.save_ra(c, 0);
+        // s6 = tick length, s7 = half of it, fp = 0x450000 (globals base).
+        let streamed = c.g[S4][0] != 0;
+        c.cycles += if streamed { 5 } else { 4 };
+        c.g[V0][0] = 0x45_0000;
+        c.g[V1][0] = Addr(path::STATE).lw(c);
+        c.g[FP][0] = c.g[V0][0];
+        let tick_off = if streamed { 0x10 } else { 0xc };
+        c.g[S6][0] = Addr(r32(c, V1).wrapping_add(tick_off)).lw(c);
+
+        c.cycles += 2;
+        c.g[S3][0] = 0;
+        if !streamed {
+            c.cycles += 2;
+            PATH_SERVICE_QUEUES.call(c, 0x003d_4f84)?;
+        }
+        c.cycles += 3;
+        c.g[S7][0] = sx(r32(c, S6) >> 1);
+        c.g[V0][0] = Addr(path::STATE).lw(c);
+        loop {
+            c.cycles += 5;
+            c.g[V1][0] = sx(r32(c, S3) << 2);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+            c.g[S0][0] = Addr(r32(c, V0).wrapping_add(path::SLOT0)).lw(c);
+            if c.g[S0][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, S0).wrapping_add(track::BUSY)).lbu(c);
+                if c.g[V0][0] == 0 {
+                    path_update_track(c)?;
+                }
+            }
+            c.g[S3][0] = sx(r32(c, S3).wrapping_add(1));
+            c.cycles += 3;
+            let more = c.g[S3][0] < path::TRACKS as u64;
+            c.g[V0][0] = Addr(path::STATE).lw(c);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_4f90);
+            }
+        }
+
+        // Drain the queues (s0 is already restored for the callee's frame).
+        c.cycles += 1;
+        loop {
+            c.cycles += 2;
+            frame.restore(c, S0, 0x90);
+            if c.g[S4][0] != 0 {
+                break;
+            }
+            c.cycles += 4;
+            PATH_SERVICE_QUEUES.call(c, 0x003d_50f0)?;
+            frame.restore(c, S0, 0x90);
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_50e0);
+            }
+        }
+        c.cycles += 11;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One idle track (s0, slot s3) of `PATH_UpdateTracks`.
+pub(crate) fn path_update_track(c: &mut Cpu) -> Flow {
+    use track::*;
+    let t = r32(c, S0);
+    c.cycles += 8;
+    c.g[V0][0] = 0x45_0000;
+    c.g[A1][0] = Addr(t + LEAD).lw(c);
+    c.g[V1][0] = Addr(path::TIME).lw(c);
+    c.g[S5][0] = c.g[V0][0];
+    c.g[A0][0] = Addr(t + NODE).lh(c);
+    c.g[S2][0] = 0;
+    // s1 = time + lead: the end of what is queued.
+    c.g[S1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+    if (c.g[A0][0] as i64) >= 0 {
+        c.cycles += 2;
+        c.g[V0][0] = Addr(t + ACTIVE).lw(c);
+        c.g[S2][0] = (c.g[V0][0] != 0) as u64;
+    }
+    c.cycles += 2;
+    if c.g[S2][0] != 0 {
+        c.cycles += 3;
+        let fades = [
+            (VOLUME_FADE, PATH_VOLUME_FADE, 0x003d_4ff4),
+            (AUX_FADE, PATH_AUX_FADE, 0x003d_5008),
+            (FADE3, PATH_FADE3, 0x003d_501c),
+        ];
+        for (i, (field, fade, ret)) in fades.into_iter().enumerate() {
+            if i > 0 {
+                c.cycles += 2;
+            }
+            c.g[V0][0] = Addr(t + field).lb(c);
+            if (c.g[V0][0] as i64) >= 0 {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                fade.call(c, ret)?;
+            }
+        }
+    }
+    c.g[V0][0] = Addr(t + STREAMED).lbu(c);
+    c.cycles += 3;
+    c.g[V0][0] = (c.g[V0][0] != 0) as u64;
+    if c.g[V0][0] != c.g[S4][0] {
+        return Ok(());
+    }
+    c.cycles += 2;
+    if c.g[S2][0] == 0 {
+        return Ok(());
+    }
+
+    c.cycles += 3;
+    c.g[V1][0] = Addr(t + STOP_AT).lw(c);
+    c.g[V0][0] = Addr(path::TIME).lw(c);
+    if c.g[V1][0] != 0 {
+        // Stop pending: stop the stream once time + tick/2 reaches it.
+        c.cycles += 4;
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S7)));
+        c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+        if c.g[V0][0] != 0 {
+            return Ok(());
+        }
+        c.cycles += 5;
+        c.g[A0][0] = Addr(t + HANDLE).lw(c);
+        c.g[A1][0] = 0;
+        call_ptr(c, 0x002a_e9f8, 0x003d_505c)?;
+        Addr(t + STOP_AT).sw(c, 0);
+        c.cycles += 1;
+        return Ok(());
+    }
+    // Stream playing?
+    c.cycles += 4;
+    c.g[A0][0] = Addr(t + HANDLE).lw(c);
+    call_ptr(c, 0x002a_ebd0, 0x003d_506c)?;
+    if c.g[V0][0] == 0 {
+        return Ok(());
+    }
+    c.cycles += 6;
+    c.g[A0][0] = c.g[S0][0];
+    PATH_QUEUED_COUNT.call(c, 0x003d_507c)?;
+    c.g[V1][0] = c.g[V0][0];
+    c.g[V0][0] = Addr(t + DEADLINE).lw(c);
+    c.g[S1][0] = sx(r32(c, S1).wrapping_add(r32(c, S6)));
+    c.cycles += 2;
+    // Not yet: the queue reaches past the next tick (deadline), or holds
+    // more than the lead.
+    if c.g[V0][0] != 0 {
+        c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+    } else {
+        c.g[V0][0] = Addr(t + LEAD).lw(c);
+        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+    }
+    c.cycles += 2;
+    if c.g[V0][0] != 0 {
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr(t + PLAY_STATE).lb(c);
+    if c.g[V0][0] == 0 {
+        c.cycles += 4;
+        c.g[A0][0] = Addr(t + HANDLE).lw(c);
+        call_ptr(c, 0x002a_f428, 0x003d_50b8)?;
+        let started = c.g[V0][0] != 0;
+        c.g[V0][0] = u64::MAX;
+        if !started {
+            c.cycles += 1;
+            Addr(t + PLAY_STATE).sb(c, u64::MAX);
+        }
+    }
+    c.cycles += 2;
+    c.g[A0][0] = c.g[S3][0];
+    PATH_TRACK_ADVANCE.call(c, 0x003d_50cc)?;
+    c.cycles += 1;
+    Ok(())
+}
+
+/// `void HUD_DrawSpeedometer(Hud* hud, Elem* elems, Rider* rider, int
+/// arg)` (0x2200c0): the speed readout. Copies the HUD settings to the
+/// stack, takes the length of the rider's velocity (VU0 `sqrt`) times the
+/// speed scale (and the units factor when settings bit 19 is clear),
+/// draws the unit label at the speedometer element (measured, aligned with
+/// `HUD_AlignElemPos`), then the number (`sprintf("%d", speed + 0.5)`)
+/// centred above it, scaled down for three or more digits.
+///
+/// The settings block is at a constant 8-aligned address, so only the
+/// compiled code's aligned copy loop is reachable (its `ldl/ldr` twin is
+/// dead code).
+pub fn hud_draw_speedometer(c: &mut Cpu) {
+    use speedo::*;
+    guest(c, |c| {
+        let p = |a: u32, o: u32| a.wrapping_add(o);
+        c.cycles += 25;
+        let frame = Frame::open(c, 0x3d0);
+        frame.save(c, S1, 0x3a0);
+        frame.save(c, S2, 0x390);
+        let rider = r32(c, A2);
+        set_reg(c, S1, reg(c, A2));
+        frame.save(c, S4, 0x370);
+        let hud = r32(c, A0);
+        set_reg(c, S2, reg(c, A0));
+        let sp0 = sp(c);
+        Addr(sp0 + 0x310).sw(c, reg(c, A3));
+        let elems = r32(c, A1);
+        set_reg(c, S4, reg(c, A1));
+        frame.save(c, S0, 0x3b0);
+        frame.save(c, S3, 0x380);
+        frame.save(c, S5, 0x360);
+        frame.save(c, S6, 0x350);
+        frame.save(c, S7, 0x340);
+        frame.save(c, FP, 0x330);
+        frame.save_ra(c, 0x320);
+        frame.save_fpr(c, 20, 0x3c0);
+        call_ptr(c, BE_LIBRARY_GET_INSTANCE, 0x0022_0104)?;
+        set_reg(c, A0, reg(c, V0));
+        set_reg(c, A1, 4);
+        call_ptr(c, BE_LIBRARY_GET_INTERFACE, 0x0022_0110)?;
+
+        // Copy the settings to sp+0 (32 bytes per step).
+        set_reg(c, V1, 0x53_0000);
+        set_reg(c, A3, sx(SETTINGS));
+        set_reg(c, V0, 0); // SETTINGS & 7
+        set_reg(c, A0, sx(sp0));
+        c.cycles += 13;
+        let (label_pos, label_size) = (sp0 + 0x2d0, sp0 + 0x2e0);
+        set_reg(c, T2, sx(label_pos));
+        set_reg(c, T3, sx(label_size));
+        Addr(sp0 + 0x314).sw(c, sx(label_pos));
+        let end = SETTINGS + SETTINGS_SIZE;
+        set_reg(c, V0, sx(end));
+        Addr(sp0 + 0x318).sw(c, sx(label_size));
+        set_reg(c, A1, 0x4a_0000);
+        set_reg(c, T0, 0x4a_0000);
+        let velocity = p(rider, RIDER_VELOCITY);
+        set_reg(c, A2, sx(velocity));
+        let elem = p(elems, ELEM);
+        set_reg(c, S0, sx(elem));
+        let (pos, scale, color, number) = (sp0 + 0x290, sp0 + 0x2a0, sp0 + 0x2b0, sp0 + 0x2f0);
+        set_reg(c, S5, sx(pos));
+        set_reg(c, S6, sx(scale));
+        set_reg(c, S7, sx(color));
+        set_reg(c, S3, sx(number));
+        let mut from = SETTINGS;
+        let mut to = sp0;
+        loop {
+            c.cycles += 11;
+            for (k, r) in [V1, T1, T2, T3].into_iter().enumerate() {
+                let v = c.ld(from + 8 * k as u32);
+                set_reg(c, r, v);
+            }
+            for (k, r) in [V1, T1, T2, T3].into_iter().enumerate() {
+                c.sd(to + 8 * k as u32, reg(c, r));
+            }
+            from += 0x20;
+            to += 0x20;
+            set_reg(c, A3, sx(from));
+            set_reg(c, A0, sx(to));
+            if from == end {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, COPY_HEAD);
+            }
+        }
+        c.cycles += 1;
+        let vt = Addr(velocity).lw(c);
+        set_reg(c, V1, vt);
+
+        // The tail doubleword; then the velocity vector.
+        c.cycles += 26;
+        set_reg(c, FP, sx(LABEL_B));
+        c.ldl(V0, from + 7);
+        c.ldr(V0, from);
+        c.sdl(V0, to + 7);
+        set_reg(c, S1, sx(LABEL_A));
+        c.sdr(V0, to);
+        let slot = VSlot::read(c, vt, SLOT_GET_VELOCITY);
+        set_reg(c, A0, slot.delta);
+        set_reg(c, V0, slot.func);
+        set_reg(c, A0, slot.this(sx(velocity)));
+        call_ptr(c, slot.func as u32, 0x0022_0238)?;
+        // |v| with VU0 (vf6.w = 1), into f0, times the speed scale.
+        c.lqc2(3, r32(c, V0));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(V1, 22);
+        c.mtc1(V1, 0);
+        let gp = r32(c, GP);
+        c.lwc1(1, gp.wrapping_sub(GP_NEG_SPEED_SCALE));
+        let units = Addr(sp0).lw(c) & UNITS_FLAG;
+        set_reg(c, V1, UNITS_FLAG);
+        set_reg(c, V0, units);
+        c.mul_s(20, 0, 1);
+        let mut label = LABEL_A;
+        if units == 0 {
+            c.cycles += 3;
+            c.lwc1(0, gp.wrapping_sub(GP_NEG_UNITS_FACTOR));
+            set_reg(c, S1, sx(LABEL_B));
+            label = LABEL_B;
+            c.mul_s(20, 20, 0);
+        }
+
+        // The label: element position, scale and colour; measure; align; draw.
+        c.cycles += 71;
+        set_reg(c, A0, sx(elem));
+        set_reg(c, A1, sx(pos));
+        call_ptr(c, HUD_GET_ELEM_POS, 0x0022_0290)?;
+        set_reg(c, A1, sx(scale));
+        set_reg(c, A0, sx(elem));
+        call_ptr(c, HUD_GET_ELEM_SCALE, 0x0022_029c)?;
+        set_reg(c, A0, sx(elem));
+        set_reg(c, A1, sx(color));
+        call_ptr(c, HUD_GET_ELEM_COLOR, 0x0022_02a8)?;
+        let text = Addr(p(hud, HUD_TEXT)).lw(c) as u32;
+        set_reg(c, V1, sx(text));
+        set_reg(c, A2, sx(sp0 + 0x2c0));
+        set_reg(c, A1, sx(label));
+        set_reg(c, A3, 0);
+        c.ldl(T3, color + 7);
+        c.ldr(T3, color);
+        c.ldl(V0, color + 0xf);
+        c.ldr(V0, color + 8);
+        c.sdl(T3, p(text, TEXT_COLOR + 7));
+        c.sdr(T3, p(text, TEXT_COLOR));
+        c.sdl(V0, p(text, TEXT_COLOR + 0xf));
+        c.sdr(V0, p(text, TEXT_COLOR + 8));
+        let text = Addr(p(hud, HUD_TEXT)).lw(c) as u32;
+        set_reg(c, V0, sx(text));
+        c.lwc1(1, scale);
+        c.lwc1(0, p(text, TEXT_BASE_SCALE));
+        c.lwc1(2, p(text, TEXT_BASE_SCALE + 4));
+        c.mul_s(0, 0, 1);
+        c.swc1(0, p(text, TEXT_SCALE));
+        c.lwc1(1, scale + 4);
+        c.mul_s(2, 2, 1);
+        c.swc1(2, p(text, TEXT_SCALE + 4));
+        let text = Addr(p(hud, HUD_TEXT)).lw(c) as u32;
+        set_reg(c, A0, sx(text));
+        c.lwc1(12, p(text, TEXT_SCALE));
+        c.lwc1(13, p(text, TEXT_SCALE + 4));
+        call_ptr(c, FONT_MEASURE_TEXT, 0x0022_030c)?;
+        c.lwc1(1, sp0 + 0x2c8);
+        set_reg(c, T0, sx(number));
+        c.lwc1(2, sp0 + 0x2cc);
+        set_reg(c, A2, sx(pos));
+        set_reg(c, AT, 0x3f80_0000);
+        c.mtc1(AT, 0);
+        set_reg(c, A0, sx(hud));
+        let ay = Addr(p(elems, ELEM_ALIGN_Y)).lb(c);
+        set_reg(c, T2, ay);
+        let ax = Addr(p(elems, ELEM_ALIGN_X)).lb(c);
+        set_reg(c, T1, ax);
+        let v = Addr(sp0 + 0x314).lw(c);
+        set_reg(c, A1, v);
+        let v = Addr(sp0 + 0x310).lw(c);
+        set_reg(c, T3, v);
+        let v = Addr(sp0 + 0x318).lw(c);
+        set_reg(c, A3, v);
+        c.swc1(1, label_size);
+        c.swc1(0, number + 4);
+        c.swc1(0, number);
+        c.swc1(2, label_size + 4);
+        call_ptr(c, HUD_ALIGN_ELEM_POS, 0x0022_0350)?;
+        c.lwc1(12, label_pos);
+        set_reg(c, A1, sx(label));
+        c.lwc1(13, label_pos + 4);
+        let v = Addr(p(hud, HUD_TEXT)).lw(c);
+        set_reg(c, A0, v);
+        call_ptr(c, FONT_DRAW_TEXT, 0x0022_0364)?;
+
+        // The number: sprintf("%d", (int)(speed + 0.5)).
+        set_reg(c, AT, 0x3f00_0000);
+        c.mtc1(AT, 0);
+        set_reg(c, T1, 0x4a_0000);
+        set_reg(c, A1, sx(NUMBER_FORMAT));
+        c.add_s(0, 20, 0);
+        c.cvt_w_s(1, 0);
+        c.mfc1(A2, 1);
+        set_reg(c, A0, sx(number));
+        call_ptr(c, SPRINTF, 0x0022_0388)?;
+        set_reg(c, A0, sx(number));
+        call_ptr(c, STRLEN, 0x0022_0390)?;
+        let short = reg(c, V0) < 3;
+        set_reg(c, V0, short as u64);
+        c.lwc1(0, gp.wrapping_sub(GP_NEG_SCALE_SHORT));
+        c.lwc1(1, scale);
+        if !short {
+            c.cycles += 1;
+            c.lwc1(0, gp.wrapping_sub(GP_NEG_SCALE_LONG));
+        }
+        c.cycles += 62;
+        c.lwc1(2, scale + 4);
+        c.mul_s(1, 1, 0);
+        c.mul_s(2, 2, 0);
+        c.swc1(1, scale);
+        c.swc1(2, scale + 4);
+        let text = Addr(p(hud, HUD_TEXT)).lw(c) as u32;
+        set_reg(c, V0, sx(text));
+        set_reg(c, A1, sx(number));
+        c.lwc1(0, scale);
+        c.lwc1(1, p(text, TEXT_BASE_SCALE));
+        c.lwc1(2, p(text, TEXT_BASE_SCALE + 4));
+        c.mul_s(1, 1, 0);
+        set_reg(c, AT, 0x3f00_0000);
+        c.mtc1(AT, 4);
+        c.lwc1(5, gp.wrapping_sub(GP_NEG_LABEL_OFFSET));
+        c.swc1(1, p(text, TEXT_SCALE));
+        c.lwc1(0, scale + 4);
+        c.mul_s(2, 2, 0);
+        c.swc1(2, p(text, TEXT_SCALE + 4));
+        // x = label x + width / 2; y = label y - (line * scale.y * sy / 2 + off).
+        c.lwc1(0, label_size);
+        c.lwc1(12, label_pos);
+        c.mul_s(0, 0, 4);
+        let text = Addr(p(hud, HUD_TEXT)).lw(c) as u32;
+        set_reg(c, V0, sx(text));
+        c.lwc1(3, scale + 4);
+        c.lwc1(2, label_pos + 4);
+        set_reg(c, A0, sx(text));
+        c.add_s(12, 12, 0);
+        c.swc1(12, label_pos);
+        c.lwc1(0, p(text, TEXT_LINE));
+        c.cvt_s_w(0, 0);
+        c.lwc1(1, p(text, TEXT_BASE_SCALE + 4));
+        c.mul_s(0, 0, 1);
+        c.mul_s(0, 0, 3);
+        c.mul_s(0, 0, 4);
+        c.add_s(0, 0, 5);
+        c.sub_s(2, 2, 0);
+        c.mov_s(13, 2);
+        c.swc1(2, label_pos + 4);
+        call_ptr(c, FONT_DRAW_TEXT_CENTERED, 0x0022_043c)?;
+        // Restore the text scale (base * 1).
+        set_reg(c, AT, 0x3f80_0000);
+        c.mtc1(AT, 0);
+        let text = Addr(p(hud, HUD_TEXT)).lw(c) as u32;
+        set_reg(c, V0, sx(text));
+        let unit = sp0 + 0x300;
+        c.swc1(0, unit + 4);
+        c.swc1(0, unit);
+        c.lwc1(2, p(text, TEXT_BASE_SCALE));
+        c.lwc1(0, p(text, TEXT_BASE_SCALE + 4));
+        c.swc1(2, p(text, TEXT_SCALE));
+        c.lwc1(1, unit + 4);
+        c.mul_s(0, 0, 1);
+        frame.restore(c, S0, 0x3b0);
+        frame.restore(c, S1, 0x3a0);
+        frame.restore(c, S2, 0x390);
+        frame.restore(c, S3, 0x380);
+        frame.restore(c, S4, 0x370);
+        frame.restore(c, S5, 0x360);
+        frame.restore(c, S6, 0x350);
+        frame.restore(c, S7, 0x340);
+        frame.restore(c, FP, 0x330);
+        frame.restore_ra(c, 0x320);
+        frame.restore_fpr(c, 20, 0x3c0);
+        c.swc1(0, p(text, TEXT_SCALE + 4));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `u8* StreamFile_GetChunk(StreamFile* handle)` (0x3e12e0): takes the
+/// handle's next queued chunk. Null for an invalid handle or an empty
+/// queue. Otherwise clears the chunk's tag byte (keeping its size),
+/// subtracts the size from the queued count under the manager's mutex and,
+/// when data remains, walks the ring (chunks by size, a -1 word wraps to the
+/// ring start) to the next chunk carrying this handle's tag; returns the
+/// chunk taken.
+pub fn stream_file_get_chunk(c: &mut Cpu) {
+    use chunk::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        let sp0 = sp(c);
+        set_reg(c, A1, sx(sp0));
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0x10);
+        set_reg(c, A2, sx(sp0) | 4);
+        STREAM_FILE_VALIDATE.call(c, 0x003e_1300)?;
+        let invalid = reg(c, V0) != 0;
+        set_reg(c, V0, 0);
+        'out: {
+            if invalid {
+                break 'out;
+            }
+            c.cycles += 4;
+            let h = Addr(sp0 + 4).lw(c) as u32;
+            set_reg(c, V1, sx(h));
+            let queued = Addr(h + H_QUEUED).lw(c);
+            set_reg(c, V0, queued);
+            if queued == 0 {
+                c.cycles += 2;
+                set_reg(c, V0, 0);
+                break 'out;
+            }
+            let chunk = Addr(h + H_NEXT).lw(c) as u32;
+            set_reg(c, S2, sx(chunk));
+            c.cycles += 17;
+            set_reg(c, V0, SIZE_MASK);
+            let ts = Addr(chunk + CH_TAG_SIZE).lw(c);
+            set_reg(c, V1, ts);
+            let size = ts & SIZE_MASK;
+            set_reg(c, S1, size);
+            Addr(chunk + CH_TAG_SIZE).sw(c, size);
+            let man = Addr(sp0).lw(c);
+            set_reg(c, A0, addu(man, MAN_MUTEX as u64));
+            EA_MUTEX_LOCK.call(c, 0x003e_1340)?;
+            let h = Addr(sp0 + 4).lw(c);
+            set_reg(c, V0, h);
+            let h = h as u32;
+            let left = sx((Addr(h + H_QUEUED).lw(c) as u32).wrapping_sub(size as u32));
+            set_reg(c, S0, left);
+            Addr(h + H_QUEUED).sw(c, left);
+            let man = Addr(sp0).lw(c);
+            set_reg(c, A0, addu(man, MAN_MUTEX as u64));
+            EA_MUTEX_UNLOCK.call(c, 0x003e_135c)?;
+            let mut at = sx(chunk.wrapping_add(size as u32));
+            set_reg(c, A2, at);
+            if (left as i64) > 0 {
+                c.cycles += 8;
+                let h = Addr(sp0 + 4).lw(c);
+                set_reg(c, A1, h);
+                let tag_word = Addr((at as u32).wrapping_add(CH_TAG_SIZE)).lw(c) & TAG_MASK;
+                set_reg(c, V0, tag_word);
+                set_reg(c, A0, TAG_MASK);
+                let tag = sx((Addr((h as u32).wrapping_add(H_TAG)).lw(c) as u32) << 24);
+                set_reg(c, V1, tag);
+                set_reg(c, T1, h);
+                if tag_word != tag {
+                    c.cycles += 7;
+                    set_reg(c, A0, 0xff_0000);
+                    let man = Addr(sp0).lw(c);
+                    set_reg(c, A1, man);
+                    set_reg(c, T0, u64::MAX);
+                    set_reg(c, A0, SIZE_MASK);
+                    set_reg(c, A3, TAG_MASK);
+                    let mut first = Addr(at as u32 + CH_WRAP).lw(c);
+                    set_reg(c, V0, first);
+                    loop {
+                        c.cycles += 2;
+                        if first != u64::MAX {
+                            let ts = Addr((at as u32).wrapping_add(CH_TAG_SIZE)).lw(c);
+                            set_reg(c, V0, ts);
+                            c.cycles += 2;
+                            let size = ts & SIZE_MASK;
+                            set_reg(c, S1, size);
+                            at = addu(at, size);
+                        } else {
+                            c.cycles += 2;
+                            at = Addr((man as u32).wrapping_add(MAN_RING)).lw(c);
+                        }
+                        set_reg(c, A2, at);
+                        c.cycles += 4;
+                        let tag_word = Addr((at as u32).wrapping_add(CH_TAG_SIZE)).lw(c) & TAG_MASK;
+                        set_reg(c, V0, tag_word);
+                        if tag_word == tag {
+                            break;
+                        }
+                        first = Addr(at as u32 + CH_WRAP).lw(c);
+                        set_reg(c, V0, first);
+                        if event_due(c) {
+                            deliver_event_here(c, HEAD);
+                        }
+                    }
+                }
+                c.cycles += 1;
+                Addr((h as u32).wrapping_add(H_NEXT)).sw(c, at);
+            }
+            c.cycles += 1;
+            set_reg(c, V0, sx(chunk));
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -3246,6 +4828,604 @@ pub(crate) mod tests {
                 );
                 c.g[A0][0] = sx(actor);
                 c.g[A1][0] = sx(flag);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::check_paths;
+    pub(crate) use crate::game::fe::ovstatehud::tests::gpa;
+    use crate::game::visualfx::boardwakefx::tests::{gp_at, put_spray_slot};
+
+    /// Centred, bottom and top alignment (align 0, positive, negative with
+    /// the upper half set) over edge-case floats.
+    #[test]
+    fn hud_align_y_matches() {
+        use crate::difftest::{scramble, Rng};
+        check(
+            ee::s05::f_0021e7a8__generated,
+            hud_align_y,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x21e7a8 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.g[A1][0] = match seed % 4 {
+                    0 => 0,
+                    1 => 1 + (r.next_u32() & 0xff) as u64,
+                    2 => sx(0xffff_fffe),
+                    _ => 0x1_0000_0000,
+                };
+                c.f[12] = if seed % 3 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(500.0)
+                };
+                c.f[13] = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(100.0)
+                };
+                c.f[14] = if seed % 7 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(4.0)
+                };
+                c.pc = 0x0021_e7a8;
+            },
+        );
+    }
+
+    /// A dynamic light for `Irradiance_AddDynamicLight` (kind, position,
+    /// colour, cone and falloff fields).
+    pub(crate) fn dynamic_light(c: &mut Cpu, r: &mut Rng, light: u32, kind: u32) {
+        c.bus.write32(light + 0x10, kind);
+        for k in 0..3 {
+            c.bus.write32(light + 4 * k, r.f32(20.0));
+        }
+        c.bus.write32(
+            light + 0xc,
+            crate::game::visualfx::boardwakefx::tests::f(1.0),
+        );
+        c.bus.write32(
+            light + 0x14,
+            crate::game::visualfx::boardwakefx::tests::f(f32::from_bits(r.f32(1.5)) + 1.5),
+        );
+        c.bus.write32(light + 0x18, r.f32(1.0));
+        c.bus.write32(
+            light + 0x1c,
+            crate::game::visualfx::boardwakefx::tests::f(f32::from_bits(r.f32(1.0)) + 1.0),
+        );
+        for k in 0..6 {
+            c.bus.write32(light + 0x20 + 4 * k, r.f32(1.0));
+        }
+        fill(c, r, light + 0x38, 2);
+        for k in 0..8 {
+            c.bus.write32(light + 0x40 + 4 * k, r.f32(30.0));
+        }
+        let outer = f32::from_bits(r.f32(5.0)) + 5.0;
+        c.bus.write32(
+            light + 0x60,
+            crate::game::visualfx::boardwakefx::tests::f(outer),
+        );
+        c.bus.write32(
+            light + 0x5c,
+            crate::game::visualfx::boardwakefx::tests::f(outer + 10.0),
+        );
+        c.bus.write8(light + 0x64, (r.next_u32() % 5) as u8);
+        c.bus.write8(light + 0x65, (r.next_u32() % 6) as u8);
+    }
+
+    /// `Rider_BuildLightSet` with the real irradiance callees: the view
+    /// irradiance copy, the camera-relative light (camera view matrix through
+    /// a fake), 0-8 dynamic lights, and the handler's directional block
+    /// (absent, empty, or 1-3 lights). The rider's AI-index getter and the
+    /// lighting/camera methods are fakes (some seeds unwind at them).
+    #[test]
+    fn rider_build_light_set_matches() {
+        use rider_lights::*;
+        check_lohi(
+            ee::s00::f_001220d8__generated,
+            rider_build_light_set,
+            200,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x1220, 4);
+                let (rider, vt, hips, bones, handler) = (
+                    DATA,
+                    DATA + 0x2000,
+                    DATA + 0x2100,
+                    DATA + 0x2200,
+                    DATA + 0x4000,
+                );
+                let (camera, cam_vt, view) = (DATA + 0x5000, DATA + 0x6000, DATA + 0x5100);
+                fill(c, &mut r, rider + LIGHTS, 0x28);
+                c.bus.write32(rider + VTABLE, vt);
+                c.bus
+                    .write16(vt + AI_INDEX_SLOT, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(vt + AI_INDEX_SLOT + 4, FAKE);
+                // The view index from both getter calls (forced fake results).
+                let view_index = 1 + seed % 3;
+                c.bus.write32(LOG_RESULTS, view_index);
+                c.bus.write32(LOG_RESULTS + 4, 1 + (seed / 3) % 3);
+                c.bus.write32(LOG_RESULTS + 12, view);
+                for i in 1..4u32 {
+                    fill(c, &mut r, 0x004f_a3c0 + i * 0xf0, 0x28);
+                    let (cell, obj, ovt) = (
+                        DATA + 0x7000 + i * 0x40,
+                        DATA + 0x7400 + i * 0x40,
+                        DATA + 0x7800 + i * 0x200,
+                    );
+                    c.bus.write32(0x004f_a370 + i * 0xf0 + 0x1c, cell);
+                    c.bus.write32(cell, obj);
+                    c.bus.write32(obj + 4, ovt);
+                    c.bus.write16(ovt + 0x150, (r.next_u32() & 0x7c) as u16);
+                    c.bus.write32(ovt + 0x154, FAKE + 0x10);
+                }
+                // Hips: rider+0x780 -> skeleton, +0x2c bones (32 bytes), +0x89c index.
+                c.bus.write32(rider + 0x780, hips);
+                c.bus.write32(hips + 0x2c, bones);
+                c.bus.write32(rider + 0x89c, r.next_u32() % 4);
+                for k in 0..32 {
+                    c.bus.write32(bones + 4 * k, r.f32(50.0));
+                }
+                // The camera (gp+0x2a90) and its view matrix.
+                c.bus.write32(GAME_GP + 0x2a90, camera);
+                c.bus.write32(camera + 0x10d8, cam_vt);
+                c.bus.write16(cam_vt + 0x118, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(cam_vt + 0x11c, FAKE + 0x20);
+                for k in 0..16 {
+                    c.bus.write32(view + 4 * k, r.f32(2.0));
+                }
+                // Dynamic lights: none, or one of two lights per slot.
+                let (l1, l2) = (DATA + 0x3000, DATA + 0x3100);
+                dynamic_light(c, &mut r, l1, [1u32, 2, 0, 3][(seed % 4) as usize]);
+                dynamic_light(c, &mut r, l2, [2u32, 1, 3, 0][(seed / 4 % 4) as usize]);
+                for k in 0..8u32 {
+                    let l = match (r.next_u32() % 4, seed % 5) {
+                        (_, 0) => 0,
+                        (0, _) => l1,
+                        (1, _) => l2,
+                        _ => 0,
+                    };
+                    c.bus.write32(rider + DYNAMIC_LIGHTS + 4 * k, l);
+                }
+                // The handler's directional block.
+                c.bus
+                    .write32(rider + HANDLER, if seed % 4 == 1 { 0 } else { handler });
+                let block = handler + HANDLER_LIGHTS;
+                for k in 0..3 {
+                    c.bus.write32(block + 4 * k, r.f32(5.0));
+                }
+                c.bus.write32(block + 0xc, (seed / 2) % 4);
+                for k in 0..12 {
+                    c.bus.write32(block + 0x10 + 4 * k, r.f32(5.0));
+                    c.bus.write32(block + 0x50 + 4 * k, r.f32(1.0));
+                }
+                c.bus.write32(block + 0x80, r.f32(1.0));
+                c.g[A0][0] = sx(rider);
+                c.pc = 0x0012_20d8;
+            },
+        );
+    }
+
+    /// `DIntr` with interrupts on and off (random other Status bits).
+    #[test]
+    fn d_intr_matches() {
+        check(ee::s15::f_0042c078__generated, d_intr, 64, &|c, seed| {
+            let mut r = Rng(0x42c0_7800 ^ (seed as u64) << 8);
+            scramble(c, &mut r);
+            let status = r.next_u32() & !(STATUS_EIE as u32);
+            c.cop0[12] = if seed % 2 == 0 {
+                status
+            } else {
+                status | STATUS_EIE as u32
+            };
+            c.pc = 0x0042_c078;
+        });
+    }
+
+    // ------------------------------------------------------- LensFX_DrawSun
+
+    pub(crate) const SUN_FX: u32 = DATA;
+
+    pub(crate) const SUN_VP: u32 = DATA + 0x300;
+
+    pub(crate) const SUN_HOLDER: u32 = DATA + 0x400;
+
+    pub(crate) const SUN_VT: u32 = DATA + 0x600;
+
+    pub(crate) const SUN_REND: u32 = DATA + 0x1000;
+
+    pub(crate) const SUN_REND_VT: u32 = DATA + 0x3000;
+
+    pub(crate) const SUN_REND_STATE: u32 = DATA + 0x3400;
+
+    pub(crate) const SUN_RESULTS: u32 = DATA + 0x3800;
+
+    /// The lens FX at `SUN_FX` (visible most seeds, no flares), a viewport,
+    /// the world painter's sun for views 6 and 7 (methods are fakes whose
+    /// forced results point at the colour, intensity, size and texture id
+    /// at `SUN_RESULTS`: the alpha is positive or not, the size sometimes
+    /// 1), the renderer (`gp+0x2a90` and `gp-0x854`) with a vtable of fakes.
+    pub(crate) fn draw_sun_setup(c: &mut Cpu, seed: u32) {
+        use crate::difftest::fakes::LOG_RESULTS;
+        let mut r = machine(c, seed, 0x002f_4a08, 12);
+        for view in [6u32, 7] {
+            let entry = 0x004f_a370 + view * 0xf0;
+            c.bus.write32(entry + 0x14, SUN_HOLDER);
+        }
+        c.bus.write32(SUN_HOLDER, SUN_HOLDER + 0x40);
+        c.bus.write32(SUN_HOLDER + 0x40 + 4, SUN_VT);
+        for (i, off) in [0xe8u32, 0xf0, 0xf8, 0x100, 0x118, 0x108]
+            .into_iter()
+            .enumerate()
+        {
+            c.bus
+                .write16(SUN_VT + off, ((r.next_u32() % 16) * 4) as u16);
+            c.bus.write32(SUN_VT + off + 4, FAKE + 0x10 * i as u32);
+        }
+        // Results of the six getters (red, green, blue, intensity, size,
+        // texture).
+        for i in 0..6u32 {
+            c.bus.write32(LOG_RESULTS + 4 * i, SUN_RESULTS + 0x10 * i);
+        }
+        for i in 0..3u32 {
+            c.bus.write32(SUN_RESULTS + 0x10 * i, r.f32(1.0));
+        }
+        let intensity = if seed % 4 == 3 { 0 } else { r.f32(2.0) };
+        c.bus.write32(SUN_RESULTS + 0x30, intensity);
+        let size = if seed % 3 == 0 {
+            0x3f80_0000
+        } else {
+            r.f32(400.0)
+        };
+        c.bus.write32(SUN_RESULTS + 0x40, size);
+        c.bus.write32(SUN_RESULTS + 0x50, r.next_u32() % 8);
+        // The renderer: every method a fake, a random state stack.
+        for rend in [gpa(0x2a90), gpa(-0x854)] {
+            c.bus.write32(rend, SUN_REND);
+        }
+        c.bus.write32(SUN_REND + 0x10d8, SUN_REND_VT);
+        for off in (0..0x300).step_by(8) {
+            c.bus
+                .write16(SUN_REND_VT + off, ((r.next_u32() % 16) * 4) as u16);
+            c.bus.write32(SUN_REND_VT + off + 4, FAKE + 0x100 + 2 * off);
+        }
+        c.bus
+            .write32(SUN_REND + 0xe84, SUN_REND_STATE + 4 * (seed % 4));
+        fill(c, &mut r, SUN_REND_STATE, 0x20);
+        fill(c, &mut r, SUN_REND + 0xf50 + 0xcc, 8);
+        // The lens FX and the viewport.
+        c.bus
+            .write16(SUN_FX + 0x2c, if seed % 9 == 0 { 0 } else { 1 });
+        c.bus.write32(SUN_FX + 0x1f0, r.f32(600.0));
+        c.bus.write32(SUN_FX + 0x1f4, r.f32(400.0));
+        c.bus.write32(SUN_FX + 0x200, 0);
+        c.bus.write32(SUN_FX + 0x204, r.f32(1.0));
+        for i in 0..4 {
+            c.bus.write32(SUN_VP + 4 * i, r.f32(640.0));
+        }
+        c.g[A0][0] = SUN_FX as u64;
+        c.g[A1][0] = SUN_VP as u64;
+        c.g[A2][0] = if seed % 2 == 0 {
+            0
+        } else {
+            r.next_u32() as u64
+        };
+        c.pc = 0x002f_4a08;
+    }
+
+    #[test]
+    fn lens_fx_draw_sun_matches() {
+        covered(
+            ee::s09::f_002f4a08__generated,
+            lens_fx_draw_sun,
+            200,
+            &draw_sun_setup,
+        );
+    }
+
+    /// Rider_SetSlew0Target: below and above full-lean speed, rate below,
+    /// inside and above its bounds, states 2/3/13 and others.
+    #[test]
+    fn rider_set_slew0_target_matches() {
+        check(
+            ee::s00::f_00113e80__generated,
+            rider_set_slew0_target,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x113e_8000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let rider = DATA;
+                c.g[A0][0] = sx(rider);
+                let v = if seed % 3 == 0 { 900.0 } else { 300.0 };
+                for k in 0..4 {
+                    c.bus.write32(rider + RIDER_VELOCITY + 4 * k, r.f32(v));
+                }
+                c.f[12] = if seed % 7 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(2.0)
+                };
+                c.bus.write32(rider + RIDER_SLEW0, r.f32(2.0));
+                put_words(
+                    c,
+                    GAME_GP - GP_SLEW0_FULL_SPEED,
+                    &[
+                        694.538_8f32.to_bits(),
+                        12.002_403f32.to_bits(),
+                        0.1f32.to_bits(),
+                        14.001_209f32.to_bits(),
+                        0.756_134f32.to_bits(),
+                        (1.0f32 / 60.0).to_bits(),
+                    ],
+                );
+                let state = [2, 3, 13, 0, 1, 4, 12, 14][(r.next_u32() % 8) as usize];
+                c.bus.write32(rider + RIDER_MAIN_STATE, state);
+            },
+        );
+    }
+
+    // --- PATH_UpdateTracks -------------------------------------------------
+
+    /// The PATH player in normal or streamed mode with a mix of empty, busy,
+    /// inactive, fading, stopping and playing tracks. Platform handles: 0 has
+    /// no stream (the fades' platform calls take their short path), 1..3 are
+    /// streams that are stopped / playing. Every playing track still has
+    /// enough queued (deadline or lead), so PATH_TrackAdvance (a large tree
+    /// of its own) is not entered.
+    pub(crate) fn path_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = Rng(0x003d_4f10 ^ (seed as u64) << 12);
+        crate::difftest::scramble(c, &mut r);
+        c.g[GP][0] = GAME_GP as u64;
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        let state = DATA + 0x100;
+        let streamed = seed % 2 == 0;
+        c.bus
+            .write8(0x0044_f434, if streamed { b'B' } else { b'A' });
+        w(c, 0x0044_f420, state);
+        let time = 0x1000 + r.next_u32() % 0x1_0000;
+        w(c, 0x0044_f438, time);
+        let ticks = [r.next_u32() % 0x1000, r.next_u32() % 0x1000];
+        w(c, state + 0xc, ticks[0]);
+        w(c, state + 0x10, ticks[1]);
+        let step = ticks[streamed as usize];
+        w(c, state + 0x14, r.next_u32());
+        w(c, state + 0x18, r.next_u32());
+        w(c, state + 0x91c, 0); // no queues to service
+        w(c, GAME_GP + 0x410, DATA + 0xf000); // audio system: no PATH streams
+                                              // Platform stream table: 0 none, 1 stopped, 2/3 playing.
+        let table = 0x004d_3e98;
+        w(c, table, 0);
+        for h in 1..4u32 {
+            let p = DATA + 0xe000 + 0x100 * h;
+            w(c, table + 4 * h, p);
+            c.bus.write8(p + 0x64, 1);
+            c.bus.write8(p + 0x65, 0);
+            w(c, p + 0x58, [0, 0, 1, 7][h as usize]);
+            w(c, p + 0xc, 1);
+        }
+        for i in 0..24u32 {
+            let t = DATA + 0x2000 + 0x100 * i;
+            let used = r.next_u32() % 5 != 0;
+            w(c, state + 0x58 + 4 * i, if used { t } else { 0 });
+            crate::difftest::fill(c, &mut r, t, 0x40);
+            c.bus.write8(t + 0x3, (r.next_u32() % 6 == 0) as u8);
+            c.bus
+                .write16(t + 0x36, if r.next_u32() % 4 == 0 { 0xffff } else { 3 });
+            w(c, t + 0x30, (r.next_u32() % 5 != 0) as u32);
+            let mut fading = false;
+            for f in [0xd, 0x15, 0x1d] {
+                let on = r.next_u32() % 4 == 0;
+                fading |= on;
+                c.bus.write8(t + f, if on { 0 } else { 0xff });
+            }
+            let mine = (r.next_u32() % 4 != 0) == streamed;
+            c.bus.write8(t + 0x2f, mine as u8);
+            let handle = if fading { 0 } else { 1 + r.next_u32() % 3 };
+            w(c, t + 0x54, handle);
+            let stop = if handle != 0 && r.next_u32() % 3 == 0 {
+                time + r.next_u32() % (step + 2)
+            } else {
+                0
+            };
+            w(c, t + 0x4c, stop);
+            w(c, t + 0x20, 0); // nothing queued
+            let lead = (r.next_u32() % 0x200) as i32 - 0x100;
+            let deadline = if lead < 0 && r.next_u32() % 2 == 0 {
+                0
+            } else {
+                (time as i32 + lead) as u32 + step + 1 + r.next_u32() % 0x100
+            };
+            w(c, t + 0x24, lead as u32);
+            w(c, t + 0x48, deadline);
+        }
+        c.pc = 0x003d_4f10;
+    }
+
+    #[test]
+    fn path_update_tracks_matches() {
+        crate::difftest::check(
+            ee::s14::f_003d4f10__generated,
+            path_update_tracks,
+            200,
+            &|c, seed| path_fixture(c, seed),
+        );
+    }
+
+    /// A float in [lo, hi) as its bit pattern.
+    pub(crate) fn uf(r: &mut Rng, lo: f32, hi: f32) -> u32 {
+        (lo + (r.next_u32() as f32 / u32::MAX as f32) * (hi - lo)).to_bits()
+    }
+
+    pub(crate) fn put_cstr(c: &mut Cpu, at: u32, s: &[u8]) {
+        for (i, b) in s.iter().enumerate() {
+            c.bus.write8(at + i as u32, *b);
+        }
+        c.bus.write8(at + s.len() as u32, 0);
+    }
+
+    /// HUD_DrawSpeedometer: the BELibrary dummy and interface (a fake
+    /// method), the rider's velocity method a fake returning a random vector,
+    /// random settings (units bit both ways), HUD elements and text object as
+    /// in the position-panel test, speeds giving one to three digits; real
+    /// HUD/font/sprintf/strlen callees.
+    #[test]
+    fn hud_draw_speedometer_matches() {
+        use super::speedo::*;
+        covered(
+            ee::s05::f_002200c0__generated,
+            hud_draw_speedometer,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x22_00c0, 2);
+                c.pc = 0x0022_00c0;
+                let gp = GAME_GP;
+                let (hud, elems, rider, text) = (DATA, DATA + 0x1000, DATA + 0x1c00, DATA + 0x800);
+                // BELibrary singleton and interface slot 0 with a fake method.
+                c.bus.write32(gp - 0x1f04, DATA + 0x30_0000);
+                c.bus.write32(gp - 0x1efc, 0);
+                let lib_if = DATA + 0x3000;
+                c.bus.write32(0x0053_08a8, lib_if);
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(lib_if + 4, vt);
+                let vt2 = vtable(c, &mut r, &[SLOT_GET_VELOCITY]);
+                c.bus.write32(rider + RIDER_VELOCITY, vt2);
+                let vel = DATA + 0x2000;
+                c.bus.write32(LOG_RESULTS + 4, vel);
+                for k in 0..4 {
+                    let v = uf(&mut r, -70.0, 70.0);
+                    c.bus.write32(vel + 4 * k, v);
+                }
+                // The settings block (word 0: the units flag).
+                fill(c, &mut r, SETTINGS, 0x288 / 4);
+                let w0 = r.next_u32() & !(UNITS_FLAG as u32);
+                c.bus.write32(
+                    SETTINGS,
+                    w0 | if seed % 2 == 0 { UNITS_FLAG as u32 } else { 0 },
+                );
+                put_cstr(c, NUMBER_FORMAT, b"%d");
+                put_cstr(c, LABEL_A, b"MPH");
+                put_cstr(c, LABEL_B, b"KPH");
+                for off in [
+                    GP_NEG_SPEED_SCALE,
+                    GP_NEG_UNITS_FACTOR,
+                    GP_NEG_SCALE_SHORT,
+                    GP_NEG_SCALE_LONG,
+                    GP_NEG_LABEL_OFFSET,
+                ] {
+                    let v = uf(&mut r, 0.2, 3.0);
+                    c.bus.write32(gp - off, v);
+                }
+                // The HUD, its text object and elements.
+                c.bus.write32(hud + HUD_TEXT, text);
+                c.bus.write32(text + TEXT_BASE_SCALE, uf(&mut r, 1.0, 20.0));
+                c.bus
+                    .write32(text + TEXT_BASE_SCALE + 4, uf(&mut r, 1.0, 20.0));
+                c.bus.write32(text + TEXT_LINE, r.next_u32() % 32);
+                for i in 0..48u32 {
+                    let e = elems + 0x24 * i;
+                    c.bus.write16(e, (r.next_u32() % 640) as u16);
+                    c.bus.write16(e + 2, (r.next_u32() % 448) as u16);
+                    c.bus.write16(e + 4, (r.next_u32() % 64) as u16);
+                    c.bus.write16(e + 6, (r.next_u32() % 64) as u16);
+                    for k in 0..4 {
+                        let v = uf(&mut r, 0.0, 1.0);
+                        c.bus.write32(e + 0x10 + 4 * k, v);
+                    }
+                    c.bus.write8(e + 0x20, (r.next_u32() % 3) as u8);
+                    c.bus.write8(e + 0x21, (r.next_u32() % 3) as u8);
+                    c.bus.write8(e + 0x22, (r.next_u32() % 8) as u8);
+                }
+                // Font_DrawText's globals (as in the position-panel test).
+                c.bus.write32(gp - 0xf28, DATA + 0x1800);
+                fill(c, &mut r, DATA + 0x1800, 4);
+                c.bus.write32(gp - 0x854, DATA + 0x1900);
+                c.bus.write32(DATA + 0x1900 + 0xe84, DATA + 0x1a00);
+                c.bus.write32(DATA + 0x1a00 + 8, r.next_u32());
+                c.g[A0][0] = sx(hud);
+                c.g[A1][0] = sx(elems);
+                c.g[A2][0] = sx(rider);
+                c.g[A3][0] = r.next_u32() as u64;
+            },
+        );
+    }
+
+    /// StreamFile_GetChunk: null / bad-magic / valid handles, empty or
+    /// non-empty queues, a ring of 2-6 chunks plus a wrap marker with this
+    /// handle's tag somewhere other than the chunk taken; the mutex's kernel
+    /// calls are fakes (some unwind).
+    #[test]
+    fn stream_file_get_chunk_matches() {
+        use super::chunk::*;
+        covered(
+            ee::s14::f_003e12e0__generated,
+            stream_file_get_chunk,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e_12e0, 4);
+                c.pc = 0x003e_12e0;
+                let (h, man, ring) = (DATA, DATA + 0x100, DATA + 0x1000);
+                c.g[A0][0] = if seed % 13 == 0 { 0 } else { sx(h) };
+                c.bus.write32(h, man);
+                c.bus.write32(
+                    man,
+                    if seed % 11 == 0 {
+                        r.next_u32()
+                    } else {
+                        0x4d52_5453
+                    },
+                );
+                // The mutex at man+4: owner, depth, semaphore.
+                c.bus.write32(man + 8, r.next_u32() % 4);
+                c.bus.write32(man + 0xc, r.next_u32() % 3);
+                c.bus.write32(man + 0x10, r.next_u32() % 64);
+                c.bus.write32(man + MAN_RING, ring);
+                let tag = 1 + r.next_u32() % 255;
+                c.bus.write32(h + H_TAG, tag);
+                let k = 2 + r.next_u32() % 5;
+                let take = r.next_u32() % k;
+                let mut hit = (take + 1 + r.next_u32() % (k - 1)) % k;
+                if hit == take {
+                    hit = (take + 1) % k;
+                }
+                let mut at = ring;
+                let mut take_at = ring;
+                let mut take_size = 0;
+                for i in 0..k {
+                    let size = 0x10 * (1 + r.next_u32() % 8);
+                    let t = if i == hit || (i != take && r.next_u32() % 3 == 0) {
+                        tag
+                    } else {
+                        (tag + 1 + r.next_u32() % 254) % 256
+                    };
+                    let w0 = r.next_u32() & 0x7fff_ffff;
+                    c.bus.write32(at, w0);
+                    c.bus.write32(at + CH_TAG_SIZE, t << 24 | size);
+                    if i == take {
+                        take_at = at;
+                        take_size = size;
+                    }
+                    at += size;
+                }
+                c.bus.write32(at, u32::MAX);
+                c.bus.write32(
+                    at + CH_TAG_SIZE,
+                    r.next_u32() & 0x00ff_ffff | 0x0100_0000 * ((tag + 7) % 256),
+                );
+                c.bus.write32(h + H_NEXT, take_at);
+                let queued = match seed % 4 {
+                    0 => 0,
+                    1 => take_size,
+                    2 => take_size + 0x10 * (1 + r.next_u32() % 16),
+                    _ => r.next_u32() % 0x100,
+                };
+                c.bus.write32(h + H_QUEUED, queued);
             },
         );
     }

@@ -3,6 +3,8 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
+use crate::abi::set_fpr;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -43,6 +45,8 @@ pub(crate) use crate::game::fe::festaterewards::at_4 as at_2;
 pub(crate) use crate::game::fe::festaterewards::lw_3 as lw_2;
 pub(crate) use crate::game::fe::festaterewards2::r;
 pub(crate) use crate::game::fe::festaterewards2::Ops;
+pub(crate) use crate::game::lib::snd::add;
+pub(crate) use crate::game::lib::snd::shl;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3;
 pub(crate) use crate::game::render::graphicsman::RegMem;
@@ -578,6 +582,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002a_92f8,
         ps2_sound_manager_free_spu_block,
         "PS2SoundManager_FreeSpuBlock",
+    ),
+    (
+        0x0029_5208,
+        ssx_audio_system_update_tracked_sounds,
+        "SSXAudioSystem_UpdateTrackedSounds",
     ),
 ];
 
@@ -10865,6 +10874,288 @@ pub fn ssx_audio_system_pa_say20c5(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod tracked {
+
+    /// `{ int count; int* buf; int write; int read; }`.
+    pub const RING: u32 = 0x597c;
+
+    /// `int`: ring size in words.
+    pub const COUNT: u32 = 0x597c;
+
+    /// `int*`: the words.
+    pub const BUF: u32 = 0x5980;
+
+    /// `int`: write index.
+    pub const WRITE: u32 = 0x5984;
+
+    /// `int`: read index.
+    pub const READ: u32 = 0x5988;
+
+    /// `Audio**`: the sound system (`*p`: tick at +0x260, bank monitor at
+    /// +0x1d8).
+    pub const AUDIO: u32 = 0x118;
+
+    /// Audio: the current tick.
+    pub const TICK: u32 = 0x260;
+
+    /// Audio: the bank monitor.
+    pub const BANK_MONITOR: u32 = 0x1d8;
+
+    /// Words per record.
+    pub const RECORD: u64 = 5;
+}
+
+pub(crate) const BANK_MONITOR_FIND_INSTANCE: Callee = Callee {
+    addr: 0x002a_d550,
+    f: ee::s08::BankMonitor_FindInstance,
+};
+
+pub(crate) const BANK_MONITOR_STOP_HANDLE: Callee = Callee {
+    addr: 0x002a_d5f0,
+    f: ee::s08::BankMonitor_StopHandle,
+};
+
+/// Pop one word of the ring (-1 when empty). Registers on entry: `a0` =
+/// write index, `a1` = read index (the first pop loads them, with `v1` =
+/// write); the last pop does not reload them.
+pub(crate) fn tracked_pop(c: &mut Cpu, this: u32, first: bool, last: bool) -> u64 {
+    use tracked::*;
+    let ring = this + RING;
+    let has_word = if first {
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(this + READ);
+        c.g[A0][0] = c.g[V1][0];
+        c.g[A1][0] = c.g[V0][0];
+        c.g[V1][0] != c.g[V0][0]
+    } else {
+        c.cycles += 2;
+        let has_word = c.g[A0][0] != c.g[A1][0];
+        if has_word {
+            c.g[V0][0] = c.lw(ring + 0xc);
+        }
+        has_word
+    };
+    if !has_word {
+        c.cycles += 2;
+        return u64::MAX;
+    }
+    c.cycles += if first { 10 } else { 9 };
+    if first {
+        c.g[V0][0] = c.lw(ring + 0xc);
+    }
+    c.g[A1][0] = add(c.g[A1][0], 1);
+    c.g[A0][0] = c.lw(ring + 4);
+    c.g[V0][0] = shl(c.g[V0][0], 2);
+    c.g[V1][0] = c.lw(this + COUNT);
+    c.g[V0][0] = add(c.g[V0][0], c.g[A0][0]);
+    c.g[V0][0] = c.lw(r32(c, V0));
+    c.g[V1][0] = ((c.g[A1][0] as i64) < (c.g[V1][0] as i64)) as u64;
+    c.sw(this + READ, c.g[A1][0]);
+    if c.g[V1][0] == 0 {
+        c.cycles += 1;
+        c.sw(this + READ, 0);
+    }
+    if last {
+        c.cycles += 1;
+    } else {
+        c.cycles += 3;
+        c.g[A0][0] = c.lw(this + WRITE);
+        c.g[A1][0] = c.lw(this + READ);
+    }
+    c.g[V0][0]
+}
+
+/// Push one word back into the ring unless it is full; false when full
+/// (the word is dropped). On entry (after the first) v0 = write index.
+pub(crate) fn tracked_push(c: &mut Cpu, this: u32, value: u64, first: bool, last: bool) -> bool {
+    use tracked::*;
+    if first {
+        c.cycles += 6;
+        c.g[V0][0] = c.lw(this + WRITE);
+    } else {
+        c.cycles += 5;
+    }
+    c.g[V1][0] = c.lw(this + COUNT);
+    c.g[V0][0] = add(c.g[V0][0], 1);
+    c.div(0, V0, V1);
+    c.cycles += 4;
+    c.g[V0][0] = c.lw(this + READ);
+    c.g[A0][0] = c.hi[0];
+    if c.g[A0][0] == c.g[V0][0] {
+        if !last {
+            c.g[V0][0] = c.lw(this + WRITE);
+        }
+        return false;
+    }
+    c.cycles += 11;
+    let write = c.lw(this + WRITE);
+    let buf = c.lw(this + BUF);
+    c.g[V0][0] = add(shl(write, 2), buf);
+    c.sw(r32(c, V0), value);
+    c.g[V1][0] = add(c.lw(this + WRITE), 1);
+    let count = c.lw(this + COUNT);
+    c.g[V0][0] = ((c.g[V1][0] as i64) < (count as i64)) as u64;
+    c.sw(this + WRITE, c.g[V1][0]);
+    let wrapped = c.g[V0][0] == 0;
+    if last {
+        if wrapped {
+            c.cycles += 2;
+            c.sw(this + WRITE, 0);
+        }
+    } else {
+        if wrapped {
+            c.cycles += 1;
+            c.sw(this + WRITE, 0);
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.lw(this + WRITE);
+    }
+    true
+}
+
+/// `void SSXAudioSystem_UpdateTrackedSounds(SSXAudioSystem* this)`
+/// (0x295208): go once through the records queued in the tracked-sound
+/// ring. A record whose sound has gone (negative handle, or no bank-monitor
+/// instance) is dropped; a live one is queued again until its expiry tick,
+/// then dropped, stopping its sound first if the record asks for it.
+pub fn ssx_audio_system_update_tracked_sounds(c: &mut Cpu) {
+    use tracked::*;
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x90);
+        c.g[A1][0] = RECORD;
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x60);
+        frame.save(c, S3, 0x50);
+        frame.save(c, S4, 0x40);
+        frame.save(c, S5, 0x30);
+        frame.save(c, S6, 0x20);
+        frame.save(c, S7, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, S0);
+
+        // Records queued: ((write - read + count) % count) / 5.
+        c.g[A0][0] = c.lw(this + READ);
+        let write = c.lw(this + WRITE);
+        c.g[V0][0] = c.lw(this + COUNT);
+        c.g[V1][0] = add(
+            sx((write as u32).wrapping_sub(c.g[A0][0] as u32)),
+            c.g[V0][0],
+        );
+        c.cycles += 6;
+        c.div(0, V1, V0);
+        c.g[A0][0] = c.hi[0];
+        c.div(0, A0, A1);
+        c.g[A0][0] = c.lo[0];
+        c.g[S7][0] = c.g[A0][0];
+        if (c.g[A0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[S1][0] = sx(this + RING);
+            c.g[V1][0] = c.lw(this + WRITE);
+            loop {
+                let key = tracked_pop(c, this, true, false);
+                c.g[S4][0] = key;
+                let handle = tracked_pop(c, this, false, false);
+                c.g[S2][0] = handle;
+                let expire = tracked_pop(c, this, false, false);
+                c.g[S3][0] = expire;
+                let stop = tracked_pop(c, this, false, false);
+                c.g[S5][0] = stop;
+                let extra = tracked_pop(c, this, false, true);
+                c.g[S6][0] = extra;
+                tracked_record(c, this, [key, handle, expire, stop, extra])?;
+                c.cycles += 2;
+                if c.g[S7][0] == 0 {
+                    break;
+                }
+                c.g[V1][0] = c.lw(this + WRITE);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0029_5278);
+                }
+            }
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One popped record: requeue, drop or stop it; counts it off (s7).
+pub(crate) fn tracked_record(c: &mut Cpu, this: u32, rec: [u64; 5]) -> crate::call::Flow {
+    use tracked::*;
+    let [_, handle, expire, stop, _] = rec;
+    let count_off = |c: &mut Cpu| c.g[S7][0] = sx((c.g[S7][0] as u32).wrapping_sub(1));
+    c.cycles += 2;
+    if (handle as i64) < 0 {
+        count_off(c);
+        return Ok(());
+    }
+    c.cycles += 2;
+    c.g[A1][0] = handle;
+    if handle != 0 {
+        // Gone from the bank monitor: drop it.
+        c.cycles += 7;
+        let audio = c.lw(this + AUDIO);
+        c.g[V0][0] = audio;
+        c.g[A2][0] = 1;
+        c.g[A0][0] = add(c.lw(audio as u32), BANK_MONITOR as u64);
+        BANK_MONITOR_FIND_INSTANCE.call(c, 0x0029_53f4)?;
+        if c.g[V0][0] == 0 {
+            count_off(c);
+            return Ok(());
+        }
+    }
+    c.cycles += 6;
+    let audio = c.lw(this + AUDIO);
+    let sys = c.lw(audio as u32);
+    c.g[V1][0] = sys;
+    let tick = c.lw((sys as u32).wrapping_add(TICK));
+    c.g[V0][0] = ((tick as i64) < (expire as i64)) as u64;
+    c.g[A0][0] = add(sys, BANK_MONITOR as u64);
+    let keep = if c.g[V0][0] != 0 {
+        true
+    } else {
+        c.cycles += 3;
+        c.g[V0][0] = u64::MAX;
+        expire == u64::MAX
+    };
+    if keep {
+        // Queue the record again (words that do not fit are dropped).
+        for (i, word) in rec.into_iter().enumerate() {
+            let last = i == 4;
+            let stored = tracked_push(c, this, word, i == 0, last);
+            if last && !stored {
+                count_off(c);
+                return Ok(());
+            }
+        }
+    } else {
+        // Expired: stop the sound if asked.
+        c.cycles += 2;
+        c.g[A1][0] = handle;
+        if stop != 0 {
+            c.cycles += 3;
+            c.f[12] = 0;
+            c.g[A2][0] = 1;
+            BANK_MONITOR_STOP_HANDLE.call(c, 0x0029_55f0)?;
+        }
+    }
+    c.cycles += 1;
+    count_off(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13813,6 +14104,99 @@ pub(crate) mod tests {
                 c.bus.write32(rider + 0x6c0, DATA + 0x3_0000);
                 c.bus.write32(DATA + 0x3_0000 + 0x38, 0);
                 let _ = r.next_u32();
+            },
+        );
+    }
+    use super::*;
+
+    /// `SSXAudioSystem_UpdateTrackedSounds`: rings of several sizes (also
+    /// 0, read walking up to write 0: empty pops), records with negative,
+    /// zero and live/gone handles, never/expired/pending ticks, stop flags,
+    /// nearly full rings (dropped requeues).
+    #[test]
+    fn ssx_audio_system_update_tracked_sounds_matches() {
+        use crate::difftest::fakes::machine;
+        check(
+            ee::s08::f_00295208__generated,
+            ssx_audio_system_update_tracked_sounds,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29_5208, 0);
+                c.pc = 0x0029_5208;
+                let this = DATA;
+                let buf = DATA + 0x1_0000;
+                let audio = DATA + 0x2_0000;
+                let sys = DATA + 0x2_1000;
+                let bm = sys + tracked::BANK_MONITOR;
+                let insts = DATA + 0x3_0000;
+                let count = [0u32, 10, 12, 23, 40, 9][(seed % 6) as usize];
+                let (read, write) = if count == 0 {
+                    (0u32.wrapping_sub(5 + r.next_u32() % 11), 0)
+                } else {
+                    let read = r.next_u32() % count;
+                    let pending = if seed % 5 == 0 {
+                        count - 1
+                    } else {
+                        r.next_u32() % count
+                    };
+                    (read, (read + pending) % count)
+                };
+                c.bus.write32(this + tracked::COUNT, count);
+                c.bus.write32(this + tracked::BUF, buf);
+                c.bus.write32(this + tracked::WRITE, write);
+                c.bus.write32(this + tracked::READ, read);
+                let tick = r.next_u32() % 1000;
+                let n = count.max(16);
+                for k in 0..n {
+                    let field = k % 5;
+                    let w = match field {
+                        1 => [u32::MAX, 0, 1, 2, 3][(r.next_u32() % 5) as usize],
+                        2 => match r.next_u32() % 3 {
+                            0 => u32::MAX,
+                            1 => tick.wrapping_sub(r.next_u32() % 5),
+                            _ => tick + 1 + r.next_u32() % 5,
+                        },
+                        3 => r.next_u32() % 2,
+                        _ => r.next_u32(),
+                    };
+                    let at = if count == 0 {
+                        buf.wrapping_add(read.wrapping_add(k).wrapping_mul(4))
+                    } else {
+                        buf + 4 * ((read + k) % count)
+                    };
+                    c.bus.write32(at, w);
+                }
+                // A stop flag only with handle 0 / -1: stopping a live
+                // instance would reach the sound driver (FadeOut).
+                for k in 0..n {
+                    if k % 5 == 3 {
+                        let idx = |k: u32| {
+                            if count == 0 {
+                                buf.wrapping_add(read.wrapping_add(k).wrapping_mul(4))
+                            } else {
+                                buf + 4 * ((read + k) % count)
+                            }
+                        };
+                        let handle = c.bus.read32(idx(k - 2));
+                        if handle != 0 && handle != u32::MAX {
+                            c.bus.write32(idx(k), 0);
+                        }
+                    }
+                }
+                c.bus.write32(this + tracked::AUDIO, audio);
+                c.bus.write32(audio, sys);
+                c.bus.write32(sys + tracked::TICK, tick);
+                c.bus.write32(bm + 0x8ec, insts);
+                // Live instances (state 1, not stopping) for some handles.
+                for id in 1..=3u32 {
+                    if r.next_u32() % 4 != 0 {
+                        let inst = insts + 0xc0 * (id * 10 + r.next_u32() % 10);
+                        c.bus.write32(inst, 1);
+                        c.bus.write32(inst + 4, id);
+                        c.bus.write32(inst + 0x9c, 0);
+                    }
+                }
+                c.g[A0][0] = sx(this);
             },
         );
     }

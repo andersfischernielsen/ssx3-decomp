@@ -2,8 +2,12 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_fpr;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -375,6 +379,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         irradiance_add_directional_scaled,
         "Irradiance_AddDirectionalScaled",
     ),
+    (
+        0x0037_dbe8,
+        ps2_graphics_man_clip_code,
+        "PS2GraphicsMan_v91",
+    ),
+    (0x0037_dd20, ps2_graphics_man_v92, "PS2GraphicsMan_v92"),
 ];
 
 /// Same-shard direct callees used above.
@@ -9689,6 +9699,298 @@ pub fn ps2_graphics_man_set_perspective(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod gfx {
+
+    /// `int`: the clip matrices are up to date.
+    pub const CLIP_VALID: u32 = 0x6b90;
+
+    /// `u32`: screen width.
+    pub const WIDTH: u32 = 0x5a30;
+
+    /// `u32`: screen height.
+    pub const HEIGHT: u32 = 0x5a34;
+
+    /// `2048.0`: the GS drawing-area centre.
+    pub const GS_CENTRE: u32 = 0x4500_0000;
+
+    /// The depth clamp (24-bit Z).
+    pub const Z_MAX: u64 = 0x00ff_ffff;
+}
+
+pub(crate) mod clip {
+    use super::ee;
+    use super::Callee;
+
+    /// `PS2GraphicsMan` fields: the world-to-clip matrix, the clip bounds
+    /// (min x, min y, max z, ..., max x, max y, min z) and the "view matrices
+    /// valid" flag.
+    pub const CLIP_MATRIX: u32 = 0x6b30;
+
+    pub const MIN_X: u32 = 0x6b70;
+
+    pub const MIN_Y: u32 = 0x6b74;
+
+    pub const MAX_Z: u32 = 0x6b78;
+
+    pub const MAX_X: u32 = 0x6b80;
+
+    pub const MAX_Y: u32 = 0x6b84;
+
+    pub const MIN_Z: u32 = 0x6b88;
+
+    pub const VIEW_VALID: u32 = 0x6b90;
+
+    pub const UPDATE_VIEW_MATRICES: Callee = Callee {
+        addr: 0x0037_d968,
+        f: ee::s12::PS2GraphicsMan_UpdateViewMatrices,
+    };
+}
+
+pub(crate) const UPDATE_VIEW_MATRICES: Callee = Callee {
+    addr: 0x0037_d968,
+    f: ee::s12::PS2GraphicsMan_UpdateViewMatrices,
+};
+
+pub(crate) const PROJECT_POINT: Callee = Callee {
+    addr: 0x0037_dee0,
+    f: ee::s12::PS2GraphicsMan_ProjectPoint,
+};
+
+/// `(float)half` for a `u32 >> 1` as gcc converts it (`cvt.s.w` when the
+/// value is non-negative, else halve-convert-double through v0); the
+/// halved value is never negative, so the second form never runs.
+pub(crate) fn half_to_float(c: &mut Cpu, half: u64, whole: u64) -> FpuF32 {
+    if (half as i64) >= 0 {
+        c.cycles += 4;
+        FpuF32::from_i32(half as i32)
+    } else {
+        c.cycles += 6;
+        let v = (half & 1) | sx((whole as u32) >> 2);
+        c.g[V0][0] = v;
+        let f = FpuF32::from_i32(v as i32);
+        f + f
+    }
+}
+
+/// `Vec4 PS2GraphicsMan_v92(PS2GraphicsMan* gm, const Vec4* p)`
+/// (0x37dd20, result through the hidden pointer in a0): project `p` to the
+/// screen. Refresh the view matrices if stale, project to GS coordinates,
+/// move x and y from the 2048-centred GS area to pixels (whole numbers),
+/// and clamp z to the 24-bit depth range.
+pub fn ps2_graphics_man_v92(c: &mut Cpu) {
+    use gfx::*;
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save_ra(c, 0x10);
+        let gm = r32(c, S0);
+        c.g[V0][0] = c.lw(gm + CLIP_VALID);
+        c.g[S2][0] = c.g[A0][0];
+        if c.g[V0][0] == 0 {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S0][0];
+            UPDATE_VIEW_MATRICES.call(c, 0x0037_dd50)?;
+        }
+
+        // Project into a vector on the stack.
+        c.cycles += 9;
+        c.g[A0][0] = c.g[SP][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S0][0];
+        PROJECT_POINT.call(c, 0x0037_dd60)?;
+        let v = sp(c);
+        let width = c.lw(gm + WIDTH);
+        c.g[V1][0] = width;
+        c.g[A0][0] = c.g[SP][0];
+        let half_w = sx((width as u32) >> 1);
+        c.g[V0][0] = half_w;
+        c.g[A3][0] = c.g[SP][0];
+        let half_w = half_to_float(c, half_w, width);
+        set_fpr(c, 2, half_w);
+
+        // x -= 2048 - width / 2, truncated.
+        c.cycles += 14;
+        c.g[AT][0] = GS_CENTRE as u64;
+        c.g[A1][0] = sx(v + 4);
+        let left = FpuF32(GS_CENTRE) - half_w;
+        let x = Addr(v).read_fpu(c) - left;
+        set_fpr(c, 1, x);
+        let height = c.lw(gm + HEIGHT);
+        c.g[V1][0] = height;
+        let half_h = sx((height as u32) >> 1);
+        c.g[A2][0] = half_h;
+        let xi = x.to_i32();
+        c.g[V0][0] = sx(xi as u32);
+        let x = FpuF32::from_i32(xi);
+        set_fpr(c, 0, x);
+        Addr(v).write_fpu(c, x);
+        let half_h = half_to_float(c, half_h, height);
+        set_fpr(c, 2, half_h);
+
+        // y -= 2048 - height / 2, truncated; z as an integer.
+        c.cycles += 18;
+        c.g[AT][0] = GS_CENTRE as u64;
+        c.g[A0][0] = 0xff_0000;
+        c.g[A2][0] = sx(v + 8);
+        let top = FpuF32(GS_CENTRE) - half_h;
+        let y = Addr(v + 4).read_fpu(c) - top;
+        let yi = y.to_i32();
+        let y = FpuF32::from_i32(yi);
+        Addr(v + 4).write_fpu(c, y);
+        let z = Addr(v + 8).read_fpu(c);
+        set_fpr(c, 1, z);
+        let zi = z.to_i32();
+        c.f[0] = zi as u32;
+        c.g[V0][0] = sx(zi as u32);
+        c.g[A0][0] = Z_MAX;
+        let depth = if zi < 0 {
+            c.cycles += 1;
+            0
+        } else {
+            c.cycles += 4;
+            let over = Z_MAX < sx(zi as u32);
+            c.g[V0][0] = over as u64;
+            if over {
+                Z_MAX
+            } else {
+                sx(zi as u32)
+            }
+        };
+        c.g[V1][0] = depth;
+
+        // Store z, copy the vector out, return it.
+        c.cycles += 12;
+        let z = FpuF32::from_i32(depth as i32);
+        set_fpr(c, 0, z);
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        Addr(v + 8).write_fpu(c, z);
+        frame.restore_ra(c, 0x10);
+        c.lq(V1, v);
+        c.sq(V1, r32(c, S2));
+        frame.restore(c, S2, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `int PS2GraphicsMan_v91(PS2GraphicsMan* self, const Vec4* p)` (0x37dbe8):
+/// the clip outcode of a point. Rebuilds the view matrices if stale,
+/// transforms `p` by the world-to-clip matrix (VU0), divides x and y by w
+/// and sets bits for x below/above (2/1), y below/above (8/4) the bounds;
+/// behind the eye (`1/w < 0`) flips the code with `^ 0x2f`, otherwise z
+/// above/below adds 0x20/0x10.
+pub fn ps2_graphics_man_clip_code(c: &mut Cpu) {
+    use clip::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        let gfx = r32(c, A0);
+        set_reg(c, S0, reg(c, A0));
+        frame.save_ra(c, 0x20);
+        let valid = Addr(gfx + VIEW_VALID).lw(c);
+        set_reg(c, V0, valid);
+        let p = r32(c, A1);
+        set_reg(c, S1, reg(c, A1));
+        if valid == 0 {
+            c.cycles += 2;
+            UPDATE_VIEW_MATRICES.call(c, 0x0037_dc10)?;
+        }
+        c.cycles += 28;
+        let m = gfx + CLIP_MATRIX;
+        set_reg(c, V0, sx(m));
+        set_reg(c, AT, 0x3f80_0000);
+        c.mtc1(AT, 3);
+        c.lqc2(8, p);
+        for k in 0..4u32 {
+            c.lqc2(4 + k as usize, m + 0x10 * k);
+        }
+        c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+        c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+        let sp0 = sp(c);
+        c.sqc2(12, sp0 + 0x10);
+        let mut code: u64 = 0;
+        set_reg(c, V1, 0);
+        c.lq(V0, sp0 + 0x10);
+        c.lwc1(4, gfx + MIN_X);
+        c.sq(V0, sp0);
+        // v.w = 1/w; v.x *= v.w; v.y *= v.w.
+        c.lwc1(0, sp0 + 0xc);
+        c.lwc1(1, sp0);
+        c.div_s(3, 3, 0);
+        c.lwc1(2, sp0 + 4);
+        c.mul_s(1, 1, 3);
+        c.swc1(3, sp0 + 0xc);
+        c.mul_s(2, 2, 3);
+        c.c_lt_s(1, 4);
+        c.swc1(1, sp0);
+        let below_x = c.fcc();
+        c.swc1(2, sp0 + 4);
+        if below_x {
+            c.cycles += 1;
+            code = 2;
+        }
+        c.cycles += 5;
+        c.lwc1(0, gfx + MAX_X);
+        c.c_lt_s(0, 1);
+        if c.fcc() {
+            code |= 1;
+        }
+        c.cycles += 5;
+        c.lwc1(0, gfx + MIN_Y);
+        c.c_lt_s(2, 0);
+        if c.fcc() {
+            code |= 8;
+        }
+        c.cycles += 5;
+        c.lwc1(0, gfx + MAX_Y);
+        c.c_lt_s(0, 2);
+        if c.fcc() {
+            code |= 4;
+        }
+        c.cycles += 5;
+        c.mtc1(0, 0);
+        c.c_lt_s(3, 0);
+        let behind = c.fcc();
+        c.lwc1(1, sp0 + 8);
+        if behind {
+            c.cycles += 2;
+            code ^= 0x2f;
+        } else {
+            c.cycles += 5;
+            c.lwc1(0, gfx + MAX_Z);
+            c.c_lt_s(0, 1);
+            if c.fcc() {
+                code |= 0x20;
+            }
+            c.cycles += 5;
+            c.lwc1(0, gfx + MIN_Z);
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                code |= 0x10;
+            }
+        }
+        c.cycles += 6;
+        set_reg(c, V1, code);
+        frame.restore(c, S0, 0x40);
+        set_reg(c, V0, code);
+        frame.restore(c, S1, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -12475,6 +12777,127 @@ pub(crate) mod tests {
                     c.f[14] = uf(&mut r, 50.0, 20000.0);
                 }
                 c.g[A0][0] = sx(gfx);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::misc::tests::uf as uf_2;
+
+    /// `PS2GraphicsMan_v92`: stale clip matrices (UpdateViewMatrices runs)
+    /// or fresh ones, screen sizes with the top bit set, depths below 0,
+    /// inside and above the 24-bit range.
+    #[test]
+    fn ps2_graphics_man_v92_matches() {
+        use crate::game::render::particle::tests::put_defer;
+        check(
+            ee::s12::f_0037dd20__generated,
+            ps2_graphics_man_v92,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x37dd_2001 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0037_dd20;
+                let gm = DATA;
+                let stale = seed % 3 == 0;
+                c.bus.write32(
+                    gm + gfx::CLIP_VALID,
+                    if stale { 0 } else { 1 + r.next_u32() % 9 },
+                );
+                if stale {
+                    let cam = DATA + 0x1_0000;
+                    let defer = put_defer(c);
+                    for i in 0..16u32 {
+                        c.bus.write32(cam + 4 * i, r.f32(2.0));
+                        c.bus.write32(gm + 0x6af0 + 4 * i, r.f32(2.0));
+                        c.bus.write32(gm + 0x57c0 + 4 * i, r.f32(2.0));
+                        c.bus.write32(gm + 0x5860 + 4 * i, r.f32(2.0));
+                    }
+                    c.bus.write32(gm + 0x13e4, cam);
+                    c.bus.write32(gm + 0x18f0, defer);
+                }
+                // Clip matrix, GS scale and offset (ProjectPoint).
+                for i in 0..16u32 {
+                    c.bus.write32(gm + 0x58a0 + 4 * i, r.f32(2.0));
+                }
+                for i in 0..4u32 {
+                    c.bus.write32(gm + 0x58e0 + 4 * i, r.f32(300.0));
+                    c.bus.write32(gm + 0x58f0 + 4 * i, r.f32(4096.0));
+                }
+                let depth = [-1.0e3f32, 1.0e6, 3.0e7][(seed / 3 % 3) as usize];
+                c.bus.write32(
+                    gm + 0x58f8,
+                    (depth + (r.next_u32() % 1000) as f32).to_bits(),
+                );
+                let (w, h) = match seed % 4 {
+                    0 => (640, 448),
+                    1 => (512, 224),
+                    2 => (r.next_u32() | 0x8000_0000, r.next_u32() | 0x8000_0000),
+                    _ => (r.next_u32() % 2048, r.next_u32() % 2048),
+                };
+                c.bus.write32(gm + gfx::WIDTH, w);
+                c.bus.write32(gm + gfx::HEIGHT, h);
+                let p = DATA + 0x9000;
+                for i in 0..3u32 {
+                    c.bus.write32(p + 4 * i, r.f32(100.0));
+                }
+                c.bus.write32(p + 12, (1.0f32).to_bits());
+                c.g[A0][0] = sx(DATA + 0xa000);
+                c.g[A1][0] = sx(gm);
+                c.g[A2][0] = sx(p);
+            },
+        );
+    }
+
+    /// PS2GraphicsMan_v91: random clip matrix, point and bounds (points
+    /// inside and outside each bound, w of both signs); the stale-matrices
+    /// path runs the real `PS2GraphicsMan_UpdateViewMatrices` on some seeds.
+    #[test]
+    fn ps2_graphics_man_clip_code_matches() {
+        use super::clip::*;
+        check(
+            ee::s12::f_0037dbe8__generated,
+            ps2_graphics_man_clip_code,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x37_dbe8 ^ (seed as u64) << 12);
+                crate::difftest::scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0037_dbe8;
+                let gfx = DATA;
+                let p = DATA + 0x8000;
+                c.g[A0][0] = sx(gfx);
+                c.g[A1][0] = sx(p);
+                c.bus.write32(
+                    gfx + VIEW_VALID,
+                    if seed % 8 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                for k in 0..16 {
+                    let v = if k % 5 == 0 {
+                        uf_2(&mut r, 0.5, 2.0)
+                    } else {
+                        uf_2(&mut r, -1.0, 1.0)
+                    };
+                    c.bus.write32(gfx + CLIP_MATRIX + 4 * k, v);
+                }
+                for k in 0..3 {
+                    let v = uf_2(&mut r, -2.0, 2.0);
+                    c.bus.write32(p + 4 * k, v);
+                }
+                let w = if seed % 3 == 0 {
+                    uf_2(&mut r, -2.0, -0.1)
+                } else {
+                    uf_2(&mut r, 0.1, 2.0)
+                };
+                c.bus.write32(p + 12, w);
+                for off in [MIN_X, MIN_Y, MIN_Z] {
+                    let v = uf_2(&mut r, -1.5, 0.0);
+                    c.bus.write32(gfx + off, v);
+                }
+                for off in [MAX_X, MAX_Y, MAX_Z] {
+                    let v = uf_2(&mut r, 0.0, 1.5);
+                    c.bus.write32(gfx + off, v);
+                }
             },
         );
     }

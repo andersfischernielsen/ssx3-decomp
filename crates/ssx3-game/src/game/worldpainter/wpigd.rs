@@ -62,6 +62,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x002b_d378, twpigd_sun_blend, "tWPIGD_Sun_Blend"),
     (0x002b_d5a8, twpigd_lighting_blend, "tWPIGD_Lighting_Blend"),
+    (
+        0x002b_de30,
+        twpigd_lighting_is_equal,
+        "tWPIGD_Lighting_IsEqual",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -911,6 +916,87 @@ pub fn twpigd_screen_tint_blend(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// tWPIGD_Lighting_IsEqual (0x2bde30)
+
+/// `tWPIGD_Lighting_PairDiffers(a, b)` (0x2bb100): whether two 2-word
+/// colour pairs differ.
+pub(crate) const LIGHTING_PAIR_DIFFERS: Callee = Callee {
+    addr: 0x002b_b100,
+    f: ee::s08::f_002bb100,
+};
+
+/// `bool tWPIGD_Lighting_IsEqual(const tWPIGD_Lighting* a, const Lighting* b)`
+/// (0x2bde30): whether a world-painter lighting record matches a lighting
+/// state: the four colour pairs at a+8/+0x18/+0x28/+0x38 against
+/// b+4/+0xc/+0x14/+0x1c (through `PairDiffers`), then the floats a+0x48 ==
+/// b+0x24 and a+0x50 == b+0x28. Returns 1 if all match, else 0.
+pub fn twpigd_lighting_is_equal(c: &mut Cpu) {
+    /// (offset in a, offset in b, return address) of each pair compare.
+    const PAIRS: [(u32, u32, u32); 4] = [
+        (0x08, 0x04, 0x002b_de54),
+        (0x18, 0x0c, 0x002b_de68),
+        (0x28, 0x14, 0x002b_de7c),
+        (0x38, 0x1c, 0x002b_de90),
+    ];
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        let a = r32(c, A0);
+        let b = r32(c, A1);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        let mut pairs_equal = true;
+        for (i, &(oa, ob, back)) in PAIRS.iter().enumerate() {
+            if i > 0 {
+                c.cycles += 5;
+            }
+            c.g[A0][0] = sx(a.wrapping_add(oa));
+            c.g[A1][0] = sx(b.wrapping_add(ob));
+            LIGHTING_PAIR_DIFFERS.call(c, back)?;
+            let differs = c.g[V0][0] != 0;
+            c.g[V0][0] = 0;
+            if differs {
+                pairs_equal = false;
+                break;
+            }
+        }
+        if pairs_equal {
+            c.cycles += 6;
+            let x = Addr(a.wrapping_add(0x48)).read_fpu(c);
+            let y = Addr(b.wrapping_add(0x24)).read_fpu(c);
+            c.f[1] = x.0;
+            c.f[0] = y.0;
+            let eq = x.eq_s(y);
+            abi::set_fcc(c, eq);
+            if eq {
+                c.cycles += 6;
+                let x = Addr(a.wrapping_add(0x50)).read_fpu(c);
+                let y = Addr(b.wrapping_add(0x28)).read_fpu(c);
+                c.f[1] = x.0;
+                c.f[0] = y.0;
+                let eq = x.eq_s(y);
+                abi::set_fcc(c, eq);
+                if eq {
+                    c.cycles += 2;
+                    c.g[V0][0] = 1;
+                }
+            }
+        } else {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1317,6 +1403,59 @@ pub(crate) mod tests {
                 } else {
                     r.f32(1.2)
                 };
+            },
+        );
+    }
+    use super::*;
+
+    /// Lighting compare: random records where each field is either copied
+    /// from the other side or left different, so every early-out (pair 1-4,
+    /// float 1-2) and the full match are reached.
+    #[test]
+    fn twpigd_lighting_is_equal_matches() {
+        check(
+            ee::s08::f_002bde30__generated,
+            twpigd_lighting_is_equal,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0xde30 ^ (seed as u64) << 4);
+                scramble(c, &mut r);
+                c.pc = 0x002b_de30;
+                let a = DATA;
+                let b = DATA + 0x100;
+                fill(c, &mut r, a, 0x18);
+                fill(c, &mut r, b, 0x10);
+                // First differing field (0..=5), or 6: all equal.
+                let first_diff = seed % 7;
+                let fields: [(u32, u32, u32); 6] = [
+                    (0x08, 0x04, 2),
+                    (0x18, 0x0c, 2),
+                    (0x28, 0x14, 2),
+                    (0x38, 0x1c, 2),
+                    (0x48, 0x24, 1),
+                    (0x50, 0x28, 1),
+                ];
+                for (i, &(oa, ob, n)) in fields.iter().enumerate() {
+                    if (i as u32) < first_diff {
+                        for k in 0..n {
+                            let v = c.bus.read32(a + oa + 4 * k);
+                            c.bus.write32(b + ob + 4 * k, v);
+                        }
+                    }
+                }
+                // Signed zeros compare equal; vary the second word of a pair only.
+                if seed % 11 == 3 {
+                    c.bus.write32(a + 0x48, 0x8000_0000);
+                    c.bus.write32(b + 0x24, 0);
+                }
+                if seed % 13 == 5 && first_diff < 4 {
+                    let ob = fields[first_diff as usize].1;
+                    let oa = fields[first_diff as usize].0;
+                    let v = c.bus.read32(a + oa);
+                    c.bus.write32(b + ob, v);
+                }
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | a as u64;
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | b as u64;
             },
         );
     }

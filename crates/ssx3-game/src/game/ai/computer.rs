@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::call;
@@ -226,6 +227,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0011_2fb0,
         rider_update_dist_to_finish,
         "Rider_UpdateDistToFinish",
+    ),
+    (
+        0x0010_b980,
+        computer_actor_rider_find_jump_marker,
+        "ComputerActorRider_FindJumpMarker",
+    ),
+    (
+        0x0010_da10,
+        computer_actor_rider_should_attack_back,
+        "ComputerActorRider_ShouldAttackBack",
     ),
 ];
 
@@ -6046,6 +6057,437 @@ pub fn rider_update_dist_to_finish(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod attack_back {
+
+    /// The AI rider's own rider (its `+0x6c0` interface, its distance table).
+    pub const RIDER: u32 = 0x18;
+
+    /// Seconds left of the current decision (float).
+    pub const TIMER: u32 = 0xf30;
+
+    /// The current decision: attack back (1) or not (0).
+    pub const DECISION: u32 = 0xf34;
+
+    /// AI manager fields: rider count and rider pointer array.
+    pub const AI_COUNT: u32 = 0x78;
+
+    pub const AI_RIDERS: u32 = 0x28;
+
+    /// Per-rider distance table entry stride and distance field.
+    pub const DIST_STRIDE: u32 = 0x24;
+
+    pub const DIST: u32 = 0x8;
+
+    /// Rider: the AI interface object (vtable at its start).
+    pub const IFACE: u32 = 0x6c0;
+
+    /// Rider: animation controller.
+    pub const ANIM_CTL: u32 = 0x784;
+}
+
+/// `AI_GetFrameCounter()` (0x1298c8).
+pub(crate) const AI_GET_FRAME_COUNTER: Callee = Callee {
+    addr: 0x0012_98c8,
+    f: ee::s00::f_001298c8,
+};
+
+/// `AnimController_GetLayerAnimEntry(ctl, layer)` (0x311ae8).
+pub(crate) const ANIM_GET_LAYER_ANIM_ENTRY: u32 = 0x0031_1ae8;
+
+/// `Rand_NextGame()` (0x317810).
+pub(crate) const RAND_NEXT_GAME: u32 = 0x0031_7810;
+
+/// `int ComputerActorRider_ShouldAttackBack(ComputerActorRider* self)`
+/// (0x10da10): whether an AI rider hits back at a rider that is attacking
+/// it. A running decision is kept for its timer (2 s), counted down by one
+/// tick (`.lit4` gp-0x7ce4) per call; a negative timer is clamped to 0 and
+/// answers no. With no decision, every 6th AI frame scans the riders: the
+/// first other rider whose interface reports an attack (vtable slot 8),
+/// closer than 200 and playing animation-entry kind 13 on layer 1 makes a
+/// new decision: attack with a 25% chance (`Rand_NextGame() % 100 < 25`).
+pub fn computer_actor_rider_should_attack_back(c: &mut Cpu) {
+    use attack_back::*;
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x60);
+        c.f[0] = 0;
+        frame.save(c, S2, 0x30);
+        frame.save(c, S0, 0x50);
+        let me = Addr(r32(c, A0));
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        let timer = me.off(TIMER).read_fpu(c);
+        c.f[1] = timer.0;
+        let zero = FpuF32::ZERO;
+        let negative = timer.lt(zero);
+        abi::set_fcc(c, negative);
+        // false: fall to the shared "return 0" (v0 = 0).
+        let mut answered = false;
+        if negative {
+            c.cycles += 2;
+            me.off(TIMER).write_fpu(c, zero);
+        } else {
+            c.cycles += 3;
+            let running = zero.lt(timer);
+            abi::set_fcc(c, running);
+            if running {
+                c.cycles += 5;
+                let tick = Addr(r32(c, GP).wrapping_sub(0x7ce4)).read_fpu(c);
+                c.g[V0][0] = me.off(DECISION).lw(c);
+                let left = timer - tick;
+                c.f[0] = left.0;
+                me.off(TIMER).write_fpu(c, left);
+                answered = true;
+            } else {
+                c.cycles += 6;
+                AI_GET_FRAME_COUNTER.call(c, 0x0010_da74)?;
+                c.g[V1][0] = 6;
+                let (_, phase) = abi::div(c, r32(c, V0), 6);
+                c.cycles += 3;
+                c.g[A0][0] = sx(phase);
+                c.g[V0][0] = 0;
+                if phase != 0 {
+                    answered = true;
+                } else {
+                    c.cycles += 6;
+                    let world = Addr(r32(c, GP).wrapping_sub(0x848)).lw(c);
+                    c.g[V0][0] = world;
+                    let ai_root = Addr((world as u32).wrapping_add(0x84)).lw(c);
+                    c.g[V1][0] = ai_root;
+                    let ai = Addr((ai_root as u32).wrapping_add(0xc)).lw(c);
+                    c.g[S3][0] = ai;
+                    let ai = Addr(ai as u32);
+                    c.g[V0][0] = ai.off(AI_COUNT).lw(c);
+                    c.g[S0][0] = 0;
+                    if c.g[V0][0] as i64 > 0 {
+                        c.cycles += 2;
+                        c.g[S4][0] = 100;
+                        c.g[A0][0] = me.off(RIDER).lw(c);
+                        loop {
+                            // Index of the rider this AI rides (slot 7).
+                            c.cycles += 8;
+                            let iface = (c.g[A0][0] as u32).wrapping_add(IFACE);
+                            let vt = Addr(iface).lw(c);
+                            c.g[V1][0] = vt;
+                            c.g[A0][0] = sx(iface);
+                            c.g[A1][0] = Addr((vt as u32).wrapping_add(0x38)).lh(c);
+                            c.g[V0][0] = Addr((vt as u32).wrapping_add(0x3c)).lw(c);
+                            let f = r32(c, V0);
+                            c.g[A0][0] = sx(iface.wrapping_add(r32(c, A1)));
+                            call_ptr(c, f, 0x0010_dac8)?;
+                            let i = r32(c, S0);
+                            let mine = c.g[S0][0] == c.g[V0][0];
+                            c.g[V1][0] = sx(i << 2);
+                            let mut count_loaded = false;
+                            if !mine {
+                                // Is rider i attacking (slot 8)?
+                                c.cycles += 11;
+                                c.g[V0][0] = sx(r32(c, S3).wrapping_add(AI_RIDERS));
+                                let slot = r32(c, V0).wrapping_add(i << 2);
+                                c.g[S1][0] = sx(slot);
+                                let other = Addr(slot).lw(c);
+                                let iface = (other as u32).wrapping_add(IFACE);
+                                let vt = Addr(iface).lw(c);
+                                c.g[V1][0] = vt;
+                                c.g[A0][0] = sx(iface);
+                                c.g[A1][0] = Addr((vt as u32).wrapping_add(0x40)).lh(c);
+                                c.g[V0][0] = Addr((vt as u32).wrapping_add(0x44)).lw(c);
+                                let f = r32(c, V0);
+                                c.g[A0][0] = sx(iface.wrapping_add(r32(c, A1)));
+                                call_ptr(c, f, 0x0010_daf4)?;
+                                let attacking = c.g[V0][0] != 0;
+                                c.g[V0][0] = 0x24;
+                                if attacking {
+                                    // Distance to rider i from my rider's table.
+                                    c.cycles += 10;
+                                    let table = me.off(RIDER).lw(c);
+                                    let off = abi::mult(c, 0x24, i);
+                                    c.g[V0][0] = sx(off);
+                                    c.g[AT][0] = 0x4348_0000;
+                                    let limit = FpuF32(0x4348_0000); // 200.0
+                                    c.f[1] = limit.0;
+                                    let entry = (table as u32).wrapping_add(off);
+                                    c.g[V1][0] = sx(entry);
+                                    let dist = Addr(entry.wrapping_add(DIST)).read_fpu(c);
+                                    c.f[0] = dist.0;
+                                    let near = dist.lt(limit);
+                                    abi::set_fcc(c, near);
+                                    c.g[A1][0] = 1;
+                                    if near {
+                                        c.cycles += 6;
+                                        let other = Addr(r32(c, S1)).lw(c);
+                                        c.g[V0][0] = other;
+                                        c.g[A0][0] =
+                                            Addr((other as u32).wrapping_add(ANIM_CTL)).lw(c);
+                                        call_ptr(c, ANIM_GET_LAYER_ANIM_ENTRY, 0x0010_db30)?;
+                                        c.g[V1][0] = 0xd;
+                                        if c.g[V0][0] != 0xd {
+                                            c.g[V0][0] = ai.off(AI_COUNT).lw(c);
+                                            count_loaded = true; // (skips the +1 below)
+                                        } else {
+                                            // New decision: 25% attack, for 2 s.
+                                            c.cycles += 6;
+                                            call_ptr(c, RAND_NEXT_GAME, 0x0010_db44)?;
+                                            let (_, roll) = abi::divu(c, r32(c, V0), 100);
+                                            c.g[A0][0] = sx(me.off(DECISION).0);
+                                            c.cycles += 3;
+                                            c.g[V0][0] = sx(roll);
+                                            c.g[V1][0] = sx(roll >> 1);
+                                            let roll_f = if (roll as i32) < 0 {
+                                                c.cycles += 5;
+                                                let v = (roll & 1) | (roll >> 1);
+                                                c.g[V0][0] = sx(v);
+                                                let h = FpuF32::from_i32(v as i32);
+                                                h + h
+                                            } else {
+                                                c.cycles += 4;
+                                                FpuF32::from_i32(roll as i32)
+                                            };
+                                            c.f[1] = roll_f.0;
+                                            c.cycles += 6;
+                                            c.g[AT][0] = 0x41c8_0000;
+                                            let chance = FpuF32(0x41c8_0000); // 25.0
+                                            c.f[0] = chance.0;
+                                            let attack = roll_f.lt(chance);
+                                            abi::set_fcc(c, attack);
+                                            c.g[V0][0] = 1;
+                                            if !attack {
+                                                c.cycles += 1;
+                                                c.g[V0][0] = 0;
+                                            }
+                                            c.cycles += 6;
+                                            me.off(DECISION).sw(c, c.g[V0][0]);
+                                            c.g[AT][0] = 0x4000_0000;
+                                            c.f[0] = 0x4000_0000; // 2.0
+                                            c.g[V0][0] = me.off(DECISION).lw(c);
+                                            me.off(TIMER).write_fpu(c, FpuF32(0x4000_0000));
+                                            answered = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if !count_loaded {
+                                c.cycles += 1;
+                                c.g[V0][0] = ai.off(AI_COUNT).lw(c);
+                            }
+                            c.cycles += 4;
+                            c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+                            let more = (c.g[S0][0] as i64) < (c.g[V0][0] as i64);
+                            c.g[V0][0] = more as u64;
+                            if !more {
+                                break;
+                            }
+                            c.g[A0][0] = me.off(RIDER).lw(c);
+                            if event_due(c) {
+                                deliver_event_here(c, 0x0010_dab0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !answered {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider_FindJumpMarker (0x10b980)
+
+/// ComputerActor: +0x18 the rider; the jump marker's take-off and landing
+/// points go to +0xe50 and +0xe60.
+pub(crate) const CA_RIDER: u32 = 0x18;
+
+pub(crate) const CA_JUMP_FROM: u32 = 0xe50;
+
+pub(crate) const CA_JUMP_TO: u32 = 0xe60;
+
+/// Rider: track position (+0x4c0 across, +0x4c4 along), +0xab8 the track.
+pub(crate) const RIDER_TRACK_X: u32 = 0x4c0;
+
+pub(crate) const RIDER_TRACK_DIST: u32 = 0x4c4;
+
+pub(crate) const RIDER_TRACK: u32 = 0xab8;
+
+/// Track vtable (+0x34): `QueryMarkers(buf, max, x, dist)` at slot +8.
+pub(crate) const TRACK_VTABLE: u32 = 0x34;
+
+/// Marker records (0x10): type, flags, start and end distance.
+pub(crate) const MARKER_JUMP: u64 = 0x10;
+
+/// Speed units per flag step (gp-0x7e08: 27.77778, 100 km/h in m/s / 1).
+pub(crate) const GP_MARKER_SPEED_UNIT: u32 = 0x7e08;
+
+/// `Path_GetPointAtDistance(Vec4* out, Path* path, int* clamped, float d)`
+/// (cross-shard: through the table).
+pub(crate) const PATH_GET_POINT_AT_DISTANCE: u32 = 0x0026_ab20;
+
+/// `bool ComputerActorRider_FindJumpMarker(ComputerActor* self, float*
+/// speed, int* below, int* f3, int* f2, int* f1, int* f0)` (0x10b980): ask
+/// the track for up to 12 markers in the 300 units ahead of the rider; for
+/// the first jump marker (type 0x10) report its speed (flags >> 4, times
+/// 27.78) and flag bits, whether it starts at or behind the rider, and store
+/// the track points of its start and end. False when there is none.
+pub fn computer_actor_rider_find_jump_marker(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 35;
+        let frame = Frame::open(c, 0x180);
+        c.g[AT][0] = 0x4396_0000; // 300.0
+        c.mtc1(AT, 0);
+        frame.save(c, S1, 0x160);
+        frame.save(c, S4, 0x130);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S5, 0x120);
+        c.g[S4][0] = c.g[T2][0];
+        frame.save(c, S6, 0x110);
+        c.g[S5][0] = c.g[T1][0];
+        frame.save(c, S7, 0x100);
+        c.g[S6][0] = c.g[T0][0];
+        frame.save(c, FP, 0xf0);
+        c.g[S7][0] = c.g[A3][0];
+        frame.save(c, S0, 0x170);
+        c.g[FP][0] = c.g[A1][0];
+        frame.save(c, S2, 0x150);
+        c.g[A1][0] = c.g[SP][0]; // marker buffer at sp
+        frame.save(c, S3, 0x140);
+        frame.save_ra(c, 0xe0);
+        let this = Addr(c.g[S1][0] as u32);
+        c.g[V0][0] = this.off(CA_RIDER).lw(c);
+        let below_ptr = frame.at(c, 0xd0);
+        c.sw(below_ptr, c.g[A2][0]);
+        c.g[A2][0] = 0xc;
+        let rider = Addr(c.g[V0][0] as u32);
+        c.g[S3][0] = rider.off(RIDER_TRACK).lw(c);
+        let dist = rider.off(RIDER_TRACK_DIST).read_fpu(c);
+        c.g[V1][0] = Addr(c.g[S3][0] as u32).off(TRACK_VTABLE).lw(c);
+        let x = rider.off(RIDER_TRACK_X).read_fpu(c);
+        abi::set_fpr(c, 12, x);
+        abi::set_fpr(c, 13, dist + FpuF32(c.f[0]));
+        let vt = Addr(c.g[V1][0] as u32);
+        c.g[A0][0] = vt.off(8).lh(c);
+        c.g[V0][0] = vt.off(0xc).lw(c);
+        let method = c.g[V0][0] as u32;
+        c.g[A0][0] = addu(c.g[S3][0], c.g[A0][0]);
+        call_ptr(c, method, 0x0010_ba00)?;
+        c.g[A1][0] = c.g[V0][0];
+        let count = c.g[A1][0] as i64;
+        c.g[A0][0] = 0;
+        let mut found = false;
+        if count > 0 {
+            c.cycles += 5;
+            let gp = c.g[GP][0] as u32;
+            let unit = Addr(gp.wrapping_sub(GP_MARKER_SPEED_UNIT)).read_fpu(c);
+            abi::set_fpr(c, 1, unit);
+            c.g[A2][0] = MARKER_JUMP;
+            c.g[S2][0] = addu(c.g[SP][0], 0xc0); // point result
+            c.g[V1][0] = c.g[SP][0]; // marker
+            c.g[S0][0] = addu(c.g[SP][0], 0xc); // marker's end distance
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+                let is_jump = c.g[V0][0] == c.g[A2][0];
+                c.g[A0][0] = addu(c.g[A0][0], 1);
+                if is_jump {
+                    c.cycles += 24;
+                    let flags = Addr(c.g[V1][0] as u32).off(4).lw(c);
+                    c.g[V1][0] = flags;
+                    let start = Addr((c.g[S0][0] as u32).wrapping_sub(4)).read_fpu(c);
+                    abi::set_fpr(c, 12, start);
+                    let fl = flags as u32 as i32;
+                    c.g[V0][0] = sx((fl >> 4) as u32);
+                    let speed = FpuF32::from_i32(fl >> 4) * unit;
+                    abi::set_fpr(c, 0, speed);
+                    c.g[A1][0] = sx((fl >> 3) as u32) & 1;
+                    c.g[V0][0] = sx((fl >> 2) as u32) & 1;
+                    c.g[A0][0] = sx((fl >> 1) as u32) & 1;
+                    c.g[V1][0] &= 1;
+                    Addr(c.g[FP][0] as u32).write_fpu(c, speed);
+                    Addr(c.g[S7][0] as u32).sw(c, c.g[A1][0]);
+                    Addr(c.g[S6][0] as u32).sw(c, c.g[V0][0]);
+                    Addr(c.g[S5][0] as u32).sw(c, c.g[A0][0]);
+                    Addr(c.g[S4][0] as u32).sw(c, c.g[V1][0]);
+                    c.g[V0][0] = this.off(CA_RIDER).lw(c);
+                    let now = Addr(c.g[V0][0] as u32).off(RIDER_TRACK_DIST).read_fpu(c);
+                    abi::set_fpr(c, 0, now);
+                    let behind = start.le(now);
+                    abi::set_fcc(c, behind);
+                    c.g[A2][0] = 1;
+                    if !behind {
+                        c.cycles += 1;
+                        c.g[A2][0] = 0;
+                    }
+                    c.cycles += 17;
+                    let below = frame.at(c, 0xd0);
+                    c.g[V0][0] = c.lw(below);
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A1][0] = c.g[S3][0];
+                    Addr(c.g[V0][0] as u32).sw(c, c.g[A2][0]);
+                    c.g[A2][0] = 0;
+                    call_ptr(c, PATH_GET_POINT_AT_DISTANCE, 0x0010_baa8)?;
+                    let point = frame.at(c, 0xc0);
+                    c.lq(V0, point);
+                    c.g[A0][0] = c.g[S2][0];
+                    let end = Addr(c.g[S0][0] as u32).read_fpu(c);
+                    abi::set_fpr(c, 12, end);
+                    c.g[A1][0] = c.g[S3][0];
+                    c.sq(V0, this.off(CA_JUMP_FROM).0);
+                    c.g[A2][0] = 0;
+                    call_ptr(c, PATH_GET_POINT_AT_DISTANCE, 0x0010_bac4)?;
+                    let point = frame.at(c, 0xc0);
+                    c.lq(V1, point);
+                    c.g[V0][0] = 1;
+                    c.sq(V1, this.off(CA_JUMP_TO).0);
+                    found = true;
+                    break;
+                }
+                c.cycles += 4;
+                c.g[V1][0] = addu(c.g[V1][0], 0x10);
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S0][0] = addu(c.g[S0][0], 0x10);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_ba20);
+                }
+            }
+        }
+        if !found {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x170);
+        frame.restore(c, S1, 0x160);
+        frame.restore(c, S2, 0x150);
+        frame.restore(c, S3, 0x140);
+        frame.restore(c, S4, 0x130);
+        frame.restore(c, S5, 0x120);
+        frame.restore(c, S6, 0x110);
+        frame.restore(c, S7, 0x100);
+        frame.restore(c, FP, 0xf0);
+        frame.restore_ra(c, 0xe0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8040,6 +8482,170 @@ pub(crate) mod tests {
                 }
                 // Rider_OnSplitMarker's feature switch: off (its short path).
                 c.bus.write32(0x0053_08d0, 1 << 9);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::check_paths;
+
+    /// Attack-back decision: timer negative / running / zero; AI frame a
+    /// multiple of 6 or not; 0-4 riders, each one mine or not, attacking or
+    /// not, nearer than 200 or not, playing entry kind 13 or not (or no
+    /// animation, 0x1b6). The interface methods (slots 7 and 8) point at the
+    /// real `AnimController_GetLayerAnimId` with delta 4, which returns the
+    /// word at iface+0x14: the fixture's answer.
+    #[test]
+    fn computer_actor_rider_should_attack_back_matches() {
+        use crate::difftest::GAME_GP;
+        use attack_back::*;
+        check(
+            ee::s00::f_0010da10__generated,
+            computer_actor_rider_should_attack_back,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0xda10 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0010_da10;
+                let me = DATA;
+                let world = DATA + 0x1000;
+                let root = DATA + 0x1100;
+                let ai = DATA + 0x1200;
+                let my_rider = DATA + 0x2000;
+                let vt_self = DATA + 0x9000;
+                let vt_other = DATA + 0x9100;
+                let getter = 0x0031_2aa0; // returns lw(a0 + 0x10) with delta 4
+                let timer = match seed % 4 {
+                    0 => r.f32(2.0),
+                    1 => 0x8000_0000,
+                    _ => 0,
+                };
+                c.bus.write32(me + TIMER, timer);
+                c.bus.write32(me + DECISION, r.next_u32());
+                c.bus.write32(me + RIDER, my_rider);
+                c.bus.write32(GAME_GP - 0x7ce4, 0x3c88_8889); // 1/60
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, root);
+                c.bus.write32(root + 0xc, ai);
+                let frame = if seed % 3 == 0 {
+                    r.next_u32()
+                } else {
+                    6 * (r.next_u32() % 1000)
+                };
+                c.bus.write32(ai + 8, frame);
+                let count = r.next_u32() % 5;
+                c.bus.write32(ai + AI_COUNT, count);
+                c.bus.write32(my_rider + IFACE, vt_self);
+                c.bus.write16(vt_self + 0x38, 4);
+                c.bus.write32(vt_self + 0x3c, getter);
+                c.bus.write32(my_rider + IFACE + 0x14, r.next_u32() % 4);
+                c.bus.write16(vt_other + 0x40, 4);
+                c.bus.write32(vt_other + 0x44, getter);
+                for i in 0..4u32 {
+                    let rider = DATA + 0x3000 + i * 0x1000;
+                    let ctl = DATA + 0x8000 + i * 0x100;
+                    c.bus.write32(ai + AI_RIDERS + 4 * i, rider);
+                    c.bus.write32(rider + IFACE, vt_other);
+                    let attacking = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    };
+                    c.bus.write32(rider + IFACE + 0x14, attacking);
+                    c.bus.write32(
+                        my_rider + i * DIST_STRIDE + DIST,
+                        r.f32(400.0) & 0x7fff_ffff,
+                    );
+                    c.bus.write32(rider + ANIM_CTL, ctl);
+                    // Layer 1's animation id; its table entry's first word.
+                    let id = if r.next_u32() % 8 == 0 { 0x1b6 } else { 1 + i };
+                    c.bus.write32(ctl + 4, id);
+                    let kind = if r.next_u32() % 2 == 0 {
+                        13
+                    } else {
+                        r.next_u32() % 20
+                    };
+                    c.bus.write32(0x0044_6990 + (1 + i) * 0x1c, kind);
+                }
+                // Rand_NextGame's state.
+                fill(c, &mut r, 0x004f_f030, 6);
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | me as u64;
+            },
+        );
+    }
+
+    /// ComputerActorRider_FindJumpMarker: the track's marker query is a fake
+    /// (forced count; a real return-0 method for "none"), the buffer it
+    /// "fills" is written beforehand; jump markers at random places or
+    /// absent, before and behind the rider; the real Path_GetPointAtDistance
+    /// on a short path.
+    #[test]
+    fn computer_actor_rider_find_jump_marker_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::SP as STACK;
+        covered(
+            ee::s00::f_0010b980__generated,
+            computer_actor_rider_find_jump_marker,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10b9_80, 1);
+                let this = DATA;
+                let rider = DATA + 0x1000;
+                let track = DATA + 0x2000;
+                let vt = DATA + 0x3000;
+                let nodes = DATA + 0x4000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x5000);
+                c.g[A2][0] = sx(DATA + 0x5004);
+                c.g[A3][0] = sx(DATA + 0x5008);
+                c.g[T0][0] = sx(DATA + 0x500c);
+                c.g[T1][0] = sx(DATA + 0x5010);
+                c.g[T2][0] = sx(DATA + 0x5014);
+                c.bus.write32(this + CA_RIDER, rider);
+                c.bus.write32(rider + RIDER_TRACK, track);
+                c.bus.write32(rider + RIDER_TRACK_X, r.f32(50.0));
+                c.bus.write32(
+                    rider + RIDER_TRACK_DIST,
+                    (100.0 + (r.next_u32() % 200) as f32).to_bits(),
+                );
+                c.bus.write32(track + TRACK_VTABLE, vt);
+                let delta = (r.next_u32() % 8) * 4;
+                c.bus.write16(vt + 8, delta as u16);
+                // Path: start point, node count, nodes.
+                for k in 0..3 {
+                    c.bus.write32(track + 0xc + 4 * k, r.f32(100.0));
+                }
+                c.bus.write32(track + 8, r.next_u32() % 3);
+                c.bus.write32(track + 0x18, nodes);
+                for k in 0..12 {
+                    c.bus.write32(nodes + 4 * k, r.f32(400.0));
+                }
+                c.bus
+                    .write32(GAME_GP - GP_MARKER_SPEED_UNIT, 27.777_78f32.to_bits());
+                if seed % 9 == 0 {
+                    c.bus.write32(vt + 0xc, 0x0011_25b8); // Rider_ReturnZero: none
+                } else {
+                    c.bus.write32(vt + 0xc, FAKE);
+                    c.bus.write32(LOG_RESULTS, 1 + r.next_u32() % 12);
+                }
+                // The marker records the query writes (buffer at the new sp).
+                let buf = STACK - 0x180;
+                let jump_at = if seed % 4 == 0 { 99 } else { r.next_u32() % 12 };
+                for i in 0..12 {
+                    let m = buf + 0x10 * i;
+                    let ty = if i == jump_at {
+                        0x10
+                    } else {
+                        r.next_u32() % 0x10
+                    };
+                    c.bus.write32(m, ty);
+                    c.bus.write32(m + 4, r.next_u32() >> (r.next_u32() % 32));
+                    c.bus
+                        .write32(m + 8, (50.0 + (r.next_u32() % 300) as f32).to_bits());
+                    c.bus
+                        .write32(m + 0xc, (100.0 + (r.next_u32() % 400) as f32).to_bits());
+                }
             },
         );
     }

@@ -2,7 +2,9 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -72,6 +74,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "MeshAnim_KillRestorable",
     ),
     (0x0035_2a58, mesh_anim_save, "MeshAnim_Save"),
+    (
+        0x0035_1538,
+        intersect_info_evaluate,
+        "IntersectInfo_Evaluate",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -739,6 +746,144 @@ pub fn intersect_info_eval_derivative(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// IntersectInfo_Evaluate (0x351538)
+
+/// IntersectInfo: +0 current segment index per animated channel, +0x40 the
+/// curve set, +0x44 16 output floats.
+pub(crate) const II_CURVE_SET: u32 = 0x40;
+
+pub(crate) const II_OUT: u32 = 0x44;
+
+/// Curve set: +0x18 mask of animated channels, +0x20 curve pointers (one per
+/// animated channel).
+pub(crate) const CS_MASK: u32 = 0x18;
+
+pub(crate) const CS_CURVES: u32 = 0x20;
+
+/// Curve: +0 segment count, +4 segments (0x18 bytes: cubic a b c d, then
+/// the time range [start, end)).
+pub(crate) const CURVE_SEGS: u32 = 0x4;
+
+pub(crate) const SEG_SIZE: u64 = 0x18;
+
+pub(crate) const SEG_START: u32 = 0x10;
+
+pub(crate) const SEG_END: u32 = 0x14;
+
+pub(crate) const INTERSECT_INFO_FIND_KEY_SEGMENT: Callee = Callee {
+    addr: 0x0035_1a80,
+    f: ee::s11::IntersectInfo_FindKeySegment,
+};
+
+/// `void IntersectInfo_Evaluate(IntersectInfo* self, float t)` (0x351538):
+/// evaluate the animated channels of 16 at time `t`. For each channel whose
+/// mask bit is set, the current cubic segment is used when `t` is in its
+/// range, else `IntersectInfo_FindKeySegment` finds (and stores) the right
+/// one; the output is `((a t + b) t + c) t + d`.
+pub fn intersect_info_evaluate(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S0, 0x70);
+        frame.save(c, S2, 0x50);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S4, 0x30);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S5, 0x20);
+        c.g[S0][0] = c.g[S3][0]; // current segment index of the channel
+        frame.save(c, S6, 0x10);
+        c.g[S5][0] = 1; // channel mask bit
+        frame.save_fpr(c, 20, 0x80);
+        c.g[S2][0] = addu(c.g[S0][0], II_OUT as u64);
+        frame.save(c, S1, 0x60);
+        let t = abi::farg(c, 0);
+        abi::set_fpr(c, 20, t);
+        frame.save_ra(c, 0);
+        c.g[S6][0] = SEG_SIZE;
+        c.g[S4][0] = 0xf;
+        let this = Addr(c.g[S3][0] as u32);
+        c.g[V0][0] = this.off(II_CURVE_SET).lw(c);
+        c.g[S1][0] = Addr(c.g[V0][0] as u32).off(CS_CURVES).lw(c);
+        loop {
+            c.cycles += 8;
+            c.g[V1][0] = this.off(II_CURVE_SET).lw(c);
+            c.g[S4][0] = addu(c.g[S4][0], (-1i64) as u64);
+            c.g[A1][0] = Addr(c.g[S1][0] as u32).lw(c);
+            c.g[A2][0] = 0;
+            c.g[V0][0] = Addr(c.g[V1][0] as u32).off(CS_MASK).lw(c);
+            c.g[V0][0] &= c.g[S5][0];
+            let animated = c.g[V0][0] != 0;
+            c.g[S5][0] = sx((c.g[S5][0] as u32) << 1);
+            if animated {
+                c.cycles += 13;
+                c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+                c.g[A0][0] = c.g[A1][0];
+                c.g[V1][0] = Addr(c.g[A1][0] as u32).off(CURVE_SEGS).lw(c);
+                abi::set_fpr(c, 12, t);
+                c.mult(0, V0, V0, S6);
+                c.g[A1][0] = c.g[S0][0];
+                c.g[S1][0] = addu(c.g[S1][0], 4);
+                c.g[V0][0] = addu(c.g[V1][0], c.g[V0][0]);
+                let seg = Addr(c.g[V0][0] as u32);
+                let start = seg.off(SEG_START).read_fpu(c);
+                abi::set_fpr(c, 0, start);
+                let after_start = start.le(t);
+                abi::set_fcc(c, after_start);
+                c.g[S0][0] = addu(c.g[S0][0], 4);
+                if after_start {
+                    c.cycles += 5;
+                    let end = seg.off(SEG_END).read_fpu(c);
+                    abi::set_fpr(c, 0, end);
+                    let before_end = t.lt(end);
+                    abi::set_fcc(c, before_end);
+                    if before_end {
+                        c.g[A2][0] = 1;
+                    }
+                }
+                c.cycles += 2;
+                if c.g[A2][0] == 0 {
+                    c.cycles += 3;
+                    INTERSECT_INFO_FIND_KEY_SEGMENT.call(c, 0x0035_1600)?;
+                }
+                let seg = Addr(c.g[V0][0] as u32);
+                let a = seg.read_fpu(c);
+                c.cycles += 10;
+                let b = seg.off(4).read_fpu(c);
+                let cc = seg.off(8).read_fpu(c);
+                let d = seg.off(0xc).read_fpu(c);
+                let v = ((a * t + b) * t + cc) * t + d;
+                abi::set_fpr(c, 1, b);
+                abi::set_fpr(c, 2, cc);
+                abi::set_fpr(c, 3, d);
+                abi::set_fpr(c, 0, v);
+                Addr(c.g[S2][0] as u32).write_fpu(c, v);
+            }
+            c.cycles += 2;
+            let more = (c.g[S4][0] as i64) >= 0;
+            c.g[S2][0] = addu(c.g[S2][0], 4);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0035_1588);
+            }
+        }
+        c.cycles += 11;
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -973,6 +1118,60 @@ pub(crate) mod tests {
                         w(c, seg + 0x14, 0x4120_0000); // 10.0
                     }
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::{check_paths, fill};
+
+    /// IntersectInfo_Evaluate: random channel masks, `t` inside the current
+    /// segment, in the next one, elsewhere and outside all of them (the real
+    /// FindKeySegment searches).
+    #[test]
+    fn intersect_info_evaluate_matches() {
+        check(
+            ee::s11::f_00351538__generated,
+            intersect_info_evaluate,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x3515_3800 ^ seed as u64);
+                scramble(c, &mut r);
+                let this = DATA;
+                let set = DATA + 0x200;
+                let curves = DATA + 0x300;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + II_CURVE_SET, set);
+                let mask = match seed % 4 {
+                    0 => 0xffff,
+                    1 => 0,
+                    _ => r.next_u32() & 0xffff,
+                };
+                c.bus.write32(set + CS_MASK, mask);
+                c.bus.write32(set + CS_CURVES, curves);
+                for i in 0..16 {
+                    let curve = DATA + 0x400 + 0x10 * i;
+                    let segs = DATA + 0x1000 + 0x200 * i;
+                    let count = 1 + r.next_u32() % 5;
+                    c.bus.write32(curves + 4 * i, curve);
+                    c.bus.write32(curve, count);
+                    c.bus.write32(curve + CURVE_SEGS, segs);
+                    for j in 0..count {
+                        let seg = segs + 0x18 * j;
+                        for k in 0..4 {
+                            c.bus.write32(seg + 4 * k, r.f32(3.0));
+                        }
+                        c.bus.write32(seg + SEG_START, (j as f32).to_bits());
+                        c.bus.write32(seg + SEG_END, (j as f32 + 1.0).to_bits());
+                    }
+                    c.bus.write32(this + 4 * i, r.next_u32() % count);
+                    c.bus.write32(this + II_OUT + 4 * i, r.next_u32());
+                }
+                let t = match seed % 5 {
+                    0 => (r.next_u32() % 6) as f32,
+                    1 => -0.5,
+                    _ => (r.next_u32() % 600) as f32 / 100.0,
+                };
+                c.f[12] = t.to_bits();
             },
         );
     }

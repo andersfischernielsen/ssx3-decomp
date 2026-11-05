@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -49,6 +50,7 @@ pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
 pub(crate) use crate::game::scripter::ssxscriptengine::p as p_4;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p;
 pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
+pub(crate) use crate::game::ui::uistate::oc224_at;
 pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
 pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw_3;
 pub(crate) use crate::game::wscript::wscriptman::p as p_7;
@@ -253,6 +255,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002b_4708,
         music_player_clear_loops_active,
         "MusicPlayer_ClearLoopsActive",
+    ),
+    (
+        0x0028_c8c8,
+        ssx_audio_system_update_music_intensity,
+        "SSXAudioSystem_UpdateMusicIntensity",
+    ),
+    (
+        0x0028_e100,
+        ssx_audio_system_update_peak_music,
+        "SSXAudioSystem_UpdatePeakMusic",
     ),
 ];
 
@@ -2918,6 +2930,886 @@ pub fn ssx_audio_system_select_random_song(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod audio_sys {
+
+    /// The inline music player (bank monitor) at +0x118.
+    pub const PLAYER: u32 = 0x118;
+
+    /// The music bank's mixer object (its methods: +0x10 set gain, +0x20
+    /// set volume curve).
+    pub const MIXER: u32 = 0x5558;
+
+    /// Peak music needs an update.
+    pub const PEAK_DIRTY: u32 = 0x6274;
+
+    /// What to do: 0 start, 2 change peak, 3/other resume, 4 stop.
+    pub const PEAK_STATE: u32 = 0x6278;
+
+    /// The pending track id (0x17 = none).
+    pub const PEAK_TRACK: u32 = 0x6284;
+
+    pub const NO_TRACK: u64 = 0x17;
+}
+
+pub(crate) mod audio_callee {
+    use super::Callee;
+    use ssx3_ee as ee;
+
+    pub const IS_GAME_MUSIC_ENABLED: Callee = Callee {
+        addr: 0x0028_d960,
+        f: ee::s07::SSXAudioSystem_IsGameMusicEnabled,
+    };
+
+    pub const GET_BE_LIBRARY: Callee = Callee {
+        addr: 0x0028_b1e8,
+        f: ee::s07::SSXAudioSystem_GetBELibrary,
+    };
+
+    pub const GET_CHANNEL_GAIN_PTR: Callee = Callee {
+        addr: 0x0028_7968,
+        f: ee::s07::SSXAudioSystem_GetChannelGainPtr,
+    };
+
+    pub const SELECT_RANDOM_SONG: Callee = Callee {
+        addr: 0x0028_d488,
+        f: ee::s07::SSXAudioSystem_SelectRandomSong,
+    };
+
+    pub const PLAY_MUSIC: Callee = Callee {
+        addr: 0x0028_cf98,
+        f: ee::s07::SSXAudioSystem_PlayMusic,
+    };
+
+    /// `BE_GetInterface(lib, 0)` (s01).
+    pub const BE_GET_INTERFACE: u32 = 0x0014_dd58;
+
+    /// `BENewRaceInt_GetTrack` (s01): the current track record.
+    pub const RACE_GET_TRACK: u32 = 0x0014_4bc0;
+
+    /// `SSXAudioSystem_TrackToCategory(this, track)` (s08): 1, 2, 4 or 0.
+    pub const TRACK_TO_CATEGORY: u32 = 0x002a_1e20;
+
+    /// `SSXAudioSystem_IsTrackGroup14(this, track)` (s08).
+    pub const IS_RANDOM_TRACK: u32 = 0x002a_4030;
+
+    /// `MusicPlayer_SetCategory(player, n)` (s08).
+    pub const PLAYER_SET_CATEGORY: u32 = 0x002b_49c0;
+
+    /// `MusicPlayer_PathCmdA(player, n)` (s08).
+    pub const PLAYER_PATH_CMD: u32 = 0x002b_3c28;
+}
+
+pub(crate) mod music {
+
+    /// The music player (`MusicMonitor`, embedded).
+    pub const MONITOR: u32 = 0x118;
+
+    /// Its vtable pointer (event slot at +0x18).
+    pub const MONITOR_VT: u32 = 0x5558;
+
+    /// Ambience gain written for the mixer.
+    pub const AMBIENCE_GAIN: u32 = 0x5830;
+
+    /// Music gain (copy of the channel gain).
+    pub const MUSIC_GAIN: u32 = 0x60a0;
+
+    /// Speed latched when the rider left the ground.
+    pub const AIR_SPEED: u32 = 0x6244;
+
+    /// Lowest height seen during the jump.
+    pub const AIR_LOW: u32 = 0x6248;
+
+    /// Peak height expected for the jump.
+    pub const AIR_HIGH: u32 = 0x624c;
+
+    /// Frames the music stays held.
+    pub const HOLD: u32 = 0x6250;
+
+    /// Rider's air predictor (`rider + 0x788`): state, speed, heights.
+    pub const RIDER_AIR: u32 = 0x788;
+
+    pub const AIR_STATE: u32 = 0xac;
+
+    pub const AIR_TAKEOFF_SPEED: u32 = 0x98;
+
+    pub const AIR_PEAK: u32 = 0x9c;
+
+    pub const AIR_HEIGHT: u32 = 0xa0;
+
+    /// `gp` globals: "in a jump" this frame and last frame.
+    pub const GP_IN_AIR: u32 = 0x52c;
+
+    pub const GP_WAS_IN_AIR: u32 = 0x530;
+}
+
+/// `void SSXAudioSystem_UpdatePeakMusic(SSXAudioSystem* this)` (0x28e100):
+/// when the peak music is dirty, by the peak state: 0 (if game music is
+/// on) load the bank for the pending track (or the current race track) and
+/// apply its category's gain; 2 (if game music is on and a track is
+/// pending) either play a random song (random-song tracks) or load the
+/// track's bank, then clear the pending track; 4 stop the music; anything
+/// else (if music is on) restart it (3 with path 0x24). Clears the dirty
+/// flag.
+pub fn ssx_audio_system_update_peak_music(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S0, 0x60);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        let this = r32(c, S4);
+        c.g[V0][0] = c.lw(this.wrapping_add(audio_sys::PEAK_DIRTY));
+        let dirty = c.g[V0][0] != 0;
+        frame.restore(c, S0, 0x60);
+        if dirty {
+            update_peak_music_body(c, this)?;
+            c.cycles += 1;
+            frame.restore(c, S0, 0x60);
+        }
+        c.cycles += 8;
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Clear the dirty flag (0x28e4e4).
+pub(crate) fn peak_clear_dirty(c: &mut Cpu, this: u32) -> crate::call::Flow {
+    c.cycles += 1;
+    c.sw(this.wrapping_add(audio_sys::PEAK_DIRTY), 0);
+    Ok(())
+}
+
+pub(crate) fn update_peak_music_body(c: &mut Cpu, this: u32) -> crate::call::Flow {
+    c.cycles += 3;
+    c.g[S0][0] = c.lw(this.wrapping_add(audio_sys::PEAK_STATE));
+    c.g[V0][0] = 2;
+    if c.g[S0][0] == 0 {
+        return peak_start(c, this);
+    }
+    c.cycles += 2;
+    let state = c.g[S0][0];
+    c.g[V0][0] = 4;
+    if state == 2 {
+        return peak_change(c, this);
+    }
+    // 0x28e488: stop (4) or restart.
+    c.cycles += 2;
+    c.g[A0][0] = c.g[S4][0];
+    if state == 4 {
+        c.cycles += 2;
+        c.g[A1][0] = 0;
+    } else {
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S4][0];
+        audio_callee::IS_GAME_MUSIC_ENABLED.call(c, 0x0028_e4a0)?;
+        let enabled = c.g[V0][0] != 0;
+        c.g[V0][0] = 3;
+        if !enabled {
+            return peak_clear_dirty(c, this);
+        }
+        c.cycles += 3;
+        c.g[V1][0] = c.lw(this.wrapping_add(audio_sys::PEAK_STATE));
+        c.g[A0][0] = c.g[S4][0];
+        if c.g[V1][0] != c.g[V0][0] {
+            // PlayMusic(this, 0, 0, -1, 0)
+            c.cycles += 5;
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = u64::MAX;
+            c.g[T0][0] = 0;
+            audio_callee::PLAY_MUSIC.call(c, 0x0028_e4e4)?;
+            return peak_clear_dirty(c, this);
+        }
+        c.cycles += 1;
+        c.g[A1][0] = 0x24;
+    }
+    // 0x28e4b8: PlayMusic(this, a1, 0, -1, 0)
+    c.cycles += 6;
+    c.g[A2][0] = 0;
+    c.g[A3][0] = u64::MAX;
+    c.g[T0][0] = 0;
+    audio_callee::PLAY_MUSIC.call(c, 0x0028_e4c8)?;
+    c.sw(this.wrapping_add(audio_sys::PEAK_DIRTY), 0);
+    Ok(())
+}
+
+/// State 0 (0x28e134): load the bank for the pending (or current race)
+/// track.
+pub(crate) fn peak_start(c: &mut Cpu, this: u32) -> crate::call::Flow {
+    c.cycles += 4;
+    audio_callee::IS_GAME_MUSIC_ENABLED.call(c, 0x0028_e144)?;
+    let enabled = c.g[V0][0] != 0;
+    c.g[S0][0] = audio_sys::NO_TRACK;
+    if !enabled {
+        return peak_clear_dirty(c, this);
+    }
+    c.cycles += 3;
+    c.g[A1][0] = c.lw(this.wrapping_add(audio_sys::PEAK_TRACK));
+    if c.g[A1][0] == c.g[S0][0] {
+        // No pending track: the race's track.
+        c.cycles += 12;
+        audio_callee::GET_BE_LIBRARY.call(c, 0x0028_e160)?;
+        c.g[A1][0] = 0;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, audio_callee::BE_GET_INTERFACE, 0x0028_e16c)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, audio_callee::RACE_GET_TRACK, 0x0028_e174)?;
+        c.g[A1][0] = c.lw(r32(c, V0));
+        c.g[A0][0] = c.g[S4][0];
+        call_ptr(c, audio_callee::TRACK_TO_CATEGORY, 0x0028_e180)?;
+        c.g[V1][0] = c.g[V0][0];
+    } else {
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S4][0];
+        call_ptr(c, audio_callee::TRACK_TO_CATEGORY, 0x0028_e190)?;
+        let v = c.g[S0][0];
+        c.sw(this.wrapping_add(audio_sys::PEAK_TRACK), v);
+        c.g[V1][0] = c.g[V0][0];
+    }
+    // 0x28e198: by category (v1).
+    c.cycles += 3;
+    c.g[V0][0] = 2;
+    if c.g[V1][0] == 1 {
+        c.cycles += 23;
+        peak_bank_gain(c, this, 1, [0x0028_e1d0, 0x0028_e1ec, 0x0028_e1f8])?;
+    } else {
+        c.cycles += 2;
+        if c.g[V1][0] == c.g[V0][0] {
+            c.cycles += 22;
+            peak_bank_gain(c, this, 2, [0x0028_e230, 0x0028_e24c, 0x0028_e258])?;
+        } else {
+            c.cycles += 21;
+            peak_bank_gain(c, this, 3, [0x0028_e284, 0x0028_e2a4, 0x0028_e2b0])?;
+        }
+    }
+    c.cycles += 10;
+    peak_bank_curve(c, [0x0028_e2c8, 0x0028_e2d4])?;
+    c.sw(this.wrapping_add(audio_sys::PEAK_DIRTY), 0);
+    Ok(())
+}
+
+/// State 2 (0x28e2dc): change to the pending peak track.
+pub(crate) fn peak_change(c: &mut Cpu, this: u32) -> crate::call::Flow {
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S4][0];
+    audio_callee::IS_GAME_MUSIC_ENABLED.call(c, 0x0028_e2ec)?;
+    let enabled = c.g[V0][0] != 0;
+    c.g[V0][0] = audio_sys::NO_TRACK;
+    if !enabled {
+        return peak_clear_dirty(c, this);
+    }
+    c.cycles += 3;
+    c.g[A1][0] = c.lw(this.wrapping_add(audio_sys::PEAK_TRACK));
+    if c.g[A1][0] == c.g[V0][0] {
+        c.sw(this.wrapping_add(audio_sys::PEAK_DIRTY), 0);
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S4][0];
+    call_ptr(c, audio_callee::IS_RANDOM_TRACK, 0x0028_e308)?;
+    if c.g[V0][0] != 0 {
+        // A random song: SelectRandomSong, PlayMusic(this, 0x24, 1, -1, 0).
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S4][0];
+        audio_callee::SELECT_RANDOM_SONG.call(c, 0x0028_e318)?;
+        c.g[A0][0] = c.g[S4][0];
+        c.g[A1][0] = 0x24;
+        c.g[A2][0] = 1;
+        c.g[A3][0] = u64::MAX;
+        c.g[T0][0] = 0;
+        audio_callee::PLAY_MUSIC.call(c, 0x0028_e330)?;
+        c.g[V0][0] = audio_sys::NO_TRACK;
+    } else {
+        // Load the track's bank (0x28e338).
+        c.g[A1][0] = c.lw(this.wrapping_add(audio_sys::PEAK_TRACK));
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S4][0];
+        call_ptr(c, audio_callee::TRACK_TO_CATEGORY, 0x0028_e340)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = 1;
+        c.g[S2][0] = sx(this.wrapping_add(audio_sys::PLAYER));
+        if c.g[V1][0] == 1 {
+            c.cycles += 22;
+            peak_bank_gain(c, this, 1, [0x0028_e378, 0x0028_e394, 0x0028_e3a0])?;
+        } else {
+            c.cycles += 2;
+            if c.g[V1][0] == c.g[S0][0] {
+                c.cycles += 22;
+                peak_bank_gain(c, this, 2, [0x0028_e3d8, 0x0028_e3f4, 0x0028_e400])?;
+            } else {
+                c.cycles += 21;
+                peak_bank_gain(c, this, 3, [0x0028_e42c, 0x0028_e44c, 0x0028_e458])?;
+            }
+        }
+        c.cycles += 9;
+        peak_bank_curve(c, [0x0028_e470, 0x0028_e47c])?;
+        c.g[V0][0] = audio_sys::NO_TRACK;
+    }
+    // 0x28e480: no pending track any more.
+    c.cycles += 2;
+    let v = c.g[V0][0];
+    c.sw(this.wrapping_add(audio_sys::PEAK_TRACK), v);
+    peak_clear_dirty(c, this)
+}
+
+/// Apply category `kind`'s gain: `mixer->vt[0x10](player + d, &table[kind],
+/// 0xc, GetChannelGainPtr(this, 1, 0), 0)`, then
+/// `MusicPlayer_SetCategory(player, kind)`; v1 = the mixer. The third
+/// variant sets s5 after the first call (as compiled).
+pub(crate) fn peak_bank_gain(
+    c: &mut Cpu,
+    this: u32,
+    kind: u32,
+    rets: [u32; 3],
+) -> crate::call::Flow {
+    c.g[S3][0] = c.lw(this.wrapping_add(audio_sys::MIXER));
+    c.g[S2][0] = sx(this.wrapping_add(audio_sys::PLAYER));
+    c.g[A0][0] = c.g[S4][0];
+    c.g[S0][0] = c.lh(oc224_at(c, S3, 0x10));
+    c.g[S1][0] = sx(0x004a_3630 + 8 * (kind - 1));
+    c.g[A1][0] = 1;
+    c.g[A2][0] = 0;
+    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[S0][0] as u32));
+    if kind != 3 {
+        c.g[S5][0] = c.g[S2][0];
+    }
+    audio_callee::GET_CHANNEL_GAIN_PTR.call(c, rets[0])?;
+    if kind == 3 {
+        c.g[S5][0] = c.g[S2][0];
+    }
+    c.g[V1][0] = c.lw(oc224_at(c, S3, 0x14));
+    c.g[A0][0] = c.g[S0][0];
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A3][0] = c.g[V0][0];
+    c.g[A2][0] = 0xc;
+    let t = r32(c, V1);
+    c.g[T0][0] = 0;
+    call_ptr(c, t, rets[1])?;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = kind as u64;
+    call_ptr(c, audio_callee::PLAYER_SET_CATEGORY, rets[2])?;
+    c.g[V1][0] = c.lw(this.wrapping_add(audio_sys::MIXER));
+    Ok(())
+}
+
+/// `mixer(v1)->vt[0x20](player(s5) + d, 0xc)`, then
+/// `MusicPlayer_PathCmdA(player, 0x7f)`.
+pub(crate) fn peak_bank_curve(c: &mut Cpu, rets: [u32; 2]) -> crate::call::Flow {
+    c.g[A1][0] = 0xc;
+    c.g[A0][0] = c.lh(oc224_at(c, V1, 0x20));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 0x24));
+    let t = r32(c, V0);
+    c.g[A0][0] = sx((c.g[S5][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, rets[0])?;
+    c.g[A0][0] = c.g[S5][0];
+    c.g[A1][0] = 0x7f;
+    call_ptr(c, audio_callee::PLAYER_PATH_CMD, rets[1])
+}
+
+/// An FPU register as a float.
+#[inline]
+pub(crate) fn fpr(c: &Cpu, n: usize) -> FpuF32 {
+    FpuF32(c.f[n])
+}
+
+/// `(int)(signed char)x`: the `sll 24; sra 24` the compiler emits for a
+/// `char` argument or result.
+#[inline]
+pub(crate) fn sext8(x: u64) -> u64 {
+    sx((((x as u32) << 24) as i32 >> 24) as u32)
+}
+
+pub(crate) const FIND_RIDER: Callee = Callee {
+    addr: 0x0028_5d98,
+    f: ee::s07::SSXAudioSystem_FindRider,
+};
+
+pub(crate) const GAIN_PTR: Callee = Callee {
+    addr: 0x0028_7968,
+    f: ee::s07::SSXAudioSystem_GetChannelGainPtr,
+};
+
+pub(crate) const MUSIC_TRIGGER: Callee = Callee {
+    addr: 0x0028_d898,
+    f: ee::s07::SSXAudioSystem_GetMusicTrigger,
+};
+
+pub(crate) const IS_REPLAY: Callee = Callee {
+    addr: 0x0028_8ae0,
+    f: ee::s07::SSXAudioSystem_IsReplayPlaying,
+};
+
+pub(crate) const START_AMBIENCE: Callee = Callee {
+    addr: 0x0029_10e0,
+    f: ee::s07::SSXAudioSystem_StartAmbienceLoop,
+};
+
+pub(crate) const STOP_AMBIENCE: Callee = Callee {
+    addr: 0x0029_13d8,
+    f: ee::s07::SSXAudioSystem_StopAmbienceLoop,
+};
+
+pub(crate) const MUSIC_ENABLED: Callee = Callee {
+    addr: 0x0028_d960,
+    f: ee::s07::SSXAudioSystem_IsGameMusicEnabled,
+};
+
+/// `void SSXAudioSystem_UpdateMusicIntensity(SSXAudioSystem* self)`
+/// (0x28c8c8): while the local rider is in a jump (air state 1 or 3) fast
+/// enough, duck the music by how high the rider is in the jump (music and
+/// ambience gains, monitor volume/percent), start the ambience loop on
+/// take-off and fire monitor event 7; on landing (or replay, or too slow)
+/// stop the ambience loop, fire event 8 and restore full volume.
+pub fn ssx_audio_system_update_music_intensity(c: &mut Cpu) {
+    use music::*;
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S0, 0x40);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 23, 0x68);
+        frame.save_fpr(c, 22, 0x60);
+        frame.save_fpr(c, 21, 0x58);
+        frame.save_fpr(c, 20, 0x50);
+        let sys = r32(c, S1);
+        let gp = r32(c, GP);
+
+        // Hold counter.
+        let hold = Addr(sys.wrapping_add(HOLD)).lw(c);
+        c.g[V0][0] = sx((hold as u32).wrapping_sub(1));
+        if (hold as i64) > 0 {
+            c.cycles += 1;
+            let v = c.g[V0][0];
+            Addr(sys.wrapping_add(HOLD)).sw(c, v);
+        }
+
+        // The speed that drives the intensity: the take-off speed while in
+        // a jump (latched on the first frame), 0 otherwise.
+        c.cycles += 10;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = u64::MAX;
+        FIND_RIDER.call(c, 0x0028_c910)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S2][0];
+        call_ptr(c, 0x0011_fe98, 0x0028_c91c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[V0][0] = 1;
+        c.g[A1][0] = 0;
+        let mut have_speed = false;
+        if c.g[A0][0] == 1 {
+            c.cycles += 4;
+            let air = Addr(r32(c, S2).wrapping_add(RIDER_AIR)).lw(c);
+            c.g[V0][0] = air;
+            let state = Addr((air as u32).wrapping_add(AIR_STATE)).lw(c);
+            c.g[V1][0] = state;
+            c.g[A2][0] = air;
+            let jumping = if state == 1 {
+                true
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 3;
+                state == 3
+            };
+            if jumping {
+                c.cycles += 1;
+                c.g[A1][0] = 1;
+            }
+            c.cycles += 2;
+            let in_air = Addr(gp.wrapping_add(GP_IN_AIR)).lw(c);
+            c.g[V1][0] = in_air;
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            if jumping {
+                if in_air == 1 {
+                    c.f[20] = Addr(sys.wrapping_add(AIR_SPEED)).read_u32(c);
+                } else {
+                    c.cycles += 4;
+                    let speed = Addr((air as u32).wrapping_add(AIR_TAKEOFF_SPEED)).read_fpu(c);
+                    c.f[20] = speed.0;
+                    Addr(sys.wrapping_add(AIR_LOW)).sw(c, 0);
+                    Addr(sys.wrapping_add(AIR_SPEED)).write_fpu(c, speed);
+                }
+                have_speed = true;
+            } else if in_air == 1 {
+                c.cycles += 2;
+                c.f[20] = Addr(sys.wrapping_add(AIR_SPEED)).read_u32(c);
+                have_speed = true;
+            }
+        }
+        if !have_speed {
+            c.cycles += 1;
+            c.f[20] = 0;
+        }
+        let speed = fpr(c, 20);
+
+        // Whether the monitor may be driven this frame (s3).
+        c.cycles += 13;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 1;
+        c.g[A2][0] = 0;
+        c.g[S3][0] = 0;
+        GAIN_PTR.call(c, 0x0028_c99c)?;
+        let threshold = Addr(gp.wrapping_sub(0x45d4)).read_fpu(c);
+        c.f[0] = threshold.0;
+        let gain = Addr(r32(c, V0)).read_fpu(c);
+        c.f[1] = gain.0;
+        let in_air = Addr(gp.wrapping_add(GP_IN_AIR)).lw(c);
+        c.g[V0][0] = in_air;
+        let fast = abi::c_lt_s(c, threshold, speed);
+        Addr(sys.wrapping_add(MUSIC_GAIN)).write_fpu(c, gain);
+        Addr(gp.wrapping_add(GP_WAS_IN_AIR)).sw(c, in_air);
+        Addr(gp.wrapping_add(GP_IN_AIR)).sw(c, 0);
+        if fast {
+            c.cycles += 6;
+            c.g[A0][0] = sx(sys.wrapping_add(MONITOR));
+            call_ptr(c, 0x002b_4878, 0x0028_c9c4)?;
+            c.g[S0][0] = c.g[V0][0];
+            c.g[V0][0] = 1;
+            if c.g[S0][0] == 1 {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S1][0];
+                call_ptr(c, 0x002a_4168, 0x0028_c9dc)?;
+                if c.g[V0][0] == 0 {
+                    c.cycles += 4;
+                    c.g[A0][0] = c.g[S1][0];
+                    call_ptr(c, 0x002a_41d8, 0x0028_c9ec)?;
+                    if c.g[V0][0] == 0 {
+                        c.cycles += 3;
+                        c.g[A0][0] = c.g[S1][0];
+                        MUSIC_TRIGGER.call(c, 0x0028_c9fc)?;
+                        if c.g[V0][0] == 0 {
+                            c.g[S3][0] = c.g[S0][0];
+                        }
+                    }
+                }
+            }
+        }
+
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S1][0];
+        IS_REPLAY.call(c, 0x0028_ca08)?;
+        let replay = c.g[V0][0] != 0;
+        c.g[V1][0] = Addr(gp.wrapping_add(GP_WAS_IN_AIR)).lw(c);
+        if !replay {
+            c.cycles += 6;
+            c.g[AT][0] = 0x4000_0000;
+            c.f[0] = 0x4000_0000;
+            let moving = abi::c_lt_s(c, FpuF32(0x4000_0000), speed);
+            c.g[V1][0] = 1;
+            if moving {
+                let extra = music_in_air(c, sys, gp)?;
+                return music_finish(c, frame, extra);
+            }
+            c.cycles += 1;
+            c.g[V1][0] = Addr(gp.wrapping_add(GP_WAS_IN_AIR)).lw(c);
+        }
+        music_landed(c, sys)?;
+        music_finish(c, frame, true)
+    })
+}
+
+/// In a jump: scale music and ambience by the height ratio. Returns whether
+/// the exit takes the extra cycle (`s0` reloaded at the common tail).
+pub(crate) fn music_in_air(c: &mut Cpu, sys: u32, gp: u32) -> Result<bool, crate::call::Unwound> {
+    use music::*;
+    c.cycles += 7;
+    let air = Addr(r32(c, S2).wrapping_add(RIDER_AIR)).lw(c);
+    c.g[V0][0] = air;
+    let low_seen = Addr(sys.wrapping_add(AIR_LOW)).read_fpu(c);
+    c.f[0] = low_seen.0;
+    let height = Addr((air as u32).wrapping_add(AIR_HEIGHT)).read_fpu(c);
+    let lower = abi::c_lt_s(c, height, low_seen);
+    let v1 = c.g[V1][0];
+    Addr(gp.wrapping_add(GP_IN_AIR)).sw(c, v1);
+    let mut low = height;
+    if lower {
+        c.cycles += 1;
+        low = low_seen;
+    }
+    c.f[4] = low.0;
+    c.cycles += 3;
+    let was_in_air = Addr(gp.wrapping_add(GP_WAS_IN_AIR)).lw(c);
+    c.g[V0][0] = was_in_air;
+    Addr(sys.wrapping_add(AIR_LOW)).write_fpu(c, low);
+    let high = if was_in_air == 0 {
+        // First frame of the jump: expect half the remaining rise above
+        // the lowest point (at least 0.5).
+        c.cycles += 11;
+        let air = Addr(r32(c, S2).wrapping_add(RIDER_AIR)).lw(c);
+        c.g[V0][0] = air;
+        c.g[AT][0] = 0x3f00_0000;
+        let half = FpuF32(0x3f00_0000);
+        c.f[2] = half.0;
+        let h = Addr((air as u32).wrapping_add(AIR_HEIGHT)).read_fpu(c);
+        c.f[1] = h.0;
+        let peak = Addr((air as u32).wrapping_add(AIR_PEAK)).read_fpu(c);
+        let rise = peak - h;
+        c.f[0] = rise.0;
+        let mut high = rise * half;
+        if abi::c_lt_s(c, high, half) {
+            high = half;
+        }
+        c.cycles += 3;
+        let high = high + low;
+        c.f[3] = high.0;
+        Addr(sys.wrapping_add(AIR_HIGH)).write_fpu(c, high);
+        high
+    } else {
+        c.cycles += 1;
+        let high = Addr(sys.wrapping_add(AIR_HIGH)).read_fpu(c);
+        c.f[3] = high.0;
+        high
+    };
+
+    // Volume floor from speed: clamp((1 - speed * k * 0.5) * 127, 20, 127).
+    c.cycles += 18;
+    let k = Addr(gp.wrapping_sub(0x45d0)).read_fpu(c);
+    let below = abi::c_lt_s(c, low, high);
+    let half = FpuF32(0x3f00_0000);
+    let one = FpuF32(0x3f80_0000);
+    let vmax = FpuF32(0x42fe_0000);
+    let vmin = FpuF32(0x41a0_0000);
+    let speed = fpr(c, 20);
+    let scaled = (speed * k) * half;
+    c.f[0] = scaled.0;
+    c.f[2] = half.0;
+    let inv = Addr(gp.wrapping_sub(0x45cc)).read_fpu(c);
+    c.f[23] = inv.0;
+    let rest = one - scaled;
+    c.f[1] = rest.0;
+    c.g[AT][0] = 0x41a0_0000;
+    c.f[21] = vmax.0;
+    c.f[5] = vmin.0;
+    let floor = (rest * vmax).min(vmax).max(vmin);
+    c.f[20] = floor.0;
+    let play = c.g[S3][0] != 0;
+    let mon = sx(sys.wrapping_add(MONITOR));
+
+    if below {
+        c.cycles += 13;
+        let ratio = low.div(high);
+        c.f[22] = ratio.0;
+        c.g[AT][0] = 0x42d6_0000;
+        c.g[S2][0] = 0x7f;
+        let t = vmax - ratio * FpuF32(0x42d6_0000);
+        c.f[0] = t.0;
+        let v = t.min(vmax).max(vmin);
+        c.f[1] = v.0;
+        c.f[0] = v.to_i32() as u32;
+        c.g[V0][0] = sx((c.f[0]) << 24);
+        c.g[S0][0] = sext8(c.f[0] as u64);
+        if play {
+            c.cycles += 21;
+            c.g[A1][0] = 1;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = 0;
+            GAIN_PTR.call(c, 0x0028_cb1c)?;
+            let k = Addr(r32(c, V0)).read_fpu(c);
+            c.g[A0][0] = mon;
+            c.g[V0][0] = sx(r32(c, S0).wrapping_sub(0x14));
+            c.g[AT][0] = 0x42c8_0000;
+            c.g[V0][0] = sx(0x7fu32.wrapping_sub(r32(c, V0)));
+            let k = k * inv;
+            c.f[1] = k.0;
+            let g = FpuF32::from_i32(r32(c, V0) as i32) * k;
+            c.f[0] = g.0;
+            let pct = g * FpuF32(0x42c8_0000);
+            c.f[2] = pct.0;
+            Addr(sys.wrapping_add(MUSIC_GAIN)).write_fpu(c, g);
+            c.f[0] = pct.to_i32() as u32;
+            c.g[A1][0] = sext8(c.f[0] as u64);
+            call_ptr(c, 0x002b_3d10, 0x0028_cb60)?;
+        }
+        c.cycles += 15;
+        let floor = fpr(c, 20);
+        let ratio = fpr(c, 22);
+        let d = (vmax - floor) * ratio;
+        c.f[1] = d.0;
+        let v = (vmax - d).min(vmax).max(floor);
+        c.f[0] = v.0;
+        c.f[1] = v.to_i32() as u32;
+        c.g[V0][0] = sx(c.f[1] << 24);
+        c.g[S0][0] = sext8(c.f[1] as u64);
+        c.g[V1][0] = sx(0x7fu32.wrapping_sub(r32(c, S0)));
+        let amb = FpuF32::from_i32(r32(c, V1) as i32) * inv;
+        c.f[0] = amb.0;
+        Addr(sys.wrapping_add(AMBIENCE_GAIN)).write_fpu(c, amb);
+        if play {
+            c.cycles += 5;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[A0][0] = mon;
+            call_ptr(c, 0x002b_3c98, 0x0028_cba8)?;
+            c.g[A0][0] = c.g[S1][0];
+        } else {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S1][0];
+        }
+    } else {
+        c.cycles += 4;
+        let amb = (vmax - floor) * inv;
+        c.f[0] = amb.0;
+        Addr(sys.wrapping_add(AMBIENCE_GAIN)).write_fpu(c, amb);
+        if play {
+            c.cycles += 22;
+            c.f[0] = floor.to_i32() as u32;
+            c.g[S0][0] = mon;
+            c.g[A0][0] = mon;
+            c.g[A1][0] = sext8(c.f[0] as u64);
+            call_ptr(c, 0x002b_3c98, 0x0028_cbdc)?;
+            c.g[A1][0] = 1;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = 0;
+            GAIN_PTR.call(c, 0x0028_cbec)?;
+            let g = Addr(r32(c, V0)).read_fpu(c);
+            c.g[A0][0] = c.g[S0][0];
+            c.g[AT][0] = 0x42c8_0000;
+            c.f[1] = 0x42c8_0000;
+            Addr(sys.wrapping_add(MUSIC_GAIN)).write_fpu(c, g);
+            let pct = g * FpuF32(0x42c8_0000);
+            c.f[0] = pct.0;
+            c.f[1] = pct.to_i32() as u32;
+            c.g[A1][0] = sext8(c.f[1] as u64);
+            call_ptr(c, 0x002b_3d10, 0x0028_cc18)?;
+        }
+        c.cycles += 1;
+        c.g[A0][0] = c.g[S1][0];
+    }
+
+    // Ambience gain times the master ambience channel.
+    c.cycles += 9;
+    c.g[A1][0] = 5;
+    c.g[A2][0] = 0;
+    GAIN_PTR.call(c, 0x0028_cc28)?;
+    let master = Addr(r32(c, V0)).read_fpu(c);
+    c.f[0] = master.0;
+    let amb = Addr(sys.wrapping_add(AMBIENCE_GAIN)).read_fpu(c) * master;
+    let was_in_air = Addr(gp.wrapping_add(GP_WAS_IN_AIR)).lw(c);
+    c.g[V0][0] = was_in_air;
+    c.f[1] = amb.0;
+    Addr(sys.wrapping_add(AMBIENCE_GAIN)).write_fpu(c, amb);
+    if was_in_air != 0 {
+        return Ok(true);
+    }
+    // Take-off: start the ambience loop, fire event 7.
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S1][0];
+    START_AMBIENCE.call(c, 0x0028_cc48)?;
+    c.g[S0][0] = mon;
+    if c.g[S3][0] == 0 {
+        return Ok(true);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, 0x002b_4620, 0x0028_cc58)?;
+    if c.g[V0][0] == 0 {
+        return Ok(false);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S1][0];
+    MUSIC_ENABLED.call(c, 0x0028_cc68)?;
+    if c.g[V0][0] == 0 {
+        return Ok(false);
+    }
+    c.cycles += 8;
+    monitor_event(c, sys, 7, 0x0028_cc88)?;
+    Ok(false)
+}
+
+/// `monitor->vt->event(monitor + delta, n)` (slot +0x18 of the vtable at
+/// `sys + 0x5558`), with the monitor in s0.
+pub(crate) fn monitor_event(c: &mut Cpu, sys: u32, event: u64, ret: u32) -> Flow {
+    let vt = Addr(sys.wrapping_add(music::MONITOR_VT)).lw(c);
+    c.g[V0][0] = vt;
+    c.g[A1][0] = event;
+    let delta = Addr((vt as u32).wrapping_add(0x18)).lh(c);
+    c.g[A0][0] = delta;
+    let func = Addr((vt as u32).wrapping_add(0x1c)).lw(c);
+    c.g[V1][0] = func;
+    c.g[A0][0] = sx(r32(c, S0).wrapping_add(delta as u32));
+    call_ptr(c, func as u32, ret)
+}
+
+/// Landed (or replay / too slow): if the jump just ended stop the ambience
+/// loop and fire event 8; then full volume and the stored music gain.
+pub(crate) fn music_landed(c: &mut Cpu, sys: u32) -> Flow {
+    use music::*;
+    c.cycles += 3;
+    c.g[V0][0] = 1;
+    let mon = sx(sys.wrapping_add(MONITOR));
+    c.g[S0][0] = mon;
+    if c.g[V1][0] == 1 {
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S1][0];
+        STOP_AMBIENCE.call(c, 0x0028_cca8)?;
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, 0x002b_46e8, 0x0028_ccb0)?;
+        c.g[A1][0] = 0x7f;
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            MUSIC_ENABLED.call(c, 0x0028_ccc0)?;
+            if c.g[V0][0] != 0 {
+                c.cycles += 6;
+                monitor_event(c, sys, 8, 0x0028_cce0)?;
+            }
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S0][0];
+            call_ptr(c, 0x002b_4708, 0x0028_cce8)?;
+            c.cycles += 1;
+            c.g[A1][0] = 0x7f;
+        }
+    } else {
+        c.cycles += 1;
+        c.g[A1][0] = 0x7f;
+    }
+    c.cycles += 12;
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, 0x002b_3c98, 0x0028_ccf4)?;
+    c.g[AT][0] = 0x42c8_0000;
+    c.f[1] = 0x42c8_0000;
+    c.g[A0][0] = c.g[S0][0];
+    let g = Addr(sys.wrapping_add(MUSIC_GAIN)).read_fpu(c);
+    let pct = g * FpuF32(0x42c8_0000);
+    c.f[0] = pct.0;
+    c.f[1] = pct.to_i32() as u32;
+    c.g[A1][0] = sext8(c.f[1] as u64);
+    call_ptr(c, 0x002b_3d10, 0x0028_cd1c)
+}
+
+/// Common tail: `extra` is the path through the 1-cycle `lq s0` block.
+pub(crate) fn music_finish(c: &mut Cpu, frame: Frame, extra: bool) -> Flow {
+    if extra {
+        c.cycles += 1;
+    }
+    frame.restore(c, S0, 0x40);
+    c.cycles += 10;
+    frame.restore(c, S1, 0x30);
+    frame.restore(c, S2, 0x20);
+    frame.restore(c, S3, 0x10);
+    frame.restore_ra(c, 0);
+    frame.restore_fpr(c, 23, 0x68);
+    frame.restore_fpr(c, 22, 0x60);
+    frame.restore_fpr(c, 21, 0x58);
+    frame.restore_fpr(c, 20, 0x50);
+    frame.close(c);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4037,6 +4929,230 @@ pub(crate) mod tests {
                 c.bus.write32(obj + 0x1d8, DATA + 0x2800);
                 c.bus.write32(DATA + 0x2800, vt);
             },
+        );
+    }
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::fe::ovstatehud::tests::gpa;
+
+    // ------------------------------------------ SSXAudioSystem_UpdatePeakMusic
+
+    pub(crate) const AUDIO: u32 = DATA;
+
+    pub(crate) const AUDIO_WORLD: u32 = DATA + 0xc000;
+
+    pub(crate) const AUDIO_MIXER: u32 = DATA + 0xc100;
+
+    pub(crate) const AUDIO_IFACE: u32 = DATA + 0xc200;
+
+    /// `SSXAudioSystem_TrackToCategory`'s jump table (.rodata 0x483010):
+    /// the 22 tracks' categories (1, 2 or 4).
+    pub(crate) const TRACK_CATEGORY_JUMPS: [u32; 22] = {
+        const A: u32 = 0x002a_1e44;
+        const B: u32 = 0x002a_1e4c;
+        const C: u32 = 0x002a_1e54;
+        [
+            A, A, B, B, C, A, B, C, A, B, C, A, B, C, A, B, C, A, A, B, B, C,
+        ]
+    };
+
+    /// The audio system at `AUDIO` with every peak state, music on/off and
+    /// pending tracks (none, plain, random-song); the world (`gp-0x848`)
+    /// says a replay is playing so `PlayMusic` returns at once; the race's
+    /// track (via the BE interface, a fake) at 0x43d950; a mixer of fakes;
+    /// the music player fixture `SelectRandomSong` needs (a two-slot bank
+    /// with slot 1 occupied, as in `RestartPeakMusic`'s test).
+    pub(crate) fn update_peak_music_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x0028_e100, 4);
+        let a = AUDIO;
+        c.bus.write32(gpa(-0x1f04), DATA + 0xc300);
+        c.bus.write32(gpa(-0x848), AUDIO_WORLD);
+        c.bus.write32(AUDIO_WORLD + 0x78, DATA + 0xc300);
+        c.bus.write32(AUDIO_WORLD + 0x84, AUDIO_WORLD + 0x40);
+        c.bus.write32(AUDIO_WORLD + 0x40 + 0x28, AUDIO_WORLD + 0x80);
+        c.bus.write32(AUDIO_WORLD + 0x80, 1);
+        // BE_GetInterface(lib, 0): gp-0x1efc indexes the table at 0x5308a8.
+        c.bus.write32(gpa(-0x1efc), 0);
+        c.bus.write32(0x0053_08a8, AUDIO_IFACE);
+        c.bus.write32(AUDIO_IFACE + 4, AUDIO_IFACE + 0x10);
+        c.bus.write16(AUDIO_IFACE + 0x10 + 8, 0);
+        c.bus.write32(AUDIO_IFACE + 0x10 + 0xc, FAKE + 0x100);
+        c.bus.write32(0x0053_5c08, 0);
+        c.bus.write32(0x0043_d950, r.next_u32() % 0x18);
+        crate::difftest::put_words(c, 0x0048_3010, &TRACK_CATEGORY_JUMPS);
+        // The mixer (methods +0x10, +0x20).
+        c.bus.write32(a + 0x5558, AUDIO_MIXER);
+        for (i, off) in [0x10u32, 0x20].into_iter().enumerate() {
+            c.bus
+                .write16(AUDIO_MIXER + off, ((r.next_u32() % 16) * 4) as u16);
+            c.bus.write32(AUDIO_MIXER + off + 4, FAKE + 0x10 * i as u32);
+        }
+        // The music player (inline at +0x118).
+        c.bus.write32(a + 0x118, DATA + 0xa000);
+        c.bus.write32(DATA + 0xa000, DATA + 0xa100);
+        c.bus.write32(DATA + 0xa100 + 0x1d8, 0);
+        c.bus.write32(a + 0x504, 2);
+        c.bus.write32(a + 0x4fc, 2);
+        c.bus.write32(a + 0x508, 0);
+        c.bus.write64(a + 0x510, 2);
+        c.bus.write32(a + 0x62a4, r.next_u32() % 2);
+        // The peak music request.
+        c.bus.write32(a + 0x6274, if seed % 7 == 0 { 0 } else { 1 });
+        c.bus.write32(
+            a + 0x6278,
+            [0u32, 2, 3, 4, 1, 0, 2][(seed / 7) as usize % 7],
+        );
+        c.bus
+            .write32(a + 0x608c, [3u32, 0, 2, 3, 4][(seed / 2) as usize % 5]);
+        let track = match r.next_u32() % 4 {
+            0 => 0x17,
+            1 => 0xe + r.next_u32() % 3,
+            _ => r.next_u32() % 0x18,
+        };
+        c.bus.write32(a + 0x6284, track);
+        c.bus.write32(a + 0x6294, 0);
+        c.g[A0][0] = a as u64;
+        c.pc = 0x0028_e100;
+    }
+
+    #[test]
+    fn ssx_audio_system_update_peak_music_matches() {
+        covered(
+            ee::s07::f_0028e100__generated,
+            ssx_audio_system_update_peak_music,
+            300,
+            &update_peak_music_setup,
+        );
+    }
+
+    /// A float in [0, 2 * half).
+    pub(crate) fn pos(r: &mut Rng, half: f32) -> u32 {
+        (f32::from_bits(r.f32(half)) + half).to_bits()
+    }
+
+    // --- SSXAudioSystem_UpdateMusicIntensity -------------------------------
+
+    pub(crate) const SYS_2: u32 = DATA;
+
+    pub(crate) const RIDER_M: u32 = DATA + 0x8000;
+
+    pub(crate) const RIDER_STATE: u32 = DATA + 0x9000;
+
+    pub(crate) const AIR: u32 = DATA + 0x9800;
+
+    pub(crate) const WORLD_M: u32 = DATA + 0xa000;
+
+    pub(crate) const GAME_M: u32 = DATA + 0xa100;
+
+    pub(crate) const REPLAY: u32 = DATA + 0xa200;
+
+    pub(crate) const RACE: u32 = DATA + 0xa300;
+
+    pub(crate) const RACE_REPLAY: u32 = DATA + 0xa400;
+
+    pub(crate) const SONG: u32 = DATA + 0xb000;
+
+    pub(crate) const SONG_VT: u32 = DATA + 0xb100;
+
+    pub(crate) const AMB_OWNER: u32 = DATA + 0xc000;
+
+    pub(crate) const AMB_VT: u32 = DATA + 0xc100;
+
+    pub(crate) const MON_VT: u32 = DATA + 0xc200;
+
+    pub(crate) const BELIB: u32 = DATA + 0xd000;
+
+    pub(crate) const BE_STATE: u32 = DATA + 0xd100;
+
+    pub(crate) const BE_VT: u32 = DATA + 0xd200;
+
+    /// The audio system, the local rider in or out of a jump (FindRider
+    /// through the race manager, or the replay rider), the air predictor's
+    /// heights, the music monitor (song present or not, ducking, playing
+    /// state), the track id the race-music checks read (through the
+    /// BELibrary state vtable, a fake), and the monitor/ambience vtables
+    /// (fakes).
+    pub(crate) fn music_fixture(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x28c8c8, 4);
+        let gp = GAME_GP;
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        // World -> game module -> race manager -> riders.
+        w(c, gp - 0x848, WORLD_M);
+        w(c, WORLD_M + 0x84, GAME_M);
+        let replay = seed % 7 == 0;
+        w(c, GAME_M + 0x28, if replay { REPLAY } else { 0 });
+        w(c, REPLAY, 1 + seed % 9);
+        w(c, GAME_M + 0xc, RACE);
+        w(c, RACE + 0x7c, 1);
+        w(c, RACE + 0x28, RIDER_M);
+        w(c, RACE + 0x40, RACE_REPLAY);
+        w(c, RACE_REPLAY + 0x18, RIDER_M);
+        w(c, RIDER_M + 0x874, 0);
+        // Rider: playing state (1 = racing) and air predictor.
+        w(c, RIDER_M + 0x77c, RIDER_STATE);
+        w(c, RIDER_STATE + 0xde0, if seed % 11 == 0 { 0 } else { 1 });
+        w(c, RIDER_M + 0x788, AIR);
+        w(c, AIR + 0xac, [1, 3, 0, 2, 1][(seed / 2 % 5) as usize]);
+        let speed = pos(&mut r, 3.0);
+        w(c, AIR + 0x98, speed);
+        w(c, AIR + 0x9c, pos(&mut r, 8.0));
+        w(c, AIR + 0xa0, pos(&mut r, 4.0));
+        // Audio system state.
+        w(c, SYS_2 + 0x6250, (r.next_u32() % 3).wrapping_sub(1));
+        w(c, SYS_2 + 0x6244, pos(&mut r, 3.0));
+        w(c, SYS_2 + 0x6248, pos(&mut r, 4.0));
+        w(c, SYS_2 + 0x624c, pos(&mut r, 6.0));
+        w(c, SYS_2 + 0x62d8, pos(&mut r, 0.5)); // music channel gain
+        w(c, SYS_2 + 0x6318, pos(&mut r, 0.5)); // ambience channel gain
+        w(c, SYS_2 + 0x5830, r.next_u32());
+        w(c, SYS_2 + 0x5834, 1); // ambience loop already running: short path
+        w(c, SYS_2 + 0x623c, (seed / 3 % 4 == 0) as u32); // music trigger
+        w(c, SYS_2 + 0x608c, seed / 5 % 5); // game-music state
+        w(c, gp + 0x52c, (seed % 3 != 0) as u32);
+        w(c, gp + 0x530, r.next_u32() % 2);
+        w(c, gp - 0x45d4, 3.999_498_6_f32.to_bits());
+        w(c, gp - 0x45d0, 0.842_519_7_f32.to_bits());
+        w(c, gp - 0x45cc, (1.0f32 / 127.0).to_bits());
+        // Music monitor: song (or none), ducking flag.
+        let mon = SYS_2 + 0x118;
+        let song = if seed % 13 == 0 { 0 } else { SONG };
+        w(c, mon, AMB_OWNER);
+        w(c, mon + 0x408, song);
+        w(c, mon + 0x418, (seed % 4 == 1) as u32);
+        w(c, SONG, SONG_VT);
+        w(c, SONG_VT + 0x94, (seed % 8 == 1) as u32);
+        w(c, SONG + 0x38, [2, 2, 0][(seed / 4 % 3) as usize]);
+        w(c, SONG + 0x4c, (seed / 6 % 2) as u32);
+        w(c, SONG + 0x54, 0);
+        // Vtables of the stop-ambience owner and the monitor: fakes.
+        w(c, AMB_OWNER + 0xab0, AMB_VT);
+        c.bus.write16(AMB_VT + 0x18, 0x10);
+        w(c, AMB_VT + 0x1c, FAKE);
+        w(c, SYS_2 + 0x5558, MON_VT);
+        c.bus.write16(MON_VT + 0x18, 0x20);
+        w(c, MON_VT + 0x1c, FAKE + 0x10);
+        // BELibrary: current state's track (race-music checks).
+        w(c, gp - 0x1f04, BELIB);
+        w(c, gp - 0x1efc, 0);
+        w(c, 0x0053_08a8, BE_STATE);
+        w(c, BE_STATE + 4, BE_VT);
+        c.bus.write16(BE_VT + 8, 0);
+        w(c, BE_VT + 0xc, FAKE + 0x20);
+        w(c, 0x0053_5c08, 0);
+        w(c, 0x0043_d950, [0, 9, 12, 3][(seed / 7 % 4) as usize]);
+        c.bus
+            .write8(0x0053_5c10, [0, 2, 3, 0, 0][(seed / 9 % 5) as usize]);
+        c.g[A0][0] = SYS_2 as u64;
+        c.pc = 0x0028_c8c8;
+    }
+
+    #[test]
+    fn update_music_intensity_matches() {
+        covered(
+            ee::s07::f_0028c8c8__generated,
+            ssx_audio_system_update_music_intensity,
+            300,
+            &|c, seed| music_fixture(c, seed),
         );
     }
 }

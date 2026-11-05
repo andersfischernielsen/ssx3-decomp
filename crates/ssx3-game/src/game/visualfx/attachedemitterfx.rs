@@ -3,14 +3,18 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
+use crate::abi::set_fpr;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::lib::snd::add;
 pub(crate) use crate::game::visualfx::boardwakefx::addiu;
 pub(crate) use crate::game::visualfx::boardwakefx::at;
 pub(crate) use crate::game::visualfx::boardwakefx::back_edge;
@@ -71,6 +75,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_2218,
         attached_emitter_fx_destroy_emitter,
         "AttachedEmitterFX_DestroyEmitter",
+    ),
+    (
+        0x002f_2088,
+        attached_emitter_fx_render,
+        "AttachedEmitterFX_Render",
     ),
 ];
 
@@ -976,6 +985,122 @@ pub(crate) fn attached_emitter(c: &mut Cpu, sp: u32, gp: u32) -> Flow {
     Ok(())
 }
 
+pub(crate) mod attached_fx {
+
+    /// `DynamicEmitter*[10]`: the attached emitters.
+    pub const ITEMS: u32 = 0x6c;
+
+    /// Slots in `ITEMS`.
+    pub const ITEM_COUNT: u64 = 10;
+
+    /// `Rider*`: the rider the effect is attached to (visibility).
+    pub const RIDER: u32 = 0x98;
+
+    /// `RiderInfo*`: the owner's render info (draw level, visibility).
+    pub const INFO: u32 = 0x9c;
+
+    /// Rider: drawn this frame.
+    pub const RIDER_VISIBLE: u32 = 0xb18;
+
+    /// RiderInfo: draw level (negative: none).
+    pub const INFO_LEVEL: u32 = 0xc2c;
+
+    /// RiderInfo: drawn this frame.
+    pub const INFO_VISIBLE: u32 = 0xcc8;
+
+    /// The draw level without an owner.
+    pub const DEFAULT_LEVEL: u64 = 7;
+
+    /// The draw level of an owner without one.
+    pub const NO_LEVEL: u64 = 0x16;
+}
+
+/// `void AttachedEmitterFX_Render(AttachedEmitterFX* fx)` (0x2f2088): draw
+/// each attached emitter (`DynamicEmitter_Render(emitter, level)`) when the
+/// rider or its render info is visible; the level is the info's level + 1
+/// (0x16 when it has none, 7 without info).
+pub fn attached_emitter_fx_render(c: &mut Cpu) {
+    use attached_fx::*;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S0, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x10);
+        let fx = r32(c, S1);
+        c.g[S0][0] = sx(fx + ITEMS);
+        frame.save_ra(c, 0);
+        c.g[S2][0] = ITEM_COUNT - 1;
+        loop {
+            c.cycles += 4;
+            let slot = r32(c, S0);
+            let emitter = c.lw(slot);
+            c.g[V0][0] = emitter;
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_sub(1));
+            c.g[A1][0] = DEFAULT_LEVEL;
+            if emitter != 0 {
+                // Draw level.
+                c.cycles += 3;
+                let info = c.lw(fx + INFO);
+                c.g[V0][0] = info;
+                c.g[A0][0] = info;
+                if info != 0 {
+                    c.cycles += 5;
+                    let level = c.lw((info as u32).wrapping_add(INFO_LEVEL));
+                    c.g[V1][0] = ((level as i64) < 0) as u64;
+                    c.g[V0][0] = add(level, 1);
+                    c.g[A1][0] = if c.g[V1][0] == 0 {
+                        c.g[V0][0]
+                    } else {
+                        NO_LEVEL
+                    };
+                }
+                // Visible: the rider, else the info.
+                c.cycles += 3;
+                let rider = c.lw(fx + RIDER);
+                c.g[V0][0] = rider;
+                let mut visible = false;
+                if rider != 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = c.lw((rider as u32).wrapping_add(RIDER_VISIBLE));
+                    visible = c.g[V0][0] != 0;
+                }
+                if !visible {
+                    c.cycles += 2;
+                    if info != 0 {
+                        c.cycles += 3;
+                        c.g[V0][0] = c.lw((info as u32).wrapping_add(INFO_VISIBLE));
+                        visible = c.g[V0][0] != 0;
+                    }
+                }
+                if visible {
+                    c.cycles += 2;
+                    c.g[A0][0] = c.lw(slot);
+                    // DynamicEmitter_Render (cross-shard: call_indirect).
+                    call_ptr(c, 0x0037_1380, 0x002f_210c)?;
+                }
+            }
+            c.cycles += 2;
+            let more = (c.g[S2][0] as i64) >= 0;
+            c.g[S0][0] = add(c.g[S0][0], 4);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002f_20a8);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1237,6 +1362,53 @@ pub(crate) mod tests {
                 for i in 0..0x140u32 {
                     c.bus.write32(0x0044_5ab0 - 0x280 + 4 * i, r.f32(1.0));
                 }
+            },
+        );
+    }
+    use super::*;
+
+    /// `AttachedEmitterFX_Render`: empty and filled slots, with/without
+    /// rider and info, negative/positive levels, every visibility case.
+    /// The emitters have no particles (+0x174 = 0): `DynamicEmitter_Render`
+    /// returns at once.
+    #[test]
+    fn attached_emitter_fx_render_matches() {
+        check(
+            ee::s09::f_002f2088__generated,
+            attached_emitter_fx_render,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2f20_8801 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x002f_2088;
+                let fx = DATA;
+                for i in 0..10u32 {
+                    let e = if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        DATA + 0x1000 + 0x200 * i
+                    };
+                    c.bus.write32(fx + attached_fx::ITEMS + 4 * i, e);
+                }
+                let rider = DATA + 0x5000;
+                let info = DATA + 0x8000;
+                let has_rider = seed % 3 != 0;
+                let has_info = (seed / 3) % 3 != 0;
+                c.bus
+                    .write32(fx + attached_fx::RIDER, if has_rider { rider } else { 0 });
+                c.bus
+                    .write32(fx + attached_fx::INFO, if has_info { info } else { 0 });
+                c.bus
+                    .write32(rider + attached_fx::RIDER_VISIBLE, r.next_u32() % 2);
+                c.bus
+                    .write32(info + attached_fx::INFO_VISIBLE, r.next_u32() % 2);
+                let level = if r.next_u32() % 3 == 0 {
+                    r.next_u32() | 0x8000_0000
+                } else {
+                    r.next_u32() % 32
+                };
+                c.bus.write32(info + attached_fx::INFO_LEVEL, level);
+                c.g[A0][0] = sx(fx);
             },
         );
     }

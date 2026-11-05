@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -209,6 +210,274 @@ pub fn stats_process_render_stub(c: &mut Cpu) {
 pub fn stats_process_update_stub(c: &mut Cpu) {
     c.cycles += 2;
     abi::ret(c);
+}
+
+pub(crate) mod halo {
+
+    /// Render context: current packet write pointer.
+    pub const PACKET: u32 = 0xe84;
+
+    /// Render context / world: vtable.
+    pub const VTABLE: u32 = 0x10d8;
+
+    /// Render context: per-blend-mode halfwords (`(mode + 0x25) * 4 + 0xf50`).
+    pub const MODE_WORDS: u32 = 0xf50;
+
+    /// vtable slots {delta (i16), fn}: world "skip draw" test, quad draw
+    /// with UV scale, quad draw.
+    pub const SLOT_SKIP: u32 = 0x2d8;
+
+    pub const SLOT_DRAW_SCALED: u32 = 0x278;
+
+    pub const SLOT_DRAW: u32 = 0x270;
+
+    /// The GS register-set template copied into the packet (0x14 bytes).
+    pub const TEMPLATE: u32 = 0x0050_1420;
+}
+
+/// `void HaloModifier_DrawQuad(const Vec4* pos, const Vec4* colour, int mode,
+/// float size /* f12 */, float stretch /* f13 */)` (0x2d1d10): draw one halo
+/// sprite unless the world's skip test (vtable slot 0x2d8) says no. Pushes
+/// a 0x14-byte register template onto the render packet, patches its
+/// fields (alpha/blend setup, the mode's halfword), then draws: a plain
+/// unit quad when `stretch` is 0, else a quad stretched by `stretch *
+/// k` (k at gp-0x3f98), and for modes 1 and 4 a second, mirrored one
+/// (`-stretch * k`). Pops the template again.
+pub fn halo_modifier_draw_quad(c: &mut Cpu) {
+    use halo::*;
+    guest(c, |c| {
+        let gp = r32(c, GP);
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x120);
+        let world = Addr(gp.wrapping_sub(0x854)).lw(c);
+        c.g[A3][0] = world;
+        frame.save(c, S0, 0xe0);
+        frame.save(c, S2, 0xc0);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S3, 0xb0);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_fpr(c, 23, 0x108);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_fpr(c, 22, 0x100);
+        let stretch = abi::farg(c, 1);
+        c.f[23] = stretch.0;
+        frame.save(c, S1, 0xd0);
+        c.f[22] = c.f[12]; // size
+        frame.save(c, S4, 0xa0);
+        c.g[A1][0] = c.g[S2][0];
+        frame.save(c, S5, 0x90);
+        frame.save(c, S6, 0x80);
+        frame.save_ra(c, 0x70);
+        frame.save_fpr(c, 24, 0x110);
+        frame.save_fpr(c, 21, 0xf8);
+        frame.save_fpr(c, 20, 0xf0);
+        // world->ShouldSkipHalo(pos)
+        let vt = Addr((world as u32).wrapping_add(VTABLE)).lw(c);
+        c.g[V1][0] = vt;
+        let delta = Addr((vt as u32).wrapping_add(SLOT_SKIP)).lh(c);
+        c.g[A0][0] = delta;
+        let f = Addr((vt as u32).wrapping_add(SLOT_SKIP + 4)).lw(c);
+        c.g[V0][0] = f;
+        c.g[A0][0] = sx((world as u32).wrapping_add(delta as u32));
+        call_ptr(c, f as u32, 0x002d_1d78)?;
+        if c.g[V0][0] != 0 {
+            frame.restore(c, S0, 0xe0);
+        } else {
+            halo_push_and_draw(c, frame, gp, stretch)?;
+            // Pop the template.
+            c.cycles += 3;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0x14));
+            let ctx = r32(c, S1);
+            Addr(ctx.wrapping_add(PACKET)).sw(c, c.g[V0][0]);
+            frame.restore(c, S0, 0xe0);
+        }
+        c.cycles += 14;
+        frame.restore(c, S1, 0xd0);
+        frame.restore(c, S2, 0xc0);
+        frame.restore(c, S3, 0xb0);
+        frame.restore(c, S4, 0xa0);
+        frame.restore(c, S5, 0x90);
+        frame.restore(c, S6, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.restore_fpr(c, 24, 0x110);
+        frame.restore_fpr(c, 23, 0x108);
+        frame.restore_fpr(c, 22, 0x100);
+        frame.restore_fpr(c, 21, 0xf8);
+        frame.restore_fpr(c, 20, 0xf0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The body of `HaloModifier_DrawQuad` after the skip test: push and patch
+/// the template, draw. Leaves the packet pointer in v0.
+pub(crate) fn halo_push_and_draw(c: &mut Cpu, frame: Frame, gp: u32, stretch: FpuF32) -> Flow {
+    use halo::*;
+    c.cycles += 98;
+    // The colour onto the stack (w, x, y, z order of the loads).
+    let colour = Addr(r32(c, S0));
+    c.f[3] = colour.off(8).read_fpu(c).0;
+    c.g[A0][0] = 0x50_0000;
+    c.f[0] = colour.off(0xc).read_fpu(c).0;
+    c.g[A1][0] = 0xffff_ffff_ffbf_ffff;
+    c.f[1] = colour.read_fpu(c).0;
+    c.f[2] = colour.off(4).read_fpu(c).0;
+    c.g[T4][0] = 0x40_0000;
+    c.swc1(0, frame.at(c, 0));
+    c.g[T5][0] = 0xffff_ffff_ffff_fffc;
+    c.swc1(1, frame.at(c, 4));
+    c.g[A3][0] = 0xffff_ffff_e000_03ff;
+    c.swc1(2, frame.at(c, 8));
+    c.swc1(3, frame.at(c, 0xc));
+    c.g[T6][0] = 0xffff_ffff_ffff_ff83;
+    let ctx = Addr(gp.wrapping_add(0x2a90)).lw(c);
+    c.g[S1][0] = ctx;
+    let ctx = Addr(ctx as u32);
+    c.g[T7][0] = 0xffff_ffff_ffff_fc1f;
+    c.g[S0][0] = 0x80_0000;
+    let packet = ctx.off(PACKET).lw(c);
+    c.g[V0][0] = packet;
+    c.g[T0][0] = 0xffff_ffff_fe7f_ffff;
+    // Duplicate the last 0x14 bytes of the packet.
+    let p = Addr(packet as u32);
+    c.g[V1][0] = p.read_u64_unaligned(c);
+    c.g[A2][0] = p.off(8).read_u64_unaligned(c);
+    c.g[T2][0] = p.off(0x10).lw(c);
+    p.off(0x14).write_u64_unaligned(c, c.g[V1][0]);
+    p.off(0x1c).write_u64_unaligned(c, c.g[A2][0]);
+    p.off(0x24).sw(c, c.g[T2][0]);
+    c.g[T1][0] = 0xffff_ffff_ffcf_ffff;
+    c.g[T3][0] = 0xffff_ffff_fff0_0fff;
+    c.g[T2][0] = 0x1_4000;
+    // Advance the packet and copy the template over the new entry.
+    let packet = ctx.off(PACKET).lw(c);
+    c.g[V1][0] = packet;
+    let p = Addr(packet as u32);
+    c.f[21] = 0;
+    c.g[V0][0] = sx(p.0.wrapping_add(0x14));
+    let mode_word = ctx.0.wrapping_add(r32(c, S3).wrapping_add(0x25) << 2);
+    ctx.off(PACKET).sw(c, c.g[V0][0]);
+    c.g[A2][0] = sx(mode_word);
+    let template = Addr(TEMPLATE);
+    c.g[S4][0] = sx(TEMPLATE);
+    c.g[S5][0] = template.read_u64_unaligned(c);
+    c.g[S6][0] = template.off(8).read_u64_unaligned(c);
+    c.g[V0][0] = template.off(0x10).lw(c);
+    p.off(0x14).write_u64_unaligned(c, c.g[S5][0]);
+    p.off(0x1c).write_u64_unaligned(c, c.g[S6][0]);
+    p.off(0x24).sw(c, c.g[V0][0]);
+    let plain = stretch.eq_s(FpuF32::ZERO);
+    abi::set_fcc(c, plain);
+    // Patch the new entry's words: (pointer register, offset, and, or).
+    const EDITS: [(usize, u32, u64, u64); 8] = [
+        (A0, 0x4, 0xffff_ffff_ffbf_ffff, 0x40_0000),
+        (V1, 0x4, 0xffff_ffff_ffff_fffc, 0),
+        (A0, 0x8, 0xffff_ffff_e000_03ff, 0),
+        (V1, 0x4, 0xffff_ffff_ffff_ff83, 0x1c),
+        (A0, 0x8, 0xffff_ffff_ffff_fc1f, 0x100),
+        (A1, 0x4, 0xffff_ffff_fe7f_ffff, 0x80_0000),
+        (V1, 0x4, 0xffff_ffff_ffcf_ffff, 0),
+        (A0, 0x4, 0xffff_ffff_fff0_0fff, 0x1_4000),
+    ];
+    for &(reg, off, and, or) in EDITS.iter() {
+        let entry = ctx.off(PACKET).lw(c);
+        c.g[reg][0] = entry;
+        let at = Addr((entry as u32).wrapping_add(off));
+        c.g[V0][0] = (at.lw(c) & and) | or;
+        at.sw(c, c.g[V0][0]);
+    }
+    c.g[V1][0] = Addr(mode_word.wrapping_add(MODE_WORDS)).lw(c);
+    c.g[V0][0] = ctx.off(PACKET).lw(c);
+    Addr(r32(c, V0).wrapping_add(0x10)).sh(c, c.g[V1][0]);
+
+    if plain {
+        // A unit quad: size x size, uv (0, 0)-(1, 1).
+        c.cycles += 19;
+        let vt = ctx.off(VTABLE).lw(c);
+        c.g[V1][0] = vt;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[0] = FpuF32::ONE.0;
+        c.g[A2][0] = sx(frame.at(c, 0x10));
+        let delta = Addr((vt as u32).wrapping_add(SLOT_DRAW)).lh(c);
+        c.g[A3][0] = sx(frame.at(c, 0x20));
+        c.swc1(22, frame.at(c, 0x14));
+        c.g[T0][0] = sx(frame.at(c, 0x60));
+        c.swc1(21, frame.at(c, 0x24));
+        c.g[A0][0] = sx(ctx.0.wrapping_add(delta as u32));
+        c.swc1(0, frame.at(c, 0x64));
+        c.swc1(22, frame.at(c, 0x10));
+        c.swc1(21, frame.at(c, 0x20));
+        c.swc1(0, frame.at(c, 0x60));
+        let f = Addr((vt as u32).wrapping_add(SLOT_DRAW + 4)).lw(c);
+        c.g[V0][0] = f;
+        c.g[T1][0] = c.g[SP][0];
+        call_ptr(c, f as u32, 0x002d_2010)?;
+        c.g[V0][0] = ctx.off(PACKET).lw(c);
+        return Ok(());
+    }
+    // Stretched quad, scale stretch * k.
+    c.cycles += 25;
+    let vt = ctx.off(VTABLE).lw(c);
+    c.g[V1][0] = vt;
+    c.g[S0][0] = sx(frame.at(c, 0x10));
+    c.g[AT][0] = 0x3f80_0000;
+    let one = FpuF32::ONE;
+    c.f[20] = one.0;
+    c.g[A1][0] = c.g[S2][0];
+    c.g[A0][0] = Addr((vt as u32).wrapping_add(SLOT_DRAW_SCALED)).lh(c);
+    c.g[A2][0] = c.g[S0][0];
+    let k = Addr(gp.wrapping_sub(0x3f98)).read_fpu(c);
+    c.f[24] = k.0;
+    c.g[A3][0] = sx(frame.at(c, 0x20));
+    c.swc1(22, frame.at(c, 0x10));
+    c.g[A0][0] = sx(ctx.0.wrapping_add(r32(c, A0)));
+    c.swc1(22, frame.at(c, 0x14));
+    c.f[12] = (stretch * k).0;
+    c.swc1(21, frame.at(c, 0x20));
+    c.g[T0][0] = sx(frame.at(c, 0x30));
+    c.swc1(21, frame.at(c, 0x24));
+    c.g[T1][0] = c.g[SP][0];
+    c.swc1(20, frame.at(c, 0x30));
+    c.swc1(20, frame.at(c, 0x34));
+    let f = Addr((vt as u32).wrapping_add(SLOT_DRAW_SCALED + 4)).lw(c);
+    c.g[V0][0] = f;
+    c.g[T2][0] = 1;
+    call_ptr(c, f as u32, 0x002d_1f60)?;
+    c.g[V1][0] = 1;
+    c.g[V0][0] = 4;
+    let mut mirrored = c.g[S3][0] == 1;
+    if !mirrored {
+        c.cycles += 2;
+        mirrored = c.g[S3][0] == 4;
+    }
+    if mirrored {
+        // The mirrored half: scale -stretch * k.
+        c.cycles += 21;
+        let vt = ctx.off(VTABLE).lw(c);
+        c.g[V1][0] = vt;
+        let neg = -stretch;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A2][0] = c.g[S0][0];
+        c.g[A0][0] = Addr((vt as u32).wrapping_add(SLOT_DRAW_SCALED)).lh(c);
+        c.g[A3][0] = sx(frame.at(c, 0x40));
+        c.swc1(22, frame.at(c, 0x14));
+        c.f[12] = (neg * k).0;
+        c.swc1(21, frame.at(c, 0x44));
+        c.g[A0][0] = sx(ctx.0.wrapping_add(r32(c, A0)));
+        c.swc1(20, frame.at(c, 0x54));
+        c.g[T0][0] = sx(frame.at(c, 0x50));
+        c.swc1(22, frame.at(c, 0x10));
+        c.g[T1][0] = c.g[SP][0];
+        c.swc1(21, frame.at(c, 0x40));
+        c.swc1(20, frame.at(c, 0x50));
+        let f = Addr((vt as u32).wrapping_add(SLOT_DRAW_SCALED + 4)).lw(c);
+        c.g[V0][0] = f;
+        c.g[T2][0] = 1;
+        call_ptr(c, f as u32, 0x002d_1fc0)?;
+    }
+    c.g[V0][0] = ctx.off(PACKET).lw(c);
+    Ok(())
 }
 
 #[cfg(test)]

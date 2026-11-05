@@ -7840,6 +7840,302 @@ pub(crate) fn shake_epilogue(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// ChaseCameraAlgorithm_GatherRiderState (0x162568).
+
+/// `vf4.w = vf3 . vf(b)` (xyz), the compiler's VU0 dot-product idiom
+/// (`vf6.w` as the 1.0 multiplier through ACC).
+#[inline]
+pub(crate) fn vu0_dot3(c: &mut Cpu, b: u8) {
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(b));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+/// `|v|` of the vector at `addr` into Q (`sqrt Q, vf4.w`), then `cfc2 rt, Q`
+/// and `mtc1 rt, f`.
+#[inline]
+pub(crate) fn vu0_length(c: &mut Cpu, addr: u32, f: usize) {
+    c.lqc2(3, addr);
+    vu0_dot3(c, 3);
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(2, 22);
+    c.mtc1(2, f);
+}
+
+// ---------------------------------------------------------------------------
+// ChaseCameraAlgorithm_UpdateChaseHeading (0x162c78).
+
+/// `void ChaseCameraAlgorithm_UpdateChaseHeading(ChaseCameraAlgorithm*
+/// self, CamInfo* info)` (0x162c78): above 27.8 m/s, measure the angle
+/// between the stored chase heading (`self + 0x80`) and the target's
+/// velocity (kept from last frame when shorter than 1), pass it (less a
+/// 10.9 degree dead zone) through a 5-tap filter history at `self + 0x340`
+/// (input, output and error rings, gains at +0x40..+0x48), and turn the
+/// filtered angle into a blend rate (square-rooted twice in rider states
+/// 11..13); blend the heading towards `info->velocity / info->speed`.
+/// Below that speed keep the heading. Store the normalised heading in
+/// `info + 0x30`.
+pub fn chase_camera_algorithm_update_chase_heading(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0xb0);
+        let gp = r32(c, GP);
+        c.lwc1(1, gp.wrapping_sub(0x6ae0)); // 27.78 m/s
+        frame.save(c, S0, 0xa0);
+        frame.save(c, S1, 0x90);
+        frame.save_ra(c, 0x80);
+        c.g[S1][0] = c.g[A1][0];
+        let info = r32(c, S1);
+        c.lwc1(0, info.wrapping_add(0x44));
+        c.c_lt_s(1, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let me = r32(c, S0);
+        let sp0 = sp(c);
+        if c.fcc() {
+            chase_heading_follow(c, me, info, sp0, gp)?;
+        } else {
+            c.cycles += 1;
+            c.lq(2, me.wrapping_add(0x80));
+        }
+
+        // info->heading = normalize(heading).
+        c.cycles += 25;
+        c.sq(2, sp0);
+        vu0_length(c, sp0, 0);
+        frame.restore(c, S0, 0xa0);
+        c.mfc1(3, 0);
+        c.qmtc2(3, 3);
+        c.vu0().div(0, 3, 3, 0);
+        c.lqc2(4, sp0);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 4, Src::Q);
+        c.sqc2(5, sp0);
+        frame.restore_ra(c, 0x80);
+        c.lq(2, sp0);
+        c.sq(2, info.wrapping_add(0x30));
+        frame.restore(c, S1, 0x90);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The fast branch of `UpdateChaseHeading`: filter the heading error and
+/// blend; leaves the new heading in `$2` (and at `self + 0x80`).
+pub(crate) fn chase_heading_follow(c: &mut Cpu, me: u32, info: u32, sp0: u32, gp: u32) -> Flow {
+    // Target velocity (virtual slot 0x18 of the target, into sp+0x10);
+    // keep last frame's when |v|^2 < 1.
+    c.cycles += 22;
+    c.g[A2][0] = Addr(me.wrapping_add(0x30)).lw(c);
+    let obj = r32(c, A2);
+    c.g[A0][0] = sx(sp0 + 0x10);
+    c.g[V0][0] = Addr(obj).lw(c);
+    let vt = r32(c, V0);
+    c.g[A1][0] = Addr(vt.wrapping_add(0x18)).lh(c);
+    c.g[V1][0] = Addr(vt.wrapping_add(0x1c)).lw(c);
+    c.g[A1][0] = sx(obj.wrapping_add(r32(c, A1)));
+    let func = r32(c, V1);
+    call_ptr(c, func, 0x0016_2cc0)?;
+    c.g[AT][0] = 0x3f80_0000;
+    c.f[4] = 0x3f80_0000;
+    c.lqc2(3, sp0 + 0x10);
+    c.lqc2(5, sp0 + 0x10);
+    vu0_dot3(c, 5);
+    c.qmfc2(2, 4);
+    c.mtc1(2, 0);
+    c.c_lt_s(0, 4);
+    c.lq(2, sp0 + 0x10);
+    if c.fcc() {
+        c.cycles += 3;
+        c.lq(2, me.wrapping_add(0x1c0));
+        c.sq(2, sp0 + 0x10);
+        c.lq(2, sp0 + 0x10);
+    }
+
+    // len = sqrt(|h|^2 |v|^2); angle = 90 deg - acos(clamp(h.v / len)).
+    c.cycles += 25;
+    c.lwc1(2, gp.wrapping_sub(0x6adc)); // 0.001
+    c.sq(2, me.wrapping_add(0x1c0));
+    c.lqc2(3, me.wrapping_add(0x80));
+    c.lqc2(5, me.wrapping_add(0x80));
+    vu0_dot3(c, 5);
+    c.qmfc2(3, 4);
+    c.mtc1(3, 0);
+    c.lqc2(3, me.wrapping_add(0x1c0));
+    c.lqc2(5, me.wrapping_add(0x1c0));
+    vu0_dot3(c, 5);
+    c.qmfc2(2, 4);
+    c.mtc1(2, 1);
+    c.mul_s(0, 0, 1);
+    c.sqrt_s(3, 0);
+    c.c_lt_s(3, 2);
+    if c.fcc() {
+        c.cycles += 3;
+        c.f[7] = 0;
+    } else {
+        c.cycles += 16;
+        c.lqc2(3, me.wrapping_add(0x80));
+        c.lqc2(5, me.wrapping_add(0x1c0));
+        vu0_dot3(c, 5);
+        c.qmfc2(2, 4);
+        c.mtc1(2, 0);
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.f[1] = 0xbf80_0000;
+        c.div_s(0, 0, 3);
+        c.c_le_s(1, 0);
+        c.f[12] = c.f[1];
+        if c.fcc() {
+            c.cycles += 1;
+            c.min_s(12, 0, 4);
+        }
+        c.cycles += 5;
+        call_ptr(c, 0x0031_c128, 0x0016_2dc4)?; // acosf
+        c.lwc1(1, gp.wrapping_sub(0x6ad8)); // pi/2
+        c.sub_s(7, 1, 0);
+    }
+    c.g[V0][0] = Addr(me.wrapping_add(0x37c)).lw(c);
+
+    // f7 = max(angle - dead zone, 0); f3 = f7 - previous output; f2 = sum
+    // of the error ring.
+    c.cycles += 4;
+    c.g[V1][0] = 5;
+    c.lwc1(1, gp.wrapping_sub(0x6ad4)); // dead zone
+    c.cycles += 16;
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+    c.f[0] = 0;
+    c.div(0, 2, 3);
+    c.sub_s(7, 7, 1);
+    c.g[V0][0] = 5;
+    c.g[T0][0] = sx(me.wrapping_add(0x368));
+    c.f[2] = c.f[0];
+    c.max_s(7, 7, 0);
+    c.g[A3][0] = sx(me.wrapping_add(0x340));
+    c.g[V0][0] = c.g[T0][0];
+    c.g[V1][0] = 4;
+    c.g[A0][0] = c.hi[0];
+    c.g[A0][0] = sx(r32(c, A0) << 2);
+    c.g[A0][0] = sx(me.wrapping_add(r32(c, A0)));
+    c.lwc1(4, r32(c, A0).wrapping_add(0x354));
+    c.sub_s(3, 7, 4);
+    loop {
+        c.cycles += 7;
+        c.lwc1(0, r32(c, V0));
+        c.g[V1][0] = sx(r32(c, V1).wrapping_sub(1));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+        let more = (c.g[V1][0] as i64) >= 0;
+        c.add_s(2, 2, 0);
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0016_2e20);
+        }
+    }
+
+    // Filter step: out = prev + d*k0 + sum*k1 + (in[prev] - f7)*k2; store
+    // in/out/error at idx, advance idx; rate from the output.
+    c.cycles += 4;
+    let hist = r32(c, A3);
+    c.g[A0][0] = Addr(hist + 0x3c).lw(c);
+    c.g[A1][0] = 5;
+    c.cycles += 52;
+    c.g[A2][0] = 5;
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(4));
+    c.lwc1(0, hist + 0x40);
+    c.div(0, 2, 5);
+    c.lwc1(1, hist + 0x44);
+    c.mul_s(0, 3, 0);
+    c.g[A0][0] = sx(r32(c, A0) << 2);
+    c.mul_s(1, 2, 1);
+    c.lwc1(3, hist + 0x48);
+    c.g[A0][0] = sx(hist.wrapping_add(r32(c, A0)));
+    c.lwc1(6, gp.wrapping_sub(0x6ad0));
+    c.add_s(0, 4, 0);
+    c.g[AT][0] = 0x3f80_0000;
+    c.f[8] = 0x3f80_0000;
+    c.f[2] = 0;
+    c.lwc1(4, gp.wrapping_sub(0x6acc));
+    c.add_s(0, 0, 1);
+    c.lwc1(5, gp.wrapping_sub(0x6ac8));
+    c.g[V1][0] = c.hi[0];
+    c.g[V1][0] = sx(r32(c, V1) << 2);
+    c.g[V1][0] = sx(hist.wrapping_add(r32(c, V1)));
+    c.lwc1(1, r32(c, V1));
+    c.swc1(7, r32(c, A0));
+    c.sub_s(1, 1, 7);
+    c.g[V0][0] = Addr(hist + 0x3c).lw(c);
+    c.mul_s(1, 1, 3);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(hist.wrapping_add(r32(c, V0)));
+    c.add_s(0, 0, 1);
+    c.swc1(0, r32(c, V0).wrapping_add(0x14));
+    c.sub_s(1, 7, 0);
+    c.mul_s(0, 0, 6);
+    c.g[V0][0] = Addr(hist + 0x3c).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.min_s(0, 0, 8);
+    c.g[V0][0] = sx(r32(c, T0).wrapping_add(r32(c, V0)));
+    c.max_s(0, 0, 2);
+    c.swc1(1, r32(c, V0));
+    c.sub_s(0, 8, 0);
+    c.g[V0][0] = Addr(hist + 0x3c).lw(c);
+    c.mul_s(0, 0, 4);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+    c.div(0, 2, 5);
+    c.g[A0][0] = c.hi[0];
+    let idx = c.g[A0][0];
+    Addr(hist + 0x3c).sw(c, idx);
+    c.g[V1][0] = Addr(me.wrapping_add(0x30)).lw(c);
+    c.g[A0][0] = Addr(r32(c, V1).wrapping_add(4)).lw(c);
+    c.g[V0][0] = Addr(r32(c, A0).wrapping_add(0x434)).lw(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xb));
+    c.g[V0][0] = (c.g[V0][0] < 3) as u64;
+    c.add_s(2, 0, 5);
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.sqrt_s(0, 2);
+        c.sqrt_s(2, 0);
+    }
+
+    // heading = heading * rate + (velocity / speed) * (1 - rate).
+    c.cycles += 32;
+    c.lwc1(0, info.wrapping_add(0x44));
+    c.sub_s(1, 8, 2);
+    c.div_s(0, 8, 0);
+    c.mfc1(3, 0);
+    c.lqc2(4, info.wrapping_add(0x20));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, sp0 + 0x30);
+    c.lq(2, sp0 + 0x30);
+    c.sq(2, sp0 + 0x20);
+    c.mfc1(3, 2);
+    c.lqc2(4, me.wrapping_add(0x80));
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, sp0 + 0x60);
+    c.lq(2, sp0 + 0x60);
+    c.sq(2, sp0 + 0x50);
+    c.mfc1(3, 1);
+    c.lqc2(4, sp0 + 0x20);
+    c.qmtc2(3, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, sp0 + 0x70);
+    c.lq(2, sp0 + 0x70);
+    c.sq(2, sp0 + 0x60);
+    c.lqc2(3, sp0 + 0x50);
+    c.lqc2(4, sp0 + 0x60);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, sp0 + 0x70);
+    c.lq(2, sp0 + 0x70);
+    c.sq(2, me.wrapping_add(0x80));
+    c.sq(2, sp0 + 0x40);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

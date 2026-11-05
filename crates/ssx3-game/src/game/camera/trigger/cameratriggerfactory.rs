@@ -316,6 +316,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         debug_menu_select_background,
         "DebugMenu_SelectBackground",
     ),
+    (
+        0x0016_2568,
+        chase_camera_algorithm_gather_rider_state,
+        "ChaseCameraAlgorithm_GatherRiderState",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3705,6 +3710,10 @@ macro_rules! child_case {
         }
     }};
 }
+use crate::abi::ret;
+pub(crate) use crate::game::camera::camera::vu0_dot3;
+pub(crate) use crate::game::camera::camera::vu0_length;
+pub(crate) use crate::game::sound::bankmanager::fpr;
 pub(crate) use child_case;
 
 /// What the last child-collect block leaves behind (the original loads the
@@ -4967,6 +4976,347 @@ pub fn camera_trigger_man_collect_octree_node_triggers(c: &mut Cpu) {
     c.g[SP][0] = sx(at_4(c, SP, 0x90));
     c.pc = t;
     return;
+}
+
+/// Call virtual slot `slot` of the camera target (`self + 0x30`) with
+/// `this` in `this_reg` (the other argument register keeps what the caller
+/// set): `v0`/`v1` hold the vtable and function as the original loads them
+/// (`vt_reg`, `fn_reg`).
+#[inline]
+pub(crate) fn target_vcall(
+    c: &mut Cpu,
+    self_: u32,
+    obj_reg: usize,
+    vt_reg: usize,
+    this_reg: usize,
+    fn_reg: usize,
+    slot: u32,
+    ret: u32,
+) -> Flow {
+    c.g[obj_reg][0] = Addr(self_.wrapping_add(0x30)).lw(c);
+    let obj = r32(c, obj_reg);
+    c.g[vt_reg][0] = Addr(obj).lw(c);
+    let vt = r32(c, vt_reg);
+    c.g[this_reg][0] = Addr(vt.wrapping_add(slot)).lh(c);
+    c.g[fn_reg][0] = Addr(vt.wrapping_add(slot + 4)).lw(c);
+    let func = r32(c, fn_reg);
+    c.g[this_reg][0] = sx(obj.wrapping_add(r32(c, this_reg)));
+    call_ptr(c, func, ret)
+}
+
+/// `void ChaseCameraAlgorithm_GatherRiderState(ChaseCameraAlgorithm* self,
+/// CamInfo* out, float a..h)` (0x162568): read the target's velocity (kept
+/// from last frame below 27.8 m/s), split it into its horizontal part and
+/// the vertical rest, blend the stored horizontal heading towards it by a
+/// factor from the slope of the velocity (`|n.z|` mapped between two
+/// thresholds onto [lo, hi]; the second set of parameters in trick/rail
+/// states 2, 3 and 13), and fill the camera info: rider mode flags, two
+/// target parameters, the frame (position, matrix, velocity), its speed and
+/// a 0..1 boost amount; mirror three of them into the algorithm.
+pub fn chase_camera_algorithm_gather_rider_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 49;
+        let frame = Frame::open(c, 0x110);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S1, 0xb0);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0xa0);
+        c.g[S1][0] = c.g[A0][0];
+        // Keep the eight float parameters in callee-saved registers:
+        // f25..f27 = a, b, c; f24 = d; f22, f23 = e, f; f21 = g; f20 = h.
+        for (f, src, off) in [
+            (27, 14, 0x108),
+            (26, 13, 0x100),
+            (25, 12, 0xf8),
+            (24, 15, 0xf0),
+            (23, 17, 0xe8),
+            (22, 16, 0xe0),
+            (21, 18, 0xd8),
+        ] {
+            frame.save_fpr(c, f, off);
+            c.f[f] = c.f[src];
+        }
+        frame.save_fpr(c, 20, 0xd0);
+        frame.save_ra(c, 0x90);
+        c.f[20] = c.f[19];
+        let me = r32(c, S1);
+        let out = r32(c, S0);
+        let sp0 = sp(c);
+
+        // Velocity (returned in sp+0) and the rider's mode.
+        c.g[A0][0] = Addr(me.wrapping_add(0x30)).lw(c);
+        let obj = r32(c, A0);
+        c.g[V0][0] = Addr(obj).lw(c);
+        let vt = r32(c, V0);
+        c.g[A1][0] = Addr(vt.wrapping_add(0x18)).lh(c);
+        c.g[V1][0] = Addr(vt.wrapping_add(0x1c)).lw(c);
+        c.g[A1][0] = sx(obj.wrapping_add(r32(c, A1)));
+        c.g[A0][0] = sx(sp0);
+        let func = r32(c, V1);
+        call_ptr(c, func, 0x0016_25e0)?;
+        c.g[V0][0] = Addr(me.wrapping_add(0x30)).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(4)).lw(c);
+        call_ptr(c, 0x0011_fe98, 0x0016_25ec)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.lwc1(1, r32(c, GP).wrapping_sub(0x6afc)); // 27.78 m/s
+        vu0_length(c, sp0, 0);
+        c.c_lt_s(0, 1);
+        c.lq(2, sp0);
+        if c.fcc() {
+            // Too slow: keep last frame's velocity.
+            c.cycles += 3;
+            c.lq(2, me.wrapping_add(0x1b0));
+            c.sq(2, sp0);
+            c.lq(2, sp0);
+        }
+
+        // Horizontal part (sp+0x10), vertical rest (sp+0x20), direction
+        // (sp+0x30).
+        c.cycles += 23;
+        c.mtc1(0, 1);
+        c.sq(2, sp0 + 0x10);
+        c.swc1(1, sp0 + 0x18);
+        c.sq(2, me.wrapping_add(0x1b0));
+        c.lqc2(3, sp0);
+        c.lqc2(4, sp0 + 0x10);
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp0 + 0x30);
+        c.lq(2, sp0 + 0x30);
+        c.sq(2, sp0 + 0x20);
+        c.lqc2(3, sp0);
+        c.lqc2(5, sp0);
+        vu0_dot3(c, 5);
+        c.qmfc2(3, 4);
+        c.mtc1(3, 0);
+        c.c_lt_s(1, 0);
+        c.g[V0][0] = 0x50_0000;
+        if c.fcc() {
+            c.cycles += 13;
+            c.lqc2(3, sp0);
+            vu0_dot3(c, 3);
+            c.vu0().rsqrt(0, 3, 4, 0);
+            c.vu0().waitq();
+            c.vu0().mul(0b1111, 5, 3, Src::Q);
+            c.sqc2(5, sp0 + 0x40);
+            c.lq(2, sp0 + 0x40);
+            c.sq(2, sp0 + 0x30);
+        } else {
+            // Zero velocity: the default direction (0x4ff120).
+            c.cycles += 3;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xee0));
+            c.lq(3, r32(c, V0));
+            c.sq(3, sp0 + 0x30);
+        }
+
+        // Pick the parameter set by the target's state.
+        c.cycles += 11;
+        target_vcall(c, me, A1, V1, A0, V0, 0xa0, 0x0016_26ec)?;
+        c.g[V1][0] = c.g[V0][0];
+        let state = c.g[V1][0];
+        c.g[V0][0] = (sx((state as u32).wrapping_sub(2)) < 2) as u64;
+        c.f[12] = c.f[22];
+        let second = if c.g[V0][0] != 0 {
+            true
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 0xd;
+            c.f[12] = c.f[25];
+            if state == 0xd {
+                c.cycles += 1;
+                c.f[12] = c.f[22];
+                true
+            } else {
+                false
+            }
+        };
+        // f12 = lo, f13 = hi, f14 = t0, f15 = t1.
+        if second {
+            c.cycles += 4;
+            c.f[13] = c.f[23];
+            c.f[14] = c.f[21];
+            c.f[15] = c.f[20];
+        } else {
+            c.cycles += 3;
+            c.f[13] = c.f[26];
+            c.f[14] = c.f[27];
+            c.f[15] = c.f[24];
+        }
+
+        // frac = clamp((|dir.z| - t0) / (t1 - t0), 0, 1).
+        c.cycles += 6;
+        let x = Addr(sp0 + 0x38).read_fpu(c).abs();
+        c.f[0] = x.0;
+        let (lo, hi, t0, t1) = (fpr(c, 12), fpr(c, 13), fpr(c, 14), fpr(c, 15));
+        let frac = if !abi_le(c, t0, x) {
+            c.cycles += 1;
+            FpuF32::ZERO
+        } else {
+            c.cycles += 3;
+            if abi_le(c, x, t1) {
+                c.cycles += 5;
+                let span = t1 - t0;
+                let d = x - t0;
+                c.f[0] = d.0;
+                d.div(span)
+            } else {
+                c.cycles += 4;
+                c.g[AT][0] = 0x3f80_0000;
+                FpuF32::ONE
+            }
+        };
+        c.f[1] = frac.0;
+        let range = hi - lo;
+
+        // r = lo + (hi - lo) * frac; while racing (mode 1) a slow
+        // horizontal velocity keeps the stored heading.
+        c.cycles += 4;
+        c.g[V0][0] = 1;
+        let step = range * frac;
+        c.f[0] = step.0;
+        c.f[12] = (lo + step).0;
+        if c.g[S2][0] == 1 {
+            c.cycles += 14;
+            c.lwc1(0, r32(c, GP).wrapping_sub(0x6af8)); // 27.78 m/s
+            vu0_length(c, sp0 + 0x10, 1);
+            c.c_lt_s(1, 0);
+            if c.fcc() {
+                c.cycles += 2;
+                c.lq(2, me.wrapping_add(0x100));
+                c.sq(2, sp0 + 0x10);
+            }
+        }
+
+        // heading = heading * r + horizontal * (1 - r); position = heading
+        // + vertical rest. Mode flags.
+        c.cycles += 89;
+        c.mfc1(2, 12);
+        c.lqc2(4, me.wrapping_add(0x100));
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sp0 + 0x70);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(1, 20);
+        c.lq(2, sp0 + 0x70);
+        let mode = c.g[S2][0];
+        c.g[A2][0] = mode ^ 4;
+        c.sub_s(0, 20, 12);
+        c.g[A1][0] = mode ^ 2;
+        c.sq(2, sp0 + 0x60);
+        c.g[A0][0] = mode ^ 5;
+        c.mfc1(2, 0);
+        c.lqc2(4, sp0 + 0x10);
+        c.qmtc2(2, 3);
+        c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+        c.sqc2(5, sp0 + 0x80);
+        c.g[V1][0] = mode ^ 1;
+        c.lq(2, sp0 + 0x80);
+        c.g[A2][0] = (c.g[A2][0] == 0) as u64;
+        c.g[A1][0] = (c.g[A1][0] == 0) as u64;
+        c.g[A0][0] = (c.g[A0][0] == 0) as u64;
+        c.sq(2, sp0 + 0x70);
+        c.g[V1][0] = (c.g[V1][0] == 0) as u64;
+        c.lqc2(3, sp0 + 0x60);
+        c.lqc2(4, sp0 + 0x70);
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp0 + 0x80);
+        c.lq(2, sp0 + 0x80);
+        c.sq(2, me.wrapping_add(0x100));
+        c.sq(2, sp0 + 0x50);
+        c.sq(2, sp0 + 0x40);
+        c.lqc2(3, sp0 + 0x40);
+        c.lqc2(4, sp0 + 0x20);
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, sp0 + 0x60);
+        let (is4, is2, is5, is1) = (c.g[A2][0], c.g[A1][0], c.g[A0][0], c.g[V1][0]);
+        Addr(out + 0x64).sw(c, is4);
+        Addr(out + 0x58).sw(c, is2);
+        Addr(out + 0x5c).sw(c, is5);
+        Addr(out + 0x60).sw(c, is1);
+        Addr(out + 0x40).sw(c, mode);
+        c.lq(2, sp0 + 0x60);
+        c.sq(2, sp0 + 0x50);
+        // Target parameters (slots 0x88, 0x90) and frame (slot 0x8).
+        target_vcall(c, me, A1, V1, A0, V0, 0x88, 0x0016_2890)?;
+        c.swc1(0, out + 0x4c);
+        target_vcall(c, me, A1, V0, A0, V1, 0x90, 0x0016_28ac)?;
+        c.swc1(0, out + 0x54);
+        c.g[A0][0] = sx(sp0 + 0x80);
+        c.lq(2, sp0 + 0x50);
+        c.g[A2][0] = Addr(me.wrapping_add(0x30)).lw(c);
+        c.sq(2, sp0 + 0x60);
+        let obj = r32(c, A2);
+        c.g[V1][0] = Addr(obj).lw(c);
+        let vt = r32(c, V1);
+        c.g[A1][0] = Addr(vt.wrapping_add(0x8)).lh(c);
+        c.g[V0][0] = Addr(vt.wrapping_add(0xc)).lw(c);
+        c.g[A1][0] = sx(obj.wrapping_add(r32(c, A1)));
+        let func = r32(c, V0);
+        call_ptr(c, func, 0x0016_28d4)?;
+        c.lq(3, me.wrapping_add(0x40));
+        c.lq(4, sp0 + 0x80);
+        c.lq(2, sp0 + 0x60);
+        c.lwc1(1, out + 0x4c);
+        c.mtc1(0, 2);
+        c.sq(3, out);
+        c.sq(4, out + 0x10);
+        c.c_lt_s(2, 1);
+        c.sq(2, out + 0x20);
+        c.lqc2(3, out + 0x20);
+        vu0_dot3(c, 3);
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(3, 22);
+        c.mtc1(3, 0);
+        c.sq(4, sp0 + 0x70);
+        c.swc1(0, out + 0x44);
+        // Boost amount: (p + 1) / 2 for a positive parameter, else 0.
+        if c.fcc() {
+            c.cycles += 5;
+            c.add_s(1, 1, 20);
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 0);
+            c.mul_s(1, 1, 0);
+        } else {
+            c.cycles += 1;
+            c.f[1] = c.f[2];
+        }
+
+        c.cycles += 21;
+        c.lwc1(0, out + 0x4c);
+        c.swc1(1, out + 0x50);
+        c.swc1(0, me.wrapping_add(0x2f4));
+        c.lwc1(1, out + 0x50);
+        c.swc1(1, me.wrapping_add(0x2f8));
+        c.g[V0][0] = Addr(out + 0x5c).lw(c);
+        let v0 = c.g[V0][0];
+        Addr(me.wrapping_add(0x2fc)).sw(c, v0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S1, 0xb0);
+        frame.restore_ra(c, 0x90);
+        for (f, off) in [
+            (27, 0x108),
+            (26, 0x100),
+            (25, 0xf8),
+            (24, 0xf0),
+            (23, 0xe8),
+            (22, 0xe0),
+            (21, 0xd8),
+            (20, 0xd0),
+        ] {
+            frame.restore_fpr(c, f, off);
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `c.le.s a, b` (latched in FCC).
+#[inline]
+pub(crate) fn abi_le(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
+    let le = a.le(b);
+    abi::set_fcc(c, le);
+    le
 }
 
 #[cfg(test)]
@@ -6528,6 +6878,101 @@ pub(crate) mod tests {
                     c.bus.write32(OCT_NODE, OCT_NODE + 0x200);
                 }
             },
+        );
+    }
+    use super::*;
+
+    // --- ChaseCameraAlgorithm_GatherRiderState ----------------------------
+
+    pub(crate) const CAM: u32 = DATA;
+
+    pub(crate) const CAM_OUT: u32 = DATA + 0x1000;
+
+    pub(crate) const CAM_TARGET: u32 = DATA + 0x2000;
+
+    pub(crate) const CAM_TARGET_VT: u32 = DATA + 0x2100;
+
+    pub(crate) const CAM_RIDER: u32 = DATA + 0x3000;
+
+    pub(crate) const CAM_RIDER_STATE: u32 = DATA + 0x4000;
+
+    /// A chase camera whose target (a fake vtable: velocity, state,
+    /// parameters, frame) is a rider in one of the modes; velocities around
+    /// the 27.8 m/s threshold, thresholds that put |dir.z| below, between
+    /// and above them.
+    pub(crate) fn gather_fixture(c: &mut Cpu, seed: u32) {
+        use crate::difftest::fakes::LOG_RESULTS;
+        use crate::difftest::SP;
+        let mut r = machine(c, seed, 0x162568, 4);
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        let vec = |c: &mut Cpu, r: &mut Rng, a: u32, len: f32| {
+            for i in 0..4 {
+                c.bus.write32(a + 4 * i, r.f32(len));
+            }
+        };
+        w(c, CAM + 0x30, CAM_TARGET);
+        w(c, CAM_TARGET, CAM_TARGET_VT);
+        for (i, slot) in [0x18u32, 0xa0, 0x88, 0x90, 0x8].into_iter().enumerate() {
+            c.bus.write16(CAM_TARGET_VT + slot, (i as u16) * 0x10);
+            w(c, CAM_TARGET_VT + slot + 4, FAKE + 0x10 * i as u32);
+        }
+        // The velocity the first call "returns" in its result slot (sp+0).
+        let len = if seed % 3 == 0 {
+            0.0
+        } else if seed % 2 == 0 {
+            20.0
+        } else {
+            60.0
+        };
+        vec(c, &mut r, SP - 0x110, len);
+        vec(c, &mut r, CAM + 0x1b0, 40.0);
+        vec(c, &mut r, CAM + 0x100, 40.0);
+        vec(c, &mut r, CAM + 0x40, 40.0);
+        crate::difftest::put_words(c, 0x004f_f120, &[0, 0, 0x3f80_0000, 0]);
+        w(c, GAME_GP - 0x6afc, 27.777_779_f32.to_bits());
+        w(c, GAME_GP - 0x6af8, 27.777_779_f32.to_bits());
+        // Rider mode (0x11fe98) and target state (fake call 1).
+        w(c, CAM_TARGET + 4, CAM_RIDER);
+        w(c, CAM_RIDER + 0x77c, CAM_RIDER_STATE);
+        w(
+            c,
+            CAM_RIDER_STATE + 0xde0,
+            [1, 2, 4, 5, 0, 1][(seed / 2 % 6) as usize],
+        );
+        w(
+            c,
+            LOG_RESULTS + 4,
+            [2, 3, 13, 5, 1][(seed / 5 % 5) as usize],
+        );
+        // a..h: lo/hi pairs and |z| thresholds.
+        for (i, (base, span)) in [
+            (-5.0f32, 10.0f32),
+            (-5.0, 10.0),
+            (0.0, 0.6),
+            (0.5, 0.6),
+            (-5.0, 10.0),
+            (-5.0, 10.0),
+            (0.0, 0.6),
+            (0.5, 0.6),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let u = (r.next_u32() as f32 / u32::MAX as f32) * span + base;
+            c.f[12 + i] = u.to_bits();
+        }
+        c.g[A0][0] = CAM as u64;
+        c.g[A1][0] = CAM_OUT as u64;
+        c.pc = 0x0016_2568;
+    }
+
+    #[test]
+    fn gather_rider_state_matches() {
+        covered(
+            ee::s01::f_00162568__generated,
+            chase_camera_algorithm_gather_rider_state,
+            300,
+            &|c, seed| gather_fixture(c, seed),
         );
     }
 }

@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::call;
@@ -21,6 +22,10 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
+use ssx3_ee_rt::vu0::Src;
+use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::Y;
+use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
@@ -127,6 +132,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_1b08, pack_d, "__pack_d"),
     (0x0041_1fd8, muldf3, "__muldf3"),
     (0x0040_f5a8, kernel_tanf, "__kernel_tanf"),
+    (0x0041_23e8, fpcmp_parts_d, "__fpcmp_parts_d"),
+    (0x0041_2550, floatsidf, "__floatsidf"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3338,6 +3345,279 @@ pub fn kernel_tanf(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// __fpcmp_parts_d (0x004123e8)
+
+/// libgcc's unpacked double (`fp_number_type`): class, sign, exponent,
+/// 64-bit fraction.
+pub(crate) const FP_CLASS: u32 = 0x0;
+
+pub(crate) const FP_SIGN: u32 = 0x4;
+
+pub(crate) const FP_EXP: u32 = 0x8;
+
+pub(crate) const FP_FRAC: u32 = 0x10;
+
+/// Classes: 0/1 = NaNs (below 2), 2 = zero, 3 = normal, 4 = infinity.
+pub(crate) const CLASS_ZERO: u64 = 2;
+
+pub(crate) const CLASS_INFINITY: u64 = 4;
+
+/// `int __fpcmp_parts_d(fp_number_type* a, fp_number_type* b)` (0x004123e8):
+/// the soft-float double compare core. 1 if either is a NaN; infinities and
+/// zeros by sign; else by sign, exponent, then fraction. Result -1/0/1 in
+/// v0 (two infinities: `b.sign - a.sign`). Leaves the original's scratch in
+/// a0/a2/a3/v1.
+pub fn fpcmp_parts_d(c: &mut Cpu) {
+    use crate::guest::Addr;
+    let a = c.g[A0][0] as u32;
+    let b = c.g[A1][0] as u32;
+    /// The shared tail: `v0` (already -1) becomes `v1` (1) when the sign
+    /// is clear (gcc's `movz`).
+    fn by_sign(c: &mut Cpu, cycles: u64, sign: u64) {
+        c.cycles += cycles;
+        if sign == 0 {
+            c.g[V0][0] = c.g[V1][0];
+        }
+        ret(c);
+    }
+
+    c.cycles += 4;
+    let class_a = Addr(a + FP_CLASS).lw(c);
+    c.g[A2][0] = class_a;
+    c.g[V0][0] = (class_a < 2) as u64;
+    if class_a >= 2 {
+        c.cycles += 4;
+        let class_b = Addr(b + FP_CLASS).lw(c);
+        c.g[V1][0] = class_b;
+        c.g[V0][0] = class_a ^ CLASS_INFINITY;
+        if class_b >= 2 {
+            c.cycles += 2;
+            c.g[V0][0] = class_b ^ CLASS_INFINITY;
+            let sign_a;
+            if class_a != CLASS_INFINITY {
+                c.cycles += 2;
+                if class_b == CLASS_INFINITY {
+                    // Finite against infinity: the sign of b decides.
+                    c.cycles += 5;
+                    let sign_b = Addr(b + FP_SIGN).lw(c);
+                    c.g[A0][0] = sign_b;
+                    c.g[V1][0] = u64::MAX;
+                    c.g[V0][0] = 1;
+                    if sign_b == 0 {
+                        c.g[V0][0] = c.g[V1][0];
+                    }
+                    return ret(c);
+                }
+                c.g[V0][0] = class_a ^ CLASS_ZERO;
+                c.cycles += 2;
+                c.g[V0][0] = class_b ^ CLASS_ZERO;
+                if class_a == CLASS_ZERO {
+                    c.cycles += 2;
+                    if class_b != CLASS_ZERO {
+                        // Zero against a number: the sign of b decides.
+                        let sign_b = Addr(b + FP_SIGN).lw(c);
+                        c.g[A0][0] = sign_b;
+                        c.cycles += 4;
+                        c.g[V1][0] = 1;
+                        c.g[V0][0] = u64::MAX;
+                        if sign_b != 0 {
+                            c.g[V0][0] = c.g[V1][0];
+                        }
+                        return ret(c);
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 0;
+                    return ret(c);
+                }
+                c.cycles += 2;
+                if class_b != CLASS_ZERO {
+                    return compare_normals(c, a, b);
+                }
+                // A number against zero: the sign of a decides.
+                sign_a = Addr(a + FP_SIGN).lw(c);
+            } else {
+                c.cycles += 2;
+                if class_b == CLASS_INFINITY {
+                    // Two infinities: b.sign - a.sign.
+                    c.cycles += 4;
+                    let sb = Addr(b + FP_SIGN).lw(c);
+                    c.g[V1][0] = sb;
+                    let sa = Addr(a + FP_SIGN).lw(c);
+                    c.g[V0][0] = sx((sb as u32).wrapping_sub(sa as u32));
+                    return ret(c);
+                }
+                // Infinity against a finite number: the sign of a decides.
+                sign_a = Addr(a + FP_SIGN).lw(c);
+            }
+            c.g[A0][0] = sign_a;
+            c.g[V1][0] = 1;
+            c.g[V0][0] = u64::MAX;
+            return by_sign(c, 4, sign_a);
+        }
+    }
+    // A NaN: unordered.
+    c.cycles += 2;
+    c.g[V0][0] = 1;
+    ret(c);
+}
+
+/// Both operands normal (the `'b_4124a0` block of `__fpcmp_parts_d`).
+pub(crate) fn fpcmp_normals_tail(c: &mut Cpu, cycles: u64, v0: u64, sign_a: u64) {
+    c.cycles += cycles;
+    c.g[V0][0] = v0;
+    if sign_a == 0 {
+        c.g[V0][0] = c.g[V1][0];
+    }
+    ret(c);
+}
+
+/// Two normal numbers: different signs -> by the sign of a; same sign ->
+/// by exponent, then by fraction (`v1` = the result for a positive `a`,
+/// negated by the sign).
+pub(crate) fn compare_normals(c: &mut Cpu, a: u32, b: u32) {
+    use crate::guest::Addr;
+    c.cycles += 4;
+    let sign_a = Addr(a + FP_SIGN).lw(c);
+    c.g[A3][0] = sign_a;
+    let sign_b = Addr(b + FP_SIGN).lw(c);
+    c.g[V0][0] = sign_b;
+    if sign_a != sign_b {
+        c.cycles += 1;
+        c.g[V1][0] = 1;
+        return fpcmp_normals_tail(c, 3, u64::MAX, sign_a);
+    }
+    let exp_a = Addr(a + FP_EXP).lw(c);
+    c.g[A2][0] = exp_a;
+    c.cycles += 4;
+    let exp_b = Addr(b + FP_EXP).lw(c);
+    c.g[V1][0] = exp_b;
+    c.g[V0][0] = ((exp_b as i64) < (exp_a as i64)) as u64;
+    if (exp_b as i64) < (exp_a as i64) {
+        // |a| > |b|.
+        c.g[V1][0] = 1;
+        return fpcmp_normals_tail(c, 3, u64::MAX, sign_a);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = ((exp_a as i64) < (exp_b as i64)) as u64;
+    if (exp_a as i64) < (exp_b as i64) {
+        // |a| < |b|.
+        c.cycles += 1;
+        c.g[V1][0] = u64::MAX;
+        return fpcmp_normals_tail(c, 3, 1, sign_a);
+    }
+    let frac_a = Addr(a + FP_FRAC).ld(c);
+    c.g[V1][0] = frac_a;
+    c.cycles += 4;
+    let frac_b = Addr(b + FP_FRAC).ld(c);
+    c.g[A0][0] = frac_b;
+    c.g[V0][0] = (frac_b < frac_a) as u64;
+    if frac_b < frac_a {
+        c.g[V1][0] = 1;
+        return fpcmp_normals_tail(c, 3, u64::MAX, sign_a);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = (frac_a < frac_b) as u64;
+    c.g[V1][0] = u64::MAX;
+    if frac_a < frac_b {
+        return fpcmp_normals_tail(c, 3, 1, sign_a);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = 0;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// __floatsidf (0x412550)
+
+pub(crate) const PACK_D_3: Callee = Callee {
+    addr: 0x0041_1b08,
+    f: ee::s15::__pack_d,
+};
+
+pub(crate) const CLASS_NUMBER: u64 = 3;
+
+/// Fraction bits (FRACBITS + NGARDS = 60): the fraction is normalised so
+/// its top set bit is bit 60.
+pub(crate) const FRAC_EXP: u64 = 0x3c;
+
+/// `double __floatsidf(int i)` (0x412550, libgcc soft-float): build the
+/// unpacked number (zero, or sign and magnitude with exponent 60,
+/// normalised) and pack it with `__pack_d`. INT_MIN returns -2^31 directly.
+pub fn floatsidf(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x30);
+        let num = Addr(sp(c));
+        c.g[V0][0] = CLASS_NUMBER;
+        c.g[V1][0] = sx((c.g[A0][0] as u32) >> 31); // sign
+        frame.save_ra(c, 0x20);
+        num.off(FP_CLASS).sw(c, c.g[V0][0]);
+        num.off(FP_SIGN).sw(c, c.g[V1][0]);
+        if c.g[A0][0] == 0 {
+            c.cycles += 3;
+            c.g[V0][0] = CLASS_ZERO;
+            num.off(FP_CLASS).sw(c, c.g[V0][0]);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = FRAC_EXP;
+            num.off(FP_EXP).sw(c, c.g[V0][0]);
+            if c.g[V1][0] == 0 {
+                c.cycles += 1;
+                num.off(FP_FRAC).sd(c, c.g[A0][0]);
+            } else {
+                c.cycles += 3;
+                let int_min = c.g[A0][0] == 0xffff_ffff_8000_0000;
+                c.g[V0][0] = sx(0u32.wrapping_sub(c.g[A0][0] as u32));
+                if int_min {
+                    // -2^31 as a double.
+                    c.cycles += 4;
+                    c.g[V0][0] = 0xc1e0 << 48;
+                    frame.restore_ra(c, 0x20);
+                    c.cycles += 2;
+                    frame.close(c);
+                    return Ok(());
+                }
+                c.cycles += 2;
+                num.off(FP_FRAC).sd(c, c.g[V0][0]);
+            }
+            // Normalise: shift the fraction up to bit 60.
+            c.cycles += 6;
+            c.g[A1][0] = num.off(FP_FRAC).ld(c);
+            c.g[V0][0] = u64::MAX >> 4;
+            c.g[V0][0] = (c.g[V0][0] < c.g[A1][0]) as u64;
+            c.g[A0][0] = num.off(FP_EXP).lw(c);
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[A2][0] = u64::MAX >> 4;
+                loop {
+                    c.cycles += 7;
+                    c.g[V1][0] = c.g[A1][0] << 1;
+                    c.g[A0][0] = addu(c.g[A0][0], (-1i64) as u64);
+                    c.g[A1][0] = c.g[V1][0];
+                    c.g[V0][0] = (c.g[A2][0] < c.g[V1][0]) as u64;
+                    if c.g[V0][0] != 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0041_25d0);
+                    }
+                }
+                c.cycles += 2;
+                num.off(FP_EXP).sw(c, c.g[A0][0]);
+                num.off(FP_FRAC).sd(c, c.g[V1][0]);
+            }
+        }
+        c.cycles += 3;
+        c.g[A0][0] = c.g[SP][0];
+        PACK_D_3.call(c, 0x0041_25fc)?;
+        frame.restore_ra(c, 0x20);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4427,7 +4707,6 @@ pub(crate) mod tests {
         });
     }
     use super::*;
-    use crate::difftest::fakes::{self};
     use crate::difftest::put_vec;
     pub(crate) use crate::game::camera::camera::tests::f;
 
@@ -4480,6 +4759,90 @@ pub(crate) mod tests {
                     1 => u64::MAX,
                     _ => r.next_u32() as u64,
                 };
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::elf_image;
+    use crate::difftest::{check_lohi, check_paths};
+
+    /// Two unpacked doubles covering every class pair (NaN, zero, normal,
+    /// infinity, and an out-of-range negative class), both signs, and
+    /// equal/greater/smaller exponents and fractions.
+    #[test]
+    fn fpcmp_parts_d_matches() {
+        use crate::difftest::{scramble, Rng};
+        check(
+            ee::s15::f_004123e8__generated,
+            fpcmp_parts_d,
+            400,
+            &|c, seed| {
+                let mut r = Rng(0x4123_e8 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                let (a, b) = (DATA, DATA + 0x40);
+                let classes = [0u32, 1, 2, 3, 3, 3, 4, 0xffff_fff0];
+                c.bus.write32(a + FP_CLASS, classes[seed as usize % 8]);
+                c.bus
+                    .write32(b + FP_CLASS, classes[(seed as usize / 8) % 8]);
+                let pick = |r: &mut Rng, n: u32| r.next_u32() % n;
+                let sa = pick(&mut r, 2);
+                let sb = if pick(&mut r, 2) == 0 {
+                    sa
+                } else {
+                    pick(&mut r, 2)
+                };
+                c.bus.write32(a + FP_SIGN, sa);
+                c.bus.write32(b + FP_SIGN, sb);
+                let ea = pick(&mut r, 5).wrapping_sub(2);
+                let eb = if pick(&mut r, 2) == 0 {
+                    ea
+                } else {
+                    pick(&mut r, 5).wrapping_sub(2)
+                };
+                c.bus.write32(a + FP_EXP, ea);
+                c.bus.write32(b + FP_EXP, eb);
+                let fa = ((r.next_u32() as u64) << 32 | r.next_u32() as u64) & 0xf;
+                let fb = if pick(&mut r, 3) == 0 {
+                    fa
+                } else {
+                    fa ^ (pick(&mut r, 4) as u64)
+                };
+                c.bus.write32(a + FP_FRAC, fa as u32);
+                c.bus.write32(
+                    a + FP_FRAC + 4,
+                    (fa >> 32) as u32 | 0x8000_0000 * pick(&mut r, 2),
+                );
+                c.bus.write32(b + FP_FRAC, fb as u32);
+                c.bus.write32(b + FP_FRAC + 4, (fb >> 32) as u32);
+                c.g[A0][0] = sx(a);
+                c.g[A1][0] = sx(b);
+                c.pc = 0x0041_23e8;
+            },
+        );
+    }
+
+    /// __floatsidf: zero, positive, negative, INT_MIN, small and large
+    /// magnitudes (long and short normalisation), with the real __pack_d.
+    #[test]
+    fn floatsidf_matches() {
+        check(
+            ee::s15::f_00412550__generated,
+            floatsidf,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x4125_5000 ^ seed as u64);
+                scramble(c, &mut r);
+                let v = match seed % 6 {
+                    0 => 0,
+                    1 => i32::MIN,
+                    2 => (r.next_u32() % 16) as i32 - 8,
+                    3 => r.next_u32() as i32,
+                    4 => i32::MAX - (r.next_u32() % 4) as i32,
+                    _ => ((r.next_u32() >> (r.next_u32() % 31)) as i32)
+                        .wrapping_mul(if r.next_u32() & 1 == 0 { 1 } else { -1 }),
+                };
+                c.g[A0][0] = sx(v as u32);
             },
         );
     }

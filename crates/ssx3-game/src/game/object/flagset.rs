@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -94,6 +95,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "AnimObject_GetNodeIntersectMatrix",
     ),
     (0x0034_e348, anim_object_v52, "AnimObject_v52"),
+    (
+        0x0034_bca0,
+        group_compute_verts,
+        "cFlagManager_GroupComputeVerts",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2231,6 +2237,580 @@ pub fn fence_render(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// cFlagManager_GroupComputeVerts (0x0034bca0)
+
+/// `FlagManager* World_GetFlagManager()` (0x002d1cb0, called through the
+/// function table as the original does).
+pub(crate) const WORLD_GET_FLAG_MANAGER: u32 = 0x002d_1cb0;
+
+/// `this + off` (or any register plus an offset), as the compiled address
+/// arithmetic does it (32-bit wrap).
+#[inline(always)]
+pub(crate) fn ad(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// The sine/cosine slots of the 512-entry wave table at `base` for the
+/// angle index in v0: `v0 = &table[i & 0x1ff]`, `v1 = &table[(i & 0x1ff) +
+/// 0x80]` (a quarter turn later; the table has 0x80 extra entries).
+#[inline(always)]
+pub(crate) fn wave_slots(c: &mut Cpu, base: usize) {
+    c.g[V0][0] &= 0x1ff;
+    c.g[V1][0] = sx(ad(c, V0, 0x80));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[base][0] as u32));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[base][0] as u32));
+}
+
+/// Flag group fields (`cFlagGroup`, s0): style bytes, wave phases and
+/// amplitudes, grid size, rest positions.
+pub(crate) const GROUP_PINNED: u32 = 0x00;
+
+// byte; with +1 also a u16 "animated" test
+pub(crate) const GROUP_MIRROR: u32 = 0x01;
+
+// byte: 1 = flip the columns
+pub(crate) const GROUP_EDGE_ONLY: u32 = 0x02;
+
+// byte: freeze the first row
+pub(crate) const GROUP_COLUMNS: u32 = 0x64;
+
+pub(crate) const GROUP_ROWS: u32 = 0x68;
+
+pub(crate) const GROUP_COLUMN_SPAN: u32 = 0x6c;
+
+pub(crate) const GROUP_ROW_SPAN: u32 = 0x70;
+
+pub(crate) const GROUP_REST_VERTS: u32 = 0x74;
+
+pub(crate) const GROUP_WIND_BLEND: u32 = 0x4c;
+
+/// `void cFlagManager_GroupComputeVerts(cFlagGroup* group, Vec3* verts)`
+/// (0x0034bca0): animate a cloth flag. Four wave phases (+0x78, scaled by
+/// a `.lit4` constant) and four amplitudes (+0x14, scaled by the wind
+/// blend of the flag manager) drive a per-column offset table on the
+/// stack; then every grid vertex is the rest vertex plus its column's
+/// offset plus two travelling ripples weighted by the row. Pinned groups
+/// fold the weight at the middle (`> 0.5` mirrors); the mirror style flips
+/// the column order; the edge-only style copies the first row unchanged.
+/// The register-level FPU ops and scratch registers follow the original
+/// exactly (the wave table at 0x504fb8, `cvt.w.s` indices).
+pub fn group_compute_verts(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x120);
+        'flags: {
+            frame.save(c, S0, 0x110);
+            frame.save(c, S2, 0xf0);
+            c.g[S0][0] = c.g[A0][0];
+            frame.save(c, S3, 0xe0);
+            c.g[S2][0] = 0;
+            frame.save(c, S1, 0x100);
+            frame.save_ra(c, 0xd0);
+            c.g[V0][0] = c.lb(ad(c, S0, GROUP_PINNED));
+            c.g[S3][0] = c.g[A1][0];
+            if c.g[V0][0] == 0 {
+                break 'flags;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = c.lb(ad(c, S0, GROUP_MIRROR));
+            // s2: pinned and mirrored (the "fold at the middle" style).
+            c.g[S2][0] = (c.g[V0][0] != 0) as u64;
+        }
+        c.cycles += 17;
+        c.g[S1][0] = c.lhu(ad(c, S0, GROUP_PINNED)) as u64;
+        call_ptr(c, WORLD_GET_FLAG_MANAGER, 0x0034_bcdc)?;
+
+        // Wind blend: f12 = blend + manager.wind * (1 - blend).
+        c.lwc1(2, ad(c, S0, GROUP_WIND_BLEND));
+        c.g[S1][0] = (c.g[S1][0] < 1) as u64; // s1: not animated
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 1);
+        c.g[A1][0] = sx(ad(c, SP, 0x10));
+        c.lwc1(0, ad(c, V0, 0x10));
+        c.g[A0][0] = sx(ad(c, S0, 0x14));
+        c.sub_s(1, 1, 2);
+        c.lwc1(3, ad(c, GP, 0u32.wrapping_sub(0x2afc)));
+        c.g[V1][0] = c.g[SP][0];
+        c.g[V0][0] = sx(ad(c, S0, 0x78));
+        c.g[A2][0] = 3;
+        c.mul_s(0, 0, 1);
+        c.add_s(12, 2, 0);
+        // Four phases (sp+0x00) and amplitudes (sp+0x10).
+        loop {
+            c.cycles += 12;
+            c.lwc1(1, ad(c, V0, 0));
+            c.g[A2][0] = sx(ad(c, A2, 0xffff_ffff));
+            c.lwc1(0, ad(c, A0, 0));
+            c.g[V0][0] = sx(ad(c, V0, 4));
+            c.mul_s(1, 1, 3);
+            c.g[A0][0] = sx(ad(c, A0, 4));
+            c.mul_s(0, 0, 12);
+            c.swc1(1, ad(c, V1, 0));
+            c.swc1(0, ad(c, A1, 0));
+            c.g[V1][0] = sx(ad(c, V1, 4));
+            let more = (c.g[A2][0] as i64) >= 0;
+            c.g[A1][0] = sx(ad(c, A1, 4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_bd18);
+            }
+        }
+
+        // Per-column offsets (sp+0x20, 12 bytes per column).
+        c.cycles += 9;
+        c.g[A0][0] = c.lw(ad(c, S0, GROUP_COLUMNS));
+        c.g[V0][0] = 9;
+        c.g[V1][0] = u64::MAX;
+        c.mtc1(0, 13);
+        c.g[A2][0] = 0;
+        c.mov_s(16, 13);
+        c.mov_s(15, 13);
+        if (c.g[A0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 14);
+            loop {
+                column_offsets(c);
+                c.g[V0][0] = c.lw(ad(c, S0, GROUP_COLUMNS));
+                c.g[V0][0] = ((c.g[A2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.add_s(13, 13, 14);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_bd78);
+                }
+            }
+        }
+
+        // The vertex grid.
+        c.cycles += 5;
+        c.g[V0][0] = c.lw(ad(c, S0, GROUP_ROWS));
+        c.g[T2][0] = 0;
+        c.mtc1(0, 18);
+        c.g[V1][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 3;
+            c.g[T4][0] = 0xc;
+            c.g[T1][0] = 0;
+            loop {
+                c.cycles += 5;
+                c.g[V0][0] = c.lw(ad(c, S0, GROUP_COLUMNS));
+                c.g[T3][0] = sx(ad(c, V1, 1));
+                c.mtc1(0, 13);
+                c.g[A3][0] = 0;
+                if (c.g[V0][0] as i64) > 0 {
+                    c.cycles += 13;
+                    c.mult(0, A2, T2, T4);
+                    c.g[V0][0] = 0x50_0000;
+                    c.g[AT][0] = 0x3f00_0000;
+                    c.mtc1(AT, 11);
+                    c.g[T0][0] = sx(ad(c, V0, 0x4fb8));
+                    c.g[AT][0] = 0x3f80_0000;
+                    c.mtc1(AT, 12);
+                    c.mov_s(14, 13);
+                    c.lwc1(17, ad(c, GP, 0u32.wrapping_sub(0x2af0)));
+                    c.g[A1][0] = sx(ad(c, SP, 0x20));
+                    c.lwc1(16, ad(c, GP, 0u32.wrapping_sub(0x2aec)));
+                    c.g[A0][0] = sx(ad(c, T1, c.g[S3][0] as u32));
+                    c.lwc1(15, ad(c, GP, 0u32.wrapping_sub(0x2ae8)));
+                    loop {
+                        grid_vertex(c);
+                        c.cycles += 6;
+                        c.g[V0][0] = c.lw(ad(c, S0, GROUP_COLUMNS));
+                        c.g[A3][0] = sx(ad(c, A3, 1));
+                        c.g[A1][0] = sx(ad(c, A1, 0xc));
+                        c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                        let more = c.g[V0][0] != 0;
+                        c.add_s(13, 13, 12);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0034_c030);
+                        }
+                    }
+                }
+                c.cycles += 7;
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 0);
+                c.g[V1][0] = c.g[T3][0];
+                c.g[V0][0] = c.lw(ad(c, S0, GROUP_ROWS));
+                c.g[V0][0] = ((c.g[V1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.add_s(18, 18, 0);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_bfe8);
+                }
+            }
+        }
+
+        c.cycles += 7;
+        frame.restore(c, S0, 0x110);
+        frame.restore(c, S1, 0x100);
+        frame.restore(c, S2, 0xf0);
+        frame.restore(c, S3, 0xe0);
+        frame.restore_ra(c, 0xd0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One column of the offset table (`a2` = column, f13 = column number as
+/// a float, f14 = 1.0): its weight `f3`, the two travelling waves and the
+/// static shape terms, into the 12-byte slot of the (possibly mirrored)
+/// column index `a0`.
+pub(crate) fn column_offsets(c: &mut Cpu) {
+    'weighted: {
+        c.cycles += 5;
+        c.lwc1(0, ad(c, S0, GROUP_COLUMN_SPAN));
+        c.g[A0][0] = c.g[A2][0];
+        c.div_s(3, 13, 0);
+        c.mov_s(4, 3);
+        if c.g[S1][0] != 0 {
+            // Not animated: full weight.
+            c.cycles += 4;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 3);
+            break 'weighted;
+        }
+        c.cycles += 2;
+        if c.g[S2][0] != 0 {
+            // Folded at the middle.
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(AT, 0);
+            c.c_lt_s(0, 3);
+            if c.fcc() {
+                c.sub_s(3, 14, 3);
+            } else {
+                c.cycles += 2;
+            }
+            break 'weighted;
+        }
+        c.g[V1][0] = c.lb(ad(c, S0, GROUP_MIRROR));
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        if c.g[V1][0] == c.g[V0][0] {
+            // Mirrored: slot columns - a2 - 1.
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(ad(c, S0, GROUP_COLUMNS));
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(c.g[A2][0] as u32));
+            c.g[A0][0] = sx(ad(c, V0, 0xffff_ffff));
+        }
+    }
+    // First wave (x).
+    c.cycles += 22;
+    c.lwc1(2, ad(c, GP, 0u32.wrapping_sub(0x2af8)));
+    c.g[V0][0] = 0x500000;
+    c.lwc1(1, ad(c, S0, 0x24));
+    c.g[A1][0] = sx(ad(c, V0, 0x4fb8));
+    c.mul_s(5, 4, 2);
+    c.lwc1(0, ad(c, SP, 0));
+    c.lwc1(6, ad(c, GP, 0u32.wrapping_sub(0x2af4)));
+    c.lwc1(4, ad(c, SP, 0x10));
+    c.mul_s(1, 5, 1);
+    c.add_s(0, 0, 1);
+    c.mul_s(0, 0, 6);
+    c.cvt_w_s(1, 0);
+    c.mfc1(2, 1);
+    wave_slots(c, A1);
+    c.lwc1(2, ad(c, V0, 0));
+    c.lwc1(1, ad(c, V1, 0));
+    if c.g[S2][0] == 0 {
+        c.cycles += 3;
+        c.mul_s(0, 4, 3);
+        c.mul_s(0, 0, 1);
+        c.add_s(16, 16, 0);
+    }
+    // Second wave (y); the slot gets (x, running sum, 0).
+    c.cycles += 30;
+    c.mul_s(0, 4, 3);
+    c.g[V0][0] = 0xc;
+    c.mult(0, 3, 4, 2);
+    c.swc1(16, ad(c, SP, 0xa4));
+    c.sw(ad(c, SP, 0xa8), 0u64);
+    c.mul_s(0, 0, 2);
+    c.lwc1(1, ad(c, S0, 0x28));
+    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(ad(c, SP, 0)));
+    c.swc1(0, ad(c, SP, 0xa0));
+    c.mul_s(1, 5, 1);
+    c.ldl(7, ad(c, SP, 0xa7));
+    c.ldr(7, ad(c, SP, 0xa0));
+    c.g[T0][0] = c.lw(ad(c, SP, 0xa8));
+    c.sdl(7, ad(c, A0, 0x27));
+    c.sdr(7, ad(c, A0, 0x20));
+    c.sw(ad(c, A0, 0x28), c.g[T0][0]);
+    c.lwc1(0, ad(c, SP, 0x4));
+    c.add_s(0, 0, 1);
+    c.mul_s(0, 0, 6);
+    c.cvt_w_s(1, 0);
+    c.mfc1(2, 1);
+    wave_slots(c, A1);
+    c.lwc1(2, ad(c, V0, 0));
+    c.lwc1(1, ad(c, V1, 0));
+    if c.g[S2][0] == 0 {
+        c.cycles += 4;
+        c.lwc1(0, ad(c, SP, 0x14));
+        c.mul_s(0, 0, 3);
+        c.mul_s(0, 0, 1);
+        c.add_s(15, 15, 0);
+    }
+    // The static shape terms (+0x34..+0x48) blended by the wind.
+    c.cycles += 64;
+    c.lwc1(1, ad(c, SP, 0x14));
+    c.sub_s(5, 14, 12);
+    c.swc1(15, ad(c, SP, 0xa4));
+    c.g[A2][0] = sx(ad(c, A2, 0x1));
+    c.mul_s(1, 1, 3);
+    c.sw(ad(c, SP, 0xa8), 0u64);
+    c.lwc1(10, ad(c, S0, 0x40));
+    c.mul_s(1, 1, 2);
+    c.lwc1(9, ad(c, S0, 0x44));
+    c.lwc1(7, ad(c, S0, 0x48));
+    c.mul_s(10, 10, 3);
+    c.lwc1(8, ad(c, S0, 0x34));
+    c.mul_s(9, 9, 3);
+    c.lwc1(6, ad(c, S0, 0x38));
+    c.mul_s(7, 7, 3);
+    c.swc1(1, ad(c, SP, 0xa0));
+    c.mul_s(8, 8, 3);
+    c.mul_s(6, 6, 3);
+    c.lwc1(0, ad(c, A0, 0x20));
+    c.mul_s(10, 10, 12);
+    c.lwc1(4, ad(c, S0, 0x3c));
+    c.mul_s(8, 8, 5);
+    c.add_s(0, 0, 1);
+    c.lwc1(2, ad(c, A0, 0x24));
+    c.mul_s(4, 4, 3);
+    c.lwc1(3, ad(c, A0, 0x28));
+    c.mul_s(9, 9, 12);
+    c.swc1(0, ad(c, A0, 0x20));
+    c.mul_s(7, 7, 12);
+    c.mul_s(4, 4, 5);
+    c.lwc1(0, ad(c, SP, 0xa4));
+    c.mul_s(6, 6, 5);
+    c.add_s(11, 10, 8);
+    c.add_s(2, 2, 0);
+    c.add_s(1, 7, 4);
+    c.add_s(5, 9, 6);
+    c.swc1(2, ad(c, A0, 0x24));
+    c.lwc1(0, ad(c, SP, 0xa8));
+    c.add_s(3, 3, 0);
+    c.swc1(3, ad(c, A0, 0x28));
+    c.swc1(5, ad(c, SP, 0xc4));
+    c.swc1(1, ad(c, SP, 0xc8));
+    c.swc1(10, ad(c, SP, 0xa0));
+    c.swc1(9, ad(c, SP, 0xa4));
+    c.swc1(7, ad(c, SP, 0xa8));
+    c.swc1(8, ad(c, SP, 0xb0));
+    c.swc1(6, ad(c, SP, 0xb4));
+    c.swc1(4, ad(c, SP, 0xb8));
+    c.swc1(11, ad(c, SP, 0xc0));
+    c.lwc1(1, ad(c, A0, 0x20));
+    c.lwc1(2, ad(c, A0, 0x24));
+    c.add_s(1, 1, 11);
+    c.lwc1(3, ad(c, A0, 0x28));
+    c.swc1(1, ad(c, A0, 0x20));
+    c.lwc1(0, ad(c, SP, 0xc4));
+    c.add_s(2, 2, 0);
+    c.swc1(2, ad(c, A0, 0x24));
+    c.lwc1(0, ad(c, SP, 0xc8));
+    c.add_s(3, 3, 0);
+    c.swc1(3, ad(c, A0, 0x28));
+}
+
+/// One grid vertex (`a0` = output, `a1` = its column's offset slot, `a2` =
+/// rest-vertex offset; f13 = column, f18 = row as floats; f11 = 0.5,
+/// f12 = 1.0, f14 = 0.0, f15..f17 = `.lit4` constants).
+pub(crate) fn grid_vertex(c: &mut Cpu) {
+    'style: {
+        c.cycles += 6;
+        c.lwc1(0, ad(c, S0, GROUP_COLUMN_SPAN));
+        c.lwc1(1, ad(c, S0, GROUP_ROW_SPAN));
+        c.div_s(8, 13, 0);
+        c.div_s(9, 18, 1);
+        c.mov_s(10, 8);
+        if c.g[S2][0] != 0 {
+            c.cycles += 4;
+            c.c_lt_s(11, 8);
+            if c.fcc() {
+                c.sub_s(8, 12, 8);
+                c.cycles += 1;
+            } else {
+                c.cycles += 2;
+            }
+            break 'style;
+        }
+        c.cycles += 4;
+        c.g[V1][0] = c.lb(ad(c, S0, GROUP_MIRROR));
+        c.g[V0][0] = 1;
+        if c.g[V1][0] == c.g[V0][0] {
+            c.cycles += 3;
+            c.sub_s(8, 12, 8);
+            c.mov_s(10, 8);
+            c.cycles += 1;
+            break 'style;
+        }
+        c.cycles += 2;
+        if c.g[S1][0] != 0 {
+            c.cycles += 2;
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 8);
+            c.cycles += 1;
+        }
+    }
+    c.g[V0][0] = c.lb(ad(c, S0, GROUP_EDGE_ONLY));
+    c.cycles += 2;
+    let edge_only = c.g[V0][0] != 0;
+    c.g[V0][0] = c.lw(ad(c, S0, GROUP_REST_VERTS));
+    if edge_only {
+        c.cycles += 3;
+        c.c_eq_s(9, 14);
+        if c.fcc() {
+            // First row of an edge-only flag: the rest vertex as is.
+            c.cycles += 8;
+            c.g[V0][0] = sx(ad(c, A2, c.g[V0][0] as u32));
+            c.ldl(V1, ad(c, V0, 0x7));
+            c.ldr(V1, ad(c, V0, 0));
+            c.g[T5][0] = c.lw(ad(c, V0, 0x8));
+            c.sdl(V1, ad(c, A0, 0x7));
+            c.sdr(V1, ad(c, A0, 0));
+            c.sw(ad(c, A0, 0x8), c.g[T5][0]);
+            return;
+        }
+    }
+    // Rest vertex plus the column offset.
+    c.cycles += 22;
+    c.c_lt_s(14, 10);
+    c.lwc1(5, ad(c, A1, 0));
+    c.g[V0][0] = sx((c.g[A2][0] as u32).wrapping_add(ad(c, V0, 0)));
+    c.lwc1(4, ad(c, A1, 0x4));
+    c.lwc1(2, ad(c, V0, 0x8));
+    c.lwc1(0, ad(c, V0, 0));
+    c.lwc1(1, ad(c, V0, 0x4));
+    c.lwc1(3, ad(c, A1, 0x8));
+    c.add_s(0, 0, 5);
+    c.add_s(1, 1, 4);
+    c.add_s(2, 2, 3);
+    c.swc1(0, ad(c, SP, 0xa0));
+    c.swc1(1, ad(c, SP, 0xa4));
+    c.swc1(2, ad(c, SP, 0xa8));
+    c.ldl(2, ad(c, SP, 0xa7));
+    c.ldr(2, ad(c, SP, 0xa0));
+    c.g[V1][0] = c.lw(ad(c, SP, 0xa8));
+    c.sdl(2, ad(c, A0, 0x7));
+    c.sdr(2, ad(c, A0, 0));
+    c.sw(ad(c, A0, 0x8), c.g[V1][0]);
+    let ripple1 = c.fcc();
+    c.lwc1(6, ad(c, SP, 0x18));
+    if ripple1 {
+        c.cycles += 4;
+        c.c_lt_s(17, 6);
+        let strong = c.fcc();
+        c.lwc1(1, ad(c, SP, 0x8));
+        if strong {
+            // Ripple 1 (amplitude sp+0x18, phase sp+0x08, freq +0x2c).
+            c.cycles += 37;
+            c.add_s(0, 10, 9);
+            c.lwc1(2, ad(c, S0, 0x2c));
+            c.add_s(3, 8, 9);
+            c.mul_s(2, 2, 16);
+            c.lwc1(5, ad(c, A0, 0));
+            c.mul_s(0, 0, 11);
+            c.mul_s(3, 3, 11);
+            c.mul_s(4, 6, 9);
+            c.mul_s(0, 0, 2);
+            c.mul_s(3, 6, 3);
+            c.mul_s(2, 6, 8);
+            c.add_s(1, 1, 0);
+            c.mul_s(1, 1, 15);
+            c.cvt_w_s(0, 1);
+            c.mfc1(2, 0);
+            wave_slots(c, T0);
+            c.lwc1(0, ad(c, V0, 0));
+            c.lwc1(1, ad(c, V1, 0));
+            c.mul_s(4, 4, 0);
+            c.mul_s(3, 3, 1);
+            c.mul_s(2, 2, 0);
+            c.swc1(4, ad(c, SP, 0xa8));
+            c.swc1(3, ad(c, SP, 0xa4));
+            c.swc1(2, ad(c, SP, 0xa0));
+            c.add_s(5, 5, 2);
+            c.lwc1(0, ad(c, A0, 0x4));
+            c.lwc1(1, ad(c, A0, 0x8));
+            c.add_s(0, 0, 3);
+            c.swc1(5, ad(c, A0, 0));
+            c.add_s(1, 1, 4);
+            c.swc1(0, ad(c, A0, 0x4));
+            c.swc1(1, ad(c, A0, 0x8));
+        }
+        c.cycles += 2;
+        c.c_lt_s(14, 10);
+    }
+    c.cycles += 2;
+    let ripple2 = c.fcc();
+    c.lwc1(7, ad(c, SP, 0x1c));
+    if ripple2 {
+        c.cycles += 4;
+        c.c_lt_s(17, 7);
+        let strong = c.fcc();
+        c.lwc1(1, ad(c, SP, 0xc));
+        if strong {
+            // Ripple 2 (amplitude sp+0x1c, phase sp+0x0c, freq +0x30).
+            c.cycles += 39;
+            c.add_s(0, 10, 9);
+            c.lwc1(2, ad(c, S0, 0x30));
+            c.add_s(4, 8, 9);
+            c.mul_s(2, 2, 16);
+            c.lwc1(6, ad(c, A0, 0));
+            c.mul_s(0, 0, 11);
+            c.mul_s(4, 4, 11);
+            c.sub_s(3, 12, 9);
+            c.mul_s(0, 0, 2);
+            c.mul_s(5, 7, 8);
+            c.mul_s(3, 7, 3);
+            c.add_s(1, 1, 0);
+            c.mul_s(4, 7, 4);
+            c.mul_s(1, 1, 15);
+            c.cvt_w_s(0, 1);
+            c.mfc1(2, 0);
+            wave_slots(c, T0);
+            c.lwc1(0, ad(c, V0, 0));
+            c.lwc1(1, ad(c, V1, 0));
+            c.mul_s(5, 5, 0);
+            c.mul_s(4, 4, 1);
+            c.mul_s(3, 3, 0);
+            c.swc1(5, ad(c, SP, 0xa0));
+            c.add_s(6, 6, 5);
+            c.swc1(4, ad(c, SP, 0xa4));
+            c.swc1(3, ad(c, SP, 0xa8));
+            c.swc1(6, ad(c, A0, 0));
+            c.lwc1(1, ad(c, A0, 0x4));
+            c.lwc1(2, ad(c, A0, 0x8));
+            c.add_s(1, 1, 4);
+            c.swc1(1, ad(c, A0, 0x4));
+            c.lwc1(0, ad(c, SP, 0xa8));
+            c.add_s(2, 2, 0);
+            c.swc1(2, ad(c, A0, 0x8));
+        }
+    }
+    c.cycles += 4;
+    c.g[A0][0] = sx(ad(c, A0, 0xc));
+    c.g[A2][0] = sx(ad(c, A2, 0xc));
+    c.g[T1][0] = sx(ad(c, T1, 0xc));
+    c.g[T2][0] = sx(ad(c, T2, 1));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3043,5 +3623,72 @@ pub(crate) mod tests {
                 "v40 +0x3c, {hz} Hz"
             );
         }
+    }
+    use super::*;
+
+    /// A flag group of 1-6 columns by 1-4 rows in every style (static,
+    /// animated, mirrored, pinned/folded, edge-only) with amplitudes of
+    /// both signs (the ripples are skipped below the `.lit4` threshold),
+    /// real `.lit4` constants and a sine table at 0x504fb8; the flag
+    /// manager is reached through the world at gp-0x848.
+    #[test]
+    fn group_compute_verts_matches() {
+        use crate::difftest::{scramble, Rng, GAME_GP};
+        check(
+            ee::s11::f_0034bca0__generated,
+            group_compute_verts,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x34bca0 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                elf_image(c);
+                c.g[GP][0] = GAME_GP as u64;
+                // World -> +0x84 -> +0x70 = flag manager (wind at +0x10).
+                let (world, sub, mgr) = (DATA + 0x3000, DATA + 0x3100, DATA + 0x3200);
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, sub);
+                c.bus.write32(sub + 0x70, mgr);
+                c.bus.write32(mgr + 0x10, r.f32(1.0));
+                // The wave table: 0x200 + 0x80 entries of sin(2*pi*i/512).
+                for i in 0..0x280u32 {
+                    let v = (i as f32 * std::f32::consts::TAU / 512.0).sin();
+                    c.bus.write32(0x0050_4fb8 + 4 * i, v.to_bits());
+                }
+                let g = DATA;
+                let style: [(u8, u8); 6] = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)];
+                let (pinned, mirror) = style[seed as usize % 6];
+                c.bus.write8(g + GROUP_PINNED, pinned);
+                c.bus.write8(g + GROUP_MIRROR, mirror);
+                c.bus.write8(g + GROUP_EDGE_ONLY, ((seed / 6) % 2) as u8);
+                for off in (0x14..0x4c).step_by(4) {
+                    c.bus.write32(g + off, r.f32(3.0));
+                }
+                c.bus.write32(g + GROUP_WIND_BLEND, r.f32(1.0));
+                let cols = 1 + (seed / 12) % 6;
+                let rows = if seed % 37 == 0 {
+                    0
+                } else {
+                    1 + (seed / 3) % 4
+                };
+                let cols = if seed % 41 == 0 { 0 } else { cols };
+                c.bus.write32(g + GROUP_COLUMNS, cols);
+                c.bus.write32(g + GROUP_ROWS, rows);
+                c.bus
+                    .write32(g + GROUP_COLUMN_SPAN, ((cols.max(2) - 1) as f32).to_bits());
+                c.bus
+                    .write32(g + GROUP_ROW_SPAN, ((rows.max(2) - 1) as f32).to_bits());
+                let rest = DATA + 0x2000;
+                c.bus.write32(g + GROUP_REST_VERTS, rest);
+                for i in 0..(6 * 4 * 3) {
+                    c.bus.write32(rest + 4 * i, r.f32(50.0));
+                }
+                for off in (0x78..0x88).step_by(4) {
+                    c.bus.write32(g + off, r.f32(6.0));
+                }
+                c.g[A0][0] = sx(g);
+                c.g[A1][0] = sx(DATA + 0x1000);
+                c.pc = 0x0034_bca0;
+            },
+        );
     }
 }

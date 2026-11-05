@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::call::call_ptr;
@@ -38,6 +39,7 @@ pub(crate) use crate::game::render::particle::shl32;
 pub(crate) use crate::game::render::particle::srl32;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::forward;
 pub(crate) use crate::game::sound::icepick::worldtriggermanager::gp_2;
+use crate::game::visualfx::boardwakefx as bw;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use callee::*;
@@ -186,6 +188,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002e_db20,
         world_painter_sample_surface_colours,
         "WorldPainter_SampleSurfaceColours",
+    ),
+    (
+        0x002e_df00,
+        world_painter_compute_colour_factor,
+        "WorldPainter_ComputeColourFactor",
+    ),
+    (
+        0x002e_e010,
+        irradiance_ref_get_entry,
+        "IrradianceRef_GetEntry",
     ),
 ];
 
@@ -2304,6 +2316,153 @@ pub fn world_painter_sample_surface_colours(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WorldPainter_ComputeColourFactor (0x2edf00).
+
+/// `float WorldPainter_ComputeColourFactor(Colour* col)` (0x2edf00): the
+/// luminance `0.299 r + 0.587 g + 0.114 b` of the colour at `+4..+0xc`,
+/// mapped to a 0..1 factor: 0 at or below 0.1, 1 at or above 0.45, between
+/// them `clamp(exp(log((lum - 0.1) / |0.35|) * 0.6001176), 0, 1)` (a gamma
+/// curve).
+pub fn world_painter_compute_colour_factor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x20);
+        let col = r32(c, A0);
+        c.lwc1(3, bw::gp(c, -0x395c)); // 0.299
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x10);
+        c.lwc1(4, bw::gp(c, -0x3958)); // 0.587
+        c.lwc1(1, bw::p(col, 0x4));
+        c.lwc1(2, bw::p(col, 0x8));
+        c.mul_s(1, 1, 3);
+        c.lwc1(0, bw::p(col, 0xc));
+        c.mul_s(2, 2, 4);
+        c.lwc1(3, bw::gp(c, -0x3954)); // 0.114
+        c.lwc1(4, bw::gp(c, -0x3950)); // 0.1
+        c.mul_s(0, 0, 3);
+        c.add_s(1, 1, 2);
+        c.add_s(1, 1, 0);
+        c.c_le_s(1, 4); // lum <= 0.1 ?
+        c.mtc1(0, 0); // f0 = 0
+        let dark = c.fcc();
+        frame.restore_ra(c, 0);
+        'restore: {
+            if dark {
+                break 'restore;
+            }
+            c.cycles += 6;
+            c.lwc1(0, bw::gp(c, -0x394c)); // 0.45
+            c.c_le_s(0, 1); // 0.45 <= lum ?
+            bw::fconst(c, 0, 0x3f80_0000); // 1
+            let bright = c.fcc();
+            frame.restore_fpr(c, 20, 0x10);
+            if bright {
+                c.cycles += 2;
+                frame.close(c);
+                return Ok(());
+            }
+            // exp(log(t) * k), clamped to [0, 1].
+            c.cycles += 17;
+            c.sub_s(0, 1, 4);
+            c.lwc1(12, bw::gp(c, -0x3948)); // 0.35
+            c.abs_s(12, 12);
+            c.lwc1(20, bw::gp(c, -0x3944)); // 0.6001176
+            c.div_s(12, 0, 12);
+            call_ptr(c, 0x0040_da10, 0x002e_df80)?; // logf
+            c.g[RA][0] = sx(0x002e_df88);
+            c.mul_s(12, 0, 20);
+            call_ptr(c, 0x0040_d758, 0x002e_df88)?; // expf
+            c.mov_s(1, 0);
+            bw::fconst(c, 2, 0x3f80_0000); // 1
+            c.mtc1(0, 0); // f0 = 0
+            c.c_le_s(0, 1);
+            if c.fcc() {
+                c.min_s(0, 1, 2);
+            }
+            c.cycles += 1;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 1;
+        frame.restore_fpr(c, 20, 0x10);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// IrradianceRef_GetEntry (0x2ee010)
+
+/// The global irradiance table (`D_005047F8`).
+pub(crate) const IRRADIANCE_TABLE: u32 = 0x0050_47f8;
+
+/// `IrradianceRef::index` (+0) and `IrradianceRef::key` (+4); a reference is
+/// resolved once its key is `RESOLVED`.
+pub(crate) const REF_INDEX: u32 = 0x0;
+
+pub(crate) const REF_KEY: u32 = 0x4;
+
+pub(crate) const RESOLVED: u64 = 0x0012_3400;
+
+/// The default irradiance entry index (gp+0x12d4, `D_004A43C4`).
+pub(crate) const GP_DEFAULT_IRRADIANCE: u32 = 0x12d4;
+
+pub(crate) const IRRADIANCE_REF_RESOLVE: Callee = Callee {
+    addr: 0x002e_dfd0,
+    f: ee::s09::IrradianceRef_Resolve,
+};
+
+/// `Irradiance_GetEntry(table, index)` (cross-shard: through the table).
+pub(crate) const IRRADIANCE_GET_ENTRY: u32 = 0x0038_abf8;
+
+/// `Irradiance* IrradianceRef_GetEntry(IrradianceRef* ref)` (0x2ee010): the
+/// irradiance entry a reference names. A resolved reference (key 0x123400)
+/// uses its index; an unnamed one (empty name) the default entry; any other
+/// is resolved by name first (`IrradianceRef_Resolve`, which writes the
+/// index and the key) and then uses its index.
+pub fn irradiance_ref_get_entry(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x20);
+        c.g[V0][0] = RESOLVED;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let this = Addr(c.g[S0][0] as u32);
+        c.g[V1][0] = this.off(REF_KEY).lw(c);
+        if c.g[V1][0] == RESOLVED {
+            c.g[A0][0] = 0x50_0000;
+            c.cycles += 1;
+            c.g[A1][0] = this.off(REF_INDEX).lw(c);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = this.lb(c);
+            let gp = c.g[GP][0] as u32;
+            c.g[A1][0] = Addr(gp).off(GP_DEFAULT_IRRADIANCE).lw(c);
+            if c.g[V0][0] == 0 {
+                // Unnamed: the default entry.
+                c.cycles += 2;
+                c.g[A0][0] = 0x50_0000;
+            } else {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                IRRADIANCE_REF_RESOLVE.call(c, 0x002e_e050)?;
+                c.g[A0][0] = 0x50_0000;
+                c.cycles += 1;
+                c.g[A1][0] = this.off(REF_INDEX).lw(c);
+            }
+        }
+        c.cycles += 6;
+        c.g[A0][0] = sx(IRRADIANCE_TABLE);
+        call_ptr(c, IRRADIANCE_GET_ENTRY, 0x002e_e060)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3126,6 +3285,84 @@ pub(crate) mod tests {
                 };
                 c.f[12] = uv(&mut r);
                 c.f[13] = uv(&mut r);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::check_paths;
+    use crate::difftest::elf_image;
+    use crate::game::visualfx::boardwakefx::tests::put_spray_slot;
+
+    /// The colour factor over the three luminance bands (dark, bright, and
+    /// the gamma curve through the real `logf`/`expf`), with random colours
+    /// around the thresholds.
+    #[test]
+    fn world_painter_compute_colour_factor_matches() {
+        check(
+            ee::s09::f_002edf00__generated,
+            world_painter_compute_colour_factor,
+            250,
+            &|c, seed| {
+                let mut r = Rng(0x2edf_0000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                elf_image(c);
+                let col = DATA;
+                // Grey levels in the three bands, plus random colours.
+                let grey = [0.05f32, 0.1, 0.2, 0.3, 0.44, 0.45, 0.8][(seed % 7) as usize];
+                for k in 0..3u32 {
+                    let v = if seed % 3 == 0 {
+                        f32::from_bits(r.f32(1.0)).abs()
+                    } else {
+                        grey
+                    };
+                    c.bus.write32(col + 4 + 4 * k, v.to_bits());
+                }
+                c.g[A0][0] = sx(col);
+                c.pc = 0x002e_df00;
+            },
+        );
+    }
+
+    /// IrradianceRef_GetEntry: resolved, unnamed and named references (the
+    /// real `IrradianceRef_Resolve` searches a small name table; the empty
+    /// name or a miss decides the index it writes).
+    #[test]
+    fn irradiance_ref_get_entry_matches() {
+        check(
+            ee::s09::f_002ee010__generated,
+            irradiance_ref_get_entry,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x2ee0_1000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let this = DATA + 0x100;
+                c.g[A0][0] = sx(this);
+                // Irradiance table: {?, count, entries (0xa0 each), names (8 each)}.
+                let names = DATA + 0x2000;
+                let count = 1 + r.next_u32() % 3;
+                put_words(c, IRRADIANCE_TABLE, &[0, count, DATA + 0x4000, names]);
+                fill(c, &mut r, names, 8);
+                if seed % 5 == 0 {
+                    c.bus.write8(names, 0); // first name empty
+                }
+                c.bus
+                    .write32(GAME_GP + GP_DEFAULT_IRRADIANCE, r.next_u32() % 4);
+                c.bus.write32(this + REF_INDEX, r.next_u32() % 5);
+                match seed % 3 {
+                    0 => c.bus.write32(this + REF_KEY, RESOLVED as u32),
+                    1 => {
+                        c.bus.write32(this + REF_KEY, r.next_u32());
+                        c.bus.write8(this, 0);
+                    }
+                    _ => {
+                        c.bus.write32(this + REF_KEY, r.next_u32());
+                        c.bus.write8(this, 1 + (r.next_u32() % 0x7f) as u8);
+                        c.bus.write8(this + 1, 0);
+                    }
+                }
             },
         );
     }

@@ -669,6 +669,7 @@ pub(crate) mod tests {
     use crate::difftest::events::driven;
     use crate::difftest::events::schedule;
     use crate::difftest::events::Events;
+    use crate::difftest::fakes;
     use crate::difftest::fakes::covered;
     use crate::difftest::fakes::machine;
     use crate::difftest::fakes::vtable;
@@ -782,7 +783,6 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-    use crate::difftest::fakes::{self};
     use crate::difftest::{put_vec, scramble};
 
     /// Instance_GetNodeMatrix: no owner, or an owner (fake v-table) that

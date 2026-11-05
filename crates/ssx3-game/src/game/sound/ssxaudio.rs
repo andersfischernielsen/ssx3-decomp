@@ -5,6 +5,7 @@ use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::reg;
+use crate::abi::ret;
 use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -233,6 +234,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0028_a148, snd_load_queue_dtor, "SndLoadQueue_dtor"),
     (0x002a_77f8, ini_parser_ctor, "IniParser_ctor"),
     (0x002a_7ff8, ini_parser_get_string, "IniParser_GetString"),
+    (
+        0x0028_83b0,
+        ssx_audio_system_set_mix_preset,
+        "SSXAudioSystem_SetMixPreset",
+    ),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -2941,6 +2947,237 @@ pub fn ssx_audio_system_set_fade_gain(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_SetMixPreset (0x2883b0)
+
+/// SSXAudioSystem fields.
+pub(crate) const AUD_CHAN_OUT: u32 = 0x62c8;
+
+// 11 channels of 0x10: +0 out, -4 gain
+pub(crate) const AUD_CHAN_GAIN: u32 = 0x62c4;
+
+pub(crate) const AUD_MIX_OUT: u32 = 0x636c;
+
+// 10 floats: channel 4's out times a weight
+pub(crate) const AUD_CUR_GAIN: u32 = 0x63e4;
+
+// float per channel
+pub(crate) const AUD_FADING: u32 = 0x6410;
+
+pub(crate) const AUD_PRESET: u32 = 0x646c;
+
+/// Preset table: 0x28 bytes each, gains per channel (-1: unchanged) at
+/// +0x647c.. and the fade time at +0x64a0.
+pub(crate) const AUD_PRESETS: u32 = 0x647c;
+
+pub(crate) const PRESET_SIZE: u64 = 0x28;
+
+pub(crate) const PRESET_FADE: u32 = 0x64a0;
+
+/// The ten mix weights (gp+0x43c..0x460, `D_004A352C`..).
+pub(crate) const GP_MIX_WEIGHTS: u32 = 0x43c;
+
+/// The channels a preset sets (5 is not part of a preset).
+pub(crate) const PRESET_CHANNELS: [u64; 9] = [1, 2, 3, 4, 6, 7, 8, 9, 10];
+
+pub(crate) const AUDIO_GET_PRESET_GAIN: Callee = Callee {
+    addr: 0x0028_8370,
+    f: ee::s07::SSXAudioSystem_GetPresetGain,
+};
+
+pub(crate) const AUDIO_SET_GAIN_TARGET: Callee = Callee {
+    addr: 0x0028_87a8,
+    f: ee::s07::SSXAudioSystem_SetGainTarget,
+};
+
+/// `void SSXAudioSystem_SetMixPreset(SSXAudioSystem* self, int id)`
+/// (0x2883b0): switch to mix preset `id` (negative: 0). Unless it is already
+/// current, look up the gain of channels 1-4 and 6-10 (`GetPresetGain`: the
+/// preset's gain, or the current/target one where the preset says -1). With
+/// no fade time the gains apply at once: each channel's output becomes gain
+/// times level, and the ten mix outputs follow channel 4 times their
+/// weights. With a fade time every channel gets a gain target and fade
+/// rate (`SetGainTarget`), and the system is marked fading.
+pub fn ssx_audio_system_set_mix_preset(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x100);
+        c.g[V0][0] = u64::MAX;
+        frame.save(c, S1, 0x90);
+        c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+        frame.save(c, S0, 0xa0);
+        c.g[S1][0] = c.g[A0][0];
+        if c.g[V0][0] == 0 {
+            c.g[A1][0] = 0;
+        }
+        c.g[V0][0] = c.g[A1][0];
+        for (reg, off) in [
+            (S2, 0x80),
+            (S3, 0x70),
+            (S4, 0x60),
+            (S5, 0x50),
+            (S6, 0x40),
+            (S7, 0x30),
+            (FP, 0x20),
+        ] {
+            frame.save(c, reg, off);
+        }
+        frame.save_ra(c, 0x10);
+        for i in 0..10 {
+            frame.save_fpr(c, 29 - i, 0xf8 - 8 * i as u32);
+        }
+        let this = Addr(c.g[S1][0] as u32);
+        c.g[V1][0] = this.off(AUD_PRESET).lw(c);
+        c.g[S0][0] = PRESET_SIZE;
+        if c.g[V0][0] != c.g[V1][0] {
+            c.cycles += 73;
+            this.off(AUD_PRESET).sw(c, c.g[V0][0]);
+            c.mult(0, S0, V0, S0); // s0 = id * 0x28
+                                   // Gains of the nine channels into f21..f29; the pointers to the
+                                   // preset's entries stay in s2-s7, fp and two stack words.
+            let ptr_regs = [S2, S3, S4, S5, S6, S7, FP];
+            let rets = [
+                0x0028_8440u32,
+                0x0028_845c,
+                0x0028_8478,
+                0x0028_8494,
+                0x0028_84b0,
+                0x0028_84cc,
+                0x0028_84e8,
+                0x0028_8508,
+                0x0028_8528,
+            ];
+            for (i, &ch) in PRESET_CHANNELS.iter().enumerate() {
+                if i > 0 {
+                    c.mov_s(20 + i, 0);
+                }
+                c.g[V0][0] = addu(sx(this.0), (AUD_PRESETS + 4 * i as u32) as u64);
+                c.g[A0][0] = c.g[S1][0];
+                let entry = addu(c.g[V0][0], c.g[S0][0]);
+                if i < 7 {
+                    c.g[ptr_regs[i]][0] = entry;
+                } else {
+                    c.g[V0][0] = entry;
+                    let a = frame.at(c, 4 * (i as u32 - 7));
+                    c.sw(a, entry);
+                }
+                c.g[A1][0] = ch;
+                c.g[A2][0] = Addr(entry as u32).lw(c);
+                AUDIO_GET_PRESET_GAIN.call(c, rets[i])?;
+            }
+            c.mov_s(29, 0);
+            c.g[S0][0] = addu(c.g[S1][0], c.g[S0][0]);
+            let fade = Addr(c.g[S0][0] as u32).off(PRESET_FADE).read_fpu(c);
+            abi::set_fpr(c, 20, fade);
+            c.f[0] = 0;
+            abi::set_fcc(c, fade.eq_s(FpuF32(0)));
+            c.g[A0][0] = addu(c.g[S1][0], AUD_CHAN_OUT as u64);
+            if fade.eq_s(FpuF32(0)) {
+                // Apply at once.
+                c.cycles += 12;
+                for (i, &ch) in PRESET_CHANNELS.iter().enumerate() {
+                    let a = this.off(AUD_CUR_GAIN + 4 * ch as u32).0;
+                    c.swc1(21 + i, a);
+                }
+                c.g[V1][0] = addu(c.g[S1][0], AUD_CUR_GAIN as u64);
+                c.g[V0][0] = addu(c.g[S1][0], AUD_CHAN_GAIN as u64);
+                c.g[A1][0] = 10;
+                loop {
+                    // out[k] = gain[k] * level[k], k = 0..10
+                    c.cycles += 9;
+                    let gain = Addr(c.g[V0][0] as u32).read_fpu(c);
+                    c.g[A1][0] = addu(c.g[A1][0], (-1i64) as u64);
+                    let level = Addr(c.g[V1][0] as u32).read_fpu(c);
+                    c.g[V0][0] = addu(c.g[V0][0], 0x10);
+                    c.g[V1][0] = addu(c.g[V1][0], 4);
+                    let out = gain * level;
+                    abi::set_fpr(c, 1, level);
+                    abi::set_fpr(c, 0, out);
+                    Addr(c.g[A0][0] as u32).write_fpu(c, out);
+                    let more = (c.g[A1][0] as i64) >= 0;
+                    c.g[A0][0] = addu(c.g[A0][0], 0x10);
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0028_8578);
+                    }
+                }
+                c.cycles += 32;
+                let gp = Addr(c.g[GP][0] as u32);
+                let m = this.off(AUD_CHAN_OUT + 4 * 0x10).read_fpu(c);
+                // The weights' registers in the original: f8 f9 f10 f6 f7 f5
+                // f4 f2 f1, and f3 (whose product lands in f0).
+                let regs = [8usize, 9, 10, 6, 7, 5, 4, 2, 1, 3];
+                for (k, &f) in regs.iter().enumerate() {
+                    let w = gp.off(GP_MIX_WEIGHTS + 4 * k as u32).read_fpu(c);
+                    let out = m * w;
+                    this.off(AUD_MIX_OUT + 4 * k as u32).write_fpu(c, out);
+                    if f == 3 {
+                        abi::set_fpr(c, 3, w);
+                        abi::set_fpr(c, 0, out);
+                    } else {
+                        abi::set_fpr(c, f, out);
+                    }
+                }
+            } else {
+                // Fade: a gain target per channel over `fade` seconds.
+                c.cycles += 76;
+                let rets = [
+                    0x0028_863cu32,
+                    0x0028_865c,
+                    0x0028_867c,
+                    0x0028_869c,
+                    0x0028_86bc,
+                    0x0028_86dc,
+                    0x0028_86fc,
+                    0x0028_8720,
+                    0x0028_8744,
+                ];
+                for (i, &ch) in PRESET_CHANNELS.iter().enumerate() {
+                    let entry = if i < 7 {
+                        c.g[ptr_regs[i]][0]
+                    } else {
+                        let a = frame.at(c, 4 * (i as u32 - 7));
+                        c.g[V0][0] = c.lw(a);
+                        c.g[V0][0]
+                    };
+                    let gain = Addr(entry as u32).lw(c);
+                    c.mov_s(12, 21 + i);
+                    c.mov_s(13, 20);
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = ch;
+                    // a2 = (gain != -1)
+                    c.g[A2][0] = (0u64 < !gain) as u64;
+                    AUDIO_SET_GAIN_TARGET.call(c, rets[i])?;
+                }
+                c.g[V0][0] = 1;
+                this.off(AUD_FADING).sw(c, 1);
+            }
+        }
+        c.cycles += 22;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        for (reg, off) in [
+            (S2, 0x80),
+            (S3, 0x70),
+            (S4, 0x60),
+            (S5, 0x50),
+            (S6, 0x40),
+            (S7, 0x30),
+            (FP, 0x20),
+        ] {
+            frame.restore(c, reg, off);
+        }
+        frame.restore_ra(c, 0x10);
+        for i in 0..10 {
+            frame.restore_fpr(c, 29 - i, 0xf8 - 8 * i as u32);
+        }
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3870,6 +4107,62 @@ pub(crate) mod tests {
                 ] {
                     c.bus
                         .write32(GAME_GP.wrapping_add(off as u32), r.edge_f32());
+                }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::check_paths;
+
+    /// SSXAudioSystem_SetMixPreset: same preset (no-op), negative id,
+    /// immediate apply (fade 0) and fading, gains of -1 (keep current).
+    #[test]
+    fn ssx_audio_system_set_mix_preset_matches() {
+        check_lohi(
+            ee::s07::f_002883b0__generated,
+            ssx_audio_system_set_mix_preset,
+            240,
+            &|c, seed| {
+                let mut r = Rng(0x2883_b000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                let this = DATA;
+                c.g[A0][0] = sx(this);
+                for k in 0..0x50 {
+                    c.bus.write32(this + 0x62c0 + 4 * k, r.f32(4.0));
+                }
+                for k in 0..0x30 {
+                    c.bus.write32(this + 0x6440 + 4 * k, r.f32(4.0));
+                }
+                for k in 0..10 {
+                    c.bus.write32(GAME_GP + GP_MIX_WEIGHTS + 4 * k, r.f32(2.0));
+                }
+                c.bus.write32(GAME_GP.wrapping_sub(0x4614), r.f32(2.0));
+                c.bus.write32(this + AUD_FADING, r.next_u32() % 2);
+                let id = (r.next_u32() % 4) as i32 - if seed % 6 == 0 { 3 } else { 0 };
+                c.g[A1][0] = sx(id as u32);
+                let cur = if seed % 8 == 0 {
+                    id.max(0) as u32
+                } else {
+                    r.next_u32() % 5
+                };
+                c.bus.write32(this + AUD_PRESET, cur);
+                for p in 0..4u32 {
+                    let e = this + AUD_PRESETS + p * PRESET_SIZE as u32;
+                    for k in 0..9 {
+                        let g = if r.next_u32() % 3 == 0 {
+                            u32::MAX
+                        } else {
+                            r.f32(2.0)
+                        };
+                        c.bus.write32(e + 4 * k, g);
+                    }
+                    let fade = if seed % 2 == 0 {
+                        0
+                    } else {
+                        r.f32(3.0) & 0x7fff_ffff
+                    };
+                    c.bus.write32(e + 0x24, fade);
                 }
             },
         );

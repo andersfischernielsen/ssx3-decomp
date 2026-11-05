@@ -2,6 +2,7 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
 use crate::abi::ret;
 use crate::call;
@@ -359,6 +360,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0013_52a8,
         rider_spin_sub_update_trick,
         "RiderSpinSub_UpdateTrick",
+    ),
+    (
+        0x0012_bb20,
+        ai_update_race_time_limit,
+        "AI_UpdateRaceTimeLimit",
+    ),
+    (
+        0x0012_ee30,
+        rider_prewind_sub_play_directional_anim,
+        "RiderPrewindSub_PlayDirectionalAnim",
     ),
 ];
 
@@ -11801,6 +11812,758 @@ pub(crate) fn cruise_body_anim(c: &mut Cpu) -> crate::call::Flow {
     Ok(())
 }
 
+pub(crate) mod prewind {
+
+    /// Stick x / y (floats).
+    pub const STICK_X: u32 = 0x2a4;
+
+    pub const STICK_Y: u32 = 0x2b0;
+
+    /// Non-zero: the rider rides switch (x is mirrored).
+    pub const SWITCH: u32 = 0x320;
+
+    /// Column of the animation table (stance/variant).
+    pub const ANIM_COLUMN: u32 = 0x328;
+
+    /// The rider's animation controller.
+    pub const ANIM_CTL: u32 = 0x784;
+}
+
+/// `Math_Atan(f12)` (0x31c228).
+pub(crate) const MATH_ATAN: u32 = 0x0031_c228;
+
+/// `AnimController_GetLayerAnimId(ctl, layer)` (0x312aa0).
+pub(crate) const ANIM_GET_LAYER_ANIM_ID: u32 = 0x0031_2aa0;
+
+/// `AnimController_PlayAnim(ctl, anim, flags, f12 speed)` (0x3128e8).
+pub(crate) const ANIM_PLAY_ANIM: u32 = 0x0031_28e8;
+
+/// `void RiderPrewindSub_PlayDirectionalAnim(RiderPrewindSub* self, int (*table)[5])`
+/// (0x12ee30): pick the prewind animation from the stick direction and play
+/// it on layer 2 if it is not already playing. The stick angle
+/// `atan2(-y, ±x)` (x mirrored when riding switch) selects one of nine rows
+/// of the table (row 0: stick centred; then by angle sector: back, three
+/// left-ish, three right-ish, forward), the rider's column selects the
+/// entry. Plays with flags 0 and speed -1.
+pub fn rider_prewind_sub_play_directional_anim(c: &mut Cpu) {
+    use prewind::*;
+    guest(c, |c| {
+        let gp = r32(c, GP);
+        let lit = |c: &mut Cpu, off: u32| Addr(gp.wrapping_sub(off)).read_fpu(c);
+        let zero = FpuF32::ZERO;
+
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        let sub = Addr(r32(c, A0));
+        let table = r32(c, A1);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 23, 0x48);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 22, 0x40);
+        frame.save_fpr(c, 21, 0x38);
+        frame.save_fpr(c, 20, 0x30);
+        let rider = sub.lw(c);
+        c.g[V0][0] = rider;
+        let rider = Addr(rider as u32);
+        let x = rider.off(STICK_X).read_fpu(c);
+        let y = rider.off(STICK_Y).read_fpu(c);
+        c.f[21] = x.0;
+        c.f[12] = y.0;
+        let (ax, ay) = (x.abs(), y.abs());
+        c.f[1] = ax.0;
+        c.f[0] = ay.0;
+        let x_major = ay.lt(ax);
+        abi::set_fcc(c, x_major);
+        // Stick magnitude (max norm) in f23.
+        let mag = if x_major {
+            c.cycles += 1;
+            ax
+        } else {
+            ay
+        };
+        c.f[23] = mag.0;
+
+        // The angle into f20. `stage` is where the shared tail is entered:
+        // 0: f20 = f12 (atan result), 1: v0 = *self, 2: a1 = 2, 3: done.
+        c.cycles += 3;
+        let switch = rider.off(SWITCH).lw(c);
+        c.g[V0][0] = switch;
+        c.f[22] = 0;
+        // Some((num >= 0)) when the denominator is zero.
+        let mut axis: Option<bool> = None;
+        let mut stage = 0;
+        let atan = |c: &mut Cpu, num: FpuF32, den: FpuF32, back: u32| -> Flow {
+            c.cycles += 7;
+            c.f[12] = num.div(den).0;
+            call_ptr(c, MATH_ATAN, back)?;
+            let den_neg = den.lt(zero);
+            abi::set_fcc(c, den_neg);
+            c.f[12] = c.f[0];
+            Ok(())
+        };
+        if switch != 0 {
+            c.cycles += 6;
+            let (num, den) = (-y, -x);
+            c.f[20] = den.0;
+            let den_zero = den.eq_s(zero);
+            abi::set_fcc(c, den_zero);
+            c.f[21] = num.0;
+            if den_zero {
+                c.cycles += 4;
+                let num_zero = num.eq_s(zero);
+                abi::set_fcc(c, num_zero);
+                c.f[20] = num.0;
+                if num_zero {
+                    stage = 1;
+                } else {
+                    c.cycles += 3;
+                    axis = Some(zero.le(num));
+                }
+            } else {
+                atan(c, num, den, 0x0012_eecc)?;
+                if den.lt(zero) {
+                    c.cycles += 3;
+                    let num_pos = zero.lt(num);
+                    abi::set_fcc(c, num_pos);
+                    if num_pos {
+                        rider_prewind_add_pi(c, gp);
+                    } else {
+                        c.cycles += 2;
+                        rider_prewind_sub_pi(c, gp);
+                    }
+                }
+            }
+        } else {
+            c.cycles += 5;
+            let (num, den) = (-y, x);
+            let den_zero = den.eq_s(zero);
+            abi::set_fcc(c, den_zero);
+            c.f[20] = num.0;
+            if den_zero {
+                c.cycles += 4;
+                let num_zero = num.eq_s(zero);
+                abi::set_fcc(c, num_zero);
+                if num_zero {
+                    c.g[V0][0] = sub.lw(c);
+                    stage = 2;
+                } else {
+                    c.cycles += 1;
+                    axis = Some(zero.le(num));
+                }
+            } else {
+                atan(c, num, den, 0x0012_ef3c)?;
+                if den.lt(zero) {
+                    c.cycles += 3;
+                    let num_pos = zero.lt(num);
+                    abi::set_fcc(c, num_pos);
+                    if num_pos {
+                        rider_prewind_add_pi(c, gp);
+                    } else {
+                        rider_prewind_sub_pi(c, gp);
+                    }
+                }
+            }
+        }
+        if let Some(num_nonneg) = axis {
+            abi::set_fcc(c, num_nonneg);
+            // Straight up or down: +-pi/2 from the literal pool.
+            c.cycles += 3;
+            c.f[20] = lit(c, 0x775c).0;
+            c.g[V0][0] = sub.lw(c);
+            if num_nonneg {
+                c.cycles += 3;
+                c.f[20] = lit(c, 0x7758).0;
+                c.g[A1][0] = 2;
+                stage = 3;
+            } else {
+                stage = 2;
+            }
+        }
+        if stage <= 0 {
+            c.cycles += 1;
+            c.f[20] = c.f[12];
+        }
+        if stage <= 1 {
+            c.cycles += 1;
+            c.g[V0][0] = sub.lw(c);
+        }
+        if stage <= 2 {
+            c.cycles += 1;
+            c.g[A1][0] = 2;
+        }
+
+        // The animation playing on layer 2.
+        c.cycles += 7;
+        c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(ANIM_CTL)).lw(c);
+        call_ptr(c, ANIM_GET_LAYER_ANIM_ID, 0x0012_ef80)?;
+        c.f[0] = 0;
+        let centred = mag.eq_s(zero);
+        abi::set_fcc(c, centred);
+        c.g[A0][0] = c.g[V0][0];
+
+        // table[row][rider->column] into a1 (v1 = rider, v0 = entry address).
+        let lookup = |c: &mut Cpu, reload: bool, row_off: u32| {
+            if reload {
+                c.g[V1][0] = sub.lw(c);
+            }
+            let column = Addr((c.g[V1][0] as u32).wrapping_add(ANIM_COLUMN)).lw(c);
+            c.g[V0][0] = sx((column as u32) << 2);
+            c.g[V0][0] = sx(((column as u32) << 2).wrapping_add(table));
+            c.g[A1][0] = Addr((c.g[V0][0] as u32).wrapping_add(row_off)).lw(c);
+        };
+        let angle = FpuF32(c.f[20]);
+        if centred {
+            c.cycles += 6;
+            lookup(c, true, 0);
+        } else {
+            c.cycles += 5;
+            let back = lit(c, 0x774c);
+            c.f[1] = back.0;
+            let a = angle.abs();
+            c.f[0] = a.0;
+            let behind = back.lt(a);
+            abi::set_fcc(c, behind);
+            if behind {
+                c.cycles += 6;
+                lookup(c, true, 0x14);
+            } else {
+                // (literal, angle above it (else below), row offset)
+                const SECTORS: [(u32, bool, u32); 5] = [
+                    (0x7748, true, 0x28),
+                    (0x7744, true, 0x3c),
+                    (0x7740, true, 0x50),
+                    (0x773c, false, 0x64),
+                    (0x7738, false, 0x78),
+                ];
+                let mut found = false;
+                for &(off, above, row) in SECTORS.iter() {
+                    c.cycles += 4;
+                    let edge = lit(c, off);
+                    c.f[0] = edge.0;
+                    let hit = if above {
+                        edge.lt(angle)
+                    } else {
+                        angle.lt(edge)
+                    };
+                    abi::set_fcc(c, hit);
+                    if hit {
+                        c.cycles += 6;
+                        lookup(c, true, row);
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    c.cycles += 5;
+                    let edge = lit(c, 0x7734);
+                    c.f[0] = edge.0;
+                    let hit = angle.lt(edge);
+                    abi::set_fcc(c, hit);
+                    c.g[V1][0] = sub.lw(c);
+                    if hit {
+                        c.cycles += 5;
+                        lookup(c, false, 0x8c);
+                    } else {
+                        c.cycles += 4;
+                        lookup(c, false, 0xa0);
+                    }
+                }
+            }
+        }
+
+        c.cycles += 2;
+        let differs = c.g[A1][0] != c.g[A0][0];
+        frame.restore(c, S0, 0x20);
+        if differs {
+            c.cycles += 6;
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(ANIM_CTL)).lw(c);
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.f[12] = 0xbf80_0000;
+            c.g[A2][0] = 0;
+            call_ptr(c, ANIM_PLAY_ANIM, 0x0012_f0f4)?;
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 8;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 23, 0x48);
+        frame.restore_fpr(c, 22, 0x40);
+        frame.restore_fpr(c, 21, 0x38);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// atan2 quadrant fix-up: `f12 += pi` (literal at gp-0x7754).
+pub(crate) fn rider_prewind_add_pi(c: &mut Cpu, gp: u32) {
+    c.cycles += 3;
+    let pi = Addr(gp.wrapping_sub(0x7754)).read_fpu(c);
+    c.f[0] = pi.0;
+    c.f[12] = (FpuF32(c.f[12]) + pi).0;
+}
+
+/// atan2 quadrant fix-up: `f12 -= pi` (literal at gp-0x7750).
+pub(crate) fn rider_prewind_sub_pi(c: &mut Cpu, gp: u32) {
+    c.cycles += 2;
+    let pi = Addr(gp.wrapping_sub(0x7750)).read_fpu(c);
+    c.f[0] = pi.0;
+    c.f[12] = (FpuF32(c.f[12]) - pi).0;
+}
+
+// ---------------------------------------------------------------------------
+// AI_UpdateRaceTimeLimit (0x12bb20)
+
+/// AI manager fields.
+pub(crate) const AI_STATE: u32 = 0x0;
+
+// 5: racing, 3: waiting for the session
+pub(crate) const AI_TIMER: u32 = 0x8;
+
+// race ticks
+pub(crate) const AI_COUNTDOWN: u32 = 0x18;
+
+// ticks left after the first finisher; -1 done
+pub(crate) const AI_RIDERS: u32 = 0x40;
+
+// actor pointers
+pub(crate) const AI_RIDER_COUNT: u32 = 0x7c;
+
+/// Actor +0x18 is the rider; rider +0x470 the finish time (>= 0 when
+/// finished), +0x480 the "forced finish" flag.
+pub(crate) const ACTOR_RIDER: u32 = 0x18;
+
+pub(crate) const RIDER_FINISH_TIME: u32 = 0x470;
+
+pub(crate) const RIDER_FORCED_FINISH: u32 = 0x480;
+
+/// World (gp-0x848): +0x78 the BE interface, +0x84 the session (+0x214
+/// its state, +0x28 the replay).
+pub(crate) const GP_WORLD: u32 = 0x848;
+
+pub(crate) const GP_GAME_COMM: u32 = 0x204;
+
+// gp-0x204
+pub(crate) const SESSION_STATE: u32 = 0x214;
+
+pub(crate) const SESSION_REPLAY: u32 = 0x28;
+
+/// Globals: race active flag and race mode byte.
+pub(crate) const RACE_ACTIVE: u32 = 0x0053_4b30;
+
+pub(crate) const RACE_MODE: u32 = 0x0053_5c12;
+
+/// The last tick at which a first finisher starts a countdown, the hard
+/// time limit, and the longest countdown (2 minutes).
+pub(crate) const LAST_COUNTDOWN_START: i64 = 0xd32b;
+
+pub(crate) const TIME_LIMIT: u64 = 0xd3a4;
+
+pub(crate) const MAX_COUNTDOWN: u64 = 0x1c20;
+
+pub(crate) const BE_GET_INTERFACE: u32 = 0x0014_dd58;
+
+// BELibrary_GetInterface (table)
+pub(crate) const BE_GET_INSTANCE: u32 = 0x0014_dc80;
+
+// BELibrary_GetInstance (table)
+pub(crate) const REPLAY_STOP_RECORDING: u32 = 0x0026_fa50;
+
+// (table)
+pub(crate) const GAME_COMM_SEND_SYNC_CHECK: u32 = 0x0025_8f20;
+
+// (table)
+pub(crate) const AI_GET_SYNC_CHECKSUM: Callee = Callee {
+    addr: 0x0012_b420,
+    f: ee::s00::AI_GetSyncChecksum,
+};
+
+pub(crate) const RIDER_ON_FINISH_RACE: Callee = Callee {
+    addr: 0x0012_5108,
+    f: ee::s00::Rider_OnFinishRace,
+};
+
+pub(crate) const AI_ALL_PLAYERS_FINISHED: Callee = Callee {
+    addr: 0x0012_a250,
+    f: ee::s00::AI_AllPlayersFinished,
+};
+
+/// Force every rider that has not finished (finish time < 0) to finish
+/// (`Rider_OnFinishRace` with the forced flag set). s2 counts, s0 walks the
+/// actors, s3 = 1, f20 = 0. Loop head `head`, call return `ret`.
+pub(crate) fn ai_force_finish_all(c: &mut Cpu, head: u32, ret: u32) -> crate::call::Flow {
+    let this = Addr(c.g[S1][0] as u32);
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+        c.g[V0][0] = Addr(c.g[V0][0] as u32).off(ACTOR_RIDER).lw(c);
+        let t = Addr(c.g[V0][0] as u32).off(RIDER_FINISH_TIME).read_fpu(c);
+        abi::set_fpr(c, 0, t);
+        let finished = FpuF32(c.f[20]).le(t);
+        abi::set_fcc(c, finished);
+        c.g[V1][0] = 1;
+        if !finished {
+            c.cycles += 1;
+            c.g[V1][0] = 0;
+        }
+        c.cycles += 2;
+        if c.g[V1][0] == 0 {
+            c.cycles += 5;
+            Addr(c.g[V0][0] as u32)
+                .off(RIDER_FORCED_FINISH)
+                .sw(c, c.g[S3][0]);
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).lw(c);
+            c.g[A0][0] = Addr(c.g[V0][0] as u32).off(ACTOR_RIDER).lw(c);
+            RIDER_ON_FINISH_RACE.call(c, ret)?;
+        }
+        c.g[V0][0] = this.off(AI_RIDER_COUNT).lw(c);
+        c.cycles += 4;
+        c.g[S2][0] = addu(c.g[S2][0], 1);
+        c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        let more = c.g[V0][0] != 0;
+        c.g[S0][0] = addu(c.g[S0][0], 4);
+        if !more {
+            return Ok(());
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// What AI_UpdateRaceTimeLimit's time-limit checks end with.
+#[derive(Clone, Copy)]
+pub(crate) enum Limit {
+    /// The unfinished riders were forced to finish: stop the replay.
+    Stop,
+    /// Nothing more to do (one join cycle).
+    Join,
+    /// Straight to the replay check.
+    Tail,
+}
+
+/// `void AI_UpdateRaceTimeLimit(AI* self)` (0x12bb20): the race time limit.
+/// Every second (60 ticks) a sync checksum is taken. While racing (state 5,
+/// or 3 with the session in state 3) in race modes 0 and 4: once someone
+/// finishes before tick 0xd32b a countdown starts (up to 2 minutes, never
+/// past the limit); when it runs out, or at the hard limit 0xd3a4 (if not
+/// everyone has finished), every unfinished rider is forced to finish, the
+/// replay stops recording and the countdown is marked done (-1). Then,
+/// unless the replay is in states 1-9, the sync check is sent every second.
+pub fn ai_update_race_time_limit(c: &mut Cpu) {
+    /// How the function leaves: through the s0 and s1 reloads (one cycle
+    /// each), the s1 reload only (s0 was reloaded on the way), or neither.
+    enum Exit {
+        Full,
+        S1Only,
+        Plain,
+    }
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x70);
+        let gp = c.g[GP][0] as u32;
+        let world_slot = Addr(gp.wrapping_sub(GP_WORLD));
+        c.g[V0][0] = world_slot.lw(c);
+        frame.save(c, S1, 0x40);
+        c.g[A1][0] = 7;
+        frame.save(c, S0, 0x50);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        frame.save(c, S3, 0x20);
+        frame.save(c, S4, 0x10);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x60);
+        c.g[A0][0] = Addr(c.g[V0][0] as u32).off(0x78).lw(c);
+        call_ptr(c, BE_GET_INTERFACE, 0x0012_bb54)?;
+        let this = Addr(c.g[S1][0] as u32);
+        c.g[V1][0] = 0x53_0000;
+        c.g[V0][0] = Addr(RACE_ACTIVE).lw(c);
+        let active = c.g[V0][0] != 0;
+        c.g[V0][0] = 0x3c;
+        let exit = 'body: {
+            if !active {
+                break 'body Exit::Full;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = this.off(AI_TIMER).lw(c);
+            c.cycles += 4;
+            c.div(0, A0, V0);
+            c.g[V1][0] = c.hi[0];
+            c.g[S4][0] = 0; // sync checksum
+            if c.g[V1][0] == 0 {
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S1][0];
+                AI_GET_SYNC_CHECKSUM.call(c, 0x0012_bb88)?;
+                c.g[S4][0] = c.g[V0][0];
+            }
+            c.cycles += 4;
+            c.g[A1][0] = this.off(AI_STATE).lw(c);
+            c.g[V0][0] = 5;
+            let racing = c.g[A1][0] == 5;
+            c.g[V0][0] = 3;
+            if !racing {
+                c.cycles += 2;
+                let waiting = c.g[A1][0] == 3;
+                frame.restore(c, S0, 0x50);
+                if !waiting {
+                    break 'body Exit::S1Only;
+                }
+                c.cycles += 5;
+                c.g[V0][0] = world_slot.lw(c);
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x84).lw(c);
+                c.g[A0][0] = Addr(c.g[V1][0] as u32).off(SESSION_STATE).lw(c);
+                if c.g[A0][0] != c.g[A1][0] {
+                    frame.restore(c, S1, 0x40);
+                    break 'body Exit::Plain;
+                }
+            }
+            c.cycles += 9;
+            call_ptr(c, BE_GET_INSTANCE, 0x0012_bbc0)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, BE_GET_INTERFACE, 0x0012_bbcc)?;
+            c.g[V1][0] = 0x53_0000;
+            c.g[V1][0] = Addr(RACE_MODE).lb(c);
+            let mut timed_mode = c.g[V1][0] == 0;
+            c.g[V0][0] = 4;
+            if !timed_mode {
+                c.cycles += 2;
+                timed_mode = c.g[V1][0] == 4;
+                c.g[V0][0] = world_slot.lw(c);
+            }
+            let limit = if !timed_mode {
+                Limit::Tail
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = this.off(AI_COUNTDOWN).lw(c);
+                if (c.g[V0][0] as i64) >= 0 {
+                    ai_countdown(c, this)?
+                } else {
+                    ai_time_limit(c, this, gp)?
+                }
+            };
+            match limit {
+                Limit::Tail => {}
+                Limit::Stop | Limit::Join => {
+                    if let Limit::Stop = limit {
+                        // Time is up: stop the replay, countdown done.
+                        c.cycles += 5;
+                        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x84).lw(c);
+                        c.g[A0][0] = Addr(c.g[V1][0] as u32).off(SESSION_REPLAY).lw(c);
+                        call_ptr(c, REPLAY_STOP_RECORDING, 0x0012_bda4)?;
+                        c.g[V0][0] = u64::MAX;
+                        this.off(AI_COUNTDOWN).sw(c, c.g[V0][0]);
+                    }
+                    c.cycles += 1;
+                    c.g[V0][0] = world_slot.lw(c);
+                }
+            }
+            // Send the sync check every second unless the replay is busy
+            // (states 1-9).
+            c.cycles += 5;
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).off(0x84).lw(c);
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).off(SESSION_REPLAY).lw(c);
+            c.g[A0][0] = Addr(c.g[A0][0] as u32).lw(c);
+            c.g[A1][0] = 0;
+            if c.g[A0][0] != 0 {
+                c.cycles += 1;
+                c.g[A1][0] = ((c.g[A0][0] as i64) < 10) as u64;
+            }
+            c.cycles += 2;
+            let busy = c.g[A1][0] != 0;
+            frame.restore(c, S0, 0x50);
+            if busy {
+                break 'body Exit::S1Only;
+            }
+            c.cycles += 4;
+            c.g[A1][0] = this.off(AI_TIMER).lw(c);
+            c.g[V0][0] = 0x3c;
+            c.cycles += 4;
+            c.div(0, A1, V0);
+            c.g[V1][0] = c.hi[0];
+            frame.restore(c, S0, 0x50);
+            if c.g[V1][0] != 0 {
+                break 'body Exit::S1Only;
+            }
+            c.cycles += 3;
+            c.g[A0][0] = Addr(gp.wrapping_sub(GP_GAME_COMM)).lw(c);
+            c.g[A2][0] = c.g[S4][0];
+            call_ptr(c, GAME_COMM_SEND_SYNC_CHECK, 0x0012_bdfc)?;
+            Exit::Full
+        };
+        match exit {
+            Exit::Full => {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x50);
+                c.cycles += 1;
+                frame.restore(c, S1, 0x40);
+            }
+            Exit::S1Only => {
+                c.cycles += 1;
+                frame.restore(c, S1, 0x40);
+            }
+            Exit::Plain => {}
+        }
+        c.cycles += 7;
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The running countdown (v0 = countdown >= 0): count it down; at zero
+/// force everyone to finish.
+pub(crate) fn ai_countdown(c: &mut Cpu, this: Addr) -> Result<Limit, crate::call::Unwound> {
+    c.cycles += 2;
+    let idle = (c.g[V0][0] as i64) <= 0;
+    c.g[V0][0] = addu(c.g[V0][0], (-1i64) as u64);
+    if idle {
+        return Ok(Limit::Join);
+    }
+    c.cycles += 2;
+    let left = (c.g[V0][0] as i64) > 0;
+    this.off(AI_COUNTDOWN).sw(c, c.g[V0][0]);
+    if left {
+        return Ok(Limit::Join);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = this.off(AI_RIDER_COUNT).lw(c);
+    c.g[S2][0] = 0;
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 3;
+        c.f[20] = 0;
+        c.g[S3][0] = 1;
+        c.g[S0][0] = addu(c.g[S1][0], AI_RIDERS as u64);
+        ai_force_finish_all(c, 0x0012_bc18, 0x0012_bc50)?;
+        c.cycles += 2;
+    } else {
+        c.cycles += 1;
+    }
+    let gp = c.g[GP][0] as u32;
+    c.g[V0][0] = Addr(gp.wrapping_sub(GP_WORLD)).lw(c);
+    Ok(Limit::Stop)
+}
+
+/// No countdown yet (v0 < 0): start one when someone has finished before
+/// tick 0xd32b; at the hard limit force everyone to finish.
+pub(crate) fn ai_time_limit(
+    c: &mut Cpu,
+    this: Addr,
+    gp: u32,
+) -> Result<Limit, crate::call::Unwound> {
+    let world_slot = Addr(gp.wrapping_sub(GP_WORLD));
+    c.g[V1][0] = this.off(AI_TIMER).lw(c);
+    c.cycles += 4;
+    c.g[V0][0] = (LAST_COUNTDOWN_START < c.g[V1][0] as i64) as u64;
+    if c.g[V0][0] == 0 {
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S1][0];
+        AI_ALL_PLAYERS_FINISHED.call(c, 0x0012_bc84)?;
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            c.g[V0][0] = this.off(AI_RIDER_COUNT).lw(c);
+            if (c.g[V0][0] as i64) > 0 {
+                ai_start_countdown(c, this, gp);
+                c.cycles += 1;
+            }
+        }
+        c.g[V1][0] = this.off(AI_TIMER).lw(c);
+    }
+    // The hard limit.
+    c.cycles += 4;
+    c.g[V0][0] = ((TIME_LIMIT as i64 - 1) < c.g[V1][0] as i64) as u64;
+    let over = c.g[V0][0] != 0;
+    c.g[V0][0] = world_slot.lw(c);
+    if !over {
+        return Ok(Limit::Tail);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S1][0];
+    AI_ALL_PLAYERS_FINISHED.call(c, 0x0012_bd28)?;
+    let all = c.g[V0][0] != 0;
+    c.g[V0][0] = world_slot.lw(c);
+    if all {
+        return Ok(Limit::Tail);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = this.off(AI_RIDER_COUNT).lw(c);
+    c.g[S2][0] = 0;
+    if (c.g[V0][0] as i64) > 0 {
+        c.cycles += 3;
+        c.f[20] = 0;
+        c.g[S3][0] = 1;
+        c.g[S0][0] = addu(c.g[S1][0], AI_RIDERS as u64);
+        ai_force_finish_all(c, 0x0012_bd48, 0x0012_bd80)?;
+    }
+    c.cycles += 1;
+    c.g[V0][0] = world_slot.lw(c);
+    Ok(Limit::Stop)
+}
+
+/// For each finished rider (while the game comm is not in a menu or
+/// paused, +0x8c/+0x48 both 0) set the countdown to the time left until the
+/// limit, at most 2 minutes. v0 = rider count.
+pub(crate) fn ai_start_countdown(c: &mut Cpu, this: Addr, gp: u32) {
+    c.cycles += 6;
+    c.f[1] = 0;
+    c.g[A2][0] = c.g[V0][0];
+    c.g[A3][0] = Addr(gp.wrapping_sub(GP_GAME_COMM)).lw(c);
+    c.g[T1][0] = TIME_LIMIT;
+    c.g[T0][0] = MAX_COUNTDOWN;
+    c.g[A1][0] = addu(c.g[S1][0], AI_RIDERS as u64);
+    loop {
+        c.cycles += 7;
+        c.g[V0][0] = Addr(c.g[A1][0] as u32).lw(c);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(ACTOR_RIDER).lw(c);
+        let t = Addr(c.g[V1][0] as u32).off(RIDER_FINISH_TIME).read_fpu(c);
+        abi::set_fpr(c, 0, t);
+        let finished = FpuF32(c.f[1]).le(t);
+        abi::set_fcc(c, finished);
+        c.g[A0][0] = 1;
+        if !finished {
+            c.cycles += 1;
+            c.g[A0][0] = 0;
+        }
+        c.cycles += 2;
+        c.g[A2][0] = addu(c.g[A2][0], (-1i64) as u64);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            let comm = Addr(c.g[A3][0] as u32);
+            c.g[V0][0] = comm.off(0x8c).lw(c);
+            if c.g[V0][0] == 0 {
+                c.cycles += 3;
+                c.g[V0][0] = comm.off(0x48).lw(c);
+                if c.g[V0][0] == 0 {
+                    c.cycles += 5;
+                    c.g[V0][0] = this.off(AI_TIMER).lw(c);
+                    c.g[V0][0] = sx((c.g[T1][0] as u32).wrapping_sub(c.g[V0][0] as u32));
+                    c.g[V1][0] = ((c.g[V0][0] as i64) < 7201) as u64;
+                    if c.g[V1][0] == 0 {
+                        c.g[V0][0] = c.g[T0][0];
+                    }
+                    this.off(AI_COUNTDOWN).sw(c, c.g[V0][0]);
+                }
+            }
+        }
+        c.cycles += 2;
+        let more = c.g[A2][0] != 0;
+        c.g[A1][0] = addu(c.g[A1][0], 4);
+        if !more {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0012_bcb0);
+        }
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -13781,6 +14544,157 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(SELF);
                 c.g[A1][0] = sx(POSE);
                 c.pc = 0x0013_4dd0;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::check_paths;
+
+    /// Prewind animation pick: stick x/y from {+0, -0, random} (both
+    /// axes zero, one axis zero, every angle sector), switch on/off, a
+    /// random column; the playing animation equals the chosen one (whole
+    /// column the same) or not, so PlayAnim is reached. PlayAnim's virtual
+    /// call is a fake forced to return 0x207 (its early exit) and sometimes
+    /// unwinds.
+    #[test]
+    fn rider_prewind_sub_play_directional_anim_matches() {
+        use crate::difftest::elf_image;
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        covered(
+            ee::s00::f_0012ee30__generated,
+            rider_prewind_sub_play_directional_anim,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0xee30, 1);
+                c.pc = 0x0012_ee30;
+                let sub = DATA;
+                let rider = DATA + 0x1000;
+                let table = DATA + 0x2000;
+                let ctl = DATA + 0x3000;
+                let vt = DATA + 0x4000;
+                c.bus.write32(sub, rider);
+                let pick = |r: &mut Rng, k: u32| match k {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    _ => r.f32(2.0),
+                };
+                let x = pick(&mut r, seed % 5);
+                let y = pick(&mut r, (seed / 5) % 5);
+                c.bus.write32(rider + prewind::STICK_X, x);
+                c.bus.write32(rider + prewind::STICK_Y, y);
+                let switch = if (seed / 25) % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() | 1
+                };
+                c.bus.write32(rider + prewind::SWITCH, switch);
+                let column = r.next_u32() % 5;
+                c.bus.write32(rider + prewind::ANIM_COLUMN, column);
+                c.bus.write32(rider + prewind::ANIM_CTL, ctl);
+                fill(c, &mut r, table, 45);
+                let playing = r.next_u32() % 0x300;
+                if seed % 3 == 0 {
+                    for row in 0..9 {
+                        c.bus.write32(table + row * 0x14 + column * 4, playing);
+                    }
+                }
+                // Layer 2's animation id (ctl + 2 * 4).
+                c.bus.write32(ctl + 8, playing);
+                // PlayAnim: vtable at +0x58, its slot {delta at +0x20, fn at +0x24}.
+                c.bus.write32(ctl + 0x58, vt);
+                c.bus.write16(vt + 0x20, 0x10);
+                c.bus.write32(vt + 0x24, FAKE);
+                c.bus.write32(LOG_RESULTS, 0x207);
+                c.g[A0][0] = ((r.next_u32() as u64) << 32) | sub as u64;
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | table as u64;
+            },
+        );
+    }
+
+    /// AI_UpdateRaceTimeLimit: inactive race, states 5/3/other (session
+    /// state matching or not), race modes 0/4/other, countdown idle,
+    /// running, expiring, not started (start it, hard limit, all finished),
+    /// replay busy or not, every-second ticks. BELibrary_GetInterface's
+    /// method is a fake; the other callees are real on short paths.
+    #[test]
+    fn ai_update_race_time_limit_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        covered(
+            ee::s00::f_0012bb20__generated,
+            ai_update_race_time_limit,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12bb_20, 2);
+                let gp = GAME_GP;
+                let this = DATA;
+                let world = DATA + 0x6000;
+                let be_obj = DATA + 0x7000;
+                let be_vt = DATA + 0x7100;
+                let comm = DATA + 0x8000;
+                let sess = DATA + 0x9000;
+                let replay = DATA + 0x9400;
+                c.g[A0][0] = sx(this);
+                c.bus.write32(gp - GP_WORLD, world);
+                c.bus.write32(world + 0x78, be_obj);
+                c.bus.write32(world + 0x84, sess);
+                c.bus.write32(gp - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, be_obj);
+                c.bus.write32(be_obj + 4, be_vt);
+                c.bus.write16(be_vt + 8, 0);
+                c.bus.write32(be_vt + 0xc, FAKE);
+                c.bus.write32(gp - 0x1f04, DATA + 0x7800); // BELibrary instance
+                c.bus.write32(gp - GP_GAME_COMM, comm);
+                c.bus.write32(comm + 0x8c, (r.next_u32() % 4 == 0) as u32);
+                c.bus.write32(comm + 0x48, (r.next_u32() % 4 == 0) as u32);
+                c.bus.write32(sess + 0xc, sess + 0x500);
+                c.bus.write32(sess + 0x500, 0); // session idle: no sync send
+                c.bus.write32(
+                    sess + SESSION_STATE,
+                    if r.next_u32() % 2 == 0 { 3 } else { 4 },
+                );
+                c.bus.write32(sess + SESSION_REPLAY, replay);
+                c.bus
+                    .write32(replay, [0, 5, 14, 20][(r.next_u32() % 4) as usize]);
+                c.bus.write32(RACE_ACTIVE, (seed % 13 != 0) as u32);
+                c.bus
+                    .write8(RACE_MODE, [0u8, 4, 0, 4, 2][(r.next_u32() % 5) as usize]);
+                c.bus.write32(
+                    this + AI_STATE,
+                    [5, 5, 5, 3, 1][(r.next_u32() % 5) as usize],
+                );
+                let timer = match r.next_u32() % 5 {
+                    0 => 60 * (1 + r.next_u32() % 800),
+                    1 => 0xd32b - (r.next_u32() % 3),
+                    2 => 0xd3a4 + (r.next_u32() % 3) * 60,
+                    3 => 0xd32c + r.next_u32() % 0x70,
+                    _ => r.next_u32() % 0xd3c0,
+                };
+                c.bus.write32(this + AI_TIMER, timer);
+                let countdown = match seed % 5 {
+                    0 | 1 => u32::MAX,
+                    2 => 0,
+                    3 => 1,
+                    _ => 2 + r.next_u32() % 100,
+                };
+                c.bus.write32(this + AI_COUNTDOWN, countdown);
+                c.bus.write32(this + 0x78, 0); // no riders for the sync checksum
+                let count = r.next_u32() % 4;
+                c.bus.write32(this + AI_RIDER_COUNT, count);
+                for i in 0..4 {
+                    let actor = DATA + 0x100 + 0x10 * i;
+                    let rider = DATA + 0x1000 + 0x1000 * i;
+                    c.bus.write32(this + AI_RIDERS + 4 * i, actor);
+                    c.bus.write32(actor + ACTOR_RIDER, rider);
+                    let t = if r.next_u32() % 2 == 0 {
+                        (-1.0f32).to_bits()
+                    } else {
+                        r.f32(100.0) & 0x7fff_ffff
+                    };
+                    c.bus.write32(rider + RIDER_FINISH_TIME, t);
+                    c.bus.write32(rider + RIDER_FORCED_FINISH, 0);
+                }
             },
         );
     }

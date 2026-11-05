@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -38,6 +39,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0039_f190,
         ui_state_mgr_close_top_states,
         "UIStateMgr_CloseTopStates",
+    ),
+    (
+        0x0039_ecb0,
+        ui_state_mgr_process_states,
+        "UIStateMgr_ProcessStates",
     ),
 ];
 
@@ -451,6 +457,521 @@ pub fn ui_state_mgr_dtor(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod ui_state {
+
+    pub const NEXT: u32 = 0x4;
+
+    pub const VPTR: u32 = 0x8;
+
+    pub const FLAGS: u32 = 0x1c;
+
+    pub const OWNER: u32 = 0x20;
+
+    /// `flags & ~(0x3f << 8)` (clear the phase).
+    pub const PHASE_MASK: u64 = 0xffff_ffff_ffff_c0ff;
+}
+
+pub(crate) mod ui_callee {
+    use super::Callee;
+    use ssx3_ee as ee;
+
+    pub const LIST_FIRST: Callee = Callee {
+        addr: 0x0039_7840,
+        f: ee::s13::UIList_First,
+    };
+
+    pub const NODE_IS_SENTINEL: Callee = Callee {
+        addr: 0x0039_7718,
+        f: ee::s13::UIListNode_IsSentinel,
+    };
+
+    pub const NODE_UNLINK: Callee = Callee {
+        addr: 0x0039_7740,
+        f: ee::s13::UIListNode_Unlink,
+    };
+
+    pub const UPDATE_SCREENS: Callee = Callee {
+        addr: 0x0039_e868,
+        f: ee::s13::UIState_UpdateScreens,
+    };
+
+    pub const SET_PARENT_CHAIN_VISIBLE: Callee = Callee {
+        addr: 0x0039_f7b8,
+        f: ee::s13::UIStateMgr_SetParentChainVisible,
+    };
+
+    pub const HAS_STATE_IN_PHASE: Callee = Callee {
+        addr: 0x0039_eb60,
+        f: ee::s13::UIStateMgr_HasStateInPhase,
+    };
+
+    pub const GET_ACTIVE_STATE: Callee = Callee {
+        addr: 0x0039_fa88,
+        f: ee::s13::UIStateMgr_GetActiveState,
+    };
+
+    pub const RESTART_STATE_IN_PHASE: Callee = Callee {
+        addr: 0x0039_ea90,
+        f: ee::s13::UIStateMgr_RestartStateInPhase,
+    };
+}
+
+/// `reg + off` (a field of the object in `reg`).
+#[inline(always)]
+pub(crate) fn oc224_at(c: &Cpu, reg: usize, off: u32) -> u32 {
+    (c.g[reg][0] as u32).wrapping_add(off)
+}
+
+/// The loop head (resume point after an unwinding event).
+pub(crate) const PROCESS_STATES_HEAD: u32 = 0x0039_ed00;
+
+/// `int UIStateMgr_ProcessStates(UIStateMgr* mgr)` (0x39ecb0): steps every
+/// active state of the manager's list through its open/close phases
+/// (2 opening -> 4 -> 3 -> 5 open; 6 closing -> 7 closed -> 8), calling the
+/// state's phase methods, updating its screens, showing/hiding the owner
+/// chain and restarting a state when the last one closed. Returns
+/// `!opened` if a state finished closing (else 0). Dispatcher-shaped: an
+/// unwinding event at the loop back edge returns with `pc` at
+/// [`PROCESS_STATES_HEAD`], where the trampoline re-enters it (loop state in
+/// s0/s2/s6/s7 and the node's flags in v1).
+pub fn ui_state_mgr_process_states(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut run_body = match c.pc {
+            0x0039_ecb0 => {
+                c.cycles += 17;
+                let frame = Frame::open(c, 0x90);
+                frame.save(c, S2, 0x60);
+                c.g[S2][0] = c.g[A0][0];
+                frame.save(c, S0, 0x80);
+                frame.save(c, S6, 0x20);
+                frame.save(c, S7, 0x10);
+                c.g[S6][0] = 0;
+                frame.save(c, S1, 0x70);
+                frame.save(c, S3, 0x50);
+                frame.save(c, S4, 0x40);
+                frame.save(c, S5, 0x30);
+                frame.save_ra(c, 0);
+                c.g[S7][0] = 0;
+                ui_callee::LIST_FIRST.call(c, 0x0039_ece8)?;
+                c.g[S0][0] = c.g[V0][0];
+                if c.g[S0][0] == 0 {
+                    return process_states_finish(c);
+                }
+                c.cycles += 2;
+                false
+            }
+            PROCESS_STATES_HEAD => true,
+            pc => {
+                c.jump_out(pc, 0x0039_ecb0, 0x0039_f0fc);
+                return Ok(());
+            }
+        };
+        loop {
+            if run_body {
+                process_states_step(c)?;
+            }
+            run_body = true;
+            // 0x39f0b4: next node, until the sentinel.
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            ui_callee::NODE_IS_SENTINEL.call(c, 0x0039_f0bc)?;
+            if c.g[V0][0] != 0 {
+                break;
+            }
+            c.g[V1][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+            if crate::events::back_edge_unwinds(c, PROCESS_STATES_HEAD) {
+                return Err(crate::call::Unwound);
+            }
+        }
+        process_states_finish(c)
+    })
+}
+
+/// 0x39f0c4: v0 = closed ? !opened : 0, restore, return.
+pub(crate) fn process_states_finish(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 2;
+    let closed = c.g[S6][0] != 0;
+    c.g[V0][0] = 0;
+    if closed {
+        c.cycles += 1;
+        c.g[V0][0] = c.g[S7][0] ^ 1;
+    }
+    c.cycles += 11;
+    let frame = Frame { size: 0x90 };
+    frame.restore(c, S0, 0x80);
+    frame.restore(c, S1, 0x70);
+    frame.restore(c, S2, 0x60);
+    frame.restore(c, S3, 0x50);
+    frame.restore(c, S4, 0x40);
+    frame.restore(c, S5, 0x30);
+    frame.restore(c, S6, 0x20);
+    frame.restore(c, S7, 0x10);
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// Virtual call `vt[slot]` on the state in `obj_reg` (vptr at +8):
+/// `a0 = obj + delta` (the other argument registers are already set).
+#[inline(always)]
+pub(crate) fn ui_vcall(
+    c: &mut Cpu,
+    obj_reg: usize,
+    vt_reg: usize,
+    fn_reg: usize,
+    slot: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    c.g[vt_reg][0] = c.lw(oc224_at(c, obj_reg, ui_state::VPTR));
+    c.g[A0][0] = c.lh(oc224_at(c, vt_reg, slot));
+    c.g[fn_reg][0] = c.lw(oc224_at(c, vt_reg, slot + 4));
+    let t = r32(c, fn_reg);
+    c.g[A0][0] = sx((c.g[obj_reg][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, ret)
+}
+
+/// One node (0x39ed00, s0 = node, v1 = its flags); leaves s0 = next.
+pub(crate) fn process_states_step(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 5;
+    c.g[S5][0] = c.lw(oc224_at(c, S0, ui_state::NEXT));
+    c.g[V0][0] = sx((c.g[V1][0] as u32 as i32 >> 5) as u32) & 1;
+    c.g[A1][0] = c.g[V1][0];
+    if c.g[V0][0] == 0 {
+        return step_next(c);
+    }
+    // The phase, 2..7 through the jump table at 0x493fc0.
+    c.cycles += 8;
+    c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8) & 0x3f;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(2));
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 24);
+    c.g[A0][0] = sx((c.g[V0][0] as u32 as i32 >> 24) as u32);
+    c.g[V1][0] = (c.g[A0][0] < 6) as u64;
+    c.g[V0][0] = 0x0049_0000;
+    if c.g[V1][0] == 0 {
+        return step_next(c);
+    }
+    c.cycles += 6;
+    c.g[V1][0] = sx((c.g[A0][0] as u32) << 2);
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(0x3fc0));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = c.lw(r32(c, V1));
+    match r32(c, A0) {
+        0x0039_ed4c => phase_opening(c),
+        0x0039_ee14 => phase_open_input(c),
+        0x0039_edc8 => {
+            c.cycles += 1;
+            c.g[V1][0] = c.lw(oc224_at(c, S0, ui_state::VPTR));
+            phase_open_wait(c)
+        }
+        0x0039_ee78 => {
+            // 5: open: vt[0x60](), update screens.
+            c.cycles += 9;
+            ui_vcall(c, S0, V0, V1, 0x60, 0x0039_ee8c)?;
+            c.g[A0][0] = c.g[S0][0];
+            ui_callee::UPDATE_SCREENS.call(c, 0x0039_ee94)?;
+            c.g[S0][0] = c.g[S5][0];
+            Ok(())
+        }
+        0x0039_ee9c => {
+            // 6: closing: vt[0x50]() true -> phase 7; mark shown.
+            c.cycles += 7;
+            ui_vcall(c, S0, V1, V0, 0x50, 0x0039_eeb0)?;
+            let done = c.g[V0][0] != 0;
+            c.g[V1][0] = ui_state::PHASE_MASK;
+            if done {
+                c.cycles += 4;
+                c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+                c.g[V0][0] &= c.g[V1][0];
+                c.g[V0][0] |= 0x700;
+                let v = c.g[V0][0];
+                c.sw(oc224_at(c, S0, ui_state::FLAGS), v);
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+            c.g[A0][0] = c.g[S0][0];
+            c.g[V0][0] |= 0x10;
+            store_flags_update(c)
+        }
+        0x0039_eee4 => phase_closed(c),
+        pc => {
+            c.jump_out(pc, 0x0039_ecb0, 0x0039_f0fc);
+            Err(crate::call::Unwound)
+        }
+    }
+}
+
+/// 0x39f0b0: s0 = next.
+pub(crate) fn step_next(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 1;
+    c.g[S0][0] = c.g[S5][0];
+    Ok(())
+}
+
+/// 0x39eed4: store v0 as the flags, update the screens, s0 = next.
+pub(crate) fn store_flags_update(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 4;
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, S0, ui_state::FLAGS), v);
+    ui_callee::UPDATE_SCREENS.call(c, 0x0039_eedc)?;
+    c.g[S0][0] = c.g[S5][0];
+    Ok(())
+}
+
+/// Phase 2 (0x39ed4c): opening: vt[0x20](), phase 4, update screens; a
+/// top-level state shows its owner chain and notifies the owner
+/// (vt[0x88](state, 0x15)); then as phase 4.
+pub(crate) fn phase_opening(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 17;
+    c.g[S7][0] = 1;
+    ui_vcall(c, S0, V0, V1, 0x20, 0x0039_ed64)?;
+    c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+    c.g[V1][0] = ui_state::PHASE_MASK;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[V0][0] &= c.g[V1][0];
+    c.g[V0][0] |= 0x400;
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, S0, ui_state::FLAGS), v);
+    ui_callee::UPDATE_SCREENS.call(c, 0x0039_ed80)?;
+    c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS)) & 1;
+    if c.g[V0][0] == 0 {
+        c.g[V1][0] = c.lw(oc224_at(c, S0, ui_state::VPTR));
+        return phase_open_wait(c);
+    }
+    c.cycles += 3;
+    c.g[S1][0] = c.lw(oc224_at(c, S0, ui_state::OWNER));
+    c.g[A0][0] = c.g[S2][0];
+    if c.g[S1][0] != 0 {
+        c.cycles += 11;
+        c.g[A1][0] = c.g[S1][0];
+        c.g[A2][0] = 1;
+        c.g[A3][0] = 1;
+        ui_callee::SET_PARENT_CHAIN_VISIBLE.call(c, 0x0039_edac)?;
+        c.g[V0][0] = c.lw(oc224_at(c, S1, ui_state::VPTR));
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A2][0] = 0x15;
+        c.g[A0][0] = c.lh(oc224_at(c, V0, 0x88));
+        c.g[V1][0] = c.lw(oc224_at(c, V0, 0x8c));
+        let t = r32(c, V1);
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, t, 0x0039_edc8)?;
+    }
+    c.cycles += 1;
+    c.g[V1][0] = c.lw(oc224_at(c, S0, ui_state::VPTR));
+    phase_open_wait(c)
+}
+
+/// Phase 4 (0x39edcc, v1 = vptr): vt[0x38](input) true -> phase 3; clear
+/// the input bit; update screens.
+pub(crate) fn phase_open_wait(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 9;
+    c.g[A1][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+    c.g[A0][0] = c.lh(oc224_at(c, V1, 0x38));
+    c.g[A1][0] = sx((c.g[A1][0] as u32 as i32 >> 4) as u32);
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 0x3c));
+    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    let t = r32(c, V0);
+    c.g[A1][0] &= 1;
+    call_ptr(c, t, 0x0039_ede8)?;
+    let done = c.g[V0][0] != 0;
+    c.g[V1][0] = ui_state::PHASE_MASK;
+    if done {
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+        c.g[V0][0] &= c.g[V1][0];
+        c.g[V0][0] |= 0x300;
+        let v = c.g[V0][0];
+        c.sw(oc224_at(c, S0, ui_state::FLAGS), v);
+    }
+    c.cycles += 5;
+    c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+    c.g[V1][0] = 0xffff_ffff_ffff_ffef;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[V0][0] &= c.g[V1][0];
+    store_flags_update(c)
+}
+
+/// Phase 3 (0x39ee14, a1 = flags): with input, vt[0x38](1) and clear the
+/// input bit; vt[0x30](0); phase 5; update screens.
+pub(crate) fn phase_open_input(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 4;
+    c.g[V0][0] = sx((c.g[A1][0] as u32 as i32 >> 4) as u32) & 1;
+    c.g[A1][0] = 1;
+    if c.g[V0][0] != 0 {
+        c.cycles += 9;
+        ui_vcall(c, S0, V1, V0, 0x38, 0x0039_ee38)?;
+        c.g[V1][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+        c.g[V0][0] = 0xffff_ffff_ffff_ffef;
+        c.g[V1][0] &= c.g[V0][0];
+        let v = c.g[V1][0];
+        c.sw(oc224_at(c, S0, ui_state::FLAGS), v);
+    }
+    c.cycles += 12;
+    c.g[A1][0] = 0;
+    ui_vcall(c, S0, V0, V1, 0x30, 0x0039_ee60)?;
+    c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+    c.g[V1][0] = ui_state::PHASE_MASK;
+    c.g[A0][0] = c.g[S0][0];
+    c.g[V0][0] &= c.g[V1][0];
+    c.g[V0][0] |= 0x500;
+    store_flags_update(c)
+}
+
+/// Phase 7 (0x39eee4): closed: vt[0x58](0), vt[0x28](); phase 8, inactive;
+/// unlink if remove-on-close; a top-level state hides/re-shows its owner
+/// chain (unless another state is still opening) and notifies the owner
+/// (vt[0x88](state, 0x16)); a removed state gets vt[0x8](3) (delete), else
+/// the shown bit is cleared; when nothing is active any more, restart a
+/// state in phase 1 (else 8).
+pub(crate) fn phase_closed(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 23;
+    c.g[A1][0] = 0;
+    c.g[S4][0] = 0;
+    c.g[S6][0] = 1;
+    ui_vcall(c, S0, V0, V1, 0x58, 0x0039_ef04)?;
+    ui_vcall(c, S0, V0, V1, 0x28, 0x0039_ef18)?;
+    c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+    c.g[V1][0] = ui_state::PHASE_MASK;
+    c.g[A0][0] = 0xffff_ffff_ffff_ffdf;
+    c.g[V0][0] &= c.g[V1][0];
+    c.g[V0][0] |= 0x800;
+    c.g[V0][0] &= c.g[A0][0];
+    c.g[V1][0] = sx((c.g[V0][0] as u32 as i32 >> 7) as u32) & 1;
+    let remove = c.g[V1][0] != 0;
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, S0, ui_state::FLAGS), v);
+    if remove {
+        c.cycles += 2;
+        c.g[A0][0] = c.g[S0][0];
+        ui_callee::NODE_UNLINK.call(c, 0x0039_ef48)?;
+    }
+    c.cycles += 4;
+    c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+    c.g[S3][0] = c.g[V0][0] & 1;
+    c.g[V0][0] = sx((c.g[V0][0] as u32 as i32 >> 14) as u32);
+    if c.g[S3][0] != 0 {
+        c.cycles += 4;
+        c.g[S1][0] = c.lw(oc224_at(c, S0, ui_state::OWNER));
+        c.g[V0][0] &= 1;
+        c.g[S6][0] = 0;
+        if c.g[V0][0] == 0 {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S2][0];
+            c.g[A1][0] = 1;
+            ui_callee::HAS_STATE_IN_PHASE.call(c, 0x0039_ef74)?;
+            c.g[S4][0] = c.g[V0][0];
+        } else {
+            c.cycles += 1;
+            c.g[S4][0] = 0;
+        }
+        c.cycles += 2;
+        if c.g[S4][0] == 0 {
+            // No state opening: mark hidden-owner, step the owner's count.
+            c.cycles += 4;
+            c.g[V0][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS)) | 0x80;
+            let v = c.g[V0][0];
+            c.sw(oc224_at(c, S0, ui_state::FLAGS), v);
+            if c.g[S1][0] != 0 {
+                c.cycles += 4;
+                c.g[A0][0] = c.lw(oc224_at(c, S1, ui_state::FLAGS));
+                c.g[V0][0] = c.g[A0][0] & 6;
+                let counted = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[A0][0] as u32) >> 1);
+                if counted {
+                    c.cycles += 8;
+                    c.g[V1][0] = 0xffff_ffff_ffff_fff9;
+                    c.g[V0][0] &= 3;
+                    c.g[V1][0] = c.g[A0][0] & c.g[V1][0];
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                    c.g[V0][0] &= 3;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 1);
+                    c.g[V1][0] |= c.g[V0][0];
+                    let v = c.g[V1][0];
+                    c.sw(oc224_at(c, S1, ui_state::FLAGS), v);
+                }
+                c.cycles += 17;
+                c.g[V1][0] = c.lw(oc224_at(c, S1, ui_state::FLAGS));
+                c.g[A0][0] = 0xffff_ffff_ffff_ffdf;
+                c.g[A3][0] = c.lw(oc224_at(c, S1, ui_state::VPTR));
+                c.g[A1][0] = c.g[S0][0];
+                c.g[V0][0] = c.g[V1][0] & 6;
+                c.g[A2][0] = 0x16;
+                c.g[V0][0] = (c.g[V0][0] < 1) as u64;
+                c.g[V1][0] &= c.g[A0][0];
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 5);
+                c.g[V1][0] |= c.g[V0][0];
+                let v = c.g[V1][0];
+                c.sw(oc224_at(c, S1, ui_state::FLAGS), v);
+                c.g[A0][0] = c.lh(oc224_at(c, A3, 0x88));
+                c.g[V0][0] = c.lw(oc224_at(c, A3, 0x8c));
+                let t = r32(c, V0);
+                c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, t, 0x0039_f004)?;
+            }
+        } else {
+            // 0x39f00c: another state opening: re-show the owner chain.
+            c.cycles += 2;
+            c.g[A1][0] = c.g[S1][0];
+            if c.g[S1][0] != 0 {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A2][0] = 0;
+                c.g[A3][0] = 1;
+                ui_callee::SET_PARENT_CHAIN_VISIBLE.call(c, 0x0039_f024)?;
+            }
+        }
+    }
+    // 0x39f024
+    c.cycles += 2;
+    if c.g[S0][0] != 0 {
+        c.cycles += 5;
+        c.g[V1][0] = c.lw(oc224_at(c, S0, ui_state::FLAGS));
+        c.g[V0][0] = sx((c.g[V1][0] as u32 as i32 >> 7) as u32) & 1;
+        let remove = c.g[V0][0] != 0;
+        c.g[V0][0] = 0xffff_ffff_ffff_fff7;
+        if remove {
+            c.cycles += 10;
+            c.g[A0][0] = c.g[S0][0];
+            ui_callee::NODE_UNLINK.call(c, 0x0039_f048)?;
+            c.g[A1][0] = 3;
+            ui_vcall(c, S0, V0, V1, 0x8, 0x0039_f060)?;
+        } else {
+            c.cycles += 2;
+            c.g[V0][0] = c.g[V1][0] & c.g[V0][0];
+            let v = c.g[V0][0];
+            c.sw(oc224_at(c, S0, ui_state::FLAGS), v);
+        }
+    }
+    // 0x39f070
+    c.cycles += 2;
+    if c.g[S3][0] != 0 {
+        c.cycles += 2;
+        c.g[S0][0] = c.g[S5][0];
+        if c.g[S4][0] == 0 {
+            return Ok(());
+        }
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S2][0];
+    ui_callee::GET_ACTIVE_STATE.call(c, 0x0039_f088)?;
+    c.g[S0][0] = c.g[S5][0];
+    if c.g[V0][0] != 0 {
+        return Ok(());
+    }
+    c.cycles += 5;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = 1;
+    ui_callee::RESTART_STATE_IN_PHASE.call(c, 0x0039_f09c)?;
+    c.g[S0][0] = c.g[S5][0];
+    if c.g[V0][0] != 0 {
+        return Ok(());
+    }
+    c.cycles += 3;
+    c.g[A0][0] = c.g[S2][0];
+    c.g[A1][0] = 8;
+    ui_callee::RESTART_STATE_IN_PHASE.call(c, 0x0039_f0b0)?;
+    step_next(c)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -594,5 +1115,104 @@ pub(crate) mod tests {
                 c.g[A1][0] = [0u64, 2][seed as usize % 2];
             },
         );
+    }
+    use super::*;
+    use crate::difftest::fakes::covered;
+
+    // ----------------------------------------------- UIStateMgr_ProcessStates
+
+    /// The manager (state list at +0).
+    pub(crate) const UI_MGR: u32 = DATA;
+
+    /// A shared vtable: every slot 0..0x100 a distinct fake.
+    pub(crate) const UI_VT: u32 = DATA + 0xf000;
+
+    /// Owner states (not in the list) at DATA+0x1000.
+    pub(crate) const UI_OWNERS: u32 = DATA + 0x1000;
+
+    /// Link `states` into the list at `list` (anchor link at +4), ending at
+    /// the self-linked `sentinel`. Sometimes an empty list is a null link.
+    pub(crate) fn ui_list(c: &mut Cpu, r: &mut Rng, list: u32, states: &[u32], sentinel: u32) {
+        if states.is_empty() && r.next_u32() % 4 == 0 {
+            c.bus.write32(list + 4, 0);
+            return;
+        }
+        let mut prev = list;
+        for &s in states {
+            c.bus.write32(prev + 4, s);
+            c.bus.write32(s, prev);
+            prev = s;
+        }
+        c.bus.write32(prev + 4, sentinel);
+        c.bus.write32(sentinel, prev);
+        c.bus.write32(sentinel + 4, sentinel);
+    }
+
+    /// A random state at `s`: vptr = [`UI_VT`], flags with a phase in 0..8
+    /// and random bits, no screens, owner `owner`.
+    pub(crate) fn ui_state(c: &mut Cpu, r: &mut Rng, s: u32, owner: u32) {
+        c.bus.write32(s + 8, UI_VT);
+        c.bus.write32(s + 0xc, r.next_u32() % 6);
+        let phase = 2 + r.next_u32() % 7;
+        c.bus
+            .write32(s + 0x1c, (r.next_u32() & !0x3f00) | phase << 8);
+        c.bus.write32(s + 0x20, owner);
+        // An empty screen list (+0x24) for UIState_UpdateScreens.
+        ui_list(c, r, s + 0x24, &[], s + 0x30);
+    }
+
+    /// 0..6 states in the manager's list (0x40 apart from DATA+0x100),
+    /// half of them owned by a state outside the list, the shared vtable,
+    /// and the phase jump table (.rodata 0x493fc0).
+    pub(crate) fn process_states_setup(c: &mut Cpu, seed: u32, calls: u32) -> Rng {
+        let mut r = machine(c, seed, 0x0039_ecb0, calls);
+        for off in (0..0x100).step_by(8) {
+            c.bus.write16(UI_VT + off, ((r.next_u32() % 16) * 4) as u16);
+            c.bus.write32(UI_VT + off + 4, FAKE + 2 * off);
+        }
+        crate::difftest::put_words(
+            c,
+            0x0049_3fc0,
+            &[
+                0x0039_ed4c,
+                0x0039_ee14,
+                0x0039_edc8,
+                0x0039_ee78,
+                0x0039_ee9c,
+                0x0039_eee4,
+            ],
+        );
+        let n = r.next_u32() % 7;
+        let states: Vec<u32> = (0..n).map(|i| DATA + 0x100 + 0x40 * i).collect();
+        for (i, &s) in states.iter().enumerate() {
+            let owner = if r.next_u32() % 2 == 0 {
+                0
+            } else {
+                let o = UI_OWNERS + 0x40 * i as u32;
+                ui_state(c, &mut r, o, 0);
+                o
+            };
+            ui_state(c, &mut r, s, owner);
+        }
+        ui_list(c, &mut r, UI_MGR, &states, DATA + 0x6c0);
+        // The manager's second list (+0x1c) is empty.
+        ui_list(c, &mut r, UI_MGR + 0x1c, &[], DATA + 0xec0);
+        c.g[A0][0] = UI_MGR as u64;
+        c.pc = 0x0039_ecb0;
+        r
+    }
+
+    #[test]
+    fn ui_state_mgr_process_states_matches() {
+        use crate::difftest::events::{check_events, schedule};
+        let (generated, hand): (GuestFn, GuestFn) =
+            (ee::s13::f_0039ecb0__generated, ui_state_mgr_process_states);
+        covered(generated, hand, 300, &|c, seed| {
+            process_states_setup(c, seed, 8);
+        });
+        check_events(generated, hand, 300, &|c, seed| {
+            let mut r = process_states_setup(c, seed, 0);
+            schedule(c, &mut r, seed, 0x0039_ecb0)
+        });
     }
 }

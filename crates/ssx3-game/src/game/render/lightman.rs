@@ -3,6 +3,9 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::reg;
+use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -11,6 +14,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -87,6 +91,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_14f8, vu0_read_vi1, "Vu0_ReadVI1"),
     (0x0039_16c0, font_dtor, "Font_dtor"),
     (0x0039_1708, font_load, "Font_Load"),
+    (0x0038_ee78, vfx_plants_update, "VfxPlants_Update"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1664,6 +1669,325 @@ pub fn font_ctor(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod plants {
+
+    /// The light/effects manager whose vtable slot gives the clock.
+    pub const GP_MANAGER: u32 = 0x2a90;
+
+    /// Its vtable pointer and the clock method's slot.
+    pub const MANAGER_VTABLE: u32 = 0x10d8;
+
+    pub const SLOT_CLOCK: u32 = 0x390;
+
+    /// `1/600`: clock ticks to cycles (`gp - 0x26ac`).
+    pub const GP_NEG_TIME_SCALE: u32 = 0x26ac;
+
+    /// Degrees to radians (`gp - 0x26a8`).
+    pub const GP_NEG_DEG2RAD: u32 = 0x26a8;
+
+    /// Tweakables (`D_004A4448..`): sway amplitude scale/offset, wobble
+    /// amplitude, twist amplitude, the four speeds (ints), the sway and
+    /// wobble directions (degrees).
+    pub const GP_SWAY_AMP: u32 = 0x1358;
+
+    pub const GP_SWAY_BASE: u32 = 0x135c;
+
+    pub const GP_WOBBLE_AMP: u32 = 0x1360;
+
+    pub const GP_TWIST_AMP: u32 = 0x1364;
+
+    pub const GP_SWAY_SPEED: u32 = 0x136c;
+
+    pub const GP_TWIST_SPEED: u32 = 0x1370;
+
+    pub const GP_WOBBLE_SPEED: u32 = 0x1374;
+
+    pub const GP_WOBBLE_PHASE: u32 = 0x1378;
+
+    pub const GP_SWAY_DIR: u32 = 0x137c;
+
+    pub const GP_WOBBLE_DIR: u32 = 0x1380;
+
+    /// The twist axis (`D_004FF160`) and the base matrix (`D_004FF1A0`).
+    pub const AXIS: u32 = 0x004f_f160;
+
+    pub const BASE: u32 = 0x004f_f1a0;
+
+    /// The eight output matrices (`D_00504D80`, 64 bytes each).
+    pub const CELLS: u32 = 0x0050_4d80;
+
+    pub const SIN: u32 = 0x0031_bf60;
+
+    pub const SIN_COS: u32 = 0x0031_be50;
+
+    pub const COS: u32 = 0x0031_c040;
+
+    pub const HEAD: u32 = 0x0038_ef20;
+}
+
+// ---------------------------------------------------------------------------
+// VfxPlants_Update (0x38ee78)
+
+/// `lqc2 vf1..vf4, src; sqc2 vf1..vf4, dst` (a 64-byte matrix copy).
+#[inline(always)]
+pub(crate) fn copy_mat(c: &mut Cpu, src: u32, dst: u32) {
+    for k in 0..4u32 {
+        c.lqc2(1 + k as usize, src.wrapping_add(0x10 * k));
+    }
+    for k in 0..4u32 {
+        c.sqc2(1 + k as usize, dst.wrapping_add(0x10 * k));
+    }
+}
+
+/// `dst = a * b` with the VU0 macro ops (vf4-7 = a, vf8-11 = b, vf12-15 =
+/// the result columns).
+#[inline(always)]
+pub(crate) fn mul_mat(c: &mut Cpu, a: u32, b: u32, dst: u32) {
+    for k in 0..4u32 {
+        c.lqc2(4 + k as usize, a.wrapping_add(0x10 * k));
+    }
+    for k in 0..4u32 {
+        c.lqc2(8 + k as usize, b.wrapping_add(0x10 * k));
+    }
+    for k in 0..4u8 {
+        c.vu0().mula(0b1111, 4, Src::Bc(8 + k, X));
+        c.vu0().madda(0b1111, 5, Src::Bc(8 + k, Y));
+        c.vu0().madda(0b1111, 6, Src::Bc(8 + k, Z));
+        c.vu0().madd(0b1111, 12 + k, 7, Src::Bc(8 + k, W));
+    }
+    for k in 0..4u32 {
+        c.sqc2(12 + k as usize, dst.wrapping_add(0x10 * k));
+    }
+}
+
+/// `void VfxPlants_Update(void)` (0x38ee78): builds the eight plant sway
+/// matrices for this frame from the manager's clock. Per phase `i/8`: a sway
+/// amplitude, a wobble amplitude and a twist angle from `sinf` of the
+/// scaled clock; `m0 = base * rot(axis, twist)`; the cell matrix is the base
+/// with its third row pushed along the sway direction, `m0`'s third column
+/// along the wobble direction, and finally `cell = cell * m0`.
+pub fn vfx_plants_update(c: &mut Cpu) {
+    use plants::*;
+    guest(c, |c| {
+        c.cycles += 42;
+        let frame = Frame::open(c, 0x1b0);
+        let gp = r32(c, GP);
+        let manager = Addr(gp.wrapping_add(GP_MANAGER)).lw(c);
+        set_reg(c, A1, manager);
+        frame.save(c, S1, 0x150);
+        frame.save(c, S2, 0x140);
+        set_reg(c, S1, 0);
+        frame.save(c, S3, 0x130);
+        frame.save(c, S4, 0x120);
+        frame.save(c, S5, 0x110);
+        frame.save(c, S6, 0x100);
+        frame.save(c, S7, 0xf0);
+        set_reg(c, S6, 0x50_0000);
+        frame.save(c, FP, 0xe0);
+        set_reg(c, S5, sx(AXIS));
+        frame.save_fpr(c, 26, 0x1a0);
+        frame.save_fpr(c, 25, 0x198);
+        frame.save_fpr(c, 24, 0x190);
+        frame.save_fpr(c, 23, 0x188);
+        frame.save(c, S0, 0x160);
+        frame.save_ra(c, 0xd0);
+        frame.save_fpr(c, 22, 0x180);
+        frame.save_fpr(c, 21, 0x178);
+        frame.save_fpr(c, 20, 0x170);
+        c.lwc1(25, gp.wrapping_sub(GP_NEG_TIME_SCALE));
+        let vt = Addr((manager as u32).wrapping_add(MANAGER_VTABLE)).lw(c);
+        set_reg(c, V1, vt);
+        set_reg(c, AT, 0x3f80_0000);
+        c.mtc1(AT, 26); // 1.0
+        let slot = VSlot::read(c, vt, SLOT_CLOCK);
+        set_reg(c, A0, slot.delta);
+        set_reg(c, V0, slot.func);
+        c.lwc1(24, gp.wrapping_sub(GP_NEG_DEG2RAD));
+        set_reg(c, A0, slot.this(manager));
+        call_ptr(c, slot.func as u32, 0x0038_eef4)?;
+        // f23 = (float)clock.
+        c.mtc1(V0, 23);
+        c.cvt_s_w(23, 23);
+        let sp0 = sp(c);
+        let (sin_at, cos_at) = (sp0 + 0xc0, sp0 + 0xc4);
+        set_reg(c, FP, sx(cos_at));
+        set_reg(c, V0, sx(sin_at));
+        set_reg(c, S7, sx(sp0));
+        Addr(sp0 + 0xc8).sw(c, sx(sin_at));
+        let rot = sp0 + 0x40;
+        set_reg(c, S2, sx(rot));
+        set_reg(c, V0, 0x50_0000);
+        let tmp = sp0 + 0x80;
+        set_reg(c, S3, sx(tmp));
+        set_reg(c, S4, sx(BASE));
+        let m0 = sp0;
+        let mut i: u32 = 0;
+        loop {
+            c.cycles += 207;
+            // sway = SWAY_AMP * sin(i/8 + clock * SWAY_SPEED * scale) + SWAY_BASE
+            c.lwc1(12, gp.wrapping_add(GP_SWAY_SPEED));
+            c.cvt_s_w(12, 12);
+            set_reg(c, AT, 0x3e00_0000);
+            c.mtc1(AT, 0); // 0.125
+            c.mtc1(S1, 20);
+            c.cvt_s_w(20, 20);
+            c.mul_s(12, 23, 12);
+            c.mul_s(20, 20, 0); // f20 = i / 8
+            c.mul_s(12, 12, 25);
+            c.add_s(12, 20, 12);
+            call_ptr(c, SIN, 0x0038_ef4c)?;
+            c.lwc1(12, gp.wrapping_add(GP_WOBBLE_SPEED));
+            c.lwc1(21, gp.wrapping_add(GP_SWAY_AMP));
+            c.mul_s(12, 23, 12);
+            c.lwc1(1, gp.wrapping_add(GP_SWAY_BASE));
+            c.mul_s(21, 21, 0);
+            c.mul_s(12, 12, 25);
+            c.add_s(21, 21, 1); // f21 = sway
+            c.add_s(12, 20, 12);
+            call_ptr(c, SIN, 0x0038_ef70)?;
+            // wobble = WOBBLE_AMP * sin(i/8 * WOBBLE_PHASE * scale + b)
+            c.lwc1(12, gp.wrapping_add(GP_WOBBLE_PHASE));
+            c.mul_s(12, 20, 12);
+            c.mul_s(12, 12, 25);
+            c.add_s(12, 12, 0);
+            call_ptr(c, SIN, 0x0038_ef84)?;
+            c.lwc1(12, gp.wrapping_add(GP_TWIST_SPEED));
+            c.lwc1(22, gp.wrapping_add(GP_WOBBLE_AMP));
+            c.mul_s(12, 23, 12);
+            c.mul_s(22, 22, 0); // f22 = wobble
+            c.mul_s(12, 12, 25);
+            c.add_s(12, 20, 12);
+            call_ptr(c, SIN, 0x0038_efa0)?;
+            // angle = TWIST_AMP * sin(...); m0 = base; sincos(&s, &c, angle).
+            c.lwc1(12, gp.wrapping_add(GP_TWIST_AMP));
+            c.mul_s(12, 12, 0);
+            copy_mat(c, BASE, m0);
+            let v = Addr(sp0 + 0xc8).lw(c);
+            set_reg(c, A0, v);
+            set_reg(c, A1, sx(cos_at));
+            call_ptr(c, SIN_COS, 0x0038_efd4)?;
+            // rot = rotation about the axis by the angle (Rodrigues).
+            c.lwc1(11, cos_at);
+            c.lwc1(4, AXIS + 8);
+            c.sub_s(1, 26, 11); // 1 - cos
+            c.lwc1(0, AXIS);
+            c.lwc1(6, AXIS + 4);
+            c.lwc1(8, sin_at);
+            c.mul_s(2, 1, 4);
+            Addr(rot + 0x30).sw(c, 0);
+            c.mul_s(5, 1, 0);
+            Addr(rot + 0x34).sw(c, 0);
+            c.mul_s(1, 1, 6);
+            Addr(rot + 0x38).sw(c, 0);
+            c.mul_s(13, 8, 4);
+            Addr(rot + 0x0c).sw(c, 0);
+            c.mul_s(12, 8, 0);
+            Addr(rot + 0x1c).sw(c, 0);
+            c.mul_s(9, 2, 4);
+            Addr(rot + 0x2c).sw(c, 0);
+            c.mul_s(10, 5, 4);
+            c.swc1(26, rot + 0x3c);
+            c.mul_s(3, 2, 0);
+            c.mul_s(7, 5, 0);
+            c.mul_s(4, 1, 4);
+            c.mul_s(0, 1, 0);
+            c.mul_s(8, 8, 6);
+            c.mul_s(2, 2, 6);
+            c.mul_s(5, 5, 6);
+            c.mul_s(1, 1, 6);
+            c.add_s(3, 3, 8);
+            c.sub_s(0, 0, 13);
+            c.sub_s(2, 2, 12);
+            c.add_s(9, 9, 11);
+            c.swc1(3, rot + 0x08);
+            c.add_s(7, 7, 11);
+            c.swc1(0, rot + 0x04);
+            c.add_s(5, 5, 13);
+            c.swc1(2, rot + 0x18);
+            c.sub_s(10, 10, 8);
+            c.swc1(9, rot + 0x28);
+            c.add_s(1, 1, 11);
+            c.swc1(7, rot);
+            c.add_s(4, 4, 12);
+            c.swc1(5, rot + 0x10);
+            c.swc1(10, rot + 0x20);
+            c.swc1(1, rot + 0x14);
+            c.swc1(4, rot + 0x24);
+            // m0 = m0 * rot; cell = base.
+            mul_mat(c, m0, rot, m0);
+            set_reg(c, V1, 0x50_0000);
+            let cell = CELLS.wrapping_add(i << 6);
+            set_reg(c, V0, sx(CELLS));
+            set_reg(c, S0, sx(cell));
+            copy_mat(c, BASE, cell);
+            // cell row 2 += (sin, cos)(SWAY_DIR) * sway
+            c.lwc1(12, gp.wrapping_add(GP_SWAY_DIR));
+            c.mul_s(12, 12, 24);
+            call_ptr(c, SIN, 0x0038_f138)?;
+            c.mul_s(0, 0, 21);
+            c.lwc1(1, cell + 0x20);
+            c.lwc1(12, gp.wrapping_add(GP_SWAY_DIR));
+            c.add_s(1, 1, 0);
+            c.mul_s(12, 12, 24);
+            c.swc1(1, cell + 0x20);
+            call_ptr(c, COS, 0x0038_f154)?;
+            c.mul_s(0, 0, 21);
+            c.lwc1(1, cell + 0x24);
+            c.lwc1(12, gp.wrapping_add(GP_WOBBLE_DIR));
+            c.add_s(1, 1, 0);
+            c.mul_s(12, 12, 24);
+            c.swc1(1, cell + 0x24);
+            // m0 column 2 += (sin, cos)(WOBBLE_DIR) * wobble
+            call_ptr(c, SIN, 0x0038_f170)?;
+            c.mul_s(0, 22, 0);
+            c.lwc1(1, m0 + 0x08);
+            c.lwc1(12, gp.wrapping_add(GP_WOBBLE_DIR));
+            c.add_s(1, 1, 0);
+            c.mul_s(12, 12, 24);
+            c.swc1(1, m0 + 0x08);
+            call_ptr(c, COS, 0x0038_f18c)?;
+            c.mul_s(22, 22, 0);
+            c.lwc1(0, m0 + 0x18);
+            c.add_s(0, 0, 22);
+            c.swc1(0, m0 + 0x18);
+            // cell = cell * m0 (through two stack copies).
+            mul_mat(c, cell, m0, tmp);
+            copy_mat(c, tmp, rot);
+            copy_mat(c, rot, cell);
+            i += 1;
+            set_reg(c, S1, sx(i));
+            let more = (i as i32) < 8;
+            set_reg(c, V0, more as u64);
+            frame.restore(c, S0, 0x160);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, HEAD);
+            }
+        }
+        c.cycles += 18;
+        frame.restore(c, S1, 0x150);
+        frame.restore(c, S2, 0x140);
+        frame.restore(c, S3, 0x130);
+        frame.restore(c, S4, 0x120);
+        frame.restore(c, S5, 0x110);
+        frame.restore(c, S6, 0x100);
+        frame.restore(c, S7, 0xf0);
+        frame.restore(c, FP, 0xe0);
+        frame.restore_ra(c, 0xd0);
+        frame.restore_fpr(c, 26, 0x1a0);
+        frame.restore_fpr(c, 25, 0x198);
+        frame.restore_fpr(c, 24, 0x190);
+        frame.restore_fpr(c, 23, 0x188);
+        frame.restore_fpr(c, 22, 0x180);
+        frame.restore_fpr(c, 21, 0x178);
+        frame.restore_fpr(c, 20, 0x170);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2277,5 +2601,59 @@ pub(crate) mod tests {
                 "{hz} Hz: {n} strikes vs {n60} at 60"
             );
         }
+    }
+    use super::*;
+    use crate::difftest::elf_image;
+
+    /// VfxPlants_Update with the game image loaded (real sinf/cosf/sincos),
+    /// random tweakables, axis and base matrix, the manager's clock method a
+    /// fake (forced small clock; it unwinds for some seeds).
+    #[test]
+    fn vfx_plants_update_matches() {
+        use super::plants::*;
+        covered(
+            ee::s12::f_0038ee78__generated,
+            vfx_plants_update,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x38_ee78, 1);
+                elf_image(c);
+                c.pc = 0x0038_ee78;
+                let gp = GAME_GP;
+                let manager = ptr(&mut r);
+                c.bus.write32(gp + GP_MANAGER, manager);
+                let vt = vtable(c, &mut r, &[SLOT_CLOCK]);
+                c.bus.write32(manager + MANAGER_VTABLE, vt);
+                c.bus.write32(LOG_RESULTS, r.next_u32() % 100_000);
+                for off in [
+                    GP_SWAY_AMP,
+                    GP_SWAY_BASE,
+                    GP_WOBBLE_AMP,
+                    GP_TWIST_AMP,
+                    GP_SWAY_DIR,
+                    GP_WOBBLE_DIR,
+                ] {
+                    let v = r.f32(90.0);
+                    c.bus.write32(gp + off, v);
+                }
+                for off in [
+                    GP_SWAY_SPEED,
+                    GP_TWIST_SPEED,
+                    GP_WOBBLE_SPEED,
+                    GP_WOBBLE_PHASE,
+                ] {
+                    let v = r.next_u32() % 2000;
+                    c.bus.write32(gp + off, v);
+                }
+                for k in 0..3 {
+                    let v = r.f32(1.0);
+                    c.bus.write32(AXIS + 4 * k, v);
+                }
+                for k in 0..16 {
+                    let v = r.f32(10.0);
+                    c.bus.write32(BASE + 4 * k, v);
+                }
+            },
+        );
     }
 }

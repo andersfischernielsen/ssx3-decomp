@@ -40,6 +40,7 @@ pub(crate) use crate::game::render::particle::p;
 pub(crate) use crate::game::render::particle::setf;
 pub(crate) use crate::game::render::particle::shl32;
 pub(crate) use crate::game::render::particle::sra32;
+pub(crate) use crate::game::ui::uistate::oc224_at;
 pub(crate) use crate::game::wscript::wscriptman::sw as sw_2;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
@@ -86,6 +87,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "HUD_DrawPositionPanel",
     ),
     (0x001e_a930, c_ov_state_hud1p_update, "cOVStateHUD1P_Update"),
+    (0x001f_31e0, load_indicator_draw, "LoadIndicator_Draw"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14120,6 +14122,434 @@ pub fn c_ov_state_hud1p_update(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod renderer {
+
+    pub const GP: i32 = -0x854;
+
+    pub const STATE: u32 = 0xe84;
+
+    pub const VTABLE: u32 = 0x10d8;
+
+    /// The current frame's render-context id (stored in the state's +0x10).
+    pub const CONTEXT_ID: u32 = 0x1068;
+}
+
+pub(crate) mod load_indicator {
+
+    pub const TEXT: u32 = 0x0;
+
+    pub const BUSY: u32 = 0x4;
+
+    pub const PHASE: u32 = 0x8;
+
+    pub const FONT: u32 = 0xc;
+}
+
+// ---------------------------------------------------------------------------
+// Shared register-level helpers.
+
+/// `gp + off` (a global).
+#[inline(always)]
+pub(crate) fn oc224_gp(c: &Cpu, off: i32) -> u32 {
+    (c.g[GP][0] as u32).wrapping_add(off as u32)
+}
+
+/// `ldl/ldr reg, a` (an unaligned doubleword load).
+#[inline(always)]
+pub(crate) fn oc224_ld_u(c: &mut Cpu, reg: usize, a: u32) {
+    c.ldl(reg, a.wrapping_add(7));
+    c.ldr(reg, a);
+}
+
+/// `sdl/sdr reg, a` (an unaligned doubleword store).
+#[inline(always)]
+pub(crate) fn oc224_sd_u(c: &mut Cpu, reg: usize, a: u32) {
+    c.sdl(reg, a.wrapping_add(7));
+    c.sdr(reg, a);
+}
+
+/// `void LoadIndicator_Draw(LoadIndicator* li)` (0x1f31e0): while the
+/// indicator is busy, pushes a 2D draw state (the default record at
+/// 0x501420 with alpha/blend bits set), sets a full-screen viewport and a
+/// 640x480 ortho projection, draws the "loading" text right-aligned at
+/// x=620 (`Font_MeasureTextW`, `Font_DrawTextW`, scaled 3x the first time
+/// then 2x), and a pulsing 18-pixel square left of it whose width follows
+/// `|phase - 1|`; then pops the draw state.
+pub fn load_indicator_draw(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S1, 0x70);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x60);
+        frame.save_ra(c, 0x50);
+        frame.save_fpr(c, 23, 0xa8);
+        frame.save_fpr(c, 22, 0xa0);
+        frame.save_fpr(c, 21, 0x98);
+        frame.save_fpr(c, 20, 0x90);
+        let this = r32(c, S0);
+        c.g[V0][0] = c.lw(this.wrapping_add(load_indicator::BUSY));
+        let busy = c.g[V0][0] != 0;
+        c.g[V0][0] = c.lw(oc224_gp(c, 0x1dc0));
+        if busy {
+            load_indicator_draw_busy(c, this)?;
+        }
+        c.cycles += 10;
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.restore_fpr(c, 23, 0xa8);
+        frame.restore_fpr(c, 22, 0xa0);
+        frame.restore_fpr(c, 21, 0x98);
+        frame.restore_fpr(c, 20, 0x90);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The busy body of [`load_indicator_draw`] (v0 = the "text scale set" flag
+/// at gp+0x1dc0 on entry).
+pub(crate) fn load_indicator_draw_busy(c: &mut Cpu, this: u32) -> crate::call::Flow {
+    // First use: the text scale (gp+0x1db8/0x1dbc) starts at 3.
+    c.cycles += 2;
+    if c.g[V0][0] == 0 {
+        c.cycles += 7;
+        c.g[AT][0] = 0x4040_0000;
+        c.mtc1(AT, 0);
+        c.g[V0][0] = 1;
+        let v = c.g[V0][0];
+        c.sw(oc224_gp(c, 0x1dc0), v);
+        c.swc1(0, oc224_gp(c, 0x1dbc));
+        c.swc1(0, oc224_gp(c, 0x1db8));
+    }
+    c.lwc1(0, this.wrapping_add(load_indicator::PHASE));
+    // f23 = |phase - 1|
+    c.cycles += 8;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 1);
+    c.mtc1(0, 2);
+    c.sub_s(23, 0, 1);
+    c.c_lt_s(23, 2);
+    if c.fcc() {
+        c.neg_s(23, 23);
+    }
+
+    // Push the draw state: copy the current record one up, advance.
+    c.cycles += 89;
+    c.g[A0][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[V0][0] = c.lw(oc224_at(c, A0, renderer::STATE));
+    let st = r32(c, V0);
+    oc224_ld_u(c, V1, st);
+    oc224_ld_u(c, A1, st.wrapping_add(8));
+    c.g[A2][0] = c.lw(st.wrapping_add(0x10));
+    oc224_sd_u(c, V1, st.wrapping_add(0x14));
+    oc224_sd_u(c, A1, st.wrapping_add(0x1c));
+    let v = c.g[A2][0];
+    c.sw(st.wrapping_add(0x24), v);
+    c.g[V1][0] = c.lw(oc224_at(c, A0, renderer::STATE));
+    c.g[A1][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(0x14));
+    let v = c.g[V1][0];
+    c.sw(oc224_at(c, A0, renderer::STATE), v);
+    // renderer->vt[0xa8]() and vt[0xf8]()
+    c.g[V0][0] = c.lw(oc224_at(c, A1, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, V0, 0xa8));
+    c.g[V1][0] = c.lw(oc224_at(c, V0, 0xac));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x001f_32ac)?;
+    c.g[A1][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[V0][0] = c.lw(oc224_at(c, A1, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, V0, 0xf8));
+    c.g[V1][0] = c.lw(oc224_at(c, V0, 0xfc));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x001f_32c4)?;
+
+    // The new state = the default 2D record (0x501420), with its flag
+    // fields at +4 rewritten.
+    c.g[V0][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[A0][0] = 0x0050_0000;
+    c.g[A2][0] = 0xffff_ffff_fe7f_0000;
+    c.g[T3][0] = 0x0100_0000;
+    c.g[V1][0] = c.lw(oc224_at(c, V0, renderer::STATE));
+    c.g[A2][0] |= 0xffff;
+    c.g[T0][0] = 0xffff_ffff_ffcf_0000;
+    c.g[T2][0] = 0xffff_ffff_fff0_0000;
+    c.g[A3][0] = sx((c.g[A0][0] as u32).wrapping_add(0x1420));
+    let def = r32(c, A3);
+    oc224_ld_u(c, T1, def);
+    oc224_ld_u(c, V0, def.wrapping_add(8));
+    c.g[A1][0] = c.lw(def.wrapping_add(0x10));
+    let st = r32(c, V1);
+    oc224_sd_u(c, T1, st);
+    oc224_sd_u(c, V0, st.wrapping_add(8));
+    let v = c.g[A1][0];
+    c.sw(st.wrapping_add(0x10), v);
+    c.g[T0][0] |= 0xffff;
+    c.g[T2][0] |= 0xfff;
+    c.g[T1][0] = 0x0001_0000;
+    c.g[A3][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[T1][0] |= 0x4000;
+    c.g[T4][0] = 0xffff_ffff_ffff_ff83;
+    c.g[A1][0] = 0x0050_0000;
+    c.g[A0][0] = c.lw(oc224_at(c, A3, renderer::STATE));
+    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(0xe60));
+    c.g[V0][0] = c.lw(oc224_at(c, A0, 4));
+    c.g[V0][0] &= c.g[A2][0];
+    c.g[V0][0] |= c.g[T3][0];
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, A0, 4), v);
+    c.g[V1][0] = c.lw(oc224_at(c, A3, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 4));
+    c.g[V0][0] &= c.g[T0][0];
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, V1, 4), v);
+    c.g[A0][0] = c.lw(oc224_at(c, A3, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, A0, 4));
+    c.g[V0][0] &= c.g[T2][0];
+    c.g[V0][0] |= c.g[T1][0];
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, A0, 4), v);
+    c.g[A2][0] = c.lw(oc224_at(c, A3, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, A2, 4));
+    c.g[V0][0] &= c.g[T4][0];
+    c.g[V0][0] |= 0x14;
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, A2, 4), v);
+    // renderer->vt[0x110](0x4ff1a0)
+    c.g[V1][0] = c.lw(oc224_at(c, A3, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, V1, 0x110));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 0x114));
+    let t = r32(c, V0);
+    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x001f_3390)?;
+
+    // Screen width (vt[0x50]) as a float in f20 (unsigned conversion).
+    c.g[A0][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[V1][0] = c.lw(oc224_at(c, A0, renderer::VTABLE));
+    c.g[V0][0] = c.lh(oc224_at(c, V1, 0xb8));
+    c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(0xbc));
+    c.g[A1][0] = c.lh(oc224_at(c, V1, 0x50));
+    c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 0x54));
+    let t = r32(c, V0);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    call_ptr(c, t, 0x001f_33b4)?;
+    let negative = (c.g[V0][0] as i64) < 0;
+    c.g[A1][0] = c.lw(oc224_gp(c, renderer::GP));
+    if !negative {
+        c.cycles += 4;
+        c.mtc1(V0, 20);
+        c.cvt_s_w(20, 20);
+        c.g[V1][0] = c.lw(oc224_at(c, A1, renderer::VTABLE));
+    } else {
+        c.cycles += 7;
+        c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+        c.g[V0][0] &= 1;
+        c.g[V0][0] |= c.g[V1][0];
+        c.mtc1(V0, 20);
+        c.cvt_s_w(20, 20);
+        c.add_s(20, 20, 20);
+        c.g[V1][0] = c.lw(oc224_at(c, A1, renderer::VTABLE));
+    }
+    // Screen height (vt[0x58]) in f15.
+    c.cycles += 6;
+    c.g[A0][0] = c.lh(oc224_at(c, V1, 0x58));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 0x5c));
+    let t = r32(c, V0);
+    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x001f_33f8)?;
+    let negative = (c.g[V0][0] as i64) < 0;
+    c.g[V1][0] = sx((c.g[V0][0] as u32) >> 1);
+    if !negative {
+        c.cycles += 4;
+        c.mtc1(V0, 15);
+        c.cvt_s_w(15, 15);
+    } else {
+        c.cycles += 5;
+        c.g[V0][0] &= 1;
+        c.g[V0][0] |= c.g[V1][0];
+        c.mtc1(V0, 15);
+        c.cvt_s_w(15, 15);
+        c.add_s(15, 15, 15);
+    }
+
+    // Viewport (0, 0, w, h): vt[0xb8](1).
+    c.cycles += 157;
+    c.mtc1(0, 12);
+    c.g[A0][0] = c.g[S1][0];
+    c.g[V0][0] = c.lw(r32(c, S2));
+    c.mov_s(14, 20);
+    c.mov_s(13, 12);
+    let t = r32(c, V0);
+    c.g[A1][0] = 1;
+    call_ptr(c, t, 0x001f_3440)?;
+    // Ortho 640x480: vt[0xd0](0, 0, 640, 480, 0, 1, 1, 0).
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 20);
+    c.g[A3][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[A1][0] = 1;
+    c.mtc1(0, 21);
+    c.mov_s(17, 20);
+    c.g[V0][0] = c.lw(oc224_at(c, A3, renderer::VTABLE));
+    c.g[A2][0] = 0;
+    c.g[AT][0] = 0x4420_0000;
+    c.mtc1(AT, 14);
+    c.mov_s(16, 21);
+    c.g[A0][0] = c.lh(oc224_at(c, V0, 0xd0));
+    c.mov_s(12, 21);
+    c.g[AT][0] = 0x43f0_0000;
+    c.mtc1(AT, 15);
+    c.mov_s(13, 21);
+    c.g[V1][0] = c.lw(oc224_at(c, V0, 0xd4));
+    c.lwc1(22, oc224_gp(c, -0x5558));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x001f_3490)?;
+
+    // Font colour (1, 1, 1, 0) at +0x40, scaled size = size * k.
+    let sp = sp(c);
+    c.g[V0][0] = c.lw(this.wrapping_add(load_indicator::FONT));
+    c.g[A2][0] = 0;
+    c.swc1(20, sp);
+    c.g[A3][0] = 0;
+    c.swc1(20, sp.wrapping_add(4));
+    c.swc1(20, sp.wrapping_add(8));
+    c.swc1(21, sp.wrapping_add(0xc));
+    oc224_ld_u(c, T0, sp);
+    oc224_ld_u(c, T1, sp.wrapping_add(8));
+    let font = r32(c, V0);
+    oc224_sd_u(c, T0, font.wrapping_add(0x40));
+    oc224_sd_u(c, T1, font.wrapping_add(0x48));
+    c.lwc1(2, oc224_gp(c, -0x5554));
+    c.g[V0][0] = c.lw(this.wrapping_add(load_indicator::FONT));
+    let font = r32(c, V0);
+    c.lwc1(0, font.wrapping_add(0x30));
+    c.lwc1(1, font.wrapping_add(0x34));
+    c.mul_s(0, 0, 2);
+    c.mul_s(1, 1, 2);
+    c.swc1(0, font.wrapping_add(0x38));
+    c.swc1(1, font.wrapping_add(0x3c));
+    // Shadow colour (1, 0, 0, 0) at +0x50; text scale from gp+0x1db8.
+    c.swc1(20, sp);
+    c.g[V1][0] = c.lw(this.wrapping_add(load_indicator::FONT));
+    c.swc1(21, sp.wrapping_add(4));
+    c.swc1(21, sp.wrapping_add(8));
+    c.swc1(21, sp.wrapping_add(0xc));
+    oc224_ld_u(c, V0, sp);
+    oc224_ld_u(c, A0, sp.wrapping_add(8));
+    let font = r32(c, V1);
+    oc224_sd_u(c, V0, font.wrapping_add(0x50));
+    oc224_sd_u(c, A0, font.wrapping_add(0x58));
+    c.g[V0][0] = c.lw(this.wrapping_add(load_indicator::FONT));
+    oc224_ld_u(c, T1, oc224_gp(c, 0x1db8));
+    oc224_sd_u(c, T1, oc224_at(c, V0, 0x28));
+    // width = Font_MeasureTextW(font, text)
+    c.g[A0][0] = c.lw(this.wrapping_add(load_indicator::FONT));
+    c.g[A1][0] = c.lw(this.wrapping_add(load_indicator::TEXT));
+    c.lwc1(12, oc224_at(c, A0, 0x38));
+    c.lwc1(13, oc224_at(c, A0, 0x3c));
+    call_ptr(c, 0x0039_21f0, 0x001f_3548)?;
+    // Font_DrawTextW at (620 - width, f22 - lines * height * k).
+    c.g[V0][0] = c.lw(this.wrapping_add(load_indicator::FONT));
+    c.lwc1(4, oc224_gp(c, -0x5550));
+    c.lwc1(1, oc224_at(c, V0, 0x14));
+    c.cvt_s_w(1, 1);
+    c.lwc1(3, oc224_at(c, V0, 0x34));
+    c.g[AT][0] = 0x441b_0000;
+    c.mtc1(AT, 2);
+    c.swc1(21, sp.wrapping_add(8));
+    c.mul_s(1, 1, 3);
+    c.swc1(20, sp.wrapping_add(0xc));
+    c.sub_s(2, 2, 0);
+    c.g[A0][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.mul_s(1, 1, 4);
+    c.swc1(2, sp);
+    c.sub_s(1, 22, 1);
+    c.swc1(1, sp.wrapping_add(4));
+    c.g[V1][0] = c.lw(oc224_at(c, A0, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, 8));
+    c.g[V0][0] |= 0x3e0;
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, V1, 8), v);
+    c.lwc1(12, sp);
+    c.lwc1(13, sp.wrapping_add(4));
+    c.g[A0][0] = c.lw(this.wrapping_add(load_indicator::FONT));
+    c.g[A1][0] = c.lw(this.wrapping_add(load_indicator::TEXT));
+    call_ptr(c, 0x0039_1e30, 0x001f_35ac)?;
+
+    // The pulsing square: vt[0x270](pos, size, uv0, uv1, colour), with
+    // the text scale back at 2.
+    c.g[AT][0] = 0x4000_0000;
+    c.mtc1(AT, 0);
+    c.g[A1][0] = c.g[SP][0];
+    c.g[V0][0] = c.lw(this.wrapping_add(load_indicator::FONT));
+    c.g[T0][0] = sx(sp.wrapping_add(0x30));
+    c.swc1(0, sp.wrapping_add(0x14));
+    c.g[T1][0] = sx(sp.wrapping_add(0x40));
+    c.swc1(0, sp.wrapping_add(0x10));
+    c.g[A2][0] = sx(sp.wrapping_add(0x10));
+    oc224_ld_u(c, A0, sp.wrapping_add(0x10));
+    oc224_sd_u(c, A0, oc224_at(c, V0, 0x28));
+    c.g[A3][0] = sx(sp.wrapping_add(0x20));
+    c.g[AT][0] = 0x4190_0000;
+    c.mtc1(AT, 3);
+    c.lwc1(0, sp);
+    c.g[AT][0] = 0x4188_0000;
+    c.mtc1(AT, 1);
+    c.mul_s(2, 23, 3);
+    c.swc1(22, sp.wrapping_add(4));
+    c.sub_s(0, 0, 1);
+    c.swc1(21, sp.wrapping_add(0x24));
+    c.swc1(2, sp.wrapping_add(0x10));
+    c.swc1(3, sp.wrapping_add(0x14));
+    c.swc1(0, sp);
+    c.swc1(21, sp.wrapping_add(0x20));
+    c.swc1(20, sp.wrapping_add(0x30));
+    c.swc1(20, sp.wrapping_add(0x34));
+    c.g[V1][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[A0][0] = c.lw(oc224_at(c, V1, renderer::STATE));
+    c.g[V0][0] = c.lw(oc224_at(c, V1, renderer::CONTEXT_ID));
+    let v = c.g[V0][0];
+    c.sh(oc224_at(c, A0, 0x10), v);
+    c.g[V1][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[T2][0] = c.lw(oc224_at(c, V1, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, T2, 0x270));
+    c.swc1(20, sp.wrapping_add(0x4c));
+    c.swc1(20, sp.wrapping_add(0x40));
+    c.swc1(20, sp.wrapping_add(0x44));
+    c.swc1(20, sp.wrapping_add(0x48));
+    c.g[V0][0] = c.lw(oc224_at(c, T2, 0x274));
+    let t = r32(c, V0);
+    c.g[A0][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x001f_3658)?;
+    // vt[0x100]() and vt[0xb0]()
+    c.g[A1][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[V0][0] = c.lw(oc224_at(c, A1, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, V0, 0x100));
+    c.g[V1][0] = c.lw(oc224_at(c, V0, 0x104));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x001f_3670)?;
+    c.g[A1][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[V0][0] = c.lw(oc224_at(c, A1, renderer::VTABLE));
+    c.g[A0][0] = c.lh(oc224_at(c, V0, 0xb0));
+    c.g[V1][0] = c.lw(oc224_at(c, V0, 0xb4));
+    let t = r32(c, V1);
+    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, t, 0x001f_3688)?;
+    // Pop the draw state.
+    c.g[A0][0] = c.lw(oc224_gp(c, renderer::GP));
+    c.g[V0][0] = c.lw(oc224_at(c, A0, renderer::STATE));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x14));
+    let v = c.g[V0][0];
+    c.sw(oc224_at(c, A0, renderer::STATE), v);
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -14920,6 +15350,99 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(HUD);
                 c.pc = 0x001e_a930;
             },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::covered;
+
+    /// `gp + off` on the test machine.
+    pub(crate) fn gpa(off: i32) -> u32 {
+        GAME_GP.wrapping_add(off as u32)
+    }
+
+    /// A guest function that returns `*(u32*)a0` (`lw v0, 0(a0); jr ra`):
+    /// a real vtable target for results a fake cannot give (negative
+    /// 64-bit values).
+    pub(crate) const GET_WORD: u32 = 0x0027_43c0;
+
+    // ---------------------------------------------------- LoadIndicator_Draw
+
+    pub(crate) const LI: u32 = DATA;
+
+    pub(crate) const LI_FONT: u32 = DATA + 0x100;
+
+    pub(crate) const LI_TEXT: u32 = DATA + 0x200;
+
+    pub(crate) const REND: u32 = DATA + 0x1000;
+
+    pub(crate) const REND_STATE: u32 = DATA + 0x3000;
+
+    pub(crate) const REND_VT: u32 = DATA + 0x4000;
+
+    /// Renderer methods the indicator (and `Font_DrawTextW`) call.
+    pub(crate) const LI_SLOTS: [u32; 11] = [
+        0xa8, 0xf8, 0x110, 0x50, 0x58, 0xb8, 0xd0, 0x270, 0x100, 0xb0, 0x288,
+    ];
+
+    /// The indicator at `LI` (busy most seeds, an empty wide string, a
+    /// random font), the renderer at `gp-0x854` (and `gp+0x2a90`, the one
+    /// the font code uses) with a random draw-state stack and a vtable of
+    /// fakes. Some seeds route the width/height getters to a real getter
+    /// returning negative values (the unsigned-conversion branches).
+    pub(crate) fn load_indicator_setup(c: &mut Cpu, seed: u32) {
+        let mut r = machine(c, seed, 0x001f_31e0, 12);
+        c.bus.write32(gpa(-0x854), REND);
+        c.bus.write32(gpa(0x2a90), REND);
+        c.bus.write32(REND + 0xe84, REND_STATE + 0x14 * (seed % 3));
+        fill(c, &mut r, REND_STATE, 0x30);
+        c.bus.write32(REND + 0x1068, r.next_u32());
+        c.bus.write32(REND + 0x10d8, REND_VT);
+        for (i, &off) in LI_SLOTS.iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 & !3 & 0xfff) as u32;
+            c.bus.write16(REND_VT + off, delta as u16);
+            c.bus.write32(REND_VT + off + 4, FAKE + 0x10 * i as u32);
+        }
+        if seed % 4 == 1 {
+            // width = *(REND+0), height = *(REND+4), both maybe negative
+            c.bus.write16(REND_VT + 0x50, 0);
+            c.bus.write32(REND_VT + 0x54, GET_WORD);
+            c.bus.write16(REND_VT + 0x58, 4);
+            c.bus.write32(REND_VT + 0x5c, GET_WORD);
+            c.bus
+                .write32(REND, if seed % 8 == 1 { 0x8000_0281 } else { 640 });
+            c.bus
+                .write32(REND + 4, if seed % 16 < 8 { 0xffff_fff1 } else { 448 });
+        }
+        // The indicator.
+        c.bus.write32(LI + 0x0, LI_TEXT);
+        c.bus.write16(LI_TEXT, 0);
+        c.bus
+            .write32(LI + 0x4, if seed % 5 == 0 { 0 } else { 1 + seed });
+        c.bus.write32(LI + 0x8, r.f32(2.0));
+        c.bus.write32(LI + 0xc, LI_FONT);
+        fill(c, &mut r, LI_FONT, 0x20);
+        for off in [0x18u32, 0x1c, 0x20, 0x24, 0x30, 0x34] {
+            c.bus.write32(LI_FONT + off, r.f32(4.0));
+        }
+        c.bus.write32(LI_FONT + 0x14, r.next_u32() % 4);
+        // The text scale (first use sets it to 3) and the .lit4 constants.
+        c.bus.write32(gpa(0x1dc0), seed % 2);
+        c.bus.write32(gpa(0x1db8), r.f32(3.0));
+        c.bus.write32(gpa(0x1dbc), r.f32(3.0));
+        for off in [-0x5558, -0x5554, -0x5550] {
+            c.bus.write32(gpa(off), r.f32(500.0));
+        }
+        c.g[A0][0] = LI as u64;
+        c.pc = 0x001f_31e0;
+    }
+
+    #[test]
+    fn load_indicator_draw_matches() {
+        covered(
+            ee::s04::f_001f31e0__generated,
+            load_indicator_draw,
+            200,
+            &load_indicator_setup,
         );
     }
 }
