@@ -530,8 +530,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         script_audio_obj_update_sounds,
         "ScriptAudioObj_UpdateSounds",
     ),
-    (0x0027_8918, script_engine_poll_async_loads, "ScriptEngine_PollAsyncLoads"),
-    (0x0027_89c0, script_engine_toggle_movie_pause, "ScriptEngine_ToggleMoviePause"),
+    (
+        0x0027_8918,
+        script_engine_poll_async_loads,
+        "ScriptEngine_PollAsyncLoads",
+    ),
+    (
+        0x0027_89c0,
+        script_engine_toggle_movie_pause,
+        "ScriptEngine_ToggleMoviePause",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8016,9 +8024,6 @@ pub fn script_audio_obj_update_sounds(c: &mut Cpu) {
     });
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // ScriptEngine_PollAsyncLoads (0x278918)
 
@@ -8027,35 +8032,24 @@ pub fn script_audio_obj_update_sounds(c: &mut Cpu) {
 /// async handle is at +0x630 + 0x10 * i.
 pub(crate) const SCRIPT_PENDING_LOADS: u32 = 0x620;
 
-
 pub(crate) const SCRIPT_FILTER_HANDLE: u32 = 0x538;
-
 
 pub(crate) const SCRIPT_BANK_HANDLES: u32 = 0x630;
 
-
 pub(crate) const SCRIPT_BANK_SLOT_SIZE: u32 = 0x10;
-
-
 
 /// `bool AsyncFile_IsDone(int handle)` (through the function table).
 pub(crate) const ASYNC_FILE_IS_DONE: u32 = 0x003d_f980;
-
-
 
 pub(crate) const SCRIPT_ON_FILTER_LOADED: Callee = Callee {
     addr: 0x0027_b6b0,
     f: ee::s07::ScriptEngine_OnFilterLoaded,
 };
 
-
-
 pub(crate) const SCRIPT_ON_BANK_LOADED: Callee = Callee {
     addr: 0x0027_b5d8,
     f: ee::s07::ScriptEngine_OnBankLoaded,
 };
-
-
 
 /// `void ScriptEngine_PollAsyncLoads(ScriptEngine* self /*a0*/)`
 /// (0x278918): while loads are pending, hand every finished async load to
@@ -8139,9 +8133,6 @@ pub fn script_engine_poll_async_loads(c: &mut Cpu) {
         Ok(())
     });
 }
-
-
-
 
 /// `void ScriptEngine_ToggleMoviePause(ScriptEngine* self)` (0x2789c0):
 /// pause or resume the script engine's movie (`ScriptMovie_TogglePause` on
@@ -11000,7 +10991,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     // ---------------------------------------------- ScriptEngine_PollAsyncLoads
 
     /// `ScriptEngine_PollAsyncLoads`: no pending loads; a filter handle that
@@ -11067,7 +11057,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// ScriptEngine_ToggleMoviePause: the real ScriptMovie_TogglePause on
     /// the movie at engine + 0x500 (no player, not playing, pause or resume
     /// requested, player paused or not), as in its own test.
@@ -11090,10 +11079,14 @@ pub(crate) mod tests {
                     }
                 };
                 c.bus.write32(movie, if seed % 9 == 8 { 0 } else { player });
-                c.bus.write32(movie + 4, if seed % 7 == 6 { 0 } else { r.next_u32() | 1 });
+                c.bus
+                    .write32(movie + 4, if seed % 7 == 6 { 0 } else { r.next_u32() | 1 });
                 c.bus.write32(movie + 8, flag(&mut r, 0));
                 c.bus.write32(player + 8, flag(&mut r, 1));
-                c.bus.write32(player + 0x38, flag(&mut r, 2) & (seed / 4 % 2).wrapping_neg());
+                c.bus.write32(
+                    player + 0x38,
+                    flag(&mut r, 2) & (seed / 4 % 2).wrapping_neg(),
+                );
                 c.bus.write32(player + 0x3c, 0);
                 c.g[A0][0] = sx(engine);
                 c.pc = 0x0027_89c0;

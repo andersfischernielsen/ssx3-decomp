@@ -98,7 +98,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0022_a4a8, nash_classify_effects, "Nash_ClassifyEffects"),
     (0x0022_a770, nash_collect_effects, "Nash_CollectEffects"),
-    (0x0022_a368, nash_classify_instances, "Nash_ClassifyInstances"),
+    (
+        0x0022_a368,
+        nash_classify_instances,
+        "Nash_ClassifyInstances",
+    ),
     (0x0022_a408, nash_classify_patches, "Nash_ClassifyPatches"),
     (0x0022_7f58, ssx_app_tick, "SSXApp_Tick"),
 ];
@@ -2874,9 +2878,6 @@ pub fn nash_collect_effects(c: &mut Cpu) {
     ret(c);
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // Nash_ClassifyPatches (0x22a408)
 
@@ -2885,30 +2886,21 @@ pub(crate) const NASH_CLASSIFY_PATCH: Callee = Callee {
     f: ee::s05::Nash_ClassifyPatch,
 };
 
-
-
 /// A visible-list entry (8 bytes): the source (+0, whose first patch node
 /// is at +0x24) and the VU frustum handed to the classifier (+4).
 pub(crate) const VIS_SOURCE: u32 = 0x0;
 
-
 pub(crate) const VIS_FRUSTUM: u32 = 0x4;
-
 
 pub(crate) const VIS_ENTRY_SIZE: u32 = 0x8;
 
-
 pub(crate) const SOURCE_FIRST_PATCH: u32 = 0x24;
-
 
 /// A patch node's next link.
 pub(crate) const PATCH_NEXT: u32 = 0x0;
 
-
 /// The cell's pending list head (non-zero: one more classify with no node).
 pub(crate) const CELL_LIST_HEAD: u32 = 0x78b0;
-
-
 
 /// `void Nash_ClassifyPatches(Cell* cell /*a0*/, VisEntry* list /*a1*/,
 /// int count /*a2*/)` (0x22a408): run `Nash_ClassifyPatch(cell, node,
@@ -2986,8 +2978,6 @@ pub fn nash_classify_patches(c: &mut Cpu) {
         Ok(())
     });
 }
-
-
 
 /// `void Nash_ClassifyInstances(Cell* cell, List* lists, int count)`
 /// (0x22a368, ssxapp.cpp): runs `Nash_ClassifyInstance(cell, node,
@@ -3071,19 +3061,13 @@ pub fn nash_classify_instances(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // SSXApp_Tick (0x227f58)
 
 /// gp-relative pointer to the pad queue.
 pub(crate) const SSX_APP_PAD_QUEUE_GP: u32 = 0x850;
 
-
 pub(crate) const SSX_APP_PAD_QUEUE_POLL: u32 = 0x0032_6b88;
-
-
 
 /// `void cSSXApp::timerCallback()` (0x227f58, `SSXApp_Tick`): the app's
 /// timer tick polls the pad queue (`PadQueue_Poll`) if there is one.
@@ -4276,7 +4260,6 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
 
-
     // ---------------------------------------------------- Nash_ClassifyPatches
 
     /// `Nash_ClassifyPatches`: zero, negative and up to four list entries,
@@ -4351,7 +4334,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// `Nash_ClassifyInstances`: 0..4 lists (or a negative count), each
     /// source with 0..4 nodes; the real `Nash_ClassifyInstance` runs its
     /// short paths: node type words not ending in 3 (a miss), or ending in
@@ -4415,29 +4397,38 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// SSXApp_Tick: no pad queue, or one with the real PadQueue_Poll (the
     /// fixture of its own test: 0..4 devices, or none, whose poll methods
     /// are fakes unwinding on some seeds).
     #[test]
     fn ssx_app_tick_matches() {
-        crate::difftest::check(ee::s05::f_00227f58__generated, ssx_app_tick, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x22_7f58, 4);
-            c.pc = 0x0022_7f58;
-            let q = DATA;
-            let present = seed % 5 != 0;
-            c.bus.write32(GAME_GP - SSX_APP_PAD_QUEUE_GP, if present { q } else { 0 });
-            let n = if seed % 9 == 0 { u32::MAX } else { seed % 5 };
-            c.bus.write32(q + 0x2ee8, n);
-            c.bus.write32(q + 0x2ee4, if seed % 3 == 0 { 29 } else { r.next_u32() % 30 });
-            for i in 0..4u32 {
-                let dev = DATA + 0x4000 + 0x40 * i;
-                let vt = DATA + 0x5000 + 0x40 * i;
-                c.bus.write32(q + 0x2eec + 4 * i, dev);
-                c.bus.write32(dev, vt);
-                c.bus.write16(vt + 0x10, (r.next_u32() as i16 as i32 & !3) as u16);
-                c.bus.write32(vt + 0x14, FAKE + 0x10 * i);
-            }
-        });
+        crate::difftest::check(
+            ee::s05::f_00227f58__generated,
+            ssx_app_tick,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x22_7f58, 4);
+                c.pc = 0x0022_7f58;
+                let q = DATA;
+                let present = seed % 5 != 0;
+                c.bus
+                    .write32(GAME_GP - SSX_APP_PAD_QUEUE_GP, if present { q } else { 0 });
+                let n = if seed % 9 == 0 { u32::MAX } else { seed % 5 };
+                c.bus.write32(q + 0x2ee8, n);
+                c.bus.write32(
+                    q + 0x2ee4,
+                    if seed % 3 == 0 { 29 } else { r.next_u32() % 30 },
+                );
+                for i in 0..4u32 {
+                    let dev = DATA + 0x4000 + 0x40 * i;
+                    let vt = DATA + 0x5000 + 0x40 * i;
+                    c.bus.write32(q + 0x2eec + 4 * i, dev);
+                    c.bus.write32(dev, vt);
+                    c.bus
+                        .write16(vt + 0x10, (r.next_u32() as i16 as i32 & !3) as u16);
+                    c.bus.write32(vt + 0x14, FAKE + 0x10 * i);
+                }
+            },
+        );
     }
 }

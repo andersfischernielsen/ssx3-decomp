@@ -36,6 +36,7 @@ pub(crate) use crate::game::fe::festateloadhint::sqsp;
 pub(crate) use crate::game::fe::festaterewards::at_4 as at_5;
 pub(crate) use crate::game::fe::festaterewards::gp_4 as gp_7;
 pub(crate) use crate::game::fe::festaterewards::lw_3;
+pub(crate) use crate::game::intersect::riderspheretree::lt as lt_2;
 pub(crate) use crate::game::main::gamemode::low as low_2;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2 as sp_3;
@@ -61,7 +62,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-pub(crate) use crate::game::intersect::riderspheretree::lt as lt_2;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -240,10 +240,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Player_GetControlInput",
     ),
     (0x0012_5b18, player_apply_rumble, "Player_ApplyRumble"),
-    (0x0010_6828, rider_update_sphere_tree, "Rider_UpdateSphereTree"),
+    (
+        0x0010_6828,
+        rider_update_sphere_tree,
+        "Rider_UpdateSphereTree",
+    ),
     (0x0011_4db8, rider_try_air_reverse, "Rider_TryAirReverse"),
-    (0x0012_0038, rider_get_trick_skill_factor, "Rider_GetTrickSkillFactor"),
-    (0x0012_2cd0, rider_is_on_ground_wrapper, "Rider_IsOnGround_Wrapper"),
+    (
+        0x0012_0038,
+        rider_get_trick_skill_factor,
+        "Rider_GetTrickSkillFactor",
+    ),
+    (
+        0x0012_2cd0,
+        rider_is_on_ground_wrapper,
+        "Rider_IsOnGround_Wrapper",
+    ),
     (0x0012_78e8, player_update_rumble, "Player_UpdateRumble"),
 ];
 
@@ -11902,21 +11914,20 @@ pub fn player_apply_rumble(c: &mut Cpu) {
     })
 }
 
-
 pub(crate) mod vu {
+    pub(crate) use crate::game::intersect::riderspheretree::vu::add;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::copy;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::dot;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::dot_vf3_vf5;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::normalize;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::scale;
+    pub(crate) use crate::game::intersect::riderspheretree::vu::sub;
     use ssx3_ee_rt::vu0::Src;
     use ssx3_ee_rt::vu0::W;
     use ssx3_ee_rt::vu0::X;
     use ssx3_ee_rt::vu0::Y;
     use ssx3_ee_rt::vu0::Z;
     use ssx3_ee_rt::Cpu;
-    pub(crate) use crate::game::intersect::riderspheretree::vu::dot;
-    pub(crate) use crate::game::intersect::riderspheretree::vu::dot_vf3_vf5;
-    pub(crate) use crate::game::intersect::riderspheretree::vu::normalize;
-    pub(crate) use crate::game::intersect::riderspheretree::vu::scale;
-    pub(crate) use crate::game::intersect::riderspheretree::vu::sub;
-    pub(crate) use crate::game::intersect::riderspheretree::vu::add;
-    pub(crate) use crate::game::intersect::riderspheretree::vu::copy;
 }
 
 pub(crate) mod air_reverse {
@@ -11974,14 +11985,21 @@ pub(crate) mod air_reverse {
 
     pub const ORIGIN: u32 = 0x004f_f130;
 
-    pub const BUILD_WORLD_MATRIX: Callee = Callee { addr: 0x0011_e098, f: ee::s00::f_0011e098 };
+    pub const BUILD_WORLD_MATRIX: Callee = Callee {
+        addr: 0x0011_e098,
+        f: ee::s00::f_0011e098,
+    };
 
-    pub const TOGGLE_STANCE: Callee = Callee { addr: 0x0011_5168, f: ee::s00::f_00115168 };
+    pub const TOGGLE_STANCE: Callee = Callee {
+        addr: 0x0011_5168,
+        f: ee::s00::f_00115168,
+    };
 
-    pub const AIR_PREDICTOR_PRIME: Callee = Callee { addr: 0x0011_35b8, f: ee::s00::f_001135b8 };
+    pub const AIR_PREDICTOR_PRIME: Callee = Callee {
+        addr: 0x0011_35b8,
+        f: ee::s00::f_001135b8,
+    };
 }
-
-
 
 // ---------------------------------------------------------------------------
 // Player_UpdateRumble (0x1278e8, rider.cpp)
@@ -11989,24 +12007,17 @@ pub(crate) mod air_reverse {
 /// Player fields.
 pub(crate) const PL_RIDER: u32 = 0x18;
 
-
 pub(crate) const PL_PAD: u32 = 0xdf4;
-
 
 pub(crate) const PL_RUMBLE: u32 = 0xdfc;
 
-
 /// The rider's controller-input sub-object (vtable slot 0x38: the pad id).
 pub(crate) const RIDER_INPUT: u32 = 0x6c0;
-
-
 
 pub(crate) const PLAYER_APPLY_RUMBLE: Callee = Callee {
     addr: 0x0012_5b18,
     f: ee::s00::Player_ApplyRumble,
 };
-
-
 
 /// `void Player_UpdateRumble(Player* self)` (0x1278e8): with a pad
 /// attached, asks the BE player interface whether vibration is enabled for
@@ -12032,7 +12043,7 @@ pub fn player_update_rumble(c: &mut Cpu) {
             c.g[A1][0] = 1;
             c.g[A0][0] = c.g[V0][0];
             call_ptr(c, 0x0014_dd58, 0x0012_7920)?; // BELibrary_GetInterface(be, 1)
-            // pad id = rider->input.vfunc_0x38()
+                                                    // pad id = rider->input.vfunc_0x38()
             c.g[A0][0] = Addr(this.wrapping_add(PL_RIDER)).lw(c);
             c.g[S0][0] = c.g[V0][0];
             c.g[V1][0] = Addr(r32(c, A0).wrapping_add(RIDER_INPUT)).lw(c);
@@ -12076,21 +12087,15 @@ pub fn player_update_rumble(c: &mut Cpu) {
     })
 }
 
-
-
 // --------------------------------------------------- Rider_GetTrickSkillFactor
 
 /// Rider fields: AI (player) index (+0x86c) and stats index (+0xb34).
 pub(crate) const RIDER_AI_INDEX: u32 = 0x86c;
 
-
 pub(crate) const RIDER_STATS_INDEX: u32 = 0xb34;
-
 
 /// `.lit4` scale of the trick attribute factor (0.29988...).
 pub(crate) const GP_TRICK_SKILL_SCALE: u32 = 0x7960;
-
-
 
 /// `float Rider_GetTrickSkillFactor(Rider* self)` (0x120038): the rider's
 /// trick attribute as a factor, `1 + 0.2999 * attrib2Factor`, where the
@@ -12130,15 +12135,11 @@ pub fn rider_get_trick_skill_factor(c: &mut Cpu) {
     })
 }
 
-
-
 /// `gp`-relative global address.
 #[inline]
 pub(crate) fn gp_at(c: &Cpu, off: i32) -> Addr {
     Addr((c.g[GP][0] as u32).wrapping_add(off as u32))
 }
-
-
 
 /// `bool Rider_TryAirReverse(Rider *rider)` (0x114db8): in the air with a
 /// landing predicted (predictor state 1 or 3), check the rider is above the
@@ -12189,8 +12190,6 @@ pub fn rider_try_air_reverse(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 /// `Rider_TryAirReverse` past the predictor-state test: leaves the result in
 /// v0.
@@ -12363,8 +12362,6 @@ pub(crate) fn try_reverse(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
-
-
 // ---------------------------------------------------------------------------
 // Rider_IsOnGround_Wrapper (0x122cd0)
 
@@ -12373,8 +12370,6 @@ pub(crate) const RIDER_IS_ON_GROUND: Callee = Callee {
     addr: 0x0012_31a8,
     f: ee::s00::Rider_IsOnGround,
 };
-
-
 
 /// `bool Rider_IsOnGround_Wrapper(Rider *rider)` (0x122cd0): forwards to
 /// `Rider_IsOnGround`.
@@ -12387,19 +12382,14 @@ pub fn rider_is_on_ground_wrapper(c: &mut Cpu) {
     );
 }
 
-
-
 // ---------------------------------------------------------------------------
 // Rider_UpdateSphereTree (0x106828)
 
 /// Rider: its collision sphere tree.
 pub(crate) const RIDER_SPHERE_TREE: u32 = 0xaa0;
 
-
 /// `RiderSphereTree_UpdateFromBones` (called through the function table).
 pub(crate) const RIDER_SPHERE_TREE_UPDATE_FROM_BONES: u32 = 0x0032_9ae0;
-
-
 
 /// `void Rider_UpdateSphereTree(Rider* rider)` (0x106828): move the rider's
 /// collision spheres onto its current bone positions
@@ -15441,7 +15431,6 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
 
-
     /// Player_UpdateRumble: no pad (early out); with a pad, vibration on/off
     /// from the BE player slot table, the race countdown 0 / below 10 / 10+,
     /// and Player_ApplyRumble's both paths (stop actuators with one or two
@@ -15457,53 +15446,59 @@ pub(crate) mod tests {
         const IFACE_OBJ: u32 = PLAYER + 0x3100;
         const WORLD: u32 = PLAYER + 0x3200;
         const BE: u32 = PLAYER + 0x8000;
-        check(ee::s00::f_001278e8__generated, player_update_rumble, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x12_78e8, 7);
-            c.pc = 0x0012_78e8;
-            let gp = crate::difftest::GAME_GP;
-            c.g[A0][0] = sx(PLAYER);
-            c.bus.write32(PLAYER + PL_PAD, if seed % 6 == 0 { 0 } else { PAD });
-            c.bus.write32(PLAYER + PL_RIDER, RIDER);
-            // BELibrary singleton, interface table entry 0.
-            c.bus.write32(gp - 0x1f04, BE);
-            c.bus.write32(gp - 0x1efc, 0);
-            c.bus.write32(0x0053_08a8, IFACE_OBJ);
-            let vt = vtable(c, &mut r, &[0x8]);
-            c.bus.write32(IFACE_OBJ + 4, vt);
-            // The rider input's pad id (forced 1..3), its slot and flags.
-            let vt = vtable(c, &mut r, &[0x38]);
-            c.bus.write32(RIDER + RIDER_INPUT, vt);
-            let pad_id = 1 + seed % 3;
-            c.bus.write32(LOG_RESULTS + 4, pad_id);
-            let slot = r.next_u32() % 4;
-            c.bus.write32(0x0053_05b0 + 4 * pad_id, slot);
-            c.bus.write32(0x0053_4fe0 + slot * 0x1c + 0x10, r.next_u32());
-            // The world's countdown.
-            c.bus.write32(gp - 0x848, WORLD);
-            c.bus.write32(WORLD + 0x84, WORLD + 0x100);
-            c.bus.write32(WORLD + 0x100 + 0x28, WORLD + 0x200);
-            let count = match (seed / 6) % 3 {
-                0 => 0,
-                1 => r.next_u32() % 10,
-                _ => 10 + r.next_u32() % 100,
-            };
-            c.bus.write32(WORLD + 0x200, count);
-            // The pad: motor count / type (1 or 2), motor setters.
-            let vt = vtable(c, &mut r, &[0x18, 0x20]);
-            c.bus.write32(PAD, vt);
-            let k = 1 + (seed / 2) % 2;
-            for n in [2, 4, 6] {
-                c.bus.write32(LOG_RESULTS + 4 * n, k);
-            }
-            // Player_ApplyRumble's .lit4 constants.
-            for off in [0x7860u32, 0x785c, 0x7858, 0x7854, 0x7850, 0x784c, 0x7848] {
-                c.bus.write32(gp - off, r.f32(2.0));
-            }
-            c.bus.write32(PLAYER + PL_RUMBLE, r.f32(2.0));
-            c.bus.write32(PLAYER + PL_RUMBLE + 4, r.f32(2.0));
-        });
+        check(
+            ee::s00::f_001278e8__generated,
+            player_update_rumble,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12_78e8, 7);
+                c.pc = 0x0012_78e8;
+                let gp = crate::difftest::GAME_GP;
+                c.g[A0][0] = sx(PLAYER);
+                c.bus
+                    .write32(PLAYER + PL_PAD, if seed % 6 == 0 { 0 } else { PAD });
+                c.bus.write32(PLAYER + PL_RIDER, RIDER);
+                // BELibrary singleton, interface table entry 0.
+                c.bus.write32(gp - 0x1f04, BE);
+                c.bus.write32(gp - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, IFACE_OBJ);
+                let vt = vtable(c, &mut r, &[0x8]);
+                c.bus.write32(IFACE_OBJ + 4, vt);
+                // The rider input's pad id (forced 1..3), its slot and flags.
+                let vt = vtable(c, &mut r, &[0x38]);
+                c.bus.write32(RIDER + RIDER_INPUT, vt);
+                let pad_id = 1 + seed % 3;
+                c.bus.write32(LOG_RESULTS + 4, pad_id);
+                let slot = r.next_u32() % 4;
+                c.bus.write32(0x0053_05b0 + 4 * pad_id, slot);
+                c.bus
+                    .write32(0x0053_4fe0 + slot * 0x1c + 0x10, r.next_u32());
+                // The world's countdown.
+                c.bus.write32(gp - 0x848, WORLD);
+                c.bus.write32(WORLD + 0x84, WORLD + 0x100);
+                c.bus.write32(WORLD + 0x100 + 0x28, WORLD + 0x200);
+                let count = match (seed / 6) % 3 {
+                    0 => 0,
+                    1 => r.next_u32() % 10,
+                    _ => 10 + r.next_u32() % 100,
+                };
+                c.bus.write32(WORLD + 0x200, count);
+                // The pad: motor count / type (1 or 2), motor setters.
+                let vt = vtable(c, &mut r, &[0x18, 0x20]);
+                c.bus.write32(PAD, vt);
+                let k = 1 + (seed / 2) % 2;
+                for n in [2, 4, 6] {
+                    c.bus.write32(LOG_RESULTS + 4 * n, k);
+                }
+                // Player_ApplyRumble's .lit4 constants.
+                for off in [0x7860u32, 0x785c, 0x7858, 0x7854, 0x7850, 0x784c, 0x7848] {
+                    c.bus.write32(gp - off, r.f32(2.0));
+                }
+                c.bus.write32(PLAYER + PL_RUMBLE, r.f32(2.0));
+                c.bus.write32(PLAYER + PL_RUMBLE + 4, r.f32(2.0));
+            },
+        );
     }
-
 
     /// Rider_GetTrickSkillFactor: the game image (attribute tables, the
     /// `.lit4` scale), a BE singleton, a library whose getInterface slot is
@@ -15513,42 +15508,46 @@ pub(crate) mod tests {
     #[test]
     fn rider_get_trick_skill_factor_matches() {
         const RIDER: u32 = DATA + 0x7_0000;
-        covered(ee::s00::f_00120038__generated, rider_get_trick_skill_factor, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x12_0038, 1);
-            crate::difftest::elf_image(c);
-            c.pc = 0x0012_0038;
-            c.bus.write32(GAME_GP - 0x1f04, DATA + 0x6_0000);
-            c.bus.write32(GAME_GP - 0x1efc, 0);
-            // The lazily built BE interface singletons exist (new race,
-            // new player, char, aggression).
-            for g in [0x1f3c, 0x1f30, 0x1f2c, 0x1ea4] {
-                c.bus.write32(GAME_GP - g, DATA + 0xe_0000 + g * 0x10);
-            }
-            let lib = DATA + 0x5_0000;
-            c.bus.write32(0x0053_08a8, lib);
-            let vt = crate::difftest::fakes::vtable(c, &mut r, &[8]);
-            c.bus.write32(lib + 4, vt);
-            for p in 0..8 {
-                c.bus.write32(0x0053_05b0 + 4 * p, r.next_u32() % 8);
-            }
-            for s in 0..8 {
-                let rec = 0x0053_5b20 + s * 0x1c;
-                if r.next_u32() % 3 == 0 {
-                    c.bus.write32(rec + 0xc, u32::MAX);
+        covered(
+            ee::s00::f_00120038__generated,
+            rider_get_trick_skill_factor,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x12_0038, 1);
+                crate::difftest::elf_image(c);
+                c.pc = 0x0012_0038;
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x6_0000);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                // The lazily built BE interface singletons exist (new race,
+                // new player, char, aggression).
+                for g in [0x1f3c, 0x1f30, 0x1f2c, 0x1ea4] {
+                    c.bus.write32(GAME_GP - g, DATA + 0xe_0000 + g * 0x10);
                 }
-                c.bus.write8(rec + 0x11, (r.next_u32() % 10) as u8);
-            }
-            c.bus.write32(RIDER + RIDER_AI_INDEX, r.next_u32() % 8);
-            let stats = match r.next_u32() % 3 {
-                0 => 0,
-                1 => r.next_u32() % 40,
-                _ => r.next_u32(),
-            };
-            c.bus.write32(RIDER + RIDER_STATS_INDEX, stats);
-            c.g[A0][0] = sx(RIDER);
-        });
+                let lib = DATA + 0x5_0000;
+                c.bus.write32(0x0053_08a8, lib);
+                let vt = crate::difftest::fakes::vtable(c, &mut r, &[8]);
+                c.bus.write32(lib + 4, vt);
+                for p in 0..8 {
+                    c.bus.write32(0x0053_05b0 + 4 * p, r.next_u32() % 8);
+                }
+                for s in 0..8 {
+                    let rec = 0x0053_5b20 + s * 0x1c;
+                    if r.next_u32() % 3 == 0 {
+                        c.bus.write32(rec + 0xc, u32::MAX);
+                    }
+                    c.bus.write8(rec + 0x11, (r.next_u32() % 10) as u8);
+                }
+                c.bus.write32(RIDER + RIDER_AI_INDEX, r.next_u32() % 8);
+                let stats = match r.next_u32() % 3 {
+                    0 => 0,
+                    1 => r.next_u32() % 40,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(RIDER + RIDER_STATS_INDEX, stats);
+                c.g[A0][0] = sx(RIDER);
+            },
+        );
     }
-
 
     /// A rider in the air over random geometry: predictor state 1, 3 or
     /// neither; the rider's own plane (surface 0x12 or a flagged surface) or
@@ -15590,21 +15589,30 @@ pub(crate) mod tests {
             _ => r.next_u32() % 3 * 2,
         };
         c.bus.write32(pred + PRED_STATE, state);
-        let surface = if seed / 5 % 3 == 0 { 0x12 } else { r.next_u32() % 8 };
+        let surface = if seed / 5 % 3 == 0 {
+            0x12
+        } else {
+            r.next_u32() % 8
+        };
         c.bus.write32(pred + PRED_SURFACE, surface);
         c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
         c.bus.write32(world + 0x84, game);
         c.bus.write32(game + 0x44, table);
         for k in 0..0x13 {
-            c.bus.write32(table + k * SURFACE_SIZE + 0x44, r.next_u32() % 2);
+            c.bus
+                .write32(table + k * SURFACE_SIZE + 0x44, r.next_u32() % 2);
         }
         c.g[A0][0] = rider as u64;
     }
 
-
     #[test]
     fn rider_try_air_reverse_matches() {
-        check(ssx3_ee::s00::f_00114db8__generated, rider_try_air_reverse, 300, &try_air_reverse_setup);
+        check(
+            ssx3_ee::s00::f_00114db8__generated,
+            rider_try_air_reverse,
+            300,
+            &try_air_reverse_setup,
+        );
         // Some seeds really flip (the whole body runs).
         let mut flipped = 0;
         for seed in 0..300 {
@@ -15616,26 +15624,30 @@ pub(crate) mod tests {
         assert!(flipped >= 5, "flipped {flipped}");
     }
 
-
     /// Rider_IsOnGround_Wrapper through the real `Rider_IsOnGround`: main
     /// state 0 (ground), 2 with/without the sub-state flag, or another state.
     #[test]
     fn rider_is_on_ground_wrapper_matches() {
-        check(ee::s00::f_00122cd0__generated, rider_is_on_ground_wrapper, 200, &|c, seed| {
-            let mut r = Rng(0x122c_d000 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.pc = 0x0012_2cd0;
-            let rider = DATA;
-            let base = DATA + 0x2000;
-            c.g[A0][0] = sx(rider);
-            c.bus.write32(rider + 0x77c, base);
-            let state = [0, 2, 2, 5][(seed % 4) as usize];
-            c.bus.write32(base + 0xde0, state);
-            c.bus.write32(base + 0x30, if seed % 8 < 4 { 0 } else { r.next_u32() | 1 });
-        });
+        check(
+            ee::s00::f_00122cd0__generated,
+            rider_is_on_ground_wrapper,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x122c_d000 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0012_2cd0;
+                let rider = DATA;
+                let base = DATA + 0x2000;
+                c.g[A0][0] = sx(rider);
+                c.bus.write32(rider + 0x77c, base);
+                let state = [0, 2, 2, 5][(seed % 4) as usize];
+                c.bus.write32(base + 0xde0, state);
+                c.bus
+                    .write32(base + 0x30, if seed % 8 < 4 { 0 } else { r.next_u32() | 1 });
+            },
+        );
     }
-
 
     /// `Rider_UpdateSphereTree`: a sphere tree of 0..5 spheres (and a
     /// negative count) with random bone indices; the real

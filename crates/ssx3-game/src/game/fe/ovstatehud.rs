@@ -15594,16 +15594,11 @@ pub fn hud_draw_panel_segment(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // 0x1f3188 LoadIndicator_Update
 
 /// `gp`-relative `.lit4` entry with the per-tick step (1/60 s).
 pub(crate) const LOAD_INDICATOR_LIT_STEP: u32 = 0x555c;
-
-
 
 /// `void LoadIndicator_Update(LoadIndicator* self)` (0x1f3188): while the
 /// indicator is active (+4), advance its animation clock (+8) by one tick
@@ -16937,7 +16932,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// LoadIndicator_Update: inactive on one seed in four; the clock
     /// anywhere in [-3, 57) (no wrap, one or many subtractions), the step
     /// literal 1/60 or a random small value. Events are delivered in the
@@ -16950,7 +16944,11 @@ pub(crate) mod tests {
         const SELF: u32 = DATA + 0x2_0000;
         let setup = |c: &mut Cpu, seed: u32| -> Events {
             let mut r = machine(c, seed, 0x1f31_8800, 0);
-            let active = if seed % 4 == 0 { 0 } else { 1 + r.next_u32() % 7 };
+            let active = if seed % 4 == 0 {
+                0
+            } else {
+                1 + r.next_u32() % 7
+            };
             c.bus.write32(SELF + 4, active);
             let clock = -3.0 + (r.next_u32() % 60_000) as f32 / 1000.0;
             c.bus.write32(SELF + 8, clock.to_bits());
@@ -16963,6 +16961,11 @@ pub(crate) mod tests {
             c.g[A0][0] = SELF as u64;
             schedule(c, &mut r, seed, 0x001f_3188)
         };
-        check_events(ee::s04::f_001f3188__generated, load_indicator_update, 300, &setup);
+        check_events(
+            ee::s04::f_001f3188__generated,
+            load_indicator_update,
+            300,
+            &setup,
+        );
     }
 }

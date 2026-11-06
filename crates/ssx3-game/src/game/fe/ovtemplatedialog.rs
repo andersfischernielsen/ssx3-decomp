@@ -88,7 +88,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         w_script_man_is_mission_type2_active,
         "WScriptMan_IsMissionType2Active",
     ),
-    (0x0020_cba0, game_ui_is_pause_menu_open, "GameUI_IsPauseMenuOpen"),
+    (
+        0x0020_cba0,
+        game_ui_is_pause_menu_open,
+        "GameUI_IsPauseMenuOpen",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1172,38 +1176,27 @@ pub fn game_ui_update(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // GameUI_IsPauseMenuOpen (0x20cba0)
 
 /// `gp-0x848`: the world (`D_004A28A8`).
 pub(crate) const PAUSE_WORLD_GP: u32 = 0x848;
 
-
 /// World: the game UI; GameUI +0x48: the UI root, whose state manager is at +0x18.
 pub(crate) const PAUSE_WORLD_UI: u32 = 0x84;
 
-
 pub(crate) const PAUSE_UI_ROOT: u32 = 0x48;
 
-
 pub(crate) const PAUSE_ROOT_STATE_MGR: u32 = 0x18;
-
 
 /// The pause menu state's name (`D_0046F818`).
 pub(crate) const PAUSE_STATE_NAME: u32 = 0x0046_f818;
 
-
 /// `GetHashValue32(const char*)`.
 pub(crate) const PAUSE_HASH: u32 = 0x0031_7670;
 
-
 /// `UIStateMgr_FindState(mgr, id)`.
 pub(crate) const PAUSE_FIND_STATE: u32 = 0x0039_f9d8;
-
-
 
 /// `bool GameUI_IsPauseMenuOpen(void)` (0x20cba0): whether the UI state
 /// manager holds the pause menu state (found by the hash of its name).
@@ -1594,7 +1587,6 @@ pub(crate) mod tests {
     use super::*;
     use crate::game::visualfx::renderstateman::tests::table_getter_setup;
 
-
     /// The world -> game UI -> root -> state manager chain and a manager
     /// whose two lists (background, stack) hold 0..3 states; one of them is
     /// the pause menu (id = the hash of its name) on some seeds. The hash and
@@ -1602,48 +1594,53 @@ pub(crate) mod tests {
     #[test]
     fn game_ui_is_pause_menu_open_matches() {
         use crate::difftest::{check, elf_image, GAME_GP};
-        check(ee::s05::f_0020cba0__generated, game_ui_is_pause_menu_open, 200, &|c, seed| {
-            elf_image(c);
-            let mut r = fakes::machine(c, seed, 0x20_cba0, 0);
-            let world = DATA + 0x100;
-            let ui = DATA + 0x200;
-            let root = DATA + 0x300;
-            let mgr = root + PAUSE_ROOT_STATE_MGR;
-            c.bus.write32(GAME_GP - PAUSE_WORLD_GP, world);
-            c.bus.write32(world + PAUSE_WORLD_UI, ui);
-            c.bus.write32(ui + PAUSE_UI_ROOT, root);
-            let name: Vec<u8> = (0..64)
-                .map(|i| c.bus.read8(PAUSE_STATE_NAME + i))
-                .take_while(|&b| b != 0)
-                .collect();
-            let pause = crate::game::hashvalue::str_hash(&name);
-            let open = seed % 3 == 0;
-            // Background list at mgr+0, stack at mgr+0x1c (anchor link at +4),
-            // states 0x40 apart, each list ending at a self-linked sentinel.
-            for (k, (list, base)) in [(mgr, DATA + 0x1000), (mgr + 0x1c, DATA + 0x2000)]
-                .into_iter()
-                .enumerate()
-            {
-                let n = r.next_u32() % 4;
-                let mut prev = list;
-                for i in 0..n {
-                    let s = base + 0x40 * i;
-                    let id = if open && k as u32 == seed / 3 % 2 && i + 1 == n {
-                        pause
-                    } else {
-                        r.next_u32() % 6
-                    };
-                    c.bus.write32(s + 0xc, id);
-                    c.bus.write32(prev + 4, s);
-                    c.bus.write32(s, prev);
-                    prev = s;
+        check(
+            ee::s05::f_0020cba0__generated,
+            game_ui_is_pause_menu_open,
+            200,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = fakes::machine(c, seed, 0x20_cba0, 0);
+                let world = DATA + 0x100;
+                let ui = DATA + 0x200;
+                let root = DATA + 0x300;
+                let mgr = root + PAUSE_ROOT_STATE_MGR;
+                c.bus.write32(GAME_GP - PAUSE_WORLD_GP, world);
+                c.bus.write32(world + PAUSE_WORLD_UI, ui);
+                c.bus.write32(ui + PAUSE_UI_ROOT, root);
+                let name: Vec<u8> = (0..64)
+                    .map(|i| c.bus.read8(PAUSE_STATE_NAME + i))
+                    .take_while(|&b| b != 0)
+                    .collect();
+                let pause = crate::game::hashvalue::str_hash(&name);
+                let open = seed % 3 == 0;
+                // Background list at mgr+0, stack at mgr+0x1c (anchor link at +4),
+                // states 0x40 apart, each list ending at a self-linked sentinel.
+                for (k, (list, base)) in [(mgr, DATA + 0x1000), (mgr + 0x1c, DATA + 0x2000)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let n = r.next_u32() % 4;
+                    let mut prev = list;
+                    for i in 0..n {
+                        let s = base + 0x40 * i;
+                        let id = if open && k as u32 == seed / 3 % 2 && i + 1 == n {
+                            pause
+                        } else {
+                            r.next_u32() % 6
+                        };
+                        c.bus.write32(s + 0xc, id);
+                        c.bus.write32(prev + 4, s);
+                        c.bus.write32(s, prev);
+                        prev = s;
+                    }
+                    let sentinel = base + 0x800;
+                    c.bus.write32(prev + 4, sentinel);
+                    c.bus.write32(sentinel, prev);
+                    c.bus.write32(sentinel + 4, sentinel);
                 }
-                let sentinel = base + 0x800;
-                c.bus.write32(prev + 4, sentinel);
-                c.bus.write32(sentinel, prev);
-                c.bus.write32(sentinel + 4, sentinel);
-            }
-            c.pc = 0x0020_cba0;
-        });
+                c.pc = 0x0020_cba0;
+            },
+        );
     }
 }

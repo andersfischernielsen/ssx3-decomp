@@ -407,13 +407,38 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bezier_patch_cache_release_unused,
         "BezierPatchCache_ReleaseUnused",
     ),
-    (0x0037_25b0, vfx_tube_update_color_table, "VfxTube_UpdateColorTable"),
-    (0x0037_4440, bezier_patch_cache_tess_uv2, "BezierPatchCache_TessUV2"),
-    (0x0037_4ae0, bezier_patch_cache_mark_used2, "BezierPatchCache_MarkUsed2"),
-    (0x0038_25f8, ps2_graphics_man_on_vblank_start, "PS2GraphicsMan_OnVBlankStart"),
-    (0x0038_6640, ps2_graphics_man_reset_view_effects, "PS2GraphicsMan_v115"),
+    (
+        0x0037_25b0,
+        vfx_tube_update_color_table,
+        "VfxTube_UpdateColorTable",
+    ),
+    (
+        0x0037_4440,
+        bezier_patch_cache_tess_uv2,
+        "BezierPatchCache_TessUV2",
+    ),
+    (
+        0x0037_4ae0,
+        bezier_patch_cache_mark_used2,
+        "BezierPatchCache_MarkUsed2",
+    ),
+    (
+        0x0038_25f8,
+        ps2_graphics_man_on_vblank_start,
+        "PS2GraphicsMan_OnVBlankStart",
+    ),
+    (
+        0x0038_6640,
+        ps2_graphics_man_reset_view_effects,
+        "PS2GraphicsMan_v115",
+    ),
     (0x0037_2500, vfx_tube_update, "VfxTube_Update"),
-    (0x0038_25c0, renderer_vblank_start_intc, "Renderer_VBlankStartIntc"),
+    (
+        0x0038_25c0,
+        renderer_vblank_start_intc,
+        "Renderer_VBlankStartIntc",
+    ),
+    (0x0037_c8c0, ps2_graphics_man_v46, "PS2GraphicsMan_v46"),
 ];
 
 /// Same-shard direct callees used above.
@@ -10918,16 +10943,11 @@ pub fn defer_man_reset_frame(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // BezierPatchCache_TessUV2 (0x374440, particle.cpp)
 
 /// Per-level tessellation sizes (`n` vertices per side).
 pub(crate) const BPC_TESS_N: u32 = 0x19c;
-
-
 
 /// `void BezierPatchCache_TessUV2(BezierPatchCache* self, const Rect* uv,
 /// Vec2* out, int level)` (0x374440): writes an `n x n` grid of uv pairs
@@ -11023,8 +11043,6 @@ pub fn bezier_patch_cache_tess_uv2(c: &mut Cpu) {
     ret(c);
 }
 
-
-
 // ---------------------------------------------------------------------------
 // VfxTube_UpdateColorTable (0x3725b0)
 
@@ -11032,24 +11050,17 @@ pub fn bezier_patch_cache_tess_uv2(c: &mut Cpu) {
 /// (r, g, b) and the colour last written to the table (floats).
 pub(crate) const TUBE_COLOR_INT: u32 = 0x10f0;
 
-
 pub(crate) const TUBE_COLOR_LAST: u32 = 0x1140;
-
 
 /// The tube vertex table (0x106 vertices of 0x30 bytes) and its colour
 /// fields.
 pub(crate) const TUBE_VERTS: u32 = 0x0050_1440;
 
-
 pub(crate) const TUBE_VERT_SIZE: u32 = 0x30;
-
 
 pub(crate) const TUBE_VERTS_END: u32 = TUBE_VERTS + 0x106 * TUBE_VERT_SIZE;
 
-
 pub(crate) const TUBE_VERT_R: u32 = 0x10;
-
-
 
 /// `void VfxTube_UpdateColorTable()` (0x3725b0): when the tube colour (three
 /// ints at gp+0x10f0) differs from the floats last applied (gp+0x1140),
@@ -11129,32 +11140,23 @@ pub fn vfx_tube_update_color_table(c: &mut Cpu) {
     ret(c);
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // PS2GraphicsMan_OnVBlankStart (0x3825f8)
 
 /// PS2GraphicsMan: the swap state (4 = waiting for the vblank count, 5 = go).
 pub(crate) const VBLANK_SWAP_STATE: u32 = 0x5a8c;
 
-
 /// PS2GraphicsMan: the number of vblanks to wait before signalling.
 pub(crate) const VBLANK_WAIT_COUNT: u32 = 0x5ab8;
-
 
 /// PS2GraphicsMan: vblanks counted so far.
 pub(crate) const VBLANK_COUNTER: u32 = 0x5abc;
 
-
 /// PS2GraphicsMan: the semaphore the render thread waits on.
 pub(crate) const VBLANK_SEMA: u32 = 0x5ac8;
 
-
 /// `iSignalSema(sema)` (interrupt-context syscall wrapper).
 pub(crate) const VBLANK_I_SIGNAL_SEMA: u32 = 0x0042_3dd0;
-
-
 
 /// `void PS2GraphicsMan_OnVBlankStart(PS2GraphicsMan* self)` (0x3825f8): the
 /// vblank-start handler. Counts the vblank; when a swap is waiting (state 4)
@@ -11198,8 +11200,6 @@ pub fn ps2_graphics_man_on_vblank_start(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 // ---------------------------------------------------------------------------
 // BezierPatchCache_MarkUsed2 (particle.cpp).
@@ -11257,8 +11257,6 @@ pub fn bezier_patch_cache_mark_used2(c: &mut Cpu) {
     abi::ret(c);
 }
 
-
-
 // ---------------------------------------------------------------------------
 // 0x386640 PS2GraphicsMan_v115
 
@@ -11267,19 +11265,15 @@ pub(crate) const GFX_RESET_DEPTH_FOG: Callee = Callee {
     f: ee::s12::PS2GraphicsMan_ResetDepthFogParams,
 };
 
-
 pub(crate) const GFX_RESET_COLOR_FILTER: Callee = Callee {
     addr: 0x0039_0458,
     f: ee::s12::PS2GraphicsMan_ResetColorFilter,
 };
 
-
 pub(crate) const GFX_RESET_BLOOM: Callee = Callee {
     addr: 0x0036_c740,
     f: ee::s12::PS2GraphicsMan_ResetBloomParams,
 };
-
-
 
 /// `void PS2GraphicsMan::v115(int view)` (0x386640, a vtable slot): reset
 /// view `view`'s screen effects to their defaults: depth fog, colour
@@ -11308,9 +11302,6 @@ pub fn ps2_graphics_man_reset_view_effects(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // VfxTube_Update (0x372500)
 
@@ -11327,8 +11318,6 @@ pub fn vfx_tube_update(c: &mut Cpu) {
         0x0037_2510,
     );
 }
-
-
 
 /// `int Renderer_VBlankStartIntc(int cause, PS2GraphicsMan* man)` (0x3825c0):
 /// the VBlank-start interrupt handler: run the graphics manager's vblank
@@ -11358,6 +11347,248 @@ pub fn renderer_vblank_start_intc(c: &mut Cpu) {
             c.cycles += 1;
             c.brk(0x0038_25d0, 0);
         }
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PS2GraphicsMan_v46 (0x37c8c0)
+// ---------------------------------------------------------------------------
+
+/// Texture header: format byte (+0; the word's upper 24 bits are the
+/// palette's offset), two shorts passed on (+4, +6), the mip LOD scale (+8),
+/// flags (+0xc: 0x1000 = data offset at +0x10 instead of inline, 0x2000 =
+/// alternate palette format, top nibble = mip count), data (+0x10).
+pub(crate) const V46_TEX_DIM_A: u32 = 0x4;
+
+pub(crate) const V46_TEX_DIM_B: u32 = 0x6;
+
+pub(crate) const V46_TEX_LOD_SCALE: u32 = 0x8;
+
+pub(crate) const V46_TEX_FLAGS: u32 = 0xc;
+
+pub(crate) const V46_TEX_DATA: u32 = 0x10;
+
+pub(crate) const V46_FLAG_OFFSET_DATA: u64 = 0x1000;
+
+pub(crate) const V46_FLAG_ALT_PALETTE: u64 = 0x2000;
+
+/// PS2GraphicsMan: the renderer interface (+0x10d8) whose method at
+/// +0x178/+0x17c uploads the texture.
+pub(crate) const V46_RENDERER: u32 = 0x10d8;
+
+pub(crate) const V46_UPLOAD_DELTA: u32 = 0x178;
+
+pub(crate) const V46_UPLOAD_FN: u32 = 0x17c;
+
+/// The palette part of a paletted texture (formats 1 and 2), with `v0` = the
+/// header's first word: palette at `tex + (word >> 8)` (none for 0), the
+/// palette format `t2` (`alt` with flag 0x2000), and the palette data
+/// pointer `t4` (inline at +0x10, or at the palette's +0x10 offset).
+pub(crate) fn v46_palette(c: &mut Cpu, cycles: u64, format: u64, alt: u64) {
+    c.cycles += cycles;
+    let tex = r32(c, S0);
+    c.g[T2][0] = format;
+    let flags = Addr(tex).off(V46_TEX_FLAGS).lw(c);
+    c.g[A1][0] = flags;
+    c.g[A2][0] = alt;
+    let offset = (r32(c, V0) as i32 >> 8) as u32;
+    c.g[V0][0] = sx(offset);
+    c.g[T3][0] = 1;
+    let palette = if offset == 0 {
+        0
+    } else {
+        tex.wrapping_add(offset)
+    };
+    c.g[V1][0] = sx(palette);
+    c.g[A0][0] = flags & V46_FLAG_ALT_PALETTE;
+    if flags & V46_FLAG_ALT_PALETTE != 0 {
+        c.g[T2][0] = alt;
+    }
+    let palette_flags = Addr(palette).off(V46_TEX_FLAGS).lw(c) & V46_FLAG_OFFSET_DATA;
+    c.g[V0][0] = palette_flags;
+    c.g[T1][0] = flags;
+    if palette_flags != 0 {
+        c.cycles += 3;
+        let rel = Addr(palette).off(V46_TEX_DATA).lw(c);
+        c.g[V0][0] = rel;
+        c.g[T4][0] = sx(palette.wrapping_add(rel as u32));
+    } else {
+        c.cycles += 2;
+        c.g[T4][0] = sx(palette.wrapping_add(V46_TEX_DATA));
+    }
+}
+
+/// `int PS2GraphicsMan_v46(PS2GraphicsMan* self, Texture* tex, a2, a3, t0,
+/// t1)` (0x37c8c0): uploads a texture through the renderer: works out the
+/// palette format and data (formats 1/2 paletted, 3 = format 2, 5 = 0, 0 and
+/// others keep 0) and the texel data pointer, calls the renderer's upload
+/// method with them; for a mipmapped texture with a LOD scale, sets the
+/// texture filter with LOD bias `min(int(log2-ish(240 / (scale/16384))),
+/// -135)` clamped below at -2047 (soft-float double chain). Returns the
+/// upload's handle.
+pub fn ps2_graphics_man_v46(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x60);
+        c.g[T5][0] = c.g[A2][0];
+        frame.save(c, S0, 0x50);
+        c.g[T6][0] = c.g[A3][0];
+        frame.save(c, S2, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x40);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        c.g[T7][0] = c.g[T1][0];
+        c.g[T2][0] = 0;
+        c.g[T3][0] = 0;
+        let tex = Addr(r32(c, S0));
+        let format = tex.lbu(c);
+        c.g[V1][0] = format;
+        c.g[V0][0] = 2;
+        c.g[T4][0] = 0;
+        // Whether the format's flags still have to be tested (the shared
+        // `v0 = t1 & 0x1000` tail).
+        let mut test_flags = true;
+        if format == 2 {
+            c.g[V0][0] = tex.lw(c);
+            v46_palette(c, 14, 9, 0xa);
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 1;
+            if format < 3 {
+                c.cycles += 2;
+                if format == 1 {
+                    c.g[V0][0] = tex.lw(c);
+                    v46_palette(c, 13, 0xb, 0xc);
+                } else {
+                    c.cycles += 2;
+                    c.g[T1][0] = tex.off(V46_TEX_FLAGS).lw(c);
+                }
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = 5;
+                if format == 3 {
+                    c.cycles += 3;
+                    c.g[T2][0] = 2;
+                    c.g[T1][0] = tex.off(V46_TEX_FLAGS).lw(c);
+                } else {
+                    c.cycles += 2;
+                    let flags = tex.off(V46_TEX_FLAGS).lw(c);
+                    c.g[T1][0] = flags;
+                    if format == 5 {
+                        c.cycles += 1;
+                        c.g[T2][0] = 0;
+                    } else {
+                        c.cycles += 2;
+                        c.g[V0][0] = flags & V46_FLAG_OFFSET_DATA;
+                        test_flags = false;
+                    }
+                }
+            }
+        }
+        if test_flags {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[T1][0] & V46_FLAG_OFFSET_DATA;
+        }
+        // The texel data.
+        c.cycles += 2;
+        let tex = r32(c, S0);
+        c.g[A1][0] = sx(tex.wrapping_add(V46_TEX_DATA));
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            let rel = Addr(tex).off(V46_TEX_DATA).lw(c);
+            c.g[V0][0] = rel;
+            c.g[A1][0] = sx(tex.wrapping_add(rel as u32));
+        }
+        // Upload through the renderer: (self + delta, data, a2, dim_a, dim_b,
+        // flags >> 28, t2, t3, palette data, a3, t0, t1 on the stack).
+        c.cycles += 19;
+        let renderer = Addr(r32(c, S2)).off(V46_RENDERER).lw(c) as u32;
+        c.g[V1][0] = sx(renderer);
+        c.g[A2][0] = c.g[T5][0];
+        c.g[A3][0] = Addr(tex).off(V46_TEX_DIM_A).lh(c);
+        c.g[T1][0] = sx(r32(c, T1) >> 28);
+        let delta = Addr(renderer).off(V46_UPLOAD_DELTA).lh(c);
+        let out = sp(c);
+        let (t4, t6, t0, t7) = (c.g[T4][0], c.g[T6][0], c.g[T0][0], c.g[T7][0]);
+        Addr(out).sw(c, t4);
+        Addr(out).off(8).sw(c, t6);
+        c.g[A0][0] = sx(r32(c, S2).wrapping_add(delta as u32));
+        Addr(out).off(0x10).sw(c, t0);
+        Addr(out).off(0x18).sw(c, t7);
+        let upload = Addr(renderer).off(V46_UPLOAD_FN).lw(c);
+        c.g[V0][0] = upload;
+        c.g[T0][0] = Addr(tex).off(V46_TEX_DIM_B).lh(c);
+        call_ptr(c, upload as u32, 0x0037_ca18)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[V1][0] = 0xffff_ffff_f000_0000;
+        let tex = Addr(r32(c, S0));
+        let mips = tex.off(V46_TEX_FLAGS).lw(c) & 0xffff_ffff_f000_0000;
+        c.g[V0][0] = c.g[S1][0];
+        if mips != 0 {
+            c.cycles += 3;
+            let scale = tex.off(V46_TEX_LOD_SCALE).lh(c);
+            c.g[V0][0] = scale;
+            if scale == 0 {
+                c.g[V0][0] = c.g[S1][0];
+            } else {
+                // LOD bias from 240 / (scale / 16384), in doubles.
+                c.cycles += 29;
+                let step = FpuF32::from_i32(scale as i32);
+                let unit = FpuF32(0x3880_0000);
+                let distance = FpuF32(0x4370_0000);
+                c.f[0] = unit.0;
+                c.f[1] = distance.0;
+                c.f[12] = distance.div(step * unit).0;
+                call_ptr(c, 0x0041_3af8, 0x0037_ca64)?;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x0040_d610, 0x0037_ca6c)?;
+                c.g[A1][0] = Addr(0x0049_2db0).ld(c);
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x0041_1fd8, 0x0037_ca7c)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A0][0] = 0;
+                call_ptr(c, 0x0041_1f70, 0x0037_ca88)?;
+                c.g[A1][0] = 0x8060u64 << 47;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x0041_1fd8, 0x0037_ca98)?;
+                c.g[A0][0] = c.g[V0][0];
+                call_ptr(c, 0x0041_2608, 0x0037_caa0)?;
+                let bias = c.g[V0][0];
+                c.g[V1][0] = bias;
+                let too_low = (bias as i64) < -2047;
+                c.g[V0][0] = too_low as u64;
+                c.g[A0][0] = -135i64 as u64;
+                if too_low {
+                    c.cycles += 1;
+                    c.g[T1][0] = -2047i64 as u64;
+                } else {
+                    c.cycles += 4;
+                    let above = -135i64 < bias as i64;
+                    c.g[V0][0] = above as u64;
+                    c.g[T1][0] = if above { -135i64 as u64 } else { bias };
+                }
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A2][0] = 5;
+                c.g[A3][0] = 1;
+                c.g[T0][0] = 0;
+                Callee {
+                    addr: 0x0037_d090,
+                    f: ee::s12::f_0037d090,
+                }
+                .call(c, 0x0037_cadc)?;
+                c.g[V0][0] = c.g[S1][0];
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
         Ok(())
     })
 }
@@ -14558,66 +14789,80 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
 
-
     /// BezierPatchCache_TessUV2: sizes -1..7 (none, a single vertex, grids),
     /// 8-byte aligned and word-aligned rectangles and outputs.
     #[test]
     fn bezier_patch_cache_tess_uv2_matches() {
         use crate::difftest::{scramble, Rng};
-        check(ee::s12::f_00374440__generated, bezier_patch_cache_tess_uv2, 300, &|c, seed| {
-            let mut r = Rng(0x37_4440 ^ (seed as u64) << 20);
-            scramble(c, &mut r);
-            c.pc = 0x0037_4440;
-            let level = r.next_u32() % 4;
-            let this = DATA;
-            for k in 0..4 {
-                c.bus.write32(this + BPC_TESS_N + 4 * k, r.next_u32());
-            }
-            let n = (seed % 9) as i32 - 1;
-            c.bus.write32(this + BPC_TESS_N + 4 * level, n as u32);
-            let rect = DATA + 0x400 + 4 * (seed / 9 % 2);
-            for k in 0..4 {
-                c.bus.write32(rect + 0x10 + 4 * k, if seed % 7 == 0 { r.edge_f32() } else { r.f32(10.0) });
-            }
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = sx(rect);
-            c.g[A2][0] = sx(DATA + 0x1000 + 4 * (seed / 18 % 2));
-            c.g[A3][0] = level as u64 | (r.next_u32() as u64) << 32;
-        });
+        check(
+            ee::s12::f_00374440__generated,
+            bezier_patch_cache_tess_uv2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x37_4440 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.pc = 0x0037_4440;
+                let level = r.next_u32() % 4;
+                let this = DATA;
+                for k in 0..4 {
+                    c.bus.write32(this + BPC_TESS_N + 4 * k, r.next_u32());
+                }
+                let n = (seed % 9) as i32 - 1;
+                c.bus.write32(this + BPC_TESS_N + 4 * level, n as u32);
+                let rect = DATA + 0x400 + 4 * (seed / 9 % 2);
+                for k in 0..4 {
+                    c.bus.write32(
+                        rect + 0x10 + 4 * k,
+                        if seed % 7 == 0 {
+                            r.edge_f32()
+                        } else {
+                            r.f32(10.0)
+                        },
+                    );
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(rect);
+                c.g[A2][0] = sx(DATA + 0x1000 + 4 * (seed / 18 % 2));
+                c.g[A3][0] = level as u64 | (r.next_u32() as u64) << 32;
+            },
+        );
     }
-
 
     /// VfxTube_UpdateColorTable: colour unchanged (each channel equal up to
     /// the first differing one) or changed (the whole table rewritten).
     #[test]
     fn vfx_tube_update_color_table_matches() {
-        check(ee::s12::f_003725b0__generated, vfx_tube_update_color_table, 200, &|c, seed| {
-            let mut r = Rng(0x3725_b0 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.pc = 0x0037_25b0;
-            let gp = GAME_GP;
-            // Ints, small enough to be exact as floats.
-            let ints = [r.next_u32() % 256, r.next_u32() % 256, r.next_u32() % 256];
-            // How many leading channels already match (3 = no update).
-            let matching = seed % 4;
-            for i in 0..3u32 {
-                c.bus.write32(gp + TUBE_COLOR_INT + 4 * i, ints[i as usize]);
-                let last = if i < matching {
-                    ints[i as usize] as f32
-                } else {
-                    ints[i as usize] as f32 + 1.0
-                };
-                c.bus.write32(gp + TUBE_COLOR_LAST + 4 * i, last.to_bits());
-            }
-        });
+        check(
+            ee::s12::f_003725b0__generated,
+            vfx_tube_update_color_table,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3725_b0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0037_25b0;
+                let gp = GAME_GP;
+                // Ints, small enough to be exact as floats.
+                let ints = [r.next_u32() % 256, r.next_u32() % 256, r.next_u32() % 256];
+                // How many leading channels already match (3 = no update).
+                let matching = seed % 4;
+                for i in 0..3u32 {
+                    c.bus.write32(gp + TUBE_COLOR_INT + 4 * i, ints[i as usize]);
+                    let last = if i < matching {
+                        ints[i as usize] as f32
+                    } else {
+                        ints[i as usize] as f32 + 1.0
+                    };
+                    c.bus.write32(gp + TUBE_COLOR_LAST + 4 * i, last.to_bits());
+                }
+            },
+        );
     }
     use super::*;
-    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
     use super::*;
+    use crate::game::visualfx::renderstateman::tests::table_getter_setup;
     // (fakes imported above)
     use super::*;
-
 
     /// Swap state 4 or not, the counter below/at/above the wait count; the
     /// `iSignalSema` syscall goes to the fakes (and unwinds on some seeds).
@@ -14647,7 +14892,6 @@ pub(crate) mod tests {
         );
     }
 
-
     // ------------------------------------------------ bezier patch cache
 
     /// BezierPatchCache_MarkUsed2: count 0, negative or 1..8; items whose
@@ -14658,34 +14902,38 @@ pub(crate) mod tests {
         const CACHE: u32 = DATA;
         const ITEMS: u32 = DATA + 0x1000;
         const LISTS: u32 = DATA + 0x2000;
-        check_lohi(ee::s12::f_00374ae0__generated, bezier_patch_cache_mark_used2, 300, &|c, seed| {
-            let mut r = Rng(0x0037_4ae0 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            c.pc = 0x0037_4ae0;
-            c.g[A0][0] = sx(CACHE);
-            c.g[A1][0] = match seed % 5 {
-                0 => 0,
-                1 => sx((-(1 + (r.next_u32() % 3) as i32)) as u32),
-                _ => (1 + r.next_u32() % 8) as u64,
-            };
-            c.g[A2][0] = sx(ITEMS);
-            c.g[A3][0] = (seed % 4) as u64;
-            c.g[T0][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
-            for i in 0..4 {
-                c.bus.write32(CACHE + 0x18 + 4 * i, LISTS + 0x100 * i);
-            }
-            for i in 0..8 {
-                let patch = if r.next_u32() % 3 == 0 {
-                    0x8000 | r.next_u32() as u16
-                } else {
-                    (r.next_u32() % 16) as u16
+        check_lohi(
+            ee::s12::f_00374ae0__generated,
+            bezier_patch_cache_mark_used2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0037_4ae0 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0037_4ae0;
+                c.g[A0][0] = sx(CACHE);
+                c.g[A1][0] = match seed % 5 {
+                    0 => 0,
+                    1 => sx((-(1 + (r.next_u32() % 3) as i32)) as u32),
+                    _ => (1 + r.next_u32() % 8) as u64,
                 };
-                c.bus.write16(ITEMS + 0x14 * i + 0xc, patch);
-            }
-            fill(c, &mut r, LISTS, 0x200);
-        });
+                c.g[A2][0] = sx(ITEMS);
+                c.g[A3][0] = (seed % 4) as u64;
+                c.g[T0][0] = (r.next_u32() as u64) << 32 | r.next_u32() as u64;
+                for i in 0..4 {
+                    c.bus.write32(CACHE + 0x18 + 4 * i, LISTS + 0x100 * i);
+                }
+                for i in 0..8 {
+                    let patch = if r.next_u32() % 3 == 0 {
+                        0x8000 | r.next_u32() as u16
+                    } else {
+                        (r.next_u32() % 16) as u16
+                    };
+                    c.bus.write16(ITEMS + 0x14 * i + 0xc, patch);
+                }
+                fill(c, &mut r, LISTS, 0x200);
+            },
+        );
     }
-
 
     /// PS2GraphicsMan_v115: the graphics manager at DATA, view 0..3, the
     /// three default tables (gp-relative literals and the depth-fog colour
@@ -14713,26 +14961,30 @@ pub(crate) mod tests {
     // (fakes imported above)
     use super::*;
 
-
     // ------------------------------------------------------------- VfxTube_Update
 
     /// The real `VfxTube_UpdateColorTable` runs: the tube colour unchanged
     /// (nothing to do) or changed in one component (the table refill).
     #[test]
     fn vfx_tube_update_matches() {
-        check(ee::s12::f_00372500__generated, vfx_tube_update, 120, &|c, seed| {
-            let mut r = machine(c, seed, 0x0037_2500, 0);
-            c.pc = 0x0037_2500;
-            let rgb: [u32; 3] = [r.next_u32() % 256, r.next_u32() % 256, r.next_u32() % 256];
-            for (i, v) in rgb.iter().enumerate() {
-                c.bus.write32(GAME_GP + 0x10f0 + 4 * i as u32, *v);
-                // The last colour the table was built for.
-                let last = if seed % 4 == i as u32 { *v + 1 } else { *v };
-                c.bus.write32(GAME_GP + 0x1140 + 4 * i as u32, (last as f32).to_bits());
-            }
-        });
+        check(
+            ee::s12::f_00372500__generated,
+            vfx_tube_update,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0037_2500, 0);
+                c.pc = 0x0037_2500;
+                let rgb: [u32; 3] = [r.next_u32() % 256, r.next_u32() % 256, r.next_u32() % 256];
+                for (i, v) in rgb.iter().enumerate() {
+                    c.bus.write32(GAME_GP + 0x10f0 + 4 * i as u32, *v);
+                    // The last colour the table was built for.
+                    let last = if seed % 4 == i as u32 { *v + 1 } else { *v };
+                    c.bus
+                        .write32(GAME_GP + 0x1140 + 4 * i as u32, (last as f32).to_bits());
+                }
+            },
+        );
     }
-
 
     /// Renderer_VBlankStartIntc with cause 2 (any other cause is a fatal
     /// `break`): the real vblank hook runs with swap state 4 or not and the
@@ -14765,6 +15017,71 @@ pub(crate) mod tests {
                 c.g[A0][0] = 2;
                 c.g[A1][0] = sx(gfx);
                 c.pc = 0x0038_25c0;
+            },
+        );
+    }
+    use super::*;
+
+    /// `PS2GraphicsMan_v46`: formats 0..6 (paletted 1/2 with the palette at
+    /// +0x40 or none, its data inline or at an offset; 3, 5 and others),
+    /// texel data inline or at an offset; the renderer's upload method is a
+    /// fake returning a small texture handle (sometimes unwinding); textures
+    /// with no mips, mips but LOD scale 0, or a LOD scale (positive or
+    /// negative) that runs the soft-float chain and the real
+    /// PS2GraphicsMan_SetTextureFilter / TexMan_SetTex1Filter.
+    #[test]
+    fn ps2_graphics_man_v46_matches() {
+        use crate::difftest::check;
+        use crate::difftest::fakes::LOG_RESULTS;
+        const GM: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x300;
+        const TEXMAN: u32 = DATA + 0x400;
+        const ENTRY: u32 = DATA + 0x500;
+        const TEX: u32 = DATA + 0x1000;
+        check(
+            ee::s12::f_0037c8c0__generated,
+            ps2_graphics_man_v46,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37_c8c0, 1);
+                c.pc = 0x0037_c8c0;
+                crate::difftest::elf_image(c);
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                w(c, GM + V46_RENDERER, VT);
+                c.bus
+                    .write16(VT + V46_UPLOAD_DELTA, (r.next_u32() % 8 * 4) as u16);
+                w(c, VT + V46_UPLOAD_FN, FAKE);
+                w(c, LOG_RESULTS, 1 + seed % 7);
+                w(c, GM + 0x18f4, TEXMAN);
+                for k in 0..8 {
+                    w(c, TEXMAN + 8 + 4 * k, ENTRY + 0x10 * k);
+                }
+                fill(c, &mut r, ENTRY, 0x40);
+                // The texture and its palette.
+                fill(c, &mut r, TEX, 0x20);
+                let format = seed % 7;
+                let palette_off = if seed % 3 == 0 { 0 } else { 0x40 };
+                w(c, TEX, format | palette_off << 8);
+                let mut flags = r.next_u32() & 0x0fff_ffff;
+                if (seed / 7) % 3 != 0 {
+                    flags |= (1 + r.next_u32() % 15) << 28;
+                }
+                w(c, TEX + V46_TEX_FLAGS, flags);
+                w(c, TEX + V46_TEX_DATA, 0x20 + 4 * (r.next_u32() % 8));
+                let scale: i16 = match (seed / 21) % 4 {
+                    0 => 0,
+                    1 => -((1 + r.next_u32() % 512) as i16),
+                    _ => (1 + r.next_u32() % 4096) as i16,
+                };
+                c.bus.write16(TEX + V46_TEX_LOD_SCALE, scale as u16);
+                w(c, TEX + 0x40 + V46_TEX_FLAGS, r.next_u32());
+                w(c, TEX + 0x40 + V46_TEX_DATA, 0x20 + 4 * (r.next_u32() % 8));
+                c.g[A0][0] = sx(GM);
+                c.g[A1][0] = sx(TEX);
+                c.g[A2][0] = r.next_u32() as u64;
+                c.g[A3][0] = r.next_u32() as u64;
+                c.g[T0][0] = r.next_u32() as u64;
+                c.g[T1][0] = r.next_u32() as u64;
             },
         );
     }

@@ -10,10 +10,15 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+use crate::game::animation::animsequencer::ASL_PUSH_NEW;
+use crate::game::animation::animsequencer::ASL_SET_TRACK_ANIM;
+use crate::game::animation::animsequencer::ASL_SET_TRACK_LOOP;
+use crate::game::animation::animsequencer::ASL_SET_TRACK_TIME;
 pub(crate) use crate::game::be::beintplayer::lh;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw;
 pub(crate) use crate::game::fe::feasyncfile::p_5 as p;
@@ -22,6 +27,7 @@ pub(crate) use crate::game::render::lightman::addu;
 pub(crate) use crate::game::render::lightman::off;
 pub(crate) use crate::game::render::lightman::Oc49Mem;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -53,6 +59,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         instance_get_node_matrix,
         "Instance_GetNodeMatrix",
     ),
+    (0x0034_fbf0, world_obj_dtor, "WorldObj_dtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -660,6 +667,77 @@ pub(crate) fn node_matrix_epilogue(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// WorldObj_dtor (0x34fbf0, instancenode.cpp)
+
+/// WorldObj fields: vtable (+0xc) and model instance (+0x18; its flags at
+/// +8). `D_00491C80` is the WorldObj vtable.
+pub(crate) const WOD_VTABLE: u32 = 0xc;
+
+pub(crate) const WOD_INSTANCE: u32 = 0x18;
+
+pub(crate) const WOD_INST_FLAGS: u32 = 0x8;
+
+pub(crate) const WOD_VTABLE_ADDR: u64 = 0x0049_1c80;
+
+pub(crate) const WOD_UNLINK: Callee = Callee {
+    addr: 0x0034_fc80,
+    f: ee::s11::WorldObj_UnlinkInstance,
+};
+
+pub(crate) const WOD_BASE_DTOR: Callee = Callee {
+    addr: 0x0035_4920,
+    f: ee::s11::SyncProcess_dtor,
+};
+
+/// `WorldObj::~WorldObj(WorldObj* self, int flags)` (0x34fbf0): unlinks the
+/// model instance from the object, resets its flags (keeps the high half
+/// and bits 8-9, then ORs the high half into the low half and sets bit 1),
+/// and chains to `SyncProcess_dtor`. Frame 0x30 (ra at 0, s1 / s0 at
+/// 0x10 / 0x20).
+pub fn world_obj_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 34;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x0049_0000;
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = WOD_VTABLE_ADDR;
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0];
+        let this = r32(c, S0);
+        c.sw(this.wrapping_add(WOD_VTABLE), c.g[V0][0]);
+        c.g[A1][0] = c.lw(this.wrapping_add(WOD_INSTANCE));
+        WOD_UNLINK.call(c, 0x0034_fc1c)?;
+        let this = r32(c, S0);
+        c.g[A3][0] = c.lw(this.wrapping_add(WOD_INSTANCE));
+        c.g[V1][0] = 0xffff_ffff_ffff_0300;
+        c.g[A0][0] = c.g[S0][0];
+        let inst = r32(c, A3).wrapping_add(WOD_INST_FLAGS);
+        c.g[V0][0] = c.lw(inst);
+        c.g[A1][0] = c.g[S1][0];
+        c.g[V0][0] &= c.g[V1][0];
+        c.sw(inst, c.g[V0][0]);
+        c.g[A2][0] = c.lw(this.wrapping_add(WOD_INSTANCE));
+        let inst = r32(c, A2).wrapping_add(WOD_INST_FLAGS);
+        c.g[V0][0] = c.lw(inst);
+        c.g[V1][0] = sx((r32(c, V0) as i32 >> 16) as u32);
+        c.g[V0][0] |= c.g[V1][0];
+        c.sw(inst, c.g[V0][0]);
+        c.g[V1][0] = c.lw(this.wrapping_add(WOD_INSTANCE));
+        let inst = r32(c, V1).wrapping_add(WOD_INST_FLAGS);
+        c.g[V0][0] = c.lw(inst) | 2;
+        c.sw(inst, c.g[V0][0]);
+        WOD_BASE_DTOR.call(c, 0x0034_fc64)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -840,6 +918,46 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(inst);
                 c.g[A1][0] = sx(node);
                 c.g[A2][0] = sx(out);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::{RA as RET_ADDR, SP as STACK_TOP};
+
+    /// WorldObj_dtor: an object at DATA whose instance (DATA+0x100, random
+    /// flags) points back at it or not; the real base destructors run
+    /// (process type counter, process-list unlink with/without neighbours;
+    /// flags without the delete bit, so nothing is freed).
+    #[test]
+    fn world_obj_dtor_matches() {
+        use crate::difftest::{check, fill, scramble, Rng, GAME_GP};
+        check(
+            ee::s11::f_0034fbf0__generated,
+            world_obj_dtor,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x34_fbf0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0034_fbf0;
+                c.g[GP][0] = GAME_GP as u64;
+                let obj = DATA;
+                let inst = DATA + 0x100;
+                fill(c, &mut r, obj, 8);
+                c.bus.write16(obj + 0x10, (r.next_u32() % 8) as u16);
+                if seed % 3 == 0 {
+                    c.bus.write32(obj + 4, 0);
+                } else {
+                    c.bus.write32(obj + 4, DATA + 0x200);
+                    c.bus
+                        .write32(obj + 8, if seed % 3 == 1 { 0 } else { DATA + 0x300 });
+                }
+                c.bus
+                    .write32(obj + WOD_INSTANCE, if seed % 7 == 0 { 0 } else { inst });
+                c.bus.write32(inst + WOD_INST_FLAGS, r.next_u32());
+                c.bus
+                    .write32(inst + 0xc, if seed % 2 == 0 { obj } else { r.next_u32() });
+                c.g[A0][0] = obj as u64;
+                c.g[A1][0] = (r.next_u32() & !1) as u64;
             },
         );
     }

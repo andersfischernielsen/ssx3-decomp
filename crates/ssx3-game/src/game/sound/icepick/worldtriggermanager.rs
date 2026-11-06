@@ -211,6 +211,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "WorldTriggerManager_Update",
     ),
     (0x002b_7848, c_world_sound_update, "cWorldSound_Update"),
+    (
+        0x002b_82b8,
+        world_sound_compute_falloff,
+        "WorldSound_ComputeFalloff",
+    ),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -3205,9 +3210,6 @@ pub fn world_trigger_manager_update(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ------------------------------------------------------- cWorldSound_Update
 
 /// `cWorldSound_RefreshNearbyEmitters` (0x2b75d0) and
@@ -3217,20 +3219,15 @@ pub(crate) const WS_REFRESH_NEARBY: Callee = Callee {
     f: ee::s08::f_002b75d0,
 };
 
-
 pub(crate) const WS_PROCESS_EMITTER: Callee = Callee {
     addr: 0x002b_7908,
     f: ee::s08::f_002b7908,
 };
 
-
-
 /// Size of one listener's nearby-emitter list inside `cWorldSound`
 /// (count at +0, emitter pointers from +4, the position it was built for
 /// at +0x110).
 pub(crate) const WS_NEAR_LIST_SIZE: u64 = 0x120;
-
-
 
 /// `void cWorldSound_Update(cWorldSound* self, Vec4* listener, int idx)`
 /// (0x2b7848), every frame per listener: refresh the listener's list of
@@ -3309,6 +3306,131 @@ pub fn c_world_sound_update(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+// ---------------------------------------------------------------------------
+// WorldSound_ComputeFalloff (0x002b82b8)
+
+/// The falloff curve jump table (`.rodata`, six case addresses).
+pub(crate) const FALLOFF_CURVES: u32 = 0x0048_35e0;
+
+/// `.lit4` (gp-relative): the "hold full volume" knee (0.7) and the slope
+/// after it (1 / 0.3).
+pub(crate) const FALLOFF_KNEE: u32 = 0x4534;
+
+pub(crate) const FALLOFF_KNEE_SLOPE: u32 = 0x4530;
+
+/// `float WorldSound_ComputeFalloff(float curve, float t)` (0x002b82b8): the
+/// volume of a world sound at normalised distance `t` (f13) for falloff
+/// curve `(int)curve` (f12), dispatched through a jump table:
+/// 0: `1 - t*t`; 1: `1 - t/(1.5 - t/2)`; 2: `1 - t`; 3: `u/(1.5 - u/2)` with
+/// `u = 1 - t`; 4: `(1 - t)^2`; 5: 1 up to the knee, then `(1 - t) / 0.3`;
+/// any other curve: 0. The result is in f0 (and f13).
+pub fn world_sound_compute_falloff(c: &mut Cpu) {
+    const ONE: u64 = 0x3f80_0000;
+    const HALF: u64 = 0x3f00_0000;
+    const ONE_AND_HALF: u64 = 0x3fc0_0000;
+    c.cycles += 5;
+    let curve = abi::farg(c, 0).to_i32() as u32;
+    c.f[0] = curve;
+    c.g[V1][0] = sx(curve);
+    let in_range = c.g[V1][0] < 6;
+    c.g[V0][0] = in_range as u64;
+    c.g[V0][0] = 0x48_0000;
+    let mut t = abi::farg(c, 1);
+    if !in_range {
+        c.cycles += 1;
+        t = FpuF32::ZERO;
+    } else {
+        c.cycles += 6;
+        c.g[V1][0] = sx(curve << 2);
+        c.g[V0][0] = sx(FALLOFF_CURVES);
+        c.g[V1][0] = sx((curve << 2).wrapping_add(FALLOFF_CURVES));
+        c.g[A0][0] = Addr((curve << 2).wrapping_add(FALLOFF_CURVES)).lw(c);
+        let target = c.g[A0][0] as u32;
+        match target {
+            // 0: 1 - t*t
+            0x002b_82e4 => {
+                c.cycles += 2 + 4;
+                t = t * t;
+                c.g[AT][0] = ONE;
+                c.f[0] = ONE as u32;
+                t = FpuF32::ONE - t;
+            }
+            // 1: 1 - t / (1.5 - t/2)
+            0x002b_82ec => {
+                c.cycles += 11;
+                c.g[AT][0] = ONE_AND_HALF;
+                let half_t = t * FpuF32(HALF as u32);
+                c.f[0] = half_t.0;
+                c.g[AT][0] = ONE;
+                c.f[2] = ONE as u32;
+                let d = FpuF32(ONE_AND_HALF as u32) - half_t;
+                c.f[1] = d.0;
+                t = FpuF32::ONE - t.div(d);
+            }
+            // 2: 1 - t
+            0x002b_8318 => {
+                c.cycles += 4;
+                c.g[AT][0] = ONE;
+                c.f[0] = ONE as u32;
+                t = FpuF32::ONE - t;
+            }
+            // 3: u / (1.5 - u/2), u = 1 - t (returns directly).
+            0x002b_8328 => {
+                c.cycles += 12;
+                c.f[2] = ONE as u32;
+                let u = FpuF32::ONE - t;
+                c.g[AT][0] = ONE_AND_HALF;
+                let half_u = u * FpuF32(HALF as u32);
+                c.f[1] = half_u.0;
+                let d = FpuF32(ONE_AND_HALF as u32) - half_u;
+                let r = u.div(d);
+                c.f[13] = r.0;
+                c.f[0] = r.0;
+                abi::ret(c);
+                return;
+            }
+            // 4: (1 - t)^2
+            0x002b_8358 => {
+                c.cycles += 5;
+                c.g[AT][0] = ONE;
+                c.f[0] = ONE as u32;
+                let u = FpuF32::ONE - t;
+                t = u * u;
+            }
+            // 5: full volume up to the knee, then a linear ramp to 0.
+            0x002b_836c => {
+                c.cycles += 4;
+                let knee = Addr(r32(c, GP).wrapping_sub(FALLOFF_KNEE)).read_fpu(c);
+                c.f[0] = knee.0;
+                let held = t.le(knee);
+                abi::set_fcc(c, held);
+                c.g[AT][0] = ONE;
+                if held {
+                    // (returns directly)
+                    c.cycles += 4;
+                    c.f[13] = ONE as u32;
+                    c.f[0] = ONE as u32;
+                    abi::ret(c);
+                    return;
+                }
+                c.cycles += 6;
+                c.f[0] = ONE as u32;
+                let slope = Addr(r32(c, GP).wrapping_sub(FALLOFF_KNEE_SLOPE)).read_fpu(c);
+                c.f[1] = slope.0;
+                t = (FpuF32::ONE - t) * slope;
+            }
+            _ => {
+                c.jump_out(target, 0x002b_82b8, 0x002b_83b4);
+                return;
+            }
+        }
+    }
+    c.cycles += 3;
+    c.f[13] = t.0;
+    c.f[0] = t.0;
+    abi::ret(c);
 }
 
 #[cfg(test)]
@@ -4495,7 +4617,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// cWorldSound_Update: listener lists 0..2 with 0..5 entries (and a
     /// negative count), null and non-null entries; the real
     /// RefreshNearbyEmitters either keeps the list (listener moved less than
@@ -4509,56 +4630,111 @@ pub(crate) mod tests {
         const WORLD: u32 = DATA + 0x2000;
         const MODULE: u32 = DATA + 0x2100;
         const TREE: u32 = DATA + 0x2200;
-        check(ee::s08::f_002b7848__generated, c_world_sound_update, 300, &|c, seed| {
-            let mut r = Rng(0x2b78_4800 ^ (seed as u64) << 12);
-            scramble(c, &mut r);
-            c.g[GP][0] = sx(GAME_GP);
-            c.pc = 0x002b_7848;
-            // World -> sound module -> emitter tree with no subtrees.
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), WORLD);
-            c.bus.write32(WORLD + 0x84, MODULE);
-            c.bus.write32(MODULE + 0x20, TREE);
-            c.bus.write32(GAME_GP.wrapping_sub(0x452c), r.f32(2.0));
-            for k in 0..8 {
-                put_words(c, TREE + 0x14 * k, &[1, 0, 0, 0, 0]);
-            }
-            let idx = seed % 3;
-            let list = SELF + 0x120 * idx;
-            let p = [r.f32(20.0), r.f32(20.0), r.f32(20.0), r.f32(1.0)];
-            put_vec(c, LISTENER, p);
-            // Built for a position 3 (kept) or 12 (rebuilt) away; flag 0
-            // rebuilds every time.
-            let d = if seed % 5 == 0 { 12.0 } else { 3.0 };
-            put_vec(
-                c,
-                list + 0x110,
-                [(f32::from_bits(p[0]) + d).to_bits(), p[1], p[2], r.next_u32()],
-            );
-            c.bus.write32(list + 0x11c, if seed % 11 == 0 { 0 } else { 0x3f80_0000 });
-            let count: u32 = match seed % 9 {
-                0 => 0,
-                1 => 0xffff_fffe,
-                _ => 1 + seed % 5,
-            };
-            c.bus.write32(list, count);
-            for i in 0..5 {
-                let src = SOURCES + 0x80 * i;
-                let entry = if r.next_u32() % 4 == 0 { 0 } else { src };
-                c.bus.write32(list + 4 + 4 * i, entry);
-                // Source: object at +0xc, data block at +0x10 (no records).
-                let obj = src + 0x20;
-                let block = src + 0x60;
-                c.bus.write32(src + 0xc, obj);
-                c.bus.write32(src + 0x10, block);
-                for k in 0..3 {
-                    c.bus.write32(obj + 0x40 + 4 * k, r.f32(10.0));
+        check(
+            ee::s08::f_002b7848__generated,
+            c_world_sound_update,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2b78_4800 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x002b_7848;
+                // World -> sound module -> emitter tree with no subtrees.
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), WORLD);
+                c.bus.write32(WORLD + 0x84, MODULE);
+                c.bus.write32(MODULE + 0x20, TREE);
+                c.bus.write32(GAME_GP.wrapping_sub(0x452c), r.f32(2.0));
+                for k in 0..8 {
+                    put_words(c, TREE + 0x14 * k, &[1, 0, 0, 0, 0]);
                 }
-                c.bus.write32(block, r.next_u32() % 3);
-                c.bus.write32(block + 4, if r.next_u32() % 2 == 0 { 0 } else { 0xffff_ffff });
-            }
-            c.g[A0][0] = sx(SELF);
-            c.g[A1][0] = sx(LISTENER);
-            c.g[A2][0] = idx as u64;
-        });
+                let idx = seed % 3;
+                let list = SELF + 0x120 * idx;
+                let p = [r.f32(20.0), r.f32(20.0), r.f32(20.0), r.f32(1.0)];
+                put_vec(c, LISTENER, p);
+                // Built for a position 3 (kept) or 12 (rebuilt) away; flag 0
+                // rebuilds every time.
+                let d = if seed % 5 == 0 { 12.0 } else { 3.0 };
+                put_vec(
+                    c,
+                    list + 0x110,
+                    [
+                        (f32::from_bits(p[0]) + d).to_bits(),
+                        p[1],
+                        p[2],
+                        r.next_u32(),
+                    ],
+                );
+                c.bus
+                    .write32(list + 0x11c, if seed % 11 == 0 { 0 } else { 0x3f80_0000 });
+                let count: u32 = match seed % 9 {
+                    0 => 0,
+                    1 => 0xffff_fffe,
+                    _ => 1 + seed % 5,
+                };
+                c.bus.write32(list, count);
+                for i in 0..5 {
+                    let src = SOURCES + 0x80 * i;
+                    let entry = if r.next_u32() % 4 == 0 { 0 } else { src };
+                    c.bus.write32(list + 4 + 4 * i, entry);
+                    // Source: object at +0xc, data block at +0x10 (no records).
+                    let obj = src + 0x20;
+                    let block = src + 0x60;
+                    c.bus.write32(src + 0xc, obj);
+                    c.bus.write32(src + 0x10, block);
+                    for k in 0..3 {
+                        c.bus.write32(obj + 0x40 + 4 * k, r.f32(10.0));
+                    }
+                    c.bus.write32(block, r.next_u32() % 3);
+                    c.bus.write32(
+                        block + 4,
+                        if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            0xffff_ffff
+                        },
+                    );
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(LISTENER);
+                c.g[A2][0] = idx as u64;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::Events;
+    use crate::game::be::beintreward::tests::world;
+    use crate::game::bx::bxstring::tests::{alloc, heap};
+    use crate::game::bx::bxstring2::tests::be_library;
+
+    /// WorldSound_ComputeFalloff: every curve of the jump table (and
+    /// fractional, negative and out-of-range curve numbers), distances
+    /// around the 0.7 knee and edge-case floats. The game image supplies the
+    /// jump table and the `.lit4` constants.
+    #[test]
+    fn world_sound_compute_falloff_matches() {
+        check(
+            ee::s08::f_002b82b8__generated,
+            world_sound_compute_falloff,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b82b8, 0);
+                elf_image(c);
+                let curve = match seed % 10 {
+                    k @ 0..=5 => (k as f32 + (r.next_u32() % 4) as f32 * 0.25).to_bits(),
+                    6 => 6.0f32.to_bits(),
+                    7 => (-1.0f32).to_bits(),
+                    8 => r.edge_f32(),
+                    _ => (((seed / 10) % 6) as f32).to_bits(),
+                };
+                c.f[12] = curve;
+                c.f[13] = match r.next_u32() % 4 {
+                    0 => r.edge_f32(),
+                    1 => 0.7f32.to_bits(),
+                    _ => (r.next_u32() as f32 / u32::MAX as f32).to_bits(),
+                };
+                c.pc = 0x002b_82b8;
+            },
+        );
     }
 }

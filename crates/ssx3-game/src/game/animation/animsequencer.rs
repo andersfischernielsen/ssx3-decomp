@@ -24,12 +24,12 @@ use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
+use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use ssx3_ee_rt::vu0::X;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -60,11 +60,29 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "MdfFile_CreateModelByName",
     ),
     (0x0031_3dd0, anim_sequence_save, "AnimSequence_Save"),
-    (0x0031_3ba8, anim_sequence_remove_event_trigger, "AnimSequence_RemoveEventTrigger"),
+    (
+        0x0031_3ba8,
+        anim_sequence_remove_event_trigger,
+        "AnimSequence_RemoveEventTrigger",
+    ),
     (0x0031_47f0, anim_seq_list_save, "AnimSeqList_Save"),
-    (0x0031_3c08, anim_sequence_free_triggers, "AnimSequence_FreeTriggers"),
+    (
+        0x0031_3c08,
+        anim_sequence_free_triggers,
+        "AnimSequence_FreeTriggers",
+    ),
     (0x0031_42f8, anim_seq_list_push_new, "AnimSeqList_PushNew"),
-    (0x0031_4588, anim_seq_list_push_looping_anim, "AnimSeqList_PushLoopingAnim"),
+    (
+        0x0031_4588,
+        anim_seq_list_push_looping_anim,
+        "AnimSeqList_PushLoopingAnim",
+    ),
+    (
+        0x0031_3a70,
+        anim_sequence_add_trigger,
+        "AnimSequence_AddTrigger",
+    ),
+    (0x0031_4518, anim_seq_list_push_anim, "AnimSeqList_PushAnim"),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -777,29 +795,23 @@ pub fn anim_sequence_save(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // AnimSeqList_Save (0x3147f0)
 
 /// AnimSeqList `int`: number of sequences.
 pub(crate) const SEQLIST_COUNT: u32 = 0x0;
 
-
 /// AnimSeqList: first sequence node.
 pub(crate) const SEQLIST_FIRST: u32 = 0x4;
-
 
 /// AnimSequence: next node in the list.
 pub(crate) const SEQLIST_NODE_NEXT: u32 = 0xc8;
 
-
 /// `AnimSequence_Save(seq, stream)`.
-pub(crate) const SEQLIST_SEQUENCE_SAVE: Callee =
-    Callee { addr: 0x0031_3dd0, f: ee::s10::AnimSequence_Save };
-
-
+pub(crate) const SEQLIST_SEQUENCE_SAVE: Callee = Callee {
+    addr: 0x0031_3dd0,
+    f: ee::s10::AnimSequence_Save,
+};
 
 /// `void AnimSeqList_Save(AnimSeqList* list, cAsStream* s)` (0x3147f0):
 /// write the list's count word (`s->Write(list, 4)`, vtable slot +0x8), then
@@ -862,26 +874,22 @@ pub fn anim_seq_list_save(c: &mut Cpu) {
     });
 }
 
-
-
 // ---------------------------------------------------------------------------
 // AnimSequence_RemoveEventTrigger (0x313ba8)
 
 /// `operator delete` (`__builtin_delete`, 0x317e50).
-pub(crate) const ANIM_TRIGGER_DELETE: Callee = Callee { addr: 0x0031_7e50, f: ee::s10::f_00317e50 };
-
+pub(crate) const ANIM_TRIGGER_DELETE: Callee = Callee {
+    addr: 0x0031_7e50,
+    f: ee::s10::f_00317e50,
+};
 
 /// `AnimSequence + 0xac`: head of the event-trigger list.
 pub(crate) const ANIM_SEQ_TRIGGERS: u32 = 0xac;
 
-
 /// Trigger node: `{ int key; int active; ...; Trigger* next (+0xc) }`.
 pub(crate) const ANIM_TRIGGER_ACTIVE: u32 = 0x4;
 
-
 pub(crate) const ANIM_TRIGGER_NEXT: u32 = 0xc;
-
-
 
 /// `void AnimSequence_RemoveEventTrigger(AnimSequence* seq, int key)`
 /// (0x313ba8): unlink and delete the first active trigger with `key`.
@@ -936,37 +944,32 @@ pub fn anim_sequence_remove_event_trigger(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // AnimSeqList_PushNew (0x3142f8)
 
 /// `EA_MemAllocNamed(size, name, flags, align)`.
-pub(crate) const PUSH_NEW_ALLOC: Callee = Callee { addr: 0x0031_7d70, f: ee::s10::EA_MemAllocNamed };
-
+pub(crate) const PUSH_NEW_ALLOC: Callee = Callee {
+    addr: 0x0031_7d70,
+    f: ee::s10::EA_MemAllocNamed,
+};
 
 /// `AnimSequence_ctor(seq, type)`.
-pub(crate) const PUSH_NEW_SEQ_CTOR: Callee = Callee { addr: 0x0031_3508, f: ee::s10::AnimSequence_ctor };
-
+pub(crate) const PUSH_NEW_SEQ_CTOR: Callee = Callee {
+    addr: 0x0031_3508,
+    f: ee::s10::AnimSequence_ctor,
+};
 
 /// Size of an AnimSequence, its allocation name (0x48a5c0) and flags.
 pub(crate) const PUSH_NEW_SEQ_SIZE: u64 = 0xd0;
 
-
 pub(crate) const PUSH_NEW_ALLOC_FLAGS: u64 = 0x2000_0000;
-
 
 /// AnimSeqList: `count` at +0, `first` at +4; AnimSequence `next` at +0xc8.
 pub(crate) const PUSH_NEW_LIST_COUNT: u32 = 0x0;
 
-
 pub(crate) const PUSH_NEW_LIST_FIRST: u32 = 0x4;
 
-
 pub(crate) const PUSH_NEW_SEQ_NEXT: u32 = 0xc8;
-
-
 
 /// `AnimSequence* AnimSeqList_PushNew(AnimSeqList* list, int type)`
 /// (0x3142f8): allocate and construct a new sequence of `type`, link it at
@@ -1007,8 +1010,6 @@ pub fn anim_seq_list_push_new(c: &mut Cpu) {
     });
 }
 
-
-
 // ---------------------------------------------------------------------------
 // AnimSeqList_PushLoopingAnim (0x314588)
 
@@ -1017,25 +1018,20 @@ pub(crate) const ASL_PUSH_NEW: Callee = Callee {
     f: ee::s10::AnimSeqList_PushNew,
 };
 
-
 pub(crate) const ASL_SET_TRACK_ANIM: Callee = Callee {
     addr: 0x0031_3c50,
     f: ee::s10::AnimSequence_SetTrackAnim,
 };
-
 
 pub(crate) const ASL_SET_TRACK_TIME: Callee = Callee {
     addr: 0x0031_3cf0,
     f: ee::s10::AnimSequence_SetTrackTime,
 };
 
-
 pub(crate) const ASL_SET_TRACK_LOOP: Callee = Callee {
     addr: 0x0031_3d40,
     f: ee::s10::AnimSequence_SetTrackLoop,
 };
-
-
 
 /// `AnimSequence *AnimSeqList_PushLoopingAnim(AnimSeqList *list, int arg,
 /// int anim, float time)` (0x314588): push a new sequence (`PushNew(list,
@@ -1074,8 +1070,6 @@ pub fn anim_seq_list_push_looping_anim(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 /// `void AnimSequence_FreeTriggers(AnimSequence* self)` (0x313c08): pop and
 /// `delete` every node of the trigger list at `+0xac` (linked through
@@ -1120,6 +1114,94 @@ pub fn anim_sequence_free_triggers(c: &mut Cpu) {
         }
         c.cycles += 3;
         frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `AnimSequence* AnimSeqList_PushAnim(AnimSeqList* list, int arg, int anim,
+/// float time)` (0x314518): push a new sequence (`PushNew(list, arg)`) whose
+/// track 0 plays `anim` once from `time` (not looping). Returns the
+/// sequence. Frame 0x40 (ra at 0, s1 at 0x10, s0 at 0x20, f20 at 0x30).
+pub fn anim_seq_list_push_anim(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 28;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x10);
+        frame.save_fpr(c, 20, 0x30);
+        c.g[S1][0] = c.g[A2][0]; // anim
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        c.mov_s(20, 12); // time
+        ASL_PUSH_NEW.call(c, 0x0031_4538)?;
+        c.g[S0][0] = c.g[V0][0]; // the new sequence
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        ASL_SET_TRACK_ANIM.call(c, 0x0031_454c)?;
+        c.mov_s(12, 20);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        ASL_SET_TRACK_TIME.call(c, 0x0031_455c)?;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0;
+        ASL_SET_TRACK_LOOP.call(c, 0x0031_456c)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore(c, S1, 0x10);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// AnimSequence_AddTrigger.
+
+/// `AnimSequence::triggers` (singly linked list head).
+pub(crate) const ANIM_SEQUENCE_TRIGGERS: u32 = 0xac;
+
+/// The allocation name `D_0048A5B0`.
+pub(crate) const ANIM_TRIGGER_ALLOC_NAME: u32 = 0x0048_a5b0;
+
+/// `void AnimSequence_AddTrigger(AnimSequence* self, int key, float time)`
+/// (0x313a70): allocate a 0x10-byte trigger node (`EA_MemAllocNamed(0x10,
+/// "...", 0x20000000, 0)`) and push it on the sequence's trigger list:
+/// `{ key, fired = 0, time, next = old head }`.
+pub fn anim_sequence_add_trigger(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 26;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S1, 0x10);
+        c.g[A3][0] = 0;
+        c.g[S1][0] = c.g[A1][0]; // key
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0]; // sequence
+        frame.save_fpr(c, 20, 0x30);
+        c.mov_s(20, 12); // time
+        frame.save_ra(c, 0);
+        c.g[A1][0] = sx(ANIM_TRIGGER_ALLOC_NAME);
+        c.g[A0][0] = 0x10;
+        Callee {
+            addr: 0x0031_7d70,
+            f: ee::s10::EA_MemAllocNamed,
+        }
+        .call(c, 0x0031_3aa8)?;
+        let node = c.g[V0][0] as u32;
+        let list = (c.g[S0][0] as u32).wrapping_add(ANIM_SEQUENCE_TRIGGERS);
+        c.g[V1][0] = Addr(list).lw(c); // old head
+        c.sw(list, c.g[V0][0]);
+        c.sw(node, c.g[S1][0]);
+        c.swc1(20, node.wrapping_add(0x8));
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x30);
+        c.sw(node.wrapping_add(0xc), c.g[V1][0]);
+        c.sw(node.wrapping_add(0x4), 0);
         frame.close(c);
         Ok(())
     })
@@ -1463,7 +1545,6 @@ pub(crate) mod tests {
     use super::*;
     pub(crate) use crate::game::ai::ai::tests::oc258_w32;
 
-
     /// `AnimSeqList_Save`: a stream whose Write is a fake (some seeds
     /// unwind, at any call), lists of -1..3 sequences (each with 0-1 keys)
     /// saved by the real `AnimSequence_Save`.
@@ -1471,39 +1552,43 @@ pub(crate) mod tests {
     fn anim_seq_list_save_matches() {
         use crate::difftest::fakes::{covered, FAKE};
         use crate::difftest::fill;
-        covered(ee::s10::f_003147f0__generated, anim_seq_list_save, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0031_47f0, 40);
-            c.pc = 0x0031_47f0;
-            let list = DATA + 0x1000;
-            let stream = DATA + 0x2000;
-            let vt = DATA + 0x3000;
-            c.bus.write32(stream, vt);
-            c.bus.write16(vt + 0x8, ((r.next_u32() & 0x3f) * 4) as u16);
-            c.bus.write32(vt + 0xc, FAKE);
-            let count = (seed % 5) as i32 - 1;
-            let mut next = 0;
-            for k in (0..count.max(0) as u32).rev() {
-                let seq = DATA + 0x4000 + 0x200 * k;
-                fill(c, &mut r, seq, 0x34);
-                let key = if r.next_u32() & 1 != 0 {
-                    let key = seq + 0x100;
-                    fill(c, &mut r, key, 4);
-                    c.bus.write32(key + 0xc, 0);
-                    key
-                } else {
-                    0
-                };
-                c.bus.write32(seq + 0xac, key);
-                c.bus.write32(seq + SEQLIST_NODE_NEXT, next);
-                next = seq;
-            }
-            c.bus.write32(list + SEQLIST_COUNT, count as u32);
-            c.bus.write32(list + SEQLIST_FIRST, next);
-            c.g[A0][0] = sx(list);
-            c.g[A1][0] = sx(stream);
-        });
+        covered(
+            ee::s10::f_003147f0__generated,
+            anim_seq_list_save,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_47f0, 40);
+                c.pc = 0x0031_47f0;
+                let list = DATA + 0x1000;
+                let stream = DATA + 0x2000;
+                let vt = DATA + 0x3000;
+                c.bus.write32(stream, vt);
+                c.bus.write16(vt + 0x8, ((r.next_u32() & 0x3f) * 4) as u16);
+                c.bus.write32(vt + 0xc, FAKE);
+                let count = (seed % 5) as i32 - 1;
+                let mut next = 0;
+                for k in (0..count.max(0) as u32).rev() {
+                    let seq = DATA + 0x4000 + 0x200 * k;
+                    fill(c, &mut r, seq, 0x34);
+                    let key = if r.next_u32() & 1 != 0 {
+                        let key = seq + 0x100;
+                        fill(c, &mut r, key, 4);
+                        c.bus.write32(key + 0xc, 0);
+                        key
+                    } else {
+                        0
+                    };
+                    c.bus.write32(seq + 0xac, key);
+                    c.bus.write32(seq + SEQLIST_NODE_NEXT, next);
+                    next = seq;
+                }
+                c.bus.write32(list + SEQLIST_COUNT, count as u32);
+                c.bus.write32(list + SEQLIST_FIRST, next);
+                c.g[A0][0] = sx(list);
+                c.g[A1][0] = sx(stream);
+            },
+        );
     }
-
 
     /// The BE-library dummy at gp-0x1f04 and a dummy world at gp-0x848.
     pub(crate) fn oc258_env(c: &mut Cpu) {
@@ -1515,7 +1600,6 @@ pub(crate) mod tests {
         oc258_w32(c, DATA + 0x1200 + 0x28, DATA + 0x1400);
         oc258_w32(c, wld + 0x7c, DATA + 0x1500);
     }
-
 
     /// A setup call into a generated function (returns to a sentinel).
     pub(crate) fn oc258_run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
@@ -1530,48 +1614,59 @@ pub(crate) mod tests {
         c.g[V0][0]
     }
 
-
     /// AnimSequence_RemoveEventTrigger: an empty list, or 1..6 heap-allocated
     /// triggers with keys from a small set and random active flags, so the
     /// key is missing, found inactive, or found active (unlinked, deleted).
     #[test]
     fn anim_sequence_remove_event_trigger_matches() {
         const MEM_HEAP: u32 = 0x004f_f250;
-        check(ee::s10::f_00313ba8__generated, anim_sequence_remove_event_trigger, 120, &|c, seed| {
-            let mut r = machine(c, seed, 0x0031_3ba8, 0);
-            oc258_env(c);
-            let ra = c.g[RA][0];
-            oc258_run(
-                c,
-                0x0031_ff60,
-                ee::s10::DLHeap_InitArena,
-                &[MEM_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
-            );
-            let seq = DATA + 0x100;
-            let n = if seed % 6 == 0 { 0 } else { 1 + r.next_u32() % 6 };
-            let mut link = seq + ANIM_SEQ_TRIGGERS;
-            for _ in 0..n {
-                let node =
-                    oc258_run(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[MEM_HEAP as u64, 0x10]) as u32;
-                oc258_w32(c, link, node);
-                oc258_w32(c, node, r.next_u32() % 4);
-                oc258_w32(c, node + ANIM_TRIGGER_ACTIVE, r.next_u32() % 2);
-                oc258_w32(c, node + 8, r.next_u32());
-                link = node + ANIM_TRIGGER_NEXT;
-            }
-            oc258_w32(c, link, 0);
-            c.g[RA][0] = ra;
-            c.g[A0][0] = sx(seq);
-            c.g[A1][0] = (r.next_u32() % 4) as u64;
-            c.pc = 0x0031_3ba8;
-        });
+        check(
+            ee::s10::f_00313ba8__generated,
+            anim_sequence_remove_event_trigger,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_3ba8, 0);
+                oc258_env(c);
+                let ra = c.g[RA][0];
+                oc258_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::DLHeap_InitArena,
+                    &[MEM_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
+                );
+                let seq = DATA + 0x100;
+                let n = if seed % 6 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 6
+                };
+                let mut link = seq + ANIM_SEQ_TRIGGERS;
+                for _ in 0..n {
+                    let node = oc258_run(
+                        c,
+                        0x0031_e818,
+                        ee::s10::DLHeap_Malloc,
+                        &[MEM_HEAP as u64, 0x10],
+                    ) as u32;
+                    oc258_w32(c, link, node);
+                    oc258_w32(c, node, r.next_u32() % 4);
+                    oc258_w32(c, node + ANIM_TRIGGER_ACTIVE, r.next_u32() % 2);
+                    oc258_w32(c, node + 8, r.next_u32());
+                    link = node + ANIM_TRIGGER_NEXT;
+                }
+                oc258_w32(c, link, 0);
+                c.g[RA][0] = ra;
+                c.g[A0][0] = sx(seq);
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.pc = 0x0031_3ba8;
+            },
+        );
     }
     use super::*;
     use super::*;
-    use crate::difftest::fakes::{self};
-    use crate::difftest::{elf_image};
     use super::*;
-
+    use crate::difftest::elf_image;
+    use crate::difftest::fakes::{self};
 
     /// AnimSeqList_PushNew: the real allocator (size-class pools ready) and
     /// the real AnimSequence_ctor; an empty or non-empty list.
@@ -1580,20 +1675,24 @@ pub(crate) mod tests {
         use crate::difftest::fakes::machine;
         use crate::difftest::{check, elf_image, DATA};
         use crate::game::bx::bxstring::tests::pool;
-        check(ee::s10::f_003142f8__generated, anim_seq_list_push_new, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x0031_42f8, 0);
-            elf_image(c);
-            pool(c);
-            c.pc = 0x0031_42f8;
-            let list = DATA + 0x100;
-            c.bus.write32(list + PUSH_NEW_LIST_COUNT, seed % 5);
-            let first = if seed % 3 == 0 { 0 } else { DATA + 0x400 };
-            c.bus.write32(list + PUSH_NEW_LIST_FIRST, first);
-            c.g[A0][0] = sx(list);
-            c.g[A1][0] = (r.next_u32() % 16) as u64;
-        });
+        check(
+            ee::s10::f_003142f8__generated,
+            anim_seq_list_push_new,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_42f8, 0);
+                elf_image(c);
+                pool(c);
+                c.pc = 0x0031_42f8;
+                let list = DATA + 0x100;
+                c.bus.write32(list + PUSH_NEW_LIST_COUNT, seed % 5);
+                let first = if seed % 3 == 0 { 0 } else { DATA + 0x400 };
+                c.bus.write32(list + PUSH_NEW_LIST_FIRST, first);
+                c.g[A0][0] = sx(list);
+                c.g[A1][0] = (r.next_u32() % 16) as u64;
+            },
+        );
     }
-
 
     // ------------------------------------------------ AnimSeqList_PushLoopingAnim
 
@@ -1602,7 +1701,6 @@ pub(crate) mod tests {
     pub(crate) const ASL_CTRL: u32 = DATA + 0x5_9000;
 
     pub(crate) const ASL_MAGIC: u32 = 0x3145_88a5;
-
 
     macro_rules! asl_gated {
         ($name:ident, $addr:expr, $gen:path) => {
@@ -1615,18 +1713,29 @@ pub(crate) mod tests {
             }
         };
     }
-pub(crate) use asl_gated;
+    pub(crate) use asl_gated;
 
     asl_gated!(asl_fake_alloc, 0x0031_7d70, ee::s10::f_00317d70__generated);
 
     asl_gated!(asl_fake_ctor, 0x0031_3508, ee::s10::f_00313508__generated);
 
-    asl_gated!(asl_fake_track_anim, 0x0031_3c50, ee::s10::f_00313c50__generated);
+    asl_gated!(
+        asl_fake_track_anim,
+        0x0031_3c50,
+        ee::s10::f_00313c50__generated
+    );
 
-    asl_gated!(asl_fake_track_time, 0x0031_3cf0, ee::s10::f_00313cf0__generated);
+    asl_gated!(
+        asl_fake_track_time,
+        0x0031_3cf0,
+        ee::s10::f_00313cf0__generated
+    );
 
-    asl_gated!(asl_fake_track_loop, 0x0031_3d40, ee::s10::f_00313d40__generated);
-
+    asl_gated!(
+        asl_fake_track_loop,
+        0x0031_3d40,
+        ee::s10::f_00313d40__generated
+    );
 
     pub(crate) fn asl_install_fakes() {
         static ONCE: std::sync::Once = std::sync::Once::new();
@@ -1638,7 +1747,6 @@ pub(crate) use asl_gated;
             ee::s10::OVERRIDE_00313D40 = asl_fake_track_loop;
         });
     }
-
 
     /// A list with a few sequences; the real `PushNew` links the new one in
     /// (its allocator and constructor are logged fakes returning a node),
@@ -1656,7 +1764,8 @@ pub(crate) use asl_gated;
                 c.bus.write32(ASL_CTRL, ASL_MAGIC);
                 let list = DATA + 0x5_0000;
                 c.bus.write32(list, r.next_u32() % 8);
-                c.bus.write32(list + 4, if seed % 3 == 0 { 0 } else { DATA + 0x5_1000 });
+                c.bus
+                    .write32(list + 4, if seed % 3 == 0 { 0 } else { DATA + 0x5_1000 });
                 c.g[A0][0] = sx(list);
                 c.g[A1][0] = r.next_u32() as u64;
                 c.g[A2][0] = sx(r.next_u32() % 0x400);
@@ -1664,7 +1773,6 @@ pub(crate) use asl_gated;
             },
         );
     }
-
 
     /// AnimSequence_FreeTriggers: a trigger list of 0..4 nodes (the
     /// allocator's mutex set up as in the other list-freeing tests).
@@ -1690,6 +1798,64 @@ pub(crate) use asl_gated;
                 c.bus.write32(seq + 0xac, head);
                 c.g[A0][0] = sx(seq);
                 c.pc = 0x0031_3c08;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::{RA as RET_ADDR, SP as STACK_TOP};
+
+    /// AnimSeqList_PushAnim: a list with a few sequences; the real `PushNew`
+    /// links the new one in (its allocator and constructor are logged fakes
+    /// returning a node), the three track setters are logged fakes (one may
+    /// unwind). Same fixture as `anim_seq_list_push_looping_anim_matches`.
+    #[test]
+    fn anim_seq_list_push_anim_matches() {
+        use crate::difftest::fakes::{covered, machine};
+        use crate::game::animation::animsequencer::tests::{
+            asl_install_fakes, ASL_CTRL, ASL_MAGIC,
+        };
+        asl_install_fakes();
+        covered(
+            ee::s10::f_00314518__generated,
+            anim_seq_list_push_anim,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_4518, 5);
+                c.pc = 0x0031_4518;
+                c.bus.write32(ASL_CTRL, ASL_MAGIC);
+                let list = DATA + 0x5_0000;
+                c.bus.write32(list, r.next_u32() % 8);
+                c.bus
+                    .write32(list + 4, if seed % 3 == 0 { 0 } else { DATA + 0x5_1000 });
+                c.g[A0][0] = sx(list);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = sx(r.next_u32() % 0x400);
+                c.f[12] = r.edge_f32();
+            },
+        );
+    }
+
+    /// AnimSequence_AddTrigger: the real EA_MemAllocNamed on the engine's
+    /// pool allocator; an empty or non-empty trigger list.
+    #[test]
+    fn anim_sequence_add_trigger_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::game::ui::uianimation::tests::pool_allocator;
+        check(
+            ee::s10::f_00313a70__generated,
+            anim_sequence_add_trigger,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_3a70, 0);
+                c.pc = 0x0031_3a70;
+                pool_allocator(c);
+                let seq = DATA + 0x6_0000;
+                let head = if seed % 2 == 0 { 0 } else { DATA + 0x6_1000 };
+                c.bus.write32(seq + ANIM_SEQUENCE_TRIGGERS, head);
+                c.g[A0][0] = sx(seq);
+                c.g[A1][0] = sx(r.next_u32());
+                c.f[12] = r.f32(5.0);
             },
         );
     }

@@ -116,7 +116,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         multi_spline_modifier_update_nodes,
         "MultiSplineModifier_UpdateNodes",
     ),
-    (0x0035_9830, spline_modifier_update_transform, "SplineModifier_UpdateTransform"),
+    (
+        0x0035_9830,
+        spline_modifier_update_transform,
+        "SplineModifier_UpdateTransform",
+    ),
     (0x0032_84b8, spatial_hash_remove, "SpatialHash_Remove"),
     (0x0035_9698, spline_modifier_update, "SplineModifier_Update"),
 ];
@@ -1785,62 +1789,43 @@ pub(crate) fn msm_node_matrix(c: &mut Cpu, frame: Frame) {
     c.swc1(2, m(0x48));
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // SplineModifier_UpdateTransform (0x359830, splinemodifier.cpp)
 
 /// SplineModifier fields.
 pub(crate) const SM_MODE: u32 = 0x34;
 
-
 pub(crate) const SM_SPIN: u32 = 0x38;
-
 
 pub(crate) const SM_DIST: u32 = 0x3c;
 
-
 pub(crate) const SM_DIRTY: u32 = 0x58;
-
 
 /// The driven object's 4x4 matrix (rows 0x60..0x9c).
 pub(crate) const SM_MATRIX: u32 = 0x60;
 
-
 pub(crate) const SM_POS: u32 = 0xa0;
-
 
 pub(crate) const SM_DIR: u32 = 0xb0;
 
-
 pub(crate) const SM_ACC: u32 = 0xc0;
-
 
 /// dir.x^2, dir.y^2.
 pub(crate) const SM_DIR_SQ: u32 = 0xd0;
 
-
 pub(crate) const SM_PATH: u32 = 0xd8;
-
-
 
 pub(crate) const SM_EVAL_PATH_AT_DISTANCE: Callee = Callee {
     addr: 0x0034_5248,
     f: ee::s11::SplineModifier_EvalPathAtDistance,
 };
 
-
 pub(crate) const SM_MATH_SIN_COS: u32 = 0x0031_be50;
-
 
 pub(crate) const SM_MATH_ATAN: u32 = 0x0031_c228;
 
-
 /// The world up axis (vec3) the spin rotates about.
 pub(crate) const SM_UP_AXIS: u32 = 0x004f_f160;
-
-
 
 /// One angle of the transform: `atan(y / x)` (f21 / f20) fixed into the
 /// right quadrant with `+lits[2]` / `-lits[3]` (pi) when `x < 0`, or
@@ -1849,7 +1834,13 @@ pub(crate) const SM_UP_AXIS: u32 = 0x004f_f160;
 /// f0 and applies it: yaw (`pitch == false`) `f25 = f24 - angle`, pitch
 /// `f24 += angle`. The caller charged the block that made the `x == 0`
 /// compare.
-pub(crate) fn sm_angle(c: &mut Cpu, zero: usize, lits: [u32; 4], ret_addr: u32, pitch: bool) -> crate::call::Flow {
+pub(crate) fn sm_angle(
+    c: &mut Cpu,
+    zero: usize,
+    lits: [u32; 4],
+    ret_addr: u32,
+    pitch: bool,
+) -> crate::call::Flow {
     let apply = |c: &mut Cpu| {
         if pitch {
             c.add_s(24, 24, 0);
@@ -1902,8 +1893,6 @@ pub(crate) fn sm_angle(c: &mut Cpu, zero: usize, lits: [u32; 4], ret_addr: u32, 
     apply(c);
     Ok(())
 }
-
-
 
 /// `void SplineModifier_UpdateTransform(SplineModifier* self)` (0x359830):
 /// evaluates the path at the modifier's distance (position, direction,
@@ -2066,15 +2055,20 @@ pub fn spline_modifier_update_transform(c: &mut Cpu) {
         frame.restore(c, S1, 0x130);
         frame.restore(c, S2, 0x120);
         frame.restore_ra(c, 0x110);
-        for (f, off) in [(25, 0x178), (24, 0x170), (23, 0x168), (22, 0x160), (21, 0x158), (20, 0x150)] {
+        for (f, off) in [
+            (25, 0x178),
+            (24, 0x170),
+            (23, 0x168),
+            (22, 0x160),
+            (21, 0x158),
+            (20, 0x150),
+        ] {
             frame.restore_fpr(c, f, off);
         }
         frame.close(c);
         Ok(())
     })
 }
-
-
 
 /// The object matrix (s1 + 0x60) from the sines/cosines of roll (sp+0xf0/
 /// 0xf4), pitch (0xf8/0xfc) and yaw (0x100/0x104), translation = the path
@@ -2136,8 +2130,6 @@ pub(crate) fn sm_object_matrix(c: &mut Cpu, frame: Frame) {
     c.swc1(21, m(0x9c));
 }
 
-
-
 /// The spin rotation about the world up axis from sin (sp+0x108) and cos
 /// (sp+0x10c) into the frame's 4x4 matrix at sp+0x30 (bottom row 0, 0, 0,
 /// 1); leaves v1 = sp+0xb0, a0 = sp+0x70, a1 = sp+0x30. Verbatim register
@@ -2197,7 +2189,6 @@ pub(crate) fn sm_spin_matrix(c: &mut Cpu, frame: Frame) {
     c.swc1(4, s(0x54));
 }
 
-
 pub(crate) mod spline_mod {
 
     /// End behaviour: 0 stop, 2 bounce (ping-pong), 4 stop, else wrap.
@@ -2238,8 +2229,6 @@ pub(crate) mod spline_mod {
     pub const SECONDS_PER_TICK: u32 = 0x002d_1c70;
 }
 
-
-
 // ---------------------------------------------------------------------------
 // SpatialHash_Remove (0x3284b8)
 
@@ -2247,39 +2236,28 @@ pub(crate) mod spline_mod {
 /// heads of the item lists (+0x20 + 4 * slot, three slots).
 pub(crate) const SH_NODE_ITEMS: u32 = 0x20;
 
-
 pub(crate) const SH_ITEM_SLOTS: i64 = 3;
-
 
 /// Item link: next (+0), previous (+4).
 pub(crate) const SH_LINK_NEXT: u32 = 0x0;
 
-
 pub(crate) const SH_LINK_PREV: u32 = 0x4;
-
 
 /// Keys are `{level, x, y, z}` words.
 pub(crate) const SH_KEY_X: u32 = 0x4;
 
-
 pub(crate) const SH_KEY_Y: u32 = 0x8;
 
-
 pub(crate) const SH_KEY_Z: u32 = 0xc;
-
 
 /// Resume points of the emptiness scan (event checks at its back edges).
 pub(crate) const SH_REMOVE_ENTRY: u32 = 0x0032_84b8;
 
-
 pub(crate) const SH_REMOVE_NOT_EMPTY: u32 = 0x0032_8614;
-
 
 pub(crate) const SH_REMOVE_SCAN_ITEMS: u32 = 0x0032_8620;
 
-
 pub(crate) const SH_REMOVE_END: u32 = 0x0032_8660;
-
 
 /// `SpatialHash_Remove` itself (the recursion) and `__builtin_delete`.
 pub(crate) const SPATIAL_HASH_REMOVE: Callee = Callee {
@@ -2287,13 +2265,10 @@ pub(crate) const SPATIAL_HASH_REMOVE: Callee = Callee {
     f: ee::s10::SpatialHash_Remove,
 };
 
-
 pub(crate) const SH_BUILTIN_DELETE: Callee = Callee {
     addr: 0x0031_7e50,
     f: ee::s10::f_00317e50,
 };
-
-
 
 /// `void SpatialHash_Remove(Node *node /*a0*/, int slot /*a1*/, Link *link
 /// /*a2*/, Key *item /*a3*/, Key *at /*t0*/)` (0x3284b8): removes an item's
@@ -2315,8 +2290,6 @@ pub fn spatial_hash_remove(c: &mut Cpu) {
         }
     })
 }
-
-
 
 pub(crate) fn spatial_hash_remove_body(c: &mut Cpu) -> Flow {
     let frame = Frame { size: 0x30 };
@@ -2341,7 +2314,9 @@ pub(crate) fn spatial_hash_remove_body(c: &mut Cpu) -> Flow {
         c.g[V0][0] = sx(r32(c, T5) << 2);
         let next = link.off(SH_LINK_NEXT).lw(c);
         c.g[V1][0] = next;
-        let head = sx(r32(c, V0).wrapping_add(r32(c, T4)).wrapping_add(SH_NODE_ITEMS));
+        let head = sx(r32(c, V0)
+            .wrapping_add(r32(c, T4))
+            .wrapping_add(SH_NODE_ITEMS));
         c.g[A0][0] = head;
         if next != 0 {
             c.cycles += 2;
@@ -2370,7 +2345,9 @@ pub(crate) fn spatial_hash_remove_body(c: &mut Cpu) -> Flow {
     c.cycles += 41;
     let at = Addr(r32(c, V1));
     let item = Addr(r32(c, T3));
-    let shift = (level as u32).wrapping_sub(item_level as u32).wrapping_sub(1);
+    let shift = (level as u32)
+        .wrapping_sub(item_level as u32)
+        .wrapping_sub(1);
     c.g[A0][0] = sx(shift);
     let sh = shift & 31;
     let x2 = sx((at.off(SH_KEY_X).lw(c) as u32) << 1);
@@ -2387,7 +2364,9 @@ pub(crate) fn spatial_hash_remove_body(c: &mut Cpu) -> Flow {
     let cz = sx((z2 as u32).wrapping_add(bz as u32));
     let off_y = sx((by as u32) << 3);
     let off_z = sx((bz as u32) << 2);
-    let slot = sx(r32(c, T4).wrapping_add((bx as u32) << 4).wrapping_add(off_y as u32));
+    let slot = sx(r32(c, T4)
+        .wrapping_add((bx as u32) << 4)
+        .wrapping_add(off_y as u32));
     let child_level = sx((level as u32).wrapping_sub(1));
     c.g[T1][0] = child_level;
     let key = Addr(sp(c));
@@ -2431,8 +2410,6 @@ pub(crate) fn spatial_hash_remove_body(c: &mut Cpu) -> Flow {
     c.g[A0][0] = 0;
     spatial_hash_remove_tail(c, SH_REMOVE_SCAN_ITEMS)
 }
-
-
 
 /// The end of the emptiness scan from `at`: the item slots (from
 /// 0x328620, v1 = the slot, a0 = slots seen), "not empty" (0x328614) or the
@@ -2488,15 +2465,11 @@ pub(crate) fn spatial_hash_remove_tail(c: &mut Cpu, mut at: u32) -> Flow {
     }
 }
 
-
-
 pub(crate) fn spatial_hash_remove_epilogue(c: &mut Cpu, frame: Frame) {
     c.cycles += 3;
     frame.restore_ra(c, 0x10);
     frame.close(c);
 }
-
-
 
 /// `void SplineModifier_Update(SplineModifier* self)` (0x359698): spend
 /// one tick of the acceleration time (speeding up by `accel * dt`); then,
@@ -3253,7 +3226,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// SplineModifier_UpdateTransform: every mode (0: no angle, 1: pitch,
     /// 2: yaw, 3: both, 4: none), with and without a spin angle. The path is
     /// one segment whose direction components are zeroed per seed (x / y / z
@@ -3264,54 +3236,59 @@ pub(crate) mod tests {
     fn spline_modifier_update_transform_matches() {
         const SELF: u32 = DATA;
         const SEG: u32 = DATA + 0x3000;
-        check(ee::s11::f_00359830__generated, spline_modifier_update_transform, 240, &|c, seed| {
-            let mut r = machine(c, seed, 0x35_9830, 0);
-            elf_image(c);
-            c.pc = 0x0035_9830;
-            let f = |x: f32| x.to_bits();
-            let len = 10.0 + (r.next_u32() % 100) as f32;
-            c.g[A0][0] = sx(SELF);
-            c.bus.write32(SELF + SM_MODE, seed % 5);
-            let spin = if seed % 4 == 0 { 0 } else { r.f32(3.0) };
-            c.bus.write32(SELF + SM_SPIN, spin);
-            c.bus.write32(SELF + SM_DIST, f((r.next_u32() % 10) as f32));
-            c.bus.write32(SELF + SM_DIRTY, 1);
-            // The path: one segment covering everything.
-            c.bus.write32(SELF + SM_PATH + 0x4, 0);
-            c.bus.write32(SELF + SM_PATH + 0x8, SEG);
-            c.bus.write32(SELF + SM_PATH + 0xc, f(len * 2.0));
-            c.bus.write32(SEG + 0x84, 0);
-            c.bus.write32(SEG + 0x60, 0);
-            c.bus.write32(SEG + 0x64, 0);
-            for k in 0..4 {
-                c.bus.write32(SEG + 0x50 + 4 * k, f((r.next_u32() % 8) as f32 * 0.125));
-            }
-            // Direction columns, with components zeroed by seed.
-            let zero = (seed / 5) % 8; // bit 0: x, 1: y, 2: z
-            for row in 0..4u32 {
-                let mut v = [
-                    r.f32(4.0),
-                    r.f32(4.0),
-                    r.f32(4.0),
-                    f(if row == 3 { 1.0 } else { 0.0 }),
-                ];
-                for k in 0..3usize {
-                    if zero & (1 << k) != 0 {
-                        v[k] = 0;
-                    }
+        check(
+            ee::s11::f_00359830__generated,
+            spline_modifier_update_transform,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_9830, 0);
+                elf_image(c);
+                c.pc = 0x0035_9830;
+                let f = |x: f32| x.to_bits();
+                let len = 10.0 + (r.next_u32() % 100) as f32;
+                c.g[A0][0] = sx(SELF);
+                c.bus.write32(SELF + SM_MODE, seed % 5);
+                let spin = if seed % 4 == 0 { 0 } else { r.f32(3.0) };
+                c.bus.write32(SELF + SM_SPIN, spin);
+                c.bus.write32(SELF + SM_DIST, f((r.next_u32() % 10) as f32));
+                c.bus.write32(SELF + SM_DIRTY, 1);
+                // The path: one segment covering everything.
+                c.bus.write32(SELF + SM_PATH + 0x4, 0);
+                c.bus.write32(SELF + SM_PATH + 0x8, SEG);
+                c.bus.write32(SELF + SM_PATH + 0xc, f(len * 2.0));
+                c.bus.write32(SEG + 0x84, 0);
+                c.bus.write32(SEG + 0x60, 0);
+                c.bus.write32(SEG + 0x64, 0);
+                for k in 0..4 {
+                    c.bus
+                        .write32(SEG + 0x50 + 4 * k, f((r.next_u32() % 8) as f32 * 0.125));
                 }
-                put_vec(c, SEG + 0x10 + 0x10 * row, v);
-            }
-            // The world up axis.
-            put_vec(c, SM_UP_AXIS, [f(0.0), f(0.0), f(1.0), 0]);
-            if seed % 3 == 0 {
-                put_vec(c, SM_UP_AXIS, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
-            }
-        });
+                // Direction columns, with components zeroed by seed.
+                let zero = (seed / 5) % 8; // bit 0: x, 1: y, 2: z
+                for row in 0..4u32 {
+                    let mut v = [
+                        r.f32(4.0),
+                        r.f32(4.0),
+                        r.f32(4.0),
+                        f(if row == 3 { 1.0 } else { 0.0 }),
+                    ];
+                    for k in 0..3usize {
+                        if zero & (1 << k) != 0 {
+                            v[k] = 0;
+                        }
+                    }
+                    put_vec(c, SEG + 0x10 + 0x10 * row, v);
+                }
+                // The world up axis.
+                put_vec(c, SM_UP_AXIS, [f(0.0), f(0.0), f(1.0), 0]);
+                if seed % 3 == 0 {
+                    put_vec(c, SM_UP_AXIS, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                }
+            },
+        );
     }
     use super::*;
     use super::*;
-
 
     /// Runs a guest function to completion as a setup step (returns v0).
     pub(crate) fn oc259_run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
@@ -3326,7 +3303,6 @@ pub(crate) mod tests {
         c.g[V0][0]
     }
 
-
     /// SpatialHash_Remove on a real octree path: the root key one to four
     /// levels above the item (or at it), nodes from the real main heap so
     /// the real `__builtin_delete` frees emptied ones; every node on the
@@ -3340,90 +3316,118 @@ pub(crate) mod tests {
         const ITEM_KEY: u32 = DATA + 0x110;
         const LINK: u32 = DATA + 0x200;
         const ROOT: u32 = DATA + 0x1000;
-        check(ee::s10::f_003284b8__generated, spatial_hash_remove, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0032_84b8, 0);
-            let ra = c.g[RA][0];
-            // __builtin_delete -> MEM_FreeInternal: no pools, the main heap.
-            c.bus.write32(GAME_GP + 0xdd8, 0);
-            for slot in [0x2a60u32, 0x2a68, 0x2a6c, 0x2a70, 0x2a78, 0x2a7c, 0x2a84] {
-                c.bus.write32(GAME_GP + slot, 0);
-            }
-            oc259_run(
-                c,
-                0x0031_ff60,
-                ee::s10::DLHeap_InitArena,
-                &[MAIN_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
-            );
-            let new_node = |c: &mut Cpu, r: &mut Rng| -> u32 {
-                let n = oc259_run(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[MAIN_HEAP as u64, 0x2c]) as u32;
+        check(
+            ee::s10::f_003284b8__generated,
+            spatial_hash_remove,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_84b8, 0);
+                let ra = c.g[RA][0];
+                // __builtin_delete -> MEM_FreeInternal: no pools, the main heap.
+                c.bus.write32(GAME_GP + 0xdd8, 0);
+                for slot in [0x2a60u32, 0x2a68, 0x2a6c, 0x2a70, 0x2a78, 0x2a7c, 0x2a84] {
+                    c.bus.write32(GAME_GP + slot, 0);
+                }
+                oc259_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::DLHeap_InitArena,
+                    &[MAIN_HEAP as u64, (DATA + 0x4_0000) as u64, 0x4_0000],
+                );
+                let new_node = |c: &mut Cpu, r: &mut Rng| -> u32 {
+                    let n = oc259_run(
+                        c,
+                        0x0031_e818,
+                        ee::s10::DLHeap_Malloc,
+                        &[MAIN_HEAP as u64, 0x2c],
+                    ) as u32;
+                    for i in 0..11 {
+                        c.bus.write32(n + 4 * i, 0);
+                    }
+                    match r.next_u32() % 3 {
+                        0 => c.bus.write32(n + 4 * (r.next_u32() % 8), r.next_u32() | 1),
+                        1 => c
+                            .bus
+                            .write32(n + SH_NODE_ITEMS + 4 * (r.next_u32() % 3), r.next_u32() | 1),
+                        _ => {}
+                    }
+                    n
+                };
+                c.g[RA][0] = ra;
+
+                if seed % 10 == 9 {
+                    // Resume inside a frame at a scan head.
+                    let child = new_node(c, &mut r);
+                    let frame_sp = crate::difftest::SP - 0x30;
+                    c.g[ssx3_ee_rt::cpu::reg::SP][0] = sx(frame_sp);
+                    c.bus.write64(frame_sp + 0x10, crate::difftest::RA as u64);
+                    let parent_slot = ROOT + 4 * (r.next_u32() % 8);
+                    c.bus.write32(parent_slot, child);
+                    c.g[S0][0] = sx(parent_slot);
+                    let j = r.next_u32() % 3;
+                    c.g[A0][0] = j as u64;
+                    c.g[V1][0] = sx(child + SH_NODE_ITEMS + 4 * j);
+                    c.pc = if seed % 20 == 9 {
+                        SH_REMOVE_SCAN_ITEMS
+                    } else {
+                        SH_REMOVE_NOT_EMPTY
+                    };
+                    return;
+                }
+
+                let top = 1 + r.next_u32() % 4;
+                let item_level = r.next_u32() % (top + 1);
+                let span = 1u32 << (top - item_level);
+                let xyz = [
+                    r.next_u32() % span,
+                    r.next_u32() % span,
+                    r.next_u32() % span,
+                ];
+                put_words(c, ITEM_KEY, &[item_level, xyz[0], xyz[1], xyz[2]]);
+                put_words(c, ROOT_KEY, &[top, 0, 0, 0]);
                 for i in 0..11 {
-                    c.bus.write32(n + 4 * i, 0);
+                    c.bus.write32(ROOT + 4 * i, 0);
                 }
-                match r.next_u32() % 3 {
-                    0 => c.bus.write32(n + 4 * (r.next_u32() % 8), r.next_u32() | 1),
-                    1 => c.bus.write32(n + SH_NODE_ITEMS + 4 * (r.next_u32() % 3), r.next_u32() | 1),
-                    _ => {}
+                // The path from the root down to the item's level.
+                let mut node = ROOT;
+                let mut k = [0u32; 3];
+                for lev in (item_level + 1..=top).rev() {
+                    let shift = lev - item_level - 1;
+                    let b: Vec<u32> = (0..3).map(|i| (xyz[i] >> shift) - 2 * k[i]).collect();
+                    let child = new_node(c, &mut r);
+                    c.bus
+                        .write32(node + (b[0] << 4) + (b[1] << 3) + (b[2] << 2), child);
+                    for i in 0..3 {
+                        k[i] = 2 * k[i] + b[i];
+                    }
+                    node = child;
                 }
-                n
-            };
-            c.g[RA][0] = ra;
-
-            if seed % 10 == 9 {
-                // Resume inside a frame at a scan head.
-                let child = new_node(c, &mut r);
-                let frame_sp = crate::difftest::SP - 0x30;
-                c.g[ssx3_ee_rt::cpu::reg::SP][0] = sx(frame_sp);
-                c.bus.write64(frame_sp + 0x10, crate::difftest::RA as u64);
-                let parent_slot = ROOT + 4 * (r.next_u32() % 8);
-                c.bus.write32(parent_slot, child);
-                c.g[S0][0] = sx(parent_slot);
-                let j = r.next_u32() % 3;
-                c.g[A0][0] = j as u64;
-                c.g[V1][0] = sx(child + SH_NODE_ITEMS + 4 * j);
-                c.pc = if seed % 20 == 9 { SH_REMOVE_SCAN_ITEMS } else { SH_REMOVE_NOT_EMPTY };
-                return;
-            }
-
-            let top = 1 + r.next_u32() % 4;
-            let item_level = r.next_u32() % (top + 1);
-            let span = 1u32 << (top - item_level);
-            let xyz = [r.next_u32() % span, r.next_u32() % span, r.next_u32() % span];
-            put_words(c, ITEM_KEY, &[item_level, xyz[0], xyz[1], xyz[2]]);
-            put_words(c, ROOT_KEY, &[top, 0, 0, 0]);
-            for i in 0..11 {
-                c.bus.write32(ROOT + 4 * i, 0);
-            }
-            // The path from the root down to the item's level.
-            let mut node = ROOT;
-            let mut k = [0u32; 3];
-            for lev in (item_level + 1..=top).rev() {
-                let shift = lev - item_level - 1;
-                let b: Vec<u32> = (0..3).map(|i| (xyz[i] >> shift) - 2 * k[i]).collect();
-                let child = new_node(c, &mut r);
-                c.bus.write32(node + (b[0] << 4) + (b[1] << 3) + (b[2] << 2), child);
-                for i in 0..3 {
-                    k[i] = 2 * k[i] + b[i];
+                let slot = r.next_u32() % 3;
+                let next = if r.next_u32() % 2 == 0 {
+                    DATA + 0x210
+                } else {
+                    0
+                };
+                let prev = if r.next_u32() % 2 == 0 {
+                    DATA + 0x220
+                } else {
+                    0
+                };
+                put_words(c, LINK, &[next, prev]);
+                put_words(c, DATA + 0x210, &[r.next_u32(), r.next_u32()]);
+                put_words(c, DATA + 0x220, &[r.next_u32(), r.next_u32()]);
+                if prev == 0 {
+                    c.bus.write32(node + SH_NODE_ITEMS + 4 * slot, LINK);
                 }
-                node = child;
-            }
-            let slot = r.next_u32() % 3;
-            let next = if r.next_u32() % 2 == 0 { DATA + 0x210 } else { 0 };
-            let prev = if r.next_u32() % 2 == 0 { DATA + 0x220 } else { 0 };
-            put_words(c, LINK, &[next, prev]);
-            put_words(c, DATA + 0x210, &[r.next_u32(), r.next_u32()]);
-            put_words(c, DATA + 0x220, &[r.next_u32(), r.next_u32()]);
-            if prev == 0 {
-                c.bus.write32(node + SH_NODE_ITEMS + 4 * slot, LINK);
-            }
-            c.pc = SH_REMOVE_ENTRY;
-            c.g[A0][0] = sx(ROOT);
-            c.g[A1][0] = slot as u64;
-            c.g[A2][0] = sx(LINK);
-            c.g[A3][0] = sx(ITEM_KEY);
-            c.g[T0][0] = sx(ROOT_KEY);
-        });
+                c.pc = SH_REMOVE_ENTRY;
+                c.g[A0][0] = sx(ROOT);
+                c.g[A1][0] = slot as u64;
+                c.g[A2][0] = sx(LINK);
+                c.g[A3][0] = sx(ITEM_KEY);
+                c.g[T0][0] = sx(ROOT_KEY);
+            },
+        );
     }
-
 
     /// SplineModifier_Update: acceleration time positive or not, active /
     /// stopped flags (one seed in five each), modes 0..4, a speed and
@@ -3437,40 +3441,61 @@ pub(crate) mod tests {
         use spline_mod::*;
         const SELF: u32 = DATA + 0x3_0000;
         const WORLD: u32 = DATA + 0x3_1000;
-        crate::difftest::check(ee::s11::f_00359698__generated, spline_modifier_update, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0035_9698, 0);
-            c.pc = 0x0035_9698;
-            let fl = |x: f32| x.to_bits();
-            c.bus.write32(GAME_GP - 0x848, WORLD);
-            let dt = if seed % 4 == 0 { r.f32(0.5) } else { fl(1.0 / 60.0) };
-            c.bus.write32(WORLD + 0x14, dt);
-            for lit in [LIT_END_MARGIN_STOP, LIT_END_MARGIN_BOUNCE, LIT_END_MARGIN_STOP4] {
-                let v = if seed % 3 == 0 { r.f32(1.0) } else { fl(0.1) };
-                c.bus.write32(GAME_GP - lit, v);
-            }
-            let accel_time = match seed % 4 {
-                0 => 0,
-                1 => fl(-0.5),
-                _ => r.f32(2.0),
-            };
-            c.bus.write32(SELF + ACCEL_TIME, accel_time);
-            c.bus.write32(SELF + ACCEL, r.f32(100.0));
-            let length = 50.0 + (r.next_u32() % 100) as f32;
-            c.bus.write32(SELF + LENGTH, fl(length));
-            // Inside, just past the end, just before the start.
-            let (pos, speed) = match (seed / 2) % 3 {
-                0 => (length * 0.5, 30.0),
-                1 => (length - 0.2, 600.0),
-                _ => (0.2, -600.0),
-            };
-            let speed = if seed % 7 == 0 { -speed } else { speed };
-            c.bus.write32(SELF + POS, fl(pos));
-            c.bus.write32(SELF + SPEED, fl(speed));
-            c.bus.write32(SELF + MODE, r.next_u32() % 5);
-            c.bus.write32(SELF + ACTIVE, if seed % 5 == 1 { 0 } else { 1 + r.next_u32() % 3 });
-            c.bus.write32(SELF + STOPPED, if seed % 5 == 2 { 1 } else { 0 });
-            c.bus.write32(SELF + DIRTY, r.next_u32());
-            c.g[A0][0] = SELF as u64;
-        });
+        crate::difftest::check(
+            ee::s11::f_00359698__generated,
+            spline_modifier_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_9698, 0);
+                c.pc = 0x0035_9698;
+                let fl = |x: f32| x.to_bits();
+                c.bus.write32(GAME_GP - 0x848, WORLD);
+                let dt = if seed % 4 == 0 {
+                    r.f32(0.5)
+                } else {
+                    fl(1.0 / 60.0)
+                };
+                c.bus.write32(WORLD + 0x14, dt);
+                for lit in [
+                    LIT_END_MARGIN_STOP,
+                    LIT_END_MARGIN_BOUNCE,
+                    LIT_END_MARGIN_STOP4,
+                ] {
+                    let v = if seed % 3 == 0 { r.f32(1.0) } else { fl(0.1) };
+                    c.bus.write32(GAME_GP - lit, v);
+                }
+                let accel_time = match seed % 4 {
+                    0 => 0,
+                    1 => fl(-0.5),
+                    _ => r.f32(2.0),
+                };
+                c.bus.write32(SELF + ACCEL_TIME, accel_time);
+                c.bus.write32(SELF + ACCEL, r.f32(100.0));
+                let length = 50.0 + (r.next_u32() % 100) as f32;
+                c.bus.write32(SELF + LENGTH, fl(length));
+                // Inside, just past the end, just before the start.
+                let (pos, speed) = match (seed / 2) % 3 {
+                    0 => (length * 0.5, 30.0),
+                    1 => (length - 0.2, 600.0),
+                    _ => (0.2, -600.0),
+                };
+                let speed = if seed % 7 == 0 { -speed } else { speed };
+                c.bus.write32(SELF + POS, fl(pos));
+                c.bus.write32(SELF + SPEED, fl(speed));
+                c.bus.write32(SELF + MODE, r.next_u32() % 5);
+                c.bus.write32(
+                    SELF + ACTIVE,
+                    if seed % 5 == 1 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 3
+                    },
+                );
+                c.bus
+                    .write32(SELF + STOPPED, if seed % 5 == 2 { 1 } else { 0 });
+                c.bus.write32(SELF + DIRTY, r.next_u32());
+                c.g[A0][0] = SELF as u64;
+            },
+        );
     }
 }

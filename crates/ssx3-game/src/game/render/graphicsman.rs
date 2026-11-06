@@ -132,8 +132,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         emitter_update_descriptor,
         "Emitter_UpdateDescriptor",
     ),
-    (0x0036_a1e8, deferred_delete_advance_frame, "DeferredDelete_AdvanceFrame"),
-    (0x0036_c740, ps2_graphics_man_reset_bloom_params, "PS2GraphicsMan_ResetBloomParams"),
+    (
+        0x0036_a1e8,
+        deferred_delete_advance_frame,
+        "DeferredDelete_AdvanceFrame",
+    ),
+    (
+        0x0036_c740,
+        ps2_graphics_man_reset_bloom_params,
+        "PS2GraphicsMan_ResetBloomParams",
+    ),
+    (
+        0x0037_0058,
+        emitter_build_descriptor,
+        "Emitter_BuildDescriptor",
+    ),
+    (0x0037_0aa8, emitter_save, "Emitter_Save"),
 ];
 
 /// The game's render-context singleton (`gp+0x2a90`, `D_004A5B80`): its
@@ -5757,23 +5771,16 @@ pub fn emitter_update_descriptor(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // DeferredDelete_AdvanceFrame (0x36a1e8, graphicsman.cpp)
 
 /// gp-relative index of the current deferred-delete bucket (0..3).
 pub(crate) const DD_INDEX: u32 = 0x2a98;
 
-
 /// The four buckets of objects whose deletion is deferred (0x53ab40).
 pub(crate) const DD_BUCKETS_HI: u32 = 0x0054_0000;
 
-
 pub(crate) const DD_BUCKETS_LO: u32 = 0x54c0;
-
-
 
 /// `void DeferredDelete_AdvanceFrame()` (0x36a1e8): advances the bucket
 /// index (`(index + 1) % 4`), deletes every object queued in that bucket
@@ -5849,24 +5856,18 @@ pub fn deferred_delete_advance_frame(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // PS2GraphicsMan_ResetBloomParams (0x36c740)
 
 /// PS2GraphicsMan: the bloom parameter sets (0x1c bytes each, 7 floats).
 pub(crate) const BLOOM_PARAMS: u32 = 0x6cd4;
 
-
 pub(crate) const BLOOM_PARAMS_SIZE: u64 = 0x1c;
-
 
 /// The defaults (`D_004A43D4..E4`, `D_004A43F0/F4`) as `gp` offsets, in the
 /// order of the 7 fields.
-pub(crate) const BLOOM_DEFAULTS_GP: [u32; 7] = [0x12e4, 0x12e8, 0x12ec, 0x12f0, 0x12f4, 0x1300, 0x1304];
-
-
+pub(crate) const BLOOM_DEFAULTS_GP: [u32; 7] =
+    [0x12e4, 0x12e8, 0x12ec, 0x12f0, 0x12f4, 0x1300, 0x1304];
 
 /// `void PS2GraphicsMan_ResetBloomParams(PS2GraphicsMan* self, int idx)`
 /// (0x36c740): copy the default bloom parameters into set `idx`. Leaves
@@ -5887,6 +5888,394 @@ pub fn ps2_graphics_man_reset_bloom_params(c: &mut Cpu) {
         c.swc1(f, set.wrapping_add(4 * i as u32));
     }
     ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Emitter_Save (0x370aa8)
+
+/// Emitter description fields saved: rate (+0, float), lifetime (+0x18,
+/// float) and the particle count (+0xc, word).
+pub(crate) const EMS_RATE: u32 = 0x0;
+
+pub(crate) const EMS_LIFE: u32 = 0x18;
+
+pub(crate) const EMS_COUNT: u32 = 0xc;
+
+/// cStream vtable slot "write(buf, n)" (this-adjust halfword +8, method +0xc).
+pub(crate) const EMS_STREAM_WRITE: u32 = 0x8;
+
+/// `void Emitter_Save(EmitterDesc* desc, cStream* s)` (0x370aa8): pack the
+/// description's rate, lifetime and count into a 12-byte record on the
+/// stack and write it to the stream.
+pub fn emitter_save(c: &mut Cpu) {
+    use crate::guest::Addr;
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x20);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_ra(c, 0x10);
+        let rec = frame.at(c, 0);
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0xc;
+        let desc = r32(c, A0);
+        c.g[V1][0] = Addr(desc.wrapping_add(EMS_COUNT)).lw(c);
+        c.lwc1(1, desc.wrapping_add(EMS_RATE));
+        c.lwc1(0, desc.wrapping_add(EMS_LIFE));
+        c.swc1(1, rec);
+        c.swc1(0, rec + 4);
+        let count = c.g[V1][0];
+        Addr(rec + 8).sw(c, count);
+        // s->write(&rec, 12)
+        let stream = r32(c, A3);
+        let vtable = Addr(stream).lw(c);
+        c.g[V0][0] = vtable;
+        let adjust = Addr((vtable as u32).wrapping_add(EMS_STREAM_WRITE)).lh(c);
+        let method = Addr((vtable as u32).wrapping_add(EMS_STREAM_WRITE + 4)).lw(c);
+        c.g[V1][0] = method;
+        c.g[A0][0] = sx(stream.wrapping_add(adjust as u32));
+        call_ptr(c, method as u32, 0x0037_0ae8)?;
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Emitter_BuildDescriptor.
+
+/// `base + off` for the register `base` (32-bit address arithmetic).
+#[inline(always)]
+pub(crate) fn emitter_bd_at(c: &Cpu, base: usize, off: u32) -> u32 {
+    (c.g[base][0] as u32).wrapping_add(off)
+}
+
+/// Load the three floats at `params + src` into f0, f1, f2 and store them to
+/// `sp + dst` (x, y, z; the w word is left alone).
+pub(crate) fn emitter_bd_stage_xyz(c: &mut Cpu, src: u32, dst: u32) {
+    c.lwc1(0, emitter_bd_at(c, S0, src));
+    c.lwc1(1, emitter_bd_at(c, S0, src + 4));
+    c.lwc1(2, emitter_bd_at(c, S0, src + 8));
+    c.swc1(0, emitter_bd_at(c, SP, dst));
+    c.swc1(1, emitter_bd_at(c, SP, dst + 4));
+    c.swc1(2, emitter_bd_at(c, SP, dst + 8));
+}
+
+/// `vf12 = M * v` for the 4x4 matrix at `s2` and the vector at `sp + vec`
+/// (VU0 mula/madda/madda/madd), stored to `sp + out`.
+pub(crate) fn emitter_bd_apply_matrix(c: &mut Cpu, vec: u32, out: u32) {
+    c.lqc2(8, emitter_bd_at(c, SP, vec));
+    c.lqc2(4, emitter_bd_at(c, S2, 0));
+    c.lqc2(5, emitter_bd_at(c, S2, 0x10));
+    c.lqc2(6, emitter_bd_at(c, S2, 0x20));
+    c.lqc2(7, emitter_bd_at(c, S2, 0x30));
+    c.vu0().mula(0b1111, 4, Src::Bc(8, X));
+    c.vu0().madda(0b1111, 5, Src::Bc(8, Y));
+    c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
+    c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
+    c.sqc2(12, emitter_bd_at(c, SP, out));
+}
+
+/// The emitter lifetime in the parameter block.
+pub(crate) const EMITTER_PARAM_LIFETIME: u32 = 0x0c;
+
+/// A position-like vector of the parameter block (`params + src`, w = 0)
+/// transformed by the matrix and divided by the emitter lifetime
+/// (`params + 0xc`, VU0 `div`/`mul Q`), stored to `self + dst` (and to the
+/// stack scratch at `sp`). `clear_w` is the compiler's redundant re-clear
+/// of the staged w word.
+pub(crate) fn emitter_bd_xform_div(c: &mut Cpu, src: u32, dst: u32, clear_w: bool) {
+    emitter_bd_stage_xyz(c, src, 0x20);
+    emitter_bd_apply_matrix(c, 0x20, 0x30);
+    c.lq(2, emitter_bd_at(c, SP, 0x30));
+    c.lwc1(0, emitter_bd_at(c, S0, EMITTER_PARAM_LIFETIME));
+    c.sq(2, emitter_bd_at(c, SP, 0x10));
+    c.mfc1(3, 0);
+    c.qmtc2(3, 3);
+    c.vu0().div(0, 3, 3, 0);
+    c.lqc2(4, emitter_bd_at(c, SP, 0x10));
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 4, 4, Src::Q);
+    c.sqc2(4, emitter_bd_at(c, SP, 0x30));
+    c.lq(2, emitter_bd_at(c, SP, 0x30));
+    if clear_w {
+        c.sw(emitter_bd_at(c, SP, 0x2c), 0);
+    }
+    c.sq(2, emitter_bd_at(c, S1, dst));
+    c.sq(2, emitter_bd_at(c, SP, 0));
+}
+
+/// VU0 `vf5 = vf3 op vf4` through the stack scratch: `sqc2 vf5, tmp;
+/// lq v0, tmp; sq v0, dst` (the compiler's copy of a returned vector).
+pub(crate) fn emitter_bd_vec_copy(c: &mut Cpu, tmp: u32, dst: u32) {
+    c.sqc2(5, emitter_bd_at(c, SP, tmp));
+    c.lq(2, emitter_bd_at(c, SP, tmp));
+    c.sq(2, emitter_bd_at(c, SP, dst));
+}
+
+/// `vf5 = vf4 * (bits of FPU reg fpr).x` with the scalar moved through the
+/// GPR `gpr` (`mfc1`, `qmtc2` into vf3), the vector loaded from `sp + vec`.
+pub(crate) fn emitter_bd_scale(c: &mut Cpu, gpr: usize, fpr: usize, vec: u32) {
+    c.mfc1(gpr, fpr);
+    c.lqc2(4, emitter_bd_at(c, SP, vec));
+    c.qmtc2(gpr, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+}
+
+/// `void Emitter_BuildDescriptor(Emitter* self, Matrix* m, EmitterParams* p,
+/// Box* bounds, float time)` (0x370058): fill the emitter's particle
+/// descriptor from its parameter block. Sets the two spawn curves
+/// (`Emitter_SetDescCurveA/B`), the start time (`time`, or random seeds when
+/// `time < 0`), resets the acceleration, transforms the spawn position and
+/// two spread axes by `m` (`+0xb0..+0xd0`, the position re-centred by
+/// `1.5 * (axis1 + axis2)`), the four velocity vectors divided by the
+/// lifetime (`+0x70..+0xa0`, the first re-centred by `1.5 * (v1+v2+v3)`),
+/// the four colours scaled by 128 (`Emitter_SetDescVelocityCurve`), the
+/// time (`+0x14 + 0.5 * +0x1c` when `p+8 < 0`, else 0) and the bounds.
+pub fn emitter_build_descriptor(c: &mut Cpu) {
+    guest(c, |c| {
+        const PARAM_TIME_SIGN: u32 = 0x08;
+        const PARAM_CURVE_X: u32 = 0x10;
+        const PARAM_CURVE_START: u32 = 0x14;
+        const PARAM_CURVE_Z: u32 = 0x18;
+        const PARAM_CURVE_SPAN: u32 = 0x1c;
+        const PARAM_CURVE_Y: u32 = 0xcc;
+        const SELF_START_TIME: u32 = 0x38;
+
+        c.cycles += 30;
+        let frame = Frame::open(c, 0xf0);
+        frame.save(c, S0, 0xd0);
+        frame.save(c, S1, 0xc0);
+        frame.save(c, S2, 0xb0);
+        frame.save(c, S3, 0xa0);
+        frame.save_fpr(c, 20, 0xe0);
+        frame.save_ra(c, 0x90);
+        c.g[S0][0] = c.g[A2][0]; // params
+        c.g[S1][0] = c.g[A0][0]; // self
+        c.g[S2][0] = c.g[A1][0]; // matrix
+        c.g[S3][0] = c.g[A3][0]; // bounds
+        c.mov_s(20, 12); // time
+
+        // Curve A (x, y, z of the parameter curve).
+        c.lwc1(12, emitter_bd_at(c, S0, PARAM_CURVE_X));
+        c.lwc1(14, emitter_bd_at(c, S0, PARAM_CURVE_Z));
+        c.lwc1(13, emitter_bd_at(c, S0, PARAM_CURVE_Y));
+        Callee {
+            addr: 0x0036_ce00,
+            f: ee::s12::f_0036ce00,
+        }
+        .call(c, 0x0037_0098)?;
+
+        // Curve B: start -/+ half the span.
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 0);
+        c.g[A0][0] = c.g[S1][0];
+        c.lwc1(12, emitter_bd_at(c, S0, PARAM_CURVE_SPAN));
+        c.lwc1(1, emitter_bd_at(c, S0, PARAM_CURVE_START));
+        c.mul_s(12, 12, 0);
+        c.add_s(13, 1, 12);
+        c.sub_s(12, 1, 12);
+        Callee {
+            addr: 0x0036_ce28,
+            f: ee::s12::f_0036ce28,
+        }
+        .call(c, 0x0037_00bc)?;
+
+        // Start time, or random seeds for a negative time.
+        c.mtc1(0, 0);
+        c.c_lt_s(20, 0);
+        if !c.fcc() {
+            c.swc1(20, emitter_bd_at(c, S1, SELF_START_TIME));
+        } else {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x0036_ccb8,
+                f: ee::s12::f_0036ccb8,
+            }
+            .call(c, 0x0037_00d8)?;
+        }
+
+        c.cycles += 305;
+        c.g[AT][0] = 0x3f00_0000;
+        c.mtc1(AT, 20); // f20 = 0.5 from here on
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0036_d008,
+            f: ee::s12::f_0036d008,
+        }
+        .call(c, 0x0037_00e8)?;
+
+        // Spawn position (w = 1) through the matrix -> self+0xb0.
+        c.lwc1(2, emitter_bd_at(c, S0, 0x24));
+        c.g[A0][0] = c.g[S1][0];
+        c.lwc1(3, emitter_bd_at(c, S0, 0x28));
+        c.g[A1][0] = c.g[SP][0];
+        c.lwc1(1, emitter_bd_at(c, S0, 0x2c));
+        c.g[A2][0] = sx(emitter_bd_at(c, SP, 0x20));
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.g[A3][0] = sx(emitter_bd_at(c, SP, 0x40));
+        c.swc1(3, emitter_bd_at(c, SP, 0x14));
+        c.g[T0][0] = sx(emitter_bd_at(c, SP, 0x60));
+        c.swc1(2, emitter_bd_at(c, SP, 0x10));
+        c.swc1(1, emitter_bd_at(c, SP, 0x18));
+        c.swc1(0, emitter_bd_at(c, SP, 0x1c));
+        emitter_bd_apply_matrix(c, 0x10, 0x20);
+        c.g[AT][0] = 0x3fc0_0000;
+        c.mtc1(AT, 3); // f3 = 1.5
+        c.lq(2, emitter_bd_at(c, SP, 0x20));
+        c.sw(emitter_bd_at(c, SP, 0x1c), 0);
+        c.sq(2, emitter_bd_at(c, S1, 0xb0));
+        c.sq(2, emitter_bd_at(c, SP, 0));
+        c.g[AT][0] = 0x4300_0000;
+        c.mtc1(AT, 4); // f4 = 128.0
+
+        // The two spread axes (w = 0) -> self+0xc0, self+0xd0.
+        emitter_bd_stage_xyz(c, 0x30, 0x10);
+        emitter_bd_apply_matrix(c, 0x10, 0x20);
+        c.lq(2, emitter_bd_at(c, SP, 0x20));
+        c.sw(emitter_bd_at(c, SP, 0x1c), 0);
+        c.sq(2, emitter_bd_at(c, S1, 0xc0));
+        c.sq(2, emitter_bd_at(c, SP, 0));
+        emitter_bd_stage_xyz(c, 0x3c, 0x10);
+        emitter_bd_apply_matrix(c, 0x10, 0x20);
+        c.lq(2, emitter_bd_at(c, SP, 0x20));
+        c.sq(2, emitter_bd_at(c, S1, 0xd0));
+        c.sq(2, emitter_bd_at(c, SP, 0));
+
+        // position -= 1.5 * (axis1 + axis2).
+        c.lqc2(3, emitter_bd_at(c, S1, 0xc0));
+        c.lqc2(4, emitter_bd_at(c, S1, 0xd0));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        emitter_bd_vec_copy(c, 0x20, 0x10);
+        emitter_bd_scale(c, 3, 3, 0x10);
+        emitter_bd_vec_copy(c, 0x20, 0);
+        c.lqc2(3, emitter_bd_at(c, S1, 0xb0));
+        c.lqc2(4, emitter_bd_at(c, SP, 0));
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, emitter_bd_at(c, S1, 0xb0));
+
+        // The four velocity vectors / lifetime -> self+0x70..+0xa0.
+        c.sw(emitter_bd_at(c, SP, 0x2c), 0);
+        emitter_bd_xform_div(c, 0x48, 0x70, true);
+        emitter_bd_xform_div(c, 0x54, 0x80, true);
+        emitter_bd_xform_div(c, 0x60, 0x90, true);
+        emitter_bd_xform_div(c, 0x6c, 0xa0, false);
+
+        // v1 -= 1.5 * (v2 + v3 + v4).
+        c.lqc2(3, emitter_bd_at(c, S1, 0x80));
+        c.lqc2(4, emitter_bd_at(c, S1, 0x90));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        emitter_bd_vec_copy(c, 0x30, 0x20);
+        c.lqc2(3, emitter_bd_at(c, SP, 0x20));
+        c.lqc2(4, emitter_bd_at(c, S1, 0xa0));
+        c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+        emitter_bd_vec_copy(c, 0x30, 0x10);
+        emitter_bd_scale(c, 3, 3, 0x10);
+        emitter_bd_vec_copy(c, 0x30, 0);
+        c.lqc2(3, emitter_bd_at(c, S1, 0x70));
+        c.lqc2(4, emitter_bd_at(c, SP, 0));
+        c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+        c.sqc2(5, emitter_bd_at(c, S1, 0x70));
+
+        // The four colours (w first in the block) * 128 -> sp, sp+0x20,
+        // sp+0x40, sp+0x60 (the velocity-curve arguments).
+        c.lwc1(0, emitter_bd_at(c, S0, 0x88));
+        c.lwc1(1, emitter_bd_at(c, S0, 0x8c));
+        c.lwc1(2, emitter_bd_at(c, S0, 0x90));
+        c.lwc1(3, emitter_bd_at(c, S0, 0x84));
+        c.swc1(0, emitter_bd_at(c, SP, 0x10));
+        c.swc1(1, emitter_bd_at(c, SP, 0x14));
+        c.swc1(2, emitter_bd_at(c, SP, 0x18));
+        c.swc1(3, emitter_bd_at(c, SP, 0x1c));
+        emitter_bd_scale(c, 3, 4, 0x10);
+        emitter_bd_vec_copy(c, 0x20, 0);
+
+        c.lwc1(0, emitter_bd_at(c, S0, 0x98));
+        c.lwc1(1, emitter_bd_at(c, S0, 0x9c));
+        c.lwc1(2, emitter_bd_at(c, S0, 0xa0));
+        c.lwc1(3, emitter_bd_at(c, S0, 0x94));
+        c.swc1(0, emitter_bd_at(c, SP, 0x30));
+        c.swc1(1, emitter_bd_at(c, SP, 0x34));
+        c.swc1(2, emitter_bd_at(c, SP, 0x38));
+        c.swc1(3, emitter_bd_at(c, SP, 0x3c));
+        emitter_bd_scale(c, 3, 4, 0x30);
+        c.sqc2(5, emitter_bd_at(c, SP, 0x40));
+
+        c.lwc1(0, emitter_bd_at(c, S0, 0xa8));
+        c.lwc1(1, emitter_bd_at(c, S0, 0xac));
+        c.lwc1(2, emitter_bd_at(c, S0, 0xb0));
+        c.lwc1(3, emitter_bd_at(c, S0, 0xa4));
+        c.lq(2, emitter_bd_at(c, SP, 0x40));
+        c.swc1(0, emitter_bd_at(c, SP, 0x50));
+        c.sq(2, emitter_bd_at(c, SP, 0x20));
+        c.swc1(1, emitter_bd_at(c, SP, 0x54));
+        c.swc1(2, emitter_bd_at(c, SP, 0x58));
+        c.swc1(3, emitter_bd_at(c, SP, 0x5c));
+        emitter_bd_scale(c, 3, 4, 0x50);
+        c.sqc2(5, emitter_bd_at(c, SP, 0x60));
+        c.lq(2, emitter_bd_at(c, SP, 0x60));
+
+        c.lwc1(0, emitter_bd_at(c, S0, 0xb8));
+        c.lwc1(2, emitter_bd_at(c, S0, 0xbc));
+        c.sq(2, emitter_bd_at(c, SP, 0x40));
+        c.swc1(0, emitter_bd_at(c, SP, 0x70));
+        c.lwc1(0, emitter_bd_at(c, S0, 0xb4));
+        c.lwc1(1, emitter_bd_at(c, S0, 0xc0));
+        c.swc1(2, emitter_bd_at(c, SP, 0x74));
+        c.swc1(1, emitter_bd_at(c, SP, 0x78));
+        c.swc1(0, emitter_bd_at(c, SP, 0x7c));
+        emitter_bd_scale(c, 2, 4, 0x70);
+        c.sqc2(5, emitter_bd_at(c, SP, 0x80));
+
+        // Velocity curve over start + 0.5 * span.
+        c.lwc1(12, emitter_bd_at(c, S0, PARAM_CURVE_SPAN));
+        c.lwc1(0, emitter_bd_at(c, S0, PARAM_CURVE_START));
+        c.mul_s(12, 12, 20);
+        c.lq(2, emitter_bd_at(c, SP, 0x80));
+        c.sq(2, emitter_bd_at(c, SP, 0x60));
+        c.add_s(12, 0, 12);
+        Callee {
+            addr: 0x0036_d318,
+            f: ee::s12::f_0036d318,
+        }
+        .call(c, 0x0037_0588)?;
+
+        // Time: start + 0.5 * span when p+8 < 0, else 0.
+        c.mtc1(0, 12);
+        c.lwc1(0, emitter_bd_at(c, S0, PARAM_TIME_SIGN));
+        c.c_lt_s(0, 12);
+        if c.fcc() {
+            c.cycles += 4;
+            c.lwc1(0, emitter_bd_at(c, S0, PARAM_CURVE_SPAN));
+            c.lwc1(1, emitter_bd_at(c, S0, PARAM_CURVE_START));
+            c.mul_s(0, 0, 20);
+            c.add_s(12, 1, 0);
+        }
+        c.cycles += 13;
+        c.g[A0][0] = c.g[S1][0];
+        Callee {
+            addr: 0x0036_d3d8,
+            f: ee::s12::f_0036d3d8,
+        }
+        .call(c, 0x0037_05b4)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[S3][0];
+        Callee {
+            addr: 0x0036_d500,
+            f: ee::s12::f_0036d500,
+        }
+        .call(c, 0x0037_05c0)?;
+
+        frame.restore(c, S0, 0xd0);
+        frame.restore(c, S1, 0xc0);
+        frame.restore(c, S2, 0xb0);
+        frame.restore(c, S3, 0xa0);
+        frame.restore_ra(c, 0x90);
+        frame.restore_fpr(c, 20, 0xe0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -6563,8 +6952,7 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-    use crate::difftest::{elf_image};
-
+    use crate::difftest::elf_image;
 
     /// DeferredDelete_AdvanceFrame: bucket indices -6..5 (both remainder
     /// forms), buckets with 0-3 queued objects whose destructors are fakes.
@@ -6572,32 +6960,36 @@ pub(crate) mod tests {
     fn deferred_delete_advance_frame_matches() {
         use crate::difftest::fakes::vtable;
         const NODES: u32 = DATA + 0x20_0000;
-        check(ee::s12::f_0036a1e8__generated, deferred_delete_advance_frame, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x36_a1e8, 4);
-            c.pc = 0x0036_a1e8;
-            let gp = crate::difftest::GAME_GP;
-            let index = (seed % 12) as i32 - 6;
-            c.bus.write32(gp + DD_INDEX, index as u32);
-            let next = (index + 1) % 4;
-            let bucket = DD_BUCKETS_HI - DD_BUCKETS_LO;
-            for k in 0..4 {
-                c.bus.write32(bucket + 4 * k, r.next_u32());
-            }
-            let n = (seed / 12) % 4;
-            let mut head = 0;
-            for i in (0..n).rev() {
-                let node = NODES + 0x40 * i;
-                c.bus.write32(node, head);
-                let vt = vtable(c, &mut r, &[0x8]);
-                c.bus.write32(node + 4, vt);
-                head = node;
-            }
-            c.bus.write32(bucket.wrapping_add((next * 4) as u32), head);
-        });
+        check(
+            ee::s12::f_0036a1e8__generated,
+            deferred_delete_advance_frame,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x36_a1e8, 4);
+                c.pc = 0x0036_a1e8;
+                let gp = crate::difftest::GAME_GP;
+                let index = (seed % 12) as i32 - 6;
+                c.bus.write32(gp + DD_INDEX, index as u32);
+                let next = (index + 1) % 4;
+                let bucket = DD_BUCKETS_HI - DD_BUCKETS_LO;
+                for k in 0..4 {
+                    c.bus.write32(bucket + 4 * k, r.next_u32());
+                }
+                let n = (seed / 12) % 4;
+                let mut head = 0;
+                for i in (0..n).rev() {
+                    let node = NODES + 0x40 * i;
+                    c.bus.write32(node, head);
+                    let vt = vtable(c, &mut r, &[0x8]);
+                    c.bus.write32(node + 4, vt);
+                    head = node;
+                }
+                c.bus.write32(bucket.wrapping_add((next * 4) as u32), head);
+            },
+        );
     }
     use super::*;
     use crate::game::visualfx::renderstateman::tests::table_getter_setup;
-
 
     /// Random defaults in `.sdata`, set index 0..7 on a random object.
     #[test]
@@ -6617,6 +7009,105 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA + (r.next_u32() & 0xfff0));
                 c.g[A1][0] = (seed % 8) as u64;
                 c.pc = 0x0036_c740;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// Emitter_Save: random description fields; the stream's write is a
+    /// fake (it logs the record pointer and size; some calls unwind).
+    #[test]
+    fn emitter_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::DATA;
+        const DESC: u32 = DATA + 0x20_0000;
+        const STREAM: u32 = DATA + 0x20_0100;
+        covered(
+            ee::s12::f_00370aa8__generated,
+            emitter_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x37_0aa8, 1);
+                c.pc = 0x0037_0aa8;
+                let vt = vtable(c, &mut r, &[EMS_STREAM_WRITE]);
+                c.bus.write32(STREAM, vt);
+                c.bus.write32(DESC + EMS_RATE, r.edge_f32());
+                c.bus.write32(DESC + EMS_LIFE, r.edge_f32());
+                c.bus.write32(DESC + EMS_COUNT, r.next_u32());
+                c.g[A0][0] = sx(DESC);
+                c.g[A1][0] = sx(STREAM);
+            },
+        );
+    }
+
+    /// Emitter_BuildDescriptor with real callees: random emitter (`a0`,
+    /// rate at `+0x4c`), matrix (`a1`), parameter block (`a2`) and bounds
+    /// (`a3`); the time `f12` is negative on some seeds (random seeds through
+    /// `Rand_NextMain`, whose state at `0x4ff018` is random too) and `p+8`
+    /// is negative on some seeds (the time branch).
+    #[test]
+    fn emitter_build_descriptor_matches() {
+        const SELF: u32 = DATA;
+        const PARAMS: u32 = DATA + 0x200;
+        const MATRIX: u32 = DATA + 0x400;
+        const BOUNDS: u32 = DATA + 0x500;
+        const RAND_STATE: u32 = 0x0050_0000 - 0xfe8;
+        check(
+            ee::s12::f_00370058__generated,
+            emitter_build_descriptor,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0037_0058 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0037_0058;
+                c.g[GP][0] = sx(GAME_GP);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(MATRIX);
+                c.g[A2][0] = sx(PARAMS);
+                c.g[A3][0] = sx(BOUNDS);
+                for i in 0..0x50u32 {
+                    let v = if i % 7 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(50.0)
+                    };
+                    c.bus.write32(SELF + 4 * i, v);
+                }
+                for i in 0..0x34u32 {
+                    c.bus.write32(PARAMS + 4 * i, r.f32(50.0));
+                }
+                for i in 0..0x10u32 {
+                    c.bus.write32(MATRIX + 4 * i, r.f32(4.0));
+                }
+                for i in 0..8u32 {
+                    c.bus.write32(BOUNDS + 4 * i, r.f32(100.0));
+                }
+                for i in 0..6u32 {
+                    c.bus.write32(RAND_STATE + 4 * i, r.next_u32());
+                }
+                let base = (GAME_GP as i32 - 0x2868) as u32;
+                for i in 0..24u32 {
+                    c.bus.write32(base + 4 * i, r.f32(10.0));
+                }
+                // Lifetime / rate non-zero on most seeds.
+                if seed % 5 != 0 {
+                    c.bus.write32(PARAMS + 0xc, 1.5f32.to_bits());
+                    c.bus.write32(SELF + 0x4c, 0.25f32.to_bits());
+                }
+                let time = r.f32(10.0) & 0x7fff_ffff;
+                c.f[12] = if seed % 2 == 0 {
+                    time | 0x8000_0000
+                } else {
+                    time
+                };
+                let sign = c.bus.read32(PARAMS + 8) & 0x7fff_ffff;
+                let sign = if seed % 3 == 0 {
+                    sign | 0x8000_0000
+                } else {
+                    sign
+                };
+                c.bus.write32(PARAMS + 8, sign);
             },
         );
     }

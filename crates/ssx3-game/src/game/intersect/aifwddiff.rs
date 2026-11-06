@@ -83,7 +83,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Collide_SphereVsBoxEdges",
     ),
     (0x0032_8808, spatial_hash_move, "SpatialHash_Move"),
-    (0x0032_8660, spatial_hash_insert_at_key, "SpatialHash_InsertAtKey"),
+    (
+        0x0032_8660,
+        spatial_hash_insert_at_key,
+        "SpatialHash_InsertAtKey",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2509,7 +2513,6 @@ pub(crate) fn oc230_shm_insert(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
     Ok(())
 }
 
-
 pub(crate) mod spatial_insert {
 
     pub const NODE_LISTS: u32 = 0x20;
@@ -2529,8 +2532,6 @@ pub(crate) mod spatial_insert {
 
     pub const CLEAR: u32 = 0x0032_8778;
 }
-
-
 
 /// `void SpatialHash_InsertAtKey(Node* node, int list, Item* item, Cell*
 /// target, Cell* at)` (0x328660): walk down the octree from `node` (whose
@@ -2589,7 +2590,9 @@ pub fn spatial_hash_insert_at_key(c: &mut Cpu) {
         c.cycles += 6;
         let off = sx(r32(c, S4) << 2);
         c.g[V0][0] = off;
-        let head_at = (off as u32).wrapping_add(r32(c, T2)).wrapping_add(NODE_LISTS);
+        let head_at = (off as u32)
+            .wrapping_add(r32(c, T2))
+            .wrapping_add(NODE_LISTS);
         c.g[V1][0] = sx(head_at);
         let head = Addr(head_at).lw(c);
         c.g[V0][0] = head;
@@ -2614,8 +2617,6 @@ pub fn spatial_hash_insert_at_key(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 /// One level down (block 0x3286c0 up to 0x3287ac): step the walked cell
 /// one level toward the target, select the child (s1 = its slot), create
@@ -2666,7 +2667,11 @@ pub(crate) fn spatial_hash_insert_descend(c: &mut Cpu) -> crate::call::Flow {
         c.g[A1][0] = sx(r32(c, S5).wrapping_add(NODE_NAME & 0xffff));
         c.g[A2][0] = NODE_FLAGS;
         c.g[A3][0] = 0;
-        Callee { addr: 0x0031_7d70, f: ee::s10::f_00317d70 }.call(c, 0x0032_8764)?;
+        Callee {
+            addr: 0x0031_7d70,
+            f: ee::s10::f_00317d70,
+        }
+        .call(c, 0x0032_8764)?;
         c.g[S0][0] = c.g[V0][0];
         c.g[A0][0] = u64::MAX;
         c.g[V0][0] = sx(r32(c, S0).wrapping_add(NODE_LISTS));
@@ -3353,7 +3358,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     // -- 0x00328660 SpatialHash_InsertAtKey ------------------------------------
 
     /// `SpatialHash_InsertAtKey` against the generated body: the target cell
@@ -3372,43 +3376,56 @@ pub(crate) mod tests {
         const PRE: u32 = DATA + 0x20_2000;
         const OLD: u32 = DATA + 0x20_3000;
         const ITEM: u32 = DATA + 0x20_4000;
-        check(ee::s10::f_00328660__generated, spatial_hash_insert_at_key, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0032_8660, 3);
-            alloc_ready(c);
-            c.pc = 0x0032_8660;
-            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
-            let level = r.next_u32() % 3;
-            let depth = r.next_u32() % 4;
-            let at = TARGET + if r.next_u32() % 2 == 0 { 0x10 } else { 0x13 };
-            w(c, TARGET, level);
-            c.bus.write32(at - (at & 3), 0);
-            for k in 0..3u32 {
-                let v = r.next_u32() % 64;
-                w(c, TARGET + 4 + 4 * k, v);
-                for (b, byte) in (v >> depth).to_le_bytes().into_iter().enumerate() {
-                    c.bus.write8(at + 4 + 4 * k + b as u32, byte);
+        check(
+            ee::s10::f_00328660__generated,
+            spatial_hash_insert_at_key,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_8660, 3);
+                alloc_ready(c);
+                c.pc = 0x0032_8660;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                let level = r.next_u32() % 3;
+                let depth = r.next_u32() % 4;
+                let at = TARGET + if r.next_u32() % 2 == 0 { 0x10 } else { 0x13 };
+                w(c, TARGET, level);
+                c.bus.write32(at - (at & 3), 0);
+                for k in 0..3u32 {
+                    let v = r.next_u32() % 64;
+                    w(c, TARGET + 4 + 4 * k, v);
+                    for (b, byte) in (v >> depth).to_le_bytes().into_iter().enumerate() {
+                        c.bus.write8(at + 4 + 4 * k + b as u32, byte);
+                    }
                 }
-            }
-            for (b, byte) in (level + depth).to_le_bytes().into_iter().enumerate() {
-                c.bus.write8(at + b as u32, byte);
-            }
-            // Root and pre-made nodes: some children present, lists empty or not.
-            for n in 0..9u32 {
-                let node = if n == 0 { ROOT } else { PRE + 0x40 * (n - 1) };
-                for k in 0..8u32 {
-                    let child = if n == 0 && r.next_u32() % 2 == 0 { PRE + 0x40 * k } else { 0 };
-                    w(c, node + 4 * k, child);
+                for (b, byte) in (level + depth).to_le_bytes().into_iter().enumerate() {
+                    c.bus.write8(at + b as u32, byte);
                 }
-                for l in 0..3u32 {
-                    let head = if r.next_u32() % 2 == 0 { 0 } else { OLD + 0x10 * (n * 3 + l) };
-                    w(c, node + NODE_LISTS + 4 * l, head);
+                // Root and pre-made nodes: some children present, lists empty or not.
+                for n in 0..9u32 {
+                    let node = if n == 0 { ROOT } else { PRE + 0x40 * (n - 1) };
+                    for k in 0..8u32 {
+                        let child = if n == 0 && r.next_u32() % 2 == 0 {
+                            PRE + 0x40 * k
+                        } else {
+                            0
+                        };
+                        w(c, node + 4 * k, child);
+                    }
+                    for l in 0..3u32 {
+                        let head = if r.next_u32() % 2 == 0 {
+                            0
+                        } else {
+                            OLD + 0x10 * (n * 3 + l)
+                        };
+                        w(c, node + NODE_LISTS + 4 * l, head);
+                    }
                 }
-            }
-            c.g[A0][0] = sx(ROOT);
-            c.g[A1][0] = (r.next_u32() % 3) as u64;
-            c.g[A2][0] = sx(ITEM);
-            c.g[A3][0] = sx(TARGET);
-            c.g[T0][0] = sx(at);
-        });
+                c.g[A0][0] = sx(ROOT);
+                c.g[A1][0] = (r.next_u32() % 3) as u64;
+                c.g[A2][0] = sx(ITEM);
+                c.g[A3][0] = sx(TARGET);
+                c.g[T0][0] = sx(at);
+            },
+        );
     }
 }

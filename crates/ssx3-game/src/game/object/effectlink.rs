@@ -2,14 +2,18 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -26,6 +30,7 @@ pub(crate) use crate::game::fe::fepopup::sw_4 as sw;
 pub(crate) use crate::game::fe::fereal::close;
 pub(crate) use crate::game::fe::fereal::gp as gp_2;
 pub(crate) use crate::game::fe::fereal::open;
+use crate::game::lib::snd;
 pub(crate) use crate::game::sound::asyncsys::lw as lw_2;
 pub(crate) use crate::game::visualfx::boardwakefx::fcc;
 pub(crate) use crate::game::visualfx::boardwakefx::gp;
@@ -46,11 +51,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::addu;
-use crate::abi::reg;
-use crate::abi::set_reg;
-use crate::call::VSlot;
-use crate::game::lib::snd;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -104,10 +104,23 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         dynamic_particle_modifier_update,
         "DynamicParticleModifier_Update",
     ),
-    (0x0034_5ef8, dynamic_particle_modifier_transform_points, "DynamicParticleModifier_TransformPoints"),
-    (0x0034_6070, dynamic_particle_modifier_render, "DynamicParticleModifier_Render"),
+    (
+        0x0034_5ef8,
+        dynamic_particle_modifier_transform_points,
+        "DynamicParticleModifier_TransformPoints",
+    ),
+    (
+        0x0034_6070,
+        dynamic_particle_modifier_render,
+        "DynamicParticleModifier_Render",
+    ),
     (0x0034_62a0, halo_modifier_render, "HaloModifier_Render"),
     (0x0034_5bf0, particle_modifier_save, "ParticleModifier_Save"),
+    (
+        0x0034_5890,
+        particle_modifier_base_save,
+        "ParticleModifier_BaseSave",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -977,9 +990,6 @@ pub fn dynamic_particle_modifier_update(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // DynamicParticleModifier_Render (0x346070)
 
@@ -987,19 +997,13 @@ pub fn dynamic_particle_modifier_update(c: &mut Cpu) {
 /// function table).
 pub(crate) const DYNAMIC_EMITTER_RENDER: u32 = 0x0037_1380;
 
-
-
 /// The modifier: its "hidden" word (+0x18) and its embedded emitter (+0x60).
 pub(crate) const MODIFIER_HIDDEN: u32 = 0x18;
 
-
 pub(crate) const MODIFIER_EMITTER: u32 = 0x60;
-
 
 /// The render pass handed to the emitter.
 pub(crate) const MODIFIER_RENDER_PASS: u64 = 7;
-
-
 
 /// `void DynamicParticleModifier_Render(DynamicParticleModifier* self
 /// /*a0*/)` (0x346070): unless hidden, render the embedded emitter
@@ -1025,38 +1029,27 @@ pub fn dynamic_particle_modifier_render(c: &mut Cpu) {
     });
 }
 
-
-
 // ---------------------------------------------------------------------------
 // DynamicParticleModifier_TransformPoints (0x345ef8)
 
 /// Modifier: the instance it is attached to, and its node (bone) index.
 pub(crate) const DPM_INSTANCE: u32 = 0xc;
 
-
 pub(crate) const DPM_NODE: u32 = 0x10;
-
 
 /// Modifier: the two emitter points in node space, and in world space.
 pub(crate) const DPM_LOCAL_A: u32 = 0x20;
 
-
 pub(crate) const DPM_WORLD_A: u32 = 0x30;
-
 
 pub(crate) const DPM_WORLD_B: u32 = 0x40;
 
-
 pub(crate) const DPM_LOCAL_B: u32 = 0x50;
-
-
 
 pub(crate) const INSTANCE_GET_NODE_MATRIX: Callee = Callee {
     addr: 0x0034_fed8,
     f: ee::s11::Instance_GetNodeMatrix,
 };
-
-
 
 /// `void DynamicParticleModifier_TransformPoints(DynamicParticleModifier* m)`
 /// (0x345ef8): fetch the world matrix of the modifier's node on its
@@ -1106,9 +1099,6 @@ pub fn dynamic_particle_modifier_transform_points(c: &mut Cpu) {
     })
 }
 
-
-
-
 // -------------------------------------------------------- HaloModifier_Render
 
 /// `Instance_GetNodeMatrix` (0x34fed8).
@@ -1117,31 +1107,22 @@ pub(crate) const HALO_INSTANCE_GET_NODE_MATRIX: Callee = Callee {
     f: ee::s11::f_0034fed8,
 };
 
-
 /// `HaloModifier_DrawQuad` (0x2d1d10, cross-shard).
 pub(crate) const HALO_DRAW_QUAD: u32 = 0x002d_1d10;
-
 
 /// HaloModifier: instance (+0xc), texture quad (+0x10), size (+0x20),
 /// mode (+0x24), node (+0x28), spin (+0x30).
 pub(crate) const HALO_INSTANCE: u32 = 0xc;
 
-
 pub(crate) const HALO_TEXTURE: u32 = 0x10;
-
 
 pub(crate) const HALO_SIZE: u32 = 0x20;
 
-
 pub(crate) const HALO_MODE: u32 = 0x24;
-
 
 pub(crate) const HALO_NODE: u32 = 0x28;
 
-
 pub(crate) const HALO_SPIN: u32 = 0x30;
-
-
 
 /// `void HaloModifier_Render(HaloModifier* self)` (0x3462a0): draws the
 /// halo quad at the translation of its instance node's matrix.
@@ -1177,47 +1158,33 @@ pub fn halo_modifier_render(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // ParticleModifier_Save (0x345bf0).
 
 /// `ParticleModifier_BaseSave(self, stream)`.
-pub(crate) const PMOD_BASE_SAVE: Callee = Callee { addr: 0x0034_5890, f: ee::s11::ParticleModifier_BaseSave };
-
-
+pub(crate) const PMOD_BASE_SAVE: Callee = Callee {
+    addr: 0x0034_5890,
+    f: ee::s11::ParticleModifier_BaseSave,
+};
 
 /// `Emitter_Save(emitter, stream)`.
 pub(crate) const PMOD_EMITTER_SAVE: u32 = 0x0037_0aa8;
 
-
-
 /// Stream vtable slot: `Write(this, const void* data, int size)`.
 pub(crate) const PMOD_STREAM_WRITE: u32 = 0x8;
 
-
-
 /// `ParticleModifier` field: the particle template (`void*`, 0xd8 bytes).
 pub(crate) const PMOD_TEMPLATE: u32 = 0x1e0;
-
-
 
 /// `ParticleModifier` field: `int` "uses a shared template" (nothing more
 /// is saved when set).
 pub(crate) const PMOD_SHARED: u32 = 0x1e4;
 
-
-
 /// `ParticleModifier` field: a 0x40-byte block (the transform).
 pub(crate) const PMOD_TRANSFORM: u32 = 0x10;
 
-
-
 /// `ParticleModifier` field: the emitter (inline).
 pub(crate) const PMOD_EMITTER: u32 = 0x50;
-
-
 
 /// `void ParticleModifier_Save(ParticleModifier* self, Stream* stream)`
 /// (0x345bf0): save the base part, then the "shared" flag (4 bytes); a
@@ -1259,8 +1226,6 @@ pub fn particle_modifier_save(c: &mut Cpu) {
     })
 }
 
-
-
 /// `stream->Write(self + field, size)` (or, with `deref`, the pointer
 /// stored at `self + field`), with the original's register use: the
 /// first write leaves the vtable in v0 and the function in v1, the later
@@ -1286,6 +1251,38 @@ pub(crate) fn pmod_stream_write(c: &mut Cpu, field: u32, deref: bool, size: u64,
     }
     set_reg(c, A0, write.this(stream));
     call_ptr(c, write.func as u32, ret)
+}
+
+// ---------------------------------------------------------------------------
+// ParticleModifier_BaseSave.
+
+/// `ParticleModifier::type` (the word the base class saves).
+pub(crate) const PARTICLE_MODIFIER_TYPE: u32 = 0xc;
+
+/// The stream's "write word" virtual method slot.
+pub(crate) const STREAM_VT_WRITE_WORD: u32 = 0x28;
+
+/// `void ParticleModifier_BaseSave(ParticleModifier* self, Stream* s)`
+/// (0x345890): the base part of a modifier's save: write the modifier's
+/// type word (`+0xc`) through the stream's virtual write (slot 0x28).
+pub fn particle_modifier_base_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[A1][0]; // stream
+        frame.save_ra(c, 0);
+        c.g[V0][0] = Addr(c.g[A2][0] as u32).lw(c); // vtable
+        c.g[A1][0] = Addr((c.g[A0][0] as u32).wrapping_add(PARTICLE_MODIFIER_TYPE)).lw(c);
+        let vt = c.g[V0][0];
+        let slot = VSlot::read(c, vt, STREAM_VT_WRITE_WORD);
+        c.g[A0][0] = slot.delta;
+        c.g[V1][0] = slot.func;
+        c.g[A0][0] = slot.this(c.g[A2][0]);
+        call_ptr(c, slot.func as u32, 0x0034_58b4)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -1707,7 +1704,6 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
 
-
     // ------------------------------------------ DynamicParticleModifier_Render
 
     /// `DynamicParticleModifier_Render`: hidden, and visible with the real
@@ -1752,8 +1748,6 @@ pub(crate) mod tests {
             },
         );
     }
-
-
 
     /// `DynamicParticleModifier_TransformPoints`: an instance without an
     /// owner, node -1 (the world matrix) or a node with 0..2 parents (the
@@ -1802,7 +1796,6 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-
 
     /// `HaloModifier_Render`: the real `Instance_GetNodeMatrix` (no owner;
     /// node -1, the root or a node with one or two parents; the instance
@@ -1884,7 +1877,6 @@ pub(crate) mod tests {
     use super::*;
     use crate::game::lib::snd::tests as snd_tests;
 
-
     /// `ParticleModifier_Save`: the real `ParticleModifier_BaseSave` and
     /// `Emitter_Save`, the stream's writers fakes (some calls unwind);
     /// shared-template flag set or clear.
@@ -1892,17 +1884,50 @@ pub(crate) mod tests {
     fn particle_modifier_save_matches() {
         use crate::difftest::fakes::{covered, machine, vtable};
         use crate::difftest::fill;
-        covered(ee::s11::f_00345bf0__generated, particle_modifier_save, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x34_5bf0, 5);
-            c.pc = 0x0034_5bf0;
-            let this = DATA;
-            let stream = DATA + 0x400;
-            fill(c, &mut r, this, 0x80);
-            c.bus.write32(this + PMOD_SHARED, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
-            let vt = vtable(c, &mut r, &[PMOD_STREAM_WRITE, 0x28]);
-            c.bus.write32(stream, vt);
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = sx(stream);
-        });
+        covered(
+            ee::s11::f_00345bf0__generated,
+            particle_modifier_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_5bf0, 5);
+                c.pc = 0x0034_5bf0;
+                let this = DATA;
+                let stream = DATA + 0x400;
+                fill(c, &mut r, this, 0x80);
+                c.bus.write32(
+                    this + PMOD_SHARED,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                let vt = vtable(c, &mut r, &[PMOD_STREAM_WRITE, 0x28]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+    use super::*;
+
+    /// ParticleModifier_BaseSave: a stream whose vtable slot 0x28 is a fake
+    /// (random `this` delta) that unwinds on some seeds.
+    #[test]
+    fn particle_modifier_base_save_matches() {
+        use crate::difftest::fakes::{machine, vtable};
+        check(
+            ee::s11::f_00345890__generated,
+            particle_modifier_base_save,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_5890, 1);
+                c.pc = 0x0034_5890;
+                let modifier = DATA + 0x10;
+                let stream = DATA + 0x200;
+                c.bus
+                    .write32(modifier + PARTICLE_MODIFIER_TYPE, r.next_u32());
+                let vt = vtable(c, &mut r, &[STREAM_VT_WRITE_WORD]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(modifier);
+                c.g[A1][0] = sx(stream);
+            },
+        );
     }
 }

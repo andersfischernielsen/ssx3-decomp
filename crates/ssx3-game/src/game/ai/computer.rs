@@ -9,10 +9,12 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event;
 use crate::events::deliver_event_here;
@@ -244,10 +246,34 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ai_update_rider_relations,
         "AI_UpdateRiderRelations",
     ),
-    (0x0010_f998, ai_update_race_positions, "AI_UpdateRacePositions"),
+    (
+        0x0010_f998,
+        ai_update_race_positions,
+        "AI_UpdateRacePositions",
+    ),
     (0x0011_1ac0, rider_base_save_state, "RiderBase_SaveState"),
     (0x0011_27f0, rider_select_race_path, "Rider_SelectRacePath"),
     (0x0011_2a50, rider_select_ai_path, "Rider_SelectAIPath"),
+    (
+        0x0010_d870,
+        computer_actor_rider_get_path_class_weight_2,
+        "ComputerActorRider_GetPathClassWeight",
+    ),
+    (
+        0x0011_1578,
+        rider_base_exit_sub_state,
+        "RiderBase_ExitSubState",
+    ),
+    (
+        0x0011_1630,
+        rider_base_enter_sub_state,
+        "RiderBase_EnterSubState",
+    ),
+    (
+        0x0011_1aa0,
+        rider_base_trigger_dynamic_spray,
+        "RiderBase_TriggerDynamicSpray",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -6877,7 +6903,6 @@ pub(crate) fn relate_pair(c: &mut Cpu, riders_a: u32, riders_b: u32) -> crate::c
     Ok(())
 }
 
-
 pub(crate) mod race_positions {
     use super::*;
 
@@ -6905,7 +6930,6 @@ pub(crate) mod race_positions {
     /// Score object: points.
     pub const SCORE_POINTS: u32 = 0x198;
 
-
     pub const ARE_ALL_RIDERS_LOADED: Callee = Callee {
         addr: 0x0012_a180,
         f: ee::s00::AI_AreAllRidersLoaded,
@@ -6926,7 +6950,6 @@ pub(crate) mod race_positions {
     /// old_position, new_position)` (cross-shard).
     pub const AUDIO_ON_POSITION_CHANGE: u32 = 0x0029_9e28;
 
-
     /// `base + off` of a register value (32-bit address arithmetic).
     #[inline(always)]
     pub fn race_pos_at(c: &Cpu, reg: usize, off: u32) -> u32 {
@@ -6934,79 +6957,65 @@ pub(crate) mod race_positions {
     }
 }
 
-
-
 // ---------------------------------------------------------------------------
 // RiderBase_SaveState (0x111ac0)
 
 /// `RiderBase + 0x18`: the rider (physics/model side) whose parts are saved.
 pub(crate) const RB_RIDER: u32 = 0x18;
 
-
 /// Rider fields saved by pointer.
 pub(crate) const RB_RIDER_ANIM: u32 = 0x784;
 
-
 pub(crate) const RB_RIDER_MODEL: u32 = 0x780;
-
 
 pub(crate) const RB_RIDER_AIR_PREDICTOR: u32 = 0x788;
 
-
 pub(crate) const RB_RIDER_METRIX: u32 = 0x790;
-
 
 pub(crate) const RB_RIDER_TARGET0: u32 = 0x864;
 
-
 pub(crate) const RB_RIDER_TARGET1: u32 = 0x868;
-
 
 pub(crate) const RB_RIDER_BLOCK0: u32 = 0xabc;
 
-
 pub(crate) const RB_RIDER_BLOCK1: u32 = 0xac0;
-
 
 pub(crate) const RB_RIDER_TRACK_PATH: u32 = 0xab4;
 
-
 pub(crate) const RB_RIDER_AI_PATH: u32 = 0xab8;
-
 
 /// `target + 0x150`: the id saved for a non-null target object.
 pub(crate) const RB_TARGET_ID: u32 = 0x150;
 
-
 /// `D_004D33A0`: the course path data.
 pub(crate) const RB_PATH_DATA: u32 = 0x004d_33a0;
 
-
-
 /// `RiderAnim_SaveState(anim, stream)` (0x104d68).
-pub(crate) const RB_RIDER_ANIM_SAVE: Callee = Callee { addr: 0x0010_4d68, f: ee::s00::f_00104d68 };
-
+pub(crate) const RB_RIDER_ANIM_SAVE: Callee = Callee {
+    addr: 0x0010_4d68,
+    f: ee::s00::f_00104d68,
+};
 
 /// `AirPredictor_SaveState` (0x113aa0).
-pub(crate) const RB_AIR_PREDICTOR_SAVE: Callee = Callee { addr: 0x0011_3aa0, f: ee::s00::f_00113aa0 };
-
+pub(crate) const RB_AIR_PREDICTOR_SAVE: Callee = Callee {
+    addr: 0x0011_3aa0,
+    f: ee::s00::f_00113aa0,
+};
 
 /// `RiderMetrix_SaveState` (0x1174b0).
-pub(crate) const RB_RIDER_METRIX_SAVE: Callee = Callee { addr: 0x0011_74b0, f: ee::s00::f_001174b0 };
-
+pub(crate) const RB_RIDER_METRIX_SAVE: Callee = Callee {
+    addr: 0x0011_74b0,
+    f: ee::s00::f_001174b0,
+};
 
 /// `RiderModel_SaveState` (0x310ea8).
 pub(crate) const RB_RIDER_MODEL_SAVE: u32 = 0x0031_0ea8;
 
-
 /// `PathData_GetTrackPathIndex(paths, path)` (0x26b508).
 pub(crate) const RB_PATH_TRACK_INDEX: u32 = 0x0026_b508;
 
-
 /// `PathData_GetAIPathIndex(paths, path)` (0x26b550).
 pub(crate) const RB_PATH_AI_INDEX: u32 = 0x0026_b550;
-
-
 
 /// How a rider sub-state's `SaveState(self + off, stream)` is reached.
 #[derive(Clone, Copy)]
@@ -7017,8 +7026,6 @@ pub(crate) enum RbSub {
     Table(u32),
 }
 
-
-
 /// The sub-states embedded in `RiderBase`, saved in order:
 /// (offset, saver, return address).
 pub(crate) const RB_SUBSTATES: [(u32, RbSub, u32); 16] = [
@@ -7027,24 +7034,69 @@ pub(crate) const RB_SUBSTATES: [(u32, RbSub, u32); 16] = [
     (0x030, RbSub::Table(0x0013_8ad8), 0x0011_1c54),
     (0x0b0, RbSub::Table(0x0013_c5e0), 0x0011_1c60),
     (0x110, RbSub::Table(0x0013_9970), 0x0011_1c6c),
-    (0x1d0, RbSub::Direct(Callee { addr: 0x0013_1598, f: ee::s00::f_00131598 }), 0x0011_1c78), // BoardPress
-    (0x210, RbSub::Direct(Callee { addr: 0x0012_fbf0, f: ee::s00::f_0012fbf0 }), 0x0011_1c84), // NaturalAir
+    (
+        0x1d0,
+        RbSub::Direct(Callee {
+            addr: 0x0013_1598,
+            f: ee::s00::f_00131598,
+        }),
+        0x0011_1c78,
+    ), // BoardPress
+    (
+        0x210,
+        RbSub::Direct(Callee {
+            addr: 0x0012_fbf0,
+            f: ee::s00::f_0012fbf0,
+        }),
+        0x0011_1c84,
+    ), // NaturalAir
     (0x230, RbSub::Table(0x0013_61f8), 0x0011_1c90),
-    (0x290, RbSub::Direct(Callee { addr: 0x0012_c558, f: ee::s00::f_0012c558 }), 0x0011_1c9c), // Gate
+    (
+        0x290,
+        RbSub::Direct(Callee {
+            addr: 0x0012_c558,
+            f: ee::s00::f_0012c558,
+        }),
+        0x0011_1c9c,
+    ), // Gate
     (0x2b0, RbSub::Table(0x0013_2840), 0x0011_1ca8),
-    (0x2c0, RbSub::Direct(Callee { addr: 0x0012_e708, f: ee::s00::f_0012e708 }), 0x0011_1cb4), // Wipeout
-    (0x350, RbSub::Direct(Callee { addr: 0x0012_f5b0, f: ee::s00::f_0012f5b0 }), 0x0011_1cc0), // Reset
-    (0x360, RbSub::Direct(Callee { addr: 0x0012_c9c0, f: ee::s00::f_0012c9c0 }), 0x0011_1ccc), // FinishLine
+    (
+        0x2c0,
+        RbSub::Direct(Callee {
+            addr: 0x0012_e708,
+            f: ee::s00::f_0012e708,
+        }),
+        0x0011_1cb4,
+    ), // Wipeout
+    (
+        0x350,
+        RbSub::Direct(Callee {
+            addr: 0x0012_f5b0,
+            f: ee::s00::f_0012f5b0,
+        }),
+        0x0011_1cc0,
+    ), // Reset
+    (
+        0x360,
+        RbSub::Direct(Callee {
+            addr: 0x0012_c9c0,
+            f: ee::s00::f_0012c9c0,
+        }),
+        0x0011_1ccc,
+    ), // FinishLine
     (0x370, RbSub::Table(0x0013_30b8), 0x0011_1cd8),
     (0x390, RbSub::Table(0x0013_68e8), 0x0011_1ce4), // UberGrind
     (0xd20, RbSub::Table(0x002f_6a58), 0x0011_1cf0), // cheat code
 ];
 
-
-
 /// `stream->Write(a1, a2)` (vtable slot 0x8/0xc of the stream in s1): the
 /// vtable pointer is already in `vt_reg`, the method pointer goes to `fn_reg`.
-pub(crate) fn rb_stream_write(c: &mut Cpu, vt_reg: usize, fn_reg: usize, ret_addr: u32) -> crate::call::Flow {
+pub(crate) fn rb_stream_write(
+    c: &mut Cpu,
+    vt_reg: usize,
+    fn_reg: usize,
+    ret_addr: u32,
+) -> crate::call::Flow {
     let vt = r32(c, vt_reg);
     c.g[A0][0] = Addr(vt.wrapping_add(0x8)).lh(c);
     c.g[fn_reg][0] = Addr(vt.wrapping_add(0xc)).lw(c);
@@ -7053,15 +7105,11 @@ pub(crate) fn rb_stream_write(c: &mut Cpu, vt_reg: usize, fn_reg: usize, ret_add
     call_ptr(c, target, ret_addr)
 }
 
-
-
 /// `rider = self->rider` (`lw s2+0x18`), into `reg`.
 pub(crate) fn rb_rider(c: &mut Cpu, reg: usize) -> u32 {
     c.g[reg][0] = Addr(r32(c, S2).wrapping_add(RB_RIDER)).lw(c);
     r32(c, reg)
 }
-
-
 
 /// `void RiderBase_SaveState(RiderBase* self, Stream* s)` (0x111ac0): write
 /// the rider's 0x6c0-byte block, the anim/model/air-predictor/metrix states,
@@ -7188,8 +7236,6 @@ pub fn rider_base_save_state(c: &mut Cpu) {
     })
 }
 
-
-
 /// `sp[slot] = -1 (s0); if (*rider->field) sp[slot] = (*rider->field)->id;`
 /// then `v1 = stream->vtable`.
 pub(crate) fn rb_target_id(c: &mut Cpu, field: u32, slot: u32) {
@@ -7206,8 +7252,6 @@ pub(crate) fn rb_target_id(c: &mut Cpu, field: u32, slot: u32) {
     }
     c.g[V1][0] = Addr(r32(c, S1)).lw(c);
 }
-
-
 
 /// `void AI_UpdateRacePositions(AI* ai)` (0x10f998): once every rider is
 /// loaded, give each rider a sort key (rank mode 1: finished riders 0xffff,
@@ -7456,9 +7500,6 @@ pub fn ai_update_race_positions(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // Rider_SelectAIPath (0x112a50, computer.cpp)
 
@@ -7466,80 +7507,56 @@ pub fn ai_update_race_positions(c: &mut Cpu) {
 /// the followed AI path and its search hint, the path follow state.
 pub(crate) const RSA_POS: u32 = 0x110;
 
-
 pub(crate) const RSA_VEL: u32 = 0x1e0;
-
 
 pub(crate) const RSA_CLOSEST: u32 = 0x490;
 
-
 pub(crate) const RSA_AHEAD_POINT: u32 = 0x4a0;
-
 
 pub(crate) const RSA_PATH_DIST_PREV: u32 = 0x4c0;
 
-
 pub(crate) const RSA_PATH_DIST: u32 = 0x4c4;
-
 
 pub(crate) const RSA_CLOSEST_DIST: u32 = 0x4c8;
 
-
 pub(crate) const RSA_AI: u32 = 0x6c0;
-
 
 pub(crate) const RSA_AI_PATH: u32 = 0xab8;
 
-
 pub(crate) const RSA_AI_PATH_HINT: u32 = 0xabc;
-
 
 /// Path hint field: the current segment (-1: search the whole path).
 pub(crate) const RSA_HINT_SEGMENT: u32 = 0x14;
-
 
 /// AI controller vtable slots: "uses path weights" (int) and the weight of
 /// a path (float).
 pub(crate) const RSA_VT_USES_WEIGHTS: u32 = 0x48;
 
-
 pub(crate) const RSA_VT_PATH_WEIGHT: u32 = 0xa0;
-
 
 /// `PathData` holding the AI paths.
 pub(crate) const RSA_PATH_DATA: u32 = 0x004d_33a0;
 
-
 /// `.lit4` gp-0x7c7c: the initial best distance (~1e37).
 pub(crate) const RSA_LIT_FAR: u32 = 0x7c7c;
-
 
 /// Callees (another shard, through the table).
 pub(crate) const RSA_FIND_NEAR_AI_PATHS: u32 = 0x0026_afb8;
 
-
 pub(crate) const RSA_PATH_GET_CLOSEST_POINT: u32 = 0x0026_a428;
-
 
 pub(crate) const RSA_PATH_GET_LENGTH: u32 = 0x0026_ac48;
 
-
 pub(crate) const RSA_PATH_GET_POINT_AT_DISTANCE: u32 = 0x0026_ab20;
 
-
 pub(crate) const RSA_PATH_GET_CLOSEST_POINT_FROM: u32 = 0x0026_a638;
-
 
 /// Look-ahead along a path (796.0f), the end margin (200.0f), -1.0f.
 pub(crate) const RSA_LOOK_AHEAD: u64 = 0x4447_0000;
 
-
 pub(crate) const RSA_END_MARGIN: u64 = 0x4348_0000;
 
-
 pub(crate) const RSA_MINUS_ONE: u64 = 0xffff_ffff_bf80_0000;
-
-
 
 /// `|v|²` of the quadword at `addr` (x²+y²+z²+w² through ACC) into `gpr`
 /// with `qmfc2`, as the original's inlined `vu0Dot`.
@@ -7554,8 +7571,6 @@ pub(crate) fn rsa_vu0_dot_self(c: &mut Cpu, addr: u32, gpr: usize) {
     c.qmfc2(gpr, 4);
 }
 
-
-
 /// `vf5 = [a] - [b]`, stored through the frame's temporary at sp+0x60 and
 /// reloaded into r2 (the original's by-value vector return).
 pub(crate) fn rsa_vu0_sub_to_v0(c: &mut Cpu, a: u32, b: u32) {
@@ -7565,8 +7580,6 @@ pub(crate) fn rsa_vu0_sub_to_v0(c: &mut Cpu, a: u32, b: u32) {
     c.sqc2(5, sp(c).wrapping_add(0x60));
     c.lq(2, sp(c).wrapping_add(0x60));
 }
-
-
 
 /// `void Rider_SelectAIPath(Rider* self, bool keep_current)` (0x112a50):
 /// the AI's path choice. Looks 796 units ahead along the velocity, finds up
@@ -7819,43 +7832,33 @@ pub fn rider_select_ai_path(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // Rider_SelectRacePath (0x1127f0)
 
 /// Rider fields used by the race-path choice.
 pub(crate) const SELECT_PATH_POS: u32 = 0x110;
 
-
 pub(crate) const SELECT_PATH_VEL: u32 = 0x1e0;
-
 
 pub(crate) const SELECT_PATH_TRACK_DIST: u32 = 0x4d0;
 
-
 pub(crate) const SELECT_PATH_CURRENT: u32 = 0xab4;
 
-
 pub(crate) const SELECT_PATH_AI_STATE: u32 = 0xac0;
-
 
 /// The path data (`D_004D33A0`).
 pub(crate) const SELECT_PATH_DATA: u32 = 0x004d_33a0;
 
-
-pub(crate) const SELECT_PATH_LOOK_AHEAD: Callee = Callee { addr: 0x0011_2588, f: ee::s00::f_00112588 };
-
+pub(crate) const SELECT_PATH_LOOK_AHEAD: Callee = Callee {
+    addr: 0x0011_2588,
+    f: ee::s00::f_00112588,
+};
 
 pub(crate) const SELECT_PATH_FIND_NEAR: u32 = 0x0026_b178;
 
-
 pub(crate) const SELECT_PATH_CLOSEST_POINT: u32 = 0x0026_a428;
 
-
 pub(crate) const SELECT_PATH_POINT_AT: u32 = 0x0026_ab20;
-
-
 
 /// `void Rider_SelectRacePath(Rider* self, bool skipCurrent)` (0x1127f0):
 /// pick the race path for the AI. The probe point is the position, moved
@@ -8069,6 +8072,408 @@ pub fn rider_select_race_path(c: &mut Cpu) {
         frame.restore_fpr(c, 22, 0x100);
         frame.restore_fpr(c, 21, 0xf8);
         frame.restore_fpr(c, 20, 0xf0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderBase_TriggerDynamicSpray (0x111aa0)
+// ---------------------------------------------------------------------------
+
+/// RiderBase: its dynamic spray effect (`cDynamicSprayFX`).
+pub(crate) const RIDER_DYNAMIC_SPRAY: u32 = 0xb40;
+
+/// `void RiderBase_TriggerDynamicSpray(RiderBase* self, Vec* pos, Vec* dir,
+/// int kind, float speed)` (0x111aa0): queues a spray burst on the rider's
+/// dynamic spray effect (`cDynamicSprayFX_QueueBurst(&self->spray, pos, dir,
+/// kind, 0, speed)`).
+pub fn rider_base_trigger_dynamic_spray(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(RIDER_DYNAMIC_SPRAY));
+        frame.save_ra(c, 0);
+        c.g[T0][0] = 0;
+        call_ptr(c, 0x002e_23e0, 0x0011_1ab4)?; // cDynamicSprayFX_QueueBurst
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderBase_EnterSubState
+
+/// `RiderBase.subState`: the current sub-state id (0..13).
+pub(crate) const RIDER_BASE_SUB_STATE: u32 = 0xde4;
+
+/// `.rodata` jump table of the sub-state switch (14 case labels).
+pub(crate) const ENTER_SUB_STATE_TABLE: u32 = 0x0045_6bd0;
+
+/// The sub-state `Enter` methods: (case label, sub-object offset in the
+/// rider base, callee, return address). `None` callee: a `jalr` through the
+/// function table (cross-shard call).
+pub(crate) const ENTER_SUB_STATE_ARMS: [(u32, u32, u32, Option<GuestFn>, u32); 12] = [
+    (
+        0x0011_1664,
+        0x1c0,
+        0x0013_1608,
+        Some(ee::s00::RiderCruiseSub_Enter),
+        0x0011_166c,
+    ),
+    (
+        0x0011_1674,
+        0x1d0,
+        0x0012_fc60,
+        Some(ee::s00::RiderBoardPressSub_Enter),
+        0x0011_167c,
+    ),
+    (
+        0x0011_1684,
+        0x1f0,
+        0x0012_e980,
+        Some(ee::s00::RiderPrewindSub_Enter),
+        0x0011_168c,
+    ),
+    (
+        0x0011_1694,
+        0x210,
+        0x0012_f620,
+        Some(ee::s00::RiderNaturalAirSub_Enter),
+        0x0011_169c,
+    ),
+    (0x0011_16a4, 0x230, 0x0013_3128, None, 0x0011_16ac), // RiderSpinSub_Enter
+    (
+        0x0011_16b4,
+        0x290,
+        0x0012_be20,
+        Some(ee::s00::RiderGateSub_Enter),
+        0x0011_16bc,
+    ),
+    (
+        0x0011_16c4,
+        0x2b0,
+        0x0013_1d08,
+        Some(ee::s00::RiderRailslideSub_Enter),
+        0x0011_16cc,
+    ),
+    (
+        0x0011_16d4,
+        0x2c0,
+        0x0012_ca30,
+        Some(ee::s00::RiderWipeoutSub_Enter),
+        0x0011_16dc,
+    ),
+    (
+        0x0011_16e4,
+        0x350,
+        0x0012_f230,
+        Some(ee::s00::RiderResetSub_Enter),
+        0x0011_16ec,
+    ),
+    (
+        0x0011_16f4,
+        0x360,
+        0x0012_c5c8,
+        Some(ee::s00::RiderFinishLineSub_Enter),
+        0x0011_16fc,
+    ),
+    (0x0011_1704, 0x370, 0x0013_28b0, None, 0x0011_170c), // RiderHandplantSub_Enter
+    (0x0011_1714, 0x390, 0x0013_6268, None, 0x0011_171c), // RiderUberGrindSub_Enter
+];
+
+/// `void RiderBase_EnterSubState(RiderBase* r)` (0x111630): call the `Enter`
+/// method of the rider's current sub-state (cruise, board press, prewind,
+/// natural air, spin, gate, railslide, wipeout, reset, finish line,
+/// handplant, uber grind; 3 and 13 have none) on its sub-object. Accepts
+/// every `__entries` resume label.
+pub fn rider_base_enter_sub_state(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut pc = c.pc;
+        loop {
+            match pc {
+                0x0011_1630 => {
+                    c.cycles += 7;
+                    let frame = Frame::open(c, 0x10);
+                    c.g[A2][0] = c.g[A0][0];
+                    frame.save_ra(c, 0);
+                    c.g[V1][0] = Addr(c.g[A2][0] as u32).off(RIDER_BASE_SUB_STATE).lw(c);
+                    let in_range = c.g[V1][0] < 0xe;
+                    c.g[V0][0] = 0x45_0000;
+                    pc = if in_range { 0x0011_164c } else { 0x0011_171c };
+                }
+                0x0011_164c => {
+                    c.cycles += 6;
+                    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+                    c.g[V0][0] =
+                        sx((c.g[V0][0] as u32).wrapping_add(ENTER_SUB_STATE_TABLE & 0xffff));
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+                    let target = Addr(c.g[V1][0] as u32).lw(c);
+                    c.g[A0][0] = target;
+                    let target = target as u32;
+                    let known =
+                        target == 0x0011_171c || ENTER_SUB_STATE_ARMS.iter().any(|a| a.0 == target);
+                    if !known {
+                        c.jump_out(target, 0x0011_1630, 0x0011_1728);
+                        return Ok(());
+                    }
+                    pc = target;
+                }
+                0x0011_171c => {
+                    c.cycles += 1;
+                    let sp = sp(c);
+                    c.g[RA][0] = c.ld(sp);
+                    pc = 0x0011_1720;
+                }
+                0x0011_1720 => {
+                    c.cycles += 2;
+                    let ra = c.g[RA][0] as u32;
+                    c.g[SP][0] = sx(sp(c).wrapping_add(0x10));
+                    c.pc = ra;
+                    return Ok(());
+                }
+                _ => {
+                    let Some(&(_, off, addr, f, ret)) =
+                        ENTER_SUB_STATE_ARMS.iter().find(|a| a.0 == pc)
+                    else {
+                        c.jump_out(pc, 0x0011_1630, 0x0011_1728);
+                        return Ok(());
+                    };
+                    // The last arm (uber grind) falls through to 0x11171c.
+                    let last = pc == 0x0011_1714;
+                    c.cycles += if last { 2 } else { 4 };
+                    c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(off));
+                    match f {
+                        Some(f) => Callee { addr, f }.call(c, ret)?,
+                        None => call_ptr(c, addr, ret)?,
+                    }
+                    if last {
+                        pc = 0x0011_171c;
+                    } else {
+                        let sp = sp(c);
+                        c.g[RA][0] = c.ld(sp);
+                        pc = 0x0011_1720;
+                    }
+                }
+            }
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ComputerActorRider_GetPathClassWeight (0x10d870, ai/computer.cpp)
+
+/// ComputerActorRider: the rider's preferred path class (0, 1, 2 or other).
+pub(crate) const CAR_PATH_CLASS: u32 = 0xe00;
+
+/// `gp - 0x7ce8`: the weight per unmatched path flag (33.3f).
+pub(crate) const CAR_PATH_WEIGHT_STEP_GP: u32 = 0x7ce8;
+
+/// `float ComputerActorRider_GetPathClassWeight(ComputerActorRider* self,
+/// int flagA, int flagB, int flagC)` (0x10d870): how attractive a path with
+/// the three class flags is to the AI rider. A path is rejected (0.0) when it
+/// lacks the flag of the rider's preferred class (class 0: A, 1: B, 2: C;
+/// any other class: `(A == B) != C`); an accepted path weighs
+/// `(4 - number of set flags) * 33.3`.
+pub fn computer_actor_rider_get_path_class_weight_2(c: &mut Cpu) {
+    c.cycles += 3;
+    let class = Addr(r32(c, A0).wrapping_add(CAR_PATH_CLASS)).lh(c);
+    c.g[V1][0] = class;
+    c.g[V0][0] = 1;
+    let (flag_a, flag_b, flag_c) = (c.g[A1][0], c.g[A2][0], c.g[A3][0]);
+    c.cycles += 2;
+    let accepted = if class == 0 {
+        c.g[V1][0] = 3;
+        flag_a != 0
+    } else if class == 1 {
+        c.cycles += 2;
+        c.g[V1][0] = 3;
+        if flag_b == 0 {
+            c.cycles += 2;
+        }
+        flag_b != 0
+    } else {
+        c.g[V0][0] = 2;
+        c.cycles += 2;
+        if class == 2 {
+            c.cycles += 2;
+            c.g[V1][0] = 3;
+            if flag_c == 0 {
+                c.cycles += 2;
+            }
+            flag_c != 0
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = ((flag_a ^ flag_b) < 1) as u64;
+            c.g[V1][0] = 3;
+            c.g[V0][0] == flag_c
+        }
+    };
+    if accepted {
+        c.cycles += 11;
+        // movn chain: 4, minus one per set flag (v1 holds 3 here).
+        let mut n = if flag_a != 0 { c.g[V1][0] } else { 4 };
+        let gp = r32(c, GP);
+        let step = Addr(gp.wrapping_sub(CAR_PATH_WEIGHT_STEP_GP)).read_fpu(c);
+        abi::set_fpr(c, 1, step);
+        c.g[V1][0] = sx((n as u32).wrapping_sub(1));
+        if flag_b != 0 {
+            n = c.g[V1][0];
+        }
+        c.g[A0][0] = sx((n as u32).wrapping_sub(1));
+        if flag_c != 0 {
+            n = c.g[A0][0];
+        }
+        c.g[V0][0] = n;
+        abi::set_fret(c, FpuF32::from_i32(n as u32 as i32) * step);
+    } else {
+        c.cycles += 3;
+        c.f[0] = 0;
+    }
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// RiderBase_ExitSubState.
+
+/// `Rider::mSubState`.
+pub(crate) const RIDER_SUB_STATE: u32 = 0xde4;
+
+/// The `switch (mSubState)` jump table (`.rodata`, 14 entries).
+pub(crate) const RIDER_EXIT_SUB_STATE_TABLE: u32 = 0x0045_6b90;
+
+/// How a sub state's exit handler is called.
+#[derive(Clone, Copy)]
+pub(crate) enum RiderExitSubCall {
+    Direct(Callee),
+    Table(u32),
+}
+
+/// One `case` of the exit switch: its block address (the table target), the
+/// sub-object offset in the rider, the handler and its return address.
+pub(crate) struct RiderExitSubCase {
+    block: u32,
+    off: u32,
+    handler: RiderExitSubCall,
+    ret: u32,
+}
+
+/// The sub states with an exit handler (cruise, board press, prewind,
+/// natural air, 5, 7, wipeout, 11), in block order.
+pub(crate) const RIDER_EXIT_SUB_CASES: [RiderExitSubCase; 8] = [
+    RiderExitSubCase {
+        block: 0x0011_15ac,
+        off: 0x1c0,
+        handler: RiderExitSubCall::Direct(Callee {
+            addr: 0x0013_1c30,
+            f: ee::s00::f_00131c30,
+        }),
+        ret: 0x0011_15b4,
+    },
+    RiderExitSubCase {
+        block: 0x0011_15bc,
+        off: 0x1d0,
+        handler: RiderExitSubCall::Direct(Callee {
+            addr: 0x0012_fe98,
+            f: ee::s00::f_0012fe98,
+        }),
+        ret: 0x0011_15c4,
+    },
+    RiderExitSubCase {
+        block: 0x0011_15cc,
+        off: 0x1f0,
+        handler: RiderExitSubCall::Direct(Callee {
+            addr: 0x0012_e9b0,
+            f: ee::s00::f_0012e9b0,
+        }),
+        ret: 0x0011_15d4,
+    },
+    RiderExitSubCase {
+        block: 0x0011_15dc,
+        off: 0x210,
+        handler: RiderExitSubCall::Direct(Callee {
+            addr: 0x0012_fb68,
+            f: ee::s00::f_0012fb68,
+        }),
+        ret: 0x0011_15e4,
+    },
+    RiderExitSubCase {
+        block: 0x0011_15ec,
+        off: 0x230,
+        handler: RiderExitSubCall::Table(0x0013_4cb0),
+        ret: 0x0011_15f4,
+    },
+    RiderExitSubCase {
+        block: 0x0011_15fc,
+        off: 0x2b0,
+        handler: RiderExitSubCall::Table(0x0013_2048),
+        ret: 0x0011_1604,
+    },
+    RiderExitSubCase {
+        block: 0x0011_160c,
+        off: 0x2c0,
+        handler: RiderExitSubCall::Direct(Callee {
+            addr: 0x0012_e690,
+            f: ee::s00::f_0012e690,
+        }),
+        ret: 0x0011_1614,
+    },
+    RiderExitSubCase {
+        block: 0x0011_161c,
+        off: 0x370,
+        handler: RiderExitSubCall::Table(0x0013_2f98),
+        ret: 0x0011_1624,
+    },
+];
+
+/// `void RiderBase_ExitSubState(Rider* self)` (0x111578): run the exit
+/// handler of the rider's current sub state (`mSubState`, 0xde4) on its
+/// sub-object; sub states without one (3, 6, 9, 10, 12, 13, out of range)
+/// do nothing. The switch goes through the `.rodata` jump table.
+pub fn rider_base_exit_sub_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        c.g[A2][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[V1][0] = Addr((c.g[A2][0] as u32).wrapping_add(RIDER_SUB_STATE)).lw(c);
+        let in_table = c.g[V1][0] < 14;
+        c.g[V0][0] = 0x0045_0000;
+        let mut tail = !in_table;
+        if in_table {
+            c.cycles += 6;
+            c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+            c.g[V0][0] = sx(RIDER_EXIT_SUB_STATE_TABLE);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+            c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+            let target = c.g[A0][0] as u32;
+            if target == 0x0011_1624 {
+                // No handler.
+                tail = true;
+            } else if let Some(case) = RIDER_EXIT_SUB_CASES.iter().find(|k| k.block == target) {
+                let last = case.block == 0x0011_161c;
+                c.cycles += if last { 2 } else { 4 };
+                c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(case.off));
+                match case.handler {
+                    RiderExitSubCall::Direct(f) => f.call(c, case.ret)?,
+                    RiderExitSubCall::Table(addr) => call_ptr(c, addr, case.ret)?,
+                }
+                if last {
+                    tail = true;
+                } else {
+                    frame.restore_ra(c, 0);
+                }
+            } else {
+                c.jump_out(target, 0x0011_1578, 0x0011_1630);
+                return Ok(());
+            }
+        }
+        if tail {
+            c.cycles += 1;
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
         frame.close(c);
         Ok(())
     })
@@ -10378,65 +10783,76 @@ pub(crate) mod tests {
     use super::*;
     pub(crate) use crate::game::ai::ai::tests::oc258_w32;
 
-
     /// RiderBase_SaveState: a stream whose methods are fakes; the real
     /// sub-state savers run on zeroed objects (their writes go to the fake
     /// stream); targets present or not; path indices found or not.
     #[test]
     fn rider_base_save_state_matches() {
-        check(ee::s00::f_00111ac0__generated, rider_base_save_state, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x0011_1ac0, 40);
-            c.pc = 0x0011_1ac0;
-            let stream = DATA + 0x10;
-            let vt = vtable(c, &mut r, &[0x8]);
-            oc258_w32(c, stream, vt);
-            let this = DATA + 0x20_0000;
-            crate::difftest::fill(c, &mut r, this, 0xe00 / 4);
-            let rider = DATA + 0x21_0000;
-            oc258_w32(c, this + RB_RIDER, rider);
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = sx(stream);
-            // Zeroed part objects (anim, model, air predictor, metrix).
-            for (k, f) in [RB_RIDER_ANIM, RB_RIDER_MODEL, RB_RIDER_AIR_PREDICTOR, RB_RIDER_METRIX]
+        check(
+            ee::s00::f_00111ac0__generated,
+            rider_base_save_state,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_1ac0, 40);
+                c.pc = 0x0011_1ac0;
+                let stream = DATA + 0x10;
+                let vt = vtable(c, &mut r, &[0x8]);
+                oc258_w32(c, stream, vt);
+                let this = DATA + 0x20_0000;
+                crate::difftest::fill(c, &mut r, this, 0xe00 / 4);
+                let rider = DATA + 0x21_0000;
+                oc258_w32(c, this + RB_RIDER, rider);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
+                // Zeroed part objects (anim, model, air predictor, metrix).
+                for (k, f) in [
+                    RB_RIDER_ANIM,
+                    RB_RIDER_MODEL,
+                    RB_RIDER_AIR_PREDICTOR,
+                    RB_RIDER_METRIX,
+                ]
                 .into_iter()
                 .enumerate()
-            {
-                oc258_w32(c, rider + f, DATA + 0x22_0000 + 0x1000 * k as u32);
-            }
-            // The anim's six sequence lists (8 bytes each, `count <= 0`).
-            oc258_w32(c, DATA + 0x22_0000 + 0x50, DATA + 0x22_8000);
-            // Targets: `*field` null or an object with an id.
-            for (k, f) in [RB_RIDER_TARGET0, RB_RIDER_TARGET1].into_iter().enumerate() {
-                let cell = DATA + 0x23_0000 + 0x400 * k as u32;
-                let obj = cell + 0x100;
-                oc258_w32(c, rider + f, cell);
-                let present = (seed >> k) & 1 != 0;
-                oc258_w32(c, cell, if present { obj } else { 0 });
-                oc258_w32(c, obj + RB_TARGET_ID, r.next_u32());
-            }
-            oc258_w32(c, rider + RB_RIDER_BLOCK0, r.next_u32());
-            oc258_w32(c, rider + RB_RIDER_BLOCK1, r.next_u32());
-            // Path data: n track paths of 0x3c bytes (count +0x10, array +0x14)
-            // and n AI paths of 0x40 bytes (count +0x8, array +0xc); the
-            // rider's paths are one of them, a stranger, or null.
-            let n = seed % 5;
-            let tracks = DATA + 0x24_0000;
-            let ais = DATA + 0x25_0000;
-            oc258_w32(c, RB_PATH_DATA + 0x10, n);
-            oc258_w32(c, RB_PATH_DATA + 0x14, tracks);
-            oc258_w32(c, RB_PATH_DATA + 0x8, n);
-            oc258_w32(c, RB_PATH_DATA + 0xc, ais);
-            for (f, base, stride) in [(RB_RIDER_TRACK_PATH, tracks, 0x3c), (RB_RIDER_AI_PATH, ais, 0x40)] {
-                let v = match r.next_u32() % 3 {
-                    0 => 0,
-                    1 => base + stride * (r.next_u32() % 5),
-                    _ => r.next_u32(),
-                };
-                oc258_w32(c, rider + f, v);
-            }
-        });
+                {
+                    oc258_w32(c, rider + f, DATA + 0x22_0000 + 0x1000 * k as u32);
+                }
+                // The anim's six sequence lists (8 bytes each, `count <= 0`).
+                oc258_w32(c, DATA + 0x22_0000 + 0x50, DATA + 0x22_8000);
+                // Targets: `*field` null or an object with an id.
+                for (k, f) in [RB_RIDER_TARGET0, RB_RIDER_TARGET1].into_iter().enumerate() {
+                    let cell = DATA + 0x23_0000 + 0x400 * k as u32;
+                    let obj = cell + 0x100;
+                    oc258_w32(c, rider + f, cell);
+                    let present = (seed >> k) & 1 != 0;
+                    oc258_w32(c, cell, if present { obj } else { 0 });
+                    oc258_w32(c, obj + RB_TARGET_ID, r.next_u32());
+                }
+                oc258_w32(c, rider + RB_RIDER_BLOCK0, r.next_u32());
+                oc258_w32(c, rider + RB_RIDER_BLOCK1, r.next_u32());
+                // Path data: n track paths of 0x3c bytes (count +0x10, array +0x14)
+                // and n AI paths of 0x40 bytes (count +0x8, array +0xc); the
+                // rider's paths are one of them, a stranger, or null.
+                let n = seed % 5;
+                let tracks = DATA + 0x24_0000;
+                let ais = DATA + 0x25_0000;
+                oc258_w32(c, RB_PATH_DATA + 0x10, n);
+                oc258_w32(c, RB_PATH_DATA + 0x14, tracks);
+                oc258_w32(c, RB_PATH_DATA + 0x8, n);
+                oc258_w32(c, RB_PATH_DATA + 0xc, ais);
+                for (f, base, stride) in [
+                    (RB_RIDER_TRACK_PATH, tracks, 0x3c),
+                    (RB_RIDER_AI_PATH, ais, 0x40),
+                ] {
+                    let v = match r.next_u32() % 3 {
+                        0 => 0,
+                        1 => base + stride * (r.next_u32() % 5),
+                        _ => r.next_u32(),
+                    };
+                    oc258_w32(c, rider + f, v);
+                }
+            },
+        );
     }
-
 
     /// AI_UpdateRacePositions over 0..8 riders: rank mode 0 (early out),
     /// 1 (distance), 2 (score) or another value (keys left as stack
@@ -10475,14 +10891,23 @@ pub(crate) mod tests {
                 let rider = RIDER0 + 0x1000 * i;
                 let score = SCORE0 + 0x400 * i;
                 c.bus.write32(AI + AI_RIDERS + 4 * i, rider);
-                c.bus.write32(rider + 0x880, if i == not_loaded { 3 } else { 7 });
+                c.bus
+                    .write32(rider + 0x880, if i == not_loaded { 3 } else { 7 });
                 c.bus.write32(
                     rider + RIDER_FINISHED,
-                    if r.next_u32() % 3 == 0 { 1 + r.next_u32() % 5 } else { 0 },
+                    if r.next_u32() % 3 == 0 {
+                        1 + r.next_u32() % 5
+                    } else {
+                        0
+                    },
                 );
                 c.bus.write32(rider + RIDER_RACE_TIME, r.f32(20.0));
                 c.bus.write32(rider + 0x4d0, r.f32(3000.0));
-                let pos = if r.next_u32() % 2 == 0 { i } else { r.next_u32() % 8 };
+                let pos = if r.next_u32() % 2 == 0 {
+                    i
+                } else {
+                    r.next_u32() % 8
+                };
                 c.bus.write32(rider + RIDER_POSITION, pos);
                 c.bus.write32(rider + RIDER_SCORE_OBJ, score);
                 c.bus.write32(score + SCORE_POINTS, r.next_u32() % 1000);
@@ -10502,11 +10927,15 @@ pub(crate) mod tests {
             c.g[A0][0] = AI as u64;
             schedule(c, &mut r, seed, 0x0010_f998)
         };
-        check_events(ee::s00::f_0010f998__generated, ai_update_race_positions, 300, &setup);
+        check_events(
+            ee::s00::f_0010f998__generated,
+            ai_update_race_positions,
+            300,
+            &setup,
+        );
     }
     use super::*;
     use super::*;
-
 
     /// Rider_SelectAIPath: standing still or moving (look-ahead point), 0..4
     /// AI paths of 1..4 segments around the rider (real
@@ -10525,63 +10954,93 @@ pub(crate) mod tests {
         const HINT: u32 = DATA + 0x20_2100;
         const PATHS: u32 = DATA + 0x20_4000;
         const SEGS: u32 = DATA + 0x20_5000;
-        check(ee::s00::f_00112a50__generated, rider_select_ai_path, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x11_2a50, 4);
-            elf_image(c);
-            c.pc = 0x0011_2a50;
-            let f = |v: f32| v.to_bits();
-            let uf = |r: &mut Rng, lo: f32, hi: f32| lo + (r.next_u32() % 10_000) as f32 / 10_000.0 * (hi - lo);
-            // The rider.
-            let pos = [uf(&mut r, -100.0, 100.0), uf(&mut r, -100.0, 100.0), uf(&mut r, -10.0, 10.0)];
-            put_vec(c, SELF + RSA_POS, [f(pos[0]), f(pos[1]), f(pos[2]), f(1.0)]);
-            let vel = if seed % 4 == 0 {
-                [0; 4]
-            } else {
-                [f(uf(&mut r, -30.0, 30.0)), f(uf(&mut r, -30.0, 30.0)), f(uf(&mut r, -3.0, 3.0)), 0]
-            };
-            put_vec(c, SELF + RSA_VEL, vel);
-            c.bus.write32(SELF + RSA_AI, VT);
-            put_vtable(c, &mut r, VT, &[RSA_VT_USES_WEIGHTS, RSA_VT_PATH_WEIGHT]);
-            c.bus.write32(SELF + RSA_AI_PATH_HINT, HINT);
-            for n in 0..8 {
-                c.bus.write32(LOG_RESULTS + 4 * n, r.next_u32() % 2);
-            }
-            // The AI paths.
-            let count = seed % 5;
-            c.bus.write32(RSA_PATH_DATA + 8, count);
-            c.bus.write32(RSA_PATH_DATA + 0xc, PATHS);
-            for i in 0..4u32 {
-                let path = PATHS + 0x40 * i;
-                let segs = SEGS + 0x100 * i;
-                let n = 1 + r.next_u32() % 4;
-                c.bus.write32(path + 8, n);
-                let start = [pos[0] + uf(&mut r, -150.0, 150.0), pos[1] + uf(&mut r, -150.0, 150.0), pos[2]];
-                for k in 0..3 {
-                    c.bus.write32(path + 0xc + 4 * k, f(start[k as usize]));
+        check(
+            ee::s00::f_00112a50__generated,
+            rider_select_ai_path,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_2a50, 4);
+                elf_image(c);
+                c.pc = 0x0011_2a50;
+                let f = |v: f32| v.to_bits();
+                let uf = |r: &mut Rng, lo: f32, hi: f32| {
+                    lo + (r.next_u32() % 10_000) as f32 / 10_000.0 * (hi - lo)
+                };
+                // The rider.
+                let pos = [
+                    uf(&mut r, -100.0, 100.0),
+                    uf(&mut r, -100.0, 100.0),
+                    uf(&mut r, -10.0, 10.0),
+                ];
+                put_vec(c, SELF + RSA_POS, [f(pos[0]), f(pos[1]), f(pos[2]), f(1.0)]);
+                let vel = if seed % 4 == 0 {
+                    [0; 4]
+                } else {
+                    [
+                        f(uf(&mut r, -30.0, 30.0)),
+                        f(uf(&mut r, -30.0, 30.0)),
+                        f(uf(&mut r, -3.0, 3.0)),
+                        0,
+                    ]
+                };
+                put_vec(c, SELF + RSA_VEL, vel);
+                c.bus.write32(SELF + RSA_AI, VT);
+                put_vtable(c, &mut r, VT, &[RSA_VT_USES_WEIGHTS, RSA_VT_PATH_WEIGHT]);
+                c.bus.write32(SELF + RSA_AI_PATH_HINT, HINT);
+                for n in 0..8 {
+                    c.bus.write32(LOG_RESULTS + 4 * n, r.next_u32() % 2);
                 }
-                c.bus.write32(path + 0x18, segs);
-                // Bounds (min, max): around the start, often holding the rider.
-                let reach = if r.next_u32() % 2 == 0 { 400.0 } else { 50.0 };
-                for k in 0..3 {
-                    c.bus.write32(path + 0x1c + 4 * k, f(start[k as usize] - reach));
-                    c.bus.write32(path + 0x28 + 4 * k, f(start[k as usize] + reach));
+                // The AI paths.
+                let count = seed % 5;
+                c.bus.write32(RSA_PATH_DATA + 8, count);
+                c.bus.write32(RSA_PATH_DATA + 0xc, PATHS);
+                for i in 0..4u32 {
+                    let path = PATHS + 0x40 * i;
+                    let segs = SEGS + 0x100 * i;
+                    let n = 1 + r.next_u32() % 4;
+                    c.bus.write32(path + 8, n);
+                    let start = [
+                        pos[0] + uf(&mut r, -150.0, 150.0),
+                        pos[1] + uf(&mut r, -150.0, 150.0),
+                        pos[2],
+                    ];
+                    for k in 0..3 {
+                        c.bus.write32(path + 0xc + 4 * k, f(start[k as usize]));
+                    }
+                    c.bus.write32(path + 0x18, segs);
+                    // Bounds (min, max): around the start, often holding the rider.
+                    let reach = if r.next_u32() % 2 == 0 { 400.0 } else { 50.0 };
+                    for k in 0..3 {
+                        c.bus
+                            .write32(path + 0x1c + 4 * k, f(start[k as usize] - reach));
+                        c.bus
+                            .write32(path + 0x28 + 4 * k, f(start[k as usize] + reach));
+                    }
+                    for k in 0..n {
+                        let a = uf(&mut r, 0.0, 6.28);
+                        put_vec(
+                            c,
+                            segs + 0x10 * k,
+                            [
+                                f(a.cos()),
+                                f(a.sin()),
+                                f(uf(&mut r, -0.2, 0.2)),
+                                f(uf(&mut r, 100.0, 700.0)),
+                            ],
+                        );
+                    }
                 }
-                for k in 0..n {
-                    let a = uf(&mut r, 0.0, 6.28);
-                    put_vec(c, segs + 0x10 * k, [f(a.cos()), f(a.sin()), f(uf(&mut r, -0.2, 0.2)), f(uf(&mut r, 100.0, 700.0))]);
-                }
-            }
-            let current = match seed % 3 {
-                0 => 0,
-                1 => PATHS + 0x40 * (r.next_u32() % 4),
-                _ => PATHS,
-            };
-            c.bus.write32(SELF + RSA_AI_PATH, current);
-            c.g[A0][0] = sx(SELF);
-            c.g[A1][0] = ((seed / 3) % 2) as u64;
-        });
+                let current = match seed % 3 {
+                    0 => 0,
+                    1 => PATHS + 0x40 * (r.next_u32() % 4),
+                    _ => PATHS,
+                };
+                c.bus.write32(SELF + RSA_AI_PATH, current);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = ((seed / 3) % 2) as u64;
+            },
+        );
     }
-
 
     /// Rider_SelectRacePath with its real callees (look-ahead distance,
     /// PathData_FindNearTrackPaths, Path_GetClosestPoint,
@@ -10592,65 +11051,304 @@ pub(crate) mod tests {
     /// skipping the current path or not.
     #[test]
     fn rider_select_race_path_matches() {
-        crate::difftest::check(ee::s00::f_001127f0__generated, rider_select_race_path, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x11_27f0, 0);
-            elf_image(c);
-            let me = DATA + 0x1000;
-            let ai_state = DATA + 0x3000;
-            let tracks = DATA + 0x1_0000;
-            let n = match seed % 6 {
-                0 => 0,
-                5 => 4,
-                k => k,
-            };
-            c.bus.write32(SELECT_PATH_DATA + 0x10, n);
-            c.bus.write32(SELECT_PATH_DATA + 0x14, tracks);
-            for i in 0..4u32 {
-                let t = tracks + 0x3c * i;
-                let segs = DATA + 0x2_0000 + 0x100 * i;
-                c.bus.write32(t + 8, 1 + r.next_u32() % 4);
-                for k in 0..3 {
-                    c.bus.write32(t + 0xc + 4 * k, r.f32(50.0));
+        crate::difftest::check(
+            ee::s00::f_001127f0__generated,
+            rider_select_race_path,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_27f0, 0);
+                elf_image(c);
+                let me = DATA + 0x1000;
+                let ai_state = DATA + 0x3000;
+                let tracks = DATA + 0x1_0000;
+                let n = match seed % 6 {
+                    0 => 0,
+                    5 => 4,
+                    k => k,
+                };
+                c.bus.write32(SELECT_PATH_DATA + 0x10, n);
+                c.bus.write32(SELECT_PATH_DATA + 0x14, tracks);
+                for i in 0..4u32 {
+                    let t = tracks + 0x3c * i;
+                    let segs = DATA + 0x2_0000 + 0x100 * i;
+                    c.bus.write32(t + 8, 1 + r.next_u32() % 4);
+                    for k in 0..3 {
+                        c.bus.write32(t + 0xc + 4 * k, r.f32(50.0));
+                    }
+                    c.bus.write32(t + 0x18, segs);
+                    let inside = r.next_u32() % 4 != 0;
+                    for k in 0..3 {
+                        let (lo, hi) = if inside {
+                            (-200.0f32, 200.0f32)
+                        } else {
+                            (300.0, 400.0)
+                        };
+                        c.bus.write32(t + 0x1c + 4 * k, lo.to_bits());
+                        c.bus.write32(t + 0x28 + 4 * k, hi.to_bits());
+                    }
+                    c.bus
+                        .write32(t + 0x38, ((r.next_u32() % 4000) as f32).to_bits());
+                    for k in 0..4 {
+                        let a = (r.next_u32() % 628) as f32 / 100.0;
+                        let z = (r.next_u32() % 100) as f32 / 400.0;
+                        let seg = segs + 0x10 * k;
+                        c.bus.write32(seg, a.cos().to_bits());
+                        c.bus.write32(seg + 4, a.sin().to_bits());
+                        c.bus.write32(seg + 8, z.to_bits());
+                        c.bus.write32(
+                            seg + 0xc,
+                            (10.0 + (r.next_u32() % 5000) as f32 / 100.0).to_bits(),
+                        );
+                    }
                 }
-                c.bus.write32(t + 0x18, segs);
-                let inside = r.next_u32() % 4 != 0;
-                for k in 0..3 {
-                    let (lo, hi) = if inside { (-200.0f32, 200.0f32) } else { (300.0, 400.0) };
-                    c.bus.write32(t + 0x1c + 4 * k, lo.to_bits());
-                    c.bus.write32(t + 0x28 + 4 * k, hi.to_bits());
+                put_vec(
+                    c,
+                    me + SELECT_PATH_POS,
+                    [r.f32(60.0), r.f32(60.0), r.f32(60.0), 1.0f32.to_bits()],
+                );
+                let vel = if seed % 4 == 0 {
+                    [0, 0, 0, 0]
+                } else {
+                    [r.f32(30.0), r.f32(30.0), r.f32(30.0), 0]
+                };
+                put_vec(c, me + SELECT_PATH_VEL, vel);
+                let current = match r.next_u32() % 3 {
+                    0 => DATA + 0x5000,
+                    _ => tracks + 0x3c * (r.next_u32() % 3),
+                };
+                c.bus.write32(me + SELECT_PATH_CURRENT, current);
+                c.bus.write32(me + SELECT_PATH_AI_STATE, ai_state);
+                c.bus.write32(ai_state + 0x14, r.next_u32());
+                // Near (within 1592 of the current path's base) or far.
+                let base = f32::from_bits(c.bus.read32(current + 0x38));
+                let near = if seed % 3 == 0 {
+                    base + 5000.0
+                } else {
+                    base - 20.0
+                };
+                c.bus.write32(me + SELECT_PATH_TRACK_DIST, near.to_bits());
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = if seed % 2 == 0 { 0 } else { 1 };
+                c.pc = 0x0011_27f0;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// `RiderBase_TriggerDynamicSpray`: a rider whose spray effect (+0xb40)
+    /// holds random state (strength, short range, queued position near or
+    /// far), random burst position/direction, kind and speed; the real
+    /// cDynamicSprayFX_QueueBurst runs.
+    #[test]
+    fn rider_base_trigger_dynamic_spray_matches() {
+        use crate::difftest::{check, put_vec};
+        const RIDER: u32 = DATA + 0x1000;
+        const SPRAY: u32 = RIDER + RIDER_DYNAMIC_SPRAY;
+        const POS: u32 = DATA + 0x400;
+        const DIR: u32 = DATA + 0x410;
+        check(
+            ee::s00::f_00111aa0__generated,
+            rider_base_trigger_dynamic_spray,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_1aa0, 1);
+                c.pc = 0x0011_1aa0;
+                fill(c, &mut r, SPRAY, 0x80);
+                let spread = [30.0, 120.0, 300.0, 1000.0][seed as usize % 4];
+                c.bus.write32(
+                    SPRAY + 0xe0,
+                    r.f32(if seed % 5 == 0 { 100.0 } else { 10.0 }),
+                );
+                c.bus.write32(
+                    SPRAY + 0x124,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                c.bus.write32(SPRAY, RIDER); // its rider, with random carve flags
+                fill(c, &mut r, RIDER + 0xac0, 0x12);
+                put_vec(
+                    c,
+                    SPRAY + 0x100,
+                    [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                );
+                put_vec(
+                    c,
+                    SPRAY + 0xf0,
+                    [r.f32(spread), r.f32(spread), r.f32(spread), r.next_u32()],
+                );
+                put_vec(
+                    c,
+                    POS,
+                    [r.f32(spread), r.f32(spread), r.f32(spread), r.next_u32()],
+                );
+                put_vec(
+                    c,
+                    DIR,
+                    [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                );
+                c.g[A0][0] = sx(RIDER);
+                c.g[A1][0] = sx(POS);
+                c.g[A2][0] = sx(DIR);
+                c.g[A3][0] = r.next_u32() as u64;
+                c.f[12] = if seed % 7 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(50.0)
+                };
+            },
+        );
+    }
+
+    // ------------------------------------------------ RiderBase_EnterSubState
+
+    /// `RiderBase_EnterSubState`: the real `.rodata` switch table (from the
+    /// ELF image) picks the arm from `rider + 0xde4`; every sub-state 0..13
+    /// and out-of-range ids (14, large, negative). The rider base and its
+    /// sub-objects are zeroed, with a zeroed world and BELibrary singleton,
+    /// so the real `Enter` methods take their short paths; null method
+    /// pointers they call through land in the fakes.
+    #[test]
+    fn rider_base_enter_sub_state_matches() {
+        check(
+            ee::s00::f_00111630__generated,
+            rider_base_enter_sub_state,
+            34,
+            &|c, seed| {
+                machine(c, seed, 0x0011_1630, 0);
+                elf_image(c);
+                c.pc = 0x0011_1630;
+                c.g[ssx3_ee_rt::cpu::reg::SP][0] = (crate::difftest::SP - 0x200) as u64;
+                for i in 0..0x400 {
+                    c.bus.write32(DATA + i * 4, 0);
                 }
-                c.bus.write32(t + 0x38, ((r.next_u32() % 4000) as f32).to_bits());
-                for k in 0..4 {
-                    let a = (r.next_u32() % 628) as f32 / 100.0;
-                    let z = (r.next_u32() % 100) as f32 / 400.0;
-                    let seg = segs + 0x10 * k;
-                    c.bus.write32(seg, a.cos().to_bits());
-                    c.bus.write32(seg + 4, a.sin().to_bits());
-                    c.bus.write32(seg + 8, z.to_bits());
-                    c.bus.write32(seg + 0xc, (10.0 + (r.next_u32() % 5000) as f32 / 100.0).to_bits());
+                c.bus.write32(GAME_GP - 0x848, DATA + 0x1000); // world
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x1100); // BELibrary
+                                                                // Sub states 2, 6, 11 and 12 are not driven: their real Enter
+                                                                // methods run away on the zeroed rider (AnimController_PlayAnimImpl
+                                                                // at 0x312138, the zeroed-heap consolidate at 0x31ef40). Their arms
+                                                                // are the same table call as the others.
+                let state = match seed % 17 {
+                    2 | 6 | 11 | 12 => 13,
+                    s @ 0..=13 => s,
+                    14 => 14,
+                    15 => 0x100,
+                    _ => 0xffff_fff0,
+                };
+                c.bus.write32(DATA + RIDER_BASE_SUB_STATE, state);
+                if state < 14 {
+                    assert_ne!(c.bus.read32(ENTER_SUB_STATE_TABLE + 4 * state), 0);
                 }
-            }
-            put_vec(c, me + SELECT_PATH_POS, [r.f32(60.0), r.f32(60.0), r.f32(60.0), 1.0f32.to_bits()]);
-            let vel = if seed % 4 == 0 {
-                [0, 0, 0, 0]
-            } else {
-                [r.f32(30.0), r.f32(30.0), r.f32(30.0), 0]
-            };
-            put_vec(c, me + SELECT_PATH_VEL, vel);
-            let current = match r.next_u32() % 3 {
-                0 => DATA + 0x5000,
-                _ => tracks + 0x3c * (r.next_u32() % 3),
-            };
-            c.bus.write32(me + SELECT_PATH_CURRENT, current);
-            c.bus.write32(me + SELECT_PATH_AI_STATE, ai_state);
-            c.bus.write32(ai_state + 0x14, r.next_u32());
-            // Near (within 1592 of the current path's base) or far.
-            let base = f32::from_bits(c.bus.read32(current + 0x38));
-            let near = if seed % 3 == 0 { base + 5000.0 } else { base - 20.0 };
-            c.bus.write32(me + SELECT_PATH_TRACK_DIST, near.to_bits());
-            c.g[A0][0] = sx(me);
-            c.g[A1][0] = if seed % 2 == 0 { 0 } else { 1 };
-            c.pc = 0x0011_27f0;
-        });
+                c.g[A0][0] = DATA as u64;
+            },
+        );
+    }
+
+    /// GetPathClassWeight: every preferred class (0, 1, 2, other) with each
+    /// flag zero or set (full 64-bit values), and a random weight literal.
+    #[test]
+    fn computer_actor_rider_get_path_class_weight_matches() {
+        check(
+            ee::s00::f_0010d870__generated,
+            computer_actor_rider_get_path_class_weight_2,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x10d8_7000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0010_d870;
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = sx(DATA);
+                let class = match seed % 5 {
+                    4 => r.next_u32() as u16,
+                    k => k as u16,
+                };
+                c.bus.write16(DATA + CAR_PATH_CLASS, class);
+                c.bus
+                    .write32(GAME_GP - CAR_PATH_WEIGHT_STEP_GP, r.edge_f32());
+                for (i, reg) in [A1, A2, A3].into_iter().enumerate() {
+                    c.g[reg][0] = if (seed / 5 >> i) & 1 == 0 {
+                        0
+                    } else if r.next_u32() % 2 == 0 {
+                        1
+                    } else {
+                        (r.next_u32() as u64) << 32 | r.next_u32() as u64
+                    };
+                }
+            },
+        );
+    }
+
+    /// RiderBase_ExitSubState: every sub state 0..13 plus out-of-range ones,
+    /// through the game's jump table (ELF image), with the real exit
+    /// handlers on short paths: every sub-object points at one actor whose
+    /// animation controller has layer 1 idle (`0x1b6`: the cruise and
+    /// natural-air exits stop there, the spin exit's fades find empty
+    /// lists), and the world's frame counter is odd (the wipeout exit
+    /// returns at once). Some seeds zero the table (fake jump out, which
+    /// unwinds on some of them).
+    #[test]
+    fn rider_base_exit_sub_state_matches() {
+        use crate::difftest::elf_image;
+        use crate::difftest::fakes::machine;
+        const RIDER: u32 = DATA;
+        const ACTOR: u32 = DATA + 0x1_0000;
+        const CTRL: u32 = DATA + 0x2_0000;
+        const WORLD: u32 = DATA + 0x3_0000;
+        check(
+            ee::s00::f_00111578__generated,
+            rider_base_exit_sub_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_1578, 1);
+                elf_image(c);
+                c.pc = 0x0011_1578;
+                let states = [
+                    0u32,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11,
+                    12,
+                    13,
+                    14,
+                    0xffff_ffff,
+                ];
+                c.bus.write32(
+                    RIDER + RIDER_SUB_STATE,
+                    states[(seed as usize) % states.len()],
+                );
+                if seed % 17 == 3 {
+                    for i in 0..14 {
+                        c.bus.write32(RIDER_EXIT_SUB_STATE_TABLE + 4 * i, 0);
+                    }
+                }
+                // Each handler's link to the rider actor.
+                c.bus.write32(RIDER + 0x1c0, ACTOR); // cruise: +0
+                c.bus.write32(RIDER + 0x1d0 + 0x14, ACTOR); // board press
+                c.bus.write32(RIDER + 0x210 + 0x14, ACTOR); // natural air
+                c.bus.write32(RIDER + 0x230 + 0x58, ACTOR); // spin
+                c.bus.write32(RIDER + 0x2b0 + 0x8, ACTOR); // 7
+                c.bus.write32(RIDER + 0x2c0 + 0x80, ACTOR); // wipeout
+                c.bus.write32(RIDER + 0x370 + 0x14, ACTOR); // 11
+                c.bus.write32(ACTOR + 0x784, CTRL);
+                c.bus.write32(CTRL + 4, 0x1b6);
+                // World -> game -> race: an odd frame counter.
+                c.bus.write32(GAME_GP - 0x848, WORLD);
+                c.bus.write32(WORLD + 0x84, WORLD + 0x100);
+                c.bus.write32(WORLD + 0x100 + 0xc, WORLD + 0x200);
+                c.bus
+                    .write32(WORLD + 0x200 + 8, 2 * (r.next_u32() & 0xffff) + 1);
+                c.g[A0][0] = sx(RIDER);
+                c.g[A1][0] = (r.next_u32() % 6) as u64;
+            },
+        );
     }
 }

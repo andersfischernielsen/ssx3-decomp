@@ -357,6 +357,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         path_set_volume_percent,
         "PATH_SetVolumePercent",
     ),
+    (
+        0x0026_afb8,
+        path_data_find_near_ai_paths,
+        "PathData_FindNearAIPaths",
+    ),
+    (
+        0x0026_b178,
+        path_data_find_near_track_paths,
+        "PathData_FindNearTrackPaths",
+    ),
 ];
 
 /// `Path` field: the base time the query window is shifted by.
@@ -3877,6 +3887,420 @@ pub(crate) fn set_map_tracks(c: &mut Cpu) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// PathData_FindNearTrackPaths (0x0026b178)
+
+/// Path data: track path count and the path array (0x3c bytes per path,
+/// bounds at +0x1c).
+pub(crate) const NEAR_PATHS_COUNT: u32 = 0x10;
+
+pub(crate) const NEAR_PATHS_ITEMS: u32 = 0x14;
+
+pub(crate) const NEAR_PATHS_STRIDE: u32 = 0x3c;
+
+/// `.lit4` (gp-relative): the "already taken" distance (1e37), loaded twice.
+pub(crate) const NEAR_PATHS_TAKEN_LIT: u32 = 0x4a44;
+
+pub(crate) const NEAR_PATHS_TAKEN_LIT2: u32 = 0x4a40;
+
+/// `addu` of two registers' low words.
+#[inline]
+pub(crate) fn near_paths_addu(a: u64, b: u64) -> u64 {
+    sx((a as u32).wrapping_add(b as u32))
+}
+
+pub(crate) const PATH_BOUNDS_DISTANCE: Callee = Callee {
+    addr: 0x0026_a9b0,
+    f: ee::s07::Path_BoundsDistance,
+};
+
+/// `int PathData_FindNearTrackPaths(PathData* self, const Vec3* pos,
+/// TrackPath** out, int max)` (0x0026b178): collect up to `min(count, max)`
+/// track paths near `pos`: first every path whose bounds contain `pos`
+/// (distance 0) in order, then the remaining slots by increasing bounds
+/// distance (selection by repeated minimum search over a distance array on
+/// the stack; a taken path's distance becomes 1e37). Returns the number
+/// written.
+pub fn path_data_find_near_track_paths(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x180);
+        frame.save(c, S0, 0x160);
+        frame.save(c, S2, 0x140);
+        frame.save(c, S5, 0x110);
+        frame.save(c, S6, 0x100);
+        frame.save(c, S7, 0xf0);
+        frame.save(c, FP, 0xe0);
+        frame.save(c, S1, 0x150);
+        frame.save(c, S3, 0x130);
+        frame.save(c, S4, 0x120);
+        frame.save_ra(c, 0xd0);
+        frame.save_fpr(c, 21, 0x178);
+        frame.save_fpr(c, 20, 0x170);
+        c.g[S0][0] = 0; // found
+        c.g[S2][0] = 0; // i
+        c.g[S5][0] = c.g[A0][0]; // self
+        c.g[S7][0] = c.g[A2][0]; // out
+        c.g[FP][0] = c.g[A1][0]; // pos
+        let count = Addr(r32(c, S5)).off(NEAR_PATHS_COUNT).lw(c);
+        c.g[V0][0] = count;
+        let max = abi::arg64(c, 3);
+        c.g[V1][0] = ((count as i64) < (max as i64)) as u64;
+        // want = min(count, max) (s6)
+        c.g[S6][0] = if (count as i64) < (max as i64) {
+            count
+        } else {
+            max
+        };
+
+        // Pass 1: distances; paths containing pos are taken in order.
+        if (count as i64) > 0 {
+            c.cycles += 5;
+            c.f[21] = 0;
+            c.g[S1][0] = c.g[SP][0]; // &dist[i]
+            let taken = Addr(r32(c, GP).wrapping_sub(NEAR_PATHS_TAKEN_LIT)).read_fpu(c);
+            c.f[20] = taken.0;
+            c.g[S4][0] = 0; // i * stride
+            c.g[S3][0] = c.g[S7][0]; // &out[found]
+            loop {
+                c.cycles += 8;
+                let items = Addr(r32(c, S5)).off(NEAR_PATHS_ITEMS).lw(c);
+                c.g[A1][0] = c.g[FP][0];
+                c.g[A0][0] = near_paths_addu(items, c.g[S4][0]);
+                PATH_BOUNDS_DISTANCE.call(c, 0x0026_b1f8)?;
+                let dist = FpuF32(c.f[0]);
+                let inside = dist.eq_s(FpuF32(c.f[21]));
+                abi::set_fcc(c, inside);
+                Addr(r32(c, S1)).write_fpu(c, dist);
+                if inside {
+                    c.cycles += 7;
+                    let items = Addr(r32(c, S5)).off(NEAR_PATHS_ITEMS).lw(c);
+                    c.g[S0][0] = near_paths_addu(c.g[S0][0], 1);
+                    let taken = FpuF32(c.f[20]);
+                    Addr(r32(c, S1)).write_fpu(c, taken);
+                    let path = near_paths_addu(items, c.g[S4][0]);
+                    c.g[V0][0] = path;
+                    Addr(r32(c, S3)).sw(c, path);
+                    let full = c.g[S0][0] == c.g[S6][0];
+                    c.g[S3][0] = near_paths_addu(c.g[S3][0], 4);
+                    if full {
+                        break;
+                    }
+                }
+                c.cycles += 6;
+                let count = Addr(r32(c, S5)).off(NEAR_PATHS_COUNT).lw(c);
+                c.g[S2][0] = near_paths_addu(c.g[S2][0], 1);
+                c.g[S1][0] = near_paths_addu(c.g[S1][0], 4);
+                let more = (c.g[S2][0] as i64) < (count as i64);
+                c.g[V0][0] = more as u64;
+                c.g[S4][0] = near_paths_addu(c.g[S4][0], NEAR_PATHS_STRIDE as u64);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_b1e8);
+                }
+            }
+        }
+
+        // Pass 2: fill the remaining slots with the nearest untaken paths.
+        c.cycles += 3;
+        let short = (c.g[S0][0] as i64) < (c.g[S6][0] as i64);
+        c.g[V0][0] = c.g[S0][0];
+        if short {
+            c.cycles += 2;
+            let taken = Addr(r32(c, GP).wrapping_sub(NEAR_PATHS_TAKEN_LIT2)).read_fpu(c);
+            c.f[2] = taken.0;
+            c.g[T1][0] = NEAR_PATHS_STRIDE as u64;
+            loop {
+                c.cycles += 8;
+                let count = Addr(r32(c, S5)).off(NEAR_PATHS_COUNT).lw(c);
+                c.g[V1][0] = count;
+                c.g[S2][0] = 1;
+                c.g[T0][0] = near_paths_addu(c.g[S0][0], 1);
+                c.f[1] = Addr(sp(c)).read_fpu(c).0; // best = dist[0]
+                c.g[A3][0] = 0; // best index
+                c.g[V0][0] = (1 < count as i64) as u64;
+                c.g[A1][0] = sx((c.g[S0][0] as u32) << 2);
+                if 1 < count as i64 {
+                    c.cycles += 2;
+                    c.g[A0][0] = count;
+                    c.g[V1][0] = near_paths_addu(c.g[SP][0], 4);
+                    loop {
+                        c.cycles += 5;
+                        let d = Addr(r32(c, V1)).read_fpu(c);
+                        c.f[0] = d.0;
+                        let nearer = d.lt(FpuF32(c.f[1]));
+                        abi::set_fcc(c, nearer);
+                        if nearer {
+                            c.cycles += 3;
+                            c.f[1] = d.0;
+                            c.g[A3][0] = c.g[S2][0];
+                        }
+                        c.g[S2][0] = near_paths_addu(c.g[S2][0], 1);
+                        c.cycles += 3;
+                        let more = (c.g[S2][0] as i64) < (c.g[A0][0] as i64);
+                        c.g[V0][0] = more as u64;
+                        c.g[V1][0] = near_paths_addu(c.g[V1][0], 4);
+                        if !more {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0026_b278);
+                        }
+                    }
+                }
+                // out[found] = &items[best]; dist[best] = taken.
+                c.cycles += 11;
+                let best = r32(c, A3);
+                let offset = abi::mult(c, best, NEAR_PATHS_STRIDE);
+                c.g[A2][0] = sx(offset);
+                let items = Addr(r32(c, S5)).off(NEAR_PATHS_ITEMS).lw(c);
+                c.g[V0][0] = sx(best << 2);
+                c.g[A1][0] = near_paths_addu(c.g[A1][0], c.g[S7][0]);
+                c.g[V1][0] = near_paths_addu(c.g[SP][0], c.g[V0][0]);
+                c.g[S0][0] = c.g[T0][0];
+                let taken = FpuF32(c.f[2]);
+                Addr(r32(c, V1)).write_fpu(c, taken);
+                let more = (c.g[S0][0] as i64) < (c.g[S6][0] as i64);
+                c.g[V0][0] = more as u64;
+                let path = near_paths_addu(items, c.g[A2][0]);
+                c.g[A0][0] = path;
+                Addr(r32(c, A1)).sw(c, path);
+                if !more {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S0][0];
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_b250);
+                }
+            }
+        }
+
+        c.cycles += 14;
+        frame.restore(c, S1, 0x150);
+        frame.restore(c, S0, 0x160);
+        frame.restore(c, S2, 0x140);
+        frame.restore(c, S3, 0x130);
+        frame.restore(c, S4, 0x120);
+        frame.restore(c, S5, 0x110);
+        frame.restore(c, S6, 0x100);
+        frame.restore(c, S7, 0xf0);
+        frame.restore(c, FP, 0xe0);
+        frame.restore_ra(c, 0xd0);
+        frame.restore_fpr(c, 21, 0x178);
+        frame.restore_fpr(c, 20, 0x170);
+        frame.close(c);
+        Ok(())
+    });
+}
+
+// ---------------------------------------------------------------------------
+// PathData_FindNearAIPaths.
+
+/// `PathData::aiPathCount`.
+pub(crate) const PATH_DATA_AI_COUNT: u32 = 0x8;
+
+/// `PathData::aiPaths` (0x40-byte `AIPath` records).
+pub(crate) const PATH_DATA_AI_PATHS: u32 = 0xc;
+
+/// `AIPath::enabled` (only checked when the caller asks for enabled paths).
+pub(crate) const AI_PATH_ENABLED: u32 = 0x3c;
+
+/// The caller's point, spilled at `sp+0x320`.
+pub(crate) const FIND_NEAR_AI_POINT_SLOT: u32 = 0x320;
+
+/// `s1 = s1 + n` etc.: 32-bit add, sign-extended.
+#[inline(always)]
+pub(crate) fn find_near_ai_add(v: u64, n: u32) -> u64 {
+    sx((v as u32).wrapping_add(n))
+}
+
+/// `int PathData_FindNearAIPaths(PathData* d, const Vec3* p, AIPath** out,
+/// int max, bool enabledOnly)` (0x26afb8): collect up to `max` AI paths
+/// near `p` into `out`. First pass: the bounds distance of every path
+/// (`Path_BoundsDistance`, kept in a stack array; disabled paths count as
+/// "far" (`gp-0x4a4c`) when `enabledOnly`); paths containing `p` (distance
+/// 0) are taken at once. If fewer than `max` were found, the rest are the
+/// nearest remaining paths in order (selection by smallest distance, each
+/// pick marked used with `gp-0x4a48`). Returns the number written.
+pub fn path_data_find_near_ai_paths(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x3e0);
+        frame.save(c, S0, 0x3c0);
+        frame.save(c, S2, 0x3a0);
+        c.g[S0][0] = 0; // found
+        frame.save(c, S4, 0x380);
+        c.g[S2][0] = 0; // path index
+        frame.save(c, S6, 0x360);
+        c.g[S4][0] = c.g[A0][0]; // data
+        frame.save(c, S7, 0x350);
+        frame.save(c, FP, 0x340);
+        c.g[S7][0] = c.g[A2][0]; // out
+        frame.save(c, S1, 0x3b0);
+        c.g[FP][0] = c.g[T0][0]; // enabledOnly
+        frame.save(c, S3, 0x390);
+        frame.save(c, S5, 0x370);
+        frame.save_ra(c, 0x330);
+        frame.save_fpr(c, 21, 0x3d8);
+        frame.save_fpr(c, 20, 0x3d0);
+        let point_slot = frame.at(c, FIND_NEAR_AI_POINT_SLOT);
+        c.sw(point_slot, c.g[A1][0]);
+        c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(PATH_DATA_AI_COUNT)).lw(c);
+        c.g[V1][0] = ((c.g[V0][0] as i64) < (c.g[A3][0] as i64)) as u64;
+        // limit = min(count, max)
+        c.g[S6][0] = if c.g[V1][0] == 0 {
+            c.g[A3][0]
+        } else {
+            c.g[V0][0]
+        };
+
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 6;
+            c.lwc1(20, (c.g[GP][0] as u32).wrapping_sub(0x4a4c)); // "far"
+            c.g[S1][0] = c.g[SP][0]; // distance slot
+            c.mtc1(0, 21); // 0.0
+            c.g[S3][0] = 0; // path offset
+            c.g[S5][0] = c.g[S7][0]; // out cursor
+            loop {
+                c.cycles += 6;
+                c.g[A0][0] = Addr((c.g[S4][0] as u32).wrapping_add(PATH_DATA_AI_PATHS)).lw(c);
+                c.g[A1][0] = Addr(sp(c).wrapping_add(FIND_NEAR_AI_POINT_SLOT)).lw(c);
+                c.g[A0][0] = find_near_ai_add(c.g[A0][0], c.g[S3][0] as u32);
+                Callee {
+                    addr: 0x0026_a9b0,
+                    f: ee::s07::f_0026a9b0,
+                }
+                .call(c, 0x0026_b040)?;
+                c.swc1(0, c.g[S1][0] as u32);
+                if c.g[FP][0] != 0 {
+                    c.cycles += 5;
+                    c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(PATH_DATA_AI_PATHS)).lw(c);
+                    c.g[V0][0] = find_near_ai_add(c.g[S3][0], c.g[V0][0] as u32);
+                    c.g[V1][0] = Addr((c.g[V0][0] as u32).wrapping_add(AI_PATH_ENABLED)).lw(c);
+                    if c.g[V1][0] == 0 {
+                        c.swc1(20, c.g[S1][0] as u32);
+                    }
+                }
+                c.cycles += 5;
+                c.lwc1(0, c.g[S1][0] as u32);
+                c.c_eq_s(0, 21);
+                if c.fcc() {
+                    // Inside the bounds: take it now.
+                    c.cycles += 7;
+                    c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(PATH_DATA_AI_PATHS)).lw(c);
+                    c.g[S0][0] = find_near_ai_add(c.g[S0][0], 1);
+                    c.swc1(20, c.g[S1][0] as u32);
+                    c.g[V0][0] = find_near_ai_add(c.g[V0][0], c.g[S3][0] as u32);
+                    c.sw(c.g[S5][0] as u32, c.g[V0][0]);
+                    let full = c.g[S0][0] == c.g[S6][0];
+                    c.g[S5][0] = find_near_ai_add(c.g[S5][0], 4);
+                    if full {
+                        break;
+                    }
+                    c.cycles += 1;
+                }
+                c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(PATH_DATA_AI_COUNT)).lw(c);
+                c.cycles += 5;
+                c.g[S2][0] = find_near_ai_add(c.g[S2][0], 1);
+                c.g[S1][0] = find_near_ai_add(c.g[S1][0], 4);
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.g[S3][0] = find_near_ai_add(c.g[S3][0], 0x40);
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_b030);
+                }
+            }
+        }
+
+        // Fill the rest with the nearest remaining paths.
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S6][0] as i64)) as u64;
+        let short = c.g[V0][0] != 0;
+        c.g[V0][0] = c.g[S0][0];
+        if short {
+            c.cycles += 2;
+            c.lwc1(2, (c.g[GP][0] as u32).wrapping_sub(0x4a48)); // "used"
+            loop {
+                c.cycles += 8;
+                c.g[V1][0] = Addr((c.g[S4][0] as u32).wrapping_add(PATH_DATA_AI_COUNT)).lw(c);
+                c.g[S2][0] = 1;
+                c.g[A3][0] = find_near_ai_add(c.g[S0][0], 1);
+                c.lwc1(1, sp(c)); // best = dist[0]
+                c.g[A0][0] = 0; // best index
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V1][0] as i64)) as u64;
+                c.g[A2][0] = sx((c.g[S0][0] as u32) << 2);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[V1][0];
+                    c.g[V1][0] = sx(sp(c).wrapping_add(4));
+                    loop {
+                        c.cycles += 5;
+                        c.lwc1(0, c.g[V1][0] as u32);
+                        c.c_lt_s(0, 1);
+                        if c.fcc() {
+                            c.cycles += 3;
+                            c.mov_s(1, 0);
+                            c.g[A0][0] = c.g[S2][0];
+                        }
+                        c.g[S2][0] = find_near_ai_add(c.g[S2][0], 1);
+                        c.cycles += 3;
+                        c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                        c.g[V1][0] = find_near_ai_add(c.g[V1][0], 4);
+                        if c.g[V0][0] == 0 {
+                            break;
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0026_b0e0);
+                        }
+                    }
+                }
+                c.cycles += 11;
+                c.g[V0][0] = Addr((c.g[S4][0] as u32).wrapping_add(PATH_DATA_AI_PATHS)).lw(c);
+                c.g[V1][0] = sx((c.g[A0][0] as u32) << 6);
+                c.g[A0][0] = sx((c.g[A0][0] as u32) << 2);
+                c.g[A2][0] = find_near_ai_add(c.g[A2][0], c.g[S7][0] as u32);
+                c.g[V0][0] = find_near_ai_add(c.g[V0][0], c.g[V1][0] as u32);
+                c.g[A1][0] = find_near_ai_add(c.g[SP][0], c.g[A0][0] as u32);
+                c.sw(c.g[A2][0] as u32, c.g[V0][0]);
+                c.g[S0][0] = c.g[A3][0];
+                c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S6][0] as i64)) as u64;
+                let more = c.g[V0][0] != 0;
+                c.swc1(2, c.g[A1][0] as u32);
+                if !more {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S0][0];
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_b0b8);
+                }
+            }
+        }
+
+        c.cycles += 14;
+        frame.restore(c, S1, 0x3b0);
+        frame.restore(c, S0, 0x3c0);
+        frame.restore(c, S2, 0x3a0);
+        frame.restore(c, S3, 0x390);
+        frame.restore(c, S4, 0x380);
+        frame.restore(c, S5, 0x370);
+        frame.restore(c, S6, 0x360);
+        frame.restore(c, S7, 0x350);
+        frame.restore(c, FP, 0x340);
+        frame.restore_ra(c, 0x330);
+        frame.restore_fpr(c, 21, 0x3d8);
+        frame.restore_fpr(c, 20, 0x3d0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -5711,6 +6135,118 @@ pub(crate) mod tests {
                         c.bus.write32(map + SLOT0 + 4 * j, p);
                     }
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::{check_events, driven, schedule, Events};
+    use crate::game::be::beintreward::tests::world;
+    use crate::game::bx::bxstring::tests::{alloc, heap};
+    // be_library is defined in this module
+    use super::*;
+
+    /// PathData_FindNearTrackPaths: 0..9 track paths whose bounds contain
+    /// the position (distance 0, taken first) or lie around it, `max` below,
+    /// at or above the count (sometimes with garbage in the upper half of
+    /// a3), so both passes, the early "full" exit and the minimum search run.
+    #[test]
+    fn path_data_find_near_track_paths_matches() {
+        check(
+            ee::s07::f_0026b178__generated,
+            path_data_find_near_track_paths,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x26b178, 0);
+                let this = DATA;
+                let items = DATA + 0x1000;
+                let pos = DATA + 0x800;
+                let out = DATA + 0x900;
+                let taken = 1e37f32.to_bits();
+                put_words(c, GAME_GP - NEAR_PATHS_TAKEN_LIT, &[taken]);
+                put_words(c, GAME_GP - NEAR_PATHS_TAKEN_LIT2, &[taken]);
+                let count = r.next_u32() % 10;
+                put_words(c, this + NEAR_PATHS_COUNT, &[count, items]);
+                let p = [r.f32(50.0), r.f32(50.0), r.f32(50.0)];
+                put_words(c, pos, &p);
+                for i in 0..count {
+                    let box_at = items + NEAR_PATHS_STRIDE * i;
+                    let inside = r.next_u32() % 3 == 0;
+                    for k in 0..3u32 {
+                        let centre = f32::from_bits(p[k as usize]);
+                        let (lo, hi) = if inside {
+                            (centre - 1.0 - (r.next_u32() % 8) as f32, centre + 1.0)
+                        } else {
+                            let a = centre + (r.next_u32() % 64) as f32 - 32.0;
+                            (a, a + (r.next_u32() % 16) as f32)
+                        };
+                        c.bus.write32(box_at + 0x1c + 4 * k, lo.to_bits());
+                        c.bus.write32(box_at + 0x28 + 4 * k, hi.to_bits());
+                    }
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(pos);
+                c.g[A2][0] = sx(out);
+                let max = r.next_u32() % 12;
+                c.g[A3][0] = if seed % 7 == 0 {
+                    (r.next_u32() as u64) << 32 | max as u64
+                } else {
+                    max as u64
+                };
+                c.pc = 0x0026_b178;
+            },
+        );
+    }
+
+    /// PathData_FindNearAIPaths: 0..12 AI paths whose boxes contain the
+    /// point (taken in the first pass, possibly filling `max`) or lie at
+    /// random distances (equal ones too), some disabled; `max` from -1 to 8,
+    /// `enabledOnly` on half the seeds; the real Path_BoundsDistance.
+    #[test]
+    fn path_data_find_near_ai_paths_matches() {
+        const PATHDATA: u32 = DATA;
+        const POINT: u32 = DATA + 0x80;
+        const PATHS: u32 = DATA + 0x100;
+        const OUT: u32 = DATA + 0x1000;
+        check(
+            ee::s07::f_0026afb8__generated,
+            path_data_find_near_ai_paths,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0026_afb8 ^ (seed as u64) << 4);
+                scramble(c, &mut r);
+                c.pc = 0x0026_afb8;
+                c.g[GP][0] = sx(GAME_GP);
+                c.bus.write32(GAME_GP - 0x4a4c, 1.0e30f32.to_bits());
+                c.bus.write32(GAME_GP - 0x4a48, 2.0e30f32.to_bits());
+                let n = seed % 13;
+                c.bus.write32(PATHDATA + PATH_DATA_AI_COUNT, n);
+                c.bus.write32(PATHDATA + PATH_DATA_AI_PATHS, PATHS);
+                for k in 0..3 {
+                    c.bus.write32(POINT + 4 * k, r.f32(4.0));
+                }
+                let point = [0, 1, 2].map(|k| f32::from_bits(c.bus.read32(POINT + 4 * k)));
+                for i in 0..n {
+                    let path = PATHS + 0x40 * i;
+                    let mode = r.next_u32() % 4;
+                    for k in 0..3u32 {
+                        let p = point[k as usize];
+                        let (lo, hi) = match mode {
+                            0 => (p - 1.0, p + 1.0),                  // contains the point
+                            1 => (p + 1.0 + (i % 3) as f32, p + 5.0), // same distance per i%3
+                            _ => (p + 0.5 + r.next_u32() as f32 / 1.0e9, p + 9.0),
+                        };
+                        c.bus.write32(path + 0x1c + 4 * k, lo.to_bits());
+                        c.bus.write32(path + 0x28 + 4 * k, hi.to_bits());
+                    }
+                    c.bus
+                        .write32(path + AI_PATH_ENABLED, (r.next_u32() % 3 != 0) as u32);
+                }
+                c.g[A0][0] = sx(PATHDATA);
+                c.g[A1][0] = sx(POINT);
+                c.g[A2][0] = sx(OUT);
+                c.g[A3][0] = sx(((seed / 13 % 10) as i32 - 1) as u32);
+                c.g[T0][0] = (seed % 2) as u64;
             },
         );
     }

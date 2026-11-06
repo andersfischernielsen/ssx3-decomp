@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -44,7 +45,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::ret;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -171,8 +171,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "VfxVisualEffectsTest_dtor",
     ),
     (0x0039_6d30, vfx_screen_tint_dtor, "VfxScreenTint_dtor"),
-    (0x0039_6128, tex_man_invalidate_bound, "TexMan_InvalidateBound"),
-    (0x0039_5f60, ps2_graphics_man_try_acquire_frame, "PS2GraphicsMan_TryAcquireFrame"),
+    (
+        0x0039_6128,
+        tex_man_invalidate_bound,
+        "TexMan_InvalidateBound",
+    ),
+    (
+        0x0039_5f60,
+        ps2_graphics_man_try_acquire_frame,
+        "PS2GraphicsMan_TryAcquireFrame",
+    ),
 ];
 
 /// `DeferMan` layout (offsets from the `DeferMan*`).
@@ -1544,9 +1552,6 @@ pub fn ps2_graphics_man_rotate_axis(c: &mut Cpu) {
     return;
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // 0x396128 TexMan_InvalidateBound
 
@@ -1581,16 +1586,11 @@ pub fn tex_man_invalidate_bound(c: &mut Cpu) {
     ret(c);
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // PS2GraphicsMan_TryAcquireFrame (0x395f60, font.cpp)
 
 /// `PS2GraphicsMan_AcquireFrameBuffer` (reached through the function table).
 pub(crate) const OC264_GM_ACQUIRE_FRAME_BUFFER: u32 = 0x0038_26e0;
-
-
 
 /// `bool PS2GraphicsMan_TryAcquireFrame(PS2GraphicsMan* self)` (0x395f60):
 /// forwards to `PS2GraphicsMan_AcquireFrameBuffer(self)` (claims the
@@ -2536,7 +2536,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// TexMan_InvalidateBound: the texture manager at a random address with
     /// random bound slots. Events are delivered in the two-slot loop.
     #[test]
@@ -2557,10 +2556,14 @@ pub(crate) mod tests {
             }
             mode
         };
-        check_events(ee::s13::f_00396128__generated, tex_man_invalidate_bound, 200, &setup);
+        check_events(
+            ee::s13::f_00396128__generated,
+            tex_man_invalidate_bound,
+            200,
+            &setup,
+        );
     }
     use super::*;
-
 
     /// PS2GraphicsMan_TryAcquireFrame: the current frame buffer's state
     /// free (0), claimed (1) or busy (2); the real AcquireFrameBuffer runs.

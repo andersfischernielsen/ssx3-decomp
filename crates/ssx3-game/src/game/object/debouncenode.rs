@@ -3,6 +3,8 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -51,8 +53,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::ret;
-use crate::call;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -2164,7 +2164,6 @@ pub fn crowd_man3d_group_set_mesh_frame(c: &mut Cpu) {
     })
 }
 
-
 pub(crate) mod crowd3d {
     use super::ee;
     use super::Callee;
@@ -2177,10 +2176,11 @@ pub(crate) mod crowd3d {
     /// Group: its model id (-1: unused).
     pub const GROUP_MODEL: u32 = 0x8;
 
-    pub const GROUP_RENDER: Callee = Callee { addr: 0x0034_4e18, f: ee::s11::f_00344e18 };
+    pub const GROUP_RENDER: Callee = Callee {
+        addr: 0x0034_4e18,
+        f: ee::s11::f_00344e18,
+    };
 }
-
-
 
 /// `void CrowdMan3d_Render(CrowdGroup groups[5])` (0x344138): render every
 /// crowd group in use (`CrowdMan3d_GroupRender`).
@@ -2229,8 +2229,6 @@ pub fn crowd_man3d_render(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // CrowdMan3d_Update (0x3440c8)
 
@@ -2240,15 +2238,11 @@ pub(crate) const CROWD_MAN3D_GROUP_UPDATE: Callee = Callee {
     f: ee::s11::CrowdMan3d_GroupUpdate,
 };
 
-
 /// The crowd manager's five groups (0x1f4 bytes each); a group whose id
 /// (+8) is -1 is unused.
 pub(crate) const CROWD_GROUP_SIZE: u32 = 0x1f4;
 
-
 pub(crate) const CROWD_GROUP_ID: u32 = 0x8;
-
-
 
 /// `void CrowdMan3d_Update(CrowdMan3d *man)` (0x3440c8): updates each of
 /// the five crowd groups that is in use.
@@ -3044,57 +3038,70 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
 
-
     /// Five groups, each unused (-1) or in use with an empty instance list
     /// (every slot -1, so the real `CrowdMan3d_GroupRender` only walks it).
     #[test]
     fn crowd_man3d_render_matches() {
         use crowd3d::*;
-        check(ssx3_ee::s11::f_00344138__generated, crowd_man3d_render, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x344138, 0);
-            c.pc = 0x0034_4138;
-            let groups = DATA;
-            for g in 0..GROUP_COUNT as u32 {
-                let grp = groups + g * GROUP_SIZE;
-                let used = (seed >> g) & 1 == 1;
-                c.bus.write32(grp + GROUP_MODEL, if used { r.next_u32() >> 1 } else { u32::MAX });
-                for k in 0..32 {
-                    c.bus.write32(grp + 0xc + 8 * k, u32::MAX);
+        check(
+            ssx3_ee::s11::f_00344138__generated,
+            crowd_man3d_render,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x344138, 0);
+                c.pc = 0x0034_4138;
+                let groups = DATA;
+                for g in 0..GROUP_COUNT as u32 {
+                    let grp = groups + g * GROUP_SIZE;
+                    let used = (seed >> g) & 1 == 1;
+                    c.bus.write32(
+                        grp + GROUP_MODEL,
+                        if used { r.next_u32() >> 1 } else { u32::MAX },
+                    );
+                    for k in 0..32 {
+                        c.bus.write32(grp + 0xc + 8 * k, u32::MAX);
+                    }
                 }
-            }
-            c.g[A0][0] = groups as u64;
-        });
+                c.g[A0][0] = groups as u64;
+            },
+        );
     }
-
 
     /// CrowdMan3d_Update through the real CrowdMan3d_GroupUpdate: five
     /// groups, each unused (id -1) or with 0..2 members whose update
     /// method is a fake (which may unwind).
     #[test]
     fn crowd_man3d_update_matches() {
-        crate::difftest::fakes::covered(ee::s11::f_003440c8__generated, crowd_man3d_update, 200, &|c, seed| {
-            let mut r = crate::difftest::fakes::machine(c, seed, 0x3440c8, 6);
-            c.pc = 0x0034_40c8;
-            let man = DATA;
-            c.g[A0][0] = sx(man);
-            for g in 0..5u32 {
-                let group = man + g * CROWD_GROUP_SIZE;
-                let used = r.next_u32() % 4 != 0;
-                c.bus.write32(group + CROWD_GROUP_ID, if used { g } else { u32::MAX });
-                c.bus.write32(group + 0x10c, r.next_u32() % 3);
-                c.bus.write32(group + 0x1dc, r.f32(5.0));
-                c.bus.write32(group + 0x1e0, (10.0f32).to_bits());
-                c.bus.write32(group + 0x1e4, r.f32(1.0));
-                let items = DATA + 0x10000 + g * 0x1000;
-                c.bus.write32(group + 0x1ec, items);
-                for i in 0..2u32 {
-                    let item = items + 0xd0 * i;
-                    let vt = DATA + 0x20000 + g * 0x100 + i * 0x20;
-                    c.bus.write32(item + 0x84, vt);
-                    c.bus.write16(vt + 0x10, 0);
-                    c.bus.write32(vt + 0x14, crate::difftest::fakes::FAKE + 0x10 * i);
+        crate::difftest::fakes::covered(
+            ee::s11::f_003440c8__generated,
+            crowd_man3d_update,
+            200,
+            &|c, seed| {
+                let mut r = crate::difftest::fakes::machine(c, seed, 0x3440c8, 6);
+                c.pc = 0x0034_40c8;
+                let man = DATA;
+                c.g[A0][0] = sx(man);
+                for g in 0..5u32 {
+                    let group = man + g * CROWD_GROUP_SIZE;
+                    let used = r.next_u32() % 4 != 0;
+                    c.bus
+                        .write32(group + CROWD_GROUP_ID, if used { g } else { u32::MAX });
+                    c.bus.write32(group + 0x10c, r.next_u32() % 3);
+                    c.bus.write32(group + 0x1dc, r.f32(5.0));
+                    c.bus.write32(group + 0x1e0, (10.0f32).to_bits());
+                    c.bus.write32(group + 0x1e4, r.f32(1.0));
+                    let items = DATA + 0x10000 + g * 0x1000;
+                    c.bus.write32(group + 0x1ec, items);
+                    for i in 0..2u32 {
+                        let item = items + 0xd0 * i;
+                        let vt = DATA + 0x20000 + g * 0x100 + i * 0x20;
+                        c.bus.write32(item + 0x84, vt);
+                        c.bus.write16(vt + 0x10, 0);
+                        c.bus
+                            .write32(vt + 0x14, crate::difftest::fakes::FAKE + 0x10 * i);
+                    }
                 }
-            }
-        });
+            },
+        );
     }
 }

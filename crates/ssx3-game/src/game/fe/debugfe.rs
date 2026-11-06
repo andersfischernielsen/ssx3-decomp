@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -45,6 +46,7 @@ pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2;
 pub(crate) use crate::game::scripter::ssxscriptengine::sw_at;
 pub(crate) use crate::game::wscript::wscriptman::gp;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use callee::*;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
@@ -56,8 +58,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::ret;
-use crate::ps2f::FpuF32;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -193,7 +193,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         keyboard_screen_get_cursor_object_name,
         "KeyboardScreen_GetCursorObjectName",
     ),
-    (0x0018_04b8, feui_input_poll_usb_keyboard, "FEUIInput_PollUsbKeyboard"),
+    (
+        0x0018_04b8,
+        feui_input_poll_usb_keyboard,
+        "FEUIInput_PollUsbKeyboard",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2529,25 +2533,17 @@ pub fn debug_menu_module_update_cursor_trail(c: &mut Cpu) {
     }
 }
 
-
-
-
 // --------------------------------------------------- FEUIInput_PollUsbKeyboard
 
 /// `cUsbKeyboard*` at gp+0x300 (0 when no USB keyboard is set up).
 pub(crate) const FEUI_USB_KEYBOARD_GP: u32 = 0x300;
 
-
 /// FEUIInput: key found (+0xc), key code (+0x10), modifier (+0x14).
 pub(crate) const FEUI_KEY_FOUND: u32 = 0xc;
 
-
 pub(crate) const FEUI_KEY_CODE: u32 = 0x10;
 
-
 pub(crate) const FEUI_KEY_MOD: u32 = 0x14;
-
-
 
 /// `void FEUIInput_PollUsbKeyboard(FEUIInput* self)` (0x1804b8): pops the
 /// next key of USB keyboard channel 0 (`cUsbKeyboard_GetKey`) into the
@@ -3512,8 +3508,7 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-    use crate::difftest::{elf_image};
-
+    use crate::difftest::elf_image;
 
     /// `FEUIInput_PollUsbKeyboard`: no keyboard; a keyboard that is closed,
     /// has an empty channel 0, or has a queued key (zero or non-zero key /
