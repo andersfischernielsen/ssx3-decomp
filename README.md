@@ -16,13 +16,11 @@ code ported to Rust. Rendering, movies, sound, files, controllers and the memory
 native. No emulator runs the game, and no PS2 graphics, video or audio hardware is
 emulated.
 
-- **Fully playable**: every race and freestyle event, Conquer the Mountain, music, saves.
-- **Native renderer** (wgpu): any resolution and aspect ratio, widescreen and ultrawide
+- Fully playable: every race and freestyle event, Conquer the Mountain, music, saves.
+- Native renderer (`wgpu`): any resolution and aspect ratio, widescreen and ultrawide
   through the game's own projection, adjustable field of view, texture packs, optional
   modern graphics (AA, AO, bloom, draw distance).
-- **Configurable game rate** (60/120/144/240 Hz), with no interpolation.
-- **5,527 of 11,844 functions are ported to Rust** (about 90% of a race's per-frame
-  work), each checked against the recompiled original. Every function is named.
+- Configurable game rate: 60/120/144/240 Hz, without interpolation.
 - Runs on macOS, Windows and Linux, plus an experimental browser build ([`crates/ssx3-web`](crates/ssx3-web/README.md)).
 
 #### Porting progress
@@ -38,17 +36,16 @@ are still PS2-shaped; see [`docs/plans/roadmap.md`](docs/plans/roadmap.md) and
 
 ## Getting started
 
-**You need:**
-- **A disc image of SSX 3 (USA)** (`SLUS-20772`, Redump `SSX 3 (USA)`, about 3 GB) made
-  from a disc you own. Other regions are not supported; setup checks the executable's
+You need:
+- A disc image of SSX 3 (USA) (`SLUS-20772`, Redump `SSX 3 (USA)`, about 3 GB) made
+  from a disc you own. Other regions are not supported. Setup checks the executable's
   SHA-256 (`1b49d05ca2793922180851b9e1ce9ae2291d61a7863565ac4e71f12e967af7bc`).
-- **Rust** (stable, via [rustup](https://rustup.rs)) and **Python 3**.
+- Rust (stable, via [rustup](https://rustup.rs)) and Python 3.
 - A GPU with Metal, Vulkan or DX12, and about 7 GB of disk.
 - On Linux: `pkg-config`, `libasound2-dev`, `libudev-dev`. On Windows: the MSVC toolchain
   (not WSL).
 
-Tested on macOS (Apple Silicon) and Windows. On Linux (Ubuntu 24.04) the setup, tests and
-build work; playing there is untested.
+Tested on macOS (Apple Silicon), Linux, and Windows.
 
 ```sh
 git clone https://github.com/andersfischernielsen/ssx3-decomp.git
@@ -62,10 +59,10 @@ Run `setup.py` again after pulling changes to the recompiler. The first build co
 about 55 MB of generated Rust; later builds are incremental. The binary is
 `target/game/ssx3`.
 
-**Standalone build.** `python3 tools/bundle.py` packs the game data into a build that runs
+Standalone build: `python3 tools/bundle.py` packs the game data into a build that runs
 without the ISO or the repository: `dist/SSX3.app` on macOS, one executable on Linux and
-Windows (`tools/bundle/Dockerfile` builds the Linux one anywhere). It contains the game: for
-your own use only, do not share it.
+Windows (`tools/bundle/Dockerfile` builds the Linux one anywhere). 
+It contains the game and is for your own use only. Do not share it.
 
 ## Playing
 
@@ -125,19 +122,19 @@ Mostly Python 3, run from the repository root.
 
 ## Contributing
 
-- **Docs:** [`docs/architecture.md`](docs/architecture.md) (how it fits together),
+- Docs: [`docs/architecture.md`](docs/architecture.md) (how it fits together),
   [`docs/development.md`](docs/development.md) (headless runs, verification, debugging,
   Ghidra), [`docs/plans/`](docs/plans/) (roadmap and active plans).
-- **Porting functions to Rust:**
+- Porting functions to Rust:
   [`docs/investigation/phase2-worker-guide.md`](docs/investigation/phase2-worker-guide.md)
   and [`AGENTS.md`](AGENTS.md). Ports live in `crates/ssx3-game`, are registered in
   `overrides.txt`, and each has a differential test against the generated code. The C++
   decompilation [DevvyDont/ssx3](https://github.com/DevvyDont/ssx3) is a readability aid;
   the generated code is the authority.
-- **Exactness is the rule.** A scripted headless race must give identical RAM before and
+- Exactness is the rule. A scripted headless race must give identical RAM before and
   after a change unless the change is meant to alter behaviour
   (`python3 tools/integrate_wave.py gate`).
-- **CI** builds and tests every crate that doesn't need the disc (`python3 tools/setup.py
+- CI builds and tests every crate that doesn't need the disc (`python3 tools/setup.py
   --stubs-only` gives the same setup locally). Changes to `ssx3-game` or the game itself
   need the differential tests and the RAM gate, run locally.
 - **Never commit game material**: the disc or its files, `generated/` code, disassembly,
