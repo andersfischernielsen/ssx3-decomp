@@ -376,7 +376,9 @@ fn clip_depth_source() -> String {
     const ENTRY: &str = "@vertex\nfn vs_";
     const ARGS: &str =
         "(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut";
-    let body = GPUVU_SOURCES.join("\n") + "\n" + NO_SHADOW;
+    // A CRLF checkout (git on Windows) embeds `\r\n`: the entry-point
+    // patterns below match `\n` only.
+    let body = (GPUVU_SOURCES.join("\n") + "\n" + NO_SHADOW).replace("\r\n", "\n");
     assert_eq!(body.matches(ENTRY).count(), 8, "gpuvu entry points");
     "enable clip_distances;\n".to_string()
         + &body
