@@ -5458,8 +5458,9 @@ pub(crate) fn rider_pair_bump(c: &mut Cpu) -> Flow {
     callee::TRANSLATE.call(c, 0x0010_7af0)?;
     callee::AI_GET_FRAME_COUNTER_2.call(c, 0x0010_7af8)?;
     c.lw_r(V1, at(c, S2, 0x10));
-    // 3-frame bump cooldown is a duration: 3 ticks at 60, 6 at 120.
-    let cool = crate::tick::ticks_from_frames60(c, 3);
+    // Stock bump requires age > 3: the first allowed age is 4 frames.
+    // Scale that interval, then subtract one for the strict comparison.
+    let cool = crate::tick::ticks_from_frames60(c, 4) - 1;
     c.inc_r(V0, cool.wrapping_neg());
     c.g[V1][0] = slt(c, V1, V0);
     let due = c.g[V1][0] != 0;
@@ -5519,8 +5520,9 @@ pub(crate) fn rider_pair_knock_down(c: &mut Cpu) -> Flow {
     c.cycles += 7;
     callee::AI_GET_FRAME_COUNTER_2.call(c, 0x0010_7bec)?;
     c.lw_r(V1, at(c, S5, 0x18));
-    // 3-frame knock-down cooldown is a duration: 3 ticks at 60, 6 at 120.
-    let cool = crate::tick::ticks_from_frames60(c, 3);
+    // Stock knock-down requires age > 3: the first allowed age is 4 frames.
+    // Scale that interval, then subtract one for the strict comparison.
+    let cool = crate::tick::ticks_from_frames60(c, 4) - 1;
     c.inc_r(V0, cool.wrapping_neg());
     c.g[V1][0] = slt(c, V1, V0);
     if c.g[V1][0] == 0 {
@@ -13338,11 +13340,8 @@ pub(crate) mod tests {
         }
     }
 
-    /// `Rider_CheckRiderCollisions`' bump and knock-down cooldowns are 3
-    /// frames at 60 Hz (`slot+0x10`/`+0x18` < now - 3): the same 50 ms at
-    /// every rate. With every pair timer `age` ticks old, the seeds that bump
-    /// (re-stamp a pair timer with `now`) at 60 Hz with age 4 bump at 120 Hz
-    /// only from age 7 on (6 ticks = 3 frames), and none bump at age 3 / 6.
+    /// Stock compares `last < now - 3`, so the first allowed age is four
+    /// frames (1/15 s): 4 ticks at 60 Hz, 8 at 120 Hz and 16 at 240 Hz.
     #[test]
     fn rider_check_rider_collisions_cooldowns_follow_the_rate() {
         use crate::tick;
@@ -13373,18 +13372,42 @@ pub(crate) mod tests {
         assert!(!at_60.is_empty(), "no seed bumps at 60 Hz");
         assert!(
             bumps(60, 3).is_empty(),
-            "60 Hz: bump inside the 3-frame cooldown"
+            "60 Hz: bump before the four-frame interval"
         );
         assert!(
-            bumps(120, 6).is_empty(),
-            "120 Hz: bump inside the 6-tick cooldown"
+            bumps(120, 7).is_empty(),
+            "120 Hz: bump before the eight-tick interval"
         );
-        assert_eq!(bumps(120, 7), at_60, "120 Hz: past the cooldown");
+        assert_eq!(bumps(120, 8), at_60, "120 Hz: past the cooldown");
         assert!(
-            bumps(240, 12).is_empty(),
-            "240 Hz: bump inside the 12-tick cooldown"
+            bumps(240, 15).is_empty(),
+            "240 Hz: bump before the sixteen-tick interval"
         );
-        assert_eq!(bumps(240, 13), at_60, "240 Hz: past the cooldown");
+        assert_eq!(bumps(240, 16), at_60, "240 Hz: past the cooldown");
+    }
+
+    #[test]
+    fn rider_pair_knock_down_cooldown_follows_the_rate() {
+        for (hz, interval) in [(60, 4), (120, 8), (240, 16)] {
+            for age in [interval - 1, interval] {
+                let mut c = crate::difftest::fresh();
+                collisions_setup(&mut c, 0);
+                crate::tick::set_for_test(&mut c, hz);
+                c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+                c.g[S0][0] = sx(OTHERS);
+                c.g[S1][0] = sx(RIDER_2);
+                c.g[S5][0] = sx(RIDER_2);
+                let now = c.bus.read32(WORLD + 0x200 + 8);
+                c.bus.write32(RIDER_2 + 0x18, now.wrapping_sub(age));
+                // Once eligible, stop at the distance check, before any knockdown.
+                put_v(&mut c, OTHERS + 0x110, [1000.0, 0.0, 0.0, 0.0]);
+                put_v(&mut c, RIDER_2 + 0x110, [0.0; 4]);
+                assert!(rider_pair_knock_down(&mut c).is_ok());
+                // An ineligible pair returns just after AI_GetFrameCounter;
+                // an eligible pair calls the animation query next.
+                assert_eq!(c.pc != 0x0010_7bec, age == interval, "{hz} Hz, age {age}");
+            }
+        }
     }
 
     /// A scratch object after the rider fields.
