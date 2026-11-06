@@ -5,8 +5,8 @@
 
 Counts the functions in `crates/ssx3-game/overrides.txt` (ported to Rust)
 against `generated/functions.tsv` (every function of the game), overall and
-split by purpose, then writes the progress bars `docs/images/progress.svg` and
-the function count in README.md. Run it after installing ported functions.
+split by purpose, and writes the progress bars `docs/images/progress.svg`
+(shown in the README). Run it after installing ported functions.
 
 A function's purpose comes from its source directory: the C++ reference's
 (`tools/.refindex.json`, `refindex.py`) or, for a ported function, its
@@ -164,15 +164,6 @@ def main():
     stats = counts()
     with open(os.path.join(ROOT, "docs/images/progress.svg"), "w") as f:
         f.write(svg(stats))
-    readme = os.path.join(ROOT, "README.md")
-    done, fns = stats["All"][:2]
-    text = open(readme).read()
-    text = re.sub(
-        r"\*\*[\d,]+ of [\d,]+ functions are (hand-written|ported to) Rust\*\*",
-        f"**{done:,} of {fns:,} functions are ported to Rust**",
-        text,
-    )
-    open(readme, "w").write(text)
     for g, (d, n, ds, s) in stats.items():
         print(f"{g:28} {d:6,}/{n:6,} functions ({100 * d / n:4.1f}%)  {100 * ds / s:4.1f}% of bytes")
 
