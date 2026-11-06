@@ -25,13 +25,9 @@ emulated.
   work), each checked against the recompiled original. Every function is named.
 - **Runs on macOS, Windows and Linux, plus an experimental browser build ([`crates/ssx3-web`](crates/ssx3-web/README.md)).
 
-#### Status
-
----
+#### Porting progress
 
 <img src="docs/images/progress.svg" width="100%" alt="Porting progress: code ported to Rust vs. recompiled code, overall and by purpose">
-
----
 
 The guest memory, the EE kernel's threads (coroutines on one host thread) and VU0 macro ops
 are still PS2-shaped; see [`docs/plans/roadmap.md`](docs/plans/roadmap.md) and
