@@ -12,7 +12,7 @@
 
 A native **Rust** port of **SSX 3 (USA)** (`SLUS_207.72`, PlayStation 2). The game's code
 was statically recompiled to Rust and is being replaced, function by function, with
-hand-written Rust. Rendering, movies, sound, files, controllers and the memory card are
+code ported to Rust. Rendering, movies, sound, files, controllers and the memory card are
 native. No emulator runs the game, and no PS2 graphics, video or audio hardware is
 emulated.
 
@@ -21,9 +21,13 @@ emulated.
   through the game's own projection, adjustable field of view, texture packs, optional
   modern graphics (AA, AO, bloom, draw distance).
 - **Configurable game rate** (60/120/144/240 Hz), with no interpolation.
-- **5,210 of 11,844 functions are hand-written Rust** (about 90% of a race's per-frame
+- **5,527 of 11,844 functions are ported to Rust** (about 90% of a race's per-frame
   work), each checked against the recompiled original. Every function is named.
-- **Runs on macOS and Windows**, builds on Linux, plus an experimental browser build ([`crates/ssx3-web`](crates/ssx3-web/README.md)).
+- Runs on macOS, Windows and Linux, plus an experimental browser build ([`crates/ssx3-web`](crates/ssx3-web/README.md)).
+
+#### Porting progress
+
+<img src="docs/images/progress.svg" width="100%" alt="Porting progress: code ported to Rust vs. recompiled code, overall and by purpose">
 
 The guest memory, the EE kernel's threads (coroutines on one host thread) and VU0 macro ops
 are still PS2-shaped; see [`docs/plans/roadmap.md`](docs/plans/roadmap.md) and
@@ -87,7 +91,7 @@ emulated reference paths: [`docs/options.md`](docs/options.md).
 | Crate | Role |
 | --- | --- |
 | `ssx3` | Front ends: the windowed `ssx3` (winit + wgpu + gilrs + cpal) and `ssx3-headless`. |
-| `ssx3-game` | The hand-written Rust: game functions in `src/game/<dir>/<unit>.rs` after the C++ source tree, each checked against the generated one; the native draw functions (`packetless`), native libmpeg (`movie.rs`), the native file layer, the tick rate (`tick.rs`). |
+| `ssx3-game` | The code ported to Rust: game functions in `src/game/<dir>/<unit>.rs` after the C++ source tree, each checked against the generated one; the native draw functions (`packetless`), native libmpeg (`movie.rs`), the native file layer, the tick rate (`tick.rs`). |
 | `ssx3-recomp` | The function inventory, the R5900 decoder, and `recomp-ee`: ~808k instructions in 13.3k functions lowered to structured Rust, sharded into 16 crates under `generated/ee/`. `recomp-iop` does the same for the game's IOP modules. See [`docs/investigation/recompiler-v2.md`](docs/investigation/recompiler-v2.md). |
 | `ssx3-ee-rt` | The EE core the generated code compiles against: `Cpu`, instruction semantics (MMI, bit-exact PS2 float), guest memory, the function table, the `Platform` trait. Kept small so hardware changes never recompile generated code. |
 | `ssx3-ps2` | The platform (`Machine`): an HLE EE kernel (threads, semaphores, alarms), the hardware registers the game touches, SIF and the native IOP services, the frame sink and native DMA kick; the emulated GS, VIF and IPU for the reference path. |
@@ -114,7 +118,7 @@ Mostly Python 3, run from the repository root.
 | Area | Tools |
 | --- | --- |
 | Setup and packaging | `setup.py` (extract, check, recompile; `bootstrap.sh` and `extract-from-iso.sh` are the POSIX-shell versions), `bundle.py` (standalone builds; `bundle_icon.py` makes the icon from the game's logo, `bundle/Dockerfile` is a Linux build environment), `upscale-textures.py` (AI-upscaled texture packs). |
-| Porting to hand-written Rust | `pick_wave.py` (choose the next functions by runtime hotness from a `callgraph.py`/`SSX3_CALLPROF` profile), `refsrc.py`, `refbody.py`, `refindex.py`, `refdossier2.py` (look up the matching C++ decompilation and write per-function dossiers), `integrate_wave.py` (install ported modules: regenerate, test, build, RAM gate), `reorg_modules.py` (move ports into the source-tree layout). |
+| Porting to Rust | `pick_wave.py` (choose the next functions by runtime hotness from a `callgraph.py`/`SSX3_CALLPROF` profile), `refsrc.py`, `refbody.py`, `refindex.py`, `refdossier2.py` (look up the matching C++ decompilation and write per-function dossiers), `integrate_wave.py` (install ported modules: regenerate, test, build, RAM gate), `reorg_modules.py` (move ports into the source-tree layout). |
 | Verification | `scenarios.py` (scripted headless scenarios), `bisect_overrides.py` (find the port that makes a run differ), `compare-file-logs.py`, `vu-diff/` (our VU against ps2-web-recomp's interpreter, step by step), `run-headless.sh`, `contact_sheet.py` (a page of headless screenshots). |
 | Tick rate | `scan_framerate.py`, `scan_tick_patterns.py` (find 60 Hz assumptions), `tick_ab.py` (the same race at 60 Hz and N Hz, side by side). |
 | Ghidra and inspection | `export-ghidra-functions.py`, `export-ghidra-boundaries.py`, `export-ghidra-disasm.py`, `import-ghidra-names.py`, `ghidra_create_discovered.py` (keep the function inventory and Ghidra in sync), `iso-ls.py` (files on the disc), `mcls.py` (files on a memory card image), `pine.py` (read and write PCSX2's memory for comparisons). |
@@ -124,7 +128,7 @@ Mostly Python 3, run from the repository root.
 - **Docs:** [`docs/architecture.md`](docs/architecture.md) (how it fits together),
   [`docs/development.md`](docs/development.md) (headless runs, verification, debugging,
   Ghidra), [`docs/plans/`](docs/plans/) (roadmap and active plans).
-- **Porting functions to hand-written Rust:**
+- **Porting functions to Rust:**
   [`docs/investigation/phase2-worker-guide.md`](docs/investigation/phase2-worker-guide.md)
   and [`AGENTS.md`](AGENTS.md). Ports live in `crates/ssx3-game`, are registered in
   `overrides.txt`, and each has a differential test against the generated code. The C++
