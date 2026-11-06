@@ -23,7 +23,7 @@ emulated.
 - **Configurable game rate** (60/120/144/240 Hz), with no interpolation.
 - **5,527 of 11,844 functions are ported to Rust** (about 90% of a race's per-frame
   work), each checked against the recompiled original. Every function is named.
-- **Runs on macOS, Windows and Linux, plus an experimental browser build ([`crates/ssx3-web`](crates/ssx3-web/README.md)).
+- Runs on macOS, Windows and Linux, plus an experimental browser build ([`crates/ssx3-web`](crates/ssx3-web/README.md)).
 
 #### Porting progress
 
