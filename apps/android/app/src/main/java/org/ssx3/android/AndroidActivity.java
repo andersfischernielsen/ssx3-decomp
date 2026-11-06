@@ -1,20 +1,29 @@
 package org.ssx3.android;
 
 import android.app.NativeActivity;
+import android.app.ActivityManager;
 import android.os.Bundle;
 import android.media.AudioManager;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 
 /** Java notifications never wait on Rust or the audio owner. */
 public final class AndroidActivity extends NativeActivity {
     static { System.loadLibrary("ssx3_android"); }
+    private static final SessionClaim SESSION = new SessionClaim();
+    private volatile boolean sessionOwner;
+    // Queried by android_main before bootstrap or installing global callbacks.
+    public boolean ownsSession() { return sessionOwner; }
     private boolean foreground, focused, audioFocus, destroyed, restarting, audioEnabled;
     private AudioManager audio;
     private AudioFocusRequest request;
     private native void nativeState(int bits);
     private void publish() {
+        if (!sessionOwner) return;
         nativeState((foreground ? 1 : 0) | (focused ? 2 : 0)
             | (audioFocus ? 4 : 0) | (destroyed ? 8 : 0));
     }
@@ -23,8 +32,39 @@ public final class AndroidActivity extends NativeActivity {
         audioFocus = change == AudioManager.AUDIOFOCUS_GAIN;
         publish();
     };
+    private final BroadcastReceiver returnToGame = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (!sessionOwner || destroyed || isFinishing()) return;
+            // Only move this existing task. Never create a replacement Activity
+            // in the process that owns the current guest and winit session.
+            for (ActivityManager.AppTask task : getSystemService(ActivityManager.class).getAppTasks()) {
+                if (task.getTaskInfo().taskId == getTaskId()) {
+                    task.moveToFront();
+                    setResultCode(RESULT_OK);
+                    return;
+                }
+            }
+        }
+    };
+    @Override public void onStart() {
+        long started = android.os.SystemClock.elapsedRealtime();
+        android.util.Log.i("SSX3", "onStart entering native lifecycle");
+        super.onStart();
+        android.util.Log.i("SSX3", "onStart acknowledged after "
+            + (android.os.SystemClock.elapsedRealtime() - started) + " ms");
+    }
     @Override public void onCreate(Bundle state) {
+        sessionOwner = SESSION.claim();
+        // NativeActivity must initialize its handle even for a rejected Activity.
+        // android_main returns immediately for it; stock android-activity finishes it.
         super.onCreate(state);
+        if (!sessionOwner) {
+            android.util.Log.w("SSX3", "Rejected duplicate game Activity");
+            finish();
+            return;
+        }
+        registerReceiver(returnToGame,
+            new IntentFilter(getPackageName() + LauncherActivity.RETURN_TO_GAME), Context.RECEIVER_NOT_EXPORTED);
         audio = getSystemService(AudioManager.class);
         request = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME)
@@ -75,12 +115,6 @@ public final class AndroidActivity extends NativeActivity {
         focused = value;
         if (value) { publish(); requestAudio(); } else abandon();
     }
-    @Override public void recreate() {
-        // Neither winit nor all guest globals support a second session in
-        // the same process. Restart from saved data in a fresh process.
-        restart();
-        finish();
-    }
     private void restart() {
         if (restarting) return;
         restarting = true;
@@ -88,9 +122,11 @@ public final class AndroidActivity extends NativeActivity {
             .putExtra("restart", true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
     }
     @Override public void onDestroy() {
+        if (!sessionOwner) { super.onDestroy(); return; }
         if (isChangingConfigurations()) restart();
         destroyed = true;
         abandon();
+        unregisterReceiver(returnToGame);
         // Publish BEFORE super: NativeActivity waits for android_main here.
         // Rust closes audio asynchronously, exits its event loop and ends
         // this dedicated process. The launcher cannot share this process.

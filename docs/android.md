@@ -24,10 +24,19 @@ Saves and settings live in internal app files. There is no storage permission
 and no automatic fallback or save import. Uninstalling deletes app saves.
 Do not replace a card when provisioning game data.
 
-Backgrounding and surface replacement retain the current game. Destroying
+Backgrounding and surface replacement retain the current game. Launcher and
+component-only re-entry ask a live game Activity to bring its separate task
+forward. If the game is finishing, the launcher waits for its process to exit
+before starting a new session. Successful forwarding closes the launcher. An
+unexpected duplicate is finished before guest initialization or winit startup;
+its Java notifications cannot modify the live session. Destroying
 or explicitly recreating the Activity ends the dedicated game process;
 the launcher waits for that process to exit before starting a cold session
 from saved data. Unsaved progress does not survive that boundary. This
 avoids reusing process-global guest state or recreating a winit event loop.
 
 Host lifecycle tests run through Cargo: `tools/android/test-lifecycle.sh`.
+Launcher intent-permutation and session-claim tests run on the JVM with
+`gradle -p apps/android :app:testDebugUnitTest -x :app:buildRust` (JDK/SDK as
+above; no generated guest code needed). These check forwarding and the manifest;
+real task reuse, native duplicate rejection and lifecycle timing still need a device.

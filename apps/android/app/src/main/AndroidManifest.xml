@@ -5,11 +5,12 @@
     <uses-feature android:glEsVersion="0x00030000" android:required="false" />
     <application android:label="SSX 3" android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar">
         <activity android:name=".AndroidActivity" android:process=":game" android:exported="false"
-            android:enableOnBackInvokedCallback="false" android:screenOrientation="sensorLandscape"
+            android:enableOnBackInvokedCallback="false"
+            android:launchMode="singleTask" android:taskAffinity="${applicationId}.game" android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density|fontScale|locale|layoutDirection|keyboardHidden|keyboard|navigation|uiMode">
             <meta-data android:name="android.app.lib_name" android:value="ssx3_android" />
         </activity>
-        <activity android:name=".LauncherActivity" android:exported="true">
+        <activity android:name=".LauncherActivity" android:exported="true" android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
