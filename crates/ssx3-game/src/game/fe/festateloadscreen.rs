@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -83,6 +84,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_stop_loading_screen_loop,
         "SSXAudioSystem_StopLoadingScreenLoop",
     ),
+    (0x0023_3af0, game_state_save_state, "GameState_SaveState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -925,6 +927,40 @@ pub fn cfe_load_screen_unload(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// GameState_SaveState (0x233af0)
+// ---------------------------------------------------------------------------
+
+/// The serialiser's virtual "save state" slot (`vt[1]`: delta at +8,
+/// method at +0xc), and the size argument it gets.
+pub(crate) const GAME_STATE_SAVE_SLOT: u32 = 0x8;
+
+pub(crate) const GAME_STATE_SAVE_SIZE: u64 = 4;
+
+/// `void GameState_SaveState(GameState* self, Serialiser* s)` (0x233af0):
+/// the default save of a game state: `s->vt[1](s, self, 4)` (writes the
+/// state's first word through the serialiser).
+pub fn game_state_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        let serialiser = c.g[A1][0];
+        c.g[A3][0] = serialiser;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[A2][0] = GAME_STATE_SAVE_SIZE;
+        let vt = Addr(serialiser as u32).lw(c);
+        c.g[V1][0] = vt;
+        let slot = crate::call::VSlot::read(c, vt, GAME_STATE_SAVE_SLOT);
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = slot.this(serialiser);
+        call_ptr(c, slot.func as u32, 0x0023_3b18)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1310,6 +1346,29 @@ pub(crate) mod tests {
                     .write32(DATA + 0xc, if seed % 3 == 0 { 0 } else { DATA + 0x1000 });
                 c.bus.write32(DATA + 0x10, 0);
                 c.bus.write32(DATA + 0x14, seed as u32);
+            },
+        );
+    }
+    use super::*;
+
+    /// GameState_SaveState: a serialiser whose vtable slot 1 is a fake
+    /// method (random this-delta; some calls unwind).
+    #[test]
+    fn game_state_save_state_matches() {
+        use crate::difftest::fakes::{covered, machine, ptr, vtable};
+        use crate::difftest::DATA;
+        covered(
+            ssx3_ee::s06::f_00233af0__generated,
+            game_state_save_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x23_3af0, 1);
+                c.pc = 0x0023_3af0;
+                let serialiser = DATA + 0x20_0000 + (r.next_u32() & 0xfff0);
+                let vt = vtable(c, &mut r, &[GAME_STATE_SAVE_SLOT]);
+                c.bus.write32(serialiser, vt);
+                c.g[A0][0] = sx(ptr(&mut r));
+                c.g[A1][0] = sx(serialiser);
             },
         );
     }

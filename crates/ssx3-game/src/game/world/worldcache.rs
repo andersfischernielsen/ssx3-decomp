@@ -170,8 +170,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_world_cache_streamer_update,
         "cWorldCache_StreamerUpdate",
     ),
-    (0x003a_96e0, world_cache_streamer_get_view_clearance, "cWorldCache_StreamerGetViewClearance"),
-    (0x003a_8a90, c_world_cache_alloc_resource, "cWorldCache_AllocResource"),
+    (
+        0x003a_96e0,
+        world_cache_streamer_get_view_clearance,
+        "cWorldCache_StreamerGetViewClearance",
+    ),
+    (
+        0x003a_8a90,
+        c_world_cache_alloc_resource,
+        "cWorldCache_AllocResource",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2780,9 +2788,6 @@ pub fn c_world_cache_streamer_update(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // cWorldCache_StreamerGetViewClearance (0x3a96e0)
 
@@ -2790,23 +2795,16 @@ pub fn c_world_cache_streamer_update(c: &mut Cpu) {
 /// view position quad, and the view's clearance (fade) value.
 pub(crate) const STREAM_VIEW_SIZE: u64 = 0x50;
 
-
 pub(crate) const STREAM_VIEW_USED: u32 = 0x240;
-
 
 pub(crate) const STREAM_VIEW_POS: u32 = 0x250;
 
-
 pub(crate) const STREAM_VIEW_CLEARANCE: u32 = 0x284;
-
-
 
 pub(crate) const WORLD_CACHE_STREAMER_UPDATE_VIEW: Callee = Callee {
     addr: 0x003a_9d60,
     f: ee::s13::cWorldCache_StreamerUpdateView,
 };
-
-
 
 /// `int cWorldCache_StreamerGetViewClearance(cWorldCache* cache, int view,
 /// Vec4* out_pos, float* out_t)` (0x3a96e0): for a used view record,
@@ -2862,7 +2860,6 @@ pub fn world_cache_streamer_get_view_clearance(c: &mut Cpu) {
     })
 }
 
-
 pub(crate) mod world_cache_alloc {
 
     /// Cache: the global bank (+0x4), the bank table (+0x8), the bank
@@ -2910,8 +2907,6 @@ pub(crate) mod world_cache_alloc {
     pub const NAME_AIPATH: u32 = 0x0049_4e98;
 }
 
-
-
 /// How `cWorldCache_AllocResource` allocates a resource type.
 #[derive(Clone, Copy)]
 pub(crate) enum WorldCacheAllocKind {
@@ -2924,8 +2919,6 @@ pub(crate) enum WorldCacheAllocKind {
     /// bank).
     Default,
 }
-
-
 
 /// `void* cWorldCache_AllocResource(cWorldCache* cache, int slot, int type,
 /// int key, int size)` (0x3a8a90): reference resource `type`/`key` (bank
@@ -2995,7 +2988,8 @@ pub fn c_world_cache_alloc_resource(c: &mut Cpu) {
             let slot = abi::arg(c, 1);
             let slot_off = abi::mult(c, slot, CACHE_SLOT_SIZE);
             c.g[V0][0] = sx(slot_off);
-            let list = Addr(slot_off.wrapping_add(cache).wrapping_add(CACHE_SLOT_LISTS)).lw(c) as u32;
+            let list =
+                Addr(slot_off.wrapping_add(cache).wrapping_add(CACHE_SLOT_LISTS)).lw(c) as u32;
             c.g[A2][0] = sx(list);
             c.g[V0][0] = 0;
             let item = |c: &mut Cpu| {
@@ -3106,7 +3100,11 @@ pub fn c_world_cache_alloc_resource(c: &mut Cpu) {
                         c.g[A2][0] = flags;
                         c.cycles += call_cycles;
                         c.g[A0][0] = Addr((at as u32).wrapping_add(SECTION_ALLOCATOR)).lw(c);
-                        Callee { addr: 0x003a_7878, f: ee::s13::f_003a7878 }.call(c, ret_addr)?;
+                        Callee {
+                            addr: 0x003a_7878,
+                            f: ee::s13::f_003a7878,
+                        }
+                        .call(c, ret_addr)?;
                     }
                     None => {
                         // operator new(size, name, flags, 0)
@@ -4257,8 +4255,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
-
     /// `cWorldCache_StreamerGetViewClearance`: view 0 or 1, used or not,
     /// random position and edge-case clearance values; the real
     /// `cWorldCache_StreamerUpdateView` runs on the empty cache.
@@ -4293,7 +4289,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     // -- 0x003a8a90 cWorldCache_AllocResource ----------------------------------
 
     /// `cWorldCache_AllocResource` against the generated body: the global
@@ -4320,64 +4315,84 @@ pub(crate) mod tests {
         const LISTS: u32 = DATA + 0x6_4000;
         const REFS: u32 = DATA + 0x6_8000;
         const BLOCK_BASE: u32 = DATA + 0x8_0000;
-        check(ee::s13::f_003a8a90__generated, c_world_cache_alloc_resource, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x003a_8a90, 3);
-            alloc_ready(c);
-            c.pc = 0x003a_8a90;
-            put_words(
-                c,
-                TYPE_TABLE,
-                &[
-                    CASE_SHARED, CASE_SHARED, CASE_SHARED, CASE_DEFAULT, CASE_DEFAULT,
-                    CASE_DEFAULT, CASE_DEFAULT, CASE_DEFAULT, CASE_STREAM, CASE_STREAM,
-                    CASE_SHARED, CASE_SHARED, CASE_DEFAULT, CASE_AIPATH,
-                ],
-            );
-            let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
-            // Banks 0-3 and the global bank (index 4): per type a refs array.
-            w(c, CACHE + CACHE_GLOBAL_BANK, BANKS + 0x400);
-            w(c, CACHE + CACHE_BANKS, BANK_TABLE);
-            w(c, CACHE + CACHE_SECTIONS, SECTIONS);
-            for k in 0..5u32 {
-                let bank = BANKS + 0x100 * k;
-                if k < 4 {
-                    w(c, BANK_TABLE + 4 * k, bank);
+        check(
+            ee::s13::f_003a8a90__generated,
+            c_world_cache_alloc_resource,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003a_8a90, 3);
+                alloc_ready(c);
+                c.pc = 0x003a_8a90;
+                put_words(
+                    c,
+                    TYPE_TABLE,
+                    &[
+                        CASE_SHARED,
+                        CASE_SHARED,
+                        CASE_SHARED,
+                        CASE_DEFAULT,
+                        CASE_DEFAULT,
+                        CASE_DEFAULT,
+                        CASE_DEFAULT,
+                        CASE_DEFAULT,
+                        CASE_STREAM,
+                        CASE_STREAM,
+                        CASE_SHARED,
+                        CASE_SHARED,
+                        CASE_DEFAULT,
+                        CASE_AIPATH,
+                    ],
+                );
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // Banks 0-3 and the global bank (index 4): per type a refs array.
+                w(c, CACHE + CACHE_GLOBAL_BANK, BANKS + 0x400);
+                w(c, CACHE + CACHE_BANKS, BANK_TABLE);
+                w(c, CACHE + CACHE_SECTIONS, SECTIONS);
+                for k in 0..5u32 {
+                    let bank = BANKS + 0x100 * k;
+                    if k < 4 {
+                        w(c, BANK_TABLE + 4 * k, bank);
+                    }
+                    for ty in 0..16u32 {
+                        w(c, bank + BANK_TYPES + 8 * ty, REFS + (k * 16 + ty) * 0x40);
+                    }
                 }
-                for ty in 0..16u32 {
-                    w(c, bank + BANK_TYPES + 8 * ty, REFS + (k * 16 + ty) * 0x40);
+                let bank = r.next_u32() % 5;
+                let ty = r.next_u32() % 16;
+                let id = r.next_u32() % 16;
+                let refs = REFS + (bank * 16 + ty) * 0x40;
+                let count = [0, 0, 1, 0xff][(r.next_u32() % 4) as usize];
+                w(c, refs + 4 * id, count | r.next_u32() & 0xffff_ff00);
+                // The bank's section allocator: one block with room.
+                let alloc = ALLOCATORS + 0x40 * bank;
+                let block = BLOCKS + 0x40 * bank;
+                if bank < 4 {
+                    w(c, SECTIONS + 4 * bank + SECTION_ALLOCATOR, alloc);
                 }
-            }
-            let bank = r.next_u32() % 5;
-            let ty = r.next_u32() % 16;
-            let id = r.next_u32() % 16;
-            let refs = REFS + (bank * 16 + ty) * 0x40;
-            let count = [0, 0, 1, 0xff][(r.next_u32() % 4) as usize];
-            w(c, refs + 4 * id, count | r.next_u32() & 0xffff_ff00);
-            // The bank's section allocator: one block with room.
-            let alloc = ALLOCATORS + 0x40 * bank;
-            let block = BLOCKS + 0x40 * bank;
-            if bank < 4 {
-                w(c, SECTIONS + 4 * bank + SECTION_ALLOCATOR, alloc);
-            }
-            w(c, alloc + 8, 1 + r.next_u32() % 3);
-            w(c, alloc + 0x10, block);
-            let empty = r.next_u32() % 3 == 0;
-            w(c, block, if empty { 0 } else { BLOCK_BASE });
-            w(c, block + 4, 0x1_0000);
-            w(c, block + 8, if empty { 0 } else { r.next_u32() % 0x400 });
-            w(c, block + 0xc, r.next_u32() % 0x400);
-            // The slot's load list.
-            let slot = r.next_u32() % 4;
-            let list = LISTS + 0x40 * slot;
-            w(c, CACHE + slot * CACHE_SLOT_SIZE + CACHE_SLOT_LISTS, list);
-            w(c, list + LIST_COUNT, r.next_u32() % 8);
-            w(c, list + LIST_ITEMS, list + 0x100);
-            let key = (id << 8) | if bank == 4 { 0xff } else { bank };
-            c.g[A0][0] = sx(CACHE);
-            c.g[A1][0] = slot as u64;
-            c.g[A2][0] = ty as u64;
-            c.g[A3][0] = key as u64;
-            c.g[T0][0] = if r.next_u32() % 5 == 0 { 0 } else { 1 + (r.next_u32() % 0x200) as u64 };
-        });
+                w(c, alloc + 8, 1 + r.next_u32() % 3);
+                w(c, alloc + 0x10, block);
+                let empty = r.next_u32() % 3 == 0;
+                w(c, block, if empty { 0 } else { BLOCK_BASE });
+                w(c, block + 4, 0x1_0000);
+                w(c, block + 8, if empty { 0 } else { r.next_u32() % 0x400 });
+                w(c, block + 0xc, r.next_u32() % 0x400);
+                // The slot's load list.
+                let slot = r.next_u32() % 4;
+                let list = LISTS + 0x40 * slot;
+                w(c, CACHE + slot * CACHE_SLOT_SIZE + CACHE_SLOT_LISTS, list);
+                w(c, list + LIST_COUNT, r.next_u32() % 8);
+                w(c, list + LIST_ITEMS, list + 0x100);
+                let key = (id << 8) | if bank == 4 { 0xff } else { bank };
+                c.g[A0][0] = sx(CACHE);
+                c.g[A1][0] = slot as u64;
+                c.g[A2][0] = ty as u64;
+                c.g[A3][0] = key as u64;
+                c.g[T0][0] = if r.next_u32() % 5 == 0 {
+                    0
+                } else {
+                    1 + (r.next_u32() % 0x200) as u64
+                };
+            },
+        );
     }
 }

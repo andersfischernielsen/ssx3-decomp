@@ -2,7 +2,11 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
+use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -16,6 +20,7 @@ use crate::events::event_due;
 pub(crate) use crate::game::fe::feasyncfile::low_2 as low;
 pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
+use crate::game::lib::snd;
 pub(crate) use crate::game::render::particle::p as p_2;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p;
 pub(crate) use crate::game::world::wscriptcache::DELETE_2 as DELETE;
@@ -31,11 +36,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::ret;
-use crate::abi::addu;
-use crate::abi::reg;
-use crate::abi::set_reg;
-use crate::game::lib::snd;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -460,22 +460,25 @@ pub fn hide_ctor(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // Hide_Save (0x350f40).
 
 /// `WorldObj_Save(self, stream)`.
-pub(crate) const HIDE_WORLD_OBJ_SAVE: Callee = Callee { addr: 0x0034_fe90, f: ee::s11::WorldObj_Save };
-
-
+pub(crate) const HIDE_WORLD_OBJ_SAVE: Callee = Callee {
+    addr: 0x0034_fe90,
+    f: ee::s11::WorldObj_Save,
+};
 
 /// `void Hide_Save(Hide* self, Stream* stream)` (0x350f40): a hide node
 /// saves only its world-object part: `WorldObj_Save(self, stream)`.
 /// Frame 0x10 (ra +0).
 pub fn hide_save(c: &mut Cpu) {
-    crate::call::tail_wrapper(c, None, crate::call::Target::Direct(HIDE_WORLD_OBJ_SAVE), 0x0035_0f50);
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(HIDE_WORLD_OBJ_SAVE),
+        0x0035_0f50,
+    );
 }
 
 #[cfg(test)]
@@ -662,21 +665,25 @@ pub(crate) mod tests {
     use super::*;
     use crate::game::lib::snd::tests as snd_tests;
 
-
     /// `Hide_Save` through the real `WorldObj_Save` (and
     /// `SyncProcess_Save`), the stream's writers fakes (some unwind).
     #[test]
     fn hide_save_matches() {
         use crate::difftest::fakes::{covered, machine, vtable};
-        covered(ee::s11::f_00350f40__generated, hide_save, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x35_0f40, 3);
-            c.pc = 0x0035_0f40;
-            let this = DATA + 0x100;
-            let stream = DATA + 0x400;
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = stream as u64;
-            let vt = vtable(c, &mut r, &[8, 0x30]);
-            c.bus.write32(stream, vt);
-        });
+        covered(
+            ee::s11::f_00350f40__generated,
+            hide_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_0f40, 3);
+                c.pc = 0x0035_0f40;
+                let this = DATA + 0x100;
+                let stream = DATA + 0x400;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = stream as u64;
+                let vt = vtable(c, &mut r, &[8, 0x30]);
+                c.bus.write32(stream, vt);
+            },
+        );
     }
 }

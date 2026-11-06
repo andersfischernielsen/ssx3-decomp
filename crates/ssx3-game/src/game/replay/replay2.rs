@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -74,7 +75,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::ret;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -5171,9 +5171,6 @@ pub fn in_seq_instance_update(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // InSeq_UpdateAll (0x2728f8)
 
@@ -5181,20 +5178,15 @@ pub fn in_seq_instance_update(c: &mut Cpu) {
 /// (+8) and the next node (+0x50).
 pub(crate) const INSEQ_FIRST: u32 = 0x1c;
 
-
 pub(crate) const INSEQ_NODE_INSTANCE: u32 = 0x8;
 
-
 pub(crate) const INSEQ_NODE_NEXT: u32 = 0x50;
-
 
 /// `InSeq_InstanceUpdate` (0x274a30).
 pub(crate) const INSEQ_INSTANCE_UPDATE: Callee = Callee {
     addr: 0x0027_4a30,
     f: ee::s07::InSeq_InstanceUpdate,
 };
-
-
 
 /// `void InSeq_UpdateAll(InSeq *seq)` (0x2728f8): updates the instance of
 /// every node in the sequencer's list. Frame 0x20 (ra at 0, s0 at 0x10).
@@ -7181,33 +7173,42 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// InSeq_UpdateAll: an empty list or one to five nodes whose instances
     /// take the real InSeq_InstanceUpdate's short path (no restart pending,
     /// no queued ticks) into InSeq_InstanceTick's early returns (idle, or
     /// waiting on a delay).
     #[test]
     fn in_seq_update_all_matches() {
-        check(ee::s07::f_002728f8__generated, in_seq_update_all, 200, &|c, seed| {
-            let mut r = Rng(0x0027_28f8 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.pc = 0x0027_28f8;
-            let seq = DATA;
-            let n = if seed % 5 == 0 { 0 } else { 1 + r.next_u32() % 5 };
-            let mut next = 0u32;
-            for i in (0..n).rev() {
-                let node = DATA + 0x1000 + 0x100 * i;
-                let inst = node + INSEQ_NODE_INSTANCE;
-                c.bus.write32(node + INSEQ_NODE_NEXT, next);
-                c.bus.write32(inst + 0x34, 0xffff_ffff);
-                c.bus.write32(inst + 0x38, 0);
-                let idle = r.next_u32() % 2 == 0;
-                c.bus.write32(inst + 0x20, if idle { 0 } else { 1 + r.next_u32() % 4 });
-                c.bus.write32(inst + 0x2c, 1 + r.next_u32() % 100);
-                next = node;
-            }
-            c.bus.write32(seq + INSEQ_FIRST, next);
-            c.g[A0][0] = sx(seq);
-        });
+        check(
+            ee::s07::f_002728f8__generated,
+            in_seq_update_all,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0027_28f8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0027_28f8;
+                let seq = DATA;
+                let n = if seed % 5 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 5
+                };
+                let mut next = 0u32;
+                for i in (0..n).rev() {
+                    let node = DATA + 0x1000 + 0x100 * i;
+                    let inst = node + INSEQ_NODE_INSTANCE;
+                    c.bus.write32(node + INSEQ_NODE_NEXT, next);
+                    c.bus.write32(inst + 0x34, 0xffff_ffff);
+                    c.bus.write32(inst + 0x38, 0);
+                    let idle = r.next_u32() % 2 == 0;
+                    c.bus
+                        .write32(inst + 0x20, if idle { 0 } else { 1 + r.next_u32() % 4 });
+                    c.bus.write32(inst + 0x2c, 1 + r.next_u32() % 100);
+                    next = node;
+                }
+                c.bus.write32(seq + INSEQ_FIRST, next);
+                c.g[A0][0] = sx(seq);
+            },
+        );
     }
 }

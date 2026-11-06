@@ -39,7 +39,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_painter_man_debug_draw_current,
         "cWorldPainterMan_DebugDrawCurrent",
     ),
-    (0x002b_b6b8, c_world_painter_man_debug_draw, "cWorldPainterMan_DebugDraw"),
+    (
+        0x002b_b6b8,
+        c_world_painter_man_debug_draw,
+        "cWorldPainterMan_DebugDraw",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -300,9 +304,6 @@ pub(crate) fn sp_at(c: &Cpu, off: u32) -> u32 {
     sp(c).wrapping_add(off)
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // cWorldPainterMan_DebugDraw (0x2bb6b8)
 
@@ -311,21 +312,15 @@ pub(crate) const WPM_DEBUG_DRAW_CURRENT: Callee = Callee {
     f: ee::s08::cWorldPainterMan_DebugDrawCurrent,
 };
 
-
 /// World (`gp-0x848`) -> world painter manager (+0x84) -> current painter
 /// (+0x10); the painter's +8 is the node set drawn.
 pub(crate) const WPM_WORLD: i32 = -0x848;
 
-
 pub(crate) const WORLD_PAINTER_MAN: u32 = 0x84;
-
 
 pub(crate) const WPM_CURRENT: u32 = 0x10;
 
-
 pub(crate) const PAINTER_NODES: u32 = 0x8;
-
-
 
 /// `void cWorldPainterMan_DebugDraw(void)` (0x2bb6b8): debug-draw the
 /// world's current world painter
@@ -454,7 +449,6 @@ pub(crate) mod tests {
     }
     use super::*;
     use crate::difftest::fakes::{self};
-
 
     // ------------------------------------------------ cWorldPainterMan_DebugDraw
 

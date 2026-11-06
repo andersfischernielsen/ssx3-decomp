@@ -160,7 +160,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_ground_state_collide_walls,
         "RiderGroundState_CollideWalls",
     ),
-    (0x0013_f8f8, obj_ptr_array_merge_sort, "ObjPtrArray_MergeSort"),
+    (
+        0x0013_f8f8,
+        obj_ptr_array_merge_sort,
+        "ObjPtrArray_MergeSort",
+    ),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -7971,24 +7975,17 @@ pub fn rider_ground_state_compute_drag(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // 0x13f8f8 ObjPtrArray_MergeSort
 
 /// The sort key of an object in [`obj_ptr_array_merge_sort`] (unsigned).
 pub(crate) const MERGE_SORT_KEY: u32 = 0x78;
 
-
-
 /// `ObjPtrArray_MergeSort` itself (the recursion).
 pub(crate) const MERGE_SORT_SELF: Callee = Callee {
     addr: 0x0013_f8f8,
     f: ee::s01::ObjPtrArray_MergeSort,
 };
-
-
 
 /// `void ObjPtrArray_MergeSort(Obj** first, Obj** last, Obj** buf, cmp)`
 /// (0x13f8f8): stable merge sort of an object-pointer array by the
@@ -9980,7 +9977,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// ObjPtrArray_MergeSort on -3..=24 pointers (two elements, the small
     /// halves, deep recursion, empty/negative counts), objects with keys
     /// from a small range (ties keep their order) or full 32-bit values
@@ -10004,11 +10000,17 @@ pub(crate) mod tests {
             let small_keys = seed % 3 != 0;
             for i in 0..32u32 {
                 let obj = OBJS + 0x100 * i;
-                c.bus.write32(ARRAY - 0x40 + 4 * i, OBJS + 0x100 * (r.next_u32() % 32));
+                c.bus
+                    .write32(ARRAY - 0x40 + 4 * i, OBJS + 0x100 * (r.next_u32() % 32));
                 c.bus.write32(ARRAY + 4 * i, obj);
                 c.bus.write32(BUF - 0x40 + 4 * i, r.next_u32());
-                c.bus.write32(BUF + 4 * i, OBJS + 0x100 * (r.next_u32() % 32));
-                let key = if small_keys { r.next_u32() % 6 } else { r.next_u32() };
+                c.bus
+                    .write32(BUF + 4 * i, OBJS + 0x100 * (r.next_u32() % 32));
+                let key = if small_keys {
+                    r.next_u32() % 6
+                } else {
+                    r.next_u32()
+                };
                 c.bus.write32(obj + MERGE_SORT_KEY, key);
             }
             c.g[A0][0] = ARRAY as u64;
@@ -10016,7 +10018,12 @@ pub(crate) mod tests {
             c.g[A2][0] = BUF as u64;
             schedule(c, &mut r, seed, 0x0013_f8f8)
         };
-        check_events(ee::s01::f_0013f8f8__generated, obj_ptr_array_merge_sort, 300, &setup);
+        check_events(
+            ee::s01::f_0013f8f8__generated,
+            obj_ptr_array_merge_sort,
+            300,
+            &setup,
+        );
     }
 
     #[test]

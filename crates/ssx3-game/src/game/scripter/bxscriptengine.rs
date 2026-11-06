@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -53,7 +54,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::ret;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -237,7 +237,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0028_33a8, scriptobj_resume, "ScriptObj_Resume"),
     (0x0028_3430, script_obj_activate, "ScriptObj_Activate"),
     (0x0028_3440, script_obj_deactivate, "ScriptObj_Deactivate"),
-    (0x0028_20b0, script_engine_update_processes, "ScriptEngine_UpdateProcesses"),
+    (
+        0x0028_20b0,
+        script_engine_update_processes,
+        "ScriptEngine_UpdateProcesses",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2739,32 +2743,22 @@ pub fn script_engine_start_script(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------- ScriptEngine_UpdateProcesses
 
 /// `ScriptEngine` layout: the sequence player (+0x2b8) and sixteen 0x24-byte
 /// process slots from +0x2c0 (type at +0x4, state at +0x20; 1 = pending).
 pub(crate) const SE_SEQ_PLAYER: u32 = 0x2b8;
 
-
 pub(crate) const SE_SLOTS: u32 = 0x2c0;
-
 
 pub(crate) const SE_SLOT_SIZE: u64 = 0x24;
 
-
 pub(crate) const SE_SLOT_TYPE: u32 = 0x4;
-
 
 pub(crate) const SE_SLOT_STATE: u32 = 0x20;
 
-
 /// The slot-type switch's jump table (six entries, `.rodata`).
 pub(crate) const SE_TYPE_TABLE: u32 = 0x0048_1f70;
-
-
 
 /// `InSeq_UpdateAll` (0x2728f8) and `ScriptEngine_LaunchPendingProcess`
 /// (0x282908).
@@ -2773,13 +2767,10 @@ pub(crate) const SE_IN_SEQ_UPDATE_ALL: Callee = Callee {
     f: ee::s07::f_002728f8,
 };
 
-
 pub(crate) const SE_LAUNCH_PENDING: Callee = Callee {
     addr: 0x0028_2908,
     f: ee::s07::f_00282908,
 };
-
-
 
 /// `void ScriptEngine_UpdateProcesses(ScriptEngine* self)` (0x2820b0), every
 /// frame: update all running sequences, then launch each pending process
@@ -3887,8 +3878,7 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-    use crate::difftest::{put_words};
-
+    use crate::difftest::put_words;
 
     /// ScriptEngine_UpdateProcesses: the real InSeq_UpdateAll with no
     /// running sequences; sixteen slots that are free, running (state 2+),
@@ -3900,35 +3890,46 @@ pub(crate) mod tests {
         const ENGINE: u32 = DATA;
         const SEQ: u32 = DATA + 0x1000;
         const SCRIPTS: u32 = DATA + 0x2000;
-        check(ee::s07::f_002820b0__generated, script_engine_update_processes, 300, &|c, seed| {
-            let mut r = Rng(0x28_20b0 ^ (seed as u64) << 24);
-            scramble(c, &mut r);
-            c.pc = 0x0028_20b0;
-            put_words(
-                c,
-                SE_TYPE_TABLE,
-                &[0x28_2128, 0x28_2120, 0x28_2128, 0x28_2128, 0x28_2128, 0x28_2128],
-            );
-            c.bus.write32(ENGINE + SE_SEQ_PLAYER, SEQ);
-            c.bus.write32(SEQ + 0x1c, 0);
-            c.bus.write32(ENGINE + 0x2b0, SCRIPTS);
-            for i in 0..16 {
-                let slot = ENGINE + SE_SLOTS + 0x24 * i;
-                fill(c, &mut r, slot, 9);
-                let state = match r.next_u32() % 4 {
-                    0 => 0,
-                    1 => 2 + r.next_u32() % 3,
-                    _ => 1,
-                };
-                c.bus.write32(slot + SE_SLOT_STATE, state);
-                let ty = if r.next_u32() % 2 == 0 { 1 } else { r.next_u32() % 8 };
-                c.bus.write32(slot + SE_SLOT_TYPE, ty);
-                c.bus.write32(slot + 0x14, r.next_u32() % 32);
-            }
-            for i in 0..32 {
-                c.bus.write32(SCRIPTS + 8 * i, 0);
-            }
-            c.g[A0][0] = sx(ENGINE);
-        });
+        check(
+            ee::s07::f_002820b0__generated,
+            script_engine_update_processes,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x28_20b0 ^ (seed as u64) << 24);
+                scramble(c, &mut r);
+                c.pc = 0x0028_20b0;
+                put_words(
+                    c,
+                    SE_TYPE_TABLE,
+                    &[
+                        0x28_2128, 0x28_2120, 0x28_2128, 0x28_2128, 0x28_2128, 0x28_2128,
+                    ],
+                );
+                c.bus.write32(ENGINE + SE_SEQ_PLAYER, SEQ);
+                c.bus.write32(SEQ + 0x1c, 0);
+                c.bus.write32(ENGINE + 0x2b0, SCRIPTS);
+                for i in 0..16 {
+                    let slot = ENGINE + SE_SLOTS + 0x24 * i;
+                    fill(c, &mut r, slot, 9);
+                    let state = match r.next_u32() % 4 {
+                        0 => 0,
+                        1 => 2 + r.next_u32() % 3,
+                        _ => 1,
+                    };
+                    c.bus.write32(slot + SE_SLOT_STATE, state);
+                    let ty = if r.next_u32() % 2 == 0 {
+                        1
+                    } else {
+                        r.next_u32() % 8
+                    };
+                    c.bus.write32(slot + SE_SLOT_TYPE, ty);
+                    c.bus.write32(slot + 0x14, r.next_u32() % 32);
+                }
+                for i in 0..32 {
+                    c.bus.write32(SCRIPTS + 8 * i, 0);
+                }
+                c.g[A0][0] = sx(ENGINE);
+            },
+        );
     }
 }

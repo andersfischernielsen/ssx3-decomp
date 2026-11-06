@@ -63,15 +63,15 @@ use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
 
+use crate::abi::addu;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
+use crate::call;
+use crate::call::VSlot;
 /// Replacements in this unit: (address, function, name).
 pub(crate) use crate::game::fe::ovstatemission2::ov_screen_set_widget_visibility;
 pub(crate) use crate::game::fe::splashmanager::oc230_gp;
-use crate::call;
-use crate::abi::addu;
-use crate::abi::reg;
-use crate::abi::set_reg;
-use crate::call::VSlot;
 use crate::game::lib::snd;
 
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -206,12 +206,36 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_sphere_tree_collide_triangle2,
         "RiderSphereTree_CollideTriangle2",
     ),
-    (0x0032_9b90, rider_sphere_tree_scale, "RiderSphereTree_Scale"),
-    (0x0032_b2b8, rider_sphere_tree_collide_box, "RiderSphereTree_CollideBox"),
-    (0x0032_c0f8, collide_mesh_leaf_triangles, "Collide_MeshLeafTriangles"),
-    (0x0032_f8f0, coll_hull_collide_triangle, "CollHull_CollideTriangle"),
-    (0x0032_9a28, rider_sphere_tree_assign, "RiderSphereTree_Assign"),
-    (0x0032_f760, coll_hull_overlaps_aabb, "CollHull_OverlapsAABB"),
+    (
+        0x0032_9b90,
+        rider_sphere_tree_scale,
+        "RiderSphereTree_Scale",
+    ),
+    (
+        0x0032_b2b8,
+        rider_sphere_tree_collide_box,
+        "RiderSphereTree_CollideBox",
+    ),
+    (
+        0x0032_c0f8,
+        collide_mesh_leaf_triangles,
+        "Collide_MeshLeafTriangles",
+    ),
+    (
+        0x0032_f8f0,
+        coll_hull_collide_triangle,
+        "CollHull_CollideTriangle",
+    ),
+    (
+        0x0032_9a28,
+        rider_sphere_tree_assign,
+        "RiderSphereTree_Assign",
+    ),
+    (
+        0x0032_f760,
+        coll_hull_overlaps_aabb,
+        "CollHull_OverlapsAABB",
+    ),
     (0x0032_f840, coll_hull_transform, "CollHull_Transform"),
     (0x0032_fac0, coll_hull_collide_aabb, "CollHull_CollideAABB"),
 ];
@@ -4745,7 +4769,6 @@ pub fn rider_sphere_tree_collide_triangle2(c: &mut Cpu) {
     })
 }
 
-
 pub(crate) mod vu {
     use ssx3_ee_rt::vu0::Src;
     use ssx3_ee_rt::vu0::W;
@@ -4754,14 +4777,12 @@ pub(crate) mod vu {
     use ssx3_ee_rt::vu0::Z;
     use ssx3_ee_rt::Cpu;
 
-
     /// `a · b` (xyz) into GPR `g` and FPR `f`: vf3 = a, vf5 = b, w lane of vf4.
     pub fn dot(c: &mut Cpu, a: u32, b: u32, g: usize, f: usize) {
         c.lqc2(3, a);
         c.lqc2(5, b);
         dot_vf3_vf5(c, g, f);
     }
-
 
     /// The dot product of vf3 and vf5 (already loaded).
     pub fn dot_vf3_vf5(c: &mut Cpu, g: usize, f: usize) {
@@ -4773,7 +4794,6 @@ pub(crate) mod vu {
         c.qmfc2(g, 4);
         c.mtc1(g, f);
     }
-
 
     /// `dst = src / |src|` (vf3 = src, Q = rsqrt).
     pub fn normalize(c: &mut Cpu, src: u32, dst: u32) {
@@ -4789,7 +4809,6 @@ pub(crate) mod vu {
         c.sqc2(5, dst);
     }
 
-
     /// `dst = src * f` (through GPR `g`: mfc1, qmtc2 into vf3).
     pub fn scale(c: &mut Cpu, f: usize, src: u32, dst: u32, g: usize) {
         c.mfc1(g, f);
@@ -4799,7 +4818,6 @@ pub(crate) mod vu {
         c.sqc2(5, dst);
     }
 
-
     /// `dst = a - b` (vf3 = a, vf4 = b).
     pub fn sub(c: &mut Cpu, a: u32, b: u32, dst: u32) {
         c.lqc2(3, a);
@@ -4808,7 +4826,6 @@ pub(crate) mod vu {
         c.sqc2(5, dst);
     }
 
-
     /// `dst = a + b` (vf3 = a, vf4 = b).
     pub fn add(c: &mut Cpu, a: u32, b: u32, dst: u32) {
         c.lqc2(3, a);
@@ -4816,7 +4833,6 @@ pub(crate) mod vu {
         c.vu0().add(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, dst);
     }
-
 
     /// A 128-bit copy through GPR `g` (`lq`, `sq`).
     pub fn copy(c: &mut Cpu, src: u32, dst: u32, g: usize) {
@@ -4882,24 +4898,17 @@ pub(crate) mod leaf {
     pub const SP_BOXES: u32 = 0x30;
 }
 
-
-
 // ------------------------------------------------- RiderSphereTree_CollideBox
 
 /// Collision sphere: centre (+0x10), radius (+0x20), sub-sphere mask
 /// (+0x28) and count (+0x2c).
 pub(crate) const RST_CENTRE: u32 = 0x10;
 
-
 pub(crate) const RST_RADIUS: u32 = 0x20;
-
 
 pub(crate) const RST_MASK: u32 = 0x28;
 
-
 pub(crate) const RST_COUNT: u32 = 0x2c;
-
-
 
 /// `Collide_SphereVsBoxEdges` (0x329590).
 pub(crate) const RST_SPHERE_VS_BOX: Callee = Callee {
@@ -4907,12 +4916,8 @@ pub(crate) const RST_SPHERE_VS_BOX: Callee = Callee {
     f: ee::s10::f_00329590,
 };
 
-
-
 /// `-1.0f`, the "no hit yet" distance.
 pub(crate) const RST_NO_HIT: u64 = 0xffff_ffff_bf80_0000;
-
-
 
 /// `bool RiderSphereTree_CollideBox(Sphere* self, Vec4* boxMin,
 /// Vec4* boxMax, Vec4* outPos, Vec4* outNormal)` (0x32b2b8): sweep the
@@ -5082,8 +5087,6 @@ pub fn rider_sphere_tree_collide_box(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // RiderSphereTree_Scale (0x329b90)
 
@@ -5092,22 +5095,15 @@ pub fn rider_sphere_tree_collide_box(c: &mut Cpu) {
 /// +0x30: centre at +0, radius at +0x10).
 pub(crate) const TREE_ROOT_CENTER: u32 = 0x10;
 
-
 pub(crate) const TREE_ROOT_RADIUS: u32 = 0x20;
-
 
 pub(crate) const TREE_CHILD_COUNT: u32 = 0x2c;
 
-
 pub(crate) const TREE_CHILDREN: u32 = 0x30;
-
 
 pub(crate) const TREE_CHILD_RADIUS: u32 = 0x10;
 
-
 pub(crate) const TREE_CHILD_SIZE: u32 = 0x20;
-
-
 
 /// `vf12 = m * vf8` (VU0 `mula`/`madda`/`madd` by the four columns of the
 /// matrix at `m`, loaded into vf4..vf7), with vf8 loaded from `center`.
@@ -5122,8 +5118,6 @@ pub(crate) fn sphere_center_times_matrix(c: &mut Cpu, center: u32, m: u32) {
     c.vu0().madda(0b1111, 6, Src::Bc(8, Z));
     c.vu0().madd(0b1111, 12, 7, Src::Bc(8, W));
 }
-
-
 
 /// `void RiderSphereTree_Scale(SphereTree* tree /*a0*/, Matrix* m /*a1*/,
 /// float scale /*f12*/)` (0x329b90): move every sphere of the tree (root,
@@ -5222,8 +5216,6 @@ pub fn rider_sphere_tree_scale(c: &mut Cpu) {
     ret(c);
 }
 
-
-
 /// `sw reg, addr`.
 #[inline]
 pub(crate) fn sw_reg(c: &mut Cpu, addr: u32, reg: usize) {
@@ -5231,16 +5223,12 @@ pub(crate) fn sw_reg(c: &mut Cpu, addr: u32, reg: usize) {
     Addr(addr).sw(c, v);
 }
 
-
-
 /// `c.lt.s fs, ft` and the condition bit.
 #[inline]
 pub(crate) fn lt_s(c: &mut Cpu, fs: usize, ft: usize) -> bool {
     c.c_lt_s(fs, ft);
     c.fcc()
 }
-
-
 
 /// The back-face test of triangle s1 (`useNormal && nrm · dir > limit`):
 /// true when it is skipped. Leaves t0 = the normal's address.
@@ -5262,8 +5250,6 @@ pub(crate) fn leaf_faces_away(c: &mut Cpu, limit: u32) -> bool {
     vu::dot(c, normal, this + DIR, V0, 1);
     lt_s(c, 0, 1)
 }
-
-
 
 /// Test triangle s1 (index offset s5) with the collider's virtual triangle
 /// test (swept or not); v0 = hit.
@@ -5308,8 +5294,6 @@ pub(crate) fn leaf_test_tri(c: &mut Cpu, ret_swept: u32, ret_plain: u32) -> call
     call_ptr(c, f, ret)
 }
 
-
-
 /// Count a hit in the stack's hit counter (a0 = the new count).
 pub(crate) fn leaf_count_hit(c: &mut Cpu) {
     use leaf::*;
@@ -5318,8 +5302,6 @@ pub(crate) fn leaf_count_hit(c: &mut Cpu) {
     c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
     sw_reg(c, s + SP_HITS, A0);
 }
-
-
 
 /// `int Collide_MeshLeafTriangles(Collider *self, LeafMesh *mesh, int swept,
 /// TriHit *out)` (0x32c0f8): test the leaf's triangles against the collider
@@ -5372,8 +5354,6 @@ pub fn collide_mesh_leaf_triangles(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 /// Fewer than 11 triangles: test each (v0 = the hit count at the end).
 pub(crate) fn leaf_small(c: &mut Cpu) -> call::Flow {
@@ -5452,8 +5432,6 @@ pub(crate) fn leaf_small(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
-
-
 /// 11 triangles or more: per box of ten that passes the box test, test its
 /// triangles (v0 = the hit count at the end).
 pub(crate) fn leaf_boxed(c: &mut Cpu) -> call::Flow {
@@ -5511,8 +5489,6 @@ pub(crate) fn leaf_boxed(c: &mut Cpu) -> call::Flow {
     c.g[V0][0] = Addr(sp(c) + SP_HITS).lw(c);
     Ok(())
 }
-
-
 
 /// The triangles of box s0 (from s0*10 to min(fp*10, count)).
 pub(crate) fn leaf_box_tris(c: &mut Cpu) -> call::Flow {
@@ -5600,15 +5576,11 @@ pub(crate) fn leaf_box_tris(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
-
-
 // ---------------------------------------------------------------------------
 // CollHull_CollideTriangle (0x32f8f0)
 
 /// The hull's sphere tree versus a triangle (`0x32a1c0`, through the table).
 pub(crate) const SPHERE_TREE_COLLIDE_TRIANGLE: u32 = 0x0032_a1c0;
-
-
 
 /// `int CollHull_CollideTriangle(CollHull* hull, const Vec4* p, const Vec4* a,
 /// const Vec4* b, const Vec4* n, Vec4* point, float* out_len, Vec4* out_dir)`
@@ -5626,36 +5598,23 @@ pub fn coll_hull_collide_triangle(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // CollHull_Transform (0x32f840).
 
 /// `CollHull` field: the source sphere tree (`sSphereTreeNode*`).
 pub(crate) const HULL_SOURCE_TREE: u32 = 0x60;
 
-
-
 /// `CollHull` field: the transformed sphere tree (inline).
 pub(crate) const HULL_TREE: u32 = 0x70;
-
-
 
 /// `CollHull` field: "transformed" flag.
 pub(crate) const HULL_TRANSFORMED: u32 = 0x4;
 
-
-
 /// `RiderSphereTree_Assign(dst, src)`.
 pub(crate) const HULL_SPHERE_TREE_ASSIGN: u32 = 0x0032_9a28;
 
-
-
 /// `RiderSphereTree_Scale(tree, matrix, scale)`.
 pub(crate) const HULL_SPHERE_TREE_SCALE: u32 = 0x0032_9b90;
-
-
 
 /// `void CollHull_Transform(CollHull* hull, sSphereMtx* m, float scale)`
 /// (0x32f840): copy the hull's source sphere tree into its own tree,
@@ -5704,8 +5663,6 @@ pub fn coll_hull_transform(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // RiderSphereTree_Assign (0x329a28, riderspheretree.cpp)
 
@@ -5713,30 +5670,20 @@ pub fn coll_hull_transform(c: &mut Cpu) {
 /// child count, child spheres (0x20 bytes each).
 pub(crate) const OC264_RST_TYPE: u32 = 0x0;
 
-
 pub(crate) const OC264_RST_CENTER: u32 = 0x10;
-
 
 pub(crate) const OC264_RST_RADIUS: u32 = 0x20;
 
-
 pub(crate) const OC264_RST_USER: u32 = 0x24;
-
 
 pub(crate) const OC264_RST_PARENT: u32 = 0x28;
 
-
 pub(crate) const OC264_RST_COUNT: u32 = 0x2c;
-
 
 pub(crate) const OC264_RST_CHILDREN: u32 = 0x30;
 
-
-
 /// `EA_MemCopy` (reached through the function table).
 pub(crate) const OC264_EA_MEM_COPY: u32 = 0x003e_6574;
-
-
 
 /// `RiderSphereTree* RiderSphereTree_Assign(RiderSphereTree* self, const
 /// RiderSphereTree* src)` (0x329a28): copy assignment: the header fields,
@@ -5779,21 +5726,15 @@ pub fn rider_sphere_tree_assign(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // CollHull_OverlapsAABB (0x32f760)
 
 /// Collision hull -> its bounding sphere (`{center: vec4 @0x10, radius @0x20}`).
 pub(crate) const HULL_SPHERE: u32 = 0x60;
 
-
 pub(crate) const HULL_SPHERE_CENTER: u32 = 0x10;
 
-
 pub(crate) const HULL_SPHERE_RADIUS: u32 = 0x20;
-
-
 
 /// `c.le.s a, b` with the condition bit latched.
 pub(crate) fn hull_le(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
@@ -5801,8 +5742,6 @@ pub(crate) fn hull_le(c: &mut Cpu, a: FpuF32, b: FpuF32) -> bool {
     abi::set_fcc(c, le);
     le
 }
-
-
 
 /// `bool CollHull_OverlapsAABB(CollHull *hull, const vec4 *min, const vec4 *max)`
 /// (0x32f760): whether the box around the hull's bounding sphere
@@ -5898,25 +5837,18 @@ pub fn coll_hull_overlaps_aabb(c: &mut Cpu) {
     frame.close(c);
 }
 
-
-
 // ---------------------------------------------------------------------------
 // CollHull_CollideAABB (0x32fac0)
 
 /// The hull's sphere tree.
 pub(crate) const COLL_HULL_SPHERE: u32 = 0x60;
 
-
 /// Hit record: normal at +0, push direction at +0x10, its length at +0x40.
 pub(crate) const COLL_HULL_HIT_DIR: u32 = 0x10;
 
-
 pub(crate) const COLL_HULL_HIT_LEN: u32 = 0x40;
 
-
 pub(crate) const COLL_HULL_COLLIDE_BOX: u32 = 0x0032_b2b8;
-
-
 
 /// `bool CollHull_CollideAABB(CollHull* self, Vec4* boxMin, Vec4* boxMax,
 /// Hit* hit)` (0x32fac0): collide the hull's sphere tree with the box
@@ -7261,7 +7193,6 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
 
-
     /// RiderSphereTree_CollideBox: boxes around the origin, sphere centres
     /// mostly inside (hits) and sometimes outside (misses), radii 0..5; no
     /// sub-sphere mask (first hit), or masks with counts -1..6 (the best of
@@ -7273,50 +7204,54 @@ pub(crate) mod tests {
         const SPHERE: u32 = DATA + 0x3000;
         const OUT_POS: u32 = DATA + 0x4000;
         const OUT_NORMAL: u32 = DATA + 0x4100;
-        check(ee::s10::f_0032b2b8__generated, rider_sphere_tree_collide_box, 300, &|c, seed| {
-            let mut r = Rng(0x32_b2b8 ^ (seed as u64) << 24);
-            scramble(c, &mut r);
-            c.g[GP][0] = sx(GAME_GP);
-            c.pc = 0x0032_b2b8;
-            put_words(c, GAME_GP - 0x2df0, &[0x7149_f2ca, 0x7149_f2ca]);
-            let one = 1.0f32.to_bits();
-            put_vec(c, 0x004f_f140, [one, 0, 0, 0]);
-            put_vec(c, 0x004f_f150, [0, one, 0, 0]);
-            put_vec(c, 0x004f_f160, [0, 0, one, 0]);
-            let coord = |r: &mut Rng, lo: f32, hi: f32| {
-                (lo + (r.next_u32() % 1000) as f32 * (hi - lo) / 1000.0).to_bits()
-            };
-            let outside = seed % 7 == 0;
-            for i in 0..3 {
-                c.bus.write32(BOX + 4 * i, coord(&mut r, -10.0, 0.0));
-                c.bus.write32(BOX + 0x10 + 4 * i, coord(&mut r, 0.0, 10.0));
-                let centre = if outside {
-                    coord(&mut r, 20.0, 30.0)
-                } else {
-                    coord(&mut r, -9.0, 9.0)
+        check(
+            ee::s10::f_0032b2b8__generated,
+            rider_sphere_tree_collide_box,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x32_b2b8 ^ (seed as u64) << 24);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x0032_b2b8;
+                put_words(c, GAME_GP - 0x2df0, &[0x7149_f2ca, 0x7149_f2ca]);
+                let one = 1.0f32.to_bits();
+                put_vec(c, 0x004f_f140, [one, 0, 0, 0]);
+                put_vec(c, 0x004f_f150, [0, one, 0, 0]);
+                put_vec(c, 0x004f_f160, [0, 0, one, 0]);
+                let coord = |r: &mut Rng, lo: f32, hi: f32| {
+                    (lo + (r.next_u32() % 1000) as f32 * (hi - lo) / 1000.0).to_bits()
                 };
-                c.bus.write32(SPHERE + RST_CENTRE + 4 * i, centre);
-            }
-            c.bus.write32(SPHERE + RST_CENTRE + 0xc, one);
-            c.bus.write32(SPHERE + RST_RADIUS, coord(&mut r, 0.0, 5.0));
-            let (mask, count) = if seed % 3 == 0 {
-                (0, r.next_u32())
-            } else {
-                let count = (r.next_u32() % 8).wrapping_sub(1);
-                (r.next_u32() & 0x7f, count)
-            };
-            c.bus.write32(SPHERE + RST_MASK, mask);
-            c.bus.write32(SPHERE + RST_COUNT, count);
-            fill(c, &mut r, OUT_POS, 4);
-            fill(c, &mut r, OUT_NORMAL, 4);
-            c.g[A0][0] = sx(SPHERE);
-            c.g[A1][0] = sx(BOX);
-            c.g[A2][0] = sx(BOX + 0x10);
-            c.g[A3][0] = sx(OUT_POS);
-            c.g[T0][0] = sx(OUT_NORMAL);
-        });
+                let outside = seed % 7 == 0;
+                for i in 0..3 {
+                    c.bus.write32(BOX + 4 * i, coord(&mut r, -10.0, 0.0));
+                    c.bus.write32(BOX + 0x10 + 4 * i, coord(&mut r, 0.0, 10.0));
+                    let centre = if outside {
+                        coord(&mut r, 20.0, 30.0)
+                    } else {
+                        coord(&mut r, -9.0, 9.0)
+                    };
+                    c.bus.write32(SPHERE + RST_CENTRE + 4 * i, centre);
+                }
+                c.bus.write32(SPHERE + RST_CENTRE + 0xc, one);
+                c.bus.write32(SPHERE + RST_RADIUS, coord(&mut r, 0.0, 5.0));
+                let (mask, count) = if seed % 3 == 0 {
+                    (0, r.next_u32())
+                } else {
+                    let count = (r.next_u32() % 8).wrapping_sub(1);
+                    (r.next_u32() & 0x7f, count)
+                };
+                c.bus.write32(SPHERE + RST_MASK, mask);
+                c.bus.write32(SPHERE + RST_COUNT, count);
+                fill(c, &mut r, OUT_POS, 4);
+                fill(c, &mut r, OUT_NORMAL, 4);
+                c.g[A0][0] = sx(SPHERE);
+                c.g[A1][0] = sx(BOX);
+                c.g[A2][0] = sx(BOX + 0x10);
+                c.g[A3][0] = sx(OUT_POS);
+                c.g[T0][0] = sx(OUT_NORMAL);
+            },
+        );
     }
-
 
     // --------------------------------------------------- RiderSphereTree_Scale
 
@@ -7369,7 +7304,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// A collider and a leaf mesh of 0..25 triangles (small meshes and boxed
     /// ones, with a partial last box). The triangle and box tests are fakes
     /// (hits; some seeds unwind) or a real leaf returning 0 (misses), chosen
@@ -7379,52 +7313,64 @@ pub(crate) mod tests {
         use crate::difftest::fakes::{covered, FAKE};
         use leaf::*;
         const MISS: u32 = 0x0014_06c0;
-        covered(ssx3_ee::s10::f_0032c0f8__generated, collide_mesh_leaf_triangles, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x32c0f8, 30);
-            c.pc = 0x0032_c0f8;
-            let this = DATA;
-            let vt = DATA + 0x100;
-            let mesh = DATA + 0x200;
-            let indices = DATA + 0x400;
-            let boxes = DATA + 0x600;
-            let verts = DATA + 0x800;
-            let normals = DATA + 0xa00;
-            let out = DATA + 0x1000;
-            c.bus.write32(this + USE_NORMAL, (seed % 3 != 0) as u32);
-            put_vec(c, this + DIR, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
-            c.bus.write32(this + VTABLE, vt);
-            for (i, slot) in [VT_TRI, VT_TRI_SWEPT, VT_BOX].into_iter().enumerate() {
-                c.bus.write16(vt + slot, ((r.next_u32() as i16) & !3) as u16);
-                let f = if r.next_u32() % 4 == 0 { MISS } else { FAKE + 0x10 * i as u32 };
-                c.bus.write32(vt + slot + 4, f);
-            }
-            let tris = match seed % 4 {
-                0 => r.next_u32() % 11,
-                1 => 11 + r.next_u32() % 15,
-                2 => 20,
-                _ => r.next_u32() % 26,
-            };
-            c.bus.write16(mesh + NUM_TRIS, tris as u16);
-            c.bus.write32(mesh + INDICES, indices);
-            c.bus.write32(mesh + BOXES, boxes);
-            c.bus.write32(mesh + VERTS, verts);
-            c.bus.write32(mesh + NORMALS, normals);
-            for k in 0..3 * 25 {
-                c.bus.write8(indices + k, (r.next_u32() % 16) as u8);
-            }
-            for k in 0..25 {
-                put_vec(c, normals + 16 * k, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
-            }
-            c.bus.write32(GAME_GP - GP_FACING_SMALL, r.f32(1.0));
-            c.bus.write32(GAME_GP - GP_FACING_BOXED, r.f32(1.0));
-            c.g[A0][0] = this as u64;
-            c.g[A1][0] = mesh as u64;
-            c.g[A2][0] = if seed % 2 == 0 { 0 } else { r.next_u32() as u64 };
-            c.g[A3][0] = out as u64;
-        });
+        covered(
+            ssx3_ee::s10::f_0032c0f8__generated,
+            collide_mesh_leaf_triangles,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32c0f8, 30);
+                c.pc = 0x0032_c0f8;
+                let this = DATA;
+                let vt = DATA + 0x100;
+                let mesh = DATA + 0x200;
+                let indices = DATA + 0x400;
+                let boxes = DATA + 0x600;
+                let verts = DATA + 0x800;
+                let normals = DATA + 0xa00;
+                let out = DATA + 0x1000;
+                c.bus.write32(this + USE_NORMAL, (seed % 3 != 0) as u32);
+                put_vec(c, this + DIR, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                c.bus.write32(this + VTABLE, vt);
+                for (i, slot) in [VT_TRI, VT_TRI_SWEPT, VT_BOX].into_iter().enumerate() {
+                    c.bus
+                        .write16(vt + slot, ((r.next_u32() as i16) & !3) as u16);
+                    let f = if r.next_u32() % 4 == 0 {
+                        MISS
+                    } else {
+                        FAKE + 0x10 * i as u32
+                    };
+                    c.bus.write32(vt + slot + 4, f);
+                }
+                let tris = match seed % 4 {
+                    0 => r.next_u32() % 11,
+                    1 => 11 + r.next_u32() % 15,
+                    2 => 20,
+                    _ => r.next_u32() % 26,
+                };
+                c.bus.write16(mesh + NUM_TRIS, tris as u16);
+                c.bus.write32(mesh + INDICES, indices);
+                c.bus.write32(mesh + BOXES, boxes);
+                c.bus.write32(mesh + VERTS, verts);
+                c.bus.write32(mesh + NORMALS, normals);
+                for k in 0..3 * 25 {
+                    c.bus.write8(indices + k, (r.next_u32() % 16) as u8);
+                }
+                for k in 0..25 {
+                    put_vec(c, normals + 16 * k, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                }
+                c.bus.write32(GAME_GP - GP_FACING_SMALL, r.f32(1.0));
+                c.bus.write32(GAME_GP - GP_FACING_BOXED, r.f32(1.0));
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = mesh as u64;
+                c.g[A2][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() as u64
+                };
+                c.g[A3][0] = out as u64;
+            },
+        );
     }
-
-
 
     /// `CollHull_CollideTriangle`: a single sphere (no child mask) over a
     /// triangle in the y = 0 plane, above/inside it (contact: push length
@@ -7457,7 +7403,10 @@ pub(crate) mod tests {
                 c.bus.write32(HULL + 0x60, TREE);
                 let (x, z) = match seed % 4 {
                     3 => (8.0, 8.0), // outside the triangle
-                    _ => (1.0 + (r.next_u32() % 4) as f32, 1.0 + (r.next_u32() % 4) as f32),
+                    _ => (
+                        1.0 + (r.next_u32() % 4) as f32,
+                        1.0 + (r.next_u32() % 4) as f32,
+                    ),
                 };
                 let y = match seed % 5 {
                     0 => 3.0, // above the sphere's reach
@@ -7482,13 +7431,12 @@ pub(crate) mod tests {
         );
     }
     use super::*;
+    use super::*;
+    use super::*;
     use crate::game::lib::snd::tests as snd_tests;
-    use super::*;
-    use super::*;
     // (fakes imported above)
-    use crate::difftest::{elf_image};
     use super::*;
-
+    use crate::difftest::elf_image;
 
     /// `CollHull_Transform` with the real `RiderSphereTree_Assign` (and its
     /// memcpy) and `RiderSphereTree_Scale`: source trees of 0..5 child
@@ -7496,51 +7444,63 @@ pub(crate) mod tests {
     #[test]
     fn coll_hull_transform_matches() {
         use crate::difftest::fill;
-        check(ee::s11::f_0032f840__generated, coll_hull_transform, 200, &|c, seed| {
-            let mut r = Rng(0x0032_f840 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            let hull = DATA;
-            let matrix = DATA + 0x1000;
-            let source = DATA + 0x2000;
-            c.g[A0][0] = sx(hull);
-            c.g[A1][0] = sx(matrix);
-            c.f[12] = if seed % 7 == 0 { r.edge_f32() } else { r.f32(4.0) };
-            for i in 0..16 {
-                c.bus.write32(matrix + 4 * i, r.f32(100.0));
-            }
-            fill(c, &mut r, hull, 0x70 + 0x30 + 6 * 0x20);
-            c.bus.write32(hull + HULL_SOURCE_TREE, source);
-            fill(c, &mut r, source, 0x30);
-            // Centre, radius and children: floats; the child count small.
-            for i in 0..4 + 6 * 8 {
-                let a = source + 0x10 + 4 * i;
-                if a != source + 0x2c {
-                    c.bus.write32(a, r.f32(500.0));
+        check(
+            ee::s11::f_0032f840__generated,
+            coll_hull_transform,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0032_f840 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                let hull = DATA;
+                let matrix = DATA + 0x1000;
+                let source = DATA + 0x2000;
+                c.g[A0][0] = sx(hull);
+                c.g[A1][0] = sx(matrix);
+                c.f[12] = if seed % 7 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(4.0)
+                };
+                for i in 0..16 {
+                    c.bus.write32(matrix + 4 * i, r.f32(100.0));
                 }
-            }
-            c.bus.write32(source + 0x2c, seed % 6);
-            c.pc = 0x0032_f840;
-        });
+                fill(c, &mut r, hull, 0x70 + 0x30 + 6 * 0x20);
+                c.bus.write32(hull + HULL_SOURCE_TREE, source);
+                fill(c, &mut r, source, 0x30);
+                // Centre, radius and children: floats; the child count small.
+                for i in 0..4 + 6 * 8 {
+                    let a = source + 0x10 + 4 * i;
+                    if a != source + 0x2c {
+                        c.bus.write32(a, r.f32(500.0));
+                    }
+                }
+                c.bus.write32(source + 0x2c, seed % 6);
+                c.pc = 0x0032_f840;
+            },
+        );
     }
-
 
     /// RiderSphereTree_Assign: random headers with 0..5 children, copied
     /// by the real EA_MemCopy.
     #[test]
     fn rider_sphere_tree_assign_matches() {
-        check(ee::s10::f_00329a28__generated, rider_sphere_tree_assign, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x329a_28, 0);
-            c.pc = 0x0032_9a28;
-            let this = DATA + 0x1000;
-            let src = DATA + 0x2000;
-            c.g[A0][0] = sx(this);
-            c.g[A1][0] = sx(src);
-            fill(c, &mut r, this, 0xd0 / 4);
-            fill(c, &mut r, src, 0xd0 / 4);
-            c.bus.write32(src + OC264_RST_COUNT, seed % 6);
-        });
+        check(
+            ee::s10::f_00329a28__generated,
+            rider_sphere_tree_assign,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x329a_28, 0);
+                c.pc = 0x0032_9a28;
+                let this = DATA + 0x1000;
+                let src = DATA + 0x2000;
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(src);
+                fill(c, &mut r, this, 0xd0 / 4);
+                fill(c, &mut r, src, 0xd0 / 4);
+                c.bus.write32(src + OC264_RST_COUNT, seed % 6);
+            },
+        );
     }
-
 
     // ------------------------------------------------------- CollHull_OverlapsAABB
 
@@ -7580,8 +7540,16 @@ pub(crate) mod tests {
                     lo[a] = center[a] - rad;
                     hi[a] = center[a] + rad;
                     // Touching exactly on some seeds (the `<=`).
-                    mn[a] = if seed % 5 == 0 { hi[a] } else { center[a] - 0.25 };
-                    mx[a] = if seed % 5 == 1 { lo[a] } else { center[a] + 0.25 };
+                    mn[a] = if seed % 5 == 0 {
+                        hi[a]
+                    } else {
+                        center[a] - 0.25
+                    };
+                    mx[a] = if seed % 5 == 1 {
+                        lo[a]
+                    } else {
+                        center[a] + 0.25
+                    };
                 }
                 let fail = seed % 7;
                 if fail < 6 {
@@ -7613,7 +7581,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// CollHull_CollideAABB with the real RiderSphereTree_CollideBox (the
     /// fixture of its own test): boxes around the origin, the hull's sphere
     /// inside (hit: length and normalised direction) or outside (miss),
@@ -7625,41 +7592,50 @@ pub(crate) mod tests {
         const BOX: u32 = DATA + 0x2000;
         const SPHERE: u32 = DATA + 0x3000;
         const HIT: u32 = DATA + 0x4000;
-        crate::difftest::check(ee::s11::f_0032fac0__generated, coll_hull_collide_aabb, 300, &|c, seed| {
-            let mut r = Rng(0x32_fac0 ^ (seed as u64) << 24);
-            scramble(c, &mut r);
-            c.g[GP][0] = sx(GAME_GP);
-            c.pc = 0x0032_fac0;
-            put_words(c, GAME_GP - 0x2df0, &[0x7149_f2ca, 0x7149_f2ca]);
-            let one = 1.0f32.to_bits();
-            put_vec(c, 0x004f_f140, [one, 0, 0, 0]);
-            put_vec(c, 0x004f_f150, [0, one, 0, 0]);
-            put_vec(c, 0x004f_f160, [0, 0, one, 0]);
-            let coord = |r: &mut Rng, lo: f32, hi: f32| {
-                (lo + (r.next_u32() % 1000) as f32 * (hi - lo) / 1000.0).to_bits()
-            };
-            let outside = seed % 5 == 0;
-            for i in 0..3 {
-                c.bus.write32(BOX + 4 * i, coord(&mut r, -10.0, 0.0));
-                c.bus.write32(BOX + 0x10 + 4 * i, coord(&mut r, 0.0, 10.0));
-                let centre = if outside { coord(&mut r, 20.0, 30.0) } else { coord(&mut r, -9.0, 9.0) };
-                c.bus.write32(SPHERE + 0x10 + 4 * i, centre);
-            }
-            c.bus.write32(SPHERE + 0x1c, one);
-            c.bus.write32(SPHERE + 0x20, coord(&mut r, 0.0, 5.0));
-            let (mask, count) = if seed % 3 == 0 {
-                (0, r.next_u32())
-            } else {
-                ((r.next_u32() & 0x7f), (r.next_u32() % 8).wrapping_sub(1))
-            };
-            c.bus.write32(SPHERE + 0x28, mask);
-            c.bus.write32(SPHERE + 0x2c, count);
-            fill(c, &mut r, HIT, 0x14);
-            c.bus.write32(HULL + COLL_HULL_SPHERE, SPHERE);
-            c.g[A0][0] = sx(HULL);
-            c.g[A1][0] = sx(BOX);
-            c.g[A2][0] = sx(BOX + 0x10);
-            c.g[A3][0] = sx(HIT);
-        });
+        crate::difftest::check(
+            ee::s11::f_0032fac0__generated,
+            coll_hull_collide_aabb,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x32_fac0 ^ (seed as u64) << 24);
+                scramble(c, &mut r);
+                c.g[GP][0] = sx(GAME_GP);
+                c.pc = 0x0032_fac0;
+                put_words(c, GAME_GP - 0x2df0, &[0x7149_f2ca, 0x7149_f2ca]);
+                let one = 1.0f32.to_bits();
+                put_vec(c, 0x004f_f140, [one, 0, 0, 0]);
+                put_vec(c, 0x004f_f150, [0, one, 0, 0]);
+                put_vec(c, 0x004f_f160, [0, 0, one, 0]);
+                let coord = |r: &mut Rng, lo: f32, hi: f32| {
+                    (lo + (r.next_u32() % 1000) as f32 * (hi - lo) / 1000.0).to_bits()
+                };
+                let outside = seed % 5 == 0;
+                for i in 0..3 {
+                    c.bus.write32(BOX + 4 * i, coord(&mut r, -10.0, 0.0));
+                    c.bus.write32(BOX + 0x10 + 4 * i, coord(&mut r, 0.0, 10.0));
+                    let centre = if outside {
+                        coord(&mut r, 20.0, 30.0)
+                    } else {
+                        coord(&mut r, -9.0, 9.0)
+                    };
+                    c.bus.write32(SPHERE + 0x10 + 4 * i, centre);
+                }
+                c.bus.write32(SPHERE + 0x1c, one);
+                c.bus.write32(SPHERE + 0x20, coord(&mut r, 0.0, 5.0));
+                let (mask, count) = if seed % 3 == 0 {
+                    (0, r.next_u32())
+                } else {
+                    ((r.next_u32() & 0x7f), (r.next_u32() % 8).wrapping_sub(1))
+                };
+                c.bus.write32(SPHERE + 0x28, mask);
+                c.bus.write32(SPHERE + 0x2c, count);
+                fill(c, &mut r, HIT, 0x14);
+                c.bus.write32(HULL + COLL_HULL_SPHERE, SPHERE);
+                c.g[A0][0] = sx(HULL);
+                c.g[A1][0] = sx(BOX);
+                c.g[A2][0] = sx(BOX + 0x10);
+                c.g[A3][0] = sx(HIT);
+            },
+        );
     }
 }

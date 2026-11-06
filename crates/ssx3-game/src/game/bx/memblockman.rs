@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -13,6 +14,7 @@ use crate::call::Frame;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::rider::gp_at;
 pub(crate) use crate::game::dirtysock::tags2::lw;
 pub(crate) use crate::game::fe::debugfe::r32_2;
 pub(crate) use crate::game::fe::feasyncfile::lh_r;
@@ -21,6 +23,7 @@ pub(crate) use crate::game::fe::feasyncfile::lw_r;
 pub(crate) use crate::game::fe::feasyncfile::p as p_3;
 pub(crate) use crate::game::fe::feasyncfile::sw_r;
 pub(crate) use crate::game::fe::festateload::at as at_2;
+pub(crate) use crate::game::intersect::riderspheretree::sw_reg;
 pub(crate) use crate::game::movie::movieplayer::gp;
 pub(crate) use crate::game::render::particle::at;
 pub(crate) use crate::game::scripter::ssxscriptengine::p_2 as p;
@@ -38,9 +41,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::call;
-pub(crate) use crate::game::intersect::riderspheretree::sw_reg;
-pub(crate) use crate::game::ai::rider::gp_at;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -94,7 +94,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0031_aa58, ps2_exec_man_wait_frame, "PS2ExecMan_WaitFrame"),
     (0x0031_ad20, ssx_cd_tray_callback, "ssx_CdTrayCallback"),
-    (0x0031_abd0, ps2_exec_man_vblank_signal, "PS2ExecMan_VBlankSignal"),
+    (
+        0x0031_abd0,
+        ps2_exec_man_vblank_signal,
+        "PS2ExecMan_VBlankSignal",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1299,7 +1303,6 @@ pub fn ps2_exec_man_vblank_end_intc(c: &mut Cpu) {
     })
 }
 
-
 pub(crate) mod cd_tray {
 
     /// gp+0xde4: a tray request is pending (close the tray first).
@@ -1321,8 +1324,6 @@ pub(crate) mod cd_tray {
     /// `EAFile_CdMountDisc()`.
     pub const EAFILE_CD_MOUNT_DISC: u32 = 0x003e_3d78;
 }
-
-
 
 /// `int ssx_CdTrayCallback(void)` (0x31ad20): the CD tray poll: answer a
 /// pending tray request (`sceCdTrayReq(2, &cnt)`), and when the status asks
@@ -1383,35 +1384,25 @@ pub fn ssx_cd_tray_callback(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // PS2ExecMan_WaitFrame (0x31aa58)
 
 /// PS2ExecMan: vtable, the frame semaphore id, the "waiting" flag.
 pub(crate) const EXEC_VT: u32 = 0x8;
 
-
 pub(crate) const EXEC_FRAME_SEMA: u32 = 0x18;
 
-
 pub(crate) const EXEC_WAITING: u32 = 0x1c;
-
 
 /// Virtual slots called before and after the wait.
 pub(crate) const EXEC_PRE_WAIT_SLOT: u32 = 0x58;
 
-
 pub(crate) const EXEC_POST_WAIT_SLOT: u32 = 0x60;
-
 
 /// `WaitSema` and `PollSema` (EE kernel wrappers, through the table).
 pub(crate) const WAIT_SEMA: u32 = 0x0042_3de0;
 
-
 pub(crate) const POLL_SEMA: u32 = 0x0042_3df0;
-
-
 
 /// `void PS2ExecMan_WaitFrame(PS2ExecMan* self)` (0x31aa58): mark the manager
 /// waiting, call its pre-wait hook (virtual slot 0x58), block on the frame
@@ -1465,8 +1456,6 @@ pub fn ps2_exec_man_wait_frame(c: &mut Cpu) {
     })
 }
 
-
-
 /// The pre-wait virtual call: `v1` holds the vtable, `v0` the method.
 pub(crate) fn virtual_call(c: &mut Cpu, slot: u32, ret: u32) -> crate::call::Flow {
     let this = r32(c, S0);
@@ -1479,19 +1468,13 @@ pub(crate) fn virtual_call(c: &mut Cpu, slot: u32, ret: u32) -> crate::call::Flo
     call_ptr(c, method, ret)
 }
 
-
-
-
 // -- 0x0031abd0 PS2ExecMan_VBlankSignal --------------------------------------
 
 /// Exec manager: "VSync thread busy" flag (+0x4038) and its VBlank
 /// semaphore id (+0x4034).
 pub(crate) const EXEC_VSYNC_BUSY: u32 = 0x4038;
 
-
 pub(crate) const EXEC_VSYNC_SEMA: u32 = 0x4034;
-
-
 
 /// `void PS2ExecMan_VBlankSignal(void)` (0x31abd0), the VBlank handler: when
 /// the exec manager's VSync thread is idle (+0x4038 == 0), wake it with
@@ -1502,7 +1485,11 @@ pub fn ps2_exec_man_vblank_signal(c: &mut Cpu) {
         let frame = Frame::open(c, 0x10);
         frame.save_ra(c, 0);
         // App_GetExecMan()
-        Callee { addr: 0x0031_7520, f: ee::s10::f_00317520 }.call(c, 0x0031_abe0)?;
+        Callee {
+            addr: 0x0031_7520,
+            f: ee::s10::f_00317520,
+        }
+        .call(c, 0x0031_abe0)?;
         let exec = c.g[V0][0];
         c.g[V1][0] = exec;
         let busy = Addr((exec as u32).wrapping_add(EXEC_VSYNC_BUSY)).lw(c);
@@ -2019,12 +2006,10 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
 
-
     /// Write a gp-relative global.
     pub(crate) fn put_gp(c: &mut Cpu, off: i32, v: u32) {
         c.bus.write32(GAME_GP.wrapping_add(off as u32), v);
     }
-
 
     /// The tray poll with and without a pending request, and status words
     /// without the re-mount bits (both set means `EAFile_CdMountDisc`, which
@@ -2034,22 +2019,29 @@ pub(crate) mod tests {
     #[test]
     fn ssx_cd_tray_callback_matches() {
         use cd_tray::*;
-        check(ssx3_ee::s10::f_0031ad20__generated, ssx_cd_tray_callback, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x31ad20, 0);
-            c.pc = 0x0031_ad20;
-            put_gp(c, GP_TRAY_PENDING, if seed % 2 == 0 { 0 } else { r.next_u32() | 1 });
-            put_gp(c, GP_TRAY_OPENED, r.next_u32());
-            let status = r.next_u32();
-            let status = match seed / 2 % 3 {
-                0 => status & !6,
-                1 => status & !4 | 2,
-                _ => status & !2 | 4,
-            };
-            c.bus.write32(CD_STATUS, status);
-        });
+        check(
+            ssx3_ee::s10::f_0031ad20__generated,
+            ssx_cd_tray_callback,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31ad20, 0);
+                c.pc = 0x0031_ad20;
+                put_gp(
+                    c,
+                    GP_TRAY_PENDING,
+                    if seed % 2 == 0 { 0 } else { r.next_u32() | 1 },
+                );
+                put_gp(c, GP_TRAY_OPENED, r.next_u32());
+                let status = r.next_u32();
+                let status = match seed / 2 % 3 {
+                    0 => status & !6,
+                    1 => status & !4 | 2,
+                    _ => status & !2 | 4,
+                };
+                c.bus.write32(CD_STATUS, status);
+            },
+        );
     }
-
-
 
     /// `PS2ExecMan_WaitFrame`: fake pre/post hooks (v-table), the real
     /// `WaitSema`/`PollSema` wrappers on the fake syscall; `PollSema`
@@ -2082,7 +2074,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     // -- 0x0031abd0 PS2ExecMan_VBlankSignal ------------------------------------
 
     /// `PS2ExecMan_VBlankSignal` against the generated body: the VSync thread
@@ -2094,14 +2085,23 @@ pub(crate) mod tests {
         use crate::difftest::{DATA, GAME_GP};
         const APP: u32 = DATA + 0x1_0000;
         const EXEC: u32 = DATA + 0x2_0000;
-        covered(ee::s10::f_0031abd0__generated, ps2_exec_man_vblank_signal, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0031_abd0, 1);
-            c.pc = 0x0031_abd0;
-            c.bus.write32(GAME_GP + 0x2a74, APP);
-            c.bus.write32(APP + 8, EXEC);
-            let busy = if r.next_u32() % 3 == 0 { r.next_u32() | 1 } else { 0 };
-            c.bus.write32(EXEC + EXEC_VSYNC_BUSY, busy);
-            c.bus.write32(EXEC + EXEC_VSYNC_SEMA, r.next_u32() % 64);
-        });
+        covered(
+            ee::s10::f_0031abd0__generated,
+            ps2_exec_man_vblank_signal,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_abd0, 1);
+                c.pc = 0x0031_abd0;
+                c.bus.write32(GAME_GP + 0x2a74, APP);
+                c.bus.write32(APP + 8, EXEC);
+                let busy = if r.next_u32() % 3 == 0 {
+                    r.next_u32() | 1
+                } else {
+                    0
+                };
+                c.bus.write32(EXEC + EXEC_VSYNC_BUSY, busy);
+                c.bus.write32(EXEC + EXEC_VSYNC_SEMA, r.next_u32() % 64);
+            },
+        );
     }
 }

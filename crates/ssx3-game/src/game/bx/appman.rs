@@ -19,11 +19,11 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::vu0::Src;
-use ssx3_ee_rt::Cpu;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -48,7 +48,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_exec_man_invoke_callback,
         "PS2ExecMan_InvokeCallback",
     ),
-    (0x0031_7328, app_invoke_exec_callback, "App_InvokeExecCallback"),
+    (
+        0x0031_7328,
+        app_invoke_exec_callback,
+        "App_InvokeExecCallback",
+    ),
     (0x0031_7348, app_vsync_tick, "App_VSyncTick"),
     (0x0031_7500, app_vsync_callback, "App_VSyncCallback"),
 ];
@@ -269,9 +273,6 @@ pub fn ps2_exec_man_invoke_callback(c: &mut Cpu) {
     });
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // 0x00317328 App_InvokeExecCallback
 
@@ -280,8 +281,6 @@ pub(crate) const PS2_EXEC_MAN_INVOKE_CALLBACK: Callee = Callee {
     addr: 0x0031_74a8,
     f: ee::s10::f_003174a8,
 };
-
-
 
 /// `void App_InvokeExecCallback(App* this)` (0x317328): run the exec
 /// manager's (`this+8`) pending callback, with notification
@@ -299,8 +298,6 @@ pub fn app_invoke_exec_callback(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 /// `App_VSyncTick(App* app)` (0x317348, appman.cpp): the application
 /// manager's per-vsync tick. Bumps the vsync counter (+0x18), adds the step
@@ -392,23 +389,17 @@ pub fn app_vsync_tick(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // App_VSyncCallback (0x317500, appman.cpp)
 
 /// `App*` singleton (gp + 0x2a74).
 pub(crate) const APP_INSTANCE_GP: u32 = 0x2a74;
 
-
 /// `App_VSyncTick(App*)`.
 pub(crate) const APP_VSYNC_TICK: Callee = Callee {
     addr: 0x0031_7348,
     f: ee::s10::App_VSyncTick,
 };
-
-
 
 /// `void App_VSyncCallback()` (0x317500): the VBlank handler hook; runs
 /// `App_VSyncTick` on the application singleton.
@@ -655,19 +646,24 @@ pub(crate) mod tests {
         const APP: u32 = DATA + 0x100;
         const MAN: u32 = DATA + 0x200;
         const MAN_VT: u32 = DATA + 0x300;
-        covered(ee::s10::f_00317328__generated, app_invoke_exec_callback, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x0031_7328, 2);
-            c.pc = 0x0031_7328;
-            c.g[A0][0] = sx(APP);
-            c.bus.write32(APP + 8, MAN);
-            c.bus.write32(MAN, if seed % 4 == 0 { 0 } else { FAKE });
-            c.bus.write32(MAN + 4, r.next_u32());
-            c.bus.write32(MAN + 8, MAN_VT);
-            c.bus.write16(MAN_VT + 0x70, (r.next_u32() as i16 & !3) as u16);
-            c.bus.write32(MAN_VT + 0x74, FAKE + 0x10);
-        });
+        covered(
+            ee::s10::f_00317328__generated,
+            app_invoke_exec_callback,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_7328, 2);
+                c.pc = 0x0031_7328;
+                c.g[A0][0] = sx(APP);
+                c.bus.write32(APP + 8, MAN);
+                c.bus.write32(MAN, if seed % 4 == 0 { 0 } else { FAKE });
+                c.bus.write32(MAN + 4, r.next_u32());
+                c.bus.write32(MAN + 8, MAN_VT);
+                c.bus
+                    .write16(MAN_VT + 0x70, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(MAN_VT + 0x74, FAKE + 0x10);
+            },
+        );
     }
-
 
     /// `App_VSyncTick`: an app with an accumulator 0..1 and a step 0..3.5
     /// (0..4 ticks), counter random; its vtable's `Tick` (slot 0x38) and the
@@ -680,37 +676,41 @@ pub(crate) mod tests {
         const VT: u32 = DATA + 0x2000;
         const SUBOBJ: u32 = DATA + 0x3000;
         const SUBVT: u32 = DATA + 0x4000;
-        covered(ssx3_ee::s10::f_00317348__generated, app_vsync_tick, 300, &|c, seed| {
-            let mut r: Rng = machine(c, seed, 0x317348, 6);
-            c.pc = 0x0031_7348;
-            c.g[A0][0] = sx(APP);
-            let acc = (r.next_u32() % 1000) as f32 / 1000.0;
-            let step = if seed % 4 == 0 {
-                0.0
-            } else {
-                (r.next_u32() % 3500) as f32 / 1000.0
-            };
-            c.bus.write32(APP + 0x18, r.next_u32());
-            c.bus.write32(APP + 0x24, step.to_bits());
-            c.bus.write32(APP + 0x28, acc.to_bits());
-            c.bus.write32(APP + 0x5c, VT);
-            c.bus.write32(APP + 0x8, SUBOBJ);
-            c.bus.write16(
-                VT + 0x38,
-                ((r.next_u32() % 64) as u16).wrapping_sub(32) & !1,
-            );
-            c.bus.write32(VT + 0x3c, FAKE);
-            c.bus.write32(SUBOBJ + 0x8, SUBVT);
-            c.bus.write16(
-                SUBVT + 0x28,
-                ((r.next_u32() % 64) as u16).wrapping_sub(32) & !1,
-            );
-            c.bus.write32(SUBVT + 0x2c, FAKE + 0x10);
-        });
+        covered(
+            ssx3_ee::s10::f_00317348__generated,
+            app_vsync_tick,
+            300,
+            &|c, seed| {
+                let mut r: Rng = machine(c, seed, 0x317348, 6);
+                c.pc = 0x0031_7348;
+                c.g[A0][0] = sx(APP);
+                let acc = (r.next_u32() % 1000) as f32 / 1000.0;
+                let step = if seed % 4 == 0 {
+                    0.0
+                } else {
+                    (r.next_u32() % 3500) as f32 / 1000.0
+                };
+                c.bus.write32(APP + 0x18, r.next_u32());
+                c.bus.write32(APP + 0x24, step.to_bits());
+                c.bus.write32(APP + 0x28, acc.to_bits());
+                c.bus.write32(APP + 0x5c, VT);
+                c.bus.write32(APP + 0x8, SUBOBJ);
+                c.bus.write16(
+                    VT + 0x38,
+                    ((r.next_u32() % 64) as u16).wrapping_sub(32) & !1,
+                );
+                c.bus.write32(VT + 0x3c, FAKE);
+                c.bus.write32(SUBOBJ + 0x8, SUBVT);
+                c.bus.write16(
+                    SUBVT + 0x28,
+                    ((r.next_u32() % 64) as u16).wrapping_sub(32) & !1,
+                );
+                c.bus.write32(SUBVT + 0x2c, FAKE + 0x10);
+            },
+        );
     }
     use super::*;
-    use crate::difftest::{put_vec};
-
+    use crate::difftest::put_vec;
 
     /// App_VSyncCallback: the real App_VSyncTick on an App singleton (as in
     /// `app_vsync_tick_matches`: zero / non-zero frame step, fake vtable
@@ -722,22 +722,38 @@ pub(crate) mod tests {
         const VT: u32 = DATA + 0x2000;
         const SUBOBJ: u32 = DATA + 0x3000;
         const SUBVT: u32 = DATA + 0x4000;
-        covered(ee::s10::f_00317500__generated, app_vsync_callback, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x31_7500, 6);
-            c.pc = 0x0031_7500;
-            c.bus.write32(crate::difftest::GAME_GP + APP_INSTANCE_GP, APP);
-            let acc = (r.next_u32() % 1000) as f32 / 1000.0;
-            let step = if seed % 4 == 0 { 0.0 } else { (r.next_u32() % 3500) as f32 / 1000.0 };
-            c.bus.write32(APP + 0x18, r.next_u32());
-            c.bus.write32(APP + 0x24, step.to_bits());
-            c.bus.write32(APP + 0x28, acc.to_bits());
-            c.bus.write32(APP + 0x5c, VT);
-            c.bus.write32(APP + 0x8, SUBOBJ);
-            c.bus.write16(VT + 0x38, ((r.next_u32() % 64) as u16).wrapping_sub(32) & !1);
-            c.bus.write32(VT + 0x3c, FAKE);
-            c.bus.write32(SUBOBJ + 0x8, SUBVT);
-            c.bus.write16(SUBVT + 0x28, ((r.next_u32() % 64) as u16).wrapping_sub(32) & !1);
-            c.bus.write32(SUBVT + 0x2c, FAKE + 0x10);
-        });
+        covered(
+            ee::s10::f_00317500__generated,
+            app_vsync_callback,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_7500, 6);
+                c.pc = 0x0031_7500;
+                c.bus
+                    .write32(crate::difftest::GAME_GP + APP_INSTANCE_GP, APP);
+                let acc = (r.next_u32() % 1000) as f32 / 1000.0;
+                let step = if seed % 4 == 0 {
+                    0.0
+                } else {
+                    (r.next_u32() % 3500) as f32 / 1000.0
+                };
+                c.bus.write32(APP + 0x18, r.next_u32());
+                c.bus.write32(APP + 0x24, step.to_bits());
+                c.bus.write32(APP + 0x28, acc.to_bits());
+                c.bus.write32(APP + 0x5c, VT);
+                c.bus.write32(APP + 0x8, SUBOBJ);
+                c.bus.write16(
+                    VT + 0x38,
+                    ((r.next_u32() % 64) as u16).wrapping_sub(32) & !1,
+                );
+                c.bus.write32(VT + 0x3c, FAKE);
+                c.bus.write32(SUBOBJ + 0x8, SUBVT);
+                c.bus.write16(
+                    SUBVT + 0x28,
+                    ((r.next_u32() % 64) as u16).wrapping_sub(32) & !1,
+                );
+                c.bus.write32(SUBVT + 0x2c, FAKE + 0x10);
+            },
+        );
     }
 }

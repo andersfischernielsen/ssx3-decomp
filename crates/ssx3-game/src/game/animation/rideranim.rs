@@ -95,10 +95,23 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderAnim_UpdateSeqType00",
     ),
     (0x0010_3cc8, rider_anim_blend_seq2, "RiderAnim_BlendSeq2"),
-    (0x0010_4358, rider_anim_update_seq_type07, "RiderAnim_UpdateSeqType07"),
-    (0x0010_4940, rider_anim_seq_type01_update, "RiderAnim_UpdateSeqType01"),
+    (
+        0x0010_4358,
+        rider_anim_update_seq_type07,
+        "RiderAnim_UpdateSeqType07",
+    ),
+    (
+        0x0010_4940,
+        rider_anim_seq_type01_update,
+        "RiderAnim_UpdateSeqType01",
+    ),
     (0x0010_4cf8, rider_anim_v04, "RiderAnim_v04"),
-    (0x0010_3ff8, rider_anim_play_seq_then_loop, "RiderAnim_PlaySeqThenLoop"),
+    (
+        0x0010_3ff8,
+        rider_anim_play_seq_then_loop,
+        "RiderAnim_PlaySeqThenLoop",
+    ),
+    (0x0010_4d68, rider_anim_save_state, "RiderAnim_SaveState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1408,55 +1421,38 @@ pub fn rider_anim_seq_type00_update(c: &mut Cpu) {
     });
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // RiderAnim_BlendSeq2 (0x103cc8)
 
 /// `gp+0xd8c`: the rider animation bank (animation ids at +0x1030).
 pub(crate) const ANIM_BANK_GP: u32 = 0xd8c;
 
-
 pub(crate) const BANK_IDS: u32 = 0x1030;
-
 
 /// `gp-0x7f6c`: 1/60, ticks to seconds (`.lit4`).
 pub(crate) const SEQ2_TICK_GP: u32 = 0x7f6c;
 
-
 /// AnimSequence: track 0's time and length, track 1's speed.
 pub(crate) const SEQ_TIME0: u32 = 0x8;
 
-
 pub(crate) const SEQ_LENGTH0: u32 = 0x10;
 
-
 pub(crate) const SEQ_SPEED1: u32 = 0x2c;
-
 
 /// AnimSequence methods (through the function table).
 pub(crate) const ANIM_SEQ_SET_TRACK_ANIM_2: u32 = 0x0031_3c50;
 
-
 pub(crate) const ANIM_SEQ_SET_TRACK_TIME_2: u32 = 0x0031_3cf0;
-
 
 pub(crate) const ANIM_SEQ_SET_TRACK_WEIGHT_2: u32 = 0x0031_3d28;
 
-
 pub(crate) const ANIM_SEQ_SET_TRACK_LOOP_2: u32 = 0x0031_3d40;
-
 
 pub(crate) const ANIM_SEQ_ADVANCE_TRACK_2: u32 = 0x0031_35b0;
 
-
 pub(crate) const ANIM_SEQ_UPDATE_WEIGHT_FADE_2: u32 = 0x0031_3800;
 
-
 pub(crate) const ANIM_SEQ_LIST_REMOVE_2: u32 = 0x0031_45f8;
-
-
 
 /// `int RiderAnim_BlendSeq2(Rider* r, AnimList* list, AnimSequence* seq,
 /// int key_neg, int key_mid, float dt, float v, int key_pos)` (0x103cc8):
@@ -1578,28 +1574,20 @@ pub fn rider_anim_blend_seq2(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // RiderAnim_UpdateSeqType01 (0x104940)
 
 /// `AnimSequence_AdvanceTrack(seq, 0, step)`: nonzero when the track ended.
 pub(crate) const SEQ01_ADVANCE_TRACK: u32 = 0x0031_35b0;
 
-
 /// `AnimSequence_UpdateWeightFade(seq, step)`: nonzero when faded out.
 pub(crate) const SEQ01_UPDATE_WEIGHT_FADE: u32 = 0x0031_3800;
-
 
 /// `AnimSeqList_Remove(list, seq)`.
 pub(crate) const SEQ01_LIST_REMOVE: u32 = 0x0031_45f8;
 
-
 /// `gp-0x7f40`: 1/60, ticks to seconds (this type's own `.lit4` entry).
 pub(crate) const SEQ01_TICK_GP: u32 = 0x7f40;
-
-
 
 /// `int RiderAnim_UpdateSeqType01(RiderAnim* anim, SeqList* list,
 /// AnimSequence* seq, float dt)` (0x104940): a one-shot sequence. Advance
@@ -1654,15 +1642,11 @@ pub fn rider_anim_seq_type01_update(c: &mut Cpu) {
     });
 }
 
-
-
 // ---------------------------------------------------------------------------
 // RiderAnim_v04 (seg_1218.cpp).
 
 /// `AIAnimEventMap_PickAnim` (0x311710; called through the table).
 pub(crate) const AI_ANIM_EVENT_MAP_PICK_ANIM_207: u32 = 0x0031_1710;
-
-
 
 /// `RiderAnim_v04(RiderAnim* self, int event)` (0x104cf8): pick the
 /// animation for `event` from the global event map (`gp+0xd0c`) with the
@@ -1702,41 +1686,30 @@ pub fn rider_anim_v04(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // RiderAnim_UpdateSeqType07 (0x104358)
 
 /// `AnimSequence_SetTrackTime(seq, track, time)` (0x313cf0).
 pub(crate) const SEQ07_SET_TRACK_TIME: u32 = 0x0031_3cf0;
 
-
 /// `AnimSequence_UpdateWeightFade(seq, step)` (0x313800): nonzero when faded out.
 pub(crate) const SEQ07_UPDATE_WEIGHT_FADE: u32 = 0x0031_3800;
-
 
 /// `AnimSeqList_Remove(list, seq)` (0x3145f8).
 pub(crate) const SEQ07_LIST_REMOVE: u32 = 0x0031_45f8;
 
-
 /// `gp - 0x7f58`: 1/60 (ticks to seconds).
 pub(crate) const SEQ07_TICK_GP: u32 = 0x7f58;
-
 
 /// `RiderAnim + 0x60`: the rider actor; its two speed-like floats.
 pub(crate) const SEQ07_ACTOR: u32 = 0x60;
 
-
 pub(crate) const SEQ07_ACTOR_A: u32 = 0x2b0;
-
 
 pub(crate) const SEQ07_ACTOR_B: u32 = 0x2a4;
 
-
 /// `AnimSequence + 0x10`: the track-time scale.
 pub(crate) const SEQ07_SEQ_SCALE: u32 = 0x10;
-
-
 
 /// `int RiderAnim_UpdateSeqType07(RiderAnim* self, SeqList* list,
 /// AnimSequence* seq, float dt)` (0x104358): a scrubbed sequence. Its track 0
@@ -1802,60 +1775,42 @@ pub fn rider_anim_update_seq_type07(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // RiderAnim_PlaySeqThenLoop (0x103ff8)
 
 /// `gp+0xd8c`: the rider animation bank (animation ids at +0x1030).
 pub(crate) const PSTL_ANIM_BANK_GP: u32 = 0xd8c;
 
-
 /// Animation ids in the bank, indexed by key.
 pub(crate) const PSTL_BANK_IDS: u32 = 0x1030;
-
 
 /// `gp-0x7f64` / `gp-0x7f60` / `gp-0x7f5c`: 1/60 (`.lit4`), ticks to seconds
 /// for the intro advance, the plain advance and the weight fade.
 pub(crate) const PSTL_TICK_INTRO_GP: u32 = 0x7f64;
 
-
 pub(crate) const PSTL_TICK_PLAIN_GP: u32 = 0x7f60;
 
-
 pub(crate) const PSTL_TICK_FADE_GP: u32 = 0x7f5c;
-
 
 /// AnimSequence: track 0's animation id, time and length.
 pub(crate) const PSTL_SEQ_ANIM0: u32 = 0x4;
 
-
 pub(crate) const PSTL_SEQ_TIME0: u32 = 0x8;
 
-
 pub(crate) const PSTL_SEQ_LENGTH0: u32 = 0x10;
-
 
 /// AnimSequence methods (cross-shard direct calls, through the table).
 pub(crate) const PSTL_SET_TRACK_ANIM: u32 = 0x0031_3c50;
 
-
 pub(crate) const PSTL_SET_TRACK_TIME: u32 = 0x0031_3cf0;
-
 
 pub(crate) const PSTL_SET_TRACK_LOOP: u32 = 0x0031_3d40;
 
-
 pub(crate) const PSTL_ADVANCE_TRACK: u32 = 0x0031_35b0;
-
 
 pub(crate) const PSTL_UPDATE_WEIGHT_FADE: u32 = 0x0031_3800;
 
-
 pub(crate) const PSTL_LIST_REMOVE: u32 = 0x0031_45f8;
-
-
 
 /// `int RiderAnim_PlaySeqThenLoop(RiderAnim* anim, AnimSeqList* list,
 /// AnimSequence* seq, int intro_key, float dt, int loop_key)` (0x103ff8):
@@ -1956,6 +1911,75 @@ pub fn rider_anim_play_seq_then_loop(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     });
+}
+
+// ---------------------------------------------------------------------------
+// RiderAnim_SaveState (0x104d68)
+
+/// Rider animation state: 0x50 bytes of plain state, then (+0x50) a pointer
+/// to six 8-byte animation sequence lists.
+pub(crate) const RAS_STATE_BYTES: u64 = 0x50;
+
+pub(crate) const RAS_SEQ_LISTS: u32 = 0x50;
+
+pub(crate) const RAS_SEQ_LIST_COUNT: u32 = 6;
+
+/// cStream vtable slot "write(buf, n)" (this-adjust halfword +8, method +0xc).
+pub(crate) const RAS_STREAM_WRITE: u32 = 0x8;
+
+pub(crate) const RAS_ANIM_SEQ_LIST_SAVE: u32 = 0x0031_47f0;
+
+/// `void RiderAnim_SaveState(RiderAnim* self, cStream* s)` (0x104d68): write
+/// the first 0x50 bytes of the animation state to the stream, then save
+/// each of the six animation sequence lists (`AnimSeqList_Save`).
+pub fn rider_anim_save_state(c: &mut Cpu) {
+    use crate::guest::Addr;
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = RAS_STATE_BYTES;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = 0;
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[A1][0] = c.g[S2][0];
+        // s->write(self, 0x50)
+        let stream = r32(c, S1);
+        let vtable = Addr(stream).lw(c);
+        c.g[V0][0] = vtable;
+        let adjust = Addr((vtable as u32).wrapping_add(RAS_STREAM_WRITE)).lh(c);
+        let method = Addr((vtable as u32).wrapping_add(RAS_STREAM_WRITE + 4)).lw(c);
+        c.g[V1][0] = method;
+        c.g[A0][0] = sx(stream.wrapping_add(adjust as u32));
+        call_ptr(c, method as u32, 0x0010_4da4)?;
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(RAS_SEQ_LISTS)).lw(c);
+        loop {
+            c.cycles += 8;
+            let i = r32(c, S0);
+            c.g[A1][0] = c.g[S1][0];
+            c.g[S0][0] = sx(i.wrapping_add(1));
+            c.g[A0][0] = sx(r32(c, V0).wrapping_add(i << 3));
+            call_ptr(c, RAS_ANIM_SEQ_LIST_SAVE, 0x0010_4dbc)?;
+            c.g[V0][0] = ((c.g[S0][0] as i64) < RAS_SEQ_LIST_COUNT as i64) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            c.g[V0][0] = Addr(r32(c, S2).wrapping_add(RAS_SEQ_LISTS)).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x0010_4da8);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -2480,8 +2504,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
-
     /// `RiderAnim_BlendSeq2`: random keys into an id bank, v around 0
     /// (positive, zero, negative, edge cases), random sequence times and
     /// track states; the real AnimSequence methods (from the game image)
@@ -2534,52 +2556,63 @@ pub(crate) mod tests {
                     8 => r.f32(1.0),
                     i => vs[i as usize].to_bits(),
                 };
-                c.f[12] = if seed % 4 == 0 { r.edge_f32() } else { r.f32(3.0) };
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(3.0)
+                };
             },
         );
     }
     use super::*;
     use super::*;
-    use crate::difftest::fakes::{self};
-    use crate::difftest::{check_lohi};
     use super::*;
+    use crate::difftest::check_lohi;
+    use crate::difftest::fakes::{self};
     pub(crate) use crate::game::ai::ai::tests::oc258_w32;
-
 
     /// `RiderAnim_UpdateSeqType01`: the real track advance, weight fade and
     /// list removal on a random sequence (ended / faded / still running).
     #[test]
     fn rider_anim_seq_type01_update_matches() {
         use crate::difftest::fakes::ptr;
-        check(ee::s00::f_00104940__generated, rider_anim_seq_type01_update, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0010_4940, 0);
-            crate::difftest::elf_image(c);
-            c.pc = 0x0010_4940;
-            let seq = ptr(&mut r);
-            let list = ptr(&mut r);
-            c.g[A0][0] = sx(ptr(&mut r));
-            c.g[A1][0] = sx(list);
-            c.g[A2][0] = sx(seq);
-            for off in [0x8, 0xc, 0x10, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
-                let v = match r.next_u32() % 4 {
-                    0 => 0,
-                    1 => r.edge_f32(),
-                    _ => r.f32(3.0),
+        check(
+            ee::s00::f_00104940__generated,
+            rider_anim_seq_type01_update,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_4940, 0);
+                crate::difftest::elf_image(c);
+                c.pc = 0x0010_4940;
+                let seq = ptr(&mut r);
+                let list = ptr(&mut r);
+                c.g[A0][0] = sx(ptr(&mut r));
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(seq);
+                for off in [0x8, 0xc, 0x10, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
+                    let v = match r.next_u32() % 4 {
+                        0 => 0,
+                        1 => r.edge_f32(),
+                        _ => r.f32(3.0),
+                    };
+                    c.bus.write32(seq + off, v);
+                }
+                c.bus.write32(seq + 0x1c, r.next_u32() & 1);
+                c.bus.write32(seq + 0xa0, r.next_u32() & 1);
+                let mut at = list + 4;
+                for _ in 0..seed % 3 {
+                    let other = ptr(&mut r) + 0x8;
+                    c.bus.write32(at, other);
+                    at = other + 200;
+                }
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(0.05)
                 };
-                c.bus.write32(seq + off, v);
-            }
-            c.bus.write32(seq + 0x1c, r.next_u32() & 1);
-            c.bus.write32(seq + 0xa0, r.next_u32() & 1);
-            let mut at = list + 4;
-            for _ in 0..seed % 3 {
-                let other = ptr(&mut r) + 0x8;
-                c.bus.write32(at, other);
-                at = other + 200;
-            }
-            c.f[12] = if seed % 4 == 0 { r.edge_f32() } else { r.f32(0.05) };
-        });
+            },
+        );
     }
-
 
     // ------------------------------------------------------- rider anim
 
@@ -2592,37 +2625,41 @@ pub(crate) mod tests {
         const BOARD: u32 = DATA + 0x1000;
         const RIDER: u32 = DATA + 0x2000;
         const MAP: u32 = DATA + 0x3000;
-        check(ee::s00::f_00104cf8__generated, rider_anim_v04, 200, &|c, seed| {
-            let mut r = Rng(0x0010_4cf8 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.pc = 0x0010_4cf8;
-            c.g[A0][0] = sx(ANIM);
-            c.g[A1][0] = (seed % 4) as u64;
-            let (board, rider) = match seed % 3 {
-                0 => (BOARD, 0),
-                1 => (0, RIDER),
-                _ => (0, 0),
-            };
-            c.bus.write32(ANIM + 0x64, board);
-            c.bus.write32(ANIM + 0x60, rider);
-            let v = r.next_u32();
-            c.bus.write32(BOARD + 0xcd8, v);
-            let v = r.next_u32();
-            c.bus.write32(RIDER + 0x364, v);
-            c.bus.write32(GAME_GP + 0xd0c, MAP);
-            for i in 0..4 {
-                let pick = (r.next_u32() % 8) as u16;
-                c.bus.write16(MAP + 4 * i, pick);
-                c.bus.write16(MAP + 4 * i + 2, 1);
-            }
-            for k in 0..8 {
+        check(
+            ee::s00::f_00104cf8__generated,
+            rider_anim_v04,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0010_4cf8 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0010_4cf8;
+                c.g[A0][0] = sx(ANIM);
+                c.g[A1][0] = (seed % 4) as u64;
+                let (board, rider) = match seed % 3 {
+                    0 => (BOARD, 0),
+                    1 => (0, RIDER),
+                    _ => (0, 0),
+                };
+                c.bus.write32(ANIM + 0x64, board);
+                c.bus.write32(ANIM + 0x60, rider);
                 let v = r.next_u32();
-                c.bus.write32(0x0044_9960 + 12 * k, v);
-            }
-        });
+                c.bus.write32(BOARD + 0xcd8, v);
+                let v = r.next_u32();
+                c.bus.write32(RIDER + 0x364, v);
+                c.bus.write32(GAME_GP + 0xd0c, MAP);
+                for i in 0..4 {
+                    let pick = (r.next_u32() % 8) as u16;
+                    c.bus.write16(MAP + 4 * i, pick);
+                    c.bus.write16(MAP + 4 * i + 2, 1);
+                }
+                for k in 0..8 {
+                    let v = r.next_u32();
+                    c.bus.write32(0x0044_9960 + 12 * k, v);
+                }
+            },
+        );
     }
-
 
     /// RiderAnim_UpdateSeqType07: either actor float the larger, weight fades
     /// that finish (list removal) or not; the real track setter, fade and
@@ -2630,43 +2667,55 @@ pub(crate) mod tests {
     #[test]
     fn rider_anim_update_seq_type07_matches() {
         use crate::difftest::fakes::ptr;
-        check(ee::s00::f_00104358__generated, rider_anim_update_seq_type07, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x0010_4358, 0);
-            crate::difftest::elf_image(c);
-            c.pc = 0x0010_4358;
-            let seq = ptr(&mut r);
-            let list = ptr(&mut r);
-            let anim = ptr(&mut r);
-            let actor = DATA + 0x20_0000;
-            c.g[A0][0] = sx(anim);
-            c.g[A1][0] = sx(list);
-            c.g[A2][0] = sx(seq);
-            oc258_w32(c, anim + SEQ07_ACTOR, actor);
-            for off in [SEQ07_ACTOR_A, SEQ07_ACTOR_B] {
-                let v = if r.next_u32() % 5 == 0 { r.edge_f32() } else { r.f32(30.0) };
-                oc258_w32(c, actor + off, v);
-            }
-            for off in [0x8, 0xc, 0x10, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
-                let v = match r.next_u32() % 4 {
-                    0 => 0,
-                    1 => r.edge_f32(),
-                    _ => r.f32(3.0),
+        check(
+            ee::s00::f_00104358__generated,
+            rider_anim_update_seq_type07,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_4358, 0);
+                crate::difftest::elf_image(c);
+                c.pc = 0x0010_4358;
+                let seq = ptr(&mut r);
+                let list = ptr(&mut r);
+                let anim = ptr(&mut r);
+                let actor = DATA + 0x20_0000;
+                c.g[A0][0] = sx(anim);
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(seq);
+                oc258_w32(c, anim + SEQ07_ACTOR, actor);
+                for off in [SEQ07_ACTOR_A, SEQ07_ACTOR_B] {
+                    let v = if r.next_u32() % 5 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(30.0)
+                    };
+                    oc258_w32(c, actor + off, v);
+                }
+                for off in [0x8, 0xc, 0x10, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
+                    let v = match r.next_u32() % 4 {
+                        0 => 0,
+                        1 => r.edge_f32(),
+                        _ => r.f32(3.0),
+                    };
+                    oc258_w32(c, seq + off, v);
+                }
+                oc258_w32(c, seq + 0x1c, r.next_u32() & 1);
+                oc258_w32(c, seq + 0xa0, r.next_u32() & 1);
+                let mut at = list + 4;
+                for _ in 0..seed % 3 {
+                    let other = ptr(&mut r) + 0x8;
+                    oc258_w32(c, at, other);
+                    at = other + 200;
+                }
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(0.05)
                 };
-                oc258_w32(c, seq + off, v);
-            }
-            oc258_w32(c, seq + 0x1c, r.next_u32() & 1);
-            oc258_w32(c, seq + 0xa0, r.next_u32() & 1);
-            let mut at = list + 4;
-            for _ in 0..seed % 3 {
-                let other = ptr(&mut r) + 0x8;
-                oc258_w32(c, at, other);
-                at = other + 200;
-            }
-            c.f[12] = if seed % 4 == 0 { r.edge_f32() } else { r.f32(0.05) };
-        });
+            },
+        );
     }
     use super::*;
-
 
     /// RiderAnim_PlaySeqThenLoop: track 0 plays the intro key (or not), the
     /// intro reaches its end (or not) after the real AdvanceTrack, the real
@@ -2675,46 +2724,92 @@ pub(crate) mod tests {
     fn rider_anim_play_seq_then_loop_matches() {
         use crate::difftest::fakes::{machine, ptr};
         use crate::difftest::{check, elf_image, GAME_GP};
-        check(ee::s00::f_00103ff8__generated, rider_anim_play_seq_then_loop, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0010_3ff8, 0);
-            elf_image(c);
-            c.pc = 0x0010_3ff8;
-            let bank = ptr(&mut r);
-            c.bus.write32(GAME_GP + PSTL_ANIM_BANK_GP, bank);
-            for k in 0..8 {
-                c.bus.write32(bank + PSTL_BANK_IDS + 4 * k, 0x100 + k * 0x101);
-            }
-            let intro = r.next_u32() % 8;
-            c.g[A3][0] = intro as u64;
-            c.g[T0][0] = (r.next_u32() % 8) as u64;
-            let seq = ptr(&mut r);
-            let list = ptr(&mut r);
-            c.g[A0][0] = sx(ptr(&mut r));
-            c.g[A1][0] = sx(list);
-            c.g[A2][0] = sx(seq);
-            for off in [0x8, 0xc, 0x10, 0x2c, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
-                let v = match r.next_u32() % 4 {
-                    0 => 0,
-                    1 => r.edge_f32(),
-                    _ => r.f32(3.0),
+        check(
+            ee::s00::f_00103ff8__generated,
+            rider_anim_play_seq_then_loop,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_3ff8, 0);
+                elf_image(c);
+                c.pc = 0x0010_3ff8;
+                let bank = ptr(&mut r);
+                c.bus.write32(GAME_GP + PSTL_ANIM_BANK_GP, bank);
+                for k in 0..8 {
+                    c.bus
+                        .write32(bank + PSTL_BANK_IDS + 4 * k, 0x100 + k * 0x101);
+                }
+                let intro = r.next_u32() % 8;
+                c.g[A3][0] = intro as u64;
+                c.g[T0][0] = (r.next_u32() % 8) as u64;
+                let seq = ptr(&mut r);
+                let list = ptr(&mut r);
+                c.g[A0][0] = sx(ptr(&mut r));
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(seq);
+                for off in [0x8, 0xc, 0x10, 0x2c, 0x90, 0x94, 0x98, 0x9c, 0xa4, 0xa8] {
+                    let v = match r.next_u32() % 4 {
+                        0 => 0,
+                        1 => r.edge_f32(),
+                        _ => r.f32(3.0),
+                    };
+                    c.bus.write32(seq + off, v);
+                }
+                let cur = if seed % 3 == 0 {
+                    0x100 + (r.next_u32() % 8) * 0x101
+                } else {
+                    0x100 + intro * 0x101
                 };
-                c.bus.write32(seq + off, v);
-            }
-            let cur = if seed % 3 == 0 {
-                0x100 + (r.next_u32() % 8) * 0x101
-            } else {
-                0x100 + intro * 0x101
-            };
-            c.bus.write32(seq + PSTL_SEQ_ANIM0, cur);
-            c.bus.write32(seq + 0x1c, r.next_u32() & 1);
-            c.bus.write32(seq + 0xa0, r.next_u32() & 1);
-            let mut at = list + 4;
-            for _ in 0..seed % 3 {
-                let other = ptr(&mut r) + 0x8;
-                c.bus.write32(at, other);
-                at = other + 200;
-            }
-            c.f[12] = if seed % 4 == 0 { r.edge_f32() } else { r.f32(3.0) };
-        });
+                c.bus.write32(seq + PSTL_SEQ_ANIM0, cur);
+                c.bus.write32(seq + 0x1c, r.next_u32() & 1);
+                c.bus.write32(seq + 0xa0, r.next_u32() & 1);
+                let mut at = list + 4;
+                for _ in 0..seed % 3 {
+                    let other = ptr(&mut r) + 0x8;
+                    c.bus.write32(at, other);
+                    at = other + 200;
+                }
+                c.f[12] = if seed % 4 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(3.0)
+                };
+            },
+        );
+    }
+    use super::*;
+
+    /// RiderAnim_SaveState: the stream's write is a fake (some calls
+    /// unwind); the real AnimSeqList_Save runs on six lists with no items
+    /// (count 0 or negative), so it only writes its count through the fake.
+    #[test]
+    fn rider_anim_save_state_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::DATA;
+        const SELF: u32 = DATA + 0x20_0000;
+        const STREAM: u32 = DATA + 0x20_0100;
+        const LISTS: u32 = DATA + 0x20_0200;
+        covered(
+            ee::s00::f_00104d68__generated,
+            rider_anim_save_state,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_4d68, 7);
+                c.pc = 0x0010_4d68;
+                let vt = vtable(c, &mut r, &[RAS_STREAM_WRITE]);
+                c.bus.write32(STREAM, vt);
+                c.bus.write32(SELF + RAS_SEQ_LISTS, LISTS);
+                for i in 0..RAS_SEQ_LIST_COUNT {
+                    let count = if r.next_u32() % 3 == 0 {
+                        -(r.next_u32() as i32 % 4)
+                    } else {
+                        0
+                    };
+                    c.bus.write32(LISTS + 8 * i, count as u32);
+                    c.bus.write32(LISTS + 8 * i + 4, r.next_u32());
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(STREAM);
+            },
+        );
     }
 }

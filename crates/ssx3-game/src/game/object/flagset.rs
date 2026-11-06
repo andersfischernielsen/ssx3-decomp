@@ -3,13 +3,16 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
@@ -24,6 +27,7 @@ pub(crate) use crate::game::fe::fereal::open;
 pub(crate) use crate::game::intersect::worldsphtree::p;
 pub(crate) use crate::game::intersect::worldsphtree::save_field_block;
 pub(crate) use crate::game::intersect::worldsphtree::sp_2;
+use crate::game::lib::snd;
 pub(crate) use crate::game::render::lightman::addu;
 pub(crate) use crate::game::render::lightman::gp as gp_2;
 pub(crate) use crate::game::render::lightman::off;
@@ -51,10 +55,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::reg;
-use crate::abi::set_reg;
-use crate::call::VSlot;
-use crate::game::lib::snd;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -106,7 +106,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0034_c668, cflag_manager_update, "cFlagManager_Update"),
     (0x0034_c7f8, flag_manager_render, "cFlagManager_Render"),
-    (0x0034_c2e0, cflag_manager_group_save, "cFlagManager_GroupSave"),
+    (
+        0x0034_c2e0,
+        cflag_manager_group_save,
+        "cFlagManager_GroupSave",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2993,9 +2997,6 @@ pub fn cflag_manager_update(c: &mut Cpu) {
     });
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // cFlagManager_Render (flagset.cpp).
 
@@ -3004,8 +3005,6 @@ pub(crate) const FLAG_MANAGER_GROUP_RENDER_207: Callee = Callee {
     addr: 0x0034_b9b0,
     f: ee::s11::cFlagManager_GroupRender,
 };
-
-
 
 /// `void cFlagManager_Render(cFlagManager* self)` (0x34c7f8): render each of
 /// the 15 flag groups (`self+0x20`, 0x188 bytes each) that has models
@@ -3053,31 +3052,20 @@ pub fn flag_manager_render(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // cFlagManager_GroupSave (0x34c2e0).
 
 /// `cFlagGroup` field: `int` item count.
 pub(crate) const FLAG_GROUP_COUNT: u32 = 0x5c;
 
-
-
 /// `cFlagGroup` field: `cFlag*[]` items.
 pub(crate) const FLAG_GROUP_ITEMS: u32 = 0x94;
-
-
 
 /// Stream vtable slot: `Write(this, const void* data, int size)`.
 pub(crate) const FLAG_STREAM_WRITE: u32 = 0x8;
 
-
-
 /// Stream vtable slot: `WriteObject(this, void* object)`.
 pub(crate) const FLAG_STREAM_WRITE_OBJECT: u32 = 0x28;
-
-
 
 /// `void cFlagManager_GroupSave(cFlagGroup* group, Stream* stream)`
 /// (0x34c2e0): write the group's 0x60-byte header to the stream, then each
@@ -4130,7 +4118,6 @@ pub(crate) mod tests {
     use super::*;
     // (fakes imported above)
 
-
     // ------------------------------------------------------ flag manager
 
     /// cFlagManager_Render: each of the 15 groups with or without models;
@@ -4138,25 +4125,29 @@ pub(crate) mod tests {
     /// `gp+0x1154` in empty RAM).
     #[test]
     fn flag_manager_render_matches() {
-        check(ee::s11::f_0034c7f8__generated, flag_manager_render, 200, &|c, seed| {
-            let mut r = Rng(0x0034_c7f8 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.pc = 0x0034_c7f8;
-            c.g[A0][0] = sx(DATA);
-            for i in 0..15u32 {
-                let models = if seed % 7 == 0 || r.next_u32() % 2 == 0 {
-                    0
-                } else {
-                    r.next_u32() | 1
-                };
-                c.bus.write32(DATA + 0x20 + i * 0x188 + 0x5c, models);
-            }
-        });
+        check(
+            ee::s11::f_0034c7f8__generated,
+            flag_manager_render,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0034_c7f8 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0034_c7f8;
+                c.g[A0][0] = sx(DATA);
+                for i in 0..15u32 {
+                    let models = if seed % 7 == 0 || r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() | 1
+                    };
+                    c.bus.write32(DATA + 0x20 + i * 0x188 + 0x5c, models);
+                }
+            },
+        );
     }
     use super::*;
     use crate::game::lib::snd::tests as snd_tests;
-
 
     /// `cFlagManager_GroupSave` with a stream whose two writers are fakes
     /// (some calls unwind), groups of a negative, zero or 1..5 items.
@@ -4164,22 +4155,27 @@ pub(crate) mod tests {
     fn cflag_manager_group_save_matches() {
         use crate::difftest::fakes::{covered, machine, vtable};
         use crate::difftest::fill;
-        covered(ee::s11::f_0034c2e0__generated, cflag_manager_group_save, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x34_c2e0, 6);
-            c.pc = 0x0034_c2e0;
-            let group = DATA;
-            let stream = DATA + 0x400;
-            let vt = vtable(c, &mut r, &[FLAG_STREAM_WRITE, FLAG_STREAM_WRITE_OBJECT]);
-            c.bus.write32(stream, vt);
-            let count = match seed % 6 {
-                0 => 0,
-                1 => (-(1 + (r.next_u32() % 4) as i32)) as u32,
-                _ => 1 + r.next_u32() % 5,
-            };
-            c.bus.write32(group + FLAG_GROUP_COUNT, count);
-            fill(c, &mut r, group + FLAG_GROUP_ITEMS, 6);
-            c.g[A0][0] = sx(group);
-            c.g[A1][0] = sx(stream);
-        });
+        covered(
+            ee::s11::f_0034c2e0__generated,
+            cflag_manager_group_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_c2e0, 6);
+                c.pc = 0x0034_c2e0;
+                let group = DATA;
+                let stream = DATA + 0x400;
+                let vt = vtable(c, &mut r, &[FLAG_STREAM_WRITE, FLAG_STREAM_WRITE_OBJECT]);
+                c.bus.write32(stream, vt);
+                let count = match seed % 6 {
+                    0 => 0,
+                    1 => (-(1 + (r.next_u32() % 4) as i32)) as u32,
+                    _ => 1 + r.next_u32() % 5,
+                };
+                c.bus.write32(group + FLAG_GROUP_COUNT, count);
+                fill(c, &mut r, group + FLAG_GROUP_ITEMS, 6);
+                c.g[A0][0] = sx(group);
+                c.g[A1][0] = sx(stream);
+            },
+        );
     }
 }

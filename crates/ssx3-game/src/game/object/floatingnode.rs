@@ -3,8 +3,10 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -40,6 +42,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0034_f048, floating_v49, "Floating_v49"),
     (0x0034_f930, floating_v15, "Floating_v15"),
     (0x0034_fa88, floating_save, "Floating_Save"),
+    (0x0034_fb00, world_obj_ctor, "WorldObj_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -342,6 +345,102 @@ pub fn floating_v49(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// WorldObj_ctor (0x34fb00)
+// ---------------------------------------------------------------------------
+
+/// WorldObj: vtable (+0xc) and its world node (+0x18).
+pub(crate) const WOBJ_VTABLE: u32 = 0xc;
+
+pub(crate) const WOBJ_NODE: u32 = 0x18;
+
+/// The WorldObj vtable (`D_00491C80`).
+pub(crate) const WOBJ_VTABLE_ADDR: u32 = 0x0049_1c80;
+
+/// Node flags (+8): 0x100 = already in the focus manager.
+pub(crate) const WOBJ_NODE_FLAGS: u32 = 0x8;
+
+pub(crate) const WOBJ_NODE_FOCUSED: u64 = 0x100;
+
+/// Process kinds that never take focus.
+pub(crate) const WOBJ_KINDS_UNFOCUSED: [u64; 3] = [0x6, 0x10, 0x16];
+
+/// `WorldObj* WorldObj_ctor(WorldObj* self, int list, int kind, Node* node)`
+/// (0x34fb00): constructs the sync process (`SyncProcess_ctor(self, list,
+/// kind)`), sets the node and the WorldObj vtable, links the node back to
+/// the object, and adds the node to the focus manager unless it is already
+/// there or the kind is 6, 0x10 or 0x16. Returns `self`.
+pub fn world_obj_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A2][0];
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x30);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A3][0];
+        Callee {
+            addr: 0x0035_4850,
+            f: ee::s11::f_00354850,
+        }
+        .call(c, 0x0034_fb24)?;
+        let this = Addr(r32(c, S2));
+        let node = c.g[S0][0];
+        this.off(WOBJ_NODE).sw(c, node);
+        c.g[V1][0] = sx(WOBJ_VTABLE_ADDR);
+        c.g[A0][0] = c.g[S2][0];
+        this.off(WOBJ_VTABLE).sw(c, sx(WOBJ_VTABLE_ADDR));
+        c.g[A1][0] = c.g[S0][0];
+        Callee {
+            addr: 0x0034_fc78,
+            f: ee::s11::f_0034fc78,
+        }
+        .call(c, 0x0034_fb40)?;
+        let focused = Addr(r32(c, S0)).off(WOBJ_NODE_FLAGS).lw(c) & WOBJ_NODE_FOCUSED != 0;
+        c.g[V0][0] = c.g[S2][0];
+        if !focused {
+            // Compare the kind against 6, 0x10, 0x16 in turn (each delay
+            // slot loads the next constant into v0, the last one `self`).
+            c.cycles += 3;
+            let kind = c.g[S1][0];
+            c.g[V0][0] = 0x10;
+            let add = if kind == WOBJ_KINDS_UNFOCUSED[0] {
+                c.cycles += 1;
+                c.g[V0][0] = c.g[S2][0];
+                false
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 0x16;
+                if kind == WOBJ_KINDS_UNFOCUSED[1] {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.g[S2][0];
+                    false
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S2][0];
+                    kind != WOBJ_KINDS_UNFOCUSED[2]
+                }
+            };
+            if add {
+                c.cycles += 2;
+                c.g[A0][0] = c.g[S0][0];
+                call_ptr(c, 0x002d_1bf0, 0x0034_fb74)?; // World_AddFocusObject
+                c.cycles += 1;
+                c.g[V0][0] = c.g[S2][0];
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -469,6 +568,77 @@ pub(crate) mod tests {
                 for k in 0..8u32 {
                     wf(c, inst + 0x60 + 4 * k, 0.25 * k as f32);
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fill;
+
+    /// `WorldObj_ctor`: lists 0..3 (each a process-list slot whose "pending"
+    /// bit picks the tail at +8 or +0x28), kinds 6/0x10/0x16 (no focus) or
+    /// others (counters in the typed-process table), nodes already focused
+    /// (flag 0x100) or not; the real SyncProcess_ctor chain, LinkInstance
+    /// and World_AddFocusObject (FocusMan_AddObject on a focus manager
+    /// reached through the world at gp-0x848).
+    #[test]
+    fn world_obj_ctor_matches() {
+        use crate::difftest::{check, GAME_GP};
+        const SELF: u32 = DATA + 0x100;
+        const NODE: u32 = DATA + 0x200;
+        const PROCS: u32 = DATA + 0x1000;
+        const TAILS: u32 = DATA + 0x1400;
+        const WORLD: u32 = DATA + 0x2000;
+        const FOCUS: u32 = DATA + 0x3000;
+        check(
+            ee::s11::f_0034fb00__generated,
+            world_obj_ctor,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_fb00, 0);
+                c.pc = 0x0034_fb00;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                fill(c, &mut r, SELF, 0x10);
+                fill(c, &mut r, NODE, 0x10);
+                let flags = r.next_u32();
+                w(
+                    c,
+                    NODE + WOBJ_NODE_FLAGS,
+                    if seed % 4 == 0 {
+                        flags | 0x100
+                    } else {
+                        flags & !0x100
+                    },
+                );
+                let list = seed % 4;
+                w(c, GAME_GP + 0x2898 + 4, PROCS);
+                for i in 0..4 {
+                    w(c, PROCS + 0x44 * i, r.next_u32());
+                    w(c, PROCS + 0x44 * i + 8, TAILS + 0x40 * i);
+                    w(c, PROCS + 0x44 * i + 0x28, TAILS + 0x40 * i + 0x20);
+                }
+                let kind = match (seed / 4) % 6 {
+                    0 => 6,
+                    1 => 0x10,
+                    2 => 0x16,
+                    _ => r.next_u32() % 0x20,
+                };
+                fill(c, &mut r, 0x0044_aff0, 0x20);
+                // World -> game -> race -> focus manager.
+                w(c, GAME_GP - 0x848, WORLD);
+                w(c, WORLD + 0x84, WORLD + 0x100);
+                w(c, WORLD + 0x100 + 0xc, WORLD + 0x200);
+                w(c, WORLD + 0x200 + 0xa4, FOCUS);
+                w(
+                    c,
+                    FOCUS + 0xd4,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() },
+                );
+                w(c, FOCUS + 0xd8, r.next_u32() % 8);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(kind);
+                c.g[A3][0] = sx(NODE);
             },
         );
     }

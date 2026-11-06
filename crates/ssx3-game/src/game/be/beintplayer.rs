@@ -324,7 +324,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_char_int_get_overall_rating,
         "BECharInt_GetOverallRating",
     ),
-    (0x0014_5e68, be_new_player_int_char_profile_call523e8, "BENewPlayerInt_CharProfileCall523e8"),
+    (
+        0x0014_5e68,
+        be_new_player_int_char_profile_call523e8,
+        "BENewPlayerInt_CharProfileCall523e8",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3232,9 +3236,6 @@ pub fn be_char_int_get_overall_rating(c: &mut Cpu) {
     })
 }
 
-
-
-
 /// `int BENewPlayerInt_CharProfileCall523e8(self, int player, int flag)`
 /// (0x145e68, beintplayer.cpp): tests a character-profile flag of a
 /// player's character: `BE_TestCharProfileFlag(&profiles[profile][char],
@@ -4542,7 +4543,6 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-
 
     /// `BENewPlayerInt_CharProfileCall523e8`: player 0..7 whose slot (table
     /// 0x5305b0) is 0..3; the slot's rider record (0x535b20) is unused

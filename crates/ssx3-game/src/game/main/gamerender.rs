@@ -2,6 +2,8 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::Callee;
@@ -17,18 +19,16 @@ pub(crate) use crate::game::main::gamemode::low;
 pub(crate) use crate::game::main::gamemode::lw_r;
 pub(crate) use crate::game::main::gamemode::sp_2 as sp;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::abi::r32;
-use crate::abi::ret;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::ps2f::FpuF32;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -38,7 +38,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_view_man_reset_cameras,
         "GameViewMan_ResetCameras",
     ),
-    (0x0022_e8b8, game_view_man_prefetch_views, "GameViewMan_PrefetchViews"),
+    (
+        0x0022_e8b8,
+        game_view_man_prefetch_views,
+        "GameViewMan_PrefetchViews",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -256,18 +260,12 @@ pub fn game_view_man_dtor(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ------------------------------------------------- GameViewMan_PrefetchViews
 
 /// `GameViewMan.views` (`GameCamera*[]`, from +0x4) and `.count` (+0x10).
 pub(crate) const GVM_VIEWS: u32 = 0x4;
 
-
 pub(crate) const GVM_COUNT: u32 = 0x10;
-
-
 
 /// `void GameViewMan_PrefetchViews(GameViewMan* self)` (0x22e8b8): tells the
 /// world streamer where every active view camera looks
@@ -403,7 +401,6 @@ pub(crate) mod tests {
     }
     use super::*;
     use crate::difftest::{elf_image, fill, put_words, scramble};
-
 
     /// `GameViewMan_PrefetchViews`: 0..3 views, each running the real
     /// `GameCamera_UpdateStreamView` on a world cache with no streamer

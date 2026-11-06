@@ -110,7 +110,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_ov_state_hud1p_draw_progress_meter,
         "cOVStateHUD1P_DrawProgressMeter",
     ),
-    (0x0020_ed20, hud1p_update_race_progress, "cOVStateHUD1P_UpdateRaceProgress"),
+    (
+        0x0020_ed20,
+        hud1p_update_race_progress,
+        "cOVStateHUD1P_UpdateRaceProgress",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3188,9 +3192,6 @@ break 'b_20fabc;
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // cOVStateHUD1P_UpdateRaceProgress (0x20ed20)
 
@@ -3199,36 +3200,25 @@ pub(crate) const RACE_PROGRESS_UPDATE_RIDER: Callee = Callee {
     f: ee::s05::RaceProgress_UpdateRider,
 };
 
-
-
 /// The course (`gp-0x9a0`, null outside a race), the world (`gp-0x848`)
 /// and the "progress changed" word (`gp-0x990`).
 pub(crate) const GP_RACE_COURSE: u32 = 0x9a0;
 
-
 pub(crate) const GP_WORLD: u32 = 0x848;
 
-
 pub(crate) const GP_PROGRESS_DIRTY: u32 = 0x990;
-
 
 /// world+0x84 -> racers, racers+0xc -> race, race+0x78: the rider count.
 pub(crate) const WORLD_RACERS: u32 = 0x84;
 
-
 pub(crate) const RACERS_RACE: u32 = 0xc;
 
-
 pub(crate) const RACE_RIDER_COUNT: u32 = 0x78;
-
 
 /// The race-progress slots (0x18 bytes each; the active word at +0).
 pub(crate) const PROGRESS_SLOTS: u32 = 0x004c_8bc8;
 
-
 pub(crate) const PROGRESS_SLOT_SIZE: u32 = 0x18;
-
-
 
 /// `void cOVStateHUD1P_UpdateRaceProgress()` (0x20ed20): in a race, update
 /// every rider's progress (`RaceProgress_UpdateRider(i)`) and clear its
@@ -3758,7 +3748,6 @@ pub(crate) mod tests {
         c.bus.write32(vt + off + 4, f);
     }
     use super::*;
-
 
     // ---------------------------------------- cOVStateHUD1P_UpdateRaceProgress
 

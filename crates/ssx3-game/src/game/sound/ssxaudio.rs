@@ -254,7 +254,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_update_mix_ramp,
         "SSXAudioSystem_UpdateMixRamp",
     ),
-    (0x0028_9c18, ssx_audio_system_get_rider_rating_tier, "SSXAudioSystem_GetRiderRatingTier"),
+    (
+        0x0028_9c18,
+        ssx_audio_system_get_rider_rating_tier,
+        "SSXAudioSystem_GetRiderRatingTier",
+    ),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -3702,9 +3706,6 @@ pub fn ssx_audio_system_update_mix_ramp(c: &mut Cpu) {
     ret(c);
 }
 
-
-
-
 /// `int SSXAudioSystem_GetRiderRatingTier(self, Rider* rider)` (0x289c18,
 /// ssxAudio.cpp): the rider's overall rating tier for speech selection:
 /// asks the rider's controller (`rider + 0x6c0`, vtable slot 0x38) for its
@@ -4902,7 +4903,6 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-
 
     /// `SSXAudioSystem_GetRiderRatingTier`: the BE library dummy at gp-0x1f04
     /// (so `BELibrary_GetInstance` returns it), interface table 0x5308a8

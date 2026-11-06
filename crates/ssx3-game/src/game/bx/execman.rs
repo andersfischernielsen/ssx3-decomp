@@ -2,32 +2,36 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
+use crate::call::Callee;
 use crate::call::Frame;
 use crate::events;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 pub(crate) use crate::game::visualfx::worldlightman::deleting_dtor;
 pub(crate) use crate::game::visualfx::worldlightman::DELETE;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
+use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::float;
 use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
-use crate::abi::r32;
-use crate::abi::ret;
-use crate::call::sp;
-use crate::call::Callee;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
-use ssx3_ee as ee;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0032_0ad8, ps2_exec_man_v01, "PS2ExecMan_v01"),
     (0x0032_0b68, math_ceil_log2, "Math_CeilLog2"),
-    (0x0032_0c48, input_binding_eval_bool, "InputBinding_EvalBool"),
+    (
+        0x0032_0c48,
+        input_binding_eval_bool,
+        "InputBinding_EvalBool",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -78,9 +82,6 @@ pub fn ps2_exec_man_v01(c: &mut Cpu) {
     deleting_dtor(c, 0x8, 0x0048_dc30, 0x0032_0afc);
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // InputBinding_EvalBool (0x320c48)
 
@@ -89,8 +90,6 @@ pub(crate) const INPUT_MAP_EVAL_BOOL: Callee = Callee {
     addr: 0x0032_1108,
     f: ee::s10::InputMap_EvalBool,
 };
-
-
 
 /// `bool InputBinding_EvalBool(InputBinding *binding, int index)`
 /// (0x320c48): evaluates the binding's input map (+4) as a bool, with the
@@ -151,28 +150,33 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// InputBinding_EvalBool through the real InputMap_EvalBool and a VM
     /// program that stops at once (the camera tests' input map), with the
     /// stopped VM's value 0 or 1.
     #[test]
     fn input_binding_eval_bool_matches() {
-        check(ee::s10::f_00320c48__generated, input_binding_eval_bool, 200, &|c, seed| {
-            let mut r = Rng(0x0032_0c48 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.pc = 0x0032_0c48;
-            let binding = DATA + 0x1000;
-            let map = DATA + 0x2000;
-            c.g[A0][0] = binding as u64;
-            c.g[A1][0] = (seed % 4) as u64; // the map's binding index
-            c.bus.write32(binding, r.next_u32());
-            c.bus.write32(binding + 4, map);
-            crate::game::camera::camera::tests::input_map(c, map);
-            // The stopped VM leaves `*(parser + 8)` in f0 (parser = the
-            // map's frame below this function's 0x10 frame).
-            let value = if seed % 2 == 0 { 0.0f32 } else { 1.0f32 };
-            c.bus.write32(crate::difftest::SP - 0x10 - 0x1d0 + 8, value.to_bits());
-        });
+        check(
+            ee::s10::f_00320c48__generated,
+            input_binding_eval_bool,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0032_0c48 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0032_0c48;
+                let binding = DATA + 0x1000;
+                let map = DATA + 0x2000;
+                c.g[A0][0] = binding as u64;
+                c.g[A1][0] = (seed % 4) as u64; // the map's binding index
+                c.bus.write32(binding, r.next_u32());
+                c.bus.write32(binding + 4, map);
+                crate::game::camera::camera::tests::input_map(c, map);
+                // The stopped VM leaves `*(parser + 8)` in f0 (parser = the
+                // map's frame below this function's 0x10 frame).
+                let value = if seed % 2 == 0 { 0.0f32 } else { 1.0f32 };
+                c.bus
+                    .write32(crate::difftest::SP - 0x10 - 0x1d0 + 8, value.to_bits());
+            },
+        );
     }
 }

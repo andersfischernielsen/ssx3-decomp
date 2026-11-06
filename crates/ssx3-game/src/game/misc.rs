@@ -14,11 +14,16 @@ use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::gp;
+use crate::game::animation::animsequencer::ASL_PUSH_NEW;
+use crate::game::animation::animsequencer::ASL_SET_TRACK_ANIM;
+use crate::game::animation::animsequencer::ASL_SET_TRACK_LOOP;
+use crate::game::animation::animsequencer::ASL_SET_TRACK_TIME;
 pub(crate) use crate::game::fe::ovstatehud::oc224_gp;
 pub(crate) use crate::game::fe::ovstatehud::oc224_ld_u;
 pub(crate) use crate::game::fe::ovstatehud::oc224_sd_u;
@@ -156,16 +161,82 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_5fc8, memcmp, "memcmp"),
     (0x0010_86b8, rider_probe_rail, "Rider_ProbeRail"),
     (0x0011_3db0, race_state_race_update, "RaceStateRace_Update"),
-    (0x0021_e7e0, hud_draw_stretched_panel, "HUD_DrawStretchedPanel"),
-    (0x002f_5148, world_light_man_light_instance_cb, "WorldLightMan_LightInstanceCB"),
+    (
+        0x0021_e7e0,
+        hud_draw_stretched_panel,
+        "HUD_DrawStretchedPanel",
+    ),
+    (
+        0x002f_5148,
+        world_light_man_light_instance_cb,
+        "WorldLightMan_LightInstanceCB",
+    ),
     (0x003d_62c8, path_track_set_volume, "PATH_TrackSetVolume"),
-    (0x003d_fc48, stream_file_consume_bytes, "StreamFile_ConsumeBytes"),
-    (0x003e_13e8, stream_file_release_chunk, "StreamFile_ReleaseChunk"),
-    (0x0010_09e0, computer_actor_rider_cruise_approach_jump, "ComputerActorRider_CruiseApproachJump"),
-    (0x0010_b590, computer_actor_rider_think_natural_air, "ComputerActorRider_ThinkNaturalAir"),
-    (0x0030_3ba0, wscript_fn_crowd2d_control, "WScriptFn_Crowd2dControl"),
-    (0x003d_fe88, stream_file_classify_chunk, "StreamFile_ClassifyChunk"),
+    (
+        0x003d_fc48,
+        stream_file_consume_bytes,
+        "StreamFile_ConsumeBytes",
+    ),
+    (
+        0x003e_13e8,
+        stream_file_release_chunk,
+        "StreamFile_ReleaseChunk",
+    ),
+    (
+        0x0010_09e0,
+        computer_actor_rider_cruise_approach_jump,
+        "ComputerActorRider_CruiseApproachJump",
+    ),
+    (
+        0x0010_b590,
+        computer_actor_rider_think_natural_air,
+        "ComputerActorRider_ThinkNaturalAir",
+    ),
+    (
+        0x0030_3ba0,
+        wscript_fn_crowd2d_control,
+        "WScriptFn_Crowd2dControl",
+    ),
+    (
+        0x003d_fe88,
+        stream_file_classify_chunk,
+        "StreamFile_ClassifyChunk",
+    ),
     (0x003e_6328, ea_shell_sort_pairs, "EA_ShellSortPairs"),
+    (
+        0x0011_5640,
+        rider_reset_grind_orientation,
+        "Rider_ResetGrindOrientation",
+    ),
+    (
+        0x002a_68b0,
+        crowd_audio_update_pitch_bend,
+        "CrowdAudio_UpdatePitchBend",
+    ),
+    (
+        0x002f_c0d0,
+        world_obj_factory_object,
+        "WorldObjFactory_Object",
+    ),
+    (
+        0x002f_e2c0,
+        wscript_fn_add_uv_scroll_modifier,
+        "WScriptFn_AddUVScrollModifier",
+    ),
+    (0x003b_49d0, refpack_decode, "RefPack_Decode"),
+    (
+        0x003d_fed0,
+        stream_file_parse_chunks,
+        "StreamFile_ParseChunks",
+    ),
+    (0x003e_0170, stream_file_on_read, "StreamFile_OnRead"),
+    (
+        0x003e_0270,
+        stream_file_start_next_request,
+        "StreamFile_StartNextRequest",
+    ),
+    (0x003f_f390, libpad_send_act_dma, "libpad_SendActDma"),
+    (0x0040_0190, sce_pad_set_act_direct, "scePadSetActDirect"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -7057,9 +7128,6 @@ pub fn computer_actor_rider_set_cruise_crouch(c: &mut Cpu) {
     ret(c);
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // memcmp (0x415fc8)
 
@@ -7146,7 +7214,6 @@ pub fn memcmp(c: &mut Cpu) {
     ret(c);
 }
 
-
 pub(crate) mod sfile {
 
     /// The header's mutex (an `EAMutex`).
@@ -7182,15 +7249,30 @@ pub(crate) mod sfile_callee {
     use super::ee;
     use super::Callee;
 
-    pub const VALIDATE: Callee = Callee { addr: 0x003d_fbd0, f: ee::s14::f_003dfbd0 };
+    pub const VALIDATE: Callee = Callee {
+        addr: 0x003d_fbd0,
+        f: ee::s14::f_003dfbd0,
+    };
 
-    pub const CONSUME_BYTES: Callee = Callee { addr: 0x003d_fc48, f: ee::s14::f_003dfc48 };
+    pub const CONSUME_BYTES: Callee = Callee {
+        addr: 0x003d_fc48,
+        f: ee::s14::f_003dfc48,
+    };
 
-    pub const MUTEX_LOCK: Callee = Callee { addr: 0x003e_5700, f: ee::s14::f_003e5700 };
+    pub const MUTEX_LOCK: Callee = Callee {
+        addr: 0x003e_5700,
+        f: ee::s14::f_003e5700,
+    };
 
-    pub const MUTEX_UNLOCK: Callee = Callee { addr: 0x003e_5760, f: ee::s14::f_003e5760 };
+    pub const MUTEX_UNLOCK: Callee = Callee {
+        addr: 0x003e_5760,
+        f: ee::s14::f_003e5760,
+    };
 
-    pub const ISSUE_READ: Callee = Callee { addr: 0x003e_03d0, f: ee::s14::f_003e03d0 };
+    pub const ISSUE_READ: Callee = Callee {
+        addr: 0x003e_03d0,
+        f: ee::s14::f_003e03d0,
+    };
 }
 
 pub(crate) mod hud_panel {
@@ -7216,7 +7298,7 @@ pub(crate) mod hud_panel {
 
     /// Width of each fixed end cap of a wide panel.
     pub const CAP: u32 = 0x4210_0000;
- // 36.0
+    // 36.0
     pub const WIDE: u32 = 0x4290_0000;
 }
 
@@ -7237,8 +7319,6 @@ pub(crate) mod path_track {
     /// `PATH_PlatSetVolume(plat, volume)` (cross-shard).
     pub const PLAT_SET_VOLUME: u32 = 0x002a_f6c0;
 }
-
-
 
 /// `void StreamFile_ReleaseChunk(StreamFile *file, Chunk *chunk)` (0x3e13e8):
 /// gives a consumed chunk's bytes back to the stream's ring buffer. Valid
@@ -7266,8 +7346,6 @@ pub fn stream_file_release_chunk(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 /// The body of `StreamFile_ReleaseChunk` after `StreamFile_Validate` (s0 =
 /// chunk), up to the reload of s0.
@@ -7344,11 +7422,10 @@ pub(crate) fn release_chunk_validated(c: &mut Cpu, frame: Frame) -> Flow {
     Ok(())
 }
 
-
-
-pub(crate) const HUD_DRAW_PANEL_SEGMENT: Callee = Callee { addr: 0x0021_ea00, f: ee::s05::f_0021ea00 };
-
-
+pub(crate) const HUD_DRAW_PANEL_SEGMENT: Callee = Callee {
+    addr: 0x0021_ea00,
+    f: ee::s05::f_0021ea00,
+};
 
 /// FPU register `n` as a float.
 #[inline]
@@ -7356,15 +7433,11 @@ pub(crate) fn hud_panel_fpr(c: &Cpu, n: usize) -> FpuF32 {
     FpuF32(c.f[n])
 }
 
-
-
 /// `lwc1` from `base + off`.
 #[inline]
 pub(crate) fn hud_panel_lwc1(c: &mut Cpu, base: u64, off: u32) -> FpuF32 {
     Addr((base as u32).wrapping_add(off)).read_fpu(c)
 }
-
-
 
 /// `void HUD_DrawStretchedPanel(HUD *self, const Color *colour, float pos[2],
 /// float size[2], float t, float scale_x, float scale_y, float alpha_min,
@@ -7489,8 +7562,6 @@ pub fn hud_draw_stretched_panel(c: &mut Cpu) {
     })
 }
 
-
-
 /// The wide case of `HUD_DrawStretchedPanel`: left cap (u0..mid), middle
 /// (mid..mid), right cap (mid..u1), with `pos[0]` advanced after each.
 pub(crate) fn draw_wide_panel(c: &mut Cpu) -> Flow {
@@ -7552,43 +7623,32 @@ pub(crate) fn draw_wide_panel(c: &mut Cpu) -> Flow {
     Ok(())
 }
 
-
-
 // ---------------------------------------------------------------------------
 // Rider_ProbeRail (0x1086b8)
 
 /// Rider: the path (`+0x2c`: nodes of 0x20 bytes, position then rotation).
 pub(crate) const PROBE_RAIL_PATH: u32 = 0x780;
 
-
 /// Rider: the current path node index.
 pub(crate) const PROBE_RAIL_NODE: u32 = 0x8a0;
-
 
 /// Rider: the probe offset added to the node position (`vec4`).
 pub(crate) const PROBE_RAIL_OFFSET: u32 = 0x9d0;
 
-
 /// Rider: the blend between the near and far probe radii (0..1).
 pub(crate) const PROBE_RAIL_BLEND: u32 = 0x25c;
-
 
 /// Rider: nonzero picks the short far radius (50 instead of 100).
 pub(crate) const PROBE_RAIL_SHORT: u32 = 0x330;
 
-
 /// Rider: the overlap list of objects near the rider.
 pub(crate) const PROBE_RAIL_OVERLAP: u32 = 0x860;
-
 
 /// `gp-0x7e3c`: 0.001f, the "lines are parallel" threshold.
 pub(crate) const PROBE_RAIL_PARALLEL_GP: u32 = 0x7e3c;
 
-
 /// `OverlapList_FindNearestRail(list, pos, out, mask, radius)`.
 pub(crate) const PROBE_RAIL_FIND_NEAREST: u32 = 0x0033_4680;
-
-
 
 /// The VU0 dot-product idiom of this function: `vf4 = vf[a] * vf[b]`, then
 /// the w lane accumulates y, z and w through `vf6.w = 2` (vf0.w + vf0.w).
@@ -7600,8 +7660,6 @@ pub(crate) fn probe_rail_dot(c: &mut Cpu, a: u8, b: u8) {
     v.madda(0b1000, 6, Src::Bc(4, Z));
     v.madd(0b1000, 4, 6, Src::Bc(4, W));
 }
-
-
 
 /// `vf5 = vf3 (+|-) vf4` with vf3/vf4 loaded from `a`/`b`, through the
 /// stack temporary `tmp` (`sqc2`, then `lq`/`sq` via r2) into `dst`.
@@ -7618,8 +7676,6 @@ pub(crate) fn probe_rail_vop(c: &mut Cpu, a: u32, b: u32, sub: bool, tmp: u32, d
     c.sq(2, dst);
 }
 
-
-
 /// `vf5 = vf4 * vf3.x` (vf4 loaded from `v`, vf3.x = the float in f[fs]
 /// moved through GPR `rt`), stored to `tmp` and copied to `dst`.
 pub(crate) fn probe_rail_scale(c: &mut Cpu, fs: usize, rt: usize, v: u32, tmp: u32, dst: u32) {
@@ -7631,8 +7687,6 @@ pub(crate) fn probe_rail_scale(c: &mut Cpu, fs: usize, rt: usize, v: u32, tmp: u
     c.lq(2, tmp);
     c.sq(2, dst);
 }
-
-
 
 /// `|vec at addr| <= near radius (f20)`: the dot idiom on itself, `sqrt`
 /// into Q, Q read back through v1 into f0, then `c.le.s f0, f20`.
@@ -7646,8 +7700,6 @@ pub(crate) fn probe_rail_within_near(c: &mut Cpu, addr: u32) -> bool {
     c.c_le_s(0, 20);
     c.fcc()
 }
-
-
 
 /// `int Rider_ProbeRail(Rider* self, const sVec4* target, const sVec4* dir)`
 /// (0x1086b8): whether a rail runs close to the rider's probe point. The
@@ -7670,7 +7722,7 @@ pub fn rider_probe_rail(c: &mut Cpu) {
         frame.save_ra(c, 0xf0);
         c.g[AT][0] = 0x3f80_0000;
         c.mtc1(AT, 9); // 1.0
-        // node = &path->nodes[index]
+                       // node = &path->nodes[index]
         c.g[A0][0] = Addr(me).off(PROBE_RAIL_PATH).lw(c);
         c.g[V0][0] = Addr(me).off(PROBE_RAIL_NODE).lw(c);
         c.g[V1][0] = Addr(r32(c, A0)).off(0x2c).lw(c);
@@ -7681,8 +7733,8 @@ pub fn rider_probe_rail(c: &mut Cpu) {
         let node = r32(c, V1);
         c.g[AT][0] = 0x41f0_0000;
         c.mtc1(AT, 8); // 30.0
-        // The forward axis of the node rotation (quaternion x,y,z,w at
-        // +0x10): (1 - 2(y^2 + z^2), 2(xy + wz), 2(xz - wy)), w = 0.
+                       // The forward axis of the node rotation (quaternion x,y,z,w at
+                       // +0x10): (1 - 2(y^2 + z^2), 2(xy + wz), 2(xz - wy)), w = 0.
         c.lwc1(4, node + 0x14);
         c.g[A0][0] = c.g[SP][0];
         let fwd = sp(c);
@@ -7707,7 +7759,14 @@ pub fn rider_probe_rail(c: &mut Cpu) {
         c.swc1(1, fwd);
         c.swc1(0, fwd + 4);
         // pos (sp+0x10) = node position + probe offset (through sp+0x20).
-        probe_rail_vop(c, node, me + PROBE_RAIL_OFFSET, false, fwd + 0x20, fwd + 0x10);
+        probe_rail_vop(
+            c,
+            node,
+            me + PROBE_RAIL_OFFSET,
+            false,
+            fwd + 0x20,
+            fwd + 0x10,
+        );
         let pos = fwd + 0x10;
         // Radii: f20 = near = 50 t + 30 (1 - t); f0 = far.
         c.lwc1(2, me + PROBE_RAIL_BLEND);
@@ -7848,29 +7907,21 @@ pub fn rider_probe_rail(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // RaceStateRace_Update (0x113db0)
 
 /// AI race-state object: the frame counter of the current state (+0xc).
 pub(crate) const RACE_STATE_FRAMES: u32 = 0xc;
 
-
 /// The world (gp-0x848) and its game module (+0x84).
 pub(crate) const RACE_WORLD_GP: u32 = 0x848;
 
-
 pub(crate) const RACE_WORLD_GAME_MODULE: u32 = 0x84;
-
 
 /// The AI state "race finished" and the game module state it requests.
 pub(crate) const RACE_AI_STATE_FINISHED: u64 = 0x6;
 
-
 pub(crate) const RACE_MODULE_STATE_END_RACE: u64 = 0x5;
-
-
 
 /// `AI_AllPlayersFinished` (0x12a250).
 pub(crate) const AI_ALL_PLAYERS_FINISHED: Callee = Callee {
@@ -7878,18 +7929,14 @@ pub(crate) const AI_ALL_PLAYERS_FINISHED: Callee = Callee {
     f: ee::s00::AI_AllPlayersFinished,
 };
 
-
 /// `AI_SetRaceState` (0x113b10).
 pub(crate) const AI_SET_RACE_STATE: Callee = Callee {
     addr: 0x0011_3b10,
     f: ee::s00::f_00113b10,
 };
 
-
 /// `GameModule_RequestState` (0x231250, through the function table).
 pub(crate) const GAME_MODULE_REQUEST_STATE: u32 = 0x0023_1250;
-
-
 
 /// `void RaceStateRace_Update(void *state, AI *ai /*a1*/)` (0x113db0): the
 /// per-frame update of the AI's "race" state. Counts the frame
@@ -7932,8 +7979,6 @@ pub fn race_state_race_update(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // StreamFile_ConsumeBytes (0x3dfc48)
 
@@ -7942,47 +7987,35 @@ pub fn race_state_race_update(c: &mut Cpu) {
 /// (+0x48), the buffered byte count (+0x4c) and the file handle (+0x174).
 pub(crate) const STREAM_FILE_MUTEX: u32 = 0x4;
 
-
 pub(crate) const STREAM_FILE_MODE: u32 = 0x38;
-
 
 pub(crate) const STREAM_FILE_PRIORITY: u32 = 0x40;
 
-
 pub(crate) const STREAM_FILE_LOW_WATER: u32 = 0x44;
-
 
 pub(crate) const STREAM_FILE_NEEDS_REFILL: u32 = 0x48;
 
-
 pub(crate) const STREAM_FILE_BUFFERED: u32 = 0x4c;
-
 
 pub(crate) const STREAM_FILE_HANDLE: u32 = 0x174;
 
-
 /// The read mode whose refills are reprioritised.
 pub(crate) const STREAM_FILE_MODE_STREAMING: u64 = 1;
-
 
 pub(crate) const STREAM_FILE_MUTEX_LOCK: Callee = Callee {
     addr: 0x003e_5700,
     f: ee::s14::EAMutex_Lock,
 };
 
-
 pub(crate) const STREAM_FILE_MUTEX_UNLOCK: Callee = Callee {
     addr: 0x003e_5760,
     f: ee::s14::EAMutex_Unlock,
 };
 
-
 pub(crate) const STREAM_FILE_SET_REQUEST_PRIORITY: Callee = Callee {
     addr: 0x003d_cfc0,
     f: ee::s14::EAFile_SetRequestPriority,
 };
-
-
 
 /// `void StreamFile_ConsumeBytes(StreamFile *st, int n)` (0x3dfc48): takes
 /// `n` bytes off the buffered count (under the stream's mutex). When that
@@ -8044,8 +8077,6 @@ pub fn stream_file_consume_bytes(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // 0x2f5148 WorldLightMan_LightInstanceCB
 
@@ -8054,8 +8085,6 @@ pub(crate) const LIGHT_INSTANCE_GET_LIGHTING: Callee = Callee {
     addr: 0x002f_5400,
     f: ee::s09::WorldLightMan_GetInstanceLighting,
 };
-
-
 
 /// `void WorldLightMan_LightInstanceCB(Instance* inst)` (0x2f5148): the
 /// world's per-instance lighting callback: looks up the instance's lighting
@@ -8082,8 +8111,6 @@ pub fn world_light_man_light_instance_cb(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 /// `void PATH_TrackSetVolume(PathTrack* track, int volume)` (0x3d62c8):
 /// store the volume (as a signed byte) and, while the track is playing
@@ -8119,29 +8146,20 @@ pub fn path_track_set_volume(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // StreamFile_ClassifyChunk (0x3dfe88, seg_2DCAE8.c)
 
 /// StreamFile fields: the chunk classifier table and its entry count.
 pub(crate) const SFC_ENTRIES: u32 = 0x1c;
 
-
 pub(crate) const SFC_COUNT: u32 = 0x20;
-
 
 /// Classifier entry (12 bytes): `{mask, value, result}`.
 pub(crate) const SFC_ENTRY_SIZE: u32 = 0xc;
 
-
 pub(crate) const SFC_ENTRY_VALUE: u32 = 0x4;
 
-
 pub(crate) const SFC_ENTRY_RESULT: u32 = 0x8;
-
-
 
 /// `int StreamFile_ClassifyChunk(StreamFile* self, const int* chunk_id)`
 /// (0x3dfe88): the result of the first classifier entry whose
@@ -8187,15 +8205,11 @@ pub fn stream_file_classify_chunk(c: &mut Cpu) {
     ret(c);
 }
 
-
-
 // ---------------------------------------------------------------------------
 // EA_ShellSortPairs (0x3e6328, seg_2DCAE8.c)
 
 /// Shell sort gap sequence (1, 4, 13, 40, ...: 3h+1), `D_00451218`.
 pub(crate) const OC264_SHELL_GAPS: u32 = 0x0045_1218;
-
-
 
 /// `void EA_ShellSortPairs(int n, int* keys, int* vals)` (0x3e6328): sorts
 /// `n` key/value pairs by key, descending, with a 3h+1 Shell sort (gap
@@ -8346,73 +8360,67 @@ pub fn ea_shell_sort_pairs(c: &mut Cpu) {
     }
 }
 
-
-
 // ---------------------------------------------------------------------------
 // ComputerActorRider_CruiseApproachJump (0x1009e0)
 
 /// `ComputerActorRider_FindJumpMarker(self, &speed, &below, &o3, &o4, &o5, &o6)`.
-pub(crate) const CAJ_FIND_JUMP_MARKER: Callee =
-    Callee { addr: 0x0010_b980, f: ee::s00::ComputerActorRider_FindJumpMarker };
-
+pub(crate) const CAJ_FIND_JUMP_MARKER: Callee = Callee {
+    addr: 0x0010_b980,
+    f: ee::s00::ComputerActorRider_FindJumpMarker,
+};
 
 /// `ComputerActorRider_CruiseFollowPath(self, pad)`.
-pub(crate) const CAJ_CRUISE_FOLLOW_PATH: Callee =
-    Callee { addr: 0x0010_0680, f: ee::s00::ComputerActorRider_CruiseFollowPath };
-
+pub(crate) const CAJ_CRUISE_FOLLOW_PATH: Callee = Callee {
+    addr: 0x0010_0680,
+    f: ee::s00::ComputerActorRider_CruiseFollowPath,
+};
 
 /// `ComputerActorRider_GetSteerTarget(&v, self)`.
-pub(crate) const CAJ_GET_STEER_TARGET: Callee =
-    Callee { addr: 0x0010_0610, f: ee::s00::ComputerActorRider_GetSteerTarget };
-
+pub(crate) const CAJ_GET_STEER_TARGET: Callee = Callee {
+    addr: 0x0010_0610,
+    f: ee::s00::ComputerActorRider_GetSteerTarget,
+};
 
 /// `float ComputerActorRider_ComputeSteer(self, &v)`.
-pub(crate) const CAJ_COMPUTE_STEER: Callee =
-    Callee { addr: 0x0010_0348, f: ee::s00::ComputerActorRider_ComputeSteer };
-
+pub(crate) const CAJ_COMPUTE_STEER: Callee = Callee {
+    addr: 0x0010_0348,
+    f: ee::s00::ComputerActorRider_ComputeSteer,
+};
 
 /// `ComputerActorRider_PlanAirTricks(self, o5, o6, o4, o3)`.
-pub(crate) const CAJ_PLAN_AIR_TRICKS: Callee =
-    Callee { addr: 0x0010_bfa8, f: ee::s00::ComputerActorRider_PlanAirTricks };
-
+pub(crate) const CAJ_PLAN_AIR_TRICKS: Callee = Callee {
+    addr: 0x0010_bfa8,
+    f: ee::s00::ComputerActorRider_PlanAirTricks,
+};
 
 /// `ComputerActorRider_CrouchAndBoost(self, pad)`.
-pub(crate) const CAJ_CROUCH_AND_BOOST: Callee =
-    Callee { addr: 0x0010_c140, f: ee::s00::ComputerActorRider_CrouchAndBoost };
-
+pub(crate) const CAJ_CROUCH_AND_BOOST: Callee = Callee {
+    addr: 0x0010_c140,
+    f: ee::s00::ComputerActorRider_CrouchAndBoost,
+};
 
 /// ComputerActorRider: rider (+0x18), cruise speed (+0xdf0), think state
 /// (+0xf38, `u16`) and think handler (+0xf44, an 8-byte member pointer).
 pub(crate) const CAJ_RIDER: u32 = 0x18;
 
-
 pub(crate) const CAJ_SPEED: u32 = 0xdf0;
-
 
 pub(crate) const CAJ_THINK_STATE: u32 = 0xf38;
 
-
 pub(crate) const CAJ_THINK_FN: u32 = 0xf44;
-
 
 /// The think-handler table (0x43cf20); entry 1 (cruise) at +8.
 pub(crate) const CAJ_THINK_TABLE: u32 = 0x0043_cf20;
 
-
 /// Rider: velocity (+0x1e0) and height above ground (+0x4c8).
 pub(crate) const CAJ_RIDER_VELOCITY: u32 = 0x1e0;
 
-
 pub(crate) const CAJ_RIDER_HEIGHT: u32 = 0x4c8;
-
 
 /// `gp-0x7fc4`: 10000.0 (height limit); `gp-0x7fc0`: 138.8889 (speed band).
 pub(crate) const CAJ_HEIGHT_LIMIT_GP: u32 = 0x7fc4;
 
-
 pub(crate) const CAJ_SPEED_BAND_GP: u32 = 0x7fc0;
-
-
 
 /// `void ComputerActorRider_CruiseApproachJump(ComputerActorRider* self,
 /// Pad* pad)` (0x1009e0): approaching a jump marker while cruising. No
@@ -8576,66 +8584,47 @@ pub fn computer_actor_rider_cruise_approach_jump(c: &mut Cpu) {
     });
 }
 
-
-
 // ---------------------------------------------------------------------------
 // ComputerActorRider_ThinkNaturalAir (0x10b590)
 
 /// `Rand_NextGame` (the AI's random generator, called through the table).
 pub(crate) const NATURAL_AIR_RAND: u32 = 0x0031_7810;
 
-
 pub(crate) const NATURAL_AIR_GET_STEER_TARGET: Callee = Callee {
     addr: 0x0010_0610,
     f: ee::s00::ComputerActorRider_GetSteerTarget,
 };
-
 
 pub(crate) const NATURAL_AIR_COMPUTE_STEER: Callee = Callee {
     addr: 0x0010_0348,
     f: ee::s00::ComputerActorRider_ComputeSteer,
 };
 
-
-
 /// AI think state (the `ComputerActorRider`).
 pub(crate) const AI_RIDER: u32 = 0x18;
 
-
 pub(crate) const AI_TRICK: u32 = 0xe0c;
-
 
 pub(crate) const AI_IN_TRICK: u32 = 0xe10;
 
-
 pub(crate) const AI_E14: u32 = 0xe14;
-
 
 pub(crate) const AI_E18: u32 = 0xe18;
 
-
 pub(crate) const AI_E20: u32 = 0xe20;
-
 
 pub(crate) const AI_SPIN_DIR: u32 = 0xe38;
 
-
 pub(crate) const AI_FLIP_DIR: u32 = 0xe3c;
-
 
 /// Rider -> air predictor; its state and the height above the landing.
 pub(crate) const RIDER_AIR: u32 = 0x788;
 
-
 pub(crate) const AIR_HEIGHT: u32 = 0x98;
-
 
 pub(crate) const AIR_GROUND: u32 = 0xa0;
 
-
 pub(crate) const AIR_STATE: u32 = 0xac;
-
-
 
 /// `void ComputerActorRider_ThinkNaturalAir(ComputerActorRider *self, Pad *pad)`
 /// (0x10b590): the AI's "natural" air (no trick planned). With the air
@@ -8796,8 +8785,6 @@ pub fn computer_actor_rider_think_natural_air(c: &mut Cpu) {
     })
 }
 
-
-
 /// After `Rand_NextGame`: an odd result negates the direction at `field`.
 pub(crate) fn natural_air_random_sign(c: &mut Cpu, field: u32) {
     c.g[V0][0] &= 1;
@@ -8809,8 +8796,6 @@ pub(crate) fn natural_air_random_sign(c: &mut Cpu, field: u32) {
         dir.write_fpu(c, v);
     }
 }
-
-
 
 /// `WScriptResult WScriptFn_Crowd2dControl(int argc, WScriptArg* args)`
 /// (0x303ba0, hidden result pointer in a0): the world-script command that
@@ -8831,7 +8816,7 @@ pub fn wscript_fn_crowd2d_control(c: &mut Cpu) {
     const DEFAULT_OBJECT: u32 = 0x290;
     const INSTANCE: u32 = 0x78;
     const CROWD_MAN: u32 = 0x6f0; // gp-
-    // The static "none" result is at 0x4c9098 (0x4d0000 - 0x6f68).
+                                  // The static "none" result is at 0x4c9098 (0x4d0000 - 0x6f68).
     const FLOAT_ARG: u64 = 2;
     const LOOP_HEAD: u32 = 0x0030_3c40;
     const MEMCPY: Callee = Callee {
@@ -9038,6 +9023,2047 @@ pub fn wscript_fn_crowd2d_control(c: &mut Cpu) {
         frame.restore(c, S2, 0x50);
         frame.restore(c, S3, 0x40);
         frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RefPack_Decode (0x003b49d0)
+
+/// `sx(a + b)` on the low words (`addu`/`addiu`).
+#[inline]
+pub(crate) fn refpack_addu(a: u64, b: u64) -> u64 {
+    sx((a as u32).wrapping_add(b as u32))
+}
+
+/// One RefPack byte copy loop: `do { *dst++ (t1) = *src++; } while (--v1
+/// != end)` with `end` holding -1, an event check at `head` per byte.
+#[inline]
+pub(crate) fn refpack_copy(c: &mut Cpu, src: usize, end: usize, head: u32) {
+    loop {
+        c.cycles += 7;
+        let b = Addr(r32(c, src)).lbu(c);
+        c.g[V0][0] = b;
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+        c.g[src][0] = refpack_addu(c.g[src][0], 1);
+        Addr(r32(c, T1)).sb(c, b);
+        let more = c.g[V1][0] != c.g[end][0];
+        c.g[T1][0] = refpack_addu(c.g[T1][0], 1);
+        if !more {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `int RefPack_Decode(u8* dst, const u8* src, int* consumed)`
+/// (0x003b49d0): EA RefPack (QFS) decompression. The header gives the
+/// unpacked size (3 or 4 big-endian bytes, after an optional compressed
+/// size when flag 0x100 is set); then control bytes: `0xxxxxxx` (2-byte
+/// form: 0-3 literals, a 3-10 byte match up to 1 KiB back), `10xxxxxx`
+/// (3-byte form: 4-67 bytes up to 16 KiB back), `110xxxxx` (4-byte form:
+/// 5-1028 bytes up to 128 KiB back), `111xxxxx` below 0xfc (4-112
+/// literals), and 0xfc-0xff (0-3 literals, end). Returns the unpacked size
+/// (0 for a null `src`) and stores the bytes read to `*consumed` if given.
+/// Registers as compiled: t1 = dst, a3 = src, t0 = control byte, t7 =
+/// size, t6 = -1.
+pub fn refpack_decode(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[T1][0] = c.g[A0][0];
+    c.g[A3][0] = c.g[A1][0];
+    c.g[T7][0] = 0;
+    if c.g[A1][0] != 0 {
+        refpack_decode_stream(c);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = sx((c.g[A3][0] as u32).wrapping_sub(c.g[A1][0] as u32));
+    if c.g[A2][0] != 0 {
+        c.cycles += 1;
+        let consumed = c.g[V0][0];
+        Addr(r32(c, A2)).sw(c, consumed);
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[T7][0];
+    abi::ret(c);
+}
+
+/// The header and the control-byte loop of [`refpack_decode`].
+pub(crate) fn refpack_decode_stream(c: &mut Cpu) {
+    // Header: 16-bit flags, an optional packed size, the unpacked size.
+    c.cycles += 7;
+    let src = r32(c, A1);
+    let h0 = Addr(src).lbu(c);
+    c.g[V0][0] = Addr(src).off(1).lbu(c);
+    let flags = refpack_addu(h0 << 8, c.g[V0][0]);
+    c.g[V1][0] = flags;
+    c.g[A0][0] = flags & 0x8000;
+    c.g[A3][0] = sx(src.wrapping_add(2));
+    let four = c.g[A0][0] != 0;
+    c.cycles += if four { 18 } else { 13 };
+    c.g[V1][0] = flags & 0x100;
+    c.g[V0][0] = sx(src.wrapping_add(if four { 6 } else { 5 }));
+    if c.g[V1][0] != 0 {
+        c.g[A3][0] = c.g[V0][0];
+    }
+    // t7 = big-endian size (v1/a0 alternate as the byte registers).
+    let mut p = r32(c, A3);
+    let mut size = Addr(p).lbu(c);
+    p = p.wrapping_add(1);
+    for (i, reg) in [V1, A0, V1].into_iter().enumerate() {
+        if i == 2 && !four {
+            break;
+        }
+        let b = Addr(p).lbu(c);
+        c.g[reg][0] = b;
+        c.g[V0][0] = sx((size as u32) << 8);
+        p = p.wrapping_add(1);
+        size = refpack_addu(c.g[V0][0], b);
+    }
+    c.g[T7][0] = size;
+    c.g[A3][0] = sx(p);
+
+    c.cycles += 4;
+    c.g[T6][0] = u64::MAX;
+    c.g[T2][0] = refpack_addu(c.g[A3][0], 1);
+    'stream: loop {
+        c.cycles += 1;
+        c.g[T0][0] = Addr(r32(c, A3)).lbu(c);
+        loop {
+            // t0 = control byte at a3; t2 = a3 + 1.
+            c.cycles += 3;
+            let ctl = c.g[T0][0];
+            c.g[V0][0] = ctl & 0x80;
+            c.g[A3][0] = c.g[T2][0];
+            if ctl & 0x80 == 0 {
+                // 0ooccrrr oooooooo: r literals, then c+3 bytes from o+1 back.
+                c.cycles += 7;
+                c.g[A0][0] = Addr(r32(c, A3)).lbu(c);
+                c.g[V1][0] = ctl & 0x3;
+                c.g[T3][0] = ctl & 0x1c;
+                c.g[A3][0] = refpack_addu(c.g[A3][0], 1);
+                c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+                c.g[T2][0] = ctl & 0x60;
+                if c.g[V1][0] != c.g[T6][0] {
+                    c.cycles += 3;
+                    c.g[T0][0] = u64::MAX;
+                    refpack_copy(c, A3, T0, 0x003b_4ac0);
+                }
+                c.cycles += 9;
+                c.g[V0][0] = sx((c.g[T2][0] as u32) << 3);
+                c.g[V1][0] = sx((c.g[T3][0] as u32) >> 2);
+                c.g[V0][0] = !(c.g[A0][0] | c.g[V0][0]);
+                c.g[A0][0] = refpack_addu(c.g[V0][0], c.g[T1][0]);
+                c.g[V1][0] = refpack_addu(c.g[V1][0], 2);
+                c.g[T2][0] = refpack_addu(c.g[A3][0], 1);
+                c.g[T0][0] = u64::MAX;
+                refpack_copy(c, A0, T0, 0x003b_4b00);
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = ctl & 0x20;
+                if ctl & 0x40 == 0 {
+                    // 10cccccc rroooooo oooooooo: r literals, c+4 bytes.
+                    c.cycles += 8;
+                    c.g[A0][0] = Addr(r32(c, A3)).lbu(c);
+                    c.g[T2][0] = ctl & 0x3f;
+                    c.g[A3][0] = refpack_addu(c.g[A3][0], 1);
+                    c.g[T3][0] = Addr(r32(c, A3)).lbu(c);
+                    c.g[V1][0] = sx((c.g[A0][0] as u32) >> 6);
+                    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+                    let none = c.g[V1][0] == c.g[T6][0];
+                    c.g[A3][0] = refpack_addu(c.g[A3][0], 1);
+                    if !none {
+                        c.cycles += 2;
+                        c.g[T0][0] = u64::MAX;
+                        refpack_copy(c, A3, T0, 0x003b_4b58);
+                    }
+                    c.cycles += 9;
+                    c.g[V0][0] = c.g[A0][0] & 0x3f;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32) << 8);
+                    c.g[V1][0] = refpack_addu(c.g[T2][0], 3);
+                    c.g[V0][0] = !(c.g[T3][0] | c.g[V0][0]);
+                    c.g[T2][0] = refpack_addu(c.g[A3][0], 1);
+                    c.g[A0][0] = refpack_addu(c.g[V0][0], c.g[T1][0]);
+                    c.g[T0][0] = u64::MAX;
+                    refpack_copy(c, A0, T0, 0x003b_4b98);
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = ctl & 0x1f;
+                    if ctl & 0x20 == 0 {
+                        // 110occrr oooooooo oooooooo cccccccc.
+                        c.cycles += 11;
+                        c.g[A0][0] = Addr(r32(c, A3)).lbu(c);
+                        c.g[V1][0] = ctl & 0x3;
+                        c.g[A3][0] = refpack_addu(c.g[A3][0], 1);
+                        c.g[T5][0] = ctl & 0xc;
+                        c.g[T3][0] = Addr(r32(c, A3)).lbu(c);
+                        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+                        c.g[A3][0] = refpack_addu(c.g[A3][0], 1);
+                        c.g[T2][0] = ctl & 0x10;
+                        c.g[T4][0] = Addr(r32(c, A3)).lbu(c);
+                        let none = c.g[V1][0] == c.g[T6][0];
+                        c.g[A3][0] = refpack_addu(c.g[A3][0], 1);
+                        if !none {
+                            c.cycles += 2;
+                            c.g[T0][0] = u64::MAX;
+                            refpack_copy(c, A3, T0, 0x003b_4bf8);
+                        }
+                        c.cycles += 13;
+                        c.g[V0][0] = (c.g[T2][0] != 0) as u64;
+                        c.g[A0][0] = sx((c.g[A0][0] as u32) << 8);
+                        c.g[V0][0] = sx((c.g[V0][0] as u32) << 16);
+                        c.g[V1][0] = sx((c.g[T5][0] as u32) << 6);
+                        c.g[V0][0] = refpack_addu(c.g[V0][0], c.g[A0][0]);
+                        c.g[V1][0] = refpack_addu(c.g[V1][0], c.g[T4][0]);
+                        c.g[V0][0] = !(c.g[T3][0] | c.g[V0][0]);
+                        c.g[A0][0] = refpack_addu(c.g[V0][0], c.g[T1][0]);
+                        c.g[V1][0] = refpack_addu(c.g[V1][0], 4);
+                        c.g[T2][0] = refpack_addu(c.g[A3][0], 1);
+                        c.g[T0][0] = u64::MAX;
+                        refpack_copy(c, A0, T0, 0x003b_4c48);
+                    } else {
+                        // 111rrrrr: (r+1)*4 literals, or the end code.
+                        c.cycles += 5;
+                        c.g[A0][0] = sx((c.g[V0][0] as u32) << 2);
+                        c.g[V1][0] = refpack_addu(c.g[A0][0], 4);
+                        let literals = c.g[V1][0] < 0x71;
+                        c.g[V0][0] = literals as u64;
+                        c.g[V1][0] = refpack_addu(c.g[A0][0], 3);
+                        if !literals {
+                            break 'stream;
+                        }
+                        c.cycles += 2;
+                        let none = c.g[V1][0] == c.g[T6][0];
+                        c.g[T2][0] = refpack_addu(c.g[A3][0], 1);
+                        if !none {
+                            c.cycles += 2;
+                            c.g[A0][0] = u64::MAX;
+                            refpack_copy(c, A3, A0, 0x003b_4c90);
+                            c.cycles += 2;
+                            c.g[T2][0] = refpack_addu(c.g[A3][0], 1);
+                        }
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003b_4a88);
+                        }
+                        continue 'stream;
+                    }
+                }
+            }
+            // After a match: the next control byte.
+            c.cycles += 2;
+            c.g[T0][0] = Addr(r32(c, A3)).lbu(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x003b_4a8c);
+            }
+        }
+    }
+    // End code: 0-3 trailing literals.
+    c.cycles += 4;
+    c.g[V1][0] = c.g[T0][0] & 0x3;
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+    if c.g[V1][0] != c.g[T6][0] {
+        c.cycles += 3;
+        c.g[A0][0] = u64::MAX;
+        refpack_copy(c, A3, A0, 0x003b_4cd0);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SND_FireEvents (0x3b5f98)
+// ---------------------------------------------------------------------------
+
+/// The sound library's event-handler table (`D_0050A8E8`).
+pub(crate) const SND_EVENT_TABLE: u32 = 0x0050_a8e8;
+
+// ---------------------------------------------------------------------------
+// CrowdAudio_UpdatePitchBend (0x2a68b0)
+// ---------------------------------------------------------------------------
+
+/// Sound handle of a bank-monitor instance (negative: not playing).
+pub(crate) const CROWD_VOICE_HANDLE: u32 = 0x4;
+
+/// CrowdAudio: index of the active pitch-bend curve, and its time left.
+pub(crate) const CROWD_BEND_CURVE: u32 = 0x184;
+
+pub(crate) const CROWD_BEND_TIME: u32 = 0x188;
+
+/// gp-relative pointer to the crowd sound table (`D_004A36F8`), 0x54-byte
+/// entries; the bend curve fields start 0x1c into an entry.
+pub(crate) const CROWD_TABLE_GP: u32 = 0x608;
+
+pub(crate) const CROWD_ENTRY_SIZE: u32 = 0x54;
+
+pub(crate) const CROWD_ENTRY_BEND: u32 = 0x1c;
+
+/// Curve fields (relative to the bend start): ramp-down length, ramp-up
+/// length, bend depth.
+pub(crate) const BEND_FALL: u32 = 0x48;
+
+pub(crate) const BEND_RISE: u32 = 0x4c;
+
+pub(crate) const BEND_DEPTH: u32 = 0x50;
+
+/// `void CrowdAudio_UpdatePitchBend(CrowdAudio* self, BankMonitorInstance*
+/// voice, float dt)` (0x2a68b0): a voice that is not playing is reset;
+/// otherwise, while a pitch bend is running, counts its time down by `dt`
+/// and sets the voice's pitch bend (0x40 = centre) from the curve: rising
+/// while the time left is under the rise length, then falling.
+pub fn crowd_audio_update_pitch_bend(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save(c, S0, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        let handle = Addr(r32(c, S1)).off(CROWD_VOICE_HANDLE).lw(c);
+        c.g[V0][0] = handle;
+        c.g[A1][0] = c.g[A0][0];
+        if (handle as i64) < 0 {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S1][0];
+            Callee {
+                addr: 0x002a_bb38,
+                f: ee::s08::f_002abb38,
+            }
+            .call(c, 0x002a_68d8)?;
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 6;
+            let this = Addr(r32(c, A1));
+            let time = this.off(CROWD_BEND_TIME).read_fpu(c);
+            c.f[1] = time.0;
+            c.f[0] = 0;
+            let idle = time.le(FpuF32::ZERO);
+            abi::set_fcc(c, idle);
+            frame.restore(c, S0, 0x20);
+            if !idle {
+                c.cycles += 13;
+                let curve = this.off(CROWD_BEND_CURVE).lw(c);
+                c.g[V1][0] = CROWD_ENTRY_SIZE as u64;
+                let left = time - FpuF32(c.f[12]);
+                c.f[12] = left.0;
+                let table = Addr(c.g[GP][0] as u32).off(CROWD_TABLE_GP).lw(c) as u32;
+                let offset =
+                    abi::mult(c, curve as u32, CROWD_ENTRY_SIZE).wrapping_add(CROWD_ENTRY_BEND);
+                this.off(CROWD_BEND_TIME).write_fpu(c, left);
+                c.g[V0][0] = sx(offset);
+                let bend = Addr(table.wrapping_add(offset));
+                c.g[A0][0] = sx(bend.0);
+                let rise = bend.off(BEND_RISE).read_fpu(c);
+                c.f[1] = rise.0;
+                let falling = abi::c_lt_s(c, rise, left);
+                c.g[S0][0] = 0x40;
+                let scaled = if falling {
+                    // Past the rise: depth * (fall - (left - rise)) / fall.
+                    c.cycles += 8;
+                    let over = left - rise;
+                    let fall = bend.off(BEND_FALL).read_fpu(c);
+                    let depth = bend.off(BEND_DEPTH).read_fpu(c);
+                    let remaining = fall - over;
+                    c.f[1] = remaining.0;
+                    c.f[2] = fall.0;
+                    Some((depth * remaining).div(fall))
+                } else {
+                    c.cycles += 3;
+                    if abi::c_lt_s(c, FpuF32::ZERO, left) {
+                        // Rising: depth * left / rise.
+                        c.cycles += 3;
+                        let depth = bend.off(BEND_DEPTH).read_fpu(c);
+                        Some((depth * left).div(rise))
+                    } else {
+                        None
+                    }
+                };
+                if let Some(scaled) = scaled {
+                    c.cycles += 3;
+                    c.f[0] = scaled.0;
+                    let whole = scaled.to_i32() as u32;
+                    c.f[1] = whole;
+                    c.g[V0][0] = sx(whole);
+                    c.g[S0][0] = sx(whole.wrapping_add(0x40));
+                }
+                c.cycles += 8;
+                call_ptr(c, 0x003b_58a0, 0x002a_6978)?; // SND_Lock
+                c.g[A0][0] = Addr(r32(c, S1)).off(CROWD_VOICE_HANDLE).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                call_ptr(c, 0x003b_c6b8, 0x002a_6984)?; // SND_SetPitchBend
+                call_ptr(c, 0x003b_58d8, 0x002a_698c)?; // SND_Unlock
+                frame.restore(c, S0, 0x20);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WorldObjFactory_Object (0x2fc0d0)
+// ---------------------------------------------------------------------------
+
+/// Guard word of the factory's static default parameter block.
+pub(crate) const WOF_DEFAULTS_READY_GP: u32 = 0x24f0;
+
+/// The static default parameter block `{id = -1, 0, 0, tag}` (16 bytes).
+pub(crate) const WOF_DEFAULTS: u32 = 0x004f_b4f0;
+
+/// Parameter kinds by slot (`D_00445F90`): kind 2 is a float slot.
+pub(crate) const WOF_PARAM_KINDS: u32 = 0x0044_5f90;
+
+pub(crate) const WOF_KIND_FLOAT: u64 = 2;
+
+/// gp-relative: the world-object directory (`id & 0xff` selects a section,
+/// `id >> 8` an object in it) and the world (its default object at +0x290).
+pub(crate) const WOF_DIRECTORY_GP: u32 = 0x16c8;
+
+pub(crate) const WOF_WORLD_GP: u32 = 0xce8;
+
+pub(crate) const WOF_WORLD_DEFAULT_OBJECT: u32 = 0x290;
+
+/// The factory's result value (12 bytes, returned by copy).
+pub(crate) const WOF_RESULT: u32 = 0x004c_9098;
+
+/// Object fields: the object's active node.
+pub(crate) const WOF_OBJECT_NODE: u32 = 0xc;
+
+/// `Result WorldObjFactory_Object(Param* params, int count)` (0x2fc0d0;
+/// a0 = the hidden result slot, a1 = count, a2 = params): fills a 4-word
+/// parameter block from the defaults and the `{slot, value, -, kind}`
+/// parameters (an int given for a float slot is converted), looks the object
+/// id up (-1: the world's default object), and unless the object already
+/// has an active node of kind 0x11 for these parameters, creates an
+/// `Object` (0x2c bytes) for it. Returns the factory's result value.
+pub fn world_obj_factory_object(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x80);
+        let ready = Addr(c.g[GP][0] as u32).off(WOF_DEFAULTS_READY_GP).lw(c);
+        c.g[V0][0] = ready;
+        frame.save(c, S3, 0x40);
+        frame.save(c, S0, 0x70);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S2, 0x50);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x60);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x30);
+        c.g[A2][0] = 0x50_0000;
+        frame.save_ra(c, 0x20);
+        let defaults = Addr(WOF_DEFAULTS);
+        if ready == 0 {
+            // First use: initialise the static defaults (guarded local).
+            c.cycles += 11;
+            c.g[V1][0] = sx(WOF_DEFAULTS);
+            c.g[V0][0] = u64::MAX;
+            let tag = defaults.off(0xc).lbu(c);
+            c.g[A1][0] = tag;
+            defaults.sw(c, u64::MAX);
+            c.g[A0][0] = 1;
+            defaults.off(0xc).sb(c, tag);
+            Addr(c.g[GP][0] as u32).off(WOF_DEFAULTS_READY_GP).sw(c, 1);
+            defaults.off(4).sw(c, 0);
+            defaults.off(8).sw(c, 0);
+            Addr(sp(c)).sb(c, tag);
+        }
+        // The parameter block at 0x10(sp), copied from the defaults.
+        c.cycles += 11;
+        c.g[V0][0] = u64::MAX;
+        let block = frame.at(c, 0x10);
+        c.g[S1][0] = sx(block);
+        c.g[A1][0] = sx(WOF_DEFAULTS);
+        c.g[A2][0] = 0x10;
+        Addr(block).sw(c, u64::MAX);
+        c.g[A0][0] = sx(block);
+        c.g[S4][0] = 0x4d_0000;
+        call_ptr(c, 0x003e_6574, 0x002f_c154)?; // memcpy
+        c.g[A2][0] = c.g[S3][0];
+        if (c.g[S0][0] as i64) > 0 {
+            c.cycles += 5;
+            c.g[V0][0] = 0x44_0000;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = sx(WOF_PARAM_KINDS);
+            c.g[A3][0] = WOF_KIND_FLOAT;
+            loop {
+                c.cycles += 8;
+                let param = Addr(r32(c, A2));
+                let slot4 = (param.lw(c) as u32) << 2;
+                let given_kind = param.off(0xc).lw(c);
+                c.g[V1][0] = given_kind;
+                let dest = Addr(slot4.wrapping_add(r32(c, S1)));
+                c.g[A0][0] = sx(dest.0);
+                let kind = Addr(slot4.wrapping_add(r32(c, T0))).lw(c);
+                c.g[V0][0] = kind;
+                if given_kind != kind && kind == c.g[A3][0] {
+                    // An int for a float slot.
+                    c.cycles += 2 + 4;
+                    let value = param.off(4).lw(c) as u32;
+                    let converted = FpuF32::from_i32(value as i32);
+                    c.f[0] = converted.0;
+                    dest.write_fpu(c, converted);
+                } else {
+                    c.cycles += if given_kind == kind { 1 } else { 2 + 1 };
+                    let value = param.off(4).lw(c);
+                    c.g[V0][0] = value;
+                    dest.sw(c, value);
+                }
+                c.cycles += 3;
+                let left = r32(c, A1).wrapping_sub(1);
+                c.g[A1][0] = sx(left);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x10));
+                if left == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_c170);
+                }
+            }
+        }
+        // Look the object up.
+        c.cycles += 4;
+        let id = Addr(r32(c, S1)).lw(c);
+        c.g[A2][0] = id;
+        c.g[V0][0] = !id;
+        let directory = Addr(c.g[GP][0] as u32).off(WOF_DIRECTORY_GP).lw(c);
+        c.g[A1][0] = directory;
+        if !id == 0 {
+            c.cycles += 3;
+            let world = Addr(c.g[GP][0] as u32).off(WOF_WORLD_GP).lw(c);
+            c.g[V0][0] = world;
+            c.g[S0][0] = Addr(world as u32).off(WOF_WORLD_DEFAULT_OBJECT).lw(c);
+        } else {
+            c.cycles += 8;
+            let id = id as u32;
+            let sections = Addr(directory as u32).lw(c);
+            let table = Addr(sections as u32).off(8).lw(c);
+            c.g[A0][0] = table;
+            let at = ((id & 0xff) << 2).wrapping_add(table as u32);
+            c.g[V0][0] = sx(at);
+            let section = Addr(at).lw(c);
+            c.g[V1][0] = section;
+            let object = if section != 0 {
+                c.cycles += 7;
+                let entries = Addr(section as u32).off(0x1c).lw(c);
+                c.g[A0][0] = entries;
+                let entry = Addr(((id >> 8) << 2).wrapping_add(entries as u32)).lw(c);
+                c.g[V1][0] = entry;
+                let index = (entry as u32) >> 8;
+                let object = if index != 0 {
+                    sx(index << 2)
+                } else {
+                    c.cycles += 1;
+                    0
+                };
+                c.g[V0][0] = object;
+                c.cycles += 1;
+                object
+            } else {
+                c.cycles += 2;
+                0
+            };
+            c.g[A2][0] = object;
+            c.cycles += 1;
+            c.g[S0][0] = object;
+        }
+        c.cycles += 2;
+        if c.g[S0][0] != 0 {
+            c.cycles += 3;
+            let node = Addr(r32(c, S0)).off(WOF_OBJECT_NODE).lw(c);
+            c.g[A0][0] = node;
+            c.g[A1][0] = 0x11;
+            let mut create = true;
+            if node != 0 {
+                c.cycles += 4;
+                c.g[A2][0] = c.g[S1][0];
+                Callee {
+                    addr: 0x002f_ae38,
+                    f: ee::s10::f_002fae38,
+                }
+                .call(c, 0x002f_c240)?;
+                create = c.g[V0][0] == 0;
+            }
+            if create {
+                c.cycles += 13;
+                c.g[A1][0] = 0x4a_3bf8;
+                c.g[A0][0] = 0x2c;
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0;
+                Callee {
+                    addr: 0x0031_7d70,
+                    f: ee::s10::f_00317d70,
+                }
+                .call(c, 0x002f_c260)?;
+                let block = Addr(r32(c, S1));
+                let flag = block.off(8).lw(c);
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A3][0] = block.off(4).lw(c);
+                c.g[A1][0] = 1;
+                c.g[A2][0] = c.g[S0][0];
+                c.g[T0][0] = (flag != 0) as u64;
+                call_ptr(c, 0x0035_6db0, 0x002f_c27c)?; // Object_ctor
+            }
+        }
+        // Return the factory's result value by copy.
+        c.cycles += 16;
+        let result = Addr(r32(c, S4).wrapping_sub(0x4d_0000 - WOF_RESULT));
+        c.g[A1][0] = sx(result.0);
+        let head = result.read_u64_unaligned(c);
+        let tail = result.off(8).lw(c);
+        c.g[V1][0] = tail;
+        let out = Addr(r32(c, S2));
+        out.write_u64_unaligned(c, head);
+        out.off(8).sw(c, tail);
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// StreamFile_ParseChunks (0x3dfed0, seg_2DCAE8.c)
+
+pub(crate) const SFPC_ENTRY: u32 = 0x003d_fed0;
+
+/// The loop head the trampoline re-enters at after an unwind (0x3dff08).
+pub(crate) const SFPC_HEAD: u32 = 0x003d_ff08;
+
+pub(crate) const SFPC_END: u32 = 0x003e_00d8;
+
+/// StreamFile fields: its mutex (+4), the per-class chunk tallies (+0x24,
+/// 16-byte entries `{.., .., bytes +8, first chunk +0xc}` for class 1..),
+/// the low-water mark (+0x44), the "needs refill" flag (+0x48), the parsed
+/// byte count (+0x4c), the parse cursor (+0x54), the fill cursor (+0x58)
+/// and the stream header (+0x60).
+pub(crate) const SFPC_MUTEX: u32 = 0x4;
+
+pub(crate) const SFPC_TALLIES: u32 = 0x24;
+
+pub(crate) const SFPC_LOW_WATER: u32 = 0x44;
+
+pub(crate) const SFPC_NEEDS_REFILL: u32 = 0x48;
+
+pub(crate) const SFPC_PARSED: u32 = 0x4c;
+
+pub(crate) const SFPC_CURSOR: u32 = 0x54;
+
+pub(crate) const SFPC_FILL: u32 = 0x58;
+
+pub(crate) const SFPC_HEADER: u32 = 0x60;
+
+/// Header fields: the stream state (+4; 4 = shutting down) and the id of
+/// the end-of-stream chunk (+0x11c).
+pub(crate) const SFPC_HDR_STATE: u32 = 0x4;
+
+pub(crate) const SFPC_HDR_END_ID: u32 = 0x11c;
+
+pub(crate) const SFPC_STATE_CLOSING: u64 = 4;
+
+/// Chunk header: `{id, bytes | class << 24}`.
+pub(crate) const SFPC_CHUNK_BYTES: u32 = 0x4;
+
+/// Tally entry fields.
+pub(crate) const SFPC_TALLY_BYTES: u32 = 0x8;
+
+pub(crate) const SFPC_TALLY_FIRST: u32 = 0xc;
+
+pub(crate) const SFPC_CLASSIFY: Callee = Callee {
+    addr: 0x003d_fe88,
+    f: ee::s14::StreamFile_ClassifyChunk,
+};
+
+pub(crate) const SFPC_LOCK: Callee = Callee {
+    addr: 0x003e_5700,
+    f: ee::s14::EAMutex_Lock,
+};
+
+pub(crate) const SFPC_UNLOCK: Callee = Callee {
+    addr: 0x003e_5760,
+    f: ee::s14::EAMutex_Unlock,
+};
+
+/// Where the parse loop goes after one chunk.
+pub(crate) enum SfpcNext {
+    /// Back to the "enough bytes for a header?" test (v0 = fill cursor).
+    Top,
+    /// Return v0.
+    Exit,
+}
+
+/// `int StreamFile_ParseChunks(StreamFile* self)` (0x3dfed0): walks the
+/// chunks between the parse cursor and the fill cursor. Each complete chunk
+/// is classified; under the stream's mutex (and unless the stream is shutting
+/// down) an unknown chunk is marked dead (id -2), a known one is tagged with
+/// its class (`bytes | class << 24`), added to its class tally and to the
+/// parsed byte count (clearing the "needs refill" flag when that crosses the
+/// low-water mark), and the cursor moves past it. The end-of-stream chunk (or
+/// one whose length already carries a class tag) is padded to 64-byte
+/// alignment and ends the walk with 1; a shutdown or an incomplete chunk ends
+/// it with 0. Frame 0x90 (ra at 0, s7..s0 at 0x10..0x80). Dispatcher-shaped:
+/// re-entered at [`SFPC_HEAD`] after an unwind at the loop's event check.
+pub fn stream_file_parse_chunks(c: &mut Cpu) {
+    guest(c, |c| {
+        let mut at_head = match c.pc {
+            SFPC_ENTRY => {
+                c.cycles += 14;
+                let frame = Frame::open(c, 0x90);
+                frame.save(c, S0, 0x80);
+                frame.save(c, S7, 0x10);
+                c.g[S0][0] = c.g[A0][0];
+                frame.save(c, S1, 0x70);
+                c.g[S7][0] = sx(0xffff_ffc0);
+                frame.save(c, S2, 0x60);
+                frame.save(c, S3, 0x50);
+                frame.save(c, S4, 0x40);
+                frame.save(c, S5, 0x30);
+                frame.save_ra(c, 0);
+                frame.save(c, S6, 0x20);
+                c.g[S6][0] = c.lw(r32(c, S0).wrapping_add(SFPC_HEADER));
+                // 0x3e0054
+                c.cycles += 1;
+                c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(SFPC_FILL));
+                false
+            }
+            SFPC_HEAD => true,
+            pc => {
+                c.jump_out(pc, SFPC_ENTRY, SFPC_END);
+                return Ok(());
+            }
+        };
+        loop {
+            if !at_head {
+                // 0x3e0058: at least a chunk header (8 bytes) buffered?
+                c.cycles += 5;
+                let chunk = c.lw(r32(c, S0).wrapping_add(SFPC_CURSOR));
+                c.g[S2][0] = chunk;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(chunk as u32));
+                let short = (c.g[V0][0] as i64) < 8;
+                c.g[V0][0] = 0;
+                if short {
+                    break;
+                }
+                // 0x3e006c: a length that already carries a class tag turns
+                // the chunk into an 8-byte end-of-stream chunk.
+                c.cycles += 5;
+                c.g[S1][0] = c.lw(r32(c, S2).wrapping_add(SFPC_CHUNK_BYTES));
+                c.g[V0][0] = c.g[S1][0] & 0xffff_ffff_ff00_0000;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 5;
+                    c.g[V0][0] = c.lw(r32(c, S6).wrapping_add(SFPC_HDR_END_ID));
+                    c.g[S1][0] = 8;
+                    c.sw(r32(c, S2).wrapping_add(SFPC_CHUNK_BYTES), 8);
+                    c.sw(r32(c, S2), c.g[V0][0]);
+                }
+                c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(SFPC_CURSOR));
+                // 0x3e0094: the whole chunk buffered?
+                c.cycles += 5;
+                c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(SFPC_FILL));
+                c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, S1)));
+                c.g[V0][0] = (c.g[V0][0] < c.g[V1][0]) as u64;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                    break;
+                }
+                c.g[V1][0] = c.lw(r32(c, S2));
+                if back_edge_unwinds(c, SFPC_HEAD) {
+                    return Err(Unwound);
+                }
+            }
+            at_head = false;
+            match sfpc_parse_one(c)? {
+                SfpcNext::Top => continue,
+                SfpcNext::Exit => break,
+            }
+        }
+        // 0x3e00ac
+        c.cycles += 11;
+        let frame = Frame { size: 0x90 };
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore(c, S6, 0x20);
+        frame.restore(c, S7, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `len` padded so that `cursor + len` ends 64-byte aligned (`s7` = -64).
+pub(crate) fn sfpc_align64(c: &Cpu, len: u32, cursor_low: u64) -> (u64, u64) {
+    let low = cursor_low & 0x3f;
+    let padded = sx(len.wrapping_add(low as u32));
+    let padded = sx((padded as u32).wrapping_add(0x3f)) & c.g[S7][0];
+    (low, padded)
+}
+
+/// One complete chunk at s2 (length s1, id in v1): 0x3dff08..0x3e0050.
+pub(crate) fn sfpc_parse_one(c: &mut Cpu) -> Result<SfpcNext, Unwound> {
+    // 0x3dff08: the end chunk is padded to 64-byte alignment first.
+    c.cycles += 3;
+    c.g[V0][0] = c.lw(r32(c, S6).wrapping_add(SFPC_HDR_END_ID));
+    if c.g[V1][0] == c.g[V0][0] {
+        c.cycles += 6;
+        let (len, cursor) = (r32(c, S1), c.g[A0][0]);
+        let (low, padded) = sfpc_align64(c, len, cursor);
+        c.g[V1][0] = low;
+        c.g[V0][0] = padded;
+        c.g[S1][0] = sx((padded as u32).wrapping_sub(low as u32));
+    }
+    c.g[A0][0] = c.g[S0][0];
+    // 0x3dff2c
+    c.cycles += 5;
+    c.g[A1][0] = c.g[S2][0];
+    SFPC_CLASSIFY.call(c, 0x003d_ff34)?;
+    c.g[S5][0] = c.g[V0][0];
+    c.g[V0][0] = sx(r32(c, S5) << 24);
+    if (c.g[S5][0] as i64) < 0 {
+        // 0x3dff40: unknown chunk: mark it dead and skip it.
+        c.cycles += 8;
+        c.g[S3][0] = sx(r32(c, S0).wrapping_add(SFPC_MUTEX));
+        c.g[A0][0] = c.g[S3][0];
+        SFPC_LOCK.call(c, 0x003d_ff4c)?;
+        c.g[V0][0] = c.lw(r32(c, S6).wrapping_add(SFPC_HDR_STATE)) ^ SFPC_STATE_CLOSING;
+        c.g[S4][0] = (c.g[V0][0] < 1) as u64;
+        c.g[V1][0] = sx(0xffff_fffe);
+        if c.g[S4][0] == 0 {
+            c.cycles += 4;
+            c.sw(r32(c, S2), c.g[V1][0]);
+            c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(SFPC_CURSOR));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+            c.sw(r32(c, S0).wrapping_add(SFPC_CURSOR), c.g[V0][0]);
+        }
+        // 0x3dff70
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S3][0];
+        SFPC_UNLOCK.call(c, 0x003d_ff78)?;
+    } else {
+        // 0x3dff80: tag the chunk with its class and account for it.
+        c.cycles += 9;
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(SFPC_MUTEX));
+        c.g[V0][0] |= c.g[S1][0];
+        c.sw(r32(c, S2).wrapping_add(SFPC_CHUNK_BYTES), c.g[V0][0]);
+        SFPC_LOCK.call(c, 0x003d_ff90)?;
+        c.g[V0][0] = c.lw(r32(c, S6).wrapping_add(SFPC_HDR_STATE)) ^ SFPC_STATE_CLOSING;
+        c.g[S4][0] = (c.g[V0][0] < 1) as u64;
+        c.g[A2][0] = sx(r32(c, S0).wrapping_add(SFPC_MUTEX));
+        if c.g[S4][0] == 0 {
+            // 0x3dffa4: tallies[class - 1].bytes += len (first chunk noted).
+            c.cycles += 8;
+            let tallies = c.lw(r32(c, S0).wrapping_add(SFPC_TALLIES));
+            c.g[V1][0] = sx(r32(c, S5) << 4);
+            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(0x10));
+            c.g[V0][0] = sx((tallies as u32).wrapping_add(r32(c, V1)));
+            let tally = r32(c, V0);
+            c.g[A0][0] = c.lw(tally.wrapping_add(SFPC_TALLY_BYTES));
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, S1)));
+            c.sw(tally.wrapping_add(SFPC_TALLY_BYTES), c.g[A0][0]);
+            if c.g[A0][0] == c.g[S1][0] {
+                c.cycles += 1;
+                c.sw(tally.wrapping_add(SFPC_TALLY_FIRST), c.g[S2][0]);
+            }
+            // 0x3dffc8: parsed count and cursor; low-water crossing.
+            c.cycles += 9;
+            let this = r32(c, S0);
+            c.g[V1][0] = c.lw(this.wrapping_add(SFPC_PARSED));
+            c.g[V0][0] = c.lw(this.wrapping_add(SFPC_CURSOR));
+            c.g[A0][0] = c.lw(this.wrapping_add(SFPC_LOW_WATER));
+            c.g[A1][0] = sx(r32(c, V1).wrapping_add(r32(c, S1)));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+            c.sw(this.wrapping_add(SFPC_PARSED), c.g[A1][0]);
+            c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+            c.sw(this.wrapping_add(SFPC_CURSOR), c.g[V0][0]);
+            if c.g[V1][0] != 0 {
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    c.sw(this.wrapping_add(SFPC_NEEDS_REFILL), 0);
+                }
+            }
+        }
+        // 0x3dfff8
+        c.cycles += 2;
+        c.g[A0][0] = c.g[A2][0];
+        SFPC_UNLOCK.call(c, 0x003e_0000)?;
+    }
+    // 0x3e0000
+    c.cycles += 2;
+    if c.g[S4][0] == 0 {
+        c.g[V1][0] = c.lw(r32(c, S2));
+        // 0x3e0040: stop after the end chunk.
+        c.cycles += 3;
+        c.g[V0][0] = c.lw(r32(c, S6).wrapping_add(SFPC_HDR_END_ID));
+        if c.g[V1][0] != c.g[V0][0] {
+            c.g[V0][0] = c.lw(r32(c, S0).wrapping_add(SFPC_FILL));
+            return Ok(SfpcNext::Top);
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 1;
+        return Ok(SfpcNext::Exit);
+    }
+    // 0x3e0008: shutting down: pad a non-end chunk and stop with 0.
+    c.cycles += 4;
+    c.g[V1][0] = c.lw(r32(c, S6).wrapping_add(SFPC_HDR_END_ID));
+    c.g[V0][0] = c.lw(r32(c, S2));
+    let is_end = c.g[V0][0] == c.g[V1][0];
+    c.g[V0][0] = 0;
+    if is_end {
+        return Ok(SfpcNext::Exit);
+    }
+    c.cycles += 10;
+    let cursor = c.lw(r32(c, S0).wrapping_add(SFPC_CURSOR));
+    c.g[A0][0] = sx(r32(c, S5) << 24);
+    let len = r32(c, S1);
+    let (low, padded) = sfpc_align64(c, len, cursor);
+    c.g[V0][0] = low;
+    c.g[V1][0] = padded;
+    c.g[S1][0] = sx((padded as u32).wrapping_sub(low as u32));
+    c.g[A0][0] |= c.g[S1][0];
+    c.sw(r32(c, S2).wrapping_add(SFPC_CHUNK_BYTES), c.g[A0][0]);
+    // 0x3e00a8
+    c.cycles += 1;
+    c.g[V0][0] = 0;
+    Ok(SfpcNext::Exit)
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_AddUVScrollModifier (0x2fe2c0, seg_1FBE38.cpp)
+
+/// The default UV-scroll parameter block (52 bytes, a guarded static local:
+/// `{object id = -1, 5, 0, 0, 1/60, 1/60, 1, 0, 0, 0, 0, 1, tag}`) and its guard.
+pub(crate) const WSUV_DEFAULTS: u32 = 0x004f_b7e0;
+
+pub(crate) const WSUV_DEFAULTS_HI: u64 = 0x0050_0000;
+
+pub(crate) const WSUV_GUARD: u32 = 0x252c;
+
+/// `1/60` in `.lit4` (gp-0x3384).
+pub(crate) const WSUV_SIXTIETH: u32 = 0x3384;
+
+/// Script argument entries: `{param index, value, .., type}` (16 bytes);
+/// the parameters' declared types (`D_00446238`, 2 = float).
+pub(crate) const WSUV_PARAM_TYPES: u64 = 0x0044_6238;
+
+pub(crate) const WSUV_TYPE_FLOAT: u64 = 2;
+
+/// The world (`gp+0xce8`, its own object at +0x290) and the object table
+/// (`gp+0x16c8`) the object id resolves through.
+pub(crate) const WSUV_WORLD: u32 = 0xce8;
+
+pub(crate) const WSUV_WORLD_SELF: u32 = 0x290;
+
+pub(crate) const WSUV_OBJ_TABLE: u32 = 0x16c8;
+
+/// The script's void result (`D_004C9098`, 12 bytes).
+pub(crate) const WSUV_RESULT_HI: u64 = 0x004d_0000;
+
+pub(crate) const WSUV_RESULT_LO: u32 = 0x6f68;
+
+pub(crate) const WSUV_MEMCPY: u32 = 0x003e_6574;
+
+pub(crate) const WSUV_ADD_MODIFIER: u32 = 0x0035_5b90;
+
+/// `ScriptValue WScriptFn_AddUVScrollModifier(int argc, Arg* args)`
+/// (0x2fe2c0, result returned through a0): fills a 13-word UV-scroll
+/// parameter block from the defaults and the script arguments (an integer
+/// passed for a float parameter is converted), resolves the object id in
+/// word 0 (-1: the world itself) and, if the object has a model instance
+/// whose virtual `+0x80` check passes, adds the modifier to it
+/// (`ModObj_AddUVScrollModifier`). Returns the void script value. Frame 0xa0
+/// (block at 0x10, ra at 0x50, s3..s0 at 0x60..0x90).
+pub fn wscript_fn_add_uv_scroll_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = c.lw(r32(c, GP).wrapping_add(WSUV_GUARD));
+        frame.save(c, S0, 0x90);
+        c.g[A3][0] = WSUV_DEFAULTS_HI;
+        frame.save(c, S2, 0x70);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S3, 0x60);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S1, 0x80);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x50);
+        if c.g[V0][0] == 0 {
+            // First use: build the defaults.
+            c.cycles += 25;
+            let d = WSUV_DEFAULTS;
+            c.g[V0][0] = sx(d);
+            c.g[V1][0] = u64::MAX;
+            c.f[0] = 0;
+            c.g[A2][0] = c.lbu(d.wrapping_add(0x30));
+            c.g[A0][0] = 5;
+            c.lwc1(2, r32(c, GP).wrapping_sub(WSUV_SIXTIETH));
+            c.g[A1][0] = 1;
+            c.g[AT][0] = 0x3f80_0000;
+            c.f[1] = 0x3f80_0000;
+            c.sw(d, c.g[V1][0]);
+            c.sb(d.wrapping_add(0x30), c.g[A2][0]);
+            c.sw(d.wrapping_add(0x4), 5);
+            c.swc1(2, d.wrapping_add(0x14));
+            c.swc1(0, d.wrapping_add(0x28));
+            c.swc1(1, d.wrapping_add(0x2c));
+            c.sw(r32(c, GP).wrapping_add(WSUV_GUARD), 1);
+            c.swc1(0, d.wrapping_add(0x8));
+            c.swc1(0, d.wrapping_add(0xc));
+            c.swc1(2, d.wrapping_add(0x10));
+            c.swc1(1, d.wrapping_add(0x18));
+            c.swc1(0, d.wrapping_add(0x1c));
+            c.swc1(0, d.wrapping_add(0x20));
+            c.swc1(0, d.wrapping_add(0x24));
+            c.sb(sp(c), c.g[A2][0]);
+        }
+        // 0x2fe354: copy the defaults into the frame's block.
+        c.cycles += 10;
+        c.g[V0][0] = u64::MAX;
+        let block = sp(c).wrapping_add(0x10);
+        c.g[S1][0] = sx(block);
+        c.g[A2][0] = 0x34;
+        c.g[A1][0] = sx(r32(c, A3).wrapping_sub(0x4820));
+        c.sw(block, c.g[V0][0]);
+        c.g[A0][0] = c.g[S1][0];
+        call_ptr(c, WSUV_MEMCPY, 0x002f_e374)?;
+        c.g[A2][0] = c.g[S2][0];
+        if (c.g[S0][0] as i64) > 0 {
+            // Apply the script arguments.
+            c.cycles += 5;
+            c.g[V0][0] = 0x0044_0000;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = WSUV_PARAM_TYPES;
+            c.g[A3][0] = WSUV_TYPE_FLOAT;
+            loop {
+                // 0x2fe390
+                c.cycles += 8;
+                let arg = r32(c, A2);
+                c.g[V0][0] = c.lw(arg);
+                c.g[V1][0] = c.lw(arg.wrapping_add(0xc));
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[A0][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T0)));
+                c.g[V0][0] = c.lw(r32(c, V0));
+                let convert = if c.g[V1][0] == c.g[V0][0] {
+                    false
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] == c.g[A3][0]
+                };
+                if convert {
+                    c.cycles += 4;
+                    c.lwc1(0, arg.wrapping_add(0x4));
+                    c.cvt_s_w(0, 0);
+                    c.swc1(0, r32(c, A0));
+                } else {
+                    c.g[V0][0] = c.lw(arg.wrapping_add(0x4));
+                    c.cycles += 1;
+                    c.sw(r32(c, A0), c.g[V0][0]);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+                let more = c.g[A1][0] != 0;
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x10));
+                if !more {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_e390);
+                }
+            }
+        }
+        // 0x2fe3d8: resolve the object id.
+        c.cycles += 4;
+        c.g[A2][0] = c.lw(r32(c, S1));
+        c.g[V0][0] = !c.g[A2][0];
+        c.g[A1][0] = c.lw(r32(c, GP).wrapping_add(WSUV_OBJ_TABLE));
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(r32(c, GP).wrapping_add(WSUV_WORLD));
+            c.g[V0][0] = c.lw(r32(c, V0).wrapping_add(WSUV_WORLD_SELF));
+        } else {
+            c.cycles += 8;
+            let id = r32(c, A2);
+            c.g[V0][0] = sx((id & 0xff) << 2);
+            c.g[V1][0] = c.lw(r32(c, A1));
+            c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x8));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.g[V1][0] = c.lw(r32(c, V0));
+            c.g[V0][0] = sx(id >> 8);
+            let mut found = false;
+            if c.g[V1][0] != 0 {
+                c.cycles += 7;
+                c.g[A0][0] = c.lw(r32(c, V1).wrapping_add(0x1c));
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+                c.g[V1][0] = c.lw(r32(c, V0));
+                c.g[V0][0] = sx(r32(c, V1) >> 8);
+                found = c.g[V0][0] != 0;
+                c.g[V0][0] = sx(r32(c, V0) << 2);
+            }
+            if !found {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+        // 0x2fe434: the object's model instance.
+        c.cycles += 3;
+        c.g[S0][0] = c.lw(r32(c, V0).wrapping_add(0xc));
+        c.g[V1][0] = WSUV_RESULT_HI;
+        if c.g[S0][0] != 0 {
+            c.cycles += 7;
+            let inst = r32(c, S0);
+            c.g[V1][0] = c.lw(inst.wrapping_add(0xc));
+            let vt = r32(c, V1);
+            c.g[A0][0] = c.lh(vt.wrapping_add(0x80));
+            c.g[V0][0] = c.lw(vt.wrapping_add(0x84));
+            let method = r32(c, V0);
+            c.g[A0][0] = sx(inst.wrapping_add(r32(c, A0)));
+            call_ptr(c, method, 0x002f_e454)?;
+            let ok = c.g[V0][0] != 0;
+            c.g[A0][0] = c.g[S0][0];
+            if ok {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S1][0];
+                call_ptr(c, WSUV_ADD_MODIFIER, 0x002f_e464)?;
+            }
+            c.cycles += 1;
+            c.g[V1][0] = WSUV_RESULT_HI;
+        }
+        // 0x2fe468: return the void script value through a0.
+        c.cycles += 15;
+        c.g[V0][0] = c.g[S3][0];
+        c.g[A3][0] = sx(r32(c, V1).wrapping_sub(WSUV_RESULT_LO));
+        let src = r32(c, A3);
+        let dst = r32(c, S3);
+        c.ldl(4, src.wrapping_add(7));
+        c.ldr(4, src);
+        c.g[A1][0] = c.lw(src.wrapping_add(8));
+        c.sdl(4, dst.wrapping_add(7));
+        c.sdr(4, dst);
+        c.sw(dst.wrapping_add(8), c.g[A1][0]);
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Frame arrays (256 floats each) relative to sp.
+pub(crate) const CSP_X: u32 = 0x000;
+
+// ---------------------------------------------------------------------------
+// StreamFile_StartNextRequest (0x3e0270, seg_2DCAE8.c)
+
+/// StreamFile fields: its mutex (+4), the read state (+0x38), the parse /
+/// fill cursors (+0x54 / +0x58), the current request (+0x60), the open
+/// file's name (+0x6c), its pending close/open file request (+0x16c / +0x174)
+/// and the bytes left to read (+0x170).
+pub(crate) const SNR_MUTEX: u32 = 0x4;
+
+pub(crate) const SNR_READ_STATE: u32 = 0x38;
+
+pub(crate) const SNR_CURSOR: u32 = 0x54;
+
+pub(crate) const SNR_FILL: u32 = 0x58;
+
+pub(crate) const SNR_REQUEST: u32 = 0x60;
+
+pub(crate) const SNR_NAME: u32 = 0x6c;
+
+pub(crate) const SNR_FILE: u32 = 0x16c;
+
+pub(crate) const SNR_LEFT: u32 = 0x170;
+
+pub(crate) const SNR_FILE_REQUEST: u32 = 0x174;
+
+/// Request fields: state (+4; 1 = ready, 2 = started), next (+0xc), kind
+/// (+0x10; 1 = in-memory), file name (+0x14), size (+0x118), the cursor at
+/// its start (+0x120).
+pub(crate) const SNR_REQ_STATE: u32 = 0x4;
+
+pub(crate) const SNR_REQ_NEXT: u32 = 0xc;
+
+pub(crate) const SNR_REQ_KIND: u32 = 0x10;
+
+pub(crate) const SNR_REQ_NAME: u32 = 0x14;
+
+pub(crate) const SNR_REQ_SIZE: u32 = 0x118;
+
+pub(crate) const SNR_REQ_START: u32 = 0x120;
+
+pub(crate) const SNR_STRCMP: u32 = 0x0041_65a8;
+
+pub(crate) const SNR_STRCPY: u32 = 0x0041_66f4;
+
+/// `StreamFile_OnOpen` / `StreamFile_OnClose` (request callbacks).
+pub(crate) const SNR_ON_OPEN: u64 = 0x003e_00d8;
+
+pub(crate) const SNR_ON_CLOSE: u64 = 0x003e_0118;
+
+pub(crate) const SNR_QUEUE_OPEN: Callee = Callee {
+    addr: 0x003d_d4e8,
+    f: ee::s14::EAFile_QueueOpen,
+};
+
+pub(crate) const SNR_QUEUE_CLOSE: Callee = Callee {
+    addr: 0x003d_d5a0,
+    f: ee::s14::EAFile_QueueClose,
+};
+
+pub(crate) const SNR_SET_CALLBACK: Callee = Callee {
+    addr: 0x003d_cf70,
+    f: ee::s14::EAFile_SetRequestCallback,
+};
+
+pub(crate) const SNR_ISSUE_READ: Callee = Callee {
+    addr: 0x003e_03d0,
+    f: ee::s14::StreamFile_IssueRead,
+};
+
+/// `void StreamFile_StartNextRequest(StreamFile* self, int priority)`
+/// (0x3e0270): under the stream's mutex, picks the request to stream (the
+/// current one if ready, else the next queued one); with none, the stream
+/// goes idle (read state 0). Otherwise the request is marked started at the
+/// parse cursor, the fill cursor is reset to it and, for an in-memory
+/// request or one on the already open file, reading starts at once
+/// (`StreamFile_IssueRead`); a different file is remembered by name and
+/// opened (or the old one closed first) through the file queue, with
+/// `StreamFile_OnOpen` / `OnClose` as callbacks. Frame 0x50 (ra at 0, s3..s0
+/// at 0x10..0x40).
+pub fn stream_file_start_next_request(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S3, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x20);
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(SNR_MUTEX));
+        frame.save(c, S1, 0x30);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = 0;
+        SFPC_LOCK.call(c, 0x003e_029c)?;
+        let this = r32(c, S0);
+        c.g[A0][0] = c.lw(this.wrapping_add(SNR_REQUEST));
+        c.g[V0][0] = 1;
+        // s1: no request to start.
+        let mut idle = true;
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            let req = r32(c, A0);
+            c.g[V1][0] = c.lw(req.wrapping_add(SNR_REQ_STATE));
+            c.g[S1][0] = 0;
+            if c.g[V1][0] == c.g[V0][0] {
+                idle = false;
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(req.wrapping_add(SNR_REQ_NEXT));
+                if c.g[V0][0] != 0 {
+                    c.sw(this.wrapping_add(SNR_REQUEST), c.g[V0][0]);
+                    idle = false;
+                }
+            }
+        }
+        if idle {
+            c.cycles += 1;
+            c.g[S1][0] = 1;
+        }
+        // 0x3e02c4
+        c.cycles += 2;
+        if c.g[S1][0] == 0 {
+            c.g[S2][0] = c.lw(this.wrapping_add(SNR_REQUEST));
+            c.cycles += 4;
+            c.g[V0][0] = 2;
+            c.g[V1][0] = c.lw(this.wrapping_add(SNR_CURSOR));
+            let req = r32(c, S2);
+            c.sw(req.wrapping_add(SNR_REQ_STATE), 2);
+            c.sw(req.wrapping_add(SNR_REQ_START), c.g[V1][0]);
+        } else {
+            c.cycles += 3;
+            c.sw(this.wrapping_add(SNR_READ_STATE), 0);
+        }
+        // 0x3e02e8
+        c.cycles += 4;
+        c.g[A0][0] = sx(r32(c, S0).wrapping_add(SNR_MUTEX));
+        SFPC_UNLOCK.call(c, 0x003e_02f0)?;
+        if c.g[S1][0] == 0 {
+            c.cycles += 6;
+            let this = r32(c, S0);
+            c.g[V0][0] = c.lw(this.wrapping_add(SNR_CURSOR));
+            c.g[A0][0] = 1;
+            c.sw(this.wrapping_add(SNR_FILL), c.g[V0][0]);
+            let req = r32(c, S2);
+            c.g[V1][0] = c.lw(req.wrapping_add(SNR_REQ_KIND));
+            let mut read_now = true;
+            if c.g[V1][0] != c.g[A0][0] {
+                // A file request: open its file unless it is already open.
+                c.g[V0][0] = c.lw(req.wrapping_add(SNR_REQ_SIZE));
+                c.cycles += 8;
+                c.g[S1][0] = sx(this.wrapping_add(SNR_NAME));
+                c.g[S2][0] = sx(req.wrapping_add(SNR_REQ_NAME));
+                c.g[A1][0] = c.g[S1][0];
+                c.g[A0][0] = c.g[S2][0];
+                c.sw(this.wrapping_add(SNR_LEFT), c.g[V0][0]);
+                call_ptr(c, SNR_STRCMP, 0x003e_0330)?;
+                let same = c.g[V0][0] == 0;
+                c.g[A0][0] = c.g[S1][0];
+                if !same {
+                    read_now = false;
+                    c.cycles += 5;
+                    c.g[A1][0] = c.g[S2][0];
+                    call_ptr(c, SNR_STRCPY, 0x003e_0340)?;
+                    let this = r32(c, S0);
+                    c.g[A0][0] = c.lw(this.wrapping_add(SNR_FILE));
+                    c.g[A1][0] = c.g[S3][0];
+                    let (queued, callback, ret) = if c.g[A0][0] == 0 {
+                        c.cycles += 7;
+                        c.g[A0][0] = c.g[S1][0];
+                        c.g[A2][0] = c.g[S3][0];
+                        c.g[A1][0] = 1;
+                        c.g[A3][0] = c.g[S0][0];
+                        SNR_QUEUE_OPEN.call(c, 0x003e_0360)?;
+                        (c.g[V0][0], SNR_ON_OPEN, 0x003e_0378)
+                    } else {
+                        c.cycles += 4;
+                        c.g[A2][0] = c.g[S0][0];
+                        SNR_QUEUE_CLOSE.call(c, 0x003e_0388)?;
+                        (c.g[V0][0], SNR_ON_CLOSE, 0x003e_03a0)
+                    };
+                    c.sw(r32(c, S0).wrapping_add(SNR_FILE_REQUEST), queued);
+                    if queued != 0 {
+                        c.cycles += 6;
+                        c.g[A1][0] = 0x003e_0000;
+                        c.g[A0][0] = queued;
+                        c.g[A1][0] = callback;
+                        SNR_SET_CALLBACK.call(c, ret)?;
+                    } else {
+                        c.cycles += 1;
+                    }
+                }
+            } else {
+                c.cycles += 2;
+                c.sw(this.wrapping_add(SNR_LEFT), 0);
+            }
+            if read_now {
+                // 0x3e03a8
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S3][0];
+                SNR_ISSUE_READ.call(c, 0x003e_03b4)?;
+                c.cycles += 1;
+            }
+        }
+        // 0x3e03b8
+        frame.restore(c, S0, 0x40);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// libpad_SendActDma (0x3ff390)
+
+/// libpad's per-port/slot state table (0x526250): 0x70 bytes per port,
+/// 0x1c per slot.
+pub(crate) const PAD_SLOTS: u32 = 0x0052_6250;
+
+pub(crate) const PAD_PORT_STRIDE: u32 = 0x70;
+
+pub(crate) const PAD_SLOT_STRIDE: u32 = 0x1c;
+
+/// Slot fields: actuator packet buffer (+4), IOP destination (+8), last
+/// DMA id (+0xc).
+pub(crate) const PAD_ACT_BUF: u32 = 0x4;
+
+pub(crate) const PAD_IOP_DEST: u32 = 0x8;
+
+pub(crate) const PAD_DMA_ID: u32 = 0xc;
+
+/// libpad's debug-print flag (0x4515cc) and the "busy" message (0x497888).
+pub(crate) const PAD_DEBUG_BASE: u32 = 0x0045_0000;
+
+pub(crate) const PAD_DEBUG_FLAG: u32 = 0x15cc;
+
+pub(crate) const PAD_BUSY_MSG: u32 = 0x0049_7888;
+
+/// `int libpad_SendActDma(int port, int slot)` (0x3ff390): send the slot's
+/// actuator (vibration) packet to the IOP. If the previous DMA is still
+/// running (`sceSifDmaStat >= 0`) it gives up (printing a message when
+/// libpad debugging is on) and returns 0; otherwise it bumps the packet
+/// counter, writes back the buffer, DMAs 0x20 bytes into the IOP's
+/// double-buffered destination and records the DMA id (returns 1; 0 and
+/// the message when `sceSifSetDma` fails).
+pub fn libpad_send_act_dma(c: &mut Cpu) {
+    use crate::guest::Addr;
+    const DMA_STAT: Callee = Callee {
+        addr: 0x0042_4140,
+        f: ee::s15::sceSifDmaStat,
+    };
+    const SYNC_DCACHE: Callee = Callee {
+        addr: 0x0042_4698,
+        f: ee::s15::SyncDCache,
+    };
+    const SET_DMA: Callee = Callee {
+        addr: 0x0042_4160,
+        f: ee::s15::sceSifSetDma,
+    };
+    const PRINTF: Callee = Callee {
+        addr: 0x0042_5c60,
+        f: ee::s15::scePrintf,
+    };
+    guest(c, |c| {
+        c.cycles += 20;
+        let frame = Frame::open(c, 0x150);
+        c.g[V1][0] = PAD_SLOT_STRIDE as u64;
+        c.sd(frame.at(c, 0x120), c.g[S2][0]);
+        c.sd(frame.at(c, 0x100), c.g[S0][0]);
+        c.g[S2][0] = c.g[A0][0];
+        c.g[S0][0] = c.g[A1][0];
+        c.g[A0][0] = PAD_PORT_STRIDE as u64;
+        c.mult(1, A0, S2, A0);
+        c.mult(0, V1, S0, V1);
+        c.sd(frame.at(c, 0x130), c.g[S3][0]);
+        c.g[S3][0] = 0x0052_0000;
+        c.sd(frame.at(c, 0x140), c.g[RA][0]);
+        c.sd(frame.at(c, 0x110), c.g[S1][0]);
+        c.g[V0][0] = sx(PAD_SLOTS);
+        c.g[V1][0] = crate::abi::addu(c.g[V1][0], c.g[A0][0]);
+        let slot = PAD_SLOTS.wrapping_add(r32(c, V1));
+        c.g[A1][0] = sx(slot);
+        c.g[V0][0] = sx(slot);
+        c.g[A0][0] = Addr(slot).off(PAD_DMA_ID).lw(c);
+        c.g[S1][0] = Addr(slot).off(PAD_ACT_BUF).lw(c);
+
+        let mut busy = false;
+        if c.g[A0][0] != 0 {
+            c.cycles += 4;
+            DMA_STAT.call(c, 0x003f_f3e8)?;
+            busy = (c.g[V0][0] as i64) >= 0;
+            c.g[V0][0] = sx(PAD_DEBUG_BASE);
+        }
+        if !busy {
+            c.cycles += 28;
+            c.g[A3][0] = PAD_SLOT_STRIDE as u64;
+            c.g[V1][0] = PAD_PORT_STRIDE as u64;
+            c.mult(0, A3, S0, A3);
+            c.mult(1, V1, S2, V1);
+            let buf = r32(c, S1);
+            let counter = sx((Addr(buf).lw(c) as u32).wrapping_add(1));
+            c.g[A2][0] = counter;
+            c.g[S3][0] = sx(PAD_SLOTS);
+            c.g[A0][0] = sx(buf);
+            c.g[A1][0] = sx(buf.wrapping_add(0x1f));
+            c.g[S2][0] = crate::abi::addu(c.g[A3][0], c.g[V1][0]);
+            let slot = PAD_SLOTS.wrapping_add(r32(c, S2));
+            c.g[V1][0] = sx(slot);
+            let half = (counter as u32 & 1) << 5;
+            c.g[V0][0] = half as u64;
+            let dest = (Addr(slot).off(PAD_IOP_DEST).lw(c) as u32).wrapping_add(half);
+            Addr(buf).sw(c, counter);
+            c.g[S0][0] = sx(dest);
+            SYNC_DCACHE.call(c, 0x003f_f434)?;
+
+            // One sceSifDmaData {src, dest, size 0x20, attr 0} on the stack.
+            c.g[V0][0] = 0x20;
+            let sp0 = frame.at(c, 0);
+            let (dest, src) = (c.g[S0][0], c.g[S1][0]);
+            Addr(sp0).off(4).sw(c, dest);
+            Addr(sp0).sw(c, src);
+            c.g[A0][0] = c.g[SP][0];
+            Addr(sp0).off(8).sw(c, 0x20);
+            c.g[A1][0] = 1;
+            Addr(sp0).off(0xc).sw(c, 0);
+            SET_DMA.call(c, 0x003f_f454)?;
+            c.g[A0][0] = c.g[V0][0];
+            let slot = r32(c, S3).wrapping_add(r32(c, S2));
+            c.g[V1][0] = sx(slot);
+            if c.g[A0][0] != 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                let id = c.g[A0][0];
+                Addr(slot).off(PAD_DMA_ID).sw(c, id);
+                return pad_send_act_dma_epilogue(c, frame);
+            }
+            c.cycles += 1;
+            c.g[V0][0] = sx(PAD_DEBUG_BASE);
+        }
+
+        // Busy (or failed): print when debugging, return 0.
+        c.cycles += 3;
+        c.g[V1][0] = Addr(PAD_DEBUG_BASE).off(PAD_DEBUG_FLAG).lw(c);
+        c.g[A0][0] = 0x0049_0000;
+        if c.g[V1][0] != 0 {
+            c.cycles += 2;
+            c.g[A0][0] = sx(PAD_BUSY_MSG);
+            PRINTF.call(c, 0x003f_f478)?;
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        pad_send_act_dma_epilogue(c, frame)
+    })
+}
+
+/// libpad_SendActDma's epilogue: reload ra, s3..s0 (`ld`), pop the frame.
+pub(crate) fn pad_send_act_dma_epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 7;
+    frame.restore_ra(c, 0x140);
+    c.g[S3][0] = c.ld(frame.at(c, 0x130));
+    c.g[S2][0] = c.ld(frame.at(c, 0x120));
+    c.g[S1][0] = c.ld(frame.at(c, 0x110));
+    c.g[S0][0] = c.ld(frame.at(c, 0x100));
+    frame.close(c);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// scePadSetActDirect (0x400190)
+
+/// Slot field: the pad's DMA receive buffer (two 0x80-byte halves; the
+/// current one has the connection state byte at +0x72, 1 = stable).
+pub(crate) const PAD_STATE_STABLE: u64 = 1;
+
+pub(crate) const PAD_DMA_STATE: u32 = 0x72;
+
+/// Actuator packet: command (+4) = 1, length (+8) = 6, the six motor bytes
+/// at +0xc.
+pub(crate) const PAD_ACT_CMD: u32 = 0x4;
+
+pub(crate) const PAD_ACT_LEN: u32 = 0x8;
+
+pub(crate) const PAD_ACT_DATA: u32 = 0xc;
+
+pub(crate) const PAD_ACT_BYTES: u32 = 6;
+
+/// `int scePadSetActDirect(int port, int slot, const u8* data)` (0x400190):
+/// set the vibration motors of a connected pad. Returns 0 unless the pad's
+/// state is "stable"; then copies the six actuator bytes into the slot's
+/// actuator packet (command 1, length 6) and sends it
+/// (`libpad_SendActDma`), returning 1 when that succeeded.
+pub fn sce_pad_set_act_direct(c: &mut Cpu) {
+    use crate::guest::Addr;
+    const GET_DMA_BUFFER: Callee = Callee {
+        addr: 0x003f_f9a8,
+        f: ee::s15::libpad_GetDmaBuffer,
+    };
+    const SEND_ACT_DMA: Callee = Callee {
+        addr: 0x003f_f390,
+        f: ee::s15::libpad_SendActDma,
+    };
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x40);
+        c.sd(frame.at(c, 0x20), c.g[S2][0]);
+        c.sd(frame.at(c, 0x10), c.g[S1][0]);
+        c.g[S2][0] = c.g[A1][0];
+        c.sd(frame.at(c, 0), c.g[S0][0]);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0x30);
+        c.g[S0][0] = c.g[A2][0];
+        GET_DMA_BUFFER.call(c, 0x0040_01b4)?;
+        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(PAD_DMA_STATE)).lbu(c);
+        let stable = c.g[V1][0] == PAD_STATE_STABLE;
+        c.g[V0][0] = 0;
+        if stable {
+            c.cycles += 11;
+            c.g[V1][0] = PAD_SLOT_STRIDE as u64;
+            c.g[A0][0] = PAD_PORT_STRIDE as u64;
+            c.mult(0, V1, S2, V1);
+            c.mult(1, A0, S1, A0);
+            c.g[A1][0] = 0;
+            c.g[V1][0] = crate::abi::addu(c.g[V1][0], c.g[A0][0]);
+            let slot = PAD_SLOTS.wrapping_add(r32(c, V1));
+            c.g[V0][0] = sx(slot);
+            let packet = Addr(slot).off(PAD_ACT_BUF).lw(c);
+            c.g[A2][0] = packet;
+            c.g[A3][0] = sx((packet as u32).wrapping_add(PAD_ACT_DATA));
+            // Copy the six motor bytes.
+            loop {
+                c.cycles += 8;
+                let i = r32(c, A1);
+                let src = r32(c, S0).wrapping_add(i);
+                let dst = r32(c, A3).wrapping_add(i);
+                c.g[V0][0] = sx(src);
+                c.g[A0][0] = sx(dst);
+                let byte = Addr(src).lbu(c);
+                c.g[V1][0] = byte;
+                c.g[A1][0] = sx(i.wrapping_add(1));
+                let more = ((c.g[A1][0] as i64) < PAD_ACT_BYTES as i64) as u64;
+                c.g[V0][0] = more;
+                Addr(dst).sb(c, byte);
+                if more == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0040_01f0);
+                }
+            }
+            c.cycles += 10;
+            c.g[S0][0] = 1;
+            c.g[V0][0] = PAD_ACT_BYTES as u64;
+            let packet = Addr(r32(c, A2));
+            packet.off(PAD_ACT_CMD).sw(c, 1);
+            c.g[A0][0] = c.g[S1][0];
+            packet.off(PAD_ACT_LEN).sw(c, PAD_ACT_BYTES as u64);
+            c.g[A1][0] = c.g[S2][0];
+            SEND_ACT_DMA.call(c, 0x0040_022c)?;
+            c.g[V0][0] ^= 1;
+            if c.g[V0][0] != 0 {
+                c.g[S0][0] = 0;
+            }
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 6;
+        frame.restore_ra(c, 0x30);
+        c.g[S2][0] = c.ld(frame.at(c, 0x20));
+        c.g[S1][0] = c.ld(frame.at(c, 0x10));
+        c.g[S0][0] = c.ld(frame.at(c, 0));
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Rider_ResetGrindOrientation (0x115640, seg/seg_14B10.cpp)
+
+/// Rider: the grind orientation (0 none, 3 / 4 sideways left / right).
+pub(crate) const RGO_GRIND_SIDE: u32 = 0x328;
+
+/// Rider: the rotation axis quadword handed to `Rider_RotateAroundAxis`.
+pub(crate) const RGO_AXIS: u32 = 0x1c0;
+
+/// Rider: its animation controller.
+pub(crate) const RGO_ANIM: u32 = 0x784;
+
+/// AnimController: the root rotation quadword and the heading vector.
+pub(crate) const RGO_ANIM_ROOT_ROT: u32 = 0x30;
+
+pub(crate) const RGO_ANIM_HEADING: u32 = 0x40;
+
+/// The identity rotation quadword (0x4ff130) and the up axis (0x4ff160).
+pub(crate) const RGO_IDENTITY: u32 = 0x004f_f130;
+
+pub(crate) const RGO_UP: u32 = 0x004f_f160;
+
+/// `gp - 0x7b70` / `gp - 0x7b6c`: +pi/2 and -pi/2.
+pub(crate) const RGO_QUARTER_TURN_GP: u32 = 0x7b70;
+
+pub(crate) const RGO_NEG_QUARTER_TURN_GP: u32 = 0x7b6c;
+
+pub(crate) const RGO_GET_MAIN_STATE: Callee = Callee {
+    addr: 0x0011_fe98,
+    f: ee::s00::Rider_GetMainState,
+};
+
+pub(crate) const RGO_ROTATE_AROUND_AXIS: Callee = Callee {
+    addr: 0x0011_dfe0,
+    f: ee::s00::Rider_RotateAroundAxis,
+};
+
+pub(crate) const RGO_EMPTY_STANCE_HOOK: Callee = Callee {
+    addr: 0x0011_6930,
+    f: ee::s00::Rider_EmptyStanceHook,
+};
+
+/// `Math_SinCos(float, float* sin, float* cos)`, `AnimController_RotateRoots`
+/// and `cRiderAnimBase_play(anim, id, flags, -1.0)` (other shards).
+pub(crate) const RGO_MATH_SIN_COS: u32 = 0x0031_be50;
+
+pub(crate) const RGO_ROTATE_ROOTS: u32 = 0x0031_1b48;
+
+pub(crate) const RGO_PLAY: u32 = 0x0031_28e8;
+
+/// The heading vector `up * sin` (from the sincos results at `sin_at`,
+/// `sin_at + 4`; the up axis in `up_reg`, its x at `s0 - 0xea0`) built in the frame's first quadword and stored into the
+/// animation controller in `anim_reg`: shared by the two sideways arms.
+pub(crate) fn rgo_store_heading(c: &mut Cpu, sin_at: u32, up_reg: usize, anim_reg: usize) {
+    let sp_ = sp(c);
+    let up = r32(c, up_reg);
+    let s = Addr(sp_.wrapping_add(sin_at)).read_fpu(c);
+    let y = Addr(up.wrapping_add(8)).read_fpu(c);
+    let x = Addr(r32(c, S0).wrapping_sub(0xea0)).read_fpu(c);
+    let z = Addr(up.wrapping_add(4)).read_fpu(c);
+    let f1 = s * y;
+    let f2 = s * x;
+    let f3 = Addr(sp_.wrapping_add(sin_at + 4)).read_fpu(c);
+    let f0 = s * z;
+    abi::set_fpr(c, 1, f1);
+    abi::set_fpr(c, 2, f2);
+    abi::set_fpr(c, 3, f3);
+    abi::set_fpr(c, 4, z);
+    abi::set_fpr(c, 0, f0);
+    Addr(sp_ + 0xc).write_fpu(c, f3);
+    Addr(sp_ + 0x8).write_fpu(c, f1);
+    Addr(sp_).write_fpu(c, f2);
+    Addr(sp_ + 0x4).write_fpu(c, f0);
+    c.lq(2, sp_);
+    let anim = r32(c, anim_reg);
+    c.sq(2, anim.wrapping_add(RGO_ANIM_HEADING));
+}
+
+/// Reset the animation controller's root rotation to identity and compute
+/// sin/cos of -0.0 into `sin_at` (`Math_SinCos`), the controller in `anim_reg`.
+pub(crate) fn rgo_reset_root(
+    c: &mut Cpu,
+    anim_reg: usize,
+    sin_at: u32,
+    ret_: u32,
+) -> crate::call::Flow {
+    c.f[12] = 0;
+    c.g[V0][0] = sx(RGO_IDENTITY);
+    c.g[anim_reg][0] = Addr(r32(c, S3).wrapping_add(RGO_ANIM)).lw(c);
+    c.lq(3, RGO_IDENTITY);
+    c.f[12] ^= 0x8000_0000;
+    c.g[A0][0] = sx(sp(c).wrapping_add(sin_at));
+    c.g[A1][0] = sx(sp(c).wrapping_add(sin_at + 4));
+    let anim = r32(c, anim_reg);
+    c.sq(3, anim.wrapping_add(RGO_ANIM_ROOT_ROT));
+    call_ptr(c, RGO_MATH_SIN_COS, ret_)
+}
+
+/// A sideways grind arm: turn the rider by the quarter turn at `gp - lit`
+/// around its axis, rotate the animation roots by the same angle, then
+/// reset the root rotation and the heading vector.
+pub(crate) fn rgo_turn_sideways(
+    c: &mut Cpu,
+    lit: u32,
+    sin_at: u32,
+    rets: [u32; 3],
+) -> crate::call::Flow {
+    c.lq(2, r32(c, S3).wrapping_add(RGO_AXIS));
+    c.g[A1][0] = c.g[SP][0];
+    let gp = r32(c, GP);
+    let angle = Addr(gp.wrapping_sub(lit)).read_fpu(c);
+    abi::set_fpr(c, 20, angle);
+    c.g[A0][0] = c.g[S3][0];
+    c.sq(2, sp(c));
+    c.g[S0][0] = 0x50_0000;
+    abi::set_fpr(c, 12, angle);
+    c.g[S1][0] = sx(RGO_UP);
+    RGO_ROTATE_AROUND_AXIS.call(c, rets[0])?;
+    c.g[A0][0] = Addr(r32(c, S3).wrapping_add(RGO_ANIM)).lw(c);
+    c.f[12] = c.f[20];
+    call_ptr(c, RGO_ROTATE_ROOTS, rets[1])?;
+    rgo_reset_root(c, S2, sin_at, rets[2])
+}
+
+/// `void Rider_ResetGrindOrientation(Rider* rider)` (0x115640): when the
+/// rider leaves a grind (orientation at +0x328 non-zero), restore its
+/// animation. In main state 1, a sideways grind (3 / 4) resets the root
+/// rotation and heading, and the matching end-of-grind animation plays
+/// (0x11a / 0x115, else 0x10c). In main state 0, a sideways grind turns the
+/// rider back by a quarter turn (+pi/2 for 3, -pi/2 for 4) first, and
+/// animation 5 plays. Other main states only clear the orientation. Then
+/// `Rider_EmptyStanceHook`.
+pub fn rider_reset_grind_orientation(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x90);
+        frame.save(c, S3, 0x40);
+        frame.save(c, S0, 0x70);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x60);
+        frame.save(c, S2, 0x50);
+        frame.save_ra(c, 0x30);
+        frame.save_fpr(c, 20, 0x80);
+        c.g[V0][0] = Addr(r32(c, S3).wrapping_add(RGO_GRIND_SIDE)).lw(c);
+        let grinding = c.g[V0][0] != 0;
+        frame.restore(c, S0, 0x70);
+        if grinding {
+            c.cycles += 5;
+            RGO_GET_MAIN_STATE.call(c, 0x0011_5674)?;
+            c.g[V1][0] = 1;
+            if c.g[V0][0] == 1 {
+                c.cycles += 5;
+                let side = Addr(r32(c, S3).wrapping_add(RGO_GRIND_SIDE)).lw(c);
+                let sideways = (sx((side as u32).wrapping_sub(3)) < 2) as u64;
+                c.g[V0][0] = 0x50_0000;
+                if sideways != 0 {
+                    c.cycles += 25;
+                    c.g[S0][0] = 0x50_0000;
+                    rgo_reset_root(c, S1, 0x10, 0x0011_56bc)?;
+                    c.g[V0][0] = sx(r32(c, S0).wrapping_sub(0xea0));
+                    rgo_store_heading(c, 0x10, V0, S1);
+                }
+                c.cycles += 4;
+                let side = Addr(r32(c, S3).wrapping_add(RGO_GRIND_SIDE)).lw(c);
+                c.g[V1][0] = side;
+                c.g[V0][0] = 4;
+                c.g[A0][0] = Addr(r32(c, S3).wrapping_add(RGO_ANIM)).lw(c);
+                if side == 3 {
+                    c.cycles += 3;
+                    c.g[A1][0] = 0x11a;
+                } else {
+                    c.cycles += 2;
+                    if side == 4 {
+                        c.cycles += 2;
+                        c.g[A1][0] = 0x115;
+                    } else {
+                        c.cycles += 1;
+                        c.g[A1][0] = 0x10c;
+                    }
+                }
+                c.cycles += 6;
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.f[12] = 0xbf80_0000;
+                c.g[A2][0] = 0;
+                call_ptr(c, RGO_PLAY, 0x0011_5738)?;
+                Addr(r32(c, S3).wrapping_add(RGO_GRIND_SIDE)).sw(c, 0);
+            } else {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S3][0];
+                RGO_GET_MAIN_STATE.call(c, 0x0011_5748)?;
+                if c.g[V0][0] == 0 {
+                    c.cycles += 4;
+                    let side = Addr(r32(c, S3).wrapping_add(RGO_GRIND_SIDE)).lw(c);
+                    c.g[V1][0] = side;
+                    c.g[V0][0] = 4;
+                    let turned = if side == 3 {
+                        c.cycles += 30;
+                        rgo_turn_sideways(
+                            c,
+                            RGO_QUARTER_TURN_GP,
+                            0x18,
+                            [0x0011_5784, 0x0011_5790, 0x0011_57b8],
+                        )?;
+                        true
+                    } else {
+                        c.cycles += 2;
+                        if c.g[V1][0] == c.g[V0][0] {
+                            c.cycles += 29;
+                            rgo_turn_sideways(
+                                c,
+                                RGO_NEG_QUARTER_TURN_GP,
+                                0x20,
+                                [0x0011_5804, 0x0011_5810, 0x0011_5838],
+                            )?;
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if turned {
+                        c.cycles += 8;
+                        let sin_at = if side == 3 { 0x18 } else { 0x20 };
+                        rgo_store_heading(c, sin_at, S1, S2);
+                    }
+                    c.g[A0][0] = Addr(r32(c, S3).wrapping_add(RGO_ANIM)).lw(c);
+                    c.cycles += 6;
+                    c.g[A1][0] = 5;
+                    c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                    c.f[12] = 0xbf80_0000;
+                    c.g[A2][0] = 0;
+                    call_ptr(c, RGO_PLAY, 0x0011_5888)?;
+                }
+                Addr(r32(c, S3).wrapping_add(RGO_GRIND_SIDE)).sw(c, 0);
+            }
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S3][0];
+            RGO_EMPTY_STANCE_HOOK.call(c, 0x0011_5894)?;
+            frame.restore(c, S0, 0x70);
+        }
+        c.cycles += 7;
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.restore_fpr(c, 20, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// StreamFile_OnRead (0x3e0170, ealib/seg_2DCAE8.c)
+
+/// StreamFile fields: its mutex (+4), the read-ahead length (+0x40), the
+/// fill cursor (+0x58), the stream header (+0x60), the bytes read so far
+/// (+0x170), the EAFile request (+0x174) and the requested length (+0x178).
+pub(crate) const SFR_MUTEX: u32 = 0x4;
+
+pub(crate) const SFR_READ_AHEAD: u32 = 0x40;
+
+pub(crate) const SFR_FILL: u32 = 0x58;
+
+pub(crate) const SFR_HEADER: u32 = 0x60;
+
+pub(crate) const SFR_BYTES_READ: u32 = 0x170;
+
+pub(crate) const SFR_REQUEST: u32 = 0x174;
+
+pub(crate) const SFR_REQUEST_LEN: u32 = 0x178;
+
+/// Header fields: the stream state (+4; 3 = done, 4 = closing), the source
+/// kind (+0x10; 1 = memory, no EAFile request) and the total size (+0x118).
+pub(crate) const SFR_HDR_STATE: u32 = 0x4;
+
+pub(crate) const SFR_HDR_SOURCE: u32 = 0x10;
+
+pub(crate) const SFR_HDR_SIZE: u32 = 0x118;
+
+pub(crate) const SFR_STATE_DONE: u64 = 3;
+
+pub(crate) const SFR_STATE_CLOSING: u64 = 4;
+
+pub(crate) const SFR_RELEASE_REQUEST: Callee = Callee {
+    addr: 0x003d_d310,
+    f: ee::s14::EAFile_ReleaseRequest,
+};
+
+pub(crate) const SFR_PARSE_CHUNKS: Callee = Callee {
+    addr: 0x003d_fed0,
+    f: ee::s14::StreamFile_ParseChunks,
+};
+
+pub(crate) const SFR_LOCK: Callee = Callee {
+    addr: 0x003e_5700,
+    f: ee::s14::EAMutex_Lock,
+};
+
+pub(crate) const SFR_UNLOCK: Callee = Callee {
+    addr: 0x003e_5760,
+    f: ee::s14::EAMutex_Unlock,
+};
+
+pub(crate) const SFR_START_NEXT_REQUEST: Callee = Callee {
+    addr: 0x003e_0270,
+    f: ee::s14::StreamFile_StartNextRequest,
+};
+
+pub(crate) const SFR_ISSUE_READ: Callee = Callee {
+    addr: 0x003e_03d0,
+    f: ee::s14::StreamFile_IssueRead,
+};
+
+/// `void StreamFile_OnRead(int, int, StreamFile* file)` (0x3e0170): the
+/// read-completion callback. Counts the bytes that arrived (the requested
+/// length for a memory source, else what `EAFile_ReleaseRequest` reports),
+/// advances the fill cursor and parses the new chunks. When the stream is
+/// closing, finished (end of the source, a short read) or an end chunk was
+/// parsed, marks it done (state 3, under the mutex, unless closing) and
+/// starts the next request; otherwise issues the next read.
+pub fn stream_file_on_read(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        c.g[V1][0] = 1;
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        frame.save(c, S2, 0x20);
+        let file = r32(c, S0);
+        c.g[S2][0] = Addr(file.wrapping_add(SFR_HEADER)).lw(c);
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SFR_HDR_SOURCE)).lw(c);
+        if c.g[V0][0] == 1 {
+            c.cycles += 7;
+            c.g[A1][0] = Addr(file.wrapping_add(SFR_REQUEST_LEN)).lw(c);
+            c.g[V1][0] = Addr(file.wrapping_add(SFR_BYTES_READ)).lw(c);
+            c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SFR_HDR_SIZE)).lw(c);
+            let total = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+            c.g[V0][0] = ((total as i64) < (c.g[V0][0] as i64)) as u64;
+            // At (or past) the end of the source.
+            c.g[S1][0] = c.g[V0][0] ^ 1;
+        } else {
+            c.cycles += 6;
+            c.g[A0][0] = Addr(file.wrapping_add(SFR_REQUEST)).lw(c);
+            SFR_RELEASE_REQUEST.call(c, 0x003e_01c4)?;
+            let file = r32(c, S0);
+            c.g[V1][0] = Addr(file.wrapping_add(SFR_REQUEST_LEN)).lw(c);
+            c.g[A1][0] = c.g[V0][0];
+            // A short read.
+            c.g[S1][0] = ((c.g[A1][0] as i64) < (c.g[V1][0] as i64)) as u64;
+            c.g[V1][0] = Addr(file.wrapping_add(SFR_BYTES_READ)).lw(c);
+        }
+        c.cycles += 12;
+        let file = r32(c, S0);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V0][0] = Addr(file.wrapping_add(SFR_FILL)).lw(c);
+        c.g[S3][0] = SFR_STATE_CLOSING;
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+        let (bytes_read, fill) = (c.g[V1][0], c.g[V0][0]);
+        Addr(file.wrapping_add(SFR_BYTES_READ)).sw(c, bytes_read);
+        Addr(file.wrapping_add(SFR_FILL)).sw(c, fill);
+        SFR_PARSE_CHUNKS.call(c, 0x003e_01f4)?;
+        c.g[V1][0] = c.g[V0][0];
+        c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SFR_HDR_STATE)).lw(c);
+        let closing = c.g[V0][0] == c.g[S3][0];
+        c.g[A0][0] = c.g[S0][0];
+        if !closing {
+            c.cycles += 2;
+            let finished = c.g[S1][0] != 0;
+            c.g[S1][0] = sx(r32(c, S0).wrapping_add(SFR_MUTEX));
+            let mut done = finished;
+            if !finished {
+                c.cycles += 2;
+                if c.g[V1][0] == 0 {
+                    // More to read: issue the next read.
+                    c.g[A1][0] = Addr(r32(c, S0).wrapping_add(SFR_READ_AHEAD)).lw(c);
+                    c.cycles += 3;
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+                    SFR_ISSUE_READ.call(c, 0x003e_0250)?;
+                    frame.restore(c, S0, 0x40);
+                } else {
+                    done = true;
+                }
+            }
+            if done {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S1][0];
+                SFR_LOCK.call(c, 0x003e_021c)?;
+                c.g[V0][0] = Addr(r32(c, S2).wrapping_add(SFR_HDR_STATE)).lw(c);
+                let closing = c.g[V0][0] == c.g[S3][0];
+                c.g[V0][0] = SFR_STATE_DONE;
+                if !closing {
+                    c.cycles += 1;
+                    Addr(r32(c, S2).wrapping_add(SFR_HDR_STATE)).sw(c, SFR_STATE_DONE);
+                }
+                c.cycles += 3;
+                c.g[A0][0] = c.g[S1][0];
+                SFR_UNLOCK.call(c, 0x003e_0234)?;
+                c.g[A0][0] = c.g[S0][0];
+            } else {
+                c.cycles += 6;
+                frame.restore(c, S1, 0x30);
+                frame.restore(c, S2, 0x20);
+                frame.restore(c, S3, 0x10);
+                frame.restore_ra(c, 0);
+                frame.close(c);
+                return Ok(());
+            }
+        }
+        // Start the next request.
+        c.cycles += 4;
+        c.g[A1][0] = Addr(r32(c, A0).wrapping_add(SFR_READ_AHEAD)).lw(c);
+        SFR_START_NEXT_REQUEST.call(c, 0x003e_0240)?;
+        frame.restore(c, S0, 0x40);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
         frame.close(c);
         Ok(())
     })
@@ -11695,8 +13721,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
-
     /// `memcmp`: lengths 0..80, aligned or misaligned pointers, equal
     /// buffers or one differing byte anywhere (inside or past `n`).
     #[test]
@@ -11727,7 +13751,8 @@ pub(crate) mod tests {
             if seed % 3 != 0 {
                 let at = r.next_u32() % (n + 4);
                 let v = c.bus.read8(B + ob + at);
-                c.bus.write8(B + ob + at, v ^ (1 + r.next_u32() % 255) as u8);
+                c.bus
+                    .write8(B + ob + at, v ^ (1 + r.next_u32() % 255) as u8);
             }
             c.g[A0][0] = sx(A + oa);
             c.g[A1][0] = sx(B + ob);
@@ -11736,10 +13761,9 @@ pub(crate) mod tests {
     }
     use super::*;
     use super::*;
+    use super::*;
+    use super::*;
     use crate::game::visualfx::renderstateman::tests::table_getter_setup;
-    use super::*;
-    use super::*;
-
 
     /// Stream file fixture: handle at DATA -> header at DATA+0x1000 (starting
     /// with the magic 'MRTS'), buffer DATA+0x2000..DATA+0x3000, chunk inside or outside it.
@@ -11749,58 +13773,82 @@ pub(crate) mod tests {
     #[test]
     fn stream_file_release_chunk_matches() {
         use crate::difftest::fakes::{covered, machine};
-        covered(ee::s14::f_003e13e8__generated, stream_file_release_chunk, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x3e13e8, 10);
-            c.pc = 0x003e_13e8;
-            let handle = DATA;
-            let header = DATA + 0x1000;
-            let start = DATA + 0x2000;
-            let end = DATA + 0x3000;
-            let case = seed % 9;
-            c.g[A0][0] = if case == 0 { 0 } else { handle as u64 };
-            c.bus.write32(handle, header);
-            let magic = 0x4d52_5453;
-            c.bus.write32(header, if case == 1 { magic ^ (1 + r.next_u32() % 0xff) } else { magic });
-            c.bus.write32(header + sfile::BUFFER_START, start);
-            c.bus.write32(header + sfile::BUFFER_END, end);
-            let chunk = match case {
-                2 => start - 4 * (1 + r.next_u32() % 4),
-                3 => end - 8 + 4 * (1 + r.next_u32() % 4),
-                4 => end - 8,
-                _ => start + 0x100,
-            };
-            c.g[A1][0] = chunk as u64;
-            let status = if case == 5 { 0xffff_fffe } else { r.next_u32() & 0xff };
-            c.bus.write32(chunk + sfile::CHUNK_STATUS, status);
-            c.bus.write32(chunk + sfile::CHUNK_BYTES, r.next_u32() & 0xfff);
-            // Read state: mostly stalled (2), sometimes reading (1) or idle.
-            let state = match r.next_u32() % 4 {
-                0 => r.next_u32() % 2,
-                _ => 2,
-            };
-            c.bus.write32(header + sfile::READ_STATE, state);
-            c.bus.write32(header + sfile::READ_SIZE, r.next_u32() & 0xffff);
-            c.bus.write32(header + sfile::READ_SIZE_LOW, r.next_u32() & 0xffff);
-            c.bus.write32(header + sfile::LOW_WATER_HIT, r.next_u32() & 1);
-            // StreamFile_ConsumeBytes: buffered count and low-water mark (kept
-            // above the count in state 1, so it never reprioritises a request).
-            c.bus.write32(header + 0x4c, r.next_u32() & 0xfffff);
-            let low = if state == 1 { 0x7fff_ffff } else { r.next_u32() & 0xfffff };
-            c.bus.write32(header + 0x44, low);
-            // Mutex: owner, depth, semaphore (owner never the fake thread id).
-            c.bus.write32(header + 0x8, 0x7700_0000 | r.next_u32() & 0xffff);
-            c.bus.write32(header + 0xc, r.next_u32() & 3);
-            c.bus.write32(header + 0x10, r.next_u32() & 0xff);
-            // StreamFile_IssueRead short path.
-            c.bus.write32(header + 0x50, DATA + 0x2200);
-            c.bus.write32(header + 0x54, DATA + 0x2200);
-            c.bus.write32(header + 0x58, DATA + 0x2100);
-            c.bus.write32(header + 0x5c, DATA + 0x4000);
-            c.bus.write32(DATA + 0x4000 + 0xc, 0);
-            c.bus.write32(header + 0x17c, 0x1000);
-        });
+        covered(
+            ee::s14::f_003e13e8__generated,
+            stream_file_release_chunk,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e13e8, 10);
+                c.pc = 0x003e_13e8;
+                let handle = DATA;
+                let header = DATA + 0x1000;
+                let start = DATA + 0x2000;
+                let end = DATA + 0x3000;
+                let case = seed % 9;
+                c.g[A0][0] = if case == 0 { 0 } else { handle as u64 };
+                c.bus.write32(handle, header);
+                let magic = 0x4d52_5453;
+                c.bus.write32(
+                    header,
+                    if case == 1 {
+                        magic ^ (1 + r.next_u32() % 0xff)
+                    } else {
+                        magic
+                    },
+                );
+                c.bus.write32(header + sfile::BUFFER_START, start);
+                c.bus.write32(header + sfile::BUFFER_END, end);
+                let chunk = match case {
+                    2 => start - 4 * (1 + r.next_u32() % 4),
+                    3 => end - 8 + 4 * (1 + r.next_u32() % 4),
+                    4 => end - 8,
+                    _ => start + 0x100,
+                };
+                c.g[A1][0] = chunk as u64;
+                let status = if case == 5 {
+                    0xffff_fffe
+                } else {
+                    r.next_u32() & 0xff
+                };
+                c.bus.write32(chunk + sfile::CHUNK_STATUS, status);
+                c.bus
+                    .write32(chunk + sfile::CHUNK_BYTES, r.next_u32() & 0xfff);
+                // Read state: mostly stalled (2), sometimes reading (1) or idle.
+                let state = match r.next_u32() % 4 {
+                    0 => r.next_u32() % 2,
+                    _ => 2,
+                };
+                c.bus.write32(header + sfile::READ_STATE, state);
+                c.bus
+                    .write32(header + sfile::READ_SIZE, r.next_u32() & 0xffff);
+                c.bus
+                    .write32(header + sfile::READ_SIZE_LOW, r.next_u32() & 0xffff);
+                c.bus
+                    .write32(header + sfile::LOW_WATER_HIT, r.next_u32() & 1);
+                // StreamFile_ConsumeBytes: buffered count and low-water mark (kept
+                // above the count in state 1, so it never reprioritises a request).
+                c.bus.write32(header + 0x4c, r.next_u32() & 0xfffff);
+                let low = if state == 1 {
+                    0x7fff_ffff
+                } else {
+                    r.next_u32() & 0xfffff
+                };
+                c.bus.write32(header + 0x44, low);
+                // Mutex: owner, depth, semaphore (owner never the fake thread id).
+                c.bus
+                    .write32(header + 0x8, 0x7700_0000 | r.next_u32() & 0xffff);
+                c.bus.write32(header + 0xc, r.next_u32() & 3);
+                c.bus.write32(header + 0x10, r.next_u32() & 0xff);
+                // StreamFile_IssueRead short path.
+                c.bus.write32(header + 0x50, DATA + 0x2200);
+                c.bus.write32(header + 0x54, DATA + 0x2200);
+                c.bus.write32(header + 0x58, DATA + 0x2100);
+                c.bus.write32(header + 0x5c, DATA + 0x4000);
+                c.bus.write32(DATA + 0x4000 + 0xc, 0);
+                c.bus.write32(header + 0x17c, 0x1000);
+            },
+        );
     }
-
 
     /// A HUD at DATA with random texture coordinates, a (sometimes
     /// unaligned) colour, pos/size in DATA; widths below and above 72 (the
@@ -11810,53 +13858,69 @@ pub(crate) mod tests {
     #[test]
     fn hud_draw_stretched_panel_matches() {
         use crate::difftest::fakes::{covered, machine, FAKE};
-        covered(ee::s05::f_0021e7e0__generated, hud_draw_stretched_panel, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x21e7e0, 3);
-            c.pc = 0x0021_e7e0;
-            let hud = DATA;
-            let colour = DATA + 0x100 + (seed % 4) * 4 + (seed % 3);
-            let pos = DATA + 0x200;
-            let size = DATA + 0x210;
-            let world = DATA + 0x1000;
-            let draw_state = DATA + 0x3000;
-            let vtable = DATA + 0x5000;
-            c.g[A0][0] = hud as u64;
-            c.g[A1][0] = colour as u64;
-            c.g[A2][0] = pos as u64;
-            c.g[A3][0] = size as u64;
-            c.bus.write32(hud + hud_panel::TEXTURE_ID, r.next_u32());
-            for off in [hud_panel::TEX_V0, hud_panel::TEX_U0, hud_panel::TEX_U1, hud_panel::TEX_V1] {
-                c.bus.write32(hud + off, ((r.next_u32() % 1000) as f32 / 1000.0).to_bits());
-            }
-            // Byte by byte: the colour may be unaligned.
-            for i in 0..4 {
-                let bits = ((r.next_u32() % 256) as f32).to_bits();
-                for (k, b) in bits.to_le_bytes().into_iter().enumerate() {
-                    c.bus.write8(colour + 4 * i + k as u32, b);
+        covered(
+            ee::s05::f_0021e7e0__generated,
+            hud_draw_stretched_panel,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x21e7e0, 3);
+                c.pc = 0x0021_e7e0;
+                let hud = DATA;
+                let colour = DATA + 0x100 + (seed % 4) * 4 + (seed % 3);
+                let pos = DATA + 0x200;
+                let size = DATA + 0x210;
+                let world = DATA + 0x1000;
+                let draw_state = DATA + 0x3000;
+                let vtable = DATA + 0x5000;
+                c.g[A0][0] = hud as u64;
+                c.g[A1][0] = colour as u64;
+                c.g[A2][0] = pos as u64;
+                c.g[A3][0] = size as u64;
+                c.bus.write32(hud + hud_panel::TEXTURE_ID, r.next_u32());
+                for off in [
+                    hud_panel::TEX_V0,
+                    hud_panel::TEX_U0,
+                    hud_panel::TEX_U1,
+                    hud_panel::TEX_V1,
+                ] {
+                    c.bus
+                        .write32(hud + off, ((r.next_u32() % 1000) as f32 / 1000.0).to_bits());
                 }
-            }
-            c.bus.write32(pos, r.f32(400.0));
-            c.bus.write32(pos + 4, r.f32(300.0));
-            let width = if seed % 2 == 0 { 20 + r.next_u32() % 50 } else { 75 + r.next_u32() % 300 };
-            c.bus.write32(size, (width as f32).to_bits());
-            c.bus.write32(size + 4, ((10 + r.next_u32() % 120) as f32).to_bits());
-            // t in [0, 2), scales around 1 (rarely exactly 1), alpha range.
-            c.f[12] = ((r.next_u32() % 2000) as f32 / 1000.0).to_bits();
-            c.f[13] = (0.8 + (r.next_u32() % 400) as f32 / 1000.0).to_bits();
-            c.f[14] = (0.8 + (r.next_u32() % 400) as f32 / 1000.0).to_bits();
-            if seed % 7 == 0 {
-                c.f[13] = 1.0f32.to_bits();
-            }
-            c.f[15] = ((r.next_u32() % 500) as f32 / 1000.0).to_bits();
-            c.f[16] = (0.5 + (r.next_u32() % 500) as f32 / 1000.0).to_bits();
-            c.bus.write32(GAME_GP - 0x854, world);
-            c.bus.write32(world + hud_panel::WORLD_DRAW_STATE, draw_state);
-            c.bus.write32(world + 0x10d8, vtable);
-            c.bus.write16(vtable + 0x238, (r.next_u32() & 0x3c) as u16);
-            c.bus.write32(vtable + 0x23c, FAKE);
-        });
+                // Byte by byte: the colour may be unaligned.
+                for i in 0..4 {
+                    let bits = ((r.next_u32() % 256) as f32).to_bits();
+                    for (k, b) in bits.to_le_bytes().into_iter().enumerate() {
+                        c.bus.write8(colour + 4 * i + k as u32, b);
+                    }
+                }
+                c.bus.write32(pos, r.f32(400.0));
+                c.bus.write32(pos + 4, r.f32(300.0));
+                let width = if seed % 2 == 0 {
+                    20 + r.next_u32() % 50
+                } else {
+                    75 + r.next_u32() % 300
+                };
+                c.bus.write32(size, (width as f32).to_bits());
+                c.bus
+                    .write32(size + 4, ((10 + r.next_u32() % 120) as f32).to_bits());
+                // t in [0, 2), scales around 1 (rarely exactly 1), alpha range.
+                c.f[12] = ((r.next_u32() % 2000) as f32 / 1000.0).to_bits();
+                c.f[13] = (0.8 + (r.next_u32() % 400) as f32 / 1000.0).to_bits();
+                c.f[14] = (0.8 + (r.next_u32() % 400) as f32 / 1000.0).to_bits();
+                if seed % 7 == 0 {
+                    c.f[13] = 1.0f32.to_bits();
+                }
+                c.f[15] = ((r.next_u32() % 500) as f32 / 1000.0).to_bits();
+                c.f[16] = (0.5 + (r.next_u32() % 500) as f32 / 1000.0).to_bits();
+                c.bus.write32(GAME_GP - 0x854, world);
+                c.bus
+                    .write32(world + hud_panel::WORLD_DRAW_STATE, draw_state);
+                c.bus.write32(world + 0x10d8, vtable);
+                c.bus.write16(vtable + 0x238, (r.next_u32() & 0x3c) as u16);
+                c.bus.write32(vtable + 0x23c, FAKE);
+            },
+        );
     }
-
 
     /// The rider on a path node (identity or random rotation), the probe
     /// offset, blend and short-radius flag; a target near the probe (a hit),
@@ -11867,84 +13931,91 @@ pub(crate) mod tests {
     #[test]
     fn rider_probe_rail_matches() {
         use crate::difftest::{check, elf_image, put_vec};
-        check(ee::s00::f_001086b8__generated, rider_probe_rail, 300, &|c, seed| {
-            elf_image(c);
-            let mut r = fakes::machine(c, seed, 0x1086_b8, 0);
-            let me = DATA + 0x1000;
-            let path = DATA + 0x3000;
-            let nodes = DATA + 0x3100;
-            let list = DATA + 0x4000;
-            let rail = DATA + 0x5000;
-            let rail_flags = DATA + 0x5200;
-            let target = DATA + 0x7000;
-            let dir = DATA + 0x7100;
-            c.bus.write32(me + PROBE_RAIL_PATH, path);
-            c.bus.write32(path + 0x2c, nodes);
-            let node = r.next_u32() % 4;
-            c.bus.write32(me + PROBE_RAIL_NODE, node);
-            let identity = seed % 5 == 0;
-            let mut node_pos = [0f32; 3];
-            for i in 0..4 {
-                let p = [r.f32(100.0), r.f32(100.0), r.f32(100.0)];
-                if i == node {
-                    node_pos = p.map(f32::from_bits);
+        check(
+            ee::s00::f_001086b8__generated,
+            rider_probe_rail,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = fakes::machine(c, seed, 0x1086_b8, 0);
+                let me = DATA + 0x1000;
+                let path = DATA + 0x3000;
+                let nodes = DATA + 0x3100;
+                let list = DATA + 0x4000;
+                let rail = DATA + 0x5000;
+                let rail_flags = DATA + 0x5200;
+                let target = DATA + 0x7000;
+                let dir = DATA + 0x7100;
+                c.bus.write32(me + PROBE_RAIL_PATH, path);
+                c.bus.write32(path + 0x2c, nodes);
+                let node = r.next_u32() % 4;
+                c.bus.write32(me + PROBE_RAIL_NODE, node);
+                let identity = seed % 5 == 0;
+                let mut node_pos = [0f32; 3];
+                for i in 0..4 {
+                    let p = [r.f32(100.0), r.f32(100.0), r.f32(100.0)];
+                    if i == node {
+                        node_pos = p.map(f32::from_bits);
+                    }
+                    put_vec(c, nodes + 0x20 * i, [p[0], p[1], p[2], 0]);
+                    let q = if identity {
+                        [0, 0, 0, 1.0f32.to_bits()]
+                    } else {
+                        [r.f32(0.7), r.f32(0.7), r.f32(0.7), r.f32(1.0)]
+                    };
+                    put_vec(c, nodes + 0x20 * i + 0x10, q);
                 }
-                put_vec(c, nodes + 0x20 * i, [p[0], p[1], p[2], 0]);
-                let q = if identity {
-                    [0, 0, 0, 1.0f32.to_bits()]
-                } else {
-                    [r.f32(0.7), r.f32(0.7), r.f32(0.7), r.f32(1.0)]
-                };
-                put_vec(c, nodes + 0x20 * i + 0x10, q);
-            }
-            let off = [r.f32(5.0), r.f32(5.0), r.f32(5.0)];
-            put_vec(c, me + PROBE_RAIL_OFFSET, [off[0], off[1], off[2], 0]);
-            c.bus.write32(me + PROBE_RAIL_BLEND, (f32::from_bits(r.f32(0.5)) + 0.5).to_bits());
-            c.bus.write32(me + PROBE_RAIL_SHORT, r.next_u32() & 1);
-            // The target: near the probe point, mid range, or far.
-            let spread = [8.0f32, 60.0, 400.0][(seed / 5 % 3) as usize];
-            let t: Vec<u32> = (0..3)
-                .map(|i| {
-                    let d = f32::from_bits(r.f32(spread));
-                    (node_pos[i] + f32::from_bits(off[i]) + d).to_bits()
-                })
-                .collect();
-            put_vec(c, target, [t[0], t[1], t[2], 0]);
-            let d = if identity && seed % 2 == 0 {
-                [1.0f32.to_bits(), 0, 0, 0]
-            } else {
-                [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]
-            };
-            put_vec(c, dir, d);
-            // The overlap list: one plain rail (type 1) or none.
-            c.bus.write32(me + PROBE_RAIL_OVERLAP, list);
-            c.bus.write32(list + 0x210, (seed % 7 != 0) as u32);
-            c.bus.write32(list + 0x214, rail);
-            c.bus.write32(rail + 8, 1);
-            c.bus.write32(rail + 0x68, rail_flags);
-            c.bus.write32(rail_flags + 0x1c, (seed % 11 != 5) as u32);
-            c.bus.write32(rail_flags + 0x28, r.next_u32());
-            for off in [0x6c, 0x70, 0x74] {
-                c.bus.write32(rail + off, (-1.0e4f32).to_bits());
-            }
-            for off in [0x78, 0x7c, 0x80] {
-                c.bus.write32(rail + off, 1.0e4f32.to_bits());
-            }
-            for i in 0..4 {
-                let w = if i == 3 { 1.0f32.to_bits() } else { 0 };
-                let base = if i == 3 { node_pos } else { [0.0; 3] };
-                let v: Vec<u32> = (0..3)
-                    .map(|k| (base[k] + f32::from_bits(r.f32(50.0))).to_bits())
+                let off = [r.f32(5.0), r.f32(5.0), r.f32(5.0)];
+                put_vec(c, me + PROBE_RAIL_OFFSET, [off[0], off[1], off[2], 0]);
+                c.bus.write32(
+                    me + PROBE_RAIL_BLEND,
+                    (f32::from_bits(r.f32(0.5)) + 0.5).to_bits(),
+                );
+                c.bus.write32(me + PROBE_RAIL_SHORT, r.next_u32() & 1);
+                // The target: near the probe point, mid range, or far.
+                let spread = [8.0f32, 60.0, 400.0][(seed / 5 % 3) as usize];
+                let t: Vec<u32> = (0..3)
+                    .map(|i| {
+                        let d = f32::from_bits(r.f32(spread));
+                        (node_pos[i] + f32::from_bits(off[i]) + d).to_bits()
+                    })
                     .collect();
-                put_vec(c, rail + 0x10 + 0x10 * i, [v[0], v[1], v[2], w]);
-            }
-            c.g[A0][0] = sx(me);
-            c.g[A1][0] = sx(target);
-            c.g[A2][0] = sx(dir);
-            c.pc = 0x0010_86b8;
-        });
+                put_vec(c, target, [t[0], t[1], t[2], 0]);
+                let d = if identity && seed % 2 == 0 {
+                    [1.0f32.to_bits(), 0, 0, 0]
+                } else {
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]
+                };
+                put_vec(c, dir, d);
+                // The overlap list: one plain rail (type 1) or none.
+                c.bus.write32(me + PROBE_RAIL_OVERLAP, list);
+                c.bus.write32(list + 0x210, (seed % 7 != 0) as u32);
+                c.bus.write32(list + 0x214, rail);
+                c.bus.write32(rail + 8, 1);
+                c.bus.write32(rail + 0x68, rail_flags);
+                c.bus.write32(rail_flags + 0x1c, (seed % 11 != 5) as u32);
+                c.bus.write32(rail_flags + 0x28, r.next_u32());
+                for off in [0x6c, 0x70, 0x74] {
+                    c.bus.write32(rail + off, (-1.0e4f32).to_bits());
+                }
+                for off in [0x78, 0x7c, 0x80] {
+                    c.bus.write32(rail + off, 1.0e4f32.to_bits());
+                }
+                for i in 0..4 {
+                    let w = if i == 3 { 1.0f32.to_bits() } else { 0 };
+                    let base = if i == 3 { node_pos } else { [0.0; 3] };
+                    let v: Vec<u32> = (0..3)
+                        .map(|k| (base[k] + f32::from_bits(r.f32(50.0))).to_bits())
+                        .collect();
+                    put_vec(c, rail + 0x10 + 0x10 * i, [v[0], v[1], v[2], w]);
+                }
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = sx(target);
+                c.g[A2][0] = sx(dir);
+                c.pc = 0x0010_86b8;
+            },
+        );
     }
-
 
     /// RaceStateRace_Update: no riders (all finished), riders all finished
     /// or some still racing (`rider->physics->+0x470` progress below 0);
@@ -11953,42 +14024,64 @@ pub(crate) mod tests {
     /// GameModule_RequestState stores the request.
     #[test]
     fn race_state_race_update_matches() {
-        check(ee::s00::f_00113db0__generated, race_state_race_update, 300, &|c, seed| {
-            let mut r = Rng(0x0011_3db0 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.pc = 0x0011_3db0;
-            // AI_SelectRaceState's jump table (states 1..7).
-            put_words(
-                c,
-                0x0045_6ca0,
-                &[0x0011_3b74, 0x0011_3b94, 0x0011_3ba8, 0x0011_3bbc, 0x0011_3bd0, 0x0011_3be4, 0x0011_3bf8],
-            );
-            let ai = DATA;
-            let state = if seed % 3 == 0 { 6 } else { r.next_u32() % 9 };
-            c.bus.write32(ai, state);
-            c.bus.write32(ai + RACE_STATE_FRAMES, r.next_u32());
-            c.bus.write32(ai + 0x98, r.next_u32());
-            let riders = if seed % 4 == 0 { 0 } else { 1 + r.next_u32() % 4 };
-            c.bus.write32(ai + 0x7c, riders);
-            let all_done = seed % 2 == 0;
-            for i in 0..riders {
-                let rider = DATA + 0x1000 + 0x100 * i;
-                let phys = DATA + 0x2000 + 0x1000 * i;
-                c.bus.write32(ai + 0x40 + 4 * i, rider);
-                c.bus.write32(rider + 0x18, phys);
-                let racing = !all_done && r.next_u32() % 2 == 0;
-                let v = (r.next_u32() % 100) as f32 + 0.5;
-                let v = if racing { -v } else if r.next_u32() % 4 == 0 { 0.0 } else { v };
-                c.bus.write32(phys + 0x470, v.to_bits());
-            }
-            let world = DATA + 0x8000;
-            c.bus.write32(GAME_GP - RACE_WORLD_GP, world);
-            c.bus.write32(world + RACE_WORLD_GAME_MODULE, DATA + 0x9000);
-            c.g[A1][0] = sx(ai);
-        });
+        check(
+            ee::s00::f_00113db0__generated,
+            race_state_race_update,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0011_3db0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0011_3db0;
+                // AI_SelectRaceState's jump table (states 1..7).
+                put_words(
+                    c,
+                    0x0045_6ca0,
+                    &[
+                        0x0011_3b74,
+                        0x0011_3b94,
+                        0x0011_3ba8,
+                        0x0011_3bbc,
+                        0x0011_3bd0,
+                        0x0011_3be4,
+                        0x0011_3bf8,
+                    ],
+                );
+                let ai = DATA;
+                let state = if seed % 3 == 0 { 6 } else { r.next_u32() % 9 };
+                c.bus.write32(ai, state);
+                c.bus.write32(ai + RACE_STATE_FRAMES, r.next_u32());
+                c.bus.write32(ai + 0x98, r.next_u32());
+                let riders = if seed % 4 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 4
+                };
+                c.bus.write32(ai + 0x7c, riders);
+                let all_done = seed % 2 == 0;
+                for i in 0..riders {
+                    let rider = DATA + 0x1000 + 0x100 * i;
+                    let phys = DATA + 0x2000 + 0x1000 * i;
+                    c.bus.write32(ai + 0x40 + 4 * i, rider);
+                    c.bus.write32(rider + 0x18, phys);
+                    let racing = !all_done && r.next_u32() % 2 == 0;
+                    let v = (r.next_u32() % 100) as f32 + 0.5;
+                    let v = if racing {
+                        -v
+                    } else if r.next_u32() % 4 == 0 {
+                        0.0
+                    } else {
+                        v
+                    };
+                    c.bus.write32(phys + 0x470, v.to_bits());
+                }
+                let world = DATA + 0x8000;
+                c.bus.write32(GAME_GP - RACE_WORLD_GP, world);
+                c.bus.write32(world + RACE_WORLD_GAME_MODULE, DATA + 0x9000);
+                c.g[A1][0] = sx(ai);
+            },
+        );
     }
-
 
     /// StreamFile_ConsumeBytes: the count already below the low-water mark,
     /// staying above it, or crossing it (streaming mode or not: the real
@@ -11996,35 +14089,49 @@ pub(crate) mod tests {
     /// EAMutex lock / unlock (syscalls faked), owned by the caller or not.
     #[test]
     fn stream_file_consume_bytes_matches() {
-        check(ee::s14::f_003dfc48__generated, stream_file_consume_bytes, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x003d_fc48, 0);
-            c.pc = 0x003d_fc48;
-            let st = DATA;
-            let low = r.next_u32() % 0x10000;
-            let old = match seed % 3 {
-                0 => low.wrapping_sub(1 + r.next_u32() % 0x100),
-                _ => low + r.next_u32() % 0x1000,
-            };
-            let n = match seed % 4 {
-                0 => r.next_u32() % 0x10,
-                1 => r.next_u32() % 0x2000,
-                2 => old.wrapping_sub(low) + 1 + r.next_u32() % 4,
-                _ => r.next_u32(),
-            };
-            c.bus.write32(st + STREAM_FILE_BUFFERED, old);
-            c.bus.write32(st + STREAM_FILE_LOW_WATER, low);
-            c.bus.write32(st + STREAM_FILE_NEEDS_REFILL, r.next_u32());
-            c.bus.write32(st + STREAM_FILE_MODE, if seed % 2 == 0 { 1 } else { r.next_u32() % 3 });
-            c.bus.write32(st + STREAM_FILE_PRIORITY, r.next_u32() % 8);
-            c.bus.write32(st + STREAM_FILE_HANDLE, if seed % 5 == 0 { 0 } else { r.next_u32() });
-            // The mutex: owner thread id (+4), lock count (+8), semaphore (+0xc).
-            let m = st + STREAM_FILE_MUTEX;
-            put_words(c, m + 4, &[r.next_u32() % 4, r.next_u32() % 3, r.next_u32() % 16]);
-            c.g[A0][0] = sx(st);
-            c.g[A1][0] = sx(n);
-        });
+        check(
+            ee::s14::f_003dfc48__generated,
+            stream_file_consume_bytes,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003d_fc48, 0);
+                c.pc = 0x003d_fc48;
+                let st = DATA;
+                let low = r.next_u32() % 0x10000;
+                let old = match seed % 3 {
+                    0 => low.wrapping_sub(1 + r.next_u32() % 0x100),
+                    _ => low + r.next_u32() % 0x1000,
+                };
+                let n = match seed % 4 {
+                    0 => r.next_u32() % 0x10,
+                    1 => r.next_u32() % 0x2000,
+                    2 => old.wrapping_sub(low) + 1 + r.next_u32() % 4,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(st + STREAM_FILE_BUFFERED, old);
+                c.bus.write32(st + STREAM_FILE_LOW_WATER, low);
+                c.bus.write32(st + STREAM_FILE_NEEDS_REFILL, r.next_u32());
+                c.bus.write32(
+                    st + STREAM_FILE_MODE,
+                    if seed % 2 == 0 { 1 } else { r.next_u32() % 3 },
+                );
+                c.bus.write32(st + STREAM_FILE_PRIORITY, r.next_u32() % 8);
+                c.bus.write32(
+                    st + STREAM_FILE_HANDLE,
+                    if seed % 5 == 0 { 0 } else { r.next_u32() },
+                );
+                // The mutex: owner thread id (+4), lock count (+8), semaphore (+0xc).
+                let m = st + STREAM_FILE_MUTEX;
+                put_words(
+                    c,
+                    m + 4,
+                    &[r.next_u32() % 4, r.next_u32() % 3, r.next_u32() % 16],
+                );
+                c.g[A0][0] = sx(st);
+                c.g[A1][0] = sx(n);
+            },
+        );
     }
-
 
     /// WorldLightMan_LightInstanceCB: the world, its game module and light
     /// manager; an instance whose lighting node is cached at the head of
@@ -12060,7 +14167,11 @@ pub(crate) mod tests {
                 let pos = [r.f32(500.0), r.f32(500.0), r.f32(500.0), r.f32(1.0)];
                 put_vec(c, NODE + 0xb0, pos);
                 let flags = r.next_u32();
-                let flags = if seed % 2 == 0 { flags | 0x1000 } else { flags & !0x1000 };
+                let flags = if seed % 2 == 0 {
+                    flags | 0x1000
+                } else {
+                    flags & !0x1000
+                };
                 c.bus.write32(INST + 0x8, flags);
                 c.bus.write32(INST + 0xc, 0);
                 put_vec(c, INST + 0x40, pos);
@@ -12069,7 +14180,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// PATH_TrackSetVolume: random volume and scale bytes (both signs),
     /// the track playing (status byte negative) on half the seeds; the
@@ -12083,22 +14193,35 @@ pub(crate) mod tests {
         const TRACK: u32 = DATA + 0x4_0000;
         const PLAT0: u32 = DATA + 0x4_1000;
         const AUDIO: u32 = DATA + 0x5_0000;
-        crate::difftest::check_lohi(ee::s14::f_003d62c8__generated, path_track_set_volume, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x003d_62c8, 0);
-            c.pc = 0x003d_62c8;
-            let status = r.next_u32() as u8;
-            let status = if seed % 2 == 0 { status | 0x80 } else { status & 0x7f };
-            c.bus.write8(TRACK + STATUS, status);
-            c.bus.write8(TRACK + VOLUME, r.next_u32() as u8);
-            c.bus.write8(TRACK + SCALE, r.next_u32() as u8);
-            let plat = r.next_u32() % 8;
-            c.bus.write32(TRACK + PLAT, plat);
-            c.bus.write32(0x004d_3e98 + 4 * plat, PLAT0 + 0x100 * plat);
-            c.bus.write32(GAME_GP + 0x410, AUDIO);
-            c.bus.write32(AUDIO + 0x6280, 0);
-            c.g[A0][0] = TRACK as u64;
-            c.g[A1][0] = if seed % 5 == 0 { r.next_u32() as u64 } else { (r.next_u32() % 101) as u64 };
-        });
+        crate::difftest::check_lohi(
+            ee::s14::f_003d62c8__generated,
+            path_track_set_volume,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003d_62c8, 0);
+                c.pc = 0x003d_62c8;
+                let status = r.next_u32() as u8;
+                let status = if seed % 2 == 0 {
+                    status | 0x80
+                } else {
+                    status & 0x7f
+                };
+                c.bus.write8(TRACK + STATUS, status);
+                c.bus.write8(TRACK + VOLUME, r.next_u32() as u8);
+                c.bus.write8(TRACK + SCALE, r.next_u32() as u8);
+                let plat = r.next_u32() % 8;
+                c.bus.write32(TRACK + PLAT, plat);
+                c.bus.write32(0x004d_3e98 + 4 * plat, PLAT0 + 0x100 * plat);
+                c.bus.write32(GAME_GP + 0x410, AUDIO);
+                c.bus.write32(AUDIO + 0x6280, 0);
+                c.g[A0][0] = TRACK as u64;
+                c.g[A1][0] = if seed % 5 == 0 {
+                    r.next_u32() as u64
+                } else {
+                    (r.next_u32() % 101) as u64
+                };
+            },
+        );
     }
     use super::*;
     use super::*;
@@ -12107,7 +14230,6 @@ pub(crate) mod tests {
     // (fakes imported above)
     use super::*;
 
-
     /// StreamFile_ClassifyChunk: entry counts -1..5, chunk ids that match
     /// the first, a later or no entry (masks of all, some or no bits).
     #[test]
@@ -12115,56 +14237,88 @@ pub(crate) mod tests {
         const SELF: u32 = DATA + 0x1000;
         const KEY: u32 = DATA + 0x1100;
         const ENTRIES: u32 = DATA + 0x1200;
-        check(ee::s14::f_003dfe88__generated, stream_file_classify_chunk, 300, &|c, seed| {
-            let mut r = Rng(0x003d_fe88 ^ (seed as u64) << 8);
-            scramble(c, &mut r);
-            c.pc = 0x003d_fe88;
-            let n = (seed % 7) as i32 - 1;
-            c.bus.write32(SELF + SFC_COUNT, n as u32);
-            c.bus.write32(SELF + SFC_ENTRIES, ENTRIES);
-            let key = r.next_u32();
-            c.bus.write32(KEY, key);
-            let hit = if n > 0 && seed % 3 != 0 { (r.next_u32() % n as u32) as i32 } else { -1 };
-            for i in 0..6u32 {
-                let e = ENTRIES + SFC_ENTRY_SIZE * i;
-                let mask = [u32::MAX, 0xffff_0000, 0xff, 0][(r.next_u32() % 4) as usize];
-                let value = if i as i32 == hit { key & mask } else { (key & mask) ^ (1 + r.next_u32() % 0xff) };
-                c.bus.write32(e, mask);
-                c.bus.write32(e + SFC_ENTRY_VALUE, value);
-                c.bus.write32(e + SFC_ENTRY_RESULT, r.next_u32());
-            }
-            c.g[A0][0] = sx(SELF);
-            c.g[A1][0] = sx(KEY);
-        });
+        check(
+            ee::s14::f_003dfe88__generated,
+            stream_file_classify_chunk,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003d_fe88 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003d_fe88;
+                let n = (seed % 7) as i32 - 1;
+                c.bus.write32(SELF + SFC_COUNT, n as u32);
+                c.bus.write32(SELF + SFC_ENTRIES, ENTRIES);
+                let key = r.next_u32();
+                c.bus.write32(KEY, key);
+                let hit = if n > 0 && seed % 3 != 0 {
+                    (r.next_u32() % n as u32) as i32
+                } else {
+                    -1
+                };
+                for i in 0..6u32 {
+                    let e = ENTRIES + SFC_ENTRY_SIZE * i;
+                    let mask = [u32::MAX, 0xffff_0000, 0xff, 0][(r.next_u32() % 4) as usize];
+                    let value = if i as i32 == hit {
+                        key & mask
+                    } else {
+                        (key & mask) ^ (1 + r.next_u32() % 0xff)
+                    };
+                    c.bus.write32(e, mask);
+                    c.bus.write32(e + SFC_ENTRY_VALUE, value);
+                    c.bus.write32(e + SFC_ENTRY_RESULT, r.next_u32());
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(KEY);
+            },
+        );
     }
-
 
     /// EA_ShellSortPairs: 0..60 pairs (gaps 1, 4, 13, 40) with keys from a
     /// small range (ties) or the full range (negatives).
     #[test]
     fn ea_shell_sort_pairs_matches() {
         const GAPS: [u32; 14] = [
-            1, 4, 13, 40, 121, 364, 1093, 3280, 9841, 29524, 88573, 265720, 797161,
+            1,
+            4,
+            13,
+            40,
+            121,
+            364,
+            1093,
+            3280,
+            9841,
+            29524,
+            88573,
+            265720,
+            797161,
             0x7fff_ffff,
         ];
-        check(ee::s14::f_003e6328__generated, ea_shell_sort_pairs, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x3e63_28, 0);
-            c.pc = 0x003e_6328;
-            put_words(c, OC264_SHELL_GAPS, &GAPS);
-            let n = seed % 61;
-            let keys = DATA + 0x1000;
-            let vals = DATA + 0x2000;
-            c.g[A0][0] = sx(n);
-            c.g[A1][0] = sx(keys);
-            c.g[A2][0] = sx(vals);
-            for i in 0..n {
-                let k = if seed % 2 == 0 { r.next_u32() % 8 } else { r.next_u32() };
-                c.bus.write32(keys + 4 * i, k);
-                c.bus.write32(vals + 4 * i, r.next_u32());
-            }
-        });
+        check(
+            ee::s14::f_003e6328__generated,
+            ea_shell_sort_pairs,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e63_28, 0);
+                c.pc = 0x003e_6328;
+                put_words(c, OC264_SHELL_GAPS, &GAPS);
+                let n = seed % 61;
+                let keys = DATA + 0x1000;
+                let vals = DATA + 0x2000;
+                c.g[A0][0] = sx(n);
+                c.g[A1][0] = sx(keys);
+                c.g[A2][0] = sx(vals);
+                for i in 0..n {
+                    let k = if seed % 2 == 0 {
+                        r.next_u32() % 8
+                    } else {
+                        r.next_u32()
+                    };
+                    c.bus.write32(keys + 4 * i, k);
+                    c.bus.write32(vals + 4 * i, r.next_u32());
+                }
+            },
+        );
     }
-
 
     // ----------------------------------------- CruiseApproachJump fixture
 
@@ -12180,18 +14334,19 @@ pub(crate) mod tests {
 
     pub(crate) const CAJ_CTRL: u32 = crate::difftest::DATA + 0x5000;
 
-
     /// Log a fake call's argument registers, `ra`, `sp` and cycles at
     /// `CAJ_REC + slot * 0x80` (the RAM comparison checks them).
     pub(crate) fn caj_record(c: &mut Cpu, slot: u32) {
         let at = CAJ_REC + slot * 0x80;
-        for (i, r) in [A0, A1, A2, A3, T0, T1, T2, RA, SP, S0, S1].into_iter().enumerate() {
+        for (i, r) in [A0, A1, A2, A3, T0, T1, T2, RA, SP, S0, S1]
+            .into_iter()
+            .enumerate()
+        {
             c.bus.write64(at + 8 * i as u32, c.g[r][0]);
         }
         c.bus.write64(at + 0x60, c.cycles);
         c.bus.write32(at + 0x68, c.f[12]);
     }
-
 
     /// `FindJumpMarker`: found = ctrl+0; writes below (ctrl+4) and four
     /// marker words through a2, a3, t0, t1, t2.
@@ -12210,14 +14365,12 @@ pub(crate) mod tests {
         abi::ret(c);
     }
 
-
     /// `CruiseFollowPath`: only logged.
     pub(crate) fn caj_fake_cruise_follow_path(c: &mut Cpu) {
         caj_record(c, 1);
         c.cycles += 7;
         abi::ret(c);
     }
-
 
     /// `GetSteerTarget(&v, self)`: writes a vector from ctrl+0x10.
     pub(crate) fn caj_fake_get_steer_target(c: &mut Cpu) {
@@ -12231,7 +14384,6 @@ pub(crate) mod tests {
         abi::ret(c);
     }
 
-
     /// `ComputeSteer`: returns the steer at ctrl+8 in f0.
     pub(crate) fn caj_fake_compute_steer(c: &mut Cpu) {
         caj_record(c, 3);
@@ -12240,11 +14392,9 @@ pub(crate) mod tests {
         abi::ret(c);
     }
 
-
     /// Installs the fakes in the callees' override slots; restores them on
     /// drop.
     pub(crate) struct CajSlots([fn(&mut Cpu); 4]);
-
 
     impl CajSlots {
         fn install() -> CajSlots {
@@ -12264,7 +14414,6 @@ pub(crate) mod tests {
         }
     }
 
-
     impl Drop for CajSlots {
         fn drop(&mut self) {
             unsafe {
@@ -12275,7 +14424,6 @@ pub(crate) mod tests {
             }
         }
     }
-
 
     /// ComputerActorRider_CruiseApproachJump: no marker (back to cruising),
     /// or a marker with the rider below/above it, high or low, a small or
@@ -12310,10 +14458,14 @@ pub(crate) mod tests {
                 let (x, y) = (f32::from_bits(x), f32::from_bits(y));
                 let n = (x * x + y * y + 1.0).sqrt();
                 for (i, v) in [x / n, y / n, 1.0 / n, 0.0].into_iter().enumerate() {
-                    c.bus.write32(CAJ_RIDER_AT + CAJ_RIDER_VELOCITY + 4 * i as u32, (v * target).to_bits());
+                    c.bus.write32(
+                        CAJ_RIDER_AT + CAJ_RIDER_VELOCITY + 4 * i as u32,
+                        (v * target).to_bits(),
+                    );
                 }
                 let height = if seed % 3 == 0 { 20000.0f32 } else { 5.0 };
-                c.bus.write32(CAJ_RIDER_AT + CAJ_RIDER_HEIGHT, height.to_bits());
+                c.bus
+                    .write32(CAJ_RIDER_AT + CAJ_RIDER_HEIGHT, height.to_bits());
                 // The fakes' answers.
                 c.bus.write32(CAJ_CTRL, (seed % 5 != 0) as u32);
                 c.bus.write32(CAJ_CTRL + 4, (seed % 2) as u32);
@@ -12331,13 +14483,11 @@ pub(crate) mod tests {
         );
     }
 
-
     // ------------------------------------------- ComputerActorRider_ThinkNaturalAir
 
     pub(crate) fn natural_air_f32s(c: &mut Cpu, a: u32, v: [f32; 4]) {
         put_words(c, a, &v.map(f32::to_bits));
     }
-
 
     /// The AI in the air with the predictor in each state and heights around
     /// the 0.5 / 1 / 3 thresholds (spin, flip, steer); the real
@@ -12405,7 +14555,11 @@ pub(crate) mod tests {
                     [
                         f32::from_bits(r.f32(2.0)),
                         f32::from_bits(r.f32(2.0)),
-                        if seed % 3 == 0 { 1.0 } else { -f32::from_bits(r.f32(1.0)) },
+                        if seed % 3 == 0 {
+                            1.0
+                        } else {
+                            -f32::from_bits(r.f32(1.0))
+                        },
                         0.0,
                     ],
                 );
@@ -12422,7 +14576,6 @@ pub(crate) mod tests {
             },
         );
     }
-
 
     /// WScriptFn_Crowd2dControl: the static defaults initialised or not;
     /// 0..4 extra arguments over the handle and mode arguments (or none at
@@ -12469,7 +14622,15 @@ pub(crate) mod tests {
                 w(c, sets + 4 * 7, 0);
                 w(c, set + 0x1c, entries);
                 let found = (obj >> 2) << 8 | (r.next_u32() & 0xff);
-                w(c, entries + 4 * 5, if seed / 2 % 4 == 2 { r.next_u32() & 0xff } else { found });
+                w(
+                    c,
+                    entries + 4 * 5,
+                    if seed / 2 % 4 == 2 {
+                        r.next_u32() & 0xff
+                    } else {
+                        found
+                    },
+                );
                 w(c, gp + 0xce8, world);
                 w(c, world + 0x290, if seed % 9 == 4 { 0 } else { obj });
                 // The instance handle: its set is empty (bind finds nothing).
@@ -12517,6 +14678,798 @@ pub(crate) mod tests {
                 c.g[A1][0] = argc;
                 c.g[A2][0] = sx(args);
                 c.pc = 0x0030_3ba0;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::RA as RET_ADDR;
+    use crate::game::be::beintreward::tests::world;
+    use crate::game::bx::bxstring::tests::{alloc, heap};
+    use crate::game::bx::bxstring2::tests::be_library;
+
+    /// A random RefPack stream: header (3- or 4-byte sizes, with or without
+    /// the packed-size field), then every command form with random
+    /// literal counts, lengths and offsets, and an end code with 0-3
+    /// trailing literals.
+    pub(crate) fn refpack_stream(r: &mut Rng, seed: u32) -> Vec<u8> {
+        let mut s = Vec::new();
+        let four = seed % 2 == 1;
+        let skip = seed % 4 >= 2;
+        let flags: u16 = 0x10fb | (if four { 0x8000 } else { 0 }) | (if skip { 0x100 } else { 0 });
+        s.extend_from_slice(&flags.to_be_bytes());
+        let width = if four { 4 } else { 3 };
+        for _ in 0..if skip { 2 } else { 1 } {
+            let v = r.next_u32();
+            s.extend_from_slice(&v.to_be_bytes()[4 - width..]);
+        }
+        let lit = |r: &mut Rng, s: &mut Vec<u8>, n: u32| {
+            for _ in 0..n {
+                s.push(r.next_u32() as u8);
+            }
+        };
+        let n = r.next_u32() % 9;
+        for _ in 0..n {
+            let rl = r.next_u32() % 4;
+            match r.next_u32() % 4 {
+                0 => {
+                    let len = 3 + r.next_u32() % 8;
+                    let off = r.next_u32() % 1024;
+                    s.push((((off >> 8) << 5) | ((len - 3) << 2) | rl) as u8);
+                    s.push(off as u8);
+                }
+                1 => {
+                    let len = 4 + r.next_u32() % 64;
+                    let off = r.next_u32() % 0x4000;
+                    s.push((0x80 | (len - 4)) as u8);
+                    s.push(((rl << 6) | (off >> 8)) as u8);
+                    s.push(off as u8);
+                }
+                2 => {
+                    let len = 5 + r.next_u32() % 300;
+                    let off = r.next_u32() % 0x2_0000;
+                    s.push((0xc0 | ((off >> 16) << 4) | (((len - 5) >> 8) << 2) | rl) as u8);
+                    s.push((off >> 8) as u8);
+                    s.push(off as u8);
+                    s.push((len - 5) as u8);
+                }
+                _ => {
+                    let k = r.next_u32() % 28;
+                    s.push((0xe0 | k) as u8);
+                    lit(r, &mut s, (k + 1) * 4);
+                    continue;
+                }
+            }
+            lit(r, &mut s, rl);
+        }
+        let rl = r.next_u32() % 4;
+        s.push((0xfc | rl) as u8);
+        lit(r, &mut s, rl);
+        s
+    }
+
+    /// RefPack_Decode: random streams through every command form, the
+    /// header variants, a null source, and with or without `consumed`.
+    #[test]
+    fn refpack_decode_matches() {
+        check(
+            ee::s13::f_003b49d0__generated,
+            refpack_decode,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3b49d0, 0);
+                let src = DATA + 0x1000;
+                for (i, b) in refpack_stream(&mut r, seed).into_iter().enumerate() {
+                    c.bus.write8(src + i as u32, b);
+                }
+                c.g[A0][0] = sx(DATA + 0x4_0000);
+                c.g[A1][0] = if seed % 13 == 0 { 0 } else { sx(src) };
+                c.g[A2][0] = if seed % 5 == 0 { 0 } else { sx(DATA + 0x800) };
+                c.pc = 0x003b_49d0;
+            },
+        );
+    }
+
+    /// `CrowdAudio_UpdatePitchBend`: a voice with a negative handle (reset;
+    /// its fade-out already running so it returns at once) or a playing one;
+    /// bend time left <= 0 (idle) or running, with dt so that the time left
+    /// lands in the falling part, the rising part or at/below zero. The
+    /// crowd table (gp+0x608) has 4 entries of random curves. SND_Lock and
+    /// SND_Unlock run for real and call their callbacks (fakes);
+    /// SND_SetPitchBend runs for real with no channels (handle not found).
+    #[test]
+    fn crowd_audio_update_pitch_bend_matches() {
+        use crate::difftest::GAME_GP;
+        const SELF: u32 = DATA + 0x100;
+        const VOICE: u32 = DATA + 0x400;
+        const TABLE: u32 = DATA + 0x800;
+        covered(
+            ee::s08::f_002a68b0__generated,
+            crowd_audio_update_pitch_bend,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_68b0, 4);
+                c.pc = 0x002a_68b0;
+                fill(c, &mut r, SELF, 0x70);
+                fill(c, &mut r, VOICE, 0x10);
+                fill(c, &mut r, TABLE, 0x60);
+                c.bus.write32(GAME_GP + CROWD_TABLE_GP, TABLE);
+                // Lock/unlock callbacks; no sound channels.
+                c.bus.write32(0x0044_c46c, FAKE);
+                c.bus.write32(0x0044_c470, FAKE + 0x10);
+                c.bus.write16(SND_EVENT_TABLE + 0x17e, 0);
+                let playing = seed % 6 != 0;
+                c.bus.write32(
+                    VOICE + CROWD_VOICE_HANDLE,
+                    if playing {
+                        r.next_u32() & 0x7fff_ffff
+                    } else {
+                        0x8000_0000 | r.next_u32()
+                    },
+                );
+                c.bus.write32(VOICE + 0x54, 1); // fade-out already running
+                let curve = r.next_u32() % 4;
+                c.bus.write32(SELF + CROWD_BEND_CURVE, curve);
+                let bend = TABLE + curve * CROWD_ENTRY_SIZE + CROWD_ENTRY_BEND;
+                let fall = 0.5 + (r.next_u32() % 100) as f32 / 50.0;
+                let rise = 0.25 + (r.next_u32() % 100) as f32 / 50.0;
+                c.bus.write32(bend + BEND_FALL, fall.to_bits());
+                c.bus.write32(bend + BEND_RISE, rise.to_bits());
+                c.bus.write32(bend + BEND_DEPTH, r.f32(64.0));
+                let time = match seed % 5 {
+                    0 => -((r.next_u32() % 3) as f32),
+                    _ => (r.next_u32() % 400) as f32 / 50.0,
+                };
+                c.bus.write32(SELF + CROWD_BEND_TIME, time.to_bits());
+                // dt: the whole time (ends exactly at 0), an edge value, or a frame-ish step.
+                c.f[12] = match (seed / 5) % 4 {
+                    0 => time.to_bits(),
+                    1 => r.edge_f32(),
+                    _ => ((r.next_u32() % 100) as f32 / 60.0).to_bits(),
+                };
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(VOICE);
+            },
+        );
+    }
+
+    /// `WorldObjFactory_Object`: the static defaults initialised or not;
+    /// -1..4 parameters with random slots/kinds (ints into float slots get
+    /// converted; slot 0 is the object id); the id is -1 (the world's
+    /// default object, sometimes none) or a section/object pair whose
+    /// section or entry may be empty. Found objects have no node (an
+    /// `Object` is allocated from the pool allocator and constructed for
+    /// real: process list, counters, flags) or a node whose modifier check
+    /// is a fake returning non-zero (nothing created). Node flag 0x100 is
+    /// always set so WorldObj_ctor does not reach World_AddFocusObject.
+    /// Not reached: a node whose modifier check fails (needs a zero result
+    /// through the real AttachModifier chain).
+    #[test]
+    fn world_obj_factory_object_matches() {
+        use crate::difftest::{check, GAME_GP};
+        use crate::game::fe::feasyncfile::tests::alloc_base_3;
+        const RESULT_SLOT: u32 = DATA + 0x3000;
+        const PARAMS: u32 = DATA + 0x1000;
+        const DIR: u32 = DATA + 0x20_0000;
+        const SECTIONS: u32 = DIR + 0x100;
+        const TABLE: u32 = DIR + 0x200;
+        const SECTION: u32 = DIR + 0x300;
+        const ENTRIES: u32 = DIR + 0x400;
+        const WORLD: u32 = DIR + 0xa00;
+        const NODE: u32 = DIR + 0xc00;
+        const VT: u32 = DIR + 0xd00;
+        const PROCS: u32 = DIR + 0x1000;
+        const TAILS: u32 = DIR + 0x1800;
+        const OBJS: u32 = DIR + 0x2000;
+        check(
+            ee::s10::f_002fc0d0__generated,
+            world_obj_factory_object,
+            300,
+            &|c, seed| {
+                let mut r = alloc_base_3(c, seed, 0x2f_c0d0, 1);
+                c.pc = 0x002f_c0d0;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // Static defaults.
+                let ready = seed % 4 != 0;
+                w(c, GAME_GP + WOF_DEFAULTS_READY_GP, ready as u32);
+                fill(c, &mut r, WOF_DEFAULTS, 4);
+                if ready && seed % 3 == 0 {
+                    w(c, WOF_DEFAULTS, u32::MAX);
+                }
+                for i in 0..4 {
+                    w(c, WOF_PARAM_KINDS + 4 * i, r.next_u32() % 4);
+                }
+                // Directory: sections 0..2 present, 3 empty; entries 0..2 objects, 3 empty.
+                w(c, GAME_GP + WOF_DIRECTORY_GP, DIR);
+                w(c, DIR, SECTIONS);
+                w(c, SECTIONS + 8, TABLE);
+                for i in 0..4 {
+                    w(c, TABLE + 4 * i, if i == 3 { 0 } else { SECTION });
+                    let obj = OBJS + 0x100 * i;
+                    w(
+                        c,
+                        ENTRIES + 4 * i,
+                        if i == 3 {
+                            r.next_u32() & 0xff
+                        } else {
+                            (obj >> 2) << 8 | (r.next_u32() & 0xff)
+                        },
+                    );
+                    fill(c, &mut r, obj, 0x10);
+                    w(c, obj + 8, r.next_u32() | 0x100);
+                    w(
+                        c,
+                        obj + WOF_OBJECT_NODE,
+                        if (seed / 4) % 3 == 0 { NODE } else { 0 },
+                    );
+                }
+                w(c, SECTION + 0x1c, ENTRIES);
+                w(c, GAME_GP + WOF_WORLD_GP, WORLD);
+                w(
+                    c,
+                    WORLD + WOF_WORLD_DEFAULT_OBJECT,
+                    if seed % 7 == 0 { 0 } else { OBJS + 0x100 },
+                );
+                // The node's modifier check: a fake (non-zero result).
+                w(c, NODE + 0xc, VT);
+                c.bus.write16(VT + 0x50, 0);
+                w(c, VT + 0x54, FAKE);
+                // Process list for the new object (type 1).
+                w(c, GAME_GP + 0x2898 + 4, PROCS);
+                w(c, PROCS + 0x44, r.next_u32());
+                w(c, PROCS + 0x44 + 8, TAILS);
+                w(c, PROCS + 0x44 + 0x28, TAILS + 0x40);
+                // The result value.
+                fill(c, &mut r, WOF_RESULT, 3);
+                // Parameters.
+                let count: u32 = if seed % 11 == 0 { u32::MAX } else { seed % 5 };
+                for i in 0..4 {
+                    let p = PARAMS + 0x10 * i;
+                    let slot = r.next_u32() % 4;
+                    let value = if slot == 0 {
+                        match r.next_u32() % 4 {
+                            0 => u32::MAX,
+                            _ => (r.next_u32() % 4) | (r.next_u32() % 4) << 8,
+                        }
+                    } else {
+                        r.next_u32()
+                    };
+                    w(c, p, slot);
+                    w(c, p + 4, value);
+                    w(c, p + 8, r.next_u32());
+                    w(c, p + 0xc, r.next_u32() % 4);
+                }
+                c.g[A0][0] = sx(RESULT_SLOT + 4 * (seed % 2));
+                c.g[A1][0] = sx(count);
+                c.g[A2][0] = sx(PARAMS);
+            },
+        );
+    }
+
+    /// StreamFile_ParseChunks: a stream at DATA (header DATA+0x1000, three
+    /// classifier entries at DATA+0x2000, class tallies at DATA+0x3000) with
+    /// 0-4 chunks of known/unknown classes in a buffer at an unaligned
+    /// DATA+0x4000+k, optionally ending in an end-of-stream chunk or a chunk
+    /// whose length already carries a class tag, and a fill cursor that cuts
+    /// the last chunk short or not. The header's state is sometimes 4
+    /// (shutting down). The mutex syscalls go to the fakes (some unwind); one
+    /// seed in seven re-enters at the loop head with the frame already open.
+    #[test]
+    fn stream_file_parse_chunks_matches() {
+        use crate::difftest::fakes::{covered, machine};
+        covered(
+            ee::s14::f_003dfed0__generated,
+            stream_file_parse_chunks,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3dfed0, 12);
+                let this = DATA;
+                let header = DATA + 0x1000;
+                let classes = DATA + 0x2000;
+                let tallies = DATA + 0x3000;
+                let end_id = 0x454e_4421u32;
+                let ids = [0x4141_0001u32, 0x4242_0002, end_id];
+                c.g[A0][0] = this as u64;
+                c.bus.write32(this + SFPC_HEADER, header);
+                c.bus.write32(
+                    header + SFPC_HDR_STATE,
+                    if seed % 5 == 0 { 4 } else { r.next_u32() % 4 },
+                );
+                c.bus.write32(header + SFPC_HDR_END_ID, end_id);
+                // Classifier: {mask, value, class}; the end id is class 3.
+                c.bus.write32(this + 0x1c, classes);
+                c.bus.write32(this + 0x20, 3);
+                for (i, id) in ids.iter().enumerate() {
+                    let e = classes + 12 * i as u32;
+                    c.bus.write32(e, 0xffff_ffff);
+                    c.bus.write32(e + 4, *id);
+                    c.bus.write32(e + 8, i as u32 + 1);
+                }
+                c.bus.write32(this + SFPC_TALLIES, tallies);
+                for k in 0..3 {
+                    let n = if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32() & 0xfff
+                    };
+                    c.bus.write32(tallies + 16 * k + SFPC_TALLY_BYTES, n);
+                }
+                c.bus.write32(this + SFPC_PARSED, r.next_u32() & 0xfff);
+                c.bus.write32(this + SFPC_LOW_WATER, r.next_u32() & 0xfff);
+                c.bus.write32(this + SFPC_NEEDS_REFILL, 1);
+                // Mutex: owner, depth, semaphore (owner never the fake thread id).
+                c.bus
+                    .write32(this + 0x8, 0x7700_0000 | r.next_u32() & 0xffff);
+                c.bus.write32(this + 0xc, r.next_u32() & 3);
+                c.bus.write32(this + 0x10, r.next_u32() & 0xff);
+                // Chunks.
+                let start = DATA + 0x4000 + 4 * (r.next_u32() % 16);
+                let mut p = start;
+                for _ in 0..r.next_u32() % 5 {
+                    let id = match r.next_u32() % 3 {
+                        0 => ids[0],
+                        1 => ids[1],
+                        _ => r.next_u32(),
+                    };
+                    let len = 8 + 4 * (r.next_u32() % 16);
+                    c.bus.write32(p, id);
+                    c.bus.write32(p + 4, len);
+                    p += len;
+                }
+                match r.next_u32() % 3 {
+                    0 => {
+                        c.bus.write32(p, end_id);
+                        c.bus.write32(p + 4, 8 + 4 * (r.next_u32() % 8));
+                        p += 0x80;
+                    }
+                    1 => {
+                        c.bus.write32(p, r.next_u32());
+                        c.bus.write32(p + 4, (1 + r.next_u32() % 3) << 24 | 0x10);
+                        p += 0x80;
+                    }
+                    _ => {}
+                }
+                c.bus.write32(this + SFPC_CURSOR, start);
+                let fill = match r.next_u32() % 3 {
+                    0 => p.wrapping_sub(r.next_u32() % 0x40),
+                    _ => p,
+                };
+                c.bus.write32(this + SFPC_FILL, fill.max(start));
+                c.pc = SFPC_ENTRY;
+                if seed % 7 == 3 && fill >= start + 8 {
+                    // Re-entry at the loop head: frame open, first chunk loaded.
+                    let frame = STACK_TOP - 0x90;
+                    c.g[SP][0] = frame as u64;
+                    c.bus.write64(frame, RET_ADDR as u64);
+                    c.g[S0][0] = this as u64;
+                    c.g[S6][0] = header as u64;
+                    c.g[S7][0] = sx(0xffff_ffc0);
+                    c.g[S2][0] = start as u64;
+                    c.g[A0][0] = start as u64;
+                    c.g[S1][0] = c.bus.read32(start + 4) as u64 & 0xff_ffff;
+                    c.g[V1][0] = sx(c.bus.read32(start));
+                    c.pc = SFPC_HEAD;
+                }
+            },
+        );
+    }
+
+    /// WScriptFn_AddUVScrollModifier: defaults built or not (guard), 0-4
+    /// script arguments (raw or converted to float; parameter types at
+    /// 0x446238), object id -1 (the world), a null table slot, a zero handle
+    /// or a real object; no model instance, or one whose virtual check is a
+    /// fake (non-zero, some unwind) or a real leaf returning 0. The passing
+    /// check runs the real `ModObj_AddUVScrollModifier` on the heap arena.
+    #[test]
+    fn wscript_fn_add_uv_scroll_modifier_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::difftest::{fill, GAME_GP};
+        covered(
+            ee::s10::f_002fe2c0__generated,
+            wscript_fn_add_uv_scroll_modifier,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2fe2c0, 1);
+                crate::game::be::bedbreward::tests::alloc_ready(c);
+                c.pc = 0x002f_e2c0;
+                let result = DATA + 0x10;
+                let args = DATA + 0x100;
+                let world = DATA + 0x1000;
+                let obj = DATA + 0x2000;
+                let table = DATA + 0x3000;
+                let inst = DATA + 0x4000;
+                let vt = DATA + 0x5000;
+                let block = DATA + 0x6000;
+                c.bus.write32(GAME_GP + WSUV_GUARD, (seed % 3 == 0) as u32);
+                fill(c, &mut r, WSUV_DEFAULTS, 13);
+                // (A built block's object id is always -1.)
+                c.bus.write32(WSUV_DEFAULTS, 0xffff_ffff);
+                fill(c, &mut r, 0x004c_9098, 3);
+                for i in 0..13u32 {
+                    let t = if i == 0 { 1 } else { r.next_u32() % 4 };
+                    c.bus.write32(WSUV_PARAM_TYPES as u32 + 4 * i, t);
+                }
+                // Arguments.
+                let n = match seed % 6 {
+                    0 => 0,
+                    1 => -(r.next_u32() as i32 % 3) - 1,
+                    _ => (1 + r.next_u32() % 4) as i32,
+                };
+                let id = match (seed / 2) % 5 {
+                    0 => None,
+                    1 => Some(r.next_u32() % 4 << 8),
+                    2 => Some((r.next_u32() % 4) << 8 | 1),
+                    _ => Some((1 + r.next_u32() % 3) << 8 | (1 + r.next_u32() % 3)),
+                };
+                for k in 0..4u32 {
+                    let a = args + 16 * k;
+                    let idx = if k == 0 && id.is_some() {
+                        0
+                    } else {
+                        1 + r.next_u32() % 12
+                    };
+                    c.bus.write32(a, idx);
+                    c.bus
+                        .write32(a + 4, if idx == 0 { id.unwrap() } else { r.next_u32() });
+                    c.bus.write32(a + 8, r.next_u32());
+                    c.bus.write32(a + 12, r.next_u32() % 4);
+                }
+                c.g[A0][0] = result as u64;
+                c.g[A1][0] = sx(n as u32);
+                c.g[A2][0] = args as u64;
+                // Object resolution.
+                c.bus.write32(GAME_GP + WSUV_WORLD, world);
+                c.bus.write32(world + WSUV_WORLD_SELF, obj);
+                c.bus.write32(GAME_GP + WSUV_OBJ_TABLE, table);
+                c.bus.write32(table, table + 0x100);
+                c.bus.write32(table + 0x108, table + 0x200);
+                for j in 0..4u32 {
+                    let slot = if j == 0 { 0 } else { table + 0x300 + 0x10 * j };
+                    c.bus.write32(table + 0x200 + 4 * j, slot);
+                    if slot != 0 {
+                        c.bus.write32(slot + 0x1c, table + 0x400);
+                    }
+                }
+                for k in 0..4u32 {
+                    let handle = if k == 0 {
+                        0x12
+                    } else {
+                        (obj >> 2) << 8 | (r.next_u32() & 0xff)
+                    };
+                    c.bus.write32(table + 0x400 + 4 * k, handle);
+                }
+                c.bus
+                    .write32(obj + 0xc, if seed % 7 == 0 { 0 } else { inst });
+                c.bus.write32(inst + 0xc, vt);
+                c.bus.write32(inst + 0x1c, block);
+                c.bus.write32(block + 4, 0);
+                c.bus.write16(vt + 0x80, (r.next_u32() % 4 * 4) as u16);
+                c.bus
+                    .write32(vt + 0x84, if seed % 4 == 1 { 0x0014_06c0 } else { FAKE });
+            },
+        );
+    }
+
+    /// StreamFile_StartNextRequest: no current request, a ready one, a
+    /// queued next one or none; in-memory or file requests whose file name
+    /// matches the open file. The mutex syscalls go to the fakes (some
+    /// unwind); the real `StreamFile_IssueRead` stalls at once (the ring
+    /// cursors all at the buffer start). The name-change branch (strcpy and
+    /// the file queue's open/close) is not reached: `EAFile_QueueOpen` /
+    /// `QueueClose` need the whole file-request pool.
+    #[test]
+    fn stream_file_start_next_request_matches() {
+        use crate::difftest::fakes::{covered, machine};
+        covered(
+            ee::s14::f_003e0270__generated,
+            stream_file_start_next_request,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e0270, 6);
+                c.pc = 0x003e_0270;
+                let this = DATA;
+                let req = DATA + 0x1000;
+                let next = DATA + 0x1400;
+                let ring = DATA + 0x2200;
+                c.g[A0][0] = this as u64;
+                c.g[A1][0] = (r.next_u32() % 8) as u64;
+                // Mutex: owner, depth, semaphore (owner never the fake thread id).
+                c.bus
+                    .write32(this + 0x8, 0x7700_0000 | r.next_u32() & 0xffff);
+                c.bus.write32(this + 0xc, r.next_u32() & 3);
+                c.bus.write32(this + 0x10, r.next_u32() & 0xff);
+                c.bus.write32(this + SNR_READ_STATE, 1 + r.next_u32() % 2);
+                c.bus
+                    .write32(this + SNR_REQUEST, if seed % 5 == 0 { 0 } else { req });
+                c.bus.write32(
+                    req + SNR_REQ_STATE,
+                    if seed % 3 == 0 {
+                        1
+                    } else {
+                        2 + r.next_u32() % 3
+                    },
+                );
+                c.bus
+                    .write32(req + SNR_REQ_NEXT, if seed % 4 == 1 { 0 } else { next });
+                for q in [req, next] {
+                    c.bus
+                        .write32(q + SNR_REQ_KIND, if r.next_u32() % 2 == 0 { 1 } else { 2 });
+                    c.bus.write32(q + SNR_REQ_SIZE, r.next_u32() & 0xffff);
+                    c.bus.write32(q + SNR_REQ_START, r.next_u32());
+                    for (i, b) in b"track01.big\0".iter().enumerate() {
+                        c.bus.write8(q + SNR_REQ_NAME + i as u32, *b);
+                    }
+                }
+                for (i, b) in b"track01.big\0".iter().enumerate() {
+                    c.bus.write8(this + SNR_NAME + i as u32, *b);
+                }
+                c.bus.write32(this + SNR_LEFT, r.next_u32());
+                c.bus.write32(this + SNR_FILE, 0);
+                // StreamFile_IssueRead stall path.
+                c.bus.write32(this + 0x30, ring);
+                c.bus.write32(this + 0x34, DATA + 0x3000);
+                c.bus.write32(this + 0x50, ring);
+                c.bus.write32(this + SNR_CURSOR, ring);
+                c.bus.write32(this + SNR_FILL, r.next_u32());
+                c.bus.write32(this + 0x5c, DATA + 0x4000);
+                c.bus.write32(DATA + 0x4000 + 0xc, 0);
+                c.bus.write32(this + 0x17c, 0x1000);
+            },
+        );
+    }
+
+    /// Pad slot table at 0x526250 (port 0..1, slot 0..3) pointing at an
+    /// actuator buffer in DATA. Odd seeds use the fake syscalls (DmaStat
+    /// "busy", SetDma succeeds), even seeds the machine's SIF (DmaStat -1,
+    /// the first SetDma returns id 0 = failure); the debug flag is set on
+    /// some seeds so the busy message is printed.
+    #[test]
+    fn libpad_send_act_dma_matches() {
+        use crate::difftest::{check_lohi, fakes, scramble, Rng, DATA};
+        check_lohi(
+            ee::s15::f_003ff390__generated,
+            libpad_send_act_dma,
+            240,
+            &|c, seed| {
+                let mut r = if seed % 2 == 1 {
+                    fakes::machine(c, seed, 0x3ff390, 0)
+                } else {
+                    let mut r = Rng(0x3ff390 ^ (seed as u64) << 8);
+                    scramble(c, &mut r);
+                    r
+                };
+                c.pc = 0x003f_f390;
+                let port = seed / 2 % 2;
+                let slot = seed / 4 % 4;
+                let entry = PAD_SLOTS + port * PAD_PORT_STRIDE + slot * PAD_SLOT_STRIDE;
+                let buf = DATA + 0x400;
+                c.bus.write32(entry + PAD_ACT_BUF, buf);
+                c.bus
+                    .write32(entry + PAD_IOP_DEST, 0x0001_0000 + (r.next_u32() & 0xff0));
+                let id = if seed % 3 == 0 {
+                    0
+                } else {
+                    r.next_u32() & 0xff
+                };
+                c.bus.write32(entry + PAD_DMA_ID, id);
+                c.bus.write32(buf, r.next_u32());
+                for i in 1..8 {
+                    c.bus.write32(buf + 4 * i, r.next_u32());
+                }
+                let debug = if seed % 5 == 0 { 1 } else { 0 };
+                c.bus.write32(PAD_DEBUG_BASE + PAD_DEBUG_FLAG, debug);
+                c.g[A0][0] = port as u64;
+                c.g[A1][0] = slot as u64;
+            },
+        );
+    }
+
+    /// scePadSetActDirect: pad slot (port 0..1, slot 0..3) with a DMA
+    /// buffer whose current half reports state 1 (stable) or not, and an
+    /// actuator packet; the real libpad_GetDmaBuffer and libpad_SendActDma
+    /// run, the SIF syscalls faked on odd seeds (send succeeds) and real on
+    /// even ones (first SetDma returns id 0: failure).
+    #[test]
+    fn sce_pad_set_act_direct_matches() {
+        use crate::difftest::{check_lohi, fakes, scramble, Rng, DATA};
+        check_lohi(
+            ee::s15::f_00400190__generated,
+            sce_pad_set_act_direct,
+            240,
+            &|c, seed| {
+                let mut r = if seed % 2 == 1 {
+                    fakes::machine(c, seed, 0x400190, 0)
+                } else {
+                    let mut r = Rng(0x400190 ^ (seed as u64) << 8);
+                    scramble(c, &mut r);
+                    r
+                };
+                c.pc = 0x0040_0190;
+                let port = seed / 2 % 2;
+                let slot = seed / 4 % 4;
+                let entry = PAD_SLOTS + port * PAD_PORT_STRIDE + slot * PAD_SLOT_STRIDE;
+                let dma = DATA + 0x1000;
+                let act = DATA + 0x400;
+                let data = DATA + 0x300;
+                c.bus.write32(entry, dma);
+                c.bus.write32(entry + PAD_ACT_BUF, act);
+                c.bus
+                    .write32(entry + PAD_IOP_DEST, 0x0001_0000 + (r.next_u32() & 0xff0));
+                c.bus.write32(
+                    entry + PAD_DMA_ID,
+                    if seed % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32() & 0xff
+                    },
+                );
+                // Which half is current: +0x58 < +0xd8 selects the second.
+                c.bus.write32(dma + 0x58, r.next_u32() % 4);
+                c.bus.write32(dma + 0xd8, r.next_u32() % 4);
+                let state = |r: &mut Rng| if seed % 5 == 0 { r.next_u32() % 8 } else { 1 };
+                let s0 = state(&mut r);
+                let s1 = state(&mut r);
+                c.bus.write8(dma + 0x72, s0 as u8);
+                c.bus.write8(dma + 0xf2, s1 as u8);
+                for i in 0..8 {
+                    c.bus.write32(act + 4 * i, r.next_u32());
+                    c.bus.write32(data + 4 * i, r.next_u32());
+                }
+                c.bus.write32(PAD_DEBUG_BASE + PAD_DEBUG_FLAG, 0);
+                c.g[A0][0] = port as u64;
+                c.g[A1][0] = slot as u64;
+                c.g[A2][0] = sx(data);
+            },
+        );
+    }
+
+    /// Rider_ResetGrindOrientation: not grinding; main state 1 with each
+    /// orientation (3, 4, other); main state 0 with each orientation (the
+    /// quarter turns run the real RotateAroundAxis / RotateRoots / SinCos);
+    /// another main state. cRiderAnimBase_play runs for real on an animation
+    /// controller whose virtual call is a fake (as in
+    /// `rider_update_timed_event_anim_matches`).
+    #[test]
+    fn rider_reset_grind_orientation_matches() {
+        check(
+            ee::s00::f_00115640__generated,
+            rider_reset_grind_orientation,
+            200,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = machine(c, seed, 0x11_5640, 1);
+                c.pc = 0x0011_5640;
+                let rider = DATA;
+                let ctrl = DATA + 0x4000;
+                let state = DATA + 0x6000;
+                let seqs = DATA + 0x7000;
+                c.g[A0][0] = sx(rider);
+                let vt = fakes::vtable(c, &mut r, &[0x20]);
+                c.bus.write32(rider + RGO_ANIM, ctrl);
+                c.bus.write32(ctrl + 0x58, vt);
+                c.bus.write32(ctrl + 4, 0x1b6);
+                c.bus.write32(ctrl + 8, 0x1b6);
+                c.bus.write32(ctrl + 0x50, seqs);
+                for i in 0..8 {
+                    c.bus.write32(LOG_RESULTS + 4 * i, 0x207);
+                }
+                c.bus.write32(rider + 0x77c, state);
+                let main_state = match seed % 3 {
+                    0 => 0,
+                    1 => 1,
+                    _ => 2 + r.next_u32() % 4,
+                };
+                c.bus.write32(state + 0xde0, main_state);
+                let side = match (seed / 3) % 5 {
+                    0 => 0,
+                    1 | 2 => 3,
+                    3 => 4,
+                    _ => 1 + r.next_u32() % 8,
+                };
+                c.bus.write32(rider + RGO_GRIND_SIDE, side);
+                for i in 0..4 {
+                    c.bus.write32(rider + RGO_AXIS + 4 * i, r.f32(1.0));
+                    c.bus.write32(rider + 0x120 + 4 * i, r.f32(1.0));
+                }
+            },
+        );
+    }
+
+    /// StreamFile_OnRead: memory source (end reached or not) and EAFile
+    /// source (the release finds an empty request slot); then a closing
+    /// stream, a finished one, a parsed end chunk, or a further read. The
+    /// real callees take short paths: ParseChunks sees no complete chunk
+    /// (fill before the cursor) or one end-of-stream chunk (fixture as in
+    /// `stream_file_parse_chunks_matches`); StartNextRequest finds no next
+    /// header; IssueRead finds the ring idle and the buffer full (state 2).
+    /// The mutex syscalls go to the fakes.
+    #[test]
+    fn stream_file_on_read_matches() {
+        check(
+            ee::s14::f_003e0170__generated,
+            stream_file_on_read,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e_0170, 0);
+                c.pc = 0x003e_0170;
+                let file = DATA;
+                let header = DATA + 0x1000;
+                let classes = DATA + 0x2000;
+                let tallies = DATA + 0x3000;
+                let buf = DATA + 0x4000;
+                let issue = DATA + 0x5000;
+                let end_id = 0x454e_4421u32;
+                c.g[A2][0] = sx(file);
+                c.bus.write32(file + SFR_HEADER, header);
+                // 0: closing, 1: maybe finished, 2: end chunk, 3: further read.
+                let case = seed % 4;
+                let state = if case == 0 {
+                    4
+                } else {
+                    [0u32, 2, 3][(r.next_u32() % 3) as usize]
+                };
+                c.bus.write32(header + SFR_HDR_STATE, state);
+                c.bus.write32(header + 0xc, 0);
+                c.bus.write32(header + 0x11c, end_id);
+                let memory = seed % 3 == 0;
+                c.bus.write32(
+                    header + SFR_HDR_SOURCE,
+                    if memory { 1 } else { r.next_u32() % 4 + 2 },
+                );
+                // Case 3 is never finished: a memory source short of its end,
+                // an EAFile read of the full (zero) length.
+                let len = if case == 3 && !memory {
+                    0
+                } else {
+                    r.next_u32() & 0xfff
+                };
+                c.bus.write32(file + SFR_REQUEST_LEN, len);
+                c.bus.write32(file + SFR_BYTES_READ, r.next_u32() & 0xffff);
+                let size = if case == 3 {
+                    0x10_0000
+                } else {
+                    r.next_u32() & 0x1_ffff
+                };
+                c.bus.write32(header + SFR_HDR_SIZE, size);
+                // EAFile request slot table (zeroed entries: nothing to release).
+                c.bus.write32(0x0051_9ad8, DATA + 0xf_0000);
+                c.bus.write32(file + SFR_REQUEST, r.next_u32() & 0xff);
+                // Classifier and tallies for the end chunk.
+                c.bus.write32(file + 0x1c, classes);
+                c.bus.write32(file + 0x20, 1);
+                c.bus.write32(classes, 0xffff_ffff);
+                c.bus.write32(classes + 4, end_id);
+                c.bus.write32(classes + 8, 3);
+                c.bus.write32(file + 0x24, tallies);
+                c.bus.write32(file + 0x44, r.next_u32() & 0xfff);
+                c.bus.write32(file + 0x48, 1);
+                c.bus.write32(file + 0x4c, r.next_u32() & 0xfff);
+                // Mutex: owner (never the fake thread id), depth, semaphore.
+                c.bus
+                    .write32(file + 0x8, 0x7700_0000 | r.next_u32() & 0xffff);
+                c.bus.write32(file + 0xc, r.next_u32() & 3);
+                c.bus.write32(file + 0x10, r.next_u32() & 0xff);
+                // Cursor (+0x54) and fill (+0x58, OnRead adds the byte count):
+                // the end chunk, or the fill short of the cursor.
+                c.bus.write32(file + 0x54, buf);
+                c.bus.write32(file + 0x50, buf);
+                let n = if memory { len } else { 0 };
+                let fill = if case == 2 {
+                    c.bus.write32(buf, end_id);
+                    c.bus.write32(buf + 4, 8);
+                    buf + 8
+                } else {
+                    buf - 0x10
+                };
+                c.bus.write32(file + SFR_FILL, fill.wrapping_sub(n));
+                // IssueRead: ring idle, buffer full.
+                c.bus.write32(file + 0x5c, issue);
+                c.bus.write32(issue + 0xc, 0);
+                c.bus.write32(file + 0x17c, 0x1000);
+                c.bus.write32(file + SFR_READ_AHEAD, r.next_u32() & 0xff);
             },
         );
     }

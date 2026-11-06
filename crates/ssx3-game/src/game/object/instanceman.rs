@@ -81,6 +81,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_2810, mesh_anim_render, "MeshAnim_Render"),
     (0x0035_2500, mesh_anim_update, "MeshAnim_Update"),
+    (
+        0x0035_1a80,
+        intersect_info_find_key_segment,
+        "IntersectInfo_FindKeySegment",
+    ),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -886,56 +891,41 @@ pub fn intersect_info_evaluate(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // MeshAnim_Render (0x352810)
 
 /// MeshAnim: the model.
 pub(crate) const MESH_ANIM_MODEL: u32 = 0x18;
 
-
 /// MeshAnim: the fade (nothing is drawn at or below 0).
 pub(crate) const MESH_ANIM_FADE: u32 = 0x1c;
-
 
 /// MeshAnim: the draw alpha limit (the alpha passed is `min(fade, this)`
 /// when this is >= 0 and >= fade, else 1.0).
 pub(crate) const MESH_ANIM_ALPHA: u32 = 0x24;
 
-
 /// MeshAnim: the bone rotations (quaternions, 16 bytes each).
 pub(crate) const MESH_ANIM_ROTATIONS: u32 = 0x30;
-
 
 /// MeshAnim: the bone translations (16 bytes each).
 pub(crate) const MESH_ANIM_TRANSLATIONS: u32 = 0x3b0;
 
-
 /// Model: the skeleton (`+4`: bone count, `+0xc`: the part count list).
 pub(crate) const MESH_ANIM_SKELETON: u32 = 0x80;
-
 
 /// Model: the part list (`+4`: part pointers; part `+0`: i16 object id).
 pub(crate) const MESH_ANIM_PARTS: u32 = 0x94;
 
-
 /// `gp+0x16c8`: the object visibility table holder.
 pub(crate) const MESH_ANIM_VIS_GP: u32 = 0x16c8;
-
 
 /// `gp+0x2a90`: the graphics manager.
 pub(crate) const MESH_ANIM_GFX_GP: u32 = 0x2a90;
 
-
 /// Graphics manager: render-state vtable; slot `+0x2f8`: draw skinned mesh.
 pub(crate) const MESH_ANIM_GFX_VTABLE: u32 = 0x10d8;
 
-
 pub(crate) const MESH_ANIM_DRAW_SLOT: u32 = 0x2f8;
-
-
 
 /// The visibility test of one part (registers as the original: a2 the
 /// packed id, a1 the id, t0 the visibility tables, t1 = !0xff, t8 = 0xff).
@@ -1000,15 +990,16 @@ pub(crate) fn mesh_anim_part_visible(c: &mut Cpu) {
     }
 }
 
-
-
 /// One bone of the matrix loop: the 3x3 rotation of the quaternion at
 /// `a0 - 0x380` (VU0 macro code, kept op for op) with the translation at
 /// `a0` as the fourth row, written to the stack at v1 (0x40 bytes).
 pub(crate) fn mesh_anim_bone_matrix(c: &mut Cpu) {
     let a0 = r32(c, A0);
     let out = r32(c, V1);
-    c.lqc2(4, a0.wrapping_sub(MESH_ANIM_TRANSLATIONS - MESH_ANIM_ROTATIONS));
+    c.lqc2(
+        4,
+        a0.wrapping_sub(MESH_ANIM_TRANSLATIONS - MESH_ANIM_ROTATIONS),
+    );
     let v = c.vu0();
     v.add(0b1110, 1, 0, Src::Bc(0, W));
     v.add(0b1110, 5, 4, Src::Vec(4));
@@ -1044,8 +1035,6 @@ pub(crate) fn mesh_anim_bone_matrix(c: &mut Cpu) {
     c.lq(2, a0);
     c.sq(2, out + 0x30);
 }
-
-
 
 /// `void MeshAnim_Render(MeshAnim* self)` (0x352810): draw an animated mesh
 /// instance. Nothing when its fade is <= 0 or when any of the model's parts
@@ -1192,53 +1181,38 @@ pub fn mesh_anim_render(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // MeshAnim_Update (0x352500)
 
 /// Debris/mesh-anim instance fields (`sDebris` in instanceman.cpp).
 pub(crate) const MESH_ANIM_UPD_VTABLE: u32 = 0xc;
 
-
 pub(crate) const MESH_ANIM_UPD_MODEL: u32 = 0x18;
-
 
 /// Remaining life in seconds; the instance kills itself when it runs out.
 pub(crate) const MESH_ANIM_UPD_TIMER: u32 = 0x1c;
 
-
 /// Per-part rotation quaternions (0x10 each).
 pub(crate) const MESH_ANIM_UPD_ROT: u32 = 0x30;
-
 
 /// Per-part spin angles (4 each).
 pub(crate) const MESH_ANIM_UPD_SPIN: u32 = 0x330;
 
-
 /// Per-part velocities (0x10 each); positions are 0x180 below.
 pub(crate) const MESH_ANIM_UPD_VEL: u32 = 0x530;
 
-
 pub(crate) const MESH_ANIM_UPD_GRAVITY: u32 = 0x6b4;
-
 
 /// Model -> skeleton (count of parts at +4).
 pub(crate) const MESH_ANIM_UPD_SKELETON: u32 = 0x80;
 
-
 /// gp-relative pointer to the game timer (frame time at +0x14).
 pub(crate) const MESH_ANIM_UPD_TIMER_GP: u32 = 0x2a74;
-
 
 /// Vtable slot of the kill method (`vt[34]`).
 pub(crate) const MESH_ANIM_UPD_KILL_SLOT: u32 = 0x110;
 
-
 pub(crate) const MESH_ANIM_UPD_SIN_COS: u32 = 0x0031_be50;
-
-
 
 /// `void MeshAnim_Update(sDebris* self)` (0x352500): count the debris life
 /// timer down by the frame time and kill the instance (`vt[34](self, 1)`)
@@ -1427,8 +1401,6 @@ pub fn mesh_anim_update(c: &mut Cpu) {
     })
 }
 
-
-
 /// MeshAnim_Update's shared epilogue (0x3526e4).
 pub(crate) fn mesh_anim_update_epilogue(c: &mut Cpu, frame: Frame) {
     c.cycles += 8;
@@ -1439,6 +1411,113 @@ pub(crate) fn mesh_anim_update_epilogue(c: &mut Cpu, frame: Frame) {
     frame.restore_ra(c, 0x40);
     frame.restore_fpr(c, 20, 0xa0);
     frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// IntersectInfo_FindKeySegment (0x351a80)
+
+/// Range table: `count` at +0, `entries` pointer at +4; each 0x18-byte entry
+/// holds its key range `[lo, hi)` at +0x10/+0x14.
+pub(crate) const IKS_COUNT: u32 = 0x0;
+
+pub(crate) const IKS_ENTRIES: u32 = 0x4;
+
+pub(crate) const IKS_ENTRY_SIZE: u32 = 0x18;
+
+pub(crate) const IKS_LO: u32 = 0x10;
+
+pub(crate) const IKS_HI: u32 = 0x14;
+
+/// `sImRange* IntersectInfo_FindKeySegment(sImRangeTable* t, int* cur, float x)`
+/// (0x351a80): find the key segment containing `x`, trying the one after the
+/// cached cursor first (`lo <= x < hi`), else scanning from the start for the
+/// first entry with `x < hi` (the last entry when none matches). Updates the
+/// cursor and returns the entry.
+pub fn intersect_info_find_key_segment(c: &mut Cpu) {
+    use crate::guest::Addr;
+    use crate::ps2f::FpuF32;
+    let table = Addr(r32(c, A0));
+    let cur = Addr(r32(c, A1));
+    let x = FpuF32(c.f[12]);
+
+    c.cycles += 7;
+    let next = sx((cur.lw(c) as u32).wrapping_add(1));
+    c.g[A2][0] = next;
+    cur.sw(c, next);
+    let count = table.off(IKS_COUNT).lw(c);
+    let in_table = (next as i64) < (count as i64);
+    c.g[V0][0] = IKS_ENTRY_SIZE as u64;
+    'scan: {
+        if in_table {
+            // Fast path: the entry after the cursor.
+            c.cycles += 8;
+            c.g[V1][0] = table.off(IKS_ENTRIES).lw(c);
+            c.mult(0, V0, A2, V0);
+            c.g[A2][0] = crate::abi::addu(c.g[V1][0], c.g[V0][0]);
+            let e = Addr(r32(c, A2));
+            let lo = e.off(IKS_LO).read_fpu(c);
+            c.f[0] = lo.0;
+            let above_lo = lo.le(x);
+            crate::abi::set_fcc(c, above_lo);
+            c.g[A3][0] = 0;
+            if above_lo {
+                c.cycles += 5;
+                let hi = e.off(IKS_HI).read_fpu(c);
+                c.f[0] = hi.0;
+                if crate::abi::c_lt_s(c, x, hi) {
+                    c.g[A3][0] = 1;
+                }
+            }
+            c.cycles += 2;
+            if c.g[A3][0] != 0 {
+                break 'scan;
+            }
+            c.g[A2][0] = table.off(IKS_ENTRIES).lw(c);
+        } else {
+            c.cycles += 1;
+            c.g[A2][0] = table.off(IKS_ENTRIES).lw(c);
+        }
+
+        // Scan from the start.
+        c.cycles += 5;
+        cur.sw(c, 0);
+        c.g[V0][0] = sx((table.off(IKS_COUNT).lw(c) as u32).wrapping_sub(1));
+        if (c.g[V0][0] as i64) <= 0 {
+            break 'scan;
+        }
+        loop {
+            c.cycles += 5;
+            let hi = Addr(r32(c, A2)).off(IKS_HI).read_fpu(c);
+            c.f[0] = hi.0;
+            let below = crate::abi::c_lt_s(c, x, hi);
+            c.g[V0][0] = 1;
+            if !below {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+            c.cycles += 2;
+            if below {
+                break 'scan;
+            }
+            c.cycles += 8;
+            let i = sx((cur.lw(c) as u32).wrapping_add(1));
+            cur.sw(c, i);
+            let last = sx((table.off(IKS_COUNT).lw(c) as u32).wrapping_sub(1));
+            c.g[V0][0] = last;
+            let more = (i as i64) < (last as i64);
+            c.g[V1][0] = more as u64;
+            c.g[A2][0] = crate::abi::addu(c.g[A2][0], IKS_ENTRY_SIZE as u64);
+            if !more {
+                break 'scan;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0035_1af8);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A2][0];
+    ret(c);
 }
 
 #[cfg(test)]
@@ -1736,7 +1815,6 @@ pub(crate) mod tests {
     use crate::difftest::fakes;
     use crate::game::visualfx::renderstateman::tests::table_getter_setup;
 
-
     /// A mesh instance with fade <= 0 (nothing drawn) or > 0; 0..4 parts
     /// whose objects are visible (flag word with bits above the low byte),
     /// hidden or out of the table's range; 0..4 bones with random
@@ -1745,86 +1823,94 @@ pub(crate) mod tests {
     #[test]
     fn mesh_anim_render_matches() {
         use crate::difftest::{put_vec, GAME_GP};
-        fakes::covered(ee::s11::f_00352810__generated, mesh_anim_render, 200, &|c, seed| {
-            let mut r = fakes::machine(c, seed, 0x35_2810, 1);
-            let me = DATA + 0x1000;
-            let model = DATA + 0x2000;
-            let skeleton = DATA + 0x2100;
-            let counts = DATA + 0x2200;
-            let parts = DATA + 0x2300;
-            let vis_holder = DATA + 0x2500;
-            let vis = DATA + 0x2600;
-            let rec = DATA + 0x2700;
-            let flags = DATA + 0x2800;
-            let fade = match seed % 9 {
-                0 => 0.0f32,
-                1 => -0.5,
-                _ => f32::from_bits(r.f32(1.0)).abs() + 0.01,
-            };
-            c.bus.write32(me + MESH_ANIM_FADE, fade.to_bits());
-            let alpha = match seed / 9 % 3 {
-                0 => -1.0f32,
-                1 => fade * 0.5,
-                _ => fade + 1.0,
-            };
-            c.bus.write32(me + MESH_ANIM_ALPHA, alpha.to_bits());
-            c.bus.write32(me + MESH_ANIM_MODEL, model);
-            c.bus.write32(model + MESH_ANIM_SKELETON, skeleton);
-            c.bus.write32(skeleton + 0xc, counts);
-            let n_parts = r.next_u32() % 5;
-            c.bus.write32(counts, n_parts);
-            c.bus.write32(model + MESH_ANIM_PARTS, parts);
-            // Visibility: object ids 0..7 against a table of 6.
-            c.bus.write32(GAME_GP + MESH_ANIM_VIS_GP, vis_holder);
-            c.bus.write32(vis_holder, vis);
-            c.bus.write32(vis + 4, rec);
-            c.bus.write32(rec + 0x50, 6);
-            c.bus.write32(rec + 0x4c, flags);
-            let all_visible = seed % 3 != 0;
-            for i in 0..8 {
-                let w = if all_visible || r.next_u32() % 4 != 0 {
-                    (r.next_u32() | 0x100) & !0xff | (r.next_u32() & 0xff)
-                } else {
-                    r.next_u32() & 0xff
+        fakes::covered(
+            ee::s11::f_00352810__generated,
+            mesh_anim_render,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x35_2810, 1);
+                let me = DATA + 0x1000;
+                let model = DATA + 0x2000;
+                let skeleton = DATA + 0x2100;
+                let counts = DATA + 0x2200;
+                let parts = DATA + 0x2300;
+                let vis_holder = DATA + 0x2500;
+                let vis = DATA + 0x2600;
+                let rec = DATA + 0x2700;
+                let flags = DATA + 0x2800;
+                let fade = match seed % 9 {
+                    0 => 0.0f32,
+                    1 => -0.5,
+                    _ => f32::from_bits(r.f32(1.0)).abs() + 0.01,
                 };
-                c.bus.write32(flags + 4 * i, w);
-            }
-            for i in 0..n_parts {
-                let part = DATA + 0x2400 + 0x10 * i;
-                c.bus.write32(parts + 4 + 4 * i, part);
-                let id = if all_visible { r.next_u32() % 7 } else { r.next_u32() % 9 };
-                c.bus.write16(part, id as u16);
-            }
-            // Bones.
-            let n_bones = r.next_u32() % 5;
-            c.bus.write32(skeleton + 4, n_bones);
-            for i in 0..4 {
-                put_vec(
-                    c,
-                    me + MESH_ANIM_ROTATIONS + 0x10 * i,
-                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)],
-                );
-                put_vec(
-                    c,
-                    me + MESH_ANIM_TRANSLATIONS + 0x10 * i,
-                    [r.f32(100.0), r.f32(100.0), r.f32(100.0), 1.0f32.to_bits()],
-                );
-            }
-            // The graphics manager with a fake draw method.
-            let gfx = DATA + 0x8000;
-            let vt = DATA + 0x9000;
-            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
-            c.bus.write16(vt + MESH_ANIM_DRAW_SLOT, delta as u16);
-            c.bus.write32(vt + MESH_ANIM_DRAW_SLOT + 4, fakes::FAKE);
-            c.bus.write32(GAME_GP + MESH_ANIM_GFX_GP, gfx);
-            c.bus.write32(gfx + MESH_ANIM_GFX_VTABLE, vt);
-            c.g[A0][0] = sx(me);
-            c.pc = 0x0035_2810;
-        });
+                c.bus.write32(me + MESH_ANIM_FADE, fade.to_bits());
+                let alpha = match seed / 9 % 3 {
+                    0 => -1.0f32,
+                    1 => fade * 0.5,
+                    _ => fade + 1.0,
+                };
+                c.bus.write32(me + MESH_ANIM_ALPHA, alpha.to_bits());
+                c.bus.write32(me + MESH_ANIM_MODEL, model);
+                c.bus.write32(model + MESH_ANIM_SKELETON, skeleton);
+                c.bus.write32(skeleton + 0xc, counts);
+                let n_parts = r.next_u32() % 5;
+                c.bus.write32(counts, n_parts);
+                c.bus.write32(model + MESH_ANIM_PARTS, parts);
+                // Visibility: object ids 0..7 against a table of 6.
+                c.bus.write32(GAME_GP + MESH_ANIM_VIS_GP, vis_holder);
+                c.bus.write32(vis_holder, vis);
+                c.bus.write32(vis + 4, rec);
+                c.bus.write32(rec + 0x50, 6);
+                c.bus.write32(rec + 0x4c, flags);
+                let all_visible = seed % 3 != 0;
+                for i in 0..8 {
+                    let w = if all_visible || r.next_u32() % 4 != 0 {
+                        (r.next_u32() | 0x100) & !0xff | (r.next_u32() & 0xff)
+                    } else {
+                        r.next_u32() & 0xff
+                    };
+                    c.bus.write32(flags + 4 * i, w);
+                }
+                for i in 0..n_parts {
+                    let part = DATA + 0x2400 + 0x10 * i;
+                    c.bus.write32(parts + 4 + 4 * i, part);
+                    let id = if all_visible {
+                        r.next_u32() % 7
+                    } else {
+                        r.next_u32() % 9
+                    };
+                    c.bus.write16(part, id as u16);
+                }
+                // Bones.
+                let n_bones = r.next_u32() % 5;
+                c.bus.write32(skeleton + 4, n_bones);
+                for i in 0..4 {
+                    put_vec(
+                        c,
+                        me + MESH_ANIM_ROTATIONS + 0x10 * i,
+                        [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)],
+                    );
+                    put_vec(
+                        c,
+                        me + MESH_ANIM_TRANSLATIONS + 0x10 * i,
+                        [r.f32(100.0), r.f32(100.0), r.f32(100.0), 1.0f32.to_bits()],
+                    );
+                }
+                // The graphics manager with a fake draw method.
+                let gfx = DATA + 0x8000;
+                let vt = DATA + 0x9000;
+                let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+                c.bus.write16(vt + MESH_ANIM_DRAW_SLOT, delta as u16);
+                c.bus.write32(vt + MESH_ANIM_DRAW_SLOT + 4, fakes::FAKE);
+                c.bus.write32(GAME_GP + MESH_ANIM_GFX_GP, gfx);
+                c.bus.write32(gfx + MESH_ANIM_GFX_VTABLE, vt);
+                c.g[A0][0] = sx(me);
+                c.pc = 0x0035_2810;
+            },
+        );
     }
     use super::*;
     use crate::difftest::{elf_image, put_vec};
-
 
     /// MeshAnim_Update: a debris instance whose timer is <= 0 (idle), runs
     /// out this frame (kill method, a fake that unwinds on some seeds) or
@@ -1832,49 +1918,106 @@ pub(crate) mod tests {
     /// Math_SinCos and moved under gravity.
     #[test]
     fn mesh_anim_update_matches() {
-        covered(ee::s11::f_00352500__generated, mesh_anim_update, 240, &|c, seed| {
-            let mut r = machine(c, seed, 0x35_2500, 1);
-            elf_image(c);
-            let me = DATA + 0x1000;
-            let model = DATA + 0x3000;
-            let skeleton = DATA + 0x3100;
-            let timer_obj = DATA + 0x3200;
-            let vt = DATA + 0x3400;
-            let dt = 1.0f32 / 60.0;
-            c.bus.write32(GAME_GP + MESH_ANIM_UPD_TIMER_GP, timer_obj);
-            c.bus.write32(timer_obj + 0x14, dt.to_bits());
-            let timer = match seed % 4 {
-                0 => -((r.next_u32() % 3) as f32) * 0.5,
-                1 => dt * 0.5,
-                _ => 1.0 + (r.next_u32() % 100) as f32 * 0.01,
-            };
-            c.bus.write32(me + MESH_ANIM_UPD_TIMER, timer.to_bits());
-            c.bus.write32(me + MESH_ANIM_UPD_VTABLE, vt);
-            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
-            c.bus.write16(vt + MESH_ANIM_UPD_KILL_SLOT, delta as u16);
-            c.bus.write32(vt + MESH_ANIM_UPD_KILL_SLOT + 4, FAKE);
-            c.bus.write32(me + MESH_ANIM_UPD_MODEL, model);
-            c.bus.write32(model + MESH_ANIM_UPD_SKELETON, skeleton);
-            let parts: i32 = match seed % 7 {
-                0 => 0,
-                1 => -1,
-                _ => (r.next_u32() % 5 + 1) as i32,
-            };
-            c.bus.write32(skeleton + 4, parts as u32);
-            c.bus.write32(me + MESH_ANIM_UPD_GRAVITY, r.f32(2.0));
-            for i in 0..6 {
-                put_vec(c, me + MESH_ANIM_UPD_ROT + 0x10 * i,
-                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0.5f32.to_bits()]);
-                put_vec(c, me + MESH_ANIM_UPD_ROT + 0x180 + 0x10 * i,
-                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.next_u32()]);
-                c.bus.write32(me + MESH_ANIM_UPD_SPIN + 4 * i, r.f32(6.0));
-                put_vec(c, me + MESH_ANIM_UPD_VEL - 0x180 + 0x10 * i,
-                    [r.f32(500.0), r.f32(500.0), r.f32(500.0), r.next_u32()]);
-                put_vec(c, me + MESH_ANIM_UPD_VEL + 0x10 * i,
-                    [r.f32(50.0), r.f32(50.0), r.f32(50.0), r.next_u32()]);
-            }
-            c.g[A0][0] = sx(me);
-            c.pc = 0x0035_2500;
-        });
+        covered(
+            ee::s11::f_00352500__generated,
+            mesh_anim_update,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_2500, 1);
+                elf_image(c);
+                let me = DATA + 0x1000;
+                let model = DATA + 0x3000;
+                let skeleton = DATA + 0x3100;
+                let timer_obj = DATA + 0x3200;
+                let vt = DATA + 0x3400;
+                let dt = 1.0f32 / 60.0;
+                c.bus.write32(GAME_GP + MESH_ANIM_UPD_TIMER_GP, timer_obj);
+                c.bus.write32(timer_obj + 0x14, dt.to_bits());
+                let timer = match seed % 4 {
+                    0 => -((r.next_u32() % 3) as f32) * 0.5,
+                    1 => dt * 0.5,
+                    _ => 1.0 + (r.next_u32() % 100) as f32 * 0.01,
+                };
+                c.bus.write32(me + MESH_ANIM_UPD_TIMER, timer.to_bits());
+                c.bus.write32(me + MESH_ANIM_UPD_VTABLE, vt);
+                let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+                c.bus.write16(vt + MESH_ANIM_UPD_KILL_SLOT, delta as u16);
+                c.bus.write32(vt + MESH_ANIM_UPD_KILL_SLOT + 4, FAKE);
+                c.bus.write32(me + MESH_ANIM_UPD_MODEL, model);
+                c.bus.write32(model + MESH_ANIM_UPD_SKELETON, skeleton);
+                let parts: i32 = match seed % 7 {
+                    0 => 0,
+                    1 => -1,
+                    _ => (r.next_u32() % 5 + 1) as i32,
+                };
+                c.bus.write32(skeleton + 4, parts as u32);
+                c.bus.write32(me + MESH_ANIM_UPD_GRAVITY, r.f32(2.0));
+                for i in 0..6 {
+                    put_vec(
+                        c,
+                        me + MESH_ANIM_UPD_ROT + 0x10 * i,
+                        [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0.5f32.to_bits()],
+                    );
+                    put_vec(
+                        c,
+                        me + MESH_ANIM_UPD_ROT + 0x180 + 0x10 * i,
+                        [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.next_u32()],
+                    );
+                    c.bus.write32(me + MESH_ANIM_UPD_SPIN + 4 * i, r.f32(6.0));
+                    put_vec(
+                        c,
+                        me + MESH_ANIM_UPD_VEL - 0x180 + 0x10 * i,
+                        [r.f32(500.0), r.f32(500.0), r.f32(500.0), r.next_u32()],
+                    );
+                    put_vec(
+                        c,
+                        me + MESH_ANIM_UPD_VEL + 0x10 * i,
+                        [r.f32(50.0), r.f32(50.0), r.f32(50.0), r.next_u32()],
+                    );
+                }
+                c.g[A0][0] = sx(me);
+                c.pc = 0x0035_2500;
+            },
+        );
+    }
+    use super::*;
+
+    /// Range table at DATA (count, entries), cursor at DATA+0x40, entries at
+    /// DATA+0x100 with sorted [lo, hi) ranges; x chosen to hit the cursor's
+    /// next entry, a later one, or none.
+    #[test]
+    fn intersect_info_find_key_segment_matches() {
+        use crate::difftest::{check_lohi, scramble, Rng, DATA};
+        check_lohi(
+            ee::s11::f_00351a80__generated,
+            intersect_info_find_key_segment,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x351a80 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0035_1a80;
+                let count = (seed % 7) as i32 - 1; // -1..5
+                let entries = DATA + 0x100;
+                c.bus.write32(DATA, count as u32);
+                c.bus.write32(DATA + 4, entries);
+                for i in 0..8u32 {
+                    let lo = i as f32 * 10.0;
+                    c.bus.write32(entries + i * 0x18 + 0x10, lo.to_bits());
+                    c.bus
+                        .write32(entries + i * 0x18 + 0x14, (lo + 10.0).to_bits());
+                }
+                let cur = (seed / 7 % 6) as i32 - 1;
+                c.bus.write32(DATA + 0x40, cur as u32);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(DATA + 0x40);
+                c.f[12] = match seed % 5 {
+                    0 => r.f32(100.0),
+                    1 => ((cur + 1) as f32 * 10.0 + 5.0).to_bits(),
+                    2 => ((cur + 1) as f32 * 10.0).to_bits(),
+                    3 => 1000.0f32.to_bits(),
+                    _ => r.edge_f32(),
+                };
+            },
+        );
     }
 }

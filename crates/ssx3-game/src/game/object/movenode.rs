@@ -9,9 +9,11 @@ use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
+use crate::call::tail_wrapper;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Target;
 use crate::call::Unwound;
 use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
@@ -217,9 +219,19 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_7fa0, multi_particle_dtor, "MultiParticle_dtor"),
     (0x0035_6b30, mod_obj_save, "ModObj_Save"),
     (0x0035_6128, mod_obj_v25, "ModObj_v25"),
-    (0x0035_7bf8, multi_particle_man_update, "MultiParticleMan_Update"),
-    (0x0035_7c50, multi_particle_man_emit_all, "MultiParticleMan_EmitAll"),
+    (
+        0x0035_7bf8,
+        multi_particle_man_update,
+        "MultiParticleMan_Update",
+    ),
+    (
+        0x0035_7c50,
+        multi_particle_man_emit_all,
+        "MultiParticleMan_EmitAll",
+    ),
     (0x0035_6a28, mod_obj_v38, "ModObj_v38"),
+    (0x0035_67e0, mod_obj_v49, "ModObj_v49"),
+    (0x0035_6e98, object_save, "Object_Save"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3822,9 +3834,6 @@ pub fn mod_obj_save(c: &mut Cpu) {
     });
 }
 
-
-
-
 // --------------------------------------------------- MultiParticleMan_EmitAll
 
 /// `MultiParticle_EmitAtInstances` (0x358260).
@@ -3832,8 +3841,6 @@ pub(crate) const MULTI_PARTICLE_EMIT_AT_INSTANCES: Callee = Callee {
     addr: 0x0035_8260,
     f: ee::s11::f_00358260,
 };
-
-
 
 /// `void MultiParticleMan_EmitAll(MultiParticle* slots[4])` (0x357c50):
 /// emits every one of the manager's four multi-particle effects that is set.
@@ -3874,26 +3881,18 @@ pub fn multi_particle_man_emit_all(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------- ModObj_v25
 
 /// ModObj: the default transform (+0x18, its matrix at +0x10) and a handle
 /// to the attached object (+0x1c).
 pub(crate) const MODOBJ_DEFAULT: u32 = 0x18;
 
-
 pub(crate) const MODOBJ_HANDLE: u32 = 0x1c;
-
-
 
 /// The attached object's v-table at +0: `{delta: i16, fn}` slots.
 pub(crate) const MODOBJ_VT_PRIMARY: u32 = 0x98;
 
-
 pub(crate) const MODOBJ_VT_FALLBACK: u32 = 0x90;
-
-
 
 /// `void* ModObj_v25(ModObj* self)` (0x356128): the matrix the object
 /// moves with: the attached object's (virtual 19, else virtual 18), or the
@@ -3943,19 +3942,17 @@ pub fn mod_obj_v25(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // MultiParticleMan_Update (0x357bf8)
 
 /// `MultiParticle_Update(p)` (0x358120).
-pub(crate) const MULTI_PARTICLE_UPDATE: Callee = Callee { addr: 0x0035_8120, f: ee::s11::f_00358120 };
-
+pub(crate) const MULTI_PARTICLE_UPDATE: Callee = Callee {
+    addr: 0x0035_8120,
+    f: ee::s11::f_00358120,
+};
 
 /// Particle systems a `MultiParticleMan` holds.
 pub(crate) const MULTI_PARTICLE_MAN_SLOTS: u64 = 4;
-
-
 
 /// `void MultiParticleMan_Update(MultiParticle** slots)` (0x357bf8): update
 /// each of the four multi-particle systems that is present.
@@ -3997,20 +3994,14 @@ pub fn multi_particle_man_update(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // ModObj_v38 (0x356a28)
 
 /// ModObj: its move-node block (+0x1c), whose first word is the node.
 pub(crate) const MODOBJ_V38_BLOCK: u32 = 0x1c;
 
-
 /// The node's vtable slot called (delta at +0xa0, function at +0xa4).
 pub(crate) const MODOBJ_V38_SLOT: u32 = 0xa0;
-
-
 
 /// `int ModObj_v38(ModObj* self)` (0x356a28): forward to the move-node's
 /// virtual slot 0xa0 (its `delta`-adjusted `this`); 0 when there is no
@@ -4045,6 +4036,135 @@ pub fn mod_obj_v38(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     });
+}
+
+// ---------------------------------------------------------------------------
+// Object_Save
+
+/// `void Object_Save(Object* self, Stream* stream)` (0x356e98): an object
+/// saves exactly what its modifier-object base saves (`ModObj_Save`).
+pub fn object_save(c: &mut Cpu) {
+    tail_wrapper(
+        c,
+        None,
+        Target::Direct(Callee {
+            addr: 0x0035_6b30,
+            f: ee::s11::ModObj_Save,
+        }),
+        0x0035_6ea8,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// ModObj_v49 (0x3567e0)
+
+/// Modifier object: its move node (+0x18; world-space bounds min at +0x60,
+/// max at +0x6c, three floats each) and modifier block (+0x1c, whose first
+/// word is the implementation).
+pub(crate) const MOV49_NODE: u32 = 0x18;
+
+pub(crate) const MOV49_BLOCK: u32 = 0x1c;
+
+pub(crate) const MOV49_NODE_MIN: u32 = 0x60;
+
+pub(crate) const MOV49_NODE_MAX: u32 = 0x6c;
+
+/// Stack: new box (min +0, max +0x10), old box (+0x20, +0x30), a vector
+/// staging slot (+0x40).
+pub(crate) const MOV49_NEW: u32 = 0x00;
+
+pub(crate) const MOV49_OLD: u32 = 0x20;
+
+pub(crate) const MOV49_STAGE: u32 = 0x40;
+
+pub(crate) const MOV49_WORLD_GET_NASH: u32 = 0x002d_1be0;
+
+pub(crate) const MOV49_SPATIAL_HASH_UPDATE: u32 = 0x0032_91e0;
+
+/// `void ModObj_v49(ModObj* self)` (0x3567e0): refresh the modifier's
+/// bounds after its move node moved. Without a block implementation
+/// nothing happens. Otherwise the old bounds (`GetTransformBounds`) are
+/// kept, the new box is built from the node's world bounds (w = 1), set on
+/// the block (`SetTransformBounds`) and the world's spatial hash ("nash") is
+/// updated from the old box to the new one.
+pub fn mod_obj_v49(c: &mut Cpu) {
+    use crate::guest::Addr;
+    const GET_BOUNDS: Callee = Callee {
+        addr: 0x0035_2b88,
+        f: ee::s11::ModifierBlock_GetTransformBounds,
+    };
+    const SET_BOUNDS: Callee = Callee {
+        addr: 0x0035_2bc0,
+        f: ee::s11::ModifierBlock_SetTransformBounds,
+    };
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save_ra(c, 0x50);
+        c.g[S0][0] = c.g[A0][0];
+        let block = Addr(r32(c, S0).wrapping_add(MOV49_BLOCK)).lw(c);
+        c.g[V0][0] = 0;
+        if block != 0 {
+            c.cycles += 1;
+            c.g[V0][0] = Addr(block as u32).lw(c);
+        }
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            c.cycles += 38;
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(MOV49_BLOCK)).lw(c);
+            GET_BOUNDS.call(c, 0x0035_6810)?;
+            // Keep the old box.
+            let old = r32(c, V0);
+            let sp0 = frame.at(c, 0);
+            c.lq(V1, old);
+            c.g[A1][0] = sx(sp0);
+            let node = Addr(r32(c, S0).wrapping_add(MOV49_NODE)).lw(c) as u32;
+            c.g[A2][0] = sx(node);
+            c.sq(V1, sp0 + MOV49_OLD);
+            c.g[AT][0] = 0x3f80_0000;
+            c.mtc1(AT, 2);
+            c.lq(V1, old.wrapping_add(0x10));
+            c.g[A0][0] = Addr(r32(c, S0).wrapping_add(MOV49_BLOCK)).lw(c);
+            c.sq(V1, sp0 + MOV49_OLD + 0x10);
+            // New min (x, y, z, 1) through the staging slot.
+            let stage = sp0 + MOV49_STAGE;
+            c.lwc1(0, node + MOV49_NODE_MIN);
+            c.swc1(0, stage);
+            c.lwc1(1, node + MOV49_NODE_MIN + 4);
+            c.swc1(1, stage + 4);
+            c.lwc1(0, node + MOV49_NODE_MIN + 8);
+            c.swc1(2, stage + 0xc);
+            c.swc1(0, stage + 8);
+            c.lq(V0, stage);
+            c.sq(V0, sp0 + MOV49_NEW);
+            // New max (x, y, z, w = 1 still in the slot).
+            c.lwc1(0, node + MOV49_NODE_MAX);
+            c.swc1(0, stage);
+            c.lwc1(1, node + MOV49_NODE_MAX + 4);
+            c.swc1(1, stage + 4);
+            c.lwc1(0, node + MOV49_NODE_MAX + 8);
+            c.swc1(0, stage + 8);
+            c.lq(V0, stage);
+            c.sq(V0, sp0 + MOV49_NEW + 0x10);
+            SET_BOUNDS.call(c, 0x0035_687c)?;
+            c.g[S0][0] = Addr(r32(c, S0).wrapping_add(MOV49_NODE)).lw(c);
+            call_ptr(c, MOV49_WORLD_GET_NASH, 0x0035_6884)?;
+            // SpatialHash_Update(nash, 0, node, &new, &old)
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A2][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            let sp0 = frame.at(c, 0);
+            c.g[A3][0] = sx(sp0 + MOV49_NEW);
+            c.g[T0][0] = sx(sp0 + MOV49_OLD);
+            call_ptr(c, MOV49_SPATIAL_HASH_UPDATE, 0x0035_689c)?;
+        }
+        frame.restore(c, S0, 0x60);
+        c.cycles += 3;
+        frame.restore_ra(c, 0x50);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -5688,11 +5808,10 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-    use crate::difftest::{elf_image};
     use super::*;
+    use crate::difftest::elf_image;
     pub(crate) use crate::game::ai::ai::tests::oc258_w32;
     pub(crate) use crate::game::animation::animsequencer::tests::oc258_env;
-
 
     /// `MultiParticleMan_EmitAll`: each of the four slots empty or set;
     /// a set effect has no instances (count 0 or negative), so the real
@@ -5724,7 +5843,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// `ModObj_v25`: no handle, a handle to no object, or an object whose
     /// first method answers a matrix (a fake) or 0 (the real leaf
     /// 0x1406c0), then the fallback method (a fake or the leaf); fakes
@@ -5732,59 +5850,70 @@ pub(crate) mod tests {
     #[test]
     fn mod_obj_v25_matches() {
         const RETURN_ZERO_LEAF: u32 = 0x0014_06c0;
-        crate::difftest::fakes::covered(ssx3_ee::s11::f_00356128__generated, mod_obj_v25, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0035_6128, 2);
-            c.pc = 0x0035_6128;
-            let (this, handle, obj) = (DATA + 0x20_0000, DATA + 0x20_0100, DATA + 0x20_0200);
-            c.bus.write32(this + MODOBJ_DEFAULT, r.next_u32());
-            let vt =
-                crate::difftest::fakes::vtable(c, &mut r, &[MODOBJ_VT_PRIMARY, MODOBJ_VT_FALLBACK]);
-            match seed % 4 {
-                0 => c.bus.write32(this + MODOBJ_HANDLE, 0),
-                1 => {
-                    c.bus.write32(this + MODOBJ_HANDLE, handle);
-                    c.bus.write32(handle, 0);
-                }
-                _ => {
-                    c.bus.write32(this + MODOBJ_HANDLE, handle);
-                    c.bus.write32(handle, obj);
-                    c.bus.write32(obj, vt);
-                    if seed % 8 >= 4 {
-                        c.bus.write32(vt + MODOBJ_VT_PRIMARY + 4, RETURN_ZERO_LEAF);
+        crate::difftest::fakes::covered(
+            ssx3_ee::s11::f_00356128__generated,
+            mod_obj_v25,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_6128, 2);
+                c.pc = 0x0035_6128;
+                let (this, handle, obj) = (DATA + 0x20_0000, DATA + 0x20_0100, DATA + 0x20_0200);
+                c.bus.write32(this + MODOBJ_DEFAULT, r.next_u32());
+                let vt = crate::difftest::fakes::vtable(
+                    c,
+                    &mut r,
+                    &[MODOBJ_VT_PRIMARY, MODOBJ_VT_FALLBACK],
+                );
+                match seed % 4 {
+                    0 => c.bus.write32(this + MODOBJ_HANDLE, 0),
+                    1 => {
+                        c.bus.write32(this + MODOBJ_HANDLE, handle);
+                        c.bus.write32(handle, 0);
                     }
-                    if seed % 16 >= 8 {
-                        c.bus.write32(vt + MODOBJ_VT_FALLBACK + 4, RETURN_ZERO_LEAF);
+                    _ => {
+                        c.bus.write32(this + MODOBJ_HANDLE, handle);
+                        c.bus.write32(handle, obj);
+                        c.bus.write32(obj, vt);
+                        if seed % 8 >= 4 {
+                            c.bus.write32(vt + MODOBJ_VT_PRIMARY + 4, RETURN_ZERO_LEAF);
+                        }
+                        if seed % 16 >= 8 {
+                            c.bus.write32(vt + MODOBJ_VT_FALLBACK + 4, RETURN_ZERO_LEAF);
+                        }
                     }
                 }
-            }
-            c.g[A0][0] = sx(this);
-        });
+                c.g[A0][0] = sx(this);
+            },
+        );
     }
-
 
     /// MultiParticleMan_Update: any mix of empty and present slots; present
     /// systems have a null or zeroed particle system (Emitter_Update's short exit).
     #[test]
     fn multi_particle_man_update_matches() {
-        check(ee::s11::f_00357bf8__generated, multi_particle_man_update, 48, &|c, seed| {
-            let mut r = machine(c, seed, 0x357bf8, 0);
-            oc258_env(c);
-            c.pc = 0x0035_7bf8;
-            let man = DATA + 0x100;
-            c.g[A0][0] = sx(man);
-            c.bus.write32(GAME_GP.wrapping_sub(0x2a80), r.f32(1.0));
-            for k in 0..4u32 {
-                let present = (seed >> k) & 1 != 0 || seed % 7 == 3;
-                let p = DATA + 0x4000 + 0x400 * k;
-                oc258_w32(c, man + 4 * k, if present { p } else { 0 });
-                let sys = DATA + 0x8000 + 0x400 * k;
-                oc258_w32(c, p + 0x10, if (seed + k) % 2 == 0 { 0 } else { sys });
-                oc258_w32(c, sys, 0);
-            }
-        });
+        check(
+            ee::s11::f_00357bf8__generated,
+            multi_particle_man_update,
+            48,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x357bf8, 0);
+                oc258_env(c);
+                c.pc = 0x0035_7bf8;
+                let man = DATA + 0x100;
+                c.g[A0][0] = sx(man);
+                c.bus.write32(GAME_GP.wrapping_sub(0x2a80), r.f32(1.0));
+                for k in 0..4u32 {
+                    let present = (seed >> k) & 1 != 0 || seed % 7 == 3;
+                    let p = DATA + 0x4000 + 0x400 * k;
+                    oc258_w32(c, man + 4 * k, if present { p } else { 0 });
+                    let sys = DATA + 0x8000 + 0x400 * k;
+                    oc258_w32(c, p + 0x10, if (seed + k) % 2 == 0 { 0 } else { sys });
+                    oc258_w32(c, sys, 0);
+                }
+            },
+        );
     }
     use super::*;
-
 
     /// ModObj_v38: no block, a block without a node, or a node whose slot
     /// 0xa0 is a fake method (which may unwind).
@@ -5792,26 +5921,111 @@ pub(crate) mod tests {
     fn mod_obj_v38_matches() {
         use crate::difftest::fakes::{covered, machine, vtable};
         use crate::difftest::DATA;
-        covered(ee::s11::f_00356a28__generated, mod_obj_v38, 120, &|c, seed| {
-            let mut r = machine(c, seed, 0x0035_6a28, 1);
-            c.pc = 0x0035_6a28;
-            let this = DATA + 0x100;
-            let block = DATA + 0x200;
-            let node = DATA + 0x300;
-            c.g[A0][0] = sx(this);
-            match seed % 4 {
-                0 => c.bus.write32(this + MODOBJ_V38_BLOCK, 0),
-                1 => {
-                    c.bus.write32(this + MODOBJ_V38_BLOCK, block);
-                    c.bus.write32(block, 0);
+        covered(
+            ee::s11::f_00356a28__generated,
+            mod_obj_v38,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_6a28, 1);
+                c.pc = 0x0035_6a28;
+                let this = DATA + 0x100;
+                let block = DATA + 0x200;
+                let node = DATA + 0x300;
+                c.g[A0][0] = sx(this);
+                match seed % 4 {
+                    0 => c.bus.write32(this + MODOBJ_V38_BLOCK, 0),
+                    1 => {
+                        c.bus.write32(this + MODOBJ_V38_BLOCK, block);
+                        c.bus.write32(block, 0);
+                    }
+                    _ => {
+                        c.bus.write32(this + MODOBJ_V38_BLOCK, block);
+                        c.bus.write32(block, node);
+                        let vt = vtable(c, &mut r, &[MODOBJ_V38_SLOT]);
+                        c.bus.write32(node, vt);
+                    }
                 }
-                _ => {
-                    c.bus.write32(this + MODOBJ_V38_BLOCK, block);
-                    c.bus.write32(block, node);
-                    let vt = vtable(c, &mut r, &[MODOBJ_V38_SLOT]);
-                    c.bus.write32(node, vt);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    // ------------------------------------------------------------ Object_Save
+
+    /// `Object_Save`: the same fixture as `ModObj_Save` (with and without a
+    /// modifier block; the stream's write slots are fakes, some of which
+    /// unwind); the real `ModObj_Save` runs under the wrapper.
+    #[test]
+    fn object_save_matches() {
+        use crate::difftest::fakes::vtable;
+        covered(
+            ee::s11::f_00356e98__generated,
+            object_save,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_6e98, 7);
+                c.pc = 0x0035_6e98;
+                let (this, stream, block) = (DATA + 0x100, DATA + 0x400, DATA + 0x800);
+                fill(c, &mut r, this, 0x10);
+                c.bus
+                    .write32(this + 0x1c, if seed % 3 == 0 { 0 } else { block });
+                let vt = vtable(c, &mut r, &[8, 0x30]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+
+    /// ModObj_v49: block / implementation present or not; the bounds
+    /// getter (fake 0) returns an old box whose corners equal the node's
+    /// new bounds, so the real `SpatialHash_Update` (after the real
+    /// `World_GetNash`) finds the keys unchanged; the setter is fake 1.
+    #[test]
+    fn mod_obj_v49_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{put_vec, DATA, GAME_GP};
+        const ONE: u32 = 0x3f80_0000;
+        covered(
+            ee::s11::f_003567e0__generated,
+            mod_obj_v49,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3567_e000, 2);
+                c.pc = 0x0035_67e0;
+                let this = DATA + 0x20_0000;
+                let (block, imp, imp_vt, node) =
+                    (this + 0x100, this + 0x200, this + 0x300, this + 0x500);
+                let (app, game, old) = (this + 0x600, this + 0x700, this + 0x1000);
+                c.g[A0][0] = sx(this);
+                c.bus.write32(this + MOV49_NODE, node);
+                c.bus
+                    .write32(this + MOV49_BLOCK, if seed % 6 == 0 { 0 } else { block });
+                c.bus.write32(block, if seed % 6 == 1 { 0 } else { imp });
+                c.bus.write32(imp, imp_vt);
+                for (i, off) in [0x60u32, 0x68].into_iter().enumerate() {
+                    c.bus
+                        .write16(imp_vt + off, (r.next_u32() % 0x20 & !3) as u16);
+                    c.bus.write32(imp_vt + off + 4, FAKE + 0x10 * i as u32);
                 }
-            }
-        });
+                // World_GetNash: *(gp - 0x848) -> +0x84 -> +0x20.
+                c.bus.write32(GAME_GP - 0x848, app);
+                c.bus.write32(app + 0x84, game);
+                c.bus.write32(game + 0x20, r.next_u32());
+                // Spatial key grid constants.
+                c.bus.write32(GAME_GP - 0x2df8, 1.0f32.to_bits());
+                c.bus.write32(GAME_GP - 0x2df4, 0.25f32.to_bits());
+                let lo = [r.f32(1000.0), r.f32(1000.0), r.f32(1000.0)];
+                let hi = lo.map(|v| (f32::from_bits(v) + (r.next_u32() % 100) as f32).to_bits());
+                put_vec(c, old, [lo[0], lo[1], lo[2], ONE]);
+                put_vec(c, old + 0x10, [hi[0], hi[1], hi[2], r.next_u32()]);
+                for i in 0..3 {
+                    c.bus.write32(node + MOV49_NODE_MIN + 4 * i, lo[i as usize]);
+                    c.bus.write32(node + MOV49_NODE_MAX + 4 * i, hi[i as usize]);
+                }
+                c.bus.write32(LOG_RESULTS, old);
+            },
+        );
     }
 }

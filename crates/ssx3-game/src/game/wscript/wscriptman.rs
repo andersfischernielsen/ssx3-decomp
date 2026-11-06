@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -54,7 +55,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::ret;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -328,8 +328,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_06d8, dead_node_ctor, "DeadNode_ctor"),
     (0x0030_9c88, wscript_man_call_func, "WScriptMan_CallFunc"),
-    (0x0030_a060, wscript_man_on_object_trigger, "WScriptMan_OnObjectTrigger"),
-    (0x0030_a460, wscript_man_focus_leave, "WScriptMan_FocusLeave"),
+    (
+        0x0030_a060,
+        wscript_man_on_object_trigger,
+        "WScriptMan_OnObjectTrigger",
+    ),
+    (
+        0x0030_a460,
+        wscript_man_focus_leave,
+        "WScriptMan_FocusLeave",
+    ),
+    (
+        0x0030_a3a0,
+        wscript_man_focus_enter,
+        "WScriptMan_FocusEnter",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3790,9 +3803,6 @@ pub fn w_script_man_collect_item(c: &mut Cpu) {
     });
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // WScriptMan_CallFunc (0x309c88, wscriptman.cpp)
 
@@ -3800,26 +3810,18 @@ pub fn w_script_man_collect_item(c: &mut Cpu) {
 /// script tables (`cLunoValue*[]`, indexed by the handle's low byte).
 pub(crate) const WSM_WORLD: u32 = 0x28c;
 
-
 pub(crate) const WSM_SECTION_TABLES: u32 = 0x3cc;
-
 
 /// Callees (all through the function table).
 pub(crate) const WSM_WORLD_GET_SECTION_SCRIPT_FUNC: u32 = 0x003a_6d18;
 
-
 pub(crate) const WSM_LUNO_VM_REGISTER_SET_RAW: u32 = 0x0022_6600;
-
 
 pub(crate) const WSM_LUNO_VM_PASS_THROUGH: u32 = 0x0022_24a8;
 
-
 pub(crate) const WSM_LUNO_VM_CALL: u32 = 0x0022_24b8;
 
-
 pub(crate) const WSM_LUNO_VM_REGISTER_DTOR: u32 = 0x0022_5b90;
-
-
 
 /// `void WScriptMan_CallFunc(WScriptMan* self, ScriptHandle* handle)`
 /// (0x309c88): looks up the scripted function `handle` names in the world's
@@ -3872,52 +3874,38 @@ pub fn wscript_man_call_func(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // WScriptMan_FocusLeave (0x30a460, wscriptman.cpp)
 
 /// World object: its script controller (or 0).
 pub(crate) const OC264_WOBJ_CTL: u32 = 0xc;
 
-
 /// Script controller: vtable, kind (6: no focus scripts), owner object.
 pub(crate) const OC264_WCTL_VTABLE: u32 = 0xc;
 
-
 pub(crate) const OC264_WCTL_KIND: u32 = 0x10;
-
 
 pub(crate) const OC264_WCTL_OWNER: u32 = 0x18;
 
-
 pub(crate) const OC264_WCTL_KIND_PASSIVE: u64 = 6;
-
 
 /// Controller vtable entries (this-adjust halfword, method): v20 "handles
 /// focus itself", v22 "focus leave", v35 "lost focus".
 pub(crate) const OC264_WCTL_V20: u32 = 0xa0;
 
-
 pub(crate) const OC264_WCTL_V22: u32 = 0xb0;
 
-
 pub(crate) const OC264_WCTL_V35: u32 = 0x118;
-
-
 
 pub(crate) const OC264_WSCRIPT_HAS_OBJ_SCRIPT3: Callee = Callee {
     addr: 0x0030_a2e8,
     f: ee::s10::WScriptMan_HasObjScript3,
 };
 
-
 pub(crate) const OC264_WSCRIPT_RUN_OBJ_SCRIPT3: Callee = Callee {
     addr: 0x0030_a548,
     f: ee::s10::WScriptMan_RunObjScript3,
 };
-
-
 
 /// Call virtual method `slot` (this-adjust halfword at `slot`, function
 /// at `slot + 4`) of the controller in `ctl_reg`, loading the vtable into
@@ -3939,8 +3927,6 @@ pub(crate) fn oc264_wctl_call(
     c.g[A0][0] = sx(ctl.wrapping_add(adjust as u32));
     call_ptr(c, method as u32, ret)
 }
-
-
 
 /// `void WScriptMan_FocusLeave(WScriptMan* self, WorldObj* obj)` (0x30a460):
 /// the camera/focus leaves `obj`. A scripted controller that handles focus
@@ -4021,8 +4007,6 @@ pub fn wscript_man_focus_leave(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // WScriptMan_OnObjectTrigger (0x30a060)
 
@@ -4032,76 +4016,61 @@ pub fn wscript_man_focus_leave(c: &mut Cpu) {
 /// owning instance (+0x2a8, whose owner is at +0x3c).
 pub(crate) const WSM_CURRENT_ID: u32 = 0x0;
 
-
 pub(crate) const WSM_CACHE: u32 = 0x28c;
-
 
 pub(crate) const WSM_TRIGGER: u32 = 0x290;
 
-
 pub(crate) const WSM_SOURCE: u32 = 0x294;
-
 
 pub(crate) const WSM_VOLUME: u32 = 0x298;
 
-
 pub(crate) const WSM_OWNER: u32 = 0x2a4;
-
 
 pub(crate) const WSM_INSTANCE: u32 = 0x2a8;
 
-
 pub(crate) const WSM_ARGS: u32 = 0x24;
-
-
 
 pub(crate) const WSM_POST_TRIGGER_EVENT: Callee = Callee {
     addr: 0x0030_97e0,
     f: ee::s10::WScriptMan_PostTriggerEvent,
 };
 
-
 pub(crate) const WSM_CALL_FUNC: Callee = Callee {
     addr: 0x0030_9c88,
     f: ee::s10::WScriptMan_CallFunc,
 };
 
-
 pub(crate) const WSM_FIND_FUNC: u32 = 0x003a_6b78;
-
 
 pub(crate) const WSM_FUNC_ENTRY: u32 = 0x003a_6d18;
 
-
 pub(crate) const WSM_VALUE_FROM_FUNC: u32 = 0x0022_6600;
-
 
 pub(crate) const WSM_CALL_INIT: u32 = 0x0022_24a8;
 
-
 pub(crate) const WSM_CALL_RUN: u32 = 0x0022_24b8;
-
 
 pub(crate) const WSM_ALLOC: u32 = 0x0031_7d70;
 
-
 pub(crate) const WSM_TABLE_CTOR: u32 = 0x0022_4da0;
-
 
 pub(crate) const WSM_TABLE_DTOR: u32 = 0x0022_4df0;
 
-
 pub(crate) const WSM_VALUE_RELEASE: u32 = 0x0022_5b90;
-
 
 /// The allocation name (`0x4898d8`).
 pub(crate) const WSM_TABLE_NAME: u32 = 0x0049_0000 - 0x6728;
 
-
-
 /// `obj->vtable[slot](obj)`: `lw vt; lh delta; lw method` with the
 /// registers `vt`/`m` the original uses, returning to `ret`.
-pub(crate) fn wsm_virtual(c: &mut Cpu, obj: usize, slot: u32, vt: usize, m: usize, ret: u32) -> crate::call::Flow {
+pub(crate) fn wsm_virtual(
+    c: &mut Cpu,
+    obj: usize,
+    slot: u32,
+    vt: usize,
+    m: usize,
+    ret: u32,
+) -> crate::call::Flow {
     let this = r32(c, obj);
     c.g[vt][0] = Addr(this).lw(c);
     let table = r32(c, vt);
@@ -4111,8 +4080,6 @@ pub(crate) fn wsm_virtual(c: &mut Cpu, obj: usize, slot: u32, vt: usize, m: usiz
     c.g[A0][0] = sx(this.wrapping_add(r32(c, A0)));
     call_ptr(c, method, ret)
 }
-
-
 
 /// `void WScriptMan_OnObjectTrigger(WScriptMan *self, void *source,
 /// TriggerVolume *volume, Object *obj)` (0x30a060): an object entered a
@@ -4226,8 +4193,6 @@ pub fn wscript_man_on_object_trigger(c: &mut Cpu) {
     })
 }
 
-
-
 /// Find and run the trigger's script function; leaves `v0 = self->trigger`.
 /// Stack: the argument value at sp+0, the result at sp+0x10, the Luno call
 /// at sp+0x20, the function id at sp+0x24.
@@ -4328,6 +4293,96 @@ pub(crate) fn wsm_run_trigger_func(c: &mut Cpu) -> crate::call::Flow {
     c.cycles += 1;
     c.g[V0][0] = Addr(r32(c, S2)).off(WSM_TRIGGER).lw(c);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// WScriptMan_FocusEnter (0x30a3a0)
+
+/// Controller vtable slot v21 ("focus enter") and the object-type table
+/// entry size; type 3 objects run their slot-1 object script.
+pub(crate) const WSF_CTL_V21: u32 = 0xa8;
+
+pub(crate) const WSF_MAN_CACHE: u32 = 0x28c;
+
+pub(crate) const WSF_OBJ_TYPE: u32 = 0x78;
+
+pub(crate) const WSF_TYPE_ENTRY: u32 = 0xc;
+
+pub(crate) const WSF_TYPE_SCRIPTED: u64 = 3;
+
+pub(crate) const WSF_HAS_OBJ_SCRIPT1: Callee = Callee {
+    addr: 0x0030_a270,
+    f: ee::s10::WScriptMan_HasObjScript1,
+};
+
+pub(crate) const WSF_RUN_OBJ_SCRIPT1: Callee = Callee {
+    addr: 0x0030_a298,
+    f: ee::s10::WScriptMan_RunObjScript1,
+};
+
+/// `void WScriptMan_FocusEnter(WScriptMan* self, WorldObj* obj)` (0x30a3a0):
+/// the camera/focus enters `obj`. A controller that handles focus itself
+/// (v20 non-zero) gets v21(obj); without a controller, an object whose type
+/// (from the script cache's type table) is 3 runs its slot-1 object script
+/// if it has one.
+pub fn wscript_man_focus_enter(c: &mut Cpu) {
+    use crate::game::wscript::wscriptman::{oc264_wctl_call, OC264_WCTL_V20, OC264_WOBJ_CTL};
+    use crate::guest::Addr;
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = Addr(r32(c, S0).wrapping_add(OC264_WOBJ_CTL)).lw(c);
+        c.g[S1][0] = c.g[A0][0];
+        if c.g[A1][0] != 0 {
+            c.cycles += 7;
+            oc264_wctl_call(c, A1, V1, V0, OC264_WCTL_V20, 0x0030_a3d4)?;
+            if c.g[V0][0] != 0 {
+                c.cycles += 9;
+                c.g[A2][0] = Addr(r32(c, S0).wrapping_add(OC264_WOBJ_CTL)).lw(c);
+                c.g[A1][0] = c.g[S0][0];
+                oc264_wctl_call(c, A2, V1, V0, WSF_CTL_V21, 0x0030_a3f8)?;
+            }
+            frame.restore(c, S0, 0x20);
+        } else {
+            c.cycles += 11;
+            // self->cache->+4->+4: the object-type table (12-byte entries).
+            let cache = Addr(r32(c, S1).wrapping_add(WSF_MAN_CACHE)).lw(c);
+            c.g[A0][0] = cache;
+            c.g[A1][0] = WSF_TYPE_ENTRY as u64;
+            c.g[V1][0] = Addr(r32(c, S0).wrapping_add(WSF_OBJ_TYPE)).lbu(c);
+            c.g[V0][0] = Addr((cache as u32).wrapping_add(4)).lw(c);
+            c.mult(0, V1, V1, A1);
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(4)).lw(c);
+            c.g[V1][0] = crate::abi::addu(c.g[V1][0], c.g[A0][0]);
+            c.g[V0][0] = Addr(r32(c, V1)).lh(c) ^ WSF_TYPE_SCRIPTED;
+            if c.g[V0][0] != 0 {
+                frame.restore(c, S0, 0x20);
+            } else {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S0][0];
+                WSF_HAS_OBJ_SCRIPT1.call(c, 0x0030_a438)?;
+                let has = c.g[V0][0] != 0;
+                c.g[A0][0] = c.g[S1][0];
+                if has {
+                    c.cycles += 2;
+                    c.g[A1][0] = c.g[S0][0];
+                    WSF_RUN_OBJ_SCRIPT1.call(c, 0x0030_a448)?;
+                }
+                c.cycles += 1;
+                frame.restore(c, S0, 0x20);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -5835,11 +5890,10 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
     use crate::difftest::fakes::{self};
-    pub(crate) use crate::game::animation::animsequencer::tests::ASL_CTRL;
-    pub(crate) use crate::game::animation::animsequencer::tests::ASL_MAGIC;
     pub(crate) use crate::game::animation::animsequencer::tests::asl_gated;
     pub(crate) use crate::game::animation::animsequencer::tests::asl_install_fakes;
-
+    pub(crate) use crate::game::animation::animsequencer::tests::ASL_CTRL;
+    pub(crate) use crate::game::animation::animsequencer::tests::ASL_MAGIC;
 
     /// WScriptMan_CallFunc: a handle naming section 0..3 and script id
     /// 0..3 resolved through a world script cache (table entries of kind 3)
@@ -5857,45 +5911,49 @@ pub(crate) mod tests {
         const FUNCS: u32 = SELF + 0x1400;
         const SCRIPT: u32 = SELF + 0x2000;
         const TABLES: u32 = SELF + 0x3000;
-        check(ee::s10::f_00309c88__generated, wscript_man_call_func, 120, &|c, seed| {
-            let mut r = alloc_machine(c, seed, 0x30_9c88);
-            c.pc = 0x0030_9c88;
-            let section = seed % 4;
-            let id = (seed / 4) % 4;
-            c.bus.write32(HANDLE, id << 8 | section);
-            c.g[A0][0] = sx(SELF);
-            c.g[A1][0] = sx(HANDLE);
-            // World_GetSectionScriptFunc -> tWScriptCache_GetTableEntry.
-            c.bus.write32(SELF + WSM_WORLD, WORLD);
-            c.bus.write32(WORLD + 4, CACHE);
-            c.bus.write32(CACHE + 4, ENTRIES);
-            let entry = ENTRIES + 0xc * section;
-            c.bus.write16(entry, 3);
-            c.bus.write32(entry + 8, FUNCS);
-            c.bus.write32(FUNCS + 0x3c, FUNCS + 0x40);
-            c.bus.write32(FUNCS + 0x40 + 4 * id, SCRIPT);
-            // The script: code offset 0x10, start pc 0, n registers, 0 locals.
-            c.bus.write32(SCRIPT + 4, 0x10);
-            c.bus.write32(SCRIPT + 0x14, 0);
-            c.bus.write32(SCRIPT + 0x18, (seed / 16) % 4);
-            c.bus.write32(SCRIPT + 0x1c, 0);
-            // Per-section tables: a cLunoValue whose word 0 is a table
-            // (refcount at +8).
-            for i in 0..4u32 {
-                let value = TABLES + 0x40 * i;
-                let table = TABLES + 0x400 + 0x40 * i;
-                c.bus.write32(SELF + WSM_SECTION_TABLES + 4 * i, value);
-                c.bus.write32(value, table);
-                c.bus.write32(table + 8, 100);
-            }
-            // LunoVM_Call's default value: a plain word.
-            let d = 0x004c_9098;
-            c.bus.write32(d, r.next_u32());
-            c.bus.write32(d + 4, r.next_u32());
-            c.bus.write32(d + 8, 2);
-        });
+        check(
+            ee::s10::f_00309c88__generated,
+            wscript_man_call_func,
+            120,
+            &|c, seed| {
+                let mut r = alloc_machine(c, seed, 0x30_9c88);
+                c.pc = 0x0030_9c88;
+                let section = seed % 4;
+                let id = (seed / 4) % 4;
+                c.bus.write32(HANDLE, id << 8 | section);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(HANDLE);
+                // World_GetSectionScriptFunc -> tWScriptCache_GetTableEntry.
+                c.bus.write32(SELF + WSM_WORLD, WORLD);
+                c.bus.write32(WORLD + 4, CACHE);
+                c.bus.write32(CACHE + 4, ENTRIES);
+                let entry = ENTRIES + 0xc * section;
+                c.bus.write16(entry, 3);
+                c.bus.write32(entry + 8, FUNCS);
+                c.bus.write32(FUNCS + 0x3c, FUNCS + 0x40);
+                c.bus.write32(FUNCS + 0x40 + 4 * id, SCRIPT);
+                // The script: code offset 0x10, start pc 0, n registers, 0 locals.
+                c.bus.write32(SCRIPT + 4, 0x10);
+                c.bus.write32(SCRIPT + 0x14, 0);
+                c.bus.write32(SCRIPT + 0x18, (seed / 16) % 4);
+                c.bus.write32(SCRIPT + 0x1c, 0);
+                // Per-section tables: a cLunoValue whose word 0 is a table
+                // (refcount at +8).
+                for i in 0..4u32 {
+                    let value = TABLES + 0x40 * i;
+                    let table = TABLES + 0x400 + 0x40 * i;
+                    c.bus.write32(SELF + WSM_SECTION_TABLES + 4 * i, value);
+                    c.bus.write32(value, table);
+                    c.bus.write32(table + 8, 100);
+                }
+                // LunoVM_Call's default value: a plain word.
+                let d = 0x004c_9098;
+                c.bus.write32(d, r.next_u32());
+                c.bus.write32(d + 4, r.next_u32());
+                c.bus.write32(d + 8, 2);
+            },
+        );
     }
-
 
     /// WScriptMan_FocusLeave: no controller / a controller whose v20 is a
     /// fake (non-zero: v22) or the real zero leaf 0x1406c0, kinds 6 and
@@ -5919,57 +5977,65 @@ pub(crate) mod tests {
         const ZERO_LEAF: u32 = 0x0014_06c0;
         // Function entry `id` of slot 3.
         let func_at = |id: u32| FUNCS + (id >> 8) * 0x18 + 12;
-        check(ee::s10::f_0030a460__generated, wscript_man_focus_leave, 240, &|c, seed| {
-            let mut r = machine(c, seed, 0x30_a460, 2);
-            c.pc = 0x0030_a460;
-            c.g[A0][0] = sx(MAN);
-            c.g[A1][0] = sx(OBJ);
-            // Script cache: man -> table -> cache -> section -> functions.
-            c.bus.write32(MAN + 0x28c, TABLE);
-            c.bus.write32(TABLE + 4, DATA + 0x600);
-            c.bus.write32(DATA + 0x604, CACHE);
-            c.bus.write32(CACHE + 8, SECTION);
-            c.bus.write32(SECTION + 0x1c, FUNCS);
-            c.bus.write32(NO_SCRIPT + 8, u32::MAX);
-            c.bus.write32(MAN + 0x290, 0x100);
-            c.bus.write32(func_at(0x100), r.next_u32() & 0x7fff_ffff);
-            c.bus.write32(func_at(OBJ), u32::MAX);
-            c.bus.write32(func_at(OWNER), u32::MAX);
-            let has_script = seed % 2 == 0;
-            for o in [OBJ, OWNER] {
-                c.bus.write8(o + 0x78, 0);
-                let entry = if has_script { MAN + 0x290 - 8 } else { NO_SCRIPT };
-                c.bus.write32(o + 0x88, entry);
-            }
-            // Controllers.
-            let has_ctl = seed % 6 >= 2;
-            c.bus.write32(OBJ + OC264_WOBJ_CTL, if has_ctl { CTL } else { 0 });
-            c.bus.write32(OWNER + OC264_WOBJ_CTL, OWNER_CTL);
-            for ctl in [CTL, OWNER_CTL] {
-                c.bus.write32(ctl + OC264_WCTL_VTABLE, VTABLE);
-            }
-            let kind = if seed % 6 == 4 { 6 } else { r.next_u32() % 6 };
-            c.bus.write16(CTL + OC264_WCTL_KIND, kind as u16);
-            c.bus.write32(CTL + OC264_WCTL_OWNER, OWNER);
-            let v20 = if seed % 3 == 0 { FAKE } else { ZERO_LEAF };
-            for (slot, f) in [
-                (OC264_WCTL_V20, v20),
-                (OC264_WCTL_V22, FAKE + 0x10),
-                (OC264_WCTL_V35, FAKE + 0x20),
-            ] {
-                c.bus.write16(VTABLE + slot, (r.next_u32() % 0x20) as u16);
-                c.bus.write32(VTABLE + slot + 4, f);
-            }
-        });
+        check(
+            ee::s10::f_0030a460__generated,
+            wscript_man_focus_leave,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30_a460, 2);
+                c.pc = 0x0030_a460;
+                c.g[A0][0] = sx(MAN);
+                c.g[A1][0] = sx(OBJ);
+                // Script cache: man -> table -> cache -> section -> functions.
+                c.bus.write32(MAN + 0x28c, TABLE);
+                c.bus.write32(TABLE + 4, DATA + 0x600);
+                c.bus.write32(DATA + 0x604, CACHE);
+                c.bus.write32(CACHE + 8, SECTION);
+                c.bus.write32(SECTION + 0x1c, FUNCS);
+                c.bus.write32(NO_SCRIPT + 8, u32::MAX);
+                c.bus.write32(MAN + 0x290, 0x100);
+                c.bus.write32(func_at(0x100), r.next_u32() & 0x7fff_ffff);
+                c.bus.write32(func_at(OBJ), u32::MAX);
+                c.bus.write32(func_at(OWNER), u32::MAX);
+                let has_script = seed % 2 == 0;
+                for o in [OBJ, OWNER] {
+                    c.bus.write8(o + 0x78, 0);
+                    let entry = if has_script {
+                        MAN + 0x290 - 8
+                    } else {
+                        NO_SCRIPT
+                    };
+                    c.bus.write32(o + 0x88, entry);
+                }
+                // Controllers.
+                let has_ctl = seed % 6 >= 2;
+                c.bus
+                    .write32(OBJ + OC264_WOBJ_CTL, if has_ctl { CTL } else { 0 });
+                c.bus.write32(OWNER + OC264_WOBJ_CTL, OWNER_CTL);
+                for ctl in [CTL, OWNER_CTL] {
+                    c.bus.write32(ctl + OC264_WCTL_VTABLE, VTABLE);
+                }
+                let kind = if seed % 6 == 4 { 6 } else { r.next_u32() % 6 };
+                c.bus.write16(CTL + OC264_WCTL_KIND, kind as u16);
+                c.bus.write32(CTL + OC264_WCTL_OWNER, OWNER);
+                let v20 = if seed % 3 == 0 { FAKE } else { ZERO_LEAF };
+                for (slot, f) in [
+                    (OC264_WCTL_V20, v20),
+                    (OC264_WCTL_V22, FAKE + 0x10),
+                    (OC264_WCTL_V35, FAKE + 0x20),
+                ] {
+                    c.bus.write16(VTABLE + slot, (r.next_u32() % 0x20) as u16);
+                    c.bus.write32(VTABLE + slot + 4, f);
+                }
+            },
+        );
     }
-
 
     // ------------------------------------------------ WScriptMan_OnObjectTrigger
 
     pub(crate) const WSM_CTRL: u32 = DATA + 0x5_b000;
 
     pub(crate) const WSM_MAGIC: u32 = 0x30a0_60a7;
-
 
     /// The function lookup: a logged fake returning the id the fixture
     /// picks at `WSM_CTRL + 4` (-1 = none).
@@ -5984,7 +6050,6 @@ pub(crate) mod tests {
         }
     }
 
-
     macro_rules! wsm_gated {
         ($name:ident, $addr:expr, $gen:path) => {
             fn $name(c: &mut Cpu) {
@@ -5996,24 +6061,47 @@ pub(crate) mod tests {
             }
         };
     }
-pub(crate) use wsm_gated;
+    pub(crate) use wsm_gated;
 
     wsm_gated!(wsm_fake_post, 0x0030_97e0, ee::s10::f_003097e0__generated);
 
-    wsm_gated!(wsm_fake_value, WSM_VALUE_FROM_FUNC, ee::s05::f_00226600__generated);
+    wsm_gated!(
+        wsm_fake_value,
+        WSM_VALUE_FROM_FUNC,
+        ee::s05::f_00226600__generated
+    );
 
-    wsm_gated!(wsm_fake_call_init, WSM_CALL_INIT, ee::s05::f_002224a8__generated);
+    wsm_gated!(
+        wsm_fake_call_init,
+        WSM_CALL_INIT,
+        ee::s05::f_002224a8__generated
+    );
 
-    wsm_gated!(wsm_fake_call_run, WSM_CALL_RUN, ee::s05::f_002224b8__generated);
+    wsm_gated!(
+        wsm_fake_call_run,
+        WSM_CALL_RUN,
+        ee::s05::f_002224b8__generated
+    );
 
-    wsm_gated!(wsm_fake_table_ctor, WSM_TABLE_CTOR, ee::s05::f_00224da0__generated);
+    wsm_gated!(
+        wsm_fake_table_ctor,
+        WSM_TABLE_CTOR,
+        ee::s05::f_00224da0__generated
+    );
 
-    wsm_gated!(wsm_fake_release, WSM_VALUE_RELEASE, ee::s05::f_00225b90__generated);
+    wsm_gated!(
+        wsm_fake_release,
+        WSM_VALUE_RELEASE,
+        ee::s05::f_00225b90__generated
+    );
 
-    wsm_gated!(wsm_fake_cache_entry, 0x003a_dc50, ee::s13::f_003adc50__generated);
+    wsm_gated!(
+        wsm_fake_cache_entry,
+        0x003a_dc50,
+        ee::s13::f_003adc50__generated
+    );
 
     wsm_gated!(wsm_fake_free, 0x0031_7e50, ee::s10::f_00317e50__generated);
-
 
     pub(crate) fn wsm_install_fakes() {
         // The allocator's slot is shared with the PushLoopingAnim fakes.
@@ -6031,7 +6119,6 @@ pub(crate) use wsm_gated;
             ee::s10::OVERRIDE_00317E50 = wsm_fake_free;
         });
     }
-
 
     /// Objects that post the trigger event or not (a real leaf returning 0),
     /// event mode 4 or not, finished riders, no rider; no function (-1), no
@@ -6074,16 +6161,22 @@ pub(crate) use wsm_gated;
                 c.bus
                     .write32(trigger + 0xc, if r.next_u32() % 3 == 0 { 0 } else { fx });
                 c.bus.write32(fx + 0xc, fx_vt);
-                c.bus.write16(fx_vt + 0x148, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus
+                    .write16(fx_vt + 0x148, (r.next_u32() as i16 as i32 & !3) as u16);
                 c.bus.write32(fx_vt + 0x14c, FAKE + 0x20);
                 // obj: id (slot 0x38) and "posts the event" (slot 0x40).
                 c.bus.write32(obj, obj_vt);
-                c.bus.write16(obj_vt + 0x38, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus
+                    .write16(obj_vt + 0x38, (r.next_u32() as i16 as i32 & !3) as u16);
                 c.bus.write32(obj_vt + 0x3c, FAKE);
                 c.bus.write16(obj_vt + 0x40, 0);
                 c.bus.write32(
                     obj_vt + 0x44,
-                    if seed % 3 == 0 { 0x0014_06c0 } else { FAKE + 0x10 },
+                    if seed % 3 == 0 {
+                        0x0014_06c0
+                    } else {
+                        FAKE + 0x10
+                    },
                 );
                 c.bus.write32(rider + 0x480, (r.next_u32() % 3 == 0) as u32);
                 c.bus.write32(GAME_GP - 0x848, world);
@@ -6093,7 +6186,11 @@ pub(crate) use wsm_gated;
                 // The function and its owner.
                 c.bus.write32(
                     WSM_CTRL + 4,
-                    if r.next_u32() % 4 == 0 { u32::MAX } else { r.next_u32() % 0x400 },
+                    if r.next_u32() % 4 == 0 {
+                        u32::MAX
+                    } else {
+                        r.next_u32() % 0x400
+                    },
                 );
                 let (o, i) = match (seed / 3) % 4 {
                     0 => (0, 0),
@@ -6104,12 +6201,86 @@ pub(crate) use wsm_gated;
                 c.bus.write32(wsm + WSM_OWNER, o);
                 c.bus.write32(wsm + WSM_INSTANCE, i);
                 c.bus.write32(instance + 0x3c, owner);
-                c.bus
-                    .write32(owner + 0x1c, if r.next_u32() % 2 == 0 { 0 } else { r.next_u32() });
+                c.bus.write32(
+                    owner + 0x1c,
+                    if r.next_u32() % 2 == 0 {
+                        0
+                    } else {
+                        r.next_u32()
+                    },
+                );
                 c.g[A0][0] = sx(wsm);
                 c.g[A1][0] = sx(r.next_u32());
                 c.g[A2][0] = sx(volume);
                 c.g[A3][0] = sx(if r.next_u32() % 8 == 0 { 0 } else { obj });
+            },
+        );
+    }
+    use super::*;
+
+    /// WScriptMan_FocusEnter: no controller (object type 3 or not, with or
+    /// without a slot-1 script) or a controller whose v20 is a fake
+    /// (non-zero: v21 is called) or the real zero leaf 0x1406c0. The real
+    /// HasObjScript1/RunObjScript1 and script cache lookup run; as in the
+    /// FocusLeave test the "has script" entry points at `man + 0x290`, which
+    /// RunObjScript1 overwrites with the object (whose function is -1), so
+    /// the script call itself is skipped.
+    #[test]
+    fn wscript_man_focus_enter_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{check, DATA};
+        use crate::game::wscript::wscriptman::{OC264_WCTL_V20, OC264_WCTL_VTABLE, OC264_WOBJ_CTL};
+        const MAN: u32 = DATA;
+        const TABLE: u32 = DATA + 0x400;
+        const CACHE: u32 = DATA + 0xc00;
+        const SECTION: u32 = DATA + 0x1200;
+        const NO_SCRIPT: u32 = DATA + 0x1400;
+        const OBJ: u32 = DATA + 0x800;
+        const CTL: u32 = DATA + 0xa00;
+        const VTABLE: u32 = DATA + 0x1800;
+        const FUNCS: u32 = DATA + 0x1_0000;
+        const ZERO_LEAF: u32 = 0x0014_06c0;
+        // Function entry `id` of slot 1.
+        let func_at = |id: u32| FUNCS + (id >> 8) * 0x18 + 4;
+        check(
+            ee::s10::f_0030a3a0__generated,
+            wscript_man_focus_enter,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30_a3a0, 2);
+                c.pc = 0x0030_a3a0;
+                c.g[A0][0] = sx(MAN);
+                c.g[A1][0] = sx(OBJ);
+                // Script cache: man -> table -> cache (type table) -> section.
+                c.bus.write32(MAN + 0x28c, TABLE);
+                c.bus.write32(TABLE + 4, DATA + 0x600);
+                c.bus.write32(DATA + 0x604, CACHE);
+                c.bus.write32(CACHE + 8, SECTION);
+                c.bus.write32(SECTION + 0x1c, FUNCS);
+                c.bus.write32(NO_SCRIPT + 8, u32::MAX);
+                c.bus.write32(MAN + 0x290, 0x100);
+                c.bus.write32(func_at(0x100), r.next_u32() & 0x7fff_ffff);
+                c.bus.write32(func_at(OBJ), u32::MAX);
+                c.bus.write8(OBJ + 0x78, 0);
+                let ty = if seed % 4 == 1 { r.next_u32() % 8 } else { 3 };
+                c.bus.write16(CACHE, ty as u16);
+                let has_script = seed % 2 == 0;
+                let entry = if has_script {
+                    MAN + 0x290 - 8
+                } else {
+                    NO_SCRIPT
+                };
+                c.bus.write32(OBJ + 0x88, entry);
+                // Controller.
+                let has_ctl = seed % 6 >= 3;
+                c.bus
+                    .write32(OBJ + OC264_WOBJ_CTL, if has_ctl { CTL } else { 0 });
+                c.bus.write32(CTL + OC264_WCTL_VTABLE, VTABLE);
+                let v20 = if seed % 3 == 0 { FAKE } else { ZERO_LEAF };
+                for (slot, f) in [(OC264_WCTL_V20, v20), (WSF_CTL_V21, FAKE + 0x10)] {
+                    c.bus.write16(VTABLE + slot, (r.next_u32() % 0x20) as u16);
+                    c.bus.write32(VTABLE + slot + 4, f);
+                }
             },
         );
     }
