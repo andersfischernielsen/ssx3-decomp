@@ -8,3 +8,6 @@ license.workspace = true
 [dependencies]
 ssx3-core = { path = "../ssx3-core" }
 cpal = "0.18"
+
+[target.'cfg(target_os = "android")'.dependencies]
+cpal = { version = "0.18", features = ["realtime"] }
