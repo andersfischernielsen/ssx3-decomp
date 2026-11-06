@@ -179,10 +179,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_update_target_speed,
         "Rider_UpdateTargetSpeed",
     ),
-    (0x0011_98d8, rider_metrix_set_flip_amount, "RiderMetrix_SetFlipAmount"),
-    (0x0011_7908, rider_metrix_get_trick_bonus, "RiderMetrix_GetTrickBonus"),
-    (0x0011_9898, rider_metrix_set_spin_amount, "RiderMetrix_SetSpinAmount"),
-    (0x0011_a228, rider_metrix_finish_trick, "RiderMetrix_FinishTrick"),
+    (
+        0x0011_98d8,
+        rider_metrix_set_flip_amount,
+        "RiderMetrix_SetFlipAmount",
+    ),
+    (
+        0x0011_7908,
+        rider_metrix_get_trick_bonus,
+        "RiderMetrix_GetTrickBonus",
+    ),
+    (
+        0x0011_9898,
+        rider_metrix_set_spin_amount,
+        "RiderMetrix_SetSpinAmount",
+    ),
+    (
+        0x0011_a228,
+        rider_metrix_finish_trick,
+        "RiderMetrix_FinishTrick",
+    ),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -4219,23 +4235,16 @@ pub fn rider_update_target_speed(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // RiderMetrix_SetFlipAmount (0x1198d8)
 
 /// RiderMetrix: the trick's accumulated rotation total and the flip amount.
 pub(crate) const METRIX_ROTATION_TOTAL: u32 = 0x14;
 
-
 pub(crate) const METRIX_FLIP_AMOUNT: u32 = 0x38;
-
 
 /// `gp-0x7a10`: the flip weight in the rotation total (0.0286..., `.lit4`).
 pub(crate) const FLIP_WEIGHT_GP: u32 = 0x7a10;
-
-
 
 /// `float RiderMetrix_SetFlipAmount(RiderMetrix* m, float flip)` (0x1198d8):
 /// replace the flip amount, swapping its weighted magnitude in the
@@ -4263,24 +4272,17 @@ pub fn rider_metrix_set_flip_amount(c: &mut Cpu) {
     ret(c);
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // RiderMetrix_SetSpinAmount (0x119898)
 
 /// RiderMetrix: the spin amount of the current trick (float).
 pub(crate) const SPIN_METRIX_SPIN_AMOUNT: u32 = 0x34;
 
-
 /// RiderMetrix: the running rotation total (spin and flip, weighted).
 pub(crate) const SPIN_METRIX_ROTATION_TOTAL: u32 = 0x14;
 
-
 /// `gp`-relative weight of a spin degree in the rotation total (.sdata).
 pub(crate) const SPIN_WEIGHT_GP: u32 = 0x7a14;
-
-
 
 /// `void RiderMetrix_SetSpinAmount(RiderMetrix* m, float spin)` (0x119898):
 /// replaces the stored spin amount and moves the rotation total by the
@@ -4308,19 +4310,14 @@ pub fn rider_metrix_set_spin_amount(c: &mut Cpu) {
     ret(c);
 }
 
-
-
 // ---------------------------------------------------------------------------
 // RiderMetrix_GetTrickBonus (0x117908)
 
 /// The metrix's trick bonus factor (float).
 pub(crate) const RIDER_METRIX_TRICK_BONUS: u32 = 0x1c;
 
-
 /// The scale applied to it (gp-0x7b0c, 10000.0 in the game).
 pub(crate) const RIDER_METRIX_BONUS_SCALE_GP: u32 = 0x7b0c;
-
-
 
 /// `int RiderMetrix_GetTrickBonus(RiderMetrix *self)` (0x117908): the trick
 /// bonus factor scaled to points, `(int)(factor * scale + 5)` rounded down
@@ -4346,39 +4343,83 @@ pub fn rider_metrix_get_trick_bonus(c: &mut Cpu) {
     ret(c);
 }
 
-
 pub(crate) mod finish_trick_callee {
     use super::*;
 
-    pub const REMOVE_HUD_MESSAGE: Callee = Callee { addr: 0x0011_79e0, f: ee::s00::f_001179e0 };
+    pub const REMOVE_HUD_MESSAGE: Callee = Callee {
+        addr: 0x0011_79e0,
+        f: ee::s00::f_001179e0,
+    };
 
-    pub const ALL_PLAYERS_FINISHED: Callee = Callee { addr: 0x0012_a250, f: ee::s00::f_0012a250 };
+    pub const ALL_PLAYERS_FINISHED: Callee = Callee {
+        addr: 0x0012_a250,
+        f: ee::s00::f_0012a250,
+    };
 
-    pub const BUILD_TRICK_DESC: Callee = Callee { addr: 0x0011_a8c8, f: ee::s00::f_0011a8c8 };
+    pub const BUILD_TRICK_DESC: Callee = Callee {
+        addr: 0x0011_a8c8,
+        f: ee::s00::f_0011a8c8,
+    };
 
-    pub const GET_ROUNDED_TRICK_POINTS: Callee = Callee { addr: 0x0011_7948, f: ee::s00::f_00117948 };
+    pub const GET_ROUNDED_TRICK_POINTS: Callee = Callee {
+        addr: 0x0011_7948,
+        f: ee::s00::f_00117948,
+    };
 
-    pub const LOOKUP_BONUS_TRICK: Callee = Callee { addr: 0x0011_b1a8, f: ee::s00::f_0011b1a8 };
+    pub const LOOKUP_BONUS_TRICK: Callee = Callee {
+        addr: 0x0011_b1a8,
+        f: ee::s00::f_0011b1a8,
+    };
 
-    pub const SHOW_HUD_NUMBER: Callee = Callee { addr: 0x0011_7b88, f: ee::s00::f_00117b88 };
+    pub const SHOW_HUD_NUMBER: Callee = Callee {
+        addr: 0x0011_7b88,
+        f: ee::s00::f_00117b88,
+    };
 
-    pub const COUNT_TRICK_REPEATS: Callee = Callee { addr: 0x0011_90f0, f: ee::s00::f_001190f0 };
+    pub const COUNT_TRICK_REPEATS: Callee = Callee {
+        addr: 0x0011_90f0,
+        f: ee::s00::f_001190f0,
+    };
 
-    pub const SHOW_TRICK_NAME: Callee = Callee { addr: 0x0011_8ff8, f: ee::s00::f_00118ff8 };
+    pub const SHOW_TRICK_NAME: Callee = Callee {
+        addr: 0x0011_8ff8,
+        f: ee::s00::f_00118ff8,
+    };
 
-    pub const GET_TRICK_SCORE: Callee = Callee { addr: 0x0011_7990, f: ee::s00::f_00117990 };
+    pub const GET_TRICK_SCORE: Callee = Callee {
+        addr: 0x0011_7990,
+        f: ee::s00::f_00117990,
+    };
 
-    pub const GET_SCORE_TIER: Callee = Callee { addr: 0x0011_9310, f: ee::s00::f_00119310 };
+    pub const GET_SCORE_TIER: Callee = Callee {
+        addr: 0x0011_9310,
+        f: ee::s00::f_00119310,
+    };
 
-    pub const GET_TRICK_BONUS: Callee = Callee { addr: 0x0011_7908, f: ee::s00::f_00117908 };
+    pub const GET_TRICK_BONUS: Callee = Callee {
+        addr: 0x0011_7908,
+        f: ee::s00::f_00117908,
+    };
 
-    pub const ADD_COMBO_POINTS: Callee = Callee { addr: 0x0011_7638, f: ee::s00::f_00117638 };
+    pub const ADD_COMBO_POINTS: Callee = Callee {
+        addr: 0x0011_7638,
+        f: ee::s00::f_00117638,
+    };
 
-    pub const GET_TRICK_POINTS: Callee = Callee { addr: 0x0011_7900, f: ee::s00::f_00117900 };
+    pub const GET_TRICK_POINTS: Callee = Callee {
+        addr: 0x0011_7900,
+        f: ee::s00::f_00117900,
+    };
 
-    pub const AWARD_POINTS: Callee = Callee { addr: 0x0011_9ef8, f: ee::s00::f_00119ef8 };
+    pub const AWARD_POINTS: Callee = Callee {
+        addr: 0x0011_9ef8,
+        f: ee::s00::f_00119ef8,
+    };
 
-    pub const UPDATE_PEAK_A4: Callee = Callee { addr: 0x0011_7708, f: ee::s00::f_00117708 };
+    pub const UPDATE_PEAK_A4: Callee = Callee {
+        addr: 0x0011_7708,
+        f: ee::s00::f_00117708,
+    };
 
     /// Cross-shard calls (through the function table).
     pub const AUDIO_GET_INSTANCE: u32 = 0x0028_b180;
@@ -4392,12 +4433,8 @@ pub(crate) mod finish_trick_callee {
     pub const BE_GET_INTERFACE: u32 = 0x0014_dd58;
 }
 
-
-
 /// The event settings (`D_00535BC8`): kind at +0x48, game type at +0x49.
 pub(crate) const FINISH_TRICK_EVENT_SETTINGS: u32 = 0x0053_5bc8;
-
-
 
 /// `float RiderMetrix_FinishTrick(RiderMetrix* m, int stance, int alternate,
 /// int style, int flag, int takeoff)` (0x11a228): clear the trick HUD
@@ -4551,8 +4588,6 @@ pub fn rider_metrix_finish_trick(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 /// RiderMetrix_FinishTrick's scoring part (0x11a320..0x11a700): bank the
 /// trick; leaves v0 = takeoff (reloaded from the frame).
@@ -4859,8 +4894,6 @@ pub(crate) fn finish_trick_bank(c: &mut Cpu, m: u32) -> crate::call::Flow {
     c.g[V0][0] = Addr(sp(c) + 0x10).lw(c);
     Ok(())
 }
-
-
 
 /// RiderMetrix_FinishTrick's epilogue (0x11a774).
 pub(crate) fn finish_trick_epilogue(c: &mut Cpu, frame: Frame) {
@@ -5894,8 +5927,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
-
     /// `RiderMetrix_SetFlipAmount`: random and edge-case old/new flip
     /// amounts and totals (including totals that would go negative), the
     /// game's weight constant or an edge case.
@@ -5908,14 +5939,19 @@ pub(crate) mod tests {
             &|c, seed| {
                 let mut r = machine(c, seed, 0x0011_98d8, 0);
                 c.pc = 0x0011_98d8;
-                let k = if seed % 5 == 0 { r.edge_f32() } else { 0x3cea_aef8 };
+                let k = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    0x3cea_aef8
+                };
                 c.bus.write32(GAME_GP - FLIP_WEIGHT_GP, k);
                 let pick = |r: &mut Rng, i: u32| match i % 3 {
                     0 => r.edge_f32(),
                     _ => r.f32(400.0),
                 };
                 c.bus.write32(DATA + METRIX_FLIP_AMOUNT, pick(&mut r, seed));
-                c.bus.write32(DATA + METRIX_ROTATION_TOTAL, pick(&mut r, seed / 3));
+                c.bus
+                    .write32(DATA + METRIX_ROTATION_TOTAL, pick(&mut r, seed / 3));
                 c.f[12] = pick(&mut r, seed / 9);
                 c.g[A0][0] = sx(DATA);
             },
@@ -5923,53 +5959,70 @@ pub(crate) mod tests {
     }
     use super::*;
     use super::*;
-    use crate::difftest::{check_paths};
-
+    use crate::difftest::check_paths;
 
     /// `RiderMetrix_SetSpinAmount`: random and edge-case old/new spin
     /// amounts and totals (including totals that would go negative), the
     /// game's weight constant or an edge case.
     #[test]
     fn rider_metrix_set_spin_amount_matches() {
-        check(ee::s00::f_00119898__generated, rider_metrix_set_spin_amount, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0011_9898, 0);
-            c.pc = 0x0011_9898;
-            let k = if seed % 5 == 0 { r.edge_f32() } else { 0x3c8e_fa35 };
-            c.bus.write32(GAME_GP - SPIN_WEIGHT_GP, k);
-            let pick = |r: &mut Rng, i: u32| match i % 3 {
-                0 => r.edge_f32(),
-                _ => r.f32(400.0),
-            };
-            c.bus.write32(DATA + SPIN_METRIX_SPIN_AMOUNT, pick(&mut r, seed));
-            c.bus.write32(DATA + SPIN_METRIX_ROTATION_TOTAL, pick(&mut r, seed / 3));
-            c.f[12] = pick(&mut r, seed / 9);
-            c.g[A0][0] = sx(DATA);
-        });
+        check(
+            ee::s00::f_00119898__generated,
+            rider_metrix_set_spin_amount,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_9898, 0);
+                c.pc = 0x0011_9898;
+                let k = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    0x3c8e_fa35
+                };
+                c.bus.write32(GAME_GP - SPIN_WEIGHT_GP, k);
+                let pick = |r: &mut Rng, i: u32| match i % 3 {
+                    0 => r.edge_f32(),
+                    _ => r.f32(400.0),
+                };
+                c.bus
+                    .write32(DATA + SPIN_METRIX_SPIN_AMOUNT, pick(&mut r, seed));
+                c.bus
+                    .write32(DATA + SPIN_METRIX_ROTATION_TOTAL, pick(&mut r, seed / 3));
+                c.f[12] = pick(&mut r, seed / 9);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
     }
-
 
     /// Random and edge-case bonus factors (both signs, huge values that
     /// saturate the conversion), the game's scale and random ones.
     #[test]
     fn rider_metrix_get_trick_bonus_matches() {
-        crate::difftest::check_lohi(ee::s00::f_00117908__generated, rider_metrix_get_trick_bonus, 300, &|c, seed| {
-            let mut r = Rng(0x0011_7908 ^ (seed as u64) << 12);
-            scramble(c, &mut r);
-            c.pc = 0x0011_7908;
-            c.g[GP][0] = GAME_GP as u64;
-            c.g[A0][0] = DATA as u64;
-            let factor = match seed % 4 {
-                0 => r.edge_f32(),
-                1 => r.f32(1.0),
-                _ => r.f32(10.0),
-            };
-            c.bus.write32(DATA + RIDER_METRIX_TRICK_BONUS, factor);
-            let scale = if seed % 5 == 0 { r.edge_f32() } else { 10000.0f32.to_bits() };
-            c.bus.write32(GAME_GP - RIDER_METRIX_BONUS_SCALE_GP, scale);
-        });
+        crate::difftest::check_lohi(
+            ee::s00::f_00117908__generated,
+            rider_metrix_get_trick_bonus,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0011_7908 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.pc = 0x0011_7908;
+                c.g[GP][0] = GAME_GP as u64;
+                c.g[A0][0] = DATA as u64;
+                let factor = match seed % 4 {
+                    0 => r.edge_f32(),
+                    1 => r.f32(1.0),
+                    _ => r.f32(10.0),
+                };
+                c.bus.write32(DATA + RIDER_METRIX_TRICK_BONUS, factor);
+                let scale = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    10000.0f32.to_bits()
+                };
+                c.bus.write32(GAME_GP - RIDER_METRIX_BONUS_SCALE_GP, scale);
+            },
+        );
     }
     use super::*;
-
 
     /// RiderMetrix_FinishTrick with its real callees: a world whose single
     /// player has (not) finished, a zeroed BELibrary dummy and audio system,
@@ -5978,71 +6031,92 @@ pub(crate) mod tests {
     /// free ride or not) and every takeoff/style/flag combination.
     #[test]
     fn rider_metrix_finish_trick_matches() {
-        crate::difftest::check(ee::s00::f_0011a228__generated, rider_metrix_finish_trick, 160, &|c, seed| {
-            let mut r = machine(c, seed, 0x11_a228, 0);
-            elf_image(c);
-            let be = DATA + 0x20_0000;
-            let world = DATA + 0x21_0000;
-            let game = world + 0x1000;
-            let race = world + 0x2000;
-            let player = world + 0x3000;
-            let player_state = world + 0x4000;
-            let audio = DATA + 0x22_0000;
-            for a in [be, world, audio] {
-                for i in 0..0x1000 / 4 {
-                    c.bus.write32(a + 4 * i, 0);
+        crate::difftest::check(
+            ee::s00::f_0011a228__generated,
+            rider_metrix_finish_trick,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_a228, 0);
+                elf_image(c);
+                let be = DATA + 0x20_0000;
+                let world = DATA + 0x21_0000;
+                let game = world + 0x1000;
+                let race = world + 0x2000;
+                let player = world + 0x3000;
+                let player_state = world + 0x4000;
+                let audio = DATA + 0x22_0000;
+                for a in [be, world, audio] {
+                    for i in 0..0x1000 / 4 {
+                        c.bus.write32(a + 4 * i, 0);
+                    }
                 }
-            }
-            c.bus.write32(GAME_GP.wrapping_sub(0x1f04), be);
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
-            c.bus.write32(GAME_GP + 0x410, audio);
-            c.bus.write32(world + 0x84, game);
-            c.bus.write32(game + 0xc, race);
-            // One player; finished when its +0x470 is >= 0.
-            c.bus.write32(race + 0x7c, 1);
-            c.bus.write32(race + 0x40, player);
-            c.bus.write32(player + 0x18, player_state);
-            let finished = seed % 10 == 0;
-            c.bus.write32(player_state + 0x470, (if finished { 1.0f32 } else { -1.0 }).to_bits());
-            // The event settings.
-            let kind = if seed % 3 == 0 { 4 } else { (r.next_u32() % 4) as u8 };
-            c.bus.write8(FINISH_TRICK_EVENT_SETTINGS + 0x48, kind);
-            c.bus.write8(FINISH_TRICK_EVENT_SETTINGS + 0x49, (seed / 3 % 2) as u8);
+                c.bus.write32(GAME_GP.wrapping_sub(0x1f04), be);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(GAME_GP + 0x410, audio);
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0xc, race);
+                // One player; finished when its +0x470 is >= 0.
+                c.bus.write32(race + 0x7c, 1);
+                c.bus.write32(race + 0x40, player);
+                c.bus.write32(player + 0x18, player_state);
+                let finished = seed % 10 == 0;
+                c.bus.write32(
+                    player_state + 0x470,
+                    (if finished { 1.0f32 } else { -1.0 }).to_bits(),
+                );
+                // The event settings.
+                let kind = if seed % 3 == 0 {
+                    4
+                } else {
+                    (r.next_u32() % 4) as u8
+                };
+                c.bus.write8(FINISH_TRICK_EVENT_SETTINGS + 0x48, kind);
+                c.bus
+                    .write8(FINISH_TRICK_EVENT_SETTINGS + 0x49, (seed / 3 % 2) as u8);
 
-            let m = DATA + 0x1000;
-            for i in 0..0x200 / 4 {
-                c.bus.write32(m + 4 * i, 0);
-            }
-            let score = match seed % 5 {
-                0 => 0.0f32,
-                1 => -((r.next_u32() % 50) as f32),
-                _ => (r.next_u32() % 500) as f32,
-            };
-            c.bus.write32(m + 0x14, score.to_bits());
-            // Trick points (0 on some seeds: nothing scored).
-            let points = if seed % 7 == 0 { 0.0f32 } else { (r.next_u32() % 4000) as f32 };
-            c.bus.write32(m + 0x1c4, points.to_bits());
-            c.bus.write32(m + 0x34, r.f32(20.0));
-            c.bus.write32(m + 0x38, r.f32(20.0));
-            for off in [0x44, 0x30, 0x48, 0x24, 0x78, 0x14c, 0x150, 0x154, 0x158, 0x144] {
-                c.bus.write32(m + off, r.f32(10.0));
-            }
-            for off in [0x4c, 0x80, 0x58, 0x74, 0x84, 0xfc, 0x100, 0x104, 0x108, 0x114, 0x118, 0x11c] {
-                c.bus.write32(m + off, r.next_u32() % 100);
-            }
-            for off in [0x198, 0x19c, 0x110, 0x18c] {
-                c.bus.write32(m + off, r.next_u32() % 3000);
-            }
-            c.bus.write32(m + 0xa4, r.f32(2.0));
-            c.bus.write32(m + 0x20, if seed % 4 == 1 { 1 } else { 0 });
-            c.bus.write32(m + 0x28, if seed % 6 == 2 { 1 } else { 0 });
-            c.g[A0][0] = sx(m);
-            c.g[A1][0] = (r.next_u32() % 2) as u64;
-            c.g[A2][0] = (r.next_u32() % 2) as u64;
-            c.g[A3][0] = if seed % 4 == 3 { 1 } else { 0 };
-            c.g[T0][0] = if seed % 8 == 5 { 1 } else { 0 };
-            c.g[T1][0] = if seed % 2 == 0 { 1 } else { 0 };
-            c.pc = 0x0011_a228;
-        });
+                let m = DATA + 0x1000;
+                for i in 0..0x200 / 4 {
+                    c.bus.write32(m + 4 * i, 0);
+                }
+                let score = match seed % 5 {
+                    0 => 0.0f32,
+                    1 => -((r.next_u32() % 50) as f32),
+                    _ => (r.next_u32() % 500) as f32,
+                };
+                c.bus.write32(m + 0x14, score.to_bits());
+                // Trick points (0 on some seeds: nothing scored).
+                let points = if seed % 7 == 0 {
+                    0.0f32
+                } else {
+                    (r.next_u32() % 4000) as f32
+                };
+                c.bus.write32(m + 0x1c4, points.to_bits());
+                c.bus.write32(m + 0x34, r.f32(20.0));
+                c.bus.write32(m + 0x38, r.f32(20.0));
+                for off in [
+                    0x44, 0x30, 0x48, 0x24, 0x78, 0x14c, 0x150, 0x154, 0x158, 0x144,
+                ] {
+                    c.bus.write32(m + off, r.f32(10.0));
+                }
+                for off in [
+                    0x4c, 0x80, 0x58, 0x74, 0x84, 0xfc, 0x100, 0x104, 0x108, 0x114, 0x118, 0x11c,
+                ] {
+                    c.bus.write32(m + off, r.next_u32() % 100);
+                }
+                for off in [0x198, 0x19c, 0x110, 0x18c] {
+                    c.bus.write32(m + off, r.next_u32() % 3000);
+                }
+                c.bus.write32(m + 0xa4, r.f32(2.0));
+                c.bus.write32(m + 0x20, if seed % 4 == 1 { 1 } else { 0 });
+                c.bus.write32(m + 0x28, if seed % 6 == 2 { 1 } else { 0 });
+                c.g[A0][0] = sx(m);
+                c.g[A1][0] = (r.next_u32() % 2) as u64;
+                c.g[A2][0] = (r.next_u32() % 2) as u64;
+                c.g[A3][0] = if seed % 4 == 3 { 1 } else { 0 };
+                c.g[T0][0] = if seed % 8 == 5 { 1 } else { 0 };
+                c.g[T1][0] = if seed % 2 == 0 { 1 } else { 0 };
+                c.pc = 0x0011_a228;
+            },
+        );
     }
 }

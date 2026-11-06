@@ -3,31 +3,35 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
+use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Frame;
+use crate::events::deliver_event_here;
+use crate::events::event_due;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
-use crate::abi::ret;
-use crate::ps2f::FpuF32;
-use crate::call::call_ptr;
-use crate::call::sp;
-use crate::events::deliver_event_here;
-use crate::events::event_due;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x002d_b9c8, c_crowd_anim2d_ctor, "cCrowdAnim2D_ctor"),
     (0x002d_bac0, c_crowd_anim2d_update, "cCrowdAnim2D_Update"),
-    (0x002d_ba08, crowd_anim2d_step_frame, "cCrowdAnim2D_StepFrame"),
+    (
+        0x002d_ba08,
+        crowd_anim2d_step_frame,
+        "cCrowdAnim2D_StepFrame",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -322,32 +326,22 @@ pub fn c_crowd_anim2d_update(c: &mut Cpu) {
     });
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // cCrowdAnim2D_StepFrame (0x2dba08)
 
 /// The step-mode jump table (`0x480000 + 0x75f0`, five entries in .rodata).
 pub(crate) const CROWD_STEP_TABLE: u32 = 0x0048_75f0;
 
-
 /// The five step modes' handlers (the table's entries).
 pub(crate) const CROWD_STEP_FORWARD: u32 = 0x002d_ba30;
 
-
 pub(crate) const CROWD_STEP_BACKWARD: u32 = 0x002d_ba44;
-
 
 pub(crate) const CROWD_STEP_PINGPONG_UP: u32 = 0x002d_ba54;
 
-
 pub(crate) const CROWD_STEP_PINGPONG_DOWN: u32 = 0x002d_ba7c;
 
-
 pub(crate) const CROWD_STEP_LOOP: u32 = 0x002d_baa0;
-
-
 
 /// `int cCrowdAnim2D_StepFrame(void* self, int frame, int count, int* mode)`
 /// (0x2dba08): the next frame of a 2D crowd animation of `count` frames.
@@ -575,35 +569,43 @@ pub(crate) mod tests {
     use super::*;
     use crate::difftest::fakes::machine;
 
-
     /// `cCrowdAnim2D_StepFrame`: modes 0..4 and out of range, one-frame and
     /// longer animations, frames at / near both ends and random (the real
     /// jump table from the game image).
     #[test]
     fn crowd_anim2d_step_frame_matches() {
         use crate::difftest::elf_image;
-        check(ee::s09::f_002dba08__generated, crowd_anim2d_step_frame, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x002d_ba08, 0);
-            elf_image(c);
-            c.pc = 0x002d_ba08;
-            let mode = if seed % 13 == 12 { r.next_u32() } else { seed % 5 };
-            c.bus.write32(DATA, mode);
-            let count = match (seed / 5) % 4 {
-                0 => 1,
-                1 => 2,
-                2 => r.next_u32() % 40,
-                _ => r.next_u32(),
-            };
-            let frame = match (seed / 20) % 5 {
-                0 => 0,
-                1 => count.wrapping_sub(1),
-                2 => count,
-                3 => u32::MAX,
-                _ => r.next_u32() % 40,
-            };
-            c.g[A1][0] = sx(frame);
-            c.g[A2][0] = sx(count);
-            c.g[A3][0] = sx(DATA);
-        });
+        check(
+            ee::s09::f_002dba08__generated,
+            crowd_anim2d_step_frame,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002d_ba08, 0);
+                elf_image(c);
+                c.pc = 0x002d_ba08;
+                let mode = if seed % 13 == 12 {
+                    r.next_u32()
+                } else {
+                    seed % 5
+                };
+                c.bus.write32(DATA, mode);
+                let count = match (seed / 5) % 4 {
+                    0 => 1,
+                    1 => 2,
+                    2 => r.next_u32() % 40,
+                    _ => r.next_u32(),
+                };
+                let frame = match (seed / 20) % 5 {
+                    0 => 0,
+                    1 => count.wrapping_sub(1),
+                    2 => count,
+                    3 => u32::MAX,
+                    _ => r.next_u32() % 40,
+                };
+                c.g[A1][0] = sx(frame);
+                c.g[A2][0] = sx(count);
+                c.g[A3][0] = sx(DATA);
+            },
+        );
     }
 }

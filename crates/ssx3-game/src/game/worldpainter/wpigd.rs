@@ -1132,9 +1132,6 @@ pub fn music_trigger_blend(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // tWPIGD_Mix_Blend (0x2bccc8, seg_1BA100.cpp)
 
@@ -1142,13 +1139,9 @@ pub fn music_trigger_blend(c: &mut Cpu) {
 /// the integer value at 8, the target's value copied to 0xc.
 pub(crate) const WPIGD_VTABLE: u32 = 0x4;
 
-
 pub(crate) const WPIGD_VALUE: u32 = 0x8;
 
-
 pub(crate) const WPIGD_TARGET: u32 = 0xc;
-
-
 
 /// `void tWPIGD_Mix_Blend(tWPIGD* self, tWPIGD* target, float t)`
 /// (0x2bccc8): calls the vtable slot at 0x218, blends the integer value
@@ -1754,7 +1747,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// tWPIGD_Mix_Blend: random integer values and blend factors (edge
     /// floats), the vtable slot a fake.
     #[test]
@@ -1762,21 +1754,30 @@ pub(crate) mod tests {
         use crate::difftest::fakes::vtable;
         const SELF: u32 = DATA + 0x20_0000;
         const TARGET: u32 = SELF + 0x100;
-        check(ee::s08::f_002bccc8__generated, twpigd_mix_blend, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x2b_ccc8, 2);
-            c.pc = 0x002b_ccc8;
-            c.g[A0][0] = sx(SELF);
-            c.g[A1][0] = sx(TARGET);
-            c.f[12] = if seed % 2 == 0 { r.edge_f32() } else { r.f32(1.0) };
-            let vt = vtable(c, &mut r, &[0x218]);
-            c.bus.write32(SELF + WPIGD_VTABLE, vt);
-            let v = |r: &mut crate::difftest::Rng| match r.next_u32() % 3 {
-                0 => r.next_u32(),
-                _ => r.next_u32() % 2000,
-            };
-            let (a, b) = (v(&mut r), v(&mut r));
-            c.bus.write32(SELF + WPIGD_VALUE, a);
-            c.bus.write32(TARGET + 4, b);
-        });
+        check(
+            ee::s08::f_002bccc8__generated,
+            twpigd_mix_blend,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2b_ccc8, 2);
+                c.pc = 0x002b_ccc8;
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(TARGET);
+                c.f[12] = if seed % 2 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(1.0)
+                };
+                let vt = vtable(c, &mut r, &[0x218]);
+                c.bus.write32(SELF + WPIGD_VTABLE, vt);
+                let v = |r: &mut crate::difftest::Rng| match r.next_u32() % 3 {
+                    0 => r.next_u32(),
+                    _ => r.next_u32() % 2000,
+                };
+                let (a, b) = (v(&mut r), v(&mut r));
+                c.bus.write32(SELF + WPIGD_VALUE, a);
+                c.bus.write32(TARGET + 4, b);
+            },
+        );
     }
 }

@@ -2154,8 +2154,8 @@ macro_rules! reward_gallery_dtor {
         }
     };
 }
-pub(crate) use reward_gallery_dtor;
 use crate::abi::ret;
+pub(crate) use reward_gallery_dtor;
 
 reward_gallery_dtor!(
     cfe_state_reward_gallery_dtor,
@@ -5788,41 +5788,38 @@ pub fn ov_screen_message_center_ctor(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // MessageCenter_Update (0x1e1458)
 
 /// `MessageCenter_InitGroupTable` (0x1e12f0).
-pub(crate) const MESSAGE_CENTER_INIT_GROUP_TABLE: Callee = Callee { addr: 0x001e_12f0, f: ee::s04::f_001e12f0 };
-
+pub(crate) const MESSAGE_CENTER_INIT_GROUP_TABLE: Callee = Callee {
+    addr: 0x001e_12f0,
+    f: ee::s04::f_001e12f0,
+};
 
 /// `MessageCenter_TriggerGroups(type)` (0x1e14c0).
-pub(crate) const MESSAGE_CENTER_TRIGGER_GROUPS: Callee = Callee { addr: 0x001e_14c0, f: ee::s04::f_001e14c0 };
-
-
+pub(crate) const MESSAGE_CENTER_TRIGGER_GROUPS: Callee = Callee {
+    addr: 0x001e_14c0,
+    f: ee::s04::f_001e14c0,
+};
 
 /// gp-relative message-center globals.
 pub(crate) const MC_SUSPENDED: u32 = 0x1030;
 
- // gp - 0x1030: non-zero = updates off
+// gp - 0x1030: non-zero = updates off
 pub(crate) const MC_TABLE_READY: u32 = 0x1028;
 
- // gp - 0x1028: group table initialised
+// gp - 0x1028: group table initialised
 pub(crate) const MC_LAST_TRIGGER: u32 = 0x1034;
 
- // gp - 0x1034: clock at the last trigger
+// gp - 0x1034: clock at the last trigger
 pub(crate) const MC_CLOCK_OWNER: u32 = 0x2a74;
 
- // gp + 0x2a74: object whose +0x1c is the clock
+// gp + 0x2a74: object whose +0x1c is the clock
 pub(crate) const MC_CLOCK: u32 = 0x1c;
-
 
 /// Ticks between two periodic trigger passes (600 = 10 s at 60 Hz).
 pub(crate) const MC_TRIGGER_PERIOD: i64 = 600;
-
-
 
 /// `void MessageCenter_Update(void)` (0x1e1458): unless the message center
 /// is suspended, build the group table once, then every 600 clock ticks
@@ -7808,34 +7805,42 @@ pub(crate) mod tests {
     pub(crate) use crate::game::ai::ai::tests::oc258_w32;
     pub(crate) use crate::game::animation::animsequencer::tests::oc258_env;
 
-
     #[test]
     fn message_center_update_matches() {
-        check(ee::s04::f_001e1458__generated, message_center_update, 40, &|c, seed| {
-            let mut r = machine(c, seed, 0x1e1458, 0);
-            oc258_env(c);
-            c.pc = 0x001e_1458;
-            let gp = GAME_GP;
-            // Suspended in 1 of 5 seeds.
-            oc258_w32(c, gp - MC_SUSPENDED, if seed % 5 == 0 { r.next_u32() | 1 } else { 0 });
-            oc258_w32(c, gp - MC_TABLE_READY, (seed / 2 % 2) as u32);
-            let owner = DATA + 0x2000;
-            oc258_w32(c, gp + MC_CLOCK_OWNER, owner);
-            let clock = r.next_u32() >> 2;
-            oc258_w32(c, owner + MC_CLOCK, clock);
-            // Elapsed time: below, at and past the 600-tick period.
-            let elapsed = match seed % 4 {
-                0 => 600,
-                1 => 601,
-                2 => r.next_u32() % 600,
-                _ => 601 + r.next_u32() % 5000,
-            };
-            oc258_w32(c, gp - MC_LAST_TRIGGER, clock.wrapping_sub(elapsed));
-            // Trigger table types (0x441630, 0x14 per group).
-            for i in 0..0x40u32 {
-                let kind = r.next_u32() % 7;
-                oc258_w32(c, 0x0044_1630 + 0x14 * i, kind);
-            }
-        });
+        check(
+            ee::s04::f_001e1458__generated,
+            message_center_update,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x1e1458, 0);
+                oc258_env(c);
+                c.pc = 0x001e_1458;
+                let gp = GAME_GP;
+                // Suspended in 1 of 5 seeds.
+                oc258_w32(
+                    c,
+                    gp - MC_SUSPENDED,
+                    if seed % 5 == 0 { r.next_u32() | 1 } else { 0 },
+                );
+                oc258_w32(c, gp - MC_TABLE_READY, (seed / 2 % 2) as u32);
+                let owner = DATA + 0x2000;
+                oc258_w32(c, gp + MC_CLOCK_OWNER, owner);
+                let clock = r.next_u32() >> 2;
+                oc258_w32(c, owner + MC_CLOCK, clock);
+                // Elapsed time: below, at and past the 600-tick period.
+                let elapsed = match seed % 4 {
+                    0 => 600,
+                    1 => 601,
+                    2 => r.next_u32() % 600,
+                    _ => 601 + r.next_u32() % 5000,
+                };
+                oc258_w32(c, gp - MC_LAST_TRIGGER, clock.wrapping_sub(elapsed));
+                // Trigger table types (0x441630, 0x14 per group).
+                for i in 0..0x40u32 {
+                    let kind = r.next_u32() % 7;
+                    oc258_w32(c, 0x0044_1630 + 0x14 * i, kind);
+                }
+            },
+        );
     }
 }

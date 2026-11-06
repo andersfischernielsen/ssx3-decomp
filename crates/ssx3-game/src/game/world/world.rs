@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -22,6 +23,7 @@ pub(crate) use crate::game::wscript::wscriptman::lw_4 as lw_2;
 pub(crate) use crate::game::wscript::wscriptman::p;
 pub(crate) use crate::game::wscript::wscriptman::sw;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -54,6 +56,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "World_GetSphereTreeAt",
     ),
     (0x003a_6d00, world_get_table_entry, "World_GetTableEntry"),
+    (
+        0x003a_6d18,
+        world_get_section_script_func,
+        "World_GetSectionScriptFunc",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -506,6 +513,45 @@ pub fn world_ctor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// World_GetSectionScriptFunc (0x3a6d18)
+// ---------------------------------------------------------------------------
+
+/// World: the section script-cache table (`{?, caches}`), 12-byte caches.
+pub(crate) const WSSF_SCRIPT_TABLE: u32 = 0x4;
+
+pub(crate) const WSSF_TABLE_CACHES: u32 = 0x4;
+
+pub(crate) const WSSF_CACHE_SIZE: u32 = 0xc;
+
+/// `ScriptFunc* World_GetSectionScriptFunc(World* self, int* handle)`
+/// (0x3a6d18): the handle's low byte selects a section's script cache, the
+/// rest the entry; returns `tWScriptCache_GetTableEntry(cache, handle >> 8)`.
+pub fn world_get_section_script_func(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x10);
+        c.g[V1][0] = WSSF_CACHE_SIZE as u64;
+        frame.save_ra(c, 0);
+        let handle = Addr(r32(c, A1)).lw(c) as u32;
+        let table = Addr(r32(c, A0)).off(WSSF_SCRIPT_TABLE).lw(c);
+        c.g[A2][0] = table;
+        let offset = abi::mult(c, handle & 0xff, WSSF_CACHE_SIZE);
+        let caches = Addr(table as u32).off(WSSF_TABLE_CACHES).lw(c);
+        c.g[V0][0] = caches;
+        c.g[A1][0] = sx(handle >> 8);
+        c.g[A0][0] = sx((caches as u32).wrapping_add(offset));
+        Callee {
+            addr: 0x003a_dc50,
+            f: ee::s13::f_003adc50,
+        }
+        .call(c, 0x003a_6d44)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -745,6 +791,52 @@ pub(crate) mod tests {
             &|c, seed| {
                 alloc_base(c, seed, 0x3a66, 5);
                 c.g[A0][0] = DATA as u64;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fill;
+
+    /// `World_GetSectionScriptFunc`: handles over 4 sections' caches (type 3
+    /// with a function table, or another type: null) and 8 entries; the real
+    /// tWScriptCache_GetTableEntry.
+    #[test]
+    fn world_get_section_script_func_matches() {
+        use crate::difftest::check;
+        const WORLD: u32 = DATA + 0x100;
+        const HANDLE: u32 = DATA + 0x200;
+        const TABLE: u32 = DATA + 0x300;
+        const CACHES: u32 = DATA + 0x400;
+        const HEADER: u32 = DATA + 0x600;
+        const FUNCS: u32 = DATA + 0x800;
+        check(
+            ee::s13::f_003a6d18__generated,
+            world_get_section_script_func,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a_6d18, 0);
+                c.pc = 0x003a_6d18;
+                c.bus.write32(WORLD + WSSF_SCRIPT_TABLE, TABLE);
+                c.bus.write32(TABLE + WSSF_TABLE_CACHES, CACHES);
+                for i in 0..4 {
+                    let cache = CACHES + WSSF_CACHE_SIZE * i;
+                    fill(c, &mut r, cache, 3);
+                    c.bus.write16(
+                        cache,
+                        if (seed + i) % 3 == 0 {
+                            r.next_u32() as u16
+                        } else {
+                            3
+                        },
+                    );
+                    c.bus.write32(cache + 8, HEADER);
+                }
+                c.bus.write32(HEADER + 0x3c, FUNCS);
+                fill(c, &mut r, FUNCS, 8);
+                let handle = (seed % 4) | (seed / 4 % 8) << 8;
+                c.bus.write32(HANDLE, handle);
+                c.g[A0][0] = sx(WORLD);
+                c.g[A1][0] = sx(HANDLE);
             },
         );
     }

@@ -2,8 +2,11 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -13,6 +16,7 @@ pub(crate) use crate::game::object::flexrailnode::at_3 as at;
 pub(crate) use crate::game::object::flexrailnode::r32v;
 pub(crate) use crate::game::object::flexrailnode::spa;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -23,18 +27,19 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::abi::r32;
-use crate::abi::ret;
-use crate::ps2f::FpuF32;
-use crate::call::sp;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
-    0x0015_2460,
-    be_record_char_profile_event_score,
-    "BE_RecordCharProfileEventScore",
-),
-    (0x0015_23e8, be_test_char_profile_flag, "BE_TestCharProfileFlag"),
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
+    (
+        0x0015_2460,
+        be_record_char_profile_event_score,
+        "BE_RecordCharProfileEventScore",
+    ),
+    (
+        0x0015_23e8,
+        be_test_char_profile_flag,
+        "BE_TestCharProfileFlag",
+    ),
 ];
 
 /// Direct-call targets (dossier callees, found by address in `generated/ee`).
@@ -364,16 +369,11 @@ pub fn be_record_char_profile_event_place(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // BE_TestCharProfileFlag (bedbprofile.cpp).
 
 /// The three profile flag masks (`D_0045A7C0`), indexed by kind.
 pub(crate) const CHAR_PROFILE_MASKS_207: u32 = 0x0045_a7c0;
-
-
 
 /// `int BE_TestCharProfileFlag(CharProfile* self, int kind)` (0x1523e8):
 /// whether the profile's flag word (`+0xacc`) has any bit of mask `kind`.
@@ -464,31 +464,35 @@ pub(crate) mod tests {
     use crate::difftest::fakes::{self, covered};
     use crate::difftest::{check_lohi, fill, scramble};
 
-
     // --------------------------------------------------- profile flags
 
     /// BE_TestCharProfileFlag: kinds 0..2, random masks and flag words
     /// (sometimes zero, sometimes exactly the mask).
     #[test]
     fn be_test_char_profile_flag_matches() {
-        check(ee::s01::f_001523e8__generated, be_test_char_profile_flag, 200, &|c, seed| {
-            let mut r = Rng(0x0015_23e8 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            c.pc = 0x0015_23e8;
-            let kind = seed % 3;
-            c.g[A0][0] = sx(DATA);
-            c.g[A1][0] = kind as u64;
-            let masks = [1 << (r.next_u32() % 32), r.next_u32(), r.next_u32() & 0xff];
-            for (i, m) in masks.iter().enumerate() {
-                c.bus.write32(CHAR_PROFILE_MASKS_207 + 4 * i as u32, *m);
-            }
-            let flags = match seed % 4 {
-                0 => 0,
-                1 => masks[kind as usize],
-                2 => !masks[kind as usize],
-                _ => r.next_u32(),
-            };
-            c.bus.write32(DATA + 0xacc, flags);
-        });
+        check(
+            ee::s01::f_001523e8__generated,
+            be_test_char_profile_flag,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0015_23e8 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0015_23e8;
+                let kind = seed % 3;
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = kind as u64;
+                let masks = [1 << (r.next_u32() % 32), r.next_u32(), r.next_u32() & 0xff];
+                for (i, m) in masks.iter().enumerate() {
+                    c.bus.write32(CHAR_PROFILE_MASKS_207 + 4 * i as u32, *m);
+                }
+                let flags = match seed % 4 {
+                    0 => 0,
+                    1 => masks[kind as usize],
+                    2 => !masks[kind as usize],
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(DATA + 0xacc, flags);
+            },
+        );
     }
 }

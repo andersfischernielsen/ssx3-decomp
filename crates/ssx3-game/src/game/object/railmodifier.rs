@@ -321,9 +321,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_c4e0, rail_modifier_v03, "RailModifier_v03"),
     (0x0036_1098, mod_obj_get_matrices, "ModObj_GetMatrices"),
-    (0x0036_5f68, vram_heap_nodes_to_scratchpad, "VramHeap_NodesToScratchpad"),
-    (0x0036_5fa8, vram_heap_nodes_from_scratchpad, "VramHeap_NodesFromScratchpad"),
-    (0x0035_fd98, uv_scroll_modifier_save, "UVScrollModifier_Save"),
+    (
+        0x0036_5f68,
+        vram_heap_nodes_to_scratchpad,
+        "VramHeap_NodesToScratchpad",
+    ),
+    (
+        0x0036_5fa8,
+        vram_heap_nodes_from_scratchpad,
+        "VramHeap_NodesFromScratchpad",
+    ),
+    (
+        0x0035_fd98,
+        uv_scroll_modifier_save,
+        "UVScrollModifier_Save",
+    ),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -5686,9 +5698,6 @@ pub fn rail_modifier_update_bounds(c: &mut Cpu) {
     });
 }
 
-
-
-
 /// `void RailModifier_v03(RailModifier* self)` (0x35c4e0, railmodifier.cpp):
 /// the rail modifier's per-frame update: recomputes its bounds (+0x10 min,
 /// +0x20 max) with `RailModifier_UpdateBounds` and moves its entry (id at
@@ -5733,8 +5742,6 @@ pub fn rail_modifier_v03(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // ModObj_GetMatrices (0x361098)
 
@@ -5742,20 +5749,14 @@ pub fn rail_modifier_v03(c: &mut Cpu) {
 /// the flags (`+0x26`, bit 0: the modifier is active) and the matrix array.
 pub(crate) const MODOBJ_MODIFIER: u32 = 0x14;
 
-
 pub(crate) const MODOBJ_MODIFIER_VT: u32 = 0x20;
-
 
 pub(crate) const MODOBJ_FLAGS: u32 = 0x26;
 
-
 pub(crate) const MODOBJ_MATRICES: u32 = 0x44;
-
 
 /// The modifier's "update matrices" vtable slot.
 pub(crate) const MODIFIER_UPDATE_SLOT: u32 = 0x198;
-
-
 
 /// `Matrix* ModObj_GetMatrices(ModObj* self)` (0x361098): the object's
 /// matrix array (`+0x44`), first letting the active transform modifier
@@ -5790,23 +5791,17 @@ pub fn mod_obj_get_matrices(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // VramHeap_NodesFromScratchpad (railmodifier.cpp).
 
 /// `InvalidDCache` (libkernel; called through the table).
 pub(crate) const INVALID_DCACHE_207: u32 = 0x0042_47d8;
 
-
 /// `SprStream_Download` (0x38f738).
 pub(crate) const SPR_STREAM_DOWNLOAD_207: Callee = Callee {
     addr: 0x0038_f738,
     f: ee::s12::SprStream_Download,
 };
-
-
 
 /// `void VramHeap_NodesFromScratchpad(VramHeap* self)` (0x365fa8): bring the
 /// heap's node block back from the scratchpad: invalidate the data cache
@@ -5836,8 +5831,6 @@ pub fn vram_heap_nodes_from_scratchpad(c: &mut Cpu) {
     })
 }
 
-
-
 // ------------------------------------------------ VramHeap_NodesToScratchpad
 
 /// `SprStream_Upload` (0x38f708).
@@ -5846,16 +5839,12 @@ pub(crate) const VRAM_SPR_STREAM_UPLOAD: Callee = Callee {
     f: ee::s12::f_0038f708,
 };
 
-
 /// `SyncDCache` (0x424698, cross-shard).
 pub(crate) const VRAM_SYNC_DCACHE: u32 = 0x0042_4698;
-
 
 /// The heap's node table: 0x1ff0 bytes from +0, and the word after it
 /// (+0x1ff0) where the table's current address is kept.
 pub(crate) const VRAM_NODES_SIZE: u32 = 0x1ff0;
-
-
 
 /// `void VramHeap_NodesToScratchpad(VramHeap* self)` (0x365f68): writes the
 /// node table back from the data cache and DMAs it to the scratchpad
@@ -5883,20 +5872,14 @@ pub fn vram_heap_nodes_to_scratchpad(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // UVScrollModifier_Save (0x35fd98)
 
 /// The stream's `write(data, size)` vtable slot (delta at +8, fn at +0xc).
 pub(crate) const UV_SCROLL_SAVE_WRITE_SLOT: u32 = 0x8;
 
-
 /// Bytes of UVScrollModifier state saved.
 pub(crate) const UV_SCROLL_SAVE_SIZE: u64 = 0x50;
-
-
 
 /// `void UVScrollModifier_Save(UVScrollModifier* self, Stream* out)`
 /// (0x35fd98): write the modifier's first 0x50 bytes with `out->write(self,
@@ -8003,7 +7986,6 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
 
-
     /// `RailModifier_v03`: the real `RailModifier_UpdateBounds` asks the
     /// rail object's vtable (slot 0x160: the real `return 0` leaf on every
     /// third seed, so the box stays, else a fake) for the new box (slot
@@ -8072,8 +8054,6 @@ pub(crate) mod tests {
         );
     }
 
-
-
     /// `ModObj_GetMatrices`: modifier active or not; the modifier's update
     /// slot is a fake (logging the call, sometimes unwinding).
     #[test]
@@ -8099,7 +8079,6 @@ pub(crate) mod tests {
     // (fakes imported above)
     use super::*;
 
-
     // ------------------------------------------------------- vram heap
 
     /// VramHeap_NodesFromScratchpad: the heap at a random 16-byte aligned
@@ -8108,21 +8087,25 @@ pub(crate) mod tests {
     /// scratchpad. The real InvalidDCache and SprStream_Download run.
     #[test]
     fn vram_heap_nodes_from_scratchpad_matches() {
-        check(ee::s12::f_00365fa8__generated, vram_heap_nodes_from_scratchpad, 100, &|c, seed| {
-            let mut r = Rng(0x0036_5fa8 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            c.g[GP][0] = GAME_GP as u64;
-            c.pc = 0x0036_5fa8;
-            fill(c, &mut r, DATA, 0x1000);
-            for i in 0..0x1000 {
-                c.bus.spr[i * 4..i * 4 + 4].copy_from_slice(&r.next_u32().to_le_bytes());
-            }
-            let spr = 0x7000_0000 + (r.next_u32() % 0x200) * 0x10;
-            c.bus.write32(GAME_GP + 0x2a94, spr);
-            c.g[A0][0] = sx(DATA + (r.next_u32() % 0x100) * 0x10);
-        });
+        check(
+            ee::s12::f_00365fa8__generated,
+            vram_heap_nodes_from_scratchpad,
+            100,
+            &|c, seed| {
+                let mut r = Rng(0x0036_5fa8 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x0036_5fa8;
+                fill(c, &mut r, DATA, 0x1000);
+                for i in 0..0x1000 {
+                    c.bus.spr[i * 4..i * 4 + 4].copy_from_slice(&r.next_u32().to_le_bytes());
+                }
+                let spr = 0x7000_0000 + (r.next_u32() % 0x200) * 0x10;
+                c.bus.write32(GAME_GP + 0x2a94, spr);
+                c.g[A0][0] = sx(DATA + (r.next_u32() % 0x100) * 0x10);
+            },
+        );
     }
-
 
     /// `VramHeap_NodesToScratchpad`: the real `SyncDCache` (interrupts
     /// enabled or not) and `SprStream_Upload` / `Dma_ToScratchpad`
@@ -8159,21 +8142,25 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// UVScrollModifier_Save: the stream's write method is a fake (which may
     /// unwind).
     #[test]
     fn uv_scroll_modifier_save_matches() {
         use crate::difftest::fakes::{covered, machine, vtable};
         use crate::difftest::DATA;
-        covered(ee::s12::f_0035fd98__generated, uv_scroll_modifier_save, 60, &|c, seed| {
-            let mut r = machine(c, seed, 0x0035_fd98, 1);
-            c.pc = 0x0035_fd98;
-            let out = DATA + 0x300;
-            let vt = vtable(c, &mut r, &[UV_SCROLL_SAVE_WRITE_SLOT]);
-            c.bus.write32(out, vt);
-            c.g[A0][0] = sx(DATA + 0x100);
-            c.g[A1][0] = sx(out);
-        });
+        covered(
+            ee::s12::f_0035fd98__generated,
+            uv_scroll_modifier_save,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_fd98, 1);
+                c.pc = 0x0035_fd98;
+                let out = DATA + 0x300;
+                let vt = vtable(c, &mut r, &[UV_SCROLL_SAVE_WRITE_SLOT]);
+                c.bus.write32(out, vt);
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A1][0] = sx(out);
+            },
+        );
     }
 }

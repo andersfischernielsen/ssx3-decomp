@@ -387,8 +387,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_camera_update_stream_view,
         "GameCamera_UpdateStreamView",
     ),
-    (0x003a_9658, world_cache_streamer_set_view, "cWorldCache_StreamerSetView"),
-    (0x0016_6530, chase_camera_check_distance_reset_wrapper, "ChaseCameraAlgorithm_CheckDistanceReset_Wrapper"),
+    (
+        0x003a_9658,
+        world_cache_streamer_set_view,
+        "cWorldCache_StreamerSetView",
+    ),
+    (
+        0x0016_6530,
+        chase_camera_check_distance_reset_wrapper,
+        "ChaseCameraAlgorithm_CheckDistanceReset_Wrapper",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -8664,9 +8672,6 @@ pub fn game_camera_update_stream_view(c: &mut Cpu) {
     });
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // cWorldCache_StreamerSetView (0x3a9658)
 
@@ -8676,31 +8681,21 @@ pub fn game_camera_update_stream_view(c: &mut Cpu) {
 /// zeroed floats (+0x284 / +0x288).
 pub(crate) const STREAMER_SIZE: u32 = 0x50;
 
-
 pub(crate) const STREAMER_ACTIVE: u32 = 0x244;
-
 
 pub(crate) const STREAMER_STATE: u32 = 0x248;
 
-
 pub(crate) const STREAMER_VIEW_POS: u32 = 0x250;
-
 
 pub(crate) const STREAMER_BOX_LO: u32 = 0x260;
 
-
 pub(crate) const STREAMER_BOX_HI: u32 = 0x270;
-
 
 pub(crate) const STREAMER_CLEARANCE: u32 = 0x280;
 
-
 pub(crate) const STREAMER_ZERO_A: u32 = 0x284;
 
-
 pub(crate) const STREAMER_ZERO_B: u32 = 0x288;
-
-
 
 /// `void cWorldCache_StreamerSetView(cWorldCache* self /*a0*/,
 /// unsigned i /*a1*/, sVec4* pos /*a2*/, float clearance /*f12*/)`
@@ -8750,9 +8745,6 @@ pub fn world_cache_streamer_set_view(c: &mut Cpu) {
     ret(c);
 }
 
-
-
-
 // -- 0x00166530 ChaseCameraAlgorithm_CheckDistanceReset_Wrapper --------------
 
 /// `void ChaseCameraAlgorithm_CheckDistanceReset_Wrapper(Chase* self)`
@@ -8762,7 +8754,10 @@ pub fn chase_camera_check_distance_reset_wrapper(c: &mut Cpu) {
     crate::call::tail_wrapper(
         c,
         None,
-        crate::call::Target::Direct(Callee { addr: 0x0016_8150, f: ee::s02::f_00168150 }),
+        crate::call::Target::Direct(Callee {
+            addr: 0x0016_8150,
+            f: ee::s02::f_00168150,
+        }),
         0x0016_6540,
     )
 }
@@ -11307,7 +11302,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     // --------------------------------------------- cWorldCache_StreamerSetView
 
     /// `cWorldCache_StreamerSetView`: streamer indices 0..7, random view
@@ -11344,7 +11338,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     // -- 0x00166530 ChaseCameraAlgorithm_CheckDistanceReset_Wrapper ------------
 
     /// `ChaseCameraAlgorithm_CheckDistanceReset_Wrapper` against the
@@ -11359,21 +11352,34 @@ pub(crate) mod tests {
         const CAM: u32 = DATA + 0x20_0000;
         const RIDER: u32 = DATA + 0x20_1000;
         const BODY: u32 = DATA + 0x20_2000;
-        covered(ee::s02::f_00166530__generated, chase_camera_check_distance_reset_wrapper, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0016_6530, 1);
-            c.pc = 0x0016_6530;
-            c.bus.write32(GAME_GP - 0x6778, 100.0f32.to_bits());
-            let span = [5.0f32, 40.0, 400.0][(r.next_u32() % 3) as usize];
-            let p = [r.f32(span), r.f32(span), r.f32(span), r.f32(1.0)];
-            put_vec(c, CAM + 0x20, p);
-            put_vec(c, CAM + 0x40, [r.f32(span), r.f32(span), r.f32(span), r.f32(1.0)]);
-            c.bus.write32(CAM + 0x30, RIDER);
-            let vt = vtable(c, &mut r, &[0x8]);
-            c.bus.write32(RIDER, vt);
-            c.bus.write32(RIDER + 4, BODY);
-            put_vec(c, BODY + 0x1b0, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
-            put_vec(c, 0x0050_0000 - 0xea0, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
-            c.g[A0][0] = sx(CAM);
-        });
+        covered(
+            ee::s02::f_00166530__generated,
+            chase_camera_check_distance_reset_wrapper,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0016_6530, 1);
+                c.pc = 0x0016_6530;
+                c.bus.write32(GAME_GP - 0x6778, 100.0f32.to_bits());
+                let span = [5.0f32, 40.0, 400.0][(r.next_u32() % 3) as usize];
+                let p = [r.f32(span), r.f32(span), r.f32(span), r.f32(1.0)];
+                put_vec(c, CAM + 0x20, p);
+                put_vec(
+                    c,
+                    CAM + 0x40,
+                    [r.f32(span), r.f32(span), r.f32(span), r.f32(1.0)],
+                );
+                c.bus.write32(CAM + 0x30, RIDER);
+                let vt = vtable(c, &mut r, &[0x8]);
+                c.bus.write32(RIDER, vt);
+                c.bus.write32(RIDER + 4, BODY);
+                put_vec(c, BODY + 0x1b0, [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0]);
+                put_vec(
+                    c,
+                    0x0050_0000 - 0xea0,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), 0],
+                );
+                c.g[A0][0] = sx(CAM);
+            },
+        );
     }
 }

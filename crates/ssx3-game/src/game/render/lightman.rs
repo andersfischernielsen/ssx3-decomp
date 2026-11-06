@@ -95,8 +95,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0039_1708, font_load, "Font_Load"),
     (0x0038_ee78, vfx_plants_update, "VfxPlants_Update"),
     (0x0039_0f20, vfx_screen_tint_render, "VfxScreenTint_Render"),
-    (0x0039_0c20, vfx_render_toggles_update, "VfxRenderToggles_Update"),
-    (0x0038_f800, vfx_visual_effects_test_render, "VfxVisualEffectsTest_Render"),
+    (
+        0x0039_0c20,
+        vfx_render_toggles_update,
+        "VfxRenderToggles_Update",
+    ),
+    (
+        0x0038_f800,
+        vfx_visual_effects_test_render,
+        "VfxVisualEffectsTest_Render",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2291,32 +2299,23 @@ pub fn vfx_screen_tint_render(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // VfxRenderToggles_Update (0x390c20)
 
 /// `gp+0x2a90`: the graphics manager (`D_004A5B80`).
 pub(crate) const TOGGLES_GFX_GP: u32 = 0x2a90;
 
-
 /// Graphics manager: the vtable pointer of the render-state interface.
 pub(crate) const TOGGLES_GFX_VTABLE: u32 = 0x10d8;
-
 
 /// Vtable slot 16 (`{delta: i16, fn}` at +0x80): set the render toggles.
 pub(crate) const TOGGLES_SLOT: u32 = 0x80;
 
-
 /// `gp+0x13d0`: the toggle flags (`D_004A44C0`).
 pub(crate) const TOGGLES_FLAGS_GP: u32 = 0x13d0;
 
-
 /// `gp+0x13d8`: a one-shot "changed" latch (`D_004A44C8`), cleared here.
 pub(crate) const TOGGLES_LATCH_GP: u32 = 0x13d8;
-
-
 
 /// `void VfxRenderToggles_Update(void)` (0x390c20): pass the render toggle
 /// flags to the graphics manager (vtable slot 16), then clear the one-shot
@@ -2349,16 +2348,11 @@ pub fn vfx_render_toggles_update(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // VfxVisualEffectsTest_Render (0x38f800)
 
 /// `cWorldPainterMan_DebugDraw()` (0x2bb6b8, through the table).
 pub(crate) const VFX_TEST_RENDER_DEBUG_DRAW: u32 = 0x002b_b6b8;
-
-
 
 /// `void VfxVisualEffectsTest_Render(void)` (0x38f800): the visual-effects
 /// test's render hook: draw the world painter's debug view.
@@ -3093,27 +3087,29 @@ pub(crate) mod tests {
     use super::*;
     use crate::game::visualfx::renderstateman::tests::table_getter_setup;
 
-
     /// The graphics manager with a fake slot-16 method, random flags, the
     /// latch set or clear.
     #[test]
     fn vfx_render_toggles_update_matches() {
         use crate::difftest::GAME_GP;
-        fakes::covered(ee::s12::f_00390c20__generated, vfx_render_toggles_update, 200, &|c, seed| {
-            let mut r = fakes::machine(c, seed, 0x39_0c20, 1);
-            let gfx = fakes::ptr(&mut r);
-            let vt = fakes::vtable(c, &mut r, &[TOGGLES_SLOT]);
-            c.bus.write32(GAME_GP + TOGGLES_GFX_GP, gfx);
-            c.bus.write32(gfx + TOGGLES_GFX_VTABLE, vt);
-            c.bus.write32(GAME_GP + TOGGLES_FLAGS_GP, r.next_u32());
-            let latch = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
-            c.bus.write32(GAME_GP + TOGGLES_LATCH_GP, latch);
-            c.pc = 0x0039_0c20;
-        });
+        fakes::covered(
+            ee::s12::f_00390c20__generated,
+            vfx_render_toggles_update,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x39_0c20, 1);
+                let gfx = fakes::ptr(&mut r);
+                let vt = fakes::vtable(c, &mut r, &[TOGGLES_SLOT]);
+                c.bus.write32(GAME_GP + TOGGLES_GFX_GP, gfx);
+                c.bus.write32(gfx + TOGGLES_GFX_VTABLE, vt);
+                c.bus.write32(GAME_GP + TOGGLES_FLAGS_GP, r.next_u32());
+                let latch = if seed % 2 == 0 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(GAME_GP + TOGGLES_LATCH_GP, latch);
+                c.pc = 0x0039_0c20;
+            },
+        );
     }
     use super::*;
-
-
 
     /// VfxVisualEffectsTest_Render: the real cWorldPainterMan_DebugDraw over
     /// a test world, with the debug-draw flag (gp+0x13c4) off (its short
@@ -3122,21 +3118,26 @@ pub(crate) mod tests {
     fn vfx_visual_effects_test_render_matches() {
         use crate::difftest::fakes::machine;
         use crate::difftest::{check, DATA, GAME_GP};
-        check(ee::s12::f_0038f800__generated, vfx_visual_effects_test_render, 60, &|c, seed| {
-            let _ = machine(c, seed, 0x0038_f800, 0);
-            c.pc = 0x0038_f800;
-            let world = DATA + 0x100;
-            let man = DATA + 0x200;
-            let painter = DATA + 0x300;
-            let current = DATA + 0x400;
-            c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
-            c.bus.write32(world + 0x84, man);
-            c.bus.write32(man + 0x10, painter);
-            c.bus.write32(painter + 0x8, current);
-            c.bus.write32(GAME_GP + 0x13c4, seed % 2);
-            // Flag on: entry table at gp+0x770 empty (null entry), index 0.
-            c.bus.write32(GAME_GP + 0x770, 0);
-            c.bus.write32(current + 0x4, 0);
-        });
+        check(
+            ee::s12::f_0038f800__generated,
+            vfx_visual_effects_test_render,
+            60,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0038_f800, 0);
+                c.pc = 0x0038_f800;
+                let world = DATA + 0x100;
+                let man = DATA + 0x200;
+                let painter = DATA + 0x300;
+                let current = DATA + 0x400;
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(world + 0x84, man);
+                c.bus.write32(man + 0x10, painter);
+                c.bus.write32(painter + 0x8, current);
+                c.bus.write32(GAME_GP + 0x13c4, seed % 2);
+                // Flag on: entry table at gp+0x770 empty (null entry), index 0.
+                c.bus.write32(GAME_GP + 0x770, 0);
+                c.bus.write32(current + 0x4, 0);
+            },
+        );
     }
 }

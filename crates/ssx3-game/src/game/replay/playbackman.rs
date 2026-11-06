@@ -1494,66 +1494,47 @@ pub fn replay_cache_record_frame(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // ReplayCache_Update (0x26d178)
 
 /// World pointer (`gp - 0x848`).
 pub(crate) const GP_WORLD: u32 = 0x848;
 
-
 /// World: the race manager (`+0x84`); race manager: the game state (`+0x28`).
 pub(crate) const WORLD_RACE: u32 = 0x84;
 
-
 pub(crate) const RACE_STATE: u32 = 0x28;
-
 
 /// Game state: three "paused/busy" flags that stop recording.
 pub(crate) const STATE_BUSY_A: u32 = 0x60c;
 
-
 pub(crate) const STATE_BUSY_B: u32 = 0x608;
 
-
 pub(crate) const STATE_BUSY_C: u32 = 0x610;
-
 
 /// Replay cache: the chunk buffer (null: no replay).
 pub(crate) const CACHE_CHUNKS: u32 = 0xc;
 
-
 /// The switch's jump table on the game mode (15 entries).
 pub(crate) const UPDATE_JUMP_TABLE: u32 = 0x0048_15b0;
 
-
 pub(crate) const UPDATE_RECORD: u32 = 0x0026_d1d0;
-
 
 pub(crate) const UPDATE_IDLE: u32 = 0x0026_d204;
 
-
 pub(crate) const UPDATE_READ: u32 = 0x0026_d20c;
 
-
 pub(crate) const UPDATE_DONE: u32 = 0x0026_d218;
-
-
 
 pub(crate) const REPLAY_CACHE_RECORD_FRAME: Callee = Callee {
     addr: 0x0026_d2b0,
     f: ee::s07::ReplayCache_RecordFrame,
 };
 
-
 pub(crate) const REPLAY_CACHE_READ_FRAME: Callee = Callee {
     addr: 0x0026_d420,
     f: ee::s07::ReplayCache_ReadFrame,
 };
-
-
 
 /// `int ReplayCache_Update(ReplayCache* cache, void* frame)` (0x26d178):
 /// once per tick, by game mode (the state word at world->race->state):
@@ -2235,7 +2216,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     /// `ReplayCache_Update`: every game mode 0..14 and some out of range,
     /// the busy flags (none or one of three) in record mode, a cache with or
     /// without a buffer; the real `ReplayCache_RecordFrame` (with `memcmp`
@@ -2274,9 +2254,13 @@ pub(crate) mod tests {
                     m => m,
                 };
                 c.bus.write32(STATE, mode);
-                for (i, off) in [STATE_BUSY_A, STATE_BUSY_B, STATE_BUSY_C].into_iter().enumerate() {
+                for (i, off) in [STATE_BUSY_A, STATE_BUSY_B, STATE_BUSY_C]
+                    .into_iter()
+                    .enumerate()
+                {
                     let set = (seed / 20) % 4 == i as u32 + 1;
-                    c.bus.write32(STATE + off, if set { r.next_u32() | 1 } else { 0 });
+                    c.bus
+                        .write32(STATE + off, if set { r.next_u32() | 1 } else { 0 });
                 }
                 // The cache: count, read position, repeat left, chunks.
                 fill(c, &mut r, CHUNKS, 32);

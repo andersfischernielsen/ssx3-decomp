@@ -8,10 +8,16 @@ use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
+use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::Unwound;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+use crate::game::animation::animsequencer::ASL_PUSH_NEW;
+use crate::game::animation::animsequencer::ASL_SET_TRACK_ANIM;
+use crate::game::animation::animsequencer::ASL_SET_TRACK_LOOP;
+use crate::game::animation::animsequencer::ASL_SET_TRACK_TIME;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_add;
 pub(crate) use crate::game::intersect::aifwddiff::oc230_sll;
 pub(crate) use crate::game::scripter::ssxscriptengine::low;
@@ -24,13 +30,12 @@ use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
 use ssx3_ee_rt::float;
 use ssx3_ee_rt::funcs::GuestFn;
-use ssx3_ee_rt::Cpu;
 use ssx3_ee_rt::vu0::Src;
 use ssx3_ee_rt::vu0::W;
 use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
-use crate::call::Flow;
+use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -52,9 +57,18 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0031_9e48, mem_pool_alloc, "MEM_PoolAlloc"),
     (0x0031_f2c8, dlheap_memalign, "DLHeap_Memalign"),
     (0x0031_ed60, dlheap_free, "DLHeap_Free"),
-    (0x0031_d7e0, c_csi_cubic_spline_add_point, "cCSICubicSpline_AddPoint"),
+    (
+        0x0031_d7e0,
+        c_csi_cubic_spline_add_point,
+        "cCSICubicSpline_AddPoint",
+    ),
     (0x0032_0368, mem_pool64_alloc, "MEM_Pool64Alloc"),
     (0x0032_0408, mem_pool256_alloc, "MEM_Pool256Alloc"),
+    (
+        0x0031_d8b0,
+        c_csi_cubic_spline_solve,
+        "cCSICubicSpline_Solve",
+    ),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -685,9 +699,6 @@ pub fn mem_pool_alloc(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // DLHeap_Memalign (0x31f2c8)
 
@@ -696,30 +707,20 @@ pub(crate) const DLHEAP_MALLOC: Callee = Callee {
     f: ee::s10::DLHeap_Malloc,
 };
 
-
-
 pub(crate) const DLHEAP_FREE: Callee = Callee {
     addr: 0x0031_ed60,
     f: ee::s10::DLHeap_Free,
 };
 
-
-
 /// `int* __errno()` (through the function table).
 pub(crate) const ERRNO: u32 = 0x0041_5fb8;
 
-
 pub(crate) const ENOMEM: u64 = 0xc;
-
-
 
 /// dlmalloc chunk header bits: previous chunk in use, chunk is mmapped.
 pub(crate) const PREV_INUSE: u64 = 0x1;
 
-
 pub(crate) const IS_MMAPPED: u64 = 0x2;
-
-
 
 /// `void* DLHeap_Memalign(DLHeap* heap /*a0*/, uint align /*a1*/,
 /// uint size /*a2*/)` (0x31f2c8): dlmalloc's `memalign`. An alignment of 16
@@ -933,9 +934,6 @@ pub fn dlheap_memalign(c: &mut Cpu) {
     });
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // DLHeap_Free (0x31ed60)
 
@@ -945,34 +943,24 @@ pub fn dlheap_memalign(c: &mut Cpu) {
 /// the trim threshold (+0x344) and the top pad (+0x348).
 pub(crate) const DLF_TOP: u32 = 0x30;
 
-
 pub(crate) const DLF_UNSORTED: u32 = 0x38;
-
 
 pub(crate) const DLF_UNSORTED_FD: u32 = 0x40;
 
-
 pub(crate) const DLF_TRIM_THRESHOLD: u32 = 0x344;
 
-
 pub(crate) const DLF_TOP_PAD: u32 = 0x348;
-
 
 /// Chunk fields: previous size (+0), size with flags (+4), `fd` (+8), `bk`
 /// (+0xc); size flags: previous in use (bit 0), mmapped (bit 1).
 pub(crate) const DLF_CHUNK_SIZE: u32 = 0x4;
 
-
 pub(crate) const DLF_CHUNK_FD: u32 = 0x8;
-
 
 pub(crate) const DLF_CHUNK_BK: u32 = 0xc;
 
-
 /// `FASTBIN_CONSOLIDATION_THRESHOLD`.
 pub(crate) const DLF_CONSOLIDATE_THRESHOLD: u64 = 0x4000;
-
-
 
 /// `DLHeap_Consolidate` (0x31eee8).
 pub(crate) const DLHEAP_CONSOLIDATE: Callee = Callee {
@@ -980,14 +968,11 @@ pub(crate) const DLHEAP_CONSOLIDATE: Callee = Callee {
     f: ee::s10::f_0031eee8,
 };
 
-
 /// `DLHeap_SysTrim` (0x31e6d8).
 pub(crate) const DLHEAP_SYS_TRIM: Callee = Callee {
     addr: 0x0031_e6d8,
     f: ee::s10::f_0031e6d8,
 };
-
-
 
 /// `void DLHeap_Free(DLHeap *heap, void *mem)` (0x31ed60): dlmalloc's
 /// `free`. Null is ignored; a chunk no bigger than `max_fast` goes on the
@@ -1175,23 +1160,16 @@ pub fn dlheap_free(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ---------------------------------------------------------------------------
 // MEM_Pool256Alloc (0x320408, cubicspline.cpp)
 
 /// The 256-byte pool's free-list head (offset in the pool object).
 pub(crate) const OC264_POOL256_FREE_HEAD: u32 = 0x2_0000;
 
-
-
 pub(crate) const OC264_MEM_POOL_ALLOC: Callee = Callee {
     addr: 0x0031_9e48,
     f: ee::s10::MEM_PoolAlloc,
 };
-
-
 
 /// `void* MEM_Pool256Alloc(Pool256* pool)` (0x320408): pops a block off the
 /// 256-byte pool's free list; when the list is empty falls back to
@@ -1223,30 +1201,25 @@ pub fn mem_pool256_alloc(c: &mut Cpu) {
     })
 }
 
-
-
 // ---------------------------------------------------------------------------
 // cCSICubicSpline_AddPoint (0x31d7e0)
 
 /// `cCSICubicSpline_Solve(spline)`: compute the second derivatives.
-pub(crate) const SPLINE_ADD_SOLVE: Callee = Callee { addr: 0x0031_d8b0, f: ee::s10::cCSICubicSpline_Solve };
-
+pub(crate) const SPLINE_ADD_SOLVE: Callee = Callee {
+    addr: 0x0031_d8b0,
+    f: ee::s10::cCSICubicSpline_Solve,
+};
 
 /// cCSICubicSpline: flags word at +0 (bit 2 solved, bits 3..10 points
 /// added, bits 11..18 capacity), the keys at +8.
 pub(crate) const SPLINE_ADD_FLAGS: u32 = 0x0;
 
-
 pub(crate) const SPLINE_ADD_KEYS: u32 = 0x8;
-
 
 pub(crate) const SPLINE_ADD_SOLVED: u64 = 0x4;
 
-
 /// A key: 0x14 bytes, `{x, y, end_x, end_y, d2}`.
 pub(crate) const SPLINE_ADD_KEY_SIZE: u32 = 0x14;
-
-
 
 /// `void cCSICubicSpline_AddPoint(cCSICubicSpline* self, float x, float y)`
 /// (0x31d7e0): append the key `(x, y)`; when the spline is already full,
@@ -1317,18 +1290,16 @@ pub fn c_csi_cubic_spline_add_point(c: &mut Cpu) {
     });
 }
 
-
-
 // ---------------------------------------------------------------------------
 // MEM_Pool64Alloc (0x320368)
 
 /// Free-list head of the 64-byte pool.
 pub(crate) const MEM_POOL64_FREE: u32 = 0x3_2000;
 
-
-pub(crate) const MEM_POOL64_FALLBACK: Callee = Callee { addr: 0x0031_9e48, f: ee::s10::f_00319e48 };
-
-
+pub(crate) const MEM_POOL64_FALLBACK: Callee = Callee {
+    addr: 0x0031_9e48,
+    f: ee::s10::f_00319e48,
+};
 
 /// `void* MEM_Pool64Alloc(Pool64* pool)` (0x320368): pop a block off the
 /// 64-byte pool's free list (`pool + 0x32000`); when it is empty fall back
@@ -1359,6 +1330,610 @@ pub fn mem_pool64_alloc(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+// ---------------------------------------------------------------------------
+// cCSICubicSpline_Solve (0x31d8b0, cubicspline.cpp)
+
+/// Spline header word: knot count in bits 11..18, bit 0 = clamped ends (the
+/// start slope in knot 0's +0x10, the end slope at +4). Knots at +8, 20 bytes
+/// each: on input `{x, y, ..}` (the last knot's `{x, y}` at +8/+0xc), on
+/// output `{d, c, b, y, x}`.
+pub(crate) const CSP_KNOTS: u32 = 0x8;
+
+pub(crate) const CSP_END_SLOPE: u32 = 0x4;
+
+pub(crate) const CSP_KNOT_SIZE: u32 = 0x14;
+
+pub(crate) const CSP_Y: u32 = 0x400;
+
+pub(crate) const CSP_H: u32 = 0x800;
+
+pub(crate) const CSP_ALPHA: u32 = 0xc00;
+
+pub(crate) const CSP_L: u32 = 0x1000;
+
+pub(crate) const CSP_MU: u32 = 0x1400;
+
+pub(crate) const CSP_Z: u32 = 0x1800;
+
+pub(crate) const CSP_C: u32 = 0x2000;
+
+/// `.lit4` constants (1/3) for the natural and clamped back-substitution.
+pub(crate) const CSP_THIRD_NATURAL: u32 = 0x2e48;
+
+pub(crate) const CSP_THIRD_CLAMPED: u32 = 0x2e44;
+
+pub(crate) const CSP_THREE: u32 = 0x4040_0000;
+
+#[inline]
+pub(crate) fn csp_fset(c: &mut Cpu, regs: &[(usize, FpuF32)]) {
+    for &(r, v) in regs {
+        c.f[r] = v.0;
+    }
+}
+
+#[inline]
+pub(crate) fn csp_add(c: &mut Cpu, r: usize, k: u32) {
+    c.g[r][0] = sx(r32(c, r).wrapping_add(k));
+}
+
+#[inline]
+pub(crate) fn csp_lt(c: &Cpu, a: usize, b: usize) -> u64 {
+    ((c.g[a][0] as i64) < (c.g[b][0] as i64)) as u64
+}
+
+/// `void cCSICubicSpline_Solve(sCubicSpline* self)` (0x31d8b0): computes the
+/// cubic spline coefficients through the knots (the classic tridiagonal
+/// solve: h, alpha, l/mu/z forward sweep, c/b/d back substitution), natural
+/// or clamped, in ten 256-float arrays on a 0x2830-byte stack frame, and
+/// writes `{d, c, b, y, x}` back into each knot; the last knot's x goes to
+/// +4 and the header's bits 19..26 are cleared. A leaf (s0..s2 saved at
+/// 0x2800..0x2820).
+pub fn c_csi_cubic_spline_solve(c: &mut Cpu) {
+    c.cycles += 10;
+    let frame = Frame::open(c, 0x2830);
+    c.g[T3][0] = c.g[A0][0];
+    frame.save(c, S0, 0x2820);
+    frame.save(c, S1, 0x2810);
+    frame.save(c, S2, 0x2800);
+    let this = r32(c, T3);
+    c.g[V0][0] = c.lw(this);
+    c.g[T2][0] = sx(r32(c, V0) >> 11) & 0xff;
+    let base = sp(c);
+    let ys = base.wrapping_add(CSP_Y);
+    c.g[T7][0] = sx(ys);
+    let n = r32(c, T2);
+    // Copy the knots' x and y into the frame.
+    if n != 0 {
+        c.cycles += 4;
+        c.g[V0][0] = c.lw(this.wrapping_add(CSP_KNOTS));
+        c.g[A0][0] = sx(ys);
+        c.g[V1][0] = sx(base);
+        c.g[T0][0] = n as u64;
+        loop {
+            c.cycles += 9;
+            let knot = r32(c, V0);
+            let x = Addr(knot).read_fpu(c);
+            csp_add(c, T0, u32::MAX);
+            Addr(r32(c, V1)).write_fpu(c, x);
+            csp_add(c, V1, 4);
+            let y = Addr(knot.wrapping_add(4)).read_fpu(c);
+            c.g[V0][0] = sx(knot.wrapping_add(CSP_KNOT_SIZE));
+            Addr(r32(c, A0)).write_fpu(c, y);
+            c.f[0] = y.0;
+            let more = c.g[T0][0] != 0;
+            csp_add(c, A0, 4);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_d8e8);
+            }
+        }
+    }
+    // 0x31d8f0: the last knot's {x, y}, then h[i] = x[i+1] - x[i].
+    c.cycles += 14;
+    c.g[V1][0] = CSP_KNOT_SIZE as u64;
+    c.g[A1][0] = c.lw(this.wrapping_add(CSP_KNOTS));
+    c.mult(0, V1, T2, V1);
+    let n4 = n << 2;
+    c.g[V0][0] = sx(n4);
+    c.g[A0][0] = sx(base.wrapping_add(n4));
+    c.g[T6][0] = sx(n4);
+    c.g[V0][0] = sx(ys.wrapping_add(n4));
+    c.g[T0][0] = 0;
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+    let last = r32(c, V1);
+    let x = Addr(last.wrapping_sub(0xc)).read_fpu(c);
+    Addr(r32(c, A0)).write_fpu(c, x);
+    let y = Addr(last.wrapping_sub(0x8)).read_fpu(c);
+    Addr(r32(c, V0)).write_fpu(c, y);
+    csp_fset(c, &[(0, x), (1, y)]);
+    if n != 0 {
+        c.cycles += 1;
+        c.g[V1][0] = sx(base);
+        loop {
+            c.cycles += 8;
+            let p = r32(c, V1);
+            let x1 = Addr(p.wrapping_add(4)).read_fpu(c);
+            csp_add(c, T0, 1);
+            let x0 = Addr(p).read_fpu(c);
+            c.g[V0][0] = csp_lt(c, T0, T2);
+            let h = x1 - x0;
+            Addr(p.wrapping_add(CSP_H)).write_fpu(c, h);
+            c.g[V1][0] = sx(p.wrapping_add(4));
+            csp_fset(c, &[(0, h), (1, x0)]);
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_d948);
+            }
+        }
+    }
+    // 0x31d968: natural or clamped ends.
+    c.cycles += 4;
+    c.g[V0][0] = c.lw(this);
+    c.g[V1][0] = c.g[V0][0] & 1;
+    let clamped = c.g[V1][0] != 0;
+    c.g[V0][0] = 1;
+    if clamped {
+        c.cycles += 2;
+        c.f[0] = Addr(ys).read_fpu(c).0;
+        csp_solve_clamped(c, base);
+    } else {
+        csp_solve_natural(c, base);
+    }
+    // 0x31de30: write {d, c, b, y, x} back into the knots.
+    c.cycles += 2;
+    c.g[A0][0] = sx(base);
+    if c.g[T2][0] != 0 {
+        c.cycles += 4;
+        c.g[A2][0] = c.g[T7][0];
+        c.g[T0][0] = c.g[T2][0];
+        c.g[A1][0] = 0;
+        loop {
+            c.cycles += 25;
+            let this = r32(c, T3);
+            let p = r32(c, A0);
+            let off = r32(c, A1);
+            csp_add(c, T0, u32::MAX);
+            // d, c, b into the knot's +0, +4, +8 (v1, v0, v1 hold the knot).
+            for (k, src, reg) in [(0u32, 0x2400u32, V1), (4, CSP_C, V0), (8, 0x1c00, V1)] {
+                let knots = c.lw(this.wrapping_add(CSP_KNOTS));
+                let val = Addr(p.wrapping_add(src)).read_fpu(c);
+                c.g[reg][0] = sx(off.wrapping_add(knots as u32));
+                Addr(r32(c, reg).wrapping_add(k)).write_fpu(c, val);
+            }
+            let knots = c.lw(this.wrapping_add(CSP_KNOTS));
+            let y = Addr(r32(c, A2)).read_fpu(c);
+            c.g[V0][0] = sx(off.wrapping_add(knots as u32));
+            csp_add(c, A2, 4);
+            Addr(r32(c, V0).wrapping_add(0xc)).write_fpu(c, y);
+            let knots = c.lw(this.wrapping_add(CSP_KNOTS));
+            let x = Addr(p).read_fpu(c);
+            c.g[V1][0] = sx(off.wrapping_add(knots as u32));
+            c.g[A0][0] = sx(p.wrapping_add(4));
+            Addr(r32(c, V1).wrapping_add(0x10)).write_fpu(c, x);
+            c.f[0] = x.0;
+            let more = c.g[T0][0] != 0;
+            c.g[A1][0] = sx(off.wrapping_add(CSP_KNOT_SIZE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_de48);
+            }
+        }
+    }
+    // 0x31deac
+    c.cycles += 13;
+    let this = r32(c, T3);
+    c.g[V1][0] = c.lw(this);
+    c.g[A0][0] = sx(base.wrapping_add(r32(c, T6)));
+    c.g[V0][0] = 0xffff_ffff_f807_ffff;
+    let xn = Addr(r32(c, A0)).read_fpu(c);
+    c.f[0] = xn.0;
+    frame.restore(c, S0, 0x2820);
+    c.g[V1][0] &= c.g[V0][0];
+    frame.restore(c, S1, 0x2810);
+    frame.restore(c, S2, 0x2800);
+    Addr(this.wrapping_add(CSP_END_SLOPE)).write_fpu(c, xn);
+    c.sw(this, c.g[V1][0]);
+    frame.close(c);
+}
+
+/// alpha[i] = 3/h[i] (y[i+1]-y[i]) - 3/h[i-1] (y[i]-y[i-1]) for i in
+/// 1..n, from `A0` (alpha) / `V1` (y) / `A1`-or-`A0` cursor registers
+/// (the natural and clamped loops at 0x31d9b8 / 0x31dc18 differ only in
+/// their register use).
+pub(crate) fn csp_alpha_step(c: &mut Cpu, out: u32, hp: u32, yp: u32) -> [FpuF32; 6] {
+    let h1 = Addr(hp).read_fpu(c);
+    csp_add(c, T0, 1);
+    let h0 = Addr(hp.wrapping_sub(4)).read_fpu(c);
+    c.g[V0][0] = csp_lt(c, T0, T2);
+    let y1 = Addr(yp).read_fpu(c);
+    let k = FpuF32(c.f[5]);
+    let r1 = k.div(h1);
+    let y2 = Addr(yp.wrapping_add(4)).read_fpu(c);
+    let r0 = k.div(h0);
+    let y0 = Addr(yp.wrapping_sub(4)).read_fpu(c);
+    let dy1 = y2 - y1;
+    let dy0 = y1 - y0;
+    let p1 = r1 * dy1;
+    let p0 = r0 * dy0;
+    let alpha = p1 - p0;
+    Addr(out).write_fpu(c, alpha);
+    [dy1, alpha, dy0, p0, y0, p1]
+}
+
+/// Natural ends (0x31d988..0x31db60): alpha, the forward sweep with
+/// l[0] = 1, mu[0] = z[0] = 0, then c/b/d back substitution.
+pub(crate) fn csp_solve_natural(c: &mut Cpu, base: u32) {
+    let ys = base.wrapping_add(CSP_Y);
+    c.cycles += 7;
+    c.g[T0][0] = 1;
+    c.g[T8][0] = sx(base.wrapping_add(CSP_L));
+    c.g[V0][0] = csp_lt(c, T0, T2);
+    c.g[T4][0] = sx(base.wrapping_add(CSP_Z));
+    c.g[T9][0] = sx(base.wrapping_add(CSP_C));
+    c.g[S0][0] = sx(r32(c, T2).wrapping_sub(1));
+    if c.g[V0][0] != 0 {
+        c.cycles += 5;
+        c.g[AT][0] = CSP_THREE as u64;
+        c.f[5] = CSP_THREE;
+        c.g[A0][0] = sx(base.wrapping_add(CSP_ALPHA + 4));
+        c.g[V1][0] = sx(ys.wrapping_add(4));
+        loop {
+            c.cycles += 18;
+            let a = r32(c, A0);
+            let v = r32(c, V1);
+            let [dy1, alpha, dy0, p0, y0, _] = csp_alpha_step(c, a, a.wrapping_sub(0x400), v);
+            c.g[V1][0] = sx(v.wrapping_add(4));
+            csp_fset(c, &[(0, dy1), (1, alpha), (2, dy0), (3, p0), (4, y0)]);
+            let more = c.g[V0][0] != 0;
+            c.g[A0][0] = sx(a.wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_d9b8);
+            }
+        }
+    }
+    // 0x31da00: forward sweep.
+    c.cycles += 8;
+    c.g[AT][0] = 0x3f80_0000;
+    c.f[0] = 0x3f80_0000;
+    c.g[T0][0] = 1;
+    c.sw(base.wrapping_add(CSP_MU), 0);
+    c.g[V0][0] = csp_lt(c, T0, T2);
+    Addr(base.wrapping_add(CSP_L)).write_fpu(c, FpuF32::ONE);
+    c.sw(base.wrapping_add(CSP_Z), 0);
+    if c.g[V0][0] != 0 {
+        c.cycles += 4;
+        c.g[A1][0] = sx(r32(c, T4).wrapping_add(4));
+        c.g[V1][0] = sx(base.wrapping_add(CSP_H));
+        c.g[A0][0] = sx(r32(c, T8).wrapping_add(4));
+        loop {
+            c.cycles += 26;
+            let v = r32(c, V1);
+            let a0 = r32(c, A0);
+            let a1 = r32(c, A1);
+            let x0 = Addr(v.wrapping_sub(0x800)).read_fpu(c);
+            csp_add(c, T0, 1);
+            let x2 = Addr(v.wrapping_sub(0x7f8)).read_fpu(c);
+            c.g[V0][0] = csp_lt(c, T0, T2);
+            let mu0 = Addr(v.wrapping_add(0xc00)).read_fpu(c);
+            let dx = x2 - x0;
+            let h0 = Addr(v).read_fpu(c);
+            let hm = h0 * mu0;
+            let l = (dx + dx) - hm;
+            Addr(a0).write_fpu(c, l);
+            let h1 = Addr(v.wrapping_add(4)).read_fpu(c);
+            let h0b = Addr(v).read_fpu(c);
+            let mu = h1.div(l);
+            let alpha = Addr(v.wrapping_add(0x404)).read_fpu(c);
+            Addr(v.wrapping_add(0xc04)).write_fpu(c, mu);
+            c.g[V1][0] = sx(v.wrapping_add(4));
+            let z0 = Addr(a1.wrapping_sub(4)).read_fpu(c);
+            let lr = Addr(a0).read_fpu(c);
+            let hz = h0b * z0;
+            c.g[A0][0] = sx(a0.wrapping_add(4));
+            let z = (alpha - hz).div(lr);
+            Addr(a1).write_fpu(c, z);
+            let more = c.g[V0][0] != 0;
+            c.g[A1][0] = sx(a1.wrapping_add(4));
+            csp_fset(c, &[(0, z0), (1, lr), (2, z), (3, hz)]);
+            if !more {
+                c.cycles += 2;
+                c.g[AT][0] = 0x3f80_0000;
+                c.f[0] = 0x3f80_0000;
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_da30);
+            }
+        }
+    }
+    // 0x31daa0: l[n] = 1, z[n] = c[n] = 0; back substitution.
+    c.cycles += 8;
+    let t6 = r32(c, T6);
+    c.g[V0][0] = sx(r32(c, T8).wrapping_add(t6));
+    c.g[V1][0] = sx(r32(c, T4).wrapping_add(t6));
+    c.g[A0][0] = sx(r32(c, T9).wrapping_add(t6));
+    let f0 = FpuF32(c.f[0]);
+    Addr(r32(c, V0)).write_fpu(c, f0);
+    c.g[T0][0] = c.g[S0][0];
+    c.sw(r32(c, V1), 0);
+    c.sw(r32(c, A0), 0);
+    if (c.g[T0][0] as i64) < 0 {
+        return;
+    }
+    c.cycles += 10;
+    let j4 = r32(c, T0) << 2;
+    c.g[V0][0] = sx(j4);
+    c.g[A0][0] = sx(base.wrapping_add(CSP_H).wrapping_add(j4));
+    c.g[A1][0] = sx(j4.wrapping_add(r32(c, T4)));
+    c.lwc1(6, r32(c, GP).wrapping_sub(CSP_THIRD_NATURAL));
+    c.g[AT][0] = CSP_THREE as u64;
+    c.f[5] = CSP_THREE;
+    c.g[V1][0] = sx(j4.wrapping_add(4).wrapping_add(r32(c, T9)));
+    c.g[V0][0] = sx(j4.wrapping_add(r32(c, T7)));
+    loop {
+        c.cycles += 29;
+        let v1 = r32(c, V1);
+        let a0 = r32(c, A0);
+        let a1 = r32(c, A1);
+        let v0 = r32(c, V0);
+        let c_next = Addr(v1).read_fpu(c);
+        csp_add(c, T0, u32::MAX);
+        let mu = Addr(a0.wrapping_add(0xc00)).read_fpu(c);
+        let z = Addr(a1).read_fpu(c);
+        c.g[A1][0] = sx(a1.wrapping_sub(4));
+        let cj = z - mu * c_next;
+        Addr(v1.wrapping_sub(4)).write_fpu(c, cj);
+        let y0 = Addr(v0).read_fpu(c);
+        let y1 = Addr(v0.wrapping_add(4)).read_fpu(c);
+        let s = c_next + (cj + cj);
+        let h = Addr(a0).read_fpu(c);
+        c.g[V0][0] = sx(v0.wrapping_sub(4));
+        let h3 = h * FpuF32(c.f[5]);
+        let hs6 = (h * s) * FpuF32(c.f[6]);
+        let b = (y1 - y0).div(h) - hs6;
+        Addr(a0.wrapping_add(0x1400)).write_fpu(c, b);
+        let cn2 = Addr(v1).read_fpu(c);
+        let cj2 = Addr(v1.wrapping_sub(4)).read_fpu(c);
+        c.g[V1][0] = sx(v1.wrapping_sub(4));
+        let d = (cn2 - cj2).div(h3);
+        Addr(a0.wrapping_add(0x1c00)).write_fpu(c, d);
+        let more = (c.g[T0][0] as i64) >= 0;
+        c.g[A0][0] = sx(a0.wrapping_sub(4));
+        csp_fset(c, &[(0, d), (1, cj2), (2, h), (3, hs6), (4, h3)]);
+        if !more {
+            c.cycles += 2;
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0031_dae8);
+        }
+    }
+}
+
+/// Clamped ends (0x31db64..0x31de2c; f0 = y[0]): alpha with the end slopes,
+/// the forward sweep with l[0] = 2 h[0], mu[0] = 1/2, then back substitution.
+pub(crate) fn csp_solve_clamped(c: &mut Cpu, base: u32) {
+    let ys = base.wrapping_add(CSP_Y);
+    let this = r32(c, T3);
+    let t6 = r32(c, T6);
+    let three = FpuF32(CSP_THREE);
+    c.cycles += 40;
+    c.g[A1][0] = sx(r32(c, T2).wrapping_sub(1));
+    let y_first = FpuF32(c.f[0]);
+    let y1 = Addr(base.wrapping_add(CSP_Y + 4)).read_fpu(c);
+    let m4 = r32(c, A1) << 2;
+    c.g[A0][0] = sx(m4);
+    c.g[AT][0] = CSP_THREE as u64;
+    c.g[A2][0] = sx(ys.wrapping_add(m4));
+    let h0 = Addr(base.wrapping_add(CSP_H)).read_fpu(c);
+    c.g[V0][0] = c.lw(this.wrapping_add(CSP_KNOTS));
+    c.g[A3][0] = sx(ys.wrapping_add(t6));
+    let end_slope = Addr(this.wrapping_add(CSP_END_SLOPE)).read_fpu(c);
+    c.g[V1][0] = sx(base.wrapping_add(CSP_H));
+    let start_slope = Addr(r32(c, V0).wrapping_add(0x10)).read_fpu(c);
+    c.g[S1][0] = c.g[V1][0];
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(m4));
+    let alpha0 = ((y1 - y_first) * three).div(h0) - start_slope * three;
+    c.g[S2][0] = sx(base.wrapping_add(CSP_ALPHA));
+    c.g[T0][0] = 1;
+    c.g[V0][0] = sx(base.wrapping_add(CSP_ALPHA).wrapping_add(t6));
+    c.g[S0][0] = c.g[A1][0];
+    c.g[A0][0] = csp_lt(c, T0, T2);
+    c.g[T8][0] = sx(base.wrapping_add(CSP_L));
+    c.g[T5][0] = sx(base.wrapping_add(CSP_MU));
+    c.g[T4][0] = sx(base.wrapping_add(CSP_Z));
+    c.g[T9][0] = sx(base.wrapping_add(CSP_C));
+    Addr(base.wrapping_add(CSP_ALPHA)).write_fpu(c, alpha0);
+    let yn = Addr(r32(c, A3)).read_fpu(c);
+    let yp = Addr(r32(c, A2)).read_fpu(c);
+    let hl = Addr(r32(c, V1)).read_fpu(c);
+    let q = ((yn - yp) * three).div(hl);
+    let alpha_n = end_slope * three - q;
+    Addr(r32(c, V0)).write_fpu(c, alpha_n);
+    csp_fset(c, &[(0, q), (1, yp), (2, hl), (3, alpha_n), (4, three)]);
+    if c.g[A0][0] != 0 {
+        c.cycles += 5;
+        c.f[5] = c.f[4];
+        c.g[A1][0] = sx(base.wrapping_add(CSP_ALPHA + 4));
+        c.g[V1][0] = sx(ys.wrapping_add(4));
+        c.g[A0][0] = sx(base.wrapping_add(CSP_H + 4));
+        loop {
+            c.cycles += 19;
+            let a0 = r32(c, A0);
+            let v = r32(c, V1);
+            let a1 = r32(c, A1);
+            let [dy1, alpha, dy0, p0, y0, _] = csp_alpha_step(c, a1, a0, v);
+            c.g[A0][0] = sx(a0.wrapping_add(4));
+            c.g[V1][0] = sx(v.wrapping_add(4));
+            csp_fset(c, &[(0, alpha), (1, dy1), (2, dy0), (3, p0), (4, y0)]);
+            let more = c.g[V0][0] != 0;
+            c.g[A1][0] = sx(a1.wrapping_add(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_dc18);
+            }
+        }
+    }
+    // 0x31dc64: forward sweep.
+    c.cycles += 12;
+    let h0 = Addr(base.wrapping_add(CSP_H)).read_fpu(c);
+    c.g[T0][0] = 1;
+    let a0v = Addr(base.wrapping_add(CSP_ALPHA)).read_fpu(c);
+    c.g[V0][0] = csp_lt(c, T0, T2);
+    let l0 = h0 + h0;
+    c.g[AT][0] = 0x3f00_0000;
+    let half = FpuF32(0x3f00_0000);
+    Addr(base.wrapping_add(CSP_MU)).write_fpu(c, half);
+    let z0 = a0v.div(l0);
+    Addr(base.wrapping_add(CSP_L)).write_fpu(c, l0);
+    Addr(base.wrapping_add(CSP_Z)).write_fpu(c, z0);
+    csp_fset(c, &[(0, half), (1, l0), (2, z0)]);
+    if c.g[V0][0] != 0 {
+        c.cycles += 7;
+        c.g[A3][0] = sx(r32(c, T4).wrapping_add(4));
+        c.g[T1][0] = sx(r32(c, S2).wrapping_add(4));
+        c.g[A2][0] = sx(r32(c, T5).wrapping_add(4));
+        c.g[V1][0] = c.g[S1][0];
+        c.g[A1][0] = sx(base);
+        c.g[A0][0] = sx(r32(c, T8).wrapping_add(4));
+        loop {
+            c.cycles += 29;
+            let a1 = r32(c, A1);
+            let v1 = r32(c, V1);
+            let a2 = r32(c, A2);
+            let a3 = r32(c, A3);
+            let t1 = r32(c, T1);
+            let a0 = r32(c, A0);
+            let x0 = Addr(a1).read_fpu(c);
+            csp_add(c, T0, 1);
+            let x2 = Addr(a1.wrapping_add(8)).read_fpu(c);
+            c.g[V0][0] = csp_lt(c, T0, T2);
+            let hm1 = Addr(v1).read_fpu(c);
+            c.g[A1][0] = sx(a1.wrapping_add(4));
+            let dx = x2 - x0;
+            let mu0 = Addr(a2.wrapping_sub(4)).read_fpu(c);
+            let hm = hm1 * mu0;
+            let l = (dx + dx) - hm;
+            Addr(a0).write_fpu(c, l);
+            let h = Addr(v1.wrapping_add(4)).read_fpu(c);
+            let mu = h.div(l);
+            Addr(a2).write_fpu(c, mu);
+            c.g[A2][0] = sx(a2.wrapping_add(4));
+            let hm1b = Addr(v1).read_fpu(c);
+            let zp = Addr(a3.wrapping_sub(4)).read_fpu(c);
+            c.g[V1][0] = sx(v1.wrapping_add(4));
+            let alpha = Addr(t1).read_fpu(c);
+            let hz = hm1b * zp;
+            let lr = Addr(a0).read_fpu(c);
+            c.g[T1][0] = sx(t1.wrapping_add(4));
+            c.g[A0][0] = sx(a0.wrapping_add(4));
+            let z = (alpha - hz).div(lr);
+            Addr(a3).write_fpu(c, z);
+            let more = c.g[V0][0] != 0;
+            c.g[A3][0] = sx(a3.wrapping_add(4));
+            csp_fset(c, &[(0, z), (1, hz), (2, zp), (3, lr)]);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_dcb0);
+            }
+        }
+    }
+    // 0x31dd24: l[n], z[n] = c[n]; back substitution.
+    c.cycles += 25;
+    let m4 = r32(c, S0) << 2;
+    c.g[A2][0] = sx(m4);
+    c.g[AT][0] = 0x4000_0000;
+    let two = FpuF32(0x4000_0000);
+    c.g[T5][0] = sx(r32(c, T5).wrapping_add(m4));
+    c.g[A3][0] = sx(r32(c, S1).wrapping_add(m4));
+    let mu = Addr(r32(c, T5)).read_fpu(c);
+    c.g[V0][0] = sx(r32(c, T8).wrapping_add(t6));
+    let h = Addr(r32(c, A3)).read_fpu(c);
+    c.g[T1][0] = sx(r32(c, T4).wrapping_add(m4));
+    c.g[V1][0] = sx(r32(c, S2).wrapping_add(t6));
+    c.g[A0][0] = sx(r32(c, T4).wrapping_add(t6));
+    c.g[A1][0] = sx(r32(c, T9).wrapping_add(t6));
+    c.g[T0][0] = c.g[S0][0];
+    let ln = h * (two - mu);
+    Addr(r32(c, V0)).write_fpu(c, ln);
+    let hb = Addr(r32(c, A3)).read_fpu(c);
+    let zp = Addr(r32(c, T1)).read_fpu(c);
+    let alpha = Addr(r32(c, V1)).read_fpu(c);
+    let hz = hb * zp;
+    let zn = (alpha - hz).div(ln);
+    Addr(r32(c, A0)).write_fpu(c, zn);
+    Addr(r32(c, A1)).write_fpu(c, zn);
+    csp_fset(c, &[(0, zn), (1, hz), (2, zp), (3, ln)]);
+    if (c.g[T0][0] as i64) < 0 {
+        return;
+    }
+    c.cycles += 10;
+    c.g[V0][0] = sx(m4.wrapping_add(4));
+    c.g[A1][0] = sx(base.wrapping_add(0x2400).wrapping_add(m4));
+    c.lwc1(6, r32(c, GP).wrapping_sub(CSP_THIRD_CLAMPED));
+    c.g[V1][0] = c.g[A3][0];
+    c.g[AT][0] = CSP_THREE as u64;
+    c.f[5] = CSP_THREE;
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, T9)));
+    c.g[A3][0] = c.g[T5][0];
+    c.g[A0][0] = sx(m4.wrapping_add(r32(c, T7)));
+    loop {
+        c.cycles += 32;
+        let a3 = r32(c, A3);
+        let v0 = r32(c, V0);
+        let t1 = r32(c, T1);
+        let a0 = r32(c, A0);
+        let v1 = r32(c, V1);
+        let a1 = r32(c, A1);
+        let mu = Addr(a3).read_fpu(c);
+        csp_add(c, T0, u32::MAX);
+        let c_next = Addr(v0).read_fpu(c);
+        c.g[A3][0] = sx(a3.wrapping_sub(4));
+        let z = Addr(t1).read_fpu(c);
+        c.g[T1][0] = sx(t1.wrapping_sub(4));
+        let cj = z - mu * c_next;
+        Addr(v0.wrapping_sub(4)).write_fpu(c, cj);
+        let y1 = Addr(a0.wrapping_add(4)).read_fpu(c);
+        let y0 = Addr(a0).read_fpu(c);
+        let s = c_next + (cj + cj);
+        let h = Addr(v1).read_fpu(c);
+        c.g[A0][0] = sx(a0.wrapping_sub(4));
+        let hs6 = (h * s) * FpuF32(c.f[6]);
+        let b = (y1 - y0).div(h) - hs6;
+        Addr(a1.wrapping_sub(0x800)).write_fpu(c, b);
+        let cn2 = Addr(v0).read_fpu(c);
+        let cj2 = Addr(v0.wrapping_sub(4)).read_fpu(c);
+        let hh = Addr(v1).read_fpu(c);
+        c.g[V0][0] = sx(v0.wrapping_sub(4));
+        c.g[V1][0] = sx(v1.wrapping_sub(4));
+        let h3 = hh * FpuF32(c.f[5]);
+        let d = (cn2 - cj2).div(h3);
+        Addr(a1).write_fpu(c, d);
+        let more = (c.g[T0][0] as i64) >= 0;
+        c.g[A1][0] = sx(a1.wrapping_sub(4));
+        csp_fset(c, &[(0, h3), (1, cj2), (2, d), (3, h), (4, y0)]);
+        if !more {
+            return;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0031_ddb0);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1680,7 +2255,6 @@ pub(crate) mod tests {
     }
     use super::*;
 
-
     // --------------------------------------------------------- DLHeap_Memalign
 
     /// `DLHeap_Memalign` on a real dlmalloc heap (`DLHeap_InitArena` on a
@@ -1707,38 +2281,42 @@ pub(crate) mod tests {
             assert_eq!(c.pc, BACK, "setup call {addr:#x} did not return");
             c.g[V0][0]
         }
-        check(ee::s10::f_0031f2c8__generated, dlheap_memalign, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0031_f2c8, 0);
-            let ra = c.g[RA][0];
-            run(
-                c,
-                0x0031_ff60,
-                ee::s10::DLHeap_InitArena,
-                &[HEAP as u64, ARENA as u64, 0x4_0000],
-            );
-            for _ in 0..r.next_u32() % 4 {
-                let n = (r.next_u32() % 0x300) as u64;
-                run(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[HEAP as u64, n]);
-            }
-            c.g[RA][0] = ra;
-            c.pc = 0x0031_f2c8;
-            c.g[A0][0] = sx(HEAP);
-            c.g[A1][0] = match seed % 6 {
-                0 => (r.next_u32() % 17) as u64,
-                1 => 1u64 << (5 + r.next_u32() % 8),
-                _ => (17 + r.next_u32() % 4096) as u64,
-            };
-            c.g[A2][0] = match seed % 11 {
-                0 => 0,
-                1 => 0x10_0000 + (r.next_u32() % 0x1000) as u64,
-                2 => sx(0xffff_ffe0 + r.next_u32() % 0x20),
-                _ => (r.next_u32() % 0x2000) as u64,
-            };
-        });
+        check(
+            ee::s10::f_0031f2c8__generated,
+            dlheap_memalign,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_f2c8, 0);
+                let ra = c.g[RA][0];
+                run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::DLHeap_InitArena,
+                    &[HEAP as u64, ARENA as u64, 0x4_0000],
+                );
+                for _ in 0..r.next_u32() % 4 {
+                    let n = (r.next_u32() % 0x300) as u64;
+                    run(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[HEAP as u64, n]);
+                }
+                c.g[RA][0] = ra;
+                c.pc = 0x0031_f2c8;
+                c.g[A0][0] = sx(HEAP);
+                c.g[A1][0] = match seed % 6 {
+                    0 => (r.next_u32() % 17) as u64,
+                    1 => 1u64 << (5 + r.next_u32() % 8),
+                    _ => (17 + r.next_u32() % 4096) as u64,
+                };
+                c.g[A2][0] = match seed % 11 {
+                    0 => 0,
+                    1 => 0x10_0000 + (r.next_u32() % 0x1000) as u64,
+                    2 => sx(0xffff_ffe0 + r.next_u32() % 0x20),
+                    _ => (r.next_u32() % 0x2000) as u64,
+                };
+            },
+        );
     }
     use super::*;
     pub(crate) use crate::game::object::splinemodifier::tests::oc259_run;
-
 
     /// DLHeap_Free on a real dlmalloc heap (`DLHeap_InitArena` on a 256 KiB
     /// arena, 1..8 mallocs of fast, small and large sizes, some of them
@@ -1751,52 +2329,66 @@ pub(crate) mod tests {
     fn dlheap_free_matches() {
         const HEAP: u32 = DATA + 0x2000;
         const ARENA: u32 = DATA + 0x4_0000;
-        check(ee::s10::f_0031ed60__generated, dlheap_free, 300, &|c, seed| {
-            let mut r = machine(c, seed, 0x0031_ed60, 0);
-            let ra = c.g[RA][0];
-            oc259_run(
-                c,
-                0x0031_ff60,
-                ee::s10::DLHeap_InitArena,
-                &[HEAP as u64, ARENA as u64, 0x4_0000],
-            );
-            let n = 1 + r.next_u32() % 8;
-            let mut ptrs = Vec::new();
-            for _ in 0..n {
-                let size = match r.next_u32() % 4 {
-                    0 => r.next_u32() % 0x40,
-                    1 => 0x40 + r.next_u32() % 0x800,
-                    2 => 0x1000 + r.next_u32() % 0x3000,
-                    _ => 0x3000 + r.next_u32() % 0x6000,
+        check(
+            ee::s10::f_0031ed60__generated,
+            dlheap_free,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_ed60, 0);
+                let ra = c.g[RA][0];
+                oc259_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::DLHeap_InitArena,
+                    &[HEAP as u64, ARENA as u64, 0x4_0000],
+                );
+                let n = 1 + r.next_u32() % 8;
+                let mut ptrs = Vec::new();
+                for _ in 0..n {
+                    let size = match r.next_u32() % 4 {
+                        0 => r.next_u32() % 0x40,
+                        1 => 0x40 + r.next_u32() % 0x800,
+                        2 => 0x1000 + r.next_u32() % 0x3000,
+                        _ => 0x3000 + r.next_u32() % 0x6000,
+                    };
+                    let p = oc259_run(
+                        c,
+                        0x0031_e818,
+                        ee::s10::DLHeap_Malloc,
+                        &[HEAP as u64, size as u64],
+                    );
+                    ptrs.push(p);
+                }
+                let target = (r.next_u32() % n) as usize;
+                for (i, &p) in ptrs.iter().enumerate() {
+                    if i != target && p != 0 && r.next_u32() % 3 != 0 {
+                        oc259_run(
+                            c,
+                            0x0031_ed60,
+                            ee::s10::f_0031ed60__generated,
+                            &[HEAP as u64, p],
+                        );
+                    }
+                }
+                c.g[RA][0] = ra;
+                c.pc = 0x0031_ed60;
+                c.g[A0][0] = sx(HEAP);
+                c.g[A1][0] = match seed % 12 {
+                    0 => 0,
+                    1 => {
+                        // A fake mmapped chunk (size 0x100, mmapped bit).
+                        c.bus.write32(DATA + 0x1004, 0x102);
+                        sx(DATA + 0x1008)
+                    }
+                    _ => ptrs[target],
                 };
-                let p = oc259_run(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[HEAP as u64, size as u64]);
-                ptrs.push(p);
-            }
-            let target = (r.next_u32() % n) as usize;
-            for (i, &p) in ptrs.iter().enumerate() {
-                if i != target && p != 0 && r.next_u32() % 3 != 0 {
-                    oc259_run(c, 0x0031_ed60, ee::s10::f_0031ed60__generated, &[HEAP as u64, p]);
-                }
-            }
-            c.g[RA][0] = ra;
-            c.pc = 0x0031_ed60;
-            c.g[A0][0] = sx(HEAP);
-            c.g[A1][0] = match seed % 12 {
-                0 => 0,
-                1 => {
-                    // A fake mmapped chunk (size 0x100, mmapped bit).
-                    c.bus.write32(DATA + 0x1004, 0x102);
-                    sx(DATA + 0x1008)
-                }
-                _ => ptrs[target],
-            };
-        });
+            },
+        );
     }
     use super::*;
     use super::*;
     use super::*;
     use crate::difftest::{elf_image, put_vec};
-
 
     /// MEM_Pool256Alloc: a non-empty free list (pop), or an empty one with
     /// the real MEM_PoolAlloc behind it: pools ready (served by the 512-byte
@@ -1805,51 +2397,56 @@ pub(crate) mod tests {
     fn mem_pool256_alloc_matches() {
         use crate::difftest::GAME_GP;
         use crate::game::bx::cubicspline::tests::oc238_run;
-        check(ee::s10::f_00320408__generated, mem_pool256_alloc, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x32_0408, 0);
-            let pool = DATA + 0x1000;
-            let blocks = DATA + 0x2_8000;
-            match seed % 3 {
-                0 => {
-                    // Free list of a few 0x100-byte blocks.
-                    let n = 1 + r.next_u32() % 4;
-                    for i in 0..n {
-                        let node = blocks + 0x100 * i;
-                        c.bus.write32(node, if i + 1 == n { 0 } else { node + 0x100 });
+        check(
+            ee::s10::f_00320408__generated,
+            mem_pool256_alloc,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_0408, 0);
+                let pool = DATA + 0x1000;
+                let blocks = DATA + 0x2_8000;
+                match seed % 3 {
+                    0 => {
+                        // Free list of a few 0x100-byte blocks.
+                        let n = 1 + r.next_u32() % 4;
+                        for i in 0..n {
+                            let node = blocks + 0x100 * i;
+                            c.bus
+                                .write32(node, if i + 1 == n { 0 } else { node + 0x100 });
+                        }
+                        c.bus.write32(pool + OC264_POOL256_FREE_HEAD, blocks);
                     }
-                    c.bus.write32(pool + OC264_POOL256_FREE_HEAD, blocks);
-                }
-                1 => {
-                    // Empty: MEM_PoolAlloc takes the ready 512-byte pool.
-                    c.bus.write32(pool + OC264_POOL256_FREE_HEAD, 0);
-                    c.bus.write32(GAME_GP + 0xdd8, 1);
-                    let p512 = DATA + 0x4_0000;
-                    let base = DATA + 0x5_0000;
-                    for n in 0..8u32 {
-                        let node = base + 0x200 * n;
-                        c.bus.write32(node, if n == 7 { 0 } else { node + 0x200 });
+                    1 => {
+                        // Empty: MEM_PoolAlloc takes the ready 512-byte pool.
+                        c.bus.write32(pool + OC264_POOL256_FREE_HEAD, 0);
+                        c.bus.write32(GAME_GP + 0xdd8, 1);
+                        let p512 = DATA + 0x4_0000;
+                        let base = DATA + 0x5_0000;
+                        for n in 0..8u32 {
+                            let node = base + 0x200 * n;
+                            c.bus.write32(node, if n == 7 { 0 } else { node + 0x200 });
+                        }
+                        c.bus.write32(p512 + 0x2_0000, base);
+                        c.bus.write32(GAME_GP + 0x2a68, p512);
                     }
-                    c.bus.write32(p512 + 0x2_0000, base);
-                    c.bus.write32(GAME_GP + 0x2a68, p512);
+                    _ => {
+                        // Empty, pools not ready: the dlmalloc heap.
+                        oc238_run(
+                            c,
+                            0x0031_ff60,
+                            ee::s10::f_0031ff60,
+                            &[0x004f_f250, (DATA + 0x4_0000) as u64, 0x4_0000],
+                        );
+                        c.bus.write32(pool + OC264_POOL256_FREE_HEAD, 0);
+                        c.bus.write32(GAME_GP + 0xdd8, 0);
+                    }
                 }
-                _ => {
-                    // Empty, pools not ready: the dlmalloc heap.
-                    oc238_run(
-                        c,
-                        0x0031_ff60,
-                        ee::s10::f_0031ff60,
-                        &[0x004f_f250, (DATA + 0x4_0000) as u64, 0x4_0000],
-                    );
-                    c.bus.write32(pool + OC264_POOL256_FREE_HEAD, 0);
-                    c.bus.write32(GAME_GP + 0xdd8, 0);
-                }
-            }
-            c.pc = 0x0032_0408;
-            c.g[A0][0] = sx(pool);
-            c.g[A1][0] = [0u64, 4, 8, 16, 64][(r.next_u32() % 5) as usize];
-        });
+                c.pc = 0x0032_0408;
+                c.g[A0][0] = sx(pool);
+                c.g[A1][0] = [0u64, 4, 8, 16, 64][(r.next_u32() % 5) as usize];
+            },
+        );
     }
-
 
     /// cCSICubicSpline_AddPoint: room left (append) or full (end point and
     /// the real Solve over a small sorted spline); random flag bits around
@@ -1857,33 +2454,46 @@ pub(crate) mod tests {
     #[test]
     fn c_csi_cubic_spline_add_point_matches() {
         use crate::difftest::{check_lohi, scramble, Rng, DATA};
-        check_lohi(ee::s10::f_0031d7e0__generated, c_csi_cubic_spline_add_point, 300, &|c, seed| {
-            let mut r = Rng(0x0031_d7e0 ^ (seed as u64) << 16);
-            scramble(c, &mut r);
-            c.pc = 0x0031_d7e0;
-            let spline = DATA + 0x100;
-            let keys = DATA + 0x400;
-            let cap = 2 + r.next_u32() % 6;
-            let added = if seed % 3 == 0 { cap } else { r.next_u32() % cap };
-            let other = r.next_u32() & !(0xffff << 3);
-            c.bus.write32(spline + SPLINE_ADD_FLAGS, other | added << 3 | cap << 11);
-            c.bus.write32(spline + SPLINE_ADD_KEYS, keys);
-            let mut x = 0.0f32;
-            for k in 0..cap {
-                x += 0.25 + (r.next_u32() % 100) as f32 / 50.0;
-                let at = keys + SPLINE_ADD_KEY_SIZE * k;
-                c.bus.write32(at, x.to_bits());
-                c.bus.write32(at + 4, r.f32(10.0));
-                c.bus.write32(at + 8, r.f32(10.0));
-                c.bus.write32(at + 0xc, r.f32(10.0));
-                c.bus.write32(at + 0x10, r.f32(10.0));
-            }
-            c.g[A0][0] = sx(spline);
-            c.f[12] = r.f32(10.0);
-            c.f[13] = if seed % 5 == 0 { r.edge_f32() } else { r.f32(10.0) };
-        });
+        check_lohi(
+            ee::s10::f_0031d7e0__generated,
+            c_csi_cubic_spline_add_point,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x0031_d7e0 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0031_d7e0;
+                let spline = DATA + 0x100;
+                let keys = DATA + 0x400;
+                let cap = 2 + r.next_u32() % 6;
+                let added = if seed % 3 == 0 {
+                    cap
+                } else {
+                    r.next_u32() % cap
+                };
+                let other = r.next_u32() & !(0xffff << 3);
+                c.bus
+                    .write32(spline + SPLINE_ADD_FLAGS, other | added << 3 | cap << 11);
+                c.bus.write32(spline + SPLINE_ADD_KEYS, keys);
+                let mut x = 0.0f32;
+                for k in 0..cap {
+                    x += 0.25 + (r.next_u32() % 100) as f32 / 50.0;
+                    let at = keys + SPLINE_ADD_KEY_SIZE * k;
+                    c.bus.write32(at, x.to_bits());
+                    c.bus.write32(at + 4, r.f32(10.0));
+                    c.bus.write32(at + 8, r.f32(10.0));
+                    c.bus.write32(at + 0xc, r.f32(10.0));
+                    c.bus.write32(at + 0x10, r.f32(10.0));
+                }
+                c.g[A0][0] = sx(spline);
+                c.f[12] = r.f32(10.0);
+                c.f[13] = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(10.0)
+                };
+            },
+        );
     }
-
 
     /// MEM_Pool64Alloc: a pool with free blocks (pop) or none (the real
     /// MEM_PoolAlloc(0x44, a1) on the fixture of its own test: size-class
@@ -1892,52 +2502,105 @@ pub(crate) mod tests {
     #[test]
     fn mem_pool64_alloc_matches() {
         use crate::game::bx::cubicspline::tests::oc238_run;
-        crate::difftest::check(ee::s10::f_00320368__generated, mem_pool64_alloc, 200, &|c, seed| {
-            let mut r = machine(c, seed, 0x32_0368, 0);
-            let pool64 = DATA + 0x20_0000;
-            let free = seed % 3 != 0;
-            if free {
-                let block = DATA + 0x30_0000 + 0x40 * (r.next_u32() % 16);
-                c.bus.write32(pool64 + MEM_POOL64_FREE, block);
-                c.bus.write32(block, if seed % 2 == 0 { 0 } else { block + 0x40 });
-            } else {
-                c.bus.write32(pool64 + MEM_POOL64_FREE, 0);
-                oc238_run(
-                    c,
-                    0x0031_ff60,
-                    ee::s10::f_0031ff60,
-                    &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
-                );
-                if seed % 2 == 0 {
-                    c.bus.write32(GAME_GP + 0xdd8, 1);
-                    const POOLS: [(u32, u32, u32); 7] = [
-                        (0x2a70, 0x800, 0x40),
-                        (0x2a60, 0x2000, 0x40),
-                        (0x2a6c, 0x6000, 0x40),
-                        (0x2a7c, 0x32000, 0x40),
-                        (0x2a84, 0x25800, 0x80),
-                        (0x2a78, 0x20000, 0x100),
-                        (0x2a68, 0x20000, 0x200),
-                    ];
-                    let mut pool = DATA + 0xc_0000;
-                    let mut base = DATA + 0x8_0000;
-                    for (slot, head, stride) in POOLS {
-                        for n in 0..64u32 {
-                            let node = base + stride * n;
-                            c.bus.write32(node, if n == 63 { 0 } else { node + stride });
-                        }
-                        c.bus.write32(pool + head, base);
-                        c.bus.write32(GAME_GP + slot, pool);
-                        pool += 0x100;
-                        base += 0x8000;
-                    }
+        crate::difftest::check(
+            ee::s10::f_00320368__generated,
+            mem_pool64_alloc,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_0368, 0);
+                let pool64 = DATA + 0x20_0000;
+                let free = seed % 3 != 0;
+                if free {
+                    let block = DATA + 0x30_0000 + 0x40 * (r.next_u32() % 16);
+                    c.bus.write32(pool64 + MEM_POOL64_FREE, block);
+                    c.bus
+                        .write32(block, if seed % 2 == 0 { 0 } else { block + 0x40 });
                 } else {
-                    c.bus.write32(GAME_GP + 0xdd8, 0);
+                    c.bus.write32(pool64 + MEM_POOL64_FREE, 0);
+                    oc238_run(
+                        c,
+                        0x0031_ff60,
+                        ee::s10::f_0031ff60,
+                        &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                    );
+                    if seed % 2 == 0 {
+                        c.bus.write32(GAME_GP + 0xdd8, 1);
+                        const POOLS: [(u32, u32, u32); 7] = [
+                            (0x2a70, 0x800, 0x40),
+                            (0x2a60, 0x2000, 0x40),
+                            (0x2a6c, 0x6000, 0x40),
+                            (0x2a7c, 0x32000, 0x40),
+                            (0x2a84, 0x25800, 0x80),
+                            (0x2a78, 0x20000, 0x100),
+                            (0x2a68, 0x20000, 0x200),
+                        ];
+                        let mut pool = DATA + 0xc_0000;
+                        let mut base = DATA + 0x8_0000;
+                        for (slot, head, stride) in POOLS {
+                            for n in 0..64u32 {
+                                let node = base + stride * n;
+                                c.bus.write32(node, if n == 63 { 0 } else { node + stride });
+                            }
+                            c.bus.write32(pool + head, base);
+                            c.bus.write32(GAME_GP + slot, pool);
+                            pool += 0x100;
+                            base += 0x8000;
+                        }
+                    } else {
+                        c.bus.write32(GAME_GP + 0xdd8, 0);
+                    }
                 }
-            }
-            c.g[A0][0] = sx(pool64);
-            c.g[A1][0] = [0u64, 4, 8, 16, 32, 64, 128][(r.next_u32() % 7) as usize];
-            c.pc = 0x0032_0368;
-        });
+                c.g[A0][0] = sx(pool64);
+                c.g[A1][0] = [0u64, 4, 8, 16, 32, 64, 128][(r.next_u32() % 7) as usize];
+                c.pc = 0x0032_0368;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::{RA as RET_ADDR, SP as STACK_TOP};
+
+    /// cCSICubicSpline_Solve: 0-12 knots (sometimes 40) with increasing x
+    /// and random y, natural or clamped ends (random slopes), random other
+    /// header bits; the two 1/3 `.lit4` entries set. A leaf.
+    #[test]
+    fn c_csi_cubic_spline_solve_matches() {
+        use crate::difftest::{check, scramble, Rng, GAME_GP};
+        check(
+            ee::s10::f_0031d8b0__generated,
+            c_csi_cubic_spline_solve,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x31d8_b000 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0031_d8b0;
+                c.g[GP][0] = GAME_GP as u64;
+                c.bus
+                    .write32(GAME_GP - CSP_THIRD_NATURAL, (1.0f32 / 3.0).to_bits());
+                c.bus
+                    .write32(GAME_GP - CSP_THIRD_CLAMPED, (1.0f32 / 3.0).to_bits());
+                let spline = DATA;
+                let knots = DATA + 0x100;
+                let n = if seed % 11 == 0 { 40 } else { seed % 13 };
+                let header = (r.next_u32() & !(0xff << 11) & !1) | n << 11 | (seed / 2) % 2;
+                c.bus.write32(spline, header);
+                c.bus.write32(spline + CSP_END_SLOPE, r.f32(4.0));
+                c.bus.write32(spline + CSP_KNOTS, knots);
+                let mut x = (r.next_u32() % 100) as f32 * 0.1;
+                for k in 0..=n {
+                    let e = knots + CSP_KNOT_SIZE * k;
+                    let y = (r.next_u32() % 2000) as f32 * 0.01 - 10.0;
+                    // Knot k's {x, y} at +0/+4; the last knot's also at +8/+0xc.
+                    c.bus.write32(e, x.to_bits());
+                    c.bus.write32(e + 4, y.to_bits());
+                    if k + 1 == n {
+                        c.bus.write32(e + 8, (x + 1.5).to_bits());
+                        c.bus.write32(e + 0xc, y.to_bits());
+                    }
+                    c.bus.write32(e + 0x10, r.f32(2.0));
+                    x += 0.25 + (r.next_u32() % 300) as f32 * 0.01;
+                }
+                c.g[A0][0] = spline as u64;
+            },
+        );
     }
 }

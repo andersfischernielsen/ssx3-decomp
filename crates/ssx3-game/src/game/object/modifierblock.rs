@@ -120,7 +120,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0035_3448, modifier_block_save, "ModifierBlock_Save"),
     (0x0035_3b10, skybox_render, "SkyBox_Render"),
-    (0x0035_2bc0, modifier_block_set_transform_bounds, "ModifierBlock_SetTransformBounds"),
+    (
+        0x0035_2bc0,
+        modifier_block_set_transform_bounds,
+        "ModifierBlock_SetTransformBounds",
+    ),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
@@ -1503,16 +1507,11 @@ pub fn skybox_render(c: &mut Cpu) {
     })
 }
 
-
-
-
 // ------------------------------------------ ModifierBlock_SetTransformBounds
 
 /// `sBoundBoxNode` vtable slot 13 (`setBoundBox`): this-delta (s16) at
 /// +0x68, method at +0x6c.
 pub(crate) const MB_SET_BOUND_BOX_SLOT: u32 = 0x68;
-
-
 
 /// `void ModifierBlock_SetTransformBounds(tModifierBlock* self,
 /// BoundBox* box)` (0x352bc0): forward the box to the block's bound node
@@ -2124,7 +2123,6 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-
 
     /// ModifierBlock_SetTransformBounds: no node, or a node whose vtable
     /// slot 13 is a fake method (random this-delta) that may unwind.

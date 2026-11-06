@@ -4,6 +4,7 @@
 use crate::abi;
 use crate::abi::r32;
 use crate::abi::ret;
+use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -59,7 +60,6 @@ use ssx3_ee_rt::vu0::X;
 use ssx3_ee_rt::vu0::Y;
 use ssx3_ee_rt::vu0::Z;
 use ssx3_ee_rt::Cpu;
-use crate::call;
 
 /// Replacements in this unit: (address, function, name).
 pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
@@ -147,7 +147,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ccut_scene_transition_man_update,
         "cCutSceneTransitionMan_Update",
     ),
-    (0x002e_b8f0, transition_effect_update_screen_rect, "TransitionEffect_UpdateScreenRect"),
+    (
+        0x002e_b8f0,
+        transition_effect_update_screen_rect,
+        "TransitionEffect_UpdateScreenRect",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5101,7 +5105,6 @@ pub fn ccut_scene_transition_man_update(c: &mut Cpu) {
     })
 }
 
-
 pub(crate) mod transition_rect {
 
     /// The world object (gp+0x2a90); its vtable pointer at +0x10d8, the
@@ -5124,8 +5127,6 @@ pub(crate) mod transition_rect {
 
     pub const GP_WIDTH: u32 = 0xa54;
 }
-
-
 
 /// `void TransitionEffect_UpdateScreenRect(void)` (0x2eb8f0): caches the
 /// world's screen rect for the transition effect: left, right = left + width
@@ -6115,8 +6116,7 @@ pub(crate) mod tests {
         );
     }
     use super::*;
-    use crate::difftest::{check_paths};
-
+    use crate::difftest::check_paths;
 
     /// The world (gp+0x2a90) at DATA with its vtable's screen-rect getter a
     /// fake returning a pointer to a random rect (sometimes unwinding).
@@ -6136,10 +6136,25 @@ pub(crate) mod tests {
                 let rect = DATA + 0x3000;
                 c.bus.write32(GAME_GP + GP_WORLD, world);
                 c.bus.write32(world + WORLD_VTABLE, vt);
-                c.bus.write16(vt + VT_SCREEN_RECT, ((r.next_u32() as i16) & !3) as u16);
+                c.bus
+                    .write16(vt + VT_SCREEN_RECT, ((r.next_u32() as i16) & !3) as u16);
                 c.bus.write32(vt + VT_SCREEN_RECT + 4, FAKE);
-                c.bus.write32(rect + RECT_LEFT, if seed % 4 == 0 { r.edge_f32() } else { r.f32(640.0) });
-                c.bus.write32(rect + RECT_WIDTH, if seed % 4 == 1 { r.edge_f32() } else { r.f32(640.0) });
+                c.bus.write32(
+                    rect + RECT_LEFT,
+                    if seed % 4 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(640.0)
+                    },
+                );
+                c.bus.write32(
+                    rect + RECT_WIDTH,
+                    if seed % 4 == 1 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(640.0)
+                    },
+                );
                 c.bus.write32(LOG_RESULTS, rect);
             },
         );

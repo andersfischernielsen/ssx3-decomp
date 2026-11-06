@@ -109,8 +109,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         game_module_begin_bezier_pass,
         "GameModule_BeginBezierPass",
     ),
-    (0x0022_c708, game_module_render_fog_particles, "GameModule_RenderFogParticles"),
-    (0x0022_c790, game_module_render_lens_flares, "GameModule_RenderLensFlares"),
+    (
+        0x0022_c708,
+        game_module_render_fog_particles,
+        "GameModule_RenderFogParticles",
+    ),
+    (
+        0x0022_c790,
+        game_module_render_lens_flares,
+        "GameModule_RenderLensFlares",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1159,7 +1167,6 @@ pub fn game_module_begin_bezier_pass(c: &mut Cpu) {
     })
 }
 
-
 pub(crate) mod render_lens_flares {
 
     /// `LensFX_ClearSources(fx, view)` (table call).
@@ -1187,27 +1194,22 @@ pub(crate) mod render_lens_flares {
     pub const SOURCES2: u32 = 0x7fc8;
 }
 
-
-
 // ---------------------------------------------- GameModule_RenderFogParticles
 
 /// `GameModule`: the fog particle manager (+0x18; vtable at +0x4, slot 2
 /// `renderFog` at +0x10/+0x14).
 pub(crate) const GM_FOG_MAN: u32 = 0x18;
 
-
 pub(crate) const FOG_VTABLE: u32 = 0x4;
-
 
 pub(crate) const FOG_RENDER_SLOT: u32 = 0x10;
 
-
 /// World: the two fog volume lists (count, then the volumes): kind 0 at
 /// +0x78b4/+0x78b8, kind 2 at +0x7abc/+0x7ac0.
-pub(crate) const WORLD_FOG_LISTS: [(u32, u32, u64, u32); 2] =
-    [(0x78b4, 0x78b8, 0, 0x0022_c748), (0x7abc, 0x7ac0, 2, 0x0022_c770)];
-
-
+pub(crate) const WORLD_FOG_LISTS: [(u32, u32, u64, u32); 2] = [
+    (0x78b4, 0x78b8, 0, 0x0022_c748),
+    (0x7abc, 0x7ac0, 2, 0x0022_c770),
+];
 
 /// `void GameModule_RenderFogParticles(GameModule* self, World* world)`
 /// (0x22c708): hand each non-empty fog volume list of the world to the fog
@@ -1255,8 +1257,6 @@ pub fn game_module_render_fog_particles(c: &mut Cpu) {
         Ok(())
     })
 }
-
-
 
 /// `void GameModule_RenderLensFlares(GameModule* this, World* world, int
 /// view)` (0x22c790): rebuild the lens FX's flare sources for `view` from
@@ -1668,7 +1668,6 @@ pub(crate) mod tests {
     use super::*;
     use super::*;
 
-
     /// GameModule_RenderFogParticles: both, one or neither fog list
     /// non-empty; the manager's renderFog slot is a fake (random this-delta,
     /// may unwind); the real frame finisher on its short path (no particles:
@@ -1690,7 +1689,11 @@ pub(crate) mod tests {
                 c.bus.write32(MAN + FOG_VTABLE, vt);
                 c.bus.write32(MODULE + GM_FOG_MAN, MAN);
                 for (k, &(count_off, _, _, _)) in WORLD_FOG_LISTS.iter().enumerate() {
-                    let n = if (seed >> k) % 2 == 0 { 0 } else { 1 + r.next_u32() % 20 };
+                    let n = if (seed >> k) % 2 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 20
+                    };
                     c.bus.write32(WORLD + count_off, n);
                 }
                 c.g[A0][0] = sx(MODULE);
@@ -1771,13 +1774,16 @@ pub(crate) mod tests {
                 c.bus.write32(LOG_RESULTS + 12, NO_SUN);
                 fill(c, &mut r, FX, 0x18);
                 // DrawFlares: the sun flag and the render-state methods.
-                c.bus.write32(GAME_GP + 0xa28, if seed % 3 == 0 { 0 } else { 1 });
+                c.bus
+                    .write32(GAME_GP + 0xa28, if seed % 3 == 0 { 0 } else { 1 });
                 // (At a fixed address: `vtable` picks a random one that could
                 // land on the lens FX.)
                 const FX_VT: u32 = DATA + 0x5_7000;
                 for (i, off) in [0x10u32, 0x18].into_iter().enumerate() {
-                    c.bus.write16(FX_VT + off, (r.next_u32() as i16 & !3) as u16);
-                    c.bus.write32(FX_VT + off + 4, FAKE + 0x40 + 0x10 * i as u32);
+                    c.bus
+                        .write16(FX_VT + off, (r.next_u32() as i16 & !3) as u16);
+                    c.bus
+                        .write32(FX_VT + off + 4, FAKE + 0x40 + 0x10 * i as u32);
                 }
                 c.bus.write32(FX + 0x649c, FX_VT);
             },
