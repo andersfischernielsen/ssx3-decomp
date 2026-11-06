@@ -9759,7 +9759,9 @@ pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
         abi::set_fcc(c, released);
         if !released {
             c.cycles += 4;
-            let step = lit(c, 0x7c20);
+            // 0.04166 per tick at 60 Hz: a fixed per-tick step.
+            let raw = lit(c, 0x7c20);
+            let step = rate_step_60(c, raw);
             c.f[0] = step.0;
             rider.off(BRAKE_TARGET).write_fpu(c, zero);
             rider.off(BRAKE_STEP).write_fpu(c, step);
@@ -9780,7 +9782,9 @@ pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
         abi::set_fcc(c, standing);
         if !standing {
             c.cycles += 4;
-            let step = lit(c, 0x7c1c);
+            // 0.1 per tick at 60 Hz: a fixed per-tick step.
+            let raw = lit(c, 0x7c1c);
+            let step = rate_step_60(c, raw);
             c.f[0] = step.0;
             rider.off(CROUCH_TARGET).write_fpu(c, zero);
             rider.off(CROUCH_STEP).write_fpu(c, step);
@@ -9814,12 +9818,18 @@ pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
     c.f[2] = dist.0;
     let far = floor.le(dist);
     abi::set_fcc(c, far);
+    // The crouch's step is `a * dist` per tick (a = 0.1000018) down to 0.1
+    // away, then a fixed 0.0100002 per tick (the floor entry). At another
+    // rate the fraction is `1 - (1-a)^(60/rate)` and the floor, a fixed
+    // step, is `floor * 60/rate`. At 60 both entries are used unchanged.
     let step = if far {
         c.cycles += 3;
-        dist * lit(c, 0x7c14)
+        let raw = lit(c, 0x7c14);
+        dist * smoothing_60(c, raw)
     } else {
         c.cycles += 1;
-        lit(c, 0x7c10)
+        let raw = lit(c, 0x7c10);
+        rate_step_60(c, raw)
     };
     c.f[0] = step.0;
 
@@ -9913,7 +9923,11 @@ pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
     let delta = f(c, 13) - brake_cur;
     c.f[0] = delta.0;
 
-    // Step: k * min(max(|d|, lo), 1).
+    // Step: k * min(max(|d|, lo), 1) per tick. Between the clamps the step
+    // is a share of the remaining distance, so k follows the smoothing
+    // fraction; at either clamp the step is a fixed amount per tick and
+    // scales by 60/rate, like the crouch floor above. At 60 both forms
+    // compute the stored product unchanged.
     c.cycles += 8;
     let lo = lit(c, 0x7c04);
     let dist = delta.abs();
@@ -9925,7 +9939,12 @@ pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
     let clamped = if above { dist.min(FpuF32(c.f[2])) } else { lo };
     c.f[1] = clamped.0;
     c.cycles += 5;
-    let step = clamped * lit(c, 0x7c00);
+    let raw = lit(c, 0x7c00);
+    let step = if above && !FpuF32(c.f[2]).lt(dist) {
+        clamped * smoothing_60(c, raw)
+    } else {
+        rate_step_60(c, clamped * raw)
+    };
     c.f[0] = step.0;
     let brake_target = f(c, 13);
     rider.off(BRAKE_TARGET).write_fpu(c, brake_target);

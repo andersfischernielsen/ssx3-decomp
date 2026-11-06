@@ -17,7 +17,7 @@
 
 use crate::abi;
 use crate::call::{call_ptr, guest, Callee, Frame};
-use crate::game::ai::rider::{rate_step_60, smoothing_60};
+use crate::game::ai::rider::rate_step_60;
 use crate::guest::Addr;
 use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
@@ -764,8 +764,6 @@ mod slew {
     pub const STEER: u32 = 0x1f0;
     /// #3 brake.
     pub const BRAKE: u32 = 0x214;
-    /// #4 crouch.
-    pub const CROUCH: u32 = 0x220;
     /// #15 / #16 prewind spin / flip (`cur`).
     pub const PREWIND_SPIN: u32 = 0x2a4;
     pub const PREWIND_FLIP: u32 = 0x2b0;
@@ -832,176 +830,6 @@ pub fn rider_set_slew0_target(c: &mut Cpu) {
     c.f[2] = step.0;
     c.f[3] = hi.0;
     c.f[12] = steer.0;
-    abi::ret(c);
-}
-
-/// `Rider_SetCrouchBrakeTargets(rider, crouch /*f12*/, brake /*f13*/)`
-/// (0x113f88): crouch and brake exclude each other: while one is asked for
-/// and the other is still non-zero, only the other's target is set to 0.
-/// Otherwise slew #4 gets `crouch` with a step from the distance to go, and
-/// slew #3 gets `brake`, signed by the lean side (powerslide), cleared when
-/// already crouching or moving backward along the ground, with a step
-/// `max(|Δ|, lo)` capped at 1, times k.
-pub fn rider_set_slew3_and4_targets(c: &mut Cpu) {
-    let rider = c.g[A0][0];
-    let mut crouch = FpuF32(c.f[12]);
-    let mut brake = FpuF32(c.f[13]);
-    let zero = FpuF32::ZERO;
-    c.f[1] = 0;
-    c.cycles += 4;
-    if abi::c_lt_s(c, zero, crouch) {
-        c.cycles += 4;
-        let cur = lwc1(c, rider, slew::BRAKE + slew::CUR);
-        c.f[0] = cur.0;
-        if !c_eq_s(c, cur, zero) {
-            c.cycles += 4;
-            // 0.04166 per tick at 60 Hz: a fixed per-tick step.
-            let raw = gp_float(c, 0x7c20);
-            let step = rate_step_60(c, raw);
-            swc1(c, rider, slew::BRAKE + slew::TARGET, zero);
-            swc1(c, rider, slew::BRAKE + slew::MAX_STEP, step);
-            c.f[0] = step.0;
-            abi::ret(c);
-            return;
-        }
-    }
-    c.cycles += 4;
-    let crouch_cur = lwc1(c, rider, slew::CROUCH + slew::CUR);
-    c.f[2] = crouch_cur.0;
-    if abi::c_lt_s(c, zero, brake) {
-        c.cycles += 3;
-        if !c_eq_s(c, crouch_cur, zero) {
-            c.cycles += 4;
-            // 0.1 per tick at 60 Hz: a fixed per-tick step.
-            let raw = gp_float(c, 0x7c1c);
-            let step = rate_step_60(c, raw);
-            swc1(c, rider, slew::CROUCH + slew::TARGET, zero);
-            swc1(c, rider, slew::CROUCH + slew::MAX_STEP, step);
-            c.f[0] = step.0;
-            abi::ret(c);
-            return;
-        }
-    }
-    // Slew #4: crouch.
-    c.cycles += 5;
-    if abi::c_lt_s(c, zero, crouch) {
-        c.cycles += 5;
-        let cur = lwc1(c, rider, slew::BRAKE + slew::CUR);
-        if !c_eq_s(c, cur, zero) {
-            crouch = zero;
-        }
-        c.cycles += 1;
-    }
-    let delta = crouch - crouch_cur;
-    c.cycles += 5;
-    let threshold = gp_float(c, 0x7c18);
-    let dist = delta.abs();
-    // The crouch's step is `a · max(dist, 0.1)` per tick (a = 0.1000018): at
-    // another rate the fraction is `1 - (1-a)^(60/rate)` and the floor follows
-    // it (the game's floor is a·0.1). At 60 both entries are used unchanged.
-    let raw = gp_float(c, 0x7c14);
-    let a = smoothing_60(c, raw);
-    let step = if c_le_s(c, threshold, dist) {
-        c.cycles += 3;
-        dist * a
-    } else {
-        c.cycles += 1;
-        if crate::tick::rate(c) == 60 {
-            gp_float(c, 0x7c10)
-        } else {
-            a * threshold
-        }
-    };
-    c.f[1] = threshold.0;
-    c.f[2] = dist.0;
-    c.cycles += 6;
-    c.f[1] = 0;
-    swc1(c, rider, slew::CROUCH + slew::TARGET, crouch);
-    swc1(c, rider, slew::CROUCH + slew::MAX_STEP, step);
-    // Slew #3: brake; no brake while crouched or moving backward.
-    let mut tail = 1;
-    if abi::c_lt_s(c, zero, brake) {
-        c.cycles += 5;
-        let crouch_cur = lwc1(c, rider, slew::CROUCH + slew::CUR);
-        c.f[0] = crouch_cur.0;
-        if abi::c_lt_s(c, zero, crouch_cur) {
-            brake = zero;
-        } else {
-            c.cycles += 13;
-            let vel = vu::lqc2(c, 3, (rider as u32).wrapping_add(rider::VEL));
-            let fwd = vu::lqc2(c, 5, (rider as u32).wrapping_add(rider::GROUND_FORWARD));
-            let along = vu::dot4(c, vel, fwd);
-            let image = vu::qmfc2(along);
-            c.g[V0] = image;
-            let along = FpuF32(image[0] as u32);
-            c.f[0] = along.0;
-            if abi::c_lt_s(c, along, zero) {
-                c.cycles += 1;
-                brake = zero;
-            } else {
-                tail = 0;
-            }
-        }
-    }
-    c.cycles += tail;
-    let cur = lwc1(c, rider, slew::BRAKE + slew::CUR);
-    c.cycles += 6;
-    let lean_limit = gp_float(c, 0x7c0c);
-    c.f[3] = lean_limit.0;
-    let abs_cur = cur.abs();
-    c.f[1] = abs_cur.0;
-    // Powerslide: the brake takes the sign of the lean side.
-    let mut flip = false;
-    let mut checked = false;
-    if c_le_s(c, abs_cur, lean_limit) {
-        c.cycles += 6;
-        let steer = lwc1(c, rider, slew::STEER + slew::CUR);
-        c.f[1] = steer.0;
-        c.f[0] = 0;
-        if abi::c_lt_s(c, steer, zero) {
-            flip = true;
-            checked = true;
-        }
-    }
-    if !checked {
-        c.cycles += 5;
-        let k = gp_float(c, 0x7c08);
-        c.f[0] = k.0;
-        if abi::c_lt_s(c, cur, k) {
-            c.cycles += 5;
-            let steer = lwc1(c, rider, slew::STEER + slew::CUR);
-            c.f[0] = steer.0;
-            if abi::c_lt_s(c, steer, lean_limit) {
-                c.cycles += 1;
-                flip = true;
-            }
-        }
-    }
-    if flip {
-        brake = -brake;
-        c.cycles += 1;
-    }
-    let delta = brake - cur;
-    c.cycles += 8;
-    let lo = gp_float(c, 0x7c04);
-    let dist = delta.abs();
-    c.g[AT][0] = 0x3f80_0000;
-    c.f[2] = FpuF32::ONE.0;
-    let mut amount = lo;
-    if c_le_s(c, lo, dist) {
-        amount = dist.min(FpuF32::ONE);
-    }
-    c.cycles += 5;
-    // `clamp(|Δ|, 0.1, 1) · k` per tick: the fraction follows the rate.
-    let raw = gp_float(c, 0x7c00);
-    let k = smoothing_60(c, raw);
-    swc1(c, rider, slew::BRAKE + slew::TARGET, brake);
-    let step = amount * k;
-    swc1(c, rider, slew::BRAKE + slew::MAX_STEP, step);
-    c.f[0] = step.0;
-    c.f[1] = amount.0;
-    c.f[12] = crouch.0;
-    c.f[13] = brake.0;
     abi::ret(c);
 }
 
@@ -1900,31 +1728,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn set_slew3_and4_targets() {
-        let paths: std::collections::BTreeSet<u64> = (0..3000)
-            .map(|seed| {
-                let mut c = fresh();
-                slew_setup(&mut c, seed);
-                let before = c.cycles;
-                ssx3_ee::s00::f_00113f88(&mut c);
-                c.cycles - before
-            })
-            .collect();
-        eprintln!("set_slew3_and4_targets paths: {paths:?}");
-        check(
-            ssx3_ee::s00::f_00113f88,
-            super::rider_set_slew3_and4_targets,
-            3000,
-            &|c, seed| slew_setup(c, seed),
-        );
-    }
-
     /// `Rider_SetCrouchBrakeTargets`'s (0x113f88) slew steps are per tick: the
     /// approach fractions (`dist · a` for the crouch, `clamp(|Δ|, 0.1, 1) · k`
-    /// for the brake) become `1 - (1-a)^(60/rate)`, and the two fixed "clear
-    /// the other slew" steps `a · 60/rate`, so both slews move the same amount
-    /// per second at any rate. At 60 the loaded entries are used unchanged.
+    /// for the brake between its clamps) become `1 - (1-a)^(60/rate)`, and the
+    /// fixed steps (the crouch's floor, the brake at either clamp and the two
+    /// "clear the other slew" steps) `x · 60/rate`, so both slews move the
+    /// same amount per second at any rate. At 60 the loaded entries are used
+    /// unchanged.
     #[test]
     fn set_slew3_and4_targets_follows_the_rate() {
         use crate::tick;
@@ -1963,7 +1773,13 @@ mod tests {
                 c.f[12] = crouch.to_bits();
                 c.f[13] = brake.to_bits();
                 tick::set_for_test(&mut c, hz);
-                super::rider_set_slew3_and4_targets(&mut c);
+                // Resolve dispatch so an unregistered body cannot pass.
+                let owner = crate::overrides()
+                    .into_iter()
+                    .find(|&(a, _, _)| a == 0x0011_3f88)
+                    .map(|(_, f, _)| f)
+                    .unwrap_or(ssx3_ee::s00::f_00113f88);
+                owner(&mut c);
                 (c.bus.read32(p + 0x224), c.bus.read32(p + 0x218))
             };
         // 60 Hz: the entries as stored.
@@ -1971,6 +1787,7 @@ mod tests {
         assert_eq!(steps(60, 0.0, 1.0, 0.0, 0.0).1, K, "brake step");
         assert_eq!(steps(60, 1.0, 0.0, 0.0, 0.5).1, K, "clear brake");
         assert_eq!(steps(60, 0.0, 1.0, 0.5, 0.0).0, A, "clear crouch");
+        assert_eq!(steps(60, 0.05, 0.0, 0.0, 0.0).0, FLOOR, "crouch floor");
         for hz in [120u32, 240] {
             let frac = 60.0f32 / hz as f32;
             let a = 1.0f32 - (1.0f32 - f32::from_bits(A)).powf(frac);
@@ -1992,20 +1809,95 @@ mod tests {
                 (f32::from_bits(A) * frac).to_bits(),
                 "{hz} Hz clear crouch"
             );
+            assert_eq!(
+                steps(hz, 0.05, 0.0, 0.0, 0.0).0,
+                (f32::from_bits(FLOOR) * frac).to_bits(),
+                "{hz} Hz crouch floor"
+            );
         }
     }
 
-    fn slew_setup(c: &mut Cpu, seed: u32) {
-        let mut r = machine(c, seed, 0x18, 0);
-        let p = slew_rider(c, &mut r, seed);
-        c.f[12] = axis(&mut r);
-        c.f[13] = axis(&mut r);
-        // Often one of the two slews already at zero.
-        if seed % 3 == 0 {
-            c.bus.write32(p + 0x214, 0);
-        }
-        if seed % 4 == 0 {
+    /// Repeated brake motion through the registered `0x113f88` owner and the
+    /// real slew update, compared with the 60 Hz run at every stock
+    /// (1/60 s) endpoint. Inside one clamp region the converted steps
+    /// compose to the stock step per interval (tolerance 2e-5, float
+    /// rounding only). A trajectory that crosses a clamp boundary inside a
+    /// stock interval cannot compose exactly — stock chooses its region
+    /// once per interval, the finer ticks re-choose per tick — so those
+    /// cases use 3e-4, above the largest modelled crossing residual
+    /// (2.3e-4 near the upper clamp at 120/240 Hz).
+    #[test]
+    fn brake_slew_clamp_regions_follow_the_rate() {
+        use crate::tick;
+        const A: u32 = 0x3dcc_cdc2; // 0.100001827
+        const FLOOR: u32 = 0x3c23_d7cf; // 0.010000183
+        const K: u32 = 0x3d2a_a635; // 0.0416624136
+        const TENTH: u32 = 0x3dcc_cccd;
+        const MINUS_TENTH: u32 = 0xbdcc_cccd;
+        // Resolve dispatch so an unregistered body cannot pass.
+        let owner = crate::overrides()
+            .into_iter()
+            .find(|&(a, _, _)| a == 0x0011_3f88)
+            .map(|(_, f, _)| f)
+            .unwrap_or(ssx3_ee::s00::f_00113f88);
+        // Brake value (+0x214) after each stock interval, starting from
+        // `cur0` with a constant brake request (crouch request 0).
+        let run = |hz: u32, cur0: f32, req: f32, intervals: usize| -> Vec<f32> {
+            let mut c = fresh();
+            let p = 0x0080_0000u32;
+            c.bus.write32(p + 0x214, cur0.to_bits());
             c.bus.write32(p + 0x220, 0);
+            for (off, bits) in [
+                (0x7c20u32, K),
+                (0x7c1c, A),
+                (0x7c18, TENTH),
+                (0x7c14, A),
+                (0x7c10, FLOOR),
+                (0x7c0c, TENTH),
+                (0x7c08, MINUS_TENTH),
+                (0x7c04, TENTH),
+                (0x7c00, K),
+            ] {
+                c.bus.write32(GAME_GP.wrapping_sub(off), bits);
+            }
+            tick::set_for_test(&mut c, hz);
+            let mut out = Vec::new();
+            for _ in 0..intervals {
+                for _ in 0..hz / 60 {
+                    c.g[GP][0] = GAME_GP as u64;
+                    c.g[A0][0] = p as u64;
+                    c.f[12] = 0;
+                    c.f[13] = req.to_bits();
+                    owner(&mut c);
+                    crate::game::ai::rider::slew(&mut c, p + 0x214);
+                    c.bus.write32(p + 0x214, c.f[1]);
+                }
+                out.push(f32::from_bits(c.bus.read32(p + 0x214)));
+            }
+            out
+        };
+        // (case, start, request, stock intervals, tolerance)
+        let cases: [(&str, f32, f32, usize, f32); 8] = [
+            ("below the lower clamp", 0.05, 0.0, 6, 2e-5),
+            ("below the lower clamp, snapping", 0.003, 0.0, 2, 2e-5),
+            ("between the clamps", 0.0, 0.9, 10, 2e-5),
+            ("above the upper clamp", 1.5, 0.0, 6, 2e-5),
+            ("crossing the lower clamp", 0.11, 0.0, 10, 3e-4),
+            ("just above the lower clamp", 0.1005, 0.0, 10, 3e-4),
+            ("crossing the upper clamp", 1.05, 0.0, 10, 3e-4),
+            ("just above the upper clamp", 1.005, 0.0, 10, 3e-4),
+        ];
+        for (name, cur0, req, intervals, tol) in cases {
+            let stock = run(60, cur0, req, intervals);
+            for hz in [120u32, 240] {
+                let got = run(hz, cur0, req, intervals);
+                for (i, (g, w)) in got.iter().zip(&stock).enumerate() {
+                    assert!(
+                        (g - w).abs() < tol,
+                        "{hz} Hz {name} interval {i}: {g} vs stock {w} (tol {tol})"
+                    );
+                }
+            }
         }
     }
 
