@@ -75,6 +75,9 @@ pub const NOT_A_STEP: &[u32] = &[
     0x0049_b4a0,
     // AirPredictor_Simulate (0x113200): the trajectory preview's step.
     0x0049_b480,
+    // AirPredictor_Simulate (0x113200): on contact, takes `hit fraction *
+    // steps` of that same fixed step back off the predicted air time.
+    0x0049_b48c,
     // RiderWipeoutSub_HandleInput (0x12cb68): the recover meter (+0x70)
     // gains `strength * 1/60` per *press* (the input's 0x2000 bit is set on
     // the tick a press happens), not per tick; its fall-back is per tick
@@ -90,6 +93,10 @@ pub const NOT_A_STEP: &[u32] = &[
     // cOVStateHUD1P_Update (0x1ea930): the same rounding for the HUD clock
     // (its 0x49d9b8, ticks left -> seconds, is a step).
     0x0049_d9b4,
+    // cOVStateHUD1P_Render (0x1ec3f8): `(count % 60) * 1/60`, the start
+    // countdown digit's phase; the countdown (RaceState +0x1c) counts 60 Hz
+    // frames (`race_state_countdown_update`).
+    0x0049_db60,
 ];
 
 /// 60 Hz frame counts in the game's *data* (not `.lit4`), rewritten to the
@@ -679,6 +686,15 @@ pub fn frame60_due(c: &mut Cpu, key: u32, frame: u32) -> bool {
     })
 }
 
+/// Whether update `count` (0 first) of a timeline that counts its own updates
+/// takes the next 60 Hz frame: every update at 60, one in `rate / 60` above.
+/// Unlike [`frame60_due`] it keeps no host-side state, so a timeline restored
+/// from a snapshot resumes on its saved phase.
+pub fn frame60_by_count(c: &mut Cpu, count: u32) -> bool {
+    let r = rate(c);
+    r == 60 || ((count as u64 * 60) % r as u64) < 60
+}
+
 /// Run `body` (one tick of an update) so that the integer countdowns at
 /// `addrs`, which the original takes down by 1 per tick and which count 60 Hz
 /// frames (a wait in frames, a delay before a skip is allowed), go down once
@@ -1114,6 +1130,22 @@ mod tests {
         }
     }
 
+    /// 60 frames per second at any rate, starting on the first update.
+    #[test]
+    fn frame60_by_count_is_60_per_second() {
+        let mut c = ssx3_ps2::new_cpu();
+        set_for_test(&mut c, 60);
+        for n in 0..60 {
+            assert!(frame60_by_count(&mut c, n), "60 Hz update {n}");
+        }
+        for hz in [120u32, 144, 240] {
+            set_for_test(&mut c, hz);
+            assert!(frame60_by_count(&mut c, 0), "{hz} Hz: first update");
+            let due = (0..hz).filter(|&n| frame60_by_count(&mut c, n)).count();
+            assert_eq!(due, 60, "{hz} Hz");
+        }
+    }
+
     /// The UI/screen timeline advances one frame per VSync at 60 Hz and one
     /// frame per 60 Hz boundary above it: 60 frames per second at 60, 120,
     /// 144 and 240 Hz, and every VSync at 60.
@@ -1191,5 +1223,33 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The start countdown counts 60 Hz frames at any rate, so the HUD's
+    /// `(count % 60) * 1/60` digit phase keeps its 1/60.
+    #[test]
+    fn countdown_digit_phase_is_not_the_tick_step() {
+        let mut c = ssx3_ps2::new_cpu();
+        for e in [0x0049_db60, 0x0049_b118] {
+            c.bus.write32(e, STEP_60);
+        }
+        let pool = collect_pool(&mut c);
+        assert!(pool.contains(&0x0049_b118));
+        assert!(!pool.contains(&0x0049_db60));
+    }
+
+    /// `AirPredictor_Simulate` (0x113200) forecasts a jump in fixed 1/60
+    /// steps and, on contact, takes `hit fraction · steps · 1/60` back off the
+    /// predicted air time: both entries stay 1/60 at any rate.
+    #[test]
+    fn air_predictor_entries_are_not_the_tick_step() {
+        let mut c = ssx3_ps2::new_cpu();
+        for e in [0x0049_b480, 0x0049_b48c, 0x0049_b118] {
+            c.bus.write32(e, STEP_60);
+        }
+        let pool = collect_pool(&mut c);
+        assert!(pool.contains(&0x0049_b118));
+        assert!(!pool.contains(&0x0049_b480), "forecast step");
+        assert!(!pool.contains(&0x0049_b48c), "contact backtrack");
     }
 }

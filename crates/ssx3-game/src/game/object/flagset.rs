@@ -17,7 +17,6 @@ use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
-use crate::game::ai::rider::per_tick_60;
 pub(crate) use crate::game::fe::feasyncfile::at;
 pub(crate) use crate::game::fe::feasyncfile::lw_3 as lw_2;
 pub(crate) use crate::game::fe::feasyncfile::p_5 as p_2;
@@ -1201,9 +1200,7 @@ pub fn cflag_manager_group_update(c: &mut Cpu) {
             c.g[V0][0] = 3;
             c.mul_s(2, 2, 1);
             c.add_s(2, 0, 2);
-            // Tick rate: the four phases advance per 60 Hz tick, so scale
-            // the common step by 60/rate (nothing changes at 60).
-            per_tick_60(c, 2);
+            // Flag_ReadParams already divides these amounts by the tick rate.
             loop {
                 c.cycles += 8;
                 c.lwc1(0, c.g[A0][0] as u32);
@@ -1291,9 +1288,7 @@ pub fn cflag_manager_group_update(c: &mut Cpu) {
             c.cycles += 7;
             c.g[AT][0] = 0x3f80_0000;
             c.mtc1(AT, 2);
-            // Tick rate: the scroll speeds are per 60 Hz tick (the test
-            // above them keeps the authored values).
-            per_tick_60(c, 1);
+            // Flag_ReadParams also converts the scroll speeds to per-tick steps.
             c.add_s(0, 0, 1);
             c.c_lt_s(2, 0);
             let no_wrap = !c.fcc();
@@ -1306,7 +1301,6 @@ pub fn cflag_manager_group_update(c: &mut Cpu) {
             c.cycles += 7;
             c.lwc1(1, off(c.g[S0][0] as u32, U));
             c.lwc1(0, off(c.g[S0][0] as u32, SCROLL_U));
-            per_tick_60(c, 0);
             c.add_s(0, 1, 0);
             c.c_lt_s(2, 0);
             let no_wrap = !c.fcc();
@@ -3451,8 +3445,10 @@ pub(crate) mod tests {
     }
 
     /// The flag's wave phases (`+0x78..`) and texture scroll (`+0x88`,
-    /// `+0x8c`) advance per 60 Hz tick: one update at 60 Hz and `rate/60`
-    /// updates at 120 and 240 Hz end at the same values.
+    /// `+0x8c`) follow the rate once: Flag_ReadParams turns the authored
+    /// per-second amounts into per-tick ones at the running rate, and the
+    /// update adds them as they are. A 60 Hz tick of game time (one update
+    /// at 60 Hz, `rate/60` at 120 and 240 Hz) ends at the same values.
     #[test]
     fn cflag_manager_group_update_follows_the_rate() {
         fn after(hz: u32) -> Vec<f32> {
@@ -3461,6 +3457,7 @@ pub(crate) mod tests {
             let _ = machine(c, 1, 0x34b819, 0);
             crate::tick::set_for_test(c, hz);
             let selfp = DATA;
+            let src = DATA + 0x5000;
             let world = DATA + 0x4000;
             let w84 = DATA + 0x4100;
             c.bus.write32(GAME_GP.wrapping_add(0x1150), 1);
@@ -3469,18 +3466,28 @@ pub(crate) mod tests {
             c.bus.write32(w84 + 0x70, DATA + 0x4200);
             c.bus.write32(w84 + 0xc, DATA + 0x4300);
             c.bus.write32(DATA + 0x4308, 2);
+            // Authored per second: amounts (src +0x10, +0x1c, +0x28, +0x34),
+            // blend (+0x58), scroll v and u (+0x5c, +0x60). The group's
+            // first flag copies the descriptor, so read it in place.
+            for i in 0..4u32 {
+                put_f32(c, src + 0x10 + 0xc * i, f(0.6 * (i + 1) as f32));
+            }
+            put_f32(c, src + 0x58, f(0.25));
+            put_f32(c, src + 0x5c, f(1.2));
+            put_f32(c, src + 0x60, f(1.8));
+            c.g[GP][0] = GAME_GP as u64;
+            c.g[RA][0] = crate::difftest::RA as u64;
+            c.g[A0][0] = selfp as u64;
+            c.g[A1][0] = src as u64;
+            crate::game::object::flexrailnode::flag_read_params(c);
             c.bus.write32(selfp + 0x5c, 1);
             c.bus.write32(selfp + 0x60, DATA + 0x2000);
             // Parity never matches the (fixed) frame count: no rebuild.
             c.bus.write32(selfp + 0x90, 1);
-            put_f32(c, selfp + 0x4c, f(0.25));
             put_f32(c, DATA + 0x4200 + 0x10, f(0.5));
             for i in 0..4 {
-                put_f32(c, selfp + 4 + 4 * i, f(0.01 * (i + 1) as f32));
                 put_f32(c, selfp + 0x78 + 4 * i, f(0.1));
             }
-            put_f32(c, selfp + 0x50, f(0.02));
-            put_f32(c, selfp + 0x54, f(0.03));
             put_f32(c, selfp + 0x88, f(0.2));
             put_f32(c, selfp + 0x8c, f(0.3));
             put_f32(c, GAME_GP.wrapping_sub(0x2b00), 0x3a83_126f); // 0.001f
