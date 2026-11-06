@@ -9,7 +9,9 @@ Rust with the aarch64-linux-android target, cargo-ndk 4.1.2 and Gradle 8.9.
 Set ANDROID_HOME and ANDROID_NDK_HOME to those SDK/NDK installations.
 Generate the game code using the repository's normal setup with your own
 SSX 3 USA disc. From apps/android, run `gradle assembleDebug`.
-The Gradle build invokes cargo-ndk, and packages code only. Use
+The Gradle build invokes cargo-ndk for the `ssx3-android` workspace member
+and packages code only. Like `ssx3-web`, that library is empty on desktop;
+its dependencies and shared frontend are enabled only on Android. Use
 `-PapplicationId=your.application.id` for a separate developer install.
 Keep the same debug signing key when upgrading; install with `adb install -r`.
 
@@ -23,6 +25,11 @@ no game or audio work. Restart after provisioning.
 Saves and settings live in internal app files. There is no storage permission
 and no automatic fallback or save import. Uninstalling deletes app saves.
 Do not replace a card when provisioning game data.
+
+Audio is optional. Losing audio focus, transient (including duck requests) or
+permanent, silences the game but never pauses it. Sound returns with focus;
+after a permanent loss Android sends no gain, so the game asks again the next
+time its window regains focus.
 
 Backgrounding and surface replacement retain the current game. Launcher and
 component-only re-entry ask a live game Activity to bring its separate task
@@ -40,3 +47,21 @@ Launcher intent-permutation and session-claim tests run on the JVM with
 `gradle -p apps/android :app:testDebugUnitTest -x :app:buildRust` (JDK/SDK as
 above; no generated guest code needed). These check forwarding and the manifest;
 real task reuse, native duplicate rejection and lifecycle timing still need a device.
+
+The renderer keeps wgpu's backend selection: Vulkan when available, GLES as
+a fallback. The manifest advertises both without requiring either individually.
+No device-wide display or graphics settings are changed by the app.
+
+Back (including the system back gesture) sends the game to the background and
+pauses it. Returning from the launcher resumes the same race. To quit, swipe the
+game away in recents; reopening then starts from saved data, so unsaved progress
+is lost. Losing window focus pauses. Unplugging headphones does not; if Android
+closes the stream when the output changes, that is a stream error. A stream
+error never pauses either: the game plays on silently, and asks for audio again
+the next time focus returns. A slow reopen also plays on silently until it
+completes. The pack must contain the supported USA executable,
+`SLUS_207.72`, with SHA-256
+`1b49d05ca2793922180851b9e1ce9ae2291d61a7863565ac4e71f12e967af7bc`.
+
+Startup logs include entry to `onStart`, its native acknowledgement duration,
+and the first lifecycle poll, so initialization delays can be measured on a device.

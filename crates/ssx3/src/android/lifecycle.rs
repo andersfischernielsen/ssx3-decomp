@@ -6,7 +6,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 use winit::platform::android::activity::AndroidApp;
 
 static REBUILD: AtomicBool = AtomicBool::new(false);
@@ -39,9 +39,12 @@ pub extern "system" fn Java_org_ssx3_android_AndroidActivity_nativeState(
     }
 }
 
-pub fn install(app: AndroidApp) {
-    let waker = app.create_waker();
-    *WAKE.lock().unwrap() = Some(Box::new(move || waker.wake()));
+pub fn install(app: AndroidApp, proxy: EventLoopProxy<()>) {
+    // A raw AndroidAppWaker wake is ignored by winit without queued work.
+    // Queue a real user event so focus gain can leave ControlFlow::Wait.
+    *WAKE.lock().unwrap() = Some(Box::new(move || {
+        let _ = proxy.send_event(());
+    }));
     ACTIVITY.with(|a| *a.borrow_mut() = Some(app));
 }
 pub fn surface_lost() {

@@ -13,23 +13,27 @@ import android.content.IntentFilter;
 
 /** Java notifications never wait on Rust or the audio owner. */
 public final class AndroidActivity extends NativeActivity {
-    static { System.loadLibrary("ssx3_android"); }
+    static {
+        System.loadLibrary("ssx3_android");
+    }
     private static final SessionClaim SESSION = new SessionClaim();
     private volatile boolean sessionOwner;
     // Queried by android_main before bootstrap or installing global callbacks.
-    public boolean ownsSession() { return sessionOwner; }
-    private boolean foreground, focused, audioFocus, destroyed, restarting, audioEnabled;
+    public boolean ownsSession() {
+        return sessionOwner;
+    }
+    private boolean foreground, focused, destroyed, restarting, audioEnabled;
+    private final AudioFocusPolicy audioFocus = new AudioFocusPolicy();
     private AudioManager audio;
     private AudioFocusRequest request;
     private native void nativeState(int bits);
     private void publish() {
         if (!sessionOwner) return;
-        nativeState((foreground ? 1 : 0) | (focused ? 2 : 0)
-            | (audioFocus ? 4 : 0) | (destroyed ? 8 : 0));
+        nativeState(audioFocus.bits(foreground, focused, destroyed));
     }
     private final AudioManager.OnAudioFocusChangeListener listener = change -> {
         if (destroyed) return;
-        audioFocus = change == AudioManager.AUDIOFOCUS_GAIN;
+        audioFocus.changed(change);
         publish();
     };
     private final BroadcastReceiver returnToGame = new BroadcastReceiver() {
@@ -72,17 +76,22 @@ public final class AndroidActivity extends NativeActivity {
             .setWillPauseWhenDucked(true).setOnAudioFocusChangeListener(listener).build();
     }
     private void abandon() {
-        audioFocus = false;
+        audioFocus.abandon();
         publish();
         if (audio != null && request != null) audio.abandonAudioFocusRequest(request);
     }
     private void requestAudio() {
         if (!audioEnabled || destroyed || !foreground || !focused || request == null) return;
-        audioFocus = audio.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        audioFocus.requested(audio.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED);
         publish();
     }
     public void enableAudio() {
-        runOnUiThread(() -> { if (!destroyed) { audioEnabled = true; requestAudio(); } });
+        runOnUiThread(() -> {
+            if (!destroyed) {
+                audioEnabled = true;
+                requestAudio();
+            }
+        });
     }
     public void playing() {
         runOnUiThread(() -> {
@@ -105,15 +114,25 @@ public final class AndroidActivity extends NativeActivity {
         moveTaskToBack(true);
     }
     @Override public void onResume() {
-        super.onResume(); foreground = true; publish(); requestAudio();
+        super.onResume();
+        foreground = true;
+        publish();
+        requestAudio();
     }
     @Override public void onPause() {
-        foreground = false; abandon(); super.onPause();
+        foreground = false;
+        abandon();
+        super.onPause();
     }
     @Override public void onWindowFocusChanged(boolean value) {
         super.onWindowFocusChanged(value);
         focused = value;
-        if (value) { publish(); requestAudio(); } else abandon();
+        if (value) {
+            publish();
+            requestAudio();
+        } else {
+            abandon();
+        }
     }
     private void restart() {
         if (restarting) return;
@@ -122,7 +141,10 @@ public final class AndroidActivity extends NativeActivity {
             .putExtra("restart", true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
     }
     @Override public void onDestroy() {
-        if (!sessionOwner) { super.onDestroy(); return; }
+        if (!sessionOwner) {
+            super.onDestroy();
+            return;
+        }
         if (isChangingConfigurations()) restart();
         destroyed = true;
         abandon();

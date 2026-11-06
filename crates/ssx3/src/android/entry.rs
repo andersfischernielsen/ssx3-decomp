@@ -14,11 +14,11 @@ fn android_main(app: AndroidApp) {
             return;
         }
     }
-    super::lifecycle::install(app.clone());
     let result = super::bootstrap::initialize(&app);
     let mut builder = EventLoop::builder();
-    builder.with_android_app(app);
+    builder.with_android_app(app.clone());
     let event_loop = builder.build().expect("Android event loop");
+    super::lifecycle::install(app, event_loop.create_proxy());
     match result {
         Ok(()) => {
             super::lifecycle::java(super::lifecycle::JavaAction::EnableAudio);

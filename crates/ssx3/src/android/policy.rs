@@ -65,4 +65,20 @@ mod tests {
         assert!(p.playing(7));
         assert!(!p.playing(15)); // destruction cannot resume
     }
+    #[test]
+    fn audio_focus_gain_cannot_revive_a_paused_game() {
+        let mut p = Policy {
+            native_focus: true,
+            surface: true,
+        };
+        assert!(!p.playing(6) && !p.audible(6)); // Java foreground absent
+        assert!(!p.playing(5) && !p.audible(5)); // Java window focus absent
+        p.surface = false;
+        assert!(!p.audible(7)); // gain cannot revive a missing surface
+        p.surface = true;
+        p.native_focus = false;
+        assert!(!p.audible(7)); // Java gain never fabricates native focus
+        p.native_focus = true;
+        assert!(p.playing(7) && p.audible(7));
+    }
 }
