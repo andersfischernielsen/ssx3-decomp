@@ -489,6 +489,14 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         path_track_get_queued_count,
         "PATH_TrackGetQueuedCount",
     ),
+    (
+        0x002a_cf60,
+        bank_monitor_find_free_instance,
+        "BankMonitor_FindFreeInstance",
+    ),
+    (0x002a_e7a8, path_plat_queue, "PATH_PlatQueue"),
+    (0x003d_37a0, path_select_branch, "PATH_SelectBranch"),
+    (0x003d_54c8, path_update_tick20, "PATH_UpdateTick20"),
 ];
 
 /// Same-shard direct callees used above.
@@ -7361,6 +7369,582 @@ pub fn path_plat_get_track_state(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod path_f {
+
+    /// `PATH_gNetwork` (the loaded path network), `lw 0x44f420`.
+    pub const NETWORK: u32 = 0x0044_f420;
+
+    /// Network: base of the packed node records.
+    pub const NODE_BASE: u32 = 0x34;
+
+    /// Network: node index -> record word offset (`i16[]`).
+    pub const NODE_INDEX: u32 = 0x38;
+
+    /// Network: per-track trackers (`slot` from the node header, + 0x58).
+    pub const TRACKERS: u32 = 0x58;
+
+    /// Tracker: the node it is queued on (`i16`).
+    pub const TRACKER_NODE: u32 = 0x2c;
+
+    /// Tracker: flags; low nibble = signed lane / remaining count.
+    pub const TRACKER_LANE: u32 = 0x20;
+
+    /// Node record: second word (branch count in bits 12-16).
+    pub const NODE_WORD1: u32 = 0x4;
+
+    /// Node record: the branch list (`{i8 lo, i8 hi, i16 target}`).
+    pub const BRANCHES: u32 = 0x10;
+}
+
+pub(crate) mod plat_queue_mon {
+
+    /// Stream handle (`SNDSTRM_*` handle; the bank voice in memory mode).
+    pub const HANDLE: u32 = 0x0;
+
+    pub const POS: u32 = 0x4;
+
+    /// Optional file-offset base for `SNDSTRM_QueueFileOffset`, and its limit.
+    pub const OFFSET_BASE: u32 = 0x28;
+
+    pub const OFFSET_LIMIT: u32 = 0x2c;
+
+    pub const VOLUME: u32 = 0x30;
+
+    pub const IS_MEM: u32 = 0x64;
+
+    pub const DIRTY: u32 = 0x65;
+
+    pub const COUNT: u32 = 0x66;
+
+    pub const SUBS: u32 = 0x6c;
+}
+
+pub(crate) mod plat_queue_callee {
+    use crate::call::Callee;
+    use ssx3_ee as ee;
+
+    pub const SET_VOLUME: Callee = Callee {
+        addr: 0x002a_f6c0,
+        f: ee::s08::PATH_PlatSetVolume,
+    };
+
+    pub const FIND_BANK_SLOT: Callee = Callee {
+        addr: 0x002a_e230,
+        f: ee::s08::PATH_PlatFindBankSlot,
+    };
+
+    pub const GET_TIME_MS: Callee = Callee {
+        addr: 0x002a_f370,
+        f: ee::s08::PATH_PlatGetTimeMs,
+    };
+
+    pub const SND_LOCK: u32 = 0x003b_58a0;
+
+    pub const SND_PLAY: u32 = 0x003b_6820;
+
+    pub const SND_UNLOCK: u32 = 0x003b_58d8;
+
+    pub const SNDSTRM_STOP: u32 = 0x003b_78f8;
+
+    pub const SNDSTRM_QUEUE_FILE_OFFSET: u32 = 0x003b_7e10;
+
+    pub const SNDSTRM_QUEUE: u32 = 0x003b_78d8;
+}
+
+/// `int PATH_SelectBranch(int node, int lane)` (0x3d37a0), EA path library:
+/// pick the branch out of path node `node` whose lane range `[lo, hi]`
+/// contains `lane`, else the branch whose range is closest (-1 for a node
+/// without branches). If the node's tracker is queued on this node, its
+/// own lane (low nibble of +0x20, sign-extended) replaces `lane`, and with a
+/// positive node count it is consumed (decremented; at -1 the tracker is
+/// released by setting its node to -1). A leaf; reproduces every scratch
+/// register of the original.
+pub fn path_select_branch(c: &mut Cpu) {
+    use path_f::*;
+    let sext4 = |v: u32| sx(((v << 28) as i32 >> 28) as u32);
+    c.cycles += 19;
+    c.g[V0][0] = 0x45_0000;
+    c.g[T2][0] = c.g[A1][0]; // lane
+    c.g[A2][0] = Addr(NETWORK).lw(c);
+    c.g[V1][0] = sx(r32(c, A0) << 1);
+    c.g[T0][0] = u64::MAX; // result: -1
+    let net = r32(c, A2);
+    c.g[A1][0] = Addr(net.wrapping_add(NODE_INDEX)).lw(c);
+    c.g[A3][0] = Addr(net.wrapping_add(NODE_BASE)).lw(c);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+    c.g[V0][0] = Addr(r32(c, V1)).lh(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, V0))); // node record
+    c.g[V1][0] = Addr(r32(c, A3)).lw(c); // header
+    c.g[V0][0] = sx(r32(c, V1) >> 14) & 0x7c;
+    c.g[A2][0] = sx(net.wrapping_add(r32(c, V0)));
+    c.g[A1][0] = Addr(r32(c, A2).wrapping_add(TRACKERS)).lw(c); // tracker
+    c.g[V0][0] = Addr(r32(c, A1).wrapping_add(TRACKER_NODE)).lh(c);
+    c.g[T1][0] = sx(r32(c, A3).wrapping_add(BRANCHES));
+    if c.g[V0][0] == c.g[A0][0] {
+        // The tracker sits on this node: its lane decides.
+        c.cycles += 6;
+        let tracker = r32(c, A1);
+        c.g[A0][0] = Addr(tracker.wrapping_add(TRACKER_LANE)).lw(c);
+        c.g[V1][0] = sx(((r32(c, V1) as i32) >> 28) as u32); // node count
+        c.g[V0][0] = sext4(r32(c, A0));
+        c.g[T2][0] = c.g[V0][0] & 0x7f;
+        if c.g[V1][0] as i64 > 0 {
+            c.cycles += 9;
+            c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+            c.g[V1][0] = c.g[A0][0] & 0xffff_ffff_ffff_fff0;
+            c.g[A0][0] = c.g[V0][0] & 0xf;
+            c.g[V1][0] |= c.g[A0][0];
+            c.g[V0][0] = sext4(r32(c, V0));
+            let lane = c.g[V1][0];
+            Addr(tracker.wrapping_add(TRACKER_LANE)).sw(c, lane);
+            if c.g[V0][0] == c.g[T0][0] {
+                c.cycles += 1;
+                let t0 = c.g[T0][0];
+                Addr(tracker.wrapping_add(TRACKER_NODE)).sh(c, t0);
+            }
+        }
+    }
+    // First branch whose [lo, hi] contains the lane.
+    c.cycles += 3;
+    c.g[A0][0] = 0;
+    c.g[A3][0] = Addr(r32(c, A3).wrapping_add(NODE_WORD1)).lw(c);
+    loop {
+        c.cycles += 5;
+        c.g[V0][0] = sx(r32(c, A3) >> 12);
+        c.g[A1][0] = c.g[V0][0] & 0x1f; // branch count
+        let inside = c.g[A0][0] < c.g[A1][0];
+        c.g[V1][0] = sx(r32(c, A0) << 2);
+        if !inside {
+            break;
+        }
+        c.cycles += 5;
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, T1)));
+        let entry = r32(c, V1);
+        c.g[V0][0] = Addr(entry).lb(c);
+        c.g[V0][0] = ((c.g[T2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+        if c.g[V0][0] == 0 {
+            c.cycles += 4;
+            c.g[V0][0] = Addr(entry.wrapping_add(1)).lb(c);
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[T2][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                c.cycles += 1;
+                c.g[T0][0] = Addr(entry.wrapping_add(2)).lh(c);
+                break;
+            }
+        }
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+        if event_due(c) {
+            deliver_event_here(c, 0x003d_3838);
+        }
+    }
+    c.cycles += 2;
+    if (c.g[T0][0] as i64) < 0 {
+        // None contains it: the branch with the nearest end.
+        c.cycles += 2;
+        c.g[T3][0] = c.g[T1][0];
+        if c.g[A1][0] as i64 <= 0 {
+            c.cycles += 2;
+            c.g[T0][0] = u64::MAX;
+        } else {
+            c.cycles += 2;
+            c.g[T5][0] = 0x7f; // best distance
+            if c.g[A1][0] != 0 {
+                c.cycles += 3;
+                c.g[T1][0] = c.g[A1][0];
+                c.g[T4][0] = u64::MAX;
+                c.g[T0][0] = c.g[T3][0];
+                loop {
+                    c.cycles += 16;
+                    let entry = r32(c, T0);
+                    c.g[A1][0] = Addr(entry).lb(c);
+                    c.g[A0][0] = Addr(entry.wrapping_add(1)).lb(c);
+                    c.g[A1][0] = sx(r32(c, A1).wrapping_sub(r32(c, T2)));
+                    c.g[A0][0] = sx(r32(c, A0).wrapping_sub(r32(c, T2)));
+                    c.g[V0][0] = ((c.g[T4][0] as i64) < (c.g[A1][0] as i64)) as u64;
+                    c.g[V1][0] = ((c.g[T4][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    c.g[A3][0] = sx(0u32.wrapping_sub(r32(c, A1)));
+                    c.g[A2][0] = sx(0u32.wrapping_sub(r32(c, A0)));
+                    if c.g[V0][0] == 0 {
+                        c.g[A1][0] = c.g[A3][0];
+                    }
+                    if c.g[V1][0] == 0 {
+                        c.g[A0][0] = c.g[A2][0];
+                    }
+                    c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[A0][0] as i64)) as u64;
+                    if c.g[V0][0] == 0 {
+                        c.g[A1][0] = c.g[A0][0];
+                    }
+                    c.g[V0][0] = c.g[A1][0]; // distance
+                    c.g[V1][0] = ((c.g[V0][0] as i64) < (c.g[T5][0] as i64)) as u64;
+                    c.g[T1][0] = sx(r32(c, T1).wrapping_sub(1));
+                    if c.g[V1][0] != 0 {
+                        c.cycles += 2;
+                        c.g[T5][0] = c.g[V0][0];
+                        c.g[T3][0] = c.g[T0][0];
+                    }
+                    c.cycles += 2;
+                    let more = c.g[T1][0] != 0;
+                    c.g[T0][0] = sx(r32(c, T0).wrapping_add(4));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_38a0);
+                    }
+                }
+            }
+            c.cycles += 1;
+            c.g[T0][0] = Addr(r32(c, T3).wrapping_add(2)).lhu(c);
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[T0][0];
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// BankMonitor_FindFreeInstance (0x2acf60)
+
+/// BankMonitor: the instance array (64 entries of 0xc0 bytes).
+pub(crate) const BANK_MONITOR_INSTANCES: u32 = 0x8ec;
+
+pub(crate) const BANK_MONITOR_INSTANCE_SIZE: u32 = 0xc0;
+
+pub(crate) const BANK_MONITOR_INSTANCE_COUNT: i64 = 64;
+
+pub(crate) const BANK_MONITOR_POLL_FREE: Callee = Callee {
+    addr: 0x002a_bb80,
+    f: ee::s08::BankMonitorInstance_PollFree,
+};
+
+/// `int BankMonitor::FindFreeInstance(BankMonitor* this, int n)`
+/// (0x2acf60): the index of the n-th free sound-bank instance (polling each
+/// with `BankMonitorInstance_PollFree`, which also recycles finished ones),
+/// or -1. The loop state lives in s0 (n left), s1 (index), s2 (byte
+/// offset), s3 (this), as in the original.
+pub fn bank_monitor_find_free_instance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = 0;
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A0][0];
+        loop {
+            c.cycles += 5;
+            let this = r32(c, S3);
+            let base = Addr(this.wrapping_add(BANK_MONITOR_INSTANCES)).lw(c) as u32;
+            c.g[A0][0] = sx(base.wrapping_add(r32(c, S2)));
+            BANK_MONITOR_POLL_FREE.call(c, 0x002a_cf94)?;
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_sub(1));
+                if c.g[S0][0] == 0 {
+                    // Found the n-th free one.
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S1][0];
+                    break;
+                }
+            }
+            c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < BANK_MONITOR_INSTANCE_COUNT) as u64;
+            c.g[S2][0] = sx(r32(c, S2).wrapping_add(BANK_MONITOR_INSTANCE_SIZE));
+            if c.g[V0][0] == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = u64::MAX;
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002a_cf88);
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PATH_UpdateTick20 (0x3d54c8)
+
+/// `void PATH_UpdateTick20(void)` (0x3d54c8): the music-path timer tick,
+/// `PATH_Update(0x20)`. Frame 0x10 (ra).
+pub fn path_update_tick20(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = 0x20;
+        Callee {
+            addr: 0x003d_5128,
+            f: ee::s14::PATH_Update,
+        }
+        .call(c, 0x003d_54d8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// PATH_PlatQueue (0x2ae7a8)
+
+/// The track monitor table (`D_004D3E98`, 24 pointers) and the bank-slot
+/// table (`D_004D3EF8`, 24 entries of 0x28 bytes) of `PATH_PlatQueue`.
+pub(crate) const PLAT_QUEUE_TRACKS: u32 = 0x004d_3e98;
+
+pub(crate) const PLAT_QUEUE_BANK_SLOTS: u32 = 0x004d_3ef8;
+
+/// `int PATH_PlatQueue(int track, a1, char* name, u32 sectorInfo, int tag,
+/// signed char volume, int pos, int restart)` (0x2ae7a8): queue a track on
+/// its monitor slot. A non-negative `volume` (t1) is stored and applied
+/// first. In-memory slots look up the bank slot, play the patch under the
+/// sound lock and stamp the bank slot's time; streaming slots optionally stop
+/// the stream (`restart`, t3), clear the sub-stream ids, then queue the file
+/// (at a file offset when the slot has one and the position is below its
+/// limit). On success the sub-stream list is shifted up by one and the new
+/// handle and `tag` (t0) go in front; the slot is marked dirty. Returns the
+/// handle (or -1 when no bank slot exists).
+pub fn path_plat_queue(c: &mut Cpu) {
+    use plat_queue_callee as callee;
+    use plat_queue_mon as mon;
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V0][0] = 0x4d_0000;
+        frame.save(c, S2, 0x70);
+        c.g[V0][0] = sx(PLAT_QUEUE_TRACKS);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x80);
+        frame.save(c, S3, 0x60);
+        c.g[V1][0] = sx(r32(c, S2) << 2);
+        frame.save(c, S4, 0x50);
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+        frame.save(c, S5, 0x40);
+        c.g[T1][0] = sx(r32(c, T1) << 24);
+        frame.save(c, S6, 0x30);
+        c.g[T1][0] = sx(((r32(c, T1) as i32) >> 24) as u32);
+        frame.save(c, S7, 0x20);
+        c.g[S6][0] = c.g[A1][0];
+        frame.save(c, FP, 0x10);
+        c.g[S7][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save(c, S0, 0x90);
+        c.g[FP][0] = c.g[T0][0]; // tag
+        c.g[S0][0] = c.lw(r32(c, V1)); // the monitor slot
+        c.g[S1][0] = c.g[T2][0]; // pos
+        c.g[S5][0] = c.g[T3][0]; // restart
+        c.g[S4][0] = u64::MAX; // bank: -1
+        if (c.g[T1][0] as i64) >= 0 {
+            c.cycles += 3;
+            c.g[A1][0] = c.g[T1][0];
+            c.sb(r32(c, S0).wrapping_add(mon::VOLUME), c.g[T1][0]);
+            callee::SET_VOLUME.call(c, 0x002a_e820)?;
+        }
+        'out: {
+            c.cycles += 3;
+            c.g[V0][0] = c.lb(r32(c, S0).wrapping_add(mon::IS_MEM));
+            let in_memory = c.g[V0][0] != 0;
+            c.g[V0][0] = ((c.g[S4][0] as i64) < (c.g[S1][0] as i64)) as u64;
+            if in_memory {
+                // Bank mode: find the bank slot and play the patch.
+                c.cycles += 7;
+                c.g[A0][0] = c.g[S2][0];
+                if c.g[V0][0] == 0 {
+                    c.g[S1][0] = 0; // pos < 0 -> 0
+                }
+                c.g[A1][0] = sx(r32(c, S3) >> 16);
+                callee::FIND_BANK_SLOT.call(c, 0x002a_e83c)?;
+                c.g[S2][0] = c.g[V0][0];
+                c.g[V1][0] = 0x28;
+                if (c.g[S2][0] as i64) >= 0 {
+                    c.cycles += 5;
+                    c.g[V0][0] = 0x4d_0000;
+                    c.mult(0, V1, S2, V1);
+                    c.g[V0][0] = sx(PLAT_QUEUE_BANK_SLOTS);
+                    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+                    c.g[S4][0] = c.lw(r32(c, V0).wrapping_add(0x4));
+                }
+                c.cycles += 2;
+                c.g[V0][0] = u64::MAX;
+                if (c.g[S4][0] as i64) < 0 {
+                    break 'out; // no bank: return -1
+                }
+                c.cycles += 26;
+                c.g[V0][0] = c.g[S3][0] & 0xffff;
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, S1)));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_sub(1));
+                c.sw(r32(c, S0).wrapping_add(mon::POS), c.g[V0][0]);
+                call_ptr(c, callee::SND_LOCK, 0x002a_e878)?;
+                c.g[A1][0] = c.lw(r32(c, S0).wrapping_add(mon::POS));
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A2][0] = sx(r32(c, S0).wrapping_add(mon::VOLUME));
+                call_ptr(c, callee::SND_PLAY, 0x002a_e888)?;
+                c.g[S1][0] = c.g[V0][0];
+                call_ptr(c, callee::SND_UNLOCK, 0x002a_e890)?;
+                callee::GET_TIME_MS.call(c, 0x002a_e898)?;
+                c.g[A0][0] = 0x28;
+                c.g[V1][0] = 0x4d_0000;
+                c.mult(0, A0, S2, A0);
+                c.g[V1][0] = sx(PLAT_QUEUE_BANK_SLOTS);
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+                c.sw(r32(c, V1).wrapping_add(0x24), c.g[V0][0]); // slot time
+                let m = r32(c, S0);
+                c.sw(m.wrapping_add(mon::HANDLE), c.g[S4][0]);
+                c.g[V0][0] = c.lw(m.wrapping_add(mon::SUBS));
+                c.sw(r32(c, V0).wrapping_add(0x4), c.g[S1][0]);
+                c.g[V0][0] = 1;
+                c.g[V1][0] = c.lw(m.wrapping_add(mon::SUBS));
+                c.sw(r32(c, V1), c.g[FP][0]);
+            } else {
+                // Stream mode.
+                c.cycles += 2;
+                let restart = c.g[S5][0] != 0;
+                c.g[S1][0] = sx(r32(c, S3) << 7);
+                if restart {
+                    c.cycles += 6;
+                    c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(mon::HANDLE));
+                    call_ptr(c, callee::SNDSTRM_STOP, 0x002a_e8dc)?;
+                    c.g[V1][0] = c.lb(r32(c, S0).wrapping_add(mon::COUNT));
+                    c.g[A0][0] = sx(r32(c, V1).wrapping_sub(1));
+                    c.g[V0][0] = 0xc;
+                    if (c.g[A0][0] as i64) > 0 {
+                        // Clear the ids of sub-streams 1..count (from the top).
+                        c.cycles += 3;
+                        c.g[A2][0] = u64::MAX;
+                        c.mult(0, A1, A0, V0);
+                        loop {
+                            c.cycles += 9;
+                            let m = r32(c, S0);
+                            c.g[V1][0] = c.lw(m.wrapping_add(mon::SUBS));
+                            c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+                            c.g[V1][0] = sx(r32(c, A1).wrapping_add(r32(c, V1)));
+                            c.sw(r32(c, V1).wrapping_sub(0x8), c.g[A2][0]);
+                            c.g[V0][0] = c.lw(m.wrapping_add(mon::SUBS));
+                            c.g[V0][0] = sx(r32(c, A1).wrapping_add(r32(c, V0)));
+                            c.sw(r32(c, V0).wrapping_sub(0xc), c.g[A2][0]);
+                            let more = (c.g[A0][0] as i64) > 0;
+                            c.g[A1][0] = sx(r32(c, A1).wrapping_sub(0xc));
+                            if !more {
+                                break;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x002a_e8f8);
+                            }
+                        }
+                    }
+                }
+                // Queue the file: at an offset when the slot has one and the
+                // position is inside it.
+                c.cycles += 3;
+                let m = r32(c, S0);
+                c.g[A2][0] = c.lw(m.wrapping_add(mon::OFFSET_BASE));
+                let mut queued = false;
+                if c.g[A2][0] == 0 {
+                    c.g[A0][0] = c.lw(m.wrapping_add(mon::HANDLE));
+                } else {
+                    c.cycles += 4;
+                    c.g[V0][0] = c.lw(m.wrapping_add(mon::OFFSET_LIMIT));
+                    c.g[V0][0] = (c.g[S1][0] < c.g[V0][0]) as u64;
+                    c.g[A3][0] = c.g[S1][0];
+                    if c.g[V0][0] != 0 {
+                        c.cycles += 5;
+                        c.g[A0][0] = c.lw(m.wrapping_add(mon::HANDLE));
+                        c.g[A1][0] = c.g[S6][0];
+                        call_ptr(c, callee::SNDSTRM_QUEUE_FILE_OFFSET, 0x002a_e944)?;
+                        c.g[S1][0] = c.g[V0][0];
+                        queued = true;
+                    } else {
+                        c.cycles += 1;
+                        c.g[A0][0] = c.lw(m.wrapping_add(mon::HANDLE));
+                    }
+                }
+                if !queued {
+                    c.cycles += 5;
+                    c.g[A3][0] = c.g[S1][0];
+                    c.g[A1][0] = c.g[S6][0];
+                    c.g[A2][0] = c.g[S7][0];
+                    call_ptr(c, callee::SNDSTRM_QUEUE, 0x002a_e960)?;
+                    c.g[S1][0] = c.g[V0][0];
+                }
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                if (c.g[S1][0] as i64) >= 0 {
+                    c.cycles += 4;
+                    let m = r32(c, S0);
+                    c.g[V0][0] = c.lb(m.wrapping_add(mon::COUNT));
+                    c.g[A0][0] = sx(r32(c, V0).wrapping_sub(1));
+                    c.g[V0][0] = 0xc;
+                    if (c.g[A0][0] as i64) > 0 {
+                        // Shift the 12-byte sub-stream records up by one.
+                        c.cycles += 1;
+                        c.mult(0, V1, A0, V0);
+                        loop {
+                            c.cycles += 11;
+                            let m = r32(c, S0);
+                            c.g[V0][0] = c.lw(m.wrapping_add(mon::SUBS));
+                            c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+                            c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+                            let rec = r32(c, V0);
+                            c.ldl(A1, rec.wrapping_sub(0x5));
+                            c.ldr(A1, rec.wrapping_sub(0xc));
+                            c.g[A2][0] = c.lw(rec.wrapping_sub(0x4));
+                            c.sdl(A1, rec.wrapping_add(0x7));
+                            c.sdr(A1, rec);
+                            c.sw(rec.wrapping_add(0x8), c.g[A2][0]);
+                            let more = (c.g[A0][0] as i64) > 0;
+                            c.g[V1][0] = sx(r32(c, V1).wrapping_sub(0xc));
+                            if !more {
+                                break;
+                            }
+                            if event_due(c) {
+                                deliver_event_here(c, 0x002a_e980);
+                            }
+                        }
+                    }
+                    c.cycles += 5;
+                    let m = r32(c, S0);
+                    c.g[V0][0] = c.lw(m.wrapping_add(mon::SUBS));
+                    c.sw(r32(c, V0).wrapping_add(0x4), c.g[S1][0]);
+                    c.g[V1][0] = c.lw(m.wrapping_add(mon::SUBS));
+                    c.sw(r32(c, V1), c.g[FP][0]);
+                    c.g[V0][0] = 1;
+                }
+            }
+            // Mark the slot dirty and return the handle.
+            c.cycles += 2;
+            c.sb(r32(c, S0).wrapping_add(mon::DIRTY), c.g[V0][0]);
+            c.g[V0][0] = c.g[S1][0];
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore(c, FP, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -10354,6 +10938,265 @@ pub(crate) mod tests {
                     }
                 }
                 c.g[A0][0] = (seed % 4) as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// `PATH_SelectBranch`: a network (at 0x44f420) whose node `a0` has
+    /// 0..9 branches (sometimes 31: past the written ones, zeros) with small
+    /// lane ranges, a tracker queued on that node or elsewhere, positive or
+    /// non-positive node counts (lane consumed, tracker released at -1), and
+    /// lanes inside or outside every range (nearest-branch search).
+    #[test]
+    fn path_select_branch_matches() {
+        use path_f::*;
+        const NET: u32 = DATA;
+        const IDX: u32 = DATA + 0x800;
+        const BASE: u32 = DATA + 0x1000;
+        const TRACKER: u32 = DATA + 0x2000;
+        check(
+            ee::s14::f_003d37a0__generated,
+            path_select_branch,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3d37_a0b1 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003d_37a0;
+                c.bus.write32(NETWORK, NET);
+                c.bus.write32(NET + NODE_BASE, BASE);
+                c.bus.write32(NET + NODE_INDEX, IDX);
+                for k in 0..32 {
+                    c.bus.write32(NET + TRACKERS + 4 * k, TRACKER);
+                }
+                let node = r.next_u32() % 16;
+                let word = 4 + r.next_u32() % 32;
+                c.bus.write16(IDX + 2 * node, word as u16);
+                let rec = BASE + 4 * word;
+                let count = match seed % 4 {
+                    0 => 0,
+                    1 => 8 + r.next_u32() % 8, // negative count
+                    _ => 1 + r.next_u32() % 7,
+                };
+                let slot = r.next_u32() % 32;
+                c.bus
+                    .write32(rec, count << 28 | slot << 16 | (r.next_u32() & 0xffff));
+                let branches = match seed % 13 {
+                    0 => 0,
+                    1 => 31,
+                    _ => 1 + r.next_u32() % 9,
+                };
+                c.bus
+                    .write32(rec + NODE_WORD1, (r.next_u32() & !0x1f000) | branches << 12);
+                for i in 0..9 {
+                    let lo = (r.next_u32() % 21) as i32 - 10;
+                    let hi = lo + (r.next_u32() % 6) as i32 - 1;
+                    let e = rec + BRANCHES + 4 * i;
+                    c.bus.write8(e, lo as u8);
+                    c.bus.write8(e + 1, hi as u8);
+                    c.bus.write16(e + 2, r.next_u32() as u16);
+                }
+                let on_node = seed % 3 != 0;
+                c.bus.write16(
+                    TRACKER + TRACKER_NODE,
+                    if on_node {
+                        node as u16
+                    } else {
+                        (node + 1) as u16
+                    },
+                );
+                let lane_word = if seed % 5 == 0 {
+                    r.next_u32() & !0xf // lane 0: released after the decrement
+                } else {
+                    r.next_u32()
+                };
+                c.bus.write32(TRACKER + TRACKER_LANE, lane_word);
+                c.g[A0][0] = node as u64;
+                c.g[A1][0] = if seed % 7 == 0 {
+                    sx(r.next_u32())
+                } else {
+                    sx(((r.next_u32() % 25) as i32 - 12) as u32)
+                };
+            },
+        );
+    }
+
+    /// `BankMonitor_FindFreeInstance`: 64 instances, each free (word 0
+    /// is 0) or busy (word 0 set, nothing playing at +0x9c), asking for
+    /// the 0th..5th free one (0 never matches: -1 after all 64), so the
+    /// found and not-found exits occur. PollFree runs for real on its
+    /// short paths.
+    #[test]
+    fn bank_monitor_find_free_instance_matches() {
+        const THIS: u32 = DATA;
+        const INSTANCES: u32 = DATA + 0x1000;
+        check(
+            ee::s08::f_002acf60__generated,
+            bank_monitor_find_free_instance,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x002a_cf60, 0);
+                c.pc = 0x002a_cf60;
+                c.bus.write32(THIS + BANK_MONITOR_INSTANCES, INSTANCES);
+                let busy_odds = 1 + seed % 8;
+                for i in 0..64 {
+                    let inst = INSTANCES + i * BANK_MONITOR_INSTANCE_SIZE;
+                    let busy = r.next_u32() % 8 < busy_odds;
+                    c.bus.write32(inst, if busy { r.next_u32() | 1 } else { 0 });
+                    c.bus.write32(inst + 0x9c, 0);
+                }
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(seed % 6);
+            },
+        );
+    }
+
+    /// `PATH_UpdateTick20` against the generated body, with the real
+    /// `PATH_Update` (fixture as in `path_update_tick42_matches`): locked /
+    /// uninitialised / busy early outs, and the full tick over four players
+    /// that are inactive, active without a handle, or active with a handle.
+    #[test]
+    fn path_update_tick20_matches() {
+        use crate::difftest::scramble;
+        check(
+            ee::s14::f_003d54c8__generated,
+            path_update_tick20,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x003d_54c8 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                c.pc = 0x003d_54c8;
+                let gate = seed % 6;
+                c.bus.write8(
+                    0x0044_f42d,
+                    (gate == 0) as u8 * (1 + r.next_u32() as u8 % 3),
+                );
+                c.bus.write8(0x0044_f42c, (gate != 1) as u8);
+                c.bus
+                    .write32(0x0044_f430, if gate == 2 { r.next_u32() | 1 } else { 0 });
+                c.bus.write32(0x0045_0dcc, r.next_u32()); // timer count
+                c.bus.write32(0x0045_0dc8, 1 + r.next_u32() % 0x1000); // timer period
+                for i in 0..4u32 {
+                    let p = 0x0051_7610 + 0x928 * i;
+                    let kind = r.next_u32() % 3;
+                    c.bus
+                        .write32(p + 0x34, (kind != 0) as u32 * (1 + r.next_u32() % 5));
+                    c.bus
+                        .write32(p + 0x30, if kind == 2 { DATA + 0x100 * i } else { 0 });
+                }
+            },
+        );
+    }
+
+    /// PATH_PlatQueue: in-memory slots with no bank slot, a negative bank and
+    /// a played patch; streaming slots with a stop, the file-offset queue,
+    /// the plain queue failing (no stream) and succeeding (a real
+    /// SNDSTRM_QueueRequest -> StreamFile_QueueRange chain on a fake stream
+    /// file), with 0..4 sub-streams; volume set or not.
+    #[test]
+    fn path_plat_queue_matches() {
+        use crate::difftest::fakes::{covered, machine};
+        use crate::difftest::DATA;
+        const MON: u32 = DATA + 0x2000;
+        const SUBS: u32 = DATA + 0x2400;
+        const STREAM: u32 = DATA + 0x3000;
+        const FILE: u32 = DATA + 0x3400;
+        const NODE: u32 = DATA + 0x3600;
+        const HEADER: u32 = DATA + 0x3800;
+        const REQ: u32 = DATA + 0x4000;
+        const NAME: u32 = DATA + 0x5000;
+        /// SNDSTRM stream table and count (`0x510000 - 0x5f60`, `- 0x56d2`).
+        const STRM_TABLE: u32 = 0x0050_a0a0;
+        const STRM_COUNT: u32 = 0x0050_a92e;
+        covered(
+            ssx3_ee::s08::f_002ae7a8__generated,
+            path_plat_queue,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ae7a8, 3);
+                c.pc = 0x002a_e7a8;
+                let track = r.next_u32() % 24;
+                let case = seed % 8;
+                c.bus.write32(PLAT_QUEUE_TRACKS + 4 * track, MON);
+                c.g[A0][0] = track as u64;
+                c.g[A1][0] = sx(r.next_u32());
+                c.g[A2][0] = sx(NAME);
+                c.bus.write32(NAME, 0x006b_7274); // "trk"
+                let info = r.next_u32();
+                c.g[A3][0] = sx(info);
+                c.g[T0][0] = sx(r.next_u32()); // tag
+                c.g[T1][0] = sx(if (seed / 8) % 2 == 0 {
+                    r.next_u32() & 0x7f
+                } else {
+                    0x80 | r.next_u32()
+                });
+                c.g[T2][0] = sx(match (seed / 16) % 3 {
+                    0 => (r.next_u32() % 4).wrapping_neg(),
+                    _ => r.next_u32() % 0x1000,
+                });
+                c.g[T3][0] = (case == 3 || (case == 5 && seed % 3 == 0)) as u64;
+                // Timer for PATH_PlatGetTimeMs.
+                c.bus.write32(0x0045_0dc8, 1000);
+                c.bus.write32(0x0045_0dcc, r.next_u32() % 100_000);
+                // Bank slots: none owned by the track unless the case says so.
+                for i in 0..24 {
+                    c.bus
+                        .write32(PLAT_QUEUE_BANK_SLOTS + 0x28 * i + 8, u32::MAX);
+                }
+                let count = r.next_u32() % 5;
+                c.bus.write8(MON + 0x66, count as u8);
+                c.bus.write32(MON + 0x6c, SUBS);
+                for i in 0..16 {
+                    c.bus.write32(SUBS + 4 * i, r.next_u32());
+                }
+                c.bus.write8(MON + 0x64, (case < 3) as u8);
+                let handle = r.next_u32() % 4;
+                c.bus.write32(MON, handle);
+                match case {
+                    0 => {}
+                    1 | 2 => {
+                        let k = r.next_u32() % 24;
+                        let e = PLAT_QUEUE_BANK_SLOTS + 0x28 * k;
+                        c.bus.write32(e + 8, track);
+                        c.bus.write32(e, info >> 16);
+                        let bank = if case == 1 {
+                            0x8000_0000 | r.next_u32()
+                        } else {
+                            r.next_u32() % 4
+                        };
+                        c.bus.write32(e + 4, bank);
+                    }
+                    _ => {
+                        let pos = info << 7;
+                        let (base, limit) = match case {
+                            4 => (1 | r.next_u32(), pos.wrapping_add(1).max(1)),
+                            5 => (1 | r.next_u32(), pos.min(r.next_u32())),
+                            _ => (0, 0),
+                        };
+                        c.bus.write32(MON + 0x28, base);
+                        c.bus.write32(MON + 0x2c, limit);
+                        if case >= 6 {
+                            // A live stream whose queue request succeeds.
+                            c.bus.write8(STRM_COUNT, 4);
+                            c.bus.write32(STRM_TABLE + 4 * handle, STREAM);
+                            c.bus.write32(STREAM, FILE);
+                            c.bus.write32(STREAM + 0xc, 0);
+                            c.bus.write32(STREAM + 0x128, NODE);
+                            c.bus.write32(STREAM + 0x12c, NODE);
+                            c.bus.write32(STREAM + 0x130, 1);
+                            c.bus.write32(NODE, 0);
+                            c.bus.write32(FILE, HEADER);
+                            c.bus.write32(HEADER, 0x4d52_5453); // "STRM"
+                            c.bus.write32(HEADER + 0x38, 1);
+                            c.bus.write32(HEADER + 0x64, 0);
+                            c.bus.write32(HEADER + 0x68, REQ);
+                            c.bus.write32(REQ + 0xc, 0);
+                        }
+                    }
+                }
             },
         );
     }

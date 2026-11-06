@@ -99,6 +99,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_exec_man_vblank_signal,
         "PS2ExecMan_VBlankSignal",
     ),
+    (0x0032_0058, mem_heap_memalign, "MEM_HeapMemalign"),
+    (0x0032_00c0, mem_heap_free, "MEM_HeapFree"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1508,6 +1510,37 @@ pub fn ps2_exec_man_vblank_signal(c: &mut Cpu) {
     })
 }
 
+/// `DLHeap_Free` (0x31ed60).
+pub(crate) const DLHEAP_FREE: Callee = Callee {
+    addr: 0x0031_ed60,
+    f: ee::s10::DLHeap_Free,
+};
+
+/// `void MEM_HeapFree(DLHeap* heap, void* mem)` (0x3200c0): forwards to
+/// `DLHeap_Free` (a 7-cycle `ra`-saving wrapper).
+pub fn mem_heap_free(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(DLHEAP_FREE),
+        0x0032_00d0,
+    );
+}
+
+/// `void* MEM_HeapMemalign(DLHeap* heap, uint align, uint size)` (0x320058):
+/// forwards to `DLHeap_Memalign` (0x31f2c8) in a 0x10 frame holding `ra`.
+pub fn mem_heap_memalign(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(Callee {
+            addr: 0x0031_f2c8,
+            f: ee::s10::DLHeap_Memalign,
+        }),
+        0x0032_0068,
+    );
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2101,6 +2134,113 @@ pub(crate) mod tests {
                 };
                 c.bus.write32(EXEC + EXEC_VSYNC_BUSY, busy);
                 c.bus.write32(EXEC + EXEC_VSYNC_SEMA, r.next_u32() % 64);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::events::{check_events, schedule};
+    use crate::difftest::RA as SENTINEL;
+    pub(crate) use crate::game::bx::cubicspline::tests::oc281_run;
+
+    /// `MEM_HeapFree` on a real dlmalloc heap (`DLHeap_InitArena` on a
+    /// 256 KiB arena, a few mallocs, some freed first): null, small and
+    /// large chunks, as in `dlheap_free_matches`.
+    #[test]
+    fn mem_heap_free_matches() {
+        use crate::difftest::fakes::machine;
+        const HEAP: u32 = DATA + 0x2000;
+        const ARENA: u32 = DATA + 0x4_0000;
+        check(
+            ee::s10::f_003200c0__generated,
+            mem_heap_free,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_00c0, 0);
+                let ra = c.g[RA][0];
+                oc281_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::DLHeap_InitArena,
+                    &[HEAP as u64, ARENA as u64, 0x4_0000],
+                );
+                let n = 1 + r.next_u32() % 6;
+                let mut ptrs = Vec::new();
+                for _ in 0..n {
+                    let size = match r.next_u32() % 3 {
+                        0 => r.next_u32() % 0x40,
+                        1 => 0x40 + r.next_u32() % 0x800,
+                        _ => 0x1000 + r.next_u32() % 0x3000,
+                    };
+                    ptrs.push(oc281_run(
+                        c,
+                        0x0031_e818,
+                        ee::s10::DLHeap_Malloc,
+                        &[HEAP as u64, size as u64],
+                    ));
+                }
+                let target = (r.next_u32() % n) as usize;
+                for (i, &p) in ptrs.iter().enumerate() {
+                    if i != target && p != 0 && r.next_u32() % 3 == 0 {
+                        oc281_run(c, 0x0031_ed60, ee::s10::DLHeap_Free, &[HEAP as u64, p]);
+                    }
+                }
+                c.g[RA][0] = ra;
+                c.pc = 0x0032_00c0;
+                c.g[A0][0] = sx(HEAP);
+                c.g[A1][0] = if seed % 10 == 0 { 0 } else { ptrs[target] };
+            },
+        );
+    }
+
+    /// `MEM_HeapMemalign` on a real dlmalloc heap (`DLHeap_InitArena` on a
+    /// 256 KiB arena, a few mallocs first), with small, power-of-two and odd
+    /// alignments and sizes from zero to too large.
+    #[test]
+    fn mem_heap_memalign_matches() {
+        use crate::difftest::fakes::machine;
+        const HEAP: u32 = DATA + 0x2000;
+        const ARENA: u32 = DATA + 0x4_0000;
+        const BACK: u32 = 0x0000_7770;
+        fn heap_call(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) {
+            for (i, a) in args.iter().enumerate() {
+                c.g[[A0, A1, A2][i]][0] = *a;
+            }
+            c.g[RA][0] = BACK as u64;
+            c.pc = addr;
+            f(c);
+            assert_eq!(c.pc, BACK, "setup call {addr:#x} did not return");
+        }
+        check(
+            ee::s10::f_00320058__generated,
+            mem_heap_memalign,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0032_0058, 0);
+                heap_call(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::DLHeap_InitArena,
+                    &[HEAP as u64, ARENA as u64, 0x4_0000],
+                );
+                for _ in 0..r.next_u32() % 4 {
+                    let n = (r.next_u32() % 0x300) as u64;
+                    heap_call(c, 0x0031_e818, ee::s10::DLHeap_Malloc, &[HEAP as u64, n]);
+                }
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0032_0058;
+                c.g[A0][0] = sx(HEAP);
+                c.g[A1][0] = match seed % 6 {
+                    0 => (r.next_u32() % 17) as u64,
+                    1 => 1u64 << (5 + r.next_u32() % 8),
+                    _ => (17 + r.next_u32() % 4096) as u64,
+                };
+                c.g[A2][0] = match seed % 11 {
+                    0 => 0,
+                    1 => 0x10_0000 + (r.next_u32() % 0x1000) as u64,
+                    2 => sx(0xffff_ffe0 + r.next_u32() % 0x20),
+                    _ => (r.next_u32() % 0x2000) as u64,
+                };
             },
         );
     }

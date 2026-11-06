@@ -19,6 +19,9 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::ai::SPIN_ENTER_ANIM_CTRL;
+pub(crate) use crate::game::ai::ai::SPIN_ENTER_CHARACTER;
+pub(crate) use crate::game::ai::ai::SPIN_ENTER_PLAYER;
 pub(crate) use crate::game::ai::rider::add32;
 pub(crate) use crate::game::ai::rider::eq;
 pub(crate) use crate::game::ai::rider::fr_2 as fr;
@@ -273,6 +276,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0011_1aa0,
         rider_base_trigger_dynamic_spray,
         "RiderBase_TriggerDynamicSpray",
+    ),
+    (
+        0x0010_a898,
+        computer_actor_rider_save_state,
+        "ComputerActorRider_SaveState",
+    ),
+    (
+        0x0010_c140,
+        computer_actor_rider_crouch_and_boost,
+        "ComputerActorRider_CrouchAndBoost",
+    ),
+    (
+        0x0010_cad8,
+        computer_actor_rider_choose_trick,
+        "ComputerActorRider_ChooseTrick",
+    ),
+    (
+        0x0010_cd20,
+        computer_actor_rider_pick_fitted_trick,
+        "ComputerActorRider_PickFittedTrick",
+    ),
+    (
+        0x0010_cf68,
+        computer_actor_rider_pick_uber_trick,
+        "ComputerActorRider_PickUberTrick",
     ),
 ];
 
@@ -8479,6 +8507,781 @@ pub fn rider_base_exit_sub_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// ComputerActorRider_PickUberTrick (0x10cf68)
+
+/// ComputerActorRider: the rider, the uber-trick plan (picked flag, the
+/// gap before the trick's end pose, the time asked for, the spare time),
+/// and per-trick use counts (15 ints).
+pub(crate) const UBER_PICK_RIDER: u32 = 0x18;
+
+pub(crate) const UBER_PICK_PICKED: u32 = 0xe24;
+
+pub(crate) const UBER_PICK_PLANNED: u32 = 0xe28;
+
+pub(crate) const UBER_PICK_TAIL: u32 = 0xe2c;
+
+pub(crate) const UBER_PICK_TIME: u32 = 0xe30;
+
+pub(crate) const UBER_PICK_SPARE: u32 = 0xe34;
+
+pub(crate) const UBER_PICK_USES: u32 = 0xeb8;
+
+/// Rider: air time left (float), trick level (>= 5: the second animation
+/// set), the trick interface object (vtable slot +0x38: rider index), the
+/// animation controller.
+pub(crate) const UBER_PICK_AIR_TIME: u32 = 0x2f0;
+
+pub(crate) const UBER_PICK_LEVEL: u32 = 0x2f4;
+
+pub(crate) const UBER_PICK_TRICK_IFACE: u32 = 0x6c0;
+
+pub(crate) const UBER_PICK_IFACE_INDEX_SLOT: u32 = 0x38;
+
+pub(crate) const UBER_PICK_UBER_COUNT: i64 = 15;
+
+/// `BEBAGTInt_GetTrickAnim` result for a trick the rider has no slot for.
+pub(crate) const UBER_PICK_NO_ANIM: u64 = 0x1b6;
+
+pub(crate) const UBER_PICK_SKILL_FACTOR: Callee = Callee {
+    addr: 0x0012_0038,
+    f: ee::s00::Rider_GetTrickSkillFactor,
+};
+
+/// `rider->trickIface->GetIndex()` (vtable slot +0x38) with a0 = the rider
+/// (as the original leaves it), returning to `ret`.
+pub(crate) fn uber_pick_rider_index(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    let iface = r32(c, A0).wrapping_add(UBER_PICK_TRICK_IFACE);
+    c.g[V1][0] = Addr(iface).lw(c);
+    c.g[A0][0] = sx(iface);
+    let vt = c.g[V1][0];
+    let slot = VSlot::read(c, vt, UBER_PICK_IFACE_INDEX_SLOT);
+    c.g[A1][0] = slot.delta;
+    c.g[V0][0] = slot.func;
+    c.g[A0][0] = slot.this(c.g[A0][0]);
+    call_ptr(c, slot.func as u32, ret)
+}
+
+/// `AnimController_GetCurrentAnimTriggerTime(rider->anim, a1, part)` into
+/// f0 (`rider_reg` holds the rider; a1 is set by the caller).
+pub(crate) fn uber_pick_trigger_time(
+    c: &mut Cpu,
+    rider_reg: usize,
+    part: u64,
+    ret: u32,
+) -> crate::call::Flow {
+    c.g[A2][0] = part;
+    c.g[A0][0] = Addr(r32(c, rider_reg).wrapping_add(SPIN_ENTER_ANIM_CTRL)).lw(c);
+    call_ptr(c, 0x0031_2820, ret)
+}
+
+/// `int ComputerActorRider::PickUberTrick(ComputerActorRider* this, float
+/// time)` (0x10cf68): pick the uber trick a CPU rider can finish in `time`
+/// seconds of air. -1 if the rider has no air time left (+0x2f0 <= 0).
+/// Otherwise, over the 15 uber tricks the rider has an animation for, take
+/// the least-used one whose start + end animation times (scaled by the
+/// rider's trick skill) fit in `time`; record its tail and spare time,
+/// count its use and return its index (-1 if none fits). The loop state
+/// lives in s1 (animation), s2 (trick), s4 (best), s5 (best use count),
+/// f22 (skill), f23 (time), as in the original.
+pub fn computer_actor_rider_pick_uber_trick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 21;
+        let frame = Frame::open(c, 0x90);
+        c.mtc1(0, 0);
+        frame.save(c, S0, 0x60);
+        frame.save_fpr(c, 23, 0x88);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S3, 0x30);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 22, 0x80);
+        frame.save_fpr(c, 21, 0x78);
+        frame.save_fpr(c, 20, 0x70);
+        let this = r32(c, S0);
+        Addr(this.wrapping_add(UBER_PICK_PLANNED)).sw(c, 0);
+        c.g[V0][0] = Addr(this.wrapping_add(UBER_PICK_RIDER)).lw(c);
+        c.lwc1(1, r32(c, V0).wrapping_add(UBER_PICK_AIR_TIME));
+        c.c_le_s(1, 0);
+        let grounded = c.fcc();
+        c.mov_s(23, 12);
+        if grounded {
+            c.cycles += 2;
+            c.g[V0][0] = u64::MAX;
+            return uber_pick_epilogue(c, frame);
+        }
+
+        c.cycles += 13;
+        c.swc1(23, this.wrapping_add(UBER_PICK_TIME));
+        c.g[S4][0] = u64::MAX;
+        c.g[S5][0] = 10000;
+        c.g[S2][0] = 0;
+        call_ptr(c, 0x0014_dc80, 0x0010_cfd8)?; // BELibrary_GetInstance
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 6;
+        call_ptr(c, 0x0014_dd58, 0x0010_cfe4)?; // BELibrary_GetInterface(be, 6): BAGT
+        let this = r32(c, S0);
+        c.g[A0][0] = Addr(this.wrapping_add(UBER_PICK_RIDER)).lw(c);
+        c.g[S3][0] = c.g[V0][0];
+        UBER_PICK_SKILL_FACTOR.call(c, 0x0010_cff0)?;
+        c.mov_s(22, 0);
+        let this = r32(c, S0);
+        c.g[A0][0] = Addr(this.wrapping_add(UBER_PICK_RIDER)).lw(c);
+        loop {
+            c.cycles += 18;
+            uber_pick_rider_index(c, 0x0010_d010)?;
+            let this = r32(c, S0);
+            c.g[V1][0] = Addr(this.wrapping_add(UBER_PICK_RIDER)).lw(c);
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S2][0];
+            let level = Addr(r32(c, V1).wrapping_add(UBER_PICK_LEVEL)).lw(c);
+            c.g[A3][0] = (((level as i64) < 5) as u64) ^ 1;
+            call_ptr(c, 0x0015_0198, 0x0010_d030)?; // BEBAGTInt_GetTrickAnim
+            c.g[S1][0] = c.g[V0][0];
+            c.g[V0][0] = UBER_PICK_NO_ANIM;
+            if c.g[S1][0] != UBER_PICK_NO_ANIM {
+                c.cycles += 34;
+                let this = r32(c, S0);
+                c.g[A0][0] = Addr(this.wrapping_add(UBER_PICK_RIDER)).lw(c);
+                uber_pick_rider_index(c, 0x0010_d05c)?;
+                c.g[A1][0] = c.g[V0][0];
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A2][0] = c.g[S2][0];
+                call_ptr(c, 0x0015_00d8, 0x0010_d06c)?; // BEBAGTInt_GetTrickField0
+                let this = r32(c, S0);
+                c.g[V1][0] = Addr(this.wrapping_add(UBER_PICK_RIDER)).lw(c);
+                c.g[A1][0] = c.g[V0][0];
+                uber_pick_trigger_time(c, V1, 1, 0x0010_d080)?;
+                let this = r32(c, S0);
+                c.g[V0][0] = Addr(this.wrapping_add(UBER_PICK_RIDER)).lw(c);
+                c.div_s(20, 0, 22); // start of the lead-in
+                c.g[A1][0] = c.g[S1][0];
+                uber_pick_trigger_time(c, V0, 1, 0x0010_d098)?;
+                let this = r32(c, S0);
+                c.g[V0][0] = Addr(this.wrapping_add(UBER_PICK_RIDER)).lw(c);
+                c.div_s(21, 0, 22); // start of the trick
+                c.g[A1][0] = c.g[S1][0];
+                uber_pick_trigger_time(c, V0, 2, 0x0010_d0b0)?;
+                c.div_s(0, 0, 22); // end of the trick
+                c.add_s(1, 0, 20);
+                c.c_lt_s(1, 23);
+                let fits = c.fcc();
+                c.g[A0][0] = sx(r32(c, S2) << 2);
+                if fits {
+                    c.cycles += 6;
+                    let this = r32(c, S0);
+                    let uses = this.wrapping_add(UBER_PICK_USES).wrapping_add(r32(c, A0));
+                    c.g[V1][0] = sx(uses);
+                    let n = Addr(uses).lw(c);
+                    let fewer = (n as i64) < (c.g[S5][0] as i64);
+                    c.g[V0][0] = 1; // (the branch delay slot's li)
+                    if fewer {
+                        c.cycles += 7;
+                        c.sub_s(0, 0, 21);
+                        c.sub_s(1, 23, 1);
+                        Addr(this.wrapping_add(UBER_PICK_PICKED)).sw(c, 1);
+                        c.g[S4][0] = c.g[S2][0];
+                        c.swc1(0, this.wrapping_add(UBER_PICK_TAIL));
+                        c.swc1(1, this.wrapping_add(UBER_PICK_SPARE));
+                        c.g[S5][0] = Addr(uses).lw(c);
+                    }
+                }
+                c.cycles += 1;
+            }
+            c.g[S2][0] = sx(r32(c, S2).wrapping_add(1));
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S2][0] as i64) < UBER_PICK_UBER_COUNT) as u64;
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            let this = r32(c, S0);
+            c.g[A0][0] = Addr(this.wrapping_add(UBER_PICK_RIDER)).lw(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x0010_cff8);
+            }
+        }
+
+        // Count the pick.
+        c.cycles += 3;
+        let best = c.g[S4][0];
+        c.g[V0][0] = ((best as i64) < UBER_PICK_UBER_COUNT) as u64;
+        if best != u64::MAX {
+            c.cycles += 2;
+            let in_range = c.g[V0][0] != 0;
+            let this = r32(c, S0);
+            c.g[V0][0] = sx(this.wrapping_add(UBER_PICK_USES));
+            if in_range {
+                c.cycles += 5;
+                c.g[A0][0] = sx((best as u32) << 2);
+                let uses = r32(c, V0).wrapping_add(r32(c, A0));
+                c.g[V0][0] = sx(uses);
+                c.g[V1][0] = sx((Addr(uses).lw(c) as u32).wrapping_add(1));
+                let n = c.g[V1][0];
+                Addr(uses).sw(c, n);
+            }
+        }
+        c.cycles += 1;
+        c.g[V0][0] = c.g[S4][0];
+        uber_pick_epilogue(c, frame)
+    })
+}
+
+/// PickUberTrick's epilogue (13 cycles).
+pub(crate) fn uber_pick_epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 13;
+    frame.restore(c, S0, 0x60);
+    frame.restore(c, S1, 0x50);
+    frame.restore(c, S2, 0x40);
+    frame.restore(c, S3, 0x30);
+    frame.restore(c, S4, 0x20);
+    frame.restore(c, S5, 0x10);
+    frame.restore_ra(c, 0);
+    frame.restore_fpr(c, 23, 0x88);
+    frame.restore_fpr(c, 22, 0x80);
+    frame.restore_fpr(c, 21, 0x78);
+    frame.restore_fpr(c, 20, 0x70);
+    frame.close(c);
+    Ok(())
+}
+
+/// `RiderBase_SaveState` (0x111ac0).
+pub(crate) const RIDER_BASE_SAVE_STATE: Callee = Callee {
+    addr: 0x0011_1ac0,
+    f: ee::s00::RiderBase_SaveState,
+};
+
+/// `ComputerActorRider` field: the AI-specific state block saved after the
+/// rider base (0x150 bytes).
+pub(crate) const CAR_AI_STATE: u32 = 0xdf0;
+
+pub(crate) const CAR_AI_STATE_SIZE: u64 = 0x150;
+
+/// `void ComputerActorRider_SaveState(ComputerActorRider* self, Stream* s)`
+/// (0x10a898): saves the rider base state, then writes the AI rider's own
+/// 0x150-byte block at +0xdf0 through the stream's write method.
+pub fn computer_actor_rider_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        RIDER_BASE_SAVE_STATE.call(c, 0x0010_a8b4)?;
+        c.g[A1][0] = sx(r32(c, S1).wrapping_add(CAR_AI_STATE));
+        c.g[A2][0] = CAR_AI_STATE_SIZE;
+        // stream->Write(self + 0xdf0, 0x150): vtable slot +0x8 `{delta, fn}`.
+        let stream = r32(c, S0);
+        c.g[V1][0] = Addr(stream).lw(c);
+        let vt = r32(c, V1);
+        c.g[A0][0] = Addr(vt).off(0x8).lh(c);
+        c.g[V0][0] = Addr(vt).off(0xc).lw(c);
+        let write = r32(c, V0);
+        c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+        call_ptr(c, write, 0x0010_a8d0)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ComputerActorRider` field: its rider; the rider's velocity (vec4) at +0x1e0.
+pub(crate) const CAR_RIDER: u32 = 0x18;
+
+pub(crate) const RIDER_VELOCITY: u32 = 0x1e0;
+
+/// `.lit4` (gp-relative): the speed below which the AI crouches fully
+/// (833.33) and the crouch scale above it (0.97).
+pub(crate) const CROUCH_FULL_BELOW: u32 = 0x7ddc;
+
+pub(crate) const CROUCH_FAST_SCALE: u32 = 0x7dd8;
+
+/// The AI pad word: the low 26 bits are kept, the crouch amount (0..31)
+/// goes into bits 26..31, and bits 16/17 (crouch and boost) are set.
+pub(crate) const PAD_KEEP_MASK: u64 = 0x03ff_ffff;
+
+pub(crate) const PAD_CROUCH: u64 = 0x1_0000;
+
+pub(crate) const PAD_BOOST: u64 = 0x2_0000;
+
+/// `void ComputerActorRider_CrouchAndBoost(ComputerActorRider* self, Pad* pad)`
+/// (0x10c140): presses crouch and boost on the AI's pad, with a crouch
+/// amount of 31 (scaled by 0.97 when the rider's speed is at least 833.33).
+/// The speed is the VU0 length of the rider's velocity (Q, as the original).
+pub fn computer_actor_rider_crouch_and_boost(c: &mut Cpu) {
+    c.cycles += 17;
+    c.g[V0][0] = Addr(r32(c, A0)).off(CAR_RIDER).lw(c);
+    c.g[A2][0] = c.g[A1][0];
+    let gp = r32(c, GP);
+    let full_below = Addr(gp.wrapping_sub(CROUCH_FULL_BELOW)).read_fpu(c);
+    crate::abi::set_fpr(c, 1, full_below);
+    c.lqc2(3, r32(c, V0).wrapping_add(RIDER_VELOCITY));
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.vu0().sqrt(4, 0);
+    c.vu0().waitq();
+    c.cfc2(3, 22);
+    let speed = FpuF32(c.g[V1][0] as u32);
+    crate::abi::set_fpr(c, 0, speed);
+    let mut scale = Addr(gp.wrapping_sub(CROUCH_FAST_SCALE)).read_fpu(c);
+    crate::abi::set_fpr(c, 2, scale);
+    if crate::abi::c_lt_s(c, speed, full_below) {
+        c.cycles += 2;
+        c.g[AT][0] = 0x3f80_0000;
+        scale = FpuF32::ONE;
+        crate::abi::set_fpr(c, 2, scale);
+    }
+    c.cycles += 17;
+    c.g[AT][0] = 0x41f8_0000;
+    let amount = scale * FpuF32(0x41f8_0000); // * 31.0
+    crate::abi::set_fpr(c, 0, amount);
+    let pad = Addr(r32(c, A2));
+    c.g[V1][0] = pad.lw(c) & PAD_KEEP_MASK;
+    c.g[A1][0] = PAD_CROUCH;
+    c.g[A0][0] = PAD_BOOST;
+    let amount_i = FpuF32(amount.to_i32() as u32);
+    crate::abi::set_fpr(c, 1, amount_i);
+    c.g[V0][0] = sx((amount_i.0) << 26);
+    c.g[V1][0] |= c.g[V0][0] | PAD_CROUCH | PAD_BOOST;
+    pad.sw(c, c.g[V1][0]);
+    ret(c);
+}
+
+/// `ComputerActorRider` trick-pick fields.
+pub(crate) const CAR_SKIP_PICK: u32 = 0xe20;
+
+/// `int ComputerActorRider_ChooseTrick(ComputerActorRider* ai, float height)`
+/// (0x10cad8): the trick to start at `height` above the ground, or -1. No
+/// pick when the AI is told to skip (+0xe20) and is below 1 unit, at or
+/// below 0.75 units, or at exactly 100 units; otherwise the uber, the
+/// fitted and the random trick are rolled in turn, and the first roll that
+/// succeeds picks (its picker may still answer -1, which moves on to the
+/// next roll). Frame 0x50: ra at 0, s2/s1/s0 at 0x10/0x20/0x30, f20 at 0x40.
+pub fn computer_actor_rider_choose_trick(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    const NONE: u64 = u64::MAX;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x50);
+        c.g[V1][0] = 0;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0x40);
+        c.g[S1][0] = NONE;
+        frame.save(c, S2, 0x10);
+        frame.save_ra(c, 0);
+        let ai = Addr(c.g[S0][0] as u32);
+        c.g[V0][0] = ai.off(CAR_SKIP_PICK).lw(c);
+        c.f[20] = c.f[12];
+        let height = FpuF32(c.f[20]);
+        if c.g[V0][0] != 0 {
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f80_0000;
+            c.f[0] = 0x3f80_0000;
+            let low = height.lt(FpuF32(c.f[0]));
+            crate::abi::set_fcc(c, low);
+            if low {
+                c.g[V1][0] = 1;
+            }
+        }
+
+        c.cycles += 2;
+        c.g[V0][0] = c.g[S1][0];
+        let mut picked = true;
+        if c.g[V1][0] == 0 {
+            c.cycles += 6;
+            c.g[AT][0] = 0x3f40_0000;
+            c.f[0] = 0x3f40_0000;
+            let high_enough = FpuF32(c.f[0]).lt(height);
+            crate::abi::set_fcc(c, high_enough);
+            if !high_enough {
+                picked = false;
+            } else {
+                c.cycles += 6;
+                c.g[AT][0] = 0x42c8_0000;
+                c.f[0] = 0x42c8_0000;
+                let at_100 = height.eq_s(FpuF32(c.f[0]));
+                crate::abi::set_fcc(c, at_100);
+                if at_100 {
+                    picked = false;
+                } else {
+                    choose_trick_rolls(c)?;
+                }
+            }
+        }
+        if picked {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 6;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The three rolls of [`computer_actor_rider_choose_trick`]: each
+/// `Roll*Trick(ai)` that succeeds calls its `Pick*Trick(ai, height)`; the
+/// first pick other than -1 wins. Leaves the pick in s1 and v0.
+pub(crate) fn choose_trick_rolls(c: &mut Cpu) -> crate::call::Flow {
+    const NONE: u64 = u64::MAX;
+    let stages: [(Callee, u32, Callee, u32, u64); 3] = [
+        (
+            Callee {
+                addr: 0x0010_c258,
+                f: ee::s00::ComputerActorRider_RollUberTrick,
+            },
+            0x0010_cb60,
+            Callee {
+                addr: 0x0010_cf68,
+                f: ee::s00::ComputerActorRider_PickUberTrick,
+            },
+            0x0010_cb70,
+            3,
+        ),
+        (
+            Callee {
+                addr: 0x0010_c320,
+                f: ee::s00::ComputerActorRider_RollFittedTrick,
+            },
+            0x0010_cb88,
+            Callee {
+                addr: 0x0010_cd20,
+                f: ee::s00::ComputerActorRider_PickFittedTrick,
+            },
+            0x0010_cb98,
+            2,
+        ),
+        (
+            Callee {
+                addr: 0x0010_c3b8,
+                f: ee::s00::ComputerActorRider_RollRandomTrick,
+            },
+            0x0010_cbac,
+            Callee {
+                addr: 0x0010_cbe0,
+                f: ee::s00::ComputerActorRider_PickRandomTrick,
+            },
+            0x0010_cbbc,
+            1,
+        ),
+    ];
+    for (n, (roll, roll_ret, pick, pick_ret, tail)) in stages.into_iter().enumerate() {
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S0][0];
+        roll.call(c, roll_ret)?;
+        let rolled = c.g[V0][0] != 0;
+        c.g[A0][0] = c.g[S0][0];
+        if rolled {
+            c.cycles += 3;
+            c.f[12] = c.f[20];
+            pick.call(c, pick_ret)?;
+            c.g[S1][0] = c.g[V0][0];
+        }
+        c.cycles += tail;
+        if n == 0 {
+            c.g[S2][0] = NONE;
+        }
+        c.g[V0][0] = c.g[S1][0];
+        if n < 2 && c.g[S1][0] != c.g[S2][0] {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+/// `ComputerActorRider` fields the trick pickers write: uber / fitted
+/// flags, the pick's slack before and after, the height it was picked at,
+/// and the per-trick fitted pick counts (15 ints).
+pub(crate) const CAR_PICK_UBER: u32 = 0xe24;
+
+pub(crate) const CAR_PICK_FITTED: u32 = 0xe28;
+
+pub(crate) const CAR_PICK_LEAD: u32 = 0xe2c;
+
+pub(crate) const CAR_PICK_HEIGHT: u32 = 0xe30;
+
+pub(crate) const CAR_PICK_SLACK: u32 = 0xe34;
+
+pub(crate) const CAR_FITTED_COUNTS: u32 = 0xef4;
+
+/// Rider fields: air height, uber level, animation controller, flags.
+pub(crate) const RIDER_AIR_HEIGHT: u32 = 0x2f0;
+
+pub(crate) const RIDER_UBER_LEVEL: u32 = 0x2f4;
+
+pub(crate) const RIDER_VTABLE: u32 = 0x6c0;
+
+pub(crate) const RIDER_ANIM: u32 = 0x784;
+
+pub(crate) const RIDER_FLAGS: u32 = 0xb2c;
+
+/// "No trick / no animation".
+pub(crate) const TRICK_NONE: u64 = 0x1b6;
+
+/// The fitted tricks are 1..14 of the BAGT table.
+pub(crate) const FITTED_TRICKS: i64 = 15;
+
+/// The rider's virtual "index" query (slot `{delta, fn}` at +0x38 of the
+/// vtable at `rider+0x6c0`), as the pickers make it: `a1` holds the rider
+/// (`a0` in the uber-animation call), `v1` its vtable; returns to `ret`.
+pub(crate) fn pick_fitted_rider_index(
+    c: &mut Cpu,
+    base: usize,
+    delta_reg: usize,
+    ret: u32,
+) -> crate::call::Flow {
+    let vt = Addr(c.g[V1][0] as u32);
+    c.g[base][0] = sx((c.g[base][0] as u32).wrapping_add(RIDER_VTABLE));
+    c.g[delta_reg][0] = vt.off(0x38).lh(c);
+    c.g[V0][0] = vt.off(0x3c).lw(c);
+    let f = c.g[V0][0] as u32;
+    c.g[A0][0] = sx((c.g[base][0] as u32).wrapping_add(c.g[delta_reg][0] as u32));
+    call_ptr(c, f, ret)
+}
+
+/// The AI's rider (`*(s0 + 0x18)`, the AI read from s0).
+pub(crate) fn pick_fitted_ai_rider(c: &mut Cpu) -> u64 {
+    Addr(c.g[S0][0] as u32).off(CAR_RIDER).lw(c)
+}
+
+/// `AnimController_GetCurrentAnimTriggerTime(rider->anim, anim, which)`
+/// (0x312820) as the pickers call it (`v_reg` holds the AI's rider).
+pub(crate) fn pick_fitted_trigger_time(
+    c: &mut Cpu,
+    v_reg: usize,
+    which: u64,
+    ret: u32,
+) -> crate::call::Flow {
+    c.g[A2][0] = which;
+    c.g[A0][0] = Addr(c.g[v_reg][0] as u32).off(RIDER_ANIM).lw(c);
+    call_ptr(c, 0x0031_2820, ret)
+}
+
+/// `int ComputerActorRider_PickFittedTrick(ComputerActorRider* ai, float
+/// height)` (0x10cd20): among the fitted tricks 1..14 (those with an
+/// animation), the one whose wind-up plus trick time (trigger times over
+/// the rider's trick skill factor) fits in `height` and that was picked
+/// least often so far (ties: the first). Records the pick (`+0xe28` = 1,
+/// lead / slack at `+0xe2c` / `+0xe34`, height at `+0xe30`), counts it and
+/// returns its index, or -1. While the rider is in the air with an uber
+/// trick ready (flag bit 0), only tricks without an uber animation count.
+/// The loop checks events at its head 0x10cd98. Frame 0xa0: ra at 0,
+/// s6..s0 at 0x10..0x70, f20..f23 at 0x80..0x98.
+pub fn computer_actor_rider_pick_fitted_trick(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    guest(c, |c| {
+        c.cycles += 30;
+        let frame = Frame::open(c, 0xa0);
+        frame.save(c, S0, 0x70);
+        frame.save_fpr(c, 23, 0x98);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x50);
+        c.f[23] = c.f[12];
+        frame.save(c, S3, 0x40);
+        c.g[S2][0] = 1;
+        frame.save(c, S4, 0x30);
+        frame.save(c, S5, 0x20);
+        c.g[S4][0] = u64::MAX;
+        frame.save(c, S6, 0x10);
+        c.g[S5][0] = 0x2710;
+        frame.save_fpr(c, 22, 0x90);
+        c.g[S6][0] = TRICK_NONE;
+        frame.save(c, S1, 0x60);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 21, 0x88);
+        frame.save_fpr(c, 20, 0x80);
+        let ai = Addr(c.g[S0][0] as u32);
+        ai.off(CAR_PICK_UBER).sw(c, 0);
+        let height = FpuF32(c.f[23]);
+        ai.off(CAR_PICK_HEIGHT).write_fpu(c, height);
+
+        // The BAGT interface and the rider's trick skill factor.
+        call_ptr(c, 0x0014_dc80, 0x0010_cd78)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 6;
+        call_ptr(c, 0x0014_dd58, 0x0010_cd84)?;
+        c.g[A0][0] = pick_fitted_ai_rider(c);
+        c.g[S3][0] = c.g[V0][0];
+        Callee {
+            addr: 0x0012_0038,
+            f: ee::s00::Rider_GetTrickSkillFactor,
+        }
+        .call(c, 0x0010_cd90)?;
+        c.f[22] = c.f[0];
+        c.g[A0][0] = pick_fitted_ai_rider(c);
+
+        loop {
+            // The trick's uber animation index (0x1b6: not a fitted trick).
+            c.cycles += 13;
+            c.g[V1][0] = Addr(c.g[A0][0] as u32).off(RIDER_VTABLE).lw(c);
+            pick_fitted_rider_index(c, A0, A1, 0x0010_cdb0)?;
+            c.g[A1][0] = c.g[V0][0];
+            c.g[A0][0] = c.g[S3][0];
+            c.g[A2][0] = c.g[S2][0];
+            call_ptr(c, 0x0015_0138, 0x0010_cdc0)?; // BEBAGTInt_GetTrickField6
+            c.g[S1][0] = c.g[V0][0];
+            if c.g[S1][0] == c.g[S6][0] {
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+            } else {
+                pick_fitted_try(c)?;
+            }
+
+            c.cycles += 3;
+            let more = (c.g[S2][0] as i64) < FITTED_TRICKS;
+            c.g[V0][0] = more as u64;
+            if !more {
+                break;
+            }
+            c.g[A0][0] = pick_fitted_ai_rider(c);
+            if event_due(c) {
+                deliver_event_here(c, 0x0010_cd98);
+            }
+        }
+
+        // Count the pick.
+        c.cycles += 3;
+        let best = c.g[S4][0];
+        c.g[V0][0] = ((best as i64) < FITTED_TRICKS) as u64;
+        if best != u64::MAX {
+            c.cycles += 2;
+            let in_range = c.g[V0][0] != 0;
+            c.g[V0][0] = sx((c.g[S0][0] as u32).wrapping_add(CAR_FITTED_COUNTS));
+            if in_range {
+                c.cycles += 5;
+                c.g[A0][0] = sx((best as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                let slot = Addr(c.g[V0][0] as u32);
+                c.g[V1][0] = sx((slot.lw(c) as u32).wrapping_add(1));
+                let n = c.g[V1][0];
+                slot.sw(c, n);
+            }
+        }
+        c.cycles += 15;
+        c.g[V0][0] = c.g[S4][0];
+        frame.restore(c, S0, 0x70);
+        frame.restore(c, S1, 0x60);
+        frame.restore(c, S2, 0x50);
+        frame.restore(c, S3, 0x40);
+        frame.restore(c, S4, 0x30);
+        frame.restore(c, S5, 0x20);
+        frame.restore(c, S6, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 23, 0x98);
+        frame.restore_fpr(c, 22, 0x90);
+        frame.restore_fpr(c, 21, 0x88);
+        frame.restore_fpr(c, 20, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// One fitted trick (index s2, uber animation s1 != 0x1b6) of
+/// [`computer_actor_rider_pick_fitted_trick`]: skip it while airborne with
+/// an uber animation, else time it and keep it when it fits and was picked
+/// less often than the best so far. Advances s2.
+pub(crate) fn pick_fitted_try(c: &mut Cpu) -> crate::call::Flow {
+    use crate::ps2f::FpuF32;
+    c.cycles += 5;
+    c.g[A1][0] = pick_fitted_ai_rider(c);
+    let uber_ready = Addr(c.g[A1][0] as u32).off(RIDER_FLAGS).lw(c) & 1 != 0;
+    c.g[V0][0] = TRICK_NONE;
+    if uber_ready {
+        c.cycles += 15;
+        c.g[V1][0] = Addr(c.g[A1][0] as u32).off(RIDER_VTABLE).lw(c);
+        pick_fitted_rider_index(c, A1, A0, 0x0010_cdf8)?;
+        c.g[V1][0] = pick_fitted_ai_rider(c);
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S2][0];
+        let level = Addr(c.g[V1][0] as u32).off(RIDER_UBER_LEVEL).lw(c);
+        c.g[A3][0] = ((level as i64) < 5) as u64 ^ 1;
+        call_ptr(c, 0x0015_0198, 0x0010_ce18)?; // BEBAGTInt_GetTrickAnim
+        c.g[A1][0] = pick_fitted_ai_rider(c);
+    }
+
+    c.cycles += 6;
+    c.f[1] = 0;
+    let rider = Addr(c.g[A1][0] as u32);
+    c.f[0] = rider.off(RIDER_AIR_HEIGHT).read_fpu(c).0;
+    let airborne = FpuF32(c.f[1]).lt(FpuF32(c.f[0]));
+    crate::abi::set_fcc(c, airborne);
+    if airborne {
+        c.cycles += 2;
+        if c.g[V0][0] != c.g[S6][0] {
+            c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+            return Ok(());
+        }
+        c.cycles += 1;
+    }
+    c.g[V1][0] = rider.off(RIDER_VTABLE).lw(c);
+
+    // Wind-up (field 0's animation) and trick time.
+    c.cycles += 32;
+    pick_fitted_rider_index(c, A1, A0, 0x0010_ce54)?;
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A2][0] = c.g[S2][0];
+    call_ptr(c, 0x0015_00d8, 0x0010_ce64)?; // BEBAGTInt_GetTrickField0
+    c.g[V1][0] = pick_fitted_ai_rider(c);
+    c.g[A1][0] = c.g[V0][0];
+    pick_fitted_trigger_time(c, V1, 1, 0x0010_ce78)?;
+    c.g[V0][0] = pick_fitted_ai_rider(c);
+    c.f[20] = FpuF32(c.f[0]).div(FpuF32(c.f[22])).0;
+    c.g[A1][0] = c.g[S1][0];
+    pick_fitted_trigger_time(c, V0, 1, 0x0010_ce90)?;
+    c.g[V0][0] = pick_fitted_ai_rider(c);
+    c.f[21] = FpuF32(c.f[0]).div(FpuF32(c.f[22])).0;
+    c.g[A1][0] = c.g[S1][0];
+    pick_fitted_trigger_time(c, V0, 2, 0x0010_cea8)?;
+    let end = FpuF32(c.f[0]).div(FpuF32(c.f[22]));
+    c.f[0] = end.0;
+    let total = end + FpuF32(c.f[20]);
+    c.f[1] = total.0;
+    let height = FpuF32(c.f[23]);
+    let fits = total.lt(height);
+    crate::abi::set_fcc(c, fits);
+    c.g[A0][0] = sx((c.g[S2][0] as u32) << 2);
+    let ai = Addr(c.g[S0][0] as u32);
+    if fits {
+        c.cycles += 6;
+        c.g[V1][0] = sx((c.g[S0][0] as u32).wrapping_add(CAR_FITTED_COUNTS));
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        let count = Addr(c.g[V1][0] as u32).lw(c);
+        let fewer = (count as i64) < (c.g[S5][0] as i64);
+        c.g[V0][0] = 1;
+        if fewer {
+            c.cycles += 7;
+            let lead = end - FpuF32(c.f[21]);
+            let slack = height - total;
+            c.f[0] = lead.0;
+            c.f[1] = slack.0;
+            ai.off(CAR_PICK_FITTED).sw(c, 1);
+            c.g[S4][0] = c.g[S2][0];
+            ai.off(CAR_PICK_LEAD).write_fpu(c, lead);
+            ai.off(CAR_PICK_SLACK).write_fpu(c, slack);
+            c.g[S5][0] = Addr(c.g[V1][0] as u32).lw(c);
+        }
+    }
+    c.cycles += 1;
+    c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -11348,6 +12151,490 @@ pub(crate) mod tests {
                     .write32(WORLD + 0x200 + 8, 2 * (r.next_u32() & 0xffff) + 1);
                 c.g[A0][0] = sx(RIDER);
                 c.g[A1][0] = (r.next_u32() % 6) as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::RA as SENTINEL;
+
+    /// `ComputerActorRider_PickUberTrick`: no air time (early -1) or some;
+    /// a time budget in [0, 20] s against random animation trigger times
+    /// (some parts missing: -1.0) and random use counts, so tricks fit or
+    /// not, are less used or not, and some riders have no animation for a
+    /// trick (0x1b6). The real BELibrary lookups (interface getter a fake,
+    /// sometimes unwinding), Rider_GetTrickSkillFactor, BEBAGTInt_GetTrickAnim
+    /// / GetTrickField0 (fixture as in their own tests) and
+    /// AnimController_GetCurrentAnimTriggerTime run; the rider-index and
+    /// animation-index virtuals are the real 0-returning leaf 0x1406c0.
+    #[test]
+    fn computer_actor_rider_pick_uber_trick_matches() {
+        use crate::difftest::fakes::{vtable, LOG_RESULTS};
+        const THIS: u32 = DATA;
+        const RIDER: u32 = DATA + 0x2000;
+        const IFACE_VT: u32 = DATA + 0x3000;
+        const CTRL: u32 = DATA + 0x3100;
+        const CTRL_VT: u32 = DATA + 0x3200;
+        const TRIGGERS: u32 = DATA + 0x4000;
+        const BANKS: u32 = DATA + 0x6000;
+        const BANK: u32 = DATA + 0x6100;
+        const ENTRIES: u32 = DATA + 0x6200;
+        const TIMES: u32 = DATA + 0x6400;
+        const BAGT: u32 = DATA + 0x7000;
+        const ANIMS: u32 = DATA + 0x8000;
+        const ZERO_LEAF: u32 = 0x0014_06c0;
+        const RIDER_PROFILES: u32 = 0x0053_05b0;
+        const PROFILES: u32 = 0x0053_5b20;
+        const SLOTS: u32 = 0x0053_0ec0;
+        const TRICK_TABLE: u32 = 0x0045_aeb8;
+        covered(
+            ee::s00::f_0010cf68__generated,
+            computer_actor_rider_pick_uber_trick,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_cf68, 2);
+                elf_image(c);
+                c.pc = 0x0010_cf68;
+                // The BE singletons; the library's interface getter is a
+                // fake (the BAGT interface comes back as BAGT).
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x6_0000);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                for g in [0x1f3c, 0x1f30, 0x1f2c, 0x1ea4] {
+                    c.bus.write32(GAME_GP - g, DATA + 0xe_0000 + g * 0x10);
+                }
+                let lib = DATA + 0x5_0000;
+                c.bus.write32(0x0053_08a8, lib);
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(lib + 4, vt);
+                c.bus.write32(LOG_RESULTS, BAGT);
+                // Player profiles and records (skill factor, trick slots).
+                for p in 0..8 {
+                    c.bus.write32(RIDER_PROFILES + 4 * p, r.next_u32() % 8);
+                }
+                for s in 0..8 {
+                    let rec = PROFILES + s * 0x1c;
+                    fill(c, &mut r, rec, 7);
+                    if r.next_u32() % 3 == 0 {
+                        c.bus.write32(rec + 0xc, u32::MAX);
+                    }
+                    c.bus.write8(rec + 0x11, (r.next_u32() % 10) as u8);
+                    let chars = [0u8, 0x14, 0x18, 0x19, 0x1c, 5, 30, 0xf0];
+                    c.bus.write8(rec + 0x12, chars[(r.next_u32() % 8) as usize]);
+                }
+                for i in 0..0x4000u32 / 4 {
+                    let w = r.next_u32() & 0x0707_0707;
+                    c.bus.write32(SLOTS + 4 * i, w);
+                }
+                for t in 0..15u32 {
+                    let e = TRICK_TABLE + 0x14 * t;
+                    c.bus.write16(e, r.next_u32() as u16);
+                    c.bus
+                        .write16(e + 0xc, if r.next_u32() % 3 == 0 { 0 } else { 8 });
+                    let anims = ANIMS + 0x100 * t;
+                    c.bus.write32(e + 0x10, anims);
+                    fill(c, &mut r, anims, 0x40);
+                }
+                // The rider.
+                c.bus.write32(THIS + UBER_PICK_RIDER, RIDER);
+                let air = match seed % 7 {
+                    0 => 0,
+                    1 => r.f32(1.0) | 0x8000_0000,
+                    _ => (1.0f32 + (r.next_u32() % 100) as f32 / 10.0).to_bits(),
+                };
+                c.bus.write32(RIDER + UBER_PICK_AIR_TIME, air);
+                c.bus.write32(RIDER + UBER_PICK_LEVEL, r.next_u32() % 8);
+                c.bus.write32(RIDER + UBER_PICK_TRICK_IFACE, IFACE_VT);
+                c.bus
+                    .write32(IFACE_VT + UBER_PICK_IFACE_INDEX_SLOT + 4, ZERO_LEAF);
+                c.bus.write32(RIDER + SPIN_ENTER_ANIM_CTRL, CTRL);
+                c.bus.write32(RIDER + SPIN_ENTER_PLAYER, r.next_u32() % 8);
+                let stats = match r.next_u32() % 3 {
+                    0 => 0,
+                    1 => r.next_u32() % 40,
+                    _ => r.next_u32(),
+                };
+                c.bus.write32(RIDER + SPIN_ENTER_CHARACTER, stats);
+                for i in 0..15 {
+                    c.bus
+                        .write32(THIS + UBER_PICK_USES + 4 * i, r.next_u32() % 20);
+                }
+                // The animation controller: index 0 -> bank 0, entry e.
+                c.bus.write32(CTRL + 0x58, CTRL_VT);
+                c.bus.write32(CTRL_VT + 0x24, ZERO_LEAF);
+                c.bus.write32(GAME_GP + 0xd8c, TRIGGERS);
+                let entry = seed % 3;
+                c.bus.write32(TRIGGERS + 0x1030, entry << 8);
+                c.bus.write32(GAME_GP + 0xd08, BANKS);
+                c.bus.write32(BANKS, BANK);
+                c.bus.write32(BANK + 0x8, ENTRIES);
+                c.bus.write32(BANK + 0x10, TIMES);
+                for e in 0..3 {
+                    c.bus
+                        .write16(ENTRIES + 0x14 * e + 0x10, (r.next_u32() % 64) as u16);
+                    c.bus
+                        .write16(ENTRIES + 0x14 * e + 0x12, (r.next_u32() % 4) as u16);
+                }
+                for i in 0..0x100 {
+                    c.bus.write32(TIMES + 4 * i, r.next_u32() % 600);
+                }
+                c.f[12] = r.f32(20.0) & 0x7fff_ffff;
+                c.g[A0][0] = sx(THIS);
+            },
+        );
+    }
+
+    /// A `RiderBase` at DATA+0x200000 that `RiderBase_SaveState` can save
+    /// (copied from `rider_base_save_state_matches`: zeroed part objects,
+    /// targets present or not, path indices found or not) and a stream at
+    /// DATA+0x10 whose write method (slot +0x8) is a fake. Returns
+    /// `(rider_base, stream)`.
+    pub(crate) fn oc286_rider_base_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) -> (u32, u32) {
+        use crate::difftest::fakes::vtable;
+        use crate::game::ai::computer::{
+            RB_PATH_DATA, RB_RIDER, RB_RIDER_AIR_PREDICTOR, RB_RIDER_AI_PATH, RB_RIDER_ANIM,
+            RB_RIDER_BLOCK0, RB_RIDER_BLOCK1, RB_RIDER_METRIX, RB_RIDER_MODEL, RB_RIDER_TARGET0,
+            RB_RIDER_TARGET1, RB_RIDER_TRACK_PATH, RB_TARGET_ID,
+        };
+        let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        let stream = DATA + 0x10;
+        let vt = vtable(c, r, &[0x8]);
+        w(c, stream, vt);
+        let this = DATA + 0x20_0000;
+        crate::difftest::fill(c, r, this, 0xf40 / 4);
+        let rider = DATA + 0x21_0000;
+        w(c, this + RB_RIDER, rider);
+        for (k, f) in [
+            RB_RIDER_ANIM,
+            RB_RIDER_MODEL,
+            RB_RIDER_AIR_PREDICTOR,
+            RB_RIDER_METRIX,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            w(c, rider + f, DATA + 0x22_0000 + 0x1000 * k as u32);
+        }
+        w(c, DATA + 0x22_0000 + 0x50, DATA + 0x22_8000);
+        for (k, f) in [RB_RIDER_TARGET0, RB_RIDER_TARGET1].into_iter().enumerate() {
+            let cell = DATA + 0x23_0000 + 0x400 * k as u32;
+            let obj = cell + 0x100;
+            w(c, rider + f, cell);
+            let present = (seed >> k) & 1 != 0;
+            w(c, cell, if present { obj } else { 0 });
+            let id = r.next_u32();
+            w(c, obj + RB_TARGET_ID, id);
+        }
+        let b0 = r.next_u32();
+        w(c, rider + RB_RIDER_BLOCK0, b0);
+        let b1 = r.next_u32();
+        w(c, rider + RB_RIDER_BLOCK1, b1);
+        let n = seed % 5;
+        let tracks = DATA + 0x24_0000;
+        let ais = DATA + 0x25_0000;
+        w(c, RB_PATH_DATA + 0x10, n);
+        w(c, RB_PATH_DATA + 0x14, tracks);
+        w(c, RB_PATH_DATA + 0x8, n);
+        w(c, RB_PATH_DATA + 0xc, ais);
+        for (f, base, stride) in [
+            (RB_RIDER_TRACK_PATH, tracks, 0x3c),
+            (RB_RIDER_AI_PATH, ais, 0x40),
+        ] {
+            let v = match r.next_u32() % 3 {
+                0 => 0,
+                1 => base + stride * (r.next_u32() % 5),
+                _ => r.next_u32(),
+            };
+            w(c, rider + f, v);
+        }
+        (this, stream)
+    }
+
+    /// The real rider-base save, then the AI block write through the
+    /// stream's fake write method (unwinding at any of the calls).
+    #[test]
+    fn computer_actor_rider_save_state_matches() {
+        check(
+            ee::s00::f_0010a898__generated,
+            computer_actor_rider_save_state,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_a898, 41);
+                let (this, stream) = oc286_rider_base_fixture(c, &mut r, seed);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
+                c.pc = 0x0010_a898;
+            },
+        );
+    }
+
+    /// Rider velocities whose length falls below or above 833.33 (and edge
+    /// values), the `.lit4` constants, a random pad word.
+    #[test]
+    fn computer_actor_rider_crouch_and_boost_matches() {
+        check(
+            ee::s00::f_0010c140__generated,
+            computer_actor_rider_crouch_and_boost,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_c140, 0);
+                let this = DATA;
+                let rider = DATA + 0x400;
+                let pad = DATA + 0x800;
+                c.bus.write32(this + CAR_RIDER, rider);
+                let mut comp = || {
+                    if seed % 7 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(700.0)
+                    }
+                };
+                let v = [comp(), comp(), comp(), comp()];
+                crate::difftest::put_vec(c, rider + RIDER_VELOCITY, v);
+                c.bus
+                    .write32(GAME_GP - CROUCH_FULL_BELOW, 833.333_43f32.to_bits());
+                c.bus
+                    .write32(GAME_GP - CROUCH_FAST_SCALE, 0.97f32.to_bits());
+                let word = r.next_u32();
+                c.bus.write32(pad, word);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(pad);
+                c.pc = 0x0010_c140;
+            },
+        );
+    }
+
+    pub(crate) const TW_AI: u32 = DATA + 0x1_0000;
+
+    pub(crate) const TW_RIDER: u32 = DATA + 0x2_0000;
+
+    pub(crate) const TW_RIDER_VT: u32 = DATA + 0x3_0000;
+
+    pub(crate) const TW_ANIM: u32 = DATA + 0x3_1000;
+
+    pub(crate) const TW_ANIM_VT: u32 = DATA + 0x3_1100;
+
+    pub(crate) const TW_BE_LIB: u32 = DATA + 0x3_2000;
+
+    pub(crate) const TW_BE_IFACE: u32 = DATA + 0x3_3000;
+
+    pub(crate) const TW_BE_VT: u32 = DATA + 0x3_3100;
+
+    /// What `BELibrary_GetInterface` answers (the BAGT interface).
+    pub(crate) const TW_IFACE: u32 = DATA + 0x3_4000;
+
+    /// `AnimController_GetCurrentAnimTriggerTime`'s tables (`gp+0xd8c`,
+    /// `gp+0xd08`).
+    pub(crate) const TT_BASE: u32 = DATA + 0x3_5000;
+
+    pub(crate) const TT_PTRS: u32 = DATA + 0x3_7000;
+
+    pub(crate) const TT_HDR: u32 = DATA + 0x3_7100;
+
+    pub(crate) const TT_RECS: u32 = DATA + 0x3_7200;
+
+    pub(crate) const TT_TIMES: u32 = DATA + 0x3_7400;
+
+    /// The rider index the rider's virtual answers.
+    pub(crate) const TW_IDX: u32 = DATA + 0x3_8000;
+
+    /// Fake calls made, and the call index that unwinds.
+    pub(crate) const TW_CALLS: u32 = DATA + 0x3_8004;
+
+    pub(crate) const TW_UNWIND_AT: u32 = DATA + 0x3_8008;
+
+    /// Uber trick animation lists (`trick.+0x10`).
+    pub(crate) const TW_UBER_ANIMS: u32 = DATA + 0x3_9000;
+
+    /// The BAGT trick table (0x14 bytes per trick).
+    pub(crate) const TRICK_TABLE: u32 = 0x0045_aeb8;
+
+    /// The current track (`BENewRaceInt_GetTrack`), 0xe = no uber tricks.
+    pub(crate) const TRACK: u32 = 0x0053_5c08;
+
+    /// `Rand_NextGame`'s state.
+    pub(crate) const RAND_STATE: u32 = 0x004f_f030;
+
+    /// The fake callees of the trick world: the rider's index query
+    /// (`FAKE+0x10`), the animation controller's anim lookup (`FAKE+0x20`:
+    /// ids below 8 map to themselves, others to 0x207, "no trigger time")
+    /// and the BE library's interface slot (`FAKE+0x80`). Unwinds at the
+    /// call index stored at [`TW_UNWIND_AT`].
+    pub(crate) fn trick_world_hook(c: &mut Cpu, target: u32) {
+        let ra = c.g[RA][0] as u32;
+        let n = c.bus.read32(TW_CALLS);
+        c.bus.write32(TW_CALLS, n + 1);
+        c.g[V0][0] = match target.wrapping_sub(FAKE) {
+            0x10 => c.bus.read32(TW_IDX) as u64,
+            0x20 => {
+                let anim = c.g[A1][0] as u32;
+                if anim < 8 {
+                    anim as u64
+                } else {
+                    0x207
+                }
+            }
+            0x80 => TW_IFACE as u64,
+            _ => 0,
+        };
+        c.g[A0][0] = 0x1234;
+        c.cycles += 3;
+        c.pc = if n == c.bus.read32(TW_UNWIND_AT) {
+            0xdead_0000 | n << 4
+        } else {
+            ra
+        };
+    }
+
+    /// An AI (`TW_AI`) with its rider, the BE library and BAGT interface,
+    /// the trick table (some tricks without an animation, 0x1b6), uber
+    /// animation lists, the animation trigger-time tables, the rand state,
+    /// the trick counts and the roll / pick inputs, all chosen by `r`.
+    pub(crate) fn trick_world(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let pick = |r: &mut Rng, v: &[u32]| v[(r.next_u32() as usize) % v.len()];
+        let f = |x: f32| x.to_bits();
+        c.hooks.miss = trick_world_hook;
+        c.bus.write32(TW_CALLS, 0);
+        let unwind = if seed % 5 == 0 {
+            r.next_u32() % 40
+        } else {
+            u32::MAX
+        };
+        c.bus.write32(TW_UNWIND_AT, unwind);
+        c.bus.write32(TW_IDX, r.next_u32() % 4);
+        // BE library singleton and its interface slot.
+        c.bus.write32(GAME_GP - 0x1f04, TW_BE_LIB);
+        c.bus.write32(GAME_GP - 0x1efc, 0);
+        c.bus.write32(0x0053_08a8, TW_BE_IFACE);
+        c.bus.write32(TW_BE_IFACE + 4, TW_BE_VT);
+        c.bus.write16(TW_BE_VT + 8, 0);
+        c.bus.write32(TW_BE_VT + 0xc, FAKE + 0x80);
+        c.bus.write32(TRACK, pick(&mut *r, &[0xe, 3]));
+        for i in 0..6 {
+            c.bus.write32(RAND_STATE + 4 * i, r.next_u32());
+        }
+        // Trick skill factor: `lit * attribute + 1`.
+        c.bus.write32(GAME_GP - 0x7960, f(0.5));
+        c.bus.write8(0x0053_08d8 + 0xa, 2);
+        // The trick table.
+        for i in 0..16u32 {
+            let t = TRICK_TABLE + 0x14 * i;
+            c.bus
+                .write16(t, pick(&mut *r, &[0, 1, 3, 5, 7, 9, 0x1b6]) as u16);
+            c.bus
+                .write16(t + 6, pick(&mut *r, &[0x1b6, 2, 4, 6, 8]) as u16);
+            let uber = r.next_u32() % 2;
+            c.bus.write16(t + 0xc, uber as u16);
+            c.bus.write32(t + 0x10, TW_UBER_ANIMS + 0x10 * i);
+            c.bus.write16(
+                TW_UBER_ANIMS + 0x10 * i,
+                pick(&mut *r, &[0x1b6, 3, 6]) as u16,
+            );
+        }
+        // Trigger times: anim id i -> record i, 0..3 times of 0..60 frames.
+        c.bus.write32(GAME_GP + 0xd8c, TT_BASE);
+        c.bus.write32(GAME_GP + 0xd08, TT_PTRS);
+        c.bus.write32(GAME_GP - 0x322c, f(1.0 / 30.0));
+        c.bus.write32(TT_PTRS, TT_HDR);
+        c.bus.write32(TT_HDR + 8, TT_RECS);
+        c.bus.write32(TT_HDR + 0x10, TT_TIMES);
+        for i in 0..8u32 {
+            c.bus.write32(TT_BASE + 0x1030 + 4 * i, i << 8);
+            c.bus.write16(TT_RECS + 0x14 * i + 0x10, (3 * i) as u16);
+            c.bus
+                .write16(TT_RECS + 0x14 * i + 0x12, (r.next_u32() % 4) as u16);
+        }
+        for j in 0..32u32 {
+            c.bus.write16(TT_TIMES + 4 * j, (r.next_u32() % 60) as u16);
+        }
+        // The rider.
+        let rider = TW_RIDER;
+        c.bus.write32(TW_AI + 0x18, rider);
+        c.bus.write32(rider + 0x6c0, TW_RIDER_VT);
+        c.bus.write16(TW_RIDER_VT + 0x38, 0);
+        c.bus.write32(TW_RIDER_VT + 0x3c, FAKE + 0x10);
+        c.bus.write32(rider + 0x784, TW_ANIM);
+        c.bus.write32(TW_ANIM + 0x58, TW_ANIM_VT);
+        c.bus.write16(TW_ANIM_VT + 0x20, 0);
+        c.bus.write32(TW_ANIM_VT + 0x24, FAKE + 0x20);
+        c.bus
+            .write32(rider + 0x2f0, pick(&mut *r, &[f(-1.0), 0, f(2.0), f(2.0)]));
+        c.bus.write32(rider + 0x2f4, r.next_u32() % 8);
+        c.bus.write32(rider + 0x86c, r.next_u32() % 4);
+        c.bus.write32(rider + 0xb34, 1 + r.next_u32() % 3);
+        c.bus.write32(rider + 0xb2c, r.next_u32() & 0xff);
+        // The AI: roll skill, trick counts.
+        let ai = TW_AI;
+        c.bus
+            .write32(ai + 0xdfc, pick(&mut *r, &[f(-1.0), 0, f(0.5), f(1.0)]));
+        c.bus.write32(ai + 0xe20, pick(&mut *r, &[0, 0, 1]));
+        for i in 0..15u32 {
+            for base in [0xe7cu32, 0xeb8, 0xef4] {
+                c.bus.write32(ai + base + 4 * i, r.next_u32() % 20);
+            }
+        }
+    }
+
+    /// `ComputerActorRider_ChooseTrick` on the trick world with the real
+    /// rolls and pickers: skipped (+0xe20 below 1 unit), too low, exactly
+    /// 100, each roll failing or succeeding and its pick found or not, and
+    /// unwinds out of any of the callees.
+    #[test]
+    fn computer_actor_rider_choose_trick_matches() {
+        check(
+            ee::s00::f_0010cad8__generated,
+            computer_actor_rider_choose_trick,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_cad8, 0);
+                trick_world(c, &mut r, seed);
+                let heights = [0.5f32, 0.75, 0.9, 1.5, 3.0, 10.0, 100.0, 40.0];
+                c.f[12] = heights[(r.next_u32() % 8) as usize].to_bits();
+                c.g[A0][0] = sx(TW_AI);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0010_cad8;
+            },
+        );
+    }
+
+    /// `ComputerActorRider_PickFittedTrick` on the trick world: tricks
+    /// without an animation, airborne with and without uber animations,
+    /// trigger times that fit or not, fewer or more earlier picks, no pick
+    /// at all, and unwinds out of any callee.
+    #[test]
+    fn computer_actor_rider_pick_fitted_trick_matches() {
+        check(
+            ee::s00::f_0010cd20__generated,
+            computer_actor_rider_pick_fitted_trick,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_cd20, 0);
+                trick_world(c, &mut r, seed);
+                let heights = [0.0f32, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, -1.0];
+                c.f[12] = heights[(r.next_u32() % 8) as usize].to_bits();
+                c.g[A0][0] = sx(TW_AI);
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0010_cd20;
+            },
+        );
+    }
+
+    /// Event delivery at the trick loop head (0x10cd98).
+    #[test]
+    fn computer_actor_rider_pick_fitted_trick_events_match() {
+        check_events(
+            ee::s00::f_0010cd20__generated,
+            computer_actor_rider_pick_fitted_trick,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_cd21, 0);
+                trick_world(c, &mut r, 1 + seed % 4);
+                c.bus.write32(TW_UNWIND_AT, u32::MAX);
+                c.g[A0][0] = sx(TW_AI);
+                c.g[RA][0] = SENTINEL as u64;
+                let mode = schedule(c, &mut r, seed, 0x0010_cd20);
+                c.f[12] = 2.0f32.to_bits();
+                mode
             },
         );
     }

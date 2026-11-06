@@ -112,6 +112,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "GameModeMan_ResetMode",
     ),
     (0x0023_1d60, app_module_render_fade, "AppModule_RenderFade"),
+    (0x0023_1348, game_module_save_state, "GameModule_SaveState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1462,6 +1463,200 @@ pub fn app_module_render_fade(c: &mut Cpu) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 0x00231348 GameModule_SaveState
+
+/// The game module's state machine members saved by
+/// [`game_module_save_state`]: (offset in the module, the state's
+/// `SaveState`, return address of the call).
+pub(crate) const GAME_MODULE_STATES: [(u32, Callee, u32); 15] = [
+    (
+        0xb0,
+        Callee {
+            addr: 0x0023_4990,
+            f: ee::s06::GameStatePreRaceLoad_SaveState,
+        },
+        0x0023_1410,
+    ),
+    (
+        0xd0,
+        Callee {
+            addr: 0x0023_6d60,
+            f: ee::s06::GameStatePreRaceMenu_SaveState,
+        },
+        0x0023_141c,
+    ),
+    (
+        0xe0,
+        Callee {
+            addr: 0x0023_4de0,
+            f: ee::s06::GameStateCountdown_SaveState,
+        },
+        0x0023_1428,
+    ),
+    (
+        0xf0,
+        Callee {
+            addr: 0x0023_4eb8,
+            f: ee::s06::GameStateRace_SaveState,
+        },
+        0x0023_1434,
+    ),
+    (
+        0x100,
+        Callee {
+            addr: 0x0023_40b8,
+            f: ee::s06::GameStateFinish_SaveState,
+        },
+        0x0023_1440,
+    ),
+    (
+        0x118,
+        Callee {
+            addr: 0x0023_3b90,
+            f: ee::s06::GameStateQuit_SaveState,
+        },
+        0x0023_144c,
+    ),
+    (
+        0x128,
+        Callee {
+            addr: 0x0023_6ec8,
+            f: ee::s06::GameStateResults_SaveState,
+        },
+        0x0023_1458,
+    ),
+    (
+        0x138,
+        Callee {
+            addr: 0x0023_3bd0,
+            f: ee::s06::GameStateIdle_SaveState,
+        },
+        0x0023_1464,
+    ),
+    (
+        0x148,
+        Callee {
+            addr: 0x0023_6b70,
+            f: ee::s06::GameStateResetAI_SaveState,
+        },
+        0x0023_1470,
+    ),
+    (
+        0x158,
+        Callee {
+            addr: 0x0023_5990,
+            f: ee::s06::GameStateReset_SaveState,
+        },
+        0x0023_147c,
+    ),
+    (
+        0x178,
+        Callee {
+            addr: 0x0023_6af8,
+            f: ee::s06::GameStateEventSwitchLoad_SaveState,
+        },
+        0x0023_1488,
+    ),
+    (
+        0x18c,
+        Callee {
+            addr: 0x0023_6fa8,
+            f: ee::s06::GameStateFinishCinematic_SaveState,
+        },
+        0x0023_1494,
+    ),
+    (
+        0x19c,
+        Callee {
+            addr: 0x0023_5f48,
+            f: ee::s06::GameStateRestartRace_SaveState,
+        },
+        0x0023_14a0,
+    ),
+    (
+        0x1b8,
+        Callee {
+            addr: 0x0023_6728,
+            f: ee::s06::GameStateEventSelect_SaveState,
+        },
+        0x0023_14ac,
+    ),
+    (
+        0x1dc,
+        Callee {
+            addr: 0x0023_61c8,
+            f: ee::s06::GameStateWarpToEvent_SaveState,
+        },
+        0x0023_14b8,
+    ),
+];
+
+/// `void GameModule_SaveState(GameModule* self, cStream* stream)`
+/// (0x231348): serialize the module into a save stream: the two serializable
+/// members at `+0x70`/`+0x74` (virtual `serialize`, vtable slot 0x60), the
+/// four words at `+0x214`, `+0x218`, `+0x210`, `+0x21c` (`stream->write(p,
+/// 4)`, slot 8), then every game state's `SaveState`.
+pub fn game_module_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 97;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        // The serializable members: obj->serialize(stream) (a1 is the stream).
+        for (member, ret) in [(0x70u32, 0x0023_1378u32), (0x74, 0x0023_1394)] {
+            c.g[A2][0] = c.lw((c.g[S1][0] as u32).wrapping_add(member));
+            if member == 0x74 {
+                c.g[A1][0] = c.g[S0][0];
+            }
+            c.g[V0][0] = c.lw((c.g[A2][0] as u32).wrapping_add(0xc));
+            c.g[A0][0] = c.lh((c.g[V0][0] as u32).wrapping_add(0x60));
+            c.g[V1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x64));
+            let method = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, method, ret)?;
+        }
+        // stream->write(&self->field, 4) for the four words.
+        for (i, (field, ret)) in [
+            (0x214u32, 0x0023_13b0u32),
+            (0x218, 0x0023_13cc),
+            (0x210, 0x0023_13e8),
+            (0x21c, 0x0023_1404),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let vt = c.lw(c.g[S0][0] as u32);
+            if i == 0 {
+                c.g[A3][0] = vt;
+            } else {
+                c.g[V1][0] = vt;
+            }
+            c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(field));
+            c.g[A2][0] = 0x4;
+            c.g[A0][0] = c.lh((vt as u32).wrapping_add(0x8));
+            c.g[V0][0] = c.lw((vt as u32).wrapping_add(0xc));
+            let method = c.g[V0][0] as u32;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, method, ret)?;
+        }
+        // Each game state: state->SaveState(stream).
+        for (member, save, ret) in GAME_MODULE_STATES {
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(member));
+            c.g[A1][0] = c.g[S0][0];
+            save.call(c, ret)?;
+        }
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1973,6 +2168,40 @@ pub(crate) mod tests {
                     FAKE + 0x20,
                 );
                 c.g[A0][0] = sx(module);
+            },
+        );
+    }
+    use super::*;
+
+    /// GameModule_SaveState: the two members' `serialize` and every stream
+    /// write (all through the state SaveStates) are fakes (some unwind); the
+    /// state objects are random words.
+    #[test]
+    fn game_module_save_state_matches() {
+        use crate::difftest::fakes::{machine, vtable};
+        use crate::difftest::{check, fill, DATA};
+        const THIS: u32 = DATA + 0x2_0000;
+        const STREAM: u32 = DATA + 0x2_1000;
+        const MEMBERS: u32 = DATA + 0x2_2000;
+        check(
+            ee::s06::f_00231348__generated,
+            game_module_save_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0023_1348, 40);
+                c.pc = 0x0023_1348;
+                fill(c, &mut r, THIS, 0x90);
+                let vt = vtable(c, &mut r, &[0x60]);
+                for k in 0..2 {
+                    let m = MEMBERS + 0x100 * k;
+                    fill(c, &mut r, m, 8);
+                    c.bus.write32(m + 0xc, vt);
+                    c.bus.write32(THIS + 0x70 + 4 * k, m);
+                }
+                let svt = vtable(c, &mut r, &[8]);
+                c.bus.write32(STREAM, svt);
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(STREAM);
             },
         );
     }

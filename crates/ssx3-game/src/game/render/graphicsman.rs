@@ -148,6 +148,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Emitter_BuildDescriptor",
     ),
     (0x0037_0aa8, emitter_save, "Emitter_Save"),
+    (
+        0x0036_ccb8,
+        emitter_randomize_desc_seeds,
+        "Emitter_RandomizeDescSeeds",
+    ),
 ];
 
 /// The game's render-context singleton (`gp+0x2a90`, `D_004A5B80`): its
@@ -6278,6 +6283,81 @@ pub fn emitter_build_descriptor(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Emitter_RandomizeDescSeeds (0x36ccb8)
+
+/// `Rand_NextMain` (cross-shard: through the table).
+pub(crate) const EMITTER_RAND_NEXT_MAIN: u32 = 0x0031_77f0;
+
+/// The emitter descriptor's nine random seeds (floats in [1, 2)).
+pub(crate) const EMITTER_SEED_FIELDS: [u32; 9] =
+    [0x38, 0x3c, 0x40, 0x44, 0x48, 0x50, 0x54, 0x58, 0x5c];
+
+/// Return addresses of the nine `Rand_NextMain` calls.
+pub(crate) const EMITTER_SEED_RETS: [u32; 9] = [
+    0x0036_cce4,
+    0x0036_cd08,
+    0x0036_cd24,
+    0x0036_cd40,
+    0x0036_cd5c,
+    0x0036_cd78,
+    0x0036_cd94,
+    0x0036_cdb0,
+    0x0036_cdcc,
+];
+
+/// `void Emitter_RandomizeDescSeeds(EmitterDesc* self)` (0x36ccb8): fill the
+/// descriptor's nine seed floats (+0x38..+0x48, +0x50..+0x5c) with random
+/// values in [1, 2): a random mantissa under exponent 0 (`(r & 0x7fffff) |
+/// 1.0f`), then `(x - 1) + 1` as the original computes it.
+pub fn emitter_randomize_desc_seeds(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    guest(c, |c| {
+        c.cycles += 82;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S2, 0x10);
+        c.g[S0][0] = 0x7f_0000;
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S0][0] |= 0xffff; // mantissa mask
+        frame.save_fpr(c, 20, 0x40);
+        c.g[S1][0] = 0x3f80_0000; // 1.0f
+        call_ptr(c, EMITTER_RAND_NEXT_MAIN, EMITTER_SEED_RETS[0])?;
+        c.g[AT][0] = 0x3f80_0000;
+        c.f[20] = 0x3f80_0000;
+        for (i, &field) in EMITTER_SEED_FIELDS.iter().enumerate() {
+            let last = i == EMITTER_SEED_FIELDS.len() - 1;
+            c.g[V0][0] &= c.g[S0][0];
+            if last {
+                frame.restore_ra(c, 0);
+            }
+            c.g[V0][0] |= c.g[S1][0];
+            if last {
+                frame.restore(c, S0, 0x30);
+            }
+            c.f[1] = r32(c, V0);
+            if last {
+                frame.restore(c, S1, 0x20);
+            }
+            let one = FpuF32(c.f[20]);
+            c.f[0] = (FpuF32(c.f[1]) - one).0;
+            c.f[0] = (FpuF32(c.f[0]) + one).0;
+            if last {
+                frame.restore_fpr(c, 20, 0x40);
+                c.swc1(0, r32(c, S2).wrapping_add(field));
+                frame.restore(c, S2, 0x10);
+                frame.close(c);
+            } else {
+                c.swc1(0, r32(c, S2).wrapping_add(field));
+                call_ptr(c, EMITTER_RAND_NEXT_MAIN, EMITTER_SEED_RETS[i + 1])?;
+            }
+        }
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7108,6 +7188,28 @@ pub(crate) mod tests {
                     sign
                 };
                 c.bus.write32(PARAMS + 8, sign);
+            },
+        );
+    }
+    use super::*;
+
+    /// Emitter_RandomizeDescSeeds: the real Rand_NextMain on a random
+    /// generator state; random f20 (saved and restored).
+    #[test]
+    fn emitter_randomize_desc_seeds_matches() {
+        use crate::difftest::{check, fill, scramble, Rng, DATA};
+        check(
+            ee::s12::f_0036ccb8__generated,
+            emitter_randomize_desc_seeds,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0036_ccb8 ^ (seed as u64) << 20);
+                scramble(c, &mut r);
+                c.pc = 0x0036_ccb8;
+                // Rand_NextMain's generator (0x500000 - 0xfe8).
+                fill(c, &mut r, 0x004f_f018, 0x10);
+                c.f[20] = r.edge_f32();
+                c.g[A0][0] = sx(DATA + 0x100);
             },
         );
     }

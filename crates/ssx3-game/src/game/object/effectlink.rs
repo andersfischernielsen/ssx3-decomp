@@ -121,6 +121,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         particle_modifier_base_save,
         "ParticleModifier_BaseSave",
     ),
+    (
+        0x0034_60a0,
+        dynamic_particle_modifier_save,
+        "DynamicParticleModifier_Save",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1285,6 +1290,79 @@ pub fn particle_modifier_base_save(c: &mut Cpu) {
     })
 }
 
+/// Replay/save stream vtable: `Write(stream, src, size)` at slot 0x8.
+pub(crate) const DPM_SAVE_STREAM_WRITE: u32 = 0x8;
+
+/// `DynamicParticleModifier`: saved block at +0x10 (0x50 bytes), "static"
+/// flag at +0x18, emitter state pointer at +0x260 (0xd8 bytes), embedded
+/// `DynamicEmitter` at +0x60.
+pub(crate) const DPM_SAVE_BLOCK: u32 = 0x10;
+
+pub(crate) const DPM_SAVE_BLOCK_SIZE: u64 = 0x50;
+
+pub(crate) const DPM_SAVE_STATIC: u32 = 0x18;
+
+pub(crate) const DPM_SAVE_STATE: u32 = 0x260;
+
+pub(crate) const DPM_SAVE_STATE_SIZE: u64 = 0xd8;
+
+pub(crate) const DPM_SAVE_EMITTER: u32 = 0x60;
+
+/// `stream->Write(src, size)` through the stream's vtable slot 0x8,
+/// returning to `back` (v0 = vtable, v1 = method, as the original leaves
+/// them).
+pub(crate) fn dpm_save_stream_write(c: &mut Cpu, back: u32) -> crate::call::Flow {
+    let stream = c.g[S0][0] as u32;
+    let vt = Addr(stream).lw(c);
+    c.g[V0][0] = vt;
+    let delta = Addr((vt as u32).wrapping_add(DPM_SAVE_STREAM_WRITE)).lh(c);
+    let write = Addr((vt as u32).wrapping_add(DPM_SAVE_STREAM_WRITE + 4)).lw(c);
+    c.g[V1][0] = write;
+    c.g[A0][0] = sx(stream.wrapping_add(delta as u32));
+    call_ptr(c, write as u32, back)
+}
+
+/// `void DynamicParticleModifier_Save(DynamicParticleModifier* self,
+/// Stream* stream)` (0x3460a0): the base modifier's save, then the 0x50
+/// byte block at +0x10; a non-static modifier also writes its 0xd8 byte
+/// state (+0x260) and saves its embedded emitter (`DynamicEmitter_Save`).
+pub fn dynamic_particle_modifier_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0034_5890,
+            f: ee::s11::ParticleModifier_BaseSave,
+        }
+        .call(c, 0x0034_60bc)?;
+        c.g[A1][0] = sx((c.g[S1][0] as u32).wrapping_add(DPM_SAVE_BLOCK));
+        c.g[A2][0] = DPM_SAVE_BLOCK_SIZE;
+        dpm_save_stream_write(c, 0x0034_60d8)?;
+        let is_static = Addr((c.g[S1][0] as u32).wrapping_add(DPM_SAVE_STATIC)).lw(c);
+        c.g[V0][0] = is_static;
+        if is_static == 0 {
+            c.cycles += 11;
+            c.g[A2][0] = DPM_SAVE_STATE_SIZE;
+            c.g[A1][0] = Addr((c.g[S1][0] as u32).wrapping_add(DPM_SAVE_STATE)).lw(c);
+            dpm_save_stream_write(c, 0x0034_6100)?;
+            c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(DPM_SAVE_EMITTER));
+            c.g[A1][0] = c.g[S0][0];
+            call_ptr(c, 0x0037_12b8, 0x0034_610c)?;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1928,6 +2006,51 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(modifier);
                 c.g[A1][0] = sx(stream);
             },
+        );
+    }
+    use super::*;
+    use crate::difftest::events::{check_events, schedule};
+    use crate::difftest::RA as SENTINEL;
+
+    /// A dynamic particle modifier (static or not) and a stream whose
+    /// vtable slots 0x8 (`Write`) and 0x28 (`WriteInt`, the base save) are
+    /// fakes; the embedded emitter holds random words.
+    pub(crate) fn dpm_save_fixture(c: &mut Cpu, seed: u32) {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::fill;
+        let is_static = seed % 3 == 0;
+        let calls = if is_static { 2 } else { 4 };
+        let mut r = machine(c, seed, 0x3460_a000, calls);
+        let modifier = DATA;
+        let stream = DATA + 0x1000;
+        let vt = DATA + 0x1100;
+        fill(c, &mut r, modifier, 0x110);
+        c.bus.write32(
+            modifier + DPM_SAVE_STATIC,
+            if is_static { 1 + r.next_u32() % 9 } else { 0 },
+        );
+        c.bus.write32(modifier + DPM_SAVE_STATE, DATA + 0x2000);
+        c.bus.write32(stream, vt);
+        for (i, slot) in [DPM_SAVE_STREAM_WRITE, 0x28].into_iter().enumerate() {
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(vt + slot, delta as u16);
+            c.bus.write32(vt + slot + 4, FAKE + 0x10 * i as u32);
+        }
+        c.g[A0][0] = sx(modifier);
+        c.g[A1][0] = sx(stream);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0034_60a0;
+    }
+
+    /// `DynamicParticleModifier_Save`: static and dynamic modifiers, fakes
+    /// unwinding at any call.
+    #[test]
+    fn dynamic_particle_modifier_save_matches() {
+        check(
+            ee::s11::f_003460a0__generated,
+            dynamic_particle_modifier_save,
+            300,
+            &dpm_save_fixture,
         );
     }
 }

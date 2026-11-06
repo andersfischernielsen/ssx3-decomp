@@ -60,6 +60,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Instance_GetNodeMatrix",
     ),
     (0x0034_fbf0, world_obj_dtor, "WorldObj_dtor"),
+    (0x0034_fd90, world_obj_kill, "WorldObj_Kill"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -738,6 +739,51 @@ pub fn world_obj_dtor(c: &mut Cpu) {
     })
 }
 
+/// `void WorldObj::Kill()` (0x34fd90): in the instance node (+0x18) flags
+/// word (+8) the low half is replaced by the high half and bit 2 (dead) is
+/// set; then `this->SetState(3)` through vtable (+0xc) slot +8.
+pub fn world_obj_kill(c: &mut Cpu) {
+    const NODE: u32 = 0x18;
+    const FLAGS: u32 = 0x8;
+    const VTABLE: u32 = 0xc;
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x10);
+        let me = c.g[A0][0];
+        c.g[A2][0] = me;
+        frame.save_ra(c, 0);
+        let mask = 0xffff_ffff_ffff_0000u64;
+        let node = c.lw((me as u32).wrapping_add(NODE));
+        let flags = c.lw((node as u32).wrapping_add(FLAGS)) & mask;
+        c.sw((node as u32).wrapping_add(FLAGS), flags);
+        let node = c.lw((me as u32).wrapping_add(NODE));
+        c.g[A0][0] = node;
+        let flags = c.lw((node as u32).wrapping_add(FLAGS));
+        let high = sx(((flags as u32) as i32 >> 16) as u32);
+        c.sw((node as u32).wrapping_add(FLAGS), flags | high);
+        let node = c.lw((me as u32).wrapping_add(NODE));
+        c.g[V1][0] = node;
+        let flags = c.lw((node as u32).wrapping_add(FLAGS)) | 0x2;
+        c.g[V0][0] = flags;
+        c.sw((node as u32).wrapping_add(FLAGS), flags);
+        if me != 0 {
+            c.cycles += 6;
+            let vt = c.lw((me as u32).wrapping_add(VTABLE));
+            c.g[V0][0] = vt;
+            c.g[A1][0] = 0x3;
+            let delta = c.lh((vt as u32).wrapping_add(0x8));
+            let method = c.lw((vt as u32).wrapping_add(0xc));
+            c.g[V1][0] = method;
+            c.g[A0][0] = sx((me as u32).wrapping_add(delta as u32));
+            call_ptr(c, method as u32, 0x0034_fdf0)?;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -958,6 +1004,35 @@ pub(crate) mod tests {
                     .write32(inst + 0xc, if seed % 2 == 0 { obj } else { r.next_u32() });
                 c.g[A0][0] = obj as u64;
                 c.g[A1][0] = (r.next_u32() & !1) as u64;
+            },
+        );
+    }
+    use super::*;
+
+    /// `WorldObj_Kill`: an object with a node whose flags word is random
+    /// (high half sign bit set or not) and a vtable whose slot +8 is a fake;
+    /// on 1 in 8 seeds the object pointer is null (the flag writes go
+    /// through low RAM and no call is made).
+    #[test]
+    fn world_obj_kill_matches() {
+        const ME: u32 = DATA;
+        const NODE: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x200;
+        covered(
+            ee::s11::f_0034fd90__generated,
+            world_obj_kill,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34fd90, 1);
+                c.pc = 0x0034_fd90;
+                c.bus.write32(ME + 0x18, NODE);
+                c.bus.write32(NODE + 8, r.next_u32());
+                c.bus.write32(ME + 0xc, VT);
+                c.bus.write16(VT + 8, (r.next_u32() % 0x20) as u16 & !3);
+                c.bus.write32(VT + 0xc, FAKE);
+                c.bus
+                    .write32(0x18, if seed % 2 == 0 { 0 } else { NODE + 0x40 });
+                c.g[A0][0] = if seed % 8 == 0 { 0 } else { sx(ME) };
             },
         );
     }

@@ -3,8 +3,10 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
+use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
@@ -55,6 +57,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         process_list_set_sorted_insert,
         "ProcessList_SetSortedInsert",
     ),
+    (0x0035_5280, mod_obj_ctor, "ModObj_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -625,6 +628,43 @@ pub fn process_list_shutdown(c: &mut Cpu) {
     })
 }
 
+/// `ModObj* ModObj::ModObj(list, type, node)` (0x355280): the `WorldObj`
+/// constructor, then the ModObj vtable (0x491028), scale 1.0 (+0x24), flag
+/// bit 0 of the half-word at +0x12, and the fields +0x1c, +0x20, +0x28
+/// cleared. Returns `this`.
+pub fn mod_obj_ctor(c: &mut Cpu) {
+    const WORLD_OBJ_CTOR: Callee = Callee {
+        addr: 0x0034_fb00,
+        f: ee::s11::WorldObj_ctor,
+    };
+    const VTABLE: u32 = 0x0049_1028;
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        WORLD_OBJ_CTOR.call(c, 0x0035_5294)?;
+        let me = c.g[S0][0] as u32;
+        let flags = c.lhu(me.wrapping_add(0x12)) | 0x1;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.g[V0][0] = sx(VTABLE);
+        c.sw(me.wrapping_add(0xc), sx(VTABLE));
+        c.g[V1][0] = flags;
+        c.swc1(0, me.wrapping_add(0x24));
+        c.g[V0][0] = c.g[S0][0];
+        c.sh(me.wrapping_add(0x12), flags);
+        c.sw(me.wrapping_add(0x1c), 0);
+        c.sw(me.wrapping_add(0x20), 0);
+        c.sw(me.wrapping_add(0x28), 0);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -901,6 +941,74 @@ pub(crate) mod tests {
                 for i in 0..0x20 {
                     c.bus.write32(block.wrapping_add(i * 4), 0);
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::{covered, LOG_RESULTS};
+
+    /// `ModObj_ctor`: the `WorldObj_ctor` fixture (its test in
+    /// game/object/floatingnode.rs): process lists, the world -> focus
+    /// manager chain, node flags with or without 0x100, kinds 6/0x10/0x16 or
+    /// random; the WorldObj constructor runs for real.
+    #[test]
+    fn mod_obj_ctor_matches() {
+        use crate::difftest::{check, fill};
+        const SELF: u32 = DATA + 0x100;
+        const NODE: u32 = DATA + 0x200;
+        const PROCS: u32 = DATA + 0x1000;
+        const TAILS: u32 = DATA + 0x1400;
+        const WORLD: u32 = DATA + 0x2000;
+        const FOCUS: u32 = DATA + 0x3000;
+        check(
+            ee::s11::f_00355280__generated,
+            mod_obj_ctor,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_5280, 0);
+                c.pc = 0x0035_5280;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                fill(c, &mut r, SELF, 0x10);
+                fill(c, &mut r, NODE, 0x10);
+                let flags = r.next_u32();
+                w(
+                    c,
+                    NODE + 0x8,
+                    if seed % 4 == 0 {
+                        flags | 0x100
+                    } else {
+                        flags & !0x100
+                    },
+                );
+                let list = seed % 4;
+                w(c, GAME_GP + 0x2898 + 4, PROCS);
+                for i in 0..4 {
+                    w(c, PROCS + 0x44 * i, r.next_u32());
+                    w(c, PROCS + 0x44 * i + 8, TAILS + 0x40 * i);
+                    w(c, PROCS + 0x44 * i + 0x28, TAILS + 0x40 * i + 0x20);
+                }
+                let kind = match (seed / 4) % 6 {
+                    0 => 6,
+                    1 => 0x10,
+                    2 => 0x16,
+                    _ => r.next_u32() % 0x20,
+                };
+                fill(c, &mut r, 0x0044_aff0, 0x20);
+                // World -> game -> race -> focus manager.
+                w(c, GAME_GP - 0x848, WORLD);
+                w(c, WORLD + 0x84, WORLD + 0x100);
+                w(c, WORLD + 0x100 + 0xc, WORLD + 0x200);
+                w(c, WORLD + 0x200 + 0xa4, FOCUS);
+                w(
+                    c,
+                    FOCUS + 0xd4,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() },
+                );
+                w(c, FOCUS + 0xd8, r.next_u32() % 8);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(kind);
+                c.g[A3][0] = sx(NODE);
             },
         );
     }

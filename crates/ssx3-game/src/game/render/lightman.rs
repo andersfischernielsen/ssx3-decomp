@@ -105,6 +105,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         vfx_visual_effects_test_render,
         "VfxVisualEffectsTest_Render",
     ),
+    (0x0039_1480, vu0_copy_output_mem, "Vu0_CopyOutputMem"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2365,6 +2366,47 @@ pub fn vfx_visual_effects_test_render(c: &mut Cpu) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// 0x00391480 Vu0_CopyOutputMem
+
+/// VU0 data memory (EE address) where the microprograms leave their output.
+pub(crate) const VU0_OUTPUT_MEM: u32 = 0x1100_4200;
+
+/// `void Vu0_CopyOutputMem(int unused, u128* dst)` (0x391480): copy the 100
+/// quadwords of VU0 output memory (`0x11004200`) to `dst`, ten per loop
+/// pass (a0 = source, a1 = destination, a2 = passes left - 1; an event check
+/// at each back edge).
+pub fn vu0_copy_output_mem(c: &mut Cpu) {
+    c.cycles += 4;
+    c.g[A0][0] = VU0_OUTPUT_MEM as u64;
+    c.g[A2][0] = 0x9;
+    loop {
+        c.cycles += 24;
+        c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_sub(1));
+        for k in 0..10u32 {
+            // Alternating v1 / v0, as the original's unrolled body.
+            let reg = if k % 2 == 0 { V1 } else { V0 };
+            c.lq(reg, (c.g[A0][0] as u32).wrapping_add(0x10 * k));
+            if k == 9 {
+                c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0xa0));
+                c.sq(reg, (c.g[A1][0] as u32).wrapping_add(0x90));
+            } else {
+                c.sq(reg, (c.g[A1][0] as u32).wrapping_add(0x10 * k));
+            }
+        }
+        let more = (c.g[A2][0] as i64) >= 0;
+        c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(0xa0));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0039_1490);
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3137,6 +3179,32 @@ pub(crate) mod tests {
                 // Flag on: entry table at gp+0x770 empty (null entry), index 0.
                 c.bus.write32(GAME_GP + 0x770, 0);
                 c.bus.write32(current + 0x4, 0);
+            },
+        );
+    }
+    use super::*;
+
+    /// Vu0_CopyOutputMem: random VU0 output memory copied to a random
+    /// destination; events off, delivered, or unwind-requesting (ignored at
+    /// the back edges, as in the original) at the loop's back edges.
+    #[test]
+    fn vu0_copy_output_mem_matches() {
+        use crate::difftest::events::schedule;
+        use crate::difftest::{fill, scramble, Rng, DATA};
+        check(
+            ee::s12::f_00391480__generated,
+            vu0_copy_output_mem,
+            120,
+            &|c, seed| {
+                let mut r = Rng(0x0039_1480 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                for k in 0..0x190u32 {
+                    c.bus.write32(VU0_OUTPUT_MEM + 4 * k, r.next_u32());
+                }
+                let dst = DATA + 0x1000 + 0x10 * (r.next_u32() % 0x100);
+                fill(c, &mut r, dst, 0x190);
+                c.g[A1][0] = sx(dst);
+                schedule(c, &mut r, seed, 0x0039_1480);
             },
         );
     }

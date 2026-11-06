@@ -69,6 +69,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_csi_cubic_spline_solve,
         "cCSICubicSpline_Solve",
     ),
+    (0x0031_eee8, dlheap_consolidate, "DLHeap_Consolidate"),
+    (0x0032_02f8, mem_pool16_alloc, "MEM_Pool16Alloc"),
+    (0x0032_03b8, mem_pool128_alloc, "MEM_Pool128Alloc"),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect`.
@@ -1936,6 +1939,257 @@ pub(crate) fn csp_solve_clamped(c: &mut Cpu, base: u32) {
     }
 }
 
+pub(crate) mod dl_consolidate_f {
+
+    /// `max_fast` (low bits are flags: bit 1 = have fast chunks).
+    pub const MAX_FAST: u32 = 0x0;
+
+    /// `fastbins[]`.
+    pub const FASTBINS: u32 = 0x4;
+
+    /// `top`.
+    pub const TOP: u32 = 0x30;
+
+    /// The unsorted bin (`bins[0]` as a fake chunk).
+    pub const UNSORTED: u32 = 0x38;
+
+    /// Chunk: `prev_size`, `size` (bit 0 = previous in use), `fd`, `bk`.
+    pub const PREV_SIZE: u32 = 0x0;
+
+    pub const SIZE: u32 = 0x4;
+
+    pub const FD: u32 = 0x8;
+
+    pub const BK: u32 = 0xc;
+}
+
+/// `MEM_PoolAlloc` (0x319e48).
+pub(crate) const MEM_POOL_ALLOC_281: Callee = Callee {
+    addr: 0x0031_9e48,
+    f: ee::s10::MEM_PoolAlloc,
+};
+
+/// 128-byte pool: the free-list head (offset from the pool).
+pub(crate) const POOL128_FREE_HEAD: u32 = 0x2_5800;
+
+/// `void* MEM_Pool128Alloc(Pool128* pool)` (0x3203b8): pop a 128-byte block
+/// off the pool's free list; when the list is empty, fall back to
+/// `MEM_PoolAlloc(0x84, align)` (the next size class, or dlmalloc).
+pub fn mem_pool128_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x10);
+        let pool = r32(c, A0);
+        c.g[V0][0] = sx(pool.wrapping_add(0x2_0000));
+        frame.save_ra(c, 0);
+        let head = Addr(pool.wrapping_add(POOL128_FREE_HEAD)).lw(c);
+        c.g[V1][0] = 0x2_0000;
+        if head == 0 {
+            c.cycles += 4;
+            c.g[A0][0] = 0x84;
+            MEM_POOL_ALLOC_281.call(c, 0x0032_03dc)?;
+            frame.restore_ra(c, 0);
+        } else {
+            c.cycles += 6;
+            let head_at = pool.wrapping_add(POOL128_FREE_HEAD);
+            c.g[V1][0] = sx(head_at);
+            c.g[V0][0] = Addr(head_at).lw(c);
+            c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+            let next = c.g[A0][0];
+            Addr(head_at).sw(c, next);
+            frame.restore_ra(c, 0);
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `DLHeap_InitState` (0x31e260).
+pub(crate) const DLHEAP_INIT_STATE: Callee = Callee {
+    addr: 0x0031_e260,
+    f: ee::s10::DLHeap_InitState,
+};
+
+/// Unlink a free chunk from its bin (`FD->bk = BK; BK->fd = FD`), with the
+/// original's register use (`v0` = fd, `v1` = bk).
+pub(crate) fn dl_consolidate_unlink(c: &mut Cpu, chunk: u32) {
+    use dl_consolidate_f::*;
+    c.g[V0][0] = Addr(chunk.wrapping_add(FD)).lw(c);
+    c.g[V1][0] = Addr(chunk.wrapping_add(BK)).lw(c);
+    let (fd, bk) = (c.g[V0][0], c.g[V1][0]);
+    Addr((fd as u32).wrapping_add(BK)).sw(c, bk);
+    Addr((bk as u32).wrapping_add(FD)).sw(c, fd);
+}
+
+/// `void DLHeap_Consolidate(DLHeap* ms, mstate av)` (0x31eee8): dlmalloc's
+/// `malloc_consolidate`: with the state initialised (`max_fast != 0`),
+/// clear the fast-chunks flag and free every chunk in every fast bin
+/// properly: merge it with a free previous / next neighbour and put it in
+/// the unsorted bin, or into the top chunk when it borders it. An
+/// uninitialised state is set up with `DLHeap_InitState(av)` instead.
+pub fn dlheap_consolidate(c: &mut Cpu) {
+    use dl_consolidate_f::*;
+    let frame = Frame { size: 0x10 };
+    guest(c, |c| {
+        c.cycles += 4;
+        Frame::open(c, 0x10);
+        let av = r32(c, A1);
+        c.g[V0][0] = Addr(av.wrapping_add(MAX_FAST)).lw(c);
+        frame.save_ra(c, 0);
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[A1][0];
+            DLHEAP_INIT_STATE.call(c, 0x0031_f00c)?;
+            frame.restore_ra(c, 0);
+            c.cycles += 2;
+            frame.close(c);
+            return Ok(());
+        }
+        c.cycles += 10;
+        c.g[T5][0] = sx(av.wrapping_add(UNSORTED));
+        c.g[T4][0] = sx(av.wrapping_add(FASTBINS));
+        c.g[V1][0] = c.g[V0][0] & 0xffff_ffff_ffff_fffd; // clear_fastchunks
+        let max_fast = c.g[V1][0];
+        Addr(av.wrapping_add(MAX_FAST)).sw(c, max_fast);
+        c.g[V0][0] = sx(((r32(c, V1) >> 3) << 2).wrapping_sub(4));
+        c.g[T7][0] = sx(av.wrapping_add(r32(c, V0))); // last fast bin
+        loop {
+            // One fast bin (t4).
+            c.cycles += 3;
+            c.g[A2][0] = Addr(r32(c, T4)).lw(c);
+            c.g[T6][0] = sx(r32(c, T4).wrapping_add(4));
+            if c.g[A2][0] != 0 {
+                c.cycles += 5;
+                c.g[T3][0] = 0xffff_ffff_ffff_fffe; // ~PREV_INUSE
+                c.g[T2][0] = 0xffff_ffff_ffff_fffc; // ~SIZE_BITS
+                Addr(r32(c, T4)).sw(c, 0);
+                loop {
+                    // One chunk (a2); t1 = the next in the bin.
+                    c.cycles += 9;
+                    let chunk = r32(c, A2);
+                    c.g[V1][0] = Addr(chunk.wrapping_add(SIZE)).lw(c);
+                    c.g[T1][0] = Addr(chunk.wrapping_add(FD)).lw(c);
+                    c.g[A3][0] = c.g[V1][0] & c.g[T3][0]; // size
+                    c.g[A0][0] = sx(chunk.wrapping_add(r32(c, A3))); // next chunk
+                    c.g[V0][0] = Addr(r32(c, A0).wrapping_add(SIZE)).lw(c);
+                    c.g[V1][0] = (c.g[V1][0] ^ 1) & 1;
+                    c.g[T0][0] = c.g[V0][0] & c.g[T2][0]; // next size
+                    if c.g[V1][0] != 0 {
+                        // The previous chunk is free: merge backwards.
+                        c.cycles += 7;
+                        c.g[V0][0] = Addr(r32(c, A2).wrapping_add(PREV_SIZE)).lw(c);
+                        c.g[A2][0] = sx(r32(c, A2).wrapping_sub(r32(c, V0)));
+                        c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+                        let prev = r32(c, A2);
+                        dl_consolidate_unlink(c, prev);
+                    }
+                    c.cycles += 3;
+                    let top = Addr(av.wrapping_add(TOP)).lw(c);
+                    let next = r32(c, A0);
+                    c.g[V0][0] = sx(next.wrapping_add(r32(c, T0)));
+                    if c.g[A0][0] != top {
+                        c.cycles += 4;
+                        c.g[V1][0] = Addr(r32(c, V0).wrapping_add(SIZE)).lw(c) & 1;
+                        let next_size = c.g[T0][0];
+                        Addr(next.wrapping_add(SIZE)).sw(c, next_size); // clear inuse
+                        if c.g[V1][0] == 0 {
+                            // The next chunk is free too: merge forwards.
+                            c.cycles += 5;
+                            c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, T0)));
+                            dl_consolidate_unlink(c, next);
+                        }
+                        // Into the unsorted bin.
+                        c.cycles += 10;
+                        let bin = r32(c, T5);
+                        let chunk = r32(c, A2);
+                        let size = c.g[A3][0];
+                        c.g[V0][0] = Addr(bin.wrapping_add(FD)).lw(c);
+                        let first = c.g[V0][0];
+                        c.g[V1][0] = size | 1;
+                        let head = c.g[V1][0];
+                        Addr(bin.wrapping_add(FD)).sw(c, chunk as u64);
+                        c.g[A0][0] = sx(chunk.wrapping_add(size as u32));
+                        Addr((first as u32).wrapping_add(BK)).sw(c, chunk as u64);
+                        Addr(chunk.wrapping_add(SIZE)).sw(c, head);
+                        Addr(chunk.wrapping_add(FD)).sw(c, first);
+                        Addr(chunk.wrapping_add(BK)).sw(c, bin as u64);
+                        Addr(r32(c, A0)).sw(c, size); // foot
+                    } else {
+                        // Borders the top chunk: becomes part of it.
+                        c.cycles += 4;
+                        c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, T0)));
+                        c.g[V0][0] = c.g[A3][0] | 1;
+                        let (chunk, head) = (r32(c, A2), c.g[V0][0]);
+                        Addr(chunk.wrapping_add(SIZE)).sw(c, head);
+                        Addr(av.wrapping_add(TOP)).sw(c, chunk as u64);
+                    }
+                    c.cycles += 2;
+                    c.g[A2][0] = c.g[T1][0];
+                    if c.g[T1][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_ef40);
+                    }
+                }
+            }
+            c.cycles += 3;
+            c.g[V0][0] = c.g[T4][0];
+            let more = c.g[V0][0] != c.g[T7][0];
+            c.g[T4][0] = c.g[T6][0];
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_ef20);
+            }
+        }
+        c.cycles += 2;
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// MEM_Pool16Alloc (0x3202f8)
+
+/// The 16-byte pool's free-list head (`pool + 0x2000`).
+pub(crate) const MEM_POOL16_FREE: u32 = 0x2000;
+
+pub(crate) const MEM_POOL16_FALLBACK: Callee = Callee {
+    addr: 0x0031_9e48,
+    f: ee::s10::f_00319e48,
+};
+
+/// `void* MEM_Pool16Alloc(Pool16* pool)` (0x3202f8): pop a block off the
+/// 16-byte pool's free list (`pool + 0x2000`); when it is empty fall back
+/// to `MEM_PoolAlloc(0x14, a1)` (a1 is whatever the caller left there).
+pub fn mem_pool16_alloc(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 5;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        let head = r32(c, A0).wrapping_add(MEM_POOL16_FREE);
+        c.g[V0][0] = c.lw(head);
+        if c.g[V0][0] != 0 {
+            c.g[V1][0] = c.lw(r32(c, V0)); // next free block
+            c.cycles += 2;
+            c.sw(head, c.g[V1][0]);
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = 0x14;
+            MEM_POOL16_FALLBACK.call(c, 0x0032_0314)?;
+        }
+        frame.restore_ra(c, 0);
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2600,6 +2854,206 @@ pub(crate) mod tests {
                     x += 0.25 + (r.next_u32() % 300) as f32 * 0.01;
                 }
                 c.g[A0][0] = spline as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// Run a guest function from a test setup until it returns.
+    pub(crate) fn oc281_run(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
+        const BACK: u32 = 0x0000_7770;
+        for (i, a) in args.iter().enumerate() {
+            c.g[[A0, A1, A2, A3][i]][0] = *a;
+        }
+        c.g[RA][0] = BACK as u64;
+        c.pc = addr;
+        f(c);
+        assert_eq!(c.pc, BACK, "setup call {addr:#x} did not return");
+        c.g[V0][0]
+    }
+
+    /// `MEM_Pool128Alloc`: a non-empty free list (pop), or an empty one with
+    /// the real `MEM_PoolAlloc` behind it: pools ready (the 256-byte pool
+    /// serves it from its free list) or not yet (dlmalloc on an arena the
+    /// setup initialises).
+    #[test]
+    fn mem_pool128_alloc_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::GAME_GP;
+        check(
+            ee::s10::f_003203b8__generated,
+            mem_pool128_alloc,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_03b8, 0);
+                let pool = DATA + 0x1000;
+                let blocks = DATA + 0x3_0000;
+                match seed % 3 {
+                    0 => {
+                        // Free list of a few 0x80-byte blocks.
+                        let n = 1 + r.next_u32() % 4;
+                        for i in 0..n {
+                            let node = blocks + 0x80 * i;
+                            c.bus
+                                .write32(node, if i + 1 == n { 0 } else { node + 0x80 });
+                        }
+                        c.bus.write32(pool + POOL128_FREE_HEAD, blocks);
+                    }
+                    1 => {
+                        // Empty: MEM_PoolAlloc takes the ready 256-byte pool.
+                        c.bus.write32(pool + POOL128_FREE_HEAD, 0);
+                        c.bus.write32(GAME_GP + 0xdd8, 1);
+                        let p256 = DATA + 0x4_0000;
+                        let base = DATA + 0x6_8000;
+                        for n in 0..8u32 {
+                            let node = base + 0x100 * n;
+                            c.bus.write32(node, if n == 7 { 0 } else { node + 0x100 });
+                        }
+                        c.bus.write32(p256 + 0x2_0000, base);
+                        c.bus.write32(GAME_GP + 0x2a78, p256);
+                    }
+                    _ => {
+                        // Empty, pools not ready: the dlmalloc heap.
+                        let ra = c.g[RA][0];
+                        oc281_run(
+                            c,
+                            0x0031_ff60,
+                            ee::s10::DLHeap_InitArena,
+                            &[0x004f_f250, (DATA + 0x8_0000) as u64, 0x4_0000],
+                        );
+                        c.g[RA][0] = ra;
+                        c.bus.write32(pool + POOL128_FREE_HEAD, 0);
+                        c.bus.write32(GAME_GP + 0xdd8, 0);
+                    }
+                }
+                c.pc = 0x0032_03b8;
+                c.g[A0][0] = sx(pool);
+                c.g[A1][0] = [0u64, 4, 8, 16, 64][(r.next_u32() % 5) as usize];
+            },
+        );
+    }
+
+    /// `DLHeap_Consolidate` on a real dlmalloc heap (`DLHeap_InitArena` on
+    /// a 256 KiB arena): 2..12 mallocs of fast and larger sizes, some fast
+    /// ones freed (into the fast bins), some larger ones freed (free
+    /// neighbours: backward / forward merges), the last one bordering top
+    /// (merge into top); and an uninitialised state (`DLHeap_InitState`).
+    #[test]
+    fn dlheap_consolidate_matches() {
+        use crate::difftest::fakes::machine;
+        const HEAP: u32 = DATA + 0x2000;
+        const ARENA: u32 = DATA + 0x4_0000;
+        check(
+            ee::s10::f_0031eee8__generated,
+            dlheap_consolidate,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0031_eee8, 0);
+                let ra = c.g[RA][0];
+                oc281_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::DLHeap_InitArena,
+                    &[HEAP as u64, ARENA as u64, 0x4_0000],
+                );
+                let n = 2 + r.next_u32() % 11;
+                let mut ptrs = Vec::new();
+                for _ in 0..n {
+                    let fast = r.next_u32() % 3 != 0;
+                    let size = if fast {
+                        r.next_u32() % 0x39
+                    } else {
+                        0x48 + r.next_u32() % 0x200
+                    };
+                    let p = oc281_run(
+                        c,
+                        0x0031_e818,
+                        ee::s10::DLHeap_Malloc,
+                        &[HEAP as u64, size as u64],
+                    );
+                    ptrs.push((p, fast));
+                }
+                for &(p, fast) in ptrs.iter() {
+                    let free = if fast {
+                        r.next_u32() % 4 != 0
+                    } else {
+                        r.next_u32() % 2 == 0
+                    };
+                    if p != 0 && free {
+                        oc281_run(c, 0x0031_ed60, ee::s10::DLHeap_Free, &[HEAP as u64, p]);
+                    }
+                }
+                let av = c.bus.read32(HEAP);
+                if seed % 10 == 0 {
+                    c.bus.write32(av, 0);
+                }
+                c.g[RA][0] = ra;
+                c.pc = 0x0031_eee8;
+                c.g[A0][0] = sx(HEAP);
+                c.g[A1][0] = sx(av);
+            },
+        );
+    }
+
+    /// MEM_Pool16Alloc: a free block (last or not) is popped; an empty list
+    /// falls back to the real MEM_PoolAlloc with pools ready or not (the
+    /// fixture of `mem_pool64_alloc_matches`).
+    #[test]
+    fn mem_pool16_alloc_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::{check, DATA, GAME_GP};
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        check(
+            ee::s10::f_003202f8__generated,
+            mem_pool16_alloc,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_02f8, 0);
+                let pool16 = DATA + 0x20_0000;
+                if seed % 3 != 0 {
+                    let block = DATA + 0x30_0000 + 0x10 * (r.next_u32() % 16);
+                    c.bus.write32(pool16 + MEM_POOL16_FREE, block);
+                    c.bus
+                        .write32(block, if seed % 2 == 0 { 0 } else { block + 0x10 });
+                } else {
+                    c.bus.write32(pool16 + MEM_POOL16_FREE, 0);
+                    oc238_run(
+                        c,
+                        0x0031_ff60,
+                        ee::s10::f_0031ff60,
+                        &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                    );
+                    if seed % 2 == 0 {
+                        c.bus.write32(GAME_GP + 0xdd8, 1);
+                        const POOLS: [(u32, u32, u32); 7] = [
+                            (0x2a70, 0x800, 0x40),
+                            (0x2a60, 0x2000, 0x40),
+                            (0x2a6c, 0x6000, 0x40),
+                            (0x2a7c, 0x32000, 0x40),
+                            (0x2a84, 0x25800, 0x80),
+                            (0x2a78, 0x20000, 0x100),
+                            (0x2a68, 0x20000, 0x200),
+                        ];
+                        let mut pool = DATA + 0xc_0000;
+                        let mut base = DATA + 0x8_0000;
+                        for (slot, head, stride) in POOLS {
+                            for n in 0..64u32 {
+                                let node = base + stride * n;
+                                c.bus.write32(node, if n == 63 { 0 } else { node + stride });
+                            }
+                            c.bus.write32(pool + head, base);
+                            c.bus.write32(GAME_GP + slot, pool);
+                            pool += 0x100;
+                            base += 0x8000;
+                        }
+                    } else {
+                        c.bus.write32(GAME_GP + 0xdd8, 0);
+                    }
+                }
+                c.g[A0][0] = sx(pool16);
+                c.g[A1][0] = [0u64, 4, 8, 16, 32, 64, 128][(r.next_u32() % 7) as usize];
+                c.pc = 0x0032_02f8;
             },
         );
     }

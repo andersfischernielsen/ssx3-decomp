@@ -23,7 +23,8 @@ for f,lines in hits.items():
         m=re.match(r"(\s*(?:pub(?:\(crate\))? )?use [\w:]+::)\{(.*)\};\s*$",text,re.S)
         if m:
             last=m.group(1).rstrip(':').rsplit('::',1)[-1].split()[-1]  # `self` imports this name
-            keep=[x.strip() for x in m.group(2).replace('\n',' ').split(',') if x.strip() and x.strip() not in names
+            bound=lambda x: x.split(' as ')[-1].strip()  # `a as b` binds `b`
+            keep=[x.strip() for x in m.group(2).replace('\n',' ').split(',') if x.strip() and bound(x) not in names
                   and not (x.strip()=='self' and last in names)]
             new=[] if not keep else [f"{m.group(1)}{{{', '.join(keep)}}};"]
         else:

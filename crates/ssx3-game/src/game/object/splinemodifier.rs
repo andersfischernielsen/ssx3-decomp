@@ -123,6 +123,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0032_84b8, spatial_hash_remove, "SpatialHash_Remove"),
     (0x0035_9698, spline_modifier_update, "SplineModifier_Update"),
+    (
+        0x0035_b5a8,
+        multi_spline_modifier_save,
+        "MultiSplineModifier_Save",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2643,6 +2648,106 @@ pub fn spline_modifier_update(c: &mut Cpu) {
     })
 }
 
+/// `void MultiSplineModifier::Save(cStream* s)` (0x35b5a8): writes the
+/// modifier's 0x34-byte header (+4: count first) with `s->Write` (vtable
+/// +8), its path (+0x48, `SplineModifier_SavePath`), the pointer at +0x40
+/// with `s->WritePtr` (vtable +0x28), then for each of the `count` splines
+/// (array at +0x44) the word at +0x78.
+pub fn multi_spline_modifier_save(c: &mut Cpu) {
+    const COUNT: u32 = 0x4;
+    const OWNER: u32 = 0x40;
+    const SPLINES: u32 = 0x44;
+    const PATH: u32 = 0x48;
+    const SPLINE_WORD: u32 = 0x78;
+    const SAVE_PATH: Callee = Callee {
+        addr: 0x0034_5538,
+        f: ee::s11::SplineModifier_SavePath,
+    };
+    guest(c, |c| {
+        c.cycles += 27;
+        let frame = Frame::open(c, 0x40);
+        c.g[A2][0] = 0x34;
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = 0;
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[A0][0];
+        // s->Write(&self->count, 0x34)
+        let me = c.g[S2][0] as u32;
+        let stream = c.g[S1][0] as u32;
+        c.g[A1][0] = sx(me.wrapping_add(COUNT));
+        let vt = c.lw(stream);
+        c.g[V1][0] = vt;
+        let delta = c.lh((vt as u32).wrapping_add(0x8));
+        let write = c.lw((vt as u32).wrapping_add(0xc));
+        c.g[V0][0] = write;
+        c.g[A0][0] = sx(stream.wrapping_add(delta as u32));
+        call_ptr(c, write as u32, 0x0035_b5e4)?;
+        // SplineModifier_SavePath(&self->path, s)
+        let me = c.g[S2][0] as u32;
+        let stream = c.g[S1][0];
+        c.g[A0][0] = sx(me.wrapping_add(PATH));
+        c.g[A1][0] = stream;
+        SAVE_PATH.call(c, 0x0035_b5f0)?;
+        // s->WritePtr(self->owner)
+        let me = c.g[S2][0] as u32;
+        let stream = c.g[S1][0] as u32;
+        let vt = c.lw(stream);
+        c.g[V0][0] = vt;
+        c.g[A1][0] = c.lw(me.wrapping_add(OWNER));
+        let delta = c.lh((vt as u32).wrapping_add(0x28));
+        let write_ptr = c.lw((vt as u32).wrapping_add(0x2c));
+        c.g[V1][0] = write_ptr;
+        c.g[A0][0] = sx(stream.wrapping_add(delta as u32));
+        call_ptr(c, write_ptr as u32, 0x0035_b608)?;
+        let count = c.lw((c.g[S2][0] as u32).wrapping_add(COUNT));
+        c.g[V0][0] = count;
+        if count as i64 > 0 {
+            c.cycles += 1;
+            c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(SPLINES));
+            loop {
+                // s->Write(&splines[i]->word78, 4)
+                c.cycles += 15;
+                let i = c.g[S0][0] as u32;
+                let stream = c.g[S1][0] as u32;
+                let at = sx((i << 2).wrapping_add(c.g[V1][0] as u32));
+                c.g[V0][0] = at;
+                let vt = c.lw(stream);
+                c.g[A3][0] = vt;
+                c.g[A2][0] = 0x4;
+                c.g[S0][0] = sx(i.wrapping_add(1));
+                let spline = c.lw(at as u32);
+                let delta = c.lh((vt as u32).wrapping_add(0x8));
+                let write = c.lw((vt as u32).wrapping_add(0xc));
+                c.g[V1][0] = write;
+                c.g[A1][0] = sx((spline as u32).wrapping_add(SPLINE_WORD));
+                c.g[A0][0] = sx(stream.wrapping_add(delta as u32));
+                call_ptr(c, write as u32, 0x0035_b644)?;
+                let count = c.lw((c.g[S2][0] as u32).wrapping_add(COUNT));
+                let more = ((c.g[S0][0] as i64) < (count as i64)) as u64;
+                c.g[V0][0] = more;
+                if more == 0 {
+                    c.cycles += 1;
+                    break;
+                }
+                c.g[V1][0] = c.lw((c.g[S2][0] as u32).wrapping_add(SPLINES));
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_b618);
+                }
+            }
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 5;
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3495,6 +3600,44 @@ pub(crate) mod tests {
                     .write32(SELF + STOPPED, if seed % 5 == 2 { 1 } else { 0 });
                 c.bus.write32(SELF + DIRTY, r.next_u32());
                 c.g[A0][0] = SELF as u64;
+            },
+        );
+    }
+    use super::*;
+
+    /// `MultiSplineModifier_Save`: a stream whose vtable `Write` (+8) and
+    /// `WritePtr` (+0x28) are fakes (logging every register, sometimes
+    /// unwinding); `SplineModifier_SavePath` runs for real. The spline
+    /// count is -1..5 (no loop for <= 0), the spline array holds random
+    /// pointers.
+    #[test]
+    fn multi_spline_modifier_save_matches() {
+        const ME: u32 = DATA;
+        const STREAM: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x200;
+        const SPLINES: u32 = DATA + 0x400;
+        covered(
+            ee::s11::f_0035b5a8__generated,
+            multi_spline_modifier_save,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35b5a8, 6);
+                c.pc = 0x0035_b5a8;
+                let count = (seed % 7) as i32 - 1;
+                c.bus.write32(ME + 4, count as u32);
+                c.bus.write32(ME + 0x40, r.next_u32());
+                c.bus.write32(ME + 0x44, SPLINES);
+                for i in 0..6 {
+                    c.bus
+                        .write32(SPLINES + 4 * i, DATA + 0x1000 + (r.next_u32() & 0xfff0));
+                }
+                c.bus.write32(STREAM, VT);
+                for (k, off) in [8u32, 0x28].into_iter().enumerate() {
+                    c.bus.write16(VT + off, (r.next_u32() % 0x20) as u16 & !3);
+                    c.bus.write32(VT + off + 4, FAKE + 0x10 * k as u32);
+                }
+                c.g[A0][0] = sx(ME);
+                c.g[A1][0] = sx(STREAM);
             },
         );
     }

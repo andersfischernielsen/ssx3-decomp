@@ -17,6 +17,7 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::ai::SAVE_STATE_STREAM_WRITE;
 pub(crate) use crate::game::be::bestate2::ea;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::lw_at;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::open;
@@ -342,6 +343,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0030_a3a0,
         wscript_man_focus_enter,
         "WScriptMan_FocusEnter",
+    ),
+    (0x0030_bb10, wscript_man_save_state, "WScriptMan_SaveState"),
+    (
+        0x0030_bc80,
+        wscript_man_save_process_list,
+        "WScriptMan_SaveProcessList",
     ),
 ];
 
@@ -4385,6 +4392,279 @@ pub fn wscript_man_focus_enter(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod wsm_save {
+
+    /// The plain state block written first (0x28c bytes from `self`).
+    pub const STATE_SIZE: u64 = 0x28c;
+
+    /// The world (`world + 4` is its script cache).
+    pub const WORLD: u32 = 0x28c;
+
+    /// The two process lists.
+    pub const LIST_A: u32 = 0x2b8;
+
+    pub const LIST_B: u32 = 0x2bc;
+
+    /// The collect-set table (one, 0x10c bytes).
+    pub const COLLECT_SET: u32 = 0x2c0;
+
+    pub const COLLECT_SET_SIZE: u32 = 0x10c;
+
+    /// The 50 Luno object tables.
+    pub const OBJS: u32 = 0x3cc;
+
+    pub const OBJ_COUNT: u64 = 50;
+}
+
+// ---------------------------------------------------------------------------
+// WScriptMan_SaveProcessList (0x30bc80)
+
+/// WScriptProcess: next in its list, script id.
+pub(crate) const WSCRIPT_SAVE_LIST_NEXT: u32 = 0x18;
+
+pub(crate) const WSCRIPT_SAVE_LIST_ID: u32 = 0x20;
+
+pub(crate) const WSCRIPT_SAVE_LIST_COUNT: Callee = Callee {
+    addr: 0x0030_b228,
+    f: ee::s10::WScriptProcessList_Count,
+};
+
+pub(crate) const WSCRIPT_SAVE_PROCESS: Callee = Callee {
+    addr: 0x0030_8038,
+    f: ee::s10::WScriptProcess_SaveState,
+};
+
+/// `stream->Write(stream, a1, a2)` (s1 = the stream) with `v1` = the stream's vtable
+/// (already loaded by the caller), returning to `ret`.
+pub(crate) fn wscript_save_list_write_word(c: &mut Cpu, ret: u32) -> crate::call::Flow {
+    let stream = c.g[S1][0];
+    let vt = c.g[V1][0];
+    let slot = VSlot::read(c, vt, SAVE_STATE_STREAM_WRITE);
+    c.g[A0][0] = slot.delta;
+    c.g[V0][0] = slot.func;
+    c.g[A0][0] = slot.this(stream);
+    call_ptr(c, slot.func as u32, ret)
+}
+
+/// `void WScriptMan::SaveProcessList(WScriptMan*, WScriptProcessList* list,
+/// Stream* s)` (0x30bc80): writes the number of processes, then for each
+/// process its script id and its state (`WScriptProcess_SaveState`). The
+/// list walk keeps the node in s0 and the stream in s1, as the original.
+pub fn wscript_man_save_process_list(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        c.g[S0][0] = c.g[A1][0]; // list
+        frame.save(c, S1, 0x20);
+        c.g[S1][0] = c.g[A2][0]; // stream
+        frame.save_ra(c, 0x10);
+        c.g[A0][0] = c.g[S0][0];
+        WSCRIPT_SAVE_LIST_COUNT.call(c, 0x0030_bca0)?;
+
+        // The count.
+        c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+        c.g[A1][0] = c.g[SP][0];
+        let count = c.g[V0][0];
+        Addr(sp(c)).sw(c, count);
+        c.g[A2][0] = 4;
+        wscript_save_list_write_word(c, 0x0030_bcc0)?;
+
+        // Each process: its id, then its state.
+        c.g[S0][0] = Addr(r32(c, S0)).lw(c);
+        if c.g[S0][0] != 0 {
+            c.cycles += 1;
+            c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+            loop {
+                c.cycles += 14;
+                c.g[A1][0] = sx(sp(c).wrapping_add(4));
+                c.g[A3][0] = Addr(r32(c, S0).wrapping_add(WSCRIPT_SAVE_LIST_ID)).lw(c);
+                c.g[A2][0] = 4;
+                let id = c.g[A3][0];
+                Addr(sp(c).wrapping_add(4)).sw(c, id);
+                wscript_save_list_write_word(c, 0x0030_bcf0)?;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = c.g[S1][0];
+                WSCRIPT_SAVE_PROCESS.call(c, 0x0030_bcfc)?;
+                c.g[S0][0] = Addr(r32(c, S0).wrapping_add(WSCRIPT_SAVE_LIST_NEXT)).lw(c);
+                if c.g[S0][0] == 0 {
+                    c.cycles += 1;
+                    break;
+                }
+                c.g[V1][0] = Addr(r32(c, S1)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0030_bcd0);
+                }
+            }
+        }
+        frame.restore(c, S0, 0x30);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const WSM_COLLECT_SET_SAVE: Callee = Callee {
+    addr: 0x0030_c6c8,
+    f: ee::s10::WScriptMan_CollectSetSave,
+};
+
+pub(crate) const WSM_SAVE_PROCESS_LIST: Callee = Callee {
+    addr: 0x0030_bc80,
+    f: ee::s10::WScriptMan_SaveProcessList,
+};
+
+/// `cWScriptCache_GetData` and `cLunoTable_Write` (cross-shard: the table).
+pub(crate) const WSM_CACHE_GET_DATA: u32 = 0x003a_ca38;
+
+pub(crate) const WSM_LUNO_TABLE_WRITE: u32 = 0x0022_57e0;
+
+/// `stream->Write(...)` through the stream's vtable slot 8 (`{delta, fn}`):
+/// the vtable is loaded into `vt`, the method into `func`, `a0 = stream +
+/// delta`.
+pub(crate) fn wsm_save_stream_write(
+    c: &mut Cpu,
+    vt: usize,
+    func: usize,
+    ret: u32,
+) -> crate::call::Flow {
+    let stream = r32(c, S2);
+    c.g[vt][0] = c.lw(stream);
+    c.g[A0][0] = c.lh(r32(c, vt).wrapping_add(0x8));
+    c.g[func][0] = c.lw(r32(c, vt).wrapping_add(0xc));
+    c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+    let target = r32(c, func);
+    call_ptr(c, target, ret)
+}
+
+/// `void WScriptMan_SaveState(WScriptMan* self, cPbStream* stream)`
+/// (0x30bb10): write the script manager's state to a save stream: its first
+/// 0x28c bytes, the collect set, both process lists, then the number of
+/// live Luno object tables and, for each, its index and the table (with the
+/// script cache entry of that index).
+pub fn wscript_man_save_state(c: &mut Cpu) {
+    use wsm_save as f;
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x60);
+        c.g[A2][0] = f::STATE_SIZE;
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0]; // stream
+        frame.save_ra(c, 0x10);
+        c.g[S3][0] = c.g[A0][0]; // self
+        c.g[A1][0] = c.g[S3][0];
+        c.g[S0][0] = sx(r32(c, S3).wrapping_add(f::COLLECT_SET));
+        wsm_save_stream_write(c, V1, V0, 0x0030_bb54)?;
+
+        // The collect sets (a loop over one).
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S2][0];
+        WSM_COLLECT_SET_SAVE.call(c, 0x0030_bb64)?;
+        c.g[S1][0] = sx(r32(c, S1).wrapping_sub(1));
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(f::COLLECT_SET_SIZE));
+
+        // Both process lists.
+        c.cycles += 14;
+        let this = r32(c, S3);
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = sx(this.wrapping_add(f::LIST_A));
+        c.g[A2][0] = c.g[S2][0];
+        c.g[S0][0] = sx(this.wrapping_add(f::OBJS));
+        WSM_SAVE_PROCESS_LIST.call(c, 0x0030_bb84)?;
+        let this = r32(c, S3);
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = sx(this.wrapping_add(f::LIST_B));
+        c.g[A2][0] = c.g[S2][0];
+        WSM_SAVE_PROCESS_LIST.call(c, 0x0030_bb94)?;
+
+        // count = number of live object tables (local at sp+0).
+        c.sw(sp(c), 0);
+        c.g[V1][0] = c.g[S0][0];
+        c.g[A0][0] = f::OBJ_COUNT - 1;
+        c.g[V0][0] = c.lw(r32(c, V1));
+        loop {
+            c.cycles += 3;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+            let empty = c.g[V0][0] == 0;
+            c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+            if !empty {
+                c.cycles += 3;
+                c.g[V0][0] = c.lw(sp(c));
+                c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+                c.sw(sp(c), c.g[V0][0]);
+            }
+            c.cycles += 2;
+            if (c.g[A0][0] as i64) < 0 {
+                break;
+            }
+            c.g[V0][0] = c.lw(r32(c, V1));
+            if event_due(c) {
+                deliver_event_here(c, 0x0030_bba8);
+            }
+        }
+        c.cycles += 10;
+        c.g[V0][0] = c.lw(r32(c, S2));
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 4;
+        wsm_save_stream_write(c, V0, V1, 0x0030_bbe4)?;
+
+        // Each live table: its index j (local at sp+4), then the table.
+        c.sw(sp(c).wrapping_add(4), 0);
+        c.g[A0][0] = 0;
+        loop {
+            c.cycles += 6;
+            c.g[V0][0] = sx(r32(c, A0) << 2);
+            c.g[A1][0] = sx(sp(c).wrapping_add(4));
+            c.g[V0][0] = sx(r32(c, S0).wrapping_add(r32(c, V0)));
+            c.g[V1][0] = c.lw(r32(c, V0));
+            c.g[A2][0] = 4;
+            if c.g[V1][0] != 0 {
+                c.cycles += 16;
+                wsm_save_stream_write(c, V0, V1, 0x0030_bc1c)?;
+                c.g[V0][0] = c.lw(r32(c, S3).wrapping_add(f::WORLD));
+                c.g[A1][0] = c.lw(sp(c).wrapping_add(4));
+                c.g[A0][0] = c.lw(r32(c, V0).wrapping_add(4));
+                call_ptr(c, WSM_CACHE_GET_DATA, 0x0030_bc2c)?;
+                c.g[V1][0] = c.lw(sp(c).wrapping_add(4));
+                c.g[A2][0] = c.g[V0][0];
+                c.g[A1][0] = c.g[S2][0];
+                c.g[V1][0] = sx(r32(c, V1) << 2);
+                c.g[V1][0] = sx(r32(c, S0).wrapping_add(r32(c, V1)));
+                c.g[A0][0] = c.lw(r32(c, V1));
+                call_ptr(c, WSM_LUNO_TABLE_WRITE, 0x0030_bc48)?;
+            }
+            c.cycles += 6;
+            c.g[V0][0] = c.lw(sp(c).wrapping_add(4));
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+            c.g[A0][0] = c.g[V0][0];
+            c.g[V1][0] = ((c.g[A0][0] as i64) < f::OBJ_COUNT as i64) as u64;
+            let more = c.g[V1][0] != 0;
+            c.sw(sp(c).wrapping_add(4), c.g[V0][0]);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0030_bbf0);
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6281,6 +6561,101 @@ pub(crate) mod tests {
                     c.bus.write16(VTABLE + slot, (r.next_u32() % 0x20) as u16);
                     c.bus.write32(VTABLE + slot + 4, f);
                 }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// `WScriptMan_SaveProcessList`: lists of 0..4 processes; the stream's
+    /// Write virtual is a fake (sometimes unwinding); the real
+    /// `WScriptProcessList_Count` and `WScriptProcess_SaveState` run (no
+    /// tasks, no attached object; the real script-cache lookup on a small
+    /// table).
+    #[test]
+    fn wscript_man_save_process_list_matches() {
+        use crate::difftest::fakes::vtable;
+        const LIST: u32 = DATA;
+        const NODES: u32 = DATA + 0x1000;
+        const CACHE_HOLDER: u32 = DATA + 0x3000;
+        const CACHE: u32 = DATA + 0x3100;
+        const TABLE: u32 = DATA + 0x3200;
+        const STREAM: u32 = DATA + 0x20_0000;
+        covered(
+            ee::s10::f_0030bc80__generated,
+            wscript_man_save_process_list,
+            300,
+            &|c, seed| {
+                let n = seed % 5;
+                let mut r = machine(c, seed, 0x0030_bc80, 1 + 3 * n);
+                c.pc = 0x0030_bc80;
+                let vt = vtable(c, &mut r, &[SAVE_STATE_STREAM_WRITE]);
+                c.bus.write32(STREAM, vt);
+                c.bus.write32(GAME_GP + 0x16c8, CACHE_HOLDER);
+                c.bus.write32(CACHE_HOLDER + 4, CACHE);
+                c.bus.write32(CACHE + 4, TABLE);
+                fill(c, &mut r, TABLE, 16 * 3);
+                c.bus.write32(LIST, if n == 0 { 0 } else { NODES });
+                for i in 0..n {
+                    let node = NODES + i * 0x100;
+                    fill(c, &mut r, node, 0x30 / 4);
+                    c.bus.write32(node + 0x4, 0); // no tasks
+                    c.bus.write32(node + 0x1c, 0); // no attached object
+                    c.bus.write32(node + 0x24, r.next_u32() % 16);
+                    let next = if i + 1 < n { node + 0x100 } else { 0 };
+                    c.bus.write32(node + WSCRIPT_SAVE_LIST_NEXT, next);
+                }
+                c.g[A0][0] = sx(DATA + 0x8000);
+                c.g[A1][0] = sx(LIST);
+                c.g[A2][0] = sx(STREAM);
+            },
+        );
+    }
+
+    /// WScriptMan_SaveState: a fake stream (its Write unwinds at some calls),
+    /// empty process lists (the real WScriptMan_SaveProcessList), and 0..50
+    /// live object tables whose real cLunoTable_Write takes its no-hash path;
+    /// the real cWScriptCache_GetData reads the world's cache.
+    #[test]
+    fn wscript_man_save_state_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::DATA;
+        const SELF: u32 = DATA;
+        const WORLD: u32 = DATA + 0x1000;
+        const CACHE: u32 = DATA + 0x1100;
+        const CACHE_DATA: u32 = DATA + 0x1200;
+        const OBJ: u32 = DATA + 0x2000;
+        const TABLE: u32 = DATA + 0x2100;
+        const STREAM: u32 = DATA + 0x3000;
+        covered(
+            ee::s10::f_0030bb10__generated,
+            wscript_man_save_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x30_bb10, 8);
+                c.pc = 0x0030_bb10;
+                let vt = vtable(c, &mut r, &[8]);
+                c.bus.write32(STREAM, vt);
+                c.bus.write32(SELF + wsm_save::WORLD, WORLD);
+                c.bus.write32(SELF + wsm_save::LIST_A, 0);
+                c.bus.write32(SELF + wsm_save::LIST_B, 0);
+                c.bus.write32(WORLD + 4, CACHE);
+                c.bus.write32(CACHE + 4, CACHE_DATA);
+                for i in 0..50 {
+                    c.bus.write32(CACHE_DATA + 0xc * i + 8, r.next_u32());
+                }
+                // Each live object is a reference to a table without a hash
+                // part (modulus -1).
+                c.bus.write32(OBJ, TABLE);
+                c.bus.write32(TABLE + 0xc, u32::MAX);
+                let density = [0, 1, 4, 16][(seed % 4) as usize];
+                for i in 0..50 {
+                    let live = density != 0 && r.next_u32() % 16 < density;
+                    c.bus
+                        .write32(SELF + wsm_save::OBJS + 4 * i, if live { OBJ } else { 0 });
+                }
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(STREAM);
             },
         );
     }

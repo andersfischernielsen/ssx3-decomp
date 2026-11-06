@@ -238,6 +238,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0032_f840, coll_hull_transform, "CollHull_Transform"),
     (0x0032_fac0, coll_hull_collide_aabb, "CollHull_CollideAABB"),
+    (
+        0x0032_9b40,
+        rider_sphere_tree_translate,
+        "RiderSphereTree_Translate",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5901,6 +5906,62 @@ pub fn coll_hull_collide_aabb(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod sphere_tree_f {
+
+    /// Centre of the node's bounding sphere (quadword).
+    pub const CENTER: u32 = 0x10;
+
+    /// Number of child spheres.
+    pub const COUNT: u32 = 0x2c;
+
+    /// First child (0x20 bytes each, position quadword first).
+    pub const CHILDREN: u32 = 0x30;
+
+    pub const CHILD_SIZE: u32 = 0x20;
+}
+
+/// `void RiderSphereTree_Translate(sSphereTreeNode* s, sSphereVec4* v)`
+/// (0x329b40): moves a rider's collision sphere tree by `v`: adds it to the
+/// node centre and then to each child's position (VU0 `vadd.xyzw`).
+pub fn rider_sphere_tree_translate(c: &mut Cpu) {
+    use sphere_tree_f::*;
+    let node = r32(c, A0);
+    c.cycles += 7;
+    c.lqc2(3, node.wrapping_add(CENTER));
+    c.lqc2(4, r32(c, A1));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, node.wrapping_add(CENTER));
+    c.g[V0][0] = Addr(node.wrapping_add(COUNT)).lw(c);
+    c.g[A2][0] = 0;
+    if c.g[V0][0] as i64 > 0 {
+        c.cycles += 1;
+        c.g[V1][0] = sx(node.wrapping_add(CHILDREN));
+        loop {
+            // (Registers re-read every pass: an event may run in between.)
+            let child = r32(c, V1);
+            let node = r32(c, A0);
+            c.cycles += 9;
+            c.lqc2(3, child);
+            c.lqc2(4, r32(c, A1));
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, child);
+            c.g[A2][0] = sx(r32(c, A2).wrapping_add(1));
+            let count = Addr(node.wrapping_add(COUNT)).lw(c);
+            let more = (c.g[A2][0] as i64) < (count as i64);
+            c.g[V0][0] = more as u64;
+            c.g[V1][0] = sx(child.wrapping_add(CHILD_SIZE));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0032_9b60);
+            }
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7635,6 +7696,48 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(BOX);
                 c.g[A2][0] = sx(BOX + 0x10);
                 c.g[A3][0] = sx(HIT);
+            },
+        );
+    }
+    use super::*;
+
+    /// A node with 0..6 children (sometimes a negative count) translated by
+    /// a random vector.
+    #[test]
+    fn rider_sphere_tree_translate_matches() {
+        check(
+            ee::s10::f_00329b40__generated,
+            rider_sphere_tree_translate,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x329b_40a5 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0032_9b40;
+                let node = DATA;
+                let v = DATA + 0x8000;
+                c.g[A0][0] = sx(node);
+                c.g[A1][0] = sx(v);
+                fill(c, &mut r, node, 0x30 / 4 + 6 * 8);
+                let count = match seed % 8 {
+                    0 => 0,
+                    1 => (r.next_u32() | 0x8000_0000) as i32,
+                    k => (k - 2) as i32,
+                };
+                c.bus.write32(node + sphere_tree_f::COUNT, count as u32);
+                put_vec(
+                    c,
+                    node + sphere_tree_f::CENTER,
+                    [r.f32(1e4), r.f32(1e4), r.f32(1e4), r.edge_f32()],
+                );
+                for i in 0..6 {
+                    let at = node + sphere_tree_f::CHILDREN + i * sphere_tree_f::CHILD_SIZE;
+                    put_vec(c, at, [r.f32(1e4), r.f32(1e4), r.f32(1e4), r.edge_f32()]);
+                }
+                put_vec(
+                    c,
+                    v,
+                    [r.f32(100.0), r.f32(100.0), r.f32(100.0), r.edge_f32()],
+                );
             },
         );
     }

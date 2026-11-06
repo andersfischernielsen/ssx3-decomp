@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -154,6 +155,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Bolts_GetCharBoltCount",
     ),
     (0x0014_d9d0, bolts_get_char_bolts_2, "Bolts_GetCharBolts_2"),
+    (
+        0x0014_a0b0,
+        be_get_rider_alt_character,
+        "BE_GetRiderAltCharacter",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2368,6 +2374,36 @@ pub fn be_bolt_int_unlock_bolt(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// BE_GetRiderAltCharacter (0x14a0b0)
+
+/// The rider -> character id table (`D_005305B0`, one word per rider) and
+/// the character table (`D_00535B20`, 0x1c bytes each; +0x12 is the signed
+/// alternate-character byte).
+pub(crate) const BE_RIDER_CHARACTER_IDS: u32 = 0x0053_05b0;
+
+pub(crate) const BE_CHARACTERS: u32 = 0x0053_5b20;
+
+pub(crate) const BE_CHARACTER_SIZE: u64 = 0x1c;
+
+pub(crate) const BE_CHARACTER_ALT: u32 = 0x12;
+
+/// `int BE_GetRiderAltCharacter(int rider)` (0x14a0b0): the alternate
+/// character byte (signed) of the rider's character entry.
+pub fn be_get_rider_alt_character(c: &mut Cpu) {
+    c.cycles += 12;
+    c.g[V0][0] = sx(BE_RIDER_CHARACTER_IDS);
+    c.g[A0][0] = sx(r32(c, A0) << 2);
+    c.g[A2][0] = BE_CHARACTER_SIZE;
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(BE_RIDER_CHARACTER_IDS));
+    c.g[V1][0] = c.lw(r32(c, A0)); // character id
+    c.g[A1][0] = sx(BE_CHARACTERS);
+    c.mult(0, V1, V1, A2);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(BE_CHARACTERS));
+    c.g[V0][0] = c.lb(r32(c, V1).wrapping_add(BE_CHARACTER_ALT));
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3015,6 +3051,36 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(seed % 4); // character
                 c.g[A3][0] = sx((seed / 4) % 6); // bolt key
                 c.g[T0][0] = sx(seed % 2); // free
+            },
+        );
+    }
+    use super::*;
+
+    /// BE_GetRiderAltCharacter: riders 0..15 with character ids 0..39 and
+    /// alternate bytes of both signs.
+    #[test]
+    fn be_get_rider_alt_character_matches() {
+        use crate::difftest::{check, scramble, Rng};
+        check(
+            ee::s01::f_0014a0b0__generated,
+            be_get_rider_alt_character,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0014_a0b0 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0014_a0b0;
+                let rider = r.next_u32() % 16;
+                let id = r.next_u32() % 40;
+                c.bus.write32(BE_RIDER_CHARACTER_IDS + 4 * rider, id);
+                c.bus.write8(
+                    BE_CHARACTERS + 0x1c * id + BE_CHARACTER_ALT,
+                    r.next_u32() as u8,
+                );
+                c.g[A0][0] = if seed % 2 == 0 {
+                    rider as u64
+                } else {
+                    ((r.next_u32() as u64) << 32) | rider as u64
+                };
             },
         );
     }

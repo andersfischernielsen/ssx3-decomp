@@ -18,6 +18,7 @@ use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::ai::stream_write_member;
 pub(crate) use crate::game::ai::rider::fcc_lt;
 pub(crate) use crate::game::ai::rider::fr_3 as fr_2;
 pub(crate) use crate::game::ai::rider::gp_lit;
@@ -211,6 +212,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x002f_6910,
         rider_base_match_cheat_code,
         "RiderBase_MatchCheatCode",
+    ),
+    (
+        0x002f_6a58,
+        rider_base_save_cheat_code,
+        "RiderBase_SaveCheatCode",
     ),
 ];
 
@@ -3615,6 +3621,12 @@ pub(crate) fn cheat_entering(c: &mut Cpu, this: u32, events: u64) -> CheatExit {
     CheatExit::Done
 }
 
+/// `void RiderBase::SaveCheatCode(cStream* s)` (0x2f6a58): writes the cheat
+/// code word (+4).
+pub fn rider_base_save_cheat_code(c: &mut Cpu) {
+    stream_write_member(c, 0x4, 0x4, 0x002f_6a80);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4745,6 +4757,19 @@ pub(crate) mod tests {
                 c.bus.write8(this + 7, flags);
                 c.g[A0][0] = sx(this);
             },
+        );
+    }
+    use super::*;
+    pub(crate) use crate::game::ai::ai::tests::stream_save_setup;
+
+    /// `RiderBase_SaveCheatCode`.
+    #[test]
+    fn rider_base_save_cheat_code_matches() {
+        covered(
+            ee::s09::f_002f6a58__generated,
+            rider_base_save_cheat_code,
+            200,
+            &|c, seed| stream_save_setup(c, seed, 0x002f_6a58),
         );
     }
 }

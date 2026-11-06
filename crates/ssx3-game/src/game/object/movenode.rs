@@ -232,6 +232,9 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_6a28, mod_obj_v38, "ModObj_v38"),
     (0x0035_67e0, mod_obj_v49, "ModObj_v49"),
     (0x0035_6e98, object_save, "Object_Save"),
+    (0x0035_53c0, mod_obj_dtor, "ModObj_dtor"),
+    (0x0035_6db0, object_ctor, "Object_ctor"),
+    (0x0035_79a8, particle_save, "Particle_Save"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4167,6 +4170,169 @@ pub fn mod_obj_v49(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod object_f {
+
+    /// Vtable pointer.
+    pub const VTABLE: u32 = 0xc;
+
+    /// The world node (instance) this object was built from.
+    pub const NODE: u32 = 0x18;
+
+    /// `Object`'s vtable (0x490e80).
+    pub const OBJECT_VTABLE: u32 = 0x0049_0e80;
+
+    /// Node flags word.
+    pub const NODE_FLAGS: u32 = 0x8;
+}
+
+/// `ModObj_ctor` (0x355280).
+pub(crate) const MOD_OBJ_CTOR: Callee = Callee {
+    addr: 0x0035_5280,
+    f: ee::s11::ModObj_ctor,
+};
+
+/// `Object* Object_ctor(Object* self, int list, WorldNode* node, int a3,
+/// int a4)` (0x356db0): builds the `ModObj` base (process kind 0x11),
+/// installs the `Object` vtable, then adjusts the node flags: with `a4` (or
+/// when bits 0-1 are both set) clear bit 1 and set bit 2; with `a3` clear
+/// bit 6 and set bit 5. Returns `self`.
+pub fn object_ctor(c: &mut Cpu) {
+    use object_f::*;
+    let frame = Frame { size: 0x40 };
+    guest(c, |c| {
+        c.cycles += 15;
+        Frame::open(c, 0x40);
+        frame.save(c, S2, 0x10);
+        frame.save(c, S1, 0x20);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save(c, S0, 0x30);
+        c.g[S1][0] = c.g[A0][0];
+        c.g[A3][0] = c.g[A2][0];
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[T0][0];
+        c.g[A2][0] = 0x11;
+        MOD_OBJ_CTOR.call(c, 0x0035_6ddc)?;
+        let this = r32(c, S1);
+        c.g[V1][0] = OBJECT_VTABLE as u64;
+        Addr(this.wrapping_add(VTABLE)).sw(c, OBJECT_VTABLE as u64);
+        let mut set_bit2 = c.g[S0][0] != 0;
+        if !set_bit2 {
+            c.cycles += 6;
+            c.g[V0][0] = Addr(this.wrapping_add(NODE)).lw(c);
+            c.g[A0][0] = 3;
+            c.g[V1][0] = Addr(r32(c, V0).wrapping_add(NODE_FLAGS)).lw(c) & 3;
+            set_bit2 = c.g[V1][0] == 3;
+        }
+        if set_bit2 {
+            c.cycles += 7;
+            c.g[A0][0] = Addr(this.wrapping_add(NODE)).lw(c);
+            c.g[V1][0] = 0xffff_ffff_ffff_fffd;
+            let flags = Addr(r32(c, A0).wrapping_add(NODE_FLAGS)).lw(c);
+            c.g[V0][0] = (flags & 0xffff_ffff_ffff_fffd) | 4;
+            let v = c.g[V0][0];
+            Addr(r32(c, A0).wrapping_add(NODE_FLAGS)).sw(c, v);
+        }
+        c.cycles += 2;
+        c.g[V0][0] = c.g[S1][0];
+        if c.g[S2][0] != 0 {
+            c.cycles += 8;
+            c.g[A0][0] = Addr(this.wrapping_add(NODE)).lw(c);
+            c.g[V1][0] = 0xffff_ffff_ffff_ffbf;
+            let flags = Addr(r32(c, A0).wrapping_add(NODE_FLAGS)).lw(c);
+            c.g[V0][0] = (flags & 0xffff_ffff_ffff_ffbf) | 0x20;
+            let v = c.g[V0][0];
+            Addr(r32(c, A0).wrapping_add(NODE_FLAGS)).sw(c, v);
+            c.g[V0][0] = c.g[S1][0];
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Particle_Save (0x3579a8)
+
+/// `void Particle_Save(Particle* self, Stream* stream)` (0x3579a8): a
+/// particle saves exactly what its modifier-object base saves
+/// (`ModObj_Save`).
+pub fn particle_save(c: &mut Cpu) {
+    crate::call::tail_wrapper(
+        c,
+        None,
+        crate::call::Target::Direct(Callee {
+            addr: 0x0035_6b30,
+            f: ee::s11::ModObj_Save,
+        }),
+        0x0035_79b8,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// ModObj_dtor (0x3553c0)
+
+/// `ModObj` fields used by its destructor.
+pub(crate) const MOD_OBJ_VTABLE: u32 = 0xc;
+
+pub(crate) const MOD_OBJ_BLOCK: u32 = 0x1c;
+
+/// The `ModObj` vtable (`D_00491028`).
+pub(crate) const MOD_OBJ_VTABLE_ADDR: u32 = 0x0049_1028;
+
+pub(crate) const MOD_OBJ_V49: Callee = Callee {
+    addr: 0x0035_67e0,
+    f: ee::s11::ModObj_v49,
+};
+
+pub(crate) const MOD_OBJ_BLOCK_DTOR: Callee = Callee {
+    addr: 0x0035_2ae8,
+    f: ee::s11::ModifierBlock_dtor,
+};
+
+pub(crate) const MOD_OBJ_BASE_DTOR: Callee = Callee {
+    addr: 0x0034_fbf0,
+    f: ee::s11::WorldObj_dtor,
+};
+
+/// `ModObj* ModObj_dtor(ModObj* self, int flags)` (0x3553c0): restore the
+/// ModObj vtable, refresh the bounds one last time (`ModObj_v49`), delete
+/// the modifier block if there is one (`ModifierBlock_dtor(block, 3)`), then
+/// run the `WorldObj` destructor with the caller's flags.
+pub fn mod_obj_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x30);
+        c.g[V0][0] = 0x49_0000;
+        frame.save(c, S0, 0x20);
+        c.g[V0][0] = sx(MOD_OBJ_VTABLE_ADDR);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0]; // self
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A1][0]; // flags
+        c.sw(r32(c, S0).wrapping_add(MOD_OBJ_VTABLE), c.g[V0][0]);
+        MOD_OBJ_V49.call(c, 0x0035_53e8)?;
+        c.g[A0][0] = c.lw(r32(c, S0).wrapping_add(MOD_OBJ_BLOCK));
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            c.g[A1][0] = 3; // destroy and free
+            MOD_OBJ_BLOCK_DTOR.call(c, 0x0035_53fc)?;
+        }
+        c.g[A0][0] = c.g[S0][0];
+        c.cycles += 7;
+        c.g[A1][0] = c.g[S1][0];
+        MOD_OBJ_BASE_DTOR.call(c, 0x0035_5408)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6025,6 +6191,163 @@ pub(crate) mod tests {
                     c.bus.write32(node + MOV49_NODE_MAX + 4 * i, hi[i as usize]);
                 }
                 c.bus.write32(LOG_RESULTS, old);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// `Object_ctor` on the real ModObj/WorldObj constructor chain (fixture
+    /// as in `world_obj_ctor_matches`): node flags with bits 0-1 both set
+    /// or not, a3/a4 zero or not.
+    #[test]
+    fn object_ctor_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::GAME_GP;
+        const SELF: u32 = DATA + 0x100;
+        const NODE: u32 = DATA + 0x200;
+        const PROCS: u32 = DATA + 0x1000;
+        const TAILS: u32 = DATA + 0x1400;
+        const WORLD: u32 = DATA + 0x2000;
+        const FOCUS: u32 = DATA + 0x3000;
+        check(
+            ee::s11::f_00356db0__generated,
+            object_ctor,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_6db0, 0);
+                c.pc = 0x0035_6db0;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                fill(c, &mut r, SELF, 0x10);
+                fill(c, &mut r, NODE, 0x10);
+                let mut flags = r.next_u32();
+                if seed % 4 == 0 {
+                    flags |= 0x100;
+                }
+                if seed % 3 == 0 {
+                    flags |= 3;
+                }
+                w(c, NODE + object_f::NODE_FLAGS, flags);
+                let list = seed % 4;
+                w(c, GAME_GP + 0x2898 + 4, PROCS);
+                for i in 0..4 {
+                    w(c, PROCS + 0x44 * i, r.next_u32());
+                    w(c, PROCS + 0x44 * i + 8, TAILS + 0x40 * i);
+                    w(c, PROCS + 0x44 * i + 0x28, TAILS + 0x40 * i + 0x20);
+                }
+                fill(c, &mut r, 0x0044_aff0, 0x20);
+                // World -> game -> race -> focus manager.
+                w(c, GAME_GP - 0x848, WORLD);
+                w(c, WORLD + 0x84, WORLD + 0x100);
+                w(c, WORLD + 0x100 + 0xc, WORLD + 0x200);
+                w(c, WORLD + 0x200 + 0xa4, FOCUS);
+                w(
+                    c,
+                    FOCUS + 0xd4,
+                    if seed % 5 == 0 { 0 } else { r.next_u32() },
+                );
+                w(c, FOCUS + 0xd8, r.next_u32() % 8);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(list);
+                c.g[A2][0] = sx(NODE);
+                c.g[A3][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    sx(r.next_u32() | 1)
+                };
+                c.g[T0][0] = if (seed / 2) % 2 == 0 {
+                    0
+                } else {
+                    sx(r.next_u32() | 1)
+                };
+            },
+        );
+    }
+
+    /// `Particle_Save`: the real `ModObj_Save` with and without a modifier
+    /// block (the fixture of `mod_obj_save_matches`); the stream's write
+    /// slots are fakes, some of which unwind.
+    #[test]
+    fn particle_save_matches() {
+        use crate::difftest::fakes::{covered, machine, vtable};
+        use crate::difftest::{fill, DATA};
+        covered(
+            ee::s11::f_003579a8__generated,
+            particle_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_79a8, 7);
+                c.pc = 0x0035_79a8;
+                let (this, stream, block) = (DATA + 0x100, DATA + 0x400, DATA + 0x800);
+                fill(c, &mut r, this, 0x10);
+                c.bus
+                    .write32(this + 0x1c, if seed % 3 == 0 { 0 } else { block });
+                let vt = vtable(c, &mut r, &[8, 0x30]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+
+    /// ModObj_dtor: no modifier block, or an empty one (no implementation,
+    /// so the real ModObj_v49 does nothing) allocated from a dlmalloc arena
+    /// and freed by the real ModifierBlock_dtor; the real WorldObj_dtor runs
+    /// on the fixture of `world_obj_dtor_matches` (flags without the delete
+    /// bit). The mutex syscalls are fakes; some unwind.
+    #[test]
+    fn mod_obj_dtor_matches() {
+        use crate::difftest::fakes::{machine, LOG_COUNT, LOG_UNWIND_AT};
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        check(
+            ee::s11::f_003553c0__generated,
+            mod_obj_dtor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_53c0, 0);
+                let obj = DATA + 0x1000;
+                let inst = DATA + 0x1100;
+                fill(c, &mut r, obj, 8);
+                c.bus.write16(obj + 0x10, (r.next_u32() % 8) as u16);
+                if seed % 3 == 0 {
+                    c.bus.write32(obj + 4, 0);
+                } else {
+                    c.bus.write32(obj + 4, DATA + 0x1200);
+                    c.bus
+                        .write32(obj + 8, if seed % 3 == 1 { 0 } else { DATA + 0x1300 });
+                }
+                c.bus
+                    .write32(obj + 0x18, if seed % 7 == 0 { 0 } else { inst });
+                c.bus.write32(inst + 0x8, r.next_u32());
+                c.bus
+                    .write32(inst + 0xc, if seed % 2 == 0 { obj } else { r.next_u32() });
+                let block = if seed % 4 == 0 {
+                    0
+                } else {
+                    // The game heap over test memory, pools off.
+                    c.bus.write32(GAME_GP + 0xdd8, 0);
+                    oc238_run(
+                        c,
+                        0x0031_ff60,
+                        ee::s10::f_0031ff60,
+                        &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                    );
+                    let b = oc238_run(c, 0x0031_9e48, ee::s10::f_00319e48, &[0x40, 0]) as u32;
+                    for i in 0..0x10 {
+                        c.bus.write32(b + 4 * i, 0);
+                    }
+                    b
+                };
+                c.bus.write32(obj + MOD_OBJ_BLOCK, block);
+                // Unwind at one of the next calls (the setup made some).
+                if seed % 3 == 1 {
+                    let n = c.bus.read32(LOG_COUNT);
+                    c.bus.write32(LOG_UNWIND_AT, n + r.next_u32() % 6);
+                }
+                c.pc = 0x0035_53c0;
+                c.g[A0][0] = sx(obj);
+                c.g[A1][0] = (r.next_u32() & !1) as u64;
             },
         );
     }

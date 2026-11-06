@@ -336,6 +336,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0027_4a30, in_seq_instance_update, "InSeq_InstanceUpdate"),
     (0x0027_28f8, in_seq_update_all, "InSeq_UpdateAll"),
+    (
+        0x0027_0730,
+        replay_find_rider_index,
+        "Replay_FindRiderIndex",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5220,6 +5225,121 @@ pub fn in_seq_update_all(c: &mut Cpu) {
     })
 }
 
+/// The world pointer (`gp-0x848`).
+pub(crate) const REPLAY_FIND_WORLD_GP: u32 = 0x848;
+
+/// World -> rider list (+0x84), list -> rider table (+0xc), table -> rider
+/// count (+0x7c) and rider pointers (+0x40, one word each).
+pub(crate) const REPLAY_FIND_WORLD_RIDERS: u32 = 0x84;
+
+pub(crate) const REPLAY_FIND_LIST_TABLE: u32 = 0xc;
+
+pub(crate) const REPLAY_FIND_TABLE_COUNT: u32 = 0x7c;
+
+pub(crate) const REPLAY_FIND_TABLE_RIDERS: u32 = 0x40;
+
+/// Rider -> object (+0x18); the replay id object is embedded at +0x6c0,
+/// its id getter is vtable slot 0x38.
+pub(crate) const REPLAY_FIND_RIDER_OBJ: u32 = 0x18;
+
+pub(crate) const REPLAY_FIND_OBJ_ID: u32 = 0x6c0;
+
+pub(crate) const REPLAY_FIND_ID_SLOT: u32 = 0x38;
+
+/// `world` as `lw gp-0x848` leaves it.
+pub(crate) fn replay_find_world(c: &mut Cpu) -> u64 {
+    Addr((c.g[GP][0] as u32).wrapping_sub(REPLAY_FIND_WORLD_GP)).lw(c)
+}
+
+/// The world's rider count (`world->riders->table->count`), leaving the
+/// table pointer in v1 as the original does.
+pub(crate) fn replay_find_rider_count(c: &mut Cpu, world: u64) -> u64 {
+    let list = Addr((world as u32).wrapping_add(REPLAY_FIND_WORLD_RIDERS)).lw(c);
+    c.g[A0][0] = list;
+    let table = Addr((list as u32).wrapping_add(REPLAY_FIND_LIST_TABLE)).lw(c);
+    table
+}
+
+/// `int Replay_FindRiderIndex(int id)` (0x270730): the index of the world
+/// rider whose replay id object (rider object +0x6c0, virtual getter at slot
+/// 0x38) returns `id`, or -1. The loop checks events at its head 0x270768.
+pub fn replay_find_rider_index(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x30);
+        let world = replay_find_world(c);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[A1][0] = world;
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        let table = replay_find_rider_count(c, world);
+        c.g[V0][0] = table;
+        let count = Addr((table as u32).wrapping_add(REPLAY_FIND_TABLE_COUNT)).lw(c);
+        c.g[V1][0] = count;
+        c.g[S0][0] = 0;
+        let mut found = false;
+        if (count as i64) > 0 {
+            c.cycles += 2;
+            c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(REPLAY_FIND_WORLD_RIDERS)).lw(c);
+            loop {
+                c.cycles += 13;
+                let index = c.g[S0][0] as u32;
+                c.g[A0][0] = sx(index << 2);
+                let table = Addr((c.g[V1][0] as u32).wrapping_add(REPLAY_FIND_LIST_TABLE)).lw(c);
+                let slot = sx((table as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V0][0] = slot;
+                let rider = Addr((slot as u32).wrapping_add(REPLAY_FIND_TABLE_RIDERS)).lw(c);
+                c.g[V1][0] = rider;
+                let obj = Addr((rider as u32).wrapping_add(REPLAY_FIND_RIDER_OBJ)).lw(c);
+                let vt = Addr((obj as u32).wrapping_add(REPLAY_FIND_OBJ_ID)).lw(c);
+                c.g[A1][0] = vt;
+                let id_obj = sx((obj as u32).wrapping_add(REPLAY_FIND_OBJ_ID));
+                let delta = Addr((vt as u32).wrapping_add(REPLAY_FIND_ID_SLOT)).lh(c);
+                c.g[V1][0] = delta;
+                let getter = Addr((vt as u32).wrapping_add(REPLAY_FIND_ID_SLOT + 4)).lw(c);
+                c.g[V0][0] = getter;
+                c.g[A0][0] = sx((id_obj as u32).wrapping_add(delta as u32));
+                call_ptr(c, getter as u32, 0x0027_0794)?;
+                let differs = c.g[V0][0] != c.g[S1][0];
+                c.g[V0][0] = replay_find_world(c);
+                if !differs {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[S0][0];
+                    found = true;
+                    break;
+                }
+                c.cycles += 8;
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(1));
+                let world = c.g[V0][0];
+                let table = replay_find_rider_count(c, world);
+                c.g[A1][0] = world;
+                c.g[V1][0] = table;
+                let count = Addr((table as u32).wrapping_add(REPLAY_FIND_TABLE_COUNT)).lw(c);
+                let more = (c.g[S0][0] as i64) < (count as i64);
+                c.g[V0][0] = more as u64;
+                if !more {
+                    break;
+                }
+                c.g[V1][0] = Addr((c.g[A1][0] as u32).wrapping_add(REPLAY_FIND_WORLD_RIDERS)).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0027_0768);
+                }
+            }
+        }
+        if !found {
+            c.cycles += 1;
+            c.g[V0][0] = u64::MAX;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7209,6 +7329,66 @@ pub(crate) mod tests {
                 c.bus.write32(seq + INSEQ_FIRST, next);
                 c.g[A0][0] = sx(seq);
             },
+        );
+    }
+    use super::*;
+
+    /// A world with 0..5 riders (or a negative count), each rider object's
+    /// replay id getter a fake method; the fake for rider `hit` (if any)
+    /// returns the id asked for, the others a pointer.
+    pub(crate) fn replay_find_rider_fixture(c: &mut Cpu, seed: u32) {
+        use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
+        use crate::difftest::GAME_GP;
+        let count = match seed % 6 {
+            0 => 0u32,
+            1 => (-(1 + (seed / 6 % 3) as i32)) as u32,
+            _ => 1 + seed / 6 % 5,
+        };
+        let calls = if (count as i32) > 0 { count } else { 0 };
+        let mut r = machine(c, seed, 0x2707_3000, calls);
+        let world = DATA;
+        let list = DATA + 0x100;
+        let table = DATA + 0x200;
+        c.bus.write32(GAME_GP - REPLAY_FIND_WORLD_GP, world);
+        c.bus.write32(world + REPLAY_FIND_WORLD_RIDERS, list);
+        c.bus.write32(list + REPLAY_FIND_LIST_TABLE, table);
+        c.bus.write32(table + REPLAY_FIND_TABLE_COUNT, count);
+        for i in 0..calls {
+            let rider = DATA + 0x1000 + i * 0x100;
+            let obj = DATA + 0x4000 + i * 0x1000;
+            let vt = DATA + 0x10000 + i * 0x100;
+            c.bus
+                .write32(table + REPLAY_FIND_TABLE_RIDERS + 4 * i, rider);
+            c.bus.write32(rider + REPLAY_FIND_RIDER_OBJ, obj);
+            c.bus.write32(obj + REPLAY_FIND_OBJ_ID, vt);
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(vt + REPLAY_FIND_ID_SLOT, delta as u16);
+            c.bus.write32(vt + REPLAY_FIND_ID_SLOT + 4, FAKE + 0x10 * i);
+        }
+        let id = 1 + r.next_u32() % 0x1000;
+        // Rider `hit` answers with the id (none for seed % 4 == 0).
+        if calls > 0 && seed % 4 != 0 {
+            let hit = r.next_u32() % calls;
+            c.bus.write32(LOG_RESULTS + 4 * hit, id);
+        }
+        c.g[A0][0] = if seed % 7 == 3 {
+            (r.next_u32() as u64) << 32 | id as u64
+        } else {
+            id as u64
+        };
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0027_0730;
+    }
+
+    /// `Replay_FindRiderIndex`: found at any index, not found, no riders,
+    /// fakes unwinding.
+    #[test]
+    fn replay_find_rider_index_matches() {
+        check(
+            ee::s07::f_00270730__generated,
+            replay_find_rider_index,
+            300,
+            &replay_find_rider_fixture,
         );
     }
 }

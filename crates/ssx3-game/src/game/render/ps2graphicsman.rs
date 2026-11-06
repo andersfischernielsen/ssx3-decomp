@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -112,6 +113,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_graphics_man_free_blended_matrix_history,
         "PS2GraphicsMan_FreeBlendedMatrixHistory",
     ),
+    (0x0036_7bc0, tex_man_free_texture, "TexMan_FreeTexture"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1597,6 +1599,168 @@ pub fn tex_man_bind_textures(c: &mut Cpu) {
     return;
 }
 
+/// `TexMan` fields: texture pointers by id (+8), the cached lookups reset
+/// on a free (+0x1f4c, +0x1f50, +0x1f54), the VRAM heaps (+0x1f60, and
+/// +0x4350 for kind 9 textures).
+pub(crate) const TEX_MAN_TEXTURES: u32 = 0x8;
+
+pub(crate) const TEX_MAN_CACHE: u32 = 0x1f50;
+
+pub(crate) const TEX_MAN_CACHE_LAST: u32 = 0x1f54;
+
+pub(crate) const TEX_MAN_VRAM: u32 = 0x1f60;
+
+pub(crate) const TEX_MAN_VRAM_KIND9: u32 = 0x4350;
+
+/// Texture fields: owned flag, kind, the two CPU buffers, the two VRAM
+/// blocks (-1: none) and their ids.
+pub(crate) const TEX_OWNED: u32 = 0x0;
+
+pub(crate) const TEX_KIND: u32 = 0xc;
+
+pub(crate) const TEX_BUF_A: u32 = 0x1c;
+
+pub(crate) const TEX_BUF_B: u32 = 0x20;
+
+pub(crate) const TEX_SLOT_A: u32 = 0x28;
+
+pub(crate) const TEX_SLOT_B: u32 = 0x2c;
+
+pub(crate) const TEX_ID_A: u32 = 0x30;
+
+pub(crate) const TEX_ID_B: u32 = 0x34;
+
+/// Ids below this are B textures (`TexMan_FreeBTexInfo`), others NB.
+pub(crate) const TEX_FIRST_NB: i64 = 1500;
+
+/// `void TexMan_FreeTexture(TexMan* self, int id)` (0x367bc0): free a
+/// texture's VRAM blocks (block A in the kind-9 heap for kind 9 textures),
+/// its CPU buffers when it owns them, its info record (B or NB by id), and
+/// reset the cached lookups (+0x1f4c..+0x1f54 = -1). The two-word reset
+/// loop checks events at 0x367c90. Frame 0x50: ra at 0, s3..s0 at
+/// 0x10..0x40.
+pub fn tex_man_free_texture(c: &mut Cpu) {
+    const VRAM_FREE: Callee = Callee {
+        addr: 0x0036_63d8,
+        f: ee::s12::VramHeap_FreeBlock,
+    };
+    const NONE: u64 = u64::MAX;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S2, 0x20);
+        frame.save(c, S1, 0x30);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let man = c.g[S1][0] as u32;
+        let id = c.g[S2][0] as u32;
+        c.g[V0][0] = sx(man.wrapping_add(id << 2));
+        // (s0..s3 hold the texture, manager, id and -1 across the calls.)
+        frame.save(c, S0, 0x40);
+        c.g[S0][0] = Addr(c.g[V0][0] as u32).off(TEX_MAN_TEXTURES).lw(c);
+        c.g[S3][0] = NONE;
+        let tex = Addr(c.g[S0][0] as u32);
+        let slot_a = tex.off(TEX_SLOT_A).lw(c);
+        c.g[V1][0] = sx(man.wrapping_add(TEX_MAN_VRAM_KIND9));
+        if slot_a != NONE {
+            c.cycles += 6;
+            let kind = tex.off(TEX_KIND).lw(c);
+            c.g[A0][0] = sx(man.wrapping_add(TEX_MAN_VRAM));
+            c.g[A1][0] = tex.off(TEX_ID_A).lw(c);
+            c.g[V0][0] = kind ^ 9;
+            if c.g[V0][0] == 0 {
+                c.g[A0][0] = c.g[V1][0];
+            }
+            VRAM_FREE.call(c, 0x0036_7c14)?;
+        }
+
+        c.cycles += 3;
+        let tex = Addr(c.g[S0][0] as u32);
+        let man = c.g[S1][0] as u32;
+        c.g[V0][0] = tex.off(TEX_SLOT_B).lw(c);
+        if c.g[V0][0] != NONE {
+            c.cycles += 4;
+            c.g[A1][0] = tex.off(TEX_ID_B).lw(c);
+            c.g[A0][0] = sx(man.wrapping_add(TEX_MAN_VRAM));
+            VRAM_FREE.call(c, 0x0036_7c2c)?;
+        }
+        let tex = Addr(c.g[S0][0] as u32);
+        c.g[V0][0] = tex.off(TEX_OWNED).lw(c);
+
+        c.cycles += 2;
+        let owned = c.g[V0][0] != 0;
+        let is_b = (c.g[S2][0] as i64) < TEX_FIRST_NB;
+        c.g[V0][0] = is_b as u64;
+        if owned {
+            c.cycles += 3;
+            c.g[A0][0] = tex.off(TEX_BUF_A).lw(c);
+            if c.g[A0][0] != 0 {
+                c.cycles += 3;
+                call_ptr(c, 0x0031_7e98, 0x0036_7c4c)?; // EA_MemFree
+            }
+            c.g[A0][0] = Addr(c.g[S0][0] as u32).off(TEX_BUF_B).lw(c);
+            c.cycles += 2;
+            c.g[V0][0] = ((c.g[S2][0] as i64) < TEX_FIRST_NB) as u64;
+            if c.g[A0][0] != 0 {
+                c.cycles += 3;
+                call_ptr(c, 0x0031_7e98, 0x0036_7c60)?; // EA_MemFree
+                c.g[V0][0] = ((c.g[S2][0] as i64) < TEX_FIRST_NB) as u64;
+            }
+        }
+
+        c.cycles += 2;
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S1][0];
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            Callee {
+                addr: 0x0036_72c0,
+                f: ee::s12::TexMan_FreeBTexInfo,
+            }
+            .call(c, 0x0036_7c74)?;
+        } else {
+            c.cycles += 3;
+            Callee {
+                addr: 0x0036_71c8,
+                f: ee::s12::TexMan_FreeNBTexInfo,
+            }
+            .call(c, 0x0036_7c84)?;
+        }
+        c.g[A0][0] = NONE;
+
+        // Reset the cached lookups (+0x1f50, +0x1f4c), then +0x1f54.
+        c.cycles += 2;
+        c.g[V1][0] = 1;
+        c.g[V0][0] = sx((c.g[S1][0] as u32).wrapping_add(TEX_MAN_CACHE));
+        loop {
+            c.cycles += 7;
+            let none = c.g[A0][0];
+            Addr(c.g[V0][0] as u32).sw(c, none);
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_sub(1));
+            let more = (c.g[V1][0] as i64) >= 0;
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(4));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0036_7c90);
+            }
+        }
+        c.cycles += 9;
+        c.g[V0][0] = NONE;
+        frame.restore(c, S0, 0x40);
+        Addr((c.g[S1][0] as u32).wrapping_add(TEX_MAN_CACHE_LAST)).sw(c, NONE);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2114,6 +2278,147 @@ pub(crate) mod tests {
                     c.bus.write32(UPMGR_TEX + 0x40 * i + 0xc, (seed % 3) as u32);
                     // psm
                 }
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::RA as SENTINEL;
+
+    /// Call a generated function for a fixture (up to six arguments).
+    pub(crate) fn oc287_setup_call(c: &mut Cpu, addr: u32, f: GuestFn, args: &[u64]) -> u64 {
+        const BACK: u32 = 0x0000_7770;
+        for (i, a) in args.iter().enumerate() {
+            c.g[[A0, A1, A2, A3, T0, T1][i]][0] = *a;
+        }
+        c.g[RA][0] = BACK as u64;
+        c.pc = addr;
+        f(c);
+        assert_eq!(c.pc, BACK, "setup call {addr:#x} did not return");
+        c.g[V0][0]
+    }
+
+    /// `TexMan_FreeTexture`: a texture manager with both VRAM heaps built
+    /// by the game's own `VramHeap_Init` / `VramHeap_Alloc`; textures of
+    /// kind 9 or not, with VRAM blocks A / B or none (-1), owned or not,
+    /// CPU buffers null or small pool pointers (the test machine's pools
+    /// start at 0, so `EA_MemFree` takes the pool path), B ids (< 1500) and
+    /// NB ids. The texture record itself is a small pool pointer too (its
+    /// info is deleted).
+    #[test]
+    fn tex_man_free_texture_matches() {
+        const MAN: u32 = DATA + 0x1_0000;
+        const NODES: u32 = DATA + 0x2_0000;
+        const OWNERS: u32 = DATA + 0x3_0000;
+        check(
+            ee::s12::f_00367bc0__generated,
+            tex_man_free_texture,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0036_7bc0, 0);
+                let pick = |r: &mut Rng, v: &[u32]| v[(r.next_u32() as usize) % v.len()];
+                for i in 0..16 {
+                    c.bus.write32(OWNERS + 4 * i, OWNERS + 0x100 + 0x40 * i);
+                }
+                // The two VRAM heaps, two blocks each.
+                let mut blocks = Vec::new();
+                for (h, heap) in [(0u32, MAN + TEX_MAN_VRAM), (1, MAN + TEX_MAN_VRAM_KIND9)] {
+                    c.bus.write32(heap + 0x1ff0, NODES + 0x8000 * h);
+                    oc287_setup_call(
+                        c,
+                        0x0036_5e40,
+                        ee::s12::VramHeap_Init,
+                        &[heap as u64, 0, 0x20_0000, OWNERS as u64],
+                    );
+                    let mut ids = Vec::new();
+                    for _ in 0..2 {
+                        let size = 0x100 * (1 + r.next_u32() % 16);
+                        let owner = r.next_u32() % 7;
+                        ids.push(oc287_setup_call(
+                            c,
+                            0x0036_6ce0,
+                            ee::s12::VramHeap_Alloc,
+                            &[heap as u64, size as u64, owner as u64, 7, 50, 0],
+                        ) as u32);
+                    }
+                    blocks.push(ids);
+                }
+                c.g[GP][0] = GAME_GP as u64;
+                // The texture (a small pool pointer, deleted by the info free).
+                let tex = 0x100 + 0x40 * (r.next_u32() % 8);
+                let kind9 = r.next_u32() % 3 == 0;
+                c.bus.write32(
+                    tex + TEX_KIND,
+                    if kind9 {
+                        9
+                    } else {
+                        pick(&mut r, &[0, 1, 8, 10])
+                    },
+                );
+                let heap_a = if kind9 { 1 } else { 0 };
+                let has_a = r.next_u32() % 3 != 0;
+                c.bus.write32(
+                    tex + TEX_SLOT_A,
+                    if has_a { r.next_u32() % 4 } else { u32::MAX },
+                );
+                c.bus.write32(tex + TEX_ID_A, blocks[heap_a][0]);
+                let has_b = r.next_u32() % 3 != 0;
+                c.bus.write32(
+                    tex + TEX_SLOT_B,
+                    if has_b { r.next_u32() % 4 } else { u32::MAX },
+                );
+                c.bus.write32(tex + TEX_ID_B, blocks[0][1]);
+                c.bus.write32(tex + TEX_OWNED, pick(&mut r, &[0, 1, 0x100]));
+                let buf = |r: &mut Rng| {
+                    if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        0x500 + 8 * (r.next_u32() % 0x40)
+                    }
+                };
+                let (a, b) = (buf(&mut r), buf(&mut r));
+                c.bus.write32(tex + TEX_BUF_A, a);
+                c.bus.write32(tex + TEX_BUF_B, b);
+                // The manager: the id's texture, counts, NB free-list head.
+                let id = pick(&mut r, &[3, 100, 1499, 1500, 1501, 1700]);
+                c.bus.write32(MAN + TEX_MAN_TEXTURES + 4 * id, tex);
+                c.bus.write32(MAN, 1 + r.next_u32() % 50);
+                c.bus.write32(MAN + 4, 1 + r.next_u32() % 50);
+                c.bus
+                    .write32(MAN + 0x1f48, MAN + 8 + 4 * (r.next_u32() % 1400));
+                for off in [0x1f4cu32, 0x1f50, 0x1f54] {
+                    c.bus.write32(MAN + off, r.next_u32());
+                }
+                c.g[A0][0] = sx(MAN);
+                c.g[A1][0] = id as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0036_7bc0;
+            },
+        );
+    }
+
+    /// Event delivery at the reset loop's head (0x367c90): a texture with
+    /// nothing to free in VRAM or CPU memory.
+    #[test]
+    fn tex_man_free_texture_events_match() {
+        const MAN: u32 = DATA + 0x1_0000;
+        check_events(
+            ee::s12::f_00367bc0__generated,
+            tex_man_free_texture,
+            90,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0036_7bc1, 0);
+                let tex = 0x100 + 0x40 * (r.next_u32() % 8);
+                c.bus.write32(tex + TEX_SLOT_A, u32::MAX);
+                c.bus.write32(tex + TEX_SLOT_B, u32::MAX);
+                c.bus.write32(tex + TEX_OWNED, 0);
+                let id = if seed % 2 == 0 { 7 } else { 1600 };
+                c.bus.write32(MAN + TEX_MAN_TEXTURES + 4 * id, tex);
+                c.bus.write32(MAN + 0x1f48, MAN + 0x100);
+                c.g[A0][0] = sx(MAN);
+                c.g[A1][0] = id as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                let mode = schedule(c, &mut r, seed, 0x0036_7bc0);
+                mode
             },
         );
     }

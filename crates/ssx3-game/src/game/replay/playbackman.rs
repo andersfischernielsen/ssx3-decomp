@@ -111,6 +111,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "ReplayCache_RecordFrame",
     ),
     (0x0026_d178, replay_cache_update, "ReplayCache_Update"),
+    (
+        0x0026_da88,
+        world_state_write_dead_objects,
+        "WorldState_WriteDeadObjects",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1633,6 +1638,123 @@ pub fn replay_cache_update(c: &mut Cpu) {
     })
 }
 
+/// `void WorldState::WriteDeadObjects(cPbStream* s)` (0x26da88): counts the
+/// processes in list 8 of the process manager (gp+0x2898), writes the count
+/// as an 8-byte record (`s->Write(&rec, 8)`, vtable +8), then for each of
+/// those processes the word at +0x78 of its object (node +0x18).
+pub fn world_state_write_dead_objects(c: &mut Cpu) {
+    const PROCESS_LIST_FIRST: u32 = 0x0035_4ea8;
+    const PROCESS_LIST_NEXT: u32 = 0x0035_4ef8;
+    const DEAD_LIST: u64 = 0x8;
+    const OBJECT: u32 = 0x18;
+    const SAVED_WORD: u32 = 0x78;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x60);
+        c.g[A0][0] = sx((c.g[GP][0] as u32).wrapping_add(0x2898));
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x50);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        c.g[A1][0] = DEAD_LIST;
+        // rec = { count, 0 } on the stack
+        c.sw(frame.at(c, 0), 0);
+        c.sw(frame.at(c, 4), 0);
+        call_ptr(c, PROCESS_LIST_FIRST, 0x0026_dab8)?;
+        c.g[S0][0] = c.g[V0][0];
+        if c.g[S0][0] != 0 {
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(frame.at(c, 0));
+            loop {
+                c.cycles += 9;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[S2][0];
+                c.g[A2][0] = DEAD_LIST;
+                let count = sx((c.g[V0][0] as u32).wrapping_add(1));
+                c.g[V0][0] = count;
+                c.sw(frame.at(c, 0), count);
+                call_ptr(c, PROCESS_LIST_NEXT, 0x0026_dae0)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[V0][0] = c.lw(frame.at(c, 0));
+                if c.g[S0][0] == 0 {
+                    c.cycles += 1;
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_dac8);
+                }
+            }
+        }
+        // s->Write(&rec, 8)
+        let vt = c.lw(c.g[S1][0] as u32);
+        c.g[V0][0] = vt;
+        c.cycles += 9;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x8;
+        let delta = c.lh((vt as u32).wrapping_add(0x8));
+        let write = c.lw((vt as u32).wrapping_add(0xc));
+        c.g[V1][0] = write;
+        c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(delta as u32));
+        call_ptr(c, write as u32, 0x0026_db08)?;
+        let count = c.lw(frame.at(c, 0));
+        c.g[V0][0] = count;
+        c.g[A0][0] = c.g[S2][0];
+        let mut tail = true;
+        if count as i64 > 0 {
+            c.cycles += 5;
+            c.g[A1][0] = DEAD_LIST;
+            call_ptr(c, PROCESS_LIST_FIRST, 0x0026_db1c)?;
+            c.g[S0][0] = c.g[V0][0];
+            if c.g[S0][0] == 0 {
+                frame.restore(c, S0, 0x50);
+                tail = false;
+            } else {
+                c.cycles += 2;
+                c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(OBJECT));
+                loop {
+                    // s->Write(&object->word78 (copied to the stack), 4)
+                    c.cycles += 16;
+                    c.g[A1][0] = sx(frame.at(c, 0x10));
+                    let vt = c.lw(c.g[S1][0] as u32);
+                    c.g[V1][0] = vt;
+                    c.g[A2][0] = 0x4;
+                    let word = c.lw((c.g[A0][0] as u32).wrapping_add(SAVED_WORD));
+                    c.sw(frame.at(c, 0x10), word);
+                    let delta = c.lh((vt as u32).wrapping_add(0x8));
+                    let write = c.lw((vt as u32).wrapping_add(0xc));
+                    c.g[V0][0] = write;
+                    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(delta as u32));
+                    call_ptr(c, write as u32, 0x0026_db54)?;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S2][0];
+                    c.g[A2][0] = DEAD_LIST;
+                    call_ptr(c, PROCESS_LIST_NEXT, 0x0026_db64)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    if c.g[S0][0] == 0 {
+                        break;
+                    }
+                    c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(OBJECT));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0026_db30);
+                    }
+                }
+            }
+        }
+        if tail {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 5;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2278,6 +2400,53 @@ pub(crate) mod tests {
                 c.bus.write64(FRAME, frame);
                 c.g[A0][0] = sx(CACHE);
                 c.g[A1][0] = sx(FRAME);
+            },
+        );
+    }
+    use super::*;
+
+    /// `WorldState_WriteDeadObjects`: the process manager at gp+0x2898
+    /// points at list headers (0x44 each); list 8 holds 0..4 nodes (empty:
+    /// first == the sentinel at header+0x14), each with an object (+0x18)
+    /// whose word +0x78 is random. ProcessList_First/Next run for real; the
+    /// stream's `Write` (vtable +8) is a fake (logs the registers, sometimes
+    /// unwinds).
+    #[test]
+    fn world_state_write_dead_objects_matches() {
+        const STREAM: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x200;
+        const PROCS: u32 = DATA + 0x1000;
+        const NODES: u32 = DATA + 0x2000;
+        const OBJECTS: u32 = DATA + 0x3000;
+        covered(
+            ee::s07::f_0026da88__generated,
+            world_state_write_dead_objects,
+            240,
+            &|c, seed| {
+                let nodes = seed % 5;
+                let mut r = machine(c, seed, 0x26da88, 1 + nodes);
+                c.pc = 0x0026_da88;
+                c.bus.write32(GAME_GP + 0x2898 + 4, PROCS);
+                let head = PROCS + 8 * 0x44;
+                let sentinel = head + 0x14;
+                let node = |i: u32| {
+                    if i < nodes {
+                        NODES + 0x40 * i
+                    } else {
+                        sentinel
+                    }
+                };
+                c.bus.write32(head + 8, node(0));
+                for i in 0..nodes {
+                    c.bus.write32(node(i) + 4, node(i + 1));
+                    c.bus.write32(node(i) + 0x18, OBJECTS + 0x100 * i);
+                    c.bus.write32(OBJECTS + 0x100 * i + 0x78, r.next_u32());
+                }
+                c.bus.write32(STREAM, VT);
+                c.bus.write16(VT + 8, (r.next_u32() % 0x20) as u16 & !3);
+                c.bus.write32(VT + 0xc, FAKE);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(STREAM);
             },
         );
     }

@@ -259,6 +259,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_get_rider_rating_tier,
         "SSXAudioSystem_GetRiderRatingTier",
     ),
+    (
+        0x0028_8a20,
+        ssx_audio_system_get_rider_listener_index,
+        "SSXAudioSystem_GetRiderListenerIndex",
+    ),
+    (
+        0x0028_8b40,
+        ssx_audio_find_view_in_range,
+        "SSXAudioSystem_FindViewInRange",
+    ),
 ];
 
 /// gp-relative `.lit4` constants.
@@ -3757,6 +3767,225 @@ pub fn ssx_audio_system_get_rider_rating_tier(c: &mut Cpu) {
     })
 }
 
+/// `SSXAudioSystem_GetListenerCount` (0x288ce8).
+pub(crate) const AUDIO_GET_LISTENER_COUNT: Callee = Callee {
+    addr: 0x0028_8ce8,
+    f: ee::s07::SSXAudioSystem_GetListenerCount,
+};
+
+/// `SSXAudioSystem_GetViewPos` (0x288ac0).
+pub(crate) const AUDIO_GET_VIEW_POS: Callee = Callee {
+    addr: 0x0028_8ac0,
+    f: ee::s07::SSXAudioSystem_GetViewPos,
+};
+
+/// The loop body of [`ssx_audio_find_view_in_range`] (a resume entry).
+pub(crate) const FIND_VIEW_BODY: u32 = 0x0028_8b78;
+
+/// `int SSXAudioSystem_FindViewInRange(void* self, sAudV4* pos, float radius)`
+/// (0x288b40): the index of the first listener view whose position lies
+/// within `radius * 100` of `pos` (squared 4D distance from VU0), else -1.
+/// The loop head (0x288b78) is a resume entry: an event at the back edge
+/// can unwind there.
+pub fn ssx_audio_find_view_in_range(c: &mut Cpu) {
+    let frame = Frame { size: 0x70 };
+    guest(c, |c| {
+        match c.pc {
+            0x0028_8b40 => {
+                c.cycles += 14;
+                Frame::open(c, 0x70);
+                c.g[AT][0] = 0x42c8_0000; // 100.0f
+                c.mtc1(AT, 0);
+                frame.save_fpr(c, 20, 0x60);
+                c.mul_s(20, 12, 0);
+                frame.save(c, S0, 0x50);
+                frame.save(c, S1, 0x40);
+                c.g[S0][0] = 0;
+                frame.save(c, S2, 0x30);
+                c.g[S1][0] = c.g[A0][0];
+                // f20 = (radius * 100)^2
+                c.mul_s(20, 20, 20);
+                frame.save_ra(c, 0x20);
+                c.g[S2][0] = c.g[A1][0];
+            }
+            FIND_VIEW_BODY => {
+                if find_view_in_range_body(c, frame)? {
+                    return find_view_in_range_exit(c, frame);
+                }
+            }
+            pc => {
+                c.jump_out(pc, 0x0028_8b40, 0x0028_8c04);
+                return Ok(());
+            }
+        }
+        loop {
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S1][0];
+            AUDIO_GET_LISTENER_COUNT.call(c, 0x0028_8bd8)?;
+            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[V0][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                c.cycles += 1;
+                c.g[V0][0] = u64::MAX; // -1: none in range
+                break;
+            }
+            c.g[A0][0] = c.g[S1][0];
+            if event_due(c) && crate::events::back_edge_unwinds(c, FIND_VIEW_BODY) {
+                return Ok(());
+            }
+            if find_view_in_range_body(c, frame)? {
+                break;
+            }
+        }
+        find_view_in_range_exit(c, frame)
+    })
+}
+
+/// One view of [`ssx_audio_find_view_in_range`] (0x288b78): true (with
+/// v0 = index) when view `s0` is in range, else `s0 += 1`.
+pub(crate) fn find_view_in_range_body(
+    c: &mut Cpu,
+    frame: Frame,
+) -> Result<bool, crate::call::Unwound> {
+    use ssx3_ee_rt::vu0::{W, Y, Z};
+    c.cycles += 21;
+    c.g[A1][0] = c.g[S0][0];
+    AUDIO_GET_VIEW_POS.call(c, 0x0028_8b80)?;
+    // d = view_pos - pos, through the stack as the original spills it.
+    c.lqc2(3, r32(c, V0));
+    c.lqc2(4, r32(c, S2));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, frame.at(c, 0x10));
+    c.lq(V0, frame.at(c, 0x10));
+    c.sq(V0, frame.at(c, 0));
+    c.lqc2(3, frame.at(c, 0));
+    c.lqc2(5, frame.at(c, 0));
+    // dot(d, d) in vf4.x (vf6.x = 1.0)
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 0);
+    c.c_lt_s(0, 20);
+    c.g[V0][0] = c.g[S0][0];
+    if c.fcc() {
+        return Ok(true);
+    }
+    c.cycles += 1;
+    c.g[S0][0] = sx(r32(c, S0).wrapping_add(1));
+    Ok(false)
+}
+
+/// The epilogue of [`ssx_audio_find_view_in_range`] (0x288be8).
+pub(crate) fn find_view_in_range_exit(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 7;
+    frame.restore(c, S0, 0x50);
+    frame.restore(c, S1, 0x40);
+    frame.restore(c, S2, 0x30);
+    frame.restore_ra(c, 0x20);
+    frame.restore_fpr(c, 20, 0x60);
+    frame.close(c);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// 0x00288a20 SSXAudioSystem_GetRiderListenerIndex
+
+/// Rider fields read by [`ssx_audio_system_get_rider_listener_index`].
+pub(crate) const RLI_FIXED_FLAG: u32 = 0x874;
+
+pub(crate) const RLI_FIXED_ON: u32 = 0x87c;
+
+pub(crate) const RLI_FIXED_INDEX: u32 = 0x870;
+
+/// The rider's embedded object whose vtable slot 5 (`+0x28`) gives its
+/// world position.
+pub(crate) const RLI_POS_OBJECT: u32 = 0x6c0;
+
+/// `int SSXAudioSystem_GetRiderListenerIndex(SSXAudioSystem* self, Rider*
+/// rider)` (0x288a20): which listener (view) hears this rider. 0 outside the
+/// game; the rider's fixed index (`+0x870`) when it has one (`+0x874` and
+/// `+0x87c` set); 0 with a single listener; else whether the rider's
+/// position is closer to the second view.
+pub fn ssx_audio_system_get_rider_listener_index(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        Callee {
+            addr: 0x0028_b1b0,
+            f: ee::s07::SSXAudioSystem_IsInGame,
+        }
+        .call(c, 0x0028_8a3c)?;
+        let in_game = c.g[V0][0] != 0;
+        c.g[V0][0] = 0;
+        // Ends at the shared "restore s0" block (+1) unless the second-view
+        // test ran.
+        let mut via_restore = true;
+        if in_game {
+            let rider = c.g[S0][0] as u32;
+            c.cycles += 3;
+            c.g[V0][0] = c.lw(rider.wrapping_add(RLI_FIXED_FLAG));
+            c.g[V1][0] = 0;
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                c.g[V0][0] = c.lw(rider.wrapping_add(RLI_FIXED_ON));
+                c.g[V1][0] = (0 < c.g[V0][0]) as u64;
+            }
+            c.cycles += 2;
+            if c.g[V1][0] != 0 {
+                c.cycles += 2;
+                c.g[V0][0] = c.lw(rider.wrapping_add(RLI_FIXED_INDEX));
+            } else {
+                c.cycles += 5;
+                c.g[A0][0] = c.g[S1][0];
+                Callee {
+                    addr: 0x0028_8ce8,
+                    f: ee::s07::SSXAudioSystem_GetListenerCount,
+                }
+                .call(c, 0x0028_8a70)?;
+                c.g[V1][0] = 0x1;
+                let rider = c.g[S0][0] as u32;
+                c.g[A1][0] = sx(rider.wrapping_add(RLI_POS_OBJECT));
+                if c.g[V0][0] == c.g[V1][0] {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                } else {
+                    c.cycles += 10;
+                    c.g[V1][0] = c.lw(rider.wrapping_add(RLI_POS_OBJECT));
+                    c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x28));
+                    c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x2c));
+                    let method = c.g[V0][0] as u32;
+                    c.g[A0][0] = sx((c.g[A1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                    call_ptr(c, method, 0x0028_8a90)?;
+                    c.g[A0][0] = c.g[S1][0];
+                    c.g[A1][0] = c.g[V0][0];
+                    Callee {
+                        addr: 0x0028_8940,
+                        f: ee::s07::SSXAudioSystem_IsCloserToSecondView,
+                    }
+                    .call(c, 0x0028_8a9c)?;
+                    via_restore = false;
+                }
+            }
+        }
+        if via_restore {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4956,6 +5185,110 @@ pub(crate) mod tests {
                     let v = r.next_u32() as u8 % (scale + 1);
                     c.bus.write8(0x0053_5538 + i, v);
                 }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// The audio world (gp-0x848) with an app whose view list holds 0..3
+    /// views (or no list: one listener, view 0 read from low RAM) and a
+    /// listener position near or far from them.
+    #[test]
+    fn ssx_audio_find_view_in_range_matches() {
+        use crate::difftest::GAME_GP;
+        check(
+            ee::s07::f_00288b40__generated,
+            ssx_audio_find_view_in_range,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x288b_40c3 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x0028_8b40;
+                c.g[GP][0] = sx(GAME_GP);
+                let world = DATA;
+                let app = DATA + 0x100;
+                let list = DATA + 0x200;
+                let pos = DATA + 0x400;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, app);
+                let has_list = seed % 7 != 0;
+                c.bus.write32(app + 0x84, if has_list { list } else { 0 });
+                let n = seed % 4;
+                c.bus.write32(list + 0x10, n);
+                let spread = if seed % 3 == 0 { 1.0 } else { 20.0 };
+                for i in 0..3 {
+                    let view = DATA + 0x1000 + i * 0x40;
+                    c.bus.write32(list + 4 + i * 4, view);
+                    put_vec(
+                        c,
+                        view + 0x20,
+                        [r.f32(spread), r.f32(spread), r.f32(spread), r.f32(1.0)],
+                    );
+                }
+                put_vec(
+                    c,
+                    pos,
+                    [r.f32(spread), r.f32(spread), r.f32(spread), r.f32(1.0)],
+                );
+                c.g[A0][0] = sx(DATA + 0x800);
+                c.g[A1][0] = sx(pos);
+                c.f[12] = if seed % 11 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(0.2) & 0x7fff_ffff
+                };
+            },
+        );
+    }
+
+    /// SSXAudioSystem_GetRiderListenerIndex: outside / inside the game, the
+    /// rider's fixed index on or off (flag, on word), one or two listeners;
+    /// with two the rider's position getter is a fake (may unwind) and the
+    /// real IsCloserToSecondView compares against two random views.
+    #[test]
+    fn ssx_audio_system_get_rider_listener_index_matches() {
+        use crate::difftest::fakes::{machine, vtable};
+        use crate::difftest::{check, fill, DATA, GAME_GP};
+        const THIS: u32 = DATA + 0x1_0000;
+        const RIDER: u32 = DATA + 0x2_0000;
+        const WORLD: u32 = DATA + 0x3_0000;
+        const APP: u32 = DATA + 0x3_1000;
+        const VIEWS: u32 = DATA + 0x3_2000;
+        const VIEW: u32 = DATA + 0x3_3000;
+        let f = |x: f32| x.to_bits();
+        check(
+            ee::s07::f_00288a20__generated,
+            ssx_audio_system_get_rider_listener_index,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0028_8a20, 1);
+                c.pc = 0x0028_8a20;
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = sx(RIDER);
+                // In the game (the world's app word) or not.
+                c.bus.write32(GAME_GP - 0x848, WORLD);
+                c.bus
+                    .write32(WORLD + 0x84, if seed % 7 == 0 { 0 } else { APP });
+                c.bus.write32(APP + 0x84, VIEWS);
+                c.bus.write32(VIEWS + 0x10, 1 + (seed / 2) % 2);
+                for i in 0..2u32 {
+                    let v = VIEW + 0x100 * i;
+                    c.bus.write32(VIEWS + 4 + 4 * i, v);
+                    for k in 0..0x40u32 {
+                        c.bus
+                            .write32(v + 4 * k, f(r.next_u32() as f32 / 1e7 - 200.0));
+                    }
+                }
+                // The fixed listener index.
+                let flag = [0u32, 1, 0x8000_0000][(seed % 3) as usize];
+                let on = [0u32, 2, 0xffff_ffff][((seed / 3) % 3) as usize];
+                c.bus.write32(RIDER + RLI_FIXED_FLAG, flag);
+                c.bus.write32(RIDER + RLI_FIXED_ON, on);
+                c.bus.write32(RIDER + RLI_FIXED_INDEX, r.next_u32() % 2);
+                let vt = vtable(c, &mut r, &[0x28]);
+                c.bus.write32(RIDER + RLI_POS_OBJECT, vt);
+                fill(c, &mut r, DATA, 0x10);
             },
         );
     }

@@ -14,6 +14,7 @@ use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::ai::save_state_write;
 pub(crate) use crate::game::ai::ai::virtual_call_slot;
 use crate::game::misc::STATUS_EIE;
 pub(crate) use crate::game::wscript::wscriptman::frame_at;
@@ -69,6 +70,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0013_7750,
         rider_wipeout_state_update_air,
         "RiderWipeoutState_UpdateAir",
+    ),
+    (
+        0x0013_8ad8,
+        rider_wipeout_state_save_state,
+        "RiderWipeoutState_SaveState",
     ),
 ];
 
@@ -1087,6 +1093,12 @@ pub fn rider_wipeout_state_update_air(c: &mut Cpu) {
     })
 }
 
+/// `void RiderWipeoutState_SaveState(RiderWipeoutState* self, Stream* s)`
+/// (0x138ad8): writes the 0x40-byte state to the stream.
+pub fn rider_wipeout_state_save_state(c: &mut Cpu) {
+    save_state_write(c, 0x40, 0x0013_8b00);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1576,6 +1588,23 @@ pub(crate) mod tests {
                 c.bus.write32(AP + 0xa4, now.to_bits());
                 c.bus.write32(AP + 0x98, end.to_bits());
                 c.g[A0][0] = sx(STATE);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::events::{check_events, schedule};
+    use crate::difftest::RA as SENTINEL;
+    pub(crate) use crate::game::ai::ai::tests::save_state_fixture;
+
+    #[test]
+    fn rider_wipeout_state_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s01::f_00138ad8__generated,
+            rider_wipeout_state_save_state,
+            300,
+            &|c, seed| {
+                save_state_fixture(c, seed, 0x0013_8ad8);
+                c.pc = 0x0013_8ad8;
             },
         );
     }

@@ -17,7 +17,11 @@ use crate::events;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::ai::rider_save_state_raw;
+pub(crate) use crate::game::ai::ai::rider_state_save_forward;
+pub(crate) use crate::game::ai::ai::rider_state_save_self_bytes;
 pub(crate) use crate::game::ai::ai::virtual_call_slot;
+pub(crate) use crate::game::ai::ai::SAVE_STATE_STREAM_WRITE;
 pub(crate) use crate::game::ai::computer::fr_2 as fr;
 pub(crate) use crate::game::ai::computer::gp_2 as gp_3;
 pub(crate) use crate::game::ai::computer::ldf_2 as ldf;
@@ -164,6 +168,26 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0013_f8f8,
         obj_ptr_array_merge_sort,
         "ObjPtrArray_MergeSort",
+    ),
+    (
+        0x0013_9970,
+        rider_handplant_state_save_state,
+        "RiderHandplantState_SaveState",
+    ),
+    (
+        0x0013_acb0,
+        rider_air_state_save_state,
+        "RiderAirState_SaveState",
+    ),
+    (
+        0x0013_c5e0,
+        rider_railslide_state_save_state,
+        "RiderRailslideState_SaveState",
+    ),
+    (
+        0x0013_f848,
+        rider_ground_state_save_state,
+        "RiderGroundState_SaveState",
     ),
 ];
 
@@ -8177,6 +8201,52 @@ pub fn obj_ptr_array_merge_sort(c: &mut Cpu) {
     })
 }
 
+/// `void RiderGroundState::SaveState(RiderGroundState* this, Stream* s)`
+/// (0x13f848): writes the state's 0x18-byte block to the replay stream.
+pub fn rider_ground_state_save_state(c: &mut Cpu) {
+    rider_save_state_raw(c, 0x18, 0x0013_f870);
+}
+
+/// `void RiderRailslideState_SaveState(RiderRailslideState* self, cStream*
+/// stream)` (0x13c5e0): write the state's first 0x50 bytes to the stream.
+pub fn rider_railslide_state_save_state(c: &mut Cpu) {
+    rider_state_save_self_bytes(c, 0x50, 0x0013_c608);
+}
+
+/// `void RiderAirState_SaveState(RiderAirState* self, cPbStream* stream)`
+/// (0x13acb0): write the state's 4 bytes.
+pub fn rider_air_state_save_state(c: &mut Cpu) {
+    guest(c, |c| rider_state_save_forward(c, 0x0013_acd8, 0x4))
+}
+
+/// Saved sizes of the handplant state and the reset sub-state.
+pub(crate) const HANDPLANT_STATE_SIZE: u64 = 0xa0;
+
+/// `void RiderHandplantState_SaveState(RiderHandplantState* self, Stream* s)` (0x139970): writes
+/// the handplant state's 0xa0 bytes to the save stream.
+pub fn rider_handplant_state_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[A2][0] = HANDPLANT_STATE_SIZE;
+        // s->Write(self, 0xa0): vtable slot +0x8 `{delta, fn}`.
+        let stream = r32(c, A3);
+        c.g[V1][0] = Addr(stream).lw(c);
+        let vt = r32(c, V1);
+        c.g[A0][0] = Addr(vt).off(0x8).lh(c);
+        c.g[V0][0] = Addr(vt).off(0xc).lw(c);
+        let write = r32(c, V0);
+        c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+        call_ptr(c, write, 0x0013_9998)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     #[test]
@@ -10082,5 +10152,56 @@ pub(crate) mod tests {
                 assert!((value - stock).abs() < 0.001, "{hz} Hz: {value} vs {stock}");
             }
         }
+    }
+
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::ai::ai::tests::oc286_save_block_setup;
+    pub(crate) use crate::game::ai::ai::tests::rider_save_state_setup;
+    pub(crate) use crate::game::ai::ai::tests::rider_state_save_setup;
+    pub(crate) use crate::game::ai::ai::tests::rider_state_save_setup_2;
+
+    /// `RiderGroundState_SaveState`: one stream write of 0x18 bytes.
+    #[test]
+    fn rider_ground_state_save_state_matches() {
+        covered(
+            ee::s01::f_0013f848__generated,
+            rider_ground_state_save_state,
+            200,
+            &|c, seed| rider_save_state_setup(c, seed, 0x0013_f848),
+        );
+    }
+
+    /// RiderRailslideState_SaveState: write(self, 0x50) through a fake.
+    #[test]
+    fn rider_railslide_state_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s01::f_0013c5e0__generated,
+            rider_railslide_state_save_state,
+            64,
+            &|c, seed| rider_state_save_setup(c, seed, 0x0013_c5e0),
+        );
+    }
+
+    #[test]
+    fn rider_air_state_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s01::f_0013acb0__generated,
+            rider_air_state_save_state,
+            60,
+            &|c, seed| rider_state_save_setup_2(c, seed, 0x13_acb0, 0x0013_acb0),
+        );
+    }
+
+    #[test]
+    fn rider_handplant_state_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s01::f_00139970__generated,
+            rider_handplant_state_save_state,
+            200,
+            &|c, seed| oc286_save_block_setup(c, seed, 0x13_9970, 0x0013_9970),
+        );
     }
 }

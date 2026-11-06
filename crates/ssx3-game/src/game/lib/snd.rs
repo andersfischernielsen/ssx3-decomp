@@ -224,6 +224,10 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003d_8780, spch_is_sample_allowed, "SPCH_IsSampleAllowed"),
     (0x003d_b4d0, spch_rand_next, "SPCH_RandNext"),
     (0x003d_b5c0, spch_random_no_repeat, "SPCH_RandomNoRepeat"),
+    (0x003b_76e8, sndstrm_queue_request, "SNDSTRM_QueueRequest"),
+    (0x003b_b0c8, snd_next_handle_serial, "SND_NextHandleSerial"),
+    (0x003c_72a0, snd_random_range, "SND_RandomRange"),
+    (0x003d_6e30, spch_history_find, "SPCH_HistoryFind"),
 ];
 
 /// Fields of the driver state block.
@@ -13060,6 +13064,389 @@ pub fn snd_play(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod spch_hist_f {
+
+    /// Flags: low nibble = extra word count, bit 7 = a bitmap follows.
+    pub const FLAGS: u32 = 0x4;
+
+    /// Width (bits per bitmap row).
+    pub const WIDTH: u32 = 0x5;
+
+    /// History length (ring size).
+    pub const COUNT: u32 = 0x6;
+}
+
+/// `int SPCH_HistoryFind(SpchHistory* h, int key)` (0x3d6e30): look `key`
+/// up in the speech history ring, newest first; returns its age + 1, or 0
+/// when it is not there. The ring (a write-position byte, then `count`
+/// entries) lies past the header tables, whose size follows from the
+/// flags/width bytes. A leaf.
+pub fn spch_history_find(c: &mut Cpu) {
+    use spch_hist_f::*;
+    c.cycles += 4;
+    c.g[A2][0] = c.g[A0][0];
+    let hist = r32(c, A2);
+    c.g[T0][0] = Addr(hist.wrapping_add(COUNT)).lbu(c);
+    c.g[T3][0] = 0; // result: not found
+    if c.g[T0][0] as i64 > 0 {
+        c.cycles += 13;
+        c.g[A0][0] = Addr(hist.wrapping_add(FLAGS)).lbu(c);
+        c.g[T1][0] = 0; // bitmap bytes
+        c.g[A3][0] = Addr(hist.wrapping_add(WIDTH)).lbu(c);
+        c.g[V1][0] = c.g[A0][0] & 0xf;
+        c.g[V0][0] = sx(r32(c, V1).wrapping_add(2));
+        c.mult(0, V0, A3, V0);
+        c.g[V1][0] = sx(r32(c, V1) << 2);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(0xf)) & 0x3ffc;
+        c.g[V0][0] = sx(hist.wrapping_add(r32(c, V0)));
+        c.g[A0][0] &= 0x80;
+        c.g[A2][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+        if c.g[A0][0] != 0 {
+            // A bitmap of (width + 7) / 8 bytes plus one.
+            c.cycles += 7;
+            c.g[A0][0] = sx(r32(c, A3).wrapping_add(7));
+            c.g[V1][0] = ((-1i64) < (c.g[A0][0] as i64)) as u64;
+            c.g[V0][0] = if c.g[V1][0] != 0 {
+                c.g[A0][0]
+            } else {
+                sx(r32(c, A3).wrapping_add(0xe))
+            };
+            c.g[V0][0] = sx(((r32(c, V0) as i32) >> 3) as u32);
+            c.g[T1][0] = sx(r32(c, V0).wrapping_add(1));
+        }
+        c.cycles += 8;
+        c.g[A0][0] = sx(r32(c, A2).wrapping_add(r32(c, T1)));
+        c.g[A3][0] = 0; // age
+        c.g[A2][0] = Addr(r32(c, A0)).lbu(c); // write position
+        c.g[T1][0] = sx(r32(c, T0).wrapping_sub(1));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_add(1)); // entries
+        c.g[T2][0] = u64::MAX;
+        c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+        loop {
+            c.cycles += 6;
+            c.g[V0][0] = ((c.g[T2][0] as i64) < (c.g[A2][0] as i64)) as u64;
+            if c.g[V0][0] == 0 {
+                c.g[A2][0] = c.g[T1][0]; // wrap to the last entry
+            }
+            c.g[V1][0] = sx(r32(c, A0).wrapping_add(r32(c, A2)));
+            c.g[V0][0] = Addr(r32(c, V1)).lbu(c);
+            if c.g[V0][0] == c.g[A1][0] {
+                c.cycles += 2;
+                c.g[T3][0] = sx(r32(c, A3).wrapping_add(1));
+                break;
+            }
+            c.g[A3][0] = sx(r32(c, A3).wrapping_add(1));
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[A3][0] as i64) < (c.g[T0][0] as i64)) as u64;
+            c.g[A2][0] = sx(r32(c, A2).wrapping_sub(1));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003d_6eb0);
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[T3][0];
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// 0x003c72a0 SND_RandomRange
+
+/// `int SND_RandomRange(int range)` (0x3c72a0): a random value in about
+/// `[-range, range)`: `range` is clamped to `0..=0x10000`, then
+/// `((SND_Random() & 0x7fff) - 0x4000) * range >> 14`.
+pub fn snd_random_range(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let range = c.g[S0][0] as i64;
+        c.g[V0][0] = (0x10000 < range) as u64;
+        if range > 0x10000 {
+            c.cycles += 2;
+            c.g[S0][0] = 0x10000;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = (-1 < range) as u64;
+            if range <= -1 {
+                c.g[S0][0] = 0;
+            }
+        }
+        c.cycles += 10;
+        Callee {
+            addr: 0x003b_c5c8,
+            f: ee::s13::SND_Random,
+        }
+        .call(c, 0x003c_72d8)?;
+        c.g[V0][0] &= 0x7fff;
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(0x4000));
+        c.mult(0, V0, V0, S0);
+        frame.restore(c, S0, 0x10);
+        c.g[V0][0] = sx(((c.g[V0][0] as u32) as i32 >> 14) as u32);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The last handle serial handed out (a byte, 0x44c588 = 0x450000 - 0x3a78).
+pub(crate) const SND_SERIAL_HI: u32 = 0x0045_0000;
+
+pub(crate) const SND_SERIAL_LO: u32 = 0x3a78;
+
+/// The sound voice table (0x50a8e8): voice count (i16) at +0x17e, voice
+/// array at +0x1f0, 0x8c bytes per voice; a voice's in-use flag (i8) at
+/// +0x69 and its handle serial (u8) at +0x26.
+pub(crate) const SND_VOICES: u32 = 0x0051_0000 - 0x5718;
+
+pub(crate) const SND_VOICE_COUNT: u32 = 0x17e;
+
+pub(crate) const SND_VOICE_ARRAY: u32 = 0x1f0;
+
+pub(crate) const SND_VOICE_SIZE: u32 = 0x8c;
+
+pub(crate) const SND_VOICE_IN_USE: u32 = 0x69;
+
+pub(crate) const SND_VOICE_SERIAL: u32 = 0x26;
+
+/// `u8 SND_NextHandleSerial(void)` (0x3bb0c8): advances the 8-bit handle
+/// serial (skipping 0) until no voice in use carries it, and returns it.
+/// Both loops' back edges check for events (the inner loop at 0x3bb110, the
+/// retry at 0x3bb0cc); the loop state lives in registers throughout.
+pub fn snd_next_handle_serial(c: &mut Cpu) {
+    c.cycles += 1;
+    c.g[V0][0] = sx(SND_SERIAL_HI);
+    'retry: loop {
+        // Bump the serial; 0 is skipped.
+        c.cycles += 6;
+        let serial = Addr(r32(c, V0).wrapping_sub(SND_SERIAL_LO));
+        c.g[V1][0] = serial.lbu(c);
+        c.g[A3][0] = c.g[V0][0];
+        c.g[A0][0] = sx(r32(c, V1).wrapping_add(1));
+        c.g[V1][0] = c.g[A0][0] & 0xff;
+        serial.sb(c, c.g[A0][0]);
+        if c.g[V1][0] == 0 {
+            c.cycles += 2;
+            c.g[V0][0] = sx(r32(c, A0).wrapping_add(1));
+            serial.sb(c, c.g[V0][0]);
+        }
+        // Scan the voices for one in use with this serial.
+        c.cycles += 5;
+        c.g[V0][0] = sx(SND_VOICES);
+        c.g[A1][0] = Addr(SND_VOICES).off(SND_VOICE_COUNT).lh(c);
+        let none = (c.g[A1][0] as i64) <= 0;
+        c.g[A0][0] = 0;
+        if !none {
+            c.cycles += 4;
+            c.g[A2][0] = c.g[A1][0];
+            c.g[V1][0] = Addr(SND_VOICES).off(SND_VOICE_ARRAY).lw(c);
+            c.g[A1][0] = Addr(r32(c, A3).wrapping_sub(SND_SERIAL_LO)).lbu(c);
+            loop {
+                c.cycles += 3;
+                let voice = Addr(r32(c, V1));
+                c.g[V0][0] = voice.off(SND_VOICE_IN_USE).lb(c);
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(1));
+                if c.g[V0][0] != 0 {
+                    c.cycles += 3;
+                    c.g[V0][0] = voice.off(SND_VOICE_SERIAL).lbu(c);
+                    let taken = c.g[V0][0] == c.g[A1][0];
+                    c.g[V0][0] = sx(SND_SERIAL_HI);
+                    if taken {
+                        if event_due(c) {
+                            deliver_event_here(c, 0x003b_b0cc);
+                        }
+                        continue 'retry;
+                    }
+                }
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[A0][0] as i64) < (c.g[A2][0] as i64)) as u64;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(SND_VOICE_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003b_b110);
+                }
+            }
+        }
+        c.cycles += 2;
+        c.g[V0][0] = Addr(r32(c, A3).wrapping_sub(SND_SERIAL_LO)).lbu(c);
+        ret(c);
+        return;
+    }
+}
+
+/// `SNDSTRM` stream: file handle at +0, request id counter at +0xc,
+/// queued requests list at +0x11c, free request list at +0x128 (its count
+/// at +0x130). A request node: data at +0x8, id | flags at +0xc, user
+/// word at +0x20 (0x28 bytes, cleared on reuse).
+pub(crate) const SNDSTRM_QUEUE_HANDLE: u32 = 0x0;
+
+pub(crate) const SNDSTRM_QUEUE_NEXT_ID: u32 = 0xc;
+
+pub(crate) const SNDSTRM_QUEUE_QUEUED: u32 = 0x11c;
+
+pub(crate) const SNDSTRM_QUEUE_FREE: u32 = 0x128;
+
+pub(crate) const SNDSTRM_QUEUE_FREE_COUNT: u32 = 0x130;
+
+pub(crate) const SNDSTRM_QUEUE_REQ_DATA: u32 = 0x8;
+
+pub(crate) const SNDSTRM_QUEUE_REQ_ID: u32 = 0xc;
+
+pub(crate) const SNDSTRM_QUEUE_REQ_USER: u32 = 0x20;
+
+pub(crate) const SNDSTRM_QUEUE_REQ_SIZE: u64 = 0x28;
+
+/// The stream-file owner tag `'lECS'` passed to the file queue.
+pub(crate) const SNDSTRM_QUEUE_TAG: u64 = 0x6c45_4353;
+
+/// `StreamFile_QueueRange`, `StreamFile_QueueFile`, `memset`.
+pub(crate) const SNDSTRM_QUEUE_RANGE: u32 = 0x003e_0c88;
+
+pub(crate) const SNDSTRM_QUEUE_FILE: u32 = 0x003e_0d80;
+
+pub(crate) const SNDSTRM_QUEUE_MEMSET: u32 = 0x0041_6210;
+
+/// `int SNDSTRM_QueueRequest(int stream, int user, int a2, int a3, int
+/// mode)` (0x3b76e8): queue a request on sound stream `stream`. `mode` 0
+/// queues the file range (a2, a3), mode 1 the whole file a2, any other
+/// mode takes a3 as the already-queued file request. Takes a free request
+/// node, links it into the queued list with the next request id (steps of
+/// 0x100, back to 0 past 2^31, or'ed with `stream`) and returns that id;
+/// -8 for no stream, -13 for no free node, -1 when the file queue failed.
+pub fn sndstrm_queue_request(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S1, 0x50);
+        c.g[S4][0] = c.g[A0][0];
+        frame.save(c, S2, 0x40);
+        c.g[S1][0] = c.g[T0][0];
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save(c, S5, 0x10);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S0, 0x60);
+        frame.save_ra(c, 0);
+        c.g[S5][0] = c.g[A1][0];
+        Callee {
+            addr: 0x003b_6a38,
+            f: ee::s13::SNDSTRM_GetStream,
+        }
+        .call(c, 0x003b_7720)?;
+        c.g[S0][0] = c.g[V0][0];
+        'done: {
+            c.g[V0][0] = (-8i64) as u64;
+            if c.g[S0][0] == 0 {
+                break 'done;
+            }
+            c.cycles += 3;
+            let free = Addr((c.g[S0][0] as u32).wrapping_add(SNDSTRM_QUEUE_FREE_COUNT)).lw(c);
+            c.g[V0][0] = (-13i64) as u64;
+            if free == 0 {
+                break 'done;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+            if c.g[S1][0] == 0 {
+                c.cycles += 8;
+                c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(SNDSTRM_QUEUE_HANDLE)).lw(c);
+                c.g[A2][0] = c.g[S2][0];
+                c.g[A1][0] = c.g[S3][0];
+                c.g[A3][0] = SNDSTRM_QUEUE_TAG;
+                call_ptr(c, SNDSTRM_QUEUE_RANGE, 0x003b_7758)?;
+                c.g[S2][0] = c.g[V0][0];
+            } else {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S3][0];
+                if c.g[S1][0] == c.g[V0][0] {
+                    c.cycles += 6;
+                    c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(SNDSTRM_QUEUE_HANDLE)).lw(c);
+                    c.g[A2][0] = 0;
+                    c.g[A3][0] = SNDSTRM_QUEUE_TAG;
+                    call_ptr(c, SNDSTRM_QUEUE_FILE, 0x003b_777c)?;
+                    c.g[S2][0] = c.g[V0][0];
+                }
+            }
+            c.cycles += 2;
+            c.g[V0][0] = u64::MAX;
+            if c.g[S2][0] == 0 {
+                break 'done;
+            }
+
+            // Take a free node, clear it, queue it.
+            c.cycles += 19;
+            Callee {
+                addr: 0x003b_58a0,
+                f: ee::s13::SND_Lock,
+            }
+            .call(c, 0x003b_7790)?;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(SNDSTRM_QUEUE_FREE));
+            Callee {
+                addr: 0x003c_62e8,
+                f: ee::s13::SND_ListPopFront,
+            }
+            .call(c, 0x003b_7798)?;
+            c.g[S1][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            c.g[A0][0] = c.g[S1][0];
+            c.g[A2][0] = SNDSTRM_QUEUE_REQ_SIZE;
+            call_ptr(c, SNDSTRM_QUEUE_MEMSET, 0x003b_77ac)?;
+            c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(SNDSTRM_QUEUE_QUEUED));
+            c.g[A1][0] = c.g[S1][0];
+            Callee {
+                addr: 0x003c_62b8,
+                f: ee::s13::SND_ListPushBack,
+            }
+            .call(c, 0x003b_77b8)?;
+            let stream = c.g[S0][0] as u32;
+            let req = c.g[S1][0] as u32;
+            let data = c.g[S2][0];
+            Addr(req.wrapping_add(SNDSTRM_QUEUE_REQ_DATA)).sw(c, data);
+            let next = Addr(stream.wrapping_add(SNDSTRM_QUEUE_NEXT_ID)).lw(c);
+            let next = sx((next as u32).wrapping_add(0x100));
+            c.g[V0][0] = next;
+            Addr(stream.wrapping_add(SNDSTRM_QUEUE_NEXT_ID)).sw(c, next);
+            let next = Addr(stream.wrapping_add(SNDSTRM_QUEUE_NEXT_ID)).lw(c);
+            c.g[V1][0] = next;
+            if (next as i64) < 0 {
+                Addr(stream.wrapping_add(SNDSTRM_QUEUE_NEXT_ID)).sw(c, 0);
+            }
+
+            c.cycles += 8;
+            let id = Addr(stream.wrapping_add(SNDSTRM_QUEUE_NEXT_ID)).lw(c) | c.g[S4][0];
+            c.g[V0][0] = id;
+            Addr(req.wrapping_add(SNDSTRM_QUEUE_REQ_ID)).sw(c, id);
+            let user = c.g[S5][0];
+            Addr(req.wrapping_add(SNDSTRM_QUEUE_REQ_USER)).sw(c, user);
+            c.g[S0][0] = Addr(req.wrapping_add(SNDSTRM_QUEUE_REQ_ID)).lw(c);
+            Callee {
+                addr: 0x003b_58d8,
+                f: ee::s13::SND_Unlock,
+            }
+            .call(c, 0x003b_77f0)?;
+            c.g[V0][0] = c.g[S0][0];
+        }
+        c.cycles += 9;
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -17701,6 +18088,248 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(patch);
                 c.g[A2][0] = sx(DATA + 0x4000);
             },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::RA as SENTINEL;
+
+    /// `SPCH_HistoryFind`: empty or 1..12-entry histories with random
+    /// flags/width (bitmap or not), write positions inside the ring (and 0:
+    /// wrap at once), keys present (some several times) or absent.
+    #[test]
+    fn spch_history_find_matches() {
+        use crate::difftest::check_lohi;
+        use spch_hist_f::*;
+        check_lohi(
+            ee::s14::f_003d6e30__generated,
+            spch_history_find,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3d6e_30c7 ^ seed as u64);
+                scramble(c, &mut r);
+                c.pc = 0x003d_6e30;
+                let hist = DATA;
+                fill(c, &mut r, hist, 0x40);
+                let count = if seed % 9 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 12
+                };
+                c.bus.write8(hist + COUNT, count as u8);
+                c.bus.write8(hist + FLAGS, r.next_u32() as u8);
+                c.bus.write8(hist + WIDTH, r.next_u32() as u8);
+                // The ring and everything after the header: small values so keys hit.
+                for i in 8..0x400 {
+                    c.bus.write8(hist + i, (r.next_u32() % 8) as u8);
+                }
+                // Write positions: mostly within 0..=count (some hit the wrap).
+                let flags = c.bus.read8(hist + FLAGS) as u32;
+                let width = c.bus.read8(hist + WIDTH) as u32;
+                let t = flags & 0xf;
+                let mut ring = hist + ((width * (t + 2) + 0xf) & 0x3ffc) + t * 4;
+                if flags & 0x80 != 0 {
+                    ring += (width + 7) / 8 + 1;
+                }
+                c.bus.write8(ring, (r.next_u32() % (count + 1)) as u8);
+                c.g[A0][0] = sx(hist);
+                c.g[A1][0] = if seed % 11 == 0 {
+                    sx(r.next_u32())
+                } else {
+                    (r.next_u32() % 9) as u64
+                };
+            },
+        );
+    }
+
+    /// SND_RandomRange: ranges around the clamps (negative, 0, inside,
+    /// 0x10000, above, 64-bit values); the real SND_Random over a random
+    /// generator state.
+    #[test]
+    fn snd_random_range_matches() {
+        use crate::difftest::{fill, scramble, Rng};
+        check(
+            ee::s13::f_003c72a0__generated,
+            snd_random_range,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x003c_72a0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x003c_72a0;
+                // The generator state (0x50ac50).
+                fill(c, &mut r, 0x0050_ac50, 0x10);
+                let range: u64 = match seed % 8 {
+                    0 => u64::MAX,
+                    1 => 0,
+                    2 => 0x10000,
+                    3 => 0x10001,
+                    4 => sx(r.next_u32()),
+                    5 => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+                    _ => (r.next_u32() % 0x10000) as u64,
+                };
+                c.g[A0][0] = range;
+            },
+        );
+    }
+
+    /// The voice table with `count` voices (some negative/zero counts), each
+    /// in use or not, with serials just above the current one so that the
+    /// search retries (including the wrap through 0).
+    pub(crate) fn oc286_snd_voices(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let serial = if seed % 5 == 0 {
+            0xff
+        } else {
+            r.next_u32() as u8
+        };
+        c.bus.write8(SND_SERIAL_HI - SND_SERIAL_LO, serial);
+        let count: i16 = match seed % 7 {
+            0 => -((r.next_u32() % 3) as i16),
+            _ => (r.next_u32() % 10) as i16,
+        };
+        c.bus.write16(SND_VOICES + SND_VOICE_COUNT, count as u16);
+        let voices = DATA + 0x4000;
+        c.bus.write32(SND_VOICES + SND_VOICE_ARRAY, voices);
+        for i in 0..10u32 {
+            let v = voices + i * SND_VOICE_SIZE;
+            let used = if r.next_u32() % 3 == 0 {
+                0
+            } else {
+                r.next_u32() as u8 | 1
+            };
+            c.bus.write8(v + SND_VOICE_IN_USE, used);
+            let ser = serial.wrapping_add(1 + (r.next_u32() % 4) as u8);
+            c.bus.write8(v + SND_VOICE_SERIAL, ser);
+        }
+    }
+
+    /// Serial bump (with the wrap that skips 0) and the retry search over the
+    /// voices in use.
+    #[test]
+    fn snd_next_handle_serial_matches() {
+        check(
+            ee::s13::f_003bb0c8__generated,
+            snd_next_handle_serial,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3b_b0c8, 0);
+                oc286_snd_voices(c, &mut r, seed);
+                c.pc = 0x003b_b0c8;
+            },
+        );
+    }
+
+    /// The same with events due at the back edges (delivered or unwinding).
+    #[test]
+    fn snd_next_handle_serial_events_match() {
+        use crate::difftest::events::{check_events, schedule};
+        check_events(
+            ee::s13::f_003bb0c8__generated,
+            snd_next_handle_serial,
+            60,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3b_b0c9, 0);
+                oc286_snd_voices(c, &mut r, seed | 1);
+                // Enough voices for several back edges.
+                let count = 3 + r.next_u32() % 7;
+                c.bus.write16(SND_VOICES + SND_VOICE_COUNT, count as u16);
+                let mode = schedule(c, &mut r, seed, 0x003b_b0c8);
+                c.next_event = c.cycles + 10;
+                mode
+            },
+        );
+    }
+
+    /// Stream table at 0x50a0a0 (count byte at 0x50a92e), one stream with
+    /// a free list of 0..2 nodes; the SND lock/unlock hooks (0x44c46c,
+    /// 0x44c470) are fakes; the stream file handle is null or has a bad
+    /// magic, so the real `StreamFile_Queue*` take their short path (0).
+    pub(crate) fn sndstrm_queue_fixture(c: &mut Cpu, seed: u32) {
+        use crate::difftest::fakes::{machine, FAKE};
+        let mut r = machine(c, seed, 0x3b76_e800, 2);
+        let streams = 0x0050_a0a0;
+        let stream = DATA;
+        c.bus.write8(0x0050_a92e, 4);
+        let index = match seed % 9 {
+            0 => 5,
+            1 => 2,
+            _ => 1,
+        };
+        for k in 0..4 {
+            c.bus
+                .write32(streams + 4 * k, if k == 1 { stream } else { 0 });
+        }
+        c.bus.write32(0x0044_c46c, FAKE);
+        c.bus.write32(0x0044_c470, FAKE + 0x10);
+        // File handle: null, or an object whose header lacks 'MRTS'.
+        let handle = if seed % 2 == 0 { 0 } else { DATA + 0x800 };
+        c.bus.write32(DATA + 0x800, DATA + 0x900);
+        c.bus.write32(DATA + 0x900, r.next_u32());
+        c.bus.write32(stream + SNDSTRM_QUEUE_HANDLE, handle);
+        let id = match seed % 4 {
+            0 => 0x7fff_ff80u32,
+            _ => r.next_u32() & 0x7fff_ff00,
+        };
+        c.bus.write32(stream + SNDSTRM_QUEUE_NEXT_ID, id);
+        // Free list: 0, 1 or 2 nodes.
+        let nodes = if seed % 7 == 3 { 0 } else { 1 + seed % 2 };
+        let n0 = DATA + 0x1000;
+        let n1 = DATA + 0x1100;
+        crate::difftest::fill(c, &mut r, n0, 0x80);
+        c.bus
+            .write32(stream + SNDSTRM_QUEUE_FREE, if nodes > 0 { n0 } else { 0 });
+        c.bus.write32(
+            stream + SNDSTRM_QUEUE_FREE + 4,
+            if nodes == 2 {
+                n1
+            } else if nodes == 1 {
+                n0
+            } else {
+                0
+            },
+        );
+        c.bus.write32(stream + SNDSTRM_QUEUE_FREE_COUNT, nodes);
+        c.bus.write32(n0, if nodes == 2 { n1 } else { 0 });
+        c.bus.write32(n1, 0);
+        // Queued list: empty or one node.
+        let q = DATA + 0x1200;
+        let queued = seed % 3 == 0;
+        c.bus
+            .write32(stream + SNDSTRM_QUEUE_QUEUED, if queued { q } else { 0 });
+        c.bus.write32(
+            stream + SNDSTRM_QUEUE_QUEUED + 4,
+            if queued { q } else { 0 },
+        );
+        c.bus
+            .write32(stream + SNDSTRM_QUEUE_QUEUED + 8, queued as u32);
+        c.bus.write32(q, 0);
+        c.g[A0][0] = index;
+        c.g[A1][0] = r.next_u32() as u64;
+        c.g[A2][0] = sx(r.next_u32());
+        c.g[A3][0] = match seed % 5 {
+            0 => 0,
+            _ => sx(r.next_u32() | 1),
+        };
+        c.g[T0][0] = match seed % 6 {
+            0 => 0,
+            1 => 1,
+            _ => (2 + r.next_u32() % 4) as u64,
+        };
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x003b_76e8;
+    }
+
+    /// `SNDSTRM_QueueRequest`: no stream, no free node, file queue
+    /// failure (modes 0 and 1), a queued request (id wrap), fakes
+    /// unwinding at the lock or unlock.
+    #[test]
+    fn sndstrm_queue_request_matches() {
+        check(
+            ee::s13::f_003b76e8__generated,
+            sndstrm_queue_request,
+            300,
+            &sndstrm_queue_fixture,
         );
     }
 }

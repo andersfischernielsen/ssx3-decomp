@@ -15,6 +15,7 @@ use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
+pub(crate) use crate::game::ai::ai::stream_write_member;
 pub(crate) use crate::game::ai::ai::virtual_call_slot;
 pub(crate) use crate::game::ai::rider::dot_tail;
 pub(crate) use crate::game::ai::rider::fcc;
@@ -198,6 +199,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0011_a228,
         rider_metrix_finish_trick,
         "RiderMetrix_FinishTrick",
+    ),
+    (
+        0x0011_74b0,
+        rider_metrix_save_state,
+        "RiderMetrix_SaveState",
     ),
 ];
 
@@ -4911,6 +4917,12 @@ pub(crate) fn finish_trick_epilogue(c: &mut Cpu, frame: Frame) {
     frame.close(c);
 }
 
+/// `void RiderMetrix::SaveState(cStream* s)` (0x1174b0): writes the
+/// 0x1ac-byte metrics block.
+pub fn rider_metrix_save_state(c: &mut Cpu) {
+    stream_write_member(c, 0, 0x1ac, 0x0011_74d8);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6117,6 +6129,19 @@ pub(crate) mod tests {
                 c.g[T1][0] = if seed % 2 == 0 { 1 } else { 0 };
                 c.pc = 0x0011_a228;
             },
+        );
+    }
+    use super::*;
+    pub(crate) use crate::game::ai::ai::tests::stream_save_setup;
+
+    /// `RiderMetrix_SaveState`.
+    #[test]
+    fn rider_metrix_save_state_matches() {
+        covered(
+            ee::s00::f_001174b0__generated,
+            rider_metrix_save_state,
+            200,
+            &|c, seed| stream_save_setup(c, seed, 0x0011_74b0),
         );
     }
 }

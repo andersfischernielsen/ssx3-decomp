@@ -83,6 +83,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "AnimSequence_AddTrigger",
     ),
     (0x0031_4518, anim_seq_list_push_anim, "AnimSeqList_PushAnim"),
+    (
+        0x0031_3ad8,
+        anim_sequence_add_event_trigger,
+        "AnimSequence_AddEventTrigger",
+    ),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -1207,6 +1212,65 @@ pub fn anim_sequence_add_trigger(c: &mut Cpu) {
     })
 }
 
+/// `EA_MemAllocNamed` (0x317d70).
+pub(crate) const OC286_MEM_ALLOC_NAMED: Callee = Callee {
+    addr: 0x0031_7d70,
+    f: ee::s10::EA_MemAllocNamed,
+};
+
+/// The allocation name of event triggers (0x48a5b0) and the flags passed.
+pub(crate) const EVENT_TRIGGER_ALLOC_NAME: u32 = 0x0049_0000 - 0x5a50;
+
+pub(crate) const EVENT_TRIGGER_ALLOC_FLAGS: u64 = 0x2000_0000;
+
+/// `AnimSequence` field: head of its event-trigger list.
+pub(crate) const ANIM_SEQ_TRIGGERS_2: u32 = 0xac;
+
+/// Event-trigger node (0x10 bytes): key, active flag, a cleared word, next.
+pub(crate) const TRIGGER_KEY: u32 = 0x0;
+
+pub(crate) const TRIGGER_ACTIVE: u32 = 0x4;
+
+pub(crate) const TRIGGER_CLEARED: u32 = 0x8;
+
+pub(crate) const TRIGGER_NEXT: u32 = 0xc;
+
+pub(crate) const TRIGGER_SIZE: u64 = 0x10;
+
+/// `void AnimSequence_AddEventTrigger(AnimSequence* self, int key)`
+/// (0x313ad8): allocates a 16-byte trigger node `{key, active = 1, 0,
+/// next}` and pushes it on the front of the sequence's trigger list.
+pub fn anim_sequence_add_event_trigger(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 24;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = EVENT_TRIGGER_ALLOC_FLAGS;
+        frame.save(c, S1, 0x10);
+        c.g[A3][0] = 0;
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = TRIGGER_SIZE;
+        c.g[A1][0] = sx(EVENT_TRIGGER_ALLOC_NAME);
+        OC286_MEM_ALLOC_NAMED.call(c, 0x0031_3b08)?;
+        let seq = Addr(r32(c, S0));
+        let node = Addr(r32(c, V0));
+        c.g[A0][0] = seq.off(ANIM_SEQ_TRIGGERS_2).lw(c);
+        c.g[V1][0] = 1;
+        seq.off(ANIM_SEQ_TRIGGERS_2).sw(c, c.g[V0][0]);
+        node.off(TRIGGER_KEY).sw(c, c.g[S1][0]);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        node.off(TRIGGER_ACTIVE).sw(c, c.g[V1][0]);
+        node.off(TRIGGER_NEXT).sw(c, c.g[A0][0]);
+        node.off(TRIGGER_CLEARED).sw(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1856,6 +1920,28 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(seq);
                 c.g[A1][0] = sx(r.next_u32());
                 c.f[12] = r.f32(5.0);
+            },
+        );
+    }
+    use super::*;
+
+    /// A real allocation from the pools/heap, pushed on an empty or
+    /// non-empty trigger list.
+    #[test]
+    fn anim_sequence_add_event_trigger_matches() {
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        check(
+            ee::s10::f_00313ad8__generated,
+            anim_sequence_add_event_trigger,
+            100,
+            &|c, seed| {
+                let mut r = alloc_machine(c, seed, 0x31_3ad8);
+                let seq = DATA + 0x100;
+                let head = if seed % 3 == 0 { 0 } else { DATA + 0x200 };
+                c.bus.write32(seq + ANIM_SEQ_TRIGGERS_2, head);
+                c.g[A0][0] = sx(seq);
+                c.g[A1][0] = sx(r.next_u32());
+                c.pc = 0x0031_3ad8;
             },
         );
     }

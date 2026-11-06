@@ -426,6 +426,59 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_spin_sub_try_reverse,
         "RiderSpinSub_TryReverse",
     ),
+    (0x0012_b7f0, ai_save_state, "AI_SaveState"),
+    (
+        0x0012_c558,
+        rider_gate_sub_save_state,
+        "RiderGateSub_SaveState",
+    ),
+    (
+        0x0012_c9c0,
+        rider_finish_line_sub_save_state,
+        "RiderFinishLineSub_SaveState",
+    ),
+    (
+        0x0012_e708,
+        rider_wipeout_sub_save_state,
+        "RiderWipeoutSub_SaveState",
+    ),
+    (
+        0x0012_f5b0,
+        rider_reset_sub_save_state,
+        "RiderResetSub_SaveState",
+    ),
+    (
+        0x0012_fbf0,
+        rider_natural_air_sub_save_state,
+        "RiderNaturalAirSub_SaveState",
+    ),
+    (
+        0x0013_1598,
+        rider_board_press_sub_save_state,
+        "RiderBoardPressSub_SaveState",
+    ),
+    (
+        0x0013_2840,
+        rider_railslide_sub_save_state,
+        "RiderRailslideSub_SaveState",
+    ),
+    (
+        0x0013_30b8,
+        rider_handplant_sub_save_state,
+        "RiderHandplantSub_SaveState",
+    ),
+    (0x0013_3128, rider_spin_sub_enter, "RiderSpinSub_Enter"),
+    (0x0013_4cb0, rider_spin_sub_exit, "RiderSpinSub_Exit"),
+    (
+        0x0013_61f8,
+        rider_spin_sub_save_state,
+        "RiderSpinSub_SaveState",
+    ),
+    (
+        0x0013_68e8,
+        rider_uber_grind_sub_save_state,
+        "RiderUberGrindSub_SaveState",
+    ),
 ];
 
 /// `gp`-relative globals used here.
@@ -14521,6 +14574,785 @@ pub fn rider_spin_sub_try_reverse(c: &mut Cpu) {
     })
 }
 
+/// The shared body of the rider sub-state `SaveState` forwarders:
+/// `vt = *(VTable**)stream; vt[1].fn(stream + vt[1].delta, self, size)` — the
+/// state stream's write method (vtable slot 1, at +8) saves `size` bytes of
+/// `self`. `stream` (a1) is kept in a3, `self` becomes the second argument.
+pub(crate) fn rider_sub_save_state_call(
+    c: &mut Cpu,
+    ret_addr: u32,
+    size: u32,
+) -> crate::call::Flow {
+    c.cycles += 13;
+    let frame = Frame::open(c, 0x10);
+    c.g[A3][0] = c.g[A1][0];
+    let stream = c.g[A3][0];
+    frame.save_ra(c, 0);
+    c.g[A1][0] = c.g[A0][0];
+    c.g[A2][0] = sx(size);
+    c.g[V1][0] = Addr(stream as u32).lw(c);
+    let slot = crate::call::VSlot::read(c, c.g[V1][0], 0x8);
+    c.g[A0][0] = slot.delta;
+    c.g[V0][0] = slot.func;
+    c.g[A0][0] = slot.this(stream);
+    call_ptr(c, slot.func as u32, ret_addr)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void RiderSpinSub_SaveState(RiderSpinSub* self, StateStream* s)`
+/// (0x1361f8): `s->Write(self, 0x58)`.
+pub fn rider_spin_sub_save_state(c: &mut Cpu) {
+    guest(c, |c| rider_sub_save_state_call(c, 0x0013_6220, 0x58))
+}
+
+/// `void RiderGateSub_SaveState(RiderGateSub* self, StateStream* s)`
+/// (0x12c558): `s->Write(self, 0x14)`.
+pub fn rider_gate_sub_save_state(c: &mut Cpu) {
+    guest(c, |c| rider_sub_save_state_call(c, 0x0012_c580, 0x14))
+}
+
+/// The shape of the small `SaveState` methods: `s->Write(this + off, size)`
+/// through the stream's vtable (+8), from a 0x10 frame returning to `ret`.
+/// 13 cycles.
+pub(crate) fn stream_write_member(c: &mut Cpu, off: u32, size: u64, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        let stream = c.g[A1][0];
+        c.g[A3][0] = stream;
+        frame.save_ra(c, 0);
+        c.g[A1][0] = if off == 0 {
+            c.g[A0][0]
+        } else {
+            sx((c.g[A0][0] as u32).wrapping_add(off))
+        };
+        c.g[A2][0] = size;
+        let vt = c.lw(stream as u32);
+        c.g[V1][0] = vt;
+        let delta = c.lh((vt as u32).wrapping_add(0x8));
+        let write = c.lw((vt as u32).wrapping_add(0xc));
+        c.g[V0][0] = write;
+        c.g[A0][0] = sx((stream as u32).wrapping_add(delta as u32));
+        call_ptr(c, write as u32, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderHandplantSub::SaveState(cStream* s)` (0x1330b8): writes the
+/// 0x14-byte state.
+pub fn rider_handplant_sub_save_state(c: &mut Cpu) {
+    stream_write_member(c, 0, 0x14, 0x0013_30e0);
+}
+
+// ---------------------------------------------------------------------------
+// RiderSpinSub_Enter (0x133128)
+
+/// RiderSpinSub: state (1 spinning, 0 not), next state (-1 none) at +0x8,
+/// the exit state at +0xc.
+pub(crate) const SPIN_ENTER_STATE: u32 = 0x0;
+
+pub(crate) const SPIN_ENTER_NEXT: u32 = 0x8;
+
+pub(crate) const SPIN_ENTER_EXIT: u32 = 0xc;
+
+/// Spin and flip rates (radians per tick), the spin factor.
+pub(crate) const SPIN_ENTER_SPIN_RATE: u32 = 0x38;
+
+pub(crate) const SPIN_ENTER_FLIP_RATE: u32 = 0x3c;
+
+pub(crate) const SPIN_ENTER_FACTOR: u32 = 0x40;
+
+/// The rider.
+pub(crate) const SPIN_ENTER_RIDER: u32 = 0x58;
+
+/// Rider: stick x and y at the jump, the spin and flip rates the
+/// animation reads, the animation controller, player and character.
+pub(crate) const SPIN_ENTER_STICK_X: u32 = 0x2a4;
+
+pub(crate) const SPIN_ENTER_STICK_Y: u32 = 0x2b0;
+
+pub(crate) const SPIN_ENTER_RIDER_SPIN_RATE: u32 = 0x2dc;
+
+pub(crate) const SPIN_ENTER_RIDER_FLIP_RATE: u32 = 0x2e0;
+
+pub(crate) const SPIN_ENTER_ANIM_CTRL: u32 = 0x784;
+
+pub(crate) const SPIN_ENTER_PLAYER: u32 = 0x86c;
+
+pub(crate) const SPIN_ENTER_CHARACTER: u32 = 0xb34;
+
+/// Animation sequence: playback speed.
+pub(crate) const SPIN_ENTER_SEQ_SPEED: u32 = 0x90;
+
+pub(crate) const SPIN_ENTER_GET_SPIN_FACTOR: Callee = Callee {
+    addr: 0x0013_5180,
+    f: ee::s01::RiderSpinSub_GetSpinFactor,
+};
+
+pub(crate) const SPIN_ENTER_SET_SPIN_DIRECTION: Callee = Callee {
+    addr: 0x0013_5b30,
+    f: ee::s01::RiderSpinSub_SetSpinDirection,
+};
+
+/// `void RiderSpinSub::Enter(RiderSpinSub* this, int)` (0x133128): start
+/// the air-spin sub-state. Clears the spin bookkeeping (+0x4..+0x54, rates
+/// at the minimum 4.4997), and if the stick held at the jump (rider
+/// +0x2a4/+0x2b0) is pushed at all: spin rate = max(7 * the larger stick
+/// axis, min) when x is pushed, flip rate = that * 2/3 when y is pushed
+/// (both mirrored into the rider), the spin factor and direction, and the
+/// spin animation's speed = (1 + 0.5 * the character's spin attribute) *
+/// max(flip, spin rate) / 7; state 1. Otherwise state 0, exit state 3.
+pub fn rider_spin_sub_enter(c: &mut Cpu) {
+    guest(c, |c| {
+        let gp = r32(c, GP);
+        c.cycles += 39;
+        let frame = Frame::open(c, 0x30);
+        c.lwc1(5, gp.wrapping_sub(0x7544)); // minimum rate
+        frame.save(c, S0, 0x10);
+        c.g[V0][0] = u64::MAX;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0x20);
+        let this = r32(c, S0);
+        Addr(this.wrapping_add(SPIN_ENTER_NEXT)).sw(c, u64::MAX);
+        c.g[V1][0] = Addr(this.wrapping_add(SPIN_ENTER_RIDER)).lw(c);
+        for off in [
+            0x4, 0x18, 0x1c, 0x10, 0x14, 0x20, 0x24, 0x28, 0x2c, 0x30, 0x34,
+        ] {
+            Addr(this.wrapping_add(off)).sw(c, 0);
+        }
+        c.swc1(5, this.wrapping_add(SPIN_ENTER_SPIN_RATE));
+        c.swc1(5, this.wrapping_add(SPIN_ENTER_FLIP_RATE));
+        Addr(this.wrapping_add(SPIN_ENTER_FACTOR)).sw(c, 0);
+        Addr(this.wrapping_add(0x44)).sw(c, 0);
+        let rider = r32(c, V1);
+        Addr(rider.wrapping_add(SPIN_ENTER_RIDER_SPIN_RATE)).sw(c, 0);
+        c.lwc1(0, gp.wrapping_sub(0x7540)); // 1e30
+        c.g[V0][0] = Addr(this.wrapping_add(SPIN_ENTER_RIDER)).lw(c);
+        Addr(r32(c, V0).wrapping_add(SPIN_ENTER_RIDER_FLIP_RATE)).sw(c, 0);
+        Addr(this.wrapping_add(0x48)).sw(c, 0);
+        c.swc1(0, this.wrapping_add(0x50));
+        c.g[V0][0] = Addr(this.wrapping_add(SPIN_ENTER_RIDER)).lw(c);
+        Addr(this.wrapping_add(0x4c)).sw(c, 0);
+        Addr(this.wrapping_add(0x54)).sw(c, 0);
+        c.lwc1(4, this.wrapping_add(0x48)); // f4 = 0
+        let rider = r32(c, V0);
+        c.lwc1(0, rider.wrapping_add(SPIN_ENTER_STICK_X));
+        c.c_eq_s(0, 4);
+        if c.fcc() {
+            c.cycles += 5;
+            c.lwc1(0, rider.wrapping_add(SPIN_ENTER_STICK_Y));
+            c.c_eq_s(0, 4);
+            if c.fcc() {
+                // The stick was centred: no spin.
+                c.g[V0][0] = 3;
+                c.cycles += 2;
+                Addr(this.wrapping_add(SPIN_ENTER_STATE)).sw(c, 0);
+                Addr(this.wrapping_add(SPIN_ENTER_EXIT)).sw(c, 3);
+                return spin_enter_epilogue(c, frame);
+            }
+            c.cycles += 1;
+        }
+        Addr(this.wrapping_add(SPIN_ENTER_EXIT)).sw(c, 0);
+
+        // f2 = the larger of |x| and |y|.
+        c.cycles += 8;
+        c.lwc1(3, rider.wrapping_add(SPIN_ENTER_STICK_X));
+        c.lwc1(0, rider.wrapping_add(SPIN_ENTER_STICK_Y));
+        c.abs_s(1, 3);
+        c.abs_s(0, 0);
+        c.c_lt_s(0, 1);
+        let x_larger = c.fcc();
+        c.mov_s(2, 0);
+        if x_larger {
+            c.cycles += 1;
+            c.mov_s(2, 1);
+        }
+
+        // Spin rate from x.
+        c.cycles += 4;
+        c.c_eq_s(3, 4);
+        if !c.fcc() {
+            c.cycles += 6;
+            c.lwc1(0, gp.wrapping_sub(0x753c)); // 7
+            c.mul_s(0, 2, 0);
+            c.max_s(0, 0, 5);
+            c.swc1(0, this.wrapping_add(SPIN_ENTER_SPIN_RATE));
+            c.swc1(0, rider.wrapping_add(SPIN_ENTER_RIDER_SPIN_RATE));
+        }
+        c.g[V0][0] = Addr(this.wrapping_add(SPIN_ENTER_RIDER)).lw(c);
+        let rider = r32(c, V0);
+
+        // Flip rate from y.
+        c.cycles += 4;
+        c.lwc1(0, rider.wrapping_add(SPIN_ENTER_STICK_Y));
+        c.c_eq_s(0, 4);
+        if !c.fcc() {
+            c.cycles += 7;
+            c.lwc1(0, gp.wrapping_sub(0x7538)); // 7
+            c.lwc1(1, gp.wrapping_sub(0x7534)); // 2/3
+            c.mul_s(0, 2, 0);
+            c.max_s(0, 0, 5);
+            c.mul_s(0, 0, 1);
+            c.swc1(0, this.wrapping_add(SPIN_ENTER_FLIP_RATE));
+            c.swc1(0, rider.wrapping_add(SPIN_ENTER_RIDER_FLIP_RATE));
+        }
+
+        c.cycles += 37;
+        c.g[A0][0] = c.g[S0][0];
+        SPIN_ENTER_GET_SPIN_FACTOR.call(c, 0x0013_325c)?;
+        let this = r32(c, S0);
+        c.swc1(0, this.wrapping_add(SPIN_ENTER_FACTOR));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[V0][0] = Addr(this.wrapping_add(SPIN_ENTER_RIDER)).lw(c);
+        let rider = r32(c, V0);
+        c.lwc1(13, rider.wrapping_add(SPIN_ENTER_STICK_X));
+        c.lwc1(12, rider.wrapping_add(SPIN_ENTER_STICK_Y));
+        SPIN_ENTER_SET_SPIN_DIRECTION.call(c, 0x0013_3274)?;
+        crate::game::ai::ai::BE_LIBRARY_GET_INSTANCE.call(c, 0x0013_327c)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 3;
+        crate::game::ai::ai::BE_LIBRARY_GET_INTERFACE.call(c, 0x0013_3288)?;
+        let this = r32(c, S0);
+        c.g[V1][0] = Addr(this.wrapping_add(SPIN_ENTER_RIDER)).lw(c);
+        let rider = r32(c, V1);
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = Addr(rider.wrapping_add(SPIN_ENTER_PLAYER)).lw(c);
+        c.g[A2][0] = Addr(rider.wrapping_add(SPIN_ENTER_CHARACTER)).lw(c);
+        crate::game::ai::ai::BE_CHAR_INT_GET_ATTRIB4_FACTOR.call(c, 0x0013_329c)?;
+
+        // Animation speed = (1 + attrib * 0.5) * max(flip, spin) / 7.
+        let this = r32(c, S0);
+        c.lwc1(1, gp.wrapping_sub(0x7530));
+        c.g[A1][0] = 2;
+        c.g[V0][0] = Addr(this.wrapping_add(SPIN_ENTER_RIDER)).lw(c);
+        let rider = r32(c, V0);
+        c.mul_s(20, 0, 1);
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 2);
+        c.lwc1(0, rider.wrapping_add(SPIN_ENTER_RIDER_FLIP_RATE));
+        c.lwc1(1, rider.wrapping_add(SPIN_ENTER_RIDER_SPIN_RATE));
+        c.add_s(20, 20, 2);
+        c.lwc1(3, gp.wrapping_sub(0x752c));
+        c.max_s(0, 0, 1);
+        c.g[A0][0] = Addr(rider.wrapping_add(SPIN_ENTER_ANIM_CTRL)).lw(c);
+        c.mul_s(20, 20, 0);
+        c.mul_s(20, 20, 3);
+        call_ptr(c, 0x0031_1b20, 0x0013_32d8)?; // AnimController_GetLayerSequence(ctrl, 2)
+        c.g[V1][0] = 1;
+        let seq = r32(c, V0);
+        c.swc1(20, seq.wrapping_add(SPIN_ENTER_SEQ_SPEED));
+        let this = r32(c, S0);
+        Addr(this.wrapping_add(SPIN_ENTER_STATE)).sw(c, 1);
+        spin_enter_epilogue(c, frame);
+        Ok(())
+    })
+}
+
+/// RiderSpinSub_Enter's epilogue (5 cycles).
+pub(crate) fn spin_enter_epilogue(c: &mut Cpu, frame: Frame) -> crate::call::Flow {
+    c.cycles += 5;
+    frame.restore(c, S0, 0x10);
+    frame.restore_ra(c, 0);
+    frame.restore_fpr(c, 20, 0x20);
+    frame.close(c);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Rider sub-state SaveState: write the raw state block to a replay stream.
+
+/// The stream's `Write(this, data, size)` virtual (vtable slot +0x8).
+pub(crate) const SAVE_STATE_STREAM_WRITE: u32 = 0x8;
+
+/// `stream->Write(self, size)` in a 0x10 frame, returning to `ret`: the
+/// shape of the riders' plain `SaveState(self, stream)` methods (13
+/// cycles).
+pub(crate) fn rider_save_state_raw(c: &mut Cpu, size: u64, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0]; // stream
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0]; // self
+        c.g[A2][0] = size;
+        let stream = c.g[A3][0];
+        c.g[V1][0] = Addr(stream as u32).lw(c);
+        let vt = c.g[V1][0];
+        let slot = VSlot::read(c, vt, SAVE_STATE_STREAM_WRITE);
+        c.g[A0][0] = slot.delta;
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = slot.this(stream);
+        call_ptr(c, slot.func as u32, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderRailslideSub::SaveState(RiderRailslideSub* this, Stream* s)`
+/// (0x132840): writes the sub-state's 8-byte block to the replay stream.
+pub fn rider_railslide_sub_save_state(c: &mut Cpu) {
+    rider_save_state_raw(c, 0x8, 0x0013_2868);
+}
+
+// ---------------------------------------------------------------------------
+// RiderSpinSub_Exit (0x134cb0)
+
+/// RiderSpinSub: spin start and current angle (+0x14 / +0x1c compared).
+pub(crate) const SPIN_EXIT_START: u32 = 0x14;
+
+pub(crate) const SPIN_EXIT_ANGLE: u32 = 0x1c;
+
+/// Rider: the spin input block cleared on exit, the two input timers
+/// (+0x290/+0x29c, reset to 1/60), the pose matrix.
+pub(crate) const SPIN_EXIT_RIDER_POSE: u32 = 0x110;
+
+pub(crate) const SPIN_EXIT_TIMER_A: u32 = 0x290;
+
+pub(crate) const SPIN_EXIT_TIMER_B: u32 = 0x29c;
+
+pub(crate) const SPIN_EXIT_APPLY_POSE_ROTATION: Callee = Callee {
+    addr: 0x0013_4dd0,
+    f: ee::s01::RiderSpinSub_ApplyPoseRotation,
+};
+
+/// `this->rider` (`lw (s0 + 0x58)`).
+pub(crate) fn spin_exit_rider(c: &mut Cpu) -> u64 {
+    Addr(r32(c, S0).wrapping_add(SPIN_ENTER_RIDER)).lw(c)
+}
+
+/// `void RiderSpinSub::Exit(RiderSpinSub* this, int)` (0x134cb0): leave the
+/// air spin. Fades out animation layer 1 (0.33 s), clears the rider's stick
+/// snapshot (+0x2a4..+0x2b8), resets its input timers to 1/60, applies the
+/// final pose rotation and rebuilds the world matrix; then scales the
+/// rider's spin rate (+0x2dc) by 0.75 and snaps it to the quarter turn
+/// above (pi/2, 3pi/2 or 5pi/2; 0 if not positive), negated when the spin
+/// went backwards (angle +0x1c past start +0x14); flip rate +0x2e0 = 0.
+pub fn rider_spin_sub_exit(c: &mut Cpu) {
+    guest(c, |c| {
+        let gp = r32(c, GP);
+        c.cycles += 42;
+        let frame = Frame::open(c, 0x20);
+        c.lwc1(12, gp.wrapping_sub(0x73a0)); // 0.33
+        frame.save(c, S0, 0x10);
+        c.g[A1][0] = 1;
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[V0][0] = spin_exit_rider(c);
+        c.g[A0][0] = Addr(r32(c, V0).wrapping_add(SPIN_ENTER_ANIM_CTRL)).lw(c);
+        call_ptr(c, 0x0031_1e88, 0x0013_4cd4)?; // AnimController_FadeOutLayer(ctrl, 1, 0.33)
+
+        c.g[V1][0] = spin_exit_rider(c);
+        c.g[A0][0] = c.g[S0][0];
+        c.lwc1(0, gp.wrapping_sub(0x739c)); // 1/60
+        let rider = r32(c, V1);
+        for off in [0x2a8, 0x2ac, 0x2a4] {
+            Addr(rider.wrapping_add(off)).sw(c, 0);
+        }
+        c.g[V0][0] = spin_exit_rider(c);
+        let rider = r32(c, V0);
+        for off in [0x2b4, 0x2b8, 0x2b0] {
+            Addr(rider.wrapping_add(off)).sw(c, 0);
+        }
+        c.g[V1][0] = spin_exit_rider(c);
+        let rider = r32(c, V1);
+        c.swc1(0, rider.wrapping_add(SPIN_EXIT_TIMER_A));
+        Addr(rider.wrapping_add(SPIN_EXIT_TIMER_A + 4)).sw(c, 0);
+        c.g[V0][0] = spin_exit_rider(c);
+        let rider = r32(c, V0);
+        c.swc1(0, rider.wrapping_add(SPIN_EXIT_TIMER_B));
+        Addr(rider.wrapping_add(SPIN_EXIT_TIMER_B + 4)).sw(c, 0);
+        let rider = spin_exit_rider(c) as u32;
+        c.g[A1][0] = sx(rider.wrapping_add(SPIN_EXIT_RIDER_POSE));
+        SPIN_EXIT_APPLY_POSE_ROTATION.call(c, 0x0013_4d20)?;
+        c.g[A0][0] = spin_exit_rider(c);
+        call_ptr(c, 0x0011_e098, 0x0013_4d28)?; // Rider_BuildWorldMatrix
+
+        // Spin rate *= 0.75, snapped up to the next quarter turn.
+        let gp = r32(c, GP);
+        c.g[V0][0] = spin_exit_rider(c);
+        let rider = r32(c, V0);
+        let rate = rider.wrapping_add(SPIN_ENTER_RIDER_SPIN_RATE);
+        c.lwc1(1, gp.wrapping_sub(0x7398)); // 0.75
+        c.lwc1(0, rate);
+        c.lwc1(2, gp.wrapping_sub(0x7394)); // 3pi/2
+        c.mul_s(0, 0, 1);
+        c.swc1(0, rate);
+        c.g[V0][0] = spin_exit_rider(c);
+        let rate = r32(c, V0).wrapping_add(SPIN_ENTER_RIDER_SPIN_RATE);
+        c.lwc1(1, rate);
+        c.c_lt_s(2, 1);
+        c.lwc1(0, gp.wrapping_sub(0x7390)); // 5pi/2
+        if c.fcc() {
+            c.swc1(0, rate);
+        } else {
+            c.cycles += 4;
+            c.lwc1(0, gp.wrapping_sub(0x738c)); // pi
+            c.c_lt_s(0, 1);
+            if c.fcc() {
+                c.cycles += 2;
+                c.swc1(2, rate);
+            } else {
+                c.cycles += 5;
+                c.mtc1(0, 0);
+                c.c_lt_s(0, 1);
+                if c.fcc() {
+                    c.cycles += 2;
+                    c.lwc1(0, gp.wrapping_sub(0x7388)); // pi/2
+                }
+                c.swc1(0, rate);
+            }
+        }
+
+        // Flip rate cleared; a backwards spin turns the other way.
+        c.cycles += 8;
+        c.g[V0][0] = spin_exit_rider(c);
+        Addr(r32(c, V0).wrapping_add(SPIN_ENTER_RIDER_FLIP_RATE)).sw(c, 0);
+        let this = r32(c, S0);
+        c.lwc1(1, this.wrapping_add(SPIN_EXIT_ANGLE));
+        c.lwc1(0, this.wrapping_add(SPIN_EXIT_START));
+        c.c_lt_s(0, 1);
+        if c.fcc() {
+            c.cycles += 5;
+            c.g[V0][0] = spin_exit_rider(c);
+            let rate = r32(c, V0).wrapping_add(SPIN_ENTER_RIDER_SPIN_RATE);
+            c.lwc1(0, rate);
+            c.neg_s(0, 0);
+            c.swc1(0, rate);
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x0013c5e0 RiderRailslideState_SaveState, 0x00131598
+// RiderBoardPressSub_SaveState
+
+/// The common body of the small rider-state `SaveState`s: `stream->write(
+/// self, size)` (a0 = self, a1 = stream; the write is vtable slot 1 at
+/// `+0x8`) returning to `ret`.
+pub(crate) fn rider_state_save_self_bytes(c: &mut Cpu, size: u64, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[A2][0] = size;
+        c.g[V1][0] = c.lw(c.g[A3][0] as u32);
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x8));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0xc));
+        let write = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, write, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderBoardPressSub_SaveState(RiderBoardPressSub* self, cStream*
+/// stream)` (0x131598): write the sub-state's first 0x14 bytes to the
+/// stream.
+pub fn rider_board_press_sub_save_state(c: &mut Cpu) {
+    rider_state_save_self_bytes(c, 0x14, 0x0013_15c0);
+}
+
+// ---------------------------------------------------------------------------
+// Rider state SaveState forwarders (0x13acb0, 0x12fbf0)
+
+/// The shape of the rider states' `SaveState(self, stream)`: `stream->Write(
+/// self, size)` through the stream's vtable slot 8 (`{delta, fn}`), in a
+/// 0x10 frame holding `ra`; `ret` is the return address of the call.
+pub(crate) fn rider_state_save_forward(c: &mut Cpu, ret: u32, size: u64) -> crate::call::Flow {
+    c.cycles += 13;
+    let frame = Frame::open(c, 0x10);
+    c.g[A3][0] = c.g[A1][0];
+    let stream = c.g[A3][0];
+    frame.save_ra(c, 0);
+    c.g[A1][0] = c.g[A0][0];
+    c.g[A2][0] = size;
+    c.g[V1][0] = c.lw(stream as u32);
+    let vt = c.g[V1][0];
+    let slot = crate::call::VSlot::read(c, vt, 0x8);
+    c.g[A0][0] = slot.delta;
+    c.g[V0][0] = slot.func;
+    c.g[A0][0] = slot.this(stream);
+    call_ptr(c, slot.func as u32, ret)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void RiderNaturalAirSub_SaveState(RiderNaturalAirSub* self, cPbStream*
+/// stream)` (0x12fbf0): write the sub-state's 0x14 bytes.
+pub fn rider_natural_air_sub_save_state(c: &mut Cpu) {
+    guest(c, |c| rider_state_save_forward(c, 0x0012_fc18, 0x14))
+}
+
+pub(crate) const RESET_SUB_SIZE: u64 = 0x8;
+
+/// `void RiderResetSub_SaveState(RiderResetSub* self, Stream* s)` (0x12f5b0): writes the
+/// reset sub-state's 8 bytes to the save stream.
+pub fn rider_reset_sub_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[A2][0] = RESET_SUB_SIZE;
+        // s->Write(self, 8): vtable slot +0x8 `{delta, fn}`.
+        let stream = r32(c, A3);
+        c.g[V1][0] = Addr(stream).lw(c);
+        let vt = r32(c, V1);
+        c.g[A0][0] = Addr(vt).off(0x8).lh(c);
+        c.g[V0][0] = Addr(vt).off(0xc).lw(c);
+        let write = r32(c, V0);
+        c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+        call_ptr(c, write, 0x0012_f5d8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `stream->Write(self, size)`: the shared body of the small `SaveState`
+/// methods. The stream's vtable slot 1 (`{delta, fn}` at +8) is called with
+/// `(stream + delta, self, size)` in a 0x10 frame holding `ra`; `ret` is
+/// the return address after the call.
+pub(crate) fn save_state_write(c: &mut Cpu, size: u64, ret: u32) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A0][0];
+        c.g[A2][0] = size;
+        let stream = c.g[A3][0] as u32;
+        c.g[V1][0] = Addr(stream).lw(c);
+        let vt = Addr(c.g[V1][0] as u32);
+        c.g[A0][0] = vt.off(8).lh(c);
+        c.g[V0][0] = vt.off(0xc).lw(c);
+        let write = c.g[V0][0] as u32;
+        c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, write, ret)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `void RiderWipeoutSub_SaveState(RiderWipeoutSub* self, Stream* s)`
+/// (0x12e708): writes the 0x80-byte state to the stream.
+pub fn rider_wipeout_sub_save_state(c: &mut Cpu) {
+    save_state_write(c, 0x80, 0x0012_e730);
+}
+
+/// `AI` object lists: players (inline pointer array at +0x40, count at
+/// +0x7c), mission riders (+0x48, +0x80) and actors (+0x5c, +0x84).
+pub(crate) const AI_SAVE_PLAYERS: u32 = 0x40;
+
+pub(crate) const AI_SAVE_MISSION: u32 = 0x48;
+
+pub(crate) const AI_SAVE_ACTORS: u32 = 0x5c;
+
+pub(crate) const AI_SAVE_NUM_PLAYERS: u32 = 0x7c;
+
+pub(crate) const AI_SAVE_NUM_MISSION: u32 = 0x80;
+
+pub(crate) const AI_SAVE_NUM_ACTORS: u32 = 0x84;
+
+/// Replay frame vtable: `Write(frame, src, size)` at slot 0x8.
+pub(crate) const AI_SAVE_FRAME_WRITE: u32 = 0x8;
+
+/// Rider -> object (+0x18) -> replay object (+0x77c); its vtable (+0xde8)
+/// has `Save(obj, frame)` at slot 0x10.
+pub(crate) const AI_SAVE_RIDER_OBJ: u32 = 0x18;
+
+pub(crate) const AI_SAVE_OBJ_REPLAY: u32 = 0x77c;
+
+pub(crate) const AI_SAVE_REPLAY_VT: u32 = 0xde8;
+
+pub(crate) const AI_SAVE_REPLAY_SAVE: u32 = 0x10;
+
+/// `WorldPainter_SaveViewState(frame)`.
+pub(crate) const AI_SAVE_VIEW_STATE: u32 = 0x002e_f248;
+
+/// One object loop of `AI_SaveState`, entered with a positive count: for
+/// each entry of the inline list at `self + list`, call its replay
+/// object's `Save(frame)` (vtable slot 0x10). `self` is s2, the frame s3,
+/// the index s1 and the list cursor s0; the back edge (loop head `head`)
+/// checks events. Leaves v0 = 0 (the failed `i < count` test).
+pub(crate) fn ai_save_state_objs(
+    c: &mut Cpu,
+    list: u32,
+    count: u32,
+    head: u32,
+    back: u32,
+) -> crate::call::Flow {
+    c.cycles += 3;
+    c.g[S0][0] = sx((c.g[S2][0] as u32).wrapping_add(list));
+    c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+    loop {
+        c.cycles += 14;
+        c.g[A1][0] = c.g[S3][0];
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(1));
+        c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+        let rider = c.g[V1][0] as u32;
+        let obj = Addr(rider.wrapping_add(AI_SAVE_RIDER_OBJ)).lw(c);
+        c.g[V0][0] = obj;
+        let replay = Addr((obj as u32).wrapping_add(AI_SAVE_OBJ_REPLAY)).lw(c);
+        c.g[A3][0] = replay;
+        let vt = Addr((replay as u32).wrapping_add(AI_SAVE_REPLAY_VT)).lw(c);
+        c.g[V1][0] = vt;
+        let delta = Addr((vt as u32).wrapping_add(AI_SAVE_REPLAY_SAVE)).lh(c);
+        let save = Addr((vt as u32).wrapping_add(AI_SAVE_REPLAY_SAVE + 4)).lw(c);
+        c.g[A2][0] = save;
+        c.g[A0][0] = sx((replay as u32).wrapping_add(delta as u32));
+        call_ptr(c, save as u32, back)?;
+        let n = Addr((c.g[S2][0] as u32).wrapping_add(count)).lw(c);
+        let more = (c.g[S1][0] as i64) < (n as i64);
+        c.g[V0][0] = more as u64;
+        if !more {
+            return Ok(());
+        }
+        c.g[V1][0] = Addr(c.g[S0][0] as u32).lw(c);
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `void AI_SaveState(AI* self, cReplayFrame* frame)` (0x12b7f0): write
+/// the AI block's first 0x28 bytes into the replay frame (its virtual
+/// `Write`), let every player, mission rider and actor save its replay
+/// state, then save the world painter's view state.
+pub fn ai_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x50);
+        c.g[A2][0] = 0x28;
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = 0;
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[S2][0];
+        let replay_frame = c.g[S3][0] as u32;
+        let vt = Addr(replay_frame).lw(c);
+        c.g[V0][0] = vt;
+        let delta = Addr((vt as u32).wrapping_add(AI_SAVE_FRAME_WRITE)).lh(c);
+        let write = Addr((vt as u32).wrapping_add(AI_SAVE_FRAME_WRITE + 4)).lw(c);
+        c.g[V1][0] = write;
+        c.g[A0][0] = sx(replay_frame.wrapping_add(delta as u32));
+        call_ptr(c, write as u32, 0x0012_b830)?;
+
+        // Players.
+        let n = Addr((c.g[S2][0] as u32).wrapping_add(AI_SAVE_NUM_PLAYERS)).lw(c);
+        if (n as i64) > 0 {
+            ai_save_state_objs(
+                c,
+                AI_SAVE_PLAYERS,
+                AI_SAVE_NUM_PLAYERS,
+                0x0012_b848,
+                0x0012_b870,
+            )?;
+            c.cycles += 1;
+        }
+        c.g[V0][0] = Addr((c.g[S2][0] as u32).wrapping_add(AI_SAVE_NUM_MISSION)).lw(c);
+
+        // Mission riders.
+        c.cycles += 2;
+        c.g[S1][0] = 0;
+        if (c.g[V0][0] as i64) > 0 {
+            ai_save_state_objs(
+                c,
+                AI_SAVE_MISSION,
+                AI_SAVE_NUM_MISSION,
+                0x0012_b898,
+                0x0012_b8c0,
+            )?;
+        }
+
+        // Actors.
+        c.cycles += 3;
+        let n = Addr((c.g[S2][0] as u32).wrapping_add(AI_SAVE_NUM_ACTORS)).lw(c);
+        c.g[V0][0] = n;
+        c.g[S1][0] = 0;
+        if (n as i64) > 0 {
+            ai_save_state_objs(
+                c,
+                AI_SAVE_ACTORS,
+                AI_SAVE_NUM_ACTORS,
+                0x0012_b8e8,
+                0x0012_b910,
+            )?;
+        }
+
+        c.cycles += 9;
+        c.g[A0][0] = c.g[S3][0];
+        call_ptr(c, AI_SAVE_VIEW_STATE, 0x0012_b928)?;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The replay stream interface's `Write(stream, src, size)` slot.
+pub(crate) const SUB_SAVE_STATE_WRITE: u32 = 0x8;
+
+/// The shared body of the rider sub-state `SaveState(self, stream)`
+/// forwarders: `stream->Write(self, size)` through vtable slot 0x8 in a
+/// 0x10 frame (the stream kept in a3, `self` passed as the source).
+pub(crate) fn sub_save_state_write(c: &mut Cpu, size: u32, back: u32) -> crate::call::Flow {
+    c.cycles += 13;
+    let frame = Frame::open(c, 0x10);
+    c.g[A3][0] = c.g[A1][0];
+    let stream = c.g[A3][0];
+    frame.save_ra(c, 0);
+    c.g[A1][0] = c.g[A0][0];
+    c.g[A2][0] = sx(size);
+    let vt = Addr(stream as u32).lw(c);
+    c.g[V1][0] = vt;
+    let delta = Addr((vt as u32).wrapping_add(SUB_SAVE_STATE_WRITE)).lh(c);
+    let write = Addr((vt as u32).wrapping_add(SUB_SAVE_STATE_WRITE + 4)).lw(c);
+    c.g[V0][0] = write;
+    c.g[A0][0] = sx((stream as u32).wrapping_add(delta as u32));
+    call_ptr(c, write as u32, back)?;
+    frame.restore_ra(c, 0);
+    frame.close(c);
+    Ok(())
+}
+
+/// `void RiderUberGrindSub_SaveState(RiderUberGrindSub* self, Stream* s)`
+/// (0x1368e8): write the sub-state's 8 bytes into the replay stream.
+pub fn rider_uber_grind_sub_save_state(c: &mut Cpu) {
+    guest(c, |c| sub_save_state_write(c, 0x8, 0x0013_6910))
+}
+
+/// `void RiderFinishLineSub_SaveState(RiderFinishLineSub* self, Stream* s)`
+/// (0x12c9c0): write the sub-state's 4 bytes into the replay stream.
+pub fn rider_finish_line_sub_save_state(c: &mut Cpu) {
+    guest(c, |c| sub_save_state_write(c, 0x4, 0x0012_c9e8))
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17487,6 +18319,438 @@ pub(crate) mod tests {
                     c.bus.write32(sub + off, r.edge_f32());
                 }
             },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// A rider sub-state `SaveState` forwarder: `self` at DATA+0x400, the
+    /// stream at DATA+0x800 whose vtable slot 1 is a fake (which unwinds for
+    /// some seeds).
+    pub(crate) fn rider_sub_save_state_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        use crate::difftest::fakes;
+        let mut r = fakes::machine(c, seed, salt, 1);
+        c.pc = entry;
+        let stream = DATA + 0x800;
+        c.g[A0][0] = sx(DATA + 0x400);
+        c.g[A1][0] = sx(stream);
+        let vt = fakes::vtable(c, &mut r, &[0x8]);
+        c.bus.write32(stream, vt);
+    }
+
+    #[test]
+    fn rider_spin_sub_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s01::f_001361f8__generated,
+            rider_spin_sub_save_state,
+            200,
+            &|c, seed| {
+                rider_sub_save_state_setup(c, seed, 0x1361_f8, 0x0013_61f8);
+            },
+        );
+    }
+
+    #[test]
+    fn rider_gate_sub_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s00::f_0012c558__generated,
+            rider_gate_sub_save_state,
+            200,
+            &|c, seed| {
+                rider_sub_save_state_setup(c, seed, 0x12c5_58, 0x0012_c558);
+            },
+        );
+    }
+
+    /// A stream whose vtable `Write` (+8) is a fake (logs the registers,
+    /// sometimes unwinds); `this` comes with junk upper bits on some seeds.
+    pub(crate) fn stream_save_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        const ME: u32 = DATA;
+        const STREAM: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x200;
+        let mut r = machine(c, seed, entry as u64, 1);
+        c.pc = entry;
+        c.bus.write32(STREAM, VT);
+        c.bus.write16(VT + 8, (r.next_u32() % 0x20) as u16 & !3);
+        c.bus.write32(VT + 0xc, FAKE);
+        c.g[A0][0] = if seed % 4 == 0 {
+            (r.next_u32() as u64) << 32 | ME as u64
+        } else {
+            sx(ME)
+        };
+        c.g[A1][0] = sx(STREAM);
+    }
+
+    /// `RiderHandplantSub_SaveState`.
+    #[test]
+    fn rider_handplant_sub_save_state_matches() {
+        covered(
+            ee::s01::f_001330b8__generated,
+            rider_handplant_sub_save_state,
+            200,
+            &|c, seed| stream_save_setup(c, seed, 0x0013_30b8),
+        );
+    }
+
+    /// `RiderSpinSub_Enter`: the stick x and y held at the jump each zero,
+    /// -0, an edge value or in [-1.5, 1.5], so the centred early exit, x
+    /// only, y only and both (either axis larger) occur. The real
+    /// GetSpinFactor (with Math_Atan), SetSpinDirection,
+    /// BECharInt_GetAttrib4Factor (player 0, characters 1..5) and
+    /// AnimController_GetLayerSequence run on the game image; the BE
+    /// interface getter is a fake (sometimes unwinding).
+    #[test]
+    fn rider_spin_sub_enter_matches() {
+        const THIS: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const CTRL: u32 = DATA + 0x3000;
+        const LAYERS: u32 = DATA + 0x3100;
+        const SEQ: u32 = DATA + 0x3200;
+        const BE_LIBRARY: u32 = DATA + 0x5000;
+        const BE_OBJ: u32 = DATA + 0x5100;
+        const BE_VT: u32 = DATA + 0x5200;
+        const BE_INTERFACES: u32 = 0x0053_08a8;
+        covered(
+            ee::s01::f_00133128__generated,
+            rider_spin_sub_enter,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0013_3128, 1);
+                elf_image(c);
+                c.pc = 0x0013_3128;
+                c.bus.write32(GAME_GP - 0x1f04, BE_LIBRARY);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(BE_INTERFACES, BE_OBJ);
+                c.bus.write32(BE_OBJ + 4, BE_VT);
+                c.bus.write32(BE_VT + 0xc, FAKE);
+                c.bus.write8(0x0053_08e2, 10);
+                c.bus.write8(0x0053_08e4, 10);
+                fill(c, &mut r, THIS, 0x60 / 4);
+                c.bus.write32(THIS + SPIN_ENTER_RIDER, RIDER);
+                let axis = |r: &mut Rng, k: u32| match k % 4 {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    2 => r.edge_f32(),
+                    _ => r.f32(1.5),
+                };
+                let x = axis(&mut r, seed);
+                let y = axis(&mut r, seed / 4);
+                c.bus.write32(RIDER + SPIN_ENTER_STICK_X, x);
+                c.bus.write32(RIDER + SPIN_ENTER_STICK_Y, y);
+                c.bus
+                    .write32(RIDER + SPIN_ENTER_RIDER_SPIN_RATE, r.next_u32());
+                c.bus
+                    .write32(RIDER + SPIN_ENTER_RIDER_FLIP_RATE, r.next_u32());
+                c.bus.write32(RIDER + SPIN_ENTER_ANIM_CTRL, CTRL);
+                c.bus.write32(RIDER + SPIN_ENTER_PLAYER, 0);
+                c.bus
+                    .write32(RIDER + SPIN_ENTER_CHARACTER, 1 + r.next_u32() % 5);
+                // Layer 2 of the controller: a one-entry sequence list.
+                c.bus.write32(CTRL + 0x50, LAYERS);
+                c.bus.write32(LAYERS + 2 * 8 + 4, SEQ);
+                c.bus.write32(SEQ + SPIN_ENTER_SEQ_SPEED, r.next_u32());
+                c.g[A0][0] = sx(THIS);
+            },
+        );
+    }
+
+    /// A replay stream whose Write virtual is a fake (sometimes unwinding),
+    /// `self` anywhere in the data area.
+    pub(crate) fn rider_save_state_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        use crate::difftest::fakes::{ptr, vtable};
+        let mut r = machine(c, seed, entry as u64, 1);
+        c.pc = entry;
+        let vt = vtable(c, &mut r, &[SAVE_STATE_STREAM_WRITE]);
+        let stream = DATA + 0x20_0000 + (r.next_u32() & 0xfff0);
+        c.bus.write32(stream, vt);
+        c.g[A0][0] = sx(ptr(&mut r));
+        c.g[A1][0] = sx(stream);
+    }
+
+    /// `RiderRailslideSub_SaveState`: one stream write of 8 bytes.
+    #[test]
+    fn rider_railslide_sub_save_state_matches() {
+        covered(
+            ee::s01::f_00132840__generated,
+            rider_railslide_sub_save_state,
+            200,
+            &|c, seed| rider_save_state_setup(c, seed, 0x0013_2840),
+        );
+    }
+
+    /// `RiderSpinSub_Exit`: spin rates in [-10, 10] (after the 0.75 scale
+    /// above 3pi/2, above pi, positive, or not), start/current angles in
+    /// either order. The real AnimController_FadeOutLayer (empty layer),
+    /// RiderSpinSub_ApplyPoseRotation (with GetSpinFactor, Math_Atan and
+    /// the sin/cos helper) and Rider_BuildWorldMatrix run on random floats.
+    #[test]
+    fn rider_spin_sub_exit_matches() {
+        const THIS: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const CTRL: u32 = DATA + 0x3000;
+        const LAYERS: u32 = DATA + 0x3100;
+        const BOARD: u32 = DATA + 0x5000;
+        const BONES: u32 = DATA + 0x6000;
+        check(
+            ee::s01::f_00134cb0__generated,
+            rider_spin_sub_exit,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0013_4cb0, 0);
+                elf_image(c);
+                c.pc = 0x0013_4cb0;
+                for i in 0..0x60 / 4 {
+                    c.bus.write32(THIS + 4 * i, r.f32(8.0));
+                }
+                c.bus.write32(THIS + SPIN_ENTER_RIDER, RIDER);
+                for i in 0..0xc00 / 4 {
+                    c.bus.write32(RIDER + 4 * i, r.f32(4.0));
+                }
+                c.bus
+                    .write32(RIDER + SPIN_ENTER_RIDER_SPIN_RATE, r.f32(10.0));
+                c.bus.write32(RIDER + SPIN_ENTER_ANIM_CTRL, CTRL);
+                c.bus.write32(RIDER + 0x780, BOARD);
+                c.bus.write32(RIDER + 0x89c, r.next_u32() % 8);
+                for i in 0..0x200 / 4 {
+                    c.bus.write32(BOARD + 4 * i, r.f32(2.0));
+                    c.bus.write32(BONES + 4 * i, r.f32(2.0));
+                }
+                c.bus.write32(BOARD + 0x24, BONES);
+                // Layer 1 of the controller: an empty sequence list.
+                c.bus.write32(CTRL + 0x50, LAYERS);
+                c.bus.write32(LAYERS + 8 + 4, 0);
+                c.g[A0][0] = sx(THIS);
+            },
+        );
+    }
+
+    /// The stream setup of the rider-state SaveState tests: `this` at DATA,
+    /// the stream's write is a fake (some unwind).
+    pub(crate) fn rider_state_save_setup(c: &mut Cpu, seed: u32, entry: u32) {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::DATA;
+        let mut r = machine(c, seed, entry as u64, 1);
+        c.pc = entry;
+        let stream = DATA + 0x800;
+        let vt = DATA + 0x900;
+        c.g[A0][0] = sx(DATA);
+        c.g[A1][0] = sx(stream);
+        c.bus.write32(stream, vt);
+        c.bus.write16(vt + 0x8, (r.next_u32() & 0xfffc) as u16);
+        c.bus.write32(vt + 0xc, FAKE);
+    }
+
+    /// RiderBoardPressSub_SaveState: write(self, 0x14) through a fake.
+    #[test]
+    fn rider_board_press_sub_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s00::f_00131598__generated,
+            rider_board_press_sub_save_state,
+            64,
+            &|c, seed| rider_state_save_setup(c, seed, 0x0013_1598),
+        );
+    }
+
+    /// The rider-state SaveState forwarders: `a1` a stream whose vtable slot
+    /// 8 is a fake (random delta; some calls unwind), `a0` the state.
+    pub(crate) fn rider_state_save_setup_2(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        use crate::difftest::fakes::{machine, vtable};
+        use crate::difftest::DATA;
+        let mut r = machine(c, seed, salt, 1);
+        c.pc = entry;
+        let stream = DATA + 0x800;
+        c.g[A0][0] = sx(DATA + 0x400);
+        c.g[A1][0] = sx(stream);
+        let vt = vtable(c, &mut r, &[8]);
+        c.bus.write32(stream, vt);
+    }
+
+    #[test]
+    fn rider_natural_air_sub_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s00::f_0012fbf0__generated,
+            rider_natural_air_sub_save_state,
+            60,
+            &|c, seed| rider_state_save_setup_2(c, seed, 0x12_fbf0, 0x0012_fbf0),
+        );
+    }
+
+    /// A state at DATA+0x800 saved to a stream at DATA+0x10 whose write
+    /// method (slot +0x8, random `this` delta) is a fake that may unwind.
+    pub(crate) fn oc286_save_block_setup(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        use crate::difftest::fakes::vtable;
+        let mut r = machine(c, seed, salt, 1);
+        let stream = DATA + 0x10;
+        let vt = vtable(c, &mut r, &[0x8]);
+        c.bus.write32(stream, vt);
+        c.g[A0][0] = sx(DATA + 0x800);
+        c.g[A1][0] = sx(stream);
+        c.pc = entry;
+    }
+
+    #[test]
+    fn rider_reset_sub_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s00::f_0012f5b0__generated,
+            rider_reset_sub_save_state,
+            200,
+            &|c, seed| oc286_save_block_setup(c, seed, 0x12_f5b0, 0x0012_f5b0),
+        );
+    }
+
+    /// A stream at a random address whose vtable's slot 1 is a fake (which
+    /// unwinds in some seeds), and a random `self`.
+    pub(crate) fn save_state_fixture(c: &mut Cpu, seed: u32, salt: u64) {
+        use crate::difftest::fakes::{ptr, vtable};
+        let mut r = machine(c, seed, salt, 1);
+        let stream = ptr(&mut r);
+        let vt = vtable(c, &mut r, &[8]);
+        c.bus.write32(stream, vt);
+        c.g[A0][0] = sx(ptr(&mut r));
+        c.g[A1][0] = sx(stream);
+        c.g[RA][0] = SENTINEL as u64;
+    }
+
+    #[test]
+    fn rider_wipeout_sub_save_state_matches() {
+        crate::difftest::fakes::covered(
+            ee::s00::f_0012e708__generated,
+            rider_wipeout_sub_save_state,
+            300,
+            &|c, seed| {
+                save_state_fixture(c, seed, 0x0012_e708);
+                c.pc = 0x0012_e708;
+            },
+        );
+    }
+
+    /// The world painter's six view states (globals at 0x4fa370, stride
+    /// 0xf0, field +0x20 -> holder -> object with a vtable at +4 whose
+    /// slot 0x200 is a fake): `WorldPainter_SaveViewState` makes 12 fake
+    /// calls.
+    pub(crate) fn ai_save_view_state_fixture(c: &mut Cpu) {
+        use crate::difftest::fakes::FAKE;
+        let holder = DATA + 0x30000;
+        let obj = DATA + 0x30100;
+        let vt = DATA + 0x30200;
+        for k in 0..6 {
+            c.bus.write32(0x004f_a370 + 0x20 + k * 0xf0, holder);
+        }
+        c.bus.write32(holder, obj);
+        c.bus.write32(obj + 4, vt);
+        c.bus.write16(vt + 0x200, 0);
+        c.bus.write32(vt + 0x204, FAKE + 0x800);
+    }
+
+    /// An AI block with 0..2 players, 0..5 mission riders and 0..8 actors
+    /// (or negative counts), each rider's replay object saving through a
+    /// fake; a replay frame whose `Write` is a fake.
+    pub(crate) fn ai_save_state_fixture(c: &mut Cpu, seed: u32) {
+        use crate::difftest::fakes::{machine, FAKE};
+        let mut r = Rng(0x12b7_f0ff ^ (seed as u64) << 4);
+        let mut pick = |max: u32| -> u32 {
+            match r.next_u32() % 5 {
+                0 => 0,
+                1 => (-(1 + (r.next_u32() % 2) as i32)) as u32,
+                _ => 1 + r.next_u32() % max,
+            }
+        };
+        let counts = [pick(2), pick(5), pick(8)];
+        let calls: u32 = 1
+            + 12
+            + counts
+                .iter()
+                .map(|&n| if (n as i32) > 0 { n } else { 0 })
+                .sum::<u32>();
+        let mut r = machine(c, seed, 0x12b7_f000, calls);
+        let ai = DATA;
+        let frame = DATA + 0x200;
+        let frame_vt = DATA + 0x300;
+        c.bus.write32(frame, frame_vt);
+        let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+        c.bus.write16(frame_vt + AI_SAVE_FRAME_WRITE, delta as u16);
+        c.bus.write32(frame_vt + AI_SAVE_FRAME_WRITE + 4, FAKE);
+        let lists = [AI_SAVE_PLAYERS, AI_SAVE_MISSION, AI_SAVE_ACTORS];
+        let count_offs = [AI_SAVE_NUM_PLAYERS, AI_SAVE_NUM_MISSION, AI_SAVE_NUM_ACTORS];
+        let mut k = 0;
+        for l in 0..3 {
+            c.bus.write32(ai + count_offs[l], counts[l]);
+            let n = if (counts[l] as i32) > 0 { counts[l] } else { 0 };
+            for i in 0..n {
+                let rider = DATA + 0x1000 + k * 0x100;
+                let obj = DATA + 0x4000 + k * 0x800;
+                let replay = DATA + 0x10000 + k * 0x1000;
+                let vt = DATA + 0x20000 + k * 0x40;
+                c.bus.write32(ai + lists[l] + 4 * i, rider);
+                c.bus.write32(rider + AI_SAVE_RIDER_OBJ, obj);
+                c.bus.write32(obj + AI_SAVE_OBJ_REPLAY, replay);
+                c.bus.write32(replay + AI_SAVE_REPLAY_VT, vt);
+                let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+                c.bus.write16(vt + AI_SAVE_REPLAY_SAVE, delta as u16);
+                c.bus
+                    .write32(vt + AI_SAVE_REPLAY_SAVE + 4, FAKE + 0x10 * (k + 1));
+                k += 1;
+            }
+        }
+        ai_save_view_state_fixture(c);
+        c.g[A0][0] = sx(ai);
+        c.g[A1][0] = sx(frame);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0012_b7f0;
+    }
+
+    /// `AI_SaveState`: empty and filled lists, fakes unwinding at any call.
+    #[test]
+    fn ai_save_state_matches() {
+        check(
+            ee::s00::f_0012b7f0__generated,
+            ai_save_state,
+            300,
+            &ai_save_state_fixture,
+        );
+    }
+
+    /// A sub-state at DATA+0x400 and a stream whose `Write` slot (0x8) is a
+    /// fake that may unwind.
+    pub(crate) fn sub_save_state_fixture(c: &mut Cpu, seed: u32, salt: u64, entry: u32) {
+        use crate::difftest::fakes::{machine, vtable};
+        let mut r = machine(c, seed, salt, 1);
+        let stream = DATA + 0x800;
+        let vt = vtable(c, &mut r, &[SUB_SAVE_STATE_WRITE]);
+        c.bus.write32(stream, vt);
+        c.g[A0][0] = sx(DATA + 0x400);
+        c.g[A1][0] = sx(stream);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = entry;
+    }
+
+    /// `RiderUberGrindSub_SaveState`: the stream write, returning or
+    /// unwinding.
+    #[test]
+    fn rider_uber_grind_sub_save_state_matches() {
+        check(
+            ee::s01::f_001368e8__generated,
+            rider_uber_grind_sub_save_state,
+            200,
+            &|c, seed| sub_save_state_fixture(c, seed, 0x1368_e800, 0x0013_68e8),
+        );
+    }
+
+    /// `RiderFinishLineSub_SaveState`: the stream write, returning or
+    /// unwinding.
+    #[test]
+    fn rider_finish_line_sub_save_state_matches() {
+        check(
+            ee::s00::f_0012c9c0__generated,
+            rider_finish_line_sub_save_state,
+            200,
+            &|c, seed| sub_save_state_fixture(c, seed, 0x12c9_c000, 0x0012_c9c0),
         );
     }
 }

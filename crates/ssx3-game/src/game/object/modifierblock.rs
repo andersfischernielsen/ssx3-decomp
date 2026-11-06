@@ -125,6 +125,12 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         modifier_block_set_transform_bounds,
         "ModifierBlock_SetTransformBounds",
     ),
+    (0x0035_2ae8, modifier_block_dtor, "ModifierBlock_dtor"),
+    (
+        0x0035_3300,
+        modifier_block_free_rail_modifiers,
+        "ModifierBlock_FreeRailModifiers",
+    ),
 ];
 
 /// Cross-shard direct calls the generator emitted as `call_indirect(c, addr)`.
@@ -1544,6 +1550,203 @@ pub fn modifier_block_set_transform_bounds(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// 0x00352ae8 ModifierBlock_dtor
+
+/// ModifierBlock fields written by [`modifier_block_dtor`]: the vtables of
+/// the embedded rail-modifier list (`+0x1c`, vtable at `+0x24`) and
+/// modifier list node (`+0x10`, vtable at `+0x18`).
+pub(crate) const MB_MOD_LIST: u32 = 0x10;
+
+pub(crate) const MB_MOD_LIST_VTABLE: u32 = 0x18;
+
+pub(crate) const MB_RAIL_LIST: u32 = 0x1c;
+
+pub(crate) const MB_RAIL_LIST_VTABLE: u32 = 0x24;
+
+/// `ModifierBlock* ModifierBlock_dtor(ModifierBlock* self, int flags)`
+/// (0x352ae8): free the transform, UV-scroll, texture-flip, boost and
+/// particle modifiers and every rail modifier (owner -1), restore the two
+/// embedded lists' base vtables and unlink them; `operator delete` when
+/// `flags & 1`.
+pub fn modifier_block_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 32;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A1][0];
+        let frees = [
+            Callee {
+                addr: 0x0035_30d0,
+                f: ee::s11::ModifierBlock_FreeTransform,
+            },
+            Callee {
+                addr: 0x0035_3118,
+                f: ee::s11::ModifierBlock_FreeUVScroll,
+            },
+            Callee {
+                addr: 0x0035_3150,
+                f: ee::s11::ModifierBlock_FreeTexFlip,
+            },
+            Callee {
+                addr: 0x0035_3188,
+                f: ee::s11::ModifierBlock_FreeBoost,
+            },
+            Callee {
+                addr: 0x0035_31d0,
+                f: ee::s11::ModifierBlock_FreeParticles,
+            },
+        ];
+        for (i, free) in frees.into_iter().enumerate() {
+            if i > 0 {
+                c.g[A0][0] = c.g[S1][0];
+            }
+            free.call(c, 0x0035_2b04 + 8 * i as u32)?;
+        }
+        // Every rail modifier, whatever its owner (-1).
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = 0xffff_ffff_ffff_ffff;
+        Callee {
+            addr: 0x0035_3300,
+            f: ee::s11::ModifierBlock_FreeRailModifiers,
+        }
+        .call(c, 0x0035_2b34)?;
+        let this = c.g[S1][0] as u32;
+        c.g[V0][0] = 0x0049_1200;
+        c.g[A0][0] = sx(this.wrapping_add(MB_RAIL_LIST));
+        c.sw(this.wrapping_add(MB_RAIL_LIST_VTABLE), 0x0049_1200);
+        Callee {
+            addr: 0x0035_b6d0,
+            f: ee::s11::RailModifier_ListUnlink,
+        }
+        .call(c, 0x0035_2b48)?;
+        let this = c.g[S1][0] as u32;
+        c.g[V0][0] = 0x0049_1340;
+        c.g[A0][0] = sx(this.wrapping_add(MB_MOD_LIST));
+        c.sw(this.wrapping_add(MB_MOD_LIST_VTABLE), 0x0049_1340);
+        Callee {
+            addr: 0x0034_5760,
+            f: ee::s11::ModifierList_Unlink,
+        }
+        .call(c, 0x0035_2b5c)?;
+        c.g[S0][0] &= 0x1;
+        let delete = c.g[S0][0] != 0;
+        frame.restore(c, S0, 0x20);
+        if delete {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, 0x0031_7e50, 0x0035_2b70)?; // operator delete
+            frame.restore(c, S0, 0x20);
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `ModifierBlock`: head of the rail modifier list at +0x1c. A list link:
+/// next at +0, vtable at +0x8 (`Release(link, how)` at slot 0x8), id at
+/// +0x30.
+pub(crate) const MOD_BLOCK_RAIL_HEAD: u32 = 0x1c;
+
+pub(crate) const MOD_BLOCK_LINK_NEXT: u32 = 0x0;
+
+pub(crate) const MOD_BLOCK_LINK_VT: u32 = 0x8;
+
+pub(crate) const MOD_BLOCK_LINK_ID: u32 = 0x30;
+
+pub(crate) const MOD_BLOCK_RELEASE: u32 = 0x8;
+
+/// `link->Release(3)` through the link's vtable (link in a2), returning to
+/// `back`.
+pub(crate) fn mod_block_release_link(c: &mut Cpu, back: u32) -> crate::call::Flow {
+    let link = c.g[A2][0] as u32;
+    let vt = Addr(link.wrapping_add(MOD_BLOCK_LINK_VT)).lw(c);
+    c.g[V0][0] = vt;
+    c.g[A1][0] = 3;
+    let delta = Addr((vt as u32).wrapping_add(MOD_BLOCK_RELEASE)).lh(c);
+    let release = Addr((vt as u32).wrapping_add(MOD_BLOCK_RELEASE + 4)).lw(c);
+    c.g[V1][0] = release;
+    c.g[A0][0] = sx(link.wrapping_add(delta as u32));
+    call_ptr(c, release as u32, back)
+}
+
+/// `void ModifierBlock_FreeRailModifiers(ModifierBlock* self, u32 id)`
+/// (0x353300): release (`Release(3)`) the rail modifier with `id`, or every
+/// rail modifier when `id` is -1. Both list walks check events at their
+/// heads (0x353320, 0x353358).
+pub fn modifier_block_free_rail_modifiers(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let head = Addr((c.g[A0][0] as u32).wrapping_add(MOD_BLOCK_RAIL_HEAD)).lw(c);
+        c.g[A0][0] = head;
+        let id = c.g[A1][0];
+        c.g[V0][0] = !id;
+        let mut free_all_done = head == 0;
+        if head != 0 {
+            c.cycles += 2;
+            c.g[A2][0] = head;
+            if !id != 0 {
+                // Release the one modifier whose id matches.
+                loop {
+                    c.cycles += 2;
+                    if c.g[A2][0] == 0 {
+                        break;
+                    }
+                    c.cycles += 3;
+                    let link_id = Addr((c.g[A2][0] as u32).wrapping_add(MOD_BLOCK_LINK_ID)).lw(c);
+                    c.g[V0][0] = link_id;
+                    if link_id == c.g[A1][0] {
+                        c.cycles += 8;
+                        mod_block_release_link(c, 0x0035_334c)?;
+                        break;
+                    }
+                    c.g[A2][0] = Addr((c.g[A2][0] as u32).wrapping_add(MOD_BLOCK_LINK_NEXT)).lw(c);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0035_3320);
+                    }
+                }
+            } else {
+                // Release every modifier (the next link read first).
+                loop {
+                    c.cycles += 2;
+                    let link = c.g[A2][0];
+                    c.g[S0][0] = Addr((link as u32).wrapping_add(MOD_BLOCK_LINK_NEXT)).lw(c);
+                    if link != 0 {
+                        c.cycles += 6;
+                        mod_block_release_link(c, 0x0035_3378)?;
+                    }
+                    c.cycles += 3;
+                    c.g[A2][0] = c.g[S0][0];
+                    if c.g[A2][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0035_3358);
+                    }
+                }
+                free_all_done = true;
+            }
+        }
+        if free_all_done {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2147,6 +2350,118 @@ pub(crate) mod tests {
                 c.bus.write32(block, node);
                 c.g[A0][0] = sx(block);
                 c.g[A1][0] = sx(DATA + 0x4_0000);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::RA as SENTINEL;
+
+    /// ModifierBlock_dtor: transform / boost / particle modifiers present
+    /// or not (their release methods are fakes; some unwind), no UV-scroll,
+    /// texture-flip or rail modifiers, the modifier list linked to a node or
+    /// empty; delete flag on (real operator delete over the test heap) or off.
+    #[test]
+    fn modifier_block_dtor_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::DATA;
+        use crate::game::be::belibrary::tests::alloc_ready;
+        const THIS: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x800;
+        const TRANSFORM: u32 = DATA + 0x900;
+        const BOOST: u32 = DATA + 0xa00;
+        const NODE: u32 = DATA + 0xb00;
+        check(
+            ee::s11::f_00352ae8__generated,
+            modifier_block_dtor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_2ae8, 3);
+                alloc_ready(c);
+                c.pc = 0x0035_2ae8;
+                for k in 0..0x40u32 {
+                    c.bus.write32(THIS - 0x10 + 4 * k, 0);
+                }
+                c.bus.write16(VT + 0x8, (r.next_u32() & 0x7c) as u16);
+                c.bus.write32(VT + 0xc, FAKE);
+                c.bus.write32(TRANSFORM, VT);
+                c.bus.write32(BOOST + 4, VT);
+                c.bus.write32(NODE, 0);
+                c.bus.write32(NODE + 4, 0);
+                c.bus.write32(NODE + 8, VT);
+                let present = |bit: u32, p: u32| if (seed >> bit) & 1 != 0 { p } else { 0 };
+                c.bus.write32(THIS, present(1, TRANSFORM));
+                c.bus.write32(THIS + 0xc, present(2, BOOST));
+                c.bus.write32(THIS + MB_MOD_LIST, present(3, NODE));
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = ((seed & 1) | (r.next_u32() & 6)) as u64;
+            },
+        );
+    }
+
+    /// A modifier block whose rail list holds 0..5 links (each with a
+    /// fake `Release`), asked to free one id (present or not) or all (-1).
+    pub(crate) fn mod_block_free_rail_fixture(c: &mut Cpu, seed: u32) {
+        use crate::difftest::fakes::{machine, FAKE};
+        let n = seed / 3 % 6;
+        let mut r = machine(c, seed, 0x3533_0000, n.max(1));
+        let block = DATA;
+        let links = DATA + 0x1000;
+        let mut ids = Vec::new();
+        for i in 0..n {
+            let link = links + i * 0x100;
+            let next = if i + 1 < n { link + 0x100 } else { 0 };
+            let vt = DATA + 0x8000 + i * 0x40;
+            c.bus.write32(link + MOD_BLOCK_LINK_NEXT, next);
+            c.bus.write32(link + MOD_BLOCK_LINK_VT, vt);
+            let id = r.next_u32() & 0x7fff_ffff;
+            ids.push(id);
+            c.bus.write32(link + MOD_BLOCK_LINK_ID, id);
+            let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+            c.bus.write16(vt + MOD_BLOCK_RELEASE, delta as u16);
+            c.bus.write32(vt + MOD_BLOCK_RELEASE + 4, FAKE + 0x10 * i);
+        }
+        c.bus
+            .write32(block + MOD_BLOCK_RAIL_HEAD, if n > 0 { links } else { 0 });
+        // Word 0 (the free-all walk reads `next` of a null link there).
+        c.bus.write32(0, r.next_u32());
+        c.g[A1][0] = match seed % 3 {
+            0 => u64::MAX,
+            1 if n > 0 => ids[(r.next_u32() % n) as usize] as u64,
+            _ => (r.next_u32() as u64) << 32 | r.next_u32() as u64,
+        };
+        c.g[A0][0] = sx(block);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0035_3300;
+    }
+
+    /// `ModifierBlock_FreeRailModifiers`: empty list, one id found or not,
+    /// free all; fakes unwinding.
+    #[test]
+    fn modifier_block_free_rail_modifiers_matches() {
+        check(
+            ee::s11::f_00353300__generated,
+            modifier_block_free_rail_modifiers,
+            300,
+            &mod_block_free_rail_fixture,
+        );
+    }
+
+    /// Event delivery at both walk heads.
+    #[test]
+    fn modifier_block_free_rail_modifiers_events_match() {
+        check_events(
+            ee::s11::f_00353300__generated,
+            modifier_block_free_rail_modifiers,
+            150,
+            &|c, seed| {
+                // Free all (seed even) or an absent id over five links.
+                let base = 15 + if seed % 2 == 0 { 0 } else { 2 };
+                mod_block_free_rail_fixture(c, base);
+                c.bus
+                    .write32(crate::difftest::fakes::LOG_UNWIND_AT, u32::MAX);
+                let mut r = Rng(0x3533_0001 ^ seed as u64);
+                schedule(c, &mut r, seed, 0x0035_3300)
             },
         );
     }

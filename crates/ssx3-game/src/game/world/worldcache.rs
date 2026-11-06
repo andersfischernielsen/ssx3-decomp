@@ -180,6 +180,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         c_world_cache_alloc_resource,
         "cWorldCache_AllocResource",
     ),
+    (
+        0x003a_8cd0,
+        world_cache_resolve_resource,
+        "cWorldCache_ResolveResource",
+    ),
+    (
+        0x003a_8e20,
+        cworld_cache_release_resource,
+        "cWorldCache_ReleaseResource",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3151,6 +3161,233 @@ pub fn c_world_cache_alloc_resource(c: &mut Cpu) {
     })
 }
 
+/// `void cWorldCache::ReleaseResource(int cell, int kind, sHandle h)`
+/// (0x3a8e20): drops one reference of a cached world resource. The handle's
+/// low byte picks the table (0xff: the shared table at +4, else the slot's
+/// table from the array at +8), `kind` the table entry, and `h >> 8` the
+/// reference word in the entry's array (low byte: count, upper 24 bits: the
+/// resource address / 4). When the count reaches 0 the address bits are
+/// cleared and the owner object (+0x3e8) is told through its vtable slot
+/// +0x20 (`release(kind, resource or 0 for the sentinel at gp+0x16e0, h)`);
+/// a shared (0xff) resource it hands back is freed with `EA_MemFree`.
+pub fn cworld_cache_release_resource(c: &mut Cpu) {
+    const SHARED_TABLE: u32 = 0x4;
+    const SLOT_TABLES: u32 = 0x8;
+    const OWNER: u32 = 0x3e8;
+    const SHARED: u64 = 0xff;
+    guest(c, |c| {
+        c.cycles += 10;
+        let handle = c.g[A3][0];
+        c.g[T1][0] = handle;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        let cache = c.g[A0][0] as u32;
+        c.g[A3][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let slot = handle & 0xff;
+        c.g[S0][0] = slot;
+        let index = sx((handle as u32) >> 8);
+        c.g[V0][0] = 0xff;
+        let kind = c.g[A2][0];
+        c.g[A1][0] = kind;
+        let table = if slot == SHARED {
+            c.cycles += 2;
+            c.lw(cache.wrapping_add(SHARED_TABLE))
+        } else {
+            c.cycles += 4;
+            let tables = c.lw(cache.wrapping_add(SLOT_TABLES));
+            let p = sx(((slot as u32) << 2).wrapping_add(tables as u32));
+            c.g[V0][0] = p;
+            c.lw(p as u32)
+        };
+        // The entry's reference array and the handle's reference word.
+        c.cycles += 10;
+        let entry = sx((table as u32).wrapping_add((kind as u32) << 3));
+        let refs = c.lw((entry as u32).wrapping_add(4));
+        let word_at = sx(((index as u32) << 2).wrapping_add(refs as u32));
+        let count = sx((c.lbu(word_at as u32) as u32).wrapping_sub(1));
+        c.sb(word_at as u32, count);
+        let resource = if count & 0xff != 0 {
+            c.cycles += 1;
+            c.g[V0][0] = count;
+            c.g[V1][0] = count & 0xff;
+            0
+        } else {
+            c.cycles += 6;
+            let word = c.lw(word_at as u32);
+            c.g[V1][0] = word & 0xff;
+            let addr_bits = sx((word as u32) >> 8);
+            c.g[V0][0] = addr_bits;
+            c.sw(word_at as u32, word & 0xff);
+            sx((addr_bits as u32) << 2)
+        };
+        c.g[A0][0] = resource;
+        c.cycles += 2;
+        if resource == 0 {
+            frame.restore(c, S0, 0x10);
+        } else {
+            c.cycles += 3;
+            let sentinel = sx((c.g[GP][0] as u32).wrapping_add(0x16e0));
+            c.g[V0][0] = sentinel;
+            let owner = c.lw(cache.wrapping_add(OWNER));
+            c.g[T0][0] = owner;
+            c.g[A2][0] = c.g[T1][0];
+            if resource != sentinel {
+                c.cycles += 2;
+                c.g[A3][0] = resource;
+            } else {
+                c.cycles += 3;
+                c.g[A3][0] = 0;
+            }
+            // owner->release(kind, resource, handle) through vtable +0x20.
+            c.cycles += 8;
+            let vt = c.lw((owner as u32).wrapping_add(8));
+            c.g[V1][0] = vt;
+            let delta = c.lh((vt as u32).wrapping_add(0x20));
+            let method = c.lw((vt as u32).wrapping_add(0x24));
+            c.g[V0][0] = method;
+            c.g[A0][0] = sx((owner as u32).wrapping_add(delta as u32));
+            call_ptr(c, method as u32, 0x003a_8ee0)?;
+            let freed = c.g[V0][0];
+            c.g[A0][0] = freed;
+            c.g[V0][0] = 0xff;
+            if freed == 0 {
+                c.cycles += 1;
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 2;
+                let shared = c.g[S0][0] == SHARED;
+                frame.restore(c, S0, 0x10);
+                if shared {
+                    c.cycles += 2;
+                    call_ptr(c, 0x0031_7e98, 0x003a_8efc)?; // EA_MemFree
+                    c.cycles += 1;
+                    frame.restore(c, S0, 0x10);
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003a8cd0 cWorldCache_ResolveResource
+
+/// cWorldCache fields used by [`world_cache_resolve_resource`].
+pub(crate) const WC_DEFAULT_TABLE: u32 = 0x4;
+
+pub(crate) const WC_TABLES: u32 = 0x8;
+
+pub(crate) const WC_LOADER: u32 = 0x3e8;
+
+/// The per-group pending lists (24 bytes per group; the list pointer first).
+pub(crate) const WC_GROUPS: u32 = 0x3f8;
+
+/// The "no handle" sentinel object (`D_004a47d0`, gp+0x16e0).
+pub(crate) const WC_NO_HANDLE_GP: u32 = 0x16e0;
+
+/// `void cWorldCache_ResolveResource(cWorldCache* self, int group, int id,
+/// u32 key, int handle)` (0x3a8cd0): record (id, key low byte, key >> 8) in
+/// the group's pending list, ask the loader (`self+0x3e8`, vtable slot 3 at
+/// `+0x18`) to resolve it (with handle 0 when `handle` is the no-handle
+/// sentinel, then keeping the sentinel; otherwise the loader's result becomes
+/// the handle), and merge `(handle >> 2) << 8` into the resource's state word
+/// (`table[id].bits[key >> 8]`, table `key & 0xff` or the default for 0xff).
+pub fn world_cache_resolve_resource(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x50);
+        c.g[T1][0] = c.g[A3][0];
+        frame.save(c, S0, 0x40);
+        c.g[T2][0] = c.g[A0][0];
+        frame.save(c, S1, 0x30);
+        c.g[A0][0] = c.g[T1][0] & 0xff;
+        frame.save(c, S3, 0x10);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S2, 0x20);
+        c.g[S3][0] = sx((c.g[T1][0] as u32) >> 8);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = 0xff;
+        c.g[S0][0] = c.g[T0][0];
+        let this = c.g[T2][0] as u32;
+        // The resource table: by the key's low byte, 0xff the default one.
+        if c.g[A0][0] == 0xff {
+            c.cycles += 2;
+            c.g[S2][0] = c.lw(this.wrapping_add(WC_DEFAULT_TABLE));
+        } else {
+            c.cycles += 4;
+            c.g[V1][0] = c.lw(this.wrapping_add(WC_TABLES));
+            c.g[V0][0] = sx(((c.g[A0][0] as u32) << 2).wrapping_add(c.g[V1][0] as u32));
+            c.g[S2][0] = c.lw(c.g[V0][0] as u32);
+        }
+        // Append (id, key low byte, key >> 8) to the group's pending list.
+        c.cycles += 25;
+        c.g[V1][0] = 0x18;
+        c.g[A2][0] = sx((c.g[T1][0] as u32) >> 8);
+        c.mult(0, V0, A1, V1);
+        c.g[A3][0] = sx((c.g[GP][0] as u32).wrapping_add(WC_NO_HANDLE_GP));
+        c.g[V1][0] = sx((c.g[V0][0] as u32).wrapping_add(this));
+        c.g[A1][0] = c.lw((c.g[V1][0] as u32).wrapping_add(WC_GROUPS));
+        let list = c.g[A1][0] as u32;
+        let entry = |c: &mut Cpu| -> u32 {
+            let count = c.lw(list.wrapping_add(0x8)) as u32;
+            let entries = c.lw(list.wrapping_add(0xc)) as u32;
+            (count << 2).wrapping_add(entries)
+        };
+        c.g[V0][0] = sx(entry(c));
+        c.sb(c.g[V0][0] as u32, c.g[S1][0]);
+        c.g[V1][0] = sx(entry(c));
+        c.g[V0][0] = c.lw(list.wrapping_add(0xc));
+        c.sb((c.g[V1][0] as u32).wrapping_add(0x1), c.g[T1][0]);
+        c.g[A0][0] = sx(entry(c));
+        c.g[V0][0] = c.lw(list.wrapping_add(0xc));
+        c.sh((c.g[A0][0] as u32).wrapping_add(0x2), c.g[A2][0]);
+        c.g[V0][0] = sx((c.lw(list.wrapping_add(0x8)) as u32).wrapping_add(1));
+        c.sw(list.wrapping_add(0x8), c.g[V0][0]);
+        // loader->Resolve(id, key, handle or 0).
+        let no_handle = c.g[S0][0] == c.g[A3][0];
+        c.cycles += 11;
+        let this = c.g[T2][0] as u32;
+        c.g[T0][0] = c.lw(this.wrapping_add(WC_LOADER));
+        c.g[A3][0] = if no_handle { 0 } else { c.g[S0][0] };
+        c.g[A2][0] = c.g[T1][0];
+        c.g[A1][0] = c.g[S1][0];
+        c.g[V1][0] = c.lw((c.g[T0][0] as u32).wrapping_add(0x8));
+        c.g[A0][0] = c.lh((c.g[V1][0] as u32).wrapping_add(0x18));
+        c.g[V0][0] = c.lw((c.g[V1][0] as u32).wrapping_add(0x1c));
+        let resolve = c.g[V0][0] as u32;
+        c.g[A0][0] = sx((c.g[T0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        if no_handle {
+            call_ptr(c, resolve, 0x003a_8da8)?;
+        } else {
+            call_ptr(c, resolve, 0x003a_8dd4)?;
+            c.g[S0][0] = c.g[V0][0];
+        }
+        c.g[V0][0] = sx((c.g[S1][0] as u32) << 3);
+        // table[id].bits[key >> 8] |= (handle >> 2) << 8.
+        c.cycles += 16;
+        c.g[A0][0] = sx((c.g[S3][0] as u32) << 2);
+        c.g[V0][0] = sx((c.g[S2][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[V1][0] = sx(((c.g[S0][0] as u32) as i32 >> 2) as u32);
+        c.g[A1][0] = c.lw((c.g[V0][0] as u32).wrapping_add(0x4));
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 8);
+        frame.restore(c, S0, 0x40);
+        c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+        frame.restore(c, S1, 0x30);
+        c.g[V0][0] = c.lbu(c.g[A0][0] as u32);
+        frame.restore(c, S2, 0x20);
+        c.g[V0][0] |= c.g[V1][0];
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        c.sw(c.g[A0][0] as u32, c.g[V0][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4391,6 +4628,147 @@ pub(crate) mod tests {
                     0
                 } else {
                     1 + (r.next_u32() % 0x200) as u64
+                };
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// `cWorldCache_ReleaseResource`: a cache whose shared table (+4) and
+    /// four slot tables (+8 array) each hold four kind entries with a
+    /// 16-word reference array; the handle picks shared (1 in 3) or a slot,
+    /// an index and a kind. The count is 1 (released) on 3 of 4 seeds; the
+    /// resource is null, the gp+0x16e0 sentinel or a pointer. The owner's
+    /// vtable +0x20 is a fake returning a small pool pointer (EA_MemFree
+    /// runs for real on it), or on 1 in 5 seeds a real leaf returning 0.
+    #[test]
+    fn cworld_cache_release_resource_matches() {
+        const CACHE: u32 = DATA;
+        const SLOT_TABLES: u32 = DATA + 0x100;
+        const TABLES: u32 = DATA + 0x400;
+        const REFS: u32 = DATA + 0x1000;
+        const OWNER: u32 = DATA + 0x3000;
+        const VT: u32 = DATA + 0x3100;
+        covered(
+            ee::s13::f_003a8e20__generated,
+            cworld_cache_release_resource,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3a8e20, 4);
+                c.pc = 0x003a_8e20;
+                // Tables 0..3 for the slots, table 4 the shared one.
+                for t in 0..5u32 {
+                    let table = TABLES + 0x40 * t;
+                    for k in 0..4u32 {
+                        c.bus.write32(table + 8 * k, r.next_u32());
+                        c.bus
+                            .write32(table + 8 * k + 4, REFS + 0x400 * t + 0x40 * k);
+                    }
+                    if t < 4 {
+                        c.bus.write32(SLOT_TABLES + 4 * t, table);
+                    }
+                }
+                c.bus.write32(CACHE + 4, TABLES + 0x40 * 4);
+                c.bus.write32(CACHE + 8, SLOT_TABLES);
+                let slot = if seed % 3 == 0 {
+                    0xff
+                } else {
+                    r.next_u32() % 4
+                };
+                let t = if slot == 0xff { 4 } else { slot };
+                let kind = r.next_u32() % 4;
+                let index = r.next_u32() % 16;
+                let count = if seed % 4 == 0 {
+                    2 + r.next_u32() % 254
+                } else {
+                    1
+                };
+                let resource = match r.next_u32() % 5 {
+                    0 => 0,
+                    1 => GAME_GP + 0x16e0,
+                    _ => DATA + 0x8000 + (r.next_u32() & 0xfffc),
+                };
+                c.bus.write32(
+                    REFS + 0x400 * t + 0x40 * kind + 4 * index,
+                    (resource >> 2) << 8 | count,
+                );
+                // The owner and its release method.
+                c.bus.write32(CACHE + 0x3e8, OWNER);
+                c.bus.write32(OWNER + 8, VT);
+                c.bus.write16(VT + 0x20, (r.next_u32() % 0x40) as u16 & !3);
+                c.bus
+                    .write32(VT + 0x24, if seed % 5 == 0 { 0x0014_06c0 } else { FAKE });
+                c.bus.write32(LOG_RESULTS, 0x10 + 8 * (r.next_u32() % 0x80));
+                c.g[A0][0] = sx(CACHE);
+                c.g[A2][0] = kind as u64;
+                let handle = index << 8 | slot;
+                c.g[A3][0] = if seed % 7 == 0 {
+                    (r.next_u32() as u64) << 32 | handle as u64
+                } else {
+                    handle as u64
+                };
+            },
+        );
+    }
+
+    /// cWorldCache_ResolveResource: default table (key low byte 0xff) or an
+    /// indexed one, groups 0..3 with small pending counts, the no-handle
+    /// sentinel or a handle; the loader's Resolve is a fake (some unwind; its
+    /// result is the new handle).
+    #[test]
+    fn world_cache_resolve_resource_matches() {
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{DATA, GAME_GP};
+        const THIS: u32 = DATA + 0x1000;
+        const TABLES: u32 = DATA + 0x2000;
+        const TABLE: u32 = DATA + 0x3000;
+        const BITS: u32 = DATA + 0x4_0000;
+        const LISTS: u32 = DATA + 0x6000;
+        const ENTRIES: u32 = DATA + 0x8000;
+        const LOADER: u32 = DATA + 0x9000;
+        const VT: u32 = DATA + 0x9100;
+        check(
+            ee::s13::f_003a8cd0__generated,
+            world_cache_resolve_resource,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x003a_8cd0, 1);
+                c.pc = 0x003a_8cd0;
+                c.bus.write32(THIS + WC_DEFAULT_TABLE, TABLE);
+                c.bus.write32(THIS + WC_TABLES, TABLES);
+                for k in 0..0x100u32 {
+                    c.bus.write32(TABLES + 4 * k, TABLE + 0x100 * (k % 4));
+                }
+                for k in 0..0x80u32 {
+                    c.bus.write32(TABLE + 8 * k, r.next_u32());
+                    c.bus.write32(TABLE + 8 * k + 4, BITS + 0x200 * (k % 0x20));
+                }
+                for g in 0..4u32 {
+                    let list = LISTS + 0x100 * g;
+                    c.bus.write32(THIS + WC_GROUPS + 0x18 * g, list);
+                    c.bus.write32(list + 8, r.next_u32() % 16);
+                    c.bus.write32(list + 0xc, ENTRIES + 0x100 * g);
+                }
+                crate::difftest::fill(c, &mut r, BITS, 0x1000);
+                c.bus.write32(THIS + WC_LOADER, LOADER);
+                c.bus.write32(LOADER + 8, VT);
+                c.bus.write16(VT + 0x18, (r.next_u32() & 0x3c) as u16);
+                c.bus.write32(VT + 0x1c, FAKE);
+                let lo = if seed % 3 == 0 {
+                    0xff
+                } else {
+                    r.next_u32() & 0xff
+                };
+                let hi = r.next_u32() % 0x40;
+                c.g[A0][0] = sx(THIS);
+                c.g[A1][0] = (seed % 4) as u64;
+                c.g[A2][0] = (r.next_u32() % 0x10) as u64;
+                c.g[A3][0] = sx(hi << 8 | lo);
+                c.g[T0][0] = if seed % 2 == 0 {
+                    sx(GAME_GP + WC_NO_HANDLE_GP)
+                } else {
+                    sx(r.next_u32())
                 };
             },
         );

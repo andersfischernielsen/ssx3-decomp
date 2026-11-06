@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -15,6 +16,7 @@ pub(crate) use crate::game::dirtysock::tags2::at;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::lw;
 pub(crate) use crate::game::fe::ovtemplatepausemenu::p;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -31,6 +33,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0026_b7d8,
         path_data_read_float_int_pairs,
         "PathData_ReadFloatIntPairs",
+    ),
+    (
+        0x0026_b508,
+        path_data_get_track_path_index,
+        "PathData_GetTrackPathIndex",
+    ),
+    (
+        0x0026_b550,
+        path_data_get_ai_path_index,
+        "PathData_GetAIPathIndex",
     ),
 ];
 
@@ -207,6 +219,132 @@ pub fn path_data_read_float_int_pairs(c: &mut Cpu) {
     })
 }
 
+/// `PathData` AI path table: entry count at +0x8, entries (0x40 bytes each)
+/// at +0xc.
+pub(crate) const PATH_DATA_AI_COUNT: u32 = 0x8;
+
+pub(crate) const PATH_DATA_AI_ENTRIES: u32 = 0xc;
+
+pub(crate) const PATH_DATA_AI_ENTRY_SIZE: u32 = 0x40;
+
+/// `int PathData_GetAIPathIndex(PathData* tree, AIPath* path)` (0x26b550):
+/// the index of `path` in the tree's AI path array, or -1 (also for a null
+/// path). The loop checks events at its head 0x26b570.
+pub fn path_data_get_ai_path_index(c: &mut Cpu) {
+    c.cycles += 2;
+    let path = c.g[A1][0];
+    if path != 0 {
+        c.cycles += 3;
+        let tree = Addr(c.g[A0][0] as u32);
+        let count = tree.off(PATH_DATA_AI_COUNT).lw(c);
+        c.g[V0][0] = count;
+        c.g[V1][0] = 0;
+        if (count as i64) > 0 {
+            c.cycles += 3;
+            let mut entry = tree.off(PATH_DATA_AI_ENTRIES).lw(c);
+            let mut index: u64 = 0;
+            let mut count = count;
+            c.g[A2][0] = count;
+            loop {
+                c.cycles += 2;
+                if entry == path {
+                    c.g[A0][0] = entry;
+                    c.g[V1][0] = index;
+                    c.cycles += 2;
+                    c.g[V0][0] = index;
+                    ret(c);
+                    return;
+                }
+                index = sx((index as u32).wrapping_add(1));
+                c.cycles += 3;
+                let more = (index as i64) < (count as i64);
+                entry = sx((entry as u32).wrapping_add(PATH_DATA_AI_ENTRY_SIZE));
+                if !more {
+                    c.g[A0][0] = entry;
+                    c.g[V1][0] = index;
+                    c.g[V0][0] = 0;
+                    break;
+                }
+                if event_due(c) {
+                    c.g[A0][0] = entry;
+                    c.g[V1][0] = index;
+                    c.g[V0][0] = 1;
+                    deliver_event_here(c, 0x0026_b570);
+                    entry = c.g[A0][0];
+                    index = c.g[V1][0];
+                    count = c.g[A2][0];
+                }
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = u64::MAX;
+    ret(c);
+}
+
+/// `PathData` track path table: entry count at +0x10, entries (0x3c bytes
+/// each) at +0x14.
+pub(crate) const PATH_DATA_TRACK_COUNT: u32 = 0x10;
+
+pub(crate) const PATH_DATA_TRACK_ENTRIES: u32 = 0x14;
+
+pub(crate) const PATH_DATA_TRACK_ENTRY_SIZE: u32 = 0x3c;
+
+/// `int PathData_GetTrackPathIndex(PathData* tree, TrackPath* path)`
+/// (0x26b508): the index of `path` in the tree's track path array, or -1
+/// (also for a null path). The loop checks events at its head 0x26b528.
+pub fn path_data_get_track_path_index(c: &mut Cpu) {
+    c.cycles += 2;
+    let path = c.g[A1][0];
+    if path != 0 {
+        c.cycles += 3;
+        let tree = Addr(c.g[A0][0] as u32);
+        let count = tree.off(PATH_DATA_TRACK_COUNT).lw(c);
+        c.g[V0][0] = count;
+        c.g[V1][0] = 0;
+        if (count as i64) > 0 {
+            c.cycles += 3;
+            let mut entry = tree.off(PATH_DATA_TRACK_ENTRIES).lw(c);
+            let mut index: u64 = 0;
+            let mut count = count;
+            c.g[A2][0] = count;
+            loop {
+                c.cycles += 2;
+                if entry == path {
+                    c.g[A0][0] = entry;
+                    c.g[V1][0] = index;
+                    c.cycles += 2;
+                    c.g[V0][0] = index;
+                    ret(c);
+                    return;
+                }
+                index = sx((index as u32).wrapping_add(1));
+                c.cycles += 3;
+                let more = (index as i64) < (count as i64);
+                entry = sx((entry as u32).wrapping_add(PATH_DATA_TRACK_ENTRY_SIZE));
+                if !more {
+                    c.g[A0][0] = entry;
+                    c.g[V1][0] = index;
+                    c.g[V0][0] = 0;
+                    break;
+                }
+                if event_due(c) {
+                    c.g[A0][0] = entry;
+                    c.g[V1][0] = index;
+                    c.g[V0][0] = 1;
+                    deliver_event_here(c, 0x0026_b528);
+                    entry = c.g[A0][0];
+                    index = c.g[V1][0];
+                    count = c.g[A2][0];
+                }
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = u64::MAX;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -321,6 +459,135 @@ pub(crate) mod tests {
                 w(c, OBJ + 0x1c, 0);
                 w(c, OBJ + 0x20, 0);
                 w(c, OBJ + 0x24, 0);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::{scramble, RA as SENTINEL};
+
+    /// A tree whose AI path array holds 0..6 entries, asked for a null path,
+    /// one of its entries, or a pointer that is not in the array.
+    pub(crate) fn path_index_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        scramble(c, r);
+        let tree = DATA;
+        let entries = DATA + 0x1000;
+        let count = match seed % 7 {
+            0 => 0,
+            1 => (-(1 + (r.next_u32() % 3) as i32)) as u32,
+            _ => 1 + r.next_u32() % 6,
+        };
+        c.bus.write32(tree + PATH_DATA_AI_COUNT, count);
+        c.bus.write32(tree + PATH_DATA_AI_ENTRIES, entries);
+        let n = if (count as i32) > 0 { count } else { 1 };
+        let path = match seed % 5 {
+            0 => 0,
+            1 => entries + 0x40 * n + 4,
+            2 => 0xdead_0000,
+            _ => entries + 0x40 * (r.next_u32() % n),
+        };
+        c.g[A0][0] = sx(tree);
+        c.g[A1][0] = sx(path);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0026_b550;
+    }
+
+    /// `PathData_GetAIPathIndex`: found, not found, null, empty array.
+    #[test]
+    fn path_data_get_ai_path_index_matches() {
+        check(
+            ee::s07::f_0026b550__generated,
+            path_data_get_ai_path_index,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x26b5_5000 ^ seed as u64);
+                path_index_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// Event delivery at the search loop head (0x26b570).
+    #[test]
+    fn path_data_get_ai_path_index_events_match() {
+        check_events(
+            ee::s07::f_0026b550__generated,
+            path_data_get_ai_path_index,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x26b5_5001 ^ seed as u64);
+                path_index_fixture(c, &mut r, 3 + seed % 4);
+                // Long array, path near the end (or absent).
+                c.bus.write32(DATA + PATH_DATA_AI_COUNT, 6);
+                let path = if seed % 2 == 0 {
+                    DATA + 0x1000 + 0x40 * 5
+                } else {
+                    4
+                };
+                c.g[A1][0] = sx(path);
+                schedule(c, &mut r, seed, 0x0026_b550)
+            },
+        );
+    }
+
+    /// A tree whose track path array holds 0..6 entries, asked for a null
+    /// path, one of its entries, or a pointer that is not in the array.
+    pub(crate) fn track_path_index_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        scramble(c, r);
+        let tree = DATA;
+        let entries = DATA + 0x1000;
+        let count = match seed % 7 {
+            0 => 0,
+            1 => (-(1 + (r.next_u32() % 3) as i32)) as u32,
+            _ => 1 + r.next_u32() % 6,
+        };
+        c.bus.write32(tree + PATH_DATA_TRACK_COUNT, count);
+        c.bus.write32(tree + PATH_DATA_TRACK_ENTRIES, entries);
+        let n = if (count as i32) > 0 { count } else { 1 };
+        let path = match seed % 5 {
+            0 => 0,
+            1 => entries + 0x3c * n + 4,
+            2 => 0xdead_0000,
+            _ => entries + 0x3c * (r.next_u32() % n),
+        };
+        c.g[A0][0] = sx(tree);
+        c.g[A1][0] = sx(path);
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0026_b508;
+    }
+
+    /// `PathData_GetTrackPathIndex`: found, not found, null, empty array.
+    #[test]
+    fn path_data_get_track_path_index_matches() {
+        check(
+            ee::s07::f_0026b508__generated,
+            path_data_get_track_path_index,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x26b5_0800 ^ seed as u64);
+                track_path_index_fixture(c, &mut r, seed);
+            },
+        );
+    }
+
+    /// Event delivery at the search loop head (0x26b528).
+    #[test]
+    fn path_data_get_track_path_index_events_match() {
+        check_events(
+            ee::s07::f_0026b508__generated,
+            path_data_get_track_path_index,
+            150,
+            &|c, seed| {
+                let mut r = Rng(0x26b5_0801 ^ seed as u64);
+                track_path_index_fixture(c, &mut r, 3 + seed % 4);
+                // Long array, path near the end (or absent).
+                c.bus.write32(DATA + PATH_DATA_TRACK_COUNT, 6);
+                let path = if seed % 2 == 0 {
+                    DATA + 0x1000 + 0x3c * 5
+                } else {
+                    4
+                };
+                c.g[A1][0] = sx(path);
+                schedule(c, &mut r, seed, 0x0026_b508)
             },
         );
     }
