@@ -54,12 +54,13 @@ No device-wide display or graphics settings are changed by the app.
 
 Back (including the system back gesture) sends the game to the background and
 pauses it. Returning from the launcher resumes the same race. To quit, swipe the
-game away in recents; reopening then starts from saved data, so unsaved progress
-is lost. Losing window focus pauses. Unplugging headphones does not; if Android
-closes the stream when the output changes, that is a stream error. A stream
-error never pauses either: the game plays on silently, and asks for audio again
-the next time focus returns. A slow reopen also plays on silently until it
-completes. The pack must contain the supported USA executable,
+game away in recents; reopening before removal completes may resume it. After
+removal the next session starts from saved data, so unsaved progress is lost.
+Losing window focus pauses. Unplugging headphones does not; if Android closes
+the stream when the output changes, that is a stream error. A stream error
+never pauses either: the game plays on silently and reopens the stream after a
+backoff that doubles from half a second to eight seconds. A slow reopen also
+plays on silently until it completes. The pack must contain the supported USA executable,
 `SLUS_207.72`, with SHA-256
 `1b49d05ca2793922180851b9e1ce9ae2291d61a7863565ac4e71f12e967af7bc`.
 

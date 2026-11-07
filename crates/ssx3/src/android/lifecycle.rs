@@ -1,4 +1,4 @@
-use super::policy::Policy;
+use super::policy::{AudioRetry, Policy};
 use jni::{jni_sig, jni_str, objects::JObject, JavaVM};
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, Ordering},
@@ -109,6 +109,7 @@ pub struct Lifecycle {
     policy: Policy,
     active: bool,
     audio: bool,
+    retry: AudioRetry,
     stopping: Option<Instant>,
     confirmed: bool,
     heard: bool,
@@ -217,12 +218,24 @@ impl Lifecycle {
         if audible != app.android.audio {
             app.android.audio = audible;
             app.android.heard = false;
+            app.android.retry.reset();
             audio::request(audible);
             eprintln!(
                 "[android] audio={} frame={}",
                 audible,
                 ssx3_ps2::m!(app.cpu).sched.frames
             );
+        } else if audible
+            && app.android.retry.poll(
+                Instant::now(),
+                audio::settled(),
+                audio::failed(),
+                audio::callbacks_started(),
+            )
+        {
+            eprintln!("[android] reopening audio after a stream error");
+            app.android.heard = false;
+            audio::request(true);
         }
         let ready = app.android.active;
         if ready != app.android.confirmed {

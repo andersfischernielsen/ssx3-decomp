@@ -63,9 +63,17 @@ fn lazy_start_pause_during_open_resume_and_shutdown() {
     assert!(a::callbacks_started());
     a::silence();
     assert!(!a::accepts());
+    // A stream error only silences; the next request reopens the stream.
+    a::request(true);
+    wait(&|| a::settled());
+    a::stream_error();
+    assert!(a::failed() && !a::accepts());
+    a::request(true);
+    wait(&|| a::settled());
+    assert!(!a::failed() && a::accepts());
     a::shutdown();
     wait(&|| a::settled());
-    assert_eq!(CLOSE.load(Ordering::SeqCst), 2);
+    assert_eq!(CLOSE.load(Ordering::SeqCst), 4);
     assert!(!a::failed());
     assert!(!a::callbacks_started());
 }

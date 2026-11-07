@@ -1,5 +1,6 @@
 //! Pure lifecycle policy: surface, native focus and Java focus are independent.
 //! Audio is optional: losing it silences the game but never pauses play.
+use std::time::{Duration, Instant};
 
 // Java bits: 1 foreground, 2 window focus, 4 audio focus, 8 destroyed.
 #[derive(Default)]
@@ -13,6 +14,44 @@ impl Policy {
     }
     pub fn audible(&self, java: u32) -> bool {
         self.playing(java) && java & 4 != 0
+    }
+}
+
+// A failed stream is reopened after a backoff that doubles from half a
+// second to eight seconds. A slow or stuck operation is left to finish:
+// the owner handles one command at a time, and play does not wait for it.
+#[derive(Default)]
+pub struct AudioRetry {
+    failures: u32,
+    due: Option<Instant>,
+}
+impl AudioRetry {
+    /// True when a reopen should be requested now.
+    pub fn poll(&mut self, now: Instant, settled: bool, failed: bool, heard: bool) -> bool {
+        if !settled {
+            return false;
+        }
+        if !failed {
+            self.due = None;
+            if heard {
+                self.failures = 0;
+            }
+            return false;
+        }
+        let failures = &mut self.failures;
+        let due = *self.due.get_or_insert_with(|| {
+            let delay = Duration::from_millis(500) * (1 << (*failures).min(4));
+            *failures += 1;
+            now + delay
+        });
+        if now < due {
+            return false;
+        }
+        self.due = None;
+        true
+    }
+    pub fn reset(&mut self) {
+        *self = Self::default();
     }
 }
 
@@ -52,6 +91,52 @@ mod tests {
         assert!(p.playing(3) && !p.audible(3));
         // Gain needs no key: the audio bit alone brings sound back.
         assert!(p.playing(7) && p.audible(7));
+    }
+
+    #[test]
+    fn slow_or_stuck_audio_never_requests_a_reopen() {
+        let t = Instant::now();
+        let mut audio = AudioRetry::default();
+        for s in [0, 2, 5, 60] {
+            let now = t + Duration::from_secs(s);
+            assert!(!audio.poll(now, false, false, false));
+            assert!(!audio.poll(now, false, true, false));
+        }
+        assert!(!audio.poll(t + Duration::from_secs(61), true, false, true));
+    }
+
+    #[test]
+    fn stream_errors_reopen_with_a_capped_backoff_and_no_key() {
+        let mut now = Instant::now();
+        let mut audio = AudioRetry::default();
+        for delay in [500, 1000, 2000, 4000, 8000, 8000] {
+            assert!(!audio.poll(now, true, true, false)); // schedules
+            let due = now + Duration::from_millis(delay);
+            assert!(!audio.poll(due - Duration::from_millis(1), true, true, false));
+            assert!(audio.poll(due, true, true, false));
+            // The reopen is pending, then fails again.
+            assert!(!audio.poll(due, false, false, false));
+            now = due;
+        }
+        // A reopen that plays resets the backoff.
+        assert!(!audio.poll(now, true, false, true));
+        assert!(!audio.poll(now, true, true, false));
+        assert!(audio.poll(now + Duration::from_millis(500), true, true, false));
+    }
+
+    #[test]
+    fn a_stream_that_opens_but_never_plays_keeps_backing_off() {
+        let t = Instant::now();
+        let mut audio = AudioRetry::default();
+        assert!(!audio.poll(t, true, true, false));
+        assert!(audio.poll(t + Duration::from_millis(500), true, true, false));
+        assert!(!audio.poll(t + Duration::from_millis(600), true, false, false));
+        let t = t + Duration::from_millis(700);
+        assert!(!audio.poll(t, true, true, false));
+        assert!(audio.poll(t + Duration::from_secs(1), true, true, false));
+        audio.reset();
+        assert!(!audio.poll(t, true, true, false));
+        assert!(audio.poll(t + Duration::from_millis(500), true, true, false));
     }
 
     #[test]
