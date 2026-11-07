@@ -30,7 +30,9 @@ are still PS2-shaped; see [`docs/plans/roadmap.md`](docs/plans/roadmap.md) and
 [known limitations](docs/investigation/limitations.md).
 
 ![Snow Jam at 2560x1080](docs/images/ultrawide.jpg)
+
 ![Metro City at night at 1920x1080](docs/images/metro-city-night.jpg)
+
 https://github.com/user-attachments/assets/2059e982-d7d4-4111-bcfc-18b237a24752
 
 ## Getting started
