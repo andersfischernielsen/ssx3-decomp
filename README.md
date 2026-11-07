@@ -2,8 +2,6 @@
 
 [![SSX 3 running natively: title screen, mode select, race start and three moments of a Snow Jam race](docs/images/screenshots.jpg)](docs/ssx3.mp4)
 
-▶ **[Video](docs/ssx3.mp4)**
-
 > SSX 3 is © Electronic Arts; "SSX" is an EA trademark. This project is not affiliated
 > with or endorsed by EA. **The repository contains no game data and no game code.** The
 > disc image, the executable and everything translated from them (`orig/`, `generated/`)
@@ -33,6 +31,7 @@ are still PS2-shaped; see [`docs/plans/roadmap.md`](docs/plans/roadmap.md) and
 
 ![Snow Jam at 2560x1080](docs/images/ultrawide.jpg)
 ![Metro City at night at 1920x1080](docs/images/metro-city-night.jpg)
+https://github.com/user-attachments/assets/2059e982-d7d4-4111-bcfc-18b237a24752
 
 ## Getting started
 
