@@ -27,9 +27,11 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.android.controller.ActivityController;
+import org.robolectric.shadows.ShadowAppTask;
+import org.robolectric.util.ReflectionHelpers;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 33)
+@Config(sdk = 33, shadows = AndroidBackTest.GameActivityShadow.class)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class LauncherActivityTest {
     private Application app;
@@ -122,6 +124,55 @@ public class LauncherActivityTest {
         }
     }
 
+    private void returnProbe(boolean removalWins) {
+        processes(true);
+        AndroidActivity game = Robolectric.buildActivity(AndroidActivity.class).get();
+        ReflectionHelpers.setField(game, "sessionOwner", true);
+        ActivityManager.AppTask task = ShadowAppTask.newInstance();
+        ActivityManager.RecentTaskInfo info = new ActivityManager.RecentTaskInfo();
+        info.taskId = game.getTaskId();
+        shadowOf(task).setTaskInfo(info);
+        shadowOf(app.getSystemService(ActivityManager.class)).setAppTasks(Collections.singletonList(task));
+        // Exercise the real game receiver; only the native Activity initialization
+        // is shadowed. The observed race resumes, then finishes before gaining focus.
+        BroadcastReceiver receiver = ReflectionHelpers.getField(game, "returnToGame");
+        app.registerReceiver(receiver, new IntentFilter(app.getPackageName() + LauncherActivity.RETURN_TO_GAME),
+            Context.RECEIVER_NOT_EXPORTED);
+        try (ActivityController<LauncherActivity> controller =
+                Robolectric.buildActivity(LauncherActivity.class, incoming(true)).create()) {
+            LauncherActivity launcher = controller.get();
+            shadowOf(Looper.getMainLooper()).idle();
+            assertTrue(shadowOf(task).hasMovedToFront());
+            assertFalse(launcher.isFinishing());
+            assertNull(shadowOf(launcher).getNextStartedActivity());
+            ReflectionHelpers.setField(game, "foreground", true);
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(25));
+            assertFalse(launcher.isFinishing());
+            if (removalWins) {
+                game.finish();
+                ReflectionHelpers.setField(game, "foreground", false);
+            }
+            ReflectionHelpers.setField(game, "focused", true);
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(25));
+            assertNull(shadowOf(launcher).getNextStartedActivity());
+            if (removalWins) {
+                assertFalse(launcher.isFinishing());
+                processes(false);
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(25));
+                assertForwarded(launcher);
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+                assertNull(shadowOf(launcher).getNextStartedActivity());
+            } else {
+                assertTrue(launcher.isFinishing());
+            }
+        } finally {
+            app.unregisterReceiver(receiver);
+        }
+    }
+
+    @Test public void recentsRemovalAfterMoveToFrontWaitsForExitAndStartsOnce() { returnProbe(true); }
+    @Test public void liveReturnWaitsForResumeAndFocusBeforeFinishingLauncher() { returnProbe(false); }
+
     private void live(boolean cold, boolean reentry) {
         processes(true);
         BroadcastReceiver game = new BroadcastReceiver() {
@@ -168,9 +219,18 @@ public class LauncherActivityTest {
         processes(true);
         try (ActivityController<LauncherActivity> controller =
                 Robolectric.buildActivity(LauncherActivity.class, incoming(true)).create()) {
+            ActivityManager.AppTask launcherTask = ShadowAppTask.newInstance();
+            ActivityManager.RecentTaskInfo info = new ActivityManager.RecentTaskInfo();
+            info.taskId = controller.get().getTaskId();
+            shadowOf(launcherTask).setTaskInfo(info);
+            shadowOf(app.getSystemService(ActivityManager.class)).setAppTasks(Collections.singletonList(launcherTask));
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(3));
+            assertTrue(shadowOf(launcherTask).hasMovedToFront());
             assertNull(shadowOf(controller.get()).getNextStartedActivity());
             assertFalse(controller.get().isFinishing());
+            android.widget.TextView message = (android.widget.TextView)
+                ((android.view.ViewGroup) controller.get().findViewById(android.R.id.content)).getChildAt(0);
+            assertTrue(message.getText().toString().startsWith("Previous game session did not respond"));
         }
     }
 

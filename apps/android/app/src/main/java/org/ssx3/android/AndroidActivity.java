@@ -44,7 +44,12 @@ public final class AndroidActivity extends NativeActivity {
             for (ActivityManager.AppTask task : getSystemService(ActivityManager.class).getAppTasks()) {
                 if (task.getTaskInfo().taskId == getTaskId()) {
                     task.moveToFront();
-                    setResultCode(RESULT_OK);
+                    // Moving a task is only a request: a recents dismissal can
+                    // still finish it before focus returns. Keep the launcher's
+                    // exit poll alive until a later probe sees a usable game.
+                    if (foreground && focused && !isFinishing()) {
+                        setResultCode(RESULT_OK);
+                    }
                     return;
                 }
             }

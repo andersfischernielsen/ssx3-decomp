@@ -104,6 +104,14 @@ public final class LauncherActivity extends Activity {
         waiting = false;
         handler.removeCallbacks(waitForGame);
         message.setText(text);
+        // A failed move-to-front may have covered us with a dying game task.
+        // Make the bounded error visible without creating another game.
+        for (ActivityManager.AppTask task : getSystemService(ActivityManager.class).getAppTasks()) {
+            if (task.getTaskInfo().taskId == getTaskId()) {
+                task.moveToFront();
+                break;
+            }
+        }
     }
 
     @Override protected void onDestroy() {
