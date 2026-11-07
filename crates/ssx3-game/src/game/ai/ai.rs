@@ -3520,7 +3520,8 @@ mod finish_input {
 
 /// `void RiderFinishLineSub_HandleInput(sub)` (0x12c678): settle the rider,
 /// brake to a stop, play the finish event, then hold still. The slew return
-/// step and the damping factors are loaded from the pool.
+/// step and the damping factors are loaded from the pool; all three are
+/// [`crate::tick::PER_TICK`] entries.
 pub fn rider_finish_line_sub_handle_input(c: &mut Cpu) {
     use finish_input::*;
     guest(c, |c| {
@@ -17435,6 +17436,24 @@ pub(crate) mod tests {
             let step = [0.01f32, 1.0 / 30.0, 0.07][(seed / 20 % 3) as usize];
             assert_eq!(c.bus.read32(crate::difftest::DATA + 0x1200), step.to_bits());
         }
+    }
+
+    /// Past the line, the return step moves the same way per game time.
+    #[test]
+    fn rider_finish_line_sub_return_follows_the_rate() {
+        const STEP: u32 = 0x0049_b8f8;
+
+        crate::tick::assert_slew_follows_the_rate(crate::difftest::DATA + 0x11fc, &|hz| {
+            let mut c = crate::difftest::fresh();
+            finish_line_input_setup(&mut c, 0);
+            c.bus
+                .write32(STEP, crate::tick::per_tick_at(hz, STEP, 0x3d08_8889));
+            crate::difftest::run_generated(&mut c, rider_finish_line_sub_handle_input);
+            assert_eq!(c.pc, crate::difftest::RA);
+            let stored = c.bus.read32(crate::difftest::DATA + 0x1200);
+            assert_eq!(stored, crate::tick::per_tick_at(hz, STEP, 0x3d08_8889));
+            c
+        });
     }
 
     // --------------------------------------------------- rider wipeout phase

@@ -143,6 +143,9 @@ pub const PER_TICK: &[(u32, u32, PerTick)] = &[
     // RiderRailslideState_PostUpdate (0x13bfa8): leaving a rail, the return
     // step for rider +0x22c; consumed once per update by Rider_UpdateSlewedParams.
     (0x0049_bfdc, 0x3d08_8889, PerTick::Step),
+    // RiderFinishLineSub_HandleInput (0x12c678): past the line, the return
+    // step for rider +0x1fc; consumed once per update by Rider_UpdateSlewedParams.
+    (0x0049_b8f8, 0x3d08_8889, PerTick::Step),
     // Rider_HandleBoostInput (0x114130): the boost meter (rider +0x2f8)
     // drains 0.0015068 per tick while boost is held.
     (0x0049_b4fc, 0x3ac5_7fcc, PerTick::Step),
