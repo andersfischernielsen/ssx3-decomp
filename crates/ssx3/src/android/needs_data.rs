@@ -59,14 +59,10 @@ impl ApplicationHandler for NeedsData {
             WindowEvent::CloseRequested => {
                 super::lifecycle::java(super::lifecycle::JavaAction::Finish)
             }
-            WindowEvent::KeyboardInput { event, .. }
-                if event.state.is_pressed()
-                    && event.physical_key
-                        == winit::keyboard::PhysicalKey::Code(
-                            winit::keyboard::KeyCode::BrowserBack,
-                        ) =>
-            {
-                super::lifecycle::java(super::lifecycle::JavaAction::Finish);
+            WindowEvent::KeyboardInput { event, .. } => {
+                super::policy::handle_back(&event.logical_key, event.state, event.repeat, || {
+                    super::lifecycle::java(super::lifecycle::JavaAction::Background);
+                });
             }
             WindowEvent::Resized(size) => {
                 if size.width == 0 || size.height == 0 {

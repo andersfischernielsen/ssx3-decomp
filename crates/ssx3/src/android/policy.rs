@@ -16,9 +16,30 @@ impl Policy {
     }
 }
 
+// NativeActivity keys are consumed by winit before Java's Back callback.
+// Android Back has a logical name but no mapped physical key in winit.
+pub fn handle_back(
+    key: &winit::keyboard::Key,
+    state: winit::event::ElementState,
+    repeat: bool,
+    background: impl FnOnce(),
+) -> bool {
+    if *key != winit::keyboard::Key::Named(winit::keyboard::NamedKey::BrowserBack) {
+        return false;
+    }
+    if state.is_pressed() && !repeat {
+        background();
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use winit::{
+        event::ElementState,
+        keyboard::{Key, NamedKey},
+    };
 
     #[test]
     fn audio_focus_loss_of_any_kind_keeps_play_and_only_silences() {
@@ -31,6 +52,29 @@ mod tests {
         assert!(p.playing(3) && !p.audible(3));
         // Gain needs no key: the audio bit alone brings sound back.
         assert!(p.playing(7) && p.audible(7));
+    }
+
+    #[test]
+    fn logical_android_back_backgrounds_once_and_consumes_release_and_repeat() {
+        let key = Key::Named(NamedKey::BrowserBack);
+        let mut calls = 0;
+        for (state, repeat) in [
+            (ElementState::Pressed, false),
+            (ElementState::Pressed, true),
+            (ElementState::Released, false),
+        ] {
+            assert!(handle_back(&key, state, repeat, || calls += 1));
+        }
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn other_keys_remain_available_to_the_game() {
+        for key in [Key::Named(NamedKey::Escape), Key::Character("x".into())] {
+            assert!(!handle_back(&key, ElementState::Pressed, false, || {
+                panic!("non-Back key requested backgrounding")
+            }));
+        }
     }
 
     #[test]

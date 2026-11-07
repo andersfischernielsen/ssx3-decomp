@@ -42,4 +42,18 @@ public class AndroidBackTest {
         assertFalse(activity.isFinishing());
         assertNull(shadowOf(activity).getNextStartedActivity());
     }
+    @Test public void nativeBackPostsBackgroundingToTheUiThread() throws Exception {
+        AndroidActivity activity = Robolectric.buildActivity(AndroidActivity.class).get();
+        GameActivityShadow game = Shadow.extract(activity);
+        Thread nativeInput = new Thread(activity::background);
+        nativeInput.start();
+        nativeInput.join();
+        assertEquals(0, game.moves);
+        shadowOf(android.os.Looper.getMainLooper()).idle();
+        assertEquals(1, game.moves);
+        assertTrue(game.nonRoot);
+        assertFalse(activity.isFinishing());
+        assertNull(shadowOf(activity).getNextStartedActivity());
+    }
+
 }

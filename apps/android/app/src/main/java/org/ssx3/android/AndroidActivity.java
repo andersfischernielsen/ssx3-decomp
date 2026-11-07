@@ -107,11 +107,16 @@ public final class AndroidActivity extends NativeActivity {
             android.util.Log.i("SSX3", "Native pause confirmed");
         });
     }
+    // Called by native input as well as Java Back; never wait on the native thread.
+    public void background() {
+        runOnUiThread(() -> {
+            if (!destroyed) moveTaskToBack(true);
+        });
+    }
     // Keep the guest alive; normal focus/surface callbacks pause playback.
-    // The manifest routes button and gesture Back through this API on Android 13+.
     @SuppressWarnings("deprecation")
     @Override public void onBackPressed() {
-        moveTaskToBack(true);
+        background();
     }
     @Override public void onResume() {
         super.onResume();

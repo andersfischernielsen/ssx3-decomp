@@ -65,6 +65,7 @@ pub enum JavaAction {
     Playing,
     Paused,
     Finish,
+    Background,
 }
 pub fn java(method: JavaAction) {
     ACTIVITY.with(|a| {
@@ -86,6 +87,9 @@ pub fn java(method: JavaAction) {
                     }
                     JavaAction::Paused => {
                         env.call_method(&*object, jni_str!("paused"), jni_sig!("()V"), &[])?;
+                    }
+                    JavaAction::Background => {
+                        env.call_method(&*object, jni_str!("background"), jni_sig!("()V"), &[])?;
                     }
                     JavaAction::Finish => {
                         env.call_method(&*object, jni_str!("finish"), jni_sig!("()V"), &[])?;
@@ -120,12 +124,10 @@ impl Lifecycle {
                     app.presenter = None;
                 }
             }
-            WindowEvent::KeyboardInput { event, .. } if event.state.is_pressed() => {
-                if event.physical_key
-                    == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::BrowserBack)
-                {
-                    java(JavaAction::Finish);
-                }
+            WindowEvent::KeyboardInput { event, .. } => {
+                super::policy::handle_back(&event.logical_key, event.state, event.repeat, || {
+                    java(JavaAction::Background);
+                });
             }
             _ => {}
         }
