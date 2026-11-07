@@ -194,6 +194,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "RiderFinishLineSub_Enter",
     ),
     (
+        0x0012_c678,
+        rider_finish_line_sub_handle_input,
+        "RiderFinishLineSub_HandleInput",
+    ),
+    (
         0x0012_c9f8,
         rider_finish_line_sub_load_state,
         "RiderFinishLineSub_LoadState",
@@ -3094,6 +3099,325 @@ pub fn rider_finish_line_sub_enter(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// Finish-line substate fields and its literal-pool tuning.
+mod finish_input {
+    pub const RIDER: u32 = 4;
+    pub const BRAKE: u32 = 0x214;
+    pub const ANIM_TIME_SCALE: u32 = 0x1c;
+    /// gp-0x77f8: 1/30, slew-1 return step.
+    pub const GP_RETURN_STEP: u32 = 0x77f8;
+    /// gp-0x77f4: -0.1, steer target for non-positive steering.
+    pub const GP_STEER_NEGATIVE: u32 = 0x77f4;
+    /// gp-0x77f0: +0.1, steer target for positive steering.
+    pub const GP_STEER_POSITIVE: u32 = 0x77f0;
+    /// gp-0x77ec: 0.8, threshold on the rider's +0x378 component.
+    pub const GP_BRAKE_COMPONENT_MIN: u32 = 0x77ec;
+    /// gp-0x77e8: 0.97, velocity retention while braking.
+    pub const GP_BRAKE_RETENTION: u32 = 0x77e8;
+    /// gp-0x77e4: 0.93, velocity retention while settling.
+    pub const GP_SETTLE_RETENTION: u32 = 0x77e4;
+    /// gp-0x77e0: 0.2, brake magnitude below which settling ends.
+    pub const GP_SETTLE_BRAKE_MAX: u32 = 0x77e0;
+}
+
+/// `void RiderFinishLineSub_HandleInput(sub)` (0x12c678): settle the rider,
+/// brake to a stop, play the finish event, then hold still. The slew return
+/// step and the damping factors are loaded from the pool.
+pub fn rider_finish_line_sub_handle_input(c: &mut Cpu) {
+    use finish_input::*;
+    guest(c, |c| {
+        const SAVED_RA: u32 = 0;
+        const SAVED_PREVIOUS_ANIM: u32 = 0x10;
+        const SAVED_NEXT_ANIM: u32 = 0x20;
+        const SAVED_PHASE: u32 = 0x30;
+        const SAVED_SUBSTATE: u32 = 0x40;
+        const SAVED_F20: u32 = 0x50;
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x60);
+        c.g[A1][0] = 2;
+        frame.save(c, S0, SAVED_SUBSTATE);
+        frame.save(c, S1, SAVED_PHASE);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, SAVED_NEXT_ANIM);
+        frame.save(c, S3, SAVED_PREVIOUS_ANIM);
+        frame.save_ra(c, SAVED_RA);
+        frame.save_fpr(c, 20, SAVED_F20);
+        c.g[V0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.g[A0][0] = Addr(r32(c, V0)).off(RIDER_ANIM).lw(c);
+        call_ptr(c, 0x0031_2aa0, 0x0012_c6a8)?;
+        c.g[V1][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.g[S2][0] = c.g[V0][0];
+        c.lwc1(1, r32(c, GP).wrapping_sub(GP_RETURN_STEP));
+        c.lwc1(0, r32(c, V1).wrapping_add(crate::game::misc::RIDER_SLEW0));
+        c.g[V0][0] = 1;
+        c.swc1(1, r32(c, V1).wrapping_add(BUMP_RIDER_SLEW1_RATE));
+        c.swc1(0, r32(c, V1).wrapping_add(BUMP_RIDER_SLEW1_TARGET));
+        c.g[S1][0] = Addr(r32(c, S0)).lw(c);
+        let settling = c.g[S1][0] == c.g[V0][0];
+        c.g[S3][0] = c.g[S2][0];
+        if settling {
+            finish_line_settle(c)?;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = ((c.g[S1][0] as i64) < 2) as u64;
+            if c.g[V0][0] != 0 {
+                c.cycles += 2;
+                let braking = c.g[S1][0] == 0;
+                c.g[V0][0] = 0x15;
+                if braking {
+                    finish_line_brake(c)?;
+                } else {
+                    c.cycles += 2;
+                }
+            } else {
+                c.g[V0][0] = 2;
+                c.cycles += 2;
+                let event = c.g[S1][0] == c.g[V0][0];
+                c.g[V0][0] = 3;
+                if event {
+                    finish_line_event(c)?;
+                } else {
+                    c.cycles += 2;
+                    let stopped = c.g[S1][0] == c.g[V0][0];
+                    c.g[V0][0] = 0x500000;
+                    if stopped {
+                        c.cycles += 4;
+                        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+                        // 0x4ff120: zero velocity vector.
+                        c.g[V0][0] = sx(r32(c, V0).wrapping_sub(0xee0));
+                        c.lq(V1, r32(c, V0));
+                        c.sq(V1, r32(c, A0).wrapping_add(BUMP_RIDER_VELOCITY));
+                    } else {
+                        c.cycles += 2;
+                    }
+                }
+            }
+        }
+        c.cycles += 2;
+        let same_anim = c.g[S2][0] == c.g[S3][0];
+        c.g[A1][0] = c.g[S2][0];
+        if !same_anim {
+            c.cycles += 6;
+            c.g[V0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+            c.g[AT][0] = sx(0xbf80_0000);
+            c.mtc1(AT, 12);
+            c.g[A2][0] = 0;
+            c.g[A0][0] = Addr(r32(c, V0)).off(RIDER_ANIM).lw(c);
+            call_ptr(c, 0x0031_28e8, 0x0012_c9a0)?;
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, SAVED_SUBSTATE);
+        frame.restore(c, S1, SAVED_PHASE);
+        frame.restore(c, S2, SAVED_NEXT_ANIM);
+        frame.restore(c, S3, SAVED_PREVIOUS_ANIM);
+        frame.restore_ra(c, SAVED_RA);
+        frame.restore_fpr(c, 20, SAVED_F20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// State 0: choose the turn-around or braking animation, steer toward level,
+/// and apply the first damping stage until the stop condition is reached.
+fn finish_line_brake(c: &mut Cpu) -> Flow {
+    use finish_input::*;
+    c.cycles += 2;
+    let mut turn = c.g[S2][0] == c.g[V0][0];
+    if !turn {
+        c.cycles += 6;
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.mtc1(0, 1);
+        c.lwc1(0, r32(c, A0).wrapping_add(SPIN_ENTER_RIDER_SPIN_RATE));
+        c.c_eq_s(0, 1);
+        if c.fcc() {
+            c.cycles += 4;
+            call_ptr(c, 0x0011_4cc0, 0x0012_c72c)?;
+            turn = c.g[V0][0] != 0;
+        }
+    }
+    if turn {
+        c.cycles += 4;
+        c.mtc1(0, 12);
+        c.g[S2][0] = 0x15;
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    } else {
+        c.cycles += 4;
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        call_ptr(c, 0x0011_fe98, 0x0012_c74c)?;
+        if c.g[V0][0] != 0 {
+            return Ok(());
+        }
+        c.cycles += 7;
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.mtc1(0, 20);
+        c.lwc1(0, r32(c, A0).wrapping_add(crate::game::misc::RIDER_SLEW0));
+        c.lwc1(12, r32(c, GP).wrapping_sub(GP_STEER_NEGATIVE));
+        c.c_lt_s(20, 0);
+        if c.fcc() {
+            c.cycles += 1;
+            c.lwc1(12, r32(c, GP).wrapping_sub(GP_STEER_POSITIVE));
+        }
+        c.cycles += 15;
+        c.g[S2][0] = 0xb;
+        call_ptr(c, 0x0011_3e80, 0x0012_c77c)?;
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.g[A1][0] = 0;
+        c.g[A2][0] = 0;
+        call_ptr(c, 0x0011_4130, 0x0012_c78c)?;
+        c.g[V0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.lwc1(1, r32(c, GP).wrapping_sub(GP_BRAKE_COMPONENT_MIN));
+        c.swc1(20, r32(c, V0).wrapping_add(SPIN_ENTER_RIDER_SPIN_RATE));
+        c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        // Rider +0x378: component tested by the braking gate; field name unresolved.
+        c.lwc1(0, r32(c, A0).wrapping_add(0x378));
+        c.c_lt_s(0, 1);
+        c.mov_s(12, 20);
+        if !c.fcc() {
+            return finish_line_brake_velocity(c);
+        }
+    }
+    c.cycles += 4;
+    c.mov_s(13, 12);
+    call_ptr(c, 0x0011_3f88, 0x0012_c7b8)
+}
+
+/// Apply state 0's velocity decay, then test lean and speed before settling.
+fn finish_line_brake_velocity(c: &mut Cpu) -> Flow {
+    use finish_input::*;
+    c.cycles += 15;
+    c.lwc1(0, r32(c, GP).wrapping_sub(GP_BRAKE_RETENTION));
+    c.mfc1(V0, 0);
+    c.lqc2(4, r32(c, A0).wrapping_add(BUMP_RIDER_VELOCITY));
+    c.qmtc2(V0, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, r32(c, A0).wrapping_add(BUMP_RIDER_VELOCITY));
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 13);
+    c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    c.lwc1(0, r32(c, A0).wrapping_add(BRAKE));
+    c.abs_s(0, 0);
+    c.c_eq_s(0, 13);
+    let mut stopped = c.fcc();
+    c.g[V0][0] = 1;
+    if !stopped {
+        c.cycles += 15;
+        // Mutable global low-speed threshold (not a literal-pool entry).
+        c.lwc1(0, r32(c, GP).wrapping_add(0x1b9c));
+        c.lqc2(3, r32(c, A0).wrapping_add(BUMP_RIDER_VELOCITY));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().sqrt(4, 0);
+        c.vu0().waitq();
+        c.cfc2(V0, 22);
+        c.mtc1(V0, 1);
+        c.c_lt_s(1, 0);
+        stopped = c.fcc();
+        c.g[V0][0] = 1;
+    }
+    if stopped {
+        c.cycles += 2;
+        Addr(r32(c, S0)).sw(c, c.g[V0][0]);
+        return Ok(());
+    }
+    c.cycles += 4;
+    c.mov_s(12, 20);
+    call_ptr(c, 0x0011_3f88, 0x0012_c848)
+}
+
+/// State 1: level the slews and damp the velocity, then select the finish event.
+fn finish_line_settle(c: &mut Cpu) -> Flow {
+    use finish_input::*;
+    c.cycles += 22;
+    c.mtc1(0, 20);
+    c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    c.mov_s(12, 20);
+    c.mov_s(13, 20);
+    call_ptr(c, 0x0011_3f88, 0x0012_c864)?;
+    c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    c.mov_s(12, 20);
+    call_ptr(c, 0x0011_3e80, 0x0012_c870)?;
+    c.lwc1(0, r32(c, GP).wrapping_sub(GP_SETTLE_RETENTION));
+    c.g[V0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    c.mfc1(V1, 0);
+    c.lqc2(4, r32(c, V0).wrapping_add(BUMP_RIDER_VELOCITY));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, r32(c, V0).wrapping_add(BUMP_RIDER_VELOCITY));
+    c.lwc1(1, r32(c, GP).wrapping_sub(GP_SETTLE_BRAKE_MAX));
+    c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    c.lwc1(0, r32(c, A0).wrapping_add(BRAKE));
+    c.abs_s(0, 0);
+    c.c_lt_s(0, 1);
+    if !c.fcc() {
+        return Ok(());
+    }
+    c.cycles += 5;
+    c.lwc1(0, r32(c, A0).wrapping_add(crate::game::misc::RIDER_SLEW0));
+    c.c_eq_s(0, 20);
+    c.g[V1][0] = 2;
+    if !c.fcc() {
+        return Ok(());
+    }
+    c.cycles += 4;
+    Addr(r32(c, S0)).sw(c, c.g[V1][0]);
+    // Rider +0x100: selects finish event 1 or 4; field name unresolved.
+    c.g[V0][0] = Addr(r32(c, A0)).off(0x100).lw(c);
+    let first = c.g[V0][0] == c.g[S1][0];
+    c.g[S2][0] = 4;
+    c.cycles += 5;
+    c.mov_s(12, 20);
+    c.g[A1][0] = if first { 1 } else { 4 };
+    call_ptr(
+        c,
+        0x0010_e028,
+        if first { 0x0012_c8d8 } else { 0x0012_c8ec },
+    )
+}
+
+/// State 2: advance the timed event at 3/4 animation speed; wait for layer 1.
+fn finish_line_event(c: &mut Cpu) -> Flow {
+    use finish_input::*;
+    c.cycles += 23;
+    c.g[V1][0] = 0x500000;
+    c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    // 0x4ff120: zero velocity vector.
+    c.g[V1][0] = sx(r32(c, V1).wrapping_sub(0xee0));
+    c.g[AT][0] = 0x3f40_0000;
+    c.mtc1(AT, 0);
+    c.lq(V0, r32(c, V1));
+    c.sq(V0, r32(c, A0).wrapping_add(BUMP_RIDER_VELOCITY));
+    c.g[V1][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(RIDER_ANIM).lw(c);
+    c.swc1(0, r32(c, V0).wrapping_add(ANIM_TIME_SCALE));
+    c.g[A0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    call_ptr(c, 0x0011_5b58, 0x0012_c924)?;
+    c.g[V1][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    c.g[A1][0] = 1;
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 0);
+    c.g[V0][0] = Addr(r32(c, V1)).off(RIDER_ANIM).lw(c);
+    c.swc1(0, r32(c, V0).wrapping_add(ANIM_TIME_SCALE));
+    c.g[V1][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+    c.g[A0][0] = Addr(r32(c, V1)).off(RIDER_ANIM).lw(c);
+    call_ptr(c, 0x0031_1ae8, 0x0012_c948)?;
+    let playing = c.g[V0][0] != 0;
+    c.g[V1][0] = 3;
+    if !playing {
+        c.cycles += 8;
+        c.g[V0][0] = Addr(r32(c, S0)).off(RIDER).lw(c);
+        c.g[AT][0] = 0x4120_0000;
+        c.mtc1(AT, 1);
+        c.lwc1(0, r32(c, V0).wrapping_add(RIDER_FINISH_TIME));
+        c.max_s(0, 0, 1);
+        c.swc1(0, r32(c, V0).wrapping_add(RIDER_FINISH_TIME));
+        Addr(r32(c, S0)).sw(c, c.g[V1][0]);
+    }
+    Ok(())
 }
 
 /// `void RiderWipeoutSub_UpdatePhase4(self)` (0x12d9d8): advance the wipeout
@@ -16568,6 +16892,153 @@ pub(crate) mod tests {
                 w(c, obj, 0);
             },
         );
+    }
+
+    fn finish_line_input_setup(c: &mut Cpu, seed: u32) {
+        use crate::difftest::fakes::{machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{put_vec, DATA, GAME_GP};
+
+        const RIDER: u32 = DATA + 0x1000;
+
+        const OWNER: u32 = DATA + 0x3000;
+
+        const ANIM: u32 = DATA + 0x5000;
+
+        const VT: u32 = DATA + 0x6000;
+
+        let mut rng = machine(c, seed, 0x12c678, 0);
+        let case = seed % 20;
+        let variant = (seed / 20 % 3) as usize;
+        let state = match case {
+            8..=11 | 18 => 1,
+            12..=13 => 2,
+            14 => 3,
+            15 => u32::MAX,
+            16 => 4,
+            _ => 0,
+        };
+        c.pc = 0x0012_c678;
+        c.g[A0][0] = DATA as u64;
+        c.bus.write32(DATA, state);
+        c.bus.write32(DATA + 4, RIDER);
+        c.bus.write32(RIDER + 0x77c, OWNER);
+        c.bus.write32(RIDER + 0x784, ANIM);
+        c.bus.write32(OWNER + 0xde0, if case == 1 { 1 } else { 0 });
+        c.bus.write32(
+            ANIM + 8,
+            match case {
+                0 => 0x15,
+                17 => 0xb,
+                18 => 4,
+                _ => 7,
+            },
+        );
+        // Real PlayAnim queries the virtual layer selector, which returns its
+        // no-layer sentinel. No disc load, allocator or global override swap.
+        c.bus.write32(ANIM + 0x58, VT);
+        c.bus.write32(VT + 0x24, FAKE);
+        for i in 0..8 {
+            c.bus.write32(LOG_RESULTS + i * 4, 0x207);
+        }
+        // Layer-1 entry lookup is real; the event-update callee has no pending
+        // timed event and returns immediately on state-2 seeds.
+        c.bus.write32(ANIM + 4, 9);
+        c.bus
+            .write32(0x446990 + 28 * 9, if case == 12 { 1 } else { 0 });
+        c.bus.write32(RIDER + 0x358, 0);
+        c.bus.write32(RIDER + 0x100, if case == 10 { 1 } else { 2 });
+        c.bus
+            .write32(RIDER + 0x470, [2.0f32, 10.0, 20.0][variant].to_bits());
+        let pitch = match case {
+            4 | 5 | 9 => 0.4f32,
+            2 => -0.4,
+            _ => 0.0,
+        };
+        c.bus.write32(RIDER + 0x1f0, pitch.to_bits());
+        c.bus.write32(RIDER + 0x1fc, rng.f32(0.8));
+        let brake = match case {
+            5 => 1.0f32,
+            8 => 0.9,
+            _ => 0.0,
+        };
+        c.bus.write32(RIDER + 0x214, brake.to_bits());
+        c.bus.write32(
+            RIDER + 0x2dc,
+            if case == 1 { 1.0f32 } else { 0.0 }.to_bits(),
+        );
+        c.bus.write32(
+            RIDER + 0x378,
+            if matches!(case, 5..=7 | 17) {
+                1.0f32
+            } else {
+                0.0
+            }
+            .to_bits(),
+        );
+        let speed = if case == 3 {
+            -40.0f32
+        } else if case == 6 {
+            1.0
+        } else {
+            40.0
+        };
+        put_vec(c, RIDER + 0x1e0, [speed.to_bits(), 0, 0, 0]);
+        put_vec(c, RIDER + 0x3a0, [1.0f32.to_bits(), 0, 0, 0]);
+        put_vec(c, RIDER + 0x1c0, [0, 0, 1.0f32.to_bits(), 0]);
+        put_vec(c, RIDER + 0x120, [0, 0, 0, 1.0f32.to_bits()]);
+        c.bus.write32(GAME_GP - 0x7b98, 10.0f32.to_bits());
+        // Vary every pool slot loaded directly by the caller, independently
+        // of its branch-case index. Raw constants remain live memory loads.
+        for (off, values) in [
+            (0x77f8, [0.01f32, 1.0 / 30.0, 0.07]),
+            (0x77f4, [-0.2, -0.3, -0.4]),
+            (0x77f0, [0.2, 0.3, 0.4]),
+            (0x77ec, [0.4, 0.5, 0.6]),
+            (0x77e8, [0.95, 0.96, 0.97]),
+            (0x77e4, [0.91, 0.92, 0.93]),
+            (0x77e0, [0.1, 0.2, 0.3]),
+        ] {
+            c.bus.write32(GAME_GP - off, values[variant].to_bits());
+        }
+        c.bus
+            .write32(GAME_GP + 0x1b9c, [10.0f32, 20.0, 30.0][variant].to_bits());
+        put_vec(c, 0x4ff120, [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn rider_finish_line_sub_handle_input_matches() {
+        crate::difftest::check(
+            ee::s00::f_0012c678__generated,
+            rider_finish_line_sub_handle_input,
+            180,
+            &finish_line_input_setup,
+        );
+        // All 18 conditions have both outcomes in the generated census.
+        // Event 1 and event 4 share cost 244; assert their output below too.
+        crate::difftest::require_paths(
+            ee::s00::f_0012c678__generated,
+            180,
+            &[
+                43, 45, 47, 56, 94, 102, 109, 153, 164, 202, 226, 244, 249, 278, 280, 286, 290,
+                336, 584,
+            ],
+            &finish_line_input_setup,
+        );
+        for seed in 0..180 {
+            let mut c = crate::difftest::fresh();
+            finish_line_input_setup(&mut c, seed);
+            crate::difftest::run_generated(&mut c, rider_finish_line_sub_handle_input);
+            assert_eq!(c.pc, crate::difftest::RA, "incomplete seed {seed}");
+            // First/other finish events take equal caller cycles.
+            if matches!(seed % 20, 10 | 11) {
+                assert_eq!(
+                    c.bus.read32(crate::difftest::DATA + 0x1358),
+                    if seed % 20 == 10 { 1 } else { 4 }
+                );
+            }
+            let step = [0.01f32, 1.0 / 30.0, 0.07][(seed / 20 % 3) as usize];
+            assert_eq!(c.bus.read32(crate::difftest::DATA + 0x1200), step.to_bits());
+        }
     }
 
     // --------------------------------------------------- rider wipeout phase

@@ -6159,6 +6159,7 @@
 0x0012e980    RiderPrewindSub_Enter
 0x0010c3b8    ComputerActorRider_RollRandomTrick
 # tick rate: railslide and finish-line returns, uber grind input, wipeout board spheres
+0x0012c678    RiderFinishLineSub_HandleInput
 0x0013bfa8    RiderRailslideState_PostUpdate
 # Phase 2 wave: oc313, oc314, oc315, oc316
 0x0015f780    RiderCameraTarget_v23
