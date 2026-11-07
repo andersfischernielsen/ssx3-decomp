@@ -10455,6 +10455,15 @@ pub(crate) mod hud1p_update {
 /// charge, the scratch registers each block leaves, the `.lit4` steps read
 /// through `gp`), with the calls through the call protocol and the loop
 /// back edges' event checks through [`event_due`]/[`deliver_event_here`].
+///
+/// Tick rate: the timers and fades step by `.lit4` 1/60 (and per-tick
+/// `tick::PER_TICK`) entries, which follow the rate; the clock counts ticks
+/// (ticks -> seconds through 0x49d9b8, a step). Two integer frame counts are
+/// converted: the round-up of a started second (`ticks - secs * 60`, now
+/// `secs * rate`) and the 10 s warning blink (`ticks <= 600`, now
+/// `tick::ticks_from_frames60(600)`). 3600 and 60 in the h/m/s split are
+/// seconds per hour/minute (display units), and `trunc(limit * 1/60) * 60`
+/// (0x49d9b4, `tick::NOT_A_STEP`) rounds the limit to whole 60-tick units.
 pub fn c_ov_state_hud1p_update(c: &mut Cpu) {
     guest(c, |c| {
         'b_1ea9f0: {
@@ -11962,6 +11971,13 @@ pub fn c_ov_state_hud1p_update(c: &mut Cpu) {
                                             } else {
                                                 c.cycles += 6;
                                                 c.g[V0][0] = 0x3c;
+                                                // Tick rate: the round-up asks whether ticks are
+                                                // left over after the whole seconds, so the
+                                                // seconds go back to ticks of this rate (60 at 60).
+                                                let r = crate::tick::rate(c);
+                                                if r != 60 {
+                                                    c.g[V0][0] = r as u64;
+                                                }
                                                 c.mult(0, 2, 4, 2);
                                                 c.g[V0][0] = sx((c.g[S0][0] as u32)
                                                     .wrapping_sub((c.g[V0][0] as u32)));
@@ -12017,7 +12033,10 @@ pub fn c_ov_state_hud1p_update(c: &mut Cpu) {
                                 'b_1eb6d8: {
                                     c.cycles += 2;
                                     let t = c.g[S2][0] == 0u64;
-                                    c.g[V0][0] = ((c.g[S0][0] as i64) < 601i64) as u64;
+                                    // Tick rate: the clock blinks in its last 600
+                                    // 60 Hz frames (10 s); S0 counts ticks.
+                                    let warn = crate::tick::ticks_from_frames60(c, 600) as i64 + 1;
+                                    c.g[V0][0] = ((c.g[S0][0] as i64) < warn) as u64;
                                     if t {
                                         break 'b_1eb6d8;
                                     } else {
@@ -16218,233 +16237,332 @@ pub(crate) mod tests {
     /// which unwinds in some seeds.
     #[test]
     fn c_ov_state_hud1p_update_matches() {
-        use crate::difftest::fakes::{covered, machine, FAKE};
-        use crate::difftest::{elf_image, Rng, DATA, GAME_GP};
+        use crate::difftest::fakes::covered;
+        covered(
+            ee::s04::f_001ea930__generated,
+            c_ov_state_hud1p_update,
+            120,
+            &hud1p_update_fixture,
+        );
+    }
+
+    /// The dummy objects of the `cOVStateHUD1P_Update` fixture.
+    mod hud1p_fx {
+        use crate::difftest::DATA;
+        pub(super) const HUD: u32 = DATA + 0x6_0000;
+        pub(super) const WORLD: u32 = DATA + 0x7_0000;
+        pub(super) const RM: u32 = DATA + 0x7_0100;
+        pub(super) const RACE: u32 = DATA + 0x7_0200;
+        pub(super) const PLAYER: u32 = DATA + 0x7_0400;
+        pub(super) const RIDER: u32 = DATA + 0x7_1000;
+        pub(super) const RVT: u32 = DATA + 0x7_1800;
+        pub(super) const METRIX: u32 = DATA + 0x7_2000;
+        pub(super) const TABLE: u32 = DATA + 0x7_3000;
+        pub(super) const GM: u32 = DATA + 0x7_5000;
+        pub(super) const HOBJ: u32 = DATA + 0x7_5200;
+        pub(super) const HVT: u32 = DATA + 0x7_5300;
+        pub(super) const SE: u32 = DATA + 0x7_6000;
+        pub(super) const LIST: u32 = DATA + 0x7_6800;
+        pub(super) const WSM: u32 = DATA + 0x7_7000;
+        pub(super) const MN: u32 = DATA + 0x7_7800;
+        pub(super) const MVT: u32 = DATA + 0x7_7900;
+        pub(super) const FONT1: u32 = DATA + 0x7_8000;
+        pub(super) const FONT2: u32 = DATA + 0x7_8100;
+        pub(super) const AUDIO: u32 = DATA + 0x7_9000;
+        pub(super) const STR: u32 = DATA + 0x7_a000;
+        pub(super) const BEDUMMY: u32 = DATA + 0x7_b000;
+        pub(super) const BEOBJ: u32 = DATA + 0x7_b100;
+        pub(super) const BEVT: u32 = DATA + 0x7_b200;
+        pub(super) const RECORDS: [u32; 5] = [0x9c, 0x57c, 0x618, 0xfd8, 0x1074];
+    }
+
+    /// The `cOVStateHUD1P_Update` fixture for `seed` (see
+    /// [`c_ov_state_hud1p_update_matches`]).
+    fn hud1p_update_fixture(c: &mut Cpu, seed: u32) {
+        use self::hud1p_fx::*;
+        use crate::difftest::fakes::{machine, FAKE};
+        use crate::difftest::{elf_image, Rng, GAME_GP};
         let f = |x: f32| x.to_bits();
         let gp_at = |off: i32| (GAME_GP as i32 + off) as u32;
         fn pick(r: &mut Rng, n: u32) -> u32 {
             r.next_u32() % n
         }
-        // Dummy objects.
-        const HUD: u32 = DATA + 0x6_0000;
-        const WORLD: u32 = DATA + 0x7_0000;
-        const RM: u32 = DATA + 0x7_0100;
-        const RACE: u32 = DATA + 0x7_0200;
-        const PLAYER: u32 = DATA + 0x7_0400;
-        const RIDER: u32 = DATA + 0x7_1000;
-        const RVT: u32 = DATA + 0x7_1800;
-        const METRIX: u32 = DATA + 0x7_2000;
-        const TABLE: u32 = DATA + 0x7_3000;
-        const GM: u32 = DATA + 0x7_5000;
-        const HOBJ: u32 = DATA + 0x7_5200;
-        const HVT: u32 = DATA + 0x7_5300;
-        const SE: u32 = DATA + 0x7_6000;
-        const LIST: u32 = DATA + 0x7_6800;
-        const WSM: u32 = DATA + 0x7_7000;
-        const MN: u32 = DATA + 0x7_7800;
-        const MVT: u32 = DATA + 0x7_7900;
-        const FONT1: u32 = DATA + 0x7_8000;
-        const FONT2: u32 = DATA + 0x7_8100;
-        const AUDIO: u32 = DATA + 0x7_9000;
-        const STR: u32 = DATA + 0x7_a000;
-        const BEDUMMY: u32 = DATA + 0x7_b000;
-        const BEOBJ: u32 = DATA + 0x7_b100;
-        const BEVT: u32 = DATA + 0x7_b200;
-        // Metric records the update reads from the metrix table (+0x1b0).
-        const RECORDS: [u32; 5] = [0x9c, 0x57c, 0x618, 0xfd8, 0x1074];
-        covered(
-            ee::s04::f_001ea930__generated,
-            c_ov_state_hud1p_update,
-            120,
-            &|c, seed| {
-                let mut r = machine(c, seed, 0x001e_a930, 10);
-                elf_image(c);
-                let r = &mut r;
-                // Globals.
-                let flags = if seed % 16 == 15 { 1 } else { pick(r, 2) << 3 };
-                c.bus.write32(gp_at(-0x6a0), flags);
-                c.bus.write32(gp_at(-0x848), WORLD);
-                c.bus.write32(gp_at(-0x84c), SE);
-                c.bus.write32(gp_at(0xce8), WSM);
-                c.bus.write32(gp_at(0x410), AUDIO);
-                c.bus.write32(gp_at(-0x9a0), 0); // no race-progress riders
-                                                 // BELibrary: the instance, and interface objects whose method
-                                                 // (vtable +8/+0xc) is a fake.
-                c.bus.write32(gp_at(-0x1f04), BEDUMMY);
-                c.bus.write32(gp_at(-0x1efc), 0);
-                c.bus.write32(0x0053_08a8, BEOBJ);
-                c.bus.write32(BEOBJ + 4, BEVT);
-                c.bus.write16(BEVT + 8, 0);
-                c.bus.write32(BEVT + 0xc, FAKE);
-                // BE settings bytes and words.
-                c.bus.write8(0x0053_5c10, pick(r, 6) as u8); // BE mode
-                c.bus.write8(0x0053_5c11, [2u8, 0][pick(r, 2) as usize]);
-                c.bus.write8(0x0053_5c12, pick(r, 4) as u8); // mask index
-                c.bus.write32(0x0053_4b30, pick(r, 2));
-                c.bus.write32(0x0053_08d0, r.next_u32());
-                c.bus.write32(0x0053_5610, r.next_u32()); // settings block word 0
-                                                          // Trick-score thresholds: index bytes and thresholds.
-                for k in 0..4u32 {
-                    c.bus.write8(0x0053_6708 + 4 * k, k as u8);
-                    c.bus.write32(0x0053_6640 + 4 * k, pick(r, 3000));
-                }
-                // Strings: the ticker header and the two icon labels.
-                for (at, s) in [
-                    (STR, &b"NOW PLAYING\0"[..]),
-                    (STR + 0x20, &b"A\0"[..]),
-                    (STR + 0x30, &b"BB\0"[..]),
-                ] {
-                    for (i, b) in s.iter().enumerate() {
-                        c.bus.write8(at + i as u32, *b);
-                    }
-                }
-                c.bus.write32(gp_at(-0xe74), STR);
-                c.bus.write32(gp_at(-0xf20), STR + 0x20);
-                c.bus.write32(gp_at(-0xf1c), STR + 0x30);
-                // Audio system: no current song (the getters return NULL).
-                c.bus.write32(AUDIO + 0x118 + 0x3f0, 0xffff_ffff);
-                // World -> race manager -> race; the game mode.
-                c.bus.write32(WORLD + 0xc0, GM);
-                c.bus.write32(WORLD + 0x84, RM);
-                c.bus.write32(RM + 0xc, RACE);
-                c.bus.write32(RM + 0x84, RM);
-                c.bus.write32(RM + 0x10, pick(r, 3)); // viewports
-                c.bus.write32(RACE, [5u32, 6, 0, 1][pick(r, 4) as usize]); // race type
-                c.bus
-                    .write32(RACE + 0xc, (pick(r, 4000) as i32 - 200) as u32); // time
-                c.bus.write32(RACE + 0x28, RIDER);
-                c.bus.write32(RACE + 0x2c, RIDER);
-                c.bus.write32(RACE + 0x40, PLAYER);
-                c.bus.write32(RACE + 0x44, PLAYER);
-                c.bus.write32(RACE + 0x78, 0);
-                c.bus.write32(RACE + 0x7c, pick(r, 3));
-                c.bus.write32(RACE + 0x80, pick(r, 2));
-                c.bus.write32(PLAYER + 0x18, RIDER);
-                c.bus.write32(GM, [2u32, 0, 2][pick(r, 3) as usize]);
-                c.bus.write32(GM + 4, 0);
-                c.bus.write32(GM + 0x78, pick(r, 300));
-                c.bus.write32(GM + 0x7c, pick(r, 3000));
-                c.bus.write32(GM + 0x88, pick(r, 2));
-                c.bus.write32(GM + 0x8c, pick(r, 2));
-                // GameModeMan handler table (0x536668[GM+4]) -> fake method.
-                c.bus.write32(0x0053_6668, HOBJ);
-                c.bus.write32(HOBJ, HVT);
-                c.bus.write16(HVT + 0x48, 0);
-                c.bus.write32(HVT + 0x4c, FAKE + 0x20);
-                // The rider: its +0x6c0 object (fake +0x3c method), metrix, the
-                // trick-chain id, the finish time and the finished flag.
-                c.bus.write32(RIDER + 0x6c0, RVT);
-                c.bus.write16(RVT + 0x38, 0);
-                c.bus.write32(RVT + 0x3c, FAKE + 0x10);
-                c.bus.write32(RIDER + 0x790, METRIX);
-                c.bus.write32(RIDER + 0xec, pick(r, 3));
-                c.bus.write32(RIDER + 0x470, r.f32(1.0));
-                c.bus.write32(RIDER + 0x480, pick(r, 2));
-                // Metrix: score, record table (or none), active-message bits
-                // (clean, so no rebuild).
-                c.bus.write32(METRIX + 0x198, pick(r, 3000));
-                c.bus
-                    .write32(METRIX + 0x1b0, if pick(r, 5) == 0 { 0 } else { TABLE });
-                c.bus.write32(METRIX + 0x1b8, r.next_u32());
-                c.bus.write32(METRIX + 0x1bc, r.next_u32());
-                c.bus.write32(METRIX + 0x1c0, 0);
-                for off in RECORDS {
-                    let rec = TABLE + off;
-                    let id = if pick(r, 3) == 0 { 0x34 } else { 1 };
-                    let total = [1.0f32, 2.0][pick(r, 2) as usize];
-                    let done = [0.0f32, 0.5 * total, total][pick(r, 3) as usize];
-                    c.bus.write32(rec, id);
-                    c.bus.write32(rec + 4, f(total));
-                    c.bus.write32(rec + 8, f(done));
-                    c.bus
-                        .write32(rec + 0xc, [0u32, 7, 10, 20][pick(r, 4) as usize]);
-                    c.bus.write32(rec + 0x14, r.next_u32());
-                }
-                // Script engine (gp-0x84c): state 0 or 2; HUD allowed through
-                // a skippable, playing script list.
-                c.bus
-                    .write32(SE + 0x550, if pick(r, 4) == 0 { 2 } else { 0 });
-                c.bus.write32(SE + 0x554, pick(r, 2));
-                c.bus.write32(SE + 0x54c, LIST);
-                c.bus.write32(LIST + 0xa4, 3);
-                c.bus.write32(LIST + 0x14, pick(r, 2));
-                c.bus.write32(LIST + 0xa8, 0);
-                c.bus.write32(LIST + 0xc4, 0);
-                c.bus.write32(LIST + 0xc8, 1);
-                c.bus.write32(LIST + 0xbc, r.next_u32());
-                // WScriptMan: a mission (or none) and its timer fields.
-                let mission = if pick(r, 2) == 0 {
-                    0xffff_ffff
-                } else {
-                    pick(r, 5)
-                };
-                c.bus.write32(WSM + 0x2a0, mission);
-                c.bus
-                    .write32(WSM + 0x2b8, if pick(r, 3) == 0 { 0 } else { MN });
-                c.bus.write32(MN + 0x5c, MVT);
-                c.bus.write16(MVT + 0x18, 0);
-                c.bus.write32(MVT + 0x1c, FAKE + 0x30);
-                c.bus.write32(MN + 0x60, [2u32, 0][pick(r, 2) as usize]);
-                c.bus.write32(MN + 0x18, 0);
-                for off in [4u32, 0x10, 0x1c, 0x28, 0x34] {
-                    c.bus.write32(WSM + off, pick(r, 2));
-                }
-                c.bus
-                    .write32(WSM + 0x20, (pick(r, 4000) as i32 - 200) as u32);
-                c.bus.write32(WSM + 0x24, r.next_u32());
-                // Fonts: zeroed glyph tables, random scales.
-                for font in [FONT1, FONT2] {
-                    c.bus.write32(font + 0x30, r.f32(2.0));
-                    c.bus.write32(font + 0x34, r.f32(2.0));
-                    c.bus.write32(font + 0x14, pick(r, 20));
-                }
-                // The HUD state.
-                c.bus.write32(HUD + 0x428, FONT2);
-                c.bus.write32(HUD + 0x42c, FONT1);
-                c.bus.write32(HUD + 0x3cc, r.next_u32()); // element mask
-                c.bus
-                    .write32(HUD + 0x3c4, [0x50u32, 8, 0x3a, 9][pick(r, 4) as usize]);
-                for (off, range) in [
-                    (0xc94u32, 3.0f32),
-                    (0x190, 9.0),
-                    (0x3c0, 2.0),
-                    (0xa44, 2.0),
-                    (0x3d0, 2.0),
-                    (0x164, 3.0),
-                    (0x168, 7.0),
-                ] {
-                    c.bus.write32(HUD + off, r.f32(range));
-                }
-                c.bus.write32(HUD + 0x160, pick(r, 2));
-                c.bus.write32(HUD + 0x3d4, (pick(r, 4) == 0) as u32);
-                c.bus.write32(HUD + 0x3d8, (pick(r, 4) == 0) as u32);
-                c.bus.write32(HUD + 0x55c, pick(r, 2));
-                // HUD players: slot indices (negative ends the list) and their
-                // meter/fade fields.
-                c.bus
-                    .write32(HUD + 0x48, [0u32, 1, 0, 0xffff_ffff][pick(r, 4) as usize]);
-                c.bus.write32(
-                    HUD + 0x48 + 0x8c,
-                    [0u32, 1, 0xffff_ffff][pick(r, 3) as usize],
-                );
-                for k in 0..2u32 {
-                    let s = HUD + 0x48 + 0x8c * k;
-                    c.bus
-                        .write32(s + 0x44, [0xffff_ffffu32, 0, 1, 2][pick(r, 4) as usize]);
-                    for off in [0x48u32, 0x4c, 0x64, 0x68, 0x70, 0x78] {
-                        c.bus.write32(s + off, r.f32(2.5));
-                    }
-                    c.bus
-                        .write32(s + 0x6c, [0xffff_ffffu32, 0, 3, 7][pick(r, 4) as usize]);
-                    c.bus.write32(s + 0x74, pick(r, 2));
-                    for off in [0x80u32, 0x84, 0x88] {
-                        c.bus.write32(s + off, r.next_u32());
-                    }
-                }
-                c.g[A0][0] = sx(HUD);
-                c.pc = 0x001e_a930;
-            },
+        let mut r = machine(c, seed, 0x001e_a930, 10);
+        elf_image(c);
+        let r = &mut r;
+        // Globals.
+        let flags = if seed % 16 == 15 { 1 } else { pick(r, 2) << 3 };
+        c.bus.write32(gp_at(-0x6a0), flags);
+        c.bus.write32(gp_at(-0x848), WORLD);
+        c.bus.write32(gp_at(-0x84c), SE);
+        c.bus.write32(gp_at(0xce8), WSM);
+        c.bus.write32(gp_at(0x410), AUDIO);
+        c.bus.write32(gp_at(-0x9a0), 0); // no race-progress riders
+                                         // BELibrary: the instance, and interface objects whose method
+                                         // (vtable +8/+0xc) is a fake.
+        c.bus.write32(gp_at(-0x1f04), BEDUMMY);
+        c.bus.write32(gp_at(-0x1efc), 0);
+        c.bus.write32(0x0053_08a8, BEOBJ);
+        c.bus.write32(BEOBJ + 4, BEVT);
+        c.bus.write16(BEVT + 8, 0);
+        c.bus.write32(BEVT + 0xc, FAKE);
+        // BE settings bytes and words.
+        c.bus.write8(0x0053_5c10, pick(r, 6) as u8); // BE mode
+        c.bus.write8(0x0053_5c11, [2u8, 0][pick(r, 2) as usize]);
+        c.bus.write8(0x0053_5c12, pick(r, 4) as u8); // mask index
+        c.bus.write32(0x0053_4b30, pick(r, 2));
+        c.bus.write32(0x0053_08d0, r.next_u32());
+        c.bus.write32(0x0053_5610, r.next_u32()); // settings block word 0
+                                                  // Trick-score thresholds: index bytes and thresholds.
+        for k in 0..4u32 {
+            c.bus.write8(0x0053_6708 + 4 * k, k as u8);
+            c.bus.write32(0x0053_6640 + 4 * k, pick(r, 3000));
+        }
+        // Strings: the ticker header and the two icon labels.
+        for (at, s) in [
+            (STR, &b"NOW PLAYING\0"[..]),
+            (STR + 0x20, &b"A\0"[..]),
+            (STR + 0x30, &b"BB\0"[..]),
+        ] {
+            for (i, b) in s.iter().enumerate() {
+                c.bus.write8(at + i as u32, *b);
+            }
+        }
+        c.bus.write32(gp_at(-0xe74), STR);
+        c.bus.write32(gp_at(-0xf20), STR + 0x20);
+        c.bus.write32(gp_at(-0xf1c), STR + 0x30);
+        // Audio system: no current song (the getters return NULL).
+        c.bus.write32(AUDIO + 0x118 + 0x3f0, 0xffff_ffff);
+        // World -> race manager -> race; the game mode.
+        c.bus.write32(WORLD + 0xc0, GM);
+        c.bus.write32(WORLD + 0x84, RM);
+        c.bus.write32(RM + 0xc, RACE);
+        c.bus.write32(RM + 0x84, RM);
+        c.bus.write32(RM + 0x10, pick(r, 3)); // viewports
+        c.bus.write32(RACE, [5u32, 6, 0, 1][pick(r, 4) as usize]); // race type
+        c.bus
+            .write32(RACE + 0xc, (pick(r, 4000) as i32 - 200) as u32); // time
+        c.bus.write32(RACE + 0x28, RIDER);
+        c.bus.write32(RACE + 0x2c, RIDER);
+        c.bus.write32(RACE + 0x40, PLAYER);
+        c.bus.write32(RACE + 0x44, PLAYER);
+        c.bus.write32(RACE + 0x78, 0);
+        c.bus.write32(RACE + 0x7c, pick(r, 3));
+        c.bus.write32(RACE + 0x80, pick(r, 2));
+        c.bus.write32(PLAYER + 0x18, RIDER);
+        c.bus.write32(GM, [2u32, 0, 2][pick(r, 3) as usize]);
+        c.bus.write32(GM + 4, 0);
+        c.bus.write32(GM + 0x78, pick(r, 300));
+        c.bus.write32(GM + 0x7c, pick(r, 3000));
+        c.bus.write32(GM + 0x88, pick(r, 2));
+        c.bus.write32(GM + 0x8c, pick(r, 2));
+        // GameModeMan handler table (0x536668[GM+4]) -> fake method.
+        c.bus.write32(0x0053_6668, HOBJ);
+        c.bus.write32(HOBJ, HVT);
+        c.bus.write16(HVT + 0x48, 0);
+        c.bus.write32(HVT + 0x4c, FAKE + 0x20);
+        // The rider: its +0x6c0 object (fake +0x3c method), metrix, the
+        // trick-chain id, the finish time and the finished flag.
+        c.bus.write32(RIDER + 0x6c0, RVT);
+        c.bus.write16(RVT + 0x38, 0);
+        c.bus.write32(RVT + 0x3c, FAKE + 0x10);
+        c.bus.write32(RIDER + 0x790, METRIX);
+        c.bus.write32(RIDER + 0xec, pick(r, 3));
+        c.bus.write32(RIDER + 0x470, r.f32(1.0));
+        c.bus.write32(RIDER + 0x480, pick(r, 2));
+        // Metrix: score, record table (or none), active-message bits
+        // (clean, so no rebuild).
+        c.bus.write32(METRIX + 0x198, pick(r, 3000));
+        c.bus
+            .write32(METRIX + 0x1b0, if pick(r, 5) == 0 { 0 } else { TABLE });
+        c.bus.write32(METRIX + 0x1b8, r.next_u32());
+        c.bus.write32(METRIX + 0x1bc, r.next_u32());
+        c.bus.write32(METRIX + 0x1c0, 0);
+        for off in RECORDS {
+            let rec = TABLE + off;
+            let id = if pick(r, 3) == 0 { 0x34 } else { 1 };
+            let total = [1.0f32, 2.0][pick(r, 2) as usize];
+            let done = [0.0f32, 0.5 * total, total][pick(r, 3) as usize];
+            c.bus.write32(rec, id);
+            c.bus.write32(rec + 4, f(total));
+            c.bus.write32(rec + 8, f(done));
+            c.bus
+                .write32(rec + 0xc, [0u32, 7, 10, 20][pick(r, 4) as usize]);
+            c.bus.write32(rec + 0x14, r.next_u32());
+        }
+        // Script engine (gp-0x84c): state 0 or 2; HUD allowed through
+        // a skippable, playing script list.
+        c.bus
+            .write32(SE + 0x550, if pick(r, 4) == 0 { 2 } else { 0 });
+        c.bus.write32(SE + 0x554, pick(r, 2));
+        c.bus.write32(SE + 0x54c, LIST);
+        c.bus.write32(LIST + 0xa4, 3);
+        c.bus.write32(LIST + 0x14, pick(r, 2));
+        c.bus.write32(LIST + 0xa8, 0);
+        c.bus.write32(LIST + 0xc4, 0);
+        c.bus.write32(LIST + 0xc8, 1);
+        c.bus.write32(LIST + 0xbc, r.next_u32());
+        // WScriptMan: a mission (or none) and its timer fields.
+        let mission = if pick(r, 2) == 0 {
+            0xffff_ffff
+        } else {
+            pick(r, 5)
+        };
+        c.bus.write32(WSM + 0x2a0, mission);
+        c.bus
+            .write32(WSM + 0x2b8, if pick(r, 3) == 0 { 0 } else { MN });
+        c.bus.write32(MN + 0x5c, MVT);
+        c.bus.write16(MVT + 0x18, 0);
+        c.bus.write32(MVT + 0x1c, FAKE + 0x30);
+        c.bus.write32(MN + 0x60, [2u32, 0][pick(r, 2) as usize]);
+        c.bus.write32(MN + 0x18, 0);
+        for off in [4u32, 0x10, 0x1c, 0x28, 0x34] {
+            c.bus.write32(WSM + off, pick(r, 2));
+        }
+        c.bus
+            .write32(WSM + 0x20, (pick(r, 4000) as i32 - 200) as u32);
+        c.bus.write32(WSM + 0x24, r.next_u32());
+        // Fonts: zeroed glyph tables, random scales.
+        for font in [FONT1, FONT2] {
+            c.bus.write32(font + 0x30, r.f32(2.0));
+            c.bus.write32(font + 0x34, r.f32(2.0));
+            c.bus.write32(font + 0x14, pick(r, 20));
+        }
+        // The HUD state.
+        c.bus.write32(HUD + 0x428, FONT2);
+        c.bus.write32(HUD + 0x42c, FONT1);
+        c.bus.write32(HUD + 0x3cc, r.next_u32()); // element mask
+        c.bus
+            .write32(HUD + 0x3c4, [0x50u32, 8, 0x3a, 9][pick(r, 4) as usize]);
+        for (off, range) in [
+            (0xc94u32, 3.0f32),
+            (0x190, 9.0),
+            (0x3c0, 2.0),
+            (0xa44, 2.0),
+            (0x3d0, 2.0),
+            (0x164, 3.0),
+            (0x168, 7.0),
+        ] {
+            c.bus.write32(HUD + off, r.f32(range));
+        }
+        c.bus.write32(HUD + 0x160, pick(r, 2));
+        c.bus.write32(HUD + 0x3d4, (pick(r, 4) == 0) as u32);
+        c.bus.write32(HUD + 0x3d8, (pick(r, 4) == 0) as u32);
+        c.bus.write32(HUD + 0x55c, pick(r, 2));
+        // HUD players: slot indices (negative ends the list) and their
+        // meter/fade fields.
+        c.bus
+            .write32(HUD + 0x48, [0u32, 1, 0, 0xffff_ffff][pick(r, 4) as usize]);
+        c.bus.write32(
+            HUD + 0x48 + 0x8c,
+            [0u32, 1, 0xffff_ffff][pick(r, 3) as usize],
         );
+        for k in 0..2u32 {
+            let s = HUD + 0x48 + 0x8c * k;
+            c.bus
+                .write32(s + 0x44, [0xffff_ffffu32, 0, 1, 2][pick(r, 4) as usize]);
+            for off in [0x48u32, 0x4c, 0x64, 0x68, 0x70, 0x78] {
+                c.bus.write32(s + off, r.f32(2.5));
+            }
+            c.bus
+                .write32(s + 0x6c, [0xffff_ffffu32, 0, 3, 7][pick(r, 4) as usize]);
+            c.bus.write32(s + 0x74, pick(r, 2));
+            for off in [0x80u32, 0x84, 0x88] {
+                c.bus.write32(s + off, r.next_u32());
+            }
+        }
+        c.g[A0][0] = sx(HUD);
+        c.pc = 0x001e_a930;
+    }
+
+    /// The race clock of `cOVStateHUD1P_Update` follows the tick rate: the
+    /// time limit and the race time count ticks, so at 120 Hz (twice the
+    /// ticks for the same wall time) the displayed h/m/s, the round-up of a
+    /// started second and the 10 s warning blink (`+0x3d0`, advanced per
+    /// tick) match one update at 60 after `rate/60` updates.
+    #[test]
+    fn c_ov_state_hud1p_update_clock_follows_the_rate() {
+        use self::hud1p_fx::*;
+        use crate::difftest::fakes::LOG_UNWIND_AT;
+        use crate::difftest::GAME_GP;
+        /// The `.lit4` 1/60 steps the update loads (0x49d9b4 is not one).
+        const STEPS: [u32; 7] = [
+            0x0049_d998,
+            0x0049_d9ac,
+            0x0049_d9b8,
+            0x0049_d9bc,
+            0x0049_d9c0,
+            0x0049_d9c4,
+            0x0049_d9e8,
+        ];
+        // (limit, race time) in 60 Hz frames -> (h, m, s, blink phase).
+        fn after(hz: u32, limit60: u32, time60: u32) -> (u32, u32, u32, f32) {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            hud1p_update_fixture(c, 2);
+            crate::tick::set_for_test(c, hz);
+            for a in STEPS {
+                c.bus.write32(a, crate::tick::step_bits(hz));
+            }
+            for (a, v) in crate::tick::per_tick_values(hz) {
+                c.bus.write32(a, v);
+            }
+            let ticks = |n: u32| n * hz / 60;
+            let gp_at = |off: i32| (GAME_GP as i32 + off) as u32;
+            c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+            c.bus.write32(gp_at(-0x6a0), 0);
+            c.bus.write8(0x0053_5c10, 1); // BE mode: not 4
+            c.bus.write8(0x0053_5c12, 0); // mask index
+            c.bus.write32(0x0047_8078, 0); // its mask: no hundredths
+            c.bus.write32(0x0053_08d0, 0);
+            c.bus.write32(RACE, 0); // a race: the clock runs
+            c.bus.write32(RACE + 0xc, ticks(time60));
+            c.bus.write32(GM + 0x78, ticks(limit60));
+            c.bus.write32(GM + 0x88, 1); // counts down
+            c.bus.write32(WSM + 0x2a0, 0xffff_ffff); // no mission
+            c.bus.write32(HUD + 0x3cc, 0);
+            c.bus.write32(HUD + 0x3c4, 0x50);
+            c.bus.write32(HUD + 0x160, 0);
+            c.bus.write32(HUD + 0x3d0, 0.25f32.to_bits());
+            c.bus.write32(HUD + 0x48, 0xffff_ffff); // no HUD players
+            for _ in 0..hz / 60 {
+                c.g[A0][0] = sx(HUD);
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.g[SP][0] = crate::difftest::SP as u64;
+                c.pc = 0x001e_a930;
+                c_ov_state_hud1p_update(c);
+                assert_eq!(c.pc, crate::difftest::RA, "{hz} Hz: unwound");
+            }
+            (
+                c.bus.read32(HUD + 0x17c),
+                c.bus.read32(HUD + 0x180),
+                c.bus.read32(HUD + 0x184),
+                f32::from_bits(c.bus.read32(HUD + 0x3d0)),
+            )
+        }
+        // 75 s left (a whole second), 74.5 s left, 8.3 s left (blinking),
+        // 11.7 s left (not yet).
+        for (limit, time) in [(6000, 1500), (6000, 1530), (6000, 5500), (6000, 5300)] {
+            let base = after(60, limit, time);
+            for hz in [120, 240] {
+                let t = after(hz, limit, time);
+                assert_eq!(
+                    (t.0, t.1, t.2),
+                    (base.0, base.1, base.2),
+                    "{hz} Hz, limit {limit}, time {time}: clock"
+                );
+                assert!(
+                    (t.3 - base.3).abs() < 1e-5,
+                    "{hz} Hz, limit {limit}, time {time}: blink {} vs {} at 60",
+                    t.3,
+                    base.3
+                );
+            }
+        }
+        assert_eq!(after(60, 6000, 1500).2, 15);
+        assert_eq!(after(60, 6000, 1530).2, 15);
+        assert!(after(60, 6000, 5500).3 > 0.25);
+        assert_eq!(after(60, 6000, 5300).3, -1.0);
     }
     use super::*;
     use crate::difftest::fakes::covered;

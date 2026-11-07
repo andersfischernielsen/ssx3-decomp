@@ -4621,6 +4621,8 @@ pub fn game_camera_avoid_collision(c: &mut Cpu) {
         fconst(c, 4, 0x4396_0000); // 300
         qcopy(c, sp_at(c, 0xa0), sp_at(c, 0x80));
         c.mov_s(6, 23);
+        // 50: the sideways push and the 50/s clearance, distances (not a
+        // step; the tick-rate scan's 50.0 at 0x15ee9c).
         fconst(c, 5, 0x4248_0000); // 50
         v_sub_to(c, cam + CAM_LOOK_AT, sp_at(c, 0x80), sp_at(c, 0xa0));
         qcopy(c, sp_at(c, 0xa0), sp_at(c, 0x90));
@@ -4884,6 +4886,8 @@ fn avoid_collision_script(c: &mut Cpu, cam: u32) -> Flow {
         c.g[V0][0] = 1;
         if was_blocked == 0 {
             c.cycles += 14;
+            // 50 units along the contact normal, once on the first blocked
+            // update: a distance, not a step (0x15f3d4).
             fconst(c, 0, 0x4248_0000); // 50
             vscale_q(c, V1, 0, sp_at(c, 0x2b0), sp_at(c, 0x320));
             qcopy(c, sp_at(c, 0x320), sp_at(c, 0x1e0));
@@ -5757,6 +5761,8 @@ pub fn chase_camera_algorithm_apply_jump_curves(c: &mut Cpu) {
         c.lqc2(4, p(s2, st::VEL));
         c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
         c.sqc2(5, sp_at(c, 0x10));
+        // The eye keeps at least 50 from the target (max(f30, 50)): a
+        // distance, not a step (0x164100).
         fconst(c, 0, 0x4248_0000); // 50
         c.lq(2, sp_at(c, 0x10));
         c.max_s(0, 30, 0);

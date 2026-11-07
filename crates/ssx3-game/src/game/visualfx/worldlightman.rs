@@ -2203,6 +2203,13 @@ pub(crate) fn cheat_vu0_normalise(c: &mut Cpu) {
 /// toward the maximum (`max * blend + speed * (1 - blend)`), then turns the
 /// velocity toward the steer direction (`dir * speed * steer + vel *
 /// speed * (1 - steer)`, both normalised).
+///
+/// Tick rate: the 60.0 written to the three timers (+0x2e8/+0x2ec/+0x2f0)
+/// is seconds (`Rider_UpdateBoostTimers` decays them by `time scale * 1/60`
+/// from `.lit4` per tick, which follows the rate), and it is rewritten every
+/// tick while the cheat is on: not a step. The speed blend (+0x314) and the
+/// steer share (+0x310) are per-tick smoothing shares and follow the rate
+/// (`cheat_per_tick_blend`).
 pub fn rider_base_update_cheat_code(c: &mut Cpu) {
     guest(c, |c| {
         // Prologue: s0 = self; s0 and ra saved.
@@ -2234,6 +2241,18 @@ pub fn rider_base_update_cheat_code(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+/// A per-tick blend share `a` (`x += (t - x) * a` once per tick at 60 Hz)
+/// in FPR `f` as it becomes at the current rate: `1 - (1 - a)^(60/rate)`, the
+/// same approach per unit of wall-clock time. At 60 the loaded value stays.
+#[inline]
+fn cheat_per_tick_blend(c: &mut Cpu, f: usize) {
+    let hz = crate::tick::rate(c);
+    if hz != 60 {
+        let a = f32::from_bits(c.f[f]);
+        c.f[f] = (1.0 - (1.0 - a).powf(60.0 / hz as f32)).to_bits();
+    }
 }
 
 /// The body of `RiderBase_UpdateCheatCode` after the virtual query said 0;
@@ -2370,6 +2389,7 @@ pub(crate) fn update_cheat_code_body(c: &mut Cpu, frame: Frame, this: u64) -> cr
             c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
             let r = c.g[V1][0];
             c.lwc1(2, cheat_at(r, rider_f::BLEND));
+            cheat_per_tick_blend(c, 2);
             c.lwc1(0, cheat_at(r, rider_f::MAX_SPEED));
             c.sub_s(1, 1, 2);
             c.mul_s(0, 0, 2);
@@ -2432,6 +2452,7 @@ pub(crate) fn update_cheat_code_body(c: &mut Cpu, frame: Frame, this: u64) -> cr
     c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
     c.sq(V0, frame.at(c, 0x20));
     c.lwc1(0, cheat_at(c.g[V1][0], rider_f::STEER));
+    cheat_per_tick_blend(c, 0);
     c.mul_s(0, 3, 0);
     c.mfc1(V1, 0);
     c.lqc2(4, frame.at(c, 0x20));
@@ -2448,6 +2469,7 @@ pub(crate) fn update_cheat_code_body(c: &mut Cpu, frame: Frame, this: u64) -> cr
     c.g[V1][0] = c.lw(cheat_at(this, cheat::RIDER));
     c.sq(V0, frame.at(c, 0x40));
     c.lwc1(0, cheat_at(c.g[V1][0], rider_f::STEER));
+    cheat_per_tick_blend(c, 0);
     c.sub_s(1, 1, 0);
     c.mul_s(1, 3, 1);
     c.mfc1(V1, 1);
@@ -4456,6 +4478,82 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(SELF);
             },
         );
+    }
+
+    /// The cheat assist's speed blend (+0x314) and steer share (+0x310) are
+    /// per-tick smoothing: one update at 60 and `rate/60` updates at 120 /
+    /// 240 Hz bring the velocity to (nearly) the same speed and heading. The
+    /// cheat stays on (state 1, no events), the velocity starts at 100 along
+    /// x, the steer direction is (0.6, 0, 0.8), the maximum speed 200.
+    /// Unconverted, 120 Hz would turn about twice as far (0.29 vs 0.154 rad).
+    #[test]
+    fn rider_base_update_cheat_code_follows_the_rate() {
+        use crate::difftest::{fakes, put_vec, DATA, GAME_GP};
+        use crate::game::visualfx::boardwakefx::tests::{f, gp_at, RETURN_ZERO};
+        const SELF: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const PHYS_VT: u32 = DATA + 0x2000;
+        const LIB: u32 = DATA + 0x2100;
+        const LIB_VT: u32 = DATA + 0x2200;
+        const WORLD: u32 = DATA + 0x2300;
+        const BE_LIBRARY: u32 = 0x0053_08a8;
+
+        fn after(hz: u32) -> (f32, f32) {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            fakes::machine(c, 1, 0x2f_6519, 0);
+            crate::tick::set_for_test(c, hz);
+            c.bus.write32(gp_at(-0x3898), f(0.001));
+            c.bus.write32(gp_at(-0x3894), f(0.0001));
+            c.bus.write32(gp_at(0xad0), 0);
+            c.bus.write32(gp_at(-0x848), WORLD);
+            c.bus.write32(WORLD + 0x78, 0);
+            c.bus.write32(cheat_callee::CHEATS_OFF, 0);
+            c.bus.write32(GAME_GP - 0x1efc, 0);
+            c.bus.write32(BE_LIBRARY, LIB);
+            c.bus.write32(LIB + 4, LIB_VT);
+            c.bus.write16(LIB_VT + 8, 0);
+            c.bus.write32(LIB_VT + 0xc, fakes::FAKE + 0x10);
+            c.bus.write32(SELF + cheat::RIDER, RIDER);
+            c.bus.write8(SELF + cheat::STATE, 1);
+            c.bus.write8(SELF + 5, 0);
+            c.bus.write8(SELF + 6, 0);
+            c.bus.write8(SELF + cheat::FLAGS, 0);
+            for k in 0..0x80 {
+                c.bus.write32(RIDER + 0x1e0 + 4 * k, 0);
+            }
+            c.bus.write32(RIDER + cheat_rider::PHYSICS, PHYS_VT);
+            c.bus.write16(PHYS_VT + 0x48, 0);
+            c.bus.write32(PHYS_VT + 0x4c, RETURN_ZERO);
+            c.bus.write32(RIDER + cheat_rider::ASSIST, f(1.0));
+            put_vec(c, RIDER + cheat_rider::VELOCITY, [f(100.0), 0, 0, 0]);
+            c.bus.write32(RIDER + cheat_rider::MAX_SPEED, f(200.0));
+            c.bus.write32(RIDER + cheat_rider::BLEND, f(0.015));
+            c.bus.write32(RIDER + cheat_rider::STEER, f(0.18));
+            put_vec(c, RIDER + cheat_rider::STEER_DIR, [f(0.6), 0, f(0.8), 0]);
+            for _ in 0..hz / 60 {
+                c.g[A0][0] = SELF as u64;
+                c.g[RA][0] = crate::difftest::RA as u64;
+                c.g[SP][0] = crate::difftest::SP as u64;
+                rider_base_update_cheat_code(c);
+                assert_eq!(c.pc, crate::difftest::RA, "{hz} Hz: unwound");
+                assert_eq!(c.bus.read32(RIDER + cheat_rider::MODE), 11, "{hz} Hz");
+            }
+            let x = f32::from_bits(c.bus.read32(RIDER + cheat_rider::VELOCITY));
+            let z = f32::from_bits(c.bus.read32(RIDER + cheat_rider::VELOCITY + 8));
+            ((x * x + z * z).sqrt(), z.atan2(x))
+        }
+        let (speed, heading) = after(60);
+        assert!((speed - 95.319).abs() < 0.01, "{speed}");
+        assert!((heading - 0.15394).abs() < 1e-3, "{heading}");
+        for hz in [120, 240] {
+            let (s, h) = after(hz);
+            assert!((s - speed).abs() < 0.5, "{hz} Hz: speed {s} vs {speed}");
+            assert!(
+                (h - heading).abs() < 0.005,
+                "{hz} Hz: heading {h} vs {heading}"
+            );
+        }
     }
 
     /// `RiderBase_UpdateAttackFX`: the effect at DATA, its rider with an

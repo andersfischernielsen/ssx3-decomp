@@ -11689,8 +11689,9 @@ pub(crate) fn dynamic_emitter_ceil(c: &mut Cpu, frames: FpuF32) -> FpuF32 {
 /// `void DynamicEmitter::Setup(EmitterDef* def, float time)` (0x370dc8):
 /// copies the burst count/spacing and rates from the definition (a burst of
 /// 2+ particles gets a random delay `n * rand[0,1)`), sets the start time and
-/// the particle count (`ceil(span * 60)`, the span being `def->start` or
-/// `fade_in + fade/2` when that is negative), clears the bounds, sets up the
+/// the particle ring's slot count (`ceil(span * 60)`: the span in ticks, at
+/// the game rate; the span being `def->start` or `fade_in + fade/2` when
+/// that is negative), clears the bounds, sets up the
 /// particle system (`Emitter_InitDescriptor`, `Emitter_BuildDescriptor`),
 /// resets the emitter through its vtable (+8, +0x28, +0x10) when the count
 /// changed, marks it active and installs its GS state from the template.
@@ -11791,11 +11792,22 @@ pub fn dynamic_emitter_setup(c: &mut Cpu) {
         if !positive {
             span = dynamic_emitter_span(c, def);
         }
+        // Tick rate: the ring holds one slot per tick (each caller spawns
+        // once per update, `DynamicEmitter_Spawn` steps the cursor back one
+        // slot, and `Emitter_InitDescriptor`'s per-slot age step is
+        // `life * def_life / (per_emit * count)`, i.e. one tick), so the
+        // slot count is the span in ticks: `ceil(span * rate)` (60.0 at 60).
         c.cycles += 8;
-        c.g[AT][0] = 0x4270_0000;
-        let sixty = FpuF32(0x4270_0000);
-        abi::set_fpr(c, 0, sixty);
-        let frames = span * sixty;
+        let rate = crate::tick::rate(c);
+        let per_second = if rate == 60 {
+            0x4270_0000
+        } else {
+            (rate as f32).to_bits()
+        };
+        c.g[AT][0] = per_second as u64;
+        let ticks_per_second = FpuF32(per_second);
+        abi::set_fpr(c, 0, ticks_per_second);
+        let frames = span * ticks_per_second;
         abi::set_fpr(c, 2, frames);
         let count = dynamic_emitter_ceil(c, frames);
         c.cycles += 5;
@@ -15486,6 +15498,71 @@ pub(crate) mod tests {
     }
     use super::*;
 
+    const DYN_SETUP_SELF: u32 = DATA + 0x20_0000;
+    const DYN_SETUP_DEF: u32 = DATA + 0x20_1000;
+
+    /// The `DynamicEmitter_Setup` fixture (see the test below).
+    fn dynamic_emitter_setup_fixture(c: &mut ssx3_ee_rt::Cpu, seed: u32) {
+        use crate::difftest::fakes::vtable;
+        const SELF: u32 = DYN_SETUP_SELF;
+        const DEF: u32 = DYN_SETUP_DEF;
+        let mut r = machine(c, seed, 0x370dc8, 3);
+        c.pc = 0x0037_0dc8;
+        for i in 0..0x80u32 {
+            let v = if i % 7 == 0 {
+                r.edge_f32()
+            } else {
+                r.f32(50.0)
+            };
+            c.bus.write32(SELF + 4 * i, v);
+        }
+        for i in 0..0x40u32 {
+            c.bus.write32(DEF + 4 * i, r.f32(50.0));
+        }
+        let vt = vtable(c, &mut r, &[0x8, 0x28, 0x10]);
+        c.bus.write32(SELF + 0x1f8, vt);
+        // Definition: per-emit count, kind, life, burst, rates.
+        c.bus.write32(DEF, 1 + r.next_u32() % 4);
+        c.bus.write32(DEF + 4, r.next_u32() % 4);
+        if seed % 5 != 0 {
+            c.bus.write32(DEF + 0xc, 1.5f32.to_bits());
+        }
+        c.bus.write32(DEF + 0xd0, seed % 4);
+        c.bus.write32(DEF + 0xc4, r.next_u32());
+        c.bus.write32(DEF + 0xc8, r.next_u32());
+        let start = match seed % 4 {
+            0 => 1.0f32.to_bits(),
+            1 => r.f32(5.0) | 0x8000_0000,
+            _ => r.f32(5.0) & 0x7fff_ffff,
+        };
+        c.bus.write32(DEF + 0x8, start);
+        let old = if seed % 8 == 0 {
+            60
+        } else {
+            r.next_u32() % 400
+        };
+        c.bus.write32(SELF + 0x178, old);
+        // Rand_NextMain's state, the descriptor tables and templates.
+        fill(c, &mut r, 0x004f_f018, 6);
+        let base = (GAME_GP as i32 - 0x2868) as u32;
+        for i in 0..24u32 {
+            c.bus.write32(base + 4 * i, r.f32(10.0));
+        }
+        fill(c, &mut r, 0x0050_0000 - 0xee0, 4);
+        for i in 0..0x10u32 {
+            c.bus.write32(0x0050_0000 - 0xe60 + 4 * i, r.f32(4.0));
+        }
+        fill(c, &mut r, 0x0050_1420, 5);
+        c.g[A0][0] = sx(SELF);
+        c.g[A1][0] = sx(DEF);
+        let time = r.f32(10.0) & 0x7fff_ffff;
+        c.f[12] = if seed % 2 == 0 {
+            time | 0x8000_0000
+        } else {
+            time
+        };
+    }
+
     /// `DynamicEmitter_Setup` with the real `Rand_NextMain` (random state at
     /// 0x4ff018), `Emitter_InitDescriptor` and `Emitter_BuildDescriptor`
     /// (random tables at gp-0x2868, template matrix at 0x4ff1a0); the reset
@@ -15495,71 +15572,47 @@ pub(crate) mod tests {
     /// the new one (start 1.0: 60 frames), so no reset.
     #[test]
     fn dynamic_emitter_setup_matches() {
-        use crate::difftest::fakes::vtable;
-        const SELF: u32 = DATA + 0x20_0000;
-        const DEF: u32 = DATA + 0x20_1000;
         covered(
             ee::s12::f_00370dc8__generated,
             dynamic_emitter_setup,
             240,
-            &|c, seed| {
-                let mut r = machine(c, seed, 0x370dc8, 3);
-                c.pc = 0x0037_0dc8;
-                for i in 0..0x80u32 {
-                    let v = if i % 7 == 0 {
-                        r.edge_f32()
-                    } else {
-                        r.f32(50.0)
-                    };
-                    c.bus.write32(SELF + 4 * i, v);
-                }
-                for i in 0..0x40u32 {
-                    c.bus.write32(DEF + 4 * i, r.f32(50.0));
-                }
-                let vt = vtable(c, &mut r, &[0x8, 0x28, 0x10]);
-                c.bus.write32(SELF + 0x1f8, vt);
-                // Definition: per-emit count, kind, life, burst, rates.
-                c.bus.write32(DEF, 1 + r.next_u32() % 4);
-                c.bus.write32(DEF + 4, r.next_u32() % 4);
-                if seed % 5 != 0 {
-                    c.bus.write32(DEF + 0xc, 1.5f32.to_bits());
-                }
-                c.bus.write32(DEF + 0xd0, seed % 4);
-                c.bus.write32(DEF + 0xc4, r.next_u32());
-                c.bus.write32(DEF + 0xc8, r.next_u32());
-                let start = match seed % 4 {
-                    0 => 1.0f32.to_bits(),
-                    1 => r.f32(5.0) | 0x8000_0000,
-                    _ => r.f32(5.0) & 0x7fff_ffff,
-                };
-                c.bus.write32(DEF + 0x8, start);
-                let old = if seed % 8 == 0 {
-                    60
-                } else {
-                    r.next_u32() % 400
-                };
-                c.bus.write32(SELF + 0x178, old);
-                // Rand_NextMain's state, the descriptor tables and templates.
-                fill(c, &mut r, 0x004f_f018, 6);
-                let base = (GAME_GP as i32 - 0x2868) as u32;
-                for i in 0..24u32 {
-                    c.bus.write32(base + 4 * i, r.f32(10.0));
-                }
-                fill(c, &mut r, 0x0050_0000 - 0xee0, 4);
-                for i in 0..0x10u32 {
-                    c.bus.write32(0x0050_0000 - 0xe60 + 4 * i, r.f32(4.0));
-                }
-                fill(c, &mut r, 0x0050_1420, 5);
-                c.g[A0][0] = sx(SELF);
-                c.g[A1][0] = sx(DEF);
-                let time = r.f32(10.0) & 0x7fff_ffff;
-                c.f[12] = if seed % 2 == 0 {
-                    time | 0x8000_0000
-                } else {
-                    time
-                };
-            },
+            &dynamic_emitter_setup_fixture,
         );
+    }
+
+    /// Tick rate: the particle ring has one slot per tick, so a span of
+    /// 1.0 s (seeds `% 4 == 0`: `def->start` 1.0) gives 60 slots at 60 Hz,
+    /// 120 at 120 and 240 at 240, and any positive start `ceil(start * rate)`.
+    /// At every rate the ring covers the same seconds.
+    #[test]
+    fn dynamic_emitter_setup_slots_follow_rate() {
+        use crate::difftest::fakes::LOG_UNWIND_AT;
+        fn slots(seed: u32, hz: u32) -> u32 {
+            let mut c = crate::difftest::fresh();
+            let c = &mut *c;
+            dynamic_emitter_setup_fixture(c, seed);
+            c.bus.write32(LOG_UNWIND_AT, u32::MAX);
+            crate::tick::set_for_test(c, hz);
+            dynamic_emitter_setup(c);
+            assert_eq!(c.pc, crate::difftest::RA, "{hz} Hz: did not return");
+            c.bus.read32(DYN_SETUP_SELF + dyn_emitter::COUNT)
+        }
+        for seed in [0u32, 4, 8] {
+            assert_eq!(slots(seed, 60), 60, "seed {seed}");
+            assert_eq!(slots(seed, 120), 120, "seed {seed}");
+            assert_eq!(slots(seed, 240), 240, "seed {seed}");
+        }
+        // A positive start (seeds `% 4` of 2 and 3): ceil(start * rate).
+        for seed in [2u32, 3, 6, 7] {
+            for hz in [60u32, 120, 240] {
+                let n = slots(seed, hz);
+                let mut c = crate::difftest::fresh();
+                dynamic_emitter_setup_fixture(&mut c, seed);
+                let start = f32::from_bits(c.bus.read32(DYN_SETUP_DEF + dyn_emitter::DEF_START));
+                let want = (start * hz as f32).ceil() as u32;
+                assert_eq!(n, want, "seed {seed}, {hz} Hz (start {start})");
+            }
+        }
     }
     use super::*;
 

@@ -4701,8 +4701,16 @@ pub(crate) mod trail_emit {
 /// cooldown runs it is counted down and the answer is no. Otherwise the
 /// rider's distance from the last point (VU0 length) is compared with 110
 /// (30 when grounded, not grinding and on a rail): far enough, or mode 1,
-/// or `speed` above the `.lit4` threshold at gp-0x39d0 emits and records the
+/// or `turn` below the `.lit4` threshold at gp-0x39d0 emits and records the
 /// rider position (mode 1 also sets the cooldown to 2).
+///
+/// Tick rate: the 110/30 thresholds are world distances (not a step). The
+/// f12 argument is not a speed: the caller passes the dot product of this
+/// tick's unit travel direction with last tick's (`self+0xc0`, rewritten at
+/// the end of every update), so it is the cosine of the per-tick turn, and
+/// the threshold (`0.999`, about 2.56 degrees per 60 Hz tick) is a per-tick
+/// angle: at other rates it becomes `cos(acos(k) * 60 / r)`. The mode-1
+/// cooldown of 2 is a count of 60 Hz ticks (`ticks_from_frames60`).
 pub fn c_board_trail_fx_should_emit(c: &mut Cpu) {
     use trail_emit::*;
     c.cycles += 4;
@@ -4768,7 +4776,8 @@ pub fn c_board_trail_fx_should_emit(c: &mut Cpu) {
             // Mode 1: emit and wait two ticks.
             c.g[V0][0] = 2;
             c.cycles += 3;
-            fx.off(COOLDOWN).sw(c, 2);
+            let wait = crate::tick::ticks_from_frames60(c, 2) as u64;
+            fx.off(COOLDOWN).sw(c, wait);
             c.g[A0][0] = fx.off(OWNER).lw(c);
             c.g[V0][0] = 1;
             true
@@ -4782,7 +4791,11 @@ pub fn c_board_trail_fx_should_emit(c: &mut Cpu) {
                 true
             } else {
                 c.cycles += 5;
-                let fast = Addr(r32(c, GP).wrapping_sub(0x39d0)).read_fpu(c);
+                let mut fast = Addr(r32(c, GP).wrapping_sub(0x39d0)).read_fpu(c);
+                let hz = crate::tick::rate(c);
+                if hz != 60 {
+                    fast = FpuF32(per_tick_turn_cos(f32::from_bits(fast.0), hz).to_bits());
+                }
                 c.f[0] = fast.0;
                 let quick = abi::farg(c, 0).lt(fast);
                 abi::set_fcc(c, quick);
@@ -4805,6 +4818,16 @@ pub fn c_board_trail_fx_should_emit(c: &mut Cpu) {
     }
     c.cycles += 2;
     frame.close(c);
+}
+
+/// The cosine of a per-tick turn of `acos(k)` at 60 Hz, at `hz` ticks per
+/// second (the same turn rate in degrees per second). `k` outside [-1, 1]
+/// has no angle and stays as it is.
+pub(crate) fn per_tick_turn_cos(k: f32, hz: u32) -> f32 {
+    if !(-1.0..=1.0).contains(&k) {
+        return k;
+    }
+    ((k as f64).acos() * 60.0 / hz as f64).cos() as f32
 }
 
 // ---------------------------------------------------------------------------
@@ -6024,6 +6047,69 @@ pub(crate) mod tests {
             },
         );
     }
+    /// One `cBoardTrailFX_ShouldEmit` call at `hz`: rider at the last point
+    /// (no distance trigger), flags clear, the original turn threshold
+    /// (0.999) at gp-0x39d0. Returns the emit answer and the cooldown left.
+    fn should_emit_at(c: &mut Cpu, hz: u32, mode: u32, turn: f32) -> (bool, u32) {
+        use crate::difftest::GAME_GP;
+        use trail_emit::*;
+        crate::tick::set_for_test(c, hz);
+        let fx = DATA;
+        let rider = DATA + 0x1000;
+        c.g[GP][0] = GAME_GP as u64;
+        c.bus.write32(fx + OWNER, rider);
+        c.bus.write32(fx + MODE, mode);
+        for k in 0..4 {
+            c.bus.write32(rider + RIDER_POS + 4 * k, 0);
+            c.bus.write32(fx + LAST_POS + 4 * k, 0);
+        }
+        c.bus.write32(rider + RIDER_GROUNDED, 0);
+        c.bus.write32(GAME_GP - 0x39d0, 0x3f7f_be77);
+        c.f[12] = turn.to_bits();
+        c.g[A0][0] = fx as u64;
+        c.g[RA][0] = crate::difftest::RA as u64;
+        c.pc = 0x002e_86f0;
+        c_board_trail_fx_should_emit(c);
+        assert_eq!(c.pc, crate::difftest::RA);
+        assert_eq!(c.g[SP][0] as u32, crate::difftest::SP);
+        (c.g[V0][0] != 0, c.bus.read32(fx + COOLDOWN))
+    }
+
+    /// Rate test: the mode-1 cooldown lasts 2/60 s at any rate, and a turn
+    /// of the same degrees per second emits (or not) at any rate.
+    #[test]
+    fn c_board_trail_fx_should_emit_follows_the_rate() {
+        use trail_emit::*;
+        for hz in [60u32, 120, 240] {
+            let mut c = crate::difftest::fresh();
+            c.bus.write32(DATA + COOLDOWN, 0);
+            let (emit, wait) = should_emit_at(&mut c, hz, 1, 1.0);
+            assert!(emit, "{hz} Hz");
+            assert_eq!(wait * 60, 2 * hz, "{hz} Hz cooldown");
+            // The cooldown runs out after the same time.
+            let mut ticks = 0;
+            while c.bus.read32(DATA + COOLDOWN) != 0 {
+                let (emit, _) = should_emit_at(&mut c, hz, 2, 1.0);
+                assert!(!emit);
+                ticks += 1;
+            }
+            assert_eq!(ticks * 60, 2 * hz, "{hz} Hz countdown");
+            // Turning at 150 and 180 degrees per second: 2.5 and 3 degrees
+            // per 60 Hz tick, either side of the 2.56 degree threshold.
+            for (deg_per_s, want) in [
+                (150.0f64, false),
+                (180.0, true),
+                (60.0, false),
+                (300.0, true),
+            ] {
+                let per_tick = (deg_per_s / hz as f64).to_radians();
+                c.bus.write32(DATA + COOLDOWN, 0);
+                let (emit, _) = should_emit_at(&mut c, hz, 2, per_tick.cos() as f32);
+                assert_eq!(emit, want, "{hz} Hz, {deg_per_s} deg/s");
+            }
+        }
+    }
+
     use super::*;
 
     /// cBoardTrailFX_RenderBatch: no trails (n <= 0), trails too short,

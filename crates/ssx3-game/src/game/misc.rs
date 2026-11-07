@@ -11580,22 +11580,7 @@ pub fn rider_handle_impact(c: &mut Cpu) {
             return Ok(());
         }
 
-        // impactAccum += 1 - max(normal . impulse, 0); impulse = normal.
-        c.cycles += 21;
-        c.mtc1(0, 3);
-        c.lqc2(3, impact_at(c, S3, INFO_NORMAL));
-        c.lqc2(5, impact_at(c, S1, IMPULSE));
-        impact_dot(c, 5);
-        c.qmfc2(V0, 4);
-        c.mtc1(V0, 1);
-        c.g[AT][0] = 0x3f80_0000;
-        c.mtc1(AT, 2);
-        c.g[V1][0] = u64::MAX;
-        c.max_s(1, 1, 3);
-        c.lwc1(0, impact_at(c, S1, IMPACT_ACCUM));
-        c.sub_s(2, 2, 1);
-        c.add_s(0, 0, 2);
-        c.swc1(0, impact_at(c, S1, IMPACT_ACCUM));
+        impact_accumulate(c);
         c.lq(V0, impact_at(c, S3, INFO_NORMAL));
         let no_surface = c.g[S5][0] == c.g[V1][0];
         c.sq(V0, impact_at(c, S1, IMPULSE));
@@ -11702,6 +11687,38 @@ pub fn rider_handle_impact(c: &mut Cpu) {
         impact_epilogue(c, frame);
         Ok(())
     })
+}
+
+/// `impactAccum (+0x3f0) += 1 - max(info.normal . impulse, 0)` (21 cycles;
+/// s1 = rider, s3 = info; leaves v1 = -1).
+///
+/// Tick rate: the wall-contact path calls `Rider_HandleImpact` on every tick
+/// the rider pushes into a wall, and `Rider_UpdateImpacts` decays this
+/// accumulator per tick (`tick::PER_TICK`, 0.956 converted as a decay) and
+/// resets the rider to the path above 4.5: the reset is the "stuck against a
+/// wall" detector. The gain is therefore a per-tick amount and is scaled by
+/// `60 / rate` off 60 Hz (same time to the reset at every rate); at 60 the
+/// original's `add.s` is kept bit for bit.
+pub(crate) fn impact_accumulate(c: &mut Cpu) {
+    use impact::*;
+    c.cycles += 21;
+    c.mtc1(0, 3);
+    c.lqc2(3, impact_at(c, S3, INFO_NORMAL));
+    c.lqc2(5, impact_at(c, S1, IMPULSE));
+    impact_dot(c, 5);
+    c.qmfc2(V0, 4);
+    c.mtc1(V0, 1);
+    c.g[AT][0] = 0x3f80_0000;
+    c.mtc1(AT, 2);
+    c.g[V1][0] = u64::MAX;
+    c.max_s(1, 1, 3);
+    c.lwc1(0, impact_at(c, S1, IMPACT_ACCUM));
+    c.sub_s(2, 2, 1);
+    if crate::tick::rate(c) != 60 {
+        crate::game::ai::rider::per_tick_60(c, 2);
+    }
+    c.add_s(0, 0, 2);
+    c.swc1(0, impact_at(c, S1, IMPACT_ACCUM));
 }
 
 /// Restore s1-s5, ra, f20-f23 and return (12 cycles).
@@ -12382,6 +12399,11 @@ pub(crate) fn bow_soft_rebound(c: &mut Cpu) {
 /// Slow hits (main state 1, or 2 with the handler in mode 1) add
 /// `(2.5 - facing) * max(n.z, 0.2)` to the impact accumulator when the
 /// rider is slower than 833. Leaves a0 = the animation.
+///
+/// Tick rate: like [`impact_accumulate`], the gain is per wall-contact tick
+/// (`Rider_UpdateImpacts` decays +0x3f4 per tick, 0.978 in
+/// `tick::PER_TICK`, and resets the rider above 5), so off 60 Hz it is scaled
+/// by `60 / rate`; at 60 it is the original sum.
 pub(crate) fn bow_accumulate_impact(c: &mut Cpu) {
     c.cycles += 15;
     let limit = bow_lit(c, bow_lit::SLOW_SPEED);
@@ -12415,6 +12437,11 @@ pub(crate) fn bow_accumulate_impact(c: &mut Cpu) {
             weight * floor
         };
         c.cycles += 2;
+        let add = if crate::tick::rate(c) != 60 {
+            crate::game::ai::rider::rate_step_60(c, add)
+        } else {
+            add
+        };
         let sum = old + add;
         bow_set_f(c, 0, sum);
         Addr(accum).write_fpu(c, sum);
@@ -21927,6 +21954,89 @@ pub(crate) mod tests {
                 c.g[A1][0] = sx(info);
                 c.g[A2][0] = surface;
             },
+        );
+    }
+
+    /// Tick rate: the impact accumulator's gain is per contact tick. From the
+    /// same rider and hit, two ticks at 120 Hz add what one tick adds at 60
+    /// (and at 60 the gain is the original `1 - max(n . impulse, 0)`).
+    #[test]
+    fn rider_handle_impact_accumulator_follows_the_rate() {
+        use crate::difftest::{put_vec, DATA};
+        use impact::*;
+        let run = |hz: u32, ticks: u32| -> f32 {
+            let mut c = crate::difftest::fresh();
+            crate::tick::set_for_test(&mut c, hz);
+            let rider = DATA + 0x20_0000;
+            let info = rider + 0x1000;
+            let f = |x: f32| x.to_bits();
+            put_vec(&mut c, info + INFO_NORMAL, [f(0.6), f(0.0), f(0.8), 0]);
+            put_vec(&mut c, rider + IMPULSE, [f(0.0), f(0.6), f(0.8), 0]);
+            c.bus.write32(rider + IMPACT_ACCUM, f(1.25));
+            c.g[S1][0] = sx(rider);
+            c.g[S3][0] = sx(info);
+            for _ in 0..ticks {
+                impact_accumulate(&mut c);
+            }
+            f32::from_bits(c.bus.read32(rider + IMPACT_ACCUM))
+        };
+        let at_60 = run(60, 1);
+        assert!((at_60 - (1.25 + 1.0 - 0.64)).abs() < 1e-5, "{at_60}");
+        let at_120 = run(120, 2);
+        assert!(
+            (at_120 - at_60).abs() < 1e-5,
+            "120 Hz {at_120} vs 60 Hz {at_60}"
+        );
+        let at_240 = run(240, 4);
+        assert!(
+            (at_240 - at_60).abs() < 1e-5,
+            "240 Hz {at_240} vs 60 Hz {at_60}"
+        );
+    }
+
+    /// Tick rate: Rider_BounceOffWall's slow-hit gain to the bounce
+    /// accumulator (+0x3f4) is per contact tick: 2 calls at 120 Hz and 4 at
+    /// 240 add what one adds at 60 (`(2.5 - facing) * max(n.z, 0.2)`).
+    #[test]
+    fn rider_bounce_off_wall_accumulator_follows_the_rate() {
+        use crate::difftest::{put_vec, DATA, GAME_GP};
+        let run = |hz: u32, ticks: u32| -> f32 {
+            let mut c = crate::difftest::fresh();
+            crate::tick::set_for_test(&mut c, hz);
+            let f = |x: f32| x.to_bits();
+            c.g[GP][0] = sx(GAME_GP);
+            c.bus
+                .write32(GAME_GP.wrapping_sub(bow_lit::SLOW_SPEED), f(833.337_6));
+            c.bus
+                .write32(GAME_GP.wrapping_sub(bow_lit::MIN_NORMAL_Z), f(0.2));
+            let rider = DATA + 0x20_0000;
+            let hit = rider + 0x1000;
+            put_vec(
+                &mut c,
+                rider + bow_rider::VEL,
+                [f(100.0), f(0.0), f(0.0), 0],
+            );
+            c.bus.write32(rider + bow_rider::IMPACT_ACCUM, f(1.5));
+            c.bus.write32(hit + bow_hit::NORMAL_Z, f(0.75));
+            c.g[S2][0] = sx(rider);
+            c.g[S1][0] = sx(hit);
+            bow_set_f(&mut c, 22, FpuF32::from_f32(0.5));
+            for _ in 0..ticks {
+                bow_accumulate_impact(&mut c);
+            }
+            f32::from_bits(c.bus.read32(rider + bow_rider::IMPACT_ACCUM))
+        };
+        let at_60 = run(60, 1);
+        assert!((at_60 - (1.5 + 2.0 * 0.75)).abs() < 1e-5, "{at_60}");
+        let at_120 = run(120, 2);
+        assert!(
+            (at_120 - at_60).abs() < 1e-5,
+            "120 Hz {at_120} vs 60 Hz {at_60}"
+        );
+        let at_240 = run(240, 4);
+        assert!(
+            (at_240 - at_60).abs() < 1e-5,
+            "240 Hz {at_240} vs 60 Hz {at_60}"
         );
     }
 

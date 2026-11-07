@@ -16200,9 +16200,10 @@ pub(crate) fn rs207d_post(
 /// `void SSXAudioSystem_RiderSay207D(SSXAudioSystem* sys, Rider* a, Rider*
 /// b)` (0x2a0560): the "passed you" speech when rider `a` overtakes `b`.
 /// Only with speech on (mode 2), outside replays, both riders' character
-/// info clear, at least 600 ticks since the last pass, both still behind
-/// the start line (progress < 0), one of them the followed rider unless
-/// both are human/local, the speech system ready, both heard by the same
+/// info clear, at least 10 s (600 frames at 60 Hz, `tick`-scaled) since
+/// the race-start stamp (`sys+0x582c`), both still behind the start line
+/// (progress < 0), one of them the followed rider unless both are
+/// human/local, the speech system ready, both heard by the same
 /// listener view, and their gap along `b`'s heading between the near and
 /// far limits. Then, by rivalry (2: rival lines 0x2081/0x207f; 0/1: pass
 /// lines 0x2080/0x207d), posts a line for each rider with its speech mask
@@ -16287,7 +16288,11 @@ pub(crate) fn rs207d_body(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
     c.g[A0][0] = Addr(r32(c, S3).wrapping_add(LAST_PASS)).lw(c);
     c.g[V0][0] = Addr(r32(c, V1).wrapping_add(RACE_TIME)).lw(c);
     c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, A0)));
-    c.g[V0][0] = ((c.g[V0][0] as i64) < 600) as u64;
+    // The game module's frame counter counts ticks; `+0x582c` is its value
+    // when the race started (EnterGameInit / race start): no pass lines in
+    // the first 600 60 Hz frames (10 s), the same wall time at any rate.
+    let wait = crate::tick::ticks_from_frames60(c, 600) as i64;
+    c.g[V0][0] = ((c.g[V0][0] as i64) < wait) as u64;
     if c.g[V0][0] != 0 {
         return Ok(false);
     }
@@ -22982,6 +22987,35 @@ pub(crate) mod tests {
                 rs207d_world(c, seed);
             },
         );
+    }
+
+    /// Tick rate: RiderSay207D's "no pass lines yet" wait (race frame
+    /// counter minus the race-start stamp at `sys+0x582c`) is 600 ticks at
+    /// 60 Hz, 1200 at 120 and 2400 at 240: the same 10 s. Seed 1 passes
+    /// every check before the wait and leaves at rider a's progress check
+    /// right after it, so a run that passes the wait costs more cycles.
+    #[test]
+    fn ssx_audio_system_rider_say_207d_pass_wait_follows_the_rate() {
+        const SYS: u32 = DATA + 0x20_0000;
+        const RACE_MAN: u32 = DATA + 0x21_9000;
+        let run = |hz: u32, elapsed: u32| -> u64 {
+            let mut c = crate::difftest::fresh();
+            rs207d_world(&mut c, 1);
+            crate::tick::set_for_test(&mut c, hz);
+            c.bus.write32(RACE_MAN + 8, 5000 + elapsed);
+            c.bus.write32(SYS + 0x582c, 5000);
+            let start = c.cycles;
+            ssx_audio_system_rider_say_207d(&mut c);
+            c.cycles - start
+        };
+        let blocked = run(60, 599);
+        let passed = run(60, 600);
+        assert_ne!(blocked, passed);
+        for (hz, wait) in [(120, 1200), (240, 2400)] {
+            assert_eq!(run(hz, 600), blocked, "{hz} Hz, 600 ticks");
+            assert_eq!(run(hz, wait - 1), blocked, "{hz} Hz, {} ticks", wait - 1);
+            assert_eq!(run(hz, wait), passed, "{hz} Hz, {wait} ticks");
+        }
     }
 
     /// CrowdAudio_InstanceSetSourceParam: negative, zero and positive

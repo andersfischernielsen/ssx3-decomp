@@ -1014,6 +1014,9 @@ fn update_active_body(c: &mut Cpu, this: u32) -> Flow {
             c.cycles += 8;
             c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0
             c.mtc1(AT, 20);
+            // 30.0 (0x2d7fc0): the spawn record's speed (+0x14), authored per
+            // 1/30 s; AnimObject_ctor divides it by the app manager's rate
+            // itself. Not a step: stays 30 at every rate.
             c.g[AT][0] = 0x41f0_0000; // 30.0
             c.mtc1(AT, 21);
             c.g[S0][0] = sx(r32(c, S4).wrapping_add(0x5770));
@@ -1054,6 +1057,9 @@ fn update_active_body(c: &mut Cpu, this: u32) -> Flow {
     c.cycles += 6;
     c.g[A1][0] = Addr(this).off(DEF).lw(c);
     c.g[V1][0] = Addr(this).off(CUE_CURSOR).lw(c);
+    // 30.0 (0x2d80e4): playback time -> the cues' authored 30 fps frame
+    // numbers. Not a step: the time already advances in wall time (the step
+    // above follows the rate), so the cues fire at the same moment.
     c.g[AT][0] = 0x41f0_0000; // 30.0
     c.mtc1(AT, 20);
     c.g[V0][0] = Addr(r32(c, A1)).off(0xe).lhu(c);
