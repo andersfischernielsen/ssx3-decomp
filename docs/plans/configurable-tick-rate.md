@@ -256,6 +256,38 @@ The remaining start offset is the load/intro (scripted) timeline, see
 runs land different tricks (85 Rail vs 50/50 Rail) because a different step is
 a different simulation; it is not a timing quantity.
 
+### T2 on functions ported after the inventory (2026-11)
+
+59 inventory functions were ported in waves 206-212 after this pass. Their
+`.lit4` 1/60, 1/30, 1/50 loads and app-manager reads already followed the
+rate (the ports read the same memory); their register-built and `.sdata`
+30.0/50.0/60.0/3600 sites were classified (`target/gate/tick2/brief.md`).
+Converted, exact at 60, each with a 60/120/240 rate test:
+
+- `DynamicEmitter_Setup`: the particle ring has `ceil(life * rate)` slots
+  (one spawn per tick); at 240 Hz trails and wakes were cut to a quarter.
+  The rings are rate/60 larger.
+- `RiderBase_UpdateCheatCode`: the speed and steer blend shares (rider
+  +0x314/+0x310) keep their share per 1/60 s.
+- `Rider_HandleImpact`, `Rider_BounceOffWall`: the wall-impact (+0x3f0) and
+  bounce (+0x3f4) accumulators that reset a stuck rider gain 60/rate per
+  contact tick.
+- `cBoardTrailFX_ShouldEmit`: the per-tick turn threshold (cos 0.999 per
+  60 Hz tick) scales to the same turn per second; the restart cooldown is in
+  60 Hz ticks.
+- `SSXAudioSystem_RiderSay207D`: the 600-tick race-start wait for pass lines.
+- `cOVStateHUD1P_Update`: the countdown's round-up of a started second and the
+  last-10-s blink threshold.
+
+The rest are distances, speeds, widths, a probability, a listener range,
+display units or authored 30 fps data. Measured (`tick_ab.py 240`): no halt,
+no allocation failure with the larger particle rings, race clock in step
+(0:25/0:30/0:34/0:38 both). Course % now drifts at 240 Hz (13/13, 15/14,
+13/17, 21/18 %: the 240 Hz run hits a tree at 0:25). The commit before this
+pass (98291ba) gives the identical sheet, so the drift is older than these
+conversions (somewhere between the last measurement and waves 210-212); it is
+open T3 work.
+
 ### Race countdown and script clock (done)
 
 The constant race-clock offset (~1 s at 120, ~2 s at 240) was the start
