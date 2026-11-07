@@ -47,6 +47,7 @@ Launcher intent-permutation and session-claim tests run on the JVM with
 `gradle -p apps/android :app:testDebugUnitTest -x :app:buildRust` (JDK/SDK as
 above; no generated guest code needed). These check forwarding and the manifest;
 real task reuse, native duplicate rejection and lifecycle timing still need a device.
+Android CI runs the JVM tests on pushes and pull requests without native code or a disc.
 
 The renderer keeps wgpu's backend selection: Vulkan when available, GLES as
 a fallback. The manifest advertises both without requiring either individually.

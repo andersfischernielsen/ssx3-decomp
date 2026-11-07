@@ -1,0 +1,39 @@
+name: Android
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  jvm:
+    name: JVM lifecycle tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+
+      - name: Stub crates for the generated code
+        run: python3 tools/setup.py --stubs-only
+
+      - name: Test without building native code
+        run: gradle -p apps/android --no-daemon :app:testDebugUnitTest -x :app:buildRust
