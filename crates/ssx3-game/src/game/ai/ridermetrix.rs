@@ -205,6 +205,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_metrix_save_state,
         "RiderMetrix_SaveState",
     ),
+    (
+        0x0011_7718,
+        rider_metrix_bank_combo,
+        "RiderMetrix_BankCombo",
+    ),
+    (0x0011_9708, rider_metrix_add_trick, "RiderMetrix_AddTrick"),
+    (
+        0x0011_9d40,
+        rider_metrix_land_trick,
+        "RiderMetrix_LandTrick",
+    ),
+    (
+        0x0011_9e38,
+        rider_metrix_interrupt_trick,
+        "RiderMetrix_InterruptTrick",
+    ),
 ];
 
 /// Direct calls (same shard; these go through the shard's override slots, so
@@ -4923,6 +4939,495 @@ pub fn rider_metrix_save_state(c: &mut Cpu) {
     stream_write_member(c, 0, 0x1ac, 0x0011_74d8);
 }
 
+pub(crate) mod land_trick_callee {
+    use super::*;
+
+    pub const FINISH_TRICK: Callee = Callee {
+        addr: 0x0011_a228,
+        f: ee::s00::RiderMetrix_FinishTrick,
+    };
+
+    pub const RESET_TRICK: Callee = Callee {
+        addr: 0x0011_7838,
+        f: ee::s00::RiderMetrix_ResetTrick,
+    };
+}
+
+pub(crate) mod add_trick_callee {
+    use super::*;
+
+    /// `cBE_getBE`, `BELibrary_GetInterface`, `BEBAGTInt_GetTrickPoints`,
+    /// `BEBAGTInt_GetTrickPoints2` (other shard: through the function table).
+    pub const BE_GET_BE: u32 = 0x0014_dc80;
+
+    pub const BE_GET_INTERFACE: u32 = 0x0014_dd58;
+
+    pub const GET_TRICK_POINTS: u32 = 0x0015_0528;
+
+    pub const GET_TRICK_POINTS_2: u32 = 0x0015_0540;
+
+    pub const CLEAR_PEAK_A4: Callee = Callee {
+        addr: 0x0011_76f8,
+        f: ee::s00::RiderMetrix_ClearPeakA4,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_InterruptTrick (0x119e38)
+
+/// RiderMetrix fields used by InterruptTrick.
+pub(crate) const METRIX_INT_STANCE: u32 = 0x0;
+
+pub(crate) const METRIX_INT_STANCE_2: u32 = 0x4;
+
+pub(crate) const METRIX_INT_PREV_TRICKING: u32 = 0xc;
+
+pub(crate) const METRIX_INT_PREV_28: u32 = 0x10;
+
+pub(crate) const METRIX_INT_TRICKING: u32 = 0x20;
+
+pub(crate) const METRIX_INT_TIMER: u32 = 0x24;
+
+pub(crate) const METRIX_INT_28: u32 = 0x28;
+
+pub(crate) const METRIX_INT_30: u32 = 0x30;
+
+pub(crate) const METRIX_INT_34: u32 = 0x34;
+
+/// Non-zero while the metrix is idle (nothing to bank).
+pub(crate) const METRIX_INT_IDLE: u32 = 0x70;
+
+/// `float RiderMetrix::InterruptTrick(int a, int b)` (0x119e38): keeps the
+/// current tricking flag (+0x20) and +0x28 as the previous ones (+0xc,
+/// +0x10). When idle (+0x70 set) it only clears +0x34, sets the timer +0x24
+/// to -1 and clears +0x20; otherwise it banks the trick
+/// (`FinishTrick(this, 0, 0, 0, 0, 1)`) and resets it. Then stores `a` at
+/// +0x0, `b` at +0x4, clears +0x30 and returns the banked points (0 when
+/// idle).
+pub fn rider_metrix_interrupt_trick(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S3, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S4, 0x10);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save_fpr(c, 20, 0x60);
+        c.g[S4][0] = c.g[A1][0];
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        frame.save_ra(c, 0);
+        c.mtc1(0, 20); // points = 0.0
+        let m = c.g[S0][0] as u32;
+        c.g[V0][0] = c.lw(m.wrapping_add(METRIX_INT_IDLE));
+        c.g[S1][0] = c.lw(m.wrapping_add(METRIX_INT_TRICKING));
+        c.g[S2][0] = c.lw(m.wrapping_add(METRIX_INT_28));
+        if c.g[V0][0] != 0 {
+            c.cycles += 6;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0f
+            c.mtc1(AT, 0);
+            c.swc1(20, m.wrapping_add(METRIX_INT_34));
+            c.swc1(0, m.wrapping_add(METRIX_INT_TIMER));
+            c.sw(m.wrapping_add(METRIX_INT_TRICKING), 0);
+        } else {
+            c.cycles += 10;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            c.g[A2][0] = 0;
+            c.g[A3][0] = 0;
+            c.g[T0][0] = 0;
+            c.g[T1][0] = 1;
+            Callee {
+                addr: 0x0011_a228,
+                f: ee::s00::RiderMetrix_FinishTrick,
+            }
+            .call(c, 0x0011_9eac)?;
+            c.mov_s(20, 0);
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0011_7838,
+                f: ee::s00::RiderMetrix_ResetTrick,
+            }
+            .call(c, 0x0011_9eb8)?;
+        }
+        c.cycles += 15;
+        let m = c.g[S0][0] as u32;
+        c.sw(m.wrapping_add(METRIX_INT_PREV_TRICKING), c.g[S1][0]);
+        c.mov_s(0, 20);
+        c.sw(m.wrapping_add(METRIX_INT_PREV_28), c.g[S2][0]);
+        c.sw(m.wrapping_add(METRIX_INT_STANCE_2), c.g[S3][0]);
+        c.sw(m.wrapping_add(METRIX_INT_STANCE), c.g[S4][0]);
+        c.sw(m.wrapping_add(METRIX_INT_30), 0);
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// RiderMetrix trick record fields written on landing.
+pub(crate) const METRIX_STANCE: u32 = 0x0;
+
+pub(crate) const METRIX_ALTERNATE: u32 = 0x4;
+
+pub(crate) const METRIX_STYLE: u32 = 0xc;
+
+pub(crate) const METRIX_FLAG: u32 = 0x10;
+
+pub(crate) const METRIX_SCORE: u32 = 0x14;
+
+pub(crate) const METRIX_LAST_STYLE: u32 = 0x20;
+
+pub(crate) const METRIX_LAST_STYLE_TIME: u32 = 0x24;
+
+pub(crate) const METRIX_LAST_FLAG: u32 = 0x28;
+
+pub(crate) const METRIX_LAST_FLAG_TIME: u32 = 0x2c;
+
+pub(crate) const METRIX_CHAIN_ACTIVE: u32 = 0x5c;
+
+pub(crate) const METRIX_CHAIN_TIME: u32 = 0x6c;
+
+pub(crate) const METRIX_CHAIN: u32 = 0x70;
+
+/// `float RiderMetrix_LandTrick(RiderMetrix* m, int stance, int alternate,
+/// int style, int flag)` (0x119d40): a styled landing with a positive score
+/// adds the style bonus (`gp-0x7a00`, 0.13) to the score; then the trick is
+/// banked (`RiderMetrix_FinishTrick(m, stance, alternate, style, flag, 0)`)
+/// and reset, and the landing's stance/alternate/style/flag are recorded
+/// (style and flag also as "last" with their timers cleared). A trick chain
+/// (`+0x70`) running before the landing survives the reset and is marked
+/// active again. Returns FinishTrick's points.
+pub fn rider_metrix_land_trick(c: &mut Cpu) {
+    use land_trick_callee as f;
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x80);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        frame.save(c, S4, 0x20);
+        frame.save(c, S5, 0x10);
+        frame.save(c, S3, 0x30);
+        frame.save_ra(c, 0);
+        frame.save_fpr(c, 20, 0x70);
+        c.g[S0][0] = c.g[A0][0]; // m
+        c.g[S1][0] = c.g[A3][0]; // style
+        c.g[S2][0] = c.g[T0][0]; // flag
+        c.g[S4][0] = c.g[A1][0]; // stance
+        c.g[S5][0] = c.g[A2][0]; // alternate
+        let m = r32(c, S0);
+
+        // Style bonus on a positive score.
+        if c.g[S1][0] == 0 {
+            c.cycles += 1;
+        } else {
+            c.cycles += 6;
+            c.lwc1(1, m + METRIX_SCORE);
+            c.mtc1(0, 0);
+            c.c_lt_s(0, 1);
+            if c.fcc() {
+                c.cycles += 4;
+                c.lwc1(0, r32(c, GP).wrapping_sub(0x7a00));
+                c.add_s(0, 1, 0);
+                c.swc1(0, m + METRIX_SCORE);
+            }
+        }
+        c.g[A0][0] = c.g[S0][0];
+
+        c.cycles += 15;
+        c.g[A1][0] = c.g[S4][0];
+        c.g[A2][0] = c.g[S5][0];
+        c.g[A3][0] = c.g[S1][0];
+        c.g[T0][0] = c.g[S2][0];
+        c.g[T1][0] = 0; // takeoff
+        c.g[S3][0] = Addr(m + METRIX_CHAIN).lw(c);
+        f::FINISH_TRICK.call(c, 0x0011_9dc0)?;
+        c.mov_s(20, 0);
+        c.g[A0][0] = c.g[S0][0];
+        f::RESET_TRICK.call(c, 0x0011_9dcc)?;
+
+        let m = r32(c, S0);
+        Addr(m + METRIX_STANCE).sw(c, c.g[S4][0]);
+        Addr(m + METRIX_ALTERNATE).sw(c, c.g[S5][0]);
+        Addr(m + METRIX_STYLE).sw(c, c.g[S1][0]);
+        Addr(m + METRIX_FLAG).sw(c, c.g[S2][0]);
+        if c.g[S1][0] != 0 {
+            c.cycles += 2;
+            Addr(m + METRIX_LAST_STYLE).sw(c, c.g[S1][0]);
+            Addr(m + METRIX_LAST_STYLE_TIME).sw(c, 0);
+        }
+        c.cycles += 2;
+        if c.g[S2][0] != 0 {
+            c.cycles += 2;
+            Addr(m + METRIX_LAST_FLAG).sw(c, c.g[S2][0]);
+            Addr(m + METRIX_LAST_FLAG_TIME).sw(c, 0);
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 1;
+        if c.g[S3][0] != 0 {
+            c.cycles += 3;
+            Addr(m + METRIX_CHAIN).sw(c, c.g[S3][0]);
+            Addr(m + METRIX_CHAIN_ACTIVE).sw(c, 1);
+            Addr(m + METRIX_CHAIN_TIME).sw(c, 0);
+        }
+
+        c.cycles += 11;
+        c.mov_s(0, 20);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore(c, S4, 0x20);
+        frame.restore(c, S5, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x70);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// RiderMetrix fields `RiderMetrix_AddTrick` updates.
+pub(crate) const METRIX_TRICK_RATE: u32 = 0x3c;
+
+pub(crate) const METRIX_TRICK_TIMER: u32 = 0x40;
+
+/// `float RiderMetrix_AddTrick(RiderMetrix* m, int id)` (0x119708): look the
+/// trick up in the BE trick table (interface 6): its points times 0.0001
+/// (`gp-0x7a1c`) are added to the running score (`+0x14`), its second
+/// value times 1/600000 (`gp-0x7a18`) becomes the rate at `+0x3c`; a
+/// negative timer at `+0x40` is clamped to 0, an uber trick (id >= 35) sets
+/// the chain flag `+0x5c`, then `+0xa4` is cleared. Returns 0.
+pub fn rider_metrix_add_trick(c: &mut Cpu) {
+    use add_trick_callee as f;
+    guest(c, |c| {
+        c.cycles += 36;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S1, 0x20);
+        frame.save(c, S2, 0x10);
+        frame.save(c, S0, 0x30);
+        frame.save_fpr(c, 21, 0x48);
+        frame.save_fpr(c, 20, 0x40);
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0]; // m
+        c.g[S2][0] = c.g[A1][0]; // id
+        call_ptr(c, f::BE_GET_BE, 0x0011_9730)?;
+        c.mtc1(0, 21); // zero
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 6;
+        call_ptr(c, f::BE_GET_INTERFACE, 0x0011_9740)?;
+        c.g[S0][0] = c.g[V0][0]; // trick table interface
+        c.g[A1][0] = c.g[S2][0];
+        c.g[A0][0] = c.g[S0][0];
+        call_ptr(c, f::GET_TRICK_POINTS, 0x0011_9750)?;
+        c.mtc1(2, 20);
+        c.cvt_s_w(20, 20);
+        c.lwc1(0, r32(c, GP).wrapping_sub(0x7a1c));
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S2][0];
+        c.mul_s(20, 20, 0); // points * 0.0001
+        call_ptr(c, f::GET_TRICK_POINTS_2, 0x0011_976c)?;
+
+        let m = r32(c, S1);
+        c.mtc1(2, 1);
+        c.cvt_s_w(1, 1);
+        c.lwc1(0, m + METRIX_SCORE);
+        c.lwc1(2, r32(c, GP).wrapping_sub(0x7a18));
+        c.lwc1(3, m + METRIX_TRICK_TIMER);
+        c.add_s(0, 0, 20);
+        c.mul_s(1, 1, 2);
+        c.c_lt_s(3, 21);
+        c.swc1(0, m + METRIX_SCORE);
+        c.swc1(1, m + METRIX_TRICK_RATE);
+        if c.fcc() {
+            c.cycles += 1;
+            c.swc1(21, m + METRIX_TRICK_TIMER);
+        }
+
+        c.cycles += 3;
+        let uber = (c.g[S2][0] as i64) >= 35;
+        c.g[V0][0] = 1;
+        if uber {
+            c.cycles += 1;
+            Addr(m + METRIX_CHAIN_ACTIVE).sw(c, 1);
+        }
+
+        c.cycles += 11;
+        c.g[A0][0] = c.g[S1][0];
+        f::CLEAR_PEAK_A4.call(c, 0x0011_97b4)?;
+        c.mov_s(0, 21);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 21, 0x48);
+        frame.restore_fpr(c, 20, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RiderMetrix_BankCombo (0x117718)
+
+/// RiderMetrix -> tricks in the running combo.
+pub(crate) const METRIX_COMBO_COUNT: u32 = 0x9c;
+
+/// RiderMetrix -> points of the running combo.
+pub(crate) const METRIX_COMBO_POINTS: u32 = 0xa0;
+
+/// RiderMetrix -> tricks banked over all combos.
+pub(crate) const METRIX_BANKED_TRICKS: u32 = 0x134;
+
+/// RiderMetrix -> longest combo (tricks).
+pub(crate) const METRIX_BEST_COMBO_COUNT: u32 = 0x184;
+
+/// RiderMetrix -> best combo (points).
+pub(crate) const METRIX_BEST_COMBO_POINTS: u32 = 0x188;
+
+/// RiderMetrix -> points banked over all combos.
+pub(crate) const METRIX_BANKED_POINTS: u32 = 0x198;
+
+/// The event settings (`mode` byte +0x48, `online` byte +0x49).
+pub(crate) const BANK_COMBO_EVENT_SETTINGS: u32 = 0x0053_5bc8;
+
+pub(crate) const BANK_COMBO_SHOW_HUD_NUMBER: Callee = Callee {
+    addr: 0x0011_7b88,
+    f: ee::s00::RiderMetrix_ShowHUDNumber,
+};
+
+pub(crate) const BANK_COMBO_AWARD_POINTS: Callee = Callee {
+    addr: 0x0011_9ef8,
+    f: ee::s00::RiderMetrix_AwardPoints,
+};
+
+pub(crate) const BANK_COMBO_RESET_COMBO: Callee = Callee {
+    addr: 0x0011_75f8,
+    f: ee::s00::RiderMetrix_ResetCombo,
+};
+
+/// `void RiderMetrix::BankCombo()` (0x117718): a combo of two or more
+/// tricks with positive points is banked: points and trick count are added
+/// to the totals, the best-combo records updated, and the back end's
+/// interface 0 is touched; then either the combo number (HUD id 0x26, 1.5 s,
+/// with the trick count) and the points (id 0x18, gp-0x7b10 s) are shown,
+/// or, offline in mode 4, `AwardPoints(2, min(points / 500, 20))`. The combo
+/// is always reset (`ResetCombo`). Frame 0x20 (s0).
+pub fn rider_metrix_bank_combo(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let m = Addr(c.g[S0][0] as u32);
+        c.g[A2][0] = m.off(METRIX_COMBO_COUNT).lw(c);
+        c.g[V0][0] = ((c.g[A2][0] as i64) < 2) as u64;
+        'bank: {
+            if c.g[V0][0] != 0 {
+                break 'bank;
+            }
+            c.cycles += 3;
+            c.g[A1][0] = m.off(METRIX_COMBO_POINTS).lw(c);
+            if (c.g[A1][0] as i64) <= 0 {
+                break 'bank;
+            }
+            // Bank the combo into the totals and records.
+            c.cycles += 9;
+            c.g[V0][0] = m.off(METRIX_BANKED_POINTS).lw(c);
+            c.g[V1][0] = m.off(METRIX_BANKED_TRICKS).lw(c);
+            c.g[A0][0] = m.off(METRIX_BEST_COMBO_POINTS).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A2][0] as u32));
+            let total = c.g[V0][0];
+            m.off(METRIX_BANKED_POINTS).sw(c, total);
+            c.g[A0][0] = ((c.g[A0][0] as i64) < (c.g[A1][0] as i64)) as u64;
+            let tricks = c.g[V1][0];
+            m.off(METRIX_BANKED_TRICKS).sw(c, tricks);
+            if c.g[A0][0] != 0 {
+                c.cycles += 1;
+                let pts = c.g[A1][0];
+                m.off(METRIX_BEST_COMBO_POINTS).sw(c, pts);
+            }
+            c.cycles += 5;
+            c.g[V1][0] = m.off(METRIX_COMBO_COUNT).lw(c);
+            c.g[V0][0] = m.off(METRIX_BEST_COMBO_COUNT).lw(c);
+            c.g[V0][0] = ((c.g[V0][0] as i64) < (c.g[V1][0] as i64)) as u64;
+            if c.g[V0][0] != 0 {
+                let count = c.g[V1][0];
+                m.off(METRIX_BEST_COMBO_COUNT).sw(c, count);
+            }
+
+            // cBE_getBE()->GetInterface(0), result unused.
+            c.cycles += 11;
+            call_ptr(c, 0x0014_dc80, 0x0011_7788)?;
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = 0;
+            call_ptr(c, 0x0014_dd58, 0x0011_7794)?;
+
+            // Offline in mode 4?
+            c.g[V1][0] = sx(BANK_COMBO_EVENT_SETTINGS);
+            c.g[A0][0] = 4;
+            c.g[V0][0] = Addr(BANK_COMBO_EVENT_SETTINGS + 0x48).lb(c);
+            c.g[A1][0] = 0;
+            if c.g[V0][0] == c.g[A0][0] {
+                c.cycles += 2;
+                c.g[V0][0] = Addr(BANK_COMBO_EVENT_SETTINGS + 0x49).lb(c);
+                c.g[A1][0] = (c.g[V0][0] < 1) as u64;
+            }
+            c.cycles += 2;
+            let s0 = c.g[S0][0] as u32;
+            c.g[A2][0] = Addr(s0.wrapping_add(METRIX_COMBO_POINTS)).lw(c);
+            if c.g[A1][0] == 0 {
+                // Show the combo count and the points on the HUD.
+                c.cycles += 14;
+                c.g[A0][0] = c.g[S0][0];
+                c.g[AT][0] = 0x3fc0_0000;
+                c.f[12] = 0x3fc0_0000;
+                c.g[A1][0] = 0x26;
+                c.g[A3][0] = Addr(s0.wrapping_add(METRIX_COMBO_COUNT)).lw(c);
+                BANK_COMBO_SHOW_HUD_NUMBER.call(c, 0x0011_77d4)?;
+                let s0 = c.g[S0][0] as u32;
+                c.g[A2][0] = Addr(s0.wrapping_add(METRIX_COMBO_POINTS)).lw(c);
+                c.g[A0][0] = c.g[S0][0];
+                let gp = c.g[GP][0] as u32;
+                c.f[12] = Addr(gp.wrapping_sub(0x7b10)).read_u32(c);
+                c.g[A1][0] = 0x18;
+                c.g[A3][0] = 0;
+                BANK_COMBO_SHOW_HUD_NUMBER.call(c, 0x0011_77ec)?;
+            } else {
+                // Award min(points / 500, 20) as an offline bonus.
+                c.cycles += 3;
+                c.g[V0][0] = 0x1f4;
+                c.cycles += 8;
+                c.g[V1][0] = 0x14;
+                c.div(0, A2, V0);
+                c.g[A0][0] = c.g[S0][0];
+                c.g[A1][0] = 2;
+                c.g[A2][0] = c.lo[0];
+                c.g[V0][0] = ((c.g[A2][0] as i64) < 21) as u64;
+                if c.g[V0][0] == 0 {
+                    c.g[A2][0] = c.g[V1][0];
+                }
+                BANK_COMBO_AWARD_POINTS.call(c, 0x0011_7820)?;
+            }
+        }
+        c.cycles += 6;
+        c.g[A0][0] = c.g[S0][0];
+        BANK_COMBO_RESET_COMBO.call(c, 0x0011_7828)?;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6142,6 +6647,310 @@ pub(crate) mod tests {
             rider_metrix_save_state,
             200,
             &|c, seed| stream_save_setup(c, seed, 0x0011_74b0),
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::game::scripter::ssxscriptengine::tests::{
+        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
+    };
+
+    /// `RiderMetrix_InterruptTrick`: idle metrix (no calls) or the real
+    /// FinishTrick/ResetTrick on the RiderMetrix_FinishTrick fixture (a
+    /// world with one player, finished or not, zeroed BELibrary dummy and
+    /// audio system, random trick record).
+    #[test]
+    fn rider_metrix_interrupt_trick_matches() {
+        check(
+            ee::s00::f_00119e38__generated,
+            rider_metrix_interrupt_trick,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0011_9e38, 0);
+                elf_image(c);
+                c.pc = 0x0011_9e38;
+                let be = DATA + 0x20_0000;
+                let world = DATA + 0x21_0000;
+                let game = world + 0x1000;
+                let race = world + 0x2000;
+                let player = world + 0x3000;
+                let player_state = world + 0x4000;
+                let audio = DATA + 0x22_0000;
+                for a in [be, world, audio] {
+                    for i in 0..0x1000 / 4 {
+                        c.bus.write32(a + 4 * i, 0);
+                    }
+                }
+                c.bus.write32(GAME_GP.wrapping_sub(0x1f04), be);
+                c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+                c.bus.write32(GAME_GP + 0x410, audio);
+                c.bus
+                    .write32(GAME_GP.wrapping_sub(0x7b0c), 1.0f32.to_bits());
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0xc, race);
+                c.bus.write32(race + 0x7c, 1);
+                c.bus.write32(race + 0x40, player);
+                c.bus.write32(player + 0x18, player_state);
+                let finished = seed % 5 == 1;
+                c.bus.write32(
+                    player_state + 0x470,
+                    (if finished { 1.0f32 } else { -1.0 }).to_bits(),
+                );
+                c.bus.write8(0x0053_5bc8 + 0x48, (r.next_u32() % 5) as u8);
+                c.bus.write8(0x0053_5bc8 + 0x49, (seed / 3 % 2) as u8);
+                let m = DATA + 0x1000;
+                for i in 0..0x200 / 4 {
+                    c.bus.write32(m + 4 * i, 0);
+                }
+                c.bus
+                    .write32(m + 0x14, ((r.next_u32() % 500) as f32).to_bits());
+                let points = if seed % 7 == 0 {
+                    0.0f32
+                } else {
+                    (r.next_u32() % 4000) as f32
+                };
+                c.bus.write32(m + 0x1c4, points.to_bits());
+                for off in [
+                    0x34, 0x38, 0x44, 0x30, 0x48, 0x24, 0x78, 0x14c, 0x150, 0x154, 0x158, 0x144,
+                ] {
+                    c.bus.write32(m + off, r.f32(10.0));
+                }
+                for off in [
+                    0x4c, 0x80, 0x58, 0x74, 0x84, 0xfc, 0x100, 0x104, 0x108, 0x114, 0x118, 0x11c,
+                ] {
+                    c.bus.write32(m + off, r.next_u32() % 100);
+                }
+                for off in [0x198, 0x19c, 0x110, 0x18c] {
+                    c.bus.write32(m + off, r.next_u32() % 3000);
+                }
+                c.bus.write32(m + 0xa4, r.f32(2.0));
+                c.bus.write32(m + METRIX_INT_TRICKING, r.next_u32() % 2);
+                c.bus.write32(m + METRIX_INT_28, r.next_u32() % 2);
+                c.bus
+                    .write32(m + METRIX_INT_IDLE, if seed % 3 == 0 { 1 } else { 0 });
+                c.g[A0][0] = sx(m);
+                c.g[A1][0] = r.next_u32() as u64;
+                c.g[A2][0] = sx(r.next_u32());
+            },
+        );
+    }
+
+    /// A RiderMetrix record at `DATA + 0x1000` that `RiderMetrix_FinishTrick`
+    /// can bank for real: a zeroed BELibrary dummy and audio system, a world
+    /// with one race player (finished on some seeds), the event settings, and
+    /// random score/points/statistics. Returns the record.
+    pub(crate) fn land_trick_metrix_setup(c: &mut Cpu, r: &mut Rng, seed: u32) -> u32 {
+        elf_image(c);
+        let be = DATA + 0x20_0000;
+        let world = DATA + 0x21_0000;
+        let game = world + 0x1000;
+        let race = world + 0x2000;
+        let player = world + 0x3000;
+        let player_state = world + 0x4000;
+        let audio = DATA + 0x22_0000;
+        for a in [be, world, audio] {
+            for i in 0..0x1000 / 4 {
+                c.bus.write32(a + 4 * i, 0);
+            }
+        }
+        for i in 0..0x5000 / 4 {
+            c.bus.write32(world + 4 * i, 0);
+        }
+        c.bus.write32(GAME_GP.wrapping_sub(0x1f04), be);
+        c.bus.write32(GAME_GP.wrapping_sub(0x848), world);
+        c.bus.write32(GAME_GP + 0x410, audio);
+        c.bus.write32(world + 0x84, game);
+        c.bus.write32(game + 0xc, race);
+        c.bus.write32(race + 0x7c, 1);
+        c.bus.write32(race + 0x40, player);
+        c.bus.write32(player + 0x18, player_state);
+        let finished = seed % 10 == 0;
+        c.bus.write32(
+            player_state + 0x470,
+            (if finished { 1.0f32 } else { -1.0 }).to_bits(),
+        );
+        // The event settings (`D_00535BC8`): kind, game type.
+        c.bus.write8(0x0053_5bc8 + 0x48, (r.next_u32() % 5) as u8);
+        c.bus.write8(0x0053_5bc8 + 0x49, (seed / 3 % 2) as u8);
+
+        let m = DATA + 0x1000;
+        for i in 0..0x200 / 4 {
+            c.bus.write32(m + 4 * i, 0);
+        }
+        let points = if seed % 7 == 0 {
+            0.0f32
+        } else {
+            (r.next_u32() % 4000) as f32
+        };
+        c.bus.write32(m + 0x1c4, points.to_bits());
+        c.bus.write32(m + 0x34, r.f32(20.0));
+        c.bus.write32(m + 0x38, r.f32(20.0));
+        for off in [
+            0x44, 0x30, 0x48, 0x24, 0x78, 0x14c, 0x150, 0x154, 0x158, 0x144,
+        ] {
+            c.bus.write32(m + off, r.f32(10.0));
+        }
+        for off in [
+            0x4c, 0x80, 0x58, 0x74, 0x84, 0xfc, 0x100, 0x104, 0x108, 0x114, 0x118, 0x11c,
+        ] {
+            c.bus.write32(m + off, r.next_u32() % 100);
+        }
+        for off in [0x198, 0x19c, 0x110, 0x18c] {
+            c.bus.write32(m + off, r.next_u32() % 3000);
+        }
+        c.bus.write32(m + 0xa4, r.f32(2.0));
+        m
+    }
+
+    /// `RiderMetrix_LandTrick`: styled and plain landings, positive, zero
+    /// and negative scores (the style bonus), flags on/off, and a trick
+    /// chain (`+0x70`) running or not, banked by the real FinishTrick and
+    /// ResetTrick.
+    #[test]
+    fn rider_metrix_land_trick_matches() {
+        check(
+            ee::s00::f_00119d40__generated,
+            rider_metrix_land_trick,
+            160,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_9d40, 0);
+                let m = land_trick_metrix_setup(c, &mut r, seed);
+                let score = match seed % 5 {
+                    0 => 0.0f32,
+                    1 => -((r.next_u32() % 50) as f32),
+                    _ => (r.next_u32() % 500) as f32,
+                };
+                c.bus.write32(m + METRIX_SCORE, score.to_bits());
+                c.bus.write32(
+                    m + METRIX_CHAIN,
+                    if seed % 3 == 0 {
+                        0
+                    } else {
+                        r.next_u32() % 40 + 1
+                    },
+                );
+                c.bus.write32(m + 0x20, if seed % 4 == 1 { 1 } else { 0 });
+                c.bus.write32(m + 0x28, if seed % 6 == 2 { 1 } else { 0 });
+                c.g[A0][0] = sx(m);
+                c.g[A1][0] = (r.next_u32() % 2) as u64;
+                c.g[A2][0] = (r.next_u32() % 2) as u64;
+                c.g[A3][0] = if seed % 2 == 0 {
+                    0
+                } else {
+                    (r.next_u32() % 8 + 1) as u64
+                };
+                c.g[T0][0] = if seed % 8 < 3 {
+                    (r.next_u32() % 8 + 1) as u64
+                } else {
+                    0
+                };
+                c.pc = 0x0011_9d40;
+            },
+        );
+    }
+
+    /// `RiderMetrix_AddTrick`: a BELibrary whose interface 6 is a fake
+    /// (unwinding on some seeds), a trick table at 0x530600 with random
+    /// points, ids on both sides of the uber threshold (35), and timers
+    /// `+0x40` negative or not.
+    #[test]
+    fn rider_metrix_add_trick_matches() {
+        use crate::difftest::fakes::covered;
+        use crate::game::ai::ai::tests::belibrary;
+        covered(
+            ee::s00::f_00119708__generated,
+            rider_metrix_add_trick,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x11_9708, 1);
+                elf_image(c);
+                belibrary(c, &mut r);
+                let id = match seed % 4 {
+                    0 => 34,
+                    1 => 35,
+                    _ => r.next_u32() % 60,
+                };
+                c.bus.write32(0x0053_0600 + id * 8, r.next_u32() % 20000);
+                c.bus
+                    .write32(0x0053_0604 + id * 8, r.next_u32() % 2_000_000);
+                let m = DATA + 0x2000;
+                c.bus.write32(m + METRIX_SCORE, r.f32(100.0));
+                c.bus.write32(m + METRIX_TRICK_TIMER, r.f32(5.0));
+                c.bus.write32(m + 0xa4, r.f32(5.0));
+                c.g[A0][0] = sx(m);
+                c.g[A1][0] = id as u64;
+                c.pc = 0x0011_9708;
+            },
+        );
+    }
+
+    /// RiderMetrix_BankCombo: short combos, no points, banked combos with
+    /// and without new records, online/offline in mode 4 (AwardPoints on
+    /// its early-out), the HUD calls on an empty message table, and the
+    /// back end's interface query as a fake that may unwind.
+    #[test]
+    fn rider_metrix_bank_combo_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        use crate::difftest::GAME_GP;
+        covered(
+            ee::s00::f_00117718__generated,
+            rider_metrix_bank_combo,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x117718, 1);
+                // Back end: library exists, interface 0 -> fake method.
+                let lib = DATA + 0x20_0000;
+                let vt = DATA + 0x20_1000;
+                c.bus.write32(GAME_GP - 0x1f04, DATA + 0x21_0000);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, lib);
+                c.bus.write32(lib + 4, vt);
+                c.bus
+                    .write16(vt + 8, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(vt + 0xc, FAKE);
+                // World: AwardPoints takes its early-out (rank word 5).
+                let world = DATA + 0x22_0000;
+                let game = world + 0x1000;
+                let rank = world + 0x2000;
+                c.bus.write32(GAME_GP - 0x848, world);
+                c.bus.write32(world + 0x84, game);
+                c.bus.write32(game + 0x28, rank);
+                c.bus.write32(rank, 5);
+                c.bus.write32(GAME_GP - 0x7b10, 0.7f32.to_bits());
+                // Event settings: mode 4 online/offline, or another mode.
+                let mode = if seed % 3 == 0 {
+                    4
+                } else {
+                    (r.next_u32() % 6) as u8
+                };
+                c.bus.write8(BANK_COMBO_EVENT_SETTINGS + 0x48, mode);
+                c.bus
+                    .write8(BANK_COMBO_EVENT_SETTINGS + 0x49, (seed / 3 % 2) as u8);
+                // The metrix record; empty HUD message table.
+                let m = DATA;
+                fill(c, &mut r, m, 0x200 / 4);
+                c.bus.write32(m + 0x1b0, 0);
+                let count = match seed % 8 {
+                    0 => r.next_u32() % 2,
+                    1 => 0u32.wrapping_sub(r.next_u32() % 4),
+                    _ => 2 + r.next_u32() % 40,
+                };
+                c.bus.write32(m + METRIX_COMBO_COUNT, count);
+                let points = match seed % 7 {
+                    0 => 0u32.wrapping_sub(r.next_u32() % 100),
+                    1 => 0,
+                    2 => 20_000 + r.next_u32() % 50_000,
+                    _ => r.next_u32() % 12_000,
+                };
+                c.bus.write32(m + METRIX_COMBO_POINTS, points);
+                c.bus
+                    .write32(m + METRIX_BEST_COMBO_POINTS, r.next_u32() % 15_000);
+                c.bus
+                    .write32(m + METRIX_BEST_COMBO_COUNT, r.next_u32() % 40);
+                c.g[A0][0] = sx(m);
+                c.pc = 0x0011_7718;
+            },
         );
     }
 }

@@ -126,6 +126,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         dynamic_particle_modifier_save,
         "DynamicParticleModifier_Save",
     ),
+    (0x0034_58c0, particle_modifier_ctor, "ParticleModifier_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1363,6 +1364,118 @@ pub fn dynamic_particle_modifier_save(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod particle_modifier_ctor_callee {
+    use super::*;
+
+    pub const BASE_CTOR: Callee = Callee {
+        addr: 0x0034_5798,
+        f: ee::s11::ParticleModifier_BaseCtor,
+    };
+
+    /// `Emitter_ctor`, `Emitter_Setup` (other shard: through the function
+    /// table).
+    pub const EMITTER_CTOR: u32 = 0x0037_0018;
+
+    pub const EMITTER_SETUP: u32 = 0x0037_05e0;
+}
+
+/// The ParticleModifier class vtable.
+pub(crate) const PARTICLE_MODIFIER_VTABLE: u32 = 0x0049_12b0;
+
+/// ParticleModifier fields.
+pub(crate) const PMOD_OWNER: u32 = 0xc;
+
+pub(crate) const PMOD_MATRIX: u32 = 0x10;
+
+pub(crate) const PMOD_EMITTER_2: u32 = 0x50;
+
+pub(crate) const PMOD_DEF: u32 = 0x1e0;
+
+pub(crate) const PMOD_1E4: u32 = 0x1e4;
+
+/// `ParticleModifier* ParticleModifier_ctor(void* mem, EmitterDef* def,
+/// ModObj* owner)` (0x3458c0): the base modifier for `owner`, the class
+/// vtable, an emitter at `+0x50`; the matrix at `+0x10` is the owner's
+/// object's world matrix (its vtable +0xc0) or, without an object, the
+/// owner's own matrix (`+0x10`); then the emitter is set up from `def` with
+/// that matrix. Counts the instance (`gp+0xf08`). Returns `mem`.
+pub fn particle_modifier_ctor(c: &mut Cpu) {
+    use particle_modifier_ctor_callee as f;
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0]; // def
+        c.g[S1][0] = c.g[A0][0]; // self
+        frame.save_ra(c, 0);
+        c.g[A1][0] = c.g[A2][0]; // owner
+        f::BASE_CTOR.call(c, 0x0034_58e0)?;
+        let me = r32(c, S1);
+        c.g[V1][0] = sx(PARTICLE_MODIFIER_VTABLE);
+        c.g[A0][0] = sx(me.wrapping_add(PMOD_EMITTER_2));
+        Addr(me + 0x8).sw(c, c.g[V1][0]);
+        call_ptr(c, f::EMITTER_CTOR, 0x0034_58f4)?;
+
+        let me = r32(c, S1);
+        c.g[V1][0] = Addr(me + PMOD_OWNER).lw(c);
+        Addr(me + PMOD_DEF).sw(c, c.g[S0][0]);
+        let owner = r32(c, V1);
+        c.g[A1][0] = Addr(owner + 0xc).lw(c); // the owner's object
+        c.g[V1][0] = sx(owner.wrapping_add(0x10));
+        // The matrix to copy: the object's world matrix, else the owner's.
+        let from;
+        let to;
+        if c.g[A1][0] != 0 {
+            c.cycles += 16;
+            let obj = r32(c, A1);
+            c.g[V1][0] = Addr(obj + 0xc).lw(c);
+            let vt = r32(c, V1);
+            c.g[A0][0] = Addr(vt + 0xc0).lh(c);
+            c.g[V0][0] = Addr(vt + 0xc4).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx(obj.wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0034_591c)?;
+            c.g[V1][0] = sx(r32(c, S1).wrapping_add(PMOD_MATRIX));
+            from = r32(c, V0);
+            to = r32(c, V1);
+            c.g[V0][0] = c.g[V1][0];
+        } else {
+            c.cycles += 9;
+            c.g[V0][0] = sx(me.wrapping_add(PMOD_MATRIX));
+            from = r32(c, V1);
+            to = r32(c, V0);
+        }
+        c.lqc2(1, from);
+        c.lqc2(2, from + 0x10);
+        c.lqc2(3, from + 0x20);
+        c.lqc2(4, from + 0x30);
+        c.sqc2(1, to);
+        c.sqc2(2, to + 0x10);
+        c.sqc2(3, to + 0x20);
+        c.sqc2(4, to + 0x30);
+
+        c.cycles += 14;
+        let me = r32(c, S1);
+        c.g[A2][0] = Addr(me + PMOD_DEF).lw(c);
+        c.g[A1][0] = c.g[V0][0];
+        c.g[A0][0] = sx(me.wrapping_add(PMOD_EMITTER_2));
+        call_ptr(c, f::EMITTER_SETUP, 0x0034_597c)?;
+        let me = r32(c, S1);
+        let gp = r32(c, GP);
+        c.g[V1][0] = Addr(gp.wrapping_add(0xf08)).lw(c);
+        c.g[V0][0] = c.g[S1][0];
+        Addr(me + PMOD_1E4).sw(c, 0);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(1));
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        Addr(gp.wrapping_add(0xf08)).sw(c, c.g[V1][0]);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2051,6 +2164,87 @@ pub(crate) mod tests {
             dynamic_particle_modifier_save,
             300,
             &dpm_save_fixture,
+        );
+    }
+    use super::*;
+
+    /// An emitter at `emitter` and its definition at `def` that the real
+    /// `Emitter_InitDescriptor`/`Emitter_BuildDescriptor` handle quickly:
+    /// random fields, start time negative, zero or positive, small grid
+    /// sizes, rates; the default GS state, the random generator state and
+    /// the gp-relative table `Emitter_BuildDescriptor` reads.
+    pub(crate) fn emitter_def_setup(c: &mut Cpu, r: &mut Rng, seed: u32, emitter: u32, def: u32) {
+        use crate::difftest::fill;
+        const RAND_STATE: u32 = 0x0050_0000 - 0xfe8;
+        for i in 0..0x190 / 4 {
+            c.bus.write32(emitter + 4 * i, r.f32(50.0));
+        }
+        for i in 0..0xd8 / 4 {
+            c.bus.write32(def + 4 * i, r.f32(20.0));
+        }
+        fill(c, r, 0x004f_f120, 4); // default GS state
+                                    // Grid sizes.
+        c.bus.write32(def, r.next_u32() % 8 + 1);
+        c.bus.write32(def + 0x4, r.next_u32() % 8 + 1);
+        let start = match seed % 4 {
+            0 => 0.0f32.to_bits(),
+            1 => r.f32(5.0) | 0x8000_0000,
+            _ => r.f32(5.0) & 0x7fff_ffff,
+        };
+        c.bus.write32(def + 0x8, start);
+        if seed % 5 != 0 {
+            c.bus.write32(def + 0xc, 1.5f32.to_bits());
+            c.bus.write32(emitter + 0x10 + 0x4c, 0.25f32.to_bits());
+        }
+        for i in 0..6 {
+            c.bus.write32(RAND_STATE + 4 * i, r.next_u32());
+        }
+        let base = (GAME_GP as i32 - 0x2868) as u32;
+        for i in 0..24 {
+            c.bus.write32(base + 4 * i, r.f32(10.0));
+        }
+    }
+
+    /// `ParticleModifier_ctor`: an owner with an object (its world matrix a
+    /// fake with a forced result, unwinding on some seeds) or without (its
+    /// own matrix); the real base constructor, `Emitter_ctor` and
+    /// `Emitter_Setup` on [`emitter_def_setup`].
+    #[test]
+    fn particle_modifier_ctor_matches() {
+        use crate::difftest::fakes::{covered, FAKE, LOG_RESULTS};
+        const ME: u32 = DATA;
+        const DEF: u32 = DATA + 0x400;
+        const OWNER: u32 = DATA + 0x600;
+        const OBJ: u32 = DATA + 0x700;
+        const OBJ_VT: u32 = DATA + 0x800;
+        const MATRIX: u32 = DATA + 0x900;
+        covered(
+            ee::s11::f_003458c0__generated,
+            particle_modifier_ctor,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_58c0, 1);
+                c.pc = 0x0034_58c0;
+                emitter_def_setup(c, &mut r, seed, ME + PMOD_EMITTER_2, DEF);
+                for i in 0..0x20 {
+                    c.bus.write32(OWNER + 4 * i, r.f32(4.0));
+                }
+                for i in 0..0x10 {
+                    c.bus.write32(MATRIX + 4 * i, r.f32(4.0));
+                }
+                let has_obj = seed % 4 != 0;
+                c.bus.write32(OWNER + 0xc, if has_obj { OBJ } else { 0 });
+                c.bus.write32(OBJ + 0xc, OBJ_VT);
+                c.bus
+                    .write16(OBJ_VT + 0xc0, (r.next_u32() % 0x20) as u16 & !3);
+                c.bus.write32(OBJ_VT + 0xc4, FAKE);
+                c.bus.write32(LOG_RESULTS, MATRIX);
+                c.bus.write32(GAME_GP + 0xf04, r.next_u32());
+                c.bus.write32(GAME_GP + 0xf08, r.next_u32());
+                c.g[A0][0] = sx(ME);
+                c.g[A1][0] = sx(DEF);
+                c.g[A2][0] = sx(OWNER);
+            },
         );
     }
 }

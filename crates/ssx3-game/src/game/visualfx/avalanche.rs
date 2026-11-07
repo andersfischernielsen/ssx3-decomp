@@ -99,6 +99,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Avalanche_ApplyHistoryData",
     ),
     (0x002d_8948, vfx_avalanche_update, "VfxAvalanche_Update"),
+    (0x002d_9cb0, avalanche_save_state, "Avalanche_SaveState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2365,6 +2366,96 @@ pub(crate) fn update_enabled(c: &mut Cpu) -> call::Flow {
     Ok(())
 }
 
+/// `void Avalanche_SaveState(cPbStream* s)` (0x2d9cb0): writes the state of
+/// the 16 avalanche slots (table at 0x5389c0, 0x1c bytes each) as one
+/// 0x80-byte record: the definition index of each slot (`*slot->def`, -1
+/// when idle), then each slot's playback time (+0x18; 0.0 when idle)
+/// (`s->Write(&rec, 0x80)`, vtable +8).
+pub fn avalanche_save_state(c: &mut Cpu) {
+    const SLOTS: u32 = 0x0054_0000 - 0x76c8;
+    const SLOT_SIZE: u64 = 0x1c;
+    const SLOT_TIME: u32 = 0x18;
+    const SLOT_COUNT: i64 = 16;
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = sx(SLOTS);
+        frame.save_ra(c, 0x80);
+        c.g[T1][0] = sx(SLOTS);
+        c.g[T2][0] = c.g[A0][0];
+        c.g[A3][0] = 0;
+        c.g[T3][0] = sx(SLOTS + SLOT_TIME);
+        c.g[T4][0] = sx(SLOTS);
+        c.g[T0][0] = sx(frame.at(c, 0x40));
+        c.g[A2][0] = c.g[SP][0];
+        loop {
+            // The definition index (-1: idle slot).
+            c.cycles += 3;
+            let def = c.lw(c.g[T1][0] as u32);
+            let index = if def == 0 {
+                u64::MAX
+            } else {
+                c.cycles += 1;
+                c.lw(def as u32)
+            };
+            c.g[V0][0] = index;
+            c.cycles += 7;
+            c.sw(c.g[A2][0] as u32, index);
+            c.g[A1][0] = SLOT_SIZE;
+            let i = c.g[A3][0] as u32;
+            let off = abi::mult(c, i, SLOT_SIZE as u32);
+            c.g[V0][0] = sx(off);
+            let slot = sx(off.wrapping_add(c.g[T4][0] as u32));
+            c.g[V1][0] = slot;
+            let def = c.lw(slot as u32);
+            c.g[V0][0] = def;
+            c.g[A0][0] = c.g[T0][0];
+            // The playback time (0.0: idle slot).
+            if def != 0 {
+                c.cycles += 4;
+                let i = c.g[A3][0] as u32;
+                let off = abi::mult(c, i, SLOT_SIZE as u32);
+                c.g[V1][0] = sx(off);
+                let at = sx(off.wrapping_add(c.g[T3][0] as u32));
+                c.g[V0][0] = at;
+                c.f[0] = c.lw(at as u32) as u32;
+            } else {
+                c.cycles += 1;
+                c.f[0] = 0;
+            }
+            c.cycles += 7;
+            c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(1));
+            c.sw(c.g[A0][0] as u32, c.f[0] as u64);
+            c.g[T0][0] = sx((c.g[T0][0] as u32).wrapping_add(4));
+            c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(4));
+            let more = (c.g[A3][0] as i64) < SLOT_COUNT;
+            c.g[V0][0] = more as u64;
+            c.g[T1][0] = sx((c.g[T1][0] as u32).wrapping_add(SLOT_SIZE as u32));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x002d_9ce0);
+            }
+        }
+        // s->Write(&rec, 0x80)
+        c.cycles += 10;
+        let stream = c.g[T2][0] as u32;
+        let vt = c.lw(stream);
+        c.g[V0][0] = vt;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x80;
+        let delta = c.lh((vt as u32).wrapping_add(0x8));
+        let write = c.lw((vt as u32).wrapping_add(0xc));
+        c.g[V1][0] = write;
+        c.g[A0][0] = sx(stream.wrapping_add(delta as u32));
+        call_ptr(c, write as u32, 0x002d_9d58)?;
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3095,6 +3186,41 @@ pub(crate) mod tests {
                 c.bus.write32(GAME_GP - 0x1f04, DATA + 0x6_0000);
                 c.bus.write32(GAME_GP - 0x1efc, 0);
                 c.pc = 0x002d_8948;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::covered;
+
+    /// `Avalanche_SaveState`: the 16 avalanche slots at 0x5389c0, each idle
+    /// (def 0) or pointing at a definition with a random index, with a random
+    /// time at +0x18; the stream's `Write` (vtable +8) is a fake.
+    #[test]
+    fn avalanche_save_state_matches() {
+        const SLOTS: u32 = 0x0054_0000 - 0x76c8;
+        const STREAM: u32 = DATA + 0x100;
+        const STREAM_VT: u32 = DATA + 0x200;
+        const DEFS: u32 = DATA + 0x1000;
+        covered(
+            ee::s09::f_002d9cb0__generated,
+            avalanche_save_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2d9cb0, 1);
+                c.pc = 0x002d_9cb0;
+                for i in 0..16u32 {
+                    let slot = SLOTS + 0x1c * i;
+                    fill(c, &mut r, slot, 7);
+                    let idle = (seed + i) % 3 == 0 || seed % 11 == 0;
+                    c.bus.write32(slot, if idle { 0 } else { DEFS + 0x10 * i });
+                    c.bus.write32(DEFS + 0x10 * i, r.next_u32() % 40);
+                    c.bus.write32(slot + 0x18, r.edge_f32());
+                }
+                c.bus.write32(STREAM, STREAM_VT);
+                c.bus
+                    .write16(STREAM_VT + 8, (r.next_u32() % 0x20) as u16 & !3);
+                c.bus.write32(STREAM_VT + 0xc, FAKE);
+                c.g[A0][0] = sx(STREAM);
             },
         );
     }

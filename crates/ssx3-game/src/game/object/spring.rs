@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -14,6 +15,7 @@ use crate::events::event_due;
 pub(crate) use crate::game::camera::trigger::cameratriggerfactory::r;
 pub(crate) use crate::game::scripter::ssxscriptengine::lw_at_2 as lw_at;
 use crate::guest::Addr;
+use crate::ps2f::FpuF32;
 use ssx3_ee as ee;
 use ssx3_ee_rt::cpu::reg::*;
 use ssx3_ee_rt::cpu::sx;
@@ -37,6 +39,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         flex_bridge_springs_save,
         "FlexBridge_SpringsSave",
     ),
+    (0x0035_4648, game_process_ctor, "GameProcess_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -680,6 +683,49 @@ pub fn flex_bridge_springs_save(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// GameProcess_ctor (0x354648)
+
+/// The `GameProcess` vtable (0x491f00).
+pub(crate) const OC300_GAME_PROCESS_VTABLE: u32 = 0x0049_1f00;
+
+/// Process field: its vtable pointer.
+pub(crate) const OC300_PROCESS_VTABLE: u32 = 0xc;
+
+/// The global process list (`gp + 0x2898`).
+pub(crate) const OC300_PROCESS_LIST: u32 = 0x2898;
+
+/// `ProcessList_Add` (0x354c08).
+pub(crate) const OC300_PROCESS_LIST_ADD: Callee = Callee {
+    addr: 0x0035_4c08,
+    f: ee::s11::ProcessList_Add,
+};
+
+/// `GameProcess* GameProcess_ctor(GameProcess* self, int list)` (0x354648):
+/// installs the `GameProcess` vtable and adds the process to the global
+/// process list (`ProcessList_Add(&g_processList, self, list)`); returns
+/// `self`.
+pub fn game_process_ctor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[V0][0] = sx(OC300_GAME_PROCESS_VTABLE);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[A1][0];
+        Addr(r32(c, S0)).off(OC300_PROCESS_VTABLE).sw(c, c.g[V0][0]);
+        c.g[A0][0] = sx(r32(c, GP).wrapping_add(OC300_PROCESS_LIST));
+        c.g[A1][0] = c.g[S0][0];
+        OC300_PROCESS_LIST_ADD.call(c, 0x0035_4674)?;
+        c.g[V0][0] = c.g[S0][0];
+        frame.restore_ra(c, 0);
+        frame.restore(c, S0, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -755,6 +801,45 @@ pub(crate) mod tests {
                 w(c, DATA + 0x2000, 32);
                 w(c, DATA + 0x2000 + 0x24, 0x10);
                 c.pc = 0x0035_45d8;
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::events::driven;
+    use crate::difftest::RA as SENTINEL;
+
+    /// A small process list at `gp + 0x2898`: a table of four list heads
+    /// (0x44 bytes each: a flag word, then the two sub-list heads at
+    /// +8/+0x28).
+    pub(crate) fn oc300_process_list(c: &mut Cpu, r: &mut Rng) {
+        let list = GAME_GP + OC300_PROCESS_LIST;
+        let table = DATA + 0x2000;
+        c.bus.write32(list + 4, table);
+        for k in 0..4 {
+            let e = table + 0x44 * k;
+            c.bus.write32(e, r.next_u32());
+            c.bus.write32(e + 0x8, DATA + 0x3000 + 0x40 * k);
+            c.bus.write32(e + 0x28, DATA + 0x3400 + 0x40 * k);
+        }
+    }
+
+    /// Vtable install and the real `ProcessList_Add` into each of the four
+    /// lists (both kinds by the head's flag bit).
+    #[test]
+    fn game_process_ctor_matches() {
+        check(
+            ee::s11::f_00354648__generated,
+            game_process_ctor,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3546_4800 ^ seed as u64);
+                scramble(c, &mut r);
+                c.g[GP][0] = GAME_GP as u64;
+                oc300_process_list(c, &mut r);
+                c.g[A0][0] = sx(DATA + 0x100);
+                c.g[A1][0] = (r.next_u32() % 4) as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0035_4648;
             },
         );
     }

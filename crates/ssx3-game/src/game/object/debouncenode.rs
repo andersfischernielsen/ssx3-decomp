@@ -111,6 +111,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     ),
     (0x0034_40c8, crowd_man3d_update, "CrowdMan3d_Update"),
     (0x0034_4138, crowd_man3d_render, "CrowdMan3d_Render"),
+    (0x0034_41a8, crowd_man3d_save_state, "CrowdMan3d_SaveState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2290,6 +2291,85 @@ pub fn crowd_man3d_update(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// CrowdMan3d_SaveState (0x3441a8)
+
+/// CrowdMan3d: five crowd groups of 0x1f4 bytes; a group's id at +0x8 is
+/// -1 when unused.
+pub(crate) const CROWD_GROUP_SIZE_2: u32 = 0x1f4;
+
+pub(crate) const CROWD_GROUP_ID_2: u32 = 0x8;
+
+pub(crate) const CROWD_GROUPS_END: u32 = 5 * CROWD_GROUP_SIZE_2;
+
+/// `void CrowdMan3d::SaveState(cStream* s)` (0x3441a8): for each of the five
+/// crowd groups writes its id (`s->Write(&group->id, 4)`, re-read after the
+/// call) and, for a used group (id != -1), the group itself
+/// (`CrowdMan3d_GroupSave`). s0 = group, s1 = &group->id, s2 = stream,
+/// s3 = -1, s4 = end.
+pub fn crowd_man3d_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x60);
+        frame.save(c, S0, 0x50);
+        frame.save(c, S3, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S1, 0x40);
+        c.g[S3][0] = u64::MAX;
+        frame.save(c, S2, 0x30);
+        frame.save(c, S4, 0x10);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S4][0] = sx((c.g[S0][0] as u32).wrapping_add(CROWD_GROUPS_END));
+        c.g[S1][0] = sx((c.g[A0][0] as u32).wrapping_add(CROWD_GROUP_ID_2));
+        loop {
+            // s->Write(&group->id, 4)
+            c.cycles += 10;
+            let stream = c.g[S2][0] as u32;
+            let vt = c.lw(stream);
+            c.g[V0][0] = vt;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = 0x4;
+            c.g[A0][0] = c.lh((vt as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.lw((vt as u32).wrapping_add(0xc));
+            let write = c.g[V1][0] as u32;
+            c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, write, 0x0034_41fc)?;
+            let id = c.lw((c.g[S0][0] as u32).wrapping_add(CROWD_GROUP_ID_2));
+            c.g[V0][0] = id;
+            c.g[A0][0] = c.g[S0][0];
+            if id != c.g[S3][0] {
+                c.cycles += 2;
+                c.g[A1][0] = c.g[S2][0];
+                Callee {
+                    addr: 0x0034_4fc0,
+                    f: ee::s11::CrowdMan3d_GroupSave,
+                }
+                .call(c, 0x0034_4210)?;
+            }
+            c.cycles += 4;
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(CROWD_GROUP_SIZE_2));
+            c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[S4][0] as i64)) as u64;
+            c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_add(CROWD_GROUP_SIZE_2));
+            if c.g[V0][0] == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0034_41e0);
+            }
+        }
+        c.cycles += 8;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3101,6 +3181,28 @@ pub(crate) mod tests {
                             .write32(vt + 0x14, crate::difftest::fakes::FAKE + 0x10 * i);
                     }
                 }
+            },
+        );
+    }
+    use super::*;
+    pub(crate) use crate::game::lib::gcc::tests::crowd_man3d_save_setup;
+    pub(crate) use crate::game::lib::gcc::tests::CROWD;
+    pub(crate) use crate::game::lib::gcc::tests::CROWD_STREAM;
+    pub(crate) use crate::game::lib::gcc::tests::CROWD_STREAM_VT;
+    use crate::game::scripter::ssxscriptengine::tests::{
+        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
+    };
+
+    /// `CrowdMan3d_SaveState`: used and unused groups (the real GroupSave
+    /// writes through the same fake stream); fakes unwind at random calls.
+    #[test]
+    fn crowd_man3d_save_state_matches() {
+        covered(
+            ee::s11::f_003441a8__generated,
+            crowd_man3d_save_state,
+            200,
+            &|c, seed| {
+                crowd_man3d_save_setup(c, seed, 10);
             },
         );
     }

@@ -85,6 +85,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "SSXAudioSystem_StopLoadingScreenLoop",
     ),
     (0x0023_3af0, game_state_save_state, "GameState_SaveState"),
+    (
+        0x0023_4990,
+        game_state_pre_race_load_save_state,
+        "GameStatePreRaceLoad_SaveState",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -961,6 +966,53 @@ pub fn game_state_save_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// GameStatePreRaceLoad_SaveState (0x234990).
+
+pub(crate) const PRE_RACE_BASE_SAVE_STATE: Callee = Callee {
+    addr: 0x0023_3af0,
+    f: ee::s06::GameState_SaveState,
+};
+
+/// `void GameStatePreRaceLoad_SaveState(GameStatePreRaceLoad* self, Stream*
+/// s)` (0x234990): the base state's save, then the words at `+0x10`,
+/// `+0x14`, `+0x1c` and `+0x8`, each written with the stream's virtual
+/// `Write(s, p, 4)` (vtable slot `+8`).
+pub fn game_state_pre_race_load_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 40;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        PRE_RACE_BASE_SAVE_STATE.call(c, 0x0023_49ac)?;
+        for (field, ret) in [
+            (0x10, 0x0023_49c8),
+            (0x14, 0x0023_49e4),
+            (0x1c, 0x0023_4a00),
+            (0x08, 0x0023_4a1c),
+        ] {
+            let stream = r32(c, S0);
+            c.g[V1][0] = Addr(stream).lw(c);
+            c.g[A1][0] = sx(r32(c, S1).wrapping_add(field));
+            c.g[A2][0] = 4;
+            let vt = r32(c, V1);
+            c.g[A0][0] = Addr(vt).off(8).lh(c);
+            c.g[V0][0] = Addr(vt).off(0xc).lw(c);
+            c.g[A0][0] = sx(stream.wrapping_add(r32(c, A0)));
+            let write = r32(c, V0);
+            call_ptr(c, write, ret)?;
+        }
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1369,6 +1421,28 @@ pub(crate) mod tests {
                 c.bus.write32(serialiser, vt);
                 c.g[A0][0] = sx(ptr(&mut r));
                 c.g[A1][0] = sx(serialiser);
+            },
+        );
+    }
+    use super::*;
+
+    /// GameStatePreRaceLoad_SaveState: a stream whose `Write` slot is a
+    /// fake (logs every argument; one of the five calls may unwind); the
+    /// real base GameState_SaveState makes the first call.
+    #[test]
+    fn game_state_pre_race_load_save_state_matches() {
+        fakes::covered(
+            ee::s06::f_00234990__generated,
+            game_state_pre_race_load_save_state,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x234990, 5);
+                let stream = DATA + 0x200;
+                let vt = fakes::vtable(c, &mut r, &[8]);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(DATA + 0x400 + (r.next_u32() & 0xfc));
+                c.g[A1][0] = sx(stream);
+                c.pc = 0x0023_4990;
             },
         );
     }

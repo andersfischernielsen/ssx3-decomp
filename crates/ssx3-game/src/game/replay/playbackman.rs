@@ -116,6 +116,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         world_state_write_dead_objects,
         "WorldState_WriteDeadObjects",
     ),
+    (
+        0x0026_d988,
+        world_state_write_objects,
+        "WorldState_WriteObjects",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1755,6 +1760,126 @@ pub fn world_state_write_dead_objects(c: &mut Cpu) {
     })
 }
 
+/// `void WorldState::WriteObjects(cPbStream* s, int list)` (0x26d988): counts
+/// the processes in list `list` of the process manager (gp+0x2898), writes
+/// the count as an 8-byte record (`s->Write(&rec, 8)`, vtable +8), then lets
+/// each of those processes save itself into the stream (`proc->SaveState(s)`,
+/// vtable +0x60 of the process's vtable at +0xc).
+pub fn world_state_write_objects(c: &mut Cpu) {
+    const PROCESS_MANAGER: u32 = 0x2898;
+    const PROCESS_LIST_FIRST: u32 = 0x0035_4ea8;
+    const PROCESS_LIST_NEXT: u32 = 0x0035_4ef8;
+    const PROCESS_VTABLE: u32 = 0xc;
+    const STREAM_WRITE: u32 = 0x8;
+    const PROCESS_SAVE: u32 = 0x60;
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x60);
+        c.g[A0][0] = sx((c.g[GP][0] as u32).wrapping_add(PROCESS_MANAGER));
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A2][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A1][0];
+        frame.save(c, S0, 0x50);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x10);
+        c.g[A1][0] = c.g[S1][0];
+        // rec = { count, 0 } on the stack
+        c.sw(frame.at(c, 0), 0);
+        c.sw(frame.at(c, 4), 0);
+        call_ptr(c, PROCESS_LIST_FIRST, 0x0026_d9c0)?;
+        c.g[S0][0] = c.g[V0][0];
+        if c.g[S0][0] == 0 {
+            c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+        } else {
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(frame.at(c, 0));
+            loop {
+                c.cycles += 9;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A0][0] = c.g[S3][0];
+                c.g[A2][0] = c.g[S1][0];
+                let count = sx((c.g[V0][0] as u32).wrapping_add(1));
+                c.g[V0][0] = count;
+                c.sw(frame.at(c, 0), count);
+                call_ptr(c, PROCESS_LIST_NEXT, 0x0026_d9e8)?;
+                c.g[S0][0] = c.g[V0][0];
+                c.g[V0][0] = c.lw(frame.at(c, 0));
+                if c.g[S0][0] == 0 {
+                    c.cycles += 1;
+                    c.g[V0][0] = c.lw(c.g[S2][0] as u32);
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0026_d9d0);
+                }
+            }
+        }
+        // s->Write(&rec, 8)
+        c.cycles += 9;
+        let vt = c.g[V0][0] as u32;
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = 0x8;
+        let delta = c.lh(vt.wrapping_add(STREAM_WRITE));
+        let write = c.lw(vt.wrapping_add(STREAM_WRITE + 4));
+        c.g[V1][0] = write;
+        c.g[A0][0] = sx((c.g[S2][0] as u32).wrapping_add(delta as u32));
+        call_ptr(c, write as u32, 0x0026_da10)?;
+        let count = c.lw(frame.at(c, 0));
+        c.g[V0][0] = count;
+        c.g[A0][0] = c.g[S3][0];
+        let mut tail = true;
+        if count as i64 > 0 {
+            c.cycles += 5;
+            c.g[A1][0] = c.g[S1][0];
+            call_ptr(c, PROCESS_LIST_FIRST, 0x0026_da24)?;
+            c.g[S0][0] = c.g[V0][0];
+            if c.g[S0][0] == 0 {
+                frame.restore(c, S0, 0x50);
+                tail = false;
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(PROCESS_VTABLE));
+                loop {
+                    // proc->SaveState(s)
+                    c.cycles += 12;
+                    let vt = c.g[V0][0] as u32;
+                    c.g[A1][0] = c.g[S2][0];
+                    let delta = c.lh(vt.wrapping_add(PROCESS_SAVE));
+                    let save = c.lw(vt.wrapping_add(PROCESS_SAVE + 4));
+                    c.g[V1][0] = save;
+                    c.g[A0][0] = sx((c.g[S0][0] as u32).wrapping_add(delta as u32));
+                    call_ptr(c, save as u32, 0x0026_da4c)?;
+                    c.g[A1][0] = c.g[S0][0];
+                    c.g[A0][0] = c.g[S3][0];
+                    c.g[A2][0] = c.g[S1][0];
+                    call_ptr(c, PROCESS_LIST_NEXT, 0x0026_da5c)?;
+                    c.g[S0][0] = c.g[V0][0];
+                    if c.g[S0][0] == 0 {
+                        break;
+                    }
+                    c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(PROCESS_VTABLE));
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0026_da38);
+                    }
+                }
+            }
+        }
+        if tail {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x50);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2447,6 +2572,58 @@ pub(crate) mod tests {
                 c.bus.write32(VT + 0xc, FAKE);
                 c.g[A0][0] = sx(DATA);
                 c.g[A1][0] = sx(STREAM);
+            },
+        );
+    }
+    use super::*;
+
+    /// `WorldState_WriteObjects`: the process manager at gp+0x2898 points at
+    /// list headers (0x44 each); list `a2` (0..8) holds 0..4 processes
+    /// (empty: first == the sentinel at header+0x14), each with a vtable at
+    /// +0xc whose `SaveState` slot (+0x60) is a fake. ProcessList_First/Next
+    /// run for real; the stream's `Write` (vtable +8) is a fake (logs the
+    /// registers, sometimes unwinds).
+    #[test]
+    fn world_state_write_objects_matches() {
+        const STREAM: u32 = DATA + 0x100;
+        const STREAM_VT: u32 = DATA + 0x200;
+        const PROCESS_VT: u32 = DATA + 0x300;
+        const PROCS: u32 = DATA + 0x1000;
+        const NODES: u32 = DATA + 0x2000;
+        covered(
+            ee::s07::f_0026d988__generated,
+            world_state_write_objects,
+            240,
+            &|c, seed| {
+                let nodes = seed % 5;
+                let list = (seed / 5) % 9;
+                let mut r = machine(c, seed, 0x26d988, 1 + nodes);
+                c.pc = 0x0026_d988;
+                c.bus.write32(GAME_GP + 0x2898 + 4, PROCS);
+                let head = PROCS + list * 0x44;
+                let sentinel = head + 0x14;
+                let node = |i: u32| {
+                    if i < nodes {
+                        NODES + 0x40 * i
+                    } else {
+                        sentinel
+                    }
+                };
+                c.bus.write32(head + 8, node(0));
+                for i in 0..nodes {
+                    c.bus.write32(node(i) + 4, node(i + 1));
+                    c.bus.write32(node(i) + 0xc, PROCESS_VT);
+                }
+                c.bus
+                    .write16(PROCESS_VT + 0x60, (r.next_u32() % 0x40) as u16 & !3);
+                c.bus.write32(PROCESS_VT + 0x64, FAKE + 0x10);
+                c.bus.write32(STREAM, STREAM_VT);
+                c.bus
+                    .write16(STREAM_VT + 8, (r.next_u32() % 0x20) as u16 & !3);
+                c.bus.write32(STREAM_VT + 0xc, FAKE);
+                c.g[A0][0] = sx(DATA);
+                c.g[A1][0] = sx(STREAM);
+                c.g[A2][0] = list as u64;
             },
         );
     }

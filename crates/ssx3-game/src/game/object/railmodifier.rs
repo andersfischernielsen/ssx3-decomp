@@ -336,6 +336,22 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         uv_scroll_modifier_save,
         "UVScrollModifier_Save",
     ),
+    (
+        0x0035_30d0,
+        modifier_block_free_transform,
+        "ModifierBlock_FreeTransform",
+    ),
+    (
+        0x0035_3188,
+        modifier_block_free_boost,
+        "ModifierBlock_FreeBoost",
+    ),
+    (
+        0x0035_31d0,
+        modifier_block_free_particles,
+        "ModifierBlock_FreeParticles",
+    ),
+    (0x0036_0840, sync_process_id_equals, "SyncProcess_IdEquals"),
 ];
 
 /// The matrix record table of `DeferMan_InternMatrixRecord`.
@@ -5906,6 +5922,177 @@ pub fn uv_scroll_modifier_save(c: &mut Cpu) {
     });
 }
 
+/// `void ModifierBlock::FreeParticles()` (0x3531d0): deletes every link of
+/// the block's particle list (+0x10; each link's `next` at +0, its vtable at
+/// +8) through its deleting destructor (`link->~Link(3)`, vtable +8).
+pub fn modifier_block_free_particles(c: &mut Cpu) {
+    const PARTICLES: u32 = 0x10;
+    const LINK_NEXT: u32 = 0x0;
+    const LINK_VTABLE: u32 = 0x8;
+    const DELETE: u32 = 0x8;
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let head = c.lw((c.g[A0][0] as u32).wrapping_add(PARTICLES));
+        c.g[A0][0] = head;
+        frame.restore(c, S0, 0x10);
+        if head != 0 {
+            c.cycles += 2;
+            c.g[A2][0] = head;
+            loop {
+                c.cycles += 2;
+                let link = c.g[A2][0] as u32;
+                c.g[S0][0] = c.lw(link.wrapping_add(LINK_NEXT));
+                if link != 0 {
+                    c.cycles += 6;
+                    let vt = c.lw(link.wrapping_add(LINK_VTABLE));
+                    c.g[V0][0] = vt;
+                    c.g[A1][0] = 0x3;
+                    let delta = c.lh((vt as u32).wrapping_add(DELETE));
+                    let dtor = c.lw((vt as u32).wrapping_add(DELETE + 4));
+                    c.g[V1][0] = dtor;
+                    c.g[A0][0] = sx(link.wrapping_add(delta as u32));
+                    call_ptr(c, dtor as u32, 0x0035_3210)?;
+                }
+                c.cycles += 3;
+                c.g[A2][0] = c.g[S0][0];
+                frame.restore(c, S0, 0x10);
+                if c.g[A2][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0035_31f0);
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModifierBlock_FreeTransform (0x3530d0)
+
+/// ModifierBlock: the transform modifier at +0x0.
+pub(crate) const MODIFIER_BLOCK_TRANSFORM: u32 = 0x0;
+
+/// `void ModifierBlock_FreeTransform(ModifierBlock* self)` (0x3530d0): when
+/// the block has a transform modifier, deletes it through its virtual
+/// destructor (vtable +0x8, flags 3: destroy and free) and clears the slot.
+pub fn modifier_block_free_transform(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let block = c.g[S0][0] as u32;
+        let transform = c.lw(block.wrapping_add(MODIFIER_BLOCK_TRANSFORM));
+        c.g[A2][0] = transform;
+        c.g[A1][0] = 0x3;
+        if transform != 0 {
+            c.cycles += 6;
+            let vt = c.lw(transform as u32);
+            c.g[V0][0] = vt;
+            c.g[A0][0] = c.lh((vt as u32).wrapping_add(0x8));
+            c.g[V1][0] = c.lw((vt as u32).wrapping_add(0xc));
+            let dtor = c.g[V1][0] as u32;
+            c.g[A0][0] = sx((transform as u32).wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, dtor, 0x0035_3100)?;
+            c.sw(
+                (c.g[S0][0] as u32).wrapping_add(MODIFIER_BLOCK_TRANSFORM),
+                0,
+            );
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModifierBlock_FreeBoost (0x353188).
+
+/// Modifier block: `+0xc` the boost object (vtable at `+4`, slot 1 its
+/// deleting destructor).
+pub(crate) const MOD_BLOCK_BOOST: u32 = 0xc;
+
+/// `void ModifierBlock_FreeBoost(ModifierBlock* self)` (0x353188): delete
+/// the boost object, if any (virtual destructor, flags 3), and clear it.
+pub fn modifier_block_free_boost(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A2][0] = Addr(r32(c, S0)).off(MOD_BLOCK_BOOST).lw(c);
+        c.g[A1][0] = 3;
+        if c.g[A2][0] != 0 {
+            c.cycles += 6;
+            let boost = r32(c, A2);
+            c.g[V0][0] = Addr(boost).off(4).lw(c);
+            let vt = r32(c, V0);
+            c.g[A0][0] = Addr(vt).off(8).lh(c);
+            c.g[V1][0] = Addr(vt).off(0xc).lw(c);
+            c.g[A0][0] = sx(boost.wrapping_add(r32(c, A0)));
+            let dtor = r32(c, V1);
+            call_ptr(c, dtor, 0x0035_31b8)?;
+            Addr(r32(c, S0)).off(MOD_BLOCK_BOOST).sw(c, 0);
+        }
+        c.cycles += 4;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SyncProcess_IdEquals (0x360840)
+
+/// `SyncProcess`: its sync id (`+0x14`).
+pub(crate) const OC300_SYNC_ID: u32 = 0x14;
+
+/// Object: its vtable (`+0xc`); the vtable's "get id" slot (`+0x40`).
+pub(crate) const OC300_OBJ_VTABLE: u32 = 0xc;
+
+pub(crate) const OC300_VT_GET_ID: u32 = 0x40;
+
+/// `bool SyncProcess_IdEquals(SyncProcess* self, Object* obj)` (0x360840):
+/// whether `self`'s sync id equals the id `obj` reports through its
+/// virtual "get id" method (vtable slot `+0x40`).
+pub fn sync_process_id_equals(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        let obj = c.g[A1][0];
+        let vt = Addr(obj as u32).off(OC300_OBJ_VTABLE).lw(c);
+        c.g[V1][0] = vt;
+        let slot = crate::call::VSlot::read(c, vt, OC300_VT_GET_ID);
+        c.g[A0][0] = slot.delta;
+        c.g[V0][0] = slot.func;
+        c.g[A0][0] = sx((obj as u32).wrapping_add(slot.delta as u32));
+        call_ptr(c, slot.func as u32, 0x0036_0864)?;
+        c.g[V1][0] = Addr(r32(c, S0)).off(OC300_SYNC_ID).lw(c);
+        frame.restore(c, S0, 0x10);
+        c.g[V1][0] ^= c.g[V0][0];
+        frame.restore_ra(c, 0);
+        c.g[V0][0] = (c.g[V1][0] < 1) as u64;
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8160,6 +8347,123 @@ pub(crate) mod tests {
                 c.bus.write32(out, vt);
                 c.g[A0][0] = sx(DATA + 0x100);
                 c.g[A1][0] = sx(out);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::game::scripter::ssxscriptengine::tests::{
+        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
+    };
+
+    /// `ModifierBlock_FreeParticles`: an empty list, or 1..5 links (each
+    /// `next` at +0, a vtable at +8 whose delete slot (+8) is a fake).
+    #[test]
+    fn modifier_block_free_particles_matches() {
+        const BLOCK: u32 = DATA + 0x100;
+        const LINKS: u32 = DATA + 0x1000;
+        covered(
+            ee::s11::f_003531d0__generated,
+            modifier_block_free_particles,
+            200,
+            &|c, seed| {
+                let links = seed % 6;
+                let mut r = machine(c, seed, 0x3531d0, links);
+                c.pc = 0x0035_31d0;
+                let vt = DATA + 0x400;
+                c.bus.write16(vt + 8, (r.next_u32() % 0x20) as u16 & !3);
+                c.bus.write32(vt + 0xc, FAKE);
+                let link = |i: u32| if i < links { LINKS + 0x40 * i } else { 0 };
+                fill(c, &mut r, BLOCK, 8);
+                c.bus.write32(BLOCK + 0x10, link(0));
+                for i in 0..links {
+                    c.bus.write32(link(i), link(i + 1));
+                    c.bus.write32(link(i) + 8, vt);
+                }
+                c.g[A0][0] = sx(BLOCK);
+            },
+        );
+    }
+
+    /// `ModifierBlock_FreeTransform`: no transform, or one whose destructor
+    /// is a fake (sometimes unwinding).
+    #[test]
+    fn modifier_block_free_transform_matches() {
+        covered(
+            ee::s11::f_003530d0__generated,
+            modifier_block_free_transform,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0035_30d0, 1);
+                c.pc = 0x0035_30d0;
+                let block = DATA + 0x20_0000 + 0x100;
+                let transform = DATA + 0x20_0000 + 0x200;
+                if seed % 4 == 0 {
+                    c.bus.write32(block + MODIFIER_BLOCK_TRANSFORM, 0);
+                } else {
+                    c.bus.write32(block + MODIFIER_BLOCK_TRANSFORM, transform);
+                    let vt = vtable(c, &mut r, &[0x8]);
+                    c.bus.write32(transform, vt);
+                }
+                c.g[A0][0] = sx(block);
+            },
+        );
+    }
+
+    /// ModifierBlock_FreeBoost: no boost object, or one whose destructor
+    /// slot is a fake (logs `this` and flags; some calls unwind).
+    #[test]
+    fn modifier_block_free_boost_matches() {
+        fakes::covered(
+            ee::s11::f_00353188__generated,
+            modifier_block_free_boost,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x353188, 1);
+                let block = DATA + 0x100;
+                let boost = DATA + 0x200;
+                fill(c, &mut r, block, 8);
+                let vt = fakes::vtable(c, &mut r, &[8]);
+                c.bus.write32(boost + 4, vt);
+                c.bus
+                    .write32(block + 0xc, if seed % 4 == 0 { 0 } else { boost });
+                c.g[A0][0] = sx(block);
+                c.pc = 0x0035_3188;
+            },
+        );
+    }
+
+    /// The id method is a fake: its result equals the process's id (a
+    /// non-negative one, as fakes return zero-extended values) or not; some
+    /// seeds unwind in it.
+    #[test]
+    fn sync_process_id_equals_matches() {
+        use crate::difftest::fakes::{covered, vtable, LOG_RESULTS};
+        covered(
+            ee::s12::f_00360840__generated,
+            sync_process_id_equals,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x36_0840, 1);
+                let this = DATA + 0x100;
+                let obj = DATA + 0x200;
+                let vt = vtable(c, &mut r, &[OC300_VT_GET_ID]);
+                c.bus.write32(obj + OC300_OBJ_VTABLE, vt);
+                let id = if seed % 3 == 0 {
+                    r.next_u32()
+                } else {
+                    r.next_u32() & 0x7fff_ffff
+                };
+                c.bus.write32(this + OC300_SYNC_ID, id);
+                if seed % 3 != 0 {
+                    let result = if seed % 2 == 0 { id } else { id ^ 1 };
+                    c.bus.write32(LOG_RESULTS, result);
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(obj);
+                c.pc = 0x0036_0840;
             },
         );
     }

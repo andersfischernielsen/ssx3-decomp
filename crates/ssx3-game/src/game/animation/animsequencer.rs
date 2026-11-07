@@ -88,6 +88,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         anim_sequence_add_event_trigger,
         "AnimSequence_AddEventTrigger",
     ),
+    (
+        0x0031_46d0,
+        anim_seq_list_fade_out_all,
+        "AnimSeqList_FadeOutAll",
+    ),
+    (
+        0x0031_4718,
+        anim_seq_list_remove_event_trigger,
+        "AnimSeqList_RemoveEventTrigger",
+    ),
 ];
 
 // ---------------------------------------------------------------- AnimSequence
@@ -1271,6 +1281,114 @@ pub fn anim_sequence_add_event_trigger(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// AnimSeqList_RemoveEventTrigger (0x314718)
+
+/// AnimSeqList -> first sequence.
+pub(crate) const SEQ_LIST_HEAD: u32 = 0x4;
+
+/// AnimSequence -> next sequence in the list.
+pub(crate) const SEQ_NEXT_2: u32 = 0xc8;
+
+pub(crate) const SEQ_REMOVE_EVENT_TRIGGER: Callee = Callee {
+    addr: 0x0031_3ba8,
+    f: ee::s10::AnimSequence_RemoveEventTrigger,
+};
+
+/// `void AnimSeqList::RemoveEventTrigger(int id)` (0x314718): removes the
+/// event trigger `id` from every sequence of the list
+/// (`AnimSequence_RemoveEventTrigger(seq, id)`, following `seq+0xc8`).
+/// Frame 0x30 (s0 = sequence, s1 = id).
+pub fn anim_seq_list_remove_event_trigger(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S1, 0x10);
+        frame.save_ra(c, 0);
+        frame.save(c, S0, 0x20);
+        let list = c.g[A0][0] as u32;
+        c.g[S0][0] = Addr(list.wrapping_add(SEQ_LIST_HEAD)).lw(c);
+        c.g[S1][0] = c.g[A1][0];
+        if c.g[S0][0] != 0 {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S0][0];
+            loop {
+                c.cycles += 5;
+                c.g[A1][0] = c.g[S1][0];
+                SEQ_REMOVE_EVENT_TRIGGER.call(c, 0x0031_4740)?;
+                let seq = c.g[S0][0] as u32;
+                c.g[S0][0] = Addr(seq.wrapping_add(SEQ_NEXT_2)).lw(c);
+                c.g[A0][0] = c.g[S0][0];
+                if c.g[S0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_4738);
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// AnimSeqList_FadeOutAll (0x3146d0)
+
+/// `AnimSeqList`: first sequence node (`+4`); `AnimSequence`: next node
+/// (`+0xc8`).
+pub(crate) const OC300_SEQLIST_FIRST: u32 = 0x4;
+
+pub(crate) const OC300_SEQ_NEXT: u32 = 0xc8;
+
+/// `AnimSequence_FadeOut` (0x313a20).
+pub(crate) const OC300_SEQ_FADE_OUT: Callee = Callee {
+    addr: 0x0031_3a20,
+    f: ee::s10::AnimSequence_FadeOut,
+};
+
+/// `void AnimSeqList_FadeOutAll(AnimSeqList* list, float time)` (0x3146d0):
+/// fades out every sequence of the list (`AnimSequence_FadeOut(seq, time)`
+/// along the `+0xc8` links); `time` is kept in f20 across the calls.
+pub fn anim_seq_list_fade_out_all(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x30);
+        frame.save_fpr(c, 20, 0x20);
+        frame.save_ra(c, 0);
+        frame.save(c, S0, 0x10);
+        c.g[S0][0] = Addr(r32(c, A0)).off(OC300_SEQLIST_FIRST).lw(c);
+        c.f[20] = c.f[12];
+        if c.g[S0][0] != 0 {
+            c.cycles += 1;
+            c.g[A0][0] = c.g[S0][0];
+            loop {
+                c.cycles += 5;
+                c.f[12] = c.f[20];
+                OC300_SEQ_FADE_OUT.call(c, 0x0031_46f8)?;
+                c.g[S0][0] = Addr(r32(c, S0)).off(OC300_SEQ_NEXT).lw(c);
+                c.g[A0][0] = c.g[S0][0];
+                if c.g[S0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0031_46f0);
+                }
+            }
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.restore_fpr(c, 20, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1942,6 +2060,116 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(seq);
                 c.g[A1][0] = sx(r.next_u32());
                 c.pc = 0x0031_3ad8;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use crate::difftest::events::driven;
+    use crate::difftest::RA as SENTINEL;
+
+    /// AnimSeqList_RemoveEventTrigger: empty lists and lists of 1-4
+    /// sequences, each with no triggers or a short chain of triggers whose
+    /// ids never match (the real callee walks them and frees nothing).
+    #[test]
+    fn anim_seq_list_remove_event_trigger_matches() {
+        use crate::difftest::fakes::machine;
+        check(
+            ee::s10::f_00314718__generated,
+            anim_seq_list_remove_event_trigger,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x31_4718, 0);
+                let list = DATA + 0x20_0000;
+                let seqs = list + 0x100;
+                let id = r.next_u32() % 4;
+                let n = seed % 5;
+                c.bus
+                    .write32(list + SEQ_LIST_HEAD, if n == 0 { 0 } else { seqs });
+                for i in 0..n {
+                    let seq = seqs + 0x200 * i;
+                    let next = if i + 1 == n { 0 } else { seq + 0x200 };
+                    c.bus.write32(seq + SEQ_NEXT_2, next);
+                    // Triggers {id, flag, -, next}, never the removed id.
+                    let trig = seq + 0x100;
+                    let count = r.next_u32() % 3;
+                    c.bus.write32(seq + 0xac, if count == 0 { 0 } else { trig });
+                    for t in 0..count {
+                        let tr = trig + 0x20 * t;
+                        let tid = id + 1 + r.next_u32() % 8;
+                        c.bus.write32(tr, tid);
+                        c.bus.write32(tr + 4, r.next_u32() % 2);
+                        c.bus
+                            .write32(tr + 0xc, if t + 1 == count { 0 } else { tr + 0x20 });
+                    }
+                }
+                c.g[A0][0] = sx(list);
+                c.g[A1][0] = id as u64;
+                c.pc = 0x0031_4718;
+            },
+        );
+    }
+
+    /// A list of 0..4 sequences (linked through `+0xc8`) with fade fields
+    /// that reach every path of the real `AnimSequence_FadeOut` (`+0x98`
+    /// and `+0x9c` zero or not, the new time below or above the old one).
+    pub(crate) fn oc300_fade_setup(c: &mut Cpu, seed: u32, count: u32) {
+        let mut r = Rng(0x3146_d000 ^ seed as u64);
+        scramble(c, &mut r);
+        let list = DATA + 0x100;
+        let mut next = 0;
+        for k in (0..count).rev() {
+            let seq = DATA + 0x1000 + 0x100 * k;
+            crate::difftest::fill(c, &mut r, seq, 0x40);
+            let fading = match r.next_u32() % 3 {
+                0 => 0,
+                _ => r.f32(5.0),
+            };
+            c.bus.write32(seq + 0x98, fading);
+            let old = match r.next_u32() % 3 {
+                0 => 0,
+                _ => r.f32(5.0),
+            };
+            c.bus.write32(seq + 0x9c, old);
+            c.bus.write32(seq + OC300_SEQ_NEXT, next);
+            next = seq;
+        }
+        c.bus.write32(list + OC300_SEQLIST_FIRST, next);
+        c.g[A0][0] = sx(list);
+        c.f[12] = if seed % 7 == 3 {
+            r.edge_f32()
+        } else {
+            r.f32(5.0)
+        };
+        c.g[RA][0] = SENTINEL as u64;
+        c.pc = 0x0031_46d0;
+    }
+
+    driven!(oc300_gen_fade_out_all, ee::s10::f_003146d0__generated);
+
+    driven!(oc300_hand_fade_out_all, anim_seq_list_fade_out_all);
+
+    /// Empty list and lists of 1..4 sequences with the real
+    /// `AnimSequence_FadeOut`; then with events at the loop's back edge.
+    #[test]
+    fn anim_seq_list_fade_out_all_matches() {
+        use crate::difftest::events::{check_events, schedule};
+        check(
+            ee::s10::f_003146d0__generated,
+            anim_seq_list_fade_out_all,
+            300,
+            &|c, seed| oc300_fade_setup(c, seed, seed % 5),
+        );
+        check_events(
+            oc300_gen_fade_out_all,
+            oc300_hand_fade_out_all,
+            90,
+            &|c, seed| {
+                oc300_fade_setup(c, seed, 2 + seed / 3 % 3);
+                let mut r = Rng(0x3146_d0 ^ seed as u64);
+                let mode = schedule(c, &mut r, seed, 0x0031_46d0);
+                c.next_event = c.cycles + 4 + (r.next_u32() % 16) as u64;
+                mode
             },
         );
     }

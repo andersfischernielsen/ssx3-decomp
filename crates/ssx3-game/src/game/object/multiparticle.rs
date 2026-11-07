@@ -3,7 +3,9 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -12,6 +14,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -45,6 +48,9 @@ pub(crate) use crate::game::intersect::worldsphtree::save_field_block;
 pub(crate) use crate::game::main::gamestate::gw;
 pub(crate) use crate::game::main::gamestate::lw_at_3 as lw_at;
 pub(crate) use crate::game::main::gamestate::p_2 as p_3;
+pub(crate) use crate::game::object::movenode::MP_COUNT;
+pub(crate) use crate::game::object::movenode::MP_EMITTER;
+pub(crate) use crate::game::object::movenode::MP_STREAM_WRITE;
 pub(crate) use crate::game::sound::soundsys::gp_4;
 pub(crate) use crate::game::sound::soundsys::p as p_5;
 use crate::guest::Addr;
@@ -110,6 +116,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         multi_particle_emit_at_instances,
         "MultiParticle_EmitAtInstances",
     ),
+    (0x0035_4920, sync_process_dtor, "SyncProcess_dtor"),
+    (0x0035_8380, multi_particle_save, "MultiParticle_Save"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1924,6 +1932,119 @@ pub fn multi_particle_emit_at_instances(c: &mut Cpu) {
     });
 }
 
+/// `SyncProcess::~SyncProcess()` (0x354920): installs the `SyncProcess`
+/// vtable (0x491e00 at +0xc) and runs the `TypedProcess` destructor (which
+/// returns `this`, or frees it when the delete flag in a1 is set).
+pub fn sync_process_dtor(c: &mut Cpu) {
+    const SYNC_PROCESS_VTABLE: u32 = 0x0049_1e00;
+    const PROCESS_VTABLE: u32 = 0xc;
+    const TYPED_PROCESS_DTOR: Callee = Callee {
+        addr: 0x0035_4808,
+        f: ee::s11::TypedProcess_dtor,
+    };
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V1][0] = c.g[A0][0];
+        c.g[V0][0] = sx(SYNC_PROCESS_VTABLE);
+        c.sw(
+            (c.g[V1][0] as u32).wrapping_add(PROCESS_VTABLE),
+            sx(SYNC_PROCESS_VTABLE),
+        );
+        TYPED_PROCESS_DTOR.call(c, 0x0035_493c)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const MP_TEMPLATE: u32 = 0x8;
+
+pub(crate) const MP_ITEMS: u32 = 0xc;
+
+pub(crate) const MP_BOUNDS: u32 = 0x20;
+
+pub(crate) const MP_ORIGIN: u32 = 0x40;
+
+/// `Emitter_Save(emitter, stream)`.
+pub(crate) const MP_EMITTER_SAVE: u32 = 0x0037_0aa8;
+
+/// `stream->Write(a1, size)` with the stream in s0, as the original issues
+/// it: v1 = vtable and v0 = function, or (`swapped`) the other way round.
+pub(crate) fn multi_particle_write(
+    c: &mut Cpu,
+    data: u64,
+    size: u64,
+    swapped: bool,
+    ret: u32,
+) -> Flow {
+    let stream = reg(c, S0);
+    set_reg(c, A1, data);
+    set_reg(c, A2, size);
+    let vt = Addr(stream as u32).lw(c);
+    let write = VSlot::read(c, vt, MP_STREAM_WRITE);
+    if swapped {
+        set_reg(c, V0, vt);
+        set_reg(c, V1, write.func);
+    } else {
+        set_reg(c, V1, vt);
+        set_reg(c, V0, write.func);
+    }
+    set_reg(c, A0, write.this(stream));
+    call_ptr(c, write.func as u32, ret)
+}
+
+/// `void MultiParticle_Save(MultiParticle* self, Stream* stream)`
+/// (0x358380): writes the object's first word, its item count, the shared
+/// 0xd8-byte particle template, its emitter (`Emitter_Save`), the origin
+/// (0x10 bytes) and bounds (0x20 bytes), then the item array (count words)
+/// if it has any.
+pub fn multi_particle_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 47;
+        let frame = Frame::open(c, 0x30);
+        set_reg(c, A2, 4);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        let stream = reg(c, A1);
+        set_reg(c, S0, stream);
+        frame.save_ra(c, 0);
+        let this = reg(c, A0);
+        set_reg(c, S1, this);
+
+        multi_particle_write(c, this, 4, false, 0x0035_83b4)?;
+        let this = reg(c, S1);
+        multi_particle_write(c, addu(this, MP_COUNT as u64), 4, false, 0x0035_83d0)?;
+        let template = Addr(r32(c, S1)).off(MP_TEMPLATE).lw(c);
+        multi_particle_write(c, template, 0xd8, false, 0x0035_83ec)?;
+        let emitter = Addr(r32(c, S1)).off(MP_EMITTER).lw(c);
+        set_reg(c, A0, emitter);
+        let stream = reg(c, S0);
+        set_reg(c, A1, stream);
+        call_ptr(c, MP_EMITTER_SAVE, 0x0035_83f8)?;
+        let this = reg(c, S1);
+        multi_particle_write(c, addu(this, MP_ORIGIN as u64), 0x10, false, 0x0035_8414)?;
+        let this = reg(c, S1);
+        multi_particle_write(c, addu(this, MP_BOUNDS as u64), 0x20, false, 0x0035_8430)?;
+
+        let count = Addr(r32(c, S1)).off(MP_COUNT).lw(c);
+        set_reg(c, A2, sx((count as u32) << 2));
+        if (count as i64) > 0 {
+            c.cycles += 6;
+            let items = Addr(r32(c, S1)).off(MP_ITEMS).lw(c);
+            let size = reg(c, A2);
+            multi_particle_write(c, items, size, true, 0x0035_8454)?;
+        }
+        c.cycles += 5;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2534,6 +2655,60 @@ pub(crate) mod tests {
                         [r.f32(500.0), r.f32(500.0), r.f32(500.0), r.f32(1.0)],
                     );
                 }
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+
+    /// `SyncProcess_dtor` with the real `TypedProcess`/`GameProcess`
+    /// destructors on a heap-allocated process (objnode's fixture: linked or
+    /// not, delete flag clear or set).
+    #[test]
+    fn sync_process_dtor_matches() {
+        use crate::game::object::objnode::tests::oc286_heap_process;
+        check(
+            ee::s11::f_00354920__generated,
+            sync_process_dtor,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_4920, 0);
+                let this = oc286_heap_process(c, &mut r, seed);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx((seed & 3) as u32);
+                c.pc = 0x0035_4920;
+            },
+        );
+    }
+
+    /// MultiParticle_Save: a stream whose `Write` slot is a fake (random
+    /// `this` delta, some calls unwind), the real Emitter_Save, and an item
+    /// count that is negative, zero or positive.
+    #[test]
+    fn multi_particle_save_matches() {
+        covered(
+            ee::s11::f_00358380__generated,
+            multi_particle_save,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_8380, 7);
+                c.pc = 0x0035_8380;
+                let vt = vtable(c, &mut r, &[MP_STREAM_WRITE]);
+                let this = DATA + 0x20_0000;
+                let stream = DATA + 0x20_0400;
+                let emitter = DATA + 0x20_0800;
+                fill(c, &mut r, this, 0x20);
+                fill(c, &mut r, emitter, 0x10);
+                c.bus.write32(this + MP_EMITTER, emitter);
+                let count = match seed % 4 {
+                    0 => 0,
+                    1 => (r.next_u32() | 0x8000_0000) as i32,
+                    _ => (r.next_u32() % 0x40) as i32 + 1,
+                };
+                c.bus.write32(this + MP_COUNT, count as u32);
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
             },
         );
     }

@@ -2,8 +2,11 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -94,6 +97,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0031_30a8,
         anim_data_base_decode_chan_cache,
         "AnimDataBase_DecodeChanCache",
+    ),
+    (
+        0x0031_1bf0,
+        anim_controller_transform_roots,
+        "AnimController_TransformRoots",
     ),
 ];
 
@@ -1993,6 +2001,199 @@ pub fn anim_data_base_decode_chan_cache(c: &mut Cpu) {
     ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// AnimController_TransformRoots (0x311bf0)
+
+/// The controller's six layer lists (`{count, head}`, 8 bytes each).
+pub(crate) const ACT_LAYERS: u32 = 0x50;
+
+pub(crate) const ACT_LAYER_COUNT: i64 = 6;
+
+/// A sequence's root transform: position (+0x60) and rotation quaternion
+/// (+0x70); the transform argument has them at +0 and +0x10.
+pub(crate) const ACT_SEQ_ROOT_POS: u32 = 0x60;
+
+pub(crate) const ACT_SEQ_ROOT_ROT: u32 = 0x70;
+
+pub(crate) const ACT_XF_POS: u32 = 0x0;
+
+pub(crate) const ACT_XF_ROT: u32 = 0x10;
+
+/// The root pivot (`0x500000 - 0xed0`, the zero translation).
+pub(crate) const ACT_ROOT_PIVOT_HI: u64 = 0x0050_0000;
+
+pub(crate) const ACT_ROOT_PIVOT_LO: u32 = 0xed0;
+
+pub(crate) const ACT_SEQ_LIST_GET_AT: Callee = Callee {
+    addr: 0x0031_4760,
+    f: ee::s10::AnimSeqList_GetAt,
+};
+
+/// One sequence's root: `rot = xf.rot * src.rot`, `pos = xf.rot *
+/// (src.pos - pivot) * conj(xf.rot) + xf.pos`, through VU0 and the stack as
+/// the original does; written to `dst` (the same sequence). Leaves a0 and
+/// v1 (all 128 bits) as the original's quadword moves do.
+pub(crate) fn act_transform_root(c: &mut Cpu, xf: u32, src: u32, dst: u32, pivot: u32) {
+    use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
+    let sp = sp(c);
+    // Quaternion product xf.rot * src.rot.
+    c.lqc2(4, xf.wrapping_add(ACT_XF_ROT));
+    c.lqc2(5, src.wrapping_add(ACT_SEQ_ROOT_ROT));
+    c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+    c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+    c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+    c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+    c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+    c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+    c.sqc2(8, sp.wrapping_add(0x50));
+    c.lq(V1, sp.wrapping_add(0x50));
+    c.sq(V1, sp.wrapping_add(0x30));
+    c.sq(V1, sp.wrapping_add(0x40));
+    // Offset from the pivot.
+    c.lqc2(3, src.wrapping_add(ACT_SEQ_ROOT_POS));
+    c.lqc2(4, pivot);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, sp.wrapping_add(0x70));
+    c.lq(V1, sp.wrapping_add(0x70));
+    c.sq(V1, sp.wrapping_add(0x60));
+    // Rotate it by xf.rot.
+    c.lqc2(4, xf.wrapping_add(ACT_XF_ROT));
+    c.lqc2(5, sp.wrapping_add(0x60));
+    c.vu0().sub(0b0001, 8, 8, Src::Vec(8));
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().opmula(4, 6);
+    c.vu0().opmsub(7, 6, 4);
+    c.vu0().mula(0b1110, 5, Src::Bc(0, W));
+    c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+    c.vu0().madda(0b1110, 6, Src::Bc(4, W));
+    c.vu0().madda(0b1110, 7, Src::Bc(0, W));
+    c.vu0().madd(0b1110, 8, 7, Src::Bc(0, W));
+    c.sqc2(8, sp.wrapping_add(0x70));
+    c.lq(V1, sp.wrapping_add(0x70));
+    c.sq(V1, sp.wrapping_add(0x50));
+    // Plus xf.pos.
+    c.lqc2(3, sp.wrapping_add(0x50));
+    c.lqc2(4, xf.wrapping_add(ACT_XF_POS));
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, sp.wrapping_add(0x70));
+    // Copy the new transform out (through the stack temporaries).
+    c.lq(A0, sp.wrapping_add(0x70));
+    c.lq(V1, sp.wrapping_add(0x30));
+    c.sq(A0, sp.wrapping_add(0x40));
+    c.sq(V1, sp.wrapping_add(0x10));
+    c.sq(A0, sp.wrapping_add(0x20));
+    c.sq(A0, sp);
+    c.sq(A0, dst.wrapping_add(ACT_SEQ_ROOT_POS));
+    c.lq(V1, sp.wrapping_add(0x10));
+    c.sq(V1, dst.wrapping_add(ACT_SEQ_ROOT_ROT));
+}
+
+/// `void AnimController_TransformRoots(AnimController* ctrl, const Xform*
+/// xf)` (0x311bf0): applies `xf` (position + rotation quaternion) to the
+/// root transform of every sequence in the controller's six layers.
+pub fn anim_controller_transform_roots(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x100);
+        frame.save(c, S3, 0xc0);
+        frame.save(c, S4, 0xb0);
+        let ctrl = reg(c, A0);
+        set_reg(c, S3, ctrl);
+        frame.save(c, S0, 0xf0);
+        let xf = reg(c, A1);
+        set_reg(c, S4, xf);
+        frame.save(c, S1, 0xe0);
+        set_reg(c, A0, 0);
+        frame.save(c, S2, 0xd0);
+        frame.save(c, S5, 0xa0);
+        frame.save(c, S6, 0x90);
+        frame.save_ra(c, 0x80);
+        let layers = Addr(r32(c, S3)).off(ACT_LAYERS).lw(c);
+        set_reg(c, V1, layers);
+        loop {
+            c.cycles += 6;
+            let layer = r32(c, A0);
+            let list_off = layer << 3;
+            set_reg(c, A1, sx(list_off));
+            set_reg(c, S5, sx(layer.wrapping_add(1)));
+            let list = list_off.wrapping_add(r32(c, V1));
+            set_reg(c, V1, sx(list));
+            let count = Addr(list).lw(c);
+            set_reg(c, V0, count);
+            set_reg(c, S1, 0);
+            if (count as i64) > 0 {
+                c.cycles += 4;
+                set_reg(c, S2, sx(list_off));
+                set_reg(c, S6, ACT_ROOT_PIVOT_HI);
+                let layers = Addr(r32(c, S3)).off(ACT_LAYERS).lw(c);
+                set_reg(c, A0, layers);
+                loop {
+                    c.cycles += 64;
+                    let i = reg(c, S1);
+                    set_reg(c, A1, i);
+                    let list = r32(c, A0).wrapping_add(r32(c, S2));
+                    set_reg(c, A0, sx(list));
+                    ACT_SEQ_LIST_GET_AT.call(c, 0x0031_1c5c)?;
+                    let layers = Addr(r32(c, S3)).off(ACT_LAYERS).lw(c);
+                    let src = reg(c, V0);
+                    set_reg(c, S0, src);
+                    let i = reg(c, S1);
+                    set_reg(c, A1, i);
+                    set_reg(c, A0, sx((layers as u32).wrapping_add(r32(c, S2))));
+                    set_reg(c, S1, sx((i as u32).wrapping_add(1)));
+                    ACT_SEQ_LIST_GET_AT.call(c, 0x0031_1c74)?;
+                    let pivot = r32(c, S6).wrapping_sub(ACT_ROOT_PIVOT_LO);
+                    let (xf, src, dst) = (r32(c, S4), r32(c, S0), r32(c, V0));
+                    act_transform_root(c, xf, src, dst, pivot);
+
+                    let layers = Addr(r32(c, S3)).off(ACT_LAYERS).lw(c);
+                    let list = r32(c, S2).wrapping_add(layers as u32);
+                    set_reg(c, V0, sx(list));
+                    let count = Addr(list).lw(c);
+                    let more = (reg(c, S1) as i64) < (count as i64);
+                    set_reg(c, V1, more as u64);
+                    if !more {
+                        break;
+                    }
+                    let layers = Addr(r32(c, S3)).off(ACT_LAYERS).lw(c);
+                    set_reg(c, A0, layers);
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0031_1c50);
+                    }
+                }
+            }
+            c.cycles += 4;
+            let next = reg(c, S5);
+            set_reg(c, A0, next);
+            let more = (next as i64) < ACT_LAYER_COUNT;
+            set_reg(c, V0, more as u64);
+            if !more {
+                break;
+            }
+            let layers = Addr(r32(c, S3)).off(ACT_LAYERS).lw(c);
+            set_reg(c, V1, layers);
+            if event_due(c) {
+                deliver_event_here(c, 0x0031_1c28);
+            }
+        }
+        c.cycles += 10;
+        frame.restore(c, S0, 0xf0);
+        frame.restore(c, S1, 0xe0);
+        frame.restore(c, S2, 0xd0);
+        frame.restore(c, S3, 0xc0);
+        frame.restore(c, S4, 0xb0);
+        frame.restore(c, S5, 0xa0);
+        frame.restore(c, S6, 0x90);
+        frame.restore_ra(c, 0x80);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2497,6 +2698,62 @@ pub(crate) mod tests {
                 };
                 c.g[A2][0] = sx(frames);
                 c.pc = 0x0031_30a8;
+            },
+        );
+    }
+    use super::*;
+
+    /// AnimController_TransformRoots fixture: six layer lists of 0..3
+    /// sequences (0xd0 bytes, linked at +0xc8) with random root transforms,
+    /// a random transform argument and pivot.
+    pub(crate) fn act_fixture(c: &mut Cpu, r: &mut Rng, seed: u32) {
+        let ctrl = DATA + 0x20_0000;
+        let lists = DATA + 0x20_0400;
+        let seqs = DATA + 0x20_1000;
+        let xf = DATA + 0x20_0800;
+        c.bus.write32(ctrl + ACT_LAYERS, lists);
+        for layer in 0..6 {
+            let n = if seed % 5 == 0 { 0 } else { r.next_u32() % 4 };
+            let mut head = 0;
+            for i in 0..n {
+                let s = seqs + 0x100 * (layer * 4 + i);
+                for k in 0..8 {
+                    c.bus.write32(s + ACT_SEQ_ROOT_POS + 4 * k, r.f32(4.0));
+                }
+                c.bus.write32(s + 0xc8, head);
+                head = s;
+            }
+            c.bus.write32(lists + 8 * layer, n);
+            c.bus.write32(lists + 8 * layer + 4, head);
+        }
+        for k in 0..8 {
+            let v = if seed % 7 == 3 {
+                r.edge_f32()
+            } else {
+                r.f32(2.0)
+            };
+            c.bus.write32(xf + 4 * k, v);
+        }
+        for k in 0..4 {
+            c.bus.write32(0x004f_f130 + 4 * k, r.f32(1.0));
+        }
+        c.g[A0][0] = sx(ctrl);
+        c.g[A1][0] = sx(xf);
+    }
+
+    /// AnimController_TransformRoots: real AnimSeqList_GetAt on the
+    /// fixture's lists (empty layers included).
+    #[test]
+    fn anim_controller_transform_roots_matches() {
+        check(
+            ee::s10::f_00311bf0__generated,
+            anim_controller_transform_roots,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x31_1bf0 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0031_1bf0;
+                act_fixture(c, &mut r, seed);
             },
         );
     }

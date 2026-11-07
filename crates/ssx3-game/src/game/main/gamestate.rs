@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -205,6 +206,21 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0027_8f38,
         script_engine_list_prepare,
         "ScriptEngine_ListPrepare",
+    ),
+    (
+        0x0023_5990,
+        game_state_reset_save_state,
+        "GameStateReset_SaveState",
+    ),
+    (
+        0x0023_5f48,
+        game_state_restart_race_save_state,
+        "GameStateRestartRace_SaveState",
+    ),
+    (
+        0x0023_6728,
+        game_state_event_select_save_state,
+        "GameStateEventSelect_SaveState",
     ),
 ];
 
@@ -3507,6 +3523,151 @@ pub fn inputsync_apply_input(c: &mut Cpu) {
     })
 }
 
+/// `GameState_SaveState` (same shard; through the override slot).
+pub(crate) const EVENT_SELECT_BASE_SAVE: Callee = Callee {
+    addr: 0x0023_3af0,
+    f: ee::s06::GameState_SaveState,
+};
+
+/// `void GameStateEventSelect_SaveState(GameStateEventSelect* self,
+/// Stream* stream)` (0x236728): save the base game state, then the four
+/// selection words at `+0x10`, `+0x14`, `+0x8`, `+0x18` (4 bytes each,
+/// through the stream's write method, vtable slot 1).
+pub fn game_state_event_select_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 40;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0]; // stream
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0]; // self
+        EVENT_SELECT_BASE_SAVE.call(c, 0x0023_6744)?;
+        for (field, ret_addr) in [
+            (0x10u32, 0x0023_6760u32),
+            (0x14, 0x0023_677c),
+            (0x8, 0x0023_6798),
+            (0x18, 0x0023_67b4),
+        ] {
+            let stream = r32(c, S0);
+            c.g[V1][0] = Addr(stream).lw(c);
+            let vt = r32(c, V1);
+            c.g[A1][0] = sx(r32(c, S1).wrapping_add(field));
+            c.g[A2][0] = 4;
+            c.g[A0][0] = Addr(vt + 0x8).lh(c);
+            c.g[V0][0] = Addr(vt + 0xc).lw(c);
+            let write = r32(c, V0);
+            c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, write, ret_addr)?;
+        }
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// GameStateRestartRace_SaveState (0x235f48)
+
+/// `GameState_SaveState` (same shard; through the override slot).
+pub(crate) const RESTART_RACE_BASE_SAVE: Callee = Callee {
+    addr: 0x0023_3af0,
+    f: ee::s06::GameState_SaveState,
+};
+
+/// `void GameStateRestartRace_SaveState(GameStateRestartRace* self,
+/// Stream* stream)` (0x235f48): save the base game state, then the three
+/// restart words at `+0x10`, `+0x14`, `+0x18` (4 bytes each, through the
+/// stream's write method, vtable slot 1). Frame 0x30 (s0 = stream,
+/// s1 = self); one 33-cycle block.
+pub fn game_state_restart_race_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 33;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0]; // stream
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0]; // self
+        RESTART_RACE_BASE_SAVE.call(c, 0x0023_5f64)?;
+        for (field, ret_addr) in [
+            (0x10u32, 0x0023_5f80u32),
+            (0x14, 0x0023_5f9c),
+            (0x18, 0x0023_5fb8),
+        ] {
+            let stream = r32(c, S0);
+            c.g[V1][0] = Addr(stream).lw(c);
+            let vt = r32(c, V1);
+            c.g[A1][0] = sx(r32(c, S1).wrapping_add(field));
+            c.g[A2][0] = 4;
+            c.g[A0][0] = Addr(vt.wrapping_add(0x8)).lh(c);
+            c.g[V0][0] = Addr(vt.wrapping_add(0xc)).lw(c);
+            let write = r32(c, V0);
+            c.g[A0][0] = sx(stream.wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, write, ret_addr)?;
+        }
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// GameStateReset_SaveState (0x235990)
+
+/// `GameState_SaveState` (0x233af0).
+pub(crate) const OC300_GAME_STATE_SAVE_STATE: Callee = Callee {
+    addr: 0x0023_3af0,
+    f: ee::s06::GameState_SaveState,
+};
+
+/// The stream's `Write(data, size)` vtable slot.
+pub(crate) const OC300_STREAM_WRITE: u32 = 0x8;
+
+/// `GameStateReset`: the three state words written after the base state.
+pub(crate) const OC300_RESET_SAVED_WORDS: u32 = 0x10;
+
+/// `void GameStateReset_SaveState(GameStateReset* self, cAsStream* s)`
+/// (0x235990): saves the base game state (`GameState_SaveState`), then
+/// writes the three words at `self+0x10/+0x14/+0x18` (`s->Write(p, 4)`,
+/// vtable slot `+0x8`).
+pub fn game_state_reset_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 33;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save_ra(c, 0);
+        c.g[S1][0] = c.g[A0][0];
+        OC300_GAME_STATE_SAVE_STATE.call(c, 0x0023_59ac)?;
+        for (i, ret) in [0x0023_59c8u32, 0x0023_59e4, 0x0023_5a00]
+            .into_iter()
+            .enumerate()
+        {
+            let stream = r32(c, S0);
+            let vt = Addr(stream).lw(c);
+            c.g[V1][0] = vt;
+            c.g[A1][0] = sx(r32(c, S1).wrapping_add(OC300_RESET_SAVED_WORDS + 4 * i as u32));
+            c.g[A2][0] = 0x4;
+            let slot = crate::call::VSlot::read(c, vt, OC300_STREAM_WRITE);
+            c.g[A0][0] = slot.delta;
+            c.g[V0][0] = slot.func;
+            c.g[A0][0] = sx(stream.wrapping_add(slot.delta as u32));
+            call_ptr(c, slot.func as u32, ret)?;
+        }
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4681,5 +4842,95 @@ pub(crate) mod tests {
         // The streamer view is idle: the clearance word on the stack stays
         // as written (1.0 above the 0 threshold).
         c.bus.write32(SP - 0x70 + 0x10, 1.0f32.to_bits());
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::driven;
+
+    /// `GameStateEventSelect_SaveState`: the base save (real
+    /// `GameState_SaveState`) and the four field writes all go to a fake
+    /// stream write method (logged, unwinding at a random call).
+    #[test]
+    fn game_state_event_select_save_state_matches() {
+        use crate::difftest::fakes::{covered, FAKE};
+        const ME: u32 = DATA;
+        const STREAM: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x200;
+        covered(
+            ee::s06::f_00236728__generated,
+            game_state_event_select_save_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x23_6728, 5);
+                c.pc = 0x0023_6728;
+                c.bus.write32(STREAM, VT);
+                c.bus.write16(VT + 8, (r.next_u32() % 0x20) as u16 & !3);
+                c.bus.write32(VT + 0xc, FAKE);
+                c.g[A0][0] = if seed % 4 == 0 {
+                    (r.next_u32() as u64) << 32 | ME as u64
+                } else {
+                    sx(ME)
+                };
+                c.g[A1][0] = sx(STREAM);
+            },
+        );
+    }
+
+    /// GameStateRestartRace_SaveState: the stream's write method (and the
+    /// base save's) is a fake that may unwind at any of the four calls;
+    /// `self` sometimes carries upper-half garbage.
+    #[test]
+    fn game_state_restart_race_save_state_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        const ME: u32 = DATA;
+        const STREAM: u32 = DATA + 0x100;
+        const VT: u32 = DATA + 0x200;
+        covered(
+            ee::s06::f_00235f48__generated,
+            game_state_restart_race_save_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x23_5f48, 4);
+                c.pc = 0x0023_5f48;
+                c.bus.write32(STREAM, VT);
+                c.bus.write16(VT + 8, (r.next_u32() % 0x20) as u16 & !3);
+                c.bus.write32(VT + 0xc, FAKE);
+                c.g[A0][0] = if seed % 4 == 0 {
+                    (r.next_u32() as u64) << 32 | ME as u64
+                } else {
+                    sx(ME)
+                };
+                c.g[A1][0] = sx(STREAM);
+            },
+        );
+    }
+
+    /// The base `GameState_SaveState` (real) and the three word writes go to
+    /// a fake `Write` method (random `this` delta); some seeds unwind at any
+    /// of the four calls.
+    #[test]
+    fn game_state_reset_save_state_matches() {
+        use crate::difftest::fakes::{covered, FAKE};
+        covered(
+            ee::s06::f_00235990__generated,
+            game_state_reset_save_state,
+            100,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x23_5990, 4);
+                let state = DATA + 0x100;
+                let stream = DATA + 0x200;
+                let vt = DATA + 0x300;
+                crate::difftest::fill(c, &mut r, state, 8);
+                c.bus.write32(stream, vt);
+                let delta = (r.next_u32() as i16 as i32 & !3) as u32;
+                c.bus.write16(vt + OC300_STREAM_WRITE, delta as u16);
+                c.bus.write32(vt + OC300_STREAM_WRITE + 4, FAKE);
+                c.g[A0][0] = sx(state);
+                c.g[A1][0] = sx(stream);
+                c.pc = 0x0023_5990;
+            },
+        );
     }
 }

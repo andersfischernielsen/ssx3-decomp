@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -94,6 +95,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0034_afe8,
         c_flag_manager_group_matches,
         "cFlagManager_GroupMatches",
+    ),
+    (
+        0x0034_b168,
+        c_flag_manager_group_remove_flag,
+        "cFlagManager_GroupRemoveFlag",
     ),
 ];
 
@@ -1591,6 +1597,117 @@ pub fn flag_read_params(c: &mut Cpu) {
     return;
 }
 
+// ---------------------------------------------------------------------------
+// cFlagManager_GroupRemoveFlag (0x34b168).
+
+/// Flag group: `+0x58` the track it belongs to, `+0x5c` how many riders it
+/// holds, `+0x94` the rider pointers.
+pub(crate) const FLAG_GROUP_TRACK: u32 = 0x58;
+
+pub(crate) const FLAG_GROUP_COUNT: u32 = 0x5c;
+
+pub(crate) const FLAG_GROUP_RIDERS: u32 = 0x94;
+
+/// Rider: `+0x78` its id, `+0x80` a pointer to its current track.
+pub(crate) const FLAG_RIDER_ID: u32 = 0x78;
+
+pub(crate) const FLAG_RIDER_TRACK_PTR: u32 = 0x80;
+
+pub(crate) const FLAG_GROUP_FREE_MESH: Callee = Callee {
+    addr: 0x0034_b7b8,
+    f: ee::s11::cFlagManager_GroupFreeMesh,
+};
+
+/// `int cFlagManager_GroupRemoveFlag(Group* group, Rider* rider)` (0x34b168):
+/// remove `rider` from the group's rider list (matched by id; the last entry
+/// moves into its slot) when the group is on the rider's track; free the
+/// group's mesh when it becomes empty. Returns 1 when removed, else 0.
+pub fn c_flag_manager_group_remove_flag(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 6;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        let group = Addr(r32(c, A3));
+        let rider = Addr(r32(c, A1));
+        c.g[A2][0] = group.off(FLAG_GROUP_COUNT).lw(c);
+        c.g[V0][0] = 0;
+        'out: {
+            if c.g[A2][0] == 0 {
+                break 'out;
+            }
+            c.cycles += 5;
+            c.g[V0][0] = rider.off(FLAG_RIDER_TRACK_PTR).lw(c);
+            c.g[A0][0] = group.off(FLAG_GROUP_TRACK).lw(c);
+            c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+            c.g[V0][0] = 0;
+            if c.g[V1][0] != c.g[A0][0] {
+                break 'out;
+            }
+            c.cycles += 2;
+            c.g[T0][0] = 0;
+            if (c.g[A2][0] as i64) <= 0 {
+                break 'out;
+            }
+            c.cycles += 3;
+            c.g[A2][0] = sx(group.0.wrapping_add(FLAG_GROUP_RIDERS));
+            c.g[T1][0] = c.g[A2][0];
+            loop {
+                // (Reloaded from the registers: an event may have run.)
+                let group = Addr(r32(c, A3));
+                let rider = Addr(r32(c, A1));
+                let riders = r32(c, T1);
+                let slot = Addr(r32(c, A2));
+                c.cycles += 5;
+                c.g[V0][0] = slot.lw(c);
+                c.g[A0][0] = rider.off(FLAG_RIDER_ID).lw(c);
+                c.g[V1][0] = Addr(r32(c, V0)).off(FLAG_RIDER_ID).lw(c);
+                c.g[V0][0] = group.off(FLAG_GROUP_COUNT).lw(c);
+                if c.g[V1][0] == c.g[A0][0] {
+                    // Found: move the last entry here, clear the last slot.
+                    c.cycles += 14;
+                    let last = Addr(riders.wrapping_add(r32(c, V0).wrapping_sub(1) << 2));
+                    c.g[V0][0] = sx(last.0);
+                    c.g[V1][0] = last.lw(c);
+                    slot.sw(c, c.g[V1][0]);
+                    let count = group.off(FLAG_GROUP_COUNT).lw(c) as u32;
+                    let last = Addr(riders.wrapping_add(count.wrapping_sub(1) << 2));
+                    c.g[V0][0] = sx(last.0);
+                    last.sw(c, 0);
+                    let count = (group.off(FLAG_GROUP_COUNT).lw(c) as u32).wrapping_sub(1);
+                    c.g[V1][0] = sx(count);
+                    group.off(FLAG_GROUP_COUNT).sw(c, sx(count));
+                    if count == 0 {
+                        c.cycles += 2;
+                        c.g[A0][0] = c.g[A3][0];
+                        FLAG_GROUP_FREE_MESH.call(c, 0x0034_b1fc)?;
+                    }
+                    c.cycles += 2;
+                    c.g[V0][0] = 1;
+                    break 'out;
+                }
+                c.cycles += 4;
+                c.g[T0][0] = sx(r32(c, T0).wrapping_add(1));
+                let more = (c.g[T0][0] as i64) < (c.g[V0][0] as i64);
+                c.g[V0][0] = more as u64;
+                c.g[A2][0] = sx(slot.0.wrapping_add(4));
+                if !more {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                    break 'out;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_b1a8);
+                }
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2086,6 +2203,55 @@ pub(crate) mod tests {
                     1 + (r.next_u32() % 240) as i32
                 };
                 c.bus.write32(hz + 0x10, rate as u32);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes;
+
+    /// GroupRemoveFlag: a group of 0..6 riders (ids from a small set so
+    /// matches and misses both happen), a rider on the group's track or not;
+    /// the matched entry moved, the count reaching 0 calls the real
+    /// `GroupFreeMesh` on its short path (no mesh, no buffer).
+    #[test]
+    fn c_flag_manager_group_remove_flag_matches() {
+        const GROUP: u32 = DATA;
+        const RIDER: u32 = DATA + 0x1000;
+        const TRACK_CELL: u32 = DATA + 0x2000;
+        const MEMBERS: u32 = DATA + 0x3000;
+        check(
+            ee::s11::f_0034b168__generated,
+            c_flag_manager_group_remove_flag,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x34b168, 0);
+                fill(c, &mut r, GROUP, 0x40);
+                let count: i32 = match seed % 8 {
+                    0 => 0,
+                    1 => -1,
+                    2 => 1,
+                    _ => (r.next_u32() % 6 + 1) as i32,
+                };
+                let track = r.next_u32();
+                c.bus.write32(GROUP + 0x58, track);
+                c.bus.write32(GROUP + 0x5c, count as u32);
+                // Mesh and buffer null: GroupFreeMesh takes its short path.
+                c.bus.write32(GROUP + 0x60, 0);
+                c.bus.write32(GROUP + 0x74, 0);
+                c.bus.write32(RIDER + 0x80, TRACK_CELL);
+                let same_track = seed % 5 != 3;
+                c.bus
+                    .write32(TRACK_CELL, if same_track { track } else { track ^ 1 });
+                let id = r.next_u32() % 4;
+                c.bus.write32(RIDER + 0x78, id);
+                for i in 0..6u32 {
+                    let m = MEMBERS + 0x100 * i;
+                    c.bus.write32(GROUP + 0x94 + 4 * i, m);
+                    c.bus.write32(m + 0x78, r.next_u32() % 4);
+                }
+                c.g[A0][0] = sx(GROUP);
+                c.g[A1][0] = sx(RIDER);
+                c.pc = 0x0034_b168;
             },
         );
     }

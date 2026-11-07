@@ -12,6 +12,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Target;
+use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 use crate::guest::Addr;
@@ -36,6 +37,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         focus_man_collect_node_objects,
         "FocusMan_CollectNodeObjects",
     ),
+    (0x0010_3480, focus_man_save_state, "FocusMan_SaveState"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1187,6 +1189,125 @@ pub fn focus_man_collect_node_objects(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// FocusMan_SaveState (0x103480)
+
+/// FocusMan: entry count at +0x0, 0x20-byte entries from +0x20, a word at
+/// +0xd0, value count at +0xd8, 32-bit values from +0xdc.
+pub(crate) const FOCUS_COUNT: u32 = 0x0;
+
+pub(crate) const FOCUS_ENTRIES: u32 = 0x20;
+
+pub(crate) const FOCUS_HEADER: u32 = 0xd0;
+
+pub(crate) const FOCUS_VALUE_COUNT: u32 = 0xd8;
+
+pub(crate) const FOCUS_VALUES: u32 = 0xdc;
+
+/// One `cStream` virtual call from FocusMan_SaveState: `this` adjusted by the
+/// halfword at `vt + delta_off`, the method at `vt + fn_off` (s1 holds the
+/// stream); v0/v1/a0 left as the original leaves them.
+pub(crate) fn focus_man_stream_vcall(
+    c: &mut Cpu,
+    delta_off: u32,
+    fn_off: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    let vt = c.g[V0][0] as u32;
+    c.g[A0][0] = c.lh(vt.wrapping_add(delta_off));
+    c.g[V1][0] = c.lw(vt.wrapping_add(fn_off));
+    let method = c.g[V1][0] as u32;
+    c.g[A0][0] = sx((c.g[S1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, method, ret)
+}
+
+/// `void FocusMan::SaveState(cStream* s)` (0x103480): writes the header word
+/// (+0xd0), each of the `count` 0x10-byte focus entries (stride 0x20), the
+/// value count (+0xd8) and then every value with `s->WriteInt`. The counts
+/// are re-read after every call (s3 = this, s1 = stream, s2 = index, s0 =
+/// cursor).
+pub fn focus_man_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x50);
+        c.g[A2][0] = 0x4;
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x10);
+        c.g[S2][0] = 0;
+        frame.save(c, S0, 0x40);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        // s->Write(&this->header, 4)
+        c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(FOCUS_HEADER));
+        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+        focus_man_stream_vcall(c, 0x8, 0xc, 0x0010_34c0)?;
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(FOCUS_COUNT));
+        c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(FOCUS_ENTRIES));
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+            loop {
+                // s->Write(&this->entries[i], 0x10)
+                c.cycles += 12;
+                c.g[A1][0] = c.g[S0][0];
+                c.g[A2][0] = 0x10;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(0x20));
+                focus_man_stream_vcall(c, 0x8, 0xc, 0x0010_34f0)?;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(FOCUS_COUNT));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_34d0);
+                }
+            }
+        }
+        // s->Write(&this->value_count, 4)
+        c.cycles += 11;
+        c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+        c.g[A1][0] = sx((c.g[S3][0] as u32).wrapping_add(FOCUS_VALUE_COUNT));
+        c.g[A2][0] = 0x4;
+        c.g[S2][0] = 0;
+        focus_man_stream_vcall(c, 0x8, 0xc, 0x0010_3520)?;
+        c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(FOCUS_VALUE_COUNT));
+        c.g[S0][0] = sx((c.g[S3][0] as u32).wrapping_add(FOCUS_VALUES));
+        if (c.g[V0][0] as i64) > 0 {
+            c.cycles += 1;
+            c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+            loop {
+                // s->WriteInt(this->values[j])
+                c.cycles += 11;
+                c.g[S2][0] = sx((c.g[S2][0] as u32).wrapping_add(1));
+                c.g[A1][0] = c.lw(c.g[S0][0] as u32);
+                c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(4));
+                focus_man_stream_vcall(c, 0x28, 0x2c, 0x0010_354c)?;
+                c.g[V0][0] = c.lw((c.g[S3][0] as u32).wrapping_add(FOCUS_VALUE_COUNT));
+                c.g[V0][0] = ((c.g[S2][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[V0][0] = c.lw(c.g[S1][0] as u32);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0010_3530);
+                }
+            }
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1492,6 +1613,33 @@ pub(crate) mod tests {
                 } else {
                     (r.next_u32() as u64) << 32 | (1 + r.next_u32() % 4) as u64
                 };
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::elf_image;
+    use crate::difftest::events::{check_events, driven, schedule};
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::LOG_RESULTS;
+    use crate::difftest::fill;
+    pub(crate) use crate::game::lib::gcc::tests::focus_man_setup;
+    pub(crate) use crate::game::lib::gcc::tests::FOCUS;
+    pub(crate) use crate::game::lib::gcc::tests::FOCUS_STREAM;
+    pub(crate) use crate::game::lib::gcc::tests::FOCUS_STREAM_VT;
+    use crate::game::scripter::ssxscriptengine::tests::{
+        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
+    };
+
+    /// `FocusMan_SaveState`: empty, negative and 1..4 counts for both lists;
+    /// fakes unwind at random calls.
+    #[test]
+    fn focus_man_save_state_matches() {
+        covered(
+            ee::s00::f_00103480__generated,
+            focus_man_save_state,
+            200,
+            &|c, seed| {
+                focus_man_setup(c, seed, 10);
             },
         );
     }

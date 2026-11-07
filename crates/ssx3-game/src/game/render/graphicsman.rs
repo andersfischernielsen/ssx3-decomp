@@ -2,8 +2,11 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -153,6 +156,17 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         emitter_randomize_desc_seeds,
         "Emitter_RandomizeDescSeeds",
     ),
+    (
+        0x0036_cbf8,
+        emitter_init_descriptor,
+        "Emitter_InitDescriptor",
+    ),
+    (
+        0x0036_d318,
+        emitter_set_desc_velocity_curve,
+        "Emitter_SetDescVelocityCurve",
+    ),
+    (0x0037_05e0, emitter_setup, "Emitter_Setup"),
 ];
 
 /// The game's render-context singleton (`gp+0x2a90`, `D_004A5B80`): its
@@ -6358,6 +6372,300 @@ pub fn emitter_randomize_desc_seeds(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod emitter_setup_callee {
+    use super::*;
+
+    pub const INIT_DESCRIPTOR: Callee = Callee {
+        addr: 0x0036_cbf8,
+        f: ee::s12::Emitter_InitDescriptor,
+    };
+
+    pub const BUILD_DESCRIPTOR: Callee = Callee {
+        addr: 0x0037_0058,
+        f: ee::s12::Emitter_BuildDescriptor,
+    };
+}
+
+/// `void Emitter::Setup(Matrix* m, EmitterDef* def)` (0x3705e0): copy the
+/// definition's GS state (`+0xd0`, `+0xd4`) and texture ids (`+0xc4`,
+/// `+0xc8`); the start time `self+0` is `def->start` (`+8`) when negative,
+/// else `start + fade_in + fade / 2` (`+0x14`, `+0x1c`); then initialise
+/// the particle descriptor at `self+0x10` (grid `+0`/`+4`, span = the
+/// non-negative start or `fade_in + fade / 2`, scale `+0x20`, life `+0xc`,
+/// velocity `+0x78..`) and build it for time -1 with bounds at `self+0x160`.
+pub fn emitter_setup(c: &mut Cpu) {
+    use emitter_setup_callee as f;
+    guest(c, |c| {
+        c.cycles += 22;
+        let frame = Frame::open(c, 0x60);
+        c.mtc1(0, 1);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A2][0]; // def
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A0][0]; // self
+        frame.save(c, S0, 0x50);
+        frame.save_ra(c, 0x10);
+        let me = r32(c, S2);
+        let def = r32(c, S1);
+        c.g[V0][0] = Addr(def + 0xd0).lw(c);
+        Addr(me + 0x180).sw(c, c.g[V0][0]);
+        c.lwc1(0, def + 0xd4);
+        c.swc1(0, me + 0x188);
+        c.g[V0][0] = Addr(def + 0xc4).lw(c);
+        Addr(me + 0x4).sw(c, c.g[V0][0]);
+        c.g[V1][0] = Addr(def + 0xc8).lw(c);
+        Addr(me + 0x8).sw(c, c.g[V1][0]);
+        c.lwc1(3, def + 0x8);
+        c.c_lt_s(3, 1); // start < 0
+        c.g[S3][0] = c.g[A1][0]; // m
+        if c.fcc() {
+            c.cycles += 2;
+            c.mov_s(0, 3);
+        } else {
+            c.cycles += 7;
+            c.lwc1(0, def + 0x14);
+            c.lwc1(1, def + 0x1c);
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 2); // 0.5
+            c.add_s(0, 3, 0);
+            c.mul_s(1, 1, 2);
+            c.add_s(0, 0, 1);
+        }
+
+        // The descriptor's span.
+        c.cycles += 7;
+        c.swc1(0, me);
+        c.mtc1(0, 0);
+        c.lwc1(12, def + 0x8);
+        c.c_le_s(0, 12); // 0 <= start
+        if !c.fcc() {
+            c.cycles += 7;
+            c.lwc1(0, def + 0x1c);
+            c.g[AT][0] = 0x3f00_0000;
+            c.mtc1(1, 1); // 0.5
+            c.lwc1(2, def + 0x14);
+            c.mul_s(0, 0, 1);
+            c.add_s(12, 2, 0);
+        }
+        c.lwc1(2, def + 0x78);
+
+        c.cycles += 28;
+        c.g[S0][0] = sx(me.wrapping_add(0x10)); // the descriptor
+        c.lwc1(1, def + 0x7c);
+        c.g[A0][0] = c.g[S0][0];
+        c.lwc1(0, def + 0x80);
+        c.g[A3][0] = c.g[SP][0]; // &velocity
+        c.g[A1][0] = Addr(def).lw(c);
+        c.g[A2][0] = Addr(def + 0x4).lw(c);
+        c.lwc1(13, def + 0x20);
+        c.lwc1(14, def + 0xc);
+        let v = sp(c);
+        c.swc1(2, v);
+        c.swc1(1, v + 0x4);
+        c.swc1(0, v + 0x8);
+        Addr(v + 0xc).sw(c, 0);
+        f::INIT_DESCRIPTOR.call(c, 0x0037_06cc)?;
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.mtc1(1, 12); // -1.0
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A1][0] = c.g[S3][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.g[A3][0] = sx(r32(c, S2).wrapping_add(0x160)); // bounds
+        f::BUILD_DESCRIPTOR.call(c, 0x0037_06e8)?;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Emitter_SetDescVelocityCurve (0x36d318)
+
+/// Emitter desc -> lifetime (float).
+pub(crate) const EMITTER_LIFETIME: u32 = 0x4c;
+
+/// Emitter desc -> curve base `a - 1.5 * (c + d)` (vec4).
+pub(crate) const EMITTER_CURVE_BASE: u32 = 0xf0;
+
+/// Emitter desc -> curve control points `c` and `d` (vec4 each).
+pub(crate) const EMITTER_CURVE_C: u32 = 0x100;
+
+pub(crate) const EMITTER_CURVE_D: u32 = 0x110;
+
+/// Emitter desc -> linear velocity rate `(b - a) / (t * lifetime)` (vec4).
+pub(crate) const EMITTER_CURVE_RATE: u32 = 0x120;
+
+/// `void Emitter_SetDescVelocityCurve(desc, const Vec4* a, const Vec4* b,
+/// const Vec4* c (a3), const Vec4* d (t0), float t)` (0x36d318): sets the
+/// velocity curve of a particle emitter description: base
+/// `a - 1.5 * (c + d)`, rate `(b - a) / (t * lifetime)`, and the control
+/// points `c`, `d`. VU0 macro ops through 16-byte stack temporaries, as the
+/// original (frame 0x40); one 47-cycle block.
+pub fn emitter_set_desc_velocity_curve(c: &mut Cpu) {
+    use crate::ps2f::FpuF32;
+    use ssx3_ee_rt::vu0::{Src, X};
+    c.cycles += 47;
+    c.g[SP][0] = sx(sp(c).wrapping_sub(0x40));
+    let tmp = sp(c);
+    let desc = c.g[A0][0] as u32;
+    let a = c.g[A1][0] as u32;
+    let b = c.g[A2][0] as u32;
+    let cp = c.g[A3][0] as u32;
+    let dp = c.g[T0][0] as u32;
+    c.g[AT][0] = 0x3fc0_0000;
+    c.f[0] = 0x3fc0_0000; // 1.5
+                          // sum = c + d
+    c.lqc2(3, cp);
+    c.lqc2(4, dp);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, tmp.wrapping_add(0x30));
+    c.lq(V0, tmp.wrapping_add(0x30));
+    c.sq(V0, tmp.wrapping_add(0x20));
+    // scaled = sum * 1.5
+    c.mfc1(V1, 0);
+    c.lqc2(4, tmp.wrapping_add(0x20));
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, tmp.wrapping_add(0x30));
+    c.lq(V0, tmp.wrapping_add(0x30));
+    c.sq(V0, tmp.wrapping_add(0x10));
+    // base = a - scaled
+    c.lqc2(3, a);
+    c.lqc2(4, tmp.wrapping_add(0x10));
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, tmp.wrapping_add(0x30));
+    c.lq(V0, tmp.wrapping_add(0x30));
+    c.sq(V0, desc.wrapping_add(EMITTER_CURVE_BASE));
+    c.sq(V0, tmp);
+    // delta = b - a; rate = delta / (t * lifetime)
+    c.lqc2(3, b);
+    c.lqc2(4, a);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, tmp.wrapping_add(0x20));
+    c.f[0] = Addr(desc.wrapping_add(EMITTER_LIFETIME)).read_u32(c);
+    c.lq(V0, tmp.wrapping_add(0x20));
+    c.f[12] = (FpuF32(c.f[12]) * FpuF32(c.f[0])).0;
+    c.sq(V0, tmp.wrapping_add(0x10));
+    c.mfc1(V0, 12);
+    c.qmtc2(V0, 3);
+    c.vu0().div(0, 3, 3, 0);
+    c.lqc2(4, tmp.wrapping_add(0x10));
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 4, 4, Src::Q);
+    c.sqc2(4, tmp.wrapping_add(0x20));
+    c.lq(V1, tmp.wrapping_add(0x20));
+    c.sq(V1, desc.wrapping_add(EMITTER_CURVE_RATE));
+    c.sq(V1, tmp);
+    // The control points.
+    c.lq(V0, cp);
+    c.sq(V0, desc.wrapping_add(EMITTER_CURVE_C));
+    c.lq(V1, dp);
+    c.sq(V1, desc.wrapping_add(EMITTER_CURVE_D));
+    c.g[SP][0] = sx(tmp.wrapping_add(0x40));
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// Emitter_InitDescriptor (0x36cbf8)
+
+/// Particle-system descriptor fields.
+pub(crate) const EMD_WIDTH: u32 = 0x0;
+
+pub(crate) const EMD_HEIGHT: u32 = 0x4;
+
+pub(crate) const EMD_U_STEP: u32 = 0xc;
+
+pub(crate) const EMD_INV_HEIGHT: u32 = 0x30;
+
+pub(crate) const EMD_V_SPAN: u32 = 0x34;
+
+pub(crate) const EMD_SCALE: u32 = 0x4c;
+
+pub(crate) const EMD_VELOCITY: u32 = 0x60;
+
+pub(crate) const EMD_GS_STATE: u32 = 0x130;
+
+pub(crate) const EMD_UV_SCALE: u32 = 0x140;
+
+/// The default GS state quadword copied into every descriptor.
+pub(crate) const EMD_DEFAULT_GS_STATE: u32 = 0x004f_f120;
+
+/// `vf4 = *from / scale` through VU0 (`vdiv Q` of f14, `vmul.xyzw vf4,
+/// vf4, Q`), stored to `sp+0x20`.
+pub(crate) fn emd_divide_by_scale(c: &mut Cpu, from: u32) {
+    use ssx3_ee_rt::vu0::Src;
+    c.mfc1(V1, 14);
+    c.qmtc2(V1, 3);
+    c.vu0().div(0, 3, 3, 0);
+    c.lqc2(4, from);
+    c.vu0().waitq();
+    c.vu0().mul(0b1111, 4, 4, Src::Q);
+    c.sqc2(4, sp(c).wrapping_add(0x20));
+}
+
+/// `void Emitter_InitDescriptor(Desc* d, int width, int height, float x,
+/// float y, float scale, const Vec4* velocity)` (0x36cbf8): sets up a
+/// particle system's descriptor: its grid size, the per-column u step
+/// (`x * scale / width`), the v span (`y * scale`), `1 / height`, the scale,
+/// the velocity divided twice by the scale, the default GS state and a
+/// (1, 1, 0, 0) uv scale.
+pub fn emitter_init_descriptor(c: &mut Cpu) {
+    use crate::abi::{farg, set_fpr};
+    use crate::ps2f::FpuF32;
+    c.cycles += 48;
+    let desc = Addr(r32(c, A0));
+    let width = FpuF32::from_i32(r32(c, A1) as i32);
+    set_fpr(c, 0, width);
+    let height = reg(c, A2);
+    desc.off(EMD_HEIGHT).sw(c, height);
+    let (x, y, scale) = (farg(c, 0), farg(c, 1), farg(c, 2));
+    let frame = Frame::open(c, 0x30);
+    let width_bits = reg(c, A1);
+    desc.off(EMD_WIDTH).sw(c, width_bits);
+    let v_span = y * scale;
+    set_fpr(c, 13, v_span);
+    set_reg(c, AT, 0x3f80_0000);
+    set_fpr(c, 1, FpuF32::ONE);
+    set_reg(c, A1, EMD_DEFAULT_GS_STATE as u64);
+    let u_step = (x * scale).div(width);
+    set_fpr(c, 12, u_step);
+    desc.off(EMD_U_STEP).write_fpu(c, u_step);
+
+    // velocity / scale / scale (VU0), through the stack.
+    let velocity = r32(c, A3);
+    emd_divide_by_scale(c, velocity);
+    let tmp = sp(c);
+    c.lq(V0, tmp.wrapping_add(0x20));
+    c.sq(V0, tmp.wrapping_add(0x10));
+    emd_divide_by_scale(c, tmp.wrapping_add(0x10));
+
+    let height = FpuF32::from_i32(desc.off(EMD_HEIGHT).lw(c) as i32);
+    c.lq(V0, tmp.wrapping_add(0x20));
+    desc.off(EMD_V_SPAN).write_fpu(c, v_span);
+    c.sq(V0, tmp);
+    let inv_height = FpuF32::ONE.div(height);
+    set_fpr(c, 0, inv_height);
+    c.sq(V0, desc.off(EMD_VELOCITY).0);
+
+    // uv scale (1, 1, 0, 0) and the default GS state.
+    Addr(tmp).off(4).write_fpu(c, FpuF32::ONE);
+    desc.off(EMD_SCALE).write_fpu(c, scale);
+    Addr(tmp).write_fpu(c, FpuF32::ONE);
+    Addr(tmp).off(8).sw(c, 0);
+    Addr(tmp).off(0xc).sw(c, 0);
+    desc.off(EMD_INV_HEIGHT).write_fpu(c, inv_height);
+    c.lq(V0, tmp);
+    c.lq(V1, EMD_DEFAULT_GS_STATE);
+    c.sq(V0, desc.off(EMD_UV_SCALE).0);
+    c.sq(V1, desc.off(EMD_GS_STATE).0);
+    frame.close(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7210,6 +7518,132 @@ pub(crate) mod tests {
                 fill(c, &mut r, 0x004f_f018, 0x10);
                 c.f[20] = r.edge_f32();
                 c.g[A0][0] = sx(DATA + 0x100);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::object::effectlink::tests::emitter_def_setup;
+
+    /// `Emitter_Setup` with the real descriptor init/build on
+    /// [`emitter_def_setup`] and a random matrix.
+    #[test]
+    fn emitter_setup_matches() {
+        use crate::difftest::scramble;
+        const EMITTER: u32 = DATA;
+        const DEF: u32 = DATA + 0x400;
+        const MATRIX: u32 = DATA + 0x600;
+        check(
+            ee::s12::f_003705e0__generated,
+            emitter_setup,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x0037_05e0 ^ (seed as u64) << 8);
+                scramble(c, &mut r);
+                c.pc = 0x0037_05e0;
+                c.g[GP][0] = sx(GAME_GP);
+                emitter_def_setup(c, &mut r, seed, EMITTER, DEF);
+                for i in 0..0x10 {
+                    c.bus.write32(MATRIX + 4 * i, r.f32(4.0));
+                }
+                c.g[A0][0] = sx(EMITTER);
+                c.g[A1][0] = sx(MATRIX);
+                c.g[A2][0] = sx(DEF);
+            },
+        );
+    }
+
+    /// Emitter_SetDescVelocityCurve: random vectors (sometimes edge
+    /// floats), lifetimes and t, including zero (VU0 division by zero).
+    #[test]
+    fn emitter_set_desc_velocity_curve_matches() {
+        check(
+            ee::s12::f_0036d318__generated,
+            emitter_set_desc_velocity_curve,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x36d3_1800 ^ seed as u64);
+                scramble(c, &mut r);
+                let desc = DATA;
+                let vecs = DATA + 0x1000;
+                fill(c, &mut r, desc, 0x130 / 4);
+                for i in 0..16 {
+                    let v = if seed % 5 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(100.0)
+                    };
+                    c.bus.write32(vecs + 4 * i, v);
+                }
+                c.bus.write32(
+                    desc + EMITTER_LIFETIME,
+                    match seed % 7 {
+                        0 => 0,
+                        1 => r.edge_f32(),
+                        _ => r.f32(10.0),
+                    },
+                );
+                c.f[12] = if seed % 11 == 0 { 0 } else { r.f32(4.0) };
+                c.g[A0][0] = sx(desc);
+                c.g[A1][0] = sx(vecs);
+                c.g[A2][0] = sx(vecs + 0x10);
+                c.g[A3][0] = sx(vecs + 0x20);
+                c.g[T0][0] = sx(vecs + 0x30);
+                c.pc = 0x0036_d318;
+            },
+        );
+    }
+
+    /// Emitter_InitDescriptor: random grid sizes (zero and negative
+    /// included), edge-case floats for x, y and the scale, a random velocity
+    /// and default GS state.
+    #[test]
+    fn emitter_init_descriptor_matches() {
+        check(
+            ee::s12::f_0036cbf8__generated,
+            emitter_init_descriptor,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x36_cbf8 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0036_cbf8;
+                let desc = DATA;
+                let velocity = DATA + 0x400;
+                fill(c, &mut r, desc, 0x60);
+                fill(c, &mut r, EMD_DEFAULT_GS_STATE, 4);
+                for i in 0..4 {
+                    let v = if seed % 4 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(50.0)
+                    };
+                    c.bus.write32(velocity + 4 * i, v);
+                }
+                let dim = |r: &mut Rng| match seed % 6 {
+                    0 => 0,
+                    1 => r.next_u32(),
+                    _ => r.next_u32() % 64 + 1,
+                };
+                c.g[A1][0] = (c.g[A1][0] & !0xffff_ffff) | dim(&mut r) as u64;
+                c.g[A2][0] = (c.g[A2][0] & !0xffff_ffff) | dim(&mut r) as u64;
+                c.f[12] = if seed % 3 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(10.0)
+                };
+                c.f[13] = if seed % 3 == 1 {
+                    r.edge_f32()
+                } else {
+                    r.f32(10.0)
+                };
+                c.f[14] = if seed % 5 == 0 {
+                    r.edge_f32()
+                } else {
+                    r.f32(4.0)
+                };
+                c.g[A0][0] = sx(desc);
+                c.g[A3][0] = sx(velocity);
             },
         );
     }

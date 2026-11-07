@@ -4,7 +4,9 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -235,6 +237,31 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0035_53c0, mod_obj_dtor, "ModObj_dtor"),
     (0x0035_6db0, object_ctor, "Object_ctor"),
     (0x0035_79a8, particle_save, "Particle_Save"),
+    (
+        0x0035_5468,
+        mod_obj_create_modifier_block,
+        "ModObj_CreateModifierBlock",
+    ),
+    (
+        0x0035_5550,
+        mod_obj_set_uv_scroll_modifier,
+        "ModObj_SetUVScrollModifier",
+    ),
+    (
+        0x0035_5b90,
+        mod_obj_add_uv_scroll_modifier,
+        "ModObj_AddUVScrollModifier",
+    ),
+    (
+        0x0035_5f10,
+        mod_obj_take_over_object,
+        "ModObj_TakeOverObject",
+    ),
+    (
+        0x0035_7ca8,
+        multi_particle_man_save,
+        "MultiParticleMan_Save",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4333,6 +4360,368 @@ pub fn mod_obj_dtor(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod take_over_callee {
+    use super::*;
+
+    pub const TAKE_PARTICLE_MODIFIERS: Callee = Callee {
+        addr: 0x0035_6020,
+        f: ee::s11::ModObj_TakeParticleModifiers,
+    };
+
+    pub const ADD_POSITION_MODIFIER_FROM_MATRIX: Callee = Callee {
+        addr: 0x0035_5918,
+        f: ee::s11::ModObj_AddPositionModifierFromMatrix,
+    };
+}
+
+/// `void ModObj::CreateModifierBlock()` (0x355468): allocates a 0x28-byte
+/// `ModifierBlock` (`EA_MemAllocNamed(0x28, "ModifierBlock"-ish name at
+/// 0x48e9d8, 0x20000000, 0)`), constructs it and stores it at `this+0x1c`.
+pub fn mod_obj_create_modifier_block(c: &mut Cpu) {
+    const ALLOC: u32 = 0x0031_7d70;
+    const MODIFIER_BLOCK_CTOR: Callee = Callee {
+        addr: 0x0035_2aa8,
+        f: ee::s11::ModifierBlock_ctor,
+    };
+    const MODIFIER_BLOCK: u32 = 0x1c;
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        c.g[A1][0] = sx(0x0049_0000u32.wrapping_sub(0x1628));
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = 0x28;
+        call_ptr(c, ALLOC, 0x0035_5490)?;
+        c.g[A0][0] = c.g[V0][0];
+        MODIFIER_BLOCK_CTOR.call(c, 0x0035_5498)?;
+        let block = c.g[V0][0];
+        c.sw((c.g[S0][0] as u32).wrapping_add(MODIFIER_BLOCK), block);
+        frame.restore(c, S0, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModObj_SetUVScrollModifier (0x355550)
+
+/// ModObj: its modifier block at +0x1c; the block's UV-scroll slot at +0x4.
+pub(crate) const MOD_OBJ_BLOCK_2: u32 = 0x1c;
+
+pub(crate) const MODIFIER_BLOCK_UV_SCROLL: u32 = 0x4;
+
+/// `void ModObj_SetUVScrollModifier(ModObj* self, UVScrollModifier* v)`
+/// (0x355550): creates the modifier block when absent, else frees the old
+/// UV-scroll modifier, then installs `v` in the block's slot `+0x4`. Returns
+/// the block in v0.
+pub fn mod_obj_set_uv_scroll_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MOD_OBJ_BLOCK_2));
+        let have = c.g[A0][0] != 0;
+        c.g[S1][0] = c.g[A1][0];
+        if have {
+            c.cycles += 3;
+            Callee {
+                addr: 0x0035_3118,
+                f: ee::s11::ModifierBlock_FreeUVScroll,
+            }
+            .call(c, 0x0035_5588)?;
+        } else {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            Callee {
+                addr: 0x0035_5468,
+                f: ee::s11::ModObj_CreateModifierBlock,
+            }
+            .call(c, 0x0035_5578)?;
+        }
+        c.g[V0][0] = c.lw((c.g[S0][0] as u32).wrapping_add(MOD_OBJ_BLOCK_2));
+        c.cycles += 6;
+        frame.restore(c, S0, 0x20);
+        c.sw(
+            (c.g[V0][0] as u32).wrapping_add(MODIFIER_BLOCK_UV_SCROLL),
+            c.g[S1][0],
+        );
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// A virtual call through the vtable at `obj + 0xc` (entries
+/// `{short delta; fn}`): a0 = obj + delta, `jalr fn`.
+pub(crate) fn take_over_vcall(
+    c: &mut Cpu,
+    vt: u32,
+    slot: u32,
+    obj: u32,
+    ret: u32,
+) -> crate::call::Flow {
+    c.g[A0][0] = Addr(vt + slot).lh(c);
+    c.g[V0][0] = Addr(vt + slot + 4).lw(c);
+    let target = r32(c, V0);
+    c.g[A0][0] = sx(obj.wrapping_add(c.g[A0][0] as u32));
+    call_ptr(c, target, ret)
+}
+
+/// `void ModObj_TakeOverObject(ModObj* self, cMoveNode* src)` (0x355f10):
+/// take over another node's place. If `src` has particle modifiers
+/// (vtable +0x80) they move to `self`. If `src`'s world matrix (vtable
+/// +0xc0) is `self`'s own transform (`self->+0x18 + 0x10`), `src` is just
+/// destroyed (vtable +0x8, mode 3); otherwise the matrix is copied, `src`
+/// destroyed (keeping `self`'s transform flags at `+0x18->+8`), a position
+/// modifier built from the copy, `self+0x28` set, and `self`'s vtable
+/// +0x190 called.
+pub fn mod_obj_take_over_object(c: &mut Cpu) {
+    use take_over_callee as f;
+    guest(c, |c| {
+        c.cycles += 7;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S0, 0x60);
+        frame.save(c, S1, 0x50);
+        c.g[S0][0] = c.g[A1][0]; // src
+        frame.save_ra(c, 0x40);
+        c.g[S1][0] = c.g[A0][0]; // self
+        if c.g[S0][0] == 0 {
+            c.cycles += 1;
+            frame.restore(c, S0, 0x60);
+        } else {
+            // Particle modifiers.
+            c.cycles += 7;
+            let src = r32(c, S0);
+            c.g[V1][0] = Addr(src + 0xc).lw(c);
+            let vt = r32(c, V1);
+            c.g[A0][0] = Addr(vt + 0x80).lh(c);
+            c.g[V0][0] = Addr(vt + 0x84).lw(c);
+            let target = r32(c, V0);
+            c.g[A0][0] = sx(src.wrapping_add(c.g[A0][0] as u32));
+            call_ptr(c, target, 0x0035_5f40)?;
+            if c.g[V0][0] != 0 {
+                c.cycles += 4;
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[S0][0];
+                f::TAKE_PARTICLE_MODIFIERS.call(c, 0x0035_5f54)?;
+            }
+            let src = r32(c, S0);
+            c.g[V1][0] = Addr(src + 0xc).lw(c);
+
+            // The source's world matrix.
+            c.cycles += 9;
+            take_over_vcall(c, r32(c, V1), 0xc0, src, 0x0035_5f68)?;
+            c.g[V1][0] = c.g[V0][0];
+            let own = Addr(r32(c, S1) + 0x18).lw(c);
+            c.g[V0][0] = sx((own as u32).wrapping_add(0x10));
+            c.g[A1][0] = 3;
+            if c.g[V1][0] == c.g[V0][0] {
+                // Already ours: destroy the source.
+                c.cycles += 7;
+                let src = r32(c, S0);
+                c.g[V0][0] = Addr(src + 0xc).lw(c);
+                let vt = r32(c, V0);
+                c.g[A0][0] = Addr(vt + 0x8).lh(c);
+                c.g[V1][0] = Addr(vt + 0xc).lw(c);
+                let target = r32(c, V1);
+                c.g[A0][0] = sx(src.wrapping_add(c.g[A0][0] as u32));
+                call_ptr(c, target, 0x0035_5f90)?;
+                frame.restore(c, S0, 0x60);
+            } else {
+                // Copy the matrix, destroy the source keeping our flags.
+                c.cycles += 28;
+                let m = r32(c, V1);
+                let copy = sp(c);
+                c.lqc2(1, m);
+                c.lqc2(2, m + 0x10);
+                c.lqc2(3, m + 0x20);
+                c.lqc2(4, m + 0x30);
+                c.sqc2(1, copy);
+                c.sqc2(2, copy + 0x10);
+                c.sqc2(3, copy + 0x20);
+                c.sqc2(4, copy + 0x30);
+                let src = r32(c, S0);
+                c.g[V0][0] = Addr(src + 0xc).lw(c);
+                let vt = r32(c, V0);
+                c.g[A1][0] = 3;
+                c.g[A2][0] = Addr(r32(c, S1) + 0x18).lw(c);
+                c.g[A0][0] = Addr(vt + 0x8).lh(c);
+                c.g[V1][0] = Addr(vt + 0xc).lw(c);
+                c.g[A0][0] = sx(src.wrapping_add(c.g[A0][0] as u32));
+                let target = r32(c, V1);
+                c.g[S0][0] = Addr(r32(c, A2) + 0x8).lw(c); // kept flags
+                call_ptr(c, target, 0x0035_5fd8)?;
+                let me = r32(c, S1);
+                c.g[V0][0] = Addr(me + 0x18).lw(c);
+                c.g[A0][0] = c.g[S1][0];
+                c.g[A1][0] = c.g[SP][0];
+                Addr(r32(c, V0) + 0x8).sw(c, c.g[S0][0]);
+                f::ADD_POSITION_MODIFIER_FROM_MATRIX.call(c, 0x0035_5fec)?;
+                let me = r32(c, S1);
+                c.g[V0][0] = 1;
+                c.g[V1][0] = Addr(me + 0xc).lw(c);
+                Addr(me + 0x28).sw(c, 1);
+                take_over_vcall(c, r32(c, V1), 0x190, me, 0x0035_6008)?;
+                c.cycles += 1;
+                frame.restore(c, S0, 0x60);
+            }
+        }
+        c.cycles += 4;
+        frame.restore(c, S1, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// ModObj_AddUVScrollModifier (0x355b90)
+
+/// `cMemMan_alloc(size, tag, flags, 0)` (0x317d70), reached through the
+/// function table.
+pub(crate) const OC300_MEM_ALLOC: u32 = 0x0031_7d70;
+
+/// `UVScrollModifier_ctor(mem, desc)` (0x35f6e8), through the table.
+pub(crate) const OC300_UV_SCROLL_MODIFIER_CTOR: u32 = 0x0035_f6e8;
+
+/// The allocation tag of UV-scroll modifiers (0x48e940).
+pub(crate) const OC300_UV_SCROLL_ALLOC_TAG: u32 = 0x0048_e940;
+
+/// Size of a `UVScrollModifier`.
+pub(crate) const OC300_UV_SCROLL_MODIFIER_SIZE: u64 = 0x50;
+
+/// `ModObj_SetUVScrollModifier` (0x355550).
+pub(crate) const OC300_SET_UV_SCROLL_MODIFIER: Callee = Callee {
+    addr: 0x0035_5550,
+    f: ee::s11::ModObj_SetUVScrollModifier,
+};
+
+/// `void ModObj_AddUVScrollModifier(cMoveNode* self, void* desc)`
+/// (0x355b90): allocates a UV-scroll modifier (0x50 bytes), constructs it
+/// from `desc` and installs it in the node's modifier block
+/// (`ModObj_SetUVScrollModifier`).
+pub fn mod_obj_add_uv_scroll_modifier(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 23;
+        let frame = Frame::open(c, 0x30);
+        c.g[A2][0] = 0x2000_0000;
+        frame.save(c, S0, 0x20);
+        c.g[A3][0] = 0;
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A1][0];
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = OC300_UV_SCROLL_MODIFIER_SIZE;
+        c.g[A1][0] = sx(OC300_UV_SCROLL_ALLOC_TAG);
+        call_ptr(c, OC300_MEM_ALLOC, 0x0035_5bc0)?;
+        c.g[A1][0] = c.g[S0][0];
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, OC300_UV_SCROLL_MODIFIER_CTOR, 0x0035_5bcc)?;
+        c.g[A0][0] = c.g[S1][0];
+        c.g[A1][0] = c.g[V0][0];
+        OC300_SET_UV_SCROLL_MODIFIER.call(c, 0x0035_5bd8)?;
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// MultiParticle_Save (0x358380)
+
+/// MultiParticle fields written by its save.
+pub(crate) const MP_COUNT: u32 = 0x4;
+
+pub(crate) const MP_EMITTER: u32 = 0x10;
+
+/// Stream vtable slot `Write(data, size)`.
+pub(crate) const MP_STREAM_WRITE: u32 = 0x8;
+
+// ---------------------------------------------------------------------------
+// MultiParticleMan_Save (0x357ca8)
+
+/// The manager's four MultiParticle slots (one word each).
+pub(crate) const MPM_SLOTS_LAST: u64 = 3;
+
+pub(crate) const MPM_MULTI_PARTICLE_SAVE: Callee = Callee {
+    addr: 0x0035_8380,
+    f: ee::s11::MultiParticle_Save,
+};
+
+/// `void MultiParticleMan_Save(MultiParticleMan* self, Stream* stream)`
+/// (0x357ca8): for each of the four slots writes a "present" word (staged
+/// at `sp+0`) and, when present, the MultiParticle itself.
+pub fn multi_particle_man_save(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        let this = reg(c, A0);
+        set_reg(c, S0, this);
+        frame.save(c, S2, 0x20);
+        let stream = reg(c, A1);
+        set_reg(c, S1, stream);
+        frame.save_ra(c, 0x10);
+        set_reg(c, S2, MPM_SLOTS_LAST);
+        loop {
+            c.cycles += 14;
+            let stream = reg(c, S1);
+            let vt = Addr(stream as u32).lw(c);
+            set_reg(c, A3, vt);
+            let flag_at = sp(c);
+            set_reg(c, A1, sx(flag_at));
+            let particle = Addr(r32(c, S0)).lw(c);
+            set_reg(c, A2, 4);
+            let write = VSlot::read(c, vt, MP_STREAM_WRITE);
+            set_reg(c, S2, sx(r32(c, S2).wrapping_sub(1)));
+            let present = (particle != 0) as u64;
+            set_reg(c, V0, present);
+            set_reg(c, V1, write.func);
+            Addr(flag_at).sw(c, present);
+            set_reg(c, A0, write.this(stream));
+            call_ptr(c, write.func as u32, 0x0035_7cf4)?;
+
+            let present = Addr(sp(c)).lw(c);
+            set_reg(c, V0, present);
+            let stream = reg(c, S1);
+            set_reg(c, A1, stream);
+            if present != 0 {
+                c.cycles += 2;
+                let particle = Addr(r32(c, S0)).lw(c);
+                set_reg(c, A0, particle);
+                MPM_MULTI_PARTICLE_SAVE.call(c, 0x0035_7d08)?;
+            }
+            c.cycles += 2;
+            let more = (reg(c, S2) as i64) >= 0;
+            set_reg(c, S0, sx(r32(c, S0).wrapping_add(4)));
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0035_7cc8);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6348,6 +6737,190 @@ pub(crate) mod tests {
                 c.pc = 0x0035_53c0;
                 c.g[A0][0] = sx(obj);
                 c.g[A1][0] = (r.next_u32() & !1) as u64;
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::game::scripter::ssxscriptengine::tests::{
+        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
+    };
+
+    /// `ModObj_CreateModifierBlock`: the real allocator over the test pool
+    /// and heap (`alloc_machine`) and the real `ModifierBlock_ctor`; the
+    /// object is random bytes.
+    #[test]
+    fn mod_obj_create_modifier_block_matches() {
+        use crate::game::dirtysock::tags2::tests::alloc_machine;
+        check(
+            ee::s11::f_00355468__generated,
+            mod_obj_create_modifier_block,
+            60,
+            &|c, seed| {
+                let mut r = alloc_machine(c, seed, 0x355468);
+                c.pc = 0x0035_5468;
+                fill(c, &mut r, DATA + 0x100, 0x10);
+                c.g[A0][0] = sx(DATA + 0x100);
+            },
+        );
+    }
+
+    /// `ModObj_SetUVScrollModifier`: no block (the real CreateModifierBlock
+    /// over a DLHeap arena), a block with no UV-scroll modifier, and one with
+    /// a live modifier the real FreeUVScroll frees.
+    #[test]
+    fn mod_obj_set_uv_scroll_modifier_matches() {
+        check(
+            ee::s11::f_00355550__generated,
+            mod_obj_set_uv_scroll_modifier,
+            150,
+            &|c, seed| {
+                let _ = machine(c, seed, 0x0035_5550, 0);
+                uv_scroll_heap_init(c);
+                c.pc = 0x0035_5550;
+                let this = DATA;
+                let block = DATA + 0x200;
+                for i in 0..0x20 {
+                    c.bus.write32(this + 4 * i, 0);
+                    c.bus.write32(block + 4 * i, 0);
+                }
+                match seed % 3 {
+                    0 => {}
+                    1 => c.bus.write32(this + MOD_OBJ_BLOCK_2, block),
+                    _ => {
+                        let old = uv_scroll_alloc(c, 0x20);
+                        c.bus.write32(this + MOD_OBJ_BLOCK_2, block);
+                        c.bus.write32(block + MODIFIER_BLOCK_UV_SCROLL, old);
+                    }
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(DATA + 0x400);
+            },
+        );
+    }
+
+    /// `ModObj_TakeOverObject`: no source; a source with or without
+    /// particle modifiers (real `ModObj_TakeParticleModifiers`, short path),
+    /// whose world matrix (a fake, forced result) is `self`'s own transform
+    /// or a separate matrix that is copied into a real position modifier
+    /// (pool allocator, `ModObj_SetTransformModifier`). Destroy and the
+    /// final `self` method are fakes, unwinding on some seeds.
+    #[test]
+    fn mod_obj_take_over_object_matches() {
+        use crate::difftest::fakes::{covered, FAKE, LOG_RESULTS};
+        use crate::game::movie::movieplayer::tests::{alloc_base, ret_slot, RET_ONE, RET_ZERO};
+        covered(
+            ee::s11::f_00355f10__generated,
+            mod_obj_take_over_object,
+            64,
+            &|c, seed| {
+                let mut r = alloc_base(c, seed, 0x35_5f10, 3);
+                let me = DATA + 0x1000;
+                let me_vt = DATA + 0x1400;
+                let src = DATA + 0x2000;
+                let src_vt = DATA + 0x2400;
+                let transform = DATA + 0x3000;
+                let block = DATA + 0x3100;
+                let matrix = DATA + 0x3200;
+                for a in [me, src] {
+                    for i in 0..0x40 {
+                        c.bus.write32(a + 4 * i, 0);
+                    }
+                }
+                c.bus.write32(me + 0xc, me_vt);
+                c.bus.write32(me + 0x18, transform);
+                c.bus.write32(me + 0x1c, block);
+                c.bus.write32(block, 0);
+                c.bus.write32(transform + 0x8, r.next_u32());
+                ret_slot(c, me_vt, 0x188, RET_ZERO);
+                ret_slot(c, me_vt, 0x180, RET_ZERO);
+                ret_slot(c, me_vt, 0x190, FAKE + 0x20);
+                c.bus.write32(src + 0xc, src_vt);
+                ret_slot(
+                    c,
+                    src_vt,
+                    0x80,
+                    if seed % 2 == 0 { RET_ONE } else { RET_ZERO },
+                );
+                ret_slot(c, src_vt, 0xc0, FAKE);
+                ret_slot(c, src_vt, 0x8, FAKE + 0x10);
+                for i in 0..16 {
+                    c.bus.write32(matrix + 4 * i, r.f32(100.0));
+                }
+                let own = seed % 3 == 0;
+                c.bus
+                    .write32(LOG_RESULTS, if own { transform + 0x10 } else { matrix });
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = if seed % 7 == 6 { 0 } else { sx(src) };
+                c.pc = 0x0035_5f10;
+            },
+        );
+    }
+
+    /// The real allocator, UV-scroll constructor and installer: a node with
+    /// or without a modifier block (the block's UV-scroll slot empty, so
+    /// nothing is freed), a random descriptor and a game rate object at
+    /// `gp + 0x2a74` (ticks per second at +0x10).
+    #[test]
+    fn mod_obj_add_uv_scroll_modifier_matches() {
+        use crate::game::fe::debugfe::tests::{pool_allocator, OBJ, OBJ2};
+        const BLOCK: u32 = DATA + 0x4000;
+        const RATE: u32 = DATA + 0x5000;
+        check(
+            ee::s11::f_00355b90__generated,
+            mod_obj_add_uv_scroll_modifier,
+            40,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x355b90, 0);
+                pool_allocator(c);
+                crate::difftest::fill(c, &mut r, OBJ2, 0x10);
+                for i in 0..0x0cu32 {
+                    c.bus.write32(OBJ2 + 8 + 4 * i, r.f32(100.0));
+                }
+                c.bus.write32(GAME_GP + 0x2a74, RATE);
+                c.bus.write32(RATE + 0x10, 1 + r.next_u32() % 120);
+                c.bus
+                    .write32(OBJ + 0x1c, if seed % 2 == 0 { 0 } else { BLOCK });
+                c.g[A0][0] = OBJ as u64;
+                c.g[A1][0] = OBJ2 as u64;
+                c.pc = 0x0035_5b90;
+            },
+        );
+    }
+
+    /// MultiParticleMan_Save: each of the four slots empty or holding a
+    /// MultiParticle (saved by the real MultiParticle_Save and Emitter_Save
+    /// into the fake stream `Write`, some calls unwinding).
+    #[test]
+    fn multi_particle_man_save_matches() {
+        covered(
+            ee::s11::f_00357ca8__generated,
+            multi_particle_man_save,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x35_7ca8, 20);
+                c.pc = 0x0035_7ca8;
+                let vt = vtable(c, &mut r, &[MP_STREAM_WRITE]);
+                let man = DATA + 0x20_0000;
+                let stream = DATA + 0x20_0100;
+                let bits = if seed % 9 == 0 { 0 } else { r.next_u32() };
+                for i in 0..4 {
+                    let particle = DATA + 0x20_1000 + 0x400 * i;
+                    let emitter = particle + 0x200;
+                    fill(c, &mut r, particle, 0x20);
+                    fill(c, &mut r, emitter, 0x10);
+                    c.bus.write32(particle + MP_EMITTER, emitter);
+                    c.bus.write32(particle + MP_COUNT, r.next_u32() % 8);
+                    let present = (bits >> i) & 1 != 0;
+                    c.bus
+                        .write32(man + 4 * i, if present { particle } else { 0 });
+                }
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(man);
+                c.g[A1][0] = sx(stream);
             },
         );
     }

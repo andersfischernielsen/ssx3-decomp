@@ -281,6 +281,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ps2_ai_visual_effects_man_render,
         "PS2AIVisualEffectsMan_Render",
     ),
+    (
+        0x002e_f248,
+        world_painter_save_view_state,
+        "WorldPainter_SaveViewState",
+    ),
 ];
 
 /// `cAirStreamerFX` fields.
@@ -2306,6 +2311,73 @@ pub fn ps2_ai_visual_effects_man_update(c: &mut Cpu) {
     })
 }
 
+/// The `RenderStateMan` entries (0x4fa370, 6 of 0xf0 bytes); each holds a
+/// pointer (+0x20) to the slot of its render-state object.
+pub(crate) const RSM_ENTRIES: u32 = 0x0050_0000 - 0x5c90;
+
+pub(crate) const RSM_ENTRY_SIZE: u32 = 0xf0;
+
+pub(crate) const RSM_ENTRY_OBJECT: u32 = 0x20;
+
+/// One `(*entry->object)->SaveViewState(view)` call: the object's vtable is
+/// at +4, the method at slot +0x200. a0 holds the entry's slot pointer.
+pub(crate) fn world_painter_save_view_call(c: &mut Cpu, slot: u32, back: u32) -> crate::call::Flow {
+    let object = c.lw(slot);
+    c.g[A2][0] = object;
+    let vt = c.lw((object as u32).wrapping_add(4));
+    c.g[V0][0] = vt;
+    let delta = c.lh((vt as u32).wrapping_add(0x200));
+    let method = c.lw((vt as u32).wrapping_add(0x204));
+    c.g[V1][0] = method;
+    c.g[A0][0] = sx((object as u32).wrapping_add(delta as u32));
+    call_ptr(c, method as u32, back)
+}
+
+/// `void WorldPainter_SaveViewState(void* view)` (0x2ef248): lets the
+/// render-state object of each of the six `RenderStateMan` entries save the
+/// view state (vtable +0x200), twice per entry as the original does.
+pub fn world_painter_save_view_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 10;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = sx(RSM_ENTRIES);
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[S2][0] = sx(RSM_ENTRIES + 6 * RSM_ENTRY_SIZE);
+        c.g[V1][0] = c.lw(RSM_ENTRIES + RSM_ENTRY_OBJECT);
+        loop {
+            c.cycles += 19;
+            c.g[A1][0] = c.g[S1][0];
+            let slot = c.g[V1][0] as u32;
+            world_painter_save_view_call(c, slot, 0x002e_f28c)?;
+            let slot = c.lw((c.g[S0][0] as u32).wrapping_add(RSM_ENTRY_OBJECT));
+            c.g[A0][0] = slot;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[S0][0] = sx((c.g[S0][0] as u32).wrapping_add(RSM_ENTRY_SIZE));
+            world_painter_save_view_call(c, slot as u32, 0x002e_f2b0)?;
+            let more = (c.g[S0][0] as i64) < (c.g[S2][0] as i64);
+            c.g[V0][0] = more as u64;
+            if !more {
+                break;
+            }
+            c.g[V1][0] = c.lw((c.g[S0][0] as u32).wrapping_add(RSM_ENTRY_OBJECT));
+            if event_due(c) {
+                deliver_event_here(c, 0x002e_f270);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3279,6 +3351,35 @@ pub(crate) mod tests {
                 c.bus.write32(DATA, imp);
                 c.g[A0][0] = sx(DATA);
                 c.pc = 0x002f_04b0;
+            },
+        );
+    }
+    use super::*;
+
+    /// `WorldPainter_SaveViewState`: the six `RenderStateMan` entries at
+    /// 0x4fa370 point (+0x20) at slots holding objects whose vtable (+4)
+    /// `SaveViewState` slot (+0x200) is a fake (12 calls, some unwind).
+    #[test]
+    fn world_painter_save_view_state_matches() {
+        const SLOTS: u32 = DATA + 0x100;
+        const OBJECTS: u32 = DATA + 0x1000;
+        const VT: u32 = DATA + 0x4000;
+        covered(
+            ee::s09::f_002ef248__generated,
+            world_painter_save_view_state,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2ef248, 12);
+                c.pc = 0x002e_f248;
+                c.bus.write16(VT + 0x200, (r.next_u32() % 0x40) as u16 & !3);
+                c.bus.write32(VT + 0x204, FAKE);
+                for i in 0..6u32 {
+                    let entry = RSM_ENTRIES + RSM_ENTRY_SIZE * i;
+                    c.bus.write32(entry + 0x20, SLOTS + 4 * i);
+                    c.bus.write32(SLOTS + 4 * i, OBJECTS + 0x100 * i);
+                    c.bus.write32(OBJECTS + 0x100 * i + 4, VT);
+                }
+                c.g[A0][0] = sx(DATA + 0x8000 + (r.next_u32() & 0xff0));
             },
         );
     }

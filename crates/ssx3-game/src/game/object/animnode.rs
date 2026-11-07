@@ -3,6 +3,7 @@
 
 use crate::abi;
 use crate::abi::r32;
+use crate::abi::ret;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -46,6 +47,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "AnimObject_IsTimeInWindow",
     ),
     (0x0034_ee68, floating_v01, "Floating_v01"),
+    (
+        0x0034_e448,
+        anim_object_alloc_node_info,
+        "AnimObject_AllocNodeInfo",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -285,6 +291,237 @@ pub fn anim_object_is_time_in_window(c: &mut Cpu) {
     abi::ret(c);
 }
 
+pub(crate) mod aoani {
+
+    /// AnimObject: its resource, the mesh count, the mesh instances, the
+    /// per-node references.
+    pub const RES: u32 = 0x2c;
+
+    pub const MESH_COUNT: u32 = 0x40;
+
+    pub const MESHES: u32 = 0x48;
+
+    pub const REFS: u32 = 0x4c;
+
+    /// Resource: the node definitions.
+    pub const DEF: u32 = 0x80;
+
+    /// Node definitions: count and the 16-byte entries (`+8` the mesh
+    /// source, or 0).
+    pub const DEF_COUNT: u32 = 0x4;
+
+    pub const DEF_ENTRIES: u32 = 0x8;
+
+    pub const ENTRY_SIZE: u32 = 0x10;
+
+    pub const ENTRY_SRC: u32 = 0x8;
+
+    /// A mesh instance (`IntersectInfo`, 0xd0 bytes) and its vtable field.
+    pub const MESH_SIZE: u32 = 0xd0;
+
+    pub const MESH_VTABLE: u32 = 0x84;
+
+    /// Allocation names and the `IntersectInfo` vtables (base, then final).
+    pub const MESH_NAME: u64 = 0x0048_e860;
+
+    pub const REF_NAME: u64 = 0x0048_e870;
+
+    pub const BASE_VTABLE: u64 = 0x0049_0af0;
+
+    pub const VTABLE: u64 = 0x0049_0ad0;
+}
+
+pub(crate) const AOANI_CLEAR: Callee = Callee {
+    addr: 0x0035_13d0,
+    f: ee::s11::IntersectInfo_Clear,
+};
+
+pub(crate) const AOANI_SET_SOURCE: Callee = Callee {
+    addr: 0x0035_1398,
+    f: ee::s11::IntersectInfo_SetSource,
+};
+
+/// `void AnimObject_AllocNodeInfo(AnimObject* self)` (0x34e448): count the
+/// node definitions that have a mesh source, allocate that many mesh
+/// instances (`new IntersectInfo[n]`: a count word, then each one cleared
+/// and given its identity matrix) and one 32-byte reference per node, then
+/// point each mesh instance at its node's source.
+pub fn anim_object_alloc_node_info(c: &mut Cpu) {
+    use aoani::*;
+    let frame = Frame { size: 0xb0 };
+    guest(c, |c| {
+        c.cycles += 19;
+        Frame::open(c, 0xb0);
+        frame.save(c, S1, 0x90);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S0, 0xa0);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S2, 0x80);
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save(c, FP, 0x20);
+        frame.save_ra(c, 0x10);
+        let this = r32(c, S3);
+        c.g[V0][0] = Addr(this).off(RES).lw(c);
+        c.g[S4][0] = Addr(r32(c, V0)).off(DEF).lw(c);
+        let def = r32(c, S4);
+        c.g[S0][0] = Addr(def).off(DEF_ENTRIES).lw(c);
+        Addr(this).off(MESH_COUNT).sw(c, 0);
+        c.g[V0][0] = Addr(def).off(DEF_COUNT).lw(c);
+        c.g[S1][0] = 0;
+        // Count the nodes with a mesh source.
+        if c.g[V0][0] as i64 > 0 {
+            c.cycles += 1;
+            loop {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(r32(c, S0)).off(ENTRY_SRC).lw(c);
+                if c.g[V0][0] != 0 {
+                    c.cycles += 4;
+                    let n = Addr(this).off(MESH_COUNT).lw(c);
+                    c.g[V0][0] = sx((n as u32).wrapping_add(1));
+                    let n = c.g[V0][0];
+                    Addr(this).off(MESH_COUNT).sw(c, n);
+                }
+                c.g[V0][0] = Addr(def).off(DEF_COUNT).lw(c);
+                c.cycles += 4;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(ENTRY_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_e498);
+                }
+            }
+        }
+        // The mesh instances (the refs pointer's address at sp+0).
+        c.cycles += 3;
+        c.g[S1][0] = Addr(this).off(MESH_COUNT).lw(c);
+        c.g[A0][0] = MESH_SIZE as u64;
+        if c.g[S1][0] != 0 {
+            c.cycles += 15;
+            c.g[V0][0] = sx(this.wrapping_add(REFS));
+            c.mult(0, A0, S1, A0);
+            c.g[A1][0] = MESH_NAME;
+            c.g[A2][0] = 0x2000_0000;
+            c.g[A3][0] = 0;
+            let refs_at = c.g[V0][0];
+            Addr(sp(c)).sw(c, refs_at);
+            c.g[FP][0] = sx(this.wrapping_add(MESHES));
+            c.g[S2][0] = sx(r32(c, S1).wrapping_sub(1));
+            c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x10));
+            call_ptr(c, 0x0031_7e30, 0x0034_e4fc)?; // operator_new_named
+            c.g[S5][0] = sx(r32(c, V0).wrapping_add(0x10));
+            let count = c.g[S1][0];
+            Addr(r32(c, V0)).sw(c, count);
+            c.g[S0][0] = c.g[S5][0];
+            if c.g[S1][0] != 0 {
+                c.cycles += 5;
+                c.g[V0][0] = 0x0049_0000;
+                c.g[V1][0] = 0x0049_0000;
+                c.g[S7][0] = BASE_VTABLE;
+                c.g[S6][0] = VTABLE;
+                c.g[S1][0] = u64::MAX;
+                loop {
+                    c.cycles += 9;
+                    c.g[A0][0] = c.g[S0][0];
+                    let mesh = r32(c, S0);
+                    let base_vt = c.g[S7][0];
+                    Addr(mesh).off(MESH_VTABLE).sw(c, base_vt);
+                    AOANI_CLEAR.call(c, 0x0034_e52c)?;
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_sub(1));
+                    let mesh = r32(c, S0);
+                    let vt = c.g[S6][0];
+                    Addr(mesh).off(MESH_VTABLE).sw(c, vt);
+                    c.g[A0][0] = c.g[S0][0];
+                    call_ptr(c, 0x0036_12c0, 0x0034_e53c)?; // IntersectInfo_ResetMatrix
+                    let more = c.g[S2][0] != c.g[S1][0];
+                    c.g[S0][0] = sx(r32(c, S0).wrapping_add(MESH_SIZE));
+                    if !more {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x0034_e520);
+                    }
+                }
+            }
+            c.cycles += 2;
+            let meshes = c.g[S5][0];
+            Addr(r32(c, FP)).sw(c, meshes);
+        } else {
+            c.cycles += 3;
+            Addr(this).off(MESHES).sw(c, 0);
+            c.g[V1][0] = sx(this.wrapping_add(REFS));
+            let refs_at = c.g[V1][0];
+            Addr(sp(c)).sw(c, refs_at);
+        }
+        // The node references (32 bytes each).
+        c.cycles += 9;
+        c.g[S0][0] = Addr(r32(c, S4)).off(DEF_COUNT).lw(c);
+        c.g[A1][0] = REF_NAME;
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = sx(r32(c, S0) << 5);
+        call_ptr(c, 0x0031_7e30, 0x0034_e574)?; // operator_new_named
+        c.g[V1][0] = sx(r32(c, S0).wrapping_sub(1));
+        if c.g[S0][0] != 0 {
+            c.cycles += 1;
+            c.g[A0][0] = u64::MAX;
+        }
+        c.cycles += 6;
+        c.g[V1][0] = Addr(sp(c)).lw(c);
+        c.g[S1][0] = 0;
+        let refs = c.g[V0][0];
+        Addr(r32(c, V1)).sw(c, refs);
+        let def = r32(c, S4);
+        c.g[V0][0] = Addr(def).off(DEF_COUNT).lw(c);
+        c.g[S0][0] = Addr(def).off(DEF_ENTRIES).lw(c);
+        // Point each mesh instance at its node's source.
+        if c.g[V0][0] as i64 > 0 {
+            c.cycles += 2;
+            c.g[S2][0] = 0;
+            loop {
+                c.cycles += 3;
+                c.g[A1][0] = Addr(r32(c, S0)).off(ENTRY_SRC).lw(c);
+                if c.g[A1][0] != 0 {
+                    c.cycles += 5;
+                    let meshes = Addr(r32(c, S3)).off(MESHES).lw(c);
+                    c.g[A0][0] = sx((meshes as u32).wrapping_add(r32(c, S2)));
+                    c.g[S2][0] = sx(r32(c, S2).wrapping_add(MESH_SIZE));
+                    AOANI_SET_SOURCE.call(c, 0x0034_e5bc)?;
+                }
+                c.g[V0][0] = Addr(r32(c, S4)).off(DEF_COUNT).lw(c);
+                c.cycles += 4;
+                c.g[S1][0] = sx(r32(c, S1).wrapping_add(1));
+                c.g[V0][0] = ((c.g[S1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_add(ENTRY_SIZE));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0034_e5a0);
+                }
+            }
+        }
+        c.cycles += 12;
+        frame.restore(c, S0, 0xa0);
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore(c, FP, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -427,5 +664,60 @@ pub(crate) mod tests {
                 w(c, DATA + 0xc, fb(end));
             },
         );
+    }
+    use super::*;
+    use crate::difftest::{elf_image, put_vec};
+
+    /// `AnimObject_AllocNodeInfo`: 0..6 node definitions, each with or
+    /// without a mesh source (no meshes at all for some seeds); the real
+    /// `operator_new_named` allocates from the test pools / heap, the real
+    /// `IntersectInfo_Clear` / `ResetMatrix` / `SetSource` fill them.
+    #[test]
+    fn anim_object_alloc_node_info_matches() {
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        const SELF: u32 = DATA + 0x20_0000;
+        const RES: u32 = SELF + 0x100;
+        const DEF: u32 = SELF + 0x200;
+        const ENTRIES: u32 = SELF + 0x300;
+        const SOURCES: u32 = SELF + 0x400;
+        check(
+            ee::s11::f_0034e448__generated,
+            anim_object_alloc_node_info,
+            200,
+            &|c, seed| {
+                let mut r = alloc_machine(c, seed, 0x34_e448);
+                aoani_identity_matrix(c);
+                c.pc = 0x0034_e448;
+                c.g[A0][0] = sx(SELF);
+                c.bus.write32(SELF + 0x2c, RES);
+                c.bus.write32(SELF + 0x40, r.next_u32());
+                c.bus.write32(RES + 0x80, DEF);
+                let count = seed % 7;
+                c.bus.write32(DEF + 4, count);
+                c.bus.write32(DEF + 8, ENTRIES);
+                for i in 0..count {
+                    let src = if seed % 5 == 0 || r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        SOURCES + 0x20 * i
+                    };
+                    c.bus.write32(ENTRIES + 0x10 * i + 8, src);
+                    for k in 0..6 {
+                        c.bus.write32(SOURCES + 0x20 * i + 4 * k, r.f32(100.0));
+                    }
+                }
+            },
+        );
+    }
+
+    /// The identity matrix `IntersectInfo_ResetMatrix` copies (0x4ff1a0).
+    pub(crate) fn aoani_identity_matrix(c: &mut ssx3_ee_rt::Cpu) {
+        for i in 0..4u32 {
+            put_vec(c, 0x004f_f1a0 + 0x10 * i, {
+                let mut v = [0u32; 4];
+                v[i as usize] = 0x3f80_0000;
+                v
+            });
+        }
     }
 }

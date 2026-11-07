@@ -687,6 +687,41 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         ssx_audio_system_play_grab_trick_sound,
         "SSXAudioSystem_PlayGrabTrickSound",
     ),
+    (
+        0x0029_2508,
+        ssx_audio_system_start_board_edge_loop,
+        "SSXAudioSystem_StartBoardEdgeLoop",
+    ),
+    (
+        0x0029_6e80,
+        ssx_audio_system_start_wipeout_loop2,
+        "SSXAudioSystem_StartWipeoutLoop2",
+    ),
+    (
+        0x0029_7950,
+        ssx_audio_system_start_object_loop,
+        "SSXAudioSystem_StartObjectLoop",
+    ),
+    (
+        0x0029_f0a0,
+        ssx_audio_system_is_speech_volume_on,
+        "SSXAudioSystem_IsSpeechVolumeOn",
+    ),
+    (
+        0x002a_0560,
+        ssx_audio_system_rider_say_207d,
+        "SSXAudioSystem_RiderSay207D",
+    ),
+    (
+        0x002a_5cd8,
+        crowd_audio_instance_set_source_param,
+        "CrowdAudio_InstanceSetSourceParam",
+    ),
+    (
+        0x002a_77a8,
+        crowd_audio_pitch_bend_callback,
+        "CrowdAudio_PitchBendCallback",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14866,6 +14901,2112 @@ pub(crate) fn play_object_sound_body(c: &mut Cpu) -> Result<bool, crate::call::U
     Ok(true)
 }
 
+pub(crate) mod rs207d {
+
+    /// `float` along-track progress; speech only while it is negative.
+    pub const PROGRESS: u32 = 0x470;
+
+    /// `float` heading angle (radians) of the passed rider.
+    pub const HEADING: u32 = 0x4cc;
+
+    /// The rider's embedded scripting object (its vtable pointer).
+    pub const OBJ: u32 = 0x6c0;
+
+    /// "Local" flag (0: not the local player).
+    pub const LOCAL: u32 = 0x87c;
+
+    /// Object vtable slots (`{i16 delta; pad; fn}`): direction vector,
+    /// position, "is AI".
+    pub const VT_DIR: u32 = 0x10;
+
+    pub const VT_POS: u32 = 0x28;
+
+    pub const VT_IS_AI: u32 = 0x48;
+
+    /// Audio system: the speech system and the last pass time.
+    pub const SPEECH: u32 = 0x5560;
+
+    pub const LAST_PASS: u32 = 0x582c;
+
+    /// Race manager: the race time.
+    pub const RACE_TIME: u32 = 0x8;
+
+    /// gp: speech settings (`+0x550` speech mode), the post hook, the
+    /// listener radius and the three distance limits.
+    pub const SPEECH_SETTINGS_GP: u32 = 0x84c;
+
+    pub const SPEECH_MODE: u32 = 0x550;
+
+    pub const POST_HOOK_GP: u32 = 0x173c;
+
+    pub const RADIUS_GP: u32 = 0x5e8;
+
+    pub const MIN_GAP_GP: u32 = 0x456c;
+
+    pub const MAX_GAP_GP: u32 = 0x4568;
+
+    pub const FAR_GAP_GP: u32 = 0x4564;
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_StartObjectLoop
+
+/// `SSXAudioSystem` word that gates object loops: they start only while it
+/// is negative.
+pub(crate) const SOL_GATE: u32 = 0x62a8;
+
+/// `SSXAudioSystem` object-loop slots: 30 records of 0x30 bytes.
+pub(crate) const SOL_SLOTS: u32 = 0x5a00;
+
+pub(crate) const SOL_SLOT_SIZE: u32 = 0x30;
+
+pub(crate) const SOL_SLOT_COUNT: u32 = 30;
+
+/// Slot fields: in use (1 = playing), the object, the bone (-1: the whole
+/// object), the 3D position the push entry points at, the sound id and the
+/// bank-monitor handle.
+pub(crate) const SOL_ACTIVE: u32 = 0x0;
+
+pub(crate) const SOL_OBJECT: u32 = 0x4;
+
+pub(crate) const SOL_BONE: u32 = 0x8;
+
+pub(crate) const SOL_POSITION: u32 = 0x10;
+
+pub(crate) const SOL_SOUND: u32 = 0x20;
+
+pub(crate) const SOL_HANDLE: u32 = 0x24;
+
+/// The object's scene node (vtable at node + 0xc) and its fallback position.
+pub(crate) const SOL_OBJ_NODE: u32 = 0xc;
+
+pub(crate) const SOL_OBJ_POSITION: u32 = 0x40;
+
+/// Node vtable slots ({delta: i16, pad, fn}): the node's transform, the
+/// bone lookup, the bone's transform (all return a matrix; its
+/// translation row is at +0x30).
+pub(crate) const SOL_VT_TRANSFORM: u32 = 0xc0;
+
+pub(crate) const SOL_VT_HAS_BONE: u32 = 0xd0;
+
+pub(crate) const SOL_VT_BONE_TRANSFORM: u32 = 0xe8;
+
+/// Sound ids with a track check: 0x66 only plays on tracks whose record
+/// says so; 201 gets the long radius on track kind 8.
+pub(crate) const SOL_TRACK_SOUND: u64 = 0x66;
+
+pub(crate) const SOL_RADIUS_SOUND: u64 = 0xc9;
+
+/// Push-queue tables of the bank monitor (`*sys->sndRoot`): the gain
+/// pointers and the priorities, indexed by the push count.
+pub(crate) const SOL_MONITOR_GAINS: u32 = 0x214;
+
+pub(crate) const SOL_MONITOR_PRIORITIES: u32 = 0x250;
+
+/// The push entry's position pointer array (`monitor + 0x1fc + 4 * count`).
+pub(crate) const SOL_MONITOR_POSITIONS: u32 = 0x1fc;
+
+pub(crate) const SOL_STOP_HANDLE: Callee = Callee {
+    addr: 0x002a_d5f0,
+    f: ee::s08::BankMonitor_StopHandle,
+};
+
+pub(crate) const SOL_SET_RADIUS_VANISH: Callee = Callee {
+    addr: 0x002a_9988,
+    f: ee::s08::SndPlayParams_SetRadiusVanish,
+};
+
+/// `cBE_getBE`, `SSXAudioSystem_GetBELibrary`, `BELibrary_GetInterface`,
+/// the current track record (`0x43d950 + 100 * track`), `memset`,
+/// `SSXAudioSystem_GetChannelGainPtr`, `Audio_PlayPushedSound` (called
+/// through the function table).
+pub(crate) const SOL_GET_BE: u32 = 0x0014_dc80;
+
+pub(crate) const SOL_GET_BE_LIBRARY: u32 = 0x0028_b1e8;
+
+pub(crate) const SOL_GET_INTERFACE: u32 = 0x0014_dd58;
+
+pub(crate) const SOL_TRACK_RECORD: u32 = 0x0014_4bc0;
+
+pub(crate) const SOL_MEMSET: u32 = 0x0041_6210;
+
+pub(crate) const SOL_GET_CHANNEL_GAIN: u32 = 0x0028_7968;
+
+pub(crate) const SOL_PLAY_PUSHED: u32 = 0x0029_06b8;
+
+/// `void SSXAudioSystem_StartObjectLoop(SSXAudioSystem* sys, Object* obj,
+/// int sound, int bone)` (0x297950): start a looping 3D sound attached to
+/// an object (or one of its bones). Sound 0 does nothing; sound 0x66 only
+/// on tracks whose record allows it; nothing while the system's loop gate
+/// (`+0x62a8`) is non-negative or the object has no scene node. A loop of
+/// the same sound already playing on the object is stopped first. The loop
+/// takes a free slot of 30 (none free: nothing), whose position comes from
+/// the node's (or bone's) transform or the object's position; the sound id
+/// selects bank 2 (< 100), 8 (< 150), 9 (< 200) or 4 with the sample index
+/// relative to the bank's base. It is pushed on the bank monitor's queue
+/// (volume 100, pan 90, 50, 127; radius 300, or 400 with priority 50 for
+/// sound 201 on track kind 8, otherwise priority 80), played, and the
+/// handle kept in the slot.
+pub fn ssx_audio_system_start_object_loop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xb0);
+        frame.save(c, S1, 0x80);
+        frame.save(c, S2, 0x70);
+        c.g[S1][0] = c.g[A1][0]; // obj
+        frame.save(c, S3, 0x60);
+        c.g[S2][0] = c.g[A2][0]; // sound
+        frame.save(c, S5, 0x40);
+        c.g[S3][0] = c.g[A0][0]; // sys
+        frame.save(c, S0, 0x90);
+        c.g[S5][0] = c.g[A3][0]; // bone
+        frame.save(c, S4, 0x50);
+        frame.save(c, S6, 0x30);
+        frame.save(c, S7, 0x20);
+        frame.save_ra(c, 0x10);
+        frame.save_fpr(c, 20, 0xa0);
+        start_object_loop_body(c, frame)?;
+        c.cycles += 11;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.restore_fpr(c, 20, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Everything between prologue and epilogue; every way out restores s0
+/// (the original reloads it in branch delay slots, or at 0x297e84).
+pub(crate) fn start_object_loop_body(c: &mut Cpu, frame: Frame) -> Flow {
+    if !start_object_loop_allowed(c, frame)? {
+        return Ok(());
+    }
+    if !start_object_loop_claim_slot(c, frame)? {
+        return Ok(());
+    }
+    start_object_loop_position(c)?;
+    start_object_loop_bank(c);
+    start_object_loop_radius(c)?;
+    start_object_loop_push_and_play(c)?;
+    c.cycles += 1;
+    frame.restore(c, S0, 0x90);
+    Ok(())
+}
+
+/// The early outs: sound 0, sound 0x66 on a track whose record word is 0,
+/// a non-negative gate, an object without a scene node. Leaves a1 = 1.
+pub(crate) fn start_object_loop_allowed(c: &mut Cpu, frame: Frame) -> Result<bool, Unwound> {
+    if c.g[S2][0] == 0 {
+        c.cycles += 1;
+        frame.restore(c, S0, 0x90);
+        return Ok(false);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = SOL_TRACK_SOUND;
+    if c.g[S2][0] != c.g[V0][0] {
+        c.g[V0][0] = Addr(r32(c, S3)).off(SOL_GATE).lw(c);
+    } else {
+        c.cycles += 10;
+        call_ptr(c, SOL_GET_BE, 0x0029_79a4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, SOL_GET_INTERFACE, 0x0029_79b0)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, SOL_TRACK_RECORD, 0x0029_79b8)?;
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+        frame.restore(c, S0, 0x90);
+        if c.g[V1][0] == 0 {
+            return Ok(false);
+        }
+        c.cycles += 1;
+        c.g[V0][0] = Addr(r32(c, S3)).off(SOL_GATE).lw(c);
+    }
+    c.cycles += 2;
+    frame.restore(c, S0, 0x90);
+    if (c.g[V0][0] as i64) >= 0 {
+        return Ok(false);
+    }
+    c.cycles += 3;
+    c.g[V0][0] = Addr(r32(c, S1)).off(SOL_OBJ_NODE).lw(c);
+    c.g[A1][0] = 1;
+    Ok(c.g[V0][0] != 0)
+}
+
+/// Stop the first slot playing this sound on this object, then take the
+/// first free slot (s4 = its index). False (s0 restored) when all 30 are
+/// in use.
+pub(crate) fn start_object_loop_claim_slot(c: &mut Cpu, frame: Frame) -> Result<bool, Unwound> {
+    c.cycles += 3;
+    c.g[S0][0] = c.g[S3][0];
+    c.g[A0][0] = sx(r32(c, S3).wrapping_add(SOL_SLOT_COUNT * SOL_SLOT_SIZE));
+    c.g[V1][0] = c.g[S0][0];
+    loop {
+        // 0x2979e8: slot at v1 (= s0).
+        c.cycles += 3;
+        let slot = Addr(r32(c, V1)).off(SOL_SLOTS);
+        c.g[V0][0] = slot.off(SOL_ACTIVE).lw(c);
+        if c.g[V0][0] == c.g[A1][0] {
+            c.cycles += 3;
+            c.g[V0][0] = slot.off(SOL_OBJECT).lw(c);
+            if c.g[V0][0] == c.g[S1][0] {
+                c.cycles += 3;
+                c.g[V0][0] = slot.off(SOL_SOUND).lw(c);
+                if c.g[V0][0] == c.g[S2][0] {
+                    c.g[V0][0] = Addr(r32(c, S3)).off(AUDIO_SYS_SND_ROOT).lw(c);
+                    start_object_loop_stop_slot(c)?;
+                    break;
+                }
+                c.cycles += 1;
+            }
+        }
+        c.g[S0][0] = sx(r32(c, S0).wrapping_add(SOL_SLOT_SIZE));
+        // 0x297a10
+        c.cycles += 3;
+        c.g[V0][0] = ((c.g[S0][0] as i64) < (c.g[A0][0] as i64)) as u64;
+        c.g[V1][0] = c.g[S0][0];
+        if c.g[V0][0] == 0 {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, 0x0029_79e8);
+        }
+    }
+
+    // 0x297a1c: the first free slot.
+    c.cycles += 3;
+    c.g[V0][0] = Addr(r32(c, S3)).off(SOL_SLOTS + SOL_ACTIVE).lw(c);
+    c.g[S4][0] = 0;
+    if c.g[V0][0] == 0 {
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        Addr(r32(c, S3))
+            .off(SOL_SLOTS + SOL_ACTIVE)
+            .sw(c, c.g[V0][0]);
+    } else {
+        c.cycles += 1;
+        c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+        loop {
+            // 0x297a5c
+            c.cycles += 3;
+            let more = (c.g[S4][0] as i64) < SOL_SLOT_COUNT as i64;
+            c.g[V0][0] = SOL_SLOT_SIZE as u64;
+            if !more {
+                break;
+            }
+            c.cycles += 5;
+            c.mult(0, V1, S4, V0);
+            c.g[A0][0] = sx(r32(c, V1).wrapping_add(r32(c, S3)));
+            c.g[V1][0] = Addr(r32(c, A0)).off(SOL_SLOTS + SOL_ACTIVE).lw(c);
+            if c.g[V1][0] == 0 {
+                c.cycles += 2;
+                c.g[V0][0] = 1;
+                Addr(r32(c, A0))
+                    .off(SOL_SLOTS + SOL_ACTIVE)
+                    .sw(c, c.g[V0][0]);
+                break;
+            }
+            c.g[S4][0] = sx(r32(c, S4).wrapping_add(1));
+            if event_due(c) {
+                deliver_event_here(c, 0x0029_7a5c);
+            }
+        }
+    }
+
+    // 0x297a84
+    c.cycles += 3;
+    let full = c.g[S4][0] == SOL_SLOT_COUNT as u64;
+    c.g[V0][0] = SOL_SLOT_SIZE as u64;
+    if full {
+        c.cycles += 1;
+        frame.restore(c, S0, 0x90);
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// 0x297a34: `BankMonitor_StopHandle(&(*sys->sndRoot)->monitor,
+/// slot->handle, 0.0f, 1)` and free the slot (s0 = slot - 0x5a00, v0 =
+/// sys->sndRoot).
+pub(crate) fn start_object_loop_stop_slot(c: &mut Cpu) -> Flow {
+    c.cycles += 8;
+    c.g[A2][0] = 1;
+    c.g[A1][0] = Addr(r32(c, S0)).off(SOL_SLOTS + SOL_HANDLE).lw(c);
+    c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+    c.f[12] = 0; // fade time 0.0
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(MONITOR_PUSH_QUEUE));
+    SOL_STOP_HANDLE.call(c, 0x0029_7a4c)?;
+    Addr(r32(c, S0)).off(SOL_SLOTS + SOL_ACTIVE).sw(c, 0);
+    if event_due(c) {
+        deliver_event_here(c, 0x0029_7a1c);
+    }
+    Ok(())
+}
+
+/// `node->vtable[slot](node + delta, ...)` with the node (`obj->node`) in
+/// `node_reg`; returns to `ret`.
+pub(crate) fn start_object_loop_node_call(
+    c: &mut Cpu,
+    node_reg: usize,
+    slot: u32,
+    ret: u32,
+) -> Flow {
+    c.g[node_reg][0] = Addr(r32(c, S1)).off(SOL_OBJ_NODE).lw(c);
+    c.g[V1][0] = Addr(r32(c, node_reg)).off(0xc).lw(c);
+    c.g[A0][0] = Addr(r32(c, V1)).off(slot).lh(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(slot + 4).lw(c);
+    let target = r32(c, V0);
+    c.g[A0][0] = sx(r32(c, node_reg).wrapping_add(r32(c, A0)));
+    call_ptr(c, target, ret)
+}
+
+/// Fill the slot (s0 = sys + 0x30 * s4): the object, and the position
+/// (also kept at sp+0): the node's translation for bone -1, else the
+/// bone's translation, or the object's position when the node has no such
+/// bone.
+pub(crate) fn start_object_loop_position(c: &mut Cpu) -> Flow {
+    c.cycles += 5;
+    c.g[V1][0] = u64::MAX;
+    c.mult(0, A0, S4, V0);
+    c.g[S0][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
+    let whole_object = c.g[S5][0] == c.g[V1][0];
+    Addr(r32(c, S0))
+        .off(SOL_SLOTS + SOL_OBJECT)
+        .sw(c, c.g[S1][0]);
+    let reg = if whole_object {
+        c.cycles += 8;
+        start_object_loop_node_call(c, A1, SOL_VT_TRANSFORM, 0x0029_7abc)?;
+        c.lq(V1, r32(c, V0).wrapping_add(0x30));
+        V1
+    } else {
+        c.cycles += 8;
+        start_object_loop_node_call(c, A1, SOL_VT_HAS_BONE, 0x0029_7adc)?;
+        let has_bone = c.g[V0][0] != 0;
+        c.g[A1][0] = c.g[S5][0];
+        if has_bone {
+            c.cycles += 7;
+            start_object_loop_node_call(c, A2, SOL_VT_BONE_TRANSFORM, 0x0029_7afc)?;
+            c.lq(V1, r32(c, V0).wrapping_add(0x30));
+            V1
+        } else {
+            c.cycles += 3;
+            c.lq(V0, r32(c, S1).wrapping_add(SOL_OBJ_POSITION));
+            c.sq(V0, r32(c, S0).wrapping_add(SOL_SLOTS + SOL_POSITION));
+            c.sq(V0, sp(c));
+            return Ok(());
+        }
+    };
+    c.cycles += 3;
+    c.sq(reg, r32(c, S0).wrapping_add(SOL_SLOTS + SOL_POSITION));
+    c.sq(reg, sp(c));
+    Ok(())
+}
+
+/// Keep the bone in the slot; the bank (s6) and sample index (s5) from the
+/// sound id: < 100 bank 2, < 150 bank 8, < 200 bank 9, else bank 4.
+pub(crate) fn start_object_loop_bank(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = SOL_SLOT_SIZE as u64;
+    c.g[V1][0] = ((c.g[S2][0] as i64) < 100) as u64;
+    c.mult(0, A0, S4, V0);
+    c.g[V0][0] = sx(r32(c, A0).wrapping_add(r32(c, S3)));
+    Addr(r32(c, V0)).off(SOL_SLOTS + SOL_BONE).sw(c, c.g[S5][0]);
+    let sound = r32(c, S2);
+    if c.g[V1][0] != 0 {
+        c.cycles += 3;
+        c.g[S6][0] = 2;
+        c.g[S5][0] = c.g[S2][0];
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[S2][0] as i64) < 150) as u64;
+    c.g[S6][0] = 8;
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.g[S5][0] = sx(sound.wrapping_sub(100));
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = ((c.g[S2][0] as i64) < 200) as u64;
+    c.g[S6][0] = 9;
+    if c.g[V0][0] != 0 {
+        c.cycles += 2;
+        c.g[S5][0] = sx(sound.wrapping_sub(150));
+        return;
+    }
+    c.cycles += 2;
+    c.g[S6][0] = 4;
+    c.g[S5][0] = sx(sound.wrapping_sub(200));
+}
+
+/// Keep the sound id in the slot; radius (f20) 300 and priority (s7) 80,
+/// or 400 and 50 for sound 201 on a track whose record word is 8. Leaves
+/// s0 = sys->monitor.
+pub(crate) fn start_object_loop_radius(c: &mut Cpu) -> Flow {
+    c.cycles += 9;
+    c.g[V0][0] = SOL_SLOT_SIZE as u64;
+    c.g[AT][0] = 0x4396_0000; // 300.0f
+    c.mtc1(AT, 20);
+    c.mult(0, V1, S4, V0);
+    c.g[S7][0] = 0x50;
+    c.g[V0][0] = sx(r32(c, V1).wrapping_add(r32(c, S3)));
+    c.g[V1][0] = SOL_RADIUS_SOUND;
+    Addr(r32(c, V0))
+        .off(SOL_SLOTS + SOL_SOUND)
+        .sw(c, c.g[S2][0]);
+    if c.g[S2][0] == c.g[V1][0] {
+        c.cycles += 11;
+        call_ptr(c, SOL_GET_BE_LIBRARY, 0x0029_7b98)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, SOL_GET_INTERFACE, 0x0029_7ba4)?;
+        c.g[A0][0] = c.g[V0][0];
+        call_ptr(c, SOL_TRACK_RECORD, 0x0029_7bac)?;
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+        c.g[V0][0] = 8;
+        if c.g[V1][0] != c.g[V0][0] {
+            c.g[S0][0] = Addr(r32(c, S3)).off(AUDIO_SYS_MONITOR).lw(c);
+            return Ok(());
+        }
+        c.cycles += 3;
+        c.g[AT][0] = 0x43c8_0000; // 400.0f
+        c.mtc1(AT, 20);
+        c.g[S7][0] = 0x32;
+    }
+    c.cycles += 1;
+    c.g[S0][0] = Addr(r32(c, S3)).off(AUDIO_SYS_MONITOR).lw(c);
+    Ok(())
+}
+
+/// 0x297bcc: push a new entry on the monitor's queue (s0 = monitor, s1 =
+/// its queue at +0x1d8): count += 1, copy the 24-byte template into the
+/// entry's record, clear its fields, volume 100 / pan 90, 50 / 127 / 1,
+/// bank s6 and sample s5 in the system's push tables, the channel gain
+/// pointer, the slot's position, radius f20 (vanish -1), priority s7; then
+/// `Audio_PlayPushedSound(sys)` and keep the handle in the slot.
+pub(crate) fn start_object_loop_push_and_play(c: &mut Cpu) -> Flow {
+    c.cycles += 174;
+    let monitor = r32(c, S0);
+    c.g[T1][0] = 0x18; // record size
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 0x8;
+    c.g[V0][0] = Addr(monitor).off(MONITOR_PUSH_COUNT).lw(c);
+    c.g[S1][0] = sx(monitor.wrapping_add(MONITOR_PUSH_QUEUE));
+    let queue = r32(c, S1);
+    c.g[S2][0] = SOL_SLOT_SIZE as u64;
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(1));
+    Addr(monitor).off(MONITOR_PUSH_COUNT).sw(c, c.g[V0][0]);
+    c.g[V1][0] = Addr(monitor).off(MONITOR_PUSH_COUNT).lw(c);
+    c.g[V0][0] = Addr(queue).off(0x20).lw(c);
+    c.mult(0, V1, V1, T1);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    c.ldl(A0, monitor.wrapping_add(0x1e3));
+    c.ldr(A0, monitor.wrapping_add(0x1dc));
+    c.ldl(A3, monitor.wrapping_add(0x1eb));
+    c.ldr(A3, monitor.wrapping_add(0x1e4));
+    c.ldl(T0, monitor.wrapping_add(0x1f3));
+    c.ldr(T0, monitor.wrapping_add(0x1ec));
+    let record = r32(c, V1);
+    c.sdl(A0, record.wrapping_add(0x7));
+    c.sdr(A0, record);
+    c.sdl(A3, record.wrapping_add(0xf));
+    c.sdr(A3, record.wrapping_add(0x8));
+    c.sdl(T0, record.wrapping_add(0x17));
+    c.sdr(T0, record.wrapping_add(0x10));
+    // monitor->positions[count] = 0 (set below).
+    c.g[V0][0] = Addr(monitor).off(MONITOR_PUSH_COUNT).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(monitor.wrapping_add(r32(c, V0)));
+    Addr(r32(c, V0)).off(SOL_MONITOR_POSITIONS).sw(c, 0);
+    boost_empty_store_entry(c, (V1, V0), 0x34, 2, 0, 0);
+    // table 0x38 [count] = the first byte of the entry's record.
+    c.g[A3][0] = Addr(monitor).off(MONITOR_PUSH_COUNT).lw(c);
+    c.g[A0][0] = Addr(monitor).off(MONITOR_PUSH_COUNT).lw(c);
+    c.g[T0][0] = Addr(queue).off(0x20).lw(c);
+    c.g[A3][0] = sx(r32(c, A3) << 2);
+    c.mult(0, A0, A0, T1);
+    c.g[V0][0] = Addr(queue).off(0x38).lw(c);
+    c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, T0)));
+    c.g[V1][0] = Addr(r32(c, A0)).lb(c);
+    Addr(r32(c, A3)).sw(c, c.g[V1][0]);
+    boost_empty_store_entry(c, (V0, V1), 0x3c, 2, 0, 0);
+    // memset(&queue->slots[count] (8 bytes at +0x40), 0, 8)
+    c.g[A0][0] = Addr(monitor).off(MONITOR_PUSH_COUNT).lw(c);
+    c.g[A0][0] = sx(r32(c, A0) << 3);
+    c.g[A0][0] = sx(queue.wrapping_add(r32(c, A0)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x40));
+    call_ptr(c, SOL_MEMSET, 0x0029_7ca0)?;
+
+    // The entry's parameters.
+    c.g[A3][0] = 0x64; // volume
+    c.g[T0][0] = 0x5a;
+    c.g[T1][0] = 0x32;
+    boost_empty_store_entry(c, (V1, V0), 0x60, 2, 0, 0);
+    c.g[T2][0] = 0x7f;
+    c.g[T3][0] = 0x1;
+    c.g[A1][0] = 0x5; // channel kind of GetChannelGainPtr
+    c.g[A2][0] = 0;
+    c.g[A0][0] = c.g[S3][0];
+    boost_empty_store_entry(c, (V1, V0), 0x64, 2, 0, 0);
+    boost_empty_store_entry(c, (V0, V1), 0x68, 2, 0, 0);
+    boost_empty_store_entry(c, (V1, V0), 0x6c, 2, 0, 0);
+    boost_empty_store_entry(c, (V0, V1), 0x70, 4, 0x4, 0);
+    let (a3, t0, t1, t2, t3) = (c.g[A3][0], c.g[T0][0], c.g[T1][0], c.g[T2][0], c.g[T3][0]);
+    boost_empty_store_entry(c, (V1, V0), 0x70, 4, 0x0, a3);
+    boost_empty_store_entry(c, (V0, V1), 0x70, 4, 0x8, t0);
+    boost_empty_store_entry(c, (V1, V0), 0x70, 4, 0xc, t1);
+    boost_empty_store_entry(c, (V0, V1), 0x74, 2, 0, 0);
+    boost_empty_store_entry(c, (V1, V0), 0x80, 2, 0, 0);
+    boost_empty_store_entry(c, (V0, V1), 0x84, 2, 0, 0);
+    boost_empty_store_entry(c, (V1, V0), 0x78, 2, 0, t2);
+    boost_empty_store_entry(c, (V0, V1), 0x7c, 2, 0, t3);
+
+    // sys->pushBank[count] = bank (s6); sys->pushSample[count] = sample (s5).
+    for (field, reg) in [(AUDIO_SYS_PUSH_BANK, S6), (AUDIO_SYS_PUSH_SAMPLE, S5)] {
+        let sys = r32(c, S3);
+        c.g[V1][0] = Addr(sys).off(AUDIO_SYS_MONITOR).lw(c);
+        c.g[A3][0] = Addr(sys).off(field).lw(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(MONITOR_PUSH_COUNT).lw(c);
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A3)));
+        Addr(r32(c, V0)).sw(c, c.g[reg][0]);
+    }
+
+    // gains[count] = SSXAudioSystem_GetChannelGainPtr(sys, 5, 0);
+    // positions[count] = &slot->position.
+    c.g[S0][0] = Addr(r32(c, S3)).off(AUDIO_SYS_SND_ROOT).lw(c);
+    call_ptr(c, SOL_GET_CHANNEL_GAIN, 0x0029_7dfc)?;
+    c.mult(0, V1, S4, S2);
+    c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+    c.g[AT][0] = 0xffff_ffff_bf80_0000; // -1.0f
+    c.mtc1(AT, 13);
+    c.mov_s(12, 20);
+    let root_monitor = r32(c, A0);
+    c.g[A1][0] = Addr(root_monitor).off(SOL_MONITOR_GAINS).lw(c);
+    c.g[A2][0] = sx(r32(c, V1).wrapping_add(r32(c, S3)));
+    c.g[V1][0] = Addr(root_monitor).off(MONITOR_PUSH_COUNT).lw(c);
+    c.g[A2][0] = sx(r32(c, A2).wrapping_add(SOL_SLOTS + SOL_POSITION));
+    c.g[V1][0] = sx(r32(c, V1) << 2);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+    Addr(r32(c, V1)).sw(c, c.g[V0][0]);
+    c.g[A0][0] = Addr(r32(c, S3)).off(AUDIO_SYS_SND_ROOT).lw(c);
+    c.g[V1][0] = Addr(r32(c, A0)).lw(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(MONITOR_PUSH_COUNT).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    Addr(r32(c, V1))
+        .off(SOL_MONITOR_POSITIONS)
+        .sw(c, c.g[A2][0]);
+
+    // SndPlayParams_SetRadiusVanish(&monitor->queue, radius, -1.0f)
+    c.g[V0][0] = Addr(r32(c, S3)).off(AUDIO_SYS_SND_ROOT).lw(c);
+    c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(MONITOR_PUSH_QUEUE));
+    SOL_SET_RADIUS_VANISH.call(c, 0x0029_7e54)?;
+
+    // priorities[count] = s7; handle = Audio_PlayPushedSound(sys).
+    c.g[A1][0] = Addr(r32(c, S3)).off(AUDIO_SYS_SND_ROOT).lw(c);
+    c.g[A0][0] = c.g[S3][0];
+    c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(MONITOR_PUSH_COUNT).lw(c);
+    c.g[A1][0] = Addr(r32(c, V1)).off(SOL_MONITOR_PRIORITIES).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A1)));
+    Addr(r32(c, V0)).sw(c, c.g[S7][0]);
+    call_ptr(c, SOL_PLAY_PUSHED, 0x0029_7e78)?;
+    c.mult(0, V1, S4, S2);
+    c.g[S2][0] = sx(r32(c, V1).wrapping_add(r32(c, S3)));
+    Addr(r32(c, S2))
+        .off(SOL_SLOTS + SOL_HANDLE)
+        .sw(c, c.g[V0][0]);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_StartWipeoutLoop2 (0x296e80).
+
+/// `rider->audio` (rider+0x80): the rider's audio state.
+pub(crate) const WL2_RIDER_AUDIO: u32 = 0x80;
+
+/// Rider audio: embedded object (vtable at +0) asked whether the rider is
+/// audible (slot 0x48) and for its position (slot 0x28).
+pub(crate) const WL2_AUDIO_OBJ: u32 = 0x6c0;
+
+pub(crate) const WL2_SLOT_IS_LOCAL: u32 = 0x48;
+
+pub(crate) const WL2_SLOT_GET_POS: u32 = 0x28;
+
+/// Rider audio: wipeout intensity (float) fed to the volume curve.
+pub(crate) const WL2_INTENSITY: u32 = 0x770;
+
+/// Rider audio: the wipeout-loop-2 voice handle (< 0: not playing).
+pub(crate) const WL2_HANDLE: u32 = 0x778;
+
+/// Rider audio: listener index, "has a listener", "listener valid".
+pub(crate) const WL2_LISTENER_INDEX: u32 = 0x870;
+
+pub(crate) const WL2_HAS_LISTENER: u32 = 0x874;
+
+pub(crate) const WL2_LISTENER_VALID: u32 = 0x87c;
+
+/// Rider audio: the sound source position (record source pointer).
+pub(crate) const WL2_SOURCE_POS: u32 = 0x110;
+
+/// SSXAudioSystem: the channel holder whose first word is the bank monitor
+/// the voice record is completed in.
+pub(crate) const WL2_CHANNEL: u32 = 0x118;
+
+/// Bank monitor: record write cursor, record descriptor, parameter block,
+/// per-record source pointers.
+pub(crate) const WL2_MON_CURSOR: u32 = 0x1f4;
+
+pub(crate) const WL2_MON_DESC: u32 = 0x1d8;
+
+pub(crate) const WL2_MON_PARAMS: u32 = 0x1dc;
+
+pub(crate) const WL2_MON_SOURCE: u32 = 0x1fc;
+
+/// Rodata: the five-point volume curve, the 8-byte record default, and the
+/// speech mode byte (2: replay check needed).
+pub(crate) const WL2_VOLUME_CURVE: u32 = 0x0048_2da0;
+
+pub(crate) const WL2_RECORD_DEFAULT: u32 = 0x004a_36b8;
+
+pub(crate) const WL2_SPEECH_MODE: u32 = 0x0053_5c11;
+
+/// Callees (all reached through the function table).
+pub(crate) const WL2_EVAL_CURVE5: u32 = 0x0029_0b58;
+
+pub(crate) const WL2_GET_BE: u32 = 0x0014_dc80;
+
+pub(crate) const WL2_GET_INTERFACE: u32 = 0x0014_dd58;
+
+pub(crate) const WL2_IS_REPLAY_PLAYING: u32 = 0x0028_8ae0;
+
+pub(crate) const WL2_FIND_VIEW_IN_RANGE: u32 = 0x0028_8b40;
+
+pub(crate) const WL2_MEMSET: u32 = 0x0041_6210;
+
+pub(crate) const WL2_GET_CHANNEL_GAIN_PTR: u32 = 0x0028_7968;
+
+pub(crate) const WL2_GET_RIDER_LISTENER_INDEX: u32 = 0x0028_8a20;
+
+pub(crate) const WL2_PLAY_PUSHED_SOUND: u32 = 0x0029_06b8;
+
+/// `reg + off` as an address.
+#[inline(always)]
+pub(crate) fn wl2_ea(c: &Cpu, r: usize, off: u32) -> u32 {
+    (c.g[r][0] as u32).wrapping_add(off)
+}
+
+/// `lw rd, off(rb)`.
+#[inline(always)]
+pub(crate) fn wl2_lw(c: &mut Cpu, rd: usize, rb: usize, off: u32) {
+    let a = wl2_ea(c, rb, off);
+    c.g[rd][0] = c.lw(a);
+}
+
+/// `sll rd, rd, shift; addu rd, rd, rb` (an array element address).
+#[inline(always)]
+pub(crate) fn wl2_index(c: &mut Cpu, rd: usize, shift: u32, rb: usize) {
+    c.g[rd][0] = sx(((c.g[rd][0] as u32) << shift).wrapping_add(c.g[rb][0] as u32));
+}
+
+/// Store `val` into element `cursor` of the monitor's (s0) record array at
+/// descriptor (s1) field `field` (element size `1 << shift`, at `+off`),
+/// with the original's register pair `ri`/`rb`.
+pub(crate) fn wl2_record_store(
+    c: &mut Cpu,
+    ri: usize,
+    rb: usize,
+    field: u32,
+    shift: u32,
+    off: u32,
+    val: u64,
+) {
+    wl2_lw(c, ri, S0, WL2_MON_CURSOR);
+    wl2_lw(c, rb, S1, field);
+    wl2_index(c, ri, shift, rb);
+    let a = wl2_ea(c, ri, off);
+    c.sw(a, val);
+}
+
+/// Unaligned doubleword copy through `regs` (`ldl/ldr` all, then
+/// `sdl/sdr` all).
+pub(crate) fn wl2_copy_dwords(c: &mut Cpu, regs: &[usize], src: u32, dst: u32) {
+    for (i, &r) in regs.iter().enumerate() {
+        let s = src.wrapping_add(8 * i as u32);
+        c.ldl(r, s.wrapping_add(7));
+        c.ldr(r, s);
+    }
+    for (i, &r) in regs.iter().enumerate() {
+        let d = dst.wrapping_add(8 * i as u32);
+        c.sdl(r, d.wrapping_add(7));
+        c.sdr(r, d);
+    }
+}
+
+/// `void SSXAudioSystem_StartWipeoutLoop2(SSXAudioSystem *audio, Rider
+/// *rider)` (0x296e80): start the rider's second wipeout loop unless it is
+/// already playing. A rider that is not the local one (virtual slot 0x48)
+/// and has no valid listener must be within 100 units of a view. The volume
+/// comes from the five-point curve over the wipeout intensity (clamped to
+/// 0..127); a voice record is pushed on the audio system's bank monitor
+/// (gain, pan, source, listener, replay flag) and played, and the handle is
+/// stored in the rider's audio state.
+pub fn ssx_audio_system_start_wipeout_loop2(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S3, 0x80);
+        frame.save(c, S5, 0x60);
+        frame.save(c, S0, 0xb0);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S1, 0xa0);
+        frame.save(c, S2, 0x90);
+        frame.save(c, S4, 0x70);
+        frame.save(c, S6, 0x50);
+        frame.save_ra(c, 0x40);
+        wl2_lw(c, A1, S5, WL2_RIDER_AUDIO);
+        wl2_lw(c, V0, A1, WL2_HANDLE);
+        c.g[S3][0] = c.g[A0][0];
+        if (c.g[V0][0] as i64) >= 0 {
+            // Already playing.
+            c.cycles += 1;
+            frame.restore(c, S0, 0xb0);
+        } else if wl2_should_start(c, frame)? {
+            wl2_start(c)?;
+            c.cycles += 1;
+            frame.restore(c, S0, 0xb0);
+        }
+        // (Out of range: s0 was restored by the range check.)
+        c.cycles += 9;
+        frame.restore(c, S1, 0xa0);
+        frame.restore(c, S2, 0x90);
+        frame.restore(c, S3, 0x80);
+        frame.restore(c, S4, 0x70);
+        frame.restore(c, S5, 0x60);
+        frame.restore(c, S6, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Whether the loop should start: a local rider (slot 0x48 true) or one
+/// without a valid listener is checked against the views (100 units around
+/// its slot-0x28 position); a rider with a valid listener starts at once.
+/// Leaves the rider audio in v1 when it starts.
+pub(crate) fn wl2_should_start(c: &mut Cpu, frame: Frame) -> Result<bool, crate::call::Unwound> {
+    c.cycles += 8;
+    wl2_lw(c, V1, A1, WL2_AUDIO_OBJ);
+    c.g[A1][0] = sx(wl2_ea(c, A1, WL2_AUDIO_OBJ));
+    c.g[A0][0] = c.lh(wl2_ea(c, V1, WL2_SLOT_IS_LOCAL));
+    wl2_lw(c, V0, V1, WL2_SLOT_IS_LOCAL + 4);
+    let method = c.g[V0][0] as u32;
+    c.g[A0][0] = sx(wl2_ea(c, A1, c.g[A0][0] as u32));
+    call_ptr(c, method, 0x0029_6ed0)?;
+    let check_views = if c.g[V0][0] != 0 {
+        wl2_lw(c, A0, S5, WL2_RIDER_AUDIO);
+        true
+    } else {
+        c.cycles += 4;
+        wl2_lw(c, V0, S5, WL2_RIDER_AUDIO);
+        wl2_lw(c, V1, V0, WL2_LISTENER_VALID);
+        if c.g[V1][0] != 0 {
+            wl2_lw(c, V1, S5, WL2_RIDER_AUDIO);
+            false
+        } else {
+            c.cycles += 1;
+            wl2_lw(c, A0, S5, WL2_RIDER_AUDIO);
+            true
+        }
+    };
+    if !check_views {
+        return Ok(true);
+    }
+    c.cycles += 13;
+    wl2_lw(c, V1, A0, WL2_AUDIO_OBJ);
+    c.g[A0][0] = sx(wl2_ea(c, A0, WL2_AUDIO_OBJ));
+    c.g[A1][0] = c.lh(wl2_ea(c, V1, WL2_SLOT_GET_POS));
+    wl2_lw(c, V0, V1, WL2_SLOT_GET_POS + 4);
+    let method = c.g[V0][0] as u32;
+    c.g[A0][0] = sx(wl2_ea(c, A0, c.g[A1][0] as u32));
+    call_ptr(c, method, 0x0029_6f04)?;
+    // FindViewInRange(audio, pos, 100.0f)
+    c.g[AT][0] = 0x42c8_0000;
+    c.mtc1(AT, 12);
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S3][0];
+    call_ptr(c, WL2_FIND_VIEW_IN_RANGE, 0x0029_6f18)?;
+    let none = (c.g[V0][0] as i64) < 0;
+    frame.restore(c, S0, 0xb0);
+    if none {
+        return Ok(false);
+    }
+    c.cycles += 1;
+    wl2_lw(c, V1, S5, WL2_RIDER_AUDIO);
+    Ok(true)
+}
+
+/// Start the loop: volume from the curve, the replay flag, the voice
+/// record, play it and keep the handle.
+pub(crate) fn wl2_start(c: &mut Cpu) -> crate::call::Flow {
+    // Volume = EvalCurve5(curve copied to the stack, intensity).
+    c.cycles += 38;
+    c.g[V0][0] = 0x48_0000;
+    c.g[A3][0] = sx(WL2_VOLUME_CURVE);
+    let curve = sp(c);
+    wl2_copy_dwords(c, &[A0, A1, A2], WL2_VOLUME_CURVE, curve);
+    wl2_copy_dwords(c, &[A0, A1], WL2_VOLUME_CURVE + 0x18, curve + 0x18);
+    c.g[S6][0] = 0;
+    c.g[A0][0] = c.g[SP][0];
+    let intensity = wl2_ea(c, V1, WL2_INTENSITY);
+    c.lwc1(12, intensity);
+    call_ptr(c, WL2_EVAL_CURVE5, 0x0029_6f8c)?;
+    c.cvt_w_s(1, 0);
+    c.mfc1(S4, 1);
+    wl2_lw(c, A2, S5, WL2_RIDER_AUDIO);
+    c.g[A0][0] = 0x7f;
+    c.g[V1][0] = u64::MAX;
+    wl2_lw(c, A1, A2, WL2_HAS_LISTENER);
+    c.g[A3][0] = 0;
+    // Clamp the volume to 0..=127.
+    c.g[V0][0] = ((c.g[S4][0] as i64) < 128) as u64;
+    if c.g[V0][0] == 0 {
+        c.g[S4][0] = c.g[A0][0];
+    }
+    c.g[V1][0] = ((c.g[V1][0] as i64) < (c.g[S4][0] as i64)) as u64;
+    if c.g[V1][0] == 0 {
+        c.g[S4][0] = 0;
+    }
+    if c.g[A1][0] != 0 {
+        c.cycles += 2;
+        wl2_lw(c, V0, A2, WL2_LISTENER_VALID);
+        c.g[A3][0] = (c.g[V0][0] != 0) as u64;
+    }
+    wl2_replay_flag(c)?;
+    wl2_push_record(c)?;
+    wl2_finish_record(c)?;
+    // handle = PlayPushedSound(audio)
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S3][0];
+    call_ptr(c, WL2_PLAY_PUSHED_SOUND, 0x0029_73fc)?;
+    wl2_lw(c, V1, S5, WL2_RIDER_AUDIO);
+    let a = wl2_ea(c, V1, WL2_HANDLE);
+    c.sw(a, c.g[V0][0]);
+    Ok(())
+}
+
+/// s6 = "a replay is playing" for a rider with a valid listener in speech
+/// mode 2 (the BE library is fetched first); then s0 = the bank monitor.
+pub(crate) fn wl2_replay_flag(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 2;
+    if c.g[A3][0] != 0 {
+        c.cycles += 10;
+        call_ptr(c, WL2_GET_BE, 0x0029_6fd4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = 0;
+        call_ptr(c, WL2_GET_INTERFACE, 0x0029_6fe0)?;
+        c.g[V1][0] = 0x53_0000;
+        c.g[A0][0] = 2;
+        c.g[V0][0] = c.lb(WL2_SPEECH_MODE);
+        if c.g[V0][0] == c.g[A0][0] {
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S3][0];
+            call_ptr(c, WL2_IS_REPLAY_PLAYING, 0x0029_6ffc)?;
+            c.g[S6][0] = (c.g[V0][0] < 1) as u64;
+        }
+    }
+    wl2_lw(c, S0, S3, 0);
+    Ok(())
+}
+
+/// Push a voice record on the bank monitor in s0 (advance the cursor, copy
+/// the parameter block, clear/default the per-record fields), then write
+/// the gain (s4) into the channel monitor and its pan byte (clamped).
+pub(crate) fn wl2_push_record(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 154;
+    c.g[S2][0] = 0x18;
+    c.g[A1][0] = 0;
+    c.g[A2][0] = 8;
+    // ++cursor
+    wl2_lw(c, V0, S0, WL2_MON_CURSOR);
+    c.g[S1][0] = sx(wl2_ea(c, S0, WL2_MON_DESC));
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    let a = wl2_ea(c, S0, WL2_MON_CURSOR);
+    c.sw(a, c.g[V0][0]);
+    // records[cursor] (0x18 bytes) = params
+    wl2_lw(c, V1, S0, WL2_MON_CURSOR);
+    wl2_lw(c, V0, S1, 0x20);
+    c.mult(0, V1, V1, S2);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    let (params, rec) = (wl2_ea(c, S0, WL2_MON_PARAMS), c.g[V1][0] as u32);
+    wl2_copy_dwords(c, &[V0, A0, A3], params, rec);
+    // source[cursor] = 0
+    wl2_lw(c, V0, S0, WL2_MON_CURSOR);
+    wl2_index(c, V0, 2, S0);
+    let a = wl2_ea(c, V0, WL2_MON_SOURCE);
+    c.sw(a, 0);
+    wl2_record_store(c, V1, V0, 0x34, 2, 0, 0);
+    // field38[cursor] = (s8) records[cursor].byte0
+    wl2_lw(c, A3, S0, WL2_MON_CURSOR);
+    wl2_lw(c, A0, S0, WL2_MON_CURSOR);
+    wl2_lw(c, T0, S1, 0x20);
+    c.g[A3][0] = sx((c.g[A3][0] as u32) << 2);
+    c.mult(0, A0, A0, S2);
+    wl2_lw(c, V0, S1, 0x38);
+    c.g[A3][0] = sx((c.g[A3][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[T0][0] as u32));
+    c.g[V1][0] = c.lb(c.g[A0][0] as u32);
+    c.sw(c.g[A3][0] as u32, c.g[V1][0]);
+    wl2_record_store(c, V0, V1, 0x3c, 2, 0, 0);
+    // memset(&desc->field40[cursor], 0, 8)
+    wl2_lw(c, A0, S0, WL2_MON_CURSOR);
+    wl2_index(c, A0, 3, S1);
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(0x40));
+    call_ptr(c, WL2_MEMSET, 0x0029_70d4)?;
+    // Per-record defaults.
+    wl2_lw(c, V1, S0, WL2_MON_CURSOR);
+    c.g[A0][0] = 0x64;
+    wl2_lw(c, V0, S1, 0x60);
+    c.g[A1][0] = 0x5a;
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+    c.g[A2][0] = 0x32;
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.g[A3][0] = 0x7f;
+    c.sw(c.g[V1][0] as u32, 0);
+    c.g[T0][0] = 1;
+    wl2_record_store(c, V0, V1, 0x64, 2, 0, 0);
+    wl2_record_store(c, V1, V0, 0x68, 2, 0, 0);
+    wl2_record_store(c, V0, V1, 0x6c, 2, 0, 0);
+    wl2_record_store(c, V1, V0, 0x70, 4, 4, 0);
+    let (a0, a1, a2, a3, t0) = (c.g[A0][0], c.g[A1][0], c.g[A2][0], c.g[A3][0], c.g[T0][0]);
+    wl2_record_store(c, V0, V1, 0x70, 4, 0, a0);
+    wl2_record_store(c, V1, V0, 0x70, 4, 8, a1);
+    wl2_record_store(c, V0, V1, 0x70, 4, 0xc, a2);
+    wl2_record_store(c, V1, V0, 0x74, 2, 0, 0);
+    wl2_record_store(c, V0, V1, 0x80, 2, 0, 0);
+    wl2_record_store(c, V1, V0, 0x84, 2, 0, 0);
+    wl2_record_store(c, V0, V1, 0x78, 2, 0, a3);
+    wl2_record_store(c, V1, V0, 0x7c, 2, 0, t0);
+    // audio->array4[cursor] = 0; audio->array8[cursor] = 0x34
+    wl2_lw(c, A0, S3, 0);
+    wl2_lw(c, V1, S3, 4);
+    wl2_lw(c, V0, A0, WL2_MON_CURSOR);
+    wl2_index(c, V0, 2, V1);
+    c.sw(c.g[V0][0] as u32, 0);
+    wl2_lw(c, V1, S3, 0);
+    wl2_lw(c, A0, S3, 8);
+    wl2_lw(c, V0, V1, WL2_MON_CURSOR);
+    c.g[V1][0] = 0x34;
+    wl2_index(c, V0, 2, A0);
+    c.sw(c.g[V0][0] as u32, c.g[V1][0]);
+    // Channel monitor: gain[cursor] = volume.
+    wl2_lw(c, A0, S3, WL2_CHANNEL);
+    wl2_lw(c, A1, A0, 0);
+    wl2_lw(c, V0, A1, WL2_MON_CURSOR);
+    c.g[A2][0] = sx(wl2_ea(c, A1, WL2_MON_DESC));
+    wl2_lw(c, V1, A2, 0x38);
+    wl2_index(c, V0, 2, V1);
+    c.sw(c.g[V0][0] as u32, c.g[S4][0]);
+    // Pan byte of the channel record = clamp(gain[desc.cursor], 0, 127).
+    wl2_lw(c, A0, A1, WL2_MON_CURSOR);
+    wl2_lw(c, V1, A2, 0x1c);
+    wl2_lw(c, A3, A2, 0x38);
+    c.mult(0, A0, A0, S2);
+    c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+    wl2_lw(c, A1, A2, 0x20);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A3][0] as u32));
+    c.g[V0][0] = c.lw(c.g[V1][0] as u32);
+    c.g[V0][0] = ((c.g[V0][0] as i64) < 127) as u64;
+    let at_most = c.g[V0][0] == 0;
+    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_add(c.g[A1][0] as u32));
+    let mut negative = false;
+    if !at_most {
+        c.cycles += 6;
+        wl2_lw(c, V0, A2, 0x1c);
+        wl2_index(c, V0, 2, A3);
+        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+        negative = (c.g[V1][0] as i64) < 0;
+        c.g[V0][0] = 0;
+    }
+    if !negative {
+        c.cycles += 7;
+        wl2_lw(c, V0, A2, 0x1c);
+        wl2_index(c, V0, 2, A3);
+        c.g[V1][0] = c.lw(c.g[V0][0] as u32);
+        c.g[V1][0] = ((c.g[V1][0] as i64) < 127) as u64;
+        if c.g[V1][0] == 0 {
+            c.g[V0][0] = 0x7f;
+        } else {
+            c.cycles += 4;
+            wl2_lw(c, V0, A2, 0x1c);
+            wl2_index(c, V0, 2, A3);
+            c.g[V0][0] = c.lbu(c.g[V0][0] as u32);
+        }
+    }
+    Ok(())
+}
+
+/// Store the pan byte, then fill the channel monitor's record: gain slot
+/// pointer, source position, listener index, rider, default, and the
+/// replay flag with the rider's listener index.
+pub(crate) fn wl2_finish_record(c: &mut Cpu) -> crate::call::Flow {
+    c.cycles += 23;
+    c.sb(c.g[A0][0] as u32, c.g[V0][0]);
+    // gainPtr[cursor] = GetChannelGainPtr(audio, 5, 0)
+    c.g[A1][0] = 5;
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A2][0] = 0;
+    wl2_lw(c, S0, S3, WL2_CHANNEL);
+    call_ptr(c, WL2_GET_CHANNEL_GAIN_PTR, 0x0029_72c8)?;
+    wl2_lw(c, A0, S0, 0);
+    c.g[A2][0] = 0;
+    wl2_lw(c, V1, A0, WL2_MON_CURSOR);
+    wl2_lw(c, A1, A0, 0x214);
+    wl2_index(c, V1, 2, A1);
+    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+    // source[cursor] = &rider->audio->sourcePos
+    wl2_lw(c, V0, S3, WL2_CHANNEL);
+    wl2_lw(c, A0, S5, WL2_RIDER_AUDIO);
+    wl2_lw(c, V1, V0, 0);
+    c.g[A0][0] = sx(wl2_ea(c, A0, WL2_SOURCE_POS));
+    wl2_lw(c, V0, V1, WL2_MON_CURSOR);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    let a = wl2_ea(c, V1, WL2_MON_SOURCE);
+    c.sw(a, c.g[A0][0]);
+    let no_rider = c.g[S5][0] == 0;
+    wl2_lw(c, S0, S3, WL2_CHANNEL);
+    if !no_rider {
+        c.cycles += 1;
+        wl2_lw(c, A2, S5, WL2_RIDER_AUDIO);
+    }
+    // listener[cursor] = GetRiderListenerIndex(audio, rider->audio)
+    c.cycles += 40;
+    c.g[A1][0] = c.g[A2][0];
+    c.g[A0][0] = c.g[S3][0];
+    call_ptr(c, WL2_GET_RIDER_LISTENER_INDEX, 0x0029_731c)?;
+    wl2_lw(c, A0, S0, 0);
+    c.g[A2][0] = 0x4a_0000;
+    wl2_lw(c, V1, A0, WL2_MON_CURSOR);
+    wl2_lw(c, A1, A0, 0x23c);
+    wl2_index(c, V1, 2, A1);
+    c.sw(c.g[V1][0] as u32, c.g[V0][0]);
+    // rider[cursor] = rider
+    wl2_lw(c, A0, S3, WL2_CHANNEL);
+    wl2_lw(c, V1, A0, 0);
+    wl2_lw(c, V0, V1, WL2_MON_CURSOR);
+    wl2_lw(c, A0, V1, 0x238);
+    wl2_index(c, V0, 2, A0);
+    c.sw(c.g[V0][0] as u32, c.g[S5][0]);
+    // desc.field40[cursor] (8 bytes) = default (through the stack)
+    wl2_lw(c, V1, S3, WL2_CHANNEL);
+    wl2_lw(c, A0, V1, 0);
+    c.g[A3][0] = sx(wl2_ea(c, A2, 0x36b8));
+    let tmp = sp(c).wrapping_add(0x30);
+    wl2_copy_dwords(c, &[V0], WL2_RECORD_DEFAULT, tmp);
+    c.g[V1][0] = sx(wl2_ea(c, A0, WL2_MON_DESC));
+    wl2_lw(c, V0, A0, WL2_MON_CURSOR);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    let dst = wl2_ea(c, V1, 0x40);
+    wl2_copy_dwords(c, &[T0], tmp, dst);
+    // replay[cursor] = 0
+    wl2_lw(c, A0, S3, WL2_CHANNEL);
+    wl2_lw(c, V1, A0, 0);
+    wl2_lw(c, V0, V1, WL2_MON_CURSOR);
+    wl2_lw(c, A0, V1, 0x254);
+    wl2_index(c, V0, 2, A0);
+    let replaying = c.g[S6][0] != 0;
+    c.sw(c.g[V0][0] as u32, 0);
+    if replaying {
+        // replay[cursor] = 1; replayListener[cursor] = rider->audio->listenerIndex
+        c.cycles += 17;
+        wl2_lw(c, A0, S3, WL2_CHANNEL);
+        c.g[A1][0] = 1;
+        wl2_lw(c, V1, A0, 0);
+        wl2_lw(c, V0, V1, WL2_MON_CURSOR);
+        wl2_lw(c, A0, V1, 0x258);
+        wl2_index(c, V0, 2, A0);
+        c.sw(c.g[V0][0] as u32, c.g[A1][0]);
+        wl2_lw(c, V1, S3, WL2_CHANNEL);
+        wl2_lw(c, A0, S5, WL2_RIDER_AUDIO);
+        wl2_lw(c, A1, V1, 0);
+        wl2_lw(c, A2, A0, WL2_LISTENER_INDEX);
+        wl2_lw(c, V0, A1, WL2_MON_CURSOR);
+        wl2_lw(c, V1, A1, 0x25c);
+        wl2_index(c, V0, 2, V1);
+        c.sw(c.g[V0][0] as u32, c.g[A2][0]);
+    }
+    Ok(())
+}
+
+/// `bool SSXAudioSystem::IsSpeechVolumeOn()` (0x29f0a0): whether the speech
+/// channel's volume (`GetChannelVolume(4)`) is not zero.
+pub fn ssx_audio_system_is_speech_volume_on(c: &mut Cpu) {
+    const GET_CHANNEL_VOLUME: u32 = 0x0028_7920;
+    const SPEECH_CHANNEL: u64 = 4;
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A1][0] = SPEECH_CHANNEL;
+        call_ptr(c, GET_CHANNEL_VOLUME, 0x0029_f0b0)?;
+        c.f[1] = 0;
+        let silent = FpuF32(c.f[0]).eq_s(FpuF32::ZERO);
+        abi::set_fcc(c, silent);
+        c.g[V0][0] = 0;
+        if !silent {
+            c.cycles += 1;
+            c.g[V0][0] = 1;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const RS207D_IS_SPEECH_VOLUME_ON: Callee = Callee {
+    addr: 0x0029_f0a0,
+    f: ee::s08::SSXAudioSystem_IsSpeechVolumeOn,
+};
+
+pub(crate) const RS207D_IS_INSTANCE_READY: Callee = Callee {
+    addr: 0x002b_0e28,
+    f: ee::s08::SpeechSystem_IsInstanceReady,
+};
+
+pub(crate) const RS207D_GET_RIDER_SPEECH_MASK: Callee = Callee {
+    addr: 0x0029_f330,
+    f: ee::s08::SSXAudioSystem_GetRiderSpeechMask,
+};
+
+pub(crate) const RS207D_GET_RIDER_VOICE_MASK: Callee = Callee {
+    addr: 0x002a_1d48,
+    f: ee::s08::SSXAudioSystem_GetRiderVoiceMask,
+};
+
+pub(crate) const RS207D_GET_RIDER_RIVALRY: Callee = Callee {
+    addr: 0x002a_1820,
+    f: ee::s08::SSXAudioSystem_GetRiderRivalry,
+};
+
+pub(crate) const RS207D_SET_EVENT_CONTEXT: Callee = Callee {
+    addr: 0x002b_1458,
+    f: ee::s08::SpeechSystem_SetEventContext,
+};
+
+/// `jalr` to the scripting-object method at `slot` of the rider whose
+/// object base (`rider + 0x6c0`) is `obj`, vtable `vt`: `a0 = obj + delta`.
+pub(crate) fn rs207d_obj_call(
+    c: &mut Cpu,
+    obj: u64,
+    vt: u64,
+    slot: u32,
+    ret_to: u32,
+) -> crate::call::Flow {
+    c.g[A0][0] = Addr((vt as u32).wrapping_add(slot)).lh(c);
+    c.g[V0][0] = Addr((vt as u32).wrapping_add(slot + 4)).lw(c);
+    let f = r32(c, V0);
+    c.g[A0][0] = sx((obj as u32).wrapping_add(r32(c, A0)));
+    call_ptr(c, f, ret_to)
+}
+
+/// `dot(sp[0..4], *v)` in vf4.x (VU0 macro ops, vf6.x = 1.0).
+pub(crate) fn rs207d_dot(c: &mut Cpu, v: u32) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    c.lqc2(3, sp(c));
+    c.lqc2(5, v);
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(5));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+/// Post one speech event: register its context (`SetEventContext(speech,
+/// 0, code, rider, Rider_GetCharacter(rider), 0, f20, 0)`, the rider in
+/// s1/s0 as `rider_reg`) and, when accepted, call the post hook
+/// (`gp+0x173c`) with `SPCH_MakeId(1, 0, code)` and the arguments
+/// `hook_args` sets (`before_id` runs before `SPCH_MakeId`). Returns
+/// whether the context was accepted.
+pub(crate) fn rs207d_post(
+    c: &mut Cpu,
+    rider_reg: usize,
+    code: u64,
+    rets: [u32; 4],
+    accept_cycles: u64,
+    before_id: impl FnOnce(&mut Cpu),
+    hook_args: impl FnOnce(&mut Cpu),
+) -> Result<bool, crate::call::Unwound> {
+    c.g[A0][0] = c.g[rider_reg][0];
+    call_ptr(c, 0x0012_3128, rets[0])?; // Rider_GetCharacter
+    c.g[A3][0] = c.g[rider_reg][0];
+    c.g[T0][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S4][0];
+    c.g[A1][0] = 0;
+    c.g[A2][0] = code;
+    c.mov_s(12, 20);
+    c.g[T1][0] = 0;
+    c.g[T2][0] = 0;
+    RS207D_SET_EVENT_CONTEXT.call(c, rets[1])?;
+    let accepted = c.g[V0][0] != 0;
+    c.g[A0][0] = 1;
+    if !accepted {
+        return Ok(false);
+    }
+    c.cycles += accept_cycles;
+    c.g[A1][0] = 0;
+    c.g[A2][0] = code;
+    before_id(c);
+    call_ptr(c, 0x003d_8008, rets[2])?; // SPCH_MakeId(1, 0, code)
+    c.g[V1][0] = Addr(r32(c, GP).wrapping_add(rs207d::POST_HOOK_GP)).lw(c);
+    c.g[A0][0] = c.g[V0][0];
+    hook_args(c);
+    let hook = r32(c, V1);
+    call_ptr(c, hook, rets[3])?;
+    Ok(true)
+}
+
+/// `void SSXAudioSystem_RiderSay207D(SSXAudioSystem* sys, Rider* a, Rider*
+/// b)` (0x2a0560): the "passed you" speech when rider `a` overtakes `b`.
+/// Only with speech on (mode 2), outside replays, both riders' character
+/// info clear, at least 600 ticks since the last pass, both still behind
+/// the start line (progress < 0), one of them the followed rider unless
+/// both are human/local, the speech system ready, both heard by the same
+/// listener view, and their gap along `b`'s heading between the near and
+/// far limits. Then, by rivalry (2: rival lines 0x2081/0x207f; 0/1: pass
+/// lines 0x2080/0x207d), posts a line for each rider with its speech mask
+/// and the gap class (1, or 2 beyond the "far" limit).
+pub fn ssx_audio_system_rider_say_207d(c: &mut Cpu) {
+    use rs207d::*;
+    let frame = Frame { size: 0xc0 };
+    guest(c, |c| {
+        c.cycles += 17;
+        Frame::open(c, 0xc0);
+        frame.save(c, S3, 0x70);
+        frame.save(c, S0, 0xa0);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save(c, S1, 0x90);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x80);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S4, 0x60);
+        frame.save(c, S5, 0x50);
+        frame.save(c, S6, 0x40);
+        frame.save(c, S7, 0x30);
+        frame.save_ra(c, 0x20);
+        frame.save_fpr(c, 20, 0xb0);
+        RS207D_IS_SPEECH_VOLUME_ON.call(c, 0x002a_059c)?;
+        // false: the plain exit; true: the exit through 0x2a09fc (+1 cycle).
+        let late_exit = rs207d_body(c)?;
+        if late_exit {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0xa0);
+        c.cycles += 11;
+        frame.restore(c, S1, 0x90);
+        frame.restore(c, S2, 0x80);
+        frame.restore(c, S3, 0x70);
+        frame.restore(c, S4, 0x60);
+        frame.restore(c, S5, 0x50);
+        frame.restore(c, S6, 0x40);
+        frame.restore(c, S7, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.restore_fpr(c, 20, 0xb0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The body of [`ssx_audio_system_rider_say_207d`] after the volume check:
+/// `Ok(true)` when it leaves through the 0x2a09fc exit block.
+pub(crate) fn rs207d_body(c: &mut Cpu) -> Result<bool, crate::call::Unwound> {
+    use rs207d::*;
+    let gp = r32(c, GP);
+    let volume_off = c.g[V0][0] == 0;
+    c.g[V1][0] = Addr(gp.wrapping_sub(SPEECH_SETTINGS_GP)).lw(c);
+    if volume_off {
+        return Ok(true);
+    }
+    c.cycles += 4;
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(SPEECH_MODE)).lw(c) ^ 2;
+    if c.g[V0][0] != 0 {
+        return Ok(false);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S3][0];
+    call_ptr(c, 0x0028_8ae0, 0x002a_05bc)?; // SSXAudioSystem_IsReplayPlaying
+    if c.g[V0][0] != 0 {
+        return Ok(false);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S1][0];
+    call_ptr(c, 0x0012_3168, 0x002a_05cc)?; // Rider_GetPlayerCharacterInfo
+    if c.g[V0][0] != 0 {
+        return Ok(false);
+    }
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S0][0];
+    call_ptr(c, 0x0012_3168, 0x002a_05dc)?;
+    if c.g[V0][0] != 0 {
+        return Ok(false);
+    }
+    c.cycles += 9;
+    call_ptr(c, 0x0028_b1c8, 0x002a_05ec)?; // SSXAudioSystem_GetGameModule
+    c.g[V1][0] = Addr(r32(c, V0).wrapping_add(0xc)).lw(c);
+    c.g[A0][0] = Addr(r32(c, S3).wrapping_add(LAST_PASS)).lw(c);
+    c.g[V0][0] = Addr(r32(c, V1).wrapping_add(RACE_TIME)).lw(c);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_sub(r32(c, A0)));
+    c.g[V0][0] = ((c.g[V0][0] as i64) < 600) as u64;
+    if c.g[V0][0] != 0 {
+        return Ok(false);
+    }
+    // Both riders still behind the line (0 <= progress: no speech).
+    for (rider_reg, extra) in [(S1, 6u64), (S0, 5)] {
+        c.cycles += extra;
+        c.lwc1(0, r32(c, rider_reg).wrapping_add(PROGRESS));
+        if extra == 6 {
+            c.mtc1(0, 1);
+        }
+        c.c_le_s(1, 0);
+        c.g[V0][0] = 1;
+        if !c.fcc() {
+            c.cycles += 1;
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 2;
+        if c.g[V0][0] != 0 {
+            return Ok(false);
+        }
+    }
+    // a: "AI or not local" (s4); its object base in s6.
+    c.cycles += 10;
+    c.g[V1][0] = Addr(r32(c, S1).wrapping_add(OBJ)).lw(c);
+    c.g[A1][0] = sx(r32(c, S1).wrapping_add(OBJ));
+    c.g[S6][0] = c.g[A1][0];
+    c.g[S4][0] = 0;
+    let (obj, vt) = (c.g[A1][0], c.g[V1][0]);
+    rs207d_obj_call(c, obj, vt, VT_IS_AI, 0x002a_066c)?;
+    let mut set = c.g[V0][0] != 0;
+    if !set {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S1).wrapping_add(LOCAL)).lw(c);
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+            set = true;
+        }
+    }
+    if set {
+        c.g[S4][0] = 1;
+        c.cycles += 1;
+    }
+    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(OBJ)).lw(c);
+    // b: the same (s2); its object base in s5.
+    c.cycles += 9;
+    c.g[A1][0] = sx(r32(c, S0).wrapping_add(OBJ));
+    c.g[S5][0] = c.g[A1][0];
+    c.g[S2][0] = 0;
+    let (obj, vt) = (c.g[A1][0], c.g[V1][0]);
+    rs207d_obj_call(c, obj, vt, VT_IS_AI, 0x002a_06a4)?;
+    let mut set = c.g[V0][0] != 0;
+    if !set {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(r32(c, S0).wrapping_add(LOCAL)).lw(c);
+        if c.g[V0][0] == 0 {
+            c.cycles += 1;
+            set = true;
+        }
+    }
+    if set {
+        c.g[S2][0] = 1;
+        c.cycles += 1;
+    }
+    c.g[A0][0] = c.g[S3][0];
+    // The followed rider must be a or b unless both are AI / not local.
+    c.cycles += 4;
+    c.g[A1][0] = u64::MAX;
+    call_ptr(c, 0x0028_5d98, 0x002a_06c8)?; // SSXAudioSystem_FindRider(sys, -1)
+    let a_flag = c.g[S4][0] != 0;
+    c.g[S4][0] = sx(r32(c, S3).wrapping_add(SPEECH));
+    let mut tail = true;
+    if a_flag {
+        c.cycles += 2;
+        if c.g[S2][0] != 0 {
+            c.cycles += 2;
+            if c.g[S1][0] == c.g[V0][0] {
+                tail = false;
+            } else {
+                c.cycles += 2;
+                if c.g[S0][0] != c.g[V0][0] {
+                    return Ok(false);
+                }
+                c.cycles += 1;
+                c.g[S4][0] = sx(r32(c, S3).wrapping_add(SPEECH));
+            }
+        }
+    }
+    if tail {
+        c.cycles += 1;
+    }
+    c.g[A1][0] = 0;
+    c.cycles += 4;
+    c.g[A0][0] = c.g[S4][0];
+    RS207D_IS_INSTANCE_READY.call(c, 0x002a_06f8)?;
+    if c.g[V0][0] == 0 {
+        return Ok(false);
+    }
+    // Both riders must be heard by the same listener view.
+    c.cycles += 12;
+    c.g[V1][0] = Addr(r32(c, S1).wrapping_add(OBJ)).lw(c);
+    let (obj, vt) = (c.g[S6][0], c.g[V1][0]);
+    rs207d_obj_call(c, obj, vt, VT_POS, 0x002a_0714)?;
+    c.lwc1(12, gp.wrapping_add(RADIUS_GP));
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S3][0];
+    call_ptr(c, 0x0028_8b40, 0x002a_0724)?; // SSXAudioSystem_FindViewInRange
+    c.g[S2][0] = c.g[V0][0];
+    if (c.g[S2][0] as i64) < 0 {
+        return Ok(false);
+    }
+    c.cycles += 11;
+    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(OBJ)).lw(c);
+    let (obj, vt) = (c.g[S5][0], c.g[V1][0]);
+    rs207d_obj_call(c, obj, vt, VT_POS, 0x002a_0744)?;
+    c.lwc1(12, gp.wrapping_add(RADIUS_GP));
+    c.g[A1][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S3][0];
+    call_ptr(c, 0x0028_8b40, 0x002a_0754)?;
+    if c.g[S2][0] != c.g[V0][0] {
+        return Ok(false);
+    }
+    // The gap along b's heading: dot((cos, sin, 0, 0), dirA - dirB).
+    c.cycles += 44;
+    c.lwc1(12, r32(c, S0).wrapping_add(HEADING));
+    c.g[A0][0] = sx(sp(c).wrapping_add(0x10));
+    c.g[A1][0] = sx(sp(c).wrapping_add(0x14));
+    call_ptr(c, 0x0031_be50, 0x002a_076c)?; // Math_SinCos(heading, &sin, &cos)
+    let s = sp(c);
+    c.lwc1(0, s.wrapping_add(0x14));
+    c.lwc1(1, s.wrapping_add(0x10));
+    c.swc1(0, s);
+    c.swc1(1, s.wrapping_add(0x4));
+    c.sw(s.wrapping_add(0x8), 0);
+    c.sw(s.wrapping_add(0xc), 0);
+    c.g[V1][0] = Addr(r32(c, S1).wrapping_add(OBJ)).lw(c);
+    let (obj, vt) = (c.g[S6][0], c.g[V1][0]);
+    rs207d_obj_call(c, obj, vt, VT_DIR, 0x002a_0798)?;
+    c.g[V1][0] = Addr(r32(c, S0).wrapping_add(OBJ)).lw(c);
+    let v = r32(c, V0);
+    rs207d_dot(c, v);
+    c.qmfc2(A0, 4);
+    c.mtc1(A0, 20);
+    let (obj, vt) = (c.g[S5][0], c.g[V1][0]);
+    rs207d_obj_call(c, obj, vt, VT_DIR, 0x002a_07d0)?;
+    let v = r32(c, V0);
+    rs207d_dot(c, v);
+    c.qmfc2(V1, 4);
+    c.mtc1(V1, 0);
+    c.lwc1(1, gp.wrapping_sub(MIN_GAP_GP));
+    c.sub_s(20, 20, 0);
+    c.c_lt_s(1, 20);
+    if !c.fcc() {
+        return Ok(false);
+    }
+    c.cycles += 5;
+    c.lwc1(0, gp.wrapping_sub(MAX_GAP_GP));
+    c.c_lt_s(20, 0);
+    let too_far = !c.fcc();
+    c.g[A0][0] = c.g[S1][0];
+    if too_far {
+        return Ok(true);
+    }
+    // Speech masks (s6: a, s7: b), b's voice mask (s2), gap class (s5).
+    c.cycles += 14;
+    c.g[S5][0] = 1;
+    RS207D_GET_RIDER_SPEECH_MASK.call(c, 0x002a_0828)?;
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A1][0] = c.g[S0][0];
+    c.g[S6][0] = c.g[V0][0];
+    RS207D_GET_RIDER_VOICE_MASK.call(c, 0x002a_0838)?;
+    c.g[S2][0] = c.g[V0][0];
+    c.g[A0][0] = c.g[S0][0];
+    RS207D_GET_RIDER_SPEECH_MASK.call(c, 0x002a_0844)?;
+    c.lwc1(0, gp.wrapping_sub(FAR_GAP_GP));
+    c.c_le_s(0, 20);
+    let near = !c.fcc();
+    c.g[S7][0] = c.g[V0][0];
+    if !near {
+        c.cycles += 1;
+        c.g[S5][0] = 2;
+    }
+    // Rivalry: 2 the rival lines, 0/1 the pass lines.
+    c.cycles += 8;
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = c.g[S0][0];
+    RS207D_GET_RIDER_RIVALRY.call(c, 0x002a_086c)?;
+    c.g[V1][0] = c.g[V0][0];
+    c.g[V0][0] = 2;
+    let rival = c.g[V1][0] == c.g[V0][0];
+    c.g[V0][0] = (c.g[V1][0] < 2) as u64;
+    if rival {
+        // a: "rival passed" (0x2081), b: "passed by rival" (0x207f).
+        c.cycles += 14;
+        c.mtc1(0, 20);
+        let rets = [0x002a_0888, 0x002a_08ac, 0x002a_08c0, 0x002a_08d8];
+        rs207d_post(
+            c,
+            S1,
+            0x2081,
+            rets,
+            9,
+            |_| {},
+            |c| {
+                c.g[A2][0] = c.g[S6][0];
+                c.g[A1][0] = 2;
+                c.g[A3][0] = c.g[S5][0];
+            },
+        )?;
+        c.cycles += 13;
+        let rets = [0x002a_08e0, 0x002a_0904, 0x002a_0918, 0x002a_0930];
+        let posted = rs207d_post(
+            c,
+            S0,
+            0x207f,
+            rets,
+            11,
+            |_| {},
+            |c| {
+                c.g[A2][0] = c.g[S7][0];
+                c.g[A3][0] = c.g[S5][0];
+                c.g[A1][0] = 2;
+            },
+        )?;
+        return Ok(!posted);
+    }
+    c.cycles += 2;
+    if c.g[V0][0] == 0 {
+        return Ok(false);
+    }
+    // a: "passed" (0x2080, with b's voice mask | 0x1000), b: "got
+    // passed" (0x207d).
+    c.cycles += 14;
+    c.mtc1(0, 20);
+    let rets = [0x002a_094c, 0x002a_0970, 0x002a_0988, 0x002a_09a4];
+    let before = |c: &mut Cpu| c.g[S2][0] |= 0x1000;
+    rs207d_post(c, S1, 0x2080, rets, 11, before, |c| {
+        c.g[A2][0] = c.g[S6][0];
+        c.g[T0][0] = c.g[S2][0];
+        c.g[A1][0] = 3;
+        c.g[A3][0] = c.g[S5][0];
+    })?;
+    c.cycles += 13;
+    let rets = [0x002a_09ac, 0x002a_09d0, 0x002a_09e4, 0x002a_09fc];
+    rs207d_post(
+        c,
+        S0,
+        0x207d,
+        rets,
+        9,
+        |_| {},
+        |c| {
+            c.g[A2][0] = c.g[S7][0];
+            c.g[A3][0] = c.g[S5][0];
+            c.g[A1][0] = 2;
+        },
+    )?;
+    Ok(true)
+}
+
+// ---------------------------------------------------------------------------
+// 0x002a77a8 CrowdAudio_PitchBendCallback
+
+pub(crate) const CAPB_UPDATE_PITCH_BEND: Callee = Callee {
+    addr: 0x002a_68b0,
+    f: ee::s08::CrowdAudio_UpdatePitchBend,
+};
+
+/// `void CrowdAudio_PitchBendCallback(void* ctx, BankMonitorInstance*
+/// voice, float dt)` (0x2a77a8): the bank monitor's per-voice callback:
+/// `CrowdAudio_UpdatePitchBend(voice->owner (+0x80), voice, dt)`.
+pub fn crowd_audio_pitch_bend_callback(c: &mut Cpu) {
+    let frame = Frame { size: 0x10 };
+    guest(c, |c| {
+        c.cycles += 7;
+        Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[A0][0] = Addr(r32(c, A1)).off(0x80).lw(c);
+        CAPB_UPDATE_PITCH_BEND.call(c, 0x002a_77b8)?;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// CrowdAudio_InstanceSetSourceParam (0x2a5cd8).
+
+/// Crowd audio instance: 12-byte sources from `+0x20` (`+0` active, `+4`
+/// the parameter).
+pub(crate) const CROWD_SOURCE_SIZE: u32 = 0xc;
+
+pub(crate) const CROWD_SOURCE_ACTIVE: u32 = 0x20;
+
+pub(crate) const CROWD_SOURCE_PARAM: u32 = 0x24;
+
+/// `void CrowdAudio_InstanceSetSourceParam(Instance* inst, int source, int
+/// value)` (0x2a5cd8): set an active source's parameter (negative source
+/// indices are ignored).
+pub fn crowd_audio_instance_set_source_param(c: &mut Cpu) {
+    c.cycles += 2;
+    c.g[A3][0] = c.g[A0][0];
+    if (c.g[A1][0] as i64) >= 0 {
+        c.cycles += 6;
+        c.g[V0][0] = CROWD_SOURCE_SIZE as u64;
+        c.mult(0, A0, A1, V0);
+        let source = Addr(r32(c, A3).wrapping_add(r32(c, A0)));
+        c.g[V1][0] = sx(source.0);
+        c.g[V0][0] = source.off(CROWD_SOURCE_ACTIVE).lw(c);
+        let active = c.g[V0][0] != 0;
+        c.g[V0][0] = c.g[V1][0];
+        if active {
+            c.cycles += 1;
+            source.off(CROWD_SOURCE_PARAM).sw(c, c.g[A2][0]);
+        }
+    }
+    c.cycles += 2;
+    ret(c);
+}
+
+// ---------------------------------------------------------------------------
+// SSXAudioSystem_StartBoardEdgeLoop (0x292508)
+
+/// `SSXAudioSystem` fields: the bank monitor (`+0`), the push tables of
+/// bank and sample per queue entry (`+4`, `+8`), the sound root (`+0x118`,
+/// `*root` is the monitor too).
+pub(crate) const OC300_SYS_MONITOR: u32 = 0x0;
+
+pub(crate) const OC300_SYS_PUSH_BANK: u32 = 0x4;
+
+pub(crate) const OC300_SYS_PUSH_SAMPLE: u32 = 0x8;
+
+pub(crate) const OC300_SYS_SND_ROOT: u32 = 0x118;
+
+/// Rider audio fields: human (`+0x874`), local (`+0x87c`), listener index
+/// (`+0x870`); the rider's sound position at `+0x110`.
+pub(crate) const OC300_RIDER_HUMAN: u32 = 0x874;
+
+pub(crate) const OC300_RIDER_LOCAL: u32 = 0x87c;
+
+pub(crate) const OC300_RIDER_LISTENER: u32 = 0x870;
+
+pub(crate) const OC300_RIDER_SOUND_POS: u32 = 0x110;
+
+/// Bank monitor: the push queue (`+0x1d8`) and its entry count (`+0x1f4`,
+/// = queue `+0x1c`); the 24-byte entry template at `+0x1dc`; per-entry
+/// handles inline at `+0x1fc`.
+pub(crate) const OC300_MON_QUEUE: u32 = 0x1d8;
+
+pub(crate) const OC300_MON_COUNT: u32 = 0x1f4;
+
+pub(crate) const OC300_MON_HANDLES: u32 = 0x1fc;
+
+/// The game-mode byte (2: replays possible).
+pub(crate) const OC300_MODE_BYTE: u32 = 0x0053_5c11;
+
+/// The 8-byte callback key copied into the entry's slot (0x4a36a0).
+pub(crate) const OC300_EDGE_KEY: u32 = 0x004a_36a0;
+
+/// `SSXAudioSystem_IsReplayPlaying` (0x288ae0).
+pub(crate) const OC300_IS_REPLAY_PLAYING: Callee = Callee {
+    addr: 0x0028_8ae0,
+    f: ee::s07::SSXAudioSystem_IsReplayPlaying,
+};
+
+/// `SSXAudioSystem_GetSurfaceBank` (0x2917b8).
+pub(crate) const OC300_GET_SURFACE_BANK: Callee = Callee {
+    addr: 0x0029_17b8,
+    f: ee::s07::SSXAudioSystem_GetSurfaceBank,
+};
+
+/// `SSXAudioSystem_GetChannelGainPtr` (0x287968).
+pub(crate) const OC300_GET_CHANNEL_GAIN_PTR: Callee = Callee {
+    addr: 0x0028_7968,
+    f: ee::s07::SSXAudioSystem_GetChannelGainPtr,
+};
+
+/// `SSXAudioSystem_GetRiderListenerIndex` (0x288a20).
+pub(crate) const OC300_GET_RIDER_LISTENER_INDEX: Callee = Callee {
+    addr: 0x0028_8a20,
+    f: ee::s07::SSXAudioSystem_GetRiderListenerIndex,
+};
+
+/// `Audio_PlayPushedSound` (0x2906b8).
+pub(crate) const OC300_PLAY_PUSHED_SOUND: Callee = Callee {
+    addr: 0x0029_06b8,
+    f: ee::s07::Audio_PlayPushedSound,
+};
+
+/// `table[count] = value` on the monitor's push queue: `cnt = monitor->count;
+/// tab = queue[off]; *(tab + (cnt << shift) + extra) = value`, in the
+/// registers the original uses.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn oc300_edge_store(
+    c: &mut Cpu,
+    (cnt, tab): (usize, usize),
+    monitor: u32,
+    queue: u32,
+    off: u32,
+    shift: u32,
+    extra: u32,
+    value: u64,
+) {
+    c.g[cnt][0] = Addr(monitor).off(OC300_MON_COUNT).lw(c);
+    c.g[tab][0] = Addr(queue).off(off).lw(c);
+    c.g[cnt][0] = sx((c.g[cnt][0] as u32) << shift);
+    c.g[cnt][0] = sx((c.g[cnt][0] as u32).wrapping_add(c.g[tab][0] as u32));
+    Addr(c.g[cnt][0] as u32).off(extra).sw(c, value);
+}
+
+/// `*(lw(lw(sys->sndRoot) + off) + count * 4) = value` (the root monitor's
+/// table `off` at the current entry), in the registers the original uses:
+/// `root`, `mon`, `cnt`, `tab`.
+pub(crate) fn oc300_edge_root_store(c: &mut Cpu, regs: [usize; 4], off: u32, value: u64) {
+    let [root, mon, cnt, tab] = regs;
+    c.g[root][0] = Addr(r32(c, S5)).off(OC300_SYS_SND_ROOT).lw(c);
+    c.g[mon][0] = Addr(c.g[root][0] as u32).lw(c);
+    c.g[cnt][0] = Addr(c.g[mon][0] as u32).off(OC300_MON_COUNT).lw(c);
+    c.g[tab][0] = Addr(c.g[mon][0] as u32).off(off).lw(c);
+    c.g[cnt][0] = sx((c.g[cnt][0] as u32) << 2);
+    c.g[cnt][0] = sx((c.g[cnt][0] as u32).wrapping_add(c.g[tab][0] as u32));
+    Addr(c.g[cnt][0] as u32).sw(c, value);
+}
+
+/// `void SSXAudioSystem_StartBoardEdgeLoop(SSXAudioSystem* sys, Rider*
+/// rider, int surface)` (0x292508): for a human local rider, push the
+/// board-edge loop on the bank monitor's push queue (bank from
+/// `GetSurfaceBank(sys, surface)`, sample `surface * 8 + 3`; volume 100,
+/// pan 90, 50, 127), clamp its volume to 0..127, attach the channel-6 gain,
+/// the rider's sound position, callback key and listener index, set radius
+/// 100 / vanish -1; during a replay (mode byte 2) mark it as a replay sound
+/// of the rider's listener. Then `Audio_PlayPushedSound(sys)`.
+pub fn ssx_audio_system_start_board_edge_loop(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0xa0);
+        c.g[V1][0] = 0;
+        frame.save(c, S2, 0x70);
+        frame.save(c, S5, 0x40);
+        c.g[S2][0] = c.g[A2][0]; // surface
+        frame.save(c, S6, 0x30);
+        frame.save(c, S0, 0x90);
+        c.g[S6][0] = c.g[A1][0]; // rider
+        frame.save(c, S1, 0x80);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S4, 0x50);
+        frame.save(c, S7, 0x20);
+        frame.save_ra(c, 0x10);
+        let rider = r32(c, S6);
+        c.g[V0][0] = Addr(rider).off(OC300_RIDER_HUMAN).lw(c);
+        c.g[S5][0] = c.g[A0][0]; // sys
+        if c.g[V0][0] != 0 {
+            c.cycles += 2;
+            c.g[V0][0] = Addr(rider).off(OC300_RIDER_LOCAL).lw(c);
+            c.g[V1][0] = (c.g[V0][0] != 0) as u64;
+        }
+        c.cycles += 2;
+        let play = c.g[V1][0] != 0;
+        frame.restore(c, S0, 0x90);
+        if play {
+            oc300_edge_push_and_play(c)?;
+            frame.restore(c, S0, 0x90);
+        }
+        c.cycles += 10;
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore(c, S5, 0x40);
+        frame.restore(c, S6, 0x30);
+        frame.restore(c, S7, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The push-and-play body of `StartBoardEdgeLoop` (s5 = sys, s6 = rider,
+/// s2 = surface).
+pub(crate) fn oc300_edge_push_and_play(c: &mut Cpu) -> crate::call::Flow {
+    // In a replay-capable mode, remember whether no replay is playing.
+    c.cycles += 10;
+    c.g[S7][0] = 0;
+    call_ptr(c, 0x0014_dc80, 0x0029_2560)?; // BELibrary_GetInstance
+    c.g[A0][0] = c.g[V0][0];
+    c.g[A1][0] = 0;
+    call_ptr(c, 0x0014_dd58, 0x0029_256c)?; // BELibrary_GetInterface(be, 0)
+    c.g[V1][0] = 0x53_0000;
+    c.g[A0][0] = 2;
+    c.g[V0][0] = Addr(OC300_MODE_BYTE).lb(c);
+    if c.g[V0][0] != c.g[A0][0] {
+        c.g[A0][0] = c.g[S5][0];
+    } else {
+        c.cycles += 4;
+        c.g[A0][0] = c.g[S5][0];
+        OC300_IS_REPLAY_PLAYING.call(c, 0x0029_2588)?;
+        c.g[S7][0] = (c.g[V0][0] < 1) as u64;
+        c.g[A0][0] = c.g[S5][0];
+    }
+
+    // bank = GetSurfaceBank(sys, surface).
+    c.cycles += 159;
+    c.g[A1][0] = c.g[S2][0];
+    OC300_GET_SURFACE_BANK.call(c, 0x0029_2598)?;
+    // New queue entry: count += 1, copy the 24-byte template into the
+    // entry's record (record size 0x18 in s3).
+    c.g[S3][0] = 0x18;
+    c.g[S0][0] = Addr(r32(c, S5)).off(OC300_SYS_MONITOR).lw(c);
+    c.g[S4][0] = c.g[V0][0]; // bank
+    c.g[S2][0] = sx(r32(c, S2) << 3);
+    c.g[A1][0] = 0;
+    let monitor = r32(c, S0);
+    c.g[V0][0] = Addr(monitor).off(OC300_MON_COUNT).lw(c);
+    c.g[S1][0] = sx(monitor.wrapping_add(OC300_MON_QUEUE));
+    let queue = r32(c, S1);
+    c.g[S2][0] = sx(r32(c, S2).wrapping_add(3)); // sample = surface * 8 + 3
+    c.g[A2][0] = 0x8;
+    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(1));
+    Addr(monitor).off(OC300_MON_COUNT).sw(c, c.g[V0][0]);
+    c.g[V1][0] = Addr(monitor).off(OC300_MON_COUNT).lw(c);
+    c.g[V0][0] = Addr(queue).off(0x20).lw(c);
+    c.mult(0, 3, 3, 19);
+    c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+    c.ldl(2, monitor.wrapping_add(0x1e3));
+    c.ldr(2, monitor.wrapping_add(0x1dc));
+    c.ldl(4, monitor.wrapping_add(0x1eb));
+    c.ldr(4, monitor.wrapping_add(0x1e4));
+    c.ldl(7, monitor.wrapping_add(0x1f3));
+    c.ldr(7, monitor.wrapping_add(0x1ec));
+    let record = r32(c, V1);
+    c.sdl(2, record.wrapping_add(0x7));
+    c.sdr(2, record);
+    c.sdl(4, record.wrapping_add(0xf));
+    c.sdr(4, record.wrapping_add(0x8));
+    c.sdl(7, record.wrapping_add(0x17));
+    c.sdr(7, record.wrapping_add(0x10));
+    // monitor->handles[count] = 0.
+    c.g[V0][0] = Addr(monitor).off(OC300_MON_COUNT).lw(c);
+    c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+    c.g[V0][0] = sx(monitor.wrapping_add(c.g[V0][0] as u32));
+    Addr(r32(c, V0)).off(OC300_MON_HANDLES).sw(c, 0);
+    oc300_edge_store(c, (V1, V0), monitor, queue, 0x34, 2, 0, 0);
+    // table 0x38 [count] = the entry record's first byte (sign-extended).
+    c.g[A3][0] = Addr(monitor).off(OC300_MON_COUNT).lw(c);
+    c.g[A0][0] = Addr(monitor).off(OC300_MON_COUNT).lw(c);
+    c.g[T0][0] = Addr(queue).off(0x20).lw(c);
+    c.g[A3][0] = sx(r32(c, A3) << 2);
+    c.mult(0, 4, 4, 19);
+    c.g[V0][0] = Addr(queue).off(0x38).lw(c);
+    c.g[A3][0] = sx(r32(c, A3).wrapping_add(r32(c, V0)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, T0)));
+    c.g[V1][0] = Addr(r32(c, A0)).lb(c);
+    Addr(r32(c, A3)).sw(c, c.g[V1][0]);
+    oc300_edge_store(c, (V0, V1), monitor, queue, 0x3c, 2, 0, 0);
+    // memset(&queue->slots[count] (8 bytes at +0x40), 0, 8).
+    c.g[A0][0] = Addr(monitor).off(OC300_MON_COUNT).lw(c);
+    c.g[A0][0] = sx(r32(c, A0) << 3);
+    c.g[A0][0] = sx(queue.wrapping_add(r32(c, A0)));
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(0x40));
+    call_ptr(c, 0x0041_6210, 0x0029_2678)?;
+
+    // The entry's parameters (volume 100, pan 90/50/127, flag 1).
+    let monitor = r32(c, S0);
+    let queue = r32(c, S1);
+    c.g[A0][0] = 0x64;
+    c.g[A1][0] = 0x5a;
+    c.g[A2][0] = 0x32;
+    c.g[A3][0] = 0x7f;
+    oc300_edge_store(c, (V1, V0), monitor, queue, 0x60, 2, 0, 0);
+    c.g[T0][0] = 0x1;
+    oc300_edge_store(c, (V0, V1), monitor, queue, 0x64, 2, 0, 0);
+    oc300_edge_store(c, (V1, V0), monitor, queue, 0x68, 2, 0, 0);
+    oc300_edge_store(c, (V0, V1), monitor, queue, 0x6c, 2, 0, 0);
+    oc300_edge_store(c, (V1, V0), monitor, queue, 0x70, 4, 0x4, 0);
+    oc300_edge_store(c, (V0, V1), monitor, queue, 0x70, 4, 0x0, 0x64);
+    oc300_edge_store(c, (V1, V0), monitor, queue, 0x70, 4, 0x8, 0x5a);
+    oc300_edge_store(c, (V0, V1), monitor, queue, 0x70, 4, 0xc, 0x32);
+    oc300_edge_store(c, (V1, V0), monitor, queue, 0x74, 2, 0, 0);
+    oc300_edge_store(c, (V0, V1), monitor, queue, 0x80, 2, 0, 0);
+    oc300_edge_store(c, (V1, V0), monitor, queue, 0x84, 2, 0, 0);
+    oc300_edge_store(c, (V0, V1), monitor, queue, 0x78, 2, 0, 0x7f);
+    oc300_edge_store(c, (V1, V0), monitor, queue, 0x7c, 2, 0, 1);
+
+    // sys->pushBank[count] = bank (s4); sys->pushSample[count] = sample (s2).
+    let sys = r32(c, S5);
+    c.g[A0][0] = Addr(sys).off(OC300_SYS_MONITOR).lw(c);
+    c.g[V1][0] = Addr(sys).off(OC300_SYS_PUSH_BANK).lw(c);
+    c.g[V0][0] = Addr(r32(c, A0)).off(OC300_MON_COUNT).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+    Addr(r32(c, V0)).sw(c, c.g[S4][0]);
+    c.g[V1][0] = Addr(sys).off(OC300_SYS_MONITOR).lw(c);
+    c.g[A0][0] = Addr(sys).off(OC300_SYS_PUSH_SAMPLE).lw(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(OC300_MON_COUNT).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+    Addr(r32(c, V0)).sw(c, c.g[S2][0]);
+
+    // vals[count] (root queue table 0x38) := 0, then the entry record's
+    // first byte := clamp(vals[count], 0, 127).
+    c.g[V1][0] = Addr(sys).off(OC300_SYS_SND_ROOT).lw(c);
+    c.g[A1][0] = Addr(r32(c, V1)).lw(c);
+    let root_mon = r32(c, A1);
+    c.g[V0][0] = Addr(root_mon).off(OC300_MON_COUNT).lw(c);
+    c.g[A2][0] = sx(root_mon.wrapping_add(OC300_MON_QUEUE));
+    let root_queue = r32(c, A2);
+    c.g[V1][0] = Addr(root_queue).off(0x38).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, V1)));
+    Addr(r32(c, V0)).sw(c, 0);
+    c.g[A0][0] = Addr(root_mon).off(OC300_MON_COUNT).lw(c);
+    c.g[V1][0] = Addr(root_queue).off(0x1c).lw(c);
+    c.g[A3][0] = Addr(root_queue).off(0x38).lw(c);
+    c.mult(0, 4, 4, 19);
+    c.g[V1][0] = sx(r32(c, V1) << 2);
+    c.g[A1][0] = Addr(root_queue).off(0x20).lw(c);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A3)));
+    c.g[V0][0] = Addr(r32(c, V1)).lw(c);
+    c.g[V0][0] = ((c.g[V0][0] as i64) < 127) as u64;
+    let below_max = c.g[V0][0] != 0;
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(r32(c, A1)));
+    // The current volume `vals[cur]` (queue + 0x1c is the count).
+    let volume_at = |c: &mut Cpu| {
+        c.g[V0][0] = Addr(root_queue).off(0x1c).lw(c);
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A3)));
+    };
+    let mut negative = false;
+    if below_max {
+        c.cycles += 6;
+        volume_at(c);
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+        negative = (c.g[V1][0] as i64) < 0;
+        c.g[V0][0] = 0;
+    }
+    if !negative {
+        c.cycles += 7;
+        volume_at(c);
+        c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+        c.g[V1][0] = ((c.g[V1][0] as i64) < 127) as u64;
+        if c.g[V1][0] == 0 {
+            c.g[V0][0] = 0x7f;
+        } else {
+            c.cycles += 4;
+            volume_at(c);
+            c.g[V0][0] = Addr(r32(c, V0)).lbu(c);
+        }
+    }
+    c.cycles += 69;
+    Addr(r32(c, A0)).sb(c, c.g[V0][0]);
+
+    // root->gains[count] = GetChannelGainPtr(sys, 6, 0).
+    c.g[A2][0] = 0;
+    c.g[A0][0] = c.g[S5][0];
+    c.g[A1][0] = 0x6;
+    c.g[S0][0] = Addr(r32(c, S5)).off(OC300_SYS_SND_ROOT).lw(c);
+    OC300_GET_CHANNEL_GAIN_PTR.call(c, 0x0029_2868)?;
+    c.g[A3][0] = Addr(r32(c, S0)).lw(c);
+    c.g[T0][0] = sx(r32(c, S6).wrapping_add(OC300_RIDER_SOUND_POS));
+    c.g[T1][0] = 0x4a_0000;
+    c.g[A0][0] = c.g[S5][0];
+    let mon = r32(c, A3);
+    c.g[V1][0] = Addr(mon).off(OC300_MON_COUNT).lw(c);
+    c.g[A1][0] = c.g[S6][0];
+    c.g[A2][0] = Addr(mon).off(0x214).lw(c);
+    c.g[V1][0] = sx(r32(c, V1) << 2);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A2)));
+    Addr(r32(c, V1)).sw(c, c.g[V0][0]);
+    // root->handles[count] = &rider->soundPos.
+    c.g[A2][0] = Addr(r32(c, S5)).off(OC300_SYS_SND_ROOT).lw(c);
+    c.g[V1][0] = Addr(r32(c, A2)).lw(c);
+    c.g[V0][0] = Addr(r32(c, V1)).off(OC300_MON_COUNT).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 2);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    Addr(r32(c, V1)).off(OC300_MON_HANDLES).sw(c, c.g[T0][0]);
+    // The callback key (8 bytes at 0x4a36a0, through the stack) into the
+    // entry's slot (queue + 0x40 + count * 8).
+    c.g[V0][0] = Addr(r32(c, S5)).off(OC300_SYS_SND_ROOT).lw(c);
+    c.g[A2][0] = Addr(r32(c, V0)).lw(c);
+    c.g[T0][0] = sx(OC300_EDGE_KEY);
+    c.ldl(2, OC300_EDGE_KEY.wrapping_add(0x7));
+    c.ldr(2, OC300_EDGE_KEY);
+    let stack = sp(c);
+    c.sdl(2, stack.wrapping_add(0x7));
+    c.sdr(2, stack);
+    let mon = r32(c, A2);
+    c.g[V1][0] = sx(mon.wrapping_add(OC300_MON_QUEUE));
+    c.g[V0][0] = Addr(mon).off(OC300_MON_COUNT).lw(c);
+    c.g[V0][0] = sx(r32(c, V0) << 3);
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, V0)));
+    c.ldl(2, stack.wrapping_add(0x7));
+    c.ldr(2, stack);
+    let slot = r32(c, V1);
+    c.sdl(2, slot.wrapping_add(0x47));
+    c.sdr(2, slot.wrapping_add(0x40));
+    // root table 0x254 [count] = 0; root table 0x238 [count] = rider.
+    oc300_edge_root_store(c, [A2, V1, V0, A2], 0x254, 0);
+    let rider = c.g[S6][0];
+    oc300_edge_root_store(c, [V1, A2, V0, V1], 0x238, rider);
+    // root table 0x23c [count] = GetRiderListenerIndex(sys, rider).
+    c.g[S0][0] = Addr(r32(c, S5)).off(OC300_SYS_SND_ROOT).lw(c);
+    OC300_GET_RIDER_LISTENER_INDEX.call(c, 0x0029_2924)?;
+    c.g[A0][0] = Addr(r32(c, S0)).lw(c);
+    c.g[AT][0] = 0x42c8_0000;
+    c.mtc1(1, 12); // radius 100.0
+    let mon = r32(c, A0);
+    c.g[V1][0] = Addr(mon).off(OC300_MON_COUNT).lw(c);
+    c.g[A1][0] = Addr(mon).off(0x23c).lw(c);
+    c.g[V1][0] = sx(r32(c, V1) << 2);
+    c.g[AT][0] = sx(0xbf80_0000);
+    c.mtc1(1, 13); // vanish -1.0
+    c.g[V1][0] = sx(r32(c, V1).wrapping_add(r32(c, A1)));
+    Addr(r32(c, V1)).sw(c, c.g[V0][0]);
+    // SndPlayParams_SetRadiusVanish(&root->queue, 100.0, -1.0).
+    c.g[V0][0] = Addr(r32(c, S5)).off(OC300_SYS_SND_ROOT).lw(c);
+    c.g[A0][0] = Addr(r32(c, V0)).lw(c);
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(OC300_MON_QUEUE));
+    call_ptr(c, 0x002a_9988, 0x0029_295c)?;
+    let replay = c.g[S7][0] != 0;
+    c.g[A1][0] = 1;
+    if replay {
+        // root table 0x258 [count] = 1; root table 0x25c [count] =
+        // rider->listener.
+        c.cycles += 15;
+        oc300_edge_root_store(c, [A0, V1, V0, A0], 0x258, 1);
+        c.g[A0][0] = Addr(r32(c, S5)).off(OC300_SYS_SND_ROOT).lw(c);
+        c.g[A1][0] = Addr(r32(c, S6)).off(OC300_RIDER_LISTENER).lw(c);
+        c.g[V1][0] = Addr(r32(c, A0)).lw(c);
+        c.g[V0][0] = Addr(r32(c, V1)).off(OC300_MON_COUNT).lw(c);
+        c.g[A0][0] = Addr(r32(c, V1)).off(0x25c).lw(c);
+        c.g[V0][0] = sx(r32(c, V0) << 2);
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+        Addr(r32(c, V0)).sw(c, c.g[A1][0]);
+    }
+    c.cycles += 3;
+    c.g[A0][0] = c.g[S5][0];
+    OC300_PLAY_PUSHED_SOUND.call(c, 0x0029_29a8)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -19178,6 +21319,614 @@ pub(crate) mod tests {
                 }
                 // The bank monitor's instances (all free).
                 c.bus.write32(DATA + 0x700 + 0x1d8 + 0x8ec, INSTANCES);
+            },
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    pub(crate) use crate::game::ealib::seg_2dcae8::strchr;
+
+    /// `SSXAudioSystem_StartObjectLoop` on the audio world fixture of the
+    /// soundsys tests (real memset, GetChannelGainPtr, SetRadiusVanish and
+    /// `Audio_PlayPushedSound` with no bank loaded; the real
+    /// `BankMonitor_StopHandle` finds no instance). Sound ids 0, 0x66,
+    /// 201, every bank range and a negative one; track record word 0, 3
+    /// or 8 (the real cBE_getBE / GetBELibrary and track-record getter, a
+    /// fake GetInterface method); the gate non-negative; no scene node;
+    /// slots all free, all in use, mixed, with or without a slot already
+    /// playing this sound on this object; bone -1 (node transform) or a
+    /// bone the node has (fake) or lacks (a real leaf returning 0: the
+    /// object's position).
+    #[test]
+    fn ssx_audio_system_start_object_loop_matches() {
+        use crate::difftest::fakes::{vtable, FAKE};
+        use crate::difftest::{check_lohi, fill, DATA, GAME_GP};
+        use crate::game::sound::soundsys::tests::audio;
+        const OBJ: u32 = DATA + 0x2a_0000;
+        const OTHER_OBJ: u32 = DATA + 0x2a_0800;
+        const NODE: u32 = DATA + 0x2a_1000;
+        const INSTANCES: u32 = DATA + 0x2b_0000;
+        const GAINS: u32 = DATA + 0x2c_0000;
+        const PRIORITIES: u32 = DATA + 0x2c_1000;
+        const TRACK_RECORD: u32 = 0x0043_d950;
+        const RETURNS_ZERO: u32 = 0x0014_06c0;
+        const SOUNDS: [i32; 13] = [0, 0x66, 0x66, 5, 99, 100, 149, 150, 199, 200, 201, 250, -3];
+        check_lohi(
+            ee::s08::f_00297950__generated,
+            ssx_audio_system_start_object_loop,
+            260,
+            &|c, seed| {
+                let mut r = audio::world(c, seed, 0x29_7950, 0x0029_7950);
+                let sys = audio::SYS;
+                // BELibrary_GetInterface: interface 0 with a fake method;
+                // the current track (0) and its record word.
+                let iface = DATA + 0x26_1000;
+                let ivt = DATA + 0x26_1100;
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, iface);
+                c.bus.write32(iface + 4, ivt);
+                c.bus.write16(ivt + 8, 0);
+                c.bus.write32(ivt + 0xc, FAKE + 0x40);
+                c.bus.write32(0x0053_5c08, 0);
+                c.bus
+                    .write32(TRACK_RECORD, [0u32, 8, 3, 8][(r.next_u32() % 4) as usize]);
+                // The monitor's gain / priority tables and instances (free).
+                c.bus.write32(audio::MONITOR + SOL_MONITOR_GAINS, GAINS);
+                c.bus
+                    .write32(audio::MONITOR + SOL_MONITOR_PRIORITIES, PRIORITIES);
+                c.bus
+                    .write32(audio::MONITOR + MONITOR_PUSH_QUEUE + 0x8ec, INSTANCES);
+                // The gate.
+                let gate = if seed % 13 == 6 {
+                    r.next_u32() & 0x7fff_ffff
+                } else {
+                    0x8000_0000 | r.next_u32()
+                };
+                c.bus.write32(sys + SOL_GATE, gate);
+                // The object, its node and the node's vtable.
+                let sound = SOUNDS[(r.next_u32() % SOUNDS.len() as u32) as usize];
+                let node = if seed % 17 == 9 { 0 } else { NODE };
+                c.bus.write32(OBJ + SOL_OBJ_NODE, node);
+                fill(c, &mut r, OBJ + SOL_OBJ_POSITION, 4);
+                let nvt = vtable(
+                    c,
+                    &mut r,
+                    &[SOL_VT_TRANSFORM, SOL_VT_HAS_BONE, SOL_VT_BONE_TRANSFORM],
+                );
+                c.bus.write32(NODE + 0xc, nvt);
+                if r.next_u32() % 3 == 0 {
+                    c.bus.write32(nvt + SOL_VT_HAS_BONE + 4, RETURNS_ZERO);
+                }
+                let bone = if r.next_u32() % 3 == 0 {
+                    -1i32
+                } else {
+                    (r.next_u32() % 4) as i32
+                };
+                // The slots.
+                let mode = r.next_u32() % 4;
+                let same_sound_odds = if r.next_u32() % 2 == 0 { 3 } else { 0 };
+                for k in 0..SOL_SLOT_COUNT {
+                    let slot = sys + SOL_SLOTS + k * SOL_SLOT_SIZE;
+                    let active = match mode {
+                        0 => 0,
+                        1 => 1 + r.next_u32() % 2,
+                        _ => r.next_u32() % 3,
+                    };
+                    let object = if r.next_u32() % 2 == 0 {
+                        OBJ
+                    } else {
+                        OTHER_OBJ
+                    };
+                    let id = if same_sound_odds != 0 && r.next_u32() % same_sound_odds == 0 {
+                        sound as u32
+                    } else {
+                        0x1000 + r.next_u32() % 300
+                    };
+                    c.bus.write32(slot + SOL_ACTIVE, active);
+                    c.bus.write32(slot + SOL_OBJECT, object);
+                    c.bus.write32(slot + SOL_SOUND, id);
+                    c.bus.write32(slot + SOL_HANDLE, r.next_u32() % 0x100);
+                }
+                c.g[A0][0] = sx(sys);
+                c.g[A1][0] = sx(OBJ);
+                c.g[A2][0] = sx(sound as u32);
+                c.g[A3][0] = sx(bone as u32);
+            },
+        );
+    }
+
+    /// SSXAudioSystem_StartWipeoutLoop2 on the MIDI-bank fixture of the
+    /// PlaySound tests (real record arrays, real GetChannelGainPtr,
+    /// GetRiderListenerIndex and PlayPushedSound), a world with one view
+    /// (real FindViewInRange: the view near or far from the rider's position
+    /// from a fake slot-0x28 method), the local-rider method a fake (true)
+    /// or a real `return 0` leaf, listener flags on/off, speech mode 2 or
+    /// not, replay playing or not, intensities below/inside/above the curve
+    /// (volume clamped at 0 and 127), and the loop already playing.
+    #[test]
+    fn ssx_audio_system_start_wipeout_loop2_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE, LOG_RESULTS};
+        use crate::difftest::{put_vec, put_words, DATA, GAME_GP};
+        use crate::game::sound::soundsys::tests::midi_bank;
+        const AUDIO: u32 = DATA + 0x100; // midi_bank's SSXAudioSystem
+        const RIDER: u32 = DATA + 0x2_0000;
+        const RIDER_AUDIO: u32 = DATA + 0x2_1000;
+        const VTABLE: u32 = DATA + 0x2_2000;
+        const POS: u32 = DATA + 0x2_3000;
+        const WORLD: u32 = DATA + 0x2_4000;
+        const GAME_MODULE: u32 = DATA + 0x2_5000;
+        const VIEW_LIST: u32 = DATA + 0x2_6000;
+        const VIEW: u32 = DATA + 0x2_7000;
+        const REPLAY: u32 = DATA + 0x2_8000;
+        const BE_LIB: u32 = DATA + 0x2_9000;
+        const BE_IFACE: u32 = DATA + 0x2_a000;
+        const BE_VTABLE: u32 = DATA + 0x2_b000;
+        const RETURN_ZERO: u32 = 0x0014_06c0;
+        let coord =
+            |r: &mut crate::difftest::Rng| ((r.next_u32() % 40_000) as f32 - 20_000.0).to_bits();
+        covered(
+            ee::s08::f_00296e80__generated,
+            ssx_audio_system_start_wipeout_loop2,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x29_6e80, 2);
+                c.pc = 0x0029_6e80;
+                midi_bank(c, &mut r, seed);
+                c.g[A0][0] = sx(AUDIO);
+                c.g[A1][0] = sx(RIDER);
+                c.bus.write32(RIDER + WL2_RIDER_AUDIO, RIDER_AUDIO);
+                // The loop handle: already playing on some seeds.
+                let handle = if seed % 6 == 0 { seed } else { u32::MAX };
+                c.bus.write32(RIDER_AUDIO + WL2_HANDLE, handle);
+                // Audio object vtable: slot 0x48 a fake (true) or a real
+                // `return 0`; slot 0x28 a fake returning the position.
+                c.bus.write32(RIDER_AUDIO + WL2_AUDIO_OBJ, VTABLE);
+                c.bus
+                    .write16(VTABLE + WL2_SLOT_IS_LOCAL, (r.next_u32() & 0x30) as u16);
+                let is_local = if seed % 2 == 0 { FAKE } else { RETURN_ZERO };
+                c.bus.write32(VTABLE + WL2_SLOT_IS_LOCAL + 4, is_local);
+                c.bus
+                    .write16(VTABLE + WL2_SLOT_GET_POS, (r.next_u32() & 0x30) as u16);
+                c.bus.write32(VTABLE + WL2_SLOT_GET_POS + 4, FAKE + 0x10);
+                c.bus.write32(LOG_RESULTS, POS);
+                c.bus.write32(LOG_RESULTS + 4, POS);
+                let p = [coord(&mut r), coord(&mut r), coord(&mut r), 0];
+                put_vec(c, POS, p);
+                // Intensity -5..45 over the curve's 0..40 range.
+                let intensity = ((r.next_u32() % 500) as f32 / 10.0 - 5.0).to_bits();
+                c.bus.write32(RIDER_AUDIO + WL2_INTENSITY, intensity);
+                c.bus
+                    .write32(RIDER_AUDIO + WL2_LISTENER_INDEX, r.next_u32() % 4);
+                c.bus
+                    .write32(RIDER_AUDIO + WL2_HAS_LISTENER, (seed % 3 != 0) as u32);
+                let valid = if (seed / 3) % 3 != 0 {
+                    1 + r.next_u32() % 3
+                } else {
+                    0
+                };
+                c.bus.write32(RIDER_AUDIO + WL2_LISTENER_VALID, valid);
+                // The volume curve (times, then values) and the record default.
+                let curve = [
+                    0.0f32, 10.0, 20.0, 30.0, 40.0, -40.0, 30.0, 90.0, 127.5, 300.0,
+                ];
+                put_words(c, WL2_VOLUME_CURVE, &curve.map(f32::to_bits));
+                put_words(c, WL2_RECORD_DEFAULT, &[r.next_u32(), r.next_u32()]);
+                c.bus
+                    .write8(WL2_SPEECH_MODE, if seed % 4 == 3 { 1 } else { 2 });
+                // World -> game module -> one view near or far.
+                c.bus.write32(GAME_GP - 0x848, WORLD);
+                c.bus.write32(WORLD + 0x84, GAME_MODULE);
+                c.bus.write32(GAME_MODULE + 0x84, VIEW_LIST);
+                c.bus.write32(VIEW_LIST + 0x10, 1);
+                c.bus.write32(VIEW_LIST + 4, VIEW);
+                let near = seed % 5 < 2;
+                let v = if near {
+                    let d = |x: u32| (f32::from_bits(x) + 50.0).to_bits();
+                    [d(p[0]), d(p[1]), p[2], 0]
+                } else {
+                    [coord(&mut r), coord(&mut r), coord(&mut r), 0]
+                };
+                put_vec(c, VIEW + 0x20, v);
+                // Replay state (GameModule+0x28 -> replay mode word).
+                let replay = if seed % 7 < 3 { 0 } else { REPLAY };
+                c.bus.write32(GAME_MODULE + 0x28, replay);
+                c.bus.write32(REPLAY, r.next_u32() % 14);
+                // BELibrary singleton, interface 0 with a real `return 0` slot.
+                c.bus.write32(GAME_GP - 0x1f04, BE_LIB);
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, BE_IFACE);
+                c.bus.write32(BE_IFACE + 4, BE_VTABLE);
+                c.bus.write16(BE_VTABLE + 8, 0);
+                c.bus.write32(BE_VTABLE + 0xc, RETURN_ZERO);
+            },
+        );
+    }
+
+    /// `SSXAudioSystem_IsSpeechVolumeOn` with the real
+    /// `SSXAudioSystem_GetChannelVolume`: the speech volume (+0x62fc) is
+    /// +-0, a denormal (compares equal to 0) or a random float.
+    #[test]
+    fn ssx_audio_system_is_speech_volume_on_matches() {
+        check(
+            ee::s08::f_0029f0a0__generated,
+            ssx_audio_system_is_speech_volume_on,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x29f0a0 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x0029_f0a0;
+                let volume = match seed % 4 {
+                    0 => (r.next_u32() & 1) << 31,
+                    1 => r.next_u32() & 0x807f_ffff,
+                    _ => r.edge_f32(),
+                };
+                c.bus.write32(DATA + 0x40 + 0x62bc, volume);
+                c.g[A0][0] = sx(DATA);
+            },
+        );
+    }
+
+    /// The world of [`super::ssx_audio_system_rider_say_207d`]: the audio
+    /// system, riders a / b / c (c only as the followed rider), their
+    /// scripting-object vtables (real leaves: `RiderScriptObj_GetSelf`
+    /// returns the object + delta, 0x1406c0 returns 0), the speech
+    /// settings, the game module with one listener view, the race manager,
+    /// the speech system and its event contexts, and the BE singletons.
+    pub(crate) fn rs207d_world(c: &mut ssx3_ee_rt::Cpu, seed: u32) -> Rng {
+        const SYS: u32 = DATA + 0x20_0000;
+        const RIDER_A: u32 = DATA + 0x21_0000;
+        const RIDER_B: u32 = DATA + 0x21_1000;
+        const RIDER_C: u32 = DATA + 0x21_2000;
+        const VTABLES: u32 = DATA + 0x21_4000;
+        const SETTINGS: u32 = DATA + 0x21_5000;
+        const GAME: u32 = DATA + 0x21_6000;
+        const MODULE: u32 = DATA + 0x21_7000;
+        const VIEWS: u32 = DATA + 0x21_8000;
+        const VIEW: u32 = DATA + 0x21_8100;
+        const RACE_MAN: u32 = DATA + 0x21_9000;
+        const STREAMS: u32 = DATA + 0x21_a000;
+        const STREAM: u32 = DATA + 0x21_a100;
+        const REPLAY: u32 = DATA + 0x21_a200;
+        const BE_DUMMY: u32 = DATA + 0x21_b000;
+        const IFACE: u32 = DATA + 0x21_b100;
+        const IFACE_VT: u32 = DATA + 0x21_b200;
+        const GET_SELF: u32 = 0x0014_0ce0;
+        const RETURN_0: u32 = 0x0014_06c0;
+        const F_ONE: u32 = 0x3f80_0000;
+
+        let mut r = machine(c, seed, 0x2a_0560, 12);
+        elf_image(c);
+        c.pc = 0x002a_0560;
+        let w = |c: &mut ssx3_ee_rt::Cpu, a: u32, v: u32| c.bus.write32(a, v);
+        let gp = |off: i32| (GAME_GP as i32 + off) as u32;
+        // BE library: instance, interface 0 with a fake method, singletons.
+        w(c, gp(-0x1f04), BE_DUMMY);
+        w(c, gp(-0x1efc), 0);
+        w(c, 0x0053_08a8, IFACE);
+        w(c, IFACE + 4, IFACE_VT);
+        w(c, IFACE_VT + 8, 0);
+        w(c, IFACE_VT + 0xc, FAKE + 0x40);
+        for (k, off) in [0x1f3ci32, 0x1f30, 0x1f2c, 0x1ea4].into_iter().enumerate() {
+            w(c, gp(-off), BE_DUMMY + 0x400 + 0x40 * k as u32);
+        }
+        // Player slots 0/1/2 -> race records; a character-info byte set for
+        // a (seed % 17 == 3) or b (== 4); random rivalry profiles.
+        for p in 0..3u32 {
+            w(c, 0x0053_05b0 + 4 * p, p);
+            let rec = 0x0053_5b20 + 0x1c * p;
+            w(
+                c,
+                rec + 0xc,
+                if r.next_u32() % 3 == 0 {
+                    u32::MAX
+                } else {
+                    r.next_u32() % 3
+                },
+            );
+            w(c, rec + 0x10, r.next_u32());
+            c.bus.write8(rec + 0x11, (r.next_u32() % 4) as u8);
+        }
+        c.bus.write8(0x0053_4fe0 + 0x12, (seed % 17 == 3) as u8);
+        c.bus
+            .write8(0x0053_4fe0 + 0x1c + 0x12, (seed % 17 == 4) as u8);
+        // Speech volume (channel 4) on unless seed % 9 == 3; speech mode 2.
+        w(
+            c,
+            SYS + 0x62bc + 0x40,
+            if seed % 9 == 3 { 0 } else { F_ONE },
+        );
+        w(c, gp(-0x84c), SETTINGS);
+        w(c, SETTINGS + 0x550, if seed % 10 == 7 { 0 } else { 2 });
+        // Game module, replay (playing for seed % 13 == 5), listener view.
+        w(c, gp(-0x848), GAME);
+        w(c, GAME + 0x84, MODULE);
+        w(c, MODULE + 0x28, if seed % 13 == 5 { REPLAY } else { 0 });
+        w(c, REPLAY, 3);
+        w(c, MODULE + 0xc, RACE_MAN);
+        w(c, MODULE + 0x84, VIEWS);
+        w(c, VIEWS + 0x10, 1);
+        w(c, VIEWS + 4, VIEW);
+        put_vec(c, VIEW + 0x20, [0; 4]);
+        // Race manager: time vs. the last pass, the followed-rider list,
+        // rider count 2 (rival lines) or 3 (BE rivalry).
+        w(c, RACE_MAN + 8, 1000);
+        w(c, SYS + 0x582c, if seed % 19 == 5 { 900 } else { 0 });
+        w(c, RACE_MAN + 0x78, if seed % 3 == 0 { 3 } else { 2 });
+        w(c, RACE_MAN + 0x7c, 2);
+        let followed = [RIDER_A, RIDER_B, RIDER_C, RIDER_A][(seed / 3 % 4) as usize];
+        w(c, RACE_MAN + 0x28, followed);
+        w(c, RACE_MAN + 0x2c, RIDER_C);
+        // Speech system: an instance stream unless seed % 12 == 6, event
+        // contexts free, or a's / b's line already live (rejected).
+        let speech = SYS + 0x5560;
+        w(c, speech + 4, STREAMS);
+        w(c, STREAMS, if seed % 12 == 6 { 0 } else { STREAM });
+        w(c, STREAM + 4, 0);
+        w(c, gp(0x6c4), 0);
+        let live: &[u32] = match seed % 5 {
+            1 => &[0x2081, 0x2080],
+            2 => &[0x207f, 0x207d],
+            _ => &[],
+        };
+        for (i, &code) in live.iter().enumerate() {
+            let slot = speech + 0x18 + 0x20 * i as u32;
+            w(c, slot, 1);
+            w(c, slot + 4, 50);
+            w(c, slot + 8, 0);
+            w(c, slot + 0xc, code);
+        }
+        w(c, gp(0x173c), FAKE + 0x80);
+        // The riders.
+        let gap = [500.0f32, 1000.0, 1500.0, 2000.0][(seed / 2 % 4) as usize];
+        for (i, rider) in [RIDER_A, RIDER_B, RIDER_C].into_iter().enumerate() {
+            let vt = VTABLES + 0x100 * i as u32;
+            let bits = seed >> (2 * i);
+            let progress = match (i, seed % 11) {
+                (0, 1) => 1.0f32,
+                (1, 2) => 0.0,
+                _ => -1.0,
+            };
+            w(c, rider + 0x470, progress.to_bits());
+            let heading = if seed % 7 == 0 { r.f32(3.0) } else { 0 };
+            w(c, rider + 0x4cc, heading);
+            w(c, rider + 0x6c0, vt);
+            w(c, rider + 0x86c, i as u32);
+            w(c, rider + 0x874, bits & 1);
+            w(c, rider + 0x87c, (bits >> 1) & 1);
+            w(c, rider + 0xec, r.next_u32() % 4);
+            // Slots: direction (+0x7d0), position (+0x7c0), rival player
+            // index (0), "is AI" (0 or non-zero).
+            c.bus.write16(vt + 0x10, 0x110);
+            w(c, vt + 0x14, GET_SELF);
+            c.bus.write16(vt + 0x28, 0x100);
+            w(c, vt + 0x2c, GET_SELF);
+            c.bus.write16(vt + 0x38, 0);
+            w(c, vt + 0x3c, RETURN_0);
+            c.bus.write16(vt + 0x48, 0);
+            w(
+                c,
+                vt + 0x4c,
+                if (bits >> 4) & 1 == 0 {
+                    RETURN_0
+                } else {
+                    GET_SELF
+                },
+            );
+            // Heard by the view unless seed % 23 puts one far away.
+            let far = (i == 0 && seed % 23 == 1) || (i == 1 && seed % 23 == 2);
+            let x = if far { 5000.0f32 } else { 1.0 + i as f32 };
+            put_vec(
+                c,
+                rider + 0x7c0,
+                [x.to_bits(), 2.0f32.to_bits(), 3.0f32.to_bits(), 0],
+            );
+            let d = if i == 0 { gap } else { 0.0 };
+            put_vec(c, rider + 0x7d0, [d.to_bits(), d.to_bits(), 0, 0]);
+        }
+        c.g[A0][0] = SYS as u64;
+        c.g[A1][0] = RIDER_A as u64;
+        c.g[A2][0] = RIDER_B as u64;
+        r
+    }
+
+    crate::difftest::events::driven!(strchr_gen, ee::s15::f_00416404__generated);
+
+    crate::difftest::events::driven!(strchr_hand, strchr);
+
+    /// `strchr`: strings of 0..~6000 bytes at every alignment (byte, 8-byte
+    /// and 16-byte paths), searching for a byte of the string (early, late,
+    /// in the first block), a byte not in it, or the NUL itself (`ch` with
+    /// junk above the low byte); events delivered (or unwinding) inside the
+    /// loops.
+    #[test]
+    fn strchr_matches() {
+        use crate::difftest::events::{check_events, schedule};
+        use crate::difftest::{fill, scramble};
+        check_events(strchr_gen, strchr_hand, 600, &|c, seed| {
+            let mut r = Rng(0x7374_7263_6872 ^ (seed as u64) << 20);
+            scramble(c, &mut r);
+            fill(c, &mut r, DATA, 0x2000);
+            let s = DATA
+                + 0x10 * (r.next_u32() % 32)
+                + match r.next_u32() % 3 {
+                    0 => 0,
+                    1 => 8,
+                    _ => r.next_u32() % 16,
+                };
+            let len = match r.next_u32() % 6 {
+                0 => r.next_u32() % 8,
+                1 => r.next_u32() % 40,
+                2 => [7, 8, 9, 15, 16, 17, 31, 32, 33][(r.next_u32() % 9) as usize],
+                3 => r.next_u32() % 300,
+                4 => r.next_u32() % 2000,
+                _ => 3000 + r.next_u32() % 3000,
+            };
+            // Bytes 1..=0xfe; 0xff never appears (the "absent" search).
+            for i in 0..len {
+                let b = match r.next_u32() % 6 {
+                    0 => [1u8, 0x7f, 0x80, 0xfe, 2][(r.next_u32() % 5) as usize],
+                    _ => (r.next_u32() as u8).clamp(1, 0xfe),
+                };
+                c.bus.write8(s + i, b);
+            }
+            c.bus.write8(s + len, 0);
+            let ch = match r.next_u32() % 5 {
+                0 => 0xff,
+                1 => 0,
+                _ if len == 0 => 0x41,
+                2 => c.bus.read8(s + r.next_u32() % len.min(20)) as u32,
+                _ => c.bus.read8(s + r.next_u32() % len) as u32,
+            };
+            c.g[A0][0] = sx(s);
+            c.g[A1][0] = (r.next_u32() as u64) << 32 | (r.next_u32() & 0xffff_ff00 | ch) as u64;
+            schedule(c, &mut r, seed, 0x0041_6404)
+        });
+    }
+
+    /// `CrowdAudio_PitchBendCallback`: the real `CrowdAudio_UpdatePitchBend`
+    /// on the voice's owner (the fixture of its own test): not playing,
+    /// idle, rising and falling bends; the SND lock hooks are fakes (some
+    /// unwind).
+    #[test]
+    fn crowd_audio_pitch_bend_callback_matches() {
+        use crate::difftest::fill;
+        const SELF: u32 = DATA + 0x100;
+        const VOICE: u32 = DATA + 0x400;
+        const TABLE: u32 = DATA + 0x800;
+        check(
+            ee::s08::f_002a77a8__generated,
+            crowd_audio_pitch_bend_callback,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2a_77a8, 4);
+                c.pc = 0x002a_77a8;
+                fill(c, &mut r, SELF, 0x70);
+                fill(c, &mut r, VOICE, 0x40);
+                fill(c, &mut r, TABLE, 0x60);
+                c.bus.write32(VOICE + 0x80, SELF);
+                c.bus.write32(GAME_GP + 0x608, TABLE);
+                c.bus.write32(0x0044_c46c, FAKE);
+                c.bus.write32(0x0044_c470, FAKE + 0x10);
+                c.bus.write16(0x0050_a8e8 + 0x17e, 0);
+                let playing = seed % 6 != 0;
+                c.bus.write32(
+                    VOICE + 4,
+                    if playing {
+                        r.next_u32() & 0x7fff_ffff
+                    } else {
+                        0x8000_0000 | r.next_u32()
+                    },
+                );
+                c.bus.write32(VOICE + 0x54, 1);
+                let curve = r.next_u32() % 4;
+                c.bus.write32(SELF + 0x184, curve);
+                let bend = TABLE + curve * 0x54 + 0x1c;
+                let fall = 0.5 + (r.next_u32() % 100) as f32 / 50.0;
+                let rise = 0.25 + (r.next_u32() % 100) as f32 / 50.0;
+                c.bus.write32(bend + 0x48, fall.to_bits());
+                c.bus.write32(bend + 0x4c, rise.to_bits());
+                c.bus.write32(bend + 0x50, r.f32(64.0));
+                let time = match seed % 5 {
+                    0 => -((r.next_u32() % 3) as f32),
+                    _ => (r.next_u32() % 400) as f32 / 50.0,
+                };
+                c.bus.write32(SELF + 0x188, time.to_bits());
+                c.f[12] = ((r.next_u32() % 100) as f32 / 60.0).to_bits();
+                c.g[A0][0] = r.next_u32() as u64;
+                c.g[A1][0] = sx(VOICE);
+            },
+        );
+    }
+
+    /// `SSXAudioSystem_RiderSay207D`: every early out (speech volume, mode,
+    /// replay, character info, pass interval, progress, followed rider,
+    /// speech instance, listener views, gap limits), the rival and pass
+    /// lines with accepted and rejected contexts; the post hook and the BE
+    /// interface method are fakes (some unwind).
+    #[test]
+    fn ssx_audio_system_rider_say_207d_matches() {
+        check(
+            ee::s08::f_002a0560__generated,
+            ssx_audio_system_rider_say_207d,
+            300,
+            &|c, seed| {
+                rs207d_world(c, seed);
+            },
+        );
+    }
+
+    /// CrowdAudio_InstanceSetSourceParam: negative, zero and positive
+    /// source indices; active and inactive sources.
+    #[test]
+    fn crowd_audio_instance_set_source_param_matches() {
+        check(
+            ee::s08::f_002a5cd8__generated,
+            crowd_audio_instance_set_source_param,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x2a5cd8, 0);
+                let inst = DATA + 0x100;
+                fill(c, &mut r, inst, 0x40);
+                let source: i32 = match seed % 4 {
+                    0 => -((r.next_u32() % 5) as i32) - 1,
+                    1 => 0,
+                    _ => (r.next_u32() % 8) as i32,
+                };
+                if source >= 0 && seed % 3 == 0 {
+                    c.bus.write32(inst + 0x20 + 0xc * source as u32, 0);
+                }
+                c.g[A0][0] = sx(inst);
+                c.g[A1][0] = source as i64 as u64;
+                c.g[A2][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                c.pc = 0x002a_5cd8;
+            },
+        );
+    }
+
+    /// `SSXAudioSystem_StartBoardEdgeLoop` on the shared audio world: human
+    /// and local or not (early out), mode byte 2 (the real
+    /// `IsReplayPlaying`, in and out of replays: the replay listener
+    /// fields) or not, surfaces 0..5 (both banks of the real
+    /// `GetSurfaceBank`), the real push, memset, gain, listener lookup,
+    /// `SetRadiusVanish` and `Audio_PlayPushedSound` (no bank). The
+    /// `BELibrary_GetInterface` method is a fake; some seeds unwind there or
+    /// in the SND lock hooks. (The volume clamp always sees the 0 it just
+    /// stored, so only its in-range path runs.)
+    #[test]
+    fn ssx_audio_system_start_board_edge_loop_matches() {
+        use crate::difftest::check_lohi;
+        use crate::difftest::fakes::{FAKE, LOG_UNWIND_AT};
+        use crate::game::sound::soundsys::tests::audio;
+        check_lohi(
+            ee::s07::f_00292508__generated,
+            ssx_audio_system_start_board_edge_loop,
+            150,
+            &|c, seed| {
+                let mut r = audio::world(c, seed, 0x29_2508, 0x0029_2508);
+                // BELibrary_GetInterface: interface table entry 0 with a
+                // fake method.
+                let iface = DATA + 0x26_1000;
+                let vt = DATA + 0x26_1100;
+                c.bus.write32(GAME_GP - 0x1efc, 0);
+                c.bus.write32(0x0053_08a8, iface);
+                c.bus.write32(iface + 4, vt);
+                c.bus.write16(vt + 8, 0);
+                c.bus.write32(vt + 0xc, FAKE + 0x40);
+                c.bus
+                    .write8(OC300_MODE_BYTE, if seed % 5 < 3 { 2 } else { 1 });
+                c.bus
+                    .write32(audio::RIDER + OC300_RIDER_LISTENER, r.next_u32() % 4);
+                c.g[A2][0] = match seed % 7 {
+                    6 => (r.next_u32() % 6) as u64 | (r.next_u32() as u64) << 32,
+                    k => k as u64 % 6,
+                };
+                if seed % 10 == 7 {
+                    c.bus.write32(LOG_UNWIND_AT, r.next_u32() % 3);
+                }
             },
         );
     }

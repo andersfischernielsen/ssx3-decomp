@@ -228,6 +228,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x003b_b0c8, snd_next_handle_serial, "SND_NextHandleSerial"),
     (0x003c_72a0, snd_random_range, "SND_RandomRange"),
     (0x003d_6e30, spch_history_find, "SPCH_HistoryFind"),
+    (0x003b_c570, snd_midi_to_volume, "SND_MidiToVolume"),
+    (0x003c_8158, snd_ee_voice_start, "SND_EeVoiceStart"),
+    (0x003c_8468, snd_ee_voice_stop, "SND_EeVoiceStop"),
+    (0x003c_8a88, snd_ee_voice_set_pitch, "SND_EeVoiceSetPitch"),
+    (0x003c_dde8, snd_utk_set_input, "SND_UtkSetInput"),
 ];
 
 /// Fields of the driver state block.
@@ -13447,6 +13452,595 @@ pub fn sndstrm_queue_request(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod voice_start_callee {
+    use super::*;
+
+    /// `SND_MemAlloc` (other shard: through the function table).
+    pub const MEM_ALLOC: u32 = 0x003b_5c60;
+
+    pub const DSP_INSERT_SORTED: Callee = Callee {
+        addr: 0x003c_8f48,
+        f: ee::s14::SND_DspInsertSorted,
+    };
+
+    pub const DSP_STRETCH_INIT: Callee = Callee {
+        addr: 0x003c_b280,
+        f: ee::s14::SND_DspStretch_Init,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// 0x003c8468 SND_EeVoiceStop
+
+/// The EE voice mixer (0x515b40): channel count (byte +5), the per-channel
+/// and the master level sums, the voice table pointer.
+pub(crate) const SEVS_MIXER: u32 = 0x0051_5b40;
+
+pub(crate) const SEVS_CHANNELS: u32 = 0x5;
+
+pub(crate) const SEVS_CHANNEL_SUMS: u32 = 0xe8;
+
+pub(crate) const SEVS_MASTER_SUM: u32 = 0x100;
+
+pub(crate) const SEVS_VOICES: u32 = 0x1dc;
+
+/// A voice (0x60 bytes): active byte, channel levels, master level,
+/// scale, node list.
+pub(crate) const SEVS_VOICE_SIZE: u32 = 0x60;
+
+pub(crate) const SEVS_LEVELS: u32 = 0x4;
+
+pub(crate) const SEVS_MASTER_LEVEL: u32 = 0x34;
+
+pub(crate) const SEVS_SCALE: u32 = 0x3c;
+
+pub(crate) const SEVS_NODES: u32 = 0x40;
+
+/// `void SND_EeVoiceStop(int voice)` (0x3c8468): take the voice's scaled
+/// master level and channel levels back out of the mixer sums (adding the
+/// stored negated contributions), run and free each of its nodes (`node->
+/// stop(node)` when set, `SND_MemFree`), then mark the voice inactive.
+pub fn snd_ee_voice_stop(c: &mut Cpu) {
+    let frame = Frame { size: 0x30 };
+    guest(c, |c| {
+        c.cycles += 14;
+        Frame::open(c, 0x30);
+        c.g[V1][0] = SEVS_VOICE_SIZE as u64;
+        c.g[V0][0] = 0x0051_0000;
+        frame.save(c, S1, 0x10);
+        c.mult(0, A0, A0, V1);
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0);
+        c.g[A2][0] = c.g[V0][0];
+        c.g[V0][0] = SEVS_MIXER as u64;
+        c.g[A1][0] = 0;
+        c.g[V1][0] = Addr(SEVS_MIXER).off(SEVS_VOICES).lw(c);
+        c.g[V0][0] = (SEVS_MIXER + SEVS_MASTER_SUM) as u64;
+        c.g[S1][0] = sx(r32(c, V1).wrapping_add(r32(c, A0)));
+        let voice = r32(c, S1);
+        c.g[V1][0] = sx(voice.wrapping_add(SEVS_MASTER_LEVEL));
+        // The master sum (a one-element loop: a1 0 -> -1).
+        c.cycles += 10;
+        c.lwc1(0, r32(c, V1));
+        c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+        c.lwc1(2, voice.wrapping_add(SEVS_SCALE));
+        c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+        c.lwc1(1, r32(c, V0));
+        c.mul_s(0, 0, 2);
+        c.add_s(1, 1, 0);
+        c.swc1(1, r32(c, V0));
+        c.g[V0][0] = sx(r32(c, V0).wrapping_add(4));
+        // The channel sums.
+        c.cycles += 4;
+        c.g[V1][0] = sx(SEVS_MIXER);
+        c.g[V0][0] = Addr(SEVS_MIXER).off(SEVS_CHANNELS).lbu(c);
+        c.g[A1][0] = 0;
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            c.g[A2][0] = c.g[V1][0];
+            c.g[A0][0] = sx(voice.wrapping_add(SEVS_LEVELS));
+            c.g[V1][0] = sx(SEVS_MIXER + SEVS_CHANNEL_SUMS);
+            loop {
+                c.cycles += 12;
+                c.lwc1(1, r32(c, A0));
+                c.g[A1][0] = sx(r32(c, A1).wrapping_add(1));
+                c.lwc1(2, voice.wrapping_add(SEVS_SCALE));
+                c.g[A0][0] = sx(r32(c, A0).wrapping_add(4));
+                c.lwc1(0, r32(c, V1));
+                c.mul_s(1, 1, 2);
+                c.add_s(0, 0, 1);
+                c.swc1(0, r32(c, V1));
+                c.g[V0][0] = Addr(r32(c, A2)).off(SEVS_CHANNELS).lbu(c);
+                c.g[V0][0] = ((c.g[A1][0] as i64) < (c.g[V0][0] as i64)) as u64;
+                c.g[V1][0] = sx(r32(c, V1).wrapping_add(4));
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x003c_84e8);
+                }
+            }
+        }
+        // Stop and free the nodes.
+        loop {
+            c.cycles += 4;
+            c.g[A0][0] = Addr(r32(c, S1)).off(SEVS_NODES).lw(c);
+            c.g[V0][0] = Addr(r32(c, A0)).off(4).lw(c);
+            if c.g[V0][0] != 0 {
+                c.cycles += 3;
+                let stop = r32(c, V0);
+                call_ptr(c, stop, 0x003c_8530)?;
+            }
+            c.g[V0][0] = Addr(r32(c, S1)).off(SEVS_NODES).lw(c);
+            c.cycles += 5;
+            c.g[S0][0] = Addr(r32(c, V0)).off(8).lw(c);
+            c.g[A0][0] = c.g[V0][0];
+            call_ptr(c, 0x003b_5e98, 0x003c_8540)?; // SND_MemFree
+            let next = c.g[S0][0];
+            Addr(r32(c, S1)).off(SEVS_NODES).sw(c, next);
+            if next == 0 {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x003c_8518);
+            }
+        }
+        c.cycles += 6;
+        c.sb(r32(c, S1), 0);
+        frame.restore(c, S0, 0x20);
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 0x003bc570 SND_MidiToVolume
+
+/// The MIDI-to-volume table (0x44c590, 128 halfwords).
+pub(crate) const SMTV_TABLE: u32 = 0x0044_c590;
+
+/// `u16 SND_MidiToVolume(int midi)` (0x3bc570): the volume for a MIDI
+/// level, `table[midi]` (no range check).
+pub fn snd_midi_to_volume(c: &mut Cpu) {
+    c.cycles += 6;
+    c.g[V0][0] = sx(SMTV_TABLE);
+    let at = (r32(c, A0) << 1).wrapping_add(SMTV_TABLE);
+    c.g[A0][0] = sx(at);
+    c.g[V0][0] = c.lhu(at);
+    ret(c);
+}
+
+/// The sound driver's state block (`D_00515B40`): the voice entries
+/// (`+0x1dc`, 0x60 bytes each), and per sample format (6 rows of 3) the
+/// DSP start functions (`+0x18`) and object sizes (`+0x60`).
+pub(crate) const VOICE_STATE: u32 = 0x0051_5b40;
+
+pub(crate) const VOICE_STATE_ENTRIES: u32 = 0x1dc;
+
+pub(crate) const VOICE_STATE_START_FNS: u32 = 0x18;
+
+pub(crate) const VOICE_STATE_SIZES: u32 = 0x60;
+
+/// The global flag byte passed in the start parameters (`D_0050AA62`).
+pub(crate) const VOICE_START_FLAG: u32 = 0x0050_aa62;
+
+/// Voice entry fields.
+pub(crate) const VOICE_ACTIVE: u32 = 0x0;
+
+pub(crate) const VOICE_DSP_LIST: u32 = 0x40;
+
+pub(crate) const VOICE_RESULT: u32 = 0x44;
+
+pub(crate) const VOICE_OBJ: u32 = 0x48;
+
+pub(crate) const VOICE_STREAM: u32 = 0x4c;
+
+/// `void SND_EeVoiceStart(int id, int fmt, int ch, int a, int b, int strm,
+/// int c, int g, int d, int f, ..., int e, int prio)` (0x3c8158): reset voice
+/// `id`'s DSP chain; pick the start function for the sample format (8, 10,
+/// 4, 22, 16, 23 -> rows 0..5) and channel mode (mono: 0/1 by `f >= 1`;
+/// stereo 2; other 0), and if there is one allocate its DSP object
+/// (`SND_MemAlloc(size)`, priority 0xf0 / `prio`), call it with the start
+/// parameters on the stack and insert it into the chain; with a stream,
+/// allocate a time-stretch object (0x1828 bytes, priority 0xc8), initialise
+/// it for the stream (voice -1 unless mono-0) and insert it too. Marks the
+/// voice active.
+pub fn snd_ee_voice_start(c: &mut Cpu) {
+    use voice_start_callee as f;
+    guest(c, |c| {
+        c.cycles += 37;
+        let frame = Frame::open(c, 0xd0);
+        frame.save(c, S1, 0xb0);
+        frame.save(c, S0, 0xc0);
+        frame.save(c, S3, 0x90);
+        frame.save(c, S4, 0x80);
+        frame.save(c, S5, 0x70);
+        frame.save(c, S6, 0x60);
+        frame.save(c, S7, 0x50);
+        frame.save(c, FP, 0x40);
+        frame.save(c, S2, 0xa0);
+        frame.save_ra(c, 0x30);
+        c.g[S1][0] = c.g[A0][0]; // id
+        c.g[V1][0] = 0x60;
+        c.mult(0, V1, S1, V1); // id * sizeof(entry)
+        c.g[T5][0] = 0x51_0000;
+        c.g[T4][0] = 1;
+        c.g[S3][0] = c.g[A2][0]; // ch
+        c.g[S6][0] = c.g[A3][0];
+        c.g[S7][0] = c.g[T0][0];
+        c.g[FP][0] = c.g[T1][0]; // strm
+        c.g[S4][0] = c.g[T2][0];
+        c.g[S5][0] = c.g[T3][0];
+        let entries = Addr(VOICE_STATE + VOICE_STATE_ENTRIES).lw(c);
+        c.g[S0][0] = sx((entries as u32).wrapping_add(c.g[V1][0] as u32));
+        let ent = r32(c, S0);
+        Addr(ent + VOICE_DSP_LIST).sw(c, 0);
+        Addr(ent + VOICE_OBJ).sw(c, 0);
+        Addr(ent + 0x50).sw(c, 0);
+        Addr(ent + 0x58).sw(c, 0);
+        Addr(ent + 0x5c).sw(c, 0);
+        Addr(ent + VOICE_STREAM).sw(c, 0);
+        Addr(sp(c) + 0x18).sw(c, 1); // p.one
+        Addr(sp(c) + 0x28).sw(c, 0); // p.result
+
+        // The format row (a0; -1 for an unknown format).
+        let fmt = c.g[A1][0];
+        c.g[A0][0] = u64::MAX;
+        c.g[V0][0] = 8;
+        if fmt == 8 {
+            c.cycles += 2;
+            c.g[A0][0] = 0;
+        } else {
+            c.cycles += 3;
+            c.g[V0][0] = 4;
+            if fmt == 0xa {
+                c.cycles += 2;
+                c.g[A0][0] = 1;
+            } else {
+                c.cycles += 2;
+                c.g[V0][0] = 0x16;
+                if fmt == 4 {
+                    c.cycles += 2;
+                    c.g[A0][0] = 2;
+                } else {
+                    c.cycles += 2;
+                    c.g[V0][0] = 0x10;
+                    if fmt == 0x16 {
+                        c.cycles += 2;
+                        c.g[A0][0] = 3;
+                    } else {
+                        c.cycles += 2;
+                        c.g[V1][0] = fmt ^ 0x17;
+                        if fmt == 0x10 {
+                            c.cycles += 2;
+                            c.g[A0][0] = 4;
+                        } else {
+                            c.cycles += 2;
+                            c.g[V0][0] = 5;
+                            if c.g[V1][0] == 0 {
+                                c.g[A0][0] = 5;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // The channel column (v1).
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        if c.g[S3][0] == 1 {
+            c.cycles += 5;
+            let f_arg = Addr(sp(c) + 0xd8).lw(c);
+            c.g[V0][0] = ((f_arg as i64) < 1) as u64;
+            c.g[V1][0] = if c.g[V0][0] != 0 { 0 } else { c.g[S3][0] };
+        } else {
+            c.cycles += 1;
+            c.g[V1][0] = if c.g[S3][0] != 0 { 0 } else { 2 };
+        }
+
+        // The format's start function.
+        c.cycles += 10;
+        c.g[V0][0] = 0xc;
+        c.g[A1][0] = sx(VOICE_STATE);
+        c.mult(0, V0, A0, V0); // row * 12
+        c.g[V1][0] = sx((c.g[V1][0] as u32) << 2);
+        c.g[A0][0] = sx(VOICE_STATE + VOICE_STATE_START_FNS);
+        c.g[V1][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[V0][0] as u32));
+        c.g[S2][0] = sx((c.g[V1][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        let start_fn = Addr(r32(c, S2)).lw(c);
+        c.g[V0][0] = sx(VOICE_STATE.wrapping_add(c.g[V1][0] as u32));
+        if start_fn != 0 {
+            c.cycles += 34;
+            c.g[A0][0] = Addr(r32(c, V0).wrapping_add(VOICE_STATE_SIZES)).lw(c);
+            call_ptr(c, f::MEM_ALLOC, 0x003c_8294)?;
+            let ent = r32(c, S0);
+            Addr(ent + VOICE_OBJ).sw(c, c.g[V0][0]);
+            c.g[A0][0] = 0xf0;
+            c.g[V0][0] = 0x51_0000;
+            let p = sp(c);
+            Addr(p).sw(c, c.g[S6][0]); // p.a
+            c.g[V1][0] = Addr(VOICE_START_FLAG).lbu(c);
+            c.g[A1][0] = c.g[SP][0]; // &p
+            c.g[V0][0] = Addr(p + 0xf0).lw(c);
+            Addr(p + 0x4).sw(c, c.g[S7][0]); // p.b
+            Addr(p + 0x24).sw(c, c.g[V0][0]); // p.e
+            c.g[V0][0] = Addr(p + 0xd0).lw(c);
+            Addr(p + 0x8).sw(c, c.g[S4][0]); // p.c
+            Addr(p + 0x10).sw(c, c.g[V0][0]); // p.d
+            c.g[V0][0] = Addr(p + 0xd8).lw(c);
+            Addr(p + 0xc).sw(c, c.g[S5][0]); // p.g
+            Addr(p + 0x14).sw(c, c.g[V0][0]); // p.f
+            Addr(p + 0x20).sw(c, c.g[V1][0]); // p.flag
+            Addr(p + 0x1c).sw(c, c.g[S1][0]); // p.id
+            c.g[V0][0] = Addr(ent + VOICE_OBJ).lw(c);
+            Addr(r32(c, V0) + 0x4).sw(c, 0);
+            c.g[V1][0] = Addr(ent + VOICE_OBJ).lw(c);
+            Addr(r32(c, V1) + 0x18).sh(c, 0xf0);
+            c.g[V1][0] = Addr(p + 0xf8).lw(c); // prio
+            c.g[V0][0] = Addr(ent + VOICE_OBJ).lw(c);
+            Addr(r32(c, V0) + 0x1a).sb(c, c.g[V1][0]);
+            c.g[V1][0] = Addr(r32(c, S2)).lw(c);
+            let target = r32(c, V1);
+            c.g[A0][0] = Addr(ent + VOICE_OBJ).lw(c);
+            call_ptr(c, target, 0x003c_8300)?;
+            let ent = r32(c, S0);
+            c.g[V0][0] = Addr(sp(c) + 0x28).lw(c);
+            c.g[A0][0] = sx(ent + VOICE_DSP_LIST);
+            c.g[A1][0] = Addr(ent + VOICE_OBJ).lw(c);
+            Addr(ent + VOICE_RESULT).sw(c, c.g[V0][0]);
+            f::DSP_INSERT_SORTED.call(c, 0x003c_8314)?;
+        }
+
+        // The stream's time-stretch stage.
+        c.cycles += 2;
+        c.g[V0][0] = u64::MAX;
+        if c.g[FP][0] != 0 {
+            c.cycles += 18;
+            c.g[A0][0] = 0x1828;
+            if c.g[S3][0] != 0 {
+                c.g[S1][0] = c.g[V0][0]; // voice -1
+            }
+            call_ptr(c, f::MEM_ALLOC, 0x003c_8328)?;
+            let ent = r32(c, S0);
+            Addr(ent + VOICE_STREAM).sw(c, c.g[V0][0]);
+            c.g[A0][0] = 0xc8;
+            Addr(r32(c, V0) + 0x4).sw(c, 0);
+            c.g[A1][0] = c.g[FP][0];
+            c.g[A2][0] = c.g[S1][0];
+            c.g[V0][0] = Addr(ent + VOICE_STREAM).lw(c);
+            Addr(r32(c, V0) + 0x18).sh(c, 0xc8);
+            c.g[V0][0] = Addr(sp(c) + 0xf8).lw(c); // prio
+            c.g[V1][0] = Addr(ent + VOICE_STREAM).lw(c);
+            Addr(r32(c, V1) + 0x1a).sb(c, c.g[V0][0]);
+            c.g[A0][0] = Addr(ent + VOICE_STREAM).lw(c);
+            f::DSP_STRETCH_INIT.call(c, 0x003c_8358)?;
+            let ent = r32(c, S0);
+            c.g[A1][0] = Addr(ent + VOICE_STREAM).lw(c);
+            c.g[A0][0] = sx(ent + VOICE_DSP_LIST);
+            f::DSP_INSERT_SORTED.call(c, 0x003c_8364)?;
+        }
+
+        c.cycles += 14;
+        c.g[V0][0] = 1;
+        Addr(r32(c, S0) + VOICE_ACTIVE).sb(c, 1);
+        frame.restore(c, S1, 0xb0);
+        frame.restore(c, S0, 0xc0);
+        frame.restore(c, S2, 0xa0);
+        frame.restore(c, S3, 0x90);
+        frame.restore(c, S4, 0x80);
+        frame.restore(c, S5, 0x70);
+        frame.restore(c, S6, 0x60);
+        frame.restore(c, S7, 0x50);
+        frame.restore(c, FP, 0x40);
+        frame.restore_ra(c, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_UtkSetInput (0x3cdde8).
+
+/// UTK decoder state: `+0xd44` bit position, `+0xd48` the input, `+0xd54`
+/// the input's size (non-zero: busy), `+0xd58` the user word, `+0xd5c`
+/// the header reset flag, `+0xd60` "starts with the 0xee marker", `+0xd64`
+/// the stream format (1: marker byte first).
+pub(crate) const UTK_BIT_POS: u32 = 0xd44;
+
+pub(crate) const UTK_INPUT: u32 = 0xd48;
+
+pub(crate) const UTK_INPUT_SIZE: u32 = 0xd54;
+
+pub(crate) const UTK_USER: u32 = 0xd58;
+
+pub(crate) const UTK_RESET: u32 = 0xd5c;
+
+pub(crate) const UTK_MARKED: u32 = 0xd60;
+
+pub(crate) const UTK_FORMAT: u32 = 0xd64;
+
+pub(crate) const UTK_PARSE_HEADER: Callee = Callee {
+    addr: 0x003c_d6f0,
+    f: ee::s14::SND_UtkParseHeader,
+};
+
+/// `int SND_UtkSetInput(UtkState* st, u8* data, int user, int size)`
+/// (0x3cdde8): attach a new input buffer to an idle decoder (-1 if `data`
+/// is null or an input is still attached), note whether a format-1 stream
+/// starts with the 0xee marker (skipped), and parse its header. Returns 0.
+pub fn snd_utk_set_input(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 4;
+        let frame = Frame::open(c, 0x10);
+        frame.save_ra(c, 0);
+        c.g[V0][0] = u64::MAX;
+        'out: {
+            if c.g[A1][0] == 0 {
+                break 'out;
+            }
+            c.cycles += 3;
+            let st = Addr(r32(c, A0));
+            c.g[V0][0] = st.off(UTK_INPUT_SIZE).lw(c);
+            let busy = c.g[V0][0] != 0;
+            c.g[V0][0] = u64::MAX;
+            if busy {
+                break 'out;
+            }
+            c.cycles += 7;
+            c.g[T0][0] = st.off(UTK_FORMAT).lw(c);
+            c.g[V0][0] = 1;
+            st.off(UTK_INPUT_SIZE).sw(c, c.g[A3][0]);
+            st.off(UTK_USER).sw(c, c.g[A2][0]);
+            st.off(UTK_BIT_POS).sw(c, 0);
+            st.off(UTK_INPUT).sw(c, c.g[A1][0]);
+            if c.g[T0][0] == 1 {
+                c.cycles += 4;
+                let data = r32(c, A1);
+                c.g[V1][0] = Addr(data).lbu(c);
+                c.g[V0][0] = 0xee;
+                if c.g[V1][0] != 0xee {
+                    st.off(UTK_MARKED).sw(c, 0);
+                } else {
+                    c.cycles += 1;
+                    st.off(UTK_MARKED).sw(c, c.g[T0][0]);
+                }
+                c.cycles += 6;
+                c.g[A3][0] = st.off(UTK_RESET).lw(c);
+                c.g[A1][0] = sx(data.wrapping_add(1));
+                c.g[A2][0] = c.g[A0][0];
+                UTK_PARSE_HEADER.call(c, 0x003c_de44)?;
+            } else {
+                c.cycles += 4;
+                c.g[A3][0] = st.off(UTK_RESET).lw(c);
+                c.g[A2][0] = c.g[A0][0];
+                UTK_PARSE_HEADER.call(c, 0x003c_de58)?;
+            }
+            c.g[V0][0] = 0;
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// SND_EeVoiceSetPitch (0x3c8a88)
+
+/// The sound driver's state block (`D_00515B40`).
+pub(crate) const PITCH_SND_STATE: u32 = 0x0051_5b40;
+
+/// State -> the voice entries (0x60 bytes each).
+pub(crate) const PITCH_STATE_VOICES: u32 = 0x1dc;
+
+/// State -> output sample rate code (>= 50: high-quality resampling).
+pub(crate) const PITCH_STATE_RATE_CODE: u32 = 0xe;
+
+/// Resampler interpolation setting byte (`D_0050AA62`).
+pub(crate) const PITCH_RESAMPLE_MODE: u32 = 0x0050_aa62;
+
+/// Bytes per voice entry.
+pub(crate) const PITCH_VOICE_SIZE: u64 = 0x60;
+
+/// Voice -> its DSP chain (sorted by priority).
+pub(crate) const PITCH_VOICE_DSP_CHAIN: u32 = 0x40;
+
+/// Voice -> its resampler DSP (0x38 bytes; priority half +0x18).
+pub(crate) const PITCH_VOICE_RESAMPLER: u32 = 0x50;
+
+/// Highest pitch ratio (2.0 in 16.16).
+pub(crate) const PITCH_MAX: u64 = 0x2_0000;
+
+pub(crate) const PITCH_RESAMPLE_INIT: Callee = Callee {
+    addr: 0x003c_bb28,
+    f: ee::s14::SND_DspResample_Init,
+};
+
+pub(crate) const PITCH_DSP_INSERT_SORTED: Callee = Callee {
+    addr: 0x003c_8f48,
+    f: ee::s14::SND_DspInsertSorted,
+};
+
+pub(crate) const PITCH_RESAMPLE_SET_RATE: Callee = Callee {
+    addr: 0x003c_b538,
+    f: ee::s14::SND_DspResample_SetRate,
+};
+
+/// `void SND_EeVoiceSetPitch(int voice, int pitch)` (0x3c8a88): sets the
+/// voice's resampling rate to `min(pitch, 0x20000)`, first creating its
+/// resampler DSP if it has none (`SND_MemAlloc(0x38)`, priority 0xa0,
+/// `SND_DspResample_Init(dsp, mode, rate code >= 50)`, inserted into the
+/// voice's DSP chain). Frame 0x40 (s0 = voice entry, s1 = rate, s2 =
+/// driver state); the entry offset uses `mult`.
+pub fn snd_ee_voice_set_pitch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x40);
+        c.g[V0][0] = PITCH_VOICE_SIZE;
+        frame.save(c, S0, 0x30);
+        c.mult(0, A0, A0, V0);
+        frame.save(c, S1, 0x20);
+        c.g[V1][0] = 0x51_0000;
+        frame.save(c, S2, 0x10);
+        c.g[V0][0] = PITCH_MAX;
+        frame.save_ra(c, 0);
+        c.g[S2][0] = sx(PITCH_SND_STATE);
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A2][0] = Addr(PITCH_SND_STATE + PITCH_STATE_VOICES).lw(c);
+        c.g[V0][0] = ((PITCH_MAX as i64) < (c.g[A1][0] as i64)) as u64;
+        if c.g[V0][0] == 0 {
+            c.g[S1][0] = c.g[A1][0];
+        }
+        c.g[S0][0] = sx((c.g[A2][0] as u32).wrapping_add(c.g[A0][0] as u32));
+        let voice = c.g[S0][0] as u32;
+        c.g[V0][0] = Addr(voice.wrapping_add(PITCH_VOICE_RESAMPLER)).lw(c);
+        if c.g[V0][0] != 0 {
+            c.g[A0][0] = c.g[V0][0];
+        } else {
+            // Create the resampler and insert it into the DSP chain.
+            c.cycles += 20;
+            c.g[A0][0] = 0x38;
+            call_ptr(c, 0x003b_5c60, 0x003c_8ad8)?; // SND_MemAlloc
+            let voice = Addr(c.g[S0][0] as u32);
+            let dsp = c.g[V0][0];
+            voice.off(PITCH_VOICE_RESAMPLER).sw(c, dsp);
+            c.g[A0][0] = 0xa0;
+            c.g[A3][0] = 0x51_0000;
+            let state = c.g[S2][0] as u32;
+            c.g[A2][0] = Addr(state.wrapping_add(PITCH_STATE_RATE_CODE)).lbu(c);
+            Addr((dsp as u32).wrapping_add(4)).sw(c, 0);
+            c.g[A2][0] = (c.g[A2][0] < 0x32) as u64;
+            c.g[V1][0] = voice.off(PITCH_VOICE_RESAMPLER).lw(c);
+            c.g[A2][0] ^= 1;
+            let prio = c.g[A0][0];
+            Addr((c.g[V1][0] as u32).wrapping_add(0x18)).sh(c, prio);
+            c.g[V0][0] = voice.off(PITCH_VOICE_RESAMPLER).lw(c);
+            Addr((c.g[V0][0] as u32).wrapping_add(0x1a)).sb(c, 0);
+            c.g[A1][0] = Addr(PITCH_RESAMPLE_MODE).lbu(c);
+            c.g[A0][0] = voice.off(PITCH_VOICE_RESAMPLER).lw(c);
+            PITCH_RESAMPLE_INIT.call(c, 0x003c_8b10)?;
+            let voice = Addr(c.g[S0][0] as u32);
+            c.g[A1][0] = voice.off(PITCH_VOICE_RESAMPLER).lw(c);
+            c.g[A0][0] = sx(voice.0.wrapping_add(PITCH_VOICE_DSP_CHAIN));
+            PITCH_DSP_INSERT_SORTED.call(c, 0x003c_8b1c)?;
+            let voice = Addr(c.g[S0][0] as u32);
+            c.g[A0][0] = voice.off(PITCH_VOICE_RESAMPLER).lw(c);
+        }
+        c.cycles += 8;
+        c.g[A1][0] = c.g[S1][0];
+        PITCH_RESAMPLE_SET_RATE.call(c, 0x003c_8b28)?;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_prebuffering, ee::s13::f_003b70f8__generated);
@@ -18330,6 +18924,271 @@ pub(crate) mod tests {
             sndstrm_queue_request,
             300,
             &sndstrm_queue_fixture,
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+
+    /// `SND_EeVoiceStop`: voices 0..7 with random levels and scale, 0..5
+    /// mixer channels, 1..4 nodes whose stop callback is a fake (some
+    /// unwind) or none; `SND_MemFree` runs for real on an empty SND heap
+    /// (unknown pointers are ignored).
+    #[test]
+    fn snd_ee_voice_stop_matches() {
+        const VOICES: u32 = DATA + 0x20_0000;
+        const NODES: u32 = DATA + 0x20_1000;
+        const HEAP: u32 = DATA + 0x20_2000;
+        check(
+            ee::s14::f_003c8468__generated,
+            snd_ee_voice_stop,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_8468, 4);
+                c.pc = 0x003c_8468;
+                let voice = seed % 8;
+                c.g[A0][0] = voice as u64 | (r.next_u32() as u64) << 32;
+                c.bus.write32(SEVS_MIXER + SEVS_VOICES, VOICES);
+                c.bus
+                    .write8(SEVS_MIXER + SEVS_CHANNELS, (seed / 8 % 6) as u8);
+                for i in 0..8 {
+                    c.bus
+                        .write32(SEVS_MIXER + SEVS_CHANNEL_SUMS + 4 * i, r.f32(4.0));
+                }
+                let v = VOICES + SEVS_VOICE_SIZE * voice;
+                for i in 0..0x18 {
+                    c.bus.write32(v + 4 * i, r.f32(2.0));
+                }
+                c.bus.write8(v, 1);
+                // The node list.
+                let n = 1 + r.next_u32() % 4;
+                for k in 0..n {
+                    let node = NODES + 0x20 * k;
+                    let stop = if r.next_u32() % 3 == 0 {
+                        0
+                    } else {
+                        FAKE + 0x10 * k
+                    };
+                    c.bus.write32(node + 4, stop);
+                    c.bus
+                        .write32(node + 8, if k + 1 == n { 0 } else { node + 0x20 });
+                }
+                c.bus.write32(v + SEVS_NODES, NODES);
+                // SND heap: no blocks (SND_MemFree ignores the pointer).
+                c.bus.write32(0x0050_a8e8 + 0x234, HEAP);
+                c.bus.write32(HEAP, DATA + 0x20_3000);
+                c.bus.write32(HEAP + 0x14, 0);
+            },
+        );
+    }
+
+    /// `SND_MidiToVolume`: levels 0..127 and a few out of range (the
+    /// table read is unchecked), with junk in the upper bits.
+    #[test]
+    fn snd_midi_to_volume_matches() {
+        check(
+            ee::s13::f_003bc570__generated,
+            snd_midi_to_volume,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3b_c570 ^ (seed as u64) << 16);
+                crate::difftest::scramble(c, &mut r);
+                c.pc = 0x003b_c570;
+                for i in 0..0x200u32 {
+                    c.bus.write16(SMTV_TABLE + 2 * i, r.next_u32() as u16);
+                }
+                let level = if seed % 10 == 0 {
+                    128 + r.next_u32() % 128
+                } else {
+                    seed % 128
+                };
+                c.g[A0][0] = (r.next_u32() as u64) << 32 | level as u64;
+            },
+        );
+    }
+
+    /// `SND_EeVoiceStart`: every sample format (and an unknown one), every
+    /// channel mode (mono with `f` below or above 1, stereo, other), start
+    /// functions present (fakes, unwinding on some seeds) or not, with and
+    /// without a stream. The real `SND_MemAlloc` allocates from an empty
+    /// heap at `DATA + 0x20_0000`; the real time-stretch init reads a random
+    /// stream header.
+    #[test]
+    fn snd_ee_voice_start_matches() {
+        use crate::difftest::fakes::{covered, FAKE};
+        use crate::difftest::SP as STACK;
+        covered(
+            ee::s14::f_003c8158__generated,
+            snd_ee_voice_start,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_8158, 1);
+                // The voice entries.
+                let entries = DATA + 0x3000;
+                for i in 0..0x60 * 8 / 4 {
+                    c.bus.write32(entries + 4 * i, r.next_u32());
+                }
+                c.bus.write32(VOICE_STATE + VOICE_STATE_ENTRIES, entries);
+                // The driver heap (`STATE + 0x234`): empty, room for both blocks.
+                let heap = DATA + 0x100;
+                c.bus.write32(VOICE_STATE + 0x234, heap);
+                c.bus.write32(heap, DATA + 0x20_0000); // base
+                c.bus.write32(heap + 0x4, DATA + 0x2000); // blocks
+                c.bus.write32(heap + 0xc, 0x8_0000); // limit
+                c.bus.write32(heap + 0x10, 0x100); // low water
+                c.bus.write32(heap + 0x14, 0); // lowest: empty
+                                               // Object sizes, then start functions (row -1 reads below them).
+                for i in 0..0x48 / 4 + 3 {
+                    c.bus
+                        .write32(VOICE_STATE + 0x54 + 4 * i, 0x20 + r.next_u32() % 0x200);
+                }
+                for i in 0..0x48 / 4 + 3 {
+                    let fun = if (seed + i) % 3 == 0 {
+                        0
+                    } else {
+                        FAKE + 0x10 * (i % 4)
+                    };
+                    c.bus.write32(VOICE_STATE + 0xc + 4 * i, fun);
+                }
+                c.bus.write8(VOICE_START_FLAG, r.next_u32() as u8);
+                // The stream header.
+                let strm = DATA + 0x5000;
+                for i in 0..0x10 {
+                    c.bus.write32(strm + 4 * i, r.next_u32());
+                }
+                // Stack arguments: d, f, e, prio.
+                let f_arg: i32 = match seed % 4 {
+                    0 => 0,
+                    1 => 1,
+                    2 => -1,
+                    _ => (r.next_u32() % 10) as i32,
+                };
+                c.bus.write32(STACK, r.next_u32());
+                c.bus.write32(STACK + 0x8, f_arg as u32);
+                c.bus.write32(STACK + 0x20, r.next_u32());
+                c.bus.write32(STACK + 0x28, r.next_u32());
+
+                let formats = [8u64, 10, 4, 22, 16, 23, 5];
+                c.g[A0][0] = (r.next_u32() % 8) as u64;
+                c.g[A1][0] = formats[(seed / 2 % 7) as usize];
+                c.g[A2][0] = match seed / 3 % 4 {
+                    0 => 0,
+                    1 | 2 => 1,
+                    _ => 2,
+                };
+                c.g[T1][0] = if seed % 5 < 2 { 0 } else { sx(strm) };
+                c.pc = 0x003c_8158;
+            },
+        );
+    }
+
+    /// SND_UtkSetInput: null data, a busy decoder, format 1 with and
+    /// without the 0xee marker, other formats; the real SND_UtkParseHeader
+    /// (with or without its header read; its mask table from the ELF image)
+    /// on random stream bytes.
+    #[test]
+    fn snd_utk_set_input_matches() {
+        use crate::difftest::elf_image;
+        check(
+            ee::s14::f_003cdde8__generated,
+            snd_utk_set_input,
+            300,
+            &|c, seed| {
+                elf_image(c);
+                let mut r = fakes::machine(c, seed, 0x3cdde8, 0);
+                let st = DATA + 0x1000;
+                let data = DATA + 0x100 + seed % 4;
+                fill(c, &mut r, DATA + 0x100, 8);
+                fill(c, &mut r, st, 0xd70 / 4);
+                c.bus.write32(
+                    st + UTK_INPUT_SIZE,
+                    if seed % 5 == 1 { r.next_u32() | 1 } else { 0 },
+                );
+                c.bus.write32(
+                    st + UTK_FORMAT,
+                    if seed % 3 == 0 { r.next_u32() % 3 } else { 1 },
+                );
+                if seed % 2 == 0 {
+                    c.bus.write8(data, 0xee);
+                }
+                let reset = match seed % 4 {
+                    0 => 0,
+                    1 => 1,
+                    _ => r.next_u32() | 1,
+                };
+                c.bus.write32(st + UTK_RESET, reset);
+                c.g[A0][0] = sx(st);
+                c.g[A1][0] = if seed % 7 == 3 { 0 } else { sx(data) };
+                c.g[A2][0] = r.next_u32() as u64;
+                c.g[A3][0] = ((r.next_u32() as u64) << 32) | r.next_u32() as u64;
+                c.pc = 0x003c_dde8;
+            },
+        );
+    }
+
+    /// SND_EeVoiceSetPitch: pitches below, at and above 0x20000 (and
+    /// negative), a voice that already has a resampler, or none (the real
+    /// SND_MemAlloc allocates from an empty driver heap at DATA+0x20_0000),
+    /// inserted into an empty DSP chain or one of 1-3 nodes with random
+    /// priorities; both rate-code sides and several resampler modes.
+    #[test]
+    fn snd_ee_voice_set_pitch_matches() {
+        use crate::difftest::check_lohi;
+        use crate::difftest::fakes::machine;
+        check_lohi(
+            ee::s14::f_003c8a88__generated,
+            snd_ee_voice_set_pitch,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3c_8a88, 0);
+                // The voice entries.
+                let entries = DATA + 0x3000;
+                fill(c, &mut r, entries, 0x60 * 8 / 4);
+                c.bus.write32(PITCH_SND_STATE + PITCH_STATE_VOICES, entries);
+                let voice_index = r.next_u32() % 8;
+                let voice = entries + 0x60 * voice_index;
+                let existing = DATA + 0x6000;
+                c.bus.write32(
+                    voice + PITCH_VOICE_RESAMPLER,
+                    if seed % 3 == 0 { existing } else { 0 },
+                );
+                // The DSP chain: empty or 1-3 nodes {next +8, priority +0x18}.
+                let nodes = DATA + 0x7000;
+                let n = seed / 3 % 4;
+                c.bus.write32(
+                    voice + PITCH_VOICE_DSP_CHAIN,
+                    if n == 0 { 0 } else { nodes },
+                );
+                for i in 0..n {
+                    let node = nodes + 0x40 * i;
+                    c.bus
+                        .write32(node + 8, if i + 1 == n { 0 } else { node + 0x40 });
+                    c.bus
+                        .write16(node + 0x18, (0x40 + 0x30 * i + r.next_u32() % 0x40) as u16);
+                }
+                // The driver heap (`STATE + 0x234`): empty, room for the block.
+                let heap = DATA + 0x100;
+                c.bus.write32(PITCH_SND_STATE + 0x234, heap);
+                c.bus.write32(heap, DATA + 0x20_0000); // base
+                c.bus.write32(heap + 0x4, DATA + 0x2000); // blocks
+                c.bus.write32(heap + 0xc, 0x8_0000); // limit
+                c.bus.write32(heap + 0x10, 0x100); // low water
+                c.bus.write32(heap + 0x14, 0); // lowest: empty
+                c.bus.write8(
+                    PITCH_SND_STATE + PITCH_STATE_RATE_CODE,
+                    (r.next_u32() % 100) as u8,
+                );
+                c.bus.write8(PITCH_RESAMPLE_MODE, (r.next_u32() % 3) as u8);
+                c.g[A0][0] = voice_index as u64;
+                c.g[A1][0] = match seed % 5 {
+                    0 => PITCH_MAX,
+                    1 => PITCH_MAX + 1 + (r.next_u32() % 0x1_0000) as u64,
+                    2 => sx(0u32.wrapping_sub(r.next_u32() % 0x100)),
+                    _ => (r.next_u32() % 0x2_0000) as u64,
+                };
+                c.pc = 0x003c_8a88;
+            },
         );
     }
 }

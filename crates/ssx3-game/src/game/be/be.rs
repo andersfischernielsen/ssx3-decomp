@@ -2,13 +2,18 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
+use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::camera::camera::gp;
@@ -53,6 +58,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         be_library_read_save_data,
         "BELibrary_ReadSaveData",
     ),
+    (0x0014_df08, be_library_save_state, "BELibrary_SaveState"),
 ];
 
 /// Direct and cross-shard callees, by guest address.
@@ -426,6 +432,102 @@ pub fn be_library_load_state(c: &mut Cpu) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// BELibrary_SaveState (0x14df08)
+
+/// The library's current state index (`gp-0x1efc`), saved first.
+pub(crate) const BEL_STATE_INDEX: u32 = 0x1efc;
+
+/// Number of interfaces a library holds.
+pub(crate) const BEL_INTERFACES: i64 = 14;
+
+/// Stream vtable slot `Write(data, size)`.
+pub(crate) const BEL_STREAM_WRITE: u32 = 0x8;
+
+/// Interface vtable (at +0xc) slot `WriteToReplayFrame(stream)`.
+pub(crate) const BEL_IFACE_VT: u32 = 0xc;
+
+pub(crate) const BEL_IFACE_SAVE: u32 = 0x18;
+
+pub(crate) const BEL_GET_INTERFACE: Callee = Callee {
+    addr: 0x0014_dd58,
+    f: ee::s01::BELibrary_GetInterface,
+};
+
+/// `void BELibrary_SaveState(BELibrary* self, Stream* stream)` (0x14df08):
+/// writes the current state index, then lets each of the 14 interfaces
+/// that exists write its replay frame to the stream.
+pub fn be_library_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 16;
+        let frame = Frame::open(c, 0x40);
+        set_reg(c, A2, 4);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        set_reg(c, S0, 0);
+        frame.save(c, S2, 0x10);
+        let this = reg(c, A0);
+        set_reg(c, S1, this);
+        frame.save_ra(c, 0);
+        let stream = reg(c, A1);
+        set_reg(c, S2, stream);
+        let index = sx((c.g[GP][0] as u32).wrapping_sub(BEL_STATE_INDEX));
+        set_reg(c, A1, index);
+        let vt = Addr(stream as u32).lw(c);
+        set_reg(c, V0, vt);
+        let write = VSlot::read(c, vt, BEL_STREAM_WRITE);
+        set_reg(c, V1, write.func);
+        set_reg(c, A0, write.this(stream));
+        call_ptr(c, write.func as u32, 0x0014_df44)?;
+
+        let i = reg(c, S0);
+        set_reg(c, A1, i);
+        loop {
+            c.cycles += 6;
+            let this = reg(c, S1);
+            set_reg(c, A0, this);
+            BEL_GET_INTERFACE.call(c, 0x0014_df50)?;
+            let i = reg(c, S0);
+            set_reg(c, A1, i);
+            let this = reg(c, S1);
+            set_reg(c, A0, this);
+            let present = reg(c, V0) != 0;
+            set_reg(c, S0, sx((i as u32).wrapping_add(1)));
+            if present {
+                c.cycles += 8;
+                BEL_GET_INTERFACE.call(c, 0x0014_df68)?;
+                let iface = reg(c, V0);
+                let vt = Addr(iface as u32).off(BEL_IFACE_VT).lw(c);
+                set_reg(c, V1, vt);
+                let stream = reg(c, S2);
+                set_reg(c, A1, stream);
+                let save = VSlot::read(c, vt, BEL_IFACE_SAVE);
+                set_reg(c, A2, save.func);
+                set_reg(c, A0, save.this(iface));
+                call_ptr(c, save.func as u32, 0x0014_df80)?;
+            }
+            c.cycles += 3;
+            let next = reg(c, S0);
+            let more = (next as i64) < BEL_INTERFACES;
+            set_reg(c, V0, more as u64);
+            set_reg(c, A1, next);
+            if !more {
+                break;
+            }
+            if event_due(c) {
+                deliver_event_here(c, 0x0014_df48);
+            }
+        }
+        c.cycles += 6;
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -581,6 +683,52 @@ pub(crate) mod tests {
                 w(c, crate::difftest::fakes::LOG_RESULTS, 1);
                 c.g[A0][0] = sx(lib);
                 c.g[A1][0] = sx(request);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::covered;
+
+    /// BELibrary_SaveState: state 0's object (table 0x5308a8) answers
+    /// GetInterface through a fake (every interface present) or through the
+    /// real `return 0` leaf 0x1406c0 (none present). A fake's interface
+    /// pointer lands anywhere in 0x800000..0x840000, so every 16-byte slot
+    /// there gets the interface vtable at +0xc.
+    #[test]
+    fn be_library_save_state_matches() {
+        covered(
+            ee::s01::f_0014df08__generated,
+            be_library_save_state,
+            80,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x14_df08, 30);
+                c.pc = 0x0014_df08;
+                let lib = DATA + 0x20_0000;
+                let stream = DATA + 0x20_0100;
+                let stream_vt = DATA + 0x20_0200;
+                let state = DATA + 0x20_0300;
+                let state_vt = DATA + 0x20_0400;
+                let iface_vt = DATA + 0x20_0500;
+                for slot in (0x0080_0000..0x0084_0000u32).step_by(16) {
+                    c.bus.write32(slot + BEL_IFACE_VT, iface_vt);
+                }
+                c.bus.write32(GAME_GP - BEL_STATE_INDEX, 0);
+                c.bus.write32(0x0053_08a8, state);
+                c.bus.write32(state + 4, state_vt);
+                c.bus.write16(state_vt + 0x8, 0);
+                let lookup = if seed % 4 == 0 { 0x0014_06c0 } else { FAKE };
+                c.bus.write32(state_vt + 0xc, lookup);
+                c.bus.write32(stream, stream_vt);
+                c.bus.write16(
+                    stream_vt + BEL_STREAM_WRITE,
+                    (r.next_u32() as i16 & !3) as u16,
+                );
+                c.bus.write32(stream_vt + BEL_STREAM_WRITE + 4, FAKE + 0x10);
+                c.bus
+                    .write16(iface_vt + BEL_IFACE_SAVE, (r.next_u32() as i16 & !3) as u16);
+                c.bus.write32(iface_vt + BEL_IFACE_SAVE + 4, FAKE + 0x20);
+                c.g[A0][0] = sx(lib);
+                c.g[A1][0] = sx(stream);
             },
         );
     }

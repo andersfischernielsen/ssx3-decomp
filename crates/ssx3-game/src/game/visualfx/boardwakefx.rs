@@ -275,6 +275,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         lens_fx_update_callback,
         "LensFX_UpdateCallback",
     ),
+    (
+        0x002e_2550,
+        dynamic_spray_fx_update_emitter_enables,
+        "cDynamicSprayFX_UpdateEmitterEnables",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -14256,6 +14261,141 @@ pub fn lens_fx_update_callback(c: &mut Cpu) {
     );
 }
 
+// ---------------------------------------------------------------------------
+// cDynamicSprayFX_UpdateEmitterEnables (0x2e2550)
+
+/// `cDynamicSprayFX` -> its rider (`*self`).
+pub(crate) const SPRAY_RIDER_2: u32 = 0x0;
+
+/// `cDynamicSprayFX` -> its emitter block (the enable flags live inside it).
+pub(crate) const SPRAY_EMITTERS: u32 = 0x28;
+
+/// `cDynamicSprayFX` -> the "spray on" flag of the current frame.
+pub(crate) const SPRAY_ACTIVE: u32 = 0x124;
+
+/// `cDynamicSprayFX` -> copy of the rider's spray mode.
+pub(crate) const SPRAY_MODE: u32 = 0x128;
+
+/// Rider -> spray mode (0 = full, 1 = reduced, else board-only).
+pub(crate) const RIDER_SPRAY_MODE: u32 = 0x898;
+
+/// Rider -> forced-spray flag (keeps emitter 0x9b4 on in mode 0).
+pub(crate) const RIDER_FORCE_SPRAY: u32 = 0xac4;
+
+/// Store `v` into the enable word at `off` of the emitter block, reloading
+/// the block pointer into `reg` first as the compiled code does.
+#[inline(always)]
+pub(crate) fn spray_enable_store(c: &mut Cpu, fx: Addr, reg: usize, off: u32, v: u64) {
+    c.g[reg][0] = fx.off(SPRAY_EMITTERS).lw(c);
+    let block = c.g[reg][0] as u32;
+    Addr(block.wrapping_add(off)).sw(c, v);
+}
+
+/// Store `fx->active` into the enable word at `off`, loading the block into
+/// `blk` and the flag into `val` in the order given by `flag_first`.
+#[inline(always)]
+pub(crate) fn spray_enable_copy_active(
+    c: &mut Cpu,
+    fx: Addr,
+    blk: usize,
+    val: usize,
+    off: u32,
+    flag_first: bool,
+) {
+    if flag_first {
+        c.g[val][0] = fx.off(SPRAY_ACTIVE).lw(c);
+        c.g[blk][0] = fx.off(SPRAY_EMITTERS).lw(c);
+    } else {
+        c.g[blk][0] = fx.off(SPRAY_EMITTERS).lw(c);
+        c.g[val][0] = fx.off(SPRAY_ACTIVE).lw(c);
+    }
+    let block = c.g[blk][0] as u32;
+    let v = c.g[val][0];
+    Addr(block.wrapping_add(off)).sw(c, v);
+}
+
+/// `void cDynamicSprayFX::UpdateEmitterEnables()` (0x2e2550): copies the
+/// rider's spray mode to `self+0x128` and switches the board-spray emitters
+/// on/off by mode: mode 0 enables 0xbc4/0xdd4/0x174, 0x9b4 if active or
+/// forced, and the rest follow `active`; mode 1 is the same with 0x9b4 and
+/// 0x1404 off; any other mode keeps only 0xbc4 (and 0xdd4 = active).
+pub fn dynamic_spray_fx_update_emitter_enables(c: &mut Cpu) {
+    c.cycles += 5;
+    c.g[A2][0] = c.g[A0][0];
+    let fx = Addr(c.g[A2][0] as u32);
+    c.g[V0][0] = fx.off(SPRAY_RIDER_2).lw(c);
+    let rider = c.g[V0][0] as u32;
+    c.g[A0][0] = Addr(rider.wrapping_add(RIDER_SPRAY_MODE)).lw(c);
+    let mode = c.g[A0][0];
+    fx.off(SPRAY_MODE).sw(c, mode);
+    if mode == 0 {
+        // Mode 0: everything follows `active`; 0x9b4 also when forced.
+        c.cycles += 10;
+        c.g[A0][0] = 1;
+        spray_enable_store(c, fx, V1, 0xbc4, 1);
+        spray_enable_store(c, fx, V0, 0xdd4, 1);
+        spray_enable_store(c, fx, V1, 0x174, 1);
+        c.g[V0][0] = fx.off(SPRAY_ACTIVE).lw(c);
+        c.g[A1][0] = 0;
+        let mut on = c.g[V0][0] != 0;
+        if !on {
+            c.cycles += 4;
+            c.g[V0][0] = fx.off(SPRAY_RIDER_2).lw(c);
+            let rider = c.g[V0][0] as u32;
+            c.g[V1][0] = Addr(rider.wrapping_add(RIDER_FORCE_SPRAY)).lw(c);
+            on = c.g[V1][0] != 0;
+        }
+        if on {
+            c.cycles += 2;
+            c.g[A1][0] = 1;
+        }
+        c.g[V0][0] = fx.off(SPRAY_EMITTERS).lw(c);
+        c.cycles += 20;
+        let block = c.g[V0][0] as u32;
+        let a1 = c.g[A1][0];
+        Addr(block.wrapping_add(0x9b4)).sw(c, a1);
+        spray_enable_copy_active(c, fx, V1, V0, 0x384, false);
+        spray_enable_copy_active(c, fx, A0, V0, 0x594, false);
+        spray_enable_copy_active(c, fx, V1, V0, 0x7a4, false);
+        spray_enable_copy_active(c, fx, A0, V0, 0xfe4, false);
+        spray_enable_copy_active(c, fx, V1, V0, 0x11f4, true);
+        spray_enable_copy_active(c, fx, V0, A0, 0x1404, true);
+        ret(c);
+        return;
+    }
+    c.cycles += 3;
+    c.g[V0][0] = 1;
+    if mode == 1 {
+        // Mode 1: like mode 0, but 0x9b4 and 0x1404 off.
+        c.cycles += 23;
+        spray_enable_store(c, fx, V0, 0xbc4, mode);
+        spray_enable_store(c, fx, V1, 0xdd4, mode);
+        spray_enable_store(c, fx, V0, 0x174, mode);
+        spray_enable_copy_active(c, fx, V1, V0, 0x384, false);
+        spray_enable_copy_active(c, fx, A0, V0, 0x594, false);
+        spray_enable_copy_active(c, fx, V1, V0, 0x7a4, false);
+        spray_enable_copy_active(c, fx, A0, V0, 0xfe4, true);
+        spray_enable_copy_active(c, fx, A1, V0, 0x11f4, true);
+        spray_enable_store(c, fx, V1, 0x9b4, 0);
+    } else {
+        // Any other mode: only 0xbc4 on, 0xdd4 = active, the rest off.
+        c.cycles += 2;
+        c.cycles += 18;
+        spray_enable_store(c, fx, V1, 0xbc4, 1);
+        spray_enable_copy_active(c, fx, A0, V0, 0xdd4, true);
+        spray_enable_store(c, fx, V1, 0x384, 0);
+        spray_enable_store(c, fx, V0, 0x174, 0);
+        spray_enable_store(c, fx, V1, 0x594, 0);
+        spray_enable_store(c, fx, V0, 0x7a4, 0);
+        spray_enable_store(c, fx, V1, 0xfe4, 0);
+        spray_enable_store(c, fx, V0, 0x9b4, 0);
+        spray_enable_store(c, fx, V1, 0x11f4, 0);
+    }
+    c.cycles += 3;
+    spray_enable_store(c, fx, V0, 0x1404, 0);
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -18396,6 +18536,44 @@ pub(crate) mod tests {
                     }
                 }
                 c.g[A0][0] = sx(this);
+            },
+        );
+    }
+    use super::*;
+
+    /// cDynamicSprayFX_UpdateEmitterEnables: modes 0, 1 and other; mode 0
+    /// with active on, active off + forced, and neither.
+    #[test]
+    fn dynamic_spray_fx_update_emitter_enables_matches() {
+        check(
+            ee::s09::f_002e2550__generated,
+            dynamic_spray_fx_update_emitter_enables,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2e25_5000 ^ seed as u64);
+                scramble(c, &mut r);
+                let fx = DATA;
+                let rider = DATA + 0x1000;
+                let block = DATA + 0x4000;
+                fill(c, &mut r, block, 0x1500 / 4);
+                c.bus.write32(fx + SPRAY_RIDER_2, rider);
+                c.bus.write32(fx + SPRAY_EMITTERS, block);
+                let mode = match seed % 4 {
+                    0 | 1 => 0,
+                    2 => 1,
+                    _ => r.next_u32() | 2,
+                };
+                c.bus.write32(rider + RIDER_SPRAY_MODE, mode);
+                let active = if seed % 3 == 0 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(fx + SPRAY_ACTIVE, active);
+                let forced = if (seed / 4) % 2 == 0 {
+                    0
+                } else {
+                    r.next_u32() | 1
+                };
+                c.bus.write32(rider + RIDER_FORCE_SPRAY, forced);
+                c.g[A0][0] = sx(fx);
+                c.pc = 0x002e_2550;
             },
         );
     }

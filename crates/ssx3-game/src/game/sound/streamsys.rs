@@ -173,6 +173,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         bank_monitor_instance_fade_out,
         "BankMonitorInstance_FadeOut",
     ),
+    (
+        0x002a_bd48,
+        bank_monitor_instance_update_distance,
+        "BankMonitorInstance_UpdateDistance",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -1656,6 +1661,48 @@ pub fn stream_array_is_playing(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// BankMonitorInstance_UpdateDistance (0x2abd48)
+
+/// Listener object -> its position-source vtable (slot 0x30/0x34: distance²).
+pub(crate) const LISTENER_VTABLE: u32 = 0x8d8;
+
+/// BankMonitorInstance -> distance to the listener.
+pub(crate) const BANK_MONITOR_DISTANCE: u32 = 0x5c;
+
+/// `void BankMonitorInstance::UpdateDistance(Listener* l)` (0x2abd48): asks
+/// the listener's virtual (vtable slot 0x30/0x34, `this` adjusted by the
+/// slot's delta) for the squared distance to this instance (with a 0x20-byte
+/// scratch buffer on the stack) and stores its square root at `self+0x5c`.
+pub fn bank_monitor_instance_update_distance(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 18;
+        let frame = Frame::open(c, 0x40);
+        c.g[A3][0] = c.g[A1][0];
+        frame.save(c, S0, 0x30);
+        c.g[A2][0] = c.g[SP][0];
+        frame.save_ra(c, 0x20);
+        c.g[S0][0] = c.g[A0][0];
+        c.g[A1][0] = c.g[S0][0];
+        let listener = c.g[A3][0] as u32;
+        c.g[V1][0] = Addr(listener.wrapping_add(LISTENER_VTABLE)).lw(c);
+        let vt = Addr(c.g[V1][0] as u32);
+        c.g[A0][0] = vt.off(0x30).lh(c);
+        c.g[V0][0] = vt.off(0x34).lw(c);
+        let method = c.g[V0][0] as u32;
+        c.g[A0][0] = sx(listener.wrapping_add(c.g[A0][0] as u32));
+        call_ptr(c, method, 0x002a_bd78)?;
+        let dist = crate::ps2f::FpuF32(c.f[0]).sqrt();
+        c.f[0] = dist.0;
+        frame.restore_ra(c, 0x20);
+        let this = c.g[S0][0] as u32;
+        Addr(this.wrapping_add(BANK_MONITOR_DISTANCE)).write_fpu(c, dist);
+        frame.restore(c, S0, 0x30);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2643,6 +2690,33 @@ pub(crate) mod tests {
                 c.bus.write16(STREAM + 0x14, 0);
                 c.bus
                     .write8(0x0051_0000 - 0x5718 + 0x176, r.next_u32() as u8);
+            },
+        );
+    }
+    use super::*;
+
+    /// BankMonitorInstance_UpdateDistance: the virtual is a fake that
+    /// returns a random f0 (sqrt of its bits) and sometimes unwinds.
+    #[test]
+    fn bank_monitor_instance_update_distance_matches() {
+        use crate::difftest::fakes::{covered, machine, FAKE};
+        covered(
+            ee::s08::f_002abd48__generated,
+            bank_monitor_instance_update_distance,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2abd48, 1);
+                let this = DATA;
+                let listener = DATA + 0x1000;
+                let vt = DATA + 0x3000;
+                fill(c, &mut r, this, 0x20);
+                c.bus.write32(listener + LISTENER_VTABLE, vt);
+                c.bus
+                    .write16(vt + 0x30, (r.next_u32() as i16 as i32 & !3) as u16);
+                c.bus.write32(vt + 0x34, FAKE);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(listener);
+                c.pc = 0x002a_bd48;
             },
         );
     }

@@ -110,6 +110,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         cflag_manager_group_save,
         "cFlagManager_GroupSave",
     ),
+    (0x0034_dba8, anim_object_base_dtor, "AnimObject_BaseDtor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -3138,6 +3139,141 @@ pub fn cflag_manager_group_save(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// AnimObject_BaseDtor (0x34dba8).
+
+/// The base vtable this destructor installs (`+0x20`).
+pub(crate) const ANIM_OBJ_BASE_VTABLE: u32 = 0x0049_0cc8;
+
+pub(crate) const ANIM_OBJ_VTABLE: u32 = 0x20;
+
+/// `+0x14` the embedded ModObj; `+0x44` a cache block, `+0x48` the item
+/// array (`new[]`: count at `-0x10`, 0xd0-byte items with their vtable at
+/// `+0x84`), `+0x4c` a buffer.
+pub(crate) const ANIM_OBJ_MOD_OBJ: u32 = 0x14;
+
+pub(crate) const ANIM_OBJ_CACHE: u32 = 0x44;
+
+pub(crate) const ANIM_OBJ_ITEMS: u32 = 0x48;
+
+pub(crate) const ANIM_OBJ_BUF: u32 = 0x4c;
+
+pub(crate) const ANIM_ITEM_SIZE: u32 = 0xd0;
+
+pub(crate) const ANIM_ITEM_VTABLE: u32 = 0x84;
+
+/// `EA_MemFree(p)` and `operator delete(p)` (through the table).
+pub(crate) const ANIM_EA_MEM_FREE: u32 = 0x0031_7e98;
+
+pub(crate) const ANIM_OPERATOR_DELETE: u32 = 0x0031_7e50;
+
+pub(crate) const ANIM_MOD_OBJ_DTOR: Callee = Callee {
+    addr: 0x0035_53c0,
+    f: ee::s11::ModObj_dtor,
+};
+
+/// `void AnimObject_BaseDtor(AnimObject* self, int flags)` (0x34dba8):
+/// reset the vtable, free the cache, destroy the item array back to front
+/// (virtual destructor slot 1 of each, flags 0) and free it, free the
+/// buffer, destroy the embedded ModObj, and `delete self` when `flags & 1`.
+pub fn anim_object_base_dtor(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0x50);
+        c.g[V0][0] = sx(ANIM_OBJ_BASE_VTABLE);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S1, 0x30);
+        frame.save(c, S2, 0x20);
+        c.g[S1][0] = c.g[A0][0];
+        frame.save(c, S3, 0x10);
+        frame.save_ra(c, 0);
+        let me = Addr(r32(c, S1));
+        me.off(ANIM_OBJ_VTABLE).sw(c, c.g[V0][0]);
+        c.g[A0][0] = me.off(ANIM_OBJ_CACHE).lw(c);
+        c.g[S0][0] = c.g[A1][0];
+        if c.g[A0][0] != 0 {
+            c.cycles += 2;
+            call_ptr(c, ANIM_EA_MEM_FREE, 0x0034_dbe4)?;
+        }
+
+        c.cycles += 4;
+        let me = Addr(r32(c, S1));
+        c.g[A1][0] = me.off(ANIM_OBJ_ITEMS).lw(c);
+        c.g[S3][0] = c.g[S0][0] & 1;
+        c.g[S2][0] = sx(me.0.wrapping_add(ANIM_OBJ_MOD_OBJ));
+        if c.g[A1][0] != 0 {
+            c.cycles += 6;
+            let items = r32(c, A1);
+            c.g[V1][0] = Addr(items.wrapping_sub(0x10)).lw(c);
+            c.g[V0][0] = ANIM_ITEM_SIZE as u64;
+            c.mult(0, A0, V1, V0);
+            c.g[S0][0] = sx(r32(c, A0).wrapping_add(items));
+            if c.g[A1][0] == c.g[S0][0] {
+                c.g[A0][0] = me.off(ANIM_OBJ_ITEMS).lw(c);
+            } else {
+                c.cycles += 1;
+                c.g[S0][0] = sx(r32(c, S0).wrapping_sub(ANIM_ITEM_SIZE));
+                loop {
+                    // Item s0's virtual destructor (slot 1), flags 0.
+                    c.cycles += 9;
+                    let item = r32(c, S0);
+                    c.g[A1][0] = 0;
+                    c.g[V0][0] = Addr(item.wrapping_add(ANIM_ITEM_VTABLE)).lw(c);
+                    let vt = r32(c, V0);
+                    c.g[A0][0] = Addr(vt.wrapping_add(8)).lh(c);
+                    c.g[V1][0] = Addr(vt.wrapping_add(0xc)).lw(c);
+                    c.g[A0][0] = sx(item.wrapping_add(r32(c, A0)));
+                    let target = r32(c, V1);
+                    call_ptr(c, target, 0x0034_dc28)?;
+                    let items = Addr(r32(c, S1)).off(ANIM_OBJ_ITEMS).lw(c);
+                    c.g[V0][0] = items;
+                    if items != c.g[S0][0] {
+                        c.g[S0][0] = sx(r32(c, S0).wrapping_sub(ANIM_ITEM_SIZE));
+                        if event_due(c) {
+                            deliver_event_here(c, 0x0034_dc10);
+                        }
+                        continue;
+                    }
+                    c.cycles += 1;
+                    c.g[A0][0] = Addr(r32(c, S1)).off(ANIM_OBJ_ITEMS).lw(c);
+                    break;
+                }
+            }
+            // Free the block (the array starts 0x10 bytes into it).
+            c.cycles += 2;
+            c.g[A0][0] = sx(r32(c, A0).wrapping_sub(0x10));
+            call_ptr(c, ANIM_EA_MEM_FREE, 0x0034_dc40)?;
+        }
+
+        c.cycles += 3;
+        c.g[A0][0] = Addr(r32(c, S1)).off(ANIM_OBJ_BUF).lw(c);
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            call_ptr(c, ANIM_EA_MEM_FREE, 0x0034_dc54)?;
+        }
+        c.g[A0][0] = c.g[S2][0];
+
+        c.cycles += 4;
+        c.g[A1][0] = 0;
+        ANIM_MOD_OBJ_DTOR.call(c, 0x0034_dc60)?;
+        let delete = c.g[S3][0] != 0;
+        frame.restore(c, S0, 0x40);
+        if delete {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S1][0];
+            call_ptr(c, ANIM_OPERATOR_DELETE, 0x0034_dc70)?;
+            frame.restore(c, S0, 0x40);
+        }
+        c.cycles += 6;
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -4182,6 +4318,76 @@ pub(crate) mod tests {
                 fill(c, &mut r, group + FLAG_GROUP_ITEMS, 6);
                 c.g[A0][0] = sx(group);
                 c.g[A1][0] = sx(stream);
+            },
+        );
+    }
+    use super::*;
+
+    /// AnimObject_BaseDtor: the object, its cache, buffer and item array
+    /// (0..4 items of 0xd0 bytes behind the 0x10-byte `new[]` header) are
+    /// allocated from a dlmalloc arena over test memory (pools off) and
+    /// freed by the real EA_MemFree; the items' destructors are fakes (some
+    /// unwind); the embedded ModObj has no modifier block and no node, so the
+    /// real ModObj_dtor takes its short path; flags with and without the
+    /// delete bit (the real operator delete frees the object).
+    #[test]
+    fn anim_object_base_dtor_matches() {
+        use crate::difftest::fakes::{FAKE, LOG_COUNT, LOG_UNWIND_AT};
+        use crate::difftest::GAME_GP;
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        check(
+            ee::s11::f_0034dba8__generated,
+            anim_object_base_dtor,
+            200,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x34dba8, 0);
+                // The game heap over test memory, pools off.
+                c.bus.write32(GAME_GP + 0xdd8, 0);
+                oc238_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::f_0031ff60,
+                    &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                );
+                let alloc = |c: &mut Cpu, size: u64| -> u32 {
+                    oc238_run(c, 0x0031_9e48, ee::s10::f_00319e48, &[size, 0]) as u32
+                };
+                let me = alloc(c, 0x60);
+                fill(c, &mut r, me, 0x18);
+                // ModObj at +0x14: no node (+4), no instance (+0x18), no block (+0x1c).
+                let mod_obj = me + 0x14;
+                c.bus.write32(mod_obj + 4, 0);
+                c.bus.write16(mod_obj + 0x10, (r.next_u32() % 8) as u16);
+                c.bus.write32(mod_obj + 0x18, 0);
+                c.bus.write32(mod_obj + 0x1c, 0);
+                let cache = if seed % 3 == 0 { 0 } else { alloc(c, 0x20) };
+                let buf = if seed % 4 == 1 { 0 } else { alloc(c, 0x30) };
+                let items = if seed % 5 == 2 {
+                    0
+                } else {
+                    let n = r.next_u32() % 5;
+                    let block = alloc(c, (0x10 + 0xd0 * n) as u64);
+                    c.bus.write32(block, n);
+                    let items = block + 0x10;
+                    let vt = DATA + 0x200;
+                    c.bus.write16(vt + 8, ((r.next_u32() % 0x10) & !3) as u16);
+                    c.bus.write32(vt + 0xc, FAKE);
+                    for i in 0..n {
+                        c.bus.write32(items + 0xd0 * i + 0x84, vt);
+                    }
+                    items
+                };
+                c.bus.write32(me + 0x44, cache);
+                c.bus.write32(me + 0x48, items);
+                c.bus.write32(me + 0x4c, buf);
+                // Unwind at one of the next calls (the setup made some).
+                if seed % 3 == 1 {
+                    let n = c.bus.read32(LOG_COUNT);
+                    c.bus.write32(LOG_UNWIND_AT, n + r.next_u32() % 8);
+                }
+                c.g[A0][0] = sx(me);
+                c.g[A1][0] = (r.next_u32() & 0xff) as u64;
+                c.pc = 0x0034_dba8;
             },
         );
     }

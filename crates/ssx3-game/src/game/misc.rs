@@ -20,6 +20,8 @@ use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::ai::ai::gp;
+use crate::game::ai::rider::q_rotate;
+use crate::game::ai::rider::quat_mul_vu0;
 use crate::game::animation::animsequencer::ASL_PUSH_NEW;
 use crate::game::animation::animsequencer::ASL_SET_TRACK_ANIM;
 use crate::game::animation::animsequencer::ASL_SET_TRACK_LOOP;
@@ -245,6 +247,50 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Input_QuantizeStickDirection",
     ),
     (0x0031_0ea8, rider_model_save_state, "RiderModel_SaveState"),
+    (
+        0x0010_65b0,
+        rider_deflect_along_wall,
+        "Rider_DeflectAlongWall",
+    ),
+    (
+        0x0010_bfa8,
+        computer_actor_rider_plan_air_tricks,
+        "ComputerActorRider_PlanAirTricks",
+    ),
+    (0x0010_eb30, rider_start_wipeout, "Rider_StartWipeout"),
+    (
+        0x002f_bcb8,
+        world_obj_factory_anim_object,
+        "WorldObjFactory_AnimObject",
+    ),
+    (
+        0x002f_ee98,
+        world_obj_factory_add_dynamic_particle_data,
+        "WorldObjFactory_AddDynamicParticleData",
+    ),
+    (
+        0x002f_ff00,
+        wscript_fn_play_object_sound,
+        "WScriptFn_PlayObjectSound",
+    ),
+    (
+        0x0030_2968,
+        wscript_fn_set_self_object,
+        "WScriptFn_SetSelfObject",
+    ),
+    (
+        0x0030_ecd8,
+        rider_model_sample_part_transform,
+        "RiderModel_SamplePartTransform",
+    ),
+    (0x003b_4740, refpack_unpack, "RefPack_Unpack"),
+    (0x003d_3c90, path_remap_node, "PATH_RemapNode"),
+    (
+        0x003e_0c88,
+        stream_file_queue_range,
+        "StreamFile_QueueRange",
+    ),
+    (0x0040_d610, libm_log, "log"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -12928,6 +12974,3115 @@ pub fn input_quantize_stick_direction(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod sample_part_xf {
+    use crate::call::Callee;
+
+    /// `gp + 0xd08`: the registered animation databases, indexed by the low
+    /// byte of an anim ref's first word.
+    pub const ANIM_DBS_GP: u32 = 0xd08;
+
+    /// The identity transform (position, rotation) at `0x500000 - 0xdd0`.
+    pub const IDENTITY_XF: u32 = 0x0050_0000 - 0xdd0;
+
+    /// The origin the root position is taken relative to (`0x500000 - 0xed0`).
+    pub const ROOT_ORIGIN: u32 = 0x0050_0000 - 0xed0;
+
+    // AnimDataBase: +8 clip table (0x14-byte clips), +0xc chunk descriptors.
+    pub const DB_CLIPS: u32 = 0x8;
+
+    pub const DB_CHUNKS: u32 = 0xc;
+
+    pub const CLIP_SIZE: u32 = 0x14;
+
+    // Clip: +4 first chunk descriptor, +8 channel count, +0xa chunks per
+    // channel. Chunk descriptor (8 bytes): +4 the part id of its channel.
+    pub const CLIP_FIRST_CHUNK: u32 = 0x4;
+
+    pub const CLIP_CHANNELS: u32 = 0x8;
+
+    pub const CLIP_CHUNKS: u32 = 0xa;
+
+    pub const DESC_PART: u32 = 0x4;
+
+    // Anim state (the anim ref): +0 db index | clip << 8, +0x20 root
+    // position, +0x30 root rotation (quaternion), +0x40 use-alternate-curves
+    // and scale flag.
+    pub const ST_ROOT_POS: u32 = 0x20;
+
+    pub const ST_ROOT_ROT: u32 = 0x30;
+
+    pub const ST_ALT: u32 = 0x40;
+
+    // RiderModel: +0xc bones (0x58 bytes), +0x1c bone index per part, +0x20
+    // first curve per curve slot.
+    pub const MODEL_BONES: u32 = 0xc;
+
+    pub const MODEL_PART_BONE: u32 = 0x1c;
+
+    pub const MODEL_CURVE_BASE: u32 = 0x20;
+
+    pub const BONE_SIZE: u32 = 0x58;
+
+    // Bone: +4 curve slot, +0x38 bone info.
+    pub const BONE_SLOT: u32 = 0x4;
+
+    pub const BONE_INFO: u32 = 0x38;
+
+    // Bone info: +0x10 parent (-1: root), +0x16 alternate curve slot offset,
+    // +0x18..0x1b rotation axis selectors (0..3 component, 4..7 negated),
+    // +0x40 position scale.
+    pub const INFO_PARENT: u32 = 0x10;
+
+    pub const INFO_ALT_SLOT: u32 = 0x16;
+
+    pub const INFO_SCALE: u32 = 0x40;
+
+    pub const SAMPLE_CHANNEL: Callee = Callee {
+        addr: 0x0031_1318,
+        f: ssx3_ee::s10::AnimDataBase_SampleChannel,
+    };
+}
+
+pub(crate) mod set_self_object {
+
+    /// gp offsets: the static defaults `{object id, flag byte}`, their
+    /// "initialised" flag, the declared argument types, the object manager
+    /// and the world.
+    pub const GP_DEFAULTS: u32 = 0x2678;
+
+    pub const GP_DEFAULTS_FLAG: u32 = 0x267c;
+
+    pub const GP_DEFAULTS_READY: u32 = 0x2680;
+
+    pub const GP_ARG_TYPES: u32 = 0xbf8;
+
+    pub const GP_OBJECT_MANAGER: u32 = 0x16c8;
+
+    pub const GP_WORLD: u32 = 0xce8;
+
+    /// The world's "self" object field.
+    pub const WORLD_SELF: u32 = 0x290;
+
+    /// The declared type that converts an int argument to float.
+    pub const TYPE_FLOAT: u64 = 2;
+
+    /// `EA_MemCopy`.
+    pub const MEM_COPY: u32 = 0x003e_6574;
+
+    /// The 12-byte "ok" result copied into the return register.
+    pub const RESULT_OK: u32 = 0x004c_9098;
+}
+
+pub(crate) mod deflect_along_wall {
+
+    /// Rider fields: the orientation quaternion, forward and up vectors.
+    pub const ORIENTATION: u32 = 0x120;
+
+    pub const FORWARD: u32 = 0x1b0;
+
+    pub const UP: u32 = 0x1c0;
+
+    /// The wall contact's normal (in the second argument).
+    pub const CONTACT_NORMAL: u32 = 0x10;
+
+    /// gp-relative constants: -pi/2 and pi/2 (atan2 with x = 0), +pi and
+    /// -pi (quadrant fix), the deflection limit (110 degrees) and the
+    /// largest step per call (20 degrees).
+    pub const GP_MINUS_HALF_PI: u32 = 0x7eec;
+
+    pub const GP_HALF_PI: u32 = 0x7ee8;
+
+    pub const GP_PI_ADD: u32 = 0x7ee4;
+
+    pub const GP_PI_SUB: u32 = 0x7ee0;
+
+    pub const GP_LIMIT: u32 = 0x7edc;
+
+    pub const GP_STEP: u32 = 0x7ed8;
+
+    /// `float atanf(float)` and `void Math_SinCos(float, float* s, float* c)`.
+    pub const ATANF: u32 = 0x0031_c228;
+
+    pub const SIN_COS: u32 = 0x0031_be50;
+}
+
+pub(crate) mod sfqr {
+
+    /// Stream file: its mutex, read state (0 idle), the "urgent" flag and
+    /// the two priorities `StartNextRequest` takes.
+    pub const MUTEX: u32 = 0x4;
+
+    pub const READ_STATE: u32 = 0x38;
+
+    pub const PRIORITY: u32 = 0x3c;
+
+    pub const URGENT_PRIORITY: u32 = 0x40;
+
+    pub const URGENT: u32 = 0x48;
+
+    /// Request: kind (0: a file range), name (255 chars), offset, size.
+    pub const REQ_KIND: u32 = 0x10;
+
+    pub const REQ_NAME: u32 = 0x14;
+
+    pub const REQ_OFFSET: u32 = 0x118;
+
+    pub const REQ_SIZE: u32 = 0x11c;
+}
+
+pub(crate) mod capat {
+
+    pub const TRICK: u32 = 0xe0c;
+
+    pub const PLANNED: u32 = 0xe10;
+
+    pub const SKIP: u32 = 0xe14;
+
+    pub const DONE: u32 = 0xe18;
+
+    pub const ARG_T0: u32 = 0xe1c;
+
+    pub const ARG_A3: u32 = 0xe20;
+
+    /// Spin / flip directions (+-1.0 or 0).
+    pub const SPIN: u32 = 0xe38;
+
+    pub const FLIP: u32 = 0xe3c;
+}
+
+/// Rider fields used by the wipeout start.
+pub(crate) const WIPE_VTABLE: u32 = 0x6c0;
+
+/// `vibrationBump(float)` slot of the rider vtable: `{delta (lh), fn}`.
+pub(crate) const WIPE_VT_VIBRATION_BUMP: u32 = 0x88;
+
+pub(crate) const WIPE_POSITION: u32 = 0x110;
+
+pub(crate) const WIPE_ORIENT: u32 = 0x120;
+
+pub(crate) const WIPE_UP: u32 = 0x1c0;
+
+pub(crate) const WIPE_SLEW0_TARGET: u32 = 0x1f0;
+
+pub(crate) const WIPE_SLEW0_CUR: u32 = 0x1f4;
+
+pub(crate) const WIPE_SLEW0_RATE: u32 = 0x1f8;
+
+pub(crate) const WIPE_SLEW2_TARGET: u32 = 0x208;
+
+pub(crate) const WIPE_SLEW2_CUR: u32 = 0x20c;
+
+pub(crate) const WIPE_SLEW2_RATE: u32 = 0x210;
+
+pub(crate) const WIPE_SLEW8_TARGET: u32 = 0x250;
+
+pub(crate) const WIPE_SLEW8_CUR: u32 = 0x254;
+
+pub(crate) const WIPE_SLEW8_RATE: u32 = 0x258;
+
+/// Grind/rail facing: 3 and 4 are the sideways stances (a quarter turn).
+pub(crate) const WIPE_RAIL_STYLE: u32 = 0x328;
+
+pub(crate) const WIPE_PRESS_TYPE: u32 = 0x330;
+
+pub(crate) const WIPE_HANDLER: u32 = 0x77c;
+
+pub(crate) const WIPE_ANIM_MODEL: u32 = 0x780;
+
+pub(crate) const WIPE_ANIM: u32 = 0x784;
+
+pub(crate) const WIPE_METRIX: u32 = 0x790;
+
+pub(crate) const WIPE_BONE_HIPS: u32 = 0x89c;
+
+/// Impact info: contact point (+0x20) and strength (+0x30).
+pub(crate) const WIPE_EVT_POINT: u32 = 0x20;
+
+pub(crate) const WIPE_EVT_STRENGTH: u32 = 0x30;
+
+/// Animation model: bone translation (+0x24) and rotation (+0x28) tables,
+/// per-axis bone scale (+0x140).
+pub(crate) const WIPE_MODEL_BONE_POS: u32 = 0x24;
+
+pub(crate) const WIPE_MODEL_BONE_ROT: u32 = 0x28;
+
+pub(crate) const WIPE_MODEL_SCALE: u32 = 0x140;
+
+/// Animation controller: heading offset quaternion (+0x30) and its
+/// rotation (+0x40).
+pub(crate) const WIPE_ANIM_OFFSET_A: u32 = 0x30;
+
+pub(crate) const WIPE_ANIM_OFFSET_B: u32 = 0x40;
+
+/// `.bss` vectors: the zero quadword (0x4ff130) and the up axis (0x4ff160),
+/// addressed from 0x500000 as the original does.
+pub(crate) const WIPE_HI: u32 = 0x0050_0000;
+
+pub(crate) const WIPE_ZERO: u32 = WIPE_HI - 0xed0;
+
+pub(crate) const WIPE_AXIS: u32 = WIPE_HI - 0xea0;
+
+/// `.lit4` (gp-relative, subtracted): +pi/2 and -pi/2.
+pub(crate) const WIPE_GP_HALF_PI: u32 = 0x7cb8;
+
+pub(crate) const WIPE_GP_NEG_HALF_PI: u32 = 0x7cb4;
+
+/// gp+0x1b18: the default blend id passed to the animation setup.
+pub(crate) const WIPE_GP_BLEND: u32 = 0x1b18;
+
+/// Stack frame (0x1e0) layout.
+pub(crate) const WIPE_FRAME: u32 = 0x1e0;
+
+pub(crate) const WIPE_TMP: u32 = 0x00;
+
+pub(crate) const WIPE_SEQ_BUF: u32 = 0x10;
+
+pub(crate) const WIPE_ANIM_XF: u32 = 0x60;
+
+pub(crate) const WIPE_NODE_POS: u32 = 0x80;
+
+pub(crate) const WIPE_NODE_ROT: u32 = 0x90;
+
+pub(crate) const WIPE_Y_POS: u32 = 0xa0;
+
+pub(crate) const WIPE_Y_ROT: u32 = 0xb0;
+
+pub(crate) const WIPE_XF_POS: u32 = 0xc0;
+
+pub(crate) const WIPE_XF_ROT: u32 = 0xd0;
+
+pub(crate) const WIPE_XF_COPY: u32 = 0xe0;
+
+pub(crate) const WIPE_Q: u32 = 0xf0;
+
+pub(crate) const WIPE_Q_COPY: u32 = 0x100;
+
+pub(crate) const WIPE_V0: u32 = 0x110;
+
+pub(crate) const WIPE_V1: u32 = 0x120;
+
+pub(crate) const WIPE_V2: u32 = 0x130;
+
+pub(crate) const WIPE_V3: u32 = 0x140;
+
+pub(crate) const WIPE_SINCOS_A: u32 = 0x150;
+
+pub(crate) const WIPE_SINCOS_B: u32 = 0x158;
+
+pub(crate) const WIPE_METRIX_ON_WIPEOUT: Callee = Callee {
+    addr: 0x0011_9b08,
+    f: ee::s00::RiderMetrix_OnWipeout,
+};
+
+pub(crate) const WIPE_ADD_BOOST: Callee = Callee {
+    addr: 0x0010_e098,
+    f: ee::s00::Rider_AddBoost,
+};
+
+pub(crate) const WIPE_DYNAMIC_SPRAY: Callee = Callee {
+    addr: 0x0011_1aa0,
+    f: ee::s00::RiderBase_TriggerDynamicSpray,
+};
+
+pub(crate) const WIPE_SET_SUB_STATE: Callee = Callee {
+    addr: 0x0011_fec8,
+    f: ee::s00::Rider_SetSubState,
+};
+
+pub(crate) const WIPE_SET_MAIN_STATE: Callee = Callee {
+    addr: 0x0011_fe78,
+    f: ee::s00::Rider_SetMainState,
+};
+
+pub(crate) const WIPE_ROTATE_AROUND_AXIS: Callee = Callee {
+    addr: 0x0011_dfe0,
+    f: ee::s00::Rider_RotateAroundAxis,
+};
+
+pub(crate) const WIPE_EMPTY_STANCE_HOOK: Callee = Callee {
+    addr: 0x0011_6930,
+    f: ee::s00::Rider_EmptyStanceHook,
+};
+
+pub(crate) const WIPE_UPDATE_BOARD_LEAN: Callee = Callee {
+    addr: 0x0011_fa10,
+    f: ee::s00::Rider_UpdateBoardLean,
+};
+
+pub(crate) const WIPE_BUILD_WORLD_MATRIX: Callee = Callee {
+    addr: 0x0011_e098,
+    f: ee::s00::Rider_BuildWorldMatrix,
+};
+
+/// Other-shard callees (through the function table).
+pub(crate) const WIPE_AUDIO_INSTANCE: u32 = 0x0028_b180;
+
+pub(crate) const WIPE_AUDIO_ON_WIPEOUT: u32 = 0x0029_6310;
+
+pub(crate) const WIPE_AUDIO_GRUNT: u32 = 0x0029_f660;
+
+pub(crate) const WIPE_CROWD_FALL: u32 = 0x0029_61f0;
+
+pub(crate) const WIPE_HEADING_OFFSET: u32 = 0x0031_1b48;
+
+pub(crate) const WIPE_SIN_COS: u32 = 0x0031_be50;
+
+pub(crate) const WIPE_ANIM_SETUP: u32 = 0x0031_2660;
+
+pub(crate) const WIPE_ANIM_SAMPLE_BONE: u32 = 0x0030_ecd8;
+
+pub(crate) const WIPE_ORIENT_OFFSET: u32 = 0x0031_1bf0;
+
+pub(crate) const WIPE_ANIM_PLAY: u32 = 0x0031_28e8;
+
+/// `lwc1 f, at`, returning the value.
+pub(crate) fn wipe_ldf(c: &mut Cpu, f: usize, at: u32) -> FpuF32 {
+    let v = Addr(at).read_fpu(c);
+    c.f[f] = v.0;
+    v
+}
+
+/// Set FPU register `f` to `v`, returning it.
+pub(crate) fn wipe_setf(c: &mut Cpu, f: usize, v: FpuF32) -> FpuF32 {
+    c.f[f] = v.0;
+    v
+}
+
+/// `lq reg, from; sq reg, to...` through a GPR.
+pub(crate) fn wipe_copy(c: &mut Cpu, reg: usize, from: u32, to: &[u32]) {
+    c.lq(reg, from);
+    for &t in to {
+        c.sq(reg, t);
+    }
+}
+
+/// `vf5 = a - b` (all lanes) stored at `out`.
+pub(crate) fn wipe_vsub(c: &mut Cpu, a: u32, b: u32, out: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, out);
+}
+
+/// `vf5 = a + b` (all lanes) stored at `out`.
+pub(crate) fn wipe_vadd(c: &mut Cpu, a: u32, b: u32, out: u32) {
+    c.lqc2(3, a);
+    c.lqc2(4, b);
+    c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+    c.sqc2(5, out);
+}
+
+/// `vf5 = v * f20` (f20 = -1: the negated vector) stored at `out`; the
+/// scale passes through v1 and vf3 as in the original.
+pub(crate) fn wipe_vscale_f20(c: &mut Cpu, v: u32, out: u32) {
+    c.mfc1(V1, 20);
+    c.lqc2(4, v);
+    c.qmtc2(V1, 3);
+    c.vu0().mul(0b1111, 5, 4, Src::Bc(3, X));
+    c.sqc2(5, out);
+}
+
+/// `vf8 = a * b` (quaternion product) stored at `out`.
+pub(crate) fn wipe_qmul(c: &mut Cpu, a: u32, b: u32, out: u32) {
+    c.lqc2(4, a);
+    c.lqc2(5, b);
+    quat_mul_vu0(c);
+    c.sqc2(8, out);
+}
+
+/// The quarter turn of a sideways (rail style 3: +pi/2) stance: rotate the
+/// rider about its up vector, turn the animation heading the same way,
+/// then reset the controller's offset quaternion to `{axis * sin, cos}`
+/// of `-0` (the sincos results). Registers as the original's arm.
+pub(crate) fn wipe_quarter_turn_left(c: &mut Cpu, rider: u32) -> Flow {
+    c.cycles += 38;
+    let s = sp(c);
+    c.lq(V0, rider + WIPE_UP);
+    c.g[A1][0] = sx(s);
+    let lit = r32(c, GP).wrapping_sub(WIPE_GP_HALF_PI);
+    let half_pi = wipe_ldf(c, 20, lit);
+    c.g[A0][0] = c.g[S3][0];
+    c.sq(V0, s + WIPE_TMP);
+    c.g[S0][0] = WIPE_HI as u64;
+    wipe_setf(c, 12, half_pi);
+    c.g[S4][0] = c.g[S0][0];
+    WIPE_ROTATE_AROUND_AXIS.call(c, 0x0010_ec4c)?;
+    c.g[S1][0] = WIPE_HI as u64;
+    c.g[A0][0] = Addr(r32(c, S3).wrapping_add(WIPE_ANIM)).lw(c);
+    let f20 = FpuF32(c.f[20]);
+    wipe_setf(c, 12, f20);
+    c.g[S2][0] = sx(WIPE_AXIS);
+    call_ptr(c, WIPE_HEADING_OFFSET, 0x0010_ec60)?;
+    let s = sp(c);
+    c.g[S0][0] = sx(r32(c, S0).wrapping_sub(0xed0));
+    c.f[12] = 0;
+    c.lq(V0, r32(c, S0));
+    c.g[A0][0] = sx(s + WIPE_SINCOS_A);
+    let anim = Addr(r32(c, S3).wrapping_add(WIPE_ANIM)).lw(c);
+    c.g[S0][0] = anim;
+    c.f[12] ^= 0x8000_0000;
+    c.g[A1][0] = sx(s + WIPE_SINCOS_A + 4);
+    c.sq(V0, (anim as u32).wrapping_add(WIPE_ANIM_OFFSET_A));
+    call_ptr(c, WIPE_SIN_COS, 0x0010_ec84)?;
+    wipe_store_offset_quat(c, WIPE_SINCOS_A, S2, S1, S0);
+    Ok(())
+}
+
+/// Rail style 4: the same quarter turn by -pi/2 (the original's second
+/// arm, with its own register assignment).
+pub(crate) fn wipe_quarter_turn_right(c: &mut Cpu, rider: u32) -> Flow {
+    c.cycles += 35;
+    let s = sp(c);
+    c.lq(V0, rider + WIPE_UP);
+    c.g[A1][0] = sx(s);
+    let lit = r32(c, GP).wrapping_sub(WIPE_GP_NEG_HALF_PI);
+    let neg_half_pi = wipe_ldf(c, 20, lit);
+    c.g[A0][0] = c.g[S3][0];
+    c.sq(V0, s + WIPE_TMP);
+    c.g[S0][0] = WIPE_HI as u64;
+    wipe_setf(c, 12, neg_half_pi);
+    c.g[S1][0] = sx(WIPE_AXIS);
+    WIPE_ROTATE_AROUND_AXIS.call(c, 0x0010_ecec)?;
+    c.g[A0][0] = Addr(r32(c, S3).wrapping_add(WIPE_ANIM)).lw(c);
+    let f20 = FpuF32(c.f[20]);
+    wipe_setf(c, 12, f20);
+    call_ptr(c, WIPE_HEADING_OFFSET, 0x0010_ecf8)?;
+    let s = sp(c);
+    c.f[12] = 0;
+    c.g[V0][0] = sx(r32(c, S4).wrapping_sub(0xed0));
+    c.lq(V1, r32(c, V0));
+    c.g[A0][0] = sx(s + WIPE_SINCOS_B);
+    let anim = Addr(r32(c, S3).wrapping_add(WIPE_ANIM)).lw(c);
+    c.g[S2][0] = anim;
+    c.f[12] ^= 0x8000_0000;
+    c.g[A1][0] = sx(s + WIPE_SINCOS_B + 4);
+    c.sq(V1, (anim as u32).wrapping_add(WIPE_ANIM_OFFSET_A));
+    call_ptr(c, WIPE_SIN_COS, 0x0010_ed1c)?;
+    wipe_store_offset_quat(c, WIPE_SINCOS_B, S1, S0, S2);
+    Ok(())
+}
+
+/// `{axis.x, axis.y, axis.z} * sin, cos` (sin/cos at `sincos(sp)`) built in
+/// the frame's first quadword and stored at `anim + 0x40`. `axis_reg`
+/// holds the axis address, `hi_reg` 0x500000 (its x is read through it),
+/// `anim_reg` the controller.
+pub(crate) fn wipe_store_offset_quat(
+    c: &mut Cpu,
+    sincos: u32,
+    axis_reg: usize,
+    hi_reg: usize,
+    anim_reg: usize,
+) {
+    let s = sp(c);
+    let axis = r32(c, axis_reg);
+    let az = wipe_ldf(c, 1, axis + 8);
+    let sin = wipe_ldf(c, 0, s + sincos);
+    let axis_x = r32(c, hi_reg).wrapping_sub(0xea0);
+    let ax = wipe_ldf(c, 2, axis_x);
+    let ay = wipe_ldf(c, 4, axis + 4);
+    let qz = wipe_setf(c, 1, sin * az);
+    let qx = wipe_setf(c, 2, sin * ax);
+    let cos = wipe_ldf(c, 3, s + sincos + 4);
+    let qy = wipe_setf(c, 0, sin * ay);
+    Addr(s + 0xc).write_fpu(c, cos);
+    Addr(s + 8).write_fpu(c, qz);
+    Addr(s).write_fpu(c, qx);
+    Addr(s + 4).write_fpu(c, qy);
+    c.lq(V0, s);
+    c.sq(V0, r32(c, anim_reg).wrapping_add(WIPE_ANIM_OFFSET_B));
+}
+
+/// Hips bone node of the sampled pose: `{pos * model scale, rot}` into
+/// `NODE_POS`/`NODE_ROT`, and the conjugate of the sampled animation
+/// rotation (`ANIM_XF + 0x10`) into `V0`, then `Q`/`Q_COPY`. Leaves a1 =
+/// bone index * 16 and v1 = the bone rotation quadword as the original.
+pub(crate) fn wipe_hips_node(c: &mut Cpu, rider: u32) {
+    let s = sp(c);
+    let model = Addr(rider + WIPE_ANIM_MODEL).lw(c);
+    c.g[V1][0] = model;
+    let model = model as u32;
+    c.g[A0][0] = c.g[S3][0];
+    c.g[A1][0] = Addr(rider + WIPE_BONE_HIPS).lw(c);
+    let pos_table = Addr(model + WIPE_MODEL_BONE_POS).lw(c);
+    let bone = (r32(c, A1)) << 4;
+    c.g[A1][0] = sx(bone);
+    let sx_ = wipe_ldf(c, 4, model + WIPE_MODEL_SCALE);
+    let pos = (pos_table as u32).wrapping_add(bone);
+    c.g[V0][0] = sx(pos);
+    let sy = wipe_ldf(c, 6, model + WIPE_MODEL_SCALE + 4);
+    let px = wipe_ldf(c, 0, pos);
+    let sz = wipe_ldf(c, 3, model + WIPE_MODEL_SCALE + 8);
+    let px = wipe_setf(c, 0, px * sx_);
+    let pw = wipe_ldf(c, 5, pos + 0xc);
+    let sw = wipe_ldf(c, 4, model + WIPE_MODEL_SCALE + 0xc);
+    let py = wipe_ldf(c, 1, pos + 4);
+    let pz = wipe_ldf(c, 2, pos + 8);
+    let pw = wipe_setf(c, 5, pw * sw);
+    let py = wipe_setf(c, 1, py * sy);
+    Addr(s).write_fpu(c, px);
+    let pz = wipe_setf(c, 2, pz * sz);
+    let rz = wipe_ldf(c, 0, s + WIPE_ANIM_XF + 0x18);
+    Addr(s + 0xc).write_fpu(c, pw);
+    Addr(s + 4).write_fpu(c, py);
+    let rz = wipe_setf(c, 0, -rz);
+    Addr(s + 8).write_fpu(c, pz);
+    let rx = wipe_ldf(c, 3, s + WIPE_ANIM_XF + 0x10);
+    c.lq(V0, s);
+    let ry = wipe_ldf(c, 1, s + WIPE_ANIM_XF + 0x14);
+    let rx = wipe_setf(c, 3, -rx);
+    c.sq(V0, s + WIPE_NODE_POS);
+    let ry = wipe_setf(c, 1, -ry);
+    let rw = wipe_ldf(c, 2, s + WIPE_ANIM_XF + 0x1c);
+    let rot_table = Addr(model + WIPE_MODEL_BONE_ROT).lw(c);
+    let rot = (rot_table as u32).wrapping_add(bone);
+    c.g[V0][0] = sx(rot);
+    c.lq(V1, rot);
+    Addr(s + WIPE_V0 + 0xc).write_fpu(c, rw);
+    Addr(s + WIPE_V0).write_fpu(c, rx);
+    Addr(s + WIPE_V0 + 4).write_fpu(c, ry);
+    Addr(s + WIPE_V0 + 8).write_fpu(c, rz);
+    c.sq(V1, s + WIPE_NODE_ROT);
+    wipe_copy(c, V0, s + WIPE_V0, &[s + WIPE_Q, s + WIPE_Q_COPY]);
+}
+
+/// `Invert(xf)` with the conjugate rotation already at `Q`: the position
+/// `-(rotate(Q, pos - 0) ) + 0` into `XF_POS`, the rotation into `XF_ROT`
+/// (copies in `Q_COPY`, `XF_COPY`; temporaries `t`/`u` as the original).
+pub(crate) fn wipe_invert(c: &mut Cpu, pos: u32, t: u32, u: u32) {
+    let s = sp(c);
+    wipe_vsub(c, s + pos, WIPE_ZERO, s + t);
+    wipe_copy(c, V0, s + t, &[s + u]);
+    q_rotate(c, s + WIPE_Q, s + u, s + t);
+    wipe_copy(c, V0, s + t, &[s + WIPE_V1]);
+    wipe_vscale_f20(c, s + WIPE_V1, s + t);
+    wipe_copy(c, V0, s + t, &[s + WIPE_V0]);
+    wipe_vadd(c, s + WIPE_V0, WIPE_ZERO, s + t);
+}
+
+/// `Combine(a, b)`: rotation `a.rot * b.rot` into `Q`/`Q_COPY`, position
+/// `rotate(a.rot, b.pos - 0) + a.pos` left at `V2` (the caller copies it
+/// out).
+pub(crate) fn wipe_combine(c: &mut Cpu, a_rot: u32, a_pos: u32, b_pos: u32, b_rot: u32) {
+    let s = sp(c);
+    wipe_qmul(c, a_rot, b_rot, s + WIPE_V0);
+    wipe_copy(c, V0, s + WIPE_V0, &[s + WIPE_Q, s + WIPE_Q_COPY]);
+    wipe_vsub(c, b_pos, WIPE_ZERO, s + WIPE_V2);
+    wipe_copy(c, V0, s + WIPE_V2, &[s + WIPE_V1]);
+    q_rotate(c, a_rot, s + WIPE_V1, s + WIPE_V2);
+    wipe_copy(c, V0, s + WIPE_V2, &[s + WIPE_V0]);
+    wipe_vadd(c, s + WIPE_V0, a_pos, s + WIPE_V2);
+}
+
+/// `void Rider_StartWipeout(Rider* rider, int anim, int metrixFlag,
+/// int sprayArg, const ImpactInfo* evt)` (0x0010eb30): the rider wipes
+/// out. A controller rumble scaled by the impact strength; the metrics
+/// note the wipeout (its score as boost), the audio system the wipeout,
+/// grunt and crowd fall; a dynamic snow spray at the impact point; sub
+/// state 0xd. A sideways rail stance (3 / 4) is turned a quarter back
+/// first. Then the stance and slew state are cleared, the wipeout
+/// animation `anim` is set up and its first frame's hips transform `y`
+/// (sampled hips node combined with the inverse of the sampled root)
+/// is applied to the rider (`rider.xf = rider.xf * y`), the animation's
+/// orientation offset set to `inverse(y)`, and the animation played; sub
+/// state 8, main state 2.
+pub fn rider_start_wipeout(c: &mut Cpu) {
+    guest(c, |c| {
+        // Frame and saves; the rumble.
+        c.cycles += 62;
+        let frame = Frame::open(c, WIPE_FRAME);
+        c.g[AT][0] = 0x40a0_0000;
+        let five = wipe_setf(c, 12, FpuF32(0x40a0_0000));
+        frame.save(c, S0, 0x1c0);
+        frame.save(c, S1, 0x1b0);
+        c.g[S0][0] = c.g[A2][0];
+        frame.save(c, S2, 0x1a0);
+        c.g[S1][0] = c.g[T0][0];
+        frame.save(c, S3, 0x190);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save(c, S5, 0x170);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_fpr(c, 20, 0x1d0);
+        c.g[S5][0] = c.g[A1][0];
+        frame.save(c, S4, 0x180);
+        frame.save_ra(c, 0x160);
+        let rider = r32(c, S3);
+        let evt = r32(c, S1);
+        let vt = Addr(rider + WIPE_VTABLE).lw(c);
+        c.g[V1][0] = vt;
+        let vt = vt as u32;
+        let strength = wipe_ldf(c, 0, evt + WIPE_EVT_STRENGTH);
+        let delta = Addr(vt + WIPE_VT_VIBRATION_BUMP).lh(c);
+        c.g[A0][0] = delta;
+        wipe_setf(c, 12, strength * five);
+        let method = Addr(vt + WIPE_VT_VIBRATION_BUMP + 4).lw(c);
+        c.g[V0][0] = method;
+        c.g[A0][0] = sx(rider.wrapping_add(delta as u32));
+        call_ptr(c, method as u32, 0x0010_eb8c)?;
+
+        // Metrics, boost, audio.
+        c.g[A0][0] = Addr(r32(c, S3).wrapping_add(WIPE_METRIX)).lw(c);
+        c.g[A1][0] = c.g[S0][0];
+        WIPE_METRIX_ON_WIPEOUT.call(c, 0x0010_eb98)?;
+        c.f[20] = c.f[0];
+        c.g[A0][0] = c.g[S3][0];
+        c.f[12] = c.f[20];
+        c.g[A1][0] = 1;
+        WIPE_ADD_BOOST.call(c, 0x0010_ebac)?;
+        call_ptr(c, WIPE_AUDIO_INSTANCE, 0x0010_ebb4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S3][0];
+        call_ptr(c, WIPE_AUDIO_ON_WIPEOUT, 0x0010_ebc0)?;
+        call_ptr(c, WIPE_AUDIO_INSTANCE, 0x0010_ebc8)?;
+        c.g[A2][0] = 0;
+        c.g[A3][0] = 0;
+        c.g[A0][0] = c.g[V0][0];
+        c.g[A1][0] = c.g[S3][0];
+        call_ptr(c, WIPE_AUDIO_GRUNT, 0x0010_ebdc)?;
+        call_ptr(c, WIPE_AUDIO_INSTANCE, 0x0010_ebe4)?;
+        c.g[A0][0] = c.g[V0][0];
+        c.f[12] = c.f[20];
+        c.g[A1][0] = c.g[S3][0];
+        call_ptr(c, WIPE_CROWD_FALL, 0x0010_ebf4)?;
+
+        // Snow spray at the impact point; sub state 0xd.
+        c.g[A1][0] = c.g[S1][0];
+        let evt = r32(c, A1);
+        c.g[A0][0] = Addr(r32(c, S3).wrapping_add(WIPE_HANDLER)).lw(c);
+        wipe_ldf(c, 12, evt + WIPE_EVT_STRENGTH);
+        c.g[A2][0] = sx(evt.wrapping_add(WIPE_EVT_POINT));
+        c.g[A3][0] = c.g[S2][0];
+        WIPE_DYNAMIC_SPRAY.call(c, 0x0010_ec0c)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 0xd;
+        WIPE_SET_SUB_STATE.call(c, 0x0010_ec18)?;
+
+        // Sideways rail stances turn back a quarter.
+        let rider = r32(c, S3);
+        let style = Addr(rider + WIPE_RAIL_STYLE).lw(c);
+        c.g[V1][0] = style;
+        c.g[V0][0] = 4;
+        if style == 3 {
+            wipe_quarter_turn_left(c, rider)?;
+        } else {
+            c.cycles += 2;
+            c.g[S4][0] = WIPE_HI as u64;
+            if style == 4 {
+                wipe_quarter_turn_right(c, rider)?;
+            }
+        }
+
+        // Clear the stance and the slews; set up the wipeout animation.
+        c.cycles += 283;
+        let rider = r32(c, S3);
+        Addr(rider + WIPE_RAIL_STYLE).sw(c, 0);
+        c.g[AT][0] = 0xffff_ffff_bf80_0000;
+        c.f[20] = 0xbf80_0000;
+        c.g[A0][0] = c.g[S3][0];
+        WIPE_EMPTY_STANCE_HOOK.call(c, 0x0010_ed68)?;
+        c.g[A1][0] = sx(r32(c, S3).wrapping_add(WIPE_POSITION));
+        c.g[A0][0] = c.g[S3][0];
+        WIPE_UPDATE_BOARD_LEAN.call(c, 0x0010_ed74)?;
+        c.g[A0][0] = c.g[S3][0];
+        WIPE_BUILD_WORLD_MATRIX.call(c, 0x0010_ed7c)?;
+        let rider = r32(c, S3);
+        let s = sp(c);
+        Addr(rider + WIPE_SLEW0_RATE).sw(c, 0);
+        c.g[S0][0] = sx(s + WIPE_SEQ_BUF);
+        Addr(rider + WIPE_SLEW0_TARGET).sw(c, 0);
+        c.g[A0][0] = c.g[S0][0];
+        Addr(rider + WIPE_SLEW0_CUR).sw(c, 0);
+        c.g[A2][0] = c.g[S5][0];
+        for off in [
+            WIPE_SLEW2_RATE,
+            WIPE_SLEW2_TARGET,
+            WIPE_SLEW2_CUR,
+            WIPE_SLEW8_RATE,
+            WIPE_SLEW8_TARGET,
+            WIPE_SLEW8_CUR,
+            WIPE_PRESS_TYPE,
+        ] {
+            Addr(rider + off).sw(c, 0);
+        }
+        wipe_ldf(c, 12, rider + WIPE_SLEW0_RATE);
+        c.g[A1][0] = Addr(rider + WIPE_ANIM).lw(c);
+        c.g[A3][0] = Addr(r32(c, GP).wrapping_add(WIPE_GP_BLEND)).lw(c);
+        call_ptr(c, WIPE_ANIM_SETUP, 0x0010_edc0)?;
+        let s = sp(c);
+        c.g[A1][0] = Addr(r32(c, S3).wrapping_add(WIPE_ANIM_MODEL)).lw(c);
+        c.g[A0][0] = sx(s + WIPE_ANIM_XF);
+        c.g[A3][0] = 0;
+        c.g[A2][0] = c.g[S0][0];
+        call_ptr(c, WIPE_ANIM_SAMPLE_BONE, 0x0010_edd4)?;
+
+        // y = node * inverse(sampled root); rider.xf = rider.xf * y.
+        let rider = r32(c, S3);
+        let s = sp(c);
+        wipe_hips_node(c, rider);
+        wipe_invert(c, WIPE_ANIM_XF, WIPE_V3, WIPE_V2);
+        c.lq(V0, s + WIPE_V3);
+        c.lq(V1, s + WIPE_Q);
+        c.sq(V0, s + WIPE_Q_COPY);
+        c.sq(V0, s + WIPE_XF_POS);
+        c.sq(V1, s + WIPE_XF_ROT);
+        c.sq(V0, s + WIPE_XF_COPY);
+        wipe_combine(
+            c,
+            s + WIPE_NODE_ROT,
+            s + WIPE_NODE_POS,
+            s + WIPE_XF_POS,
+            s + WIPE_XF_ROT,
+        );
+        c.lq(V0, s + WIPE_V2);
+        c.lq(V1, s + WIPE_Q);
+        c.sq(V0, s + WIPE_Q_COPY);
+        c.sq(V0, s + WIPE_Y_POS);
+        c.sq(V1, s + WIPE_Y_ROT);
+        c.sq(V0, s + WIPE_XF_COPY);
+        wipe_combine(
+            c,
+            rider + WIPE_ORIENT,
+            rider + WIPE_POSITION,
+            s + WIPE_Y_POS,
+            s + WIPE_Y_ROT,
+        );
+        c.lq(V0, s + WIPE_V2);
+        c.lq(V1, s + WIPE_Q);
+        c.sq(V0, rider + WIPE_POSITION);
+        c.sq(V1, rider + WIPE_ORIENT);
+        c.sq(V0, s + WIPE_Q_COPY);
+        c.sq(V0, s + WIPE_XF_COPY);
+        c.sq(V0, s + WIPE_XF_POS);
+        c.g[RA][0] = sx(0x0010_f090);
+        c.sq(V1, s + WIPE_XF_ROT);
+        WIPE_BUILD_WORLD_MATRIX.call(c, 0x0010_f090)?;
+
+        // The animation's orientation offset = inverse(y).
+        let s = sp(c);
+        let qx = wipe_ldf(c, 3, s + WIPE_Y_ROT);
+        c.g[A1][0] = sx(s + WIPE_XF_POS);
+        let qy = wipe_ldf(c, 0, s + WIPE_Y_ROT + 4);
+        let qz = wipe_ldf(c, 1, s + WIPE_Y_ROT + 8);
+        let qx = wipe_setf(c, 3, -qx);
+        let qy = wipe_setf(c, 0, -qy);
+        let qw = wipe_ldf(c, 2, s + WIPE_Y_ROT + 0xc);
+        let qz = wipe_setf(c, 1, -qz);
+        Addr(s + WIPE_V0 + 0xc).write_fpu(c, qw);
+        Addr(s + WIPE_V0).write_fpu(c, qx);
+        Addr(s + WIPE_V0 + 4).write_fpu(c, qy);
+        Addr(s + WIPE_V0 + 8).write_fpu(c, qz);
+        wipe_copy(c, V0, s + WIPE_V0, &[s + WIPE_Q, s + WIPE_Q_COPY]);
+        wipe_invert(c, WIPE_Y_POS, WIPE_V3, WIPE_V2);
+        c.lq(V0, s + WIPE_V3);
+        c.sq(V0, s + WIPE_Q_COPY);
+        c.lq(V1, s + WIPE_Q);
+        c.g[A0][0] = Addr(r32(c, S3).wrapping_add(WIPE_ANIM)).lw(c);
+        c.sq(V0, s + WIPE_XF_POS);
+        c.sq(V1, s + WIPE_XF_ROT);
+        c.g[RA][0] = sx(0x0010_f16c);
+        c.sq(V0, s + WIPE_XF_COPY);
+        call_ptr(c, WIPE_ORIENT_OFFSET, 0x0010_f16c)?;
+
+        // Play it; sub state 8, main state 2.
+        c.g[A0][0] = Addr(r32(c, S3).wrapping_add(WIPE_ANIM)).lw(c);
+        c.f[12] = c.f[20];
+        c.g[A1][0] = c.g[S5][0];
+        c.g[A2][0] = 0;
+        call_ptr(c, WIPE_ANIM_PLAY, 0x0010_f180)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 8;
+        WIPE_SET_SUB_STATE.call(c, 0x0010_f18c)?;
+        c.g[A0][0] = c.g[S3][0];
+        c.g[A1][0] = 2;
+        WIPE_SET_MAIN_STATE.call(c, 0x0010_f198)?;
+        frame.restore(c, S0, 0x1c0);
+        frame.restore(c, S1, 0x1b0);
+        frame.restore(c, S2, 0x1a0);
+        frame.restore(c, S3, 0x190);
+        frame.restore(c, S4, 0x180);
+        frame.restore(c, S5, 0x170);
+        frame.restore_ra(c, 0x160);
+        frame.restore_fpr(c, 20, 0x1d0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `Xform* RiderModel_SamplePartTransform(Xform* out, RiderModel* model,
+/// AnimState* st, int part)` (0x30ecd8): find the channel of the state's
+/// clip that animates `part` (the first one whose first chunk descriptor
+/// carries that part id) and sample its bone's position (3 curves, w = 1,
+/// optionally scaled by the bone's scale) and rotation (3 curves, a unit
+/// quaternion with the axes remapped). A root bone (parent -1) is moved
+/// into the state's root frame (rotated by the root rotation, offset by the
+/// root position). With no matching channel the result is the identity
+/// transform. Returns `out` (position at +0, rotation at +0x10).
+pub fn rider_model_sample_part_transform(c: &mut Cpu) {
+    use sample_part_xf as k;
+    guest(c, |c| {
+        c.cycles += 29;
+        let frame = Frame::open(c, 0x110);
+        c.g[T0][0] = 0x14;
+        frame.save(c, S2, 0xd0);
+        frame.save(c, S3, 0xc0);
+        frame.save(c, S4, 0xb0);
+        frame.save(c, S0, 0xf0);
+        frame.save(c, S1, 0xe0);
+        frame.save(c, S5, 0xa0);
+        frame.save(c, S6, 0x90);
+        frame.save(c, S7, 0x80);
+        frame.save_ra(c, 0x70);
+        frame.save_fpr(c, 20, 0x100);
+        // s2 = state, s3 = channel index, s4 = out
+        c.g[S2][0] = c.g[A2][0];
+        c.g[S3][0] = 0;
+        c.g[S4][0] = c.g[A0][0];
+        let st = Addr(c.g[S2][0] as u32);
+        // t2 = the database table, t1 = the clip's channel count, t0 = model
+        let dbs = Addr(abi::r32(c, GP).wrapping_add(k::ANIM_DBS_GP)).lw(c);
+        let word = st.lw(c) as u32;
+        c.g[T2][0] = dbs;
+        c.g[V0][0] = sx((word & 0xff) << 2);
+        c.g[V1][0] = sx(word >> 8);
+        c.g[A2][0] = abi::addu(dbs, c.g[V0][0]);
+        c.mult(0, V1, V1, T0);
+        c.g[A0][0] = Addr(c.g[A2][0] as u32).lw(c);
+        c.g[V0][0] = Addr(c.g[A0][0] as u32).off(k::DB_CLIPS).lw(c);
+        c.g[V1][0] = abi::addu(c.g[V1][0], c.g[V0][0]);
+        c.g[T1][0] = Addr(c.g[V1][0] as u32).off(k::CLIP_CHANNELS).lhu(c);
+        c.g[T0][0] = c.g[A1][0];
+        let mut found = false;
+        if c.g[T1][0] != 0 {
+            c.cycles += 7;
+            c.g[AT][0] = FpuF32::ONE.0 as u64;
+            c.f[20] = FpuF32::ONE.0;
+            c.g[S7][0] = 0x50_0000;
+            c.g[S5][0] = sx(sp(c).wrapping_add(0x10));
+            c.g[S6][0] = u64::MAX;
+            c.g[A1][0] = Addr(c.g[S2][0] as u32).lw(c);
+            loop {
+                if channel_part_matches(c) {
+                    sample_matched_part(c)?;
+                    found = true;
+                    break;
+                }
+                c.g[S3][0] = sx((c.g[S3][0] as u32).wrapping_add(1));
+                c.cycles += 3;
+                c.g[V0][0] = ((c.g[S3][0] as i64) < (c.g[T1][0] as i64)) as u64;
+                if c.g[V0][0] == 0 {
+                    break;
+                }
+                c.g[A1][0] = Addr(c.g[S2][0] as u32).lw(c);
+                if event_due(c) {
+                    deliver_event_here(c, 0x0030_ed68);
+                }
+            }
+        }
+        if !found {
+            // no channel animates the part: the identity transform
+            c.cycles += 6;
+            c.g[V0][0] = k::IDENTITY_XF as u64;
+            c.lq(3, k::IDENTITY_XF + 0x10);
+            c.lq(4, k::IDENTITY_XF);
+            let out = c.g[S4][0] as u32;
+            c.sq(3, out.wrapping_add(0x10));
+            c.sq(4, out);
+        }
+        c.cycles += 13;
+        c.g[V0][0] = c.g[S4][0];
+        frame.restore(c, S0, 0xf0);
+        frame.restore(c, S1, 0xe0);
+        frame.restore(c, S2, 0xd0);
+        frame.restore(c, S3, 0xc0);
+        frame.restore(c, S4, 0xb0);
+        frame.restore(c, S5, 0xa0);
+        frame.restore(c, S6, 0x90);
+        frame.restore(c, S7, 0x80);
+        frame.restore_ra(c, 0x70);
+        frame.restore_fpr(c, 20, 0x100);
+        frame.close(c);
+        Ok(())
+    });
+
+    /// One step of the channel search (a1 = the state's first word, s3 =
+    /// channel): the part id of the channel's first chunk descriptor (in
+    /// v1), true when it is `part` (a3).
+    fn channel_part_matches(c: &mut Cpu) -> bool {
+        c.cycles += 19;
+        let word = c.g[A1][0] as u32;
+        c.g[V1][0] = k::CLIP_SIZE as u64;
+        c.g[V0][0] = sx((word & 0xff) << 2);
+        c.g[A1][0] = sx(word >> 8);
+        c.mult(0, A1, A1, V1);
+        c.g[V0][0] = abi::addu(c.g[T2][0], c.g[V0][0]);
+        let db = Addr(c.g[V0][0] as u32).lw(c);
+        c.g[V1][0] = db;
+        c.g[A0][0] = Addr(db as u32).off(k::DB_CLIPS).lw(c);
+        c.g[A2][0] = Addr(db as u32).off(k::DB_CHUNKS).lw(c);
+        c.g[A0][0] = abi::addu(c.g[A0][0], c.g[A1][0]);
+        let clip = Addr(c.g[A0][0] as u32);
+        c.g[V1][0] = clip.off(k::CLIP_CHUNKS).lhu(c);
+        c.g[V0][0] = clip.off(k::CLIP_FIRST_CHUNK).lw(c);
+        c.mult(0, V1, S3, V1);
+        c.g[V0][0] = abi::addu(c.g[V0][0], c.g[V1][0]);
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 3);
+        c.g[V0][0] = abi::addu(c.g[V0][0], c.g[A2][0]);
+        c.g[V1][0] = Addr(c.g[V0][0] as u32).off(k::DESC_PART).lbu(c);
+        c.g[V1][0] == c.g[A3][0]
+    }
+
+    /// The matching channel's bone: position, rotation, root frame, then
+    /// the result into `out`.
+    fn sample_matched_part(c: &mut Cpu) -> Flow {
+        let base_addr = curve_base_slot(c);
+        sample_position(c, base_addr)?;
+        if is_root(c) {
+            position_to_root_frame(c);
+        } else {
+            c.g[V0][0] = Addr(c.g[S2][0] as u32).lbu(c);
+        }
+        sample_rotation(c)?;
+        c.cycles += 3;
+        let parent = Addr(c.g[S0][0] as u32).off(k::INFO_PARENT).lh(c);
+        c.g[V0][0] = parent;
+        let s = sp(c);
+        c.lq(2, s);
+        if parent == c.g[S6][0] {
+            rotation_to_root_frame(c);
+        }
+        c.cycles += 4;
+        let s = sp(c);
+        c.lq(3, s.wrapping_add(0x10));
+        let out = c.g[S4][0] as u32;
+        c.sq(2, out);
+        c.sq(3, out.wrapping_add(0x10));
+        Ok(())
+    }
+
+    /// The bone of `part` (a3) and its curve slots: s0 = bone info, a3 =
+    /// curve slot; returns the address of the curve-base entry to sample
+    /// from (the alternate slot `+info.alt` when the state's flag is set),
+    /// with a0/a1 = the base table and the slot's byte offset.
+    fn curve_base_slot(c: &mut Cpu) -> u32 {
+        c.cycles += 12;
+        let model = Addr(c.g[T0][0] as u32);
+        c.g[V0][0] = model.off(k::MODEL_PART_BONE).lw(c);
+        c.g[V1][0] = sx((c.g[A3][0] as u32) << 2);
+        c.g[A1][0] = k::BONE_SIZE as u64;
+        c.g[A0][0] = model.off(k::MODEL_BONES).lw(c);
+        c.g[V1][0] = abi::addu(c.g[V1][0], c.g[V0][0]);
+        c.g[A2][0] = Addr(c.g[S2][0] as u32).off(k::ST_ALT).lw(c);
+        c.g[V0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        c.mult(0, V0, V0, A1);
+        c.g[A0][0] = abi::addu(c.g[A0][0], c.g[V0][0]);
+        let bone = Addr(c.g[A0][0] as u32);
+        c.g[S0][0] = bone.off(k::BONE_INFO).lw(c);
+        c.g[A3][0] = bone.off(k::BONE_SLOT).lw(c);
+        let slot = c.g[A3][0] as u32;
+        if c.g[A2][0] != 0 {
+            c.cycles += 8;
+            c.g[V0][0] = Addr(c.g[S0][0] as u32).off(k::INFO_ALT_SLOT).lh(c);
+            c.g[A1][0] = sx(slot << 2);
+            c.g[V1][0] = model.off(k::MODEL_CURVE_BASE).lw(c);
+            c.g[V0][0] = abi::addu(c.g[V0][0], slot as u64);
+            c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+            c.g[A0][0] = c.g[V1][0];
+            c.g[V0][0] = abi::addu(c.g[V0][0], c.g[V1][0]);
+        } else {
+            c.cycles += 5;
+            c.g[V1][0] = model.off(k::MODEL_CURVE_BASE).lw(c);
+            c.g[V0][0] = sx(slot << 2);
+            c.g[A1][0] = c.g[V0][0];
+            c.g[V0][0] = abi::addu(c.g[V0][0], c.g[V1][0]);
+            c.g[A0][0] = c.g[V1][0];
+        }
+        c.g[V0][0] as u32
+    }
+
+    /// `AnimDataBase_SampleChannel(db, out, st, channel, first, 3)` for the
+    /// state's database (v0/v1 = its table index and entry, as left by the
+    /// original).
+    fn sample_curves(c: &mut Cpu, out: u32, first: u64, ret: u32) -> Flow {
+        let st = c.g[S2][0] as u32;
+        c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+        c.g[V1][0] = abi::addu(c.g[V1][0], c.g[V0][0]);
+        c.g[A1][0] = sx(out);
+        c.g[A2][0] = sx(st);
+        c.g[A3][0] = c.g[S3][0];
+        c.g[T0][0] = first;
+        c.g[A0][0] = Addr(c.g[V1][0] as u32).lw(c);
+        c.g[T1][0] = 3;
+        k::SAMPLE_CHANNEL.call(c, ret)
+    }
+
+    /// The position: curves `s1 = base[slot'] - base[slot]` onward into
+    /// sp+0x20, w = 1 (f20), copied to sp+0 (through sp+0x30), multiplied by
+    /// the bone's scale when the state's flag is set.
+    fn sample_position(c: &mut Cpu, base_addr: u32) -> Flow {
+        c.cycles += 26;
+        c.g[S1][0] = Addr(base_addr).lw(c);
+        c.g[V0][0] = Addr(c.g[S2][0] as u32).lbu(c);
+        c.g[A0][0] = abi::addu(c.g[A1][0], c.g[A0][0]);
+        c.g[V1][0] = Addr(abi::r32(c, GP).wrapping_add(k::ANIM_DBS_GP)).lw(c);
+        let slot_base = Addr(c.g[A0][0] as u32).lw(c);
+        c.g[A3][0] = slot_base;
+        c.g[S1][0] = sx((c.g[S1][0] as u32).wrapping_sub(slot_base as u32));
+        let s = sp(c);
+        let first = c.g[S1][0];
+        sample_curves(c, s.wrapping_add(0x20), first, 0x0030_ee54)?;
+        let s = sp(c);
+        for i in 0..3 {
+            let v = Addr(s + 0x20 + 4 * i).read_fpu(c);
+            c.f[i as usize] = v.0;
+        }
+        for i in 0..3 {
+            let v = FpuF32(c.f[i as usize]);
+            Addr(s + 0x30 + 4 * i).write_fpu(c, v);
+        }
+        let w = FpuF32(c.f[20]);
+        Addr(s + 0x3c).write_fpu(c, w);
+        c.lq(2, s + 0x30);
+        c.g[V1][0] = Addr(c.g[S2][0] as u32).off(k::ST_ALT).lw(c);
+        c.sq(2, s);
+        if c.g[V1][0] != 0 {
+            c.cycles += 18;
+            let scale = Addr(c.g[S0][0] as u32).off(k::INFO_SCALE);
+            let mut sc = [FpuF32::ZERO; 4];
+            for i in 0..4 {
+                sc[i] = scale.off(4 * i as u32).read_fpu(c);
+                c.f[4 + i] = sc[i].0;
+            }
+            let mut p = [FpuF32::ZERO; 4];
+            for i in 0..4 {
+                p[i] = Addr(s + 4 * i as u32).read_fpu(c) * sc[i];
+            }
+            // f1..f3 = x, y, z; f0 = w
+            c.f[1] = p[0].0;
+            c.f[2] = p[1].0;
+            c.f[3] = p[2].0;
+            c.f[0] = p[3].0;
+            for i in 0..4 {
+                Addr(s + 0x30 + 4 * i as u32).write_fpu(c, p[i]);
+            }
+            c.lq(2, s + 0x30);
+            c.sq(2, s);
+        }
+        Ok(())
+    }
+
+    /// `info.parent == -1` (v0 = the parent).
+    fn is_root(c: &mut Cpu) -> bool {
+        c.cycles += 3;
+        c.g[V0][0] = Addr(c.g[S0][0] as u32).off(k::INFO_PARENT).lh(c);
+        c.g[V0][0] == c.g[S6][0]
+    }
+
+    /// vf8.xyz = the vector `vec` rotated by the quaternion `quat`
+    /// (q v q* through two cross products), vf8.x zeroed first.
+    fn rotate_by_quat(c: &mut Cpu, quat: u32, vec: u32) {
+        c.lqc2(4, quat);
+        c.lqc2(5, vec);
+        let vu = c.vu0();
+        vu.sub(0b0001, 8, 8, Src::Vec(8));
+        vu.opmula(4, 5);
+        vu.opmsub(6, 5, 4);
+        vu.opmula(4, 6);
+        vu.opmsub(7, 6, 4);
+        vu.mula(0b1110, 5, Src::Bc(0, W));
+        vu.madda(0b1110, 6, Src::Bc(4, W));
+        vu.madda(0b1110, 6, Src::Bc(4, W));
+        vu.madda(0b1110, 7, Src::Bc(0, W));
+        vu.madd(0b1110, 8, 7, Src::Bc(0, W));
+    }
+
+    /// A root bone's position into the state's frame: a direction (w = 0)
+    /// is only rotated; a point is taken relative to the origin, rotated
+    /// and offset by the root position. The result goes to sp+0 (via
+    /// sp+0x30); v0 = the state's db index.
+    fn position_to_root_frame(c: &mut Cpu) {
+        c.cycles += 5;
+        let s = sp(c);
+        let w = Addr(s + 0xc).read_fpu(c);
+        c.f[1] = w.0;
+        c.f[0] = 0;
+        let direction = w.eq_s(FpuF32::ZERO);
+        abi::set_fcc(c, direction);
+        let st = c.g[S2][0] as u32;
+        if direction {
+            c.cycles += 15;
+            rotate_by_quat(c, st + k::ST_ROOT_ROT, s);
+            c.sqc2(8, s + 0x40);
+            c.lq(2, s + 0x40);
+        } else {
+            c.cycles += 26;
+            c.lqc2(3, s);
+            let origin = (c.g[S7][0] as u32).wrapping_sub(0xed0);
+            c.lqc2(4, origin);
+            c.vu0().sub(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s + 0x60);
+            c.lq(2, s + 0x60);
+            c.sq(2, s + 0x50);
+            rotate_by_quat(c, st + k::ST_ROOT_ROT, s + 0x50);
+            c.sqc2(8, s + 0x60);
+            c.lq(2, s + 0x60);
+            c.sq(2, s + 0x40);
+            c.lqc2(3, s + 0x40);
+            c.lqc2(4, st + k::ST_ROOT_POS);
+            c.vu0().add(0b1111, 5, 3, Src::Vec(4));
+            c.sqc2(5, s + 0x60);
+            c.lq(2, s + 0x60);
+        }
+        c.cycles += 4;
+        c.sq(2, s + 0x30);
+        c.lq(2, s + 0x30);
+        c.sq(2, s);
+        c.g[V0][0] = Addr(st).lbu(c);
+    }
+
+    /// The rotation: curves `s1 + 3` onward into sp+0x30 (v0 = the state's
+    /// db index), completed to a unit quaternion at sp+0x10, its axes
+    /// remapped when the state's flag is set.
+    fn sample_rotation(c: &mut Cpu) -> Flow {
+        c.cycles += 92;
+        let first = sx((c.g[S1][0] as u32).wrapping_add(3));
+        c.g[V1][0] = Addr(abi::r32(c, GP).wrapping_add(k::ANIM_DBS_GP)).lw(c);
+        let s = sp(c);
+        sample_curves(c, s.wrapping_add(0x30), first, 0x0030_efc4)?;
+        quat_from_vector_part(c);
+        if c.g[A2][0] != 0 {
+            remap_axis(c, 0x1b, 3, true);
+            remap_axis(c, 0x18, 2, false);
+            remap_axis(c, 0x19, 1, false);
+            remap_axis(c, 0x1a, 0, false);
+            c.cycles += 6;
+            let s = sp(c);
+            for (f, off) in [(3usize, 0x4cu32), (2, 0x40), (1, 0x44), (0, 0x48)] {
+                let v = FpuF32(c.f[f]);
+                Addr(s + off).write_fpu(c, v);
+            }
+            c.lq(2, s + 0x40);
+            c.sq(2, s + 0x10);
+        }
+        Ok(())
+    }
+
+    /// The quaternion from its sampled vector part (sp+0x30..0x38): the
+    /// MMI/VU0 sequence the original issues to get w = sqrt(1 - |v|^2)
+    /// with the signs restored, written to sp+0x10 as (x, y, z, w) products;
+    /// a2 = the state's flag.
+    fn quat_from_vector_part(c: &mut Cpu) {
+        let s = sp(c);
+        // (x, y, z, 0) to sp+0x40 through f0..f2
+        for (f, src) in [(1usize, 0x34u32), (2, 0x38), (0, 0x30)] {
+            let v = Addr(s + src).read_fpu(c);
+            c.f[f] = v.0;
+        }
+        for (f, dst) in [(1usize, 0x44u32), (2, 0x48), (0, 0x40)] {
+            let v = FpuF32(c.f[f]);
+            Addr(s + dst).write_fpu(c, v);
+        }
+        Addr(s + 0x4c).sw(c, 0);
+        c.lqc2(3, s + 0x40);
+        c.vu0().add(0b1110, 4, 0, Src::Bc(0, W));
+        c.vu0().abs(0b1110, 6, 3);
+        c.vu0().ftoi(0, 0b1111, 8, 3);
+        c.vu0().add(0b1110, 7, 3, Src::Vec(6));
+        c.qmfc2(4, 8);
+        c.vu0().ftoi(0, 0b1110, 6, 4);
+        c.qmfc2(5, 7);
+        c.pceqw(5, 5, 0);
+        c.paddw(4, 4, 5);
+        c.psraw(5, 4, 1);
+        c.qmtc2(5, 7);
+        c.qmfc2(2, 6);
+        c.paddw(2, 2, 4);
+        c.vu0().itof(0, 0b1111, 7, 7);
+        c.psllw(4, 4, 15);
+        c.psllw(4, 4, 15);
+        c.pceqw(5, 4, 0);
+        c.vu0().suba(0b1110, 3, Src::Vec(7));
+        c.vu0().msub(0b1110, 3, 7, Src::Bc(0, W));
+        c.pcgtw(4, 4, 0);
+        c.por(4, 4, 5);
+        c.vu0().suba(0b1110, 3, Src::Bc(0, W));
+        c.vu0().msub(0b1110, 5, 4, Src::Bc(0, W));
+        c.psllw(2, 2, 15);
+        c.psllw(2, 2, 15);
+        c.vu0().mul(0b1110, 5, 5, Src::Vec(3));
+        c.vu0().sub(0b1110, 9, 0, Src::Vec(5));
+        c.vu0().mula(0b1110, 9, Src::Vec(5));
+        c.vu0().madd(0b1110, 10, 4, Src::Bc(0, W));
+        c.qmfc2(5, 9);
+        c.pand(5, 5, 4);
+        c.qmfc2(3, 5);
+        c.pnor(4, 4, 0);
+        c.pand(4, 4, 3);
+        c.por(5, 5, 4);
+        c.sq(5, s + 0x50);
+        c.sqc2(10, s + 0x60);
+        for i in 0..3 {
+            let v = Addr(s + 0x60 + 4 * i).read_fpu(c).sqrt();
+            c.f[0] = v.0;
+            Addr(s + 0x60 + 4 * i).write_fpu(c, v);
+        }
+        c.lqc2(3, s + 0x60);
+        c.pceqw(5, 2, 0);
+        c.pcgtw(2, 2, 0);
+        c.por(2, 2, 5);
+        c.vu0().sub(0b1110, 4, 0, Src::Vec(3));
+        c.qmfc2(5, 3);
+        c.pand(5, 5, 2);
+        c.pnor(2, 2, 0);
+        c.qmfc2(3, 4);
+        c.pand(2, 2, 3);
+        c.por(5, 5, 2);
+        c.sq(5, s + 0x60);
+        let rd = |c: &mut Cpu, off: u32| Addr(s + off).read_fpu(c);
+        let f4 = rd(c, 0x50);
+        let f0 = rd(c, 0x54);
+        let f1 = rd(c, 0x68);
+        let f0 = f4 * f0;
+        let f5 = rd(c, 0x58);
+        let f2 = rd(c, 0x64);
+        let f3 = rd(c, 0x60);
+        let f1 = f0 * f1;
+        c.g[A2][0] = Addr(c.g[S2][0] as u32).off(k::ST_ALT).lw(c);
+        let f4 = f4 * f2;
+        let f0 = f0 * f5;
+        c.f[0] = f0.0;
+        c.f[1] = f1.0;
+        c.f[2] = f2.0;
+        c.f[3] = f3.0;
+        c.f[4] = f4.0;
+        c.f[5] = f5.0;
+        Addr(s + 0x10).write_fpu(c, f3);
+        Addr(s + 0x14).write_fpu(c, f1);
+        Addr(s + 0x18).write_fpu(c, f4);
+        Addr(s + 0x1c).write_fpu(c, f0);
+    }
+
+    /// One rotation component of the axis remap into `f[dest]`: component
+    /// `sel` of sp+0x10 for selector `sel < 4`, else component `sel - 4`
+    /// negated (through f0). The first one also sets v1 = sp+0x10 (and
+    /// reads through s5, the same address).
+    fn remap_axis(c: &mut Cpu, field: u32, dest: usize, first: bool) {
+        let info = Addr(c.g[S0][0] as u32);
+        c.cycles += 4;
+        let sel = info.off(field).lbu(c) as u32;
+        let direct = sel < 4;
+        let base = if first {
+            c.g[V1][0] = sx(sp(c).wrapping_add(0x10));
+            c.cycles += if direct { 5 } else { 6 };
+            c.g[S5][0] as u32
+        } else {
+            c.cycles += if direct { 4 } else { 5 };
+            c.g[V1][0] as u32
+        };
+        let index = if direct { sel } else { sel - 4 };
+        let at = base.wrapping_add(index << 2);
+        c.g[V0][0] = sx(at);
+        let v = Addr(at).read_fpu(c);
+        if direct {
+            c.f[dest] = v.0;
+        } else {
+            c.f[0] = v.0;
+            c.f[dest] = (-v).0;
+        }
+    }
+
+    /// A root bone's rotation into the state's frame: sp+0x10 = root
+    /// rotation * rotation (quaternion product), also at sp+0x40; v0's
+    /// quadword ($2) is reloaded from sp+0.
+    fn rotation_to_root_frame(c: &mut Cpu) {
+        c.cycles += 16;
+        let s = sp(c);
+        let st = c.g[S2][0] as u32;
+        c.lqc2(4, st + k::ST_ROOT_ROT);
+        c.lqc2(5, s + 0x10);
+        let vu = c.vu0();
+        vu.mul(0b1111, 7, 4, Src::Vec(5));
+        vu.opmula(4, 5);
+        vu.opmsub(6, 5, 4);
+        vu.mula(0b1110, 4, Src::Bc(5, W));
+        vu.madda(0b1110, 5, Src::Bc(4, W));
+        vu.suba(0b0001, 7, Src::Bc(7, X));
+        vu.msuba(0b0001, 0, Src::Bc(7, Y));
+        vu.msub(0b0001, 8, 0, Src::Bc(7, Z));
+        vu.madd(0b1110, 8, 6, Src::Bc(0, W));
+        c.sqc2(8, s + 0x50);
+        c.lq(2, s + 0x50);
+        c.sq(2, s + 0x10);
+        c.sq(2, s + 0x40);
+        c.lq(2, s);
+    }
+}
+
+/// `int PATH_RemapNode(int id, int node)` (0x3d3c90): remaps a path node
+/// number through the remap ranges of path `id` in the path table
+/// (`*0x44f420`): the byte at +4 of the path's word (`words[index[id]]`)
+/// picks range k (`ranges[k-1]..ranges[k]` of `words`); each word of the
+/// range is `{from << 16 | to}`, and every word whose `from` equals the
+/// current node replaces it by `to`. Negative ids and k == 0 return `node`.
+pub fn path_remap_node(c: &mut Cpu) {
+    const PATH_TABLE: u32 = 0x0045_0000 - 0xbe0;
+    const WORDS: u32 = 0x34;
+    const INDEX: u32 = 0x38;
+    const RANGES: u32 = 0x48;
+    c.cycles += 2;
+    c.g[A2][0] = c.g[A1][0];
+    if c.g[A0][0] as i64 >= 0 {
+        c.cycles += 12;
+        let table = c.lw(PATH_TABLE);
+        c.g[A1][0] = table;
+        let index = c.lw((table as u32).wrapping_add(INDEX));
+        let words = c.lw((table as u32).wrapping_add(WORDS));
+        c.g[A3][0] = words;
+        let entry = sx(((c.g[A0][0] as u32) << 1).wrapping_add(index as u32));
+        c.g[A0][0] = entry;
+        let word = c.lh(entry as u32);
+        let word_addr = ((word as u32) << 2).wrapping_add(words as u32);
+        let k = c.lbu(word_addr.wrapping_add(4));
+        let k4 = sx((k as u32) << 2);
+        c.g[V0][0] = k4;
+        if k == 0 {
+            c.g[V1][0] = index;
+        } else {
+            c.cycles += 8;
+            let ranges = c.lw((table as u32).wrapping_add(RANGES));
+            let range = (k4 as u32).wrapping_add(ranges as u32);
+            c.g[V0][0] = sx(range);
+            let start = c.lw(range.wrapping_sub(4));
+            let end = c.lw(range);
+            c.g[A0][0] = start;
+            c.g[A1][0] = sx((start as u32) << 2);
+            let n = sx((end as u32).wrapping_sub(start as u32));
+            c.g[V0][0] = n;
+            let first = sx((words as u32).wrapping_add(c.g[A1][0] as u32));
+            c.g[V1][0] = first;
+            if n as i64 > 0 {
+                c.cycles += 2;
+                c.g[A1][0] = first;
+                c.g[A0][0] = n;
+                loop {
+                    c.cycles += 8;
+                    let w = c.lw(c.g[A1][0] as u32);
+                    c.g[A0][0] = sx((c.g[A0][0] as u32).wrapping_sub(1));
+                    c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_add(4));
+                    let from = sx(((w as u32) as i32 >> 16) as u32);
+                    let to = w & 0xffff;
+                    c.g[V1][0] = to;
+                    c.g[V0][0] = c.g[A2][0] ^ from;
+                    if c.g[V0][0] == 0 {
+                        c.g[A2][0] = to;
+                    }
+                    if c.g[A0][0] == 0 {
+                        break;
+                    }
+                    if event_due(c) {
+                        deliver_event_here(c, 0x003d_3cf8);
+                    }
+                }
+            }
+        }
+    }
+    c.cycles += 2;
+    c.g[V0][0] = c.g[A2][0];
+    ret(c);
+}
+
+/// `LunoVMRegister* WScriptFn_SetSelfObject(LunoVMRegister* ret, int n,
+/// Arg* args)` (0x302968): script function. The object id starts from the
+/// default (-1) and takes each passed argument `{idx, val, _, type}` (an int
+/// passed for a float slot is converted). The id (class in the low byte,
+/// handle in the rest) is resolved through the object manager's class
+/// table; the world's self object (+0x290) becomes the handle word >> 8,
+/// times 4, or 0 when the class or handle is missing. Returns the 12-byte
+/// "ok" result in `*ret`. Frame 0x70 (s0-s3; the arguments at +0x10).
+pub fn wscript_fn_set_self_object(c: &mut Cpu) {
+    use set_self_object::*;
+    guest(c, |c| {
+        c.cycles += 11;
+        let frame = Frame::open(c, 0x70);
+        let gp = c.g[GP][0] as u32;
+        let ready = c.lw(gp.wrapping_add(GP_DEFAULTS_READY));
+        c.g[V0][0] = ready;
+        frame.save(c, S1, 0x50);
+        frame.save(c, S2, 0x40);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x30);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        if ready == 0 {
+            // First use: default id -1 (the flag byte kept, its copy at sp).
+            c.cycles += 7;
+            let flag = c.lbu(gp.wrapping_add(GP_DEFAULTS_FLAG));
+            c.g[V0][0] = flag;
+            c.g[V1][0] = u64::MAX;
+            c.g[A0][0] = 1;
+            c.sw(gp.wrapping_add(GP_DEFAULTS), u64::MAX);
+            c.sw(gp.wrapping_add(GP_DEFAULTS_READY), 1);
+            c.sb(sp(c), flag);
+        }
+
+        // buf (sp+0x10) = defaults.
+        c.cycles += 10;
+        c.g[V0][0] = u64::MAX;
+        let buf = sp(c).wrapping_add(0x10);
+        c.g[S0][0] = sx(buf);
+        c.g[A2][0] = 0x8;
+        c.g[A0][0] = sx(buf);
+        c.g[A1][0] = sx(gp.wrapping_add(GP_DEFAULTS));
+        c.sw(buf, u64::MAX);
+        call_ptr(c, MEM_COPY, 0x0030_29d0)?;
+        c.g[A2][0] = c.g[S2][0];
+        if (c.g[S1][0] as i64) > 0 {
+            // Each passed argument into its slot.
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[T0][0] = sx((c.g[GP][0] as u32).wrapping_add(GP_ARG_TYPES));
+            c.g[A3][0] = TYPE_FLOAT;
+            loop {
+                c.cycles += 8;
+                let arg = c.g[A2][0] as u32;
+                let idx = c.lw(arg);
+                let ty = c.lw(arg.wrapping_add(0xc));
+                c.g[V1][0] = ty;
+                let off = (idx as u32) << 2;
+                let slot = (c.g[S0][0] as u32).wrapping_add(off);
+                c.g[A0][0] = sx(slot);
+                let declared = c.lw((c.g[T0][0] as u32).wrapping_add(off));
+                c.g[V0][0] = declared;
+                if ty != declared && declared == c.g[A3][0] {
+                    c.cycles += 6;
+                    c.lwc1(0, arg.wrapping_add(0x4));
+                    c.cvt_s_w(0, 0);
+                    c.swc1(0, slot);
+                } else {
+                    if ty != declared {
+                        c.cycles += 2;
+                    }
+                    c.cycles += 1;
+                    let val = c.lw(arg.wrapping_add(0x4));
+                    c.g[V0][0] = val;
+                    c.sw(slot, val);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                c.g[A2][0] = sx(arg.wrapping_add(0x10));
+                if c.g[A1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x0030_29e8);
+                }
+            }
+        }
+
+        // The object: class table[id & 0xff], handle table[id >> 8] >> 8,
+        // times 4 (0 when either is missing).
+        c.cycles += 10;
+        let gp = c.g[GP][0] as u32;
+        let manager = c.lw(gp.wrapping_add(GP_OBJECT_MANAGER));
+        let id = c.lw(c.g[S0][0] as u32);
+        c.g[A1][0] = id;
+        let m = c.lw(manager as u32);
+        c.g[A0][0] = m;
+        let classes = c.lw((m as u32).wrapping_add(0x8));
+        let entry = ((id as u32 & 0xff) << 2).wrapping_add(classes as u32);
+        c.g[V0][0] = sx(entry);
+        let class = c.lw(entry);
+        c.g[V1][0] = class;
+        c.g[A2][0] = c.lw(gp.wrapping_add(GP_WORLD));
+        let mut object = 0u64;
+        if class != 0 {
+            c.cycles += 8;
+            let handles = c.lw((class as u32).wrapping_add(0x1c));
+            c.g[A0][0] = handles;
+            let word = c.lw(((id as u32) >> 8 << 2).wrapping_add(handles as u32));
+            c.g[V1][0] = word;
+            let handle = (word as u32) >> 8;
+            object = sx(handle << 2);
+            if handle == 0 {
+                c.cycles += 1;
+                object = 0;
+            }
+        } else {
+            c.cycles += 1;
+        }
+        c.g[V0][0] = object;
+
+        // world->self = object; *ret = the ok result.
+        c.cycles += 17;
+        c.sw((c.g[A2][0] as u32).wrapping_add(WORLD_SELF), object);
+        c.g[V1][0] = 0x004d_0000;
+        c.g[V0][0] = c.g[S3][0];
+        c.g[A3][0] = sx(RESULT_OK);
+        c.ldl(A0, RESULT_OK.wrapping_add(0x7));
+        c.ldr(A0, RESULT_OK);
+        c.g[A1][0] = c.lw(RESULT_OK.wrapping_add(0x8));
+        let ret_reg = c.g[S3][0] as u32;
+        c.sdl(A0, ret_reg.wrapping_add(0x7));
+        c.sdr(A0, ret_reg);
+        c.sw(ret_reg.wrapping_add(0x8), c.g[A1][0]);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `vf6 = vf4 x vf5` (the outer-product pair; vf6.x is then zeroed by
+/// `vsub.x vf6, vf6, vf6`), as the original's macro-mode sequence.
+pub(crate) fn deflect_cross(c: &mut Cpu) {
+    use ssx3_ee_rt::vu0::Src;
+    c.vu0().opmula(4, 5);
+    c.vu0().opmsub(6, 5, 4);
+    c.vu0().sub(0b0001, 6, 6, Src::Vec(6));
+}
+
+/// `vf4.w = dot3(vf3, vf<b>)` through `vmul` / `vadda` / `vmadda` / `vmadd`
+/// (vf6.w = vf0.w first), as the original does.
+pub(crate) fn deflect_dot(c: &mut Cpu, b: u8) {
+    use ssx3_ee_rt::vu0::{Src, W, Y, Z};
+    c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+    c.vu0().mul(0b1111, 4, 3, Src::Vec(b));
+    c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+    c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+    c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+}
+
+/// `void Rider::DeflectAlongWall(WallContact* contact)` (0x1065b0): with the
+/// wall normal `n = norm(up x contact.normal)` and `t = up x n`, the heading
+/// angle relative to the wall is `atan2(fwd . n, fwd . t)`. A positive angle
+/// is pushed towards +110 degrees, a negative one towards -110 degrees, by
+/// at most 20 degrees per call; when that turn `d` is non-zero the rider's
+/// orientation (+0x120) is rotated by `-d` about up (a quaternion from
+/// `Math_SinCos(-d / 2)`, multiplied on the left). Frame 0xc0 (s0, f20-f22).
+pub fn rider_deflect_along_wall(c: &mut Cpu) {
+    use deflect_along_wall::*;
+    use ssx3_ee_rt::vu0::{Src, W, X, Y, Z};
+    guest(c, |c| {
+        c.cycles += 63;
+        let frame = Frame::open(c, 0xc0);
+        frame.save(c, S0, 0x90);
+        frame.save_fpr(c, 22, 0xb0);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0x80);
+        frame.save_fpr(c, 21, 0xa8);
+        frame.save_fpr(c, 20, 0xa0);
+        c.mtc1(0, 22); // 0.0
+        let rider = c.g[S0][0] as u32;
+        let s = sp(c);
+        // n = norm(up x contact.normal) at sp+0x0 (via sp+0x30/+0x10).
+        c.lq(V0, rider.wrapping_add(UP));
+        c.sq(V0, s.wrapping_add(0x20));
+        c.lqc2(4, s.wrapping_add(0x20));
+        c.lqc2(5, (c.g[A1][0] as u32).wrapping_add(CONTACT_NORMAL));
+        deflect_cross(c);
+        c.sqc2(6, s.wrapping_add(0x30));
+        c.lq(V0, s.wrapping_add(0x30));
+        c.sq(V0, s.wrapping_add(0x10));
+        c.lqc2(3, s.wrapping_add(0x10));
+        c.vu0().add(0b1000, 6, 0, Src::Bc(0, W));
+        c.vu0().mul(0b1111, 4, 3, Src::Vec(3));
+        c.vu0().adda(0b1000, 4, Src::Bc(4, Y));
+        c.vu0().madda(0b1000, 6, Src::Bc(4, Z));
+        c.vu0().madd(0b1000, 4, 6, Src::Bc(4, W));
+        c.vu0().rsqrt(0, 3, 4, 0);
+        c.vu0().waitq();
+        c.vu0().mul(0b1111, 5, 3, Src::Q);
+        c.sqc2(5, s.wrapping_add(0x30));
+        // t = up x n (sp+0x10).
+        c.lq(V1, rider.wrapping_add(UP));
+        c.lq(V0, s.wrapping_add(0x30));
+        c.sq(V1, s.wrapping_add(0x20));
+        c.sq(V0, s);
+        c.lqc2(4, s.wrapping_add(0x20));
+        c.lqc2(5, s);
+        deflect_cross(c);
+        c.sqc2(6, s.wrapping_add(0x30));
+        // x = fwd . t (f20), y = fwd . n (f21).
+        c.lq(V1, rider.wrapping_add(FORWARD));
+        c.lq(V0, s.wrapping_add(0x30));
+        c.sq(V1, s.wrapping_add(0x20));
+        c.sq(V0, s.wrapping_add(0x10));
+        c.lqc2(3, s.wrapping_add(0x20));
+        c.lqc2(5, s.wrapping_add(0x10));
+        deflect_dot(c, 5);
+        c.qmfc2(A0, 4);
+        c.mtc1(A0, 20);
+        c.lqc2(3, s.wrapping_add(0x20));
+        c.lqc2(5, s);
+        deflect_dot(c, 5);
+        c.qmfc2(V0, 4);
+        c.mtc1(V0, 21);
+
+        // angle (f12) = atan2(y, x).
+        let gp = c.g[GP][0] as u32;
+        c.c_eq_s(20, 22);
+        if c.fcc() {
+            // x == 0: 0, -pi/2 or pi/2 by y.
+            c.cycles += 4;
+            c.c_eq_s(21, 22);
+            let y_zero = c.fcc();
+            c.mov_s(12, 21);
+            if !y_zero {
+                c.cycles += 4;
+                c.c_le_s(22, 21);
+                c.lwc1(12, gp.wrapping_sub(GP_MINUS_HALF_PI));
+                if c.fcc() {
+                    c.cycles += 3;
+                    c.lwc1(12, gp.wrapping_sub(GP_HALF_PI));
+                }
+            }
+        } else {
+            c.cycles += 7;
+            c.div_s(12, 21, 20);
+            call_ptr(c, ATANF, 0x0010_66e4)?;
+            c.c_lt_s(20, 22);
+            let x_negative = c.fcc();
+            c.mov_s(12, 0);
+            if x_negative {
+                c.cycles += 3;
+                let gp = c.g[GP][0] as u32;
+                c.c_lt_s(22, 21);
+                if c.fcc() {
+                    c.cycles += 3;
+                    c.lwc1(0, gp.wrapping_sub(GP_PI_ADD));
+                    c.add_s(12, 12, 0);
+                } else {
+                    c.cycles += 2;
+                    c.lwc1(0, gp.wrapping_sub(GP_PI_SUB));
+                    c.sub_s(12, 12, 0);
+                }
+            }
+        }
+
+        // d (f3) = clamp(limit - angle, 0, step) for a positive angle, else
+        // clamp(-limit - angle, -step, 0).
+        c.cycles += 6;
+        let gp = c.g[GP][0] as u32;
+        c.mtc1(0, 2);
+        c.lwc1(0, gp.wrapping_sub(GP_LIMIT));
+        c.c_lt_s(2, 12);
+        c.lwc1(1, gp.wrapping_sub(GP_STEP));
+        if c.fcc() {
+            c.cycles += 5;
+            c.sub_s(0, 0, 12);
+            c.c_le_s(2, 0);
+            c.mov_s(3, 2);
+            if c.fcc() {
+                c.cycles += 2;
+                c.min_s(3, 0, 1);
+            }
+        } else {
+            c.neg_s(0, 0);
+            c.cycles += 6;
+            c.neg_s(1, 1);
+            c.sub_s(0, 0, 12);
+            c.c_le_s(1, 0);
+            c.mov_s(3, 1);
+            if c.fcc() {
+                c.cycles += 1;
+                c.min_s(3, 0, 2);
+            }
+        }
+
+        c.cycles += 6;
+        c.mov_s(1, 3);
+        c.mtc1(0, 0);
+        c.c_eq_s(1, 0);
+        if !c.fcc() {
+            // Rotate the orientation by -d about up.
+            c.cycles += 37;
+            c.neg_s(0, 1);
+            c.g[AT][0] = 0x3f00_0000; // 0.5f
+            c.mtc1(AT, 12);
+            let rider = c.g[S0][0] as u32;
+            let s = sp(c);
+            c.lq(V0, rider.wrapping_add(UP));
+            c.g[A0][0] = sx(s.wrapping_add(0x70));
+            c.g[A1][0] = sx(s.wrapping_add(0x74));
+            c.mul_s(12, 0, 12);
+            c.sq(V0, s.wrapping_add(0x20));
+            call_ptr(c, SIN_COS, 0x0010_67a0)?;
+            let s = sp(c);
+            // q = (up * sin, cos) at sp+0x50.
+            c.lwc1(0, s.wrapping_add(0x70));
+            c.lwc1(1, s.wrapping_add(0x20));
+            c.lwc1(2, s.wrapping_add(0x24));
+            c.lwc1(4, s.wrapping_add(0x28));
+            c.mul_s(1, 0, 1);
+            c.mul_s(2, 0, 2);
+            c.lwc1(3, s.wrapping_add(0x74));
+            c.mul_s(0, 0, 4);
+            c.swc1(3, s.wrapping_add(0x5c));
+            c.swc1(1, s.wrapping_add(0x50));
+            c.swc1(2, s.wrapping_add(0x54));
+            c.swc1(0, s.wrapping_add(0x58));
+            // orientation = orientation * q (VU0 quaternion product).
+            let rider = c.g[S0][0] as u32;
+            c.lqc2(4, rider.wrapping_add(ORIENTATION));
+            c.lqc2(5, s.wrapping_add(0x50));
+            c.vu0().mul(0b1111, 7, 4, Src::Vec(5));
+            c.vu0().opmula(4, 5);
+            c.vu0().opmsub(6, 5, 4);
+            c.vu0().mula(0b1110, 4, Src::Bc(5, W));
+            c.vu0().madda(0b1110, 5, Src::Bc(4, W));
+            c.vu0().suba(0b0001, 7, Src::Bc(7, X));
+            c.vu0().msuba(0b0001, 0, Src::Bc(7, Y));
+            c.vu0().msub(0b0001, 8, 0, Src::Bc(7, Z));
+            c.vu0().madd(0b1110, 8, 6, Src::Bc(0, W));
+            c.sqc2(8, s.wrapping_add(0x60));
+            c.lq(V0, s.wrapping_add(0x60));
+            c.sq(V0, rider.wrapping_add(ORIENTATION));
+            c.sq(V0, s.wrapping_add(0x40));
+        }
+        frame.restore(c, S0, 0x90);
+        c.cycles += 6;
+        frame.restore_ra(c, 0x80);
+        frame.restore_fpr(c, 22, 0xb0);
+        frame.restore_fpr(c, 21, 0xa8);
+        frame.restore_fpr(c, 20, 0xa0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+pub(crate) const SFQR_VALIDATE: Callee = Callee {
+    addr: 0x003d_fbd0,
+    f: ee::s14::StreamFile_Validate,
+};
+
+pub(crate) const SFQR_ALLOC_REQUEST: Callee = Callee {
+    addr: 0x003d_fcd8,
+    f: ee::s14::StreamFile_AllocRequest,
+};
+
+pub(crate) const SFQR_ENQUEUE_REQUEST: Callee = Callee {
+    addr: 0x003d_fd58,
+    f: ee::s14::StreamFile_EnqueueRequest,
+};
+
+pub(crate) const SFQR_MUTEX_LOCK: Callee = Callee {
+    addr: 0x003e_5700,
+    f: ee::s14::EAMutex_Lock,
+};
+
+pub(crate) const SFQR_MUTEX_UNLOCK: Callee = Callee {
+    addr: 0x003e_5760,
+    f: ee::s14::EAMutex_Unlock,
+};
+
+pub(crate) const SFQR_START_NEXT_REQUEST: Callee = Callee {
+    addr: 0x003e_0270,
+    f: ee::s14::StreamFile_StartNextRequest,
+};
+
+/// `int StreamFile_QueueRange(StreamFile* file, const char* name, int
+/// offset, int size)` (0x3e0c88): queue a read of `size` bytes at `offset`
+/// of file `name` on a valid ("STRM") stream file. Takes a free request
+/// (0 when none or the file is invalid), fills it, appends it to the queue
+/// and, if the stream was idle, marks it busy and starts the next request
+/// (at the urgent priority when the urgent flag is set). Returns the
+/// request's id.
+pub fn stream_file_queue_range(c: &mut Cpu) {
+    use sfqr::*;
+    let frame = Frame { size: 0x60 };
+    guest(c, |c| {
+        c.cycles += 14;
+        Frame::open(c, 0x60);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S3, 0x20);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S0, 0x50);
+        c.g[S3][0] = c.g[A3][0];
+        frame.save_ra(c, 0x10);
+        // Validate(file, &stream (sp+0), &file (sp+4)).
+        c.g[A1][0] = c.g[SP][0];
+        c.g[A2][0] = c.g[SP][0] | 4;
+        SFQR_VALIDATE.call(c, 0x003e_0cb8)?;
+        let invalid = c.g[V0][0] != 0;
+        c.g[V0][0] = 0;
+        if !invalid {
+            sfqr_queue(c)?;
+        }
+        c.cycles += 7;
+        frame.restore(c, S0, 0x50);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// The stream (the validated header) saved at `sp+0`.
+pub(crate) fn sfqr_stream(c: &mut Cpu) -> u64 {
+    Addr(sp(c)).lw(c)
+}
+
+/// [`stream_file_queue_range`] after validation: the request, the queue
+/// and the idle-stream start; leaves the return value in v0.
+pub(crate) fn sfqr_queue(c: &mut Cpu) -> crate::call::Flow {
+    use sfqr::*;
+    c.cycles += 5;
+    c.g[A0][0] = sfqr_stream(c);
+    SFQR_ALLOC_REQUEST.call(c, 0x003e_0cc8)?;
+    c.g[S0][0] = c.g[V0][0];
+    if c.g[S0][0] == 0 {
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        return Ok(());
+    }
+    let req = r32(c, S0);
+    Addr(req).off(REQ_KIND).sw(c, 0);
+    c.cycles += 16;
+    c.g[A1][0] = c.g[S1][0];
+    c.g[A2][0] = 0xff;
+    c.g[A0][0] = sx(req.wrapping_add(REQ_NAME));
+    call_ptr(c, 0x0041_6ce0, 0x003e_0cec)?; // strncpy(req->name, name, 255)
+    let req = r32(c, S0);
+    let offset = c.g[S2][0];
+    Addr(req).off(REQ_OFFSET).sw(c, offset);
+    c.g[A1][0] = c.g[S0][0];
+    let size = c.g[S3][0];
+    Addr(req).off(REQ_SIZE).sw(c, size);
+    c.g[A0][0] = sfqr_stream(c);
+    SFQR_ENQUEUE_REQUEST.call(c, 0x003e_0d00)?;
+    c.g[A0][0] = sx((sfqr_stream(c) as u32).wrapping_add(MUTEX));
+    SFQR_MUTEX_LOCK.call(c, 0x003e_0d0c)?;
+    // Was the stream idle? Then mark it busy.
+    c.g[V1][0] = sfqr_stream(c);
+    let stream = r32(c, V1);
+    c.g[S1][0] = Addr(stream).off(READ_STATE).lw(c);
+    if c.g[S1][0] == 0 {
+        c.cycles += 3;
+        c.g[V0][0] = 1;
+        Addr(stream).off(READ_STATE).sw(c, 1);
+    }
+    c.g[A0][0] = sfqr_stream(c);
+    c.cycles += 4;
+    c.g[A0][0] = sx(r32(c, A0).wrapping_add(MUTEX));
+    SFQR_MUTEX_UNLOCK.call(c, 0x003e_0d30)?;
+    if c.g[S1][0] == 0 {
+        c.cycles += 4;
+        c.g[A0][0] = sfqr_stream(c);
+        let stream = r32(c, A0);
+        c.g[V0][0] = Addr(stream).off(URGENT).lw(c);
+        if c.g[V0][0] != 0 {
+            c.cycles += 4;
+            c.g[A1][0] = Addr(stream).off(URGENT_PRIORITY).lw(c);
+            SFQR_START_NEXT_REQUEST.call(c, 0x003e_0d50)?;
+        } else {
+            c.cycles += 3;
+            c.g[A1][0] = Addr(stream).off(PRIORITY).lw(c);
+            SFQR_START_NEXT_REQUEST.call(c, 0x003e_0d60)?;
+        }
+    }
+    c.g[V0][0] = Addr(r32(c, S0)).lw(c);
+    Ok(())
+}
+
+pub(crate) const CAPAT_ROLL_SKIP_TRICKS: Callee = Callee {
+    addr: 0x0010_c1d0,
+    f: ee::s00::ComputerActorRider_RollSkipTricks,
+};
+
+/// Store `1.0` (spin / flip wanted) or `0` at `off` of the rider in s0.
+pub(crate) fn capat_axis(c: &mut Cpu, want: bool, off: u32) {
+    c.cycles += 2;
+    let at = r32(c, S0).wrapping_add(off);
+    if !want {
+        c.sw(at, 0);
+    } else {
+        c.cycles += 3;
+        c.g[AT][0] = 0x3f80_0000;
+        c.mtc1(AT, 0);
+        c.swc1(0, at);
+    }
+}
+
+/// `void ComputerActorRider_PlanAirTricks(ComputerActorRider* self, int
+/// spin, int flip, int a3, int t0)` (0x10bfa8): reset the planned trick,
+/// plan one if a spin or a flip is wanted, roll whether to skip tricks,
+/// store the two parameters, and give the wanted axes a random direction
+/// (+-1.0).
+pub fn computer_actor_rider_plan_air_tricks(c: &mut Cpu) {
+    use capat::*;
+    let frame = Frame { size: 0x60 };
+    guest(c, |c| {
+        c.cycles += 17;
+        Frame::open(c, 0x60);
+        c.g[V0][0] = u64::MAX;
+        frame.save(c, S0, 0x50);
+        frame.save(c, S1, 0x40);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save(c, S2, 0x30);
+        let this = r32(c, S0);
+        c.g[V1][0] = sx(this.wrapping_add(PLANNED));
+        frame.save(c, S3, 0x20);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S4, 0x10);
+        c.g[S2][0] = c.g[A3][0];
+        frame.save_ra(c, 0);
+        c.g[S4][0] = c.g[A2][0];
+        c.sw(this.wrapping_add(TRICK), u64::MAX);
+        c.g[S3][0] = c.g[T0][0];
+        c.g[V0][0] = 0;
+        // planned = spin || flip
+        let mut planned = true;
+        if c.g[S1][0] == 0 {
+            c.cycles += 2;
+            planned = c.g[S4][0] != 0;
+        }
+        if planned {
+            c.cycles += 2;
+            c.g[V0][0] = 1;
+        }
+        let v = c.g[V0][0];
+        c.sw(r32(c, V1), v);
+        c.cycles += 8;
+        c.g[A0][0] = c.g[S0][0];
+        CAPAT_ROLL_SKIP_TRICKS.call(c, 0x0010_c004)?;
+        let this = r32(c, S0);
+        c.g[V1][0] = c.lw(this.wrapping_add(PLANNED));
+        let skip = c.g[V0][0];
+        c.sw(this.wrapping_add(SKIP), skip);
+        let a3 = c.g[S2][0];
+        c.sw(this.wrapping_add(ARG_A3), a3);
+        let t0 = c.g[S3][0];
+        c.sw(this.wrapping_add(ARG_T0), t0);
+        c.sw(this.wrapping_add(DONE), 0);
+        let mut late = true;
+        if c.g[V1][0] != 0 {
+            let spin = c.g[S1][0] != 0;
+            capat_axis(c, spin, SPIN);
+            let flip = c.g[S4][0] != 0;
+            capat_axis(c, flip, FLIP);
+            // Random signs (AIrand() & 1 negates).
+            for (i, (off, ret_to)) in [(SPIN, 0x0010_c04cu32), (FLIP, 0x0010_c06c)]
+                .into_iter()
+                .enumerate()
+            {
+                c.cycles += 5;
+                call_ptr(c, 0x0031_7810, ret_to)?; // Rand_NextGame
+                c.g[V0][0] &= 1;
+                if c.g[V0][0] != 0 {
+                    c.cycles += 3;
+                    let at = r32(c, S0).wrapping_add(off);
+                    c.lwc1(0, at);
+                    c.neg_s(0, 0);
+                    c.swc1(0, at);
+                } else if i == 1 {
+                    late = false;
+                }
+            }
+        }
+        if late {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x50);
+        c.cycles += 7;
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore(c, S4, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WorldObjFactory_AddDynamicParticleData (0x2fee98).
+
+/// The default particle record (0xf0 bytes, a function-local static) and
+/// its init guard (`gp+0x253c`).
+pub(crate) const DPD_TEMPLATE: u32 = 0x004f_b938;
+
+pub(crate) const DPD_GUARD: u32 = 0x253c;
+
+/// Record fields: `+0x14`/`+0x1c` a range whose top is clamped to its
+/// bottom, `+0xd8` the target object handle (-1: the world script
+/// manager's default object), `+0xdc` the modifier slot, `+0xe0..` a vector.
+pub(crate) const DPD_RANGE_LO: u32 = 0x14;
+
+pub(crate) const DPD_RANGE_HI: u32 = 0x1c;
+
+pub(crate) const DPD_HANDLE: u32 = 0xd8;
+
+pub(crate) const DPD_SLOT: u32 = 0xdc;
+
+pub(crate) const DPD_VEC: u32 = 0xe0;
+
+/// Per-field value types (2: float) of the record (`0x446380`).
+pub(crate) const DPD_FIELD_TYPES: u32 = 0x0044_6380;
+
+/// The allocation name. (The returned 12-byte value is at `0x4c9098`,
+/// addressed from `s5 = 0x4d0000`.)
+pub(crate) const DPD_ALLOC_NAME: u32 = 0x0048_9750;
+
+/// The object handle table (`gp+0x16c8`) and the world script manager
+/// (`gp+0xce8`, default object at `+0x290`).
+pub(crate) const DPD_HANDLES: u32 = 0x16c8;
+
+pub(crate) const DPD_SCRIPT_MAN: u32 = 0xce8;
+
+pub(crate) const DPD_ALLOC: Callee = Callee {
+    addr: 0x0031_7d70,
+    f: ee::s10::EA_MemAllocNamed,
+};
+
+pub(crate) const DPD_DELETE: Callee = Callee {
+    addr: 0x0031_7e50,
+    f: ee::s10::__builtin_delete,
+};
+
+/// `EA_MemCopy(dst, src, n)` and `ModObj_AddDynamicParticleModifier(obj,
+/// record, slot, &vec)` (through the table).
+pub(crate) const DPD_MEM_COPY: u32 = 0x003e_6574;
+
+pub(crate) const DPD_ADD_MODIFIER: u32 = 0x0035_5d10;
+
+/// The default record's initial words (offset, value); every other word up
+/// to `+0xe8` is 0.0.
+pub(crate) const DPD_DEFAULTS: &[(u32, u32)] = &[
+    (0x00, 1),
+    (0x08, 0xbf80_0000), // -1.0
+    (0x0c, 0x3f80_0000), // 1.0
+    (0x10, 0x4080_0000), // 4.0
+    (0x84, 0x3f80_0000),
+    (0x94, 0x3f80_0000),
+    (0x98, 0x3f80_0000),
+    (0x9c, 0x3f80_0000),
+    (0xa0, 0x3f80_0000),
+    (0xa4, 0x3f80_0000),
+    (0xb4, 0x3f80_0000),
+    (0xc4, 0x10),
+    (0xd0, 1),
+    (0xd4, 0x41a0_0000), // 20.0
+    (0xd8, 0xffff_ffff),
+];
+
+/// `Result WorldObjFactory_AddDynamicParticleData(Result* out, int n,
+/// Entry* entries)` (0x2fee98): build a dynamic particle record (0xf0
+/// bytes, allocated) from the default record (initialised on first use)
+/// and `n` entries `{field, value, _, type}` (an int stored into a float
+/// field is converted); clamp its range; look up the target object (by
+/// handle, or the default one) and, when the object's node accepts
+/// particles (virtual `+0x80`), hand the record to
+/// `ModObj_AddDynamicParticleModifier`, else free it. Returns the constant
+/// at `0x4c9098` (12 bytes into `*out`).
+pub fn world_obj_factory_add_dynamic_particle_data(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 14;
+        let frame = Frame::open(c, 0x90);
+        c.g[V0][0] = Addr(r32(c, GP).wrapping_add(DPD_GUARD)).lw(c);
+        frame.save(c, S0, 0x80);
+        frame.save(c, S2, 0x60);
+        c.g[S0][0] = 0x50_0000;
+        frame.save(c, S3, 0x50);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x40);
+        c.g[S3][0] = c.g[A1][0];
+        frame.save(c, S1, 0x70);
+        c.g[S4][0] = c.g[A2][0];
+        frame.save(c, S5, 0x30);
+        frame.save_ra(c, 0x20);
+        if c.g[V0][0] == 0 {
+            // First use: fill the default record.
+            c.cycles += 76;
+            let t = Addr(DPD_TEMPLATE);
+            for off in (0..=0xe8).step_by(4) {
+                let v = DPD_DEFAULTS
+                    .iter()
+                    .find(|&&(o, _)| o == off)
+                    .map_or(0, |&(_, v)| v);
+                t.off(off).sw(c, v as u64);
+            }
+            c.g[A1][0] = t.off(0xec).lbu(c);
+            Addr(r32(c, GP).wrapping_add(DPD_GUARD)).sw(c, 1);
+            // (Its trailing byte copied through a temporary.)
+            Addr(sp(c)).sb(c, c.g[A1][0]);
+            c.g[V0][0] = sx(DPD_TEMPLATE);
+            c.g[A0][0] = 1;
+            c.g[V1][0] = u64::MAX;
+            c.g[A2][0] = 0x10;
+            c.g[AT][0] = 0x41a0_0000;
+            c.f[0] = 0;
+            c.f[1] = 0x41a0_0000;
+            c.f[2] = 0x4080_0000;
+            c.f[3] = 0x3f80_0000;
+        }
+
+        // The record: allocate, copy the defaults.
+        c.cycles += 17;
+        c.g[A0][0] = 0xf0;
+        c.g[A1][0] = sx(DPD_ALLOC_NAME);
+        c.g[A2][0] = 0x2000_0000;
+        c.g[A3][0] = 0;
+        c.g[S5][0] = 0x4d_0000;
+        DPD_ALLOC.call(c, 0x002f_f01c)?;
+        c.g[S1][0] = c.g[V0][0];
+        c.g[A2][0] = 0xf0;
+        c.g[V0][0] = u64::MAX;
+        c.g[A1][0] = sx(DPD_TEMPLATE);
+        c.g[A0][0] = c.g[S1][0];
+        Addr(r32(c, S1)).off(DPD_HANDLE).sw(c, u64::MAX);
+        call_ptr(c, DPD_MEM_COPY, 0x002f_f03c)?;
+        c.g[A2][0] = c.g[S4][0];
+        if (c.g[S3][0] as i64) > 0 {
+            c.cycles += 5;
+            c.g[V0][0] = 0x44_0000;
+            c.g[A1][0] = c.g[S3][0];
+            c.g[T0][0] = sx(DPD_FIELD_TYPES);
+            c.g[A3][0] = 2;
+            loop {
+                let entry = Addr(r32(c, A2));
+                c.cycles += 8;
+                let field = (entry.lw(c) as u32) << 2;
+                c.g[V1][0] = entry.off(0xc).lw(c);
+                c.g[A0][0] = sx(field.wrapping_add(r32(c, S1)));
+                c.g[V0][0] = Addr(field.wrapping_add(r32(c, T0))).lw(c);
+                let dst = r32(c, A0);
+                let int_into_float = c.g[V1][0] != c.g[V0][0] && {
+                    c.cycles += 2;
+                    c.g[V0][0] == c.g[A3][0]
+                };
+                if int_into_float {
+                    c.cycles += 4;
+                    c.lwc1(0, entry.0.wrapping_add(4));
+                    c.cvt_s_w(0, 0);
+                    c.swc1(0, dst);
+                } else {
+                    c.g[V0][0] = entry.off(4).lw(c);
+                    c.cycles += 1;
+                    Addr(dst).sw(c, c.g[V0][0]);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx(r32(c, A1).wrapping_sub(1));
+                c.g[A2][0] = sx(entry.0.wrapping_add(0x10));
+                if c.g[A1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_f058);
+                }
+            }
+        }
+
+        // Clamp the range top to its bottom.
+        c.cycles += 6;
+        let rec = r32(c, S1);
+        c.lwc1(0, rec.wrapping_add(DPD_RANGE_HI));
+        c.lwc1(1, rec.wrapping_add(DPD_RANGE_LO));
+        c.c_lt_s(1, 0);
+        if c.fcc() {
+            c.swc1(1, rec.wrapping_add(DPD_RANGE_HI));
+        }
+
+        // The target object.
+        c.cycles += 4;
+        c.g[A2][0] = Addr(rec).off(DPD_HANDLE).lw(c);
+        c.g[V0][0] = !c.g[A2][0];
+        c.g[A1][0] = Addr(r32(c, GP).wrapping_add(DPD_HANDLES)).lw(c);
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            c.g[V0][0] = Addr(r32(c, GP).wrapping_add(DPD_SCRIPT_MAN)).lw(c);
+            c.g[V0][0] = Addr(r32(c, V0)).off(0x290).lw(c);
+        } else {
+            c.cycles += 8;
+            let handle = r32(c, A2);
+            c.g[V0][0] = sx((handle & 0xff) << 2);
+            c.g[V1][0] = Addr(r32(c, A1)).lw(c);
+            c.g[A0][0] = Addr(r32(c, V1)).off(8).lw(c);
+            c.g[V0][0] = sx(r32(c, V0).wrapping_add(r32(c, A0)));
+            c.g[V1][0] = Addr(r32(c, V0)).lw(c);
+            c.g[V0][0] = sx(handle >> 8);
+            let mut found = false;
+            if c.g[V1][0] != 0 {
+                c.cycles += 7;
+                c.g[A0][0] = Addr(r32(c, V1)).off(0x1c).lw(c);
+                let at = (handle >> 8 << 2).wrapping_add(r32(c, A0));
+                c.g[V0][0] = sx(at);
+                c.g[V1][0] = Addr(at).lw(c);
+                let index = r32(c, V1) >> 8;
+                c.g[V0][0] = sx(index << 2);
+                found = index != 0;
+            }
+            if !found {
+                c.cycles += 1;
+                c.g[V0][0] = 0;
+            }
+        }
+
+        c.cycles += 3;
+        c.g[S0][0] = Addr(r32(c, V0)).off(0xc).lw(c);
+        let mut handed_over = false;
+        if c.g[S0][0] != 0 {
+            c.cycles += 7;
+            let node = r32(c, S0);
+            c.g[V1][0] = Addr(node).off(0xc).lw(c);
+            let vt = r32(c, V1);
+            c.g[A0][0] = Addr(vt).off(0x80).lh(c);
+            c.g[V0][0] = Addr(vt).off(0x84).lw(c);
+            c.g[A0][0] = sx(node.wrapping_add(r32(c, A0)));
+            let accepts = r32(c, V0);
+            call_ptr(c, accepts, 0x002f_f134)?;
+            let ok = c.g[V0][0] != 0;
+            c.g[A1][0] = c.g[S1][0];
+            if ok {
+                c.cycles += 15;
+                let rec = r32(c, S1);
+                c.lwc1(3, rec.wrapping_add(DPD_VEC));
+                c.lwc1(2, rec.wrapping_add(DPD_VEC + 4));
+                c.g[A0][0] = c.g[S0][0];
+                c.lwc1(1, rec.wrapping_add(DPD_VEC + 8));
+                let v = frame.at(c, 0x10);
+                c.g[A3][0] = sx(v);
+                c.g[AT][0] = 0x3f80_0000;
+                c.f[0] = 0x3f80_0000;
+                c.swc1(3, v);
+                c.swc1(2, v + 4);
+                c.swc1(1, v + 8);
+                c.swc1(0, v + 0xc);
+                c.g[A2][0] = Addr(rec).off(DPD_SLOT).lw(c);
+                call_ptr(c, DPD_ADD_MODIFIER, 0x002f_f170)?;
+                handed_over = true;
+            }
+        }
+        if !handed_over {
+            c.cycles += 2;
+            c.g[A0][0] = c.g[S1][0];
+            DPD_DELETE.call(c, 0x002f_f180)?;
+        }
+
+        // Return the 12-byte constant.
+        c.cycles += 17;
+        c.g[A1][0] = sx(r32(c, S5).wrapping_sub(0x6f68));
+        let src = r32(c, A1);
+        c.ldl(2, src.wrapping_add(7));
+        c.ldr(2, src);
+        c.g[V1][0] = Addr(src).off(8).lw(c);
+        let out = r32(c, S2);
+        c.sdl(2, out.wrapping_add(7));
+        c.sdr(2, out);
+        Addr(out).off(8).sw(c, c.g[V1][0]);
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x80);
+        frame.restore(c, S1, 0x70);
+        frame.restore(c, S2, 0x60);
+        frame.restore(c, S3, 0x50);
+        frame.restore(c, S4, 0x40);
+        frame.restore(c, S5, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RefPack_Unpack (0x3b4740).
+
+pub(crate) const REFPACK_DECODE: Callee = Callee {
+    addr: 0x003b_49d0,
+    f: ee::s13::RefPack_Decode,
+};
+
+/// Where RefPack_Unpack's compare chain leaves: reload `ra` first (`E8`),
+/// or with `ra` already reloaded (`EC`), both returning `a1`; or straight
+/// out with `v0` already set.
+pub(crate) enum RefPackExit {
+    ReloadRa,
+    ReturnA1,
+    Out,
+}
+
+/// `int RefPack_Unpack(const u8* src, u8* dst)` (0x3b4740): decode a
+/// RefPack stream (`xx fb` header) whose type byte (ignoring bit 0) is 0x10
+/// or 0x90 with `RefPack_Decode`; any other stream yields 0. Returns the
+/// decoded size.
+pub fn refpack_unpack(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 8;
+        let frame = Frame::open(c, 0x10);
+        c.g[A3][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        c.g[V0][0] = 0xfb;
+        let src = Addr(r32(c, A3));
+        c.g[V1][0] = src.off(1).lbu(c);
+        c.g[A1][0] = 0;
+        let exit = 'chain: {
+            if c.g[V1][0] != 0xfb {
+                break 'chain RefPackExit::ReloadRa;
+            }
+            c.cycles += 5;
+            c.g[V0][0] = src.lbu(c);
+            c.g[V1][0] = 0x46;
+            let kind = c.g[V0][0] & 0xfe;
+            c.g[A2][0] = kind;
+            c.g[V0][0] = (kind < 71) as u64;
+            if kind == 0x46 {
+                break 'chain RefPackExit::ReloadRa;
+            }
+            c.cycles += 2;
+            c.g[V0][0] = 0x1c;
+            if kind < 71 {
+                c.cycles += 2;
+                c.g[V0][0] = (kind < 29) as u64;
+                if kind == 0x1c {
+                    break 'chain RefPackExit::ReloadRa;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = 0x18;
+                if kind >= 29 {
+                    break 'chain RefPackExit::ReloadRa;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = (kind < 25) as u64;
+                if kind == 0x18 {
+                    break 'chain RefPackExit::ReloadRa;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = 0x10;
+                if kind >= 25 {
+                    break 'chain RefPackExit::ReloadRa;
+                }
+                c.cycles += 2;
+                frame.restore_ra(c, 0);
+                if kind != 0x10 {
+                    c.cycles += 2;
+                    c.g[V0][0] = c.g[A1][0];
+                    break 'chain RefPackExit::Out;
+                }
+            } else {
+                c.cycles += 3;
+                c.g[V0][0] = (kind < 159) as u64;
+                if kind == 0x9e {
+                    break 'chain RefPackExit::ReloadRa;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = 0x98;
+                if kind >= 159 {
+                    break 'chain RefPackExit::ReloadRa;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = (kind < 153) as u64;
+                if kind == 0x98 {
+                    break 'chain RefPackExit::ReloadRa;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = 0x90;
+                if kind >= 153 {
+                    break 'chain RefPackExit::ReloadRa;
+                }
+                c.cycles += 2;
+                frame.restore_ra(c, 0);
+                if kind != 0x90 {
+                    break 'chain RefPackExit::ReturnA1;
+                }
+            }
+            // RefPack_Decode(dst, src, NULL).
+            c.cycles += 4;
+            c.g[A1][0] = c.g[A3][0];
+            c.g[A2][0] = 0;
+            REFPACK_DECODE.call(c, 0x003b_47e4)?;
+            c.g[A1][0] = c.g[V0][0];
+            RefPackExit::ReloadRa
+        };
+        if let RefPackExit::ReloadRa = exit {
+            c.cycles += 1;
+            frame.restore_ra(c, 0);
+        }
+        if !matches!(exit, RefPackExit::Out) {
+            c.cycles += 1;
+            c.g[V0][0] = c.g[A1][0];
+        }
+        c.cycles += 2;
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// log (0x40d610), newlib's `w_log.c` wrapper (soft-float doubles in a0/v0).
+
+/// `_LIB_VERSION` (-1 IEEE, 0 SVID, 1 XOPEN, 2 POSIX).
+pub(crate) const LOG_LIB_VERSION: u32 = 0x0049_9688;
+
+/// The exception's name ("log"), `-HUGE` (SVID) and `HUGE_VAL`.
+pub(crate) const LOG_NAME: u32 = 0x0049_9070;
+
+pub(crate) const LOG_MINUS_HUGE: u32 = 0x0049_9078;
+
+pub(crate) const LOG_HUGE_VAL: u32 = 0x0049_9680;
+
+/// `struct exception` on the stack: `+0` type, `+4` name, `+8`/`+0x10`
+/// the arguments, `+0x18` the return value, `+0x20` err.
+pub(crate) const LOG_EXC_TYPE: u32 = 0;
+
+pub(crate) const LOG_EXC_NAME: u32 = 4;
+
+pub(crate) const LOG_EXC_ARG1: u32 = 8;
+
+pub(crate) const LOG_EXC_ARG2: u32 = 0x10;
+
+pub(crate) const LOG_EXC_RETVAL: u32 = 0x18;
+
+pub(crate) const LOG_EXC_ERR: u32 = 0x20;
+
+pub(crate) const LOG_IEEE754_LOG: Callee = Callee {
+    addr: 0x0040_db58,
+    f: ee::s15::__ieee754_log,
+};
+
+pub(crate) const LOG_ISNAN: Callee = Callee {
+    addr: 0x0040_f840,
+    f: ee::s15::isnan,
+};
+
+pub(crate) const LOG_CMPDF2: Callee = Callee {
+    addr: 0x0041_2500,
+    f: ee::s15::__cmpdf2,
+};
+
+pub(crate) const LOG_SUBDF3: Callee = Callee {
+    addr: 0x0041_1f70,
+    f: ee::s15::__subdf3,
+};
+
+pub(crate) const LOG_GETREENT: Callee = Callee {
+    addr: 0x0041_5fb8,
+    f: ee::s15::__getreent,
+};
+
+pub(crate) const LOG_MATHERR: Callee = Callee {
+    addr: 0x0040_f878,
+    f: ee::s15::matherr,
+};
+
+/// The next step of `log`'s error report.
+pub(crate) enum LogStep {
+    /// Not POSIX: let `matherr` handle it.
+    AskMatherr,
+    /// errno = EDOM.
+    Edom,
+    /// Store `v1` into errno (`v0` the reentrancy struct).
+    StoreErrno,
+    /// `matherr` handled it.
+    Handled,
+}
+
+/// `double log(double x)` (0x40d610): `__ieee754_log(x)`; outside IEEE
+/// mode, for x <= 0 (not NaN) fill a `struct exception` (SING for 0, DOMAIN
+/// for negatives; return -HUGE in SVID mode, else -HUGE_VAL), set errno
+/// (ERANGE/EDOM) directly in POSIX mode, otherwise ask `matherr` and set
+/// EDOM if it declines; a non-zero `exc.err` goes to errno too. Returns the
+/// exception's value.
+pub fn libm_log(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 15;
+        let frame = Frame::open(c, 0x90);
+        let a = frame.at(c, 0x30);
+        c.sd(a, c.g[S0][0]);
+        c.g[S0][0] = c.g[A0][0];
+        let a = frame.at(c, 0x60);
+        c.sd(a, c.g[S3][0]);
+        let a = frame.at(c, 0x50);
+        c.sd(a, c.g[S2][0]);
+        let a = frame.at(c, 0x40);
+        c.sd(a, c.g[S1][0]);
+        c.g[S3][0] = 0x4a_0000;
+        frame.save_ra(c, 0x80);
+        let a = frame.at(c, 0x70);
+        c.sd(a, c.g[S4][0]);
+        LOG_IEEE754_LOG.call(c, 0x0040_d638)?;
+        c.g[S2][0] = c.g[V0][0];
+        c.g[S1][0] = Addr(LOG_LIB_VERSION).lw(c);
+        c.g[V0][0] = u64::MAX;
+        'done: {
+            let ieee = c.g[S1][0] == u64::MAX;
+            c.g[V0][0] = c.g[S2][0];
+            if ieee {
+                break 'done;
+            }
+            c.cycles += 4;
+            c.g[A0][0] = c.g[S0][0];
+            LOG_ISNAN.call(c, 0x0040_d654)?;
+            let nan = c.g[V0][0] != 0;
+            c.g[V0][0] = c.g[S2][0];
+            if nan {
+                break 'done;
+            }
+            c.cycles += 6;
+            c.g[S4][0] = 0;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[S4][0];
+            LOG_CMPDF2.call(c, 0x0040_d66c)?;
+            let positive = (c.g[V0][0] as i64) > 0;
+            c.g[V0][0] = c.g[S2][0];
+            if positive {
+                break 'done;
+            }
+
+            // x <= 0: the exception record.
+            c.cycles += 7;
+            Addr(frame.at(c, LOG_EXC_ERR)).sw(c, 0);
+            c.g[V0][0] = sx(LOG_NAME);
+            Addr(frame.at(c, LOG_EXC_ARG1)).sd(c, c.g[S0][0]);
+            Addr(frame.at(c, LOG_EXC_NAME)).sw(c, c.g[V0][0]);
+            Addr(frame.at(c, LOG_EXC_ARG2)).sd(c, c.g[S0][0]);
+            if c.g[S1][0] == 0 {
+                // SVID: -HUGE.
+                c.cycles += 4;
+                c.g[AT][0] = 0x4a_0000;
+                c.g[V0][0] = Addr(LOG_MINUS_HUGE).ld(c);
+            } else {
+                // -HUGE_VAL.
+                c.cycles += 5;
+                c.g[V0][0] = 0x4a_0000;
+                c.g[A0][0] = c.g[S4][0];
+                c.g[A1][0] = Addr(LOG_HUGE_VAL).ld(c);
+                LOG_SUBDF3.call(c, 0x0040_d6b0)?;
+            }
+            Addr(frame.at(c, LOG_EXC_RETVAL)).sd(c, c.g[V0][0]);
+
+            c.cycles += 5;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = 0;
+            LOG_CMPDF2.call(c, 0x0040_d6c0)?;
+            let zero = c.g[V0][0] == 0;
+            c.g[V1][0] = 1;
+            // POSIX sets errno directly; otherwise matherr may handle it.
+            let posix_erange = if zero {
+                // SING.
+                c.cycles += 4;
+                c.g[V0][0] = 2;
+                c.g[V1][0] = Addr(LOG_LIB_VERSION).lw(c);
+                Addr(frame.at(c, LOG_EXC_TYPE)).sw(c, c.g[V0][0]);
+                c.g[V1][0] == 2
+            } else {
+                false
+            };
+            let step = if zero {
+                if posix_erange {
+                    c.cycles += 4;
+                    LOG_GETREENT.call(c, 0x0040_d6e0)?;
+                    c.g[V1][0] = 0x22; // ERANGE
+                    LogStep::StoreErrno
+                } else {
+                    LogStep::AskMatherr
+                }
+            } else {
+                // DOMAIN.
+                c.cycles += 4;
+                c.g[V0][0] = Addr(LOG_LIB_VERSION).lw(c);
+                c.g[A0][0] = 2;
+                Addr(frame.at(c, LOG_EXC_TYPE)).sw(c, c.g[V1][0]);
+                if c.g[V0][0] == 2 {
+                    LogStep::Edom
+                } else {
+                    LogStep::AskMatherr
+                }
+            };
+            let step = if let LogStep::AskMatherr = step {
+                c.cycles += 4;
+                c.g[A0][0] = sx(sp(c));
+                LOG_MATHERR.call(c, 0x0040_d700)?;
+                let handled = c.g[V0][0] != 0;
+                c.g[V0][0] = Addr(frame.at(c, LOG_EXC_ERR)).lw(c);
+                if handled {
+                    LogStep::Handled
+                } else {
+                    LogStep::Edom
+                }
+            } else {
+                step
+            };
+            let step = if let LogStep::Edom = step {
+                c.cycles += 3;
+                LOG_GETREENT.call(c, 0x0040_d710)?;
+                c.g[V1][0] = 0x21; // EDOM
+                LogStep::StoreErrno
+            } else {
+                step
+            };
+            if let LogStep::StoreErrno = step {
+                c.cycles += 2;
+                Addr(r32(c, V0)).sw(c, c.g[V1][0]);
+                c.g[V0][0] = Addr(frame.at(c, LOG_EXC_ERR)).lw(c);
+            }
+            // A non-zero exc.err becomes errno.
+            c.cycles += 2;
+            let exc_err = c.g[V0][0] != 0;
+            c.g[V0][0] = Addr(frame.at(c, LOG_EXC_RETVAL)).ld(c);
+            if exc_err {
+                c.cycles += 5;
+                LOG_GETREENT.call(c, 0x0040_d72c)?;
+                c.g[V1][0] = Addr(frame.at(c, LOG_EXC_ERR)).lw(c);
+                Addr(r32(c, V0)).sw(c, c.g[V1][0]);
+                c.g[V0][0] = Addr(frame.at(c, LOG_EXC_RETVAL)).ld(c);
+            }
+        }
+        c.cycles += 8;
+        frame.restore_ra(c, 0x80);
+        let a = frame.at(c, 0x70);
+        c.g[S4][0] = c.ld(a);
+        let a = frame.at(c, 0x60);
+        c.g[S3][0] = c.ld(a);
+        let a = frame.at(c, 0x50);
+        c.g[S2][0] = c.ld(a);
+        let a = frame.at(c, 0x40);
+        c.g[S1][0] = c.ld(a);
+        let a = frame.at(c, 0x30);
+        c.g[S0][0] = c.ld(a);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WorldObjFactory_AnimObject (0x2fbcb8)
+
+/// gp-relative guard word of the static default anim parameters.
+pub(crate) const WOFA_DEFAULTS_READY_GP: u32 = 0x24e8;
+
+/// The static default parameter block (11 words: id -1, 1, 0, -1.0, -1.0,
+/// 30.0, 0, -1.0, 0, 0, tag byte at +0x28).
+pub(crate) const WOFA_DEFAULTS: u32 = 0x004f_b498;
+
+/// Bytes copied from the defaults into the local block.
+pub(crate) const WOFA_BLOCK_BYTES: u64 = 0x2c;
+
+/// Parameter kinds by slot (`D_00445F48`): kind 2 is a float slot.
+pub(crate) const WOFA_PARAM_KINDS: u32 = 0x0044_5f48;
+
+/// gp-relative: the world-object directory and the world.
+pub(crate) const WOFA_DIRECTORY_GP: u32 = 0x16c8;
+
+pub(crate) const WOFA_WORLD_GP: u32 = 0xce8;
+
+/// World -> its default object (used for id -1).
+pub(crate) const WOFA_WORLD_DEFAULT_OBJECT: u32 = 0x290;
+
+/// Object -> its active node.
+pub(crate) const WOFA_OBJECT_NODE: u32 = 0xc;
+
+/// The factory's result value (12 bytes, returned by copy).
+pub(crate) const WOFA_RESULT: u32 = 0x004c_9098;
+
+pub(crate) const WOFA_ATTACH_MODIFIER: Callee = Callee {
+    addr: 0x002f_ae38,
+    f: ee::s10::WorldObjFactory_AttachModifier,
+};
+
+pub(crate) const WOFA_MEM_ALLOC_NAMED: Callee = Callee {
+    addr: 0x0031_7d70,
+    f: ee::s10::EA_MemAllocNamed,
+};
+
+/// `Result WorldObjFactory_AnimObject(Param* params, int count)` (0x2fbcb8;
+/// a0 = hidden result slot, a1 = count, a2 = params): fills an 11-word anim
+/// parameter block from the (lazily initialised) defaults and the
+/// `{slot, value, -, kind}` parameters (an int for a float slot is
+/// converted), looks the object id up (-1: the world's default object), and
+/// unless the object already has an active node accepting the modifier
+/// (`AttachModifier(node, 1, block)`), allocates and constructs an
+/// `AnimObject` (0x6c bytes) for it. Returns the factory's result value.
+/// Frame 0xa0 (s0-s4).
+pub fn world_obj_factory_anim_object(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 13;
+        let frame = Frame::open(c, 0xa0);
+        let gp = Addr(c.g[GP][0] as u32);
+        c.g[V0][0] = gp.off(WOFA_DEFAULTS_READY_GP).lw(c);
+        frame.save(c, S3, 0x60);
+        frame.save(c, S0, 0x90);
+        c.g[S3][0] = c.g[A2][0];
+        frame.save(c, S2, 0x70);
+        c.g[S0][0] = c.g[A1][0];
+        frame.save(c, S1, 0x80);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S4, 0x50);
+        c.g[A2][0] = 0x50_0000;
+        let ready = c.g[V0][0] != 0;
+        frame.save_ra(c, 0x40);
+        let defaults = Addr(WOFA_DEFAULTS);
+        if !ready {
+            // First use: initialise the static defaults (guarded local).
+            c.cycles += 22;
+            c.g[V0][0] = sx(WOFA_DEFAULTS);
+            let tag = defaults.off(0x28).lbu(c);
+            c.g[A1][0] = tag;
+            c.g[V1][0] = u64::MAX;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.f[0] = 0xbf80_0000; // -1.0
+            c.g[A0][0] = 1;
+            c.g[AT][0] = 0x41f0_0000;
+            c.f[1] = 0x41f0_0000; // 30.0
+            defaults.sw(c, u64::MAX);
+            defaults.off(0x28).sb(c, tag);
+            defaults.off(0x14).write_u32(c, 0x41f0_0000);
+            defaults.off(0x1c).write_u32(c, 0xbf80_0000);
+            gp.off(WOFA_DEFAULTS_READY_GP).sw(c, 1);
+            defaults.off(0x4).sw(c, 1);
+            defaults.off(0x8).sw(c, 0);
+            defaults.off(0xc).write_u32(c, 0xbf80_0000);
+            defaults.off(0x10).write_u32(c, 0xbf80_0000);
+            defaults.off(0x18).sw(c, 0);
+            defaults.off(0x20).sw(c, 0);
+            defaults.off(0x24).sw(c, 0);
+            Addr(sp(c)).sb(c, tag);
+        }
+        // The parameter block at 0x10(sp), copied from the defaults.
+        c.cycles += 11;
+        c.g[V0][0] = u64::MAX;
+        let block = frame.at(c, 0x10);
+        c.g[S1][0] = sx(block);
+        c.g[A1][0] = sx(WOFA_DEFAULTS);
+        c.g[A2][0] = WOFA_BLOCK_BYTES;
+        Addr(block).sw(c, u64::MAX);
+        c.g[A0][0] = c.g[S1][0];
+        c.g[S4][0] = 0x4d_0000;
+        call_ptr(c, 0x003e_6574, 0x002f_bd68)?; // EA_MemCopy
+        c.g[A2][0] = c.g[S3][0];
+        if (c.g[S0][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[V0][0] = 0x44_0000;
+            c.g[A1][0] = c.g[S0][0];
+            c.g[T0][0] = sx(WOFA_PARAM_KINDS);
+            c.g[A3][0] = 2;
+            loop {
+                c.cycles += 8;
+                let param = Addr(c.g[A2][0] as u32);
+                let slot4 = (param.lw(c) as u32) << 2;
+                c.g[V1][0] = param.off(0xc).lw(c);
+                let dest = Addr(slot4.wrapping_add(c.g[S1][0] as u32));
+                c.g[A0][0] = sx(dest.0);
+                c.g[V0][0] = sx(slot4.wrapping_add(c.g[T0][0] as u32));
+                c.g[V0][0] = Addr(c.g[V0][0] as u32).lw(c);
+                if c.g[V1][0] != c.g[V0][0] && c.g[V0][0] == c.g[A3][0] {
+                    // An int given for a float slot.
+                    c.cycles += 2 + 4;
+                    let value = param.off(4).read_u32(c);
+                    let converted = crate::ps2f::FpuF32::from_i32(value as i32);
+                    c.f[0] = converted.0;
+                    dest.write_fpu(c, converted);
+                } else {
+                    c.cycles += if c.g[V1][0] == c.g[V0][0] { 1 } else { 2 + 1 };
+                    c.g[V0][0] = param.off(4).lw(c);
+                    let value = c.g[V0][0];
+                    dest.sw(c, value);
+                }
+                c.cycles += 3;
+                c.g[A1][0] = sx((c.g[A1][0] as u32).wrapping_sub(1));
+                c.g[A2][0] = sx((c.g[A2][0] as u32).wrapping_add(0x10));
+                if c.g[A1][0] == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_bd80);
+                }
+            }
+        }
+        // Look the object up.
+        c.cycles += 4;
+        c.g[A2][0] = Addr(c.g[S1][0] as u32).lw(c);
+        c.g[V0][0] = !c.g[A2][0];
+        let gp = Addr(c.g[GP][0] as u32);
+        c.g[A1][0] = gp.off(WOFA_DIRECTORY_GP).lw(c);
+        if c.g[V0][0] == 0 {
+            c.cycles += 3;
+            c.g[V0][0] = gp.off(WOFA_WORLD_GP).lw(c);
+            let world = c.g[V0][0] as u32;
+            c.g[S0][0] = Addr(world.wrapping_add(WOFA_WORLD_DEFAULT_OBJECT)).lw(c);
+        } else {
+            c.cycles += 8;
+            let id = c.g[A2][0] as u32;
+            c.g[V0][0] = sx((id & 0xff) << 2);
+            c.g[V1][0] = Addr(c.g[A1][0] as u32).lw(c);
+            c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(8)).lw(c);
+            c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+            c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+            if c.g[V1][0] != 0 {
+                c.g[A0][0] = Addr((c.g[V1][0] as u32).wrapping_add(0x1c)).lw(c);
+                c.cycles += 7;
+                c.g[V0][0] = sx(id >> 8);
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_add(c.g[A0][0] as u32));
+                c.g[V1][0] = Addr(c.g[V0][0] as u32).lw(c);
+                c.g[V0][0] = sx((c.g[V1][0] as u32) >> 8);
+                let found = c.g[V0][0] != 0;
+                c.g[V0][0] = sx((c.g[V0][0] as u32) << 2);
+                if !found {
+                    c.cycles += 1;
+                    c.g[V0][0] = 0;
+                }
+                c.cycles += 1;
+                c.g[A3][0] = c.g[V0][0];
+            } else {
+                c.cycles += 2;
+                c.g[A3][0] = 0;
+            }
+            c.cycles += 1;
+            c.g[S0][0] = c.g[A3][0];
+        }
+        c.cycles += 2;
+        if c.g[S0][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = Addr((c.g[S0][0] as u32).wrapping_add(WOFA_OBJECT_NODE)).lw(c);
+            c.g[A1][0] = 1;
+            let mut create = true;
+            if c.g[A0][0] != 0 {
+                c.cycles += 4;
+                c.g[A2][0] = c.g[S1][0];
+                WOFA_ATTACH_MODIFIER.call(c, 0x002f_be50)?;
+                create = c.g[V0][0] == 0;
+            }
+            if create {
+                c.cycles += 12;
+                c.g[A1][0] = sx(0x0049_0000u32.wrapping_sub(0x6958));
+                c.g[A0][0] = 0x6c;
+                c.g[A2][0] = 0x2000_0000;
+                c.g[A3][0] = 0;
+                WOFA_MEM_ALLOC_NAMED.call(c, 0x002f_be70)?;
+                c.g[A0][0] = c.g[V0][0];
+                c.g[A1][0] = 1;
+                c.g[A3][0] = c.g[S0][0];
+                c.g[T0][0] = c.g[S1][0];
+                c.g[A2][0] = 1;
+                call_ptr(c, 0x0034_1aa0, 0x002f_be88)?; // AnimObject_ctor
+            }
+        }
+        // Return the factory's result value by copy.
+        c.cycles += 16;
+        let result = Addr((c.g[S4][0] as u32).wrapping_sub(0x4d_0000 - WOFA_RESULT));
+        c.g[A1][0] = sx(result.0);
+        let head = result.read_u64_unaligned(c);
+        c.g[V0][0] = head;
+        c.g[V1][0] = result.off(8).lw(c);
+        let out = Addr(c.g[S2][0] as u32);
+        out.write_u64_unaligned(c, head);
+        let tail = c.g[V1][0];
+        out.off(8).sw(c, tail);
+        c.g[V0][0] = c.g[S2][0];
+        frame.restore(c, S0, 0x90);
+        frame.restore(c, S1, 0x80);
+        frame.restore(c, S2, 0x70);
+        frame.restore(c, S3, 0x60);
+        frame.restore(c, S4, 0x50);
+        frame.restore_ra(c, 0x40);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WScriptFn_PlayObjectSound (0x2fff00)
+
+/// `gp` word: the static parameter defaults are initialised.
+pub(crate) const OC300_POS_DEFAULTS_READY_GP: u32 = 0x2574;
+
+/// The static parameter defaults (3 words: object id, sound, -; 0x4fbb08).
+pub(crate) const OC300_POS_DEFAULTS: u32 = 0x004f_bb08;
+
+/// `gp` table: the kind of each parameter slot (2 = float).
+pub(crate) const OC300_POS_PARAM_KINDS_GP: u32 = 0xb38;
+
+pub(crate) const OC300_POS_KIND_FLOAT: u64 = 2;
+
+/// `gp` words: the object directory, the world (its default object at
+/// `+0x290`).
+pub(crate) const OC300_POS_DIRECTORY_GP: u32 = 0x16c8;
+
+pub(crate) const OC300_POS_WORLD_GP: u32 = 0xce8;
+
+pub(crate) const OC300_POS_WORLD_DEFAULT_OBJECT: u32 = 0x290;
+
+/// The script functions' shared result value (12 bytes at 0x4c9098).
+pub(crate) const OC300_POS_RESULT: u32 = 0x004c_9098;
+
+/// `Result WScriptFn_PlayObjectSound(Param* params, int count)` (0x2fff00;
+/// a0 = the hidden result slot, a1 = count, a2 = params): fills a 3-word
+/// parameter block (object id, sound) from the defaults and the
+/// `{slot, value, -, kind}` parameters (an int given for a float slot is
+/// converted), looks the object up (id -1: the world's default object) and,
+/// if there is one, plays the sound on it
+/// (`SSXAudioSystem_PlayObjectSound(GetInstance(), obj, sound)`). Returns
+/// the shared script result.
+pub fn wscript_fn_play_object_sound(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 12;
+        let frame = Frame::open(c, 0x70);
+        let gp = r32(c, GP);
+        let ready = Addr(gp).off(OC300_POS_DEFAULTS_READY_GP).lw(c);
+        c.g[V0][0] = ready;
+        frame.save(c, S2, 0x40);
+        frame.save(c, S1, 0x50);
+        c.g[S2][0] = c.g[A2][0];
+        frame.save(c, S3, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save(c, S0, 0x60);
+        c.g[S3][0] = c.g[A0][0];
+        frame.save_ra(c, 0x20);
+        c.g[A2][0] = 0x50_0000;
+        let defaults = Addr(OC300_POS_DEFAULTS);
+        if ready == 0 {
+            // First use: initialise the static defaults (guarded local).
+            c.cycles += 10;
+            c.g[V1][0] = sx(OC300_POS_DEFAULTS);
+            c.g[V0][0] = u64::MAX;
+            let tag = defaults.off(8).lbu(c);
+            c.g[A1][0] = tag;
+            defaults.sw(c, u64::MAX);
+            c.g[A0][0] = 1;
+            defaults.off(8).sb(c, tag);
+            defaults.off(4).sw(c, u64::MAX);
+            Addr(gp).off(OC300_POS_DEFAULTS_READY_GP).sw(c, 1);
+            Addr(sp(c)).sb(c, tag);
+        }
+        // The parameter block at 0x10(sp), copied from the defaults.
+        c.cycles += 10;
+        c.g[V0][0] = u64::MAX;
+        let block = frame.at(c, 0x10);
+        c.g[S0][0] = sx(block);
+        c.g[A1][0] = sx(OC300_POS_DEFAULTS);
+        c.g[A2][0] = 0xc;
+        Addr(block).sw(c, u64::MAX);
+        c.g[A0][0] = sx(block);
+        call_ptr(c, 0x003e_6574, 0x002f_ff78)?; // memcpy
+        c.g[A2][0] = c.g[S2][0];
+        if (c.g[S1][0] as i64) > 0 {
+            c.cycles += 4;
+            c.g[A1][0] = c.g[S1][0];
+            c.g[T0][0] = sx(r32(c, GP).wrapping_add(OC300_POS_PARAM_KINDS_GP));
+            c.g[A3][0] = OC300_POS_KIND_FLOAT;
+            loop {
+                c.cycles += 8;
+                let param = Addr(r32(c, A2));
+                let slot4 = (param.lw(c) as u32) << 2;
+                let given_kind = param.off(0xc).lw(c);
+                c.g[V1][0] = given_kind;
+                let dest = Addr(slot4.wrapping_add(r32(c, S0)));
+                c.g[A0][0] = sx(dest.0);
+                let kind = Addr(slot4.wrapping_add(r32(c, T0))).lw(c);
+                c.g[V0][0] = kind;
+                if given_kind != kind && kind == c.g[A3][0] {
+                    // An int for a float slot.
+                    c.cycles += 2 + 4;
+                    let value = param.off(4).lw(c) as u32;
+                    let converted = FpuF32::from_i32(value as i32);
+                    c.f[0] = converted.0;
+                    dest.write_fpu(c, converted);
+                } else {
+                    c.cycles += if given_kind == kind { 1 } else { 2 + 1 };
+                    let value = param.off(4).lw(c);
+                    c.g[V0][0] = value;
+                    dest.sw(c, value);
+                }
+                c.cycles += 3;
+                let left = r32(c, A1).wrapping_sub(1);
+                c.g[A1][0] = sx(left);
+                c.g[A2][0] = sx(r32(c, A2).wrapping_add(0x10));
+                if left == 0 {
+                    break;
+                }
+                if event_due(c) {
+                    deliver_event_here(c, 0x002f_ff90);
+                }
+            }
+        }
+        // Look the object up.
+        c.cycles += 4;
+        let id = Addr(r32(c, S0)).lw(c);
+        c.g[A2][0] = id;
+        c.g[V0][0] = !id;
+        let directory = Addr(r32(c, GP)).off(OC300_POS_DIRECTORY_GP).lw(c);
+        c.g[A1][0] = directory;
+        if !id == 0 {
+            c.cycles += 3;
+            let world = Addr(r32(c, GP)).off(OC300_POS_WORLD_GP).lw(c);
+            c.g[V0][0] = world;
+            c.g[S1][0] = Addr(world as u32).off(OC300_POS_WORLD_DEFAULT_OBJECT).lw(c);
+        } else {
+            c.cycles += 8;
+            let id = id as u32;
+            c.g[V0][0] = sx((id & 0xff) << 2);
+            let sections = Addr(directory as u32).lw(c);
+            c.g[V1][0] = sections;
+            let table = Addr(sections as u32).off(8).lw(c);
+            c.g[A0][0] = table;
+            let at = ((id & 0xff) << 2).wrapping_add(table as u32);
+            c.g[V0][0] = sx(at);
+            let section = Addr(at).lw(c);
+            c.g[V1][0] = section;
+            let object = if section != 0 {
+                c.cycles += 7;
+                let entries = Addr(section as u32).off(0x1c).lw(c);
+                c.g[A0][0] = entries;
+                let entry = Addr(((id >> 8) << 2).wrapping_add(entries as u32)).lw(c);
+                c.g[V1][0] = entry;
+                let index = (entry as u32) >> 8;
+                let object = if index != 0 {
+                    sx(index << 2)
+                } else {
+                    c.cycles += 1;
+                    0
+                };
+                c.g[V0][0] = object;
+                c.cycles += 1;
+                object
+            } else {
+                c.cycles += 2;
+                0
+            };
+            c.g[A1][0] = object;
+            c.cycles += 1;
+            c.g[S1][0] = object;
+        }
+        c.cycles += 2;
+        c.g[V1][0] = 0x4d_0000;
+        if c.g[S1][0] != 0 {
+            // SSXAudioSystem_PlayObjectSound(GetInstance(), obj, sound).
+            c.cycles += 7;
+            c.g[S0][0] = Addr(r32(c, S0)).off(4).lw(c);
+            call_ptr(c, 0x0028_b180, 0x0030_0054)?; // SSXAudioSystem_GetInstance
+            c.g[A0][0] = c.g[V0][0];
+            c.g[A1][0] = c.g[S1][0];
+            c.g[A2][0] = c.g[S0][0];
+            call_ptr(c, 0x0029_74a0, 0x0030_0064)?; // SSXAudioSystem_PlayObjectSound
+            c.g[V1][0] = 0x4d_0000;
+        }
+        // *result = the shared script result (12 bytes).
+        c.cycles += 15;
+        c.g[V0][0] = c.g[S3][0];
+        c.g[A3][0] = sx(OC300_POS_RESULT);
+        let out = r32(c, S3);
+        c.ldl(4, OC300_POS_RESULT.wrapping_add(0x7));
+        c.ldr(4, OC300_POS_RESULT);
+        c.g[A1][0] = Addr(OC300_POS_RESULT).off(8).lw(c);
+        c.sdl(4, out.wrapping_add(0x7));
+        c.sdr(4, out);
+        Addr(out).off(8).sw(c, c.g[A1][0]);
+        frame.restore(c, S0, 0x60);
+        frame.restore(c, S1, 0x50);
+        frame.restore(c, S2, 0x40);
+        frame.restore(c, S3, 0x30);
+        frame.restore_ra(c, 0x20);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::difftest::check;
@@ -16197,9 +19352,21 @@ pub(crate) mod tests {
     /// `CAJ_REC + slot * 0x80` (the RAM comparison checks them).
     pub(crate) fn caj_record(c: &mut Cpu, slot: u32) {
         let at = CAJ_REC + slot * 0x80;
-        for (i, r) in [A0, A1, A2, A3, T0, T1, T2, RA, SP, S0, S1]
-            .into_iter()
-            .enumerate()
+        for (i, r) in [
+            A0,
+            A1,
+            A2,
+            A3,
+            T0,
+            T1,
+            T2,
+            RA,
+            ssx3_ee_rt::cpu::reg::SP,
+            S0,
+            S1,
+        ]
+        .into_iter()
+        .enumerate()
         {
             c.bus.write64(at + 8 * i as u32, c.g[r][0]);
         }
@@ -16901,7 +20068,7 @@ pub(crate) mod tests {
                 if seed % 7 == 3 && fill >= start + 8 {
                     // Re-entry at the loop head: frame open, first chunk loaded.
                     let frame = STACK_TOP - 0x90;
-                    c.g[SP][0] = frame as u64;
+                    c.g[ssx3_ee_rt::cpu::reg::SP][0] = frame as u64;
                     c.bus.write64(frame, RET_ADDR as u64);
                     c.g[S0][0] = this as u64;
                     c.g[S6][0] = header as u64;
@@ -18002,6 +21169,1345 @@ pub(crate) mod tests {
             input_quantize_stick_direction,
             200,
             &quantize_stick_fixture,
+        );
+    }
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use super::*;
+    use crate::difftest::SP;
+    use crate::game::animation::animmodel::tests::sample_setup;
+    use crate::game::scripter::ssxscriptengine::tests::{
+        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
+    };
+
+    // ------------------------------------------------------ Rider_StartWipeout
+
+    /// Fixture area (clear of the fakes' pointer results at DATA..+0x40000
+    /// and their log at DATA+0x100000).
+    pub(crate) const WT_CTRL: u32 = DATA + 0x20_0000;
+
+    pub(crate) const WT_MAGIC: u32 = 0x10eb_30a5;
+
+    pub(crate) const WT_RIDER: u32 = WT_CTRL + 0x1000;
+
+    pub(crate) const WT_EVT: u32 = WT_CTRL + 0x2000;
+
+    pub(crate) const WT_METRIX: u32 = WT_CTRL + 0x2400;
+
+    pub(crate) const WT_ANIM: u32 = WT_CTRL + 0x2800;
+
+    pub(crate) const WT_LAYERS: u32 = WT_CTRL + 0x2900;
+
+    pub(crate) const WT_MODEL: u32 = WT_CTRL + 0x2c00;
+
+    pub(crate) const WT_BONE_POS: u32 = WT_CTRL + 0x3000;
+
+    pub(crate) const WT_BONE_ROT: u32 = WT_CTRL + 0x3100;
+
+    pub(crate) const WT_ANIM_TABLE: u32 = WT_CTRL + 0x3400;
+
+    pub(crate) const WT_ANIM_SET: u32 = WT_CTRL + 0x3500;
+
+    pub(crate) const WT_ANIM_DEFS: u32 = WT_CTRL + 0x3600;
+
+    pub(crate) const WT_ENTRY: u32 = WT_CTRL + 0x3800;
+
+    pub(crate) const WT_SEQ: u32 = WT_CTRL + 0x3a00;
+
+    /// A logged fake (which may unwind); the animation table entry and the
+    /// pushed sequence answer fixture objects.
+    pub(crate) fn wipe_fake(c: &mut Cpu, target: u32) {
+        let ra = c.g[RA][0] as u32;
+        fakes::fake(c, target, ra);
+        if c.pc != ra {
+            return;
+        }
+        match target {
+            // AnimTable_GetEntry
+            0x0031_15c8 => c.g[V0][0] = WT_ENTRY as u64,
+            // AnimSeqList_PushAnim / PushLoopingAnim
+            0x0031_4518 | 0x0031_4588 => c.g[V0][0] = WT_SEQ as u64,
+            _ => {}
+        }
+    }
+
+    /// A slot replacement: the fake while this fixture is loaded, else the
+    /// generated body.
+    macro_rules! wipe_gated {
+        ($name:ident, $addr:expr, $gen:path) => {
+            fn $name(c: &mut Cpu) {
+                if c.bus.read32(WT_CTRL) != WT_MAGIC {
+                    return $gen(c);
+                }
+                wipe_fake(c, $addr)
+            }
+        };
+    }
+    pub(crate) use wipe_gated;
+
+    wipe_gated!(
+        wipe_fake_0010e098,
+        0x0010_e098,
+        ee::s00::f_0010e098__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00111aa0,
+        0x0011_1aa0,
+        ee::s00::f_00111aa0__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_0011fec8,
+        0x0011_fec8,
+        ee::s00::f_0011fec8__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_0011dfe0,
+        0x0011_dfe0,
+        ee::s00::f_0011dfe0__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00116930,
+        0x0011_6930,
+        ee::s00::f_00116930__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_0011fa10,
+        0x0011_fa10,
+        ee::s00::f_0011fa10__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_0011e098,
+        0x0011_e098,
+        ee::s00::f_0011e098__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_0011fe78,
+        0x0011_fe78,
+        ee::s00::f_0011fe78__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00117838,
+        0x0011_7838,
+        ee::s00::f_00117838__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00117948,
+        0x0011_7948,
+        ee::s00::f_00117948__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00117b88,
+        0x0011_7b88,
+        ee::s00::f_00117b88__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_001179e0,
+        0x0011_79e0,
+        ee::s00::f_001179e0__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00117908,
+        0x0011_7908,
+        ee::s00::f_00117908__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_0028b180,
+        0x0028_b180,
+        ee::s07::f_0028b180__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00287920,
+        0x0028_7920,
+        ee::s07::f_00287920__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00288ae0,
+        0x0028_8ae0,
+        ee::s07::f_00288ae0__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00285d98,
+        0x0028_5d98,
+        ee::s07::f_00285d98__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00296310,
+        0x0029_6310,
+        ee::s08::f_00296310__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00311b48,
+        0x0031_1b48,
+        ee::s10::f_00311b48__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_0031be50,
+        0x0031_be50,
+        ee::s10::f_0031be50__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_003128e8,
+        0x0031_28e8,
+        ee::s10::f_003128e8__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_003142e8,
+        0x0031_42e8,
+        ee::s10::f_003142e8__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00313cf0,
+        0x0031_3cf0,
+        ee::s10::f_00313cf0__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00314418,
+        0x0031_4418,
+        ee::s10::f_00314418__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00314760,
+        0x0031_4760,
+        ee::s10::f_00314760__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_003115c8,
+        0x0031_15c8,
+        ee::s10::f_003115c8__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00314518,
+        0x0031_4518,
+        ee::s10::f_00314518__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00314588,
+        0x0031_4588,
+        ee::s10::f_00314588__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00313ad8,
+        0x0031_3ad8,
+        ee::s10::f_00313ad8__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00313a10,
+        0x0031_3a10,
+        ee::s10::f_00313a10__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00313a70,
+        0x0031_3a70,
+        ee::s10::f_00313a70__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00313ba8,
+        0x0031_3ba8,
+        ee::s10::f_00313ba8__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00313a20,
+        0x0031_3a20,
+        ee::s10::f_00313a20__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00313c50,
+        0x0031_3c50,
+        ee::s10::f_00313c50__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00313d28,
+        0x0031_3d28,
+        ee::s10::f_00313d28__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_003145f8,
+        0x0031_45f8,
+        ee::s10::f_003145f8__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00313c08,
+        0x0031_3c08,
+        ee::s10::f_00313c08__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00317e50,
+        0x0031_7e50,
+        ee::s10::f_00317e50__generated
+    );
+
+    wipe_gated!(
+        wipe_fake_00311318,
+        0x0031_1318,
+        ee::s10::f_00311318__generated
+    );
+
+    #[allow(unused_unsafe)]
+    pub(crate) fn wipe_install_fakes() {
+        unsafe {
+            ee::s00::OVERRIDE_0010E098 = wipe_fake_0010e098;
+            ee::s00::OVERRIDE_00111AA0 = wipe_fake_00111aa0;
+            ee::s00::OVERRIDE_0011FEC8 = wipe_fake_0011fec8;
+            ee::s00::OVERRIDE_0011DFE0 = wipe_fake_0011dfe0;
+            ee::s00::OVERRIDE_00116930 = wipe_fake_00116930;
+            ee::s00::OVERRIDE_0011FA10 = wipe_fake_0011fa10;
+            ee::s00::OVERRIDE_0011E098 = wipe_fake_0011e098;
+            ee::s00::OVERRIDE_0011FE78 = wipe_fake_0011fe78;
+            ee::s00::OVERRIDE_00117838 = wipe_fake_00117838;
+            ee::s00::OVERRIDE_00117948 = wipe_fake_00117948;
+            ee::s00::OVERRIDE_00117B88 = wipe_fake_00117b88;
+            ee::s00::OVERRIDE_001179E0 = wipe_fake_001179e0;
+            ee::s00::OVERRIDE_00117908 = wipe_fake_00117908;
+            ee::s07::OVERRIDE_0028B180 = wipe_fake_0028b180;
+            ee::s07::OVERRIDE_00287920 = wipe_fake_00287920;
+            ee::s07::OVERRIDE_00288AE0 = wipe_fake_00288ae0;
+            ee::s07::OVERRIDE_00285D98 = wipe_fake_00285d98;
+            ee::s08::OVERRIDE_00296310 = wipe_fake_00296310;
+            ee::s10::OVERRIDE_00311B48 = wipe_fake_00311b48;
+            ee::s10::OVERRIDE_0031BE50 = wipe_fake_0031be50;
+            ee::s10::OVERRIDE_003128E8 = wipe_fake_003128e8;
+            ee::s10::OVERRIDE_003142E8 = wipe_fake_003142e8;
+            ee::s10::OVERRIDE_00313CF0 = wipe_fake_00313cf0;
+            ee::s10::OVERRIDE_00314418 = wipe_fake_00314418;
+            ee::s10::OVERRIDE_00314760 = wipe_fake_00314760;
+            ee::s10::OVERRIDE_003115C8 = wipe_fake_003115c8;
+            ee::s10::OVERRIDE_00314518 = wipe_fake_00314518;
+            ee::s10::OVERRIDE_00314588 = wipe_fake_00314588;
+            ee::s10::OVERRIDE_00313AD8 = wipe_fake_00313ad8;
+            ee::s10::OVERRIDE_00313A10 = wipe_fake_00313a10;
+            ee::s10::OVERRIDE_00313A70 = wipe_fake_00313a70;
+            ee::s10::OVERRIDE_00313BA8 = wipe_fake_00313ba8;
+            ee::s10::OVERRIDE_00313A20 = wipe_fake_00313a20;
+            ee::s10::OVERRIDE_00313C50 = wipe_fake_00313c50;
+            ee::s10::OVERRIDE_00313D28 = wipe_fake_00313d28;
+            ee::s10::OVERRIDE_003145F8 = wipe_fake_003145f8;
+            ee::s10::OVERRIDE_00313C08 = wipe_fake_00313c08;
+            ee::s10::OVERRIDE_00317E50 = wipe_fake_00317e50;
+            ee::s10::OVERRIDE_00311318 = wipe_fake_00311318;
+        }
+    }
+
+    pub(crate) fn wipe_vec(c: &mut Cpu, r: &mut Rng, at: u32, range: f32) {
+        put_vec(
+            c,
+            at,
+            [r.f32(range), r.f32(range), r.f32(range), r.f32(range)],
+        );
+    }
+
+    /// Rider_StartWipeout: rail style 3, 4 or another (the two quarter-turn
+    /// arms and none); the metrics flag zero or not (RiderMetrix_OnWipeout
+    /// runs for real either way: score banking or the HUD number). The
+    /// unslotted audio callees run for real to their early exits (their
+    /// queries are fakes answering non-zero), the animation setup
+    /// (`0x312660`, with the real `AnimController_PlayAnimImpl` and
+    /// `AnimSeqList_Clear` on an empty list: fp = 0 is what the speech call
+    /// leaves in that stack slot), the bone sampler (no channels: the
+    /// identity transform at 0x4ff230, randomised) and the orientation
+    /// offset (six empty layers) also run for real. Every slotted callee is
+    /// a logged fake, one of which may unwind.
+    #[test]
+    fn rider_start_wipeout_matches() {
+        wipe_install_fakes();
+        covered(
+            ee::s00::f_0010eb30__generated,
+            rider_start_wipeout,
+            200,
+            &|c, seed| {
+                wipe_install_fakes();
+                let mut r = machine(c, seed, 0x0010_eb30, 50);
+                c.pc = 0x0010_eb30;
+                c.bus.write32(WT_CTRL, WT_MAGIC);
+                c.g[30] = [0, 0];
+
+                // gp: +-pi/2, the blend id (0, != gp+0x2860), the anim table.
+                let gp = GAME_GP;
+                c.bus
+                    .write32(gp - WIPE_GP_HALF_PI, std::f32::consts::FRAC_PI_2.to_bits());
+                c.bus.write32(
+                    gp - WIPE_GP_NEG_HALF_PI,
+                    (-std::f32::consts::FRAC_PI_2).to_bits(),
+                );
+                c.bus.write32(gp + WIPE_GP_BLEND, 0);
+                c.bus.write32(gp + 0x2860, 1);
+                c.bus.write32(gp + 0xd08, WT_ANIM_TABLE);
+                c.bus.write32(WT_ANIM_TABLE, WT_ANIM_SET);
+                c.bus.write32(WT_ANIM_SET + 8, WT_ANIM_DEFS);
+
+                // .bss vectors: zero quad, up axis, identity transform.
+                wipe_vec(c, &mut r, WIPE_ZERO, 2.0);
+                wipe_vec(c, &mut r, WIPE_AXIS, 1.0);
+                wipe_vec(c, &mut r, 0x004f_f230, 2.0);
+                wipe_vec(c, &mut r, 0x004f_f240, 1.0);
+
+                // The rider.
+                let rider = WT_RIDER;
+                let vt = fakes::vtable(c, &mut r, &[WIPE_VT_VIBRATION_BUMP]);
+                c.bus.write32(rider + WIPE_VTABLE, vt);
+                wipe_vec(c, &mut r, rider + WIPE_POSITION, 100.0);
+                wipe_vec(c, &mut r, rider + WIPE_ORIENT, 1.0);
+                wipe_vec(c, &mut r, rider + WIPE_UP, 1.0);
+                for off in (0x1f0..0x260).step_by(4) {
+                    c.bus.write32(rider + off, r.f32(5.0));
+                }
+                let style = match seed % 3 {
+                    0 => 3,
+                    1 => 4,
+                    _ => [0, 1, 2, 5][(r.next_u32() % 4) as usize],
+                };
+                c.bus.write32(rider + WIPE_RAIL_STYLE, style);
+                c.bus.write32(rider + WIPE_PRESS_TYPE, r.next_u32());
+                c.bus.write32(rider + WIPE_HANDLER, r.next_u32());
+                c.bus.write32(rider + WIPE_ANIM_MODEL, WT_MODEL);
+                c.bus.write32(rider + WIPE_ANIM, WT_ANIM);
+                c.bus.write32(rider + WIPE_METRIX, WT_METRIX);
+                let bone = r.next_u32() % 8;
+                c.bus.write32(rider + WIPE_BONE_HIPS, bone);
+
+                // Impact info, metrics.
+                for i in 0..0x10 {
+                    c.bus.write32(WT_EVT + 4 * i, r.f32(50.0));
+                }
+                for i in 0..0x80 {
+                    c.bus.write32(WT_METRIX + 4 * i, r.next_u32() % 2000);
+                }
+
+                // Animation controller (layer list of six empty layers), model.
+                for i in 0..0x14 {
+                    c.bus.write32(WT_ANIM + 4 * i, r.f32(3.0));
+                }
+                c.bus.write32(WT_ANIM + 0x50, WT_LAYERS);
+                c.bus.write32(WT_MODEL + WIPE_MODEL_BONE_POS, WT_BONE_POS);
+                c.bus.write32(WT_MODEL + WIPE_MODEL_BONE_ROT, WT_BONE_ROT);
+                wipe_vec(c, &mut r, WT_MODEL + WIPE_MODEL_SCALE, 2.0);
+                for b in 0..8 {
+                    wipe_vec(c, &mut r, WT_BONE_POS + 16 * b, 50.0);
+                    wipe_vec(c, &mut r, WT_BONE_ROT + 16 * b, 1.0);
+                }
+                c.bus.write32(WT_ENTRY + 0x18, r.f32(2.0));
+
+                // Arguments.
+                c.g[A0][0] = sx(rider);
+                c.g[A1][0] = (r.next_u32() % 0x200) as u64;
+                let flag = if seed % 2 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 50
+                };
+                c.g[A2][0] = flag as u64;
+                c.g[A3][0] = r.next_u32() as u64;
+                c.g[T0][0] = sx(WT_EVT);
+            },
+        );
+    }
+
+    /// `RiderModel_SamplePartTransform` on top of the
+    /// `AnimDataBase_SampleChannel` fixture (database at DATA, clip 1 with
+    /// three chunks per channel, the anim state at DATA+0x80): 0..2
+    /// channels, the part on channel 0, channel 1 or none; root and child
+    /// bones, the alternate-slot/scale flag on and off, a zero position w
+    /// (direction path), all axis selectors.
+    #[test]
+    fn rider_model_sample_part_transform_matches() {
+        use sample_part_xf as k;
+        const STATE: u32 = DATA + 0x80;
+        const TABLE: u32 = DATA + 0x200; // chunk descriptors
+        const DBS: u32 = DATA + 0x2_0000;
+        const MODEL: u32 = DATA + 0x2_1000;
+        const PART_BONE: u32 = DATA + 0x2_1100;
+        const BONES: u32 = DATA + 0x2_1200;
+        const CURVE_BASE: u32 = DATA + 0x2_1400;
+        const INFOS: u32 = DATA + 0x2_1800;
+        const OUT: u32 = DATA + 0x2_2000;
+        check(
+            ee::s10::f_0030ecd8__generated,
+            rider_model_sample_part_transform,
+            250,
+            &|c, seed| {
+                sample_setup(c, seed);
+                let mut r = Rng(0x30ec_d8a1 ^ (seed as u64) << 20);
+                let fv = |r: &mut Rng| {
+                    if r.next_u32() % 6 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(2.0)
+                    }
+                };
+                // stack below sp: what the sampler leaves unwritten
+                for i in 0..0x80 {
+                    let v = fv(&mut r);
+                    c.bus.write32(SP - 0x200 + 4 * i, v);
+                }
+                // the identity transform and the root origin
+                for i in 0..8 {
+                    let v = fv(&mut r);
+                    c.bus.write32(k::IDENTITY_XF + 4 * i, v);
+                }
+                for i in 0..4 {
+                    let v = fv(&mut r);
+                    c.bus.write32(k::ROOT_ORIGIN + 4 * i, v);
+                }
+                // the database table: the state's index -> the database
+                let gp = c.g[GP][0] as u32;
+                c.bus.write32(gp + k::ANIM_DBS_GP, DBS);
+                let db_index = c.bus.read32(STATE) & 0xff;
+                c.bus.write32(DBS + 4 * db_index, DATA);
+                // channels of clip 1; channel 0's part is the bank or 7
+                let channels = seed % 3;
+                c.bus
+                    .write16(DATA + 0x100 + 0x14 + k::CLIP_CHANNELS, channels as u16);
+                let bank = c.bus.read32(TABLE + 4) & 0xff;
+                let first_desc = TABLE + 8; // clip 1 starts at descriptor 1
+                if (seed / 3) % 2 == 1 {
+                    c.bus.write8(first_desc + k::DESC_PART, 7);
+                }
+                let part = if seed % 7 == 0 { 9 } else { bank };
+                // the state: root position and rotation, the flag
+                put_vec(
+                    c,
+                    STATE + k::ST_ROOT_POS,
+                    [fv(&mut r), fv(&mut r), fv(&mut r), fv(&mut r)],
+                );
+                put_vec(
+                    c,
+                    STATE + k::ST_ROOT_ROT,
+                    [r.f32(1.0), r.f32(1.0), r.f32(1.0), r.f32(1.0)],
+                );
+                let flag = if seed % 4 < 2 { 0 } else { r.next_u32() | 1 };
+                c.bus.write32(STATE + k::ST_ALT, flag);
+                // the model: part -> bone, bones, curve bases
+                c.bus.write32(MODEL + k::MODEL_PART_BONE, PART_BONE);
+                c.bus.write32(MODEL + k::MODEL_BONES, BONES);
+                c.bus.write32(MODEL + k::MODEL_CURVE_BASE, CURVE_BASE);
+                for p in 0..2 {
+                    c.bus.write32(PART_BONE + 4 * p, r.next_u32() % 3);
+                }
+                let mut base = r.next_u32() % 3;
+                for i in 0..8 {
+                    c.bus.write32(CURVE_BASE + 4 * i, base);
+                    base += r.next_u32() % 2;
+                }
+                for b in 0..3 {
+                    let bone = BONES + k::BONE_SIZE * b;
+                    let info = INFOS + 0x80 * b;
+                    c.bus.write32(bone + k::BONE_INFO, info);
+                    c.bus.write32(bone + k::BONE_SLOT, r.next_u32() % 4);
+                    let parent = if (seed + b) % 3 == 0 {
+                        0xffff
+                    } else {
+                        r.next_u32() % 5
+                    };
+                    c.bus.write16(info + k::INFO_PARENT, parent as u16);
+                    c.bus
+                        .write16(info + k::INFO_ALT_SLOT, (r.next_u32() % 4) as u16);
+                    for a in 0..4 {
+                        c.bus.write8(info + 0x18 + a, (r.next_u32() % 8) as u8);
+                    }
+                    for i in 0..4 {
+                        let v = fv(&mut r);
+                        c.bus.write32(info + k::INFO_SCALE + 4 * i, v);
+                    }
+                    if seed % 5 == 0 {
+                        // zero w: the root position is a direction
+                        c.bus.write32(info + k::INFO_SCALE + 0xc, 0);
+                    }
+                }
+                c.g[A0][0] = sx(OUT);
+                c.g[A1][0] = sx(MODEL);
+                c.g[A2][0] = sx(STATE);
+                c.g[A3][0] = part as u64;
+                c.pc = 0x0030_ecd8;
+            },
+        );
+    }
+
+    /// `PATH_RemapNode`: the path table at `*0x44f420` with index (+0x38),
+    /// words (+0x34) and ranges (+0x48). Ids are negative on some seeds; the
+    /// range byte k is 0..3 (0: no remap); ranges are sometimes empty or
+    /// reversed (n <= 0); range words remap small node numbers so that
+    /// matches (and chains of them) happen.
+    #[test]
+    fn path_remap_node_matches() {
+        const TABLE: u32 = DATA;
+        const WORDS: u32 = DATA + 0x1000;
+        const INDEX: u32 = DATA + 0x3000;
+        const RANGES: u32 = DATA + 0x3800;
+        check(
+            ee::s14::f_003d3c90__generated,
+            path_remap_node,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x3d3c90 ^ (seed as u64) << 12);
+                scramble(c, &mut r);
+                c.pc = 0x003d_3c90;
+                c.bus.write32(0x0045_0000 - 0xbe0, TABLE);
+                c.bus.write32(TABLE + 0x34, WORDS);
+                c.bus.write32(TABLE + 0x38, INDEX);
+                c.bus.write32(TABLE + 0x48, RANGES);
+                let id = r.next_u32() % 64;
+                let word = r.next_u32() % 256;
+                c.bus.write16(INDEX + 2 * id, word as u16);
+                let k = seed % 4;
+                c.bus.write8(WORDS + 4 * word + 4, k as u8);
+                // ranges[0..4]: increasing, sometimes empty or reversed
+                let mut at = r.next_u32() % 64;
+                for i in 0..4 {
+                    c.bus.write32(RANGES + 4 * i, 0x200 + at);
+                    at = match r.next_u32() % 6 {
+                        0 => at,
+                        1 => at.saturating_sub(3),
+                        _ => at + 1 + r.next_u32() % 12,
+                    };
+                }
+                for i in 0..0x300 {
+                    let from = r.next_u32() % 6;
+                    let to = if r.next_u32() % 4 == 0 {
+                        r.next_u32() & 0xffff
+                    } else {
+                        r.next_u32() % 6
+                    };
+                    c.bus.write32(WORDS + 4 * (0x200 + i), from << 16 | to);
+                }
+                c.g[A0][0] = if seed % 5 == 0 {
+                    sx(0x8000_0000 | r.next_u32())
+                } else {
+                    id as u64
+                };
+                c.g[A1][0] = (r.next_u32() % 6) as u64;
+            },
+        );
+    }
+
+    /// `WScriptFn_SetSelfObject`: defaults initialised or not; 0, negative or
+    /// 1..3 arguments (ids, ints and floats into int and float slots); class
+    /// tables with missing classes and handle words with a zero handle; the
+    /// real EA_MemCopy.
+    #[test]
+    fn wscript_fn_set_self_object_matches() {
+        use set_self_object::*;
+        check(
+            ee::s10::f_00302968__generated,
+            wscript_fn_set_self_object,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0030_2968, 0);
+                c.pc = 0x0030_2968;
+                let gp = |off: u32| GAME_GP.wrapping_add(off);
+                c.bus.write32(gp(GP_DEFAULTS_READY), (seed % 4 != 0) as u32);
+                fill(c, &mut r, RESULT_OK, 3);
+                // An object id: class (low byte) 0..7 and handle 0..15, or one
+                // with class 0xff (never present).
+                let some_id = |r: &mut Rng| -> u32 {
+                    if r.next_u32() % 4 == 0 {
+                        r.next_u32() | 0xff00_00ff
+                    } else {
+                        (r.next_u32() % 16) << 8 | r.next_u32() % 8
+                    }
+                };
+                let default_id = some_id(&mut r);
+                c.bus.write32(gp(GP_DEFAULTS), default_id);
+                c.bus.write32(gp(GP_DEFAULTS_FLAG), r.next_u32());
+                // Declared types: the id slot int (never converted: a float's
+                // bits would index far outside the handle table), the others
+                // int or float.
+                c.bus.write32(gp(GP_ARG_TYPES), r.next_u32() % 2);
+                for k in 1..4 {
+                    c.bus.write32(gp(GP_ARG_TYPES + 4 * k), r.next_u32() % 3);
+                }
+                let mgr = DATA + 0x100;
+                let m = DATA + 0x200;
+                let tables = DATA + 0x300;
+                let class = DATA + 0x400;
+                let handles = DATA + 0x800;
+                let world = DATA + 0xc00;
+                c.bus.write32(gp(GP_OBJECT_MANAGER), mgr);
+                c.bus.write32(mgr, m);
+                c.bus.write32(m + 8, tables);
+                for k in 0..256 {
+                    let present = k < 8 && r.next_u32() % 4 != 0;
+                    c.bus
+                        .write32(tables + 4 * k, if present { class } else { 0 });
+                }
+                c.bus.write32(class + 0x1c, handles);
+                for k in 0..16 {
+                    let word = if r.next_u32() % 4 == 0 {
+                        r.next_u32() & 0xff
+                    } else {
+                        r.next_u32()
+                    };
+                    c.bus.write32(handles + 4 * k, word);
+                }
+                c.bus.write32(gp(GP_WORLD), world);
+                let args = DATA + 0x2000;
+                let n = match seed % 6 {
+                    0 => 0,
+                    1 => 0xffff_ffff,
+                    _ => 1 + r.next_u32() % 3,
+                };
+                for k in 0..3 {
+                    let a = args + 0x10 * k;
+                    let idx = if k == 0 { 0 } else { r.next_u32() % 2 };
+                    c.bus.write32(a, idx);
+                    let val = if idx == 0 && r.next_u32() % 4 != 0 {
+                        some_id(&mut r)
+                    } else {
+                        r.next_u32() % 1000
+                    };
+                    c.bus.write32(a + 4, val);
+                    c.bus.write32(a + 8, r.next_u32());
+                    c.bus.write32(a + 0xc, r.next_u32() % 3);
+                }
+                c.g[A0][0] = sx(DATA + 0x3000 + (seed % 2) * 4);
+                c.g[A1][0] = sx(n);
+                c.g[A2][0] = sx(args);
+            },
+        );
+    }
+
+    /// A random 3-vector (w random too) of components in [-1, 1].
+    pub(crate) fn deflect_vec(c: &mut Cpu, r: &mut Rng, addr: u32) {
+        for i in 0..4 {
+            c.bus.write32(addr + 4 * i, r.f32(1.0));
+        }
+    }
+
+    /// `Rider_DeflectAlongWall` with the real atanf and Math_SinCos on the
+    /// game image: random up/forward/normal vectors (forward sometimes
+    /// along the wall normal or the tangent, so x = 0 or y = 0, and
+    /// sometimes zero: no turn), unit orientation quaternions.
+    #[test]
+    fn rider_deflect_along_wall_matches() {
+        use deflect_along_wall::*;
+        check(
+            ee::s00::f_001065b0__generated,
+            rider_deflect_along_wall,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x0010_65b0, 0);
+                elf_image(c);
+                c.pc = 0x0010_65b0;
+                let rider = DATA;
+                let contact = DATA + 0x800;
+                // Up mostly vertical, the wall normal mostly horizontal.
+                let up = [r.f32(0.3), 1.0f32.to_bits(), r.f32(0.3), r.next_u32()];
+                for (i, w) in up.iter().enumerate() {
+                    c.bus.write32(rider + UP + 4 * i as u32, *w);
+                }
+                deflect_vec(c, &mut r, contact + CONTACT_NORMAL);
+                c.bus.write32(contact + CONTACT_NORMAL + 4, r.f32(0.2));
+                deflect_vec(c, &mut r, rider + ORIENTATION);
+                match seed % 6 {
+                    0 => {
+                        // Zero forward: x = y = 0.
+                        for i in 0..4 {
+                            c.bus.write32(rider + FORWARD + 4 * i, 0);
+                        }
+                    }
+                    1 => {
+                        // Forward along up: both dots ~0 (x exactly 0 when up
+                        // is exactly vertical).
+                        c.bus.write32(rider + UP, 0);
+                        c.bus.write32(rider + UP + 8, 0);
+                        c.bus.write32(rider + FORWARD, 0);
+                        c.bus.write32(rider + FORWARD + 4, r.f32(1.0));
+                        c.bus.write32(rider + FORWARD + 8, 0);
+                    }
+                    2 => {
+                        // Up vertical, normal along x: n along z, t along x; a
+                        // forward along z gives x = 0.
+                        c.bus.write32(rider + UP, 0);
+                        c.bus.write32(rider + UP + 8, 0);
+                        c.bus.write32(contact + CONTACT_NORMAL, 1.0f32.to_bits());
+                        c.bus.write32(contact + CONTACT_NORMAL + 4, 0);
+                        c.bus.write32(contact + CONTACT_NORMAL + 8, 0);
+                        c.bus.write32(rider + FORWARD, 0);
+                        c.bus.write32(rider + FORWARD + 4, r.f32(1.0));
+                        c.bus.write32(rider + FORWARD + 8, r.f32(1.0));
+                    }
+                    _ => deflect_vec(c, &mut r, rider + FORWARD),
+                }
+                c.g[A0][0] = sx(rider);
+                c.g[A1][0] = sx(contact);
+            },
+        );
+    }
+
+    /// `StreamFile_QueueRange`: an invalid file (null, or no "STRM"
+    /// header), no free request, then a queued request on an empty or a
+    /// non-empty queue, with the stream busy or idle (then
+    /// `StartNextRequest` at either priority: the request's name matches
+    /// the open file and `IssueRead` stalls at once). The mutex syscalls go
+    /// to the fakes (some unwind).
+    #[test]
+    fn stream_file_queue_range_matches() {
+        const FILE: u32 = DATA;
+        const HDR: u32 = DATA + 0x1000;
+        const REQ: u32 = DATA + 0x2000;
+        const NEXT_FREE: u32 = DATA + 0x2400;
+        const TAIL: u32 = DATA + 0x2800;
+        const NAME: u32 = DATA + 0x3000;
+        const RING: u32 = DATA + 0x4000;
+        check(
+            ee::s14::f_003e0c88__generated,
+            stream_file_queue_range,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x3e_0c88, 8);
+                c.pc = 0x003e_0c88;
+                let w = |c: &mut ssx3_ee_rt::Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                c.g[A0][0] = if seed % 11 == 0 { 0 } else { FILE as u64 };
+                w(c, FILE, HDR);
+                w(
+                    c,
+                    HDR,
+                    if seed % 13 == 1 {
+                        r.next_u32()
+                    } else {
+                        0x4d52_5453
+                    },
+                );
+                // Mutex: owner (never the fake thread id), depth, semaphore.
+                w(c, HDR + 0x8, 0x7700_0000 | r.next_u32() & 0xffff);
+                w(c, HDR + 0xc, r.next_u32() & 3);
+                w(c, HDR + 0x10, r.next_u32() & 0xff);
+                // Free list: one request (or none), id counter.
+                w(c, HDR + 0x68, if seed % 9 == 4 { 0 } else { REQ });
+                w(c, REQ + 0xc, NEXT_FREE);
+                w(c, REQ, r.next_u32());
+                w(
+                    c,
+                    0x0051_9c18,
+                    if seed % 7 == 2 {
+                        0xffff_ff00
+                    } else {
+                        r.next_u32()
+                    },
+                );
+                // Queue: empty or one request.
+                let queued = seed % 3 == 0;
+                w(c, HDR + 0x64, if queued { TAIL } else { 0 });
+                w(c, HDR + 0x5c, if queued { TAIL } else { 0 });
+                w(c, HDR + 0x60, if queued { TAIL } else { 0 });
+                w(c, TAIL + 4, 2);
+                w(c, TAIL + 0xc, 0);
+                // Busy or idle; the two priorities.
+                w(
+                    c,
+                    HDR + 0x38,
+                    if seed % 2 == 0 {
+                        0
+                    } else {
+                        1 + r.next_u32() % 2
+                    },
+                );
+                w(c, HDR + 0x48, (seed / 2) % 2);
+                w(c, HDR + 0x3c, r.next_u32() % 8);
+                w(c, HDR + 0x40, r.next_u32() % 8);
+                // The file name, also the open file's name.
+                for (i, b) in b"track01.big\0".iter().enumerate() {
+                    c.bus.write8(NAME + i as u32, *b);
+                    c.bus.write8(HDR + 0x6c + i as u32, *b);
+                }
+                c.g[A1][0] = NAME as u64;
+                c.g[A2][0] = sx(r.next_u32());
+                c.g[A3][0] = sx(r.next_u32() & 0xffff);
+                // StreamFile_IssueRead stall path.
+                w(c, HDR + 0x170, r.next_u32());
+                w(c, HDR + 0x16c, 0);
+                w(c, HDR + 0x30, RING);
+                w(c, HDR + 0x34, DATA + 0x5000);
+                w(c, HDR + 0x50, RING);
+                w(c, HDR + 0x54, RING);
+                w(c, HDR + 0x58, r.next_u32());
+                w(c, HDR + 0x17c, 0x1000);
+            },
+        );
+    }
+
+    /// `ComputerActorRider_PlanAirTricks`: spin / flip wanted (1..3) or not
+    /// (0), the real `RollSkipTricks` and `Rand_NextGame` on a random
+    /// generator state (both signs of each axis).
+    #[test]
+    fn computer_actor_rider_plan_air_tricks_matches() {
+        const RIDER: u32 = DATA + 0x20_0000;
+        check(
+            ee::s00::f_0010bfa8__generated,
+            computer_actor_rider_plan_air_tricks,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x10_bfa8, 0);
+                c.pc = 0x0010_bfa8;
+                c.g[A0][0] = sx(RIDER);
+                let pick = |r: &mut Rng, on: bool| -> u64 {
+                    if on {
+                        1 + (r.next_u32() % 3) as u64
+                    } else {
+                        0
+                    }
+                };
+                c.g[A1][0] = pick(&mut r, seed % 2 == 1);
+                c.g[A2][0] = pick(&mut r, seed / 2 % 2 == 1);
+                c.g[A3][0] = r.next_u32() as u64;
+                c.g[T0][0] = r.next_u32() as u64;
+                for i in 0..0x100 {
+                    c.bus.write32(RIDER + 0xd00 + 4 * i, r.next_u32());
+                }
+                c.bus.write32(RIDER + 0xdfc, r.f32(100.0));
+                // Rand_NextGame's generator state.
+                for i in 0..8 {
+                    c.bus.write32(0x004f_f030 + 4 * i, r.next_u32());
+                }
+            },
+        );
+    }
+
+    /// WorldObjFactory_AddDynamicParticleData: the default record fresh
+    /// (guard 0) or already built (random words, the range in either
+    /// order); 0..4 entries (and n <= 0) with field types random against
+    /// the type table (int-into-float conversions), optionally setting the
+    /// handle (-1, a resolving one, one whose table slot or index is empty)
+    /// and the modifier slot; the target node's `+0x80` virtual is a fake
+    /// (accepts: the real ModObj_AddDynamicParticleModifier, which frees the
+    /// record on its short paths) or a leaf returning 0 (the record is
+    /// deleted). The record comes from a dlmalloc arena over test memory.
+    #[test]
+    fn world_obj_factory_add_dynamic_particle_data_matches() {
+        use crate::difftest::fakes::{FAKE, LOG_COUNT, LOG_UNWIND_AT};
+        use crate::difftest::GAME_GP;
+        use crate::game::bx::cubicspline::tests::oc238_run;
+        const OUT: u32 = DATA + 0x500;
+        const ENTRIES: u32 = DATA + 0x600;
+        const SCRIPT_MAN: u32 = DATA + 0x2000;
+        const HANDLES: u32 = DATA + 0x2100;
+        const HANDLE_TABLE: u32 = DATA + 0x2200;
+        const SETS: u32 = DATA + 0x2300;
+        const SET: u32 = DATA + 0x2400;
+        const SET_INDEX: u32 = DATA + 0x2500;
+        const OBJ: u32 = DATA + 0x3000;
+        const NODE: u32 = DATA + 0x3100;
+        const NODE_VT: u32 = DATA + 0x3200;
+        const MODS: u32 = DATA + 0x3300;
+        const MOD_LIST: u32 = DATA + 0x3400;
+        check(
+            ee::s10::f_002fee98__generated,
+            world_obj_factory_add_dynamic_particle_data,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x2fee98, 0);
+                // The game heap over test memory, pools off.
+                c.bus.write32(GAME_GP + 0xdd8, 0);
+                oc238_run(
+                    c,
+                    0x0031_ff60,
+                    ee::s10::f_0031ff60,
+                    &[0x004f_f250, (DATA + 0x40000) as u64, 0x40000],
+                );
+                // The default record: fresh, or built (random words).
+                if seed % 2 == 0 {
+                    c.bus.write32(GAME_GP + DPD_GUARD, 0);
+                } else {
+                    c.bus.write32(GAME_GP + DPD_GUARD, 1);
+                    fill(c, &mut r, DPD_TEMPLATE, 0x3c);
+                    c.bus.write32(DPD_TEMPLATE + 0x14, r.f32(10.0));
+                    c.bus.write32(DPD_TEMPLATE + 0x1c, r.f32(10.0));
+                    c.bus.write32(DPD_TEMPLATE + 0xd8, u32::MAX);
+                    c.bus.write32(DPD_TEMPLATE + 0xdc, u32::MAX);
+                }
+                fill(c, &mut r, DPD_TEMPLATE + 0xec, 1);
+                // Field types: 0..2 (2: float); handle and slot plain ints.
+                for i in 0..0x3c {
+                    c.bus.write32(DPD_FIELD_TYPES + 4 * i, r.next_u32() % 3);
+                }
+                c.bus.write32(DPD_FIELD_TYPES + 4 * 54, 0);
+                c.bus.write32(DPD_FIELD_TYPES + 4 * 55, 0);
+                // Entries.
+                let mut entries = Vec::new();
+                for _ in 0..r.next_u32() % 4 {
+                    let field = r.next_u32() % 54;
+                    entries.push((field, r.next_u32() % 0x400, r.next_u32() % 3));
+                }
+                let handle = match seed % 5 {
+                    0 => None,
+                    1 => Some(u32::MAX),
+                    2 => Some(0x0300 | 5), // empty set slot
+                    3 => Some(0x0400 | 6), // empty index
+                    _ => Some(0x0200 | 7), // resolves to OBJ
+                };
+                if let Some(h) = handle {
+                    entries.push((54, h, 0));
+                }
+                if seed % 3 != 0 {
+                    entries.push((55, if seed % 6 == 1 { u32::MAX } else { 3 }, 0));
+                }
+                for (i, &(field, value, ty)) in entries.iter().enumerate() {
+                    let e = ENTRIES + 0x10 * i as u32;
+                    c.bus.write32(e, field);
+                    c.bus.write32(e + 4, value);
+                    c.bus.write32(e + 0xc, ty);
+                }
+                let n = if seed % 13 == 0 {
+                    u32::MAX
+                } else {
+                    entries.len() as u32
+                };
+                // Handle lookup tables.
+                c.bus.write32(GAME_GP + DPD_SCRIPT_MAN, SCRIPT_MAN);
+                c.bus.write32(SCRIPT_MAN + 0x290, OBJ);
+                c.bus.write32(GAME_GP + DPD_HANDLES, HANDLES);
+                c.bus.write32(HANDLES, HANDLE_TABLE);
+                c.bus.write32(HANDLE_TABLE + 8, SETS);
+                for j in 0..8 {
+                    c.bus.write32(SETS + 4 * j, if j == 5 { 0 } else { SET });
+                }
+                for k in 0..8 {
+                    let v = if k == 4 {
+                        r.next_u32() & 0xff
+                    } else {
+                        (OBJ >> 2) << 8
+                    };
+                    c.bus.write32(SET + 0x1c, SET_INDEX);
+                    c.bus.write32(SET_INDEX + 4 * k, v);
+                }
+                c.bus.write32(0xc, 0); // the null object's node
+                c.bus
+                    .write32(OBJ + 0xc, if seed % 7 == 3 { 0 } else { NODE });
+                c.bus.write32(NODE + 0xc, NODE_VT);
+                c.bus
+                    .write16(NODE_VT + 0x80, ((r.next_u32() % 0x10) & !3) as u16);
+                c.bus.write32(
+                    NODE_VT + 0x84,
+                    if seed % 4 == 1 { 0x0014_06c0 } else { FAKE },
+                );
+                // No modifier slots: AddDynamicParticleModifier frees the record.
+                c.bus.write32(NODE + 0x18, MODS);
+                c.bus.write32(MODS + 0x80, MOD_LIST);
+                c.bus.write32(MOD_LIST + 4, 0);
+                // The returned constant.
+                fill(c, &mut r, 0x004c_9098, 3);
+                if seed % 3 == 2 {
+                    let k = c.bus.read32(LOG_COUNT);
+                    c.bus.write32(LOG_UNWIND_AT, k + r.next_u32() % 6);
+                }
+                c.g[A0][0] = sx(OUT);
+                c.g[A1][0] = sx(n);
+                c.g[A2][0] = sx(ENTRIES);
+                c.pc = 0x002f_ee98;
+            },
+        );
+    }
+
+    /// RefPack_Unpack: a real RefPack stream (`game::misc` tests' generator)
+    /// whose type byte is every value of interest (0x10/0x11/0x90/0x91
+    /// decode; 0x46, 0x1c, 0x18, 0x9e, 0x98 and the values around and
+    /// between them do not), or a header without the `fb` marker.
+    #[test]
+    fn refpack_unpack_matches() {
+        use crate::game::misc::tests::refpack_stream;
+        const KINDS: &[u8] = &[
+            0x10, 0x11, 0x90, 0x91, 0x46, 0x47, 0x1c, 0x1d, 0x18, 0x19, 0x9e, 0x98, 0x99, 0x00,
+            0x02, 0x12, 0x1a, 0x1e, 0x30, 0x48, 0x60, 0x80, 0x92, 0x9a, 0xa0, 0xfe, 0x10, 0x90,
+        ];
+        check(
+            ee::s13::f_003b4740__generated,
+            refpack_unpack,
+            300,
+            &|c, seed| {
+                let mut r = fakes::machine(c, seed, 0x3b4740, 0);
+                let src = DATA + 0x1000;
+                // The generator's header variant follows the type byte's bits
+                // (0x80: 4-byte sizes, 0x01: packed size present).
+                let kind = KINDS[seed as usize % KINDS.len()];
+                let variant = (kind >> 7) as u32 | ((kind & 1) as u32) << 1;
+                let mut stream = refpack_stream(&mut r, variant);
+                stream[0] = kind;
+                if seed % 11 == 5 {
+                    stream[1] = r.next_u32() as u8 & 0xfa;
+                }
+                for (i, b) in stream.into_iter().enumerate() {
+                    c.bus.write8(src + i as u32, b);
+                }
+                c.g[A0][0] = sx(src);
+                c.g[A1][0] = sx(DATA + 0x4_0000);
+                c.pc = 0x003b_4740;
+            },
+        );
+    }
+
+    /// log: every `_LIB_VERSION` mode (IEEE, SVID, XOPEN, POSIX) against
+    /// positive, zero (both signs), negative, NaN and infinite arguments
+    /// (the real soft-float callees, matherr and errno from the ELF image).
+    #[test]
+    fn libm_log_matches() {
+        use crate::difftest::elf_image;
+        check(ee::s15::f_0040d610__generated, libm_log, 300, &|c, seed| {
+            elf_image(c);
+            let mut r = fakes::machine(c, seed, 0x40d610, 0);
+            let version = [u32::MAX, 0, 1, 2][(seed % 4) as usize];
+            c.bus.write32(LOG_LIB_VERSION, version);
+            let x: f64 = match (seed / 4) % 8 {
+                0 => 0.0,
+                1 => -0.0,
+                2 => -(1.0 + (r.next_u32() % 1000) as f64),
+                3 => f64::NAN,
+                4 => f64::INFINITY,
+                5 => f64::NEG_INFINITY,
+                6 => (r.next_u32() % 100_000) as f64 / 7.0 + 1e-9,
+                _ => f64::from_bits(r.next_u32() as u64), // denormal
+            };
+            c.g[A0][0] = x.to_bits();
+            c.pc = 0x0040_d610;
+        });
+    }
+
+    /// WorldObjFactory_AnimObject: the static defaults initialised or not;
+    /// -1..3 parameters with random slots/kinds (ints into float slots get
+    /// converted; slot 0 is the object id); the id is -1 (the world's
+    /// default object, sometimes none) or a section/object pair whose
+    /// section or entry may be empty. Found objects have no node (an
+    /// `AnimObject` is allocated from the pool allocator and constructed for
+    /// real; node flag 0x100 keeps WorldObj_ctor away from the focus
+    /// manager) or a node whose modifier check is a fake returning non-zero.
+    /// Not reached: a node whose modifier check returns 0.
+    #[test]
+    fn world_obj_factory_anim_object_matches() {
+        use crate::difftest::fakes::FAKE;
+        use crate::difftest::GAME_GP;
+        use crate::game::fe::feasyncfile::tests::alloc_base_3;
+        const RESULT_SLOT: u32 = DATA + 0x3000;
+        const PARAMS: u32 = DATA + 0x1000;
+        const DIR: u32 = DATA + 0x20_0000;
+        const SECTIONS: u32 = DIR + 0x100;
+        const TABLE: u32 = DIR + 0x200;
+        const SECTION: u32 = DIR + 0x300;
+        const ENTRIES: u32 = DIR + 0x400;
+        const WORLD: u32 = DIR + 0xa00;
+        const NODE: u32 = DIR + 0xc00;
+        const VT: u32 = DIR + 0xd00;
+        const PROCS: u32 = DIR + 0x1000;
+        const TAILS: u32 = DIR + 0x1800;
+        const OBJS: u32 = DIR + 0x2000;
+        check(
+            ee::s10::f_002fbcb8__generated,
+            world_obj_factory_anim_object,
+            300,
+            &|c, seed| {
+                let mut r = alloc_base_3(c, seed, 0x2f_bcb8, 1);
+                c.pc = 0x002f_bcb8;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // Static defaults.
+                let ready = seed % 4 != 0;
+                w(c, GAME_GP + WOFA_DEFAULTS_READY_GP, ready as u32);
+                fill(c, &mut r, WOFA_DEFAULTS, 11);
+                if ready && seed % 3 == 0 {
+                    w(c, WOFA_DEFAULTS, u32::MAX);
+                }
+                for i in 0..11 {
+                    w(c, WOFA_PARAM_KINDS + 4 * i, r.next_u32() % 4);
+                }
+                // Directory: sections 0..2 present, 3 empty; entries 0..2 objects, 3 empty.
+                w(c, GAME_GP + WOFA_DIRECTORY_GP, DIR);
+                w(c, DIR, SECTIONS);
+                w(c, SECTIONS + 8, TABLE);
+                for i in 0..4 {
+                    w(c, TABLE + 4 * i, if i == 3 { 0 } else { SECTION });
+                    let obj = OBJS + 0x100 * i;
+                    w(
+                        c,
+                        ENTRIES + 4 * i,
+                        if i == 3 {
+                            r.next_u32() & 0xff
+                        } else {
+                            (obj >> 2) << 8 | (r.next_u32() & 0xff)
+                        },
+                    );
+                    w(c, obj + 8, 0x100);
+                    w(
+                        c,
+                        obj + WOFA_OBJECT_NODE,
+                        if (seed / 4) % 3 == 0 { NODE } else { 0 },
+                    );
+                }
+                w(c, SECTION + 0x1c, ENTRIES);
+                w(c, GAME_GP + WOFA_WORLD_GP, WORLD);
+                w(
+                    c,
+                    WORLD + WOFA_WORLD_DEFAULT_OBJECT,
+                    if seed % 7 == 0 { 0 } else { OBJS + 0x100 },
+                );
+                // The node's modifier check: a fake (non-zero result).
+                w(c, NODE + 0xc, VT);
+                c.bus.write16(VT + 0x50, 0);
+                w(c, VT + 0x54, FAKE);
+                // Process list for the new object (list 1).
+                w(c, GAME_GP + 0x2898 + 4, PROCS);
+                w(c, PROCS + 0x44, r.next_u32());
+                w(c, PROCS + 0x44 + 8, TAILS);
+                w(c, PROCS + 0x44 + 0x28, TAILS + 0x40);
+                // The result value.
+                fill(c, &mut r, WOFA_RESULT, 3);
+                // Parameters.
+                let count: u32 = if seed % 11 == 0 { u32::MAX } else { seed % 4 };
+                for i in 0..3 {
+                    let p = PARAMS + 0x10 * i;
+                    let slot = r.next_u32() % 11;
+                    let value = if slot == 0 {
+                        match r.next_u32() % 4 {
+                            0 => u32::MAX,
+                            _ => (r.next_u32() % 4) | (r.next_u32() % 4) << 8,
+                        }
+                    } else {
+                        r.next_u32()
+                    };
+                    w(c, p, slot);
+                    w(c, p + 4, value);
+                    w(c, p + 8, r.next_u32());
+                    w(c, p + 0xc, r.next_u32() % 4);
+                }
+                c.g[A0][0] = sx(RESULT_SLOT + 4 * (seed % 2));
+                c.g[A1][0] = sx(count);
+                c.g[A2][0] = sx(PARAMS);
+            },
+        );
+    }
+
+    /// `WScriptFn_PlayObjectSound`: defaults initialised or not (default id
+    /// -1 or random), 0..3 parameters (or a negative count) of matching,
+    /// mismatching and int-for-float kinds, object ids -1 (the world's
+    /// default object, present or not), sections present or empty, entries
+    /// with and without an object; when an object is found, the real
+    /// `GetInstance` and `PlayObjectSound` (sound 0, or object sounds
+    /// suppressed: its early exits).
+    #[test]
+    fn wscript_fn_play_object_sound_matches() {
+        const RESULT_SLOT: u32 = DATA + 0x3000;
+        const PARAMS: u32 = DATA + 0x1000;
+        const AUDIO: u32 = DATA + 0x8000;
+        const DIR: u32 = DATA + 0x20_0000;
+        const SECTIONS: u32 = DIR + 0x100;
+        const TABLE: u32 = DIR + 0x200;
+        const SECTION: u32 = DIR + 0x300;
+        const ENTRIES: u32 = DIR + 0x400;
+        const WORLD: u32 = DIR + 0xa00;
+        const OBJS: u32 = DIR + 0x2000;
+        check(
+            ee::s10::f_002fff00__generated,
+            wscript_fn_play_object_sound,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x2f_ff00, 0);
+                c.pc = 0x002f_ff00;
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                // Static defaults.
+                let ready = seed % 4 != 0;
+                w(c, GAME_GP + OC300_POS_DEFAULTS_READY_GP, ready as u32);
+                crate::difftest::fill(c, &mut r, OC300_POS_DEFAULTS, 3);
+                let id = match seed % 5 {
+                    0 => u32::MAX,
+                    k => (r.next_u32() % 4) << 8 | (k - 1),
+                };
+                w(c, OC300_POS_DEFAULTS, id);
+                // Sound 0 or a non-0x66 one (suppressed below).
+                let sound = if seed % 3 == 0 {
+                    0
+                } else {
+                    1 + r.next_u32() % 0x60
+                };
+                w(c, OC300_POS_DEFAULTS + 4, sound);
+                for i in 0..3 {
+                    w(
+                        c,
+                        GAME_GP + OC300_POS_PARAM_KINDS_GP + 4 * i,
+                        r.next_u32() % 4,
+                    );
+                }
+                // Parameters: never slot 0 (the id) or slot 1 with a 0x66.
+                let count = match seed % 7 {
+                    6 => (r.next_u32() % 3).wrapping_neg(),
+                    k => k % 4,
+                };
+                for i in 0..4u32 {
+                    let p = PARAMS + 0x10 * i;
+                    w(c, p, 1 + r.next_u32() % 2);
+                    w(c, p + 4, 1 + r.next_u32() % 0x60);
+                    w(c, p + 8, r.next_u32());
+                    w(c, p + 0xc, r.next_u32() % 4);
+                }
+                // Directory: sections 0..2 present, 3 empty; entries 0..2
+                // objects, 3 empty.
+                w(c, GAME_GP + OC300_POS_DIRECTORY_GP, DIR);
+                w(c, DIR, SECTIONS);
+                w(c, SECTIONS + 8, TABLE);
+                for i in 0..4 {
+                    w(c, TABLE + 4 * i, if i == 3 { 0 } else { SECTION });
+                    let obj = OBJS + 0x100 * i;
+                    w(
+                        c,
+                        ENTRIES + 4 * i,
+                        if i == 3 {
+                            r.next_u32() & 0xff
+                        } else {
+                            (obj >> 2) << 8 | (r.next_u32() & 0xff)
+                        },
+                    );
+                    crate::difftest::fill(c, &mut r, obj, 0x20);
+                }
+                w(c, SECTION + 0x1c, ENTRIES);
+                w(c, GAME_GP + OC300_POS_WORLD_GP, WORLD);
+                w(
+                    c,
+                    WORLD + OC300_POS_WORLD_DEFAULT_OBJECT,
+                    if seed % 10 == 5 { 0 } else { OBJS + 0x100 },
+                );
+                // The audio system: object sounds suppressed (non-negative).
+                w(c, GAME_GP + 0x410, AUDIO);
+                w(c, AUDIO + 0x62a8, r.next_u32() & 0x7fff_ffff);
+                crate::difftest::fill(c, &mut r, OC300_POS_RESULT, 3);
+                c.g[A0][0] = sx(RESULT_SLOT);
+                c.g[A1][0] = count as i32 as i64 as u64;
+                c.g[A2][0] = sx(PARAMS);
+            },
         );
     }
 }

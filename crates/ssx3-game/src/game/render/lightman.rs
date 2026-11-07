@@ -106,6 +106,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "VfxVisualEffectsTest_Render",
     ),
     (0x0039_1480, vu0_copy_output_mem, "Vu0_CopyOutputMem"),
+    (0x0039_1418, vu0_load_regs_and_call, "Vu0_LoadRegsAndCall"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -2407,6 +2408,28 @@ pub fn vu0_copy_output_mem(c: &mut Cpu) {
     ret(c);
 }
 
+// ---------------------------------------------------------------------------
+// Vu0_LoadRegsAndCall (0x391418)
+
+/// `void Vu0_LoadRegsAndCall(void* unused, const Vec4 regs[16])` (0x391418):
+/// loads VF1..VF16 from the 16 quadwords at `regs`, sets VI27 to the
+/// microprogram address 0 and runs the VU0 microprogram there
+/// (`vcallmsr vi27`). Leaves v0 = 0.
+pub fn vu0_load_regs_and_call(c: &mut Cpu) {
+    c.cycles += 25;
+    let regs = r32(c, A1);
+    for vf in 1..=16u32 {
+        c.lqc2(vf as usize, regs.wrapping_add((vf - 1) * 0x10));
+    }
+    // The microprogram address, as VI27 expects it (byte address >> 3).
+    c.g[V0][0] = 0;
+    c.ctc2(V0, 27);
+    c.vu0().vnop();
+    c.vu0().vnop();
+    c.vcallmsr();
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3205,6 +3228,50 @@ pub(crate) mod tests {
                 fill(c, &mut r, dst, 0x190);
                 c.g[A1][0] = sx(dst);
                 schedule(c, &mut r, seed, 0x0039_1480);
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::RA as SENTINEL;
+
+    /// A microprogram at VU0 address 0 for `Vu0_LoadRegsAndCall`:
+    /// `vi1 = vi14`, then end. Hand-written microcode has no translation:
+    /// run it with the reference interpreter.
+    pub(crate) fn oc300_put_microprogram_at_0(c: &mut Cpu) {
+        ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+            .hw
+            .vu0
+            .fallback = Some(ssx3_ps2::vu::reference::run_program);
+        let at = 0x1100_0000;
+        c.bus.write32(at, 0x8000_7070); // IADD vi1, vi14, vi0
+        c.bus.write32(at + 4, 0x4000_02ff); // NOP, E
+    }
+
+    /// Loads 16 random quadwords into VF1..VF16 and runs the microprogram
+    /// at address 0.
+    #[test]
+    fn vu0_load_regs_and_call_matches() {
+        check(
+            ee::s12::f_00391418__generated,
+            vu0_load_regs_and_call,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x3914_1800 ^ seed as u64);
+                scramble(c, &mut r);
+                oc300_put_microprogram_at_0(c);
+                c.g[14][0] = r.next_u32() as u64 & 0xffff;
+                c.ctc2(14, 14);
+                let regs = DATA + 0x400 + 0x10 * (r.next_u32() % 16);
+                for q in 0..16u32 {
+                    crate::difftest::put_vec(
+                        c,
+                        regs + 0x10 * q,
+                        [r.next_u32(), r.next_u32(), r.next_u32(), r.next_u32()],
+                    );
+                }
+                c.g[A1][0] = ((r.next_u32() as u64) << 32) | regs as u64;
+                c.g[RA][0] = SENTINEL as u64;
+                c.pc = 0x0039_1418;
             },
         );
     }

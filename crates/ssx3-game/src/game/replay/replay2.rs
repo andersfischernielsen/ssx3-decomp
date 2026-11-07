@@ -341,6 +341,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         replay_find_rider_index,
         "Replay_FindRiderIndex",
     ),
+    (0x0027_07e0, replay_on_rider_launch, "Replay_OnRiderLaunch"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -5340,6 +5341,96 @@ pub fn replay_find_rider_index(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// Replay_OnRiderLaunch (0x2707e0)
+
+/// `Replay` busy flags: any non-zero one blocks new highlights (`+0x61c`,
+/// `+0x620`, `+0x610`, `+0x60c`, and the playing state at `+0`).
+pub(crate) const OC300_REPLAY_BUSY_FLAGS: [u32; 4] = [0x61c, 0x620, 0x610, 0x60c];
+
+pub(crate) const OC300_REPLAY_PLAYING: u32 = 0x0;
+
+/// `Replay_FindRiderIndex` (0x270730).
+pub(crate) const OC300_REPLAY_FIND_RIDER_INDEX: Callee = Callee {
+    addr: 0x0027_0730,
+    f: ee::s07::Replay_FindRiderIndex,
+};
+
+/// `Replay_BeginHighlight` (0x270b88).
+pub(crate) const OC300_REPLAY_BEGIN_HIGHLIGHT: Callee = Callee {
+    addr: 0x0027_0b88,
+    f: ee::s07::Replay_BeginHighlight,
+};
+
+/// `Replay_EmptyRiderHook` (0x2705a8).
+pub(crate) const OC300_REPLAY_EMPTY_RIDER_HOOK: Callee = Callee {
+    addr: 0x0027_05a8,
+    f: ee::s07::Replay_EmptyRiderHook,
+};
+
+/// `void Replay_OnRiderLaunch(Replay* self, int riderId, void* data)`
+/// (0x2707e0): unless the replay is busy (any of the flags at
+/// `+0x61c/+0x620/+0x610/+0x60c` or playing at `+0`), find the rider's index
+/// (`Replay_FindRiderIndex(riderId)`) and, when found, begin a highlight
+/// for it (`Replay_BeginHighlight(self, index, data)`) and run the (empty)
+/// rider hook.
+pub fn replay_on_rider_launch(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 9;
+        let frame = Frame::open(c, 0x30);
+        frame.save(c, S0, 0x20);
+        frame.save(c, S1, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        frame.save_ra(c, 0);
+        c.g[A0][0] = c.g[A1][0];
+        let this = r32(c, S0);
+        c.g[V0][0] = Addr(this).off(OC300_REPLAY_BUSY_FLAGS[0]).lw(c);
+        c.g[S1][0] = c.g[A2][0];
+        // The first flag set: the tail charges one more cycle.
+        let mut tail = c.g[V0][0] != 0;
+        if !tail {
+            let mut busy = false;
+            for off in OC300_REPLAY_BUSY_FLAGS[1..]
+                .iter()
+                .copied()
+                .chain([OC300_REPLAY_PLAYING])
+            {
+                c.cycles += 3;
+                c.g[V0][0] = Addr(this).off(off).lw(c);
+                if c.g[V0][0] != 0 {
+                    busy = true;
+                    break;
+                }
+            }
+            if !busy {
+                tail = true;
+                c.cycles += 4;
+                OC300_REPLAY_FIND_RIDER_INDEX.call(c, 0x0027_083c)?;
+                let found = (c.g[V0][0] as i64) >= 0;
+                c.g[A0][0] = c.g[S0][0];
+                if found {
+                    c.cycles += 6;
+                    c.g[A1][0] = c.g[V0][0];
+                    c.g[A2][0] = c.g[S1][0];
+                    OC300_REPLAY_BEGIN_HIGHLIGHT.call(c, 0x0027_0850)?;
+                    c.g[A0][0] = c.g[S0][0];
+                    c.g[A1][0] = c.g[S1][0];
+                    OC300_REPLAY_EMPTY_RIDER_HOOK.call(c, 0x0027_085c)?;
+                }
+            }
+        }
+        if tail {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x20);
+        c.cycles += 4;
+        frame.restore(c, S1, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -7389,6 +7480,54 @@ pub(crate) mod tests {
             replay_find_rider_index,
             300,
             &replay_find_rider_fixture,
+        );
+    }
+    use super::*;
+
+    /// The world and riders of `Replay_FindRiderIndex`'s test (found at any
+    /// index, not found, no riders; fake id getters, some unwinding), the
+    /// busy flags each set or all clear, and the highlight slot of the found
+    /// rider in use (early out) or free (the real `HighlightSlotBegin`:
+    /// snapshot bit, value, and the 0xa0-byte copy from `data`, aligned or
+    /// not).
+    #[test]
+    fn replay_on_rider_launch_matches() {
+        use crate::game::replay::replay2::tests::replay_find_rider_fixture;
+        check(
+            ee::s07::f_002707e0__generated,
+            replay_on_rider_launch,
+            300,
+            &|c, seed| {
+                replay_find_rider_fixture(c, seed);
+                let id = c.g[A0][0];
+                let mut r = Rng(0x2707_e000 ^ seed as u64);
+                let this = DATA + 0x3_0000;
+                let snapshot = DATA + 0x3_8000;
+                let data = DATA + 0x3_9000 + (r.next_u32() % 2) * 4;
+                crate::difftest::fill(c, &mut r, data, 0x30);
+                crate::difftest::fill(c, &mut r, snapshot, 0x40);
+                let busy = seed / 2 % 7;
+                for (i, off) in OC300_REPLAY_BUSY_FLAGS
+                    .into_iter()
+                    .chain([OC300_REPLAY_PLAYING])
+                    .enumerate()
+                {
+                    let set = busy as usize == i + 1;
+                    c.bus
+                        .write32(this + off, if set { 1 + r.next_u32() % 4 } else { 0 });
+                }
+                c.bus.write32(this + 0x3b4, snapshot);
+                for k in 0..5u32 {
+                    let slot = this + 0x494 + 0xb4 * k;
+                    c.bus.write32(slot, r.next_u32() % 8);
+                    let used = r.next_u32() % 3 == 0;
+                    c.bus.write32(slot + 0xb0, if used { 1 } else { 0 });
+                }
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = id;
+                c.g[A2][0] = sx(data);
+                c.pc = 0x0027_07e0;
+            },
         );
     }
 }

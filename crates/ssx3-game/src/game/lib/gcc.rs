@@ -149,6 +149,8 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
     (0x0041_1f70, subdf3, "__subdf3"),
     (0x0041_39f8, fixunssfsi, "__fixunssfsi"),
     (0x0041_1f18, adddf3, "__adddf3"),
+    (0x0041_2280, divdf3, "__divdf3"),
+    (0x0041_2608, fixdfsi, "__fixdfsi"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4609,6 +4611,349 @@ pub fn adddf3(c: &mut Cpu) {
     });
 }
 
+pub(crate) mod fixdfsi_unpacked {
+
+    pub const CLASS: u32 = 0x0;
+
+    pub const SIGN: u32 = 0x4;
+
+    pub const EXP: u32 = 0x8;
+
+    pub const FRACTION: u32 = 0x10;
+
+    pub const CLASS_ZERO: u64 = 2;
+
+    pub const CLASS_INFINITY: u64 = 4;
+
+    /// The fraction's binary point (`FRACBITS + NGARDS`).
+    pub const FRACBITS: u64 = 0x3c;
+}
+
+/// `int __fixdfsi(double x)` (0x412608, libgcc soft-float): truncate `x`
+/// (in a0) to a signed int: zero, NaN and |x| < 1 give 0, infinity and
+/// |x| >= 2^31 saturate to 0x7fffffff / 0x80000000 by sign, otherwise the
+/// fraction shifted down to the integer part, negated for negative `x`.
+/// Resumable at 0x412638 (the "answer 0" block, reached through an event
+/// check). Frame 0x40 (the unpacked number at +0, `x` at +0x20).
+pub fn fixdfsi(c: &mut Cpu) {
+    use fixdfsi_unpacked::*;
+    guest(c, |c| {
+        let frame = Frame { size: 0x40 };
+        'zero: {
+            match c.pc {
+                FIXDFSI_ENTRY => {}
+                FIXDFSI_ZERO => break 'zero,
+                pc => {
+                    c.jump_out(pc, FIXDFSI_ENTRY, FIXDFSI_END);
+                    return Ok(());
+                }
+            }
+            c.cycles += 10;
+            let frame = Frame::open(c, 0x40);
+            let s = sp(c);
+            c.sd(s.wrapping_add(0x20), c.g[A0][0]);
+            c.g[A1][0] = c.g[SP][0];
+            frame.save_ra(c, 0x30);
+            c.g[A0][0] = sx(s.wrapping_add(0x20));
+            Callee {
+                addr: 0x0041_1c38,
+                f: ee::s15::__unpack_d,
+            }
+            .call(c, 0x0041_2620)?;
+            let class = c.lw(s.wrapping_add(CLASS));
+            c.g[V1][0] = class;
+            c.g[V0][0] = (class < 2) as u64;
+            if class == CLASS_ZERO {
+                break 'zero;
+            }
+            // NaN.
+            c.cycles += 2;
+            let nan = c.g[V0][0] != 0;
+            c.g[V0][0] = class ^ CLASS_INFINITY;
+            if nan {
+                break 'zero;
+            }
+            c.cycles += 2;
+            let exp = c.lw(s.wrapping_add(EXP));
+            c.g[A0][0] = exp;
+            let mut saturate = class == CLASS_INFINITY;
+            if !saturate {
+                c.cycles += 2;
+                c.g[V0][0] = ((exp as i64) < 31) as u64;
+                if (exp as i64) < 0 {
+                    // |x| < 1: a backward branch to the "answer 0" block,
+                    // with an event check.
+                    if back_edge_unwinds(c, FIXDFSI_ZERO) {
+                        return Ok(());
+                    }
+                    break 'zero;
+                }
+                c.cycles += 2;
+                c.g[V1][0] = FRACBITS;
+                saturate = c.g[V0][0] == 0;
+            }
+            let result = if saturate {
+                // Infinity or |x| >= 2^31.
+                c.cycles += 6;
+                let sign = c.lw(s.wrapping_add(SIGN));
+                c.g[V1][0] = sign;
+                c.g[A0][0] = 0xffff_ffff_8000_0000;
+                if sign != 0 {
+                    0xffff_ffff_8000_0000
+                } else {
+                    0x7fff_ffff
+                }
+            } else {
+                c.cycles += 8;
+                let fraction = c.ld(s.wrapping_add(FRACTION));
+                let shift = sx((FRACBITS as u32).wrapping_sub(exp as u32));
+                let int = sx((fraction >> (shift & 63)) as u32);
+                let sign = c.lw(s.wrapping_add(SIGN));
+                c.g[A0][0] = sign;
+                let negated = sx(0u32.wrapping_sub(int as u32));
+                c.g[V1][0] = negated;
+                if sign != 0 {
+                    negated
+                } else {
+                    int
+                }
+            };
+            c.g[V0][0] = result;
+            fixdfsi_exit(c, frame);
+            return Ok(());
+        }
+        c.cycles += 2;
+        c.g[V0][0] = 0;
+        fixdfsi_exit(c, frame);
+        Ok(())
+    })
+}
+
+pub(crate) const FIXDFSI_ENTRY: u32 = 0x0041_2608;
+
+/// The "answer 0" block (an event-check resume point).
+pub(crate) const FIXDFSI_ZERO: u32 = 0x0041_2638;
+
+pub(crate) const FIXDFSI_END: u32 = 0x0041_269c;
+
+/// The epilogue of `__fixdfsi`.
+pub(crate) fn fixdfsi_exit(c: &mut Cpu, frame: Frame) {
+    c.cycles += 3;
+    frame.restore_ra(c, 0x30);
+    frame.close(c);
+}
+
+// ---------------------------------------------------------------------------
+// __divdf3 (0x412280)
+
+pub(crate) const DIVDF3_ENTRY: u32 = 0x0041_2280;
+
+/// The head of the long-division loop (an event-check resume point).
+pub(crate) const DIVDF3_LOOP: u32 = 0x0041_2380;
+
+pub(crate) const DIVDF3_END: u32 = 0x0041_23e8;
+
+/// libgcc's canonical NaN (`__thenan_df`).
+pub(crate) const DIVDF3_THE_NAN: u32 = 0x0052_adc0;
+
+/// `double __divdf3(double a, double b)` (0x412280, libgcc soft-float):
+/// unpack both (a at sp+0, b at sp+0x20), and pack, as the result: a NaN
+/// operand (a first); for an infinite or zero `a`, `a` itself (with the
+/// combined sign) unless `b` is of the same class, which gives the
+/// canonical NaN; `a / inf` = zero; `a / 0` = infinity; else the quotient
+/// of the fractions by restoring long division (one bit per step from
+/// bit 60, the exponent difference adjusted when a's fraction is the
+/// smaller), rounded to even on the guard bits. Resumable at the division
+/// loop's head 0x412380 (an event check). Frame 0x70 (s0 and ra saved
+/// with `sd`).
+pub fn divdf3(c: &mut Cpu) {
+    use fixdfsi_unpacked::{CLASS, EXP, FRACTION, SIGN};
+    guest(c, |c| {
+        let frame = Frame { size: 0x70 };
+        let resumed = match c.pc {
+            DIVDF3_ENTRY => false,
+            DIVDF3_LOOP => true,
+            pc => {
+                c.jump_out(pc, DIVDF3_ENTRY, DIVDF3_END);
+                return Ok(());
+            }
+        };
+        'pack: {
+            if !resumed {
+                c.cycles += 16;
+                let frame = Frame::open(c, 0x70);
+                let s = sp(c);
+                c.sd(s.wrapping_add(0x40), c.g[A0][0]);
+                c.sd(s.wrapping_add(0x48), c.g[A1][0]);
+                c.g[A0][0] = sx(s.wrapping_add(0x40));
+                c.sd(s.wrapping_add(0x50), c.g[S0][0]);
+                frame.save_ra(c, 0x60);
+                c.g[A1][0] = c.g[SP][0];
+                Callee {
+                    addr: 0x0041_1c38,
+                    f: ee::s15::__unpack_d,
+                }
+                .call(c, 0x0041_22a0)?;
+                let a = sp(c);
+                let b = a.wrapping_add(0x20);
+                c.g[S0][0] = sx(b);
+                c.g[A0][0] = sx(a.wrapping_add(0x48));
+                c.g[A1][0] = sx(b);
+                Callee {
+                    addr: 0x0041_1c38,
+                    f: ee::s15::__unpack_d,
+                }
+                .call(c, 0x0041_22b0)?;
+                let a = sp(c);
+                let a_class = c.lw(a.wrapping_add(CLASS));
+                c.g[A3][0] = a_class;
+                c.g[V0][0] = (a_class < 2) as u64;
+                c.g[A1][0] = c.g[SP][0];
+                if a_class < 2 {
+                    // a is NaN.
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[SP][0];
+                    break 'pack;
+                }
+                c.cycles += 4;
+                let b_class = c.lw(a.wrapping_add(0x20 + CLASS));
+                c.g[A2][0] = b_class;
+                c.g[V0][0] = (b_class < 2) as u64;
+                c.g[A0][0] = c.g[S0][0];
+                if b_class < 2 {
+                    // b is NaN.
+                    break 'pack;
+                }
+                // a.sign ^= b.sign.
+                c.cycles += 6;
+                let a_sign = c.lw(a.wrapping_add(SIGN));
+                c.g[A0][0] = a_class ^ 4;
+                let b_sign = c.lw(a.wrapping_add(0x20 + SIGN));
+                c.g[V1][0] = b_sign;
+                c.g[V0][0] = a_sign ^ b_sign;
+                c.sw(a.wrapping_add(SIGN), c.g[V0][0]);
+                let mut a_special = a_class == 4;
+                if !a_special {
+                    c.cycles += 3;
+                    a_special = a_class == 2;
+                    c.g[V0][0] = b_class ^ 4;
+                }
+                if a_special {
+                    // inf / x or 0 / x: a, or NaN when b is of the same class.
+                    c.cycles += 2;
+                    c.g[A0][0] = c.g[SP][0];
+                    if a_class != b_class {
+                        break 'pack;
+                    }
+                    c.cycles += 3;
+                    c.g[V0][0] = 0x0053_0000;
+                    c.g[A0][0] = sx(DIVDF3_THE_NAN);
+                    break 'pack;
+                }
+                c.cycles += 2;
+                c.g[V0][0] = b_class ^ 2;
+                if b_class == 4 {
+                    // a / inf = 0.
+                    c.cycles += 4;
+                    c.sd(a.wrapping_add(FRACTION), 0);
+                    c.g[A0][0] = c.g[SP][0];
+                    c.sw(a.wrapping_add(EXP), 0);
+                    break 'pack;
+                }
+                c.cycles += 2;
+                c.g[V1][0] = c.lw(a.wrapping_add(EXP));
+                if b_class == 2 {
+                    // a / 0 = infinity.
+                    c.cycles += 4;
+                    c.g[V0][0] = 4;
+                    c.g[A0][0] = c.g[SP][0];
+                    c.sw(a.wrapping_add(CLASS), 4);
+                    break 'pack;
+                }
+                // The quotient's exponent; normalise the numerator.
+                c.cycles += 7;
+                let b_exp = c.lw(a.wrapping_add(0x20 + EXP));
+                c.g[A0][0] = c.ld(a.wrapping_add(FRACTION));
+                c.g[T0][0] = c.ld(a.wrapping_add(0x20 + FRACTION));
+                c.g[V0][0] = sx((c.g[V1][0] as u32).wrapping_sub(b_exp as u32));
+                c.g[A2][0] = (c.g[A0][0] < c.g[T0][0]) as u64;
+                c.sw(a.wrapping_add(EXP), c.g[V0][0]);
+                if c.g[A2][0] != 0 {
+                    c.cycles += 4;
+                    c.g[V0][0] = sx((c.g[V0][0] as u32).wrapping_sub(1));
+                    c.g[A0][0] <<= 1;
+                    c.sw(a.wrapping_add(EXP), c.g[V0][0]);
+                    c.g[A2][0] = (c.g[A0][0] < c.g[T0][0]) as u64;
+                }
+                c.cycles += 4;
+                c.g[V0][0] = 1 << 60; // the quotient bit
+                c.g[A3][0] = 0; // the quotient
+            }
+            // Restoring division: a0 numerator, t0 denominator, v0 bit, a3
+            // quotient (registers: the loop can be resumed at its head).
+            let mut at_head = resumed;
+            loop {
+                if at_head {
+                    c.cycles += 1;
+                    c.g[A2][0] = (c.g[A0][0] < c.g[T0][0]) as u64;
+                }
+                at_head = true;
+                c.cycles += 2;
+                if c.g[A2][0] == 0 {
+                    c.cycles += 3;
+                    c.g[A3][0] |= c.g[V0][0];
+                    c.g[A0][0] = c.g[A0][0].wrapping_sub(c.g[T0][0]);
+                }
+                c.g[V0][0] >>= 1;
+                c.cycles += 2;
+                let more = c.g[V0][0] != 0;
+                c.g[A0][0] <<= 1;
+                if !more {
+                    break;
+                }
+                if back_edge_unwinds(c, DIVDF3_LOOP) {
+                    return Ok(());
+                }
+            }
+            // Round to even on the guard bits (0x80 exactly: up when odd,
+            // or when a remainder is left).
+            c.cycles += 4;
+            let q = c.g[A3][0];
+            c.g[V1][0] = q & 0xff;
+            c.g[V0][0] = 0x80;
+            let result_frac = c.g[A1][0] as u32;
+            if q & 0xff == 0x80 {
+                c.cycles += 3;
+                c.g[V0][0] = q.wrapping_add(0x80);
+                if q & 0x100 != 0 {
+                    c.cycles += 2;
+                    c.g[A3][0] = q.wrapping_add(0x80);
+                } else {
+                    c.cycles += 1;
+                    if c.g[A0][0] != 0 {
+                        c.g[A3][0] = c.g[V0][0];
+                    }
+                }
+                c.cycles += 1;
+            }
+            c.sd(result_frac.wrapping_add(FRACTION), c.g[A3][0]);
+            c.cycles += 1;
+            c.g[A0][0] = c.g[A1][0];
+        }
+        c.cycles += 6;
+        Callee {
+            addr: 0x0041_1b08,
+            f: ee::s15::__pack_d,
+        }
+        .call(c, 0x0041_23d8)?;
+        let s = sp(c);
+        frame.restore_ra(c, 0x60);
+        c.g[S0][0] = c.ld(s.wrapping_add(0x50));
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     crate::difftest::events::driven!(oc238_gen_fixunssfsi, ee::s15::f_004139f8__generated);
@@ -6130,5 +6475,267 @@ pub(crate) mod tests {
             c.g[A0][0] = a;
             c.g[A1][0] = b;
         });
+    }
+    use super::*;
+    use crate::difftest::fakes::vtable;
+    pub(crate) use crate::game::object::debouncenode::crowd_man3d_save_state;
+    use crate::game::scripter::ssxscriptengine::tests::{
+        alloc as uv_scroll_alloc, heap_init as uv_scroll_heap_init,
+    };
+    pub(crate) use crate::game::ui::focusman::focus_man_save_state;
+
+    pub(crate) const FOCUS: u32 = DATA;
+
+    pub(crate) const FOCUS_STREAM: u32 = DATA + 0x400;
+
+    pub(crate) const FOCUS_STREAM_VT: u32 = DATA + 0x500;
+
+    /// A FocusMan with 0..4 entries (sometimes a negative count) and 0..4
+    /// values, and a stream whose Write (+0xc) and WriteInt (+0x2c) are fakes.
+    pub(crate) fn focus_man_setup(c: &mut Cpu, seed: u32, calls: u32) -> Rng {
+        let mut r = machine(c, seed, 0x0010_3480, calls);
+        c.pc = 0x0010_3480;
+        let count = match seed % 5 {
+            0 => 0,
+            1 => 0xffff_fffe,
+            _ => 1 + r.next_u32() % 4,
+        };
+        let values = match seed % 7 {
+            0 => 0,
+            1 => 0x8000_0000,
+            _ => 1 + r.next_u32() % 4,
+        };
+        c.bus
+            .write32(FOCUS + crate::game::ui::focusman::FOCUS_COUNT, count);
+        c.bus
+            .write32(FOCUS + crate::game::ui::focusman::FOCUS_VALUE_COUNT, values);
+        for i in 0..4 {
+            c.bus.write32(
+                FOCUS + crate::game::ui::focusman::FOCUS_VALUES + 4 * i,
+                r.next_u32(),
+            );
+        }
+        c.bus.write32(FOCUS_STREAM, FOCUS_STREAM_VT);
+        c.bus
+            .write16(FOCUS_STREAM_VT + 0x8, (r.next_u32() % 0x40) as u16 & !3);
+        c.bus.write32(FOCUS_STREAM_VT + 0xc, FAKE);
+        c.bus
+            .write16(FOCUS_STREAM_VT + 0x28, (r.next_u32() % 0x40) as u16 & !3);
+        c.bus.write32(FOCUS_STREAM_VT + 0x2c, FAKE + 0x10);
+        c.g[A0][0] = sx(FOCUS);
+        c.g[A1][0] = sx(FOCUS_STREAM);
+        r
+    }
+
+    driven!(
+        focus_man_save_state_gen_driven,
+        ee::s00::f_00103480__generated
+    );
+
+    driven!(focus_man_save_state_hand_driven, focus_man_save_state);
+
+    /// `FocusMan_SaveState` with events due at the loops' back edges.
+    #[test]
+    fn focus_man_save_state_events_match() {
+        check_events(
+            focus_man_save_state_gen_driven,
+            focus_man_save_state_hand_driven,
+            96,
+            &|c, seed| {
+                let mut r = focus_man_setup(c, seed | 2, 0);
+                let mode = schedule(c, &mut r, seed, 0x0010_3480);
+                c.next_event = c.cycles + 30 + (r.next_u32() % 40) as u64;
+                mode
+            },
+        );
+    }
+
+    /// A double for the soft-float conversions: zero, NaN, infinity, |x| < 1,
+    /// |x| >= 2^31 (around the 2^31 edge too) and in-range values, either
+    /// sign.
+    pub(crate) fn fixdfsi_operand(r: &mut Rng, seed: u32) -> u64 {
+        let sign = (r.next_u32() as u64 & 1) << 63;
+        let frac = (r.next_u32() as u64) << 20 | r.next_u32() as u64 & 0xf_ffff;
+        match seed % 8 {
+            0 => sign,
+            1 => 0x7ff0_0000_0000_0000 | frac | 1,
+            2 => 0x7ff0_0000_0000_0000 | sign,
+            3 => sign | ((1023 + 30 + r.next_u32() % 3) as u64) << 52 | frac,
+            4 => sign | ((1000 + r.next_u32() % 23) as u64) << 52 | frac,
+            5 => sign | ((1023 + 31 + r.next_u32() % 100) as u64) << 52 | frac,
+            _ => sign | ((1023 + r.next_u32() % 31) as u64) << 52 | frac,
+        }
+    }
+
+    /// A `__fixdfsi` call: the operand (|x| < 1 on most seeds when `small`),
+    /// sometimes entered at the resume point 0x412638 inside a frame whose
+    /// saved ra returns to the test's sentinel. Returns the entry.
+    pub(crate) fn fixdfsi_setup(c: &mut Cpu, seed: u32, small: bool) -> u32 {
+        let mut r = Rng(0x0041_2608 ^ (seed as u64) << 20);
+        scramble(c, &mut r);
+        let x = fixdfsi_operand(&mut r, if small && seed % 4 != 0 { 4 } else { seed });
+        c.g[A0][0] = x;
+        if !small && seed % 10 == 7 {
+            c.g[SP][0] = (crate::difftest::SP - 0x40) as u64;
+            fill(c, &mut r, crate::difftest::SP - 0x40, 16);
+            c.bus
+                .write64(crate::difftest::SP - 0x10, crate::difftest::RA as u64);
+            FIXDFSI_ZERO
+        } else {
+            FIXDFSI_ENTRY
+        }
+    }
+
+    driven!(fixdfsi_gen_driven, ee::s15::f_00412608__generated);
+
+    driven!(fixdfsi_hand_driven, fixdfsi);
+
+    /// `__fixdfsi` through the real `__unpack_d`: every class and exponent
+    /// range, the resume entry, and events at the |x| < 1 branch.
+    #[test]
+    fn fixdfsi_matches() {
+        check(ee::s15::f_00412608__generated, fixdfsi, 300, &|c, seed| {
+            let entry = fixdfsi_setup(c, seed, false);
+            c.pc = entry;
+        });
+        check_events(fixdfsi_gen_driven, fixdfsi_hand_driven, 120, &|c, seed| {
+            let entry = fixdfsi_setup(c, seed, true);
+            let mut r = Rng(0x0041_2608 ^ seed as u64);
+            let mode = schedule(c, &mut r, seed, entry);
+            c.next_event = c.cycles + 4;
+            mode
+        });
+    }
+
+    /// A double for `__divdf3`: zeros, NaNs, infinities, denormals, 1.0 and
+    /// normal numbers of either sign.
+    pub(crate) fn divdf3_operand(r: &mut Rng) -> u64 {
+        let sign = ((r.next_u32() & 1) as u64) << 63;
+        let mant = ((r.next_u32() as u64) << 32 | r.next_u32() as u64) & ((1u64 << 52) - 1);
+        sign | match r.next_u32() % 10 {
+            0 => 0,
+            1 => mant,
+            2 => 0x7ff0_0000_0000_0000,
+            3 => 0x7ff0_0000_0000_0000 | mant | 1,
+            4 => 1.0f64.to_bits(),
+            // Short mantissas: exact quotients and halfway roundings.
+            5 => (((r.next_u32() % 200 + 923) as u64) << 52) | (mant & 0xffff_0000_0000_0000 >> 12),
+            _ => (((r.next_u32() % 200 + 923) as u64) << 52) | mant,
+        }
+    }
+
+    /// `__divdf3` setup: two operands, the game image (the canonical NaN), and
+    /// sometimes a resume at the loop head with random division registers
+    /// inside a frame whose saved ra returns to the test's sentinel.
+    pub(crate) fn divdf3_setup(c: &mut Cpu, seed: u32, plain: bool) -> u32 {
+        let mut r = Rng(0x0041_2280 ^ (seed as u64) << 8);
+        scramble(c, &mut r);
+        elf_image(c); // the canonical NaN (__thenan_df)
+        let a = divdf3_operand(&mut r);
+        let b = if seed % 9 == 0 {
+            a ^ (r.next_u32() as u64 & 1) << 63
+        } else {
+            divdf3_operand(&mut r)
+        };
+        c.g[A0][0] = a;
+        c.g[A1][0] = b;
+        if !plain && seed % 10 == 7 {
+            // Resume: a's unpacked number at sp, the loop registers.
+            let s = crate::difftest::SP - 0x70;
+            c.g[SP][0] = s as u64;
+            fill(c, &mut r, s, 0x70 / 4);
+            c.bus.write32(s, 3);
+            c.bus.write64(s + 0x60, crate::difftest::RA as u64);
+            c.g[A1][0] = s as u64;
+            let den = (1u64 << 60) | (r.next_u32() as u64) << 20;
+            c.g[T0][0] = den;
+            c.g[A0][0] = (1u64 << 60) | (r.next_u32() as u64) << 24;
+            c.g[V0][0] = 1u64 << (r.next_u32() % 61);
+            c.g[A3][0] = (r.next_u32() as u64) << 20 & !(c.g[V0][0] * 2 - 1);
+            DIVDF3_LOOP
+        } else {
+            DIVDF3_ENTRY
+        }
+    }
+
+    driven!(divdf3_gen_driven, ee::s15::f_00412280__generated);
+
+    driven!(divdf3_hand_driven, divdf3);
+
+    /// `__divdf3` through the real `__unpack_d`/`__pack_d`: every class pair,
+    /// equal magnitudes, normal quotients, the resume entry, and events in
+    /// the division loop.
+    #[test]
+    fn divdf3_matches() {
+        check(ee::s15::f_00412280__generated, divdf3, 300, &|c, seed| {
+            let entry = divdf3_setup(c, seed, false);
+            c.pc = entry;
+        });
+        check_events(divdf3_gen_driven, divdf3_hand_driven, 120, &|c, seed| {
+            let entry = divdf3_setup(c, seed, true);
+            let mut r = Rng(0x0041_2280 ^ seed as u64);
+            // Normal operands: the division loop runs.
+            c.g[A0][0] = ((1000 + r.next_u32() % 40) as u64) << 52 | r.next_u32() as u64;
+            c.g[A1][0] = ((1000 + r.next_u32() % 40) as u64) << 52 | (r.next_u32() as u64) << 12;
+            let mode = schedule(c, &mut r, seed, entry);
+            c.next_event = c.cycles + 40 + (r.next_u32() % 300) as u64;
+            mode
+        });
+    }
+
+    pub(crate) const CROWD: u32 = DATA;
+
+    pub(crate) const CROWD_STREAM: u32 = DATA + 0x1000;
+
+    pub(crate) const CROWD_STREAM_VT: u32 = DATA + 0x1100;
+
+    /// Five crowd groups, used (random id) or unused (-1), and a stream
+    /// whose Write (+0xc) is a fake.
+    pub(crate) fn crowd_man3d_save_setup(c: &mut Cpu, seed: u32, calls: u32) -> Rng {
+        let mut r = machine(c, seed, 0x0034_41a8, calls);
+        c.pc = 0x0034_41a8;
+        for g in 0..5 {
+            let id = if (seed >> g) & 1 == 0 || seed % 5 == 0 {
+                0xffff_ffff
+            } else {
+                r.next_u32() % 64
+            };
+            c.bus.write32(
+                CROWD
+                    + g * crate::game::object::debouncenode::CROWD_GROUP_SIZE
+                    + crate::game::object::debouncenode::CROWD_GROUP_ID,
+                id,
+            );
+        }
+        c.bus.write32(CROWD_STREAM, CROWD_STREAM_VT);
+        c.bus
+            .write16(CROWD_STREAM_VT + 0x8, (r.next_u32() % 0x40) as u16 & !3);
+        c.bus.write32(CROWD_STREAM_VT + 0xc, FAKE);
+        c.g[A0][0] = sx(CROWD);
+        c.g[A1][0] = sx(CROWD_STREAM);
+        r
+    }
+
+    driven!(
+        crowd_man3d_save_state_gen_driven,
+        ee::s11::f_003441a8__generated
+    );
+
+    driven!(crowd_man3d_save_state_hand_driven, crowd_man3d_save_state);
+
+    /// `CrowdMan3d_SaveState` with events due at the loop's back edge.
+    #[test]
+    fn crowd_man3d_save_state_events_match() {
+        check_events(
+            crowd_man3d_save_state_gen_driven,
+            crowd_man3d_save_state_hand_driven,
+            96,
+            &|c, seed| {
+                let mut r = crowd_man3d_save_setup(c, seed, 0);
+                let mode = schedule(c, &mut r, seed, 0x0034_41a8);
+                c.next_event = c.cycles + 20 + (r.next_u32() % 60) as u64;
+                mode
+            },
+        );
     }
 }

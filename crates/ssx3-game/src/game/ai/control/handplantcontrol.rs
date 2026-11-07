@@ -189,6 +189,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_ground_state_save_state,
         "RiderGroundState_SaveState",
     ),
+    (
+        0x0013_a968,
+        rider_air_state_play_land_anim2,
+        "RiderAirState_PlayLandAnim2",
+    ),
 ];
 
 /// Direct call targets, as the generated body calls them (the shard alias,
@@ -8247,6 +8252,135 @@ pub fn rider_handplant_state_save_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// RiderAirState_PlayLandAnim2 (0x13a968)
+
+/// gp-relative literals: the hard-landing speed (-2222.22), pi and the
+/// medium-landing speed (-1250.0).
+pub(crate) const LAND2_HARD_SPEED_GP: u32 = 0x719c;
+
+pub(crate) const LAND2_PI_GP: u32 = 0x7198;
+
+pub(crate) const LAND2_MEDIUM_SPEED_GP: u32 = 0x7194;
+
+/// Air state -> its rider.
+pub(crate) const LAND2_RIDER: u32 = 0x4;
+
+/// Rider -> its anim controller.
+pub(crate) const LAND2_RIDER_ANIM: u32 = 0x784;
+
+/// Rider -> the landing spin angle (radians).
+pub(crate) const LAND2_RIDER_SPIN: u32 = 0x2dc;
+
+/// `AnimController_PlayAnim` (through the function table).
+pub(crate) const LAND2_PLAY_ANIM: u32 = 0x0031_28e8;
+
+/// `void RiderAirState::PlayLandAnim2(float vy)` (0x13a968): a very hard
+/// landing (`vy < -2222.2`) plays anim 0x3f and clears the spin angle;
+/// otherwise an over-rotated spin plays 0x42 (< -pi) or 0x43 (> pi), and
+/// a straight landing 0x3e (`vy < -1250`) or 0x3d. Each through
+/// `AnimController_PlayAnim(anim, id, 0, -1.0)`. Frame 0x20 (s0).
+pub fn rider_air_state_play_land_anim2(c: &mut Cpu) {
+    use crate::abi::set_fcc;
+    use crate::ps2f::FpuF32;
+    guest(c, |c| {
+        c.cycles += 7;
+        c.f[0] = land2_gp_lit(c, LAND2_HARD_SPEED_GP);
+        let frame = Frame::open(c, 0x20);
+        frame.save(c, S0, 0x10);
+        let hard = FpuF32(c.f[12]).lt(FpuF32(c.f[0]));
+        set_fcc(c, hard);
+        frame.save_ra(c, 0);
+        c.g[S0][0] = c.g[A0][0];
+        if hard {
+            c.cycles += 10;
+            let state = c.g[S0][0] as u32;
+            c.g[V0][0] = Addr(state.wrapping_add(LAND2_RIDER)).lw(c);
+            c.g[A1][0] = 0x3f;
+            c.g[AT][0] = 0xffff_ffff_bf80_0000;
+            c.f[12] = 0xbf80_0000;
+            c.g[A2][0] = 0;
+            c.g[A0][0] = Addr((c.g[V0][0] as u32).wrapping_add(LAND2_RIDER_ANIM)).lw(c);
+            call_ptr(c, LAND2_PLAY_ANIM, 0x0013_a9a0)?;
+            let state = c.g[S0][0] as u32;
+            c.g[V1][0] = Addr(state.wrapping_add(LAND2_RIDER)).lw(c);
+            Addr((c.g[V1][0] as u32).wrapping_add(LAND2_RIDER_SPIN)).sw(c, 0);
+            c.cycles += 1;
+            frame.restore(c, S0, 0x10);
+        } else {
+            // Pick the anim id; `None` is the plain landing 0x3d, which
+            // loads the controller after the decision (0x13aa1c).
+            c.cycles += 8;
+            c.f[2] = land2_gp_lit(c, LAND2_PI_GP);
+            let state = c.g[S0][0] as u32;
+            c.g[A0][0] = Addr(state.wrapping_add(LAND2_RIDER)).lw(c);
+            let pi = FpuF32(c.f[2]);
+            c.f[0] = pi.0 ^ 0x8000_0000;
+            let rider = c.g[A0][0] as u32;
+            c.f[1] = Addr(rider.wrapping_add(LAND2_RIDER_SPIN)).read_u32(c);
+            let spin = FpuF32(c.f[1]);
+            let under = spin.lt(FpuF32(c.f[0]));
+            set_fcc(c, under);
+            c.g[A1][0] = 0x42;
+            let chosen = if under {
+                c.cycles += 2;
+                true
+            } else {
+                c.cycles += 4;
+                let over = pi.lt(spin);
+                set_fcc(c, over);
+                c.g[A1][0] = 0x43;
+                if over {
+                    c.cycles += 2;
+                    true
+                } else {
+                    c.cycles += 5;
+                    c.f[0] = land2_gp_lit(c, LAND2_MEDIUM_SPEED_GP);
+                    let medium = FpuF32(c.f[12]).lt(FpuF32(c.f[0]));
+                    set_fcc(c, medium);
+                    c.g[A1][0] = 0x3e;
+                    if medium {
+                        c.cycles += 1;
+                    }
+                    medium
+                }
+            };
+            if chosen {
+                let rider = c.g[A0][0] as u32;
+                c.g[A0][0] = Addr(rider.wrapping_add(LAND2_RIDER_ANIM)).lw(c);
+                c.cycles += 6;
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.f[12] = 0xbf80_0000;
+                c.g[A2][0] = 0;
+                call_ptr(c, LAND2_PLAY_ANIM, 0x0013_aa14)?;
+                frame.restore(c, S0, 0x10);
+            } else {
+                c.cycles += 6;
+                let rider = c.g[A0][0] as u32;
+                c.g[A0][0] = Addr(rider.wrapping_add(LAND2_RIDER_ANIM)).lw(c);
+                c.g[A1][0] = 0x3d;
+                c.g[AT][0] = 0xffff_ffff_bf80_0000;
+                c.f[12] = 0xbf80_0000;
+                c.g[A2][0] = 0;
+                call_ptr(c, LAND2_PLAY_ANIM, 0x0013_aa34)?;
+                c.cycles += 1;
+                frame.restore(c, S0, 0x10);
+            }
+        }
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// `lwc1` of the gp-relative literal at `gp - off`.
+#[inline(always)]
+pub(crate) fn land2_gp_lit(c: &mut Cpu, off: u32) -> u32 {
+    let gp = c.g[GP][0] as u32;
+    Addr(gp.wrapping_sub(off)).read_u32(c)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     #[test]
@@ -10202,6 +10336,56 @@ pub(crate) mod tests {
             rider_handplant_state_save_state,
             200,
             &|c, seed| oc286_save_block_setup(c, seed, 0x13_9970, 0x0013_9970),
+        );
+    }
+    use super::*;
+
+    /// RiderAirState_PlayLandAnim2: vertical speeds around the hard and
+    /// medium thresholds and random, spin angles below -pi, above pi and in
+    /// between; the real AnimController_PlayAnim on the controller fixture
+    /// of the RiderAirState_PlayLandAnim test.
+    #[test]
+    fn rider_air_state_play_land_anim2_matches() {
+        use crate::difftest::fakes::machine;
+        use crate::difftest::GAME_GP;
+        use crate::game::ai::ai::tests::{slot, LOAD_B0};
+        check(
+            ee::s01::f_0013a968__generated,
+            rider_air_state_play_land_anim2,
+            300,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x13a968, 0);
+                let state = DATA;
+                let rider = DATA + 0x1000;
+                let anim = DATA + 0x4000;
+                let vt = DATA + 0x5000;
+                c.bus
+                    .write32(GAME_GP - LAND2_HARD_SPEED_GP, (-2222.2222f32).to_bits());
+                c.bus
+                    .write32(GAME_GP - LAND2_PI_GP, std::f32::consts::PI.to_bits());
+                c.bus
+                    .write32(GAME_GP - LAND2_MEDIUM_SPEED_GP, (-1250.0f32).to_bits());
+                c.f[12] = match seed % 4 {
+                    0 => (-2222.3f32 + (seed % 5) as f32).to_bits(),
+                    1 => (-1251.0f32 + (seed % 3) as f32).to_bits(),
+                    2 => r.f32(3000.0),
+                    _ => r.edge_f32(),
+                };
+                c.bus.write32(state + LAND2_RIDER, rider);
+                c.bus.write32(rider + LAND2_RIDER_ANIM, anim);
+                c.bus.write32(anim + 0x58, vt);
+                slot(c, vt, 0x20, 0, LOAD_B0);
+                c.bus.write32(anim + 0xb0, 0x207);
+                let spin = match (seed / 4) % 4 {
+                    0 => -3.5f32 - (seed % 7) as f32,
+                    1 => 3.5 + (seed % 7) as f32,
+                    2 => ((seed % 61) as f32 - 30.0) / 10.0,
+                    _ => f32::from_bits(r.edge_f32()),
+                };
+                c.bus.write32(rider + LAND2_RIDER_SPIN, spin.to_bits());
+                c.g[A0][0] = sx(state);
+                c.pc = 0x0013_a968;
+            },
         );
     }
 }

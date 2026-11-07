@@ -2,13 +2,18 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
+use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
 use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
+use crate::call::VSlot;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
 pub(crate) use crate::game::be::belibrary::EA_MEM_FREE;
@@ -21,7 +26,11 @@ use ssx3_ee_rt::funcs::GuestFn;
 use ssx3_ee_rt::Cpu;
 
 /// Replacements in this unit: (address, function, name).
-pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[];
+pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[(
+    0x002a_9988,
+    snd_play_params_set_radius_vanish,
+    "SndPlayParams_SetRadiusVanish",
+)];
 
 /// Direct calls through the generated function (which dispatches into the
 /// replacement when one is installed).
@@ -125,4 +134,93 @@ pub fn snd_play_params_dtor(c: &mut Cpu) {
         frame.close(c);
         Ok(())
     })
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::difftest::check;
+    use crate::difftest::fakes::covered;
+    use crate::difftest::fakes::machine;
+    use crate::difftest::fakes::vtable;
+    use crate::difftest::fakes::FAKE;
+    use crate::difftest::fill;
+    use crate::difftest::scramble;
+    use crate::difftest::Rng;
+    use crate::difftest::DATA;
+    use crate::difftest::GAME_GP;
+
+    /// SndPlayParams_SetRadiusVanish: random slot and tables, edge-case
+    /// radii (negative, zero, -0, NaN-like) for both branches.
+    #[test]
+    fn snd_play_params_set_radius_vanish_matches() {
+        check(
+            ee::s08::f_002a9988__generated,
+            snd_play_params_set_radius_vanish,
+            300,
+            &|c, seed| {
+                let mut r = Rng(0x2a_9988 ^ (seed as u64) << 16);
+                scramble(c, &mut r);
+                c.pc = 0x002a_9988;
+                let params = DATA;
+                c.bus.write32(params + SPP_SLOT, r.next_u32() % 16);
+                c.bus.write32(params + SPP_RADII, DATA + 0x100);
+                let vanish_table = if seed % 5 == 0 {
+                    DATA + 0x100
+                } else {
+                    DATA + 0x200
+                };
+                c.bus.write32(params + SPP_VANISH_RADII, vanish_table);
+                c.f[12] = r.edge_f32();
+                c.f[13] = match seed % 3 {
+                    0 => r.f32(100.0) | 0x8000_0000,
+                    1 => r.f32(100.0) & 0x7fff_ffff,
+                    _ => r.edge_f32(),
+                };
+                c.g[A0][0] = sx(params);
+            },
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SndPlayParams_SetRadiusVanish (0x2a9988)
+
+/// Index of the current voice slot.
+pub(crate) const SPP_SLOT: u32 = 0x1c;
+
+/// Per-slot vanish (outer) and audible (inner) radius tables.
+pub(crate) const SPP_VANISH_RADII: u32 = 0x68;
+
+pub(crate) const SPP_RADII: u32 = 0x6c;
+
+/// The address of entry `slot` of the float table at `params + table`
+/// (left in v0, the table in v1, as the original does).
+pub(crate) fn spp_slot_entry(c: &mut Cpu, params: u32, table: u32) -> u32 {
+    let slot = Addr(params).off(SPP_SLOT).lw(c);
+    let base = Addr(params).off(table).lw(c);
+    c.g[V1][0] = base;
+    let entry = (slot as u32) << 2;
+    let entry = entry.wrapping_add(base as u32);
+    c.g[V0][0] = sx(entry);
+    entry
+}
+
+/// `void SndPlayParams_SetRadiusVanish(SndPlayParams* p, float radius,
+/// float vanish)` (0x2a9988): sets the current slot's radius, and its
+/// vanish radius to `vanish`, or to `radius` when `vanish` is negative.
+pub fn snd_play_params_set_radius_vanish(c: &mut Cpu) {
+    c.cycles += 8;
+    let params = r32(c, A0);
+    let radius = crate::abi::farg(c, 0);
+    let vanish = crate::abi::farg(c, 1);
+    let zero = crate::ps2f::FpuF32::ZERO;
+    crate::abi::set_fpr(c, 0, zero);
+    let entry = spp_slot_entry(c, params, SPP_RADII);
+    let use_radius = crate::abi::c_lt_s(c, vanish, zero);
+    Addr(entry).write_fpu(c, radius);
+    c.cycles += 6;
+    let entry = spp_slot_entry(c, params, SPP_VANISH_RADII);
+    Addr(entry).write_fpu(c, if use_radius { radius } else { vanish });
+    ret(c);
 }

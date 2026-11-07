@@ -479,6 +479,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         rider_uber_grind_sub_save_state,
         "RiderUberGrindSub_SaveState",
     ),
+    (0x0013_1c30, rider_cruise_sub_exit, "RiderCruiseSub_Exit"),
 ];
 
 /// `gp`-relative globals used here.
@@ -15353,6 +15354,86 @@ pub fn rider_finish_line_sub_save_state(c: &mut Cpu) {
     guest(c, |c| sub_save_state_write(c, 0x4, 0x0012_c9e8))
 }
 
+// ---------------------------------------------------------------------------
+// 0x00131c30 RiderCruiseSub_Exit
+
+/// The rider's animation controller (`rider + 0x784`).
+pub(crate) const RCSE_ANIM: u32 = 0x784;
+
+/// Layer-1 anim types that the cruise state fades out on exit.
+pub(crate) const RCSE_FADE_TYPES: [u64; 2] = [3, 0xd];
+
+/// `void RiderCruiseSub_Exit(RiderSubState* self, int next)` (0x131c30):
+/// unless the next sub-state is 4, when animation layer 1 plays a cruise
+/// anim (type 3 or 13) fade layer 0 out over 0.1 s and set layer 1's
+/// sequence weight (+0x90) to 1.
+pub fn rider_cruise_sub_exit(c: &mut Cpu) {
+    let frame = Frame { size: 0x20 };
+    guest(c, |c| {
+        c.cycles += 6;
+        Frame::open(c, 0x20);
+        c.g[V0][0] = 4;
+        frame.save(c, S0, 0x10);
+        frame.save_ra(c, 0);
+        let to_4 = c.g[A1][0] == c.g[V0][0];
+        c.g[S0][0] = c.g[A0][0];
+        let mut late = true;
+        if !to_4 {
+            // Layer 1's anim type (asked again for the second type).
+            let mut fade = false;
+            for (i, (cycles, ret_to)) in [(7u64, 0x0013_1c58u32), (6, 0x0013_1c70)]
+                .into_iter()
+                .enumerate()
+            {
+                c.cycles += cycles;
+                let rider = Addr(r32(c, S0)).lw(c);
+                c.g[V0][0] = rider;
+                if i == 0 {
+                    c.g[A1][0] = 1;
+                }
+                c.g[A0][0] = Addr(rider as u32).off(RCSE_ANIM).lw(c);
+                call_ptr(c, 0x0031_1ae8, ret_to)?; // AnimController_GetLayerAnimEntry
+                c.g[V1][0] = RCSE_FADE_TYPES[i];
+                let hit = c.g[V0][0] == c.g[V1][0];
+                if i == 0 {
+                    c.g[A1][0] = 1;
+                }
+                if hit {
+                    fade = true;
+                    break;
+                }
+            }
+            if fade {
+                c.cycles += 12;
+                let rider = Addr(r32(c, S0)).lw(c);
+                c.g[V0][0] = rider;
+                c.g[A1][0] = 0;
+                c.lwc1(12, r32(c, GP).wrapping_sub(0x75b0)); // 0.1f
+                c.g[A0][0] = Addr(rider as u32).off(RCSE_ANIM).lw(c);
+                call_ptr(c, 0x0031_1e88, 0x0013_1c90)?; // AnimController_FadeOutLayer
+                let rider = Addr(r32(c, S0)).lw(c);
+                c.g[V0][0] = rider;
+                c.g[A1][0] = 1;
+                c.g[A0][0] = Addr(rider as u32).off(RCSE_ANIM).lw(c);
+                call_ptr(c, 0x0031_1b20, 0x0013_1ca0)?; // AnimController_GetLayerSequence
+                c.g[AT][0] = 0x3f80_0000;
+                c.mtc1(AT, 0);
+                c.swc1(0, r32(c, V0).wrapping_add(0x90));
+            } else {
+                late = false;
+            }
+        }
+        if late {
+            c.cycles += 1;
+        }
+        frame.restore(c, S0, 0x10);
+        c.cycles += 3;
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -18751,6 +18832,51 @@ pub(crate) mod tests {
             rider_finish_line_sub_save_state,
             200,
             &|c, seed| sub_save_state_fixture(c, seed, 0x12c9_c000, 0x0012_c9c0),
+        );
+    }
+    use super::*;
+
+    /// `RiderCruiseSub_Exit`: next state 4 (nothing), layer 1 playing an
+    /// anim of type 3, 13, another type or none (id 0x1b6); the fade runs
+    /// the real `FadeOutLayer` (layer 0's sequence list empty) and
+    /// `GetLayerSequence`.
+    #[test]
+    fn rider_cruise_sub_exit_matches() {
+        const SUB: u32 = DATA + 0x20_0000;
+        const RIDER: u32 = DATA + 0x20_1000;
+        const CTRL: u32 = DATA + 0x20_2000;
+        const LISTS: u32 = DATA + 0x20_3000;
+        const SEQ: u32 = DATA + 0x20_4000;
+        check(
+            ee::s00::f_00131c30__generated,
+            rider_cruise_sub_exit,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x13_1c30, 0);
+                c.pc = 0x0013_1c30;
+                c.g[A0][0] = sx(SUB);
+                c.g[A1][0] = if seed % 6 == 0 {
+                    4
+                } else {
+                    (r.next_u32() % 8) as u64
+                };
+                c.bus.write32(SUB, RIDER);
+                c.bus.write32(RIDER + RCSE_ANIM, CTRL);
+                c.bus.write32(GAME_GP - 0x75b0, 0x3dcc_cccd);
+                // Layer anim ids 0..3 (or none) and their types.
+                let id = if seed % 7 == 1 { 0x1b6 } else { seed / 2 % 4 };
+                c.bus.write32(CTRL, r.next_u32() % 4);
+                c.bus.write32(CTRL + 4, id);
+                for (k, ty) in [3u32, 0xd, 5, 0].into_iter().enumerate() {
+                    c.bus.write32(0x0044_6990 + 0x1c * k as u32, ty);
+                }
+                // Sequence lists: layer 0 empty; layer 1's head sequence.
+                c.bus.write32(CTRL + 0x50, LISTS);
+                c.bus.write32(LISTS + 4, 0);
+                c.bus.write32(LISTS + 8 + 4, SEQ);
+                c.bus.write32(SEQ + 0xc8, 0);
+                c.bus.write32(SEQ + 0x90, r.next_u32());
+            },
         );
     }
 }

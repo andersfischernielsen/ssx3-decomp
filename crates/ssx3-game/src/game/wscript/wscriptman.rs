@@ -350,6 +350,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         wscript_man_save_process_list,
         "WScriptMan_SaveProcessList",
     ),
+    (
+        0x0030_a298,
+        wscript_man_run_obj_script1,
+        "WScriptMan_RunObjScript1",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -4665,6 +4670,56 @@ pub fn wscript_man_save_state(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// 0x0030a298 WScriptMan_RunObjScript1
+
+/// Script manager fields: the world, the object whose script runs.
+pub(crate) const WSR1_WORLD: u32 = 0x28c;
+
+pub(crate) const WSR1_RUNNING: u32 = 0x290;
+
+pub(crate) const WSR1_CALL_FUNC: Callee = Callee {
+    addr: 0x0030_9c88,
+    f: ee::s10::WScriptMan_CallFunc,
+};
+
+/// `void WScriptMan_RunObjScript1(WScriptMan* self, WObj* obj)` (0x30a298):
+/// with `obj` as the running object, look up its script function 1 in the
+/// world's script cache and call it when there is one (the handle on the
+/// stack), then clear the running object.
+pub fn wscript_man_run_obj_script1(c: &mut Cpu) {
+    let frame = Frame { size: 0x30 };
+    guest(c, |c| {
+        c.cycles += 12;
+        Frame::open(c, 0x30);
+        c.g[V0][0] = c.g[A1][0];
+        frame.save(c, S0, 0x20);
+        frame.save_ra(c, 0x10);
+        c.g[S0][0] = c.g[A0][0];
+        let this = r32(c, S0);
+        let obj = c.g[V0][0];
+        Addr(this).off(WSR1_RUNNING).sw(c, obj);
+        c.g[A2][0] = 1;
+        c.g[A0][0] = Addr(this).off(WSR1_WORLD).lw(c);
+        call_ptr(c, 0x003a_6b78, 0x0030_a2bc)?; // World_GetObjectScriptFunc(world, obj, 1)
+        c.g[V1][0] = !c.g[V0][0];
+        let handle = c.g[V0][0];
+        Addr(sp(c)).sw(c, handle);
+        if c.g[V1][0] != 0 {
+            c.cycles += 3;
+            c.g[A0][0] = c.g[S0][0];
+            c.g[A1][0] = c.g[SP][0];
+            WSR1_CALL_FUNC.call(c, 0x0030_a2d4)?;
+        }
+        c.cycles += 5;
+        Addr(r32(c, S0)).off(WSR1_RUNNING).sw(c, 0);
+        frame.restore(c, S0, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -6656,6 +6711,83 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(SELF);
                 c.g[A1][0] = sx(STREAM);
+            },
+        );
+    }
+    use super::*;
+
+    /// `WScriptMan_RunObjScript1`: an object without a script slot, a slot
+    /// whose id is -1, and a found script (handle `id << 8 | section`) run
+    /// by the real `WScriptMan_CallFunc` on the Luno VM (the fixture of
+    /// `wscript_man_call_func_matches`).
+    #[test]
+    fn wscript_man_run_obj_script1_matches() {
+        use crate::game::worldpainter::quadtree::tests::alloc_machine;
+        use crate::game::wscript::wscriptman::WSM_SECTION_TABLES;
+        const SELF: u32 = DATA + 0x20_0000;
+        const OBJ: u32 = SELF + 0x1000;
+        const WORLD: u32 = SELF + 0x1100;
+        const CACHE: u32 = SELF + 0x1200;
+        const ENTRIES: u32 = SELF + 0x1300;
+        const FUNCS: u32 = SELF + 0x1400;
+        const SLOT: u32 = SELF + 0x1800;
+        const OBJ_FUNCS: u32 = SELF + 0x1900;
+        const SCRIPT: u32 = SELF + 0x2000;
+        const TABLES: u32 = SELF + 0x3000;
+        check(
+            ee::s10::f_0030a298__generated,
+            wscript_man_run_obj_script1,
+            120,
+            &|c, seed| {
+                let mut r = alloc_machine(c, seed, 0x30_a298);
+                c.pc = 0x0030_a298;
+                let section = seed % 4;
+                let id = (seed / 4) % 4;
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(OBJ);
+                c.bus.write32(SELF + WSR1_WORLD, WORLD);
+                c.bus.write32(SELF + WSR1_RUNNING, r.next_u32());
+                c.bus.write32(WORLD + 4, CACHE);
+                c.bus.write32(CACHE + 4, ENTRIES);
+                for k in 0..4u32 {
+                    let entry = ENTRIES + 0xc * k;
+                    c.bus.write16(entry, 3);
+                    c.bus.write32(entry + 8, FUNCS);
+                }
+                // The object's script slot: none, id -1, or function 1 of
+                // object-script entry `k` = the handle.
+                c.bus.write8(OBJ + 0x78, (r.next_u32() % 4) as u8);
+                c.bus
+                    .write32(OBJ + 0x88, if seed % 5 == 0 { 0 } else { SLOT });
+                let k = r.next_u32() % 3;
+                c.bus.write32(
+                    SLOT + 8,
+                    if seed % 5 == 1 {
+                        u32::MAX
+                    } else {
+                        k << 8 | 0x5a
+                    },
+                );
+                c.bus.write32(FUNCS + 0x1c, OBJ_FUNCS);
+                c.bus.write32(OBJ_FUNCS + 0x18 * k + 4, id << 8 | section);
+                // WScriptMan_CallFunc: the section function and its script.
+                c.bus.write32(FUNCS + 0x3c, FUNCS + 0x40);
+                c.bus.write32(FUNCS + 0x40 + 4 * id, SCRIPT);
+                c.bus.write32(SCRIPT + 4, 0x10);
+                c.bus.write32(SCRIPT + 0x14, 0);
+                c.bus.write32(SCRIPT + 0x18, (seed / 16) % 4);
+                c.bus.write32(SCRIPT + 0x1c, 0);
+                for i in 0..4u32 {
+                    let value = TABLES + 0x40 * i;
+                    let table = TABLES + 0x400 + 0x40 * i;
+                    c.bus.write32(SELF + WSM_SECTION_TABLES + 4 * i, value);
+                    c.bus.write32(value, table);
+                    c.bus.write32(table + 8, 100);
+                }
+                let d = 0x004c_9098;
+                c.bus.write32(d, r.next_u32());
+                c.bus.write32(d + 4, r.next_u32());
+                c.bus.write32(d + 8, 2);
             },
         );
     }

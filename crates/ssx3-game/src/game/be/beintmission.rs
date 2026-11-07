@@ -2,7 +2,11 @@
 //! batch modules by `tools/reorg_modules.py`).
 
 use crate::abi;
+use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
+use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call::call_ptr;
 use crate::call::guest;
 use crate::call::sp;
@@ -10,6 +14,7 @@ use crate::call::Callee;
 use crate::call::Flow;
 use crate::call::Frame;
 use crate::call::Unwound;
+use crate::call::VSlot;
 use crate::events::back_edge_unwinds;
 use crate::events::deliver_event_here;
 use crate::events::event_due;
@@ -234,6 +239,11 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0015_bcd0,
         be_mission_int_destroy_instance,
         "BEMissionInt_DestroyInstance",
+    ),
+    (
+        0x0015_47e8,
+        be_mission_int_save_state,
+        "BEMissionInt_SaveState",
     ),
 ];
 
@@ -2113,6 +2123,98 @@ pub fn bemissionint_count_completed_on_peak(c: &mut Cpu) {
     })
 }
 
+// ---------------------------------------------------------------------------
+// BEMissionInt_SaveState (0x1547e8)
+
+/// The per-character mission records (`0x4a6cac`, 0xf88 bytes per
+/// character): a 0x114-byte block and a 0x160-byte block.
+pub(crate) const BEMI_RECORDS: u32 = 0x004a_6cac;
+
+pub(crate) const BEMI_RECORD_SIZE: u32 = 0xf88;
+
+pub(crate) const BEMI_BLOCK_A: u64 = 0x114;
+
+pub(crate) const BEMI_BLOCK_B: u64 = 0x160;
+
+/// The mission interface's own saved word.
+pub(crate) const BEMI_STATE: u32 = 0x8;
+
+/// Stream vtable slot `Write(data, size)`.
+pub(crate) const BEMI_STREAM_WRITE: u32 = 0x8;
+
+pub(crate) const BEMI_GET_RIDER_CHARACTER: Callee = Callee {
+    addr: 0x0014_a080,
+    f: ee::s01::f_0014a080,
+};
+
+/// `stream->Write(a1, size)` with the stream in s1 (v1 = vtable, v0 =
+/// function, a0 = adjusted stream).
+pub(crate) fn bemi_stream_write(c: &mut Cpu, data: u64, size: u64, ret: u32) -> Flow {
+    let stream = reg(c, S1);
+    let vt = Addr(stream as u32).lw(c);
+    set_reg(c, V1, vt);
+    set_reg(c, A1, data);
+    set_reg(c, A2, size);
+    let write = VSlot::read(c, vt, BEMI_STREAM_WRITE);
+    set_reg(c, V0, write.func);
+    set_reg(c, A0, write.this(stream));
+    call_ptr(c, write.func as u32, ret)
+}
+
+/// `void BEMissionInt_SaveState(BEMissionInt* self, Stream* stream)`
+/// (0x1547e8): writes player 0's character's two mission record blocks,
+/// then the interface's own state word.
+pub fn be_mission_int_save_state(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 43;
+        let frame = Frame::open(c, 0x50);
+        frame.save(c, S3, 0x10);
+        frame.save(c, S1, 0x30);
+        let this = reg(c, A0);
+        set_reg(c, S3, this);
+        let stream = reg(c, A1);
+        set_reg(c, S1, stream);
+        frame.save(c, S0, 0x40);
+        frame.save(c, S2, 0x20);
+        frame.save_ra(c, 0);
+        set_reg(c, A0, 0);
+        BEMI_GET_RIDER_CHARACTER.call(c, 0x0015_4810)?;
+
+        // Block A of this character's record.
+        set_reg(c, V1, BEMI_RECORD_SIZE as u64);
+        let stream = reg(c, S1);
+        let vt = Addr(stream as u32).lw(c);
+        set_reg(c, A1, vt);
+        let character = r32(c, V0);
+        let offset = crate::abi::mult(c, character, BEMI_RECORD_SIZE);
+        set_reg(c, S2, sx(offset));
+        set_reg(c, S0, BEMI_RECORDS as u64);
+        let write = VSlot::read(c, vt, BEMI_STREAM_WRITE);
+        set_reg(c, V0, write.func);
+        set_reg(c, A2, BEMI_BLOCK_A);
+        set_reg(c, A0, write.this(stream));
+        set_reg(c, A1, sx(offset.wrapping_add(BEMI_RECORDS)));
+        call_ptr(c, write.func as u32, 0x0015_483c)?;
+
+        // Block B follows block A.
+        let block_b = r32(c, S0).wrapping_add(BEMI_BLOCK_A as u32);
+        set_reg(c, S0, sx(block_b));
+        let data = sx(r32(c, S2).wrapping_add(block_b));
+        bemi_stream_write(c, data, BEMI_BLOCK_B, 0x0015_485c)?;
+
+        let state = addu(reg(c, S3), BEMI_STATE as u64);
+        bemi_stream_write(c, state, 4, 0x0015_4878)?;
+
+        frame.restore(c, S0, 0x40);
+        frame.restore(c, S1, 0x30);
+        frame.restore(c, S2, 0x20);
+        frame.restore(c, S3, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -2763,6 +2865,38 @@ pub(crate) mod tests {
                 c.g[A0][0] = sx(DATA + 0x100);
                 // a non-zero sub-goal id: no mission lookup is taken
                 c.g[A1][0] = sx(0x1234 + (seed as u32 & 1));
+            },
+        );
+    }
+    use super::*;
+    use crate::difftest::fakes::covered;
+
+    /// BEMissionInt_SaveState: player 0's slot and character byte chosen
+    /// per seed (BE_GetRiderCharacter is real), the stream's `Write` a fake.
+    #[test]
+    fn be_mission_int_save_state_matches() {
+        covered(
+            ee::s01::f_001547e8__generated,
+            be_mission_int_save_state,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x15_47e8, 3);
+                c.pc = 0x0015_47e8;
+                let vt = vtable(c, &mut r, &[BEMI_STREAM_WRITE]);
+                // BE_GetRiderCharacter(0): slot word at 0x5305b0, character byte
+                // at 0x535b20 + slot * 0x1c + 0x11.
+                let slot = r.next_u32() % 8;
+                c.bus.write32(0x0053_05b0, slot);
+                c.bus
+                    .write8(0x0053_5b20 + slot * 0x1c + 0x11, (r.next_u32() % 12) as u8);
+                if seed % 7 == 0 {
+                    c.bus.write8(0x0053_5b20 + slot * 0x1c + 0x11, 0xff);
+                }
+                let this = DATA + 0x20_0000;
+                let stream = DATA + 0x20_0400;
+                c.bus.write32(stream, vt);
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(stream);
             },
         );
     }

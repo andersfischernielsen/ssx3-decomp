@@ -439,6 +439,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         "Renderer_VBlankStartIntc",
     ),
     (0x0037_c8c0, ps2_graphics_man_v46, "PS2GraphicsMan_v46"),
+    (0x0037_0dc8, dynamic_emitter_setup, "DynamicEmitter_Setup"),
 ];
 
 /// Same-shard direct callees used above.
@@ -11593,6 +11594,352 @@ pub fn ps2_graphics_man_v46(c: &mut Cpu) {
     })
 }
 
+pub(crate) mod dyn_emitter {
+
+    pub const START: u32 = 0x0;
+
+    pub const RATE_A: u32 = 0x4;
+
+    pub const RATE_B: u32 = 0x8;
+
+    pub const BURST: u32 = 0xc;
+
+    pub const BURST_DELAY: u32 = 0x10;
+
+    pub const BURST_SPACING: u32 = 0x14;
+
+    pub const SYSTEM: u32 = 0x20;
+
+    pub const COUNT: u32 = 0x178;
+
+    pub const ACTIVE: u32 = 0x170;
+
+    pub const PARAMS: u32 = 0x180;
+
+    pub const BOUNDS: u32 = 0x1b0;
+
+    pub const GS_STATE: u32 = 0x1e4;
+
+    pub const VTABLE: u32 = 0x1f8;
+
+    pub const DEF_PER_EMIT: u32 = 0x0;
+
+    pub const DEF_KIND: u32 = 0x4;
+
+    pub const DEF_START: u32 = 0x8;
+
+    pub const DEF_LIFE: u32 = 0xc;
+
+    pub const DEF_FADE_IN: u32 = 0x14;
+
+    pub const DEF_FADE: u32 = 0x1c;
+
+    pub const DEF_SIZE: u32 = 0x20;
+
+    pub const DEF_DIR: u32 = 0x78;
+
+    pub const DEF_RATE_A: u32 = 0xc4;
+
+    pub const DEF_RATE_B: u32 = 0xc8;
+
+    pub const DEF_BURST: u32 = 0xd0;
+
+    pub const DEF_BURST_SPACING: u32 = 0xd4;
+
+    /// The zero bounds quadword (0x4ff120), the descriptor template
+    /// (0x4ff1a0) and the GS state template (0x501420).
+    pub const ZERO_BOUNDS: u32 = 0x0050_0000 - 0xee0;
+
+    pub const TEMPLATE: u32 = 0x0050_0000 - 0xe60;
+
+    pub const GS_TEMPLATE: u32 = 0x0050_1420;
+}
+
+/// The span for a negative `def->start`: `fade_in + fade / 2` (leaves
+/// f0 = fade/2 and f1 = 0.5 as the original does).
+pub(crate) fn dynamic_emitter_span(c: &mut Cpu, def: u32) -> FpuF32 {
+    use dyn_emitter::*;
+    c.cycles += 6;
+    let fade = FpuF32(c.lw(def.wrapping_add(DEF_FADE)) as u32);
+    let half = FpuF32(0x3f00_0000);
+    c.g[AT][0] = 0x3f00_0000;
+    abi::set_fpr(c, 1, half);
+    let fade_in = FpuF32(c.lw(def.wrapping_add(DEF_FADE_IN)) as u32);
+    let f0 = fade * half;
+    abi::set_fpr(c, 0, f0);
+    fade_in + f0
+}
+
+/// `ceil(frames)` as the original computes it (`cvt.w.s`, back, `+1` when
+/// the truncation is below): f1 is left holding the rounded float.
+pub(crate) fn dynamic_emitter_ceil(c: &mut Cpu, frames: FpuF32) -> FpuF32 {
+    let mut up = FpuF32::from_i32(frames.to_i32());
+    let below = abi::c_lt_s(c, up, frames);
+    if below {
+        c.cycles += 3;
+        c.g[AT][0] = 0x3f80_0000;
+        abi::set_fpr(c, 0, FpuF32::ONE);
+        up = up + FpuF32::ONE;
+    }
+    abi::set_fpr(c, 1, up);
+    up
+}
+
+/// `void DynamicEmitter::Setup(EmitterDef* def, float time)` (0x370dc8):
+/// copies the burst count/spacing and rates from the definition (a burst of
+/// 2+ particles gets a random delay `n * rand[0,1)`), sets the start time and
+/// the particle count (`ceil(span * 60)`, the span being `def->start` or
+/// `fade_in + fade/2` when that is negative), clears the bounds, sets up the
+/// particle system (`Emitter_InitDescriptor`, `Emitter_BuildDescriptor`),
+/// resets the emitter through its vtable (+8, +0x28, +0x10) when the count
+/// changed, marks it active and installs its GS state from the template.
+pub fn dynamic_emitter_setup(c: &mut Cpu) {
+    use dyn_emitter::*;
+    const RAND: u32 = 0x0031_77f0;
+    const INIT_DESCRIPTOR: Callee = Callee {
+        addr: 0x0036_cbf8,
+        f: ee::s12::Emitter_InitDescriptor,
+    };
+    const BUILD_DESCRIPTOR: Callee = Callee {
+        addr: 0x0037_0058,
+        f: ee::s12::Emitter_BuildDescriptor,
+    };
+    guest(c, |c| {
+        c.cycles += 17;
+        let frame = Frame::open(c, 0x70);
+        frame.save(c, S1, 0x40);
+        frame.save(c, S2, 0x30);
+        c.g[S1][0] = c.g[A1][0];
+        frame.save_fpr(c, 21, 0x68);
+        c.g[S2][0] = c.g[A0][0];
+        frame.save(c, S0, 0x50);
+        c.f[21] = c.f[12];
+        frame.save(c, S3, 0x20);
+        frame.save_ra(c, 0x10);
+        frame.save_fpr(c, 20, 0x60);
+        let this = r32(c, S2);
+        let def = r32(c, S1);
+
+        // Burst: count and spacing; a random delay for 2+ particles.
+        let burst = c.lw(def.wrapping_add(DEF_BURST));
+        c.g[V1][0] = burst;
+        c.sw(this.wrapping_add(BURST), burst);
+        c.g[V0][0] = ((burst as i64) < 2) as u64;
+        let spacing = c.lw(def.wrapping_add(DEF_BURST_SPACING)) as u32;
+        c.f[0] = spacing;
+        c.sw(this.wrapping_add(BURST_SPACING), spacing as u64);
+        if (burst as i64) < 2 {
+            c.cycles += 1;
+            c.sw(this.wrapping_add(BURST_DELAY), 0);
+        } else {
+            c.cycles += 16;
+            c.f[20] = FpuF32::from_i32(burst as i32).0;
+            call_ptr(c, RAND, 0x0037_0e1c)?;
+            // A float in [1, 2) from the random mantissa, minus 1.
+            c.g[V1][0] = 0x7f_ffff;
+            c.g[A1][0] = 0x3f80_0000;
+            c.g[AT][0] = 0x3f80_0000;
+            abi::set_fpr(c, 0, FpuF32::ONE);
+            let bits = (c.g[V0][0] & 0x7f_ffff) | 0x3f80_0000;
+            c.g[V0][0] = bits;
+            let r = FpuF32(bits as u32);
+            abi::set_fpr(c, 1, r);
+            let unit = r - FpuF32::ONE;
+            abi::set_fpr(c, 0, unit);
+            let delay = FpuF32(c.f[20]) * unit;
+            c.f[20] = delay.0;
+            c.sw(r32(c, S2).wrapping_add(BURST_DELAY), sx(delay.0));
+        }
+        let this = r32(c, S2);
+        let def = r32(c, S1);
+
+        // Rates and the start time.
+        c.cycles += 10;
+        let rate_a = c.lw(def.wrapping_add(DEF_RATE_A));
+        c.g[V0][0] = rate_a;
+        c.f[0] = 0;
+        c.sw(this.wrapping_add(RATE_A), rate_a);
+        let rate_b = c.lw(def.wrapping_add(DEF_RATE_B));
+        c.g[V1][0] = rate_b;
+        c.sw(this.wrapping_add(RATE_B), rate_b);
+        let start = FpuF32(c.lw(def.wrapping_add(DEF_START)) as u32);
+        c.f[3] = start.0;
+        let negative = abi::c_lt_s(c, start, FpuF32::ZERO);
+        let mut time = start;
+        if !negative {
+            c.cycles += 7;
+            let fade_in = FpuF32(c.lw(def.wrapping_add(DEF_FADE_IN)) as u32);
+            let fade = FpuF32(c.lw(def.wrapping_add(DEF_FADE)) as u32);
+            c.g[AT][0] = 0x3f00_0000;
+            let half = FpuF32(0x3f00_0000);
+            abi::set_fpr(c, 2, half);
+            let half_fade = fade * half;
+            abi::set_fpr(c, 1, half_fade);
+            time = start + fade_in + half_fade;
+        }
+        c.f[0] = time.0;
+
+        // The particle count: ceil(span * 60).
+        c.cycles += 7;
+        c.sw(this.wrapping_add(START), sx(time.0));
+        c.f[0] = 0;
+        let mut span = FpuF32(c.lw(def.wrapping_add(DEF_START)) as u32);
+        let positive = FpuF32::ZERO.le(span);
+        abi::set_fcc(c, positive);
+        c.g[S3][0] = 0;
+        if !positive {
+            span = dynamic_emitter_span(c, def);
+        }
+        c.cycles += 8;
+        c.g[AT][0] = 0x4270_0000;
+        let sixty = FpuF32(0x4270_0000);
+        abi::set_fpr(c, 0, sixty);
+        let frames = span * sixty;
+        abi::set_fpr(c, 2, frames);
+        let count = dynamic_emitter_ceil(c, frames);
+        c.cycles += 5;
+        let n = count.to_i32() as u32;
+        c.f[0] = n;
+        c.g[V1][0] = sx(n);
+        let old = c.lw(this.wrapping_add(COUNT));
+        c.g[V0][0] = old;
+        c.g[A0][0] = 0x50_0000;
+        if old != sx(n) {
+            c.cycles += 5;
+            let count = dynamic_emitter_ceil(c, frames);
+            c.cycles += 4;
+            let n = count.to_i32() as u32;
+            c.f[0] = n;
+            c.sw(this.wrapping_add(COUNT), n as u64);
+            c.g[S3][0] = 1;
+            c.g[A0][0] = 0x50_0000;
+        }
+
+        // Clear the bounds; the life time for the descriptor.
+        c.cycles += 13;
+        c.f[0] = 0;
+        c.g[A0][0] = sx(ZERO_BOUNDS);
+        c.lq(V0, ZERO_BOUNDS);
+        c.sq(V0, this.wrapping_add(BOUNDS));
+        c.lq(V1, ZERO_BOUNDS);
+        c.sq(V1, this.wrapping_add(BOUNDS + 0x10));
+        c.lq(V0, ZERO_BOUNDS);
+        c.sq(V0, this.wrapping_add(BOUNDS + 0x20));
+        let mut life = FpuF32(c.lw(def.wrapping_add(DEF_START)) as u32);
+        let positive = FpuF32::ZERO.le(life);
+        abi::set_fcc(c, positive);
+        c.g[A1][0] = c.lw(this.wrapping_add(COUNT));
+        if !positive {
+            c.cycles += 6;
+            let fade = FpuF32(c.lw(def.wrapping_add(DEF_FADE)) as u32);
+            c.g[AT][0] = 0x3f00_0000;
+            let half = FpuF32(0x3f00_0000);
+            abi::set_fpr(c, 1, half);
+            let fade_in = FpuF32(c.lw(def.wrapping_add(DEF_FADE_IN)) as u32);
+            abi::set_fpr(c, 2, fade_in);
+            let half_fade = fade * half;
+            abi::set_fpr(c, 0, half_fade);
+            life = fade_in + half_fade;
+        }
+        c.f[12] = life.0;
+
+        // Emitter_InitDescriptor(&system, def->per_emit * count, def->kind,
+        //                        &dir, life, def->size, def->life)
+        c.cycles += 26;
+        c.g[S0][0] = sx(this.wrapping_add(SYSTEM));
+        let per_emit = c.lw(def.wrapping_add(DEF_PER_EMIT));
+        c.g[V0][0] = per_emit;
+        c.g[A0][0] = c.g[S0][0];
+        let dir_x = c.lw(def.wrapping_add(DEF_DIR)) as u32;
+        c.f[2] = dir_x;
+        c.g[A3][0] = c.g[SP][0];
+        let count = c.g[A1][0] as u32;
+        let total = abi::mult(c, per_emit as u32, count);
+        let dir_y = c.lw(def.wrapping_add(DEF_DIR + 4)) as u32;
+        c.f[0] = dir_y;
+        let dir_z = c.lw(def.wrapping_add(DEF_DIR + 8)) as u32;
+        c.f[1] = dir_z;
+        c.g[A2][0] = c.lw(def.wrapping_add(DEF_KIND));
+        c.f[13] = c.lw(def.wrapping_add(DEF_SIZE)) as u32;
+        c.f[14] = c.lw(def.wrapping_add(DEF_LIFE)) as u32;
+        c.g[A1][0] = sx(total);
+        c.sw(frame.at(c, 0), dir_x as u64);
+        c.sw(frame.at(c, 4), dir_y as u64);
+        c.sw(frame.at(c, 8), dir_z as u64);
+        c.sw(frame.at(c, 0xc), 0);
+        INIT_DESCRIPTOR.call(c, 0x0037_0fc8)?;
+
+        // Emitter_BuildDescriptor(&system, template, def, &params, time)
+        c.g[A1][0] = sx(TEMPLATE);
+        c.g[A0][0] = c.g[S0][0];
+        c.g[A2][0] = c.g[S1][0];
+        c.f[12] = c.f[21];
+        c.g[A3][0] = sx(r32(c, S2).wrapping_add(PARAMS));
+        BUILD_DESCRIPTOR.call(c, 0x0037_0fe4)?;
+        c.g[A1][0] = 0;
+        if c.g[S3][0] != 0 {
+            // The count changed: reset the emitter (vtable +8, +0x28, +0x10).
+            c.cycles += 15;
+            for (slot, back) in [(0x8, 0x0037_1000), (0x28, 0x0037_1014), (0x10, 0x0037_1028)] {
+                let this = c.g[S2][0];
+                let vt = c.lw((this as u32).wrapping_add(VTABLE));
+                c.g[V0][0] = vt;
+                let delta = c.lh((vt as u32).wrapping_add(slot));
+                let method = c.lw((vt as u32).wrapping_add(slot + 4));
+                c.g[V1][0] = method;
+                c.g[A0][0] = sx((this as u32).wrapping_add(delta as u32));
+                call_ptr(c, method as u32, back)?;
+            }
+        }
+
+        // Active, and the GS state from the template (packed register bits
+        // adjusted in the second and third words).
+        c.cycles += 41;
+        let this = r32(c, S2);
+        c.g[V0][0] = 1;
+        c.g[V1][0] = 0x50_0000;
+        c.sw(this.wrapping_add(ACTIVE), 1);
+        c.g[A0][0] = 0xffff_ffff_ffbf_0000;
+        c.g[A3][0] = sx(GS_TEMPLATE);
+        let lo = c.lw(GS_TEMPLATE) as u32 as u64 | (c.lw(GS_TEMPLATE + 4) as u32 as u64) << 32;
+        let hi =
+            c.lw(GS_TEMPLATE + 8) as u32 as u64 | (c.lw(GS_TEMPLATE + 0xc) as u32 as u64) << 32;
+        c.g[V0][0] = lo;
+        c.g[A1][0] = hi;
+        let last = c.lw(GS_TEMPLATE + 0x10);
+        c.g[A2][0] = last;
+        c.sw(this.wrapping_add(GS_STATE), lo & 0xffff_ffff);
+        c.sw(this.wrapping_add(GS_STATE + 4), lo >> 32);
+        c.sw(this.wrapping_add(GS_STATE + 8), hi & 0xffff_ffff);
+        c.sw(this.wrapping_add(GS_STATE + 0xc), hi >> 32);
+        c.sw(this.wrapping_add(GS_STATE + 0x10), last);
+        c.g[A0][0] = 0xffff_ffff_ffbf_ffff;
+        c.g[T0][0] = 0x40_0000;
+        c.g[A1][0] = 0xffff_ffff_ffcf_ffff;
+        let word1 = c.lw(this.wrapping_add(GS_STATE + 4));
+        let word2 = c.lw(this.wrapping_add(GS_STATE + 8));
+        c.g[A3][0] = 0xffff_ffff_ffff_fffc;
+        c.g[V1][0] = 0xffff_ffff_e000_03ff;
+        let word2 = word2 & 0xffff_ffff_e000_03ff;
+        c.g[A2][0] = word2;
+        c.sw(this.wrapping_add(GS_STATE + 8), word2);
+        let word1 = ((((word1 & 0xffff_ffff_ffbf_ffff) | 0x40_0000) & 0xffff_ffff_ffcf_ffff)
+            & 0xffff_ffff_ffff_fffc)
+            | 2;
+        c.g[V0][0] = word1;
+        frame.restore(c, S0, 0x50);
+        c.sw(this.wrapping_add(GS_STATE + 4), word1);
+        frame.restore(c, S1, 0x40);
+        frame.restore(c, S2, 0x30);
+        frame.restore(c, S3, 0x20);
+        frame.restore_ra(c, 0x10);
+        frame.restore_fpr(c, 21, 0x68);
+        frame.restore_fpr(c, 20, 0x60);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -15082,6 +15429,83 @@ pub(crate) mod tests {
                 c.g[A3][0] = r.next_u32() as u64;
                 c.g[T0][0] = r.next_u32() as u64;
                 c.g[T1][0] = r.next_u32() as u64;
+            },
+        );
+    }
+    use super::*;
+
+    /// `DynamicEmitter_Setup` with the real `Rand_NextMain` (random state at
+    /// 0x4ff018), `Emitter_InitDescriptor` and `Emitter_BuildDescriptor`
+    /// (random tables at gp-0x2868, template matrix at 0x4ff1a0); the reset
+    /// methods (emitter vtable at +0x1f8, slots +8/+0x28/+0x10) are fakes.
+    /// Bursts of 0..3 (random delay from 2), start time negative on some
+    /// seeds (the fade span), and on some seeds the old particle count equals
+    /// the new one (start 1.0: 60 frames), so no reset.
+    #[test]
+    fn dynamic_emitter_setup_matches() {
+        use crate::difftest::fakes::vtable;
+        const SELF: u32 = DATA + 0x20_0000;
+        const DEF: u32 = DATA + 0x20_1000;
+        covered(
+            ee::s12::f_00370dc8__generated,
+            dynamic_emitter_setup,
+            240,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x370dc8, 3);
+                c.pc = 0x0037_0dc8;
+                for i in 0..0x80u32 {
+                    let v = if i % 7 == 0 {
+                        r.edge_f32()
+                    } else {
+                        r.f32(50.0)
+                    };
+                    c.bus.write32(SELF + 4 * i, v);
+                }
+                for i in 0..0x40u32 {
+                    c.bus.write32(DEF + 4 * i, r.f32(50.0));
+                }
+                let vt = vtable(c, &mut r, &[0x8, 0x28, 0x10]);
+                c.bus.write32(SELF + 0x1f8, vt);
+                // Definition: per-emit count, kind, life, burst, rates.
+                c.bus.write32(DEF, 1 + r.next_u32() % 4);
+                c.bus.write32(DEF + 4, r.next_u32() % 4);
+                if seed % 5 != 0 {
+                    c.bus.write32(DEF + 0xc, 1.5f32.to_bits());
+                }
+                c.bus.write32(DEF + 0xd0, seed % 4);
+                c.bus.write32(DEF + 0xc4, r.next_u32());
+                c.bus.write32(DEF + 0xc8, r.next_u32());
+                let start = match seed % 4 {
+                    0 => 1.0f32.to_bits(),
+                    1 => r.f32(5.0) | 0x8000_0000,
+                    _ => r.f32(5.0) & 0x7fff_ffff,
+                };
+                c.bus.write32(DEF + 0x8, start);
+                let old = if seed % 8 == 0 {
+                    60
+                } else {
+                    r.next_u32() % 400
+                };
+                c.bus.write32(SELF + 0x178, old);
+                // Rand_NextMain's state, the descriptor tables and templates.
+                fill(c, &mut r, 0x004f_f018, 6);
+                let base = (GAME_GP as i32 - 0x2868) as u32;
+                for i in 0..24u32 {
+                    c.bus.write32(base + 4 * i, r.f32(10.0));
+                }
+                fill(c, &mut r, 0x0050_0000 - 0xee0, 4);
+                for i in 0..0x10u32 {
+                    c.bus.write32(0x0050_0000 - 0xe60 + 4 * i, r.f32(4.0));
+                }
+                fill(c, &mut r, 0x0050_1420, 5);
+                c.g[A0][0] = sx(SELF);
+                c.g[A1][0] = sx(DEF);
+                let time = r.f32(10.0) & 0x7fff_ffff;
+                c.f[12] = if seed % 2 == 0 {
+                    time | 0x8000_0000
+                } else {
+                    time
+                };
             },
         );
     }

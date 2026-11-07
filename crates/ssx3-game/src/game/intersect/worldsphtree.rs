@@ -205,6 +205,7 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         overlap_list_gather_type2,
         "OverlapList_GatherType2",
     ),
+    (0x0034_1aa0, anim_object_ctor, "AnimObject_ctor"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -15306,6 +15307,230 @@ pub(crate) fn gather_type2_query_cell(
     Ok(())
 }
 
+pub(crate) mod anim_ctor_callee {
+    use super::*;
+
+    pub const BASE_CTOR: Callee = Callee {
+        addr: 0x0034_d9b0,
+        f: ee::s11::AnimObject_BaseCtor,
+    };
+
+    pub const GET_DURATION: Callee = Callee {
+        addr: 0x0035_1508,
+        f: ee::s11::IntersectInfo_GetDuration,
+    };
+
+    /// `Rand_FloatRange`, `Rand_FloatSpread` (other shard: through the
+    /// function table).
+    pub const RAND_FLOAT_RANGE: u32 = 0x0031_7830;
+
+    pub const RAND_FLOAT_SPREAD: u32 = 0x0031_7890;
+}
+
+/// AnimObject (float animator) fields.
+pub(crate) const ANIM_ID: u32 = 0x0;
+
+pub(crate) const ANIM_ACTIVE: u32 = 0x4;
+
+pub(crate) const ANIM_AT_LIMIT: u32 = 0x8;
+
+pub(crate) const ANIM_FC: u32 = 0xc;
+
+pub(crate) const ANIM_SPEED: u32 = 0x10;
+
+pub(crate) const ANIM_MIN: u32 = 0x14;
+
+pub(crate) const ANIM_MAX: u32 = 0x18;
+
+pub(crate) const ANIM_VALUE: u32 = 0x1c;
+
+pub(crate) const ANIM_START: u32 = 0x20;
+
+pub(crate) const ANIM_VTABLE: u32 = 0x3c;
+
+pub(crate) const ANIM_FLAGS: u32 = 0x42;
+
+pub(crate) const ANIM_INSTANCE: u32 = 0x64;
+
+/// The AnimObject class vtable.
+pub(crate) const ANIM_OBJECT_VTABLE: u32 = 0x0049_0b10;
+
+/// `AnimObject* AnimObject_ctor(AnimObject* self, int list, int kind,
+/// Node* node, AnimDef* def)` (0x341aa0): build the animated node at
+/// `self+0x1c` (restorable when `def+0x24`), install the class vtable, then
+/// set the float animator up from the definition: id (`+4`), min (`+0xc`
+/// per 1/30 s, or the instance's duration when negative), max (`+0x10`, or
+/// the node info's `+0x14` when negative), value (`+0x1c` per 1/30 s, the
+/// min when negative; clamped to [min, max]; random in the range when
+/// `+0x20`), speed (`+0x14` per 1/30 s, spread by `+0x18`, over the frame
+/// rate at `gp+0x2a74 -> +0x10`; reversed when the direction `+8` is 1),
+/// start = value, active, flag bit 0. Returns `self`.
+pub fn anim_object_ctor(c: &mut Cpu) {
+    use anim_ctor_callee as f;
+    guest(c, |c| {
+        c.cycles += 19;
+        let frame = Frame::open(c, 0x40);
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        c.g[S0][0] = c.g[A3][0]; // node
+        frame.save(c, S2, 0x10);
+        c.g[S1][0] = c.g[A0][0]; // self
+        frame.save_ra(c, 0);
+        c.g[S2][0] = c.g[T0][0]; // def
+        c.g[A0][0] = sx(r32(c, S1).wrapping_add(0x1c));
+        let restorable = Addr(r32(c, S2) + 0x24).lw(c);
+        c.g[T0][0] = (0 < restorable) as u64;
+        f::BASE_CTOR.call(c, 0x0034_1ad0)?;
+
+        let me = r32(c, S1);
+        c.g[A0][0] = Addr(me + ANIM_INSTANCE).lw(c);
+        c.g[V0][0] = sx(ANIM_OBJECT_VTABLE);
+        c.mtc1(0, 1);
+        Addr(me + ANIM_VTABLE).sw(c, c.g[V0][0]);
+        c.g[S0][0] = Addr(r32(c, S0) + 0x80).lw(c); // node info
+        if c.g[A0][0] != 0 {
+            c.cycles += 3;
+            f::GET_DURATION.call(c, 0x0034_1af4)?;
+            c.mov_s(1, 0);
+        }
+
+        let me = r32(c, S1);
+        let def = r32(c, S2);
+        let info = r32(c, S0);
+        let gp = r32(c, GP);
+        // Id and min.
+        c.cycles += 8;
+        c.g[V0][0] = Addr(def + 0x4).lhu(c);
+        c.mtc1(0, 0);
+        Addr(me + ANIM_ID).sh(c, c.g[V0][0]);
+        c.lwc1(2, def + 0xc);
+        c.c_le_s(0, 2); // 0 <= min
+        c.g[V1][0] = sx(me + ANIM_MIN);
+        if c.fcc() {
+            c.cycles += 3;
+            c.lwc1(0, gp.wrapping_sub(0x2b94));
+            c.mul_s(0, 2, 0);
+        } else {
+            c.cycles += 1;
+            c.mov_s(0, 1); // the duration
+        }
+
+        // Max.
+        c.cycles += 7;
+        c.swc1(0, me + ANIM_MIN);
+        c.mtc1(0, 0);
+        c.lwc1(1, def + 0x10);
+        c.c_lt_s(1, 0); // max < 0
+        c.g[V0][0] = sx(me + ANIM_MAX);
+        c.cycles += 2;
+        if c.fcc() {
+            c.lwc1(0, info + 0x14);
+        } else {
+            c.lwc1(0, gp.wrapping_sub(0x2b90));
+            c.mul_s(0, 1, 0);
+        }
+
+        // Value, clamped.
+        c.cycles += 7;
+        c.swc1(0, me + ANIM_MAX);
+        c.mtc1(0, 0);
+        c.lwc1(1, def + 0x1c);
+        c.c_lt_s(1, 0); // value < 0
+        if !c.fcc() {
+            c.lwc1(12, me + ANIM_MIN);
+            c.cycles += 2;
+            c.lwc1(0, gp.wrapping_sub(0x2b8c));
+            c.mul_s(1, 1, 0);
+        } else {
+            c.cycles += 3;
+            c.lwc1(1, me + ANIM_MIN);
+            c.mov_s(12, 1);
+        }
+        c.cycles += 4;
+        c.c_lt_s(1, 12);
+        if c.fcc() {
+            c.mov_s(1, 12);
+        }
+        c.cycles += 5;
+        c.lwc1(13, me + ANIM_MAX);
+        c.c_lt_s(13, 1);
+        if c.fcc() {
+            c.mov_s(1, 13);
+        }
+        c.cycles += 3;
+        c.g[V0][0] = Addr(def + 0x20).lw(c);
+        if c.g[V0][0] != 0 {
+            // Random in [min, max] (f12, f13).
+            c.cycles += 4;
+            call_ptr(c, f::RAND_FLOAT_RANGE, 0x0034_1bbc)?;
+            c.mov_s(1, 0);
+        }
+        let me = r32(c, S1);
+        let def = r32(c, S2);
+        c.swc1(1, me + ANIM_VALUE);
+
+        // Speed.
+        c.cycles += 6;
+        c.mtc1(0, 0);
+        c.lwc1(13, def + 0x18);
+        c.c_eq_s(13, 0);
+        if c.fcc() {
+            c.lwc1(0, def + 0x14);
+            c.cycles += 7;
+            c.g[V0][0] = Addr(gp.wrapping_add(0x2a74)).lw(c);
+            c.lwc1(1, gp.wrapping_sub(0x2b84));
+            c.lwc1(2, r32(c, V0) + 0x10);
+            c.cvt_s_w(2, 2);
+            c.mul_s(0, 0, 1);
+            c.div_s(0, 0, 2);
+            c.swc1(0, me + ANIM_SPEED);
+        } else {
+            c.cycles += 11;
+            c.lwc1(0, gp.wrapping_sub(0x2b88));
+            c.lwc1(12, def + 0x14);
+            c.mul_s(13, 13, 0);
+            c.mul_s(12, 12, 0);
+            call_ptr(c, f::RAND_FLOAT_SPREAD, 0x0034_1bf0)?;
+            let gp = r32(c, GP);
+            c.g[V0][0] = Addr(gp.wrapping_add(0x2a74)).lw(c);
+            c.lwc1(1, r32(c, V0) + 0x10);
+            c.cvt_s_w(1, 1);
+            c.div_s(0, 0, 1);
+            c.swc1(0, r32(c, S1) + ANIM_SPEED);
+        }
+
+        // Direction.
+        let me = r32(c, S1);
+        let def = r32(c, S2);
+        c.cycles += 4;
+        c.g[V0][0] = Addr(def + 0x8).lw(c);
+        c.g[A0][0] = 1;
+        if c.g[V0][0] == 1 {
+            c.cycles += 4;
+            c.lwc1(0, me + ANIM_SPEED);
+            c.neg_s(0, 0);
+            c.swc1(0, me + ANIM_SPEED);
+        }
+        c.g[V1][0] = Addr(me + ANIM_FLAGS).lhu(c);
+
+        c.cycles += 14;
+        c.g[V0][0] = c.g[S1][0];
+        c.lwc1(0, me + ANIM_VALUE);
+        c.g[V1][0] |= 1;
+        Addr(me + ANIM_ACTIVE).sw(c, c.g[A0][0]);
+        c.swc1(0, me + ANIM_START);
+        Addr(me + ANIM_FLAGS).sh(c, c.g[V1][0]);
+        Addr(me + ANIM_FC).sw(c, 0);
+        Addr(me + ANIM_AT_LIMIT).sw(c, 0);
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -17364,6 +17589,116 @@ pub(crate) mod tests {
                 }
                 c.g[A0][0] = sx(this);
                 c.g[A1][0] = sx(bx);
+            },
+        );
+    }
+    use super::*;
+
+    /// `AnimObject_ctor` with the real constructor chain
+    /// (`AnimObject_BaseCtor` -> `ModObj_ctor` -> `WorldObj_ctor` on the
+    /// `world_obj_ctor_matches` fixture: process lists, world -> focus
+    /// manager; a node whose info has no entries, so `AllocNodeInfo` and
+    /// `AnimObject_v52` take their short paths and the instance stays 0),
+    /// the pool allocator, and definitions with min/max/value negative or
+    /// not, random value or not, speed spread or not, both directions; the
+    /// frame rate at `gp+0x2a74 -> +0x10`.
+    #[test]
+    fn anim_object_ctor_matches() {
+        use crate::difftest::fill;
+        use crate::game::fe::feasyncfile::tests::{heap_init_4, pool_allocator_7};
+        const ANIM: u32 = DATA + 0x800;
+        const NODE: u32 = DATA + 0x200;
+        const INFO: u32 = DATA + 0x600;
+        const DEF: u32 = DATA + 0x700;
+        const RATE: u32 = DATA + 0x780;
+        const PROCS: u32 = DATA + 0x1000;
+        const TAILS: u32 = DATA + 0x1400;
+        const WORLD: u32 = DATA + 0x2000;
+        const FOCUS: u32 = DATA + 0x3000;
+        check(
+            ee::s11::f_00341aa0__generated,
+            anim_object_ctor,
+            120,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x34_1aa0, 0);
+                pool_allocator_7(c);
+                heap_init_4(c);
+                let w = |c: &mut Cpu, a: u32, v: u32| c.bus.write32(a, v);
+                fill(c, &mut r, ANIM, 0x20);
+                fill(c, &mut r, NODE, 0x10);
+                let flags = r.next_u32();
+                w(
+                    c,
+                    NODE + 0x8,
+                    if seed % 4 == 0 {
+                        flags | 0x100
+                    } else {
+                        flags & !0x100
+                    },
+                );
+                w(c, NODE + 0x80, INFO);
+                // Node info: no entries; the max used for a negative max.
+                w(c, INFO + 0x4, 0);
+                w(c, INFO + 0x8, 0);
+                w(c, INFO + 0x14, r.f32(10.0));
+                // Process lists and the world -> focus manager chain.
+                w(c, GAME_GP + 0x2898 + 4, PROCS);
+                for i in 0..4 {
+                    w(c, PROCS + 0x44 * i, r.next_u32());
+                    w(c, PROCS + 0x44 * i + 8, TAILS + 0x40 * i);
+                    w(c, PROCS + 0x44 * i + 0x28, TAILS + 0x40 * i + 0x20);
+                }
+                fill(c, &mut r, 0x0044_aff0, 0x20);
+                w(c, GAME_GP - 0x848, WORLD);
+                w(c, WORLD + 0x84, WORLD + 0x100);
+                w(c, WORLD + 0x100 + 0xc, WORLD + 0x200);
+                w(c, WORLD + 0x200 + 0xa4, FOCUS);
+                w(
+                    c,
+                    FOCUS + 0xd4,
+                    if seed % 3 == 0 { 0 } else { r.next_u32() },
+                );
+                w(c, FOCUS + 0xd8, r.next_u32() % 8);
+                // Scales (1/30 s) and the frame rate.
+                for off in [0x2b94u32, 0x2b90, 0x2b8c, 0x2b88, 0x2b84] {
+                    w(c, GAME_GP - off, (1.0f32 / 30.0).to_bits());
+                }
+                w(c, GAME_GP + 0x2a74, RATE);
+                w(c, RATE + 0x10, if seed % 5 == 0 { 30 } else { 60 });
+                // The definition.
+                let signed = |r: &mut Rng, neg: bool| {
+                    let v = r.f32(20.0) & 0x7fff_ffff;
+                    if neg {
+                        v | 0x8000_0000
+                    } else {
+                        v
+                    }
+                };
+                w(c, DEF + 0x4, r.next_u32());
+                w(
+                    c,
+                    DEF + 0x8,
+                    if seed % 3 == 1 { 1 } else { r.next_u32() % 3 },
+                );
+                w(c, DEF + 0xc, signed(&mut r, seed % 4 == 1));
+                w(c, DEF + 0x10, signed(&mut r, seed % 5 == 2));
+                w(c, DEF + 0x14, r.f32(30.0));
+                w(c, DEF + 0x18, if seed % 2 == 0 { 0 } else { r.f32(10.0) });
+                w(c, DEF + 0x1c, signed(&mut r, seed % 6 == 3));
+                w(c, DEF + 0x20, if seed % 7 == 4 { 1 } else { 0 });
+                w(c, DEF + 0x24, if seed % 3 == 0 { 1 } else { 0 });
+                let kind = match (seed / 4) % 6 {
+                    0 => 6,
+                    1 => 0x10,
+                    2 => 0x16,
+                    _ => r.next_u32() % 0x20,
+                };
+                c.g[A0][0] = sx(ANIM);
+                c.g[A1][0] = sx(seed % 4);
+                c.g[A2][0] = sx(kind);
+                c.g[A3][0] = sx(NODE);
+                c.g[T0][0] = sx(DEF);
+                c.pc = 0x0034_1aa0;
             },
         );
     }

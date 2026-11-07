@@ -4,7 +4,9 @@
 use crate::abi;
 use crate::abi::addu;
 use crate::abi::r32;
+use crate::abi::reg;
 use crate::abi::ret;
+use crate::abi::set_reg;
 use crate::call;
 use crate::call::call_ptr;
 use crate::call::guest;
@@ -87,6 +89,16 @@ pub const OVERRIDES: &[(u32, GuestFn, &str)] = &[
         0x0032_8660,
         spatial_hash_insert_at_key,
         "SpatialHash_InsertAtKey",
+    ),
+    (
+        0x0032_7c00,
+        ai_fwd_diff_cache_build_entry,
+        "AIFwdDiffCache_BuildEntry",
+    ),
+    (
+        0x0032_7c68,
+        ai_fwd_diff_cache_reset_entries,
+        "AIFwdDiffCache_ResetEntries",
     ),
 ];
 
@@ -2702,6 +2714,136 @@ pub(crate) fn spatial_hash_insert_descend(c: &mut Cpu) -> crate::call::Flow {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// AIFwdDiffCache_BuildEntry (0x327c00) / AIFwdDiffCache_ResetEntries (0x327c68)
+
+/// The VU0 register block the forward-difference microprogram works on
+/// (`gp+0x2930`).
+pub(crate) const AFD_VU_REGS: u32 = 0x2930;
+
+/// Offset of the source curve's coefficient block in the source node.
+pub(crate) const AFD_SRC_COEFFS: u32 = 0x40;
+
+/// Offset of the output samples in the cache entry.
+pub(crate) const AFD_ENTRY_SAMPLES: u32 = 0x10;
+
+/// The two blocks of sample rows ResetEntries fills, their row counts
+/// (minus one) and the gp-relative "far away" fill values.
+pub(crate) const AFD_ROWS_A: u32 = 0x650;
+
+pub(crate) const AFD_ROWS_A_LAST: u64 = 0x50;
+
+pub(crate) const AFD_FILL_A: u32 = 0x2e04;
+
+pub(crate) const AFD_ROWS_B: u32 = 0x1a90;
+
+pub(crate) const AFD_ROWS_B_LAST: u64 = 0x8;
+
+pub(crate) const AFD_FILL_B: u32 = 0x2e00;
+
+pub(crate) const AFD_VU0_LOAD_REGS_AND_CALL: u32 = 0x0039_1418;
+
+pub(crate) const AFD_VU0_READ_VI1: u32 = 0x0039_14f8;
+
+pub(crate) const AFD_VU0_COPY_OUTPUT_MEM: u32 = 0x0039_1480;
+
+pub(crate) const AFD_RESET_ENTRIES: Callee = Callee {
+    addr: 0x0032_7c68,
+    f: ee::s10::AIFwdDiffCache_ResetEntries,
+};
+
+/// `void AIFwdDiffCache_BuildEntry(AIFwdDiffCache* self, Node* src,
+/// Entry* entry)` (0x327c00): loads the source curve's 16 coefficient
+/// quadwords into VU0 and runs the forward-difference microprogram, resets
+/// the entry's sample rows to "far away", reads VI1 and copies the VU0
+/// output (10 x 0xa0 bytes) into the entry's samples.
+pub fn ai_fwd_diff_cache_build_entry(c: &mut Cpu) {
+    guest(c, |c| {
+        c.cycles += 25;
+        let frame = Frame::open(c, 0x40);
+        let src = reg(c, A1);
+        set_reg(c, A1, addu(src, AFD_SRC_COEFFS as u64));
+        frame.save(c, S0, 0x30);
+        frame.save(c, S1, 0x20);
+        let this = reg(c, A0);
+        set_reg(c, S0, this);
+        frame.save(c, S2, 0x10);
+        let regs = sx((c.g[GP][0] as u32).wrapping_add(AFD_VU_REGS));
+        set_reg(c, S1, regs);
+        let entry = reg(c, A2);
+        set_reg(c, S2, entry);
+        frame.save_ra(c, 0);
+        set_reg(c, A0, regs);
+        call_ptr(c, AFD_VU0_LOAD_REGS_AND_CALL, 0x0032_7c2c)?;
+
+        let entry = reg(c, S2);
+        set_reg(c, A1, entry);
+        let this = reg(c, S0);
+        set_reg(c, A0, this);
+        AFD_RESET_ENTRIES.call(c, 0x0032_7c38)?;
+
+        let regs = reg(c, S1);
+        set_reg(c, A0, regs);
+        call_ptr(c, AFD_VU0_READ_VI1, 0x0032_7c40)?;
+
+        let regs = reg(c, S1);
+        set_reg(c, A0, regs);
+        let entry = reg(c, S2);
+        set_reg(c, A1, addu(entry, AFD_ENTRY_SAMPLES as u64));
+        call_ptr(c, AFD_VU0_COPY_OUTPUT_MEM, 0x0032_7c4c)?;
+
+        frame.restore(c, S0, 0x30);
+        frame.restore(c, S1, 0x20);
+        frame.restore(c, S2, 0x10);
+        frame.restore_ra(c, 0);
+        frame.close(c);
+        Ok(())
+    })
+}
+
+/// Fill rows `x, +0x10, +0x20` of `last + 1` 0x40-byte sample rows starting
+/// at `entry + rows` with f0 (the loop head is at `head`).
+pub(crate) fn afd_fill_rows(c: &mut Cpu, entry: u32, rows: u32, last: u64, head: u32) {
+    c.g[V1][0] = sx(entry.wrapping_add(rows));
+    c.g[A0][0] = last;
+    loop {
+        c.cycles += 7;
+        let row = r32(c, V1);
+        c.swc1(0, row);
+        c.g[V0][0] = c.g[A0][0];
+        c.swc1(0, row.wrapping_add(0x10));
+        c.g[A0][0] = sx(r32(c, A0).wrapping_sub(1));
+        c.swc1(0, row.wrapping_add(0x20));
+        let more = (c.g[V0][0] as i64) > 0;
+        c.g[V1][0] = sx(row.wrapping_add(0x40));
+        if !more {
+            break;
+        }
+        if event_due(c) {
+            deliver_event_here(c, head);
+        }
+    }
+}
+
+/// `void AIFwdDiffCache_ResetEntries(AIFwdDiffCache* self, Entry* entry)`
+/// (0x327c68): marks every sample of the entry's two row blocks (81 rows
+/// at +0x650, 9 rows at +0x1a90; three floats per row) as "far away" with
+/// the gp-relative fill values, so stale samples never win a distance test.
+pub fn ai_fwd_diff_cache_reset_entries(c: &mut Cpu) {
+    c.cycles += 4;
+    let gp = c.g[GP][0] as u32;
+    let entry = r32(c, A1);
+    c.lwc1(0, gp.wrapping_sub(AFD_FILL_A));
+    afd_fill_rows(c, entry, AFD_ROWS_A, AFD_ROWS_A_LAST, 0x0032_7c78);
+    c.cycles += 3;
+    let gp = c.g[GP][0] as u32;
+    let entry = r32(c, A1);
+    c.lwc1(0, gp.wrapping_sub(AFD_FILL_B));
+    afd_fill_rows(c, entry, AFD_ROWS_B, AFD_ROWS_B_LAST, 0x0032_7ca0);
+    c.cycles += 2;
+    ret(c);
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -3425,6 +3567,93 @@ pub(crate) mod tests {
                 c.g[A2][0] = sx(ITEM);
                 c.g[A3][0] = sx(TARGET);
                 c.g[T0][0] = sx(at);
+            },
+        );
+    }
+    use super::*;
+
+    /// Stage the VU0 microprogram at address 0 as `NOP / NOP[E]` so
+    /// Vu0_LoadRegsAndCall's `vcallmsr` (CMSAR0 = 0) returns at once.
+    pub(crate) fn afd_stub_microprogram(c: &mut Cpu) {
+        ssx3_ps2::platform::machine_of(&mut c.bus.plat)
+            .hw
+            .vu0
+            .fallback = Some(ssx3_ps2::vu::reference::run_program);
+        c.bus.write32(0x1100_0000, 0x8000_033c); // NOP (lower)
+        c.bus.write32(0x1100_0004, 0x4000_02ff); // NOP, E (upper)
+        c.bus.write32(0x1100_0008, 0x8000_033c); // NOP
+        c.bus.write32(0x1100_000c, 0x0000_02ff); // NOP
+    }
+
+    /// AIFwdDiffCache_BuildEntry: real callees (the VU0 loader with a stub
+    /// microprogram, ResetEntries, VI1 read, output copy) on random source
+    /// coefficients, random VU0 output memory and random fill values.
+    #[test]
+    fn ai_fwd_diff_cache_build_entry_matches() {
+        check(
+            ee::s10::f_00327c00__generated,
+            ai_fwd_diff_cache_build_entry,
+            200,
+            &|c, seed| {
+                let mut r = machine(c, seed, 0x32_7c00, 0);
+                c.pc = 0x0032_7c00;
+                afd_stub_microprogram(c);
+                let this = DATA + 0x20_0000;
+                let src = DATA + 0x20_0100;
+                let entry = DATA + 0x20_1000;
+                fill(c, &mut r, src + AFD_SRC_COEFFS, 0x40);
+                fill(c, &mut r, 0x1100_4200, 0x190);
+                fill(c, &mut r, entry, 0x740);
+                c.bus.write32(GAME_GP - AFD_FILL_A, r.next_u32());
+                c.bus.write32(GAME_GP - AFD_FILL_B, r.next_u32());
+                c.g[A0][0] = sx(this);
+                c.g[A1][0] = sx(src);
+                c.g[A2][0] = sx(entry);
+            },
+        );
+    }
+
+    /// ResetEntries fixture: an entry at a random place, random rows and
+    /// fill values.
+    pub(crate) fn afd_reset_entries_setup(c: &mut Cpu, r: &mut Rng) {
+        scramble(c, r);
+        c.pc = 0x0032_7c68;
+        c.g[GP][0] = GAME_GP as u64;
+        let entry = DATA + 0x20_0000 + (r.next_u32() & 0xff0);
+        fill(c, r, entry + AFD_ROWS_A, 0x80);
+        c.bus.write32(GAME_GP - AFD_FILL_A, r.edge_f32());
+        c.bus.write32(GAME_GP - AFD_FILL_B, r.edge_f32());
+        c.g[A1][0] = sx(entry);
+    }
+
+    /// AIFwdDiffCache_ResetEntries: both row blocks filled.
+    #[test]
+    fn ai_fwd_diff_cache_reset_entries_matches() {
+        check(
+            ee::s10::f_00327c68__generated,
+            ai_fwd_diff_cache_reset_entries,
+            200,
+            &|c, seed| {
+                let mut r = Rng(0x32_7c68 ^ (seed as u64) << 16);
+                afd_reset_entries_setup(c, &mut r);
+            },
+        );
+    }
+
+    /// AIFwdDiffCache_ResetEntries with events due at the loops' back edges.
+    #[test]
+    fn ai_fwd_diff_cache_reset_entries_events_match() {
+        use crate::difftest::events::{check_events, schedule};
+        check_events(
+            ee::s10::f_00327c68__generated,
+            ai_fwd_diff_cache_reset_entries,
+            90,
+            &|c, seed| {
+                let mut r = Rng(0x32_7c69 ^ (seed as u64) << 16);
+                afd_reset_entries_setup(c, &mut r);
+                let ev = schedule(c, &mut r, seed, 0x0032_7c68);
+                c.g[GP][0] = GAME_GP as u64;
+                ev
             },
         );
     }
