@@ -23,7 +23,10 @@ import integrate_wave  # noqa: E402
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 HZ = int(sys.argv[1]) if len(sys.argv) > 1 else 120
 OUT = sys.argv[2] if len(sys.argv) > 2 else f"/tmp/ssx3-tick-ab-{HZ}"
-FRAMES, EVERY = 7000, 250
+# SSX3_AB_FRAMES shortens the comparison (60 Hz frames): one different line
+# (a tree, a missed rail) ends a long replay's comparison, so handling parity
+# is best judged on the early race.
+FRAMES, EVERY = int(os.environ.get("SSX3_AB_FRAMES", 7000)), 250
 
 
 def run(hz):

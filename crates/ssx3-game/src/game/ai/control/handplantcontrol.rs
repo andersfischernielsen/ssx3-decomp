@@ -5527,6 +5527,10 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
         c.lwc1(0, (c.g[A0][0] as u32).wrapping_add(0x1f0));
         c.mul_s(0, 5, 0);
         c.mul_s(0, 0, 2);
+        // The steering yaw: `max(cos - 0.1, 0) * steer * curve(speed)` radians
+        // turned per tick with no step in it (the alignment term in f23 is
+        // already per 1/60 s). Keep the turn per 1/60 s at other rates.
+        crate::game::ai::rider::per_tick_60(c, 0);
         c.sub_s(23, 23, 0);
         c.c_eq_s(23, 1);
         let t = c.fcc();
@@ -5651,6 +5655,19 @@ pub fn rider_ground_state_update(c: &mut Cpu) {
                     c.mtc1(3, 3);
                     c.g[AT][0] = 0xffffffffc2200000;
                     c.mtc1(1, 2);
+                    // Each tick the velocity loses 0.4 of its component
+                    // along the ground normal (f1 = -0.4, kept at its
+                    // length below), the downward correction capped at 40
+                    // (f2): a per-tick share and a per-tick amount. At
+                    // other rates keep the share and the cap per 1/60 s.
+                    if crate::tick::rate(c) != 60 {
+                        let share = FpuF32(c.f[1] ^ 0x8000_0000);
+                        if share.to_f32() > 0.0 && share.to_f32() < 1.0 {
+                            let share = crate::game::ai::rider::smoothing_60(c, share);
+                            c.f[1] = share.0 ^ 0x8000_0000;
+                        }
+                        crate::game::ai::rider::per_tick_60(c, 2);
+                    }
                     c.mul_s(0, 0, 1);
                     c.mfc1(3, 0);
                     c.lqc2(4, (c.g[A0][0] as u32).wrapping_add(0x370));
@@ -10284,6 +10301,129 @@ pub(crate) mod tests {
             for hz in [120, 240] {
                 let value = run(hz, lean, speed, normal_z);
                 assert!((value - stock).abs() < 0.001, "{hz} Hz: {value} vs {stock}");
+            }
+        }
+    }
+
+    /// One ground update on a fresh `setup_2` rider with the stepped forces
+    /// frozen (time scale +0x300 = 0, which also clamps the yaw alignment to
+    /// 0), flat ground (normal +0x370 = z), no lean brake or twist, the
+    /// speed curve at `gp-0x1f98` flat at 0.05, and the given quaternion
+    /// (+0x120), velocity (+0x1e0) and steering (+0x1f0), and the probe
+    /// miss's default up (0x4ff160) set to z as well. Returns the
+    /// quaternion and the velocity after the update.
+    fn ground_rate_step(hz: u32, q: [f32; 4], v: [f32; 4], steer: f32) -> ([f32; 4], [f32; 4]) {
+        use crate::tick;
+        let mut c = crate::difftest::fresh();
+        setup_2(&mut c, 0);
+        tick::set_for_test(&mut c, hz);
+        for (a, bits) in tick::per_tick_values(hz) {
+            c.bus.write32(a, bits);
+        }
+        c.bus.write32(GAME_GP - 0x7064, tick::step_bits(hz));
+        c.bus.write32(RIDER_3 + 0x300, 0);
+        c.bus.write32(RIDER_3 + 0x2e4, 10000.0f32.to_bits());
+        c.bus.write32(RIDER_3 + 0x214, 0);
+        c.bus.write32(RIDER_3 + 0x2dc, 0);
+        c.bus.write32(RIDER_3 + 0x1f0, steer.to_bits());
+        let curve = c.bus.read32(GAME_GP - 0x1f98);
+        for (i, y) in [0.0f32, 0.05, 10.0, 0.05, 20.0, 0.05, 30.0, 0.05]
+            .into_iter()
+            .enumerate()
+        {
+            c.bus.write32(curve + 4 * i as u32, y.to_bits());
+        }
+        for (off, values) in [
+            (0x120, q),
+            (0x1b0, [1.0, 0.0, 0.0, 0.0]),
+            (0x1e0, v),
+            (0x370, [0.0, 0.0, 1.0, 0.0]),
+            (0x3d0, [0.0; 4]),
+        ] {
+            for (i, value) in values.into_iter().enumerate() {
+                c.bus.write32(RIDER_3 + off + 4 * i as u32, value.to_bits());
+            }
+        }
+        // The fixture's probe misses, and the miss resets the ground normal
+        // (+0x370) to the default up at 0x4ff160 (.bss, zero in the image)
+        // before the plane correction reads it: make that default flat
+        // ground too, or the correction sees a zero normal.
+        for (i, value) in [0.0f32, 0.0, 1.0, 0.0].into_iter().enumerate() {
+            c.bus.write32(
+                crate::game::ai::rider::RODATA_UP + 4 * i as u32,
+                value.to_bits(),
+            );
+        }
+        c.g[A0][0] = GS as u64;
+        rider_ground_state_update(&mut c);
+        assert_eq!(c.pc, crate::difftest::RA, "{hz} Hz");
+        let read = |c: &mut Cpu, off: u32| -> [f32; 4] {
+            core::array::from_fn(|i| f32::from_bits(c.bus.read32(RIDER_3 + off + 4 * i as u32)))
+        };
+        (read(&mut c, 0x120), read(&mut c, 0x1e0))
+    }
+
+    /// The steering yaw (0x13eb98, `max(cos - 0.1, 0) * steer * curve`
+    /// radians per tick about the ground normal): the heading turned in
+    /// 1/60 s is the same at 60, 120 and 240 Hz.
+    #[test]
+    fn ground_steering_yaw_follows_the_rate() {
+        let run = |hz: u32, steer: f32| {
+            let mut q = [0.0f32, 0.0, 0.0, 1.0];
+            for _ in 0..hz / 60 {
+                q = ground_rate_step(hz, q, [300.0, 0.0, 0.0, 0.0], steer).0;
+            }
+            q
+        };
+        for steer in [0.5f32, -0.8, 0.0] {
+            let stock = run(60, steer);
+            // 60 Hz: one turn of -(1 - 0.1) * steer * 0.05 about z.
+            let half = -(0.9 * steer * 0.05) / 2.0;
+            assert!(
+                (stock[2] - half.sin()).abs() < 1e-5 && (stock[3] - half.cos()).abs() < 1e-5,
+                "steering yaw not isolated: {stock:?} (steer {steer})"
+            );
+            for hz in [120, 240] {
+                let q = run(hz, steer);
+                for i in 0..4 {
+                    assert!(
+                        (q[i] - stock[i]).abs() < 1e-5,
+                        "{hz} Hz, steer {steer}: {q:?} vs {stock:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The velocity's turn into the ground plane after the probe (0x13eca4,
+    /// 0.4 of the normal component per tick, kept at its length): the
+    /// velocity after 1/60 s is the same at 60, 120 and 240 Hz.
+    #[test]
+    fn ground_velocity_plane_share_follows_the_rate() {
+        let run = |hz: u32, vz: f32| {
+            let mut v = [300.0f32, 0.0, vz, 0.0];
+            for _ in 0..hz / 60 {
+                v = ground_rate_step(hz, [0.0, 0.0, 0.0, 1.0], v, 0.0).1;
+            }
+            v
+        };
+        for vz in [50.0f32, 80.0] {
+            let stock = run(60, vz);
+            // 60 Hz: the slope vz/vx keeps 0.6 of itself, at the same speed.
+            assert!(
+                (stock[2] / stock[0] - 0.6 * vz / 300.0).abs() < 1e-5,
+                "plane share not reached: {stock:?}"
+            );
+            let speed = (300.0f32 * 300.0 + vz * vz).sqrt();
+            assert!((stock[0].hypot(stock[2]) - speed).abs() < 0.01);
+            for hz in [120, 240] {
+                let v = run(hz, vz);
+                for i in 0..3 {
+                    assert!(
+                        (v[i] - stock[i]).abs() < 0.01,
+                        "{hz} Hz, vz {vz}: {v:?} vs {stock:?}"
+                    );
+                }
             }
         }
     }

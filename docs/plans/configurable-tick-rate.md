@@ -299,9 +299,18 @@ by their own functions, so nothing is converted twice. The 240 Hz run tracks
 and hits a tree at 0:25: a small steering difference that compounds over the
 replay (the input is the 60 Hz recording scaled), not a wrong conversion.
 #19 names the remaining handling gap itself: the steering-dependent yaw term
-is not converted. That term is the next T3 item for handling parity; the
-replay comparison should judge it on the first ~20 s or on a course
-quantity, since one different line ends the comparison.
+is not converted.
+
+Fixed: `RiderGroundState_Update`'s steering yaw (`f23 -= max(cos - 0.1, 0) ·
+steer · curve(speed)` before `Rider_RotateAroundAxis` about the ground normal,
+radians per tick) is scaled by 60/rate, and the velocity's per-tick turn into
+the ground plane (0.4 of the normal component, `.lit4` 0x49c124, capped at -40
+built in a register) keeps its share per 1/60 s; exact at 60, rate tests
+`ground_steering_yaw_follows_the_rate` and
+`ground_velocity_plane_share_follows_the_rate`. Measured (`tick_ab.py 240`):
+no tree; course 13/13, 15/16, 21/22 % and 55/55 MPH at 0:38 (back to the
+earlier 21/22 %). `tick_ab.py` takes `SSX3_AB_FRAMES` to judge a shorter
+window, since one different line ends a long replay's comparison.
 
 ### Race countdown and script clock (done)
 
