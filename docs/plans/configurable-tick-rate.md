@@ -285,8 +285,23 @@ no allocation failure with the larger particle rings, race clock in step
 (0:25/0:30/0:34/0:38 both). Course % now drifts at 240 Hz (13/13, 15/14,
 13/17, 21/18 %: the 240 Hz run hits a tree at 0:25). The commit before this
 pass (98291ba) gives the identical sheet, so the drift is older than these
-conversions (somewhere between the last measurement and waves 210-212); it is
-open T3 work.
+conversions.
+
+Bisected (240 Hz replay, frame 24000 is the tree): every commit up to
+ce96a45 stays on the line; the first that hits the tree is #19 (96d5ea0,
+four handling rate terms). #19's own four commits on its base (a7d81ab) stay
+on the line, and so does #18 (4ad701a) alone: it is #18 and #19 together.
+The two touch disjoint code (#18: rider bumps, countdown/freeride timers,
+flag manager, power-up trail; #19: ground handling slews, lean braking, yaw
+alignment), and #19's two `.lit4` entries (0x49b9e8, 0x49c0a8) are loaded only
+by their own functions, so nothing is converted twice. The 240 Hz run tracks
+60 Hz within 1 % up to 0:21 (4/5, 7/7, 8/9, 11/11 %), then takes a lower line
+and hits a tree at 0:25: a small steering difference that compounds over the
+replay (the input is the 60 Hz recording scaled), not a wrong conversion.
+#19 names the remaining handling gap itself: the steering-dependent yaw term
+is not converted. That term is the next T3 item for handling parity; the
+replay comparison should judge it on the first ~20 s or on a course
+quantity, since one different line ends the comparison.
 
 ### Race countdown and script clock (done)
 
